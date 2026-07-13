@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  meta-gateway:
+    build: .
+    ports:
+      - "4100:4100"
+    environment:
+      HTTP_ADDR: ":4100"
+      DATA_DIR: /data
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-dev-admin-token}"
+      MASTER_KEY: "${MASTER_KEY:-dev-master-key-at-least-32-chars!!}"
+    volumes:
+      - meta-gateway-data:/data
+    restart: unless-stopped
+
+volumes:
+  meta-gateway-data:
