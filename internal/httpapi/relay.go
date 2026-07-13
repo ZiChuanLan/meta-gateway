@@ -91,11 +91,11 @@ type chatCompletionsRequest struct {
 	Messages json.RawMessage `json:"messages"`
 	Stream   bool            `json:"stream"`
 	// Passthrough additional fields
-	Temperature *float32         `json:"temperature,omitempty"`
-	MaxTokens   *int             `json:"max_tokens,omitempty"`
-	TopP        *float32         `json:"top_p,omitempty"`
-	N           *int             `json:"n,omitempty"`
-	Stop        interface{}      `json:"stop,omitempty"`
+	Temperature *float32               `json:"temperature,omitempty"`
+	MaxTokens   *int                   `json:"max_tokens,omitempty"`
+	TopP        *float32               `json:"top_p,omitempty"`
+	N           *int                   `json:"n,omitempty"`
+	Stop        interface{}            `json:"stop,omitempty"`
 	Extra       map[string]interface{} `json:"-"` // collected from remaining keys
 }
 
@@ -174,18 +174,20 @@ func (h *RelayHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	result := h.relay.ChatCompletions(upstreamURL, apiKey, bodyBytes, chatReq.Stream)
 	latencyMs := int(time.Since(proxyStart).Milliseconds())
 
-	// Write proxy log (without secrets)
-	status := http.StatusOK
+	// Write proxy log (without secrets). Prefer real upstream status when available.
+	status := result.StatusCode
 	if result.Err != nil {
 		status = http.StatusBadGateway
+	} else if status == 0 {
+		status = http.StatusOK
 	}
 	reqID, _ := r.Context().Value(chimw.RequestIDKey).(string)
 	pl := &domain.ProxyLog{
-		RequestID:  reqID,
-		ChannelID:  ch.ID,
-		Model:      chatReq.Model,
-		Status:     status,
-		LatencyMs:  latencyMs,
+		RequestID: reqID,
+		ChannelID: ch.ID,
+		Model:     chatReq.Model,
+		Status:    status,
+		LatencyMs: latencyMs,
 	}
 	if result.Err != nil {
 		pl.ErrorBrief = result.Err.Error()

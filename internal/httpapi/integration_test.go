@@ -260,4 +260,22 @@ func TestChatCompletionsNonStreamAndStream(t *testing.T) {
 	if strings.Contains(string(logsBody), "upstream-secret") {
 		t.Fatal("proxy logs leaked secret")
 	}
+	var logs []map[string]any
+	if err := json.Unmarshal(logsBody, &logs); err != nil {
+		t.Fatalf("decode proxy logs: %v body %s", err, logsBody)
+	}
+	if len(logs) == 0 {
+		t.Fatal("expected proxy logs after relay")
+	}
+	for _, entry := range logs {
+		if model, _ := entry["model"].(string); model != "gpt-test" {
+			t.Fatalf("unexpected model in log: %#v", entry)
+		}
+		if _, ok := entry["channel_id"]; !ok {
+			t.Fatalf("proxy log missing channel_id: %#v", entry)
+		}
+		if _, ok := entry["status"]; !ok {
+			t.Fatalf("proxy log missing status: %#v", entry)
+		}
+	}
 }
