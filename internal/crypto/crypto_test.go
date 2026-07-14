@@ -1,6 +1,8 @@
 package crypto_test
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/crypto"
@@ -29,6 +31,33 @@ func TestRoundTrip(t *testing.T) {
 		if string(dec) != s {
 			t.Fatalf("roundtrip mismatch: got %q, want %q", string(dec), s)
 		}
+	}
+}
+
+func TestExchangeFingerprintIsStableAndSeparated(t *testing.T) {
+	e1, _ := crypto.New("fingerprint-master-one")
+	e2, _ := crypto.New("fingerprint-master-two")
+	url := "https://api.example.com"
+	secret := []byte("sk-private-value")
+	got := e1.ExchangeFingerprint(url, secret)
+
+	if got != e1.ExchangeFingerprint(url, secret) {
+		t.Fatal("same identity produced different fingerprints")
+	}
+	if got == e1.ExchangeFingerprint(url+"/v2", secret) {
+		t.Fatal("URL change did not change fingerprint")
+	}
+	if got == e1.ExchangeFingerprint(url, []byte("sk-other")) {
+		t.Fatal("key change did not change fingerprint")
+	}
+	if got == e2.ExchangeFingerprint(url, secret) {
+		t.Fatal("master key change did not change fingerprint")
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(got) {
+		t.Fatalf("fingerprint is not lowercase SHA-256 hex: %q", got)
+	}
+	if strings.Contains(got, string(secret)) {
+		t.Fatal("fingerprint contains plaintext secret")
 	}
 }
 

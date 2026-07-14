@@ -29,15 +29,16 @@ type Site struct {
 
 // Credential holds encrypted secrets for a site.
 type Credential struct {
-	ID             int64     `json:"id"`
-	SiteID         int64     `json:"site_id"`
-	Kind           string    `json:"kind"` // api_key | session | access_token | password
-	SecretEnc      []byte    `json:"-"`    // never serialized in JSON
-	MetaJSON       string    `json:"meta_json,omitempty"`
-	Status         string    `json:"status"`
-	CheckinEnabled bool      `json:"checkin_enabled"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                int64     `json:"id"`
+	SiteID            int64     `json:"site_id"`
+	Kind              string    `json:"kind"` // api_key | session | access_token | password
+	SecretEnc         []byte    `json:"-"`    // never serialized in JSON
+	MetaJSON          string    `json:"meta_json,omitempty"`
+	Status            string    `json:"status"`
+	CheckinEnabled    bool      `json:"checkin_enabled"`
+	ImportFingerprint string    `json:"-"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 type CheckinLog struct {

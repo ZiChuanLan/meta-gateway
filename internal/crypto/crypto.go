@@ -7,9 +7,11 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +22,8 @@ const (
 	// currentVersion is the encryption format version marker.
 	currentVersion = "v1"
 	// nonceSize for AES-GCM.
-	nonceSize = 12
+	nonceSize               = 12
+	exchangeIdentityPurpose = "meta-gateway/exchange-identity/v1"
 )
 
 var (
@@ -32,6 +35,24 @@ var (
 // Encrypter handles encryption and decryption of secrets.
 type Encrypter struct {
 	key []byte
+}
+
+// ExchangeFingerprint returns a stable, purpose-separated identity for an
+// imported base URL and API key. It is safe to persist but must not be exposed.
+func (e *Encrypter) ExchangeFingerprint(normalizedBaseURL string, apiKey []byte) string {
+	derive := hmac.New(sha256.New, e.key)
+	_, _ = derive.Write([]byte(exchangeIdentityPurpose))
+	identityKey := derive.Sum(nil)
+
+	fingerprint := hmac.New(sha256.New, identityKey)
+	_, _ = fingerprint.Write([]byte(normalizedBaseURL))
+	_, _ = fingerprint.Write([]byte{0})
+	_, _ = fingerprint.Write(apiKey)
+	result := hex.EncodeToString(fingerprint.Sum(nil))
+	for i := range identityKey {
+		identityKey[i] = 0
+	}
+	return result
 }
 
 // New creates an Encrypter from a MASTER_KEY secret.

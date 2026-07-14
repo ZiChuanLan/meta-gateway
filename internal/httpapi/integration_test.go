@@ -16,7 +16,7 @@ import (
 	"github.com/lan/meta-gateway/internal/store"
 )
 
-func setupServer(t *testing.T, upstreamURL string) (string, string) {
+func setupServer(t *testing.T, upstreamURL string) (string, string, *store.DB) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -129,7 +129,7 @@ func setupServer(t *testing.T, upstreamURL string) (string, string) {
 		t.Fatalf("expected 401, got %d", bad.StatusCode)
 	}
 
-	return srv.URL, rawToken
+	return srv.URL, rawToken, db
 }
 
 func asInt64(t *testing.T, v any) int64 {
@@ -157,7 +157,7 @@ func TestHealthz(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	base, _ := setupServer(t, upstream.URL)
+	base, _, _ := setupServer(t, upstream.URL)
 	resp, err := http.Get(base + "/healthz")
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestChatCompletionsNonStreamAndStream(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	base, token := setupServer(t, upstream.URL)
+	base, token, _ := setupServer(t, upstream.URL)
 
 	explainReq, _ := http.NewRequest(http.MethodGet, base+"/admin/routes/explain?model=gpt-test", nil)
 	explainReq.Header.Set("Authorization", "Bearer admin-secret")
@@ -310,7 +310,7 @@ func TestDiscoveryAdminEndpoints(t *testing.T) {
 		_, _ = io.WriteString(w, `{"data":[{"id":" discovered-b "},{"id":"discovered-a"},{"id":"discovered-a"}]}`)
 	}))
 	defer upstream.Close()
-	base, _ := setupServer(t, upstream.URL)
+	base, _, _ := setupServer(t, upstream.URL)
 
 	unauthorized, err := http.Post(base+"/admin/discovery/channels/1/refresh", "application/json", nil)
 	if err != nil {

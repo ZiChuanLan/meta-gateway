@@ -19,6 +19,7 @@ type DB struct {
 	DownstreamKey   *DownstreamKeyStore
 	ProxyLog        *ProxyLogStore
 	CheckinLog      *CheckinLogStore
+	Exchange        *ExchangeStore
 }
 
 // Open opens (or creates) the SQLite database at the given path and runs migrations.
@@ -48,6 +49,7 @@ func Open(dataDir string) (*DB, error) {
 		DownstreamKey:   &DownstreamKeyStore{db: sqldb},
 		ProxyLog:        &ProxyLogStore{db: sqldb},
 		CheckinLog:      &CheckinLogStore{db: sqldb},
+		Exchange:        &ExchangeStore{db: sqldb},
 	}
 	return db, nil
 }

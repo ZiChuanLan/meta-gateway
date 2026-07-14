@@ -22,6 +22,12 @@ Admin / Cron scheduler
   -> Check-in service (eligibility, decryption, in-process exclusion)
   -> Platform check-in adapter (bounded upstream /api/user/checkin request)
   -> Check-in audit log (redacted result, reward, latency, source)
+
+Admin
+  -> Exchange parser (strict/compatible shape validation and normalization)
+  -> Exchange service (HMAC identity, encryption, legacy matching)
+  -> Exchange repository (one Site/Credential/Channel transaction)
+  -> Discovery service after commit (ordered, redacted outcomes)
 ```
 
 ## Packages
@@ -38,9 +44,10 @@ Admin / Cron scheduler
 | `internal/adapters` | Stateless platform registry, model listing, and check-in capabilities |
 | `internal/discovery` | Credential-aware refresh orchestration and redacted results |
 | `internal/checkin` | Credential-scoped check-in orchestration and cron lifecycle |
+| `internal/exchange` | Versioned formats, normalization, identity, import/export orchestration |
 | `internal/httpapi` | Admin and `/v1` HTTP adapters |
 | `internal/auth` | Admin and downstream-key authentication |
-| `internal/crypto` | AES-GCM credential encryption |
+| `internal/crypto` | AES-GCM credential encryption and purpose-separated exchange HMAC identity |
 
 ## Routing
 
@@ -121,11 +128,26 @@ in-process runs for the same credential. Existing credentials migrate with
 check-in disabled, and `CHECKIN_ENABLED` defaults to false, so an upgrade cannot
 silently introduce external requests.
 
+## Channel Exchange
+
+P6 adds a versioned exchange boundary for canonical Meta Gateway documents,
+New API channel lists, and reduced All API Hub V2 credential profiles. Parsing,
+URL/list normalization, range checks, and duplicate detection complete before
+database mutation. A purpose-separated HMAC identifies normalized URL plus API
+key without storing plaintext or relying on randomized ciphertext.
+
+Each imported identity owns one dedicated Credential/Channel. Existing shared
+CRUD credentials remain valid, but legacy adoption requires one unambiguous
+channel and constant-time secret equality. Site, Credential, and Channel writes
+use one dedicated repository transaction. Discovery runs only after commit and
+continues with redacted per-channel outcomes; manual routing protection remains
+inside the existing reconciliation service.
+
 ## Current Scope
 
-P0-P5 cover repository bootstrap, Admin CRUD, encrypted credentials,
+P0-P6 cover repository bootstrap, Admin CRUD, encrypted credentials,
 OpenAI-compatible Models and Chat Completions, SSE passthrough, multi-channel
 routing, retry/cooldown, Explain, tracked migrations, and manually triggered
 model discovery, plus credential check-in, redacted audit logs, and optional
-cron scheduling. AAH exchange, broad hardening, and Web Admin remain later
-phases.
+cron scheduling, plus secure versioned AAH/New API exchange. Broad P7
+hardening and the P8 Web Admin remain later phases.

@@ -93,6 +93,8 @@ GET /healthz → 200 {"status":"ok"}
 | POST | /admin/checkin/credentials/{id}/run | Run one credential check-in manually |
 | POST | /admin/checkin/run | Run all check-in-enabled credentials |
 | GET | /admin/checkin/logs | List and filter redacted check-in logs |
+| POST | /admin/exchange/export | Export all or selected channels; secrets require explicit opt-in |
+| POST | /admin/exchange/import | Atomically import canonical, New API, or AAH V2 channel assets |
 
 ### Public (requires `Authorization: Bearer <DownstreamKey>`)
 
@@ -159,3 +161,10 @@ API and One API sites. Scheduling is disabled by default; enable individual
 credentials through the Admin API and then set `CHECKIN_ENABLED=true`. New API
 credentials may set `meta_json` to `{"platform_user_id": 42}` when the upstream
 requires the `New-Api-User` header.
+
+Channel exchange uses a strict versioned canonical format and supports
+documented New API and All API Hub V2 compatibility inputs. Secret-bearing
+exports contain plaintext API keys and return `Cache-Control: no-store`; use
+metadata-only export unless portability is required. See
+[docs/aah-exchange-format.md](docs/aah-exchange-format.md) for the complete
+format, defaults, idempotency, and security contract.

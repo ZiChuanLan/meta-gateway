@@ -1,4 +1,4 @@
-# MVP Acceptance (P0-P5)
+# MVP Acceptance (P0-P6)
 
 Evidence from local verification on 2026-07-14.
 
@@ -48,4 +48,8 @@ Evidence from local verification on 2026-07-14.
 - [x] Credential-scoped manual and scheduled New API / One API check-in (P5)
 - [x] Redacted check-in logs, deterministic batches, and overlap exclusion (P5)
 - [x] P0-P4 database upgrade defaults existing credentials to check-in disabled (P5)
-- AAH import/export APIs (P6)
+- [x] Canonical version 1 secret and metadata channel export (P6)
+- [x] Canonical, New API, and reduced AAH V2 profile imports (P6)
+- [x] HMAC identity, repeat-import update, different-key separation, and unique legacy adoption (P6)
+- [x] Atomic asset transaction followed by ordered redacted discovery (P6)
+- [x] Admin auth, 10 MiB limit, no-store secret response, and stable exchange errors (P6)

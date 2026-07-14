@@ -13,6 +13,7 @@ import (
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/discovery"
+	"github.com/lan/meta-gateway/internal/exchange"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
@@ -20,8 +21,9 @@ import (
 )
 
 type Dependencies struct {
-	Registry       *adapters.Registry
-	CheckinService *checkin.Service
+	Registry        *adapters.Registry
+	CheckinService  *checkin.Service
+	ExchangeService *exchange.Service
 }
 
 // New creates a fully wired chi.Router.
@@ -40,6 +42,11 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	if checkinService == nil {
 		checkinService = checkin.New(db, enc, registry)
 	}
+	discoveryService := discovery.New(db, enc, registry)
+	exchangeService := dependencies.ExchangeService
+	if exchangeService == nil {
+		exchangeService = exchange.NewService(db, enc, discoveryService)
+	}
 
 	// Global middleware
 	r.Use(chimw.RequestID)
@@ -57,10 +64,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	selector := routing.New(db.RouteMember)
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
-	discoveryHandler := NewDiscoveryHandler(db, discovery.New(db, enc, registry))
+	discoveryHandler := NewDiscoveryHandler(db, discoveryService)
 	discoveryHandler.Register(adminGroup)
 	checkinHandler := NewCheckinHandler(db, checkinService)
 	checkinHandler.Register(adminGroup)
+	exchangeHandler := NewExchangeHandler(exchangeService)
+	exchangeHandler.Register(adminGroup)
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)

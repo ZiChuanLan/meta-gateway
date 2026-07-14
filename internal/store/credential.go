@@ -13,7 +13,7 @@ type CredentialStore struct {
 }
 
 func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, created_at, updated_at FROM credentials WHERE site_id = ? ORDER BY id`, siteID)
+	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE site_id = ? ORDER BY id`, siteID)
 	if err != nil {
 		return nil, fmt.Errorf("credential list: %w", err)
 	}
@@ -23,7 +23,7 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 	for rows.Next() {
 		var r domain.Credential
 		var secret string
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("credential scan: %w", err)
 		}
 		r.SecretEnc = []byte(secret)
@@ -33,10 +33,10 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 }
 
 func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
-	row := s.db.QueryRow(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, created_at, updated_at FROM credentials WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
 	var r domain.Credential
 	var secret string
-	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -47,8 +47,8 @@ func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 }
 
 func (s *CredentialStore) Create(c *domain.Credential) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO credentials (site_id, kind, secret_enc, meta_json, status, checkin_enabled) VALUES (?, ?, ?, ?, ?, ?)`,
-		c.SiteID, c.Kind, string(c.SecretEnc), c.MetaJSON, c.Status, c.CheckinEnabled)
+	res, err := s.db.Exec(`INSERT INTO credentials (site_id, kind, secret_enc, meta_json, status, checkin_enabled, import_fingerprint) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''))`,
+		c.SiteID, c.Kind, string(c.SecretEnc), c.MetaJSON, c.Status, c.CheckinEnabled, c.ImportFingerprint)
 	if err != nil {
 		return 0, fmt.Errorf("credential create: %w", err)
 	}
@@ -71,7 +71,7 @@ func (s *CredentialStore) SetCheckinEnabled(id int64, enabled bool) error {
 }
 
 func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, created_at, updated_at FROM credentials WHERE checkin_enabled = 1 ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE checkin_enabled = 1 ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("credential checkin list: %w", err)
 	}
@@ -80,7 +80,7 @@ func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
 	for rows.Next() {
 		var r domain.Credential
 		var secret string
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("credential checkin scan: %w", err)
 		}
 		r.SecretEnc = []byte(secret)
@@ -90,8 +90,8 @@ func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
 }
 
 func (s *CredentialStore) Update(c *domain.Credential) error {
-	_, err := s.db.Exec(`UPDATE credentials SET kind=?, secret_enc=?, meta_json=?, status=?, updated_at=datetime('now') WHERE id=?`,
-		c.Kind, string(c.SecretEnc), c.MetaJSON, c.Status, c.ID)
+	_, err := s.db.Exec(`UPDATE credentials SET kind=?, secret_enc=?, meta_json=?, status=?, import_fingerprint=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
+		c.Kind, string(c.SecretEnc), c.MetaJSON, c.Status, c.ImportFingerprint, c.ID)
 	if err != nil {
 		return fmt.Errorf("credential update: %w", err)
 	}
