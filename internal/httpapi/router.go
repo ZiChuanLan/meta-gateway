@@ -10,7 +10,9 @@ import (
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
+	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/relay"
+	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
@@ -31,12 +33,14 @@ func New(cfg *config.Config, db *store.DB, enc *crypto.Encrypter) http.Handler {
 	// Admin routes
 	adminGroup := chi.NewRouter()
 	adminGroup.Use(auth.AdminMiddleware(cfg.AdminToken))
-	adminHandler := NewAdminHandler(db, enc)
+	selector := routing.New(db.RouteMember)
+	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)
-	relayHandler := NewRelayHandler(db, relay.New(), enc)
+	proxyService := proxy.New(selector, relay.New(), db, enc, cfg.RetryTimes, cfg.Cooldown)
+	relayHandler := NewRelayHandler(db, proxyService)
 	v1Group := chi.NewRouter()
 	v1Group.Use(auth.NewDownstreamAuth(db.DownstreamKey).Middleware())
 	relayHandler.Register(v1Group)

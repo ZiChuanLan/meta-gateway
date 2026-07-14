@@ -1,13 +1,16 @@
 package relay_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/relay"
 )
@@ -136,5 +139,37 @@ func TestModels(t *testing.T) {
 	}
 	if len(data) != 2 {
 		t.Fatalf("expected 2 models, got %d", len(data))
+	}
+}
+
+func TestChatCompletionsPropagatesCancellation(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		upstream.Close()
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan *relay.Result, 1)
+	go func() {
+		resultCh <- relay.New().ChatCompletionsContext(ctx, upstream.URL, "key", []byte(`{}`), false)
+	}()
+	<-started
+	cancel()
+	select {
+	case result := <-resultCh:
+		if !errors.Is(result.Err, context.Canceled) {
+			t.Fatalf("expected cancellation, got %v", result.Err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream request did not observe cancellation")
 	}
 }

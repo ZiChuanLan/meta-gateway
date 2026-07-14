@@ -6,7 +6,7 @@ A lightweight relay gateway for LLM API access. Routes chat completion requests 
 
 ### Prerequisites
 
-- Go 1.22+ (or Docker)
+- Go 1.26.4+ (or Docker)
 - SQLite (embedded, no external dependency)
 
 ### Using Go
@@ -42,6 +42,8 @@ curl http://127.0.0.1:4100/healthz
 | `DATA_DIR` | `./data` | SQLite storage directory |
 | `ADMIN_TOKEN` | _(required)_ | Bearer token for admin endpoints |
 | `MASTER_KEY` | _(required)_ | Encryption key for secrets at rest (32+ chars) |
+| `RETRY_TIMES` | `2` | Maximum retries after the first upstream attempt |
+| `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
 
 ## API Overview
 
@@ -69,6 +71,7 @@ GET /healthz → 200 {"status":"ok"}
 | PUT | /admin/channels/{id} | Update channel |
 | DELETE | /admin/channels/{id} | Delete channel |
 | GET | /admin/routes | List routes |
+| GET | /admin/routes/explain?model={model} | Explain candidate eligibility and priority |
 | POST | /admin/routes | Create route |
 | GET | /admin/routes/{id} | Get route |
 | PUT | /admin/routes/{id} | Update route |
@@ -139,3 +142,8 @@ curl -s -X POST http://127.0.0.1:4100/v1/chat/completions \
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture overview.
+
+Routing evaluates higher numeric priority first and uses weight only within the
+selected priority tier. If all eligible weights in a tier are zero, selection
+is uniform. Retryable transport failures and transient upstream responses move
+to another eligible channel; ordinary client-error responses do not retry.

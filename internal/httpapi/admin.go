@@ -1,25 +1,30 @@
 package httpapi
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
 // AdminHandler serves management endpoints under /admin.
 type AdminHandler struct {
-	db  *store.DB
-	enc *crypto.Encrypter
+	db     *store.DB
+	enc    *crypto.Encrypter
+	router *routing.Selector
 }
 
-func NewAdminHandler(db *store.DB, enc *crypto.Encrypter) *AdminHandler {
-	return &AdminHandler{db: db, enc: enc}
+func NewAdminHandler(db *store.DB, enc *crypto.Encrypter, selector *routing.Selector) *AdminHandler {
+	return &AdminHandler{db: db, enc: enc, router: selector}
 }
 
 func (h *AdminHandler) Register(r chi.Router) {
@@ -44,6 +49,7 @@ func (h *AdminHandler) Register(r chi.Router) {
 
 	// Routes
 	r.Get("/routes", h.listRoutes)
+	r.Get("/routes/explain", h.explainRoute)
 	r.Post("/routes", h.createRoute)
 	r.Get("/routes/{id}", h.getRoute)
 	r.Put("/routes/{id}", h.updateRoute)
@@ -62,6 +68,24 @@ func (h *AdminHandler) Register(r chi.Router) {
 
 	// Proxy logs
 	r.Get("/proxy-logs", h.listProxyLogs)
+}
+
+func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
+	model := r.URL.Query().Get("model")
+	if model == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	explanation, err := h.router.Explain(r.Context(), model)
+	if err != nil {
+		if errors.Is(err, routing.ErrRouteNotFound) {
+			writeError(w, http.StatusNotFound, "route not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to explain route")
+		return
+	}
+	writeJSON(w, http.StatusOK, explanation)
 }
 
 // ---------------------------------------------------------------------------
@@ -360,9 +384,13 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
+	if rt.ModelPattern == "" {
+		writeError(w, http.StatusBadRequest, "model_pattern is required")
+		return
+	}
 	id, err := h.db.Route.Create(&rt)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	created, _ := h.db.Route.GetByID(id)
@@ -399,8 +427,12 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.ID = id
+	if rt.ModelPattern == "" {
+		writeError(w, http.StatusBadRequest, "model_pattern is required")
+		return
+	}
 	if err := h.db.Route.Update(&rt); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	updated, _ := h.db.Route.GetByID(id)
@@ -450,9 +482,13 @@ func (h *AdminHandler) createRouteMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rm.RouteID = routeID
+	if rm.Weight < 0 {
+		writeError(w, http.StatusBadRequest, "weight must be non-negative")
+		return
+	}
 	id, err := h.db.RouteMember.Create(&rm)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	created, _ := h.db.RouteMember.GetByID(id)
@@ -471,12 +507,28 @@ func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rm.ID = id
+	if rm.Weight < 0 {
+		writeError(w, http.StatusBadRequest, "weight must be non-negative")
+		return
+	}
 	if err := h.db.RouteMember.Update(&rm); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	updated, _ := h.db.RouteMember.GetByID(id)
 	writeJSON(w, http.StatusOK, updated)
+}
+
+func writeStoreError(w http.ResponseWriter, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "resource not found")
+		return
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "unique constraint failed") {
+		writeError(w, http.StatusConflict, "resource already exists")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "database operation failed")
 }
 
 func (h *AdminHandler) deleteRouteMember(w http.ResponseWriter, r *http.Request) {

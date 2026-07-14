@@ -3,6 +3,7 @@ package relay
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +20,11 @@ type Relay struct {
 func New() *Relay {
 	return &Relay{
 		client: &http.Client{
-			Timeout: 300 * time.Second, // SSE can be long-lived
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				ResponseHeaderTimeout: 60 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
+			},
 		},
 	}
 }
@@ -35,6 +40,11 @@ type Result struct {
 
 // ChatCompletions forwards a /v1/chat/completions request to the given upstream.
 func (r *Relay) ChatCompletions(upstreamURL string, apiKey string, reqBody []byte, stream bool) *Result {
+	return r.ChatCompletionsContext(context.Background(), upstreamURL, apiKey, reqBody, stream)
+}
+
+// ChatCompletionsContext forwards a request and propagates cancellation.
+func (r *Relay) ChatCompletionsContext(ctx context.Context, upstreamURL string, apiKey string, reqBody []byte, stream bool) *Result {
 	start := time.Now()
 
 	var bodyReader io.Reader
@@ -44,7 +54,7 @@ func (r *Relay) ChatCompletions(upstreamURL string, apiKey string, reqBody []byt
 		bodyReader = bytes.NewReader(reqBody)
 	}
 
-	httpReq, err := http.NewRequest(http.MethodPost, upstreamURL, bodyReader)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bodyReader)
 	if err != nil {
 		return &Result{Err: fmt.Errorf("relay: create request: %w", err)}
 	}

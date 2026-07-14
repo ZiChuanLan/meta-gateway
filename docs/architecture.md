@@ -2,75 +2,82 @@
 
 ## Overview
 
-Meta Gateway is a lightweight HTTP relay gateway for LLM API access. It routes incoming chat completion requests to upstream API providers based on configured routes and channels.
+Meta Gateway is an OpenAI-compatible relay that selects upstream channels by
+exact model route, priority, weight, and shared cooldown state.
 
-### Layer Diagram
-
-```
-Clients (curl / apps / Cursor / Claude Code)
-        │  DownstreamKey Auth
-        ▼
-┌──────────────────────────────────────┐
-│  HTTP Server (chi)                    │
-│  /v1/*    →  relay + single-channel   │
-│  /admin/* →  management CRUD          │
-│  /healthz →  health check             │
-└──────────────┬───────────────────────┘
-               │
-        Domain + Store (SQLite)
-               │
-        Upstream Sites / APIs
+```text
+Client
+  -> HTTP adapter (auth, validation, response commitment)
+  -> Proxy service (attempts, retry policy, logs, credentials)
+  -> Routing selector (eligibility, priority tiers, weighted choice)
+  -> Store repositories (SQLite)
+  -> Relay transport (context-bound upstream HTTP)
 ```
 
 ## Packages
 
 | Package | Responsibility |
 | --- | --- |
-| `cmd/server` | Entry point, config loading, server startup |
-| `internal/config` | Environment variable parsing |
-| `internal/domain` | Domain models (Site, Channel, Route, etc.) |
-| `internal/store` | SQLite database, migrations, CRUD operations |
-| `internal/crypto` | AES-256-GCM secret encryption/decryption |
-| `internal/auth` | Admin (static token) and DownstreamKey auth |
-| `internal/httpapi` | HTTP route handlers (admin + relay) |
-| `internal/relay` | HTTP client for proxying to upstreams |
+| `cmd/server` | Entry point, configuration, and server startup |
+| `internal/config` | Environment parsing |
+| `internal/domain` | Persisted entities and routing candidate facts |
+| `internal/store` | SQLite migrations, CRUD, routing facts, and health state |
+| `internal/routing` | Pure candidate evaluation, explain output, and weighted selection |
+| `internal/proxy` | Retry orchestration, credentials, cooldown updates, and attempt logs |
+| `internal/relay` | Context-bound upstream HTTP transport |
+| `internal/httpapi` | Admin and `/v1` HTTP adapters |
+| `internal/auth` | Admin and downstream-key authentication |
+| `internal/crypto` | AES-GCM credential encryption |
 
-## Data Flow — Chat Completions
+## Routing
 
-1. Client sends `POST /v1/chat/completions` with DownstreamKey Bearer auth
-2. DownstreamAuth middleware validates the token hash
-3. Relay handler looks up the route matching `model` field
-4. Finds first enabled `RouteMember` → gets `Channel`
-5. Resolves the credential (decrypts the API key at runtime)
-6. Forwards the request to the upstream's `/v1/chat/completions`
-7. Writes a `ProxyLog` entry (without secrets)
-8. Returns the upstream response (SSE passthrough if `stream=true`)
+Routes match exact model names. `RouteMember` is the runtime source of truth
+for priority and weight; Channel priority and weight are compatibility/default
+metadata.
+
+1. Load the enabled exact route and all member/channel/credential facts.
+2. Exclude disabled members/channels, unavailable credentials, members in
+   cooldown, and channels already attempted by the request.
+3. Choose the highest numeric priority tier with eligible members.
+4. Select by positive weight inside the tier.
+5. If every weight in the tier is zero, select uniformly.
+
+`GET /admin/routes/explain?model=<model>` uses the same evaluator and returns
+stable reason codes without changing state.
+
+## Retry And Streaming
+
+The proxy service retries transport failures and upstream statuses 408, 429,
+500, 502, 503, and 504. Ordinary 4xx responses are returned immediately. A
+channel is attempted once per request, and retry count is bounded by
+`RETRY_TIMES` and candidate exhaustion.
+
+Retryable failure increments the member failure count and applies a fixed
+cooldown. Success clears member failure state. Each upstream attempt writes one
+ProxyLog row with request ID, channel, attempt number, latency, real upstream
+status when available, and a redacted error category.
+
+Downstream cancellation is propagated to upstream requests. The relay uses a
+response-header timeout instead of a whole-request timeout, so an established
+SSE stream can remain open until cancellation or upstream closure. No retry is
+possible after response commitment.
 
 ## Database
 
-SQLite with WAL mode. Schema in `internal/store/001_init.sql`.
+SQLite runs in WAL mode. Embedded migrations are ordered, transactional, and
+recorded in `schema_migrations`; each file executes once. P3 adds uniqueness for
+exact model patterns and route/channel membership plus routing lookup indexes.
+Back up an existing SQLite database before starting a P3 binary. If legacy data
+contains duplicate exact routes or duplicate route/channel memberships, the
+migration stops with a uniqueness error instead of silently choosing data to
+delete.
 
-### Entities
+Credentials are encrypted at rest, downstream keys are hashed, and no API or
+ProxyLog field returns raw credential material.
 
-- **Site** — upstream API provider
-- **Credential** — encrypted API keys/sessions per site
-- **Channel** — relay target (upstream URL + model group)
-- **Route** — model pattern to channel mapping
-- **RouteMember** — channel binding with priority/weight
-- **DownstreamKey** — client authentication tokens (SHA-256 hashed)
-- **ProxyLog** — relay request metadata (no secrets)
+## Current Scope
 
-## Security
-
-- Secrets encrypted with AES-256-GCM using `MASTER_KEY`
-- Downstream tokens stored as SHA-256 hashes
-- Admin routes protected by static `ADMIN_TOKEN`
-- No secrets logged or exposed in API responses
-
-## Scope
-
-This implementation covers P0–P2:
-
-- P0: Repo layout, healthz, SQLite, Docker
-- P1: Domain models, Admin CRUD, secret encryption
-- P2: Single-channel relay, `/v1/models`, `/v1/chat/completions` with SSE
+P0-P3 cover repository bootstrap, Admin CRUD, encrypted credentials,
+OpenAI-compatible Models and Chat Completions, SSE passthrough, multi-channel
+routing, retry/cooldown, Explain, and tracked migrations. Discovery, check-in,
+AAH exchange, broad hardening, and Web Admin remain later phases.

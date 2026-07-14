@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config holds the application configuration parsed from environment variables.
@@ -11,6 +12,8 @@ type Config struct {
 	DataDir    string
 	AdminToken string
 	MasterKey  string
+	RetryTimes int
+	Cooldown   time.Duration
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -20,6 +23,8 @@ func Load() *Config {
 		DataDir:    envStr("DATA_DIR", "./data"),
 		AdminToken: envStr("ADMIN_TOKEN", ""),
 		MasterKey:  envStr("MASTER_KEY", ""),
+		RetryTimes: envInt("RETRY_TIMES", 2),
+		Cooldown:   time.Duration(envInt("COOLDOWN_SECONDS", 30)) * time.Second,
 	}
 }
 

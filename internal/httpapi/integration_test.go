@@ -195,6 +195,23 @@ func TestChatCompletionsNonStreamAndStream(t *testing.T) {
 
 	base, token := setupServer(t, upstream.URL)
 
+	explainReq, _ := http.NewRequest(http.MethodGet, base+"/admin/routes/explain?model=gpt-test", nil)
+	explainReq.Header.Set("Authorization", "Bearer admin-secret")
+	explainResp, err := http.DefaultClient.Do(explainReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var explanation map[string]any
+	_ = json.NewDecoder(explainResp.Body).Decode(&explanation)
+	explainResp.Body.Close()
+	if explainResp.StatusCode != http.StatusOK || asInt64(t, explanation["route_id"]) <= 0 {
+		t.Fatalf("explain status=%d body=%#v", explainResp.StatusCode, explanation)
+	}
+	candidates, _ := explanation["candidates"].([]any)
+	if len(candidates) != 1 {
+		t.Fatalf("unexpected explain candidates: %#v", explanation)
+	}
+
 	req, _ := http.NewRequest(http.MethodGet, base+"/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)

@@ -29,14 +29,14 @@ type Site struct {
 
 // Credential holds encrypted secrets for a site.
 type Credential struct {
-	ID         int64     `json:"id"`
-	SiteID     int64     `json:"site_id"`
-	Kind       string    `json:"kind"` // api_key | session | password
-	SecretEnc  []byte    `json:"-"`     // never serialized in JSON
-	MetaJSON   string    `json:"meta_json,omitempty"`
-	Status     string    `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID        int64     `json:"id"`
+	SiteID    int64     `json:"site_id"`
+	Kind      string    `json:"kind"` // api_key | session | password
+	SecretEnc []byte    `json:"-"`    // never serialized in JSON
+	MetaJSON  string    `json:"meta_json,omitempty"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -66,13 +66,13 @@ type Channel struct {
 
 // Route maps a model pattern to channels.
 type Route struct {
-	ID            int64     `json:"id"`
-	ModelPattern  string    `json:"model_pattern"`
-	Enabled       bool      `json:"enabled"`
-	MappingJSON   string    `json:"mapping_json,omitempty"`
-	Notes         string    `json:"notes,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID           int64     `json:"id"`
+	ModelPattern string    `json:"model_pattern"`
+	Enabled      bool      `json:"enabled"`
+	MappingJSON  string    `json:"mapping_json,omitempty"`
+	Notes        string    `json:"notes,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -81,19 +81,19 @@ type Route struct {
 
 // RouteMember binds a channel to a route with priority/weight.
 type RouteMember struct {
-	ID             int64     `json:"id"`
-	RouteID        int64     `json:"route_id"`
-	ChannelID      int64     `json:"channel_id"`
-	Priority       int       `json:"priority"`
-	Weight         int       `json:"weight"`
-	Enabled        bool      `json:"enabled"`
-	Auto           bool      `json:"auto"`
-	ManualOverride bool      `json:"manual_override"`
-	FailCount      int       `json:"fail_count"`
+	ID             int64      `json:"id"`
+	RouteID        int64      `json:"route_id"`
+	ChannelID      int64      `json:"channel_id"`
+	Priority       int        `json:"priority"`
+	Weight         int        `json:"weight"`
+	Enabled        bool       `json:"enabled"`
+	Auto           bool       `json:"auto"`
+	ManualOverride bool       `json:"manual_override"`
+	FailCount      int        `json:"fail_count"`
 	CooldownUntil  *time.Time `json:"cooldown_until,omitempty"`
-	LastError      string    `json:"last_error,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	LastError      string     `json:"last_error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +122,14 @@ type ProxyLog struct {
 	Model      string    `json:"model"`
 	Status     int       `json:"status"`
 	LatencyMs  int       `json:"latency_ms"`
+	Attempt    int       `json:"attempt"`
 	ErrorBrief string    `json:"error_brief,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+// RoutingCandidate contains the persisted facts needed to evaluate one member.
+type RoutingCandidate struct {
+	Member           RouteMember `json:"member"`
+	Channel          Channel     `json:"channel"`
+	CredentialUsable bool        `json:"credential_usable"`
 }

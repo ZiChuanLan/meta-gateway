@@ -37,8 +37,10 @@ Evidence from local verification on 2026-07-14.
 - [x] docker-compose.yml + volume
 - [x] `.env.example` documents `ADMIN_TOKEN` / `MASTER_KEY`
 
-## Out of scope for this child
+## P3 Evidence And Remaining Scope
 
-- Multi-channel priority/weight/retry (parent P3)
+- [x] Multi-channel priority tiers, weighted selection, retry, and cooldown (P3)
+- [x] Authenticated route Explain endpoint with stable eligibility reasons (P3)
+- [x] Tracked transactional SQLite migrations and P0-P2 upgrade coverage (P3)
 - Model discovery / checkin (P4–P5)
 - AAH import/export APIs (P6)

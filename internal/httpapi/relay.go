@@ -1,31 +1,34 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/lan/meta-gateway/internal/crypto"
-	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/relay"
+	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
 )
+
+type ChatProxy interface {
+	ChatCompletions(ctx context.Context, req proxy.Request) *relay.Result
+}
 
 // RelayHandler serves public /v1/* endpoints.
 type RelayHandler struct {
 	db    *store.DB
-	relay *relay.Relay
-	enc   *crypto.Encrypter
+	proxy ChatProxy
 }
 
-func NewRelayHandler(db *store.DB, r *relay.Relay, enc *crypto.Encrypter) *RelayHandler {
-	return &RelayHandler{db: db, relay: r, enc: enc}
+func NewRelayHandler(db *store.DB, service ChatProxy) *RelayHandler {
+	return &RelayHandler{db: db, proxy: service}
 }
 
 func (h *RelayHandler) Register(r chi.Router) {
@@ -33,7 +36,6 @@ func (h *RelayHandler) Register(r chi.Router) {
 	r.Post("/chat/completions", h.chatCompletions)
 }
 
-// getModels returns models from enabled routes, falling back to channel models_csv.
 func (h *RelayHandler) getModels(w http.ResponseWriter, r *http.Request) {
 	seen := map[string]struct{}{}
 	var models []map[string]interface{}
@@ -46,190 +48,98 @@ func (h *RelayHandler) getModels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seen[id] = struct{}{}
-		models = append(models, map[string]interface{}{
-			"id":     id,
-			"object": "model",
-		})
+		models = append(models, map[string]interface{}{"id": id, "object": "model"})
 	}
 
 	routes, err := h.db.Route.List()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to list models")
 		return
 	}
-	for _, rt := range routes {
-		if rt.Enabled {
-			add(rt.ModelPattern)
+	for _, route := range routes {
+		if route.Enabled {
+			add(route.ModelPattern)
 		}
 	}
-
 	if len(models) == 0 {
 		channels, err := h.db.Channel.ListEnabled()
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeError(w, http.StatusInternalServerError, "failed to list models")
 			return
 		}
-		for _, ch := range channels {
-			for _, part := range strings.Split(ch.ModelsCSV, ",") {
-				add(part)
+		for _, channel := range channels {
+			for _, model := range strings.Split(channel.ModelsCSV, ",") {
+				add(model)
 			}
 		}
 	}
-
 	if models == nil {
 		models = []map[string]interface{}{}
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"object": "list",
-		"data":   models,
-	})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"object": "list", "data": models})
 }
 
-// chatCompletionsRequest mirrors the OpenAI chat completions request.
 type chatCompletionsRequest struct {
-	Model    string          `json:"model"`
-	Messages json.RawMessage `json:"messages"`
-	Stream   bool            `json:"stream"`
-	// Passthrough additional fields
-	Temperature *float32               `json:"temperature,omitempty"`
-	MaxTokens   *int                   `json:"max_tokens,omitempty"`
-	TopP        *float32               `json:"top_p,omitempty"`
-	N           *int                   `json:"n,omitempty"`
-	Stop        interface{}            `json:"stop,omitempty"`
-	Extra       map[string]interface{} `json:"-"` // collected from remaining keys
+	Model  string `json:"model"`
+	Stream bool   `json:"stream"`
 }
 
-// chatCompletions proxies a chat completion request through the single available channel.
 func (h *RelayHandler) chatCompletions(w http.ResponseWriter, r *http.Request) {
-	// Read the raw body first so we can forward it.
-	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 10*1024*1024))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 10*1024*1024))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "body too large")
 		return
 	}
 	defer r.Body.Close()
-
-	// Parse minimally to check stream field.
-	var chatReq chatCompletionsRequest
-	if err := json.Unmarshal(bodyBytes, &chatReq); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	var request chatCompletionsRequest
+	if err := json.Unmarshal(body, &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if chatReq.Model == "" {
+	if request.Model == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
 
-	// Find the enabled channel (single-channel mode: first enabled route member or default).
-	route, err := h.db.Route.GetByModel(chatReq.Model)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if route == nil {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("no route for model: %s", chatReq.Model))
-		return
-	}
-
-	members, err := h.db.RouteMember.ListByRoute(route.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	// Find the first enabled member.
-	var member *domain.RouteMember
-	for _, m := range members {
-		if m.Enabled {
-			member = &m
-			break
+	requestID, _ := r.Context().Value(chimw.RequestIDKey).(string)
+	result := h.proxy.ChatCompletions(r.Context(), proxy.Request{
+		RequestID: requestID,
+		Model:     request.Model,
+		Body:      body,
+		Stream:    request.Stream,
+	})
+	if result.Err != nil {
+		switch {
+		case errors.Is(result.Err, routing.ErrRouteNotFound), errors.Is(result.Err, routing.ErrNoEligible):
+			writeError(w, http.StatusNotFound, "no eligible channel for this model")
+		case errors.Is(result.Err, proxy.ErrCredential):
+			writeError(w, http.StatusInternalServerError, "failed to resolve upstream credentials")
+		case errors.Is(result.Err, context.Canceled), errors.Is(result.Err, context.DeadlineExceeded):
+			return
+		default:
+			writeError(w, http.StatusBadGateway, "upstream request failed")
 		}
-	}
-	if member == nil {
-		writeError(w, http.StatusNotFound, "no enabled channel for this model")
-		return
-	}
-
-	// Get the channel to find upstream URL and credential.
-	ch, err := h.db.Channel.GetByID(member.ChannelID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if ch == nil || ch.Status != domain.StatusEnabled {
-		writeError(w, http.StatusNotFound, "channel not found or disabled")
-		return
-	}
-
-	apiKey, err := h.resolveAPIKey(ch)
-	if err != nil {
-		log.Printf("relay: resolve key for channel %d: %v", ch.ID, err)
-		writeError(w, http.StatusInternalServerError, "failed to resolve upstream credentials")
-		return
-	}
-
-	upstreamURL := strings.TrimRight(ch.BaseURL, "/") + "/v1/chat/completions"
-
-	proxyStart := time.Now()
-	result := h.relay.ChatCompletions(upstreamURL, apiKey, bodyBytes, chatReq.Stream)
-	latencyMs := int(time.Since(proxyStart).Milliseconds())
-
-	// Write proxy log (without secrets). Prefer real upstream status when available.
-	status := result.StatusCode
-	if result.Err != nil {
-		status = http.StatusBadGateway
-	} else if status == 0 {
-		status = http.StatusOK
-	}
-	reqID, _ := r.Context().Value(chimw.RequestIDKey).(string)
-	pl := &domain.ProxyLog{
-		RequestID: reqID,
-		ChannelID: ch.ID,
-		Model:     chatReq.Model,
-		Status:    status,
-		LatencyMs: latencyMs,
-	}
-	if result.Err != nil {
-		pl.ErrorBrief = result.Err.Error()
-	}
-	// Best-effort log write
-	h.db.ProxyLog.Insert(pl)
-
-	if result.Err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("upstream error: %v", result.Err))
 		return
 	}
 	defer result.Body.Close()
-
-	if chatReq.Stream {
-		// SSE passthrough
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.WriteHeader(result.StatusCode)
-		io.Copy(w, result.Body)
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(result.StatusCode)
-		io.Copy(w, result.Body)
+	copyResponseHeaders(w.Header(), result.Header, request.Stream)
+	w.WriteHeader(result.StatusCode)
+	if _, err := io.Copy(w, result.Body); err != nil {
+		log.Printf("relay: copy upstream response request_id=%s: %v", requestID, err)
 	}
 }
 
-func (h *RelayHandler) resolveAPIKey(ch *domain.Channel) (string, error) {
-	if ch.CredentialID == nil {
-		return "", fmt.Errorf("no credential attached to channel")
+func copyResponseHeaders(dst, src http.Header, stream bool) {
+	for _, key := range []string{"Content-Type", "Cache-Control", "Content-Encoding", "Retry-After", "X-Request-Id"} {
+		if value := src.Get(key); value != "" {
+			dst.Set(key, value)
+		}
 	}
-	cred, err := h.db.Credential.GetByID(*ch.CredentialID)
-	if err != nil {
-		return "", fmt.Errorf("credential lookup: %w", err)
+	if stream {
+		dst.Set("Content-Type", "text/event-stream")
+		dst.Set("Cache-Control", "no-cache")
+		dst.Set("Connection", "keep-alive")
+	} else if dst.Get("Content-Type") == "" {
+		dst.Set("Content-Type", "application/json")
 	}
-	if cred == nil {
-		return "", fmt.Errorf("credential not found")
-	}
-	// Decrypt the secret
-	plaintext, err := h.enc.Decrypt(string(cred.SecretEnc))
-	if err != nil {
-		return "", fmt.Errorf("credential decrypt: %w", err)
-	}
-	return string(plaintext), nil
 }
