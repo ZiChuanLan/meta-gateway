@@ -13,19 +13,32 @@ type ModelAdapter interface {
 }
 
 type Registry struct {
-	adapters map[string]ModelAdapter
+	adapters        map[string]ModelAdapter
+	checkinAdapters map[string]CheckinAdapter
 }
 
 func NewRegistry(client *http.Client) *Registry {
 	openAI := NewOpenAIModelAdapter("openai-compatible", client)
 	newAPI := NewOpenAIModelAdapter("new-api", client)
+	newAPICheckin := NewJSONCheckinAdapter("new-api", client, true)
+	oneAPICheckin := NewJSONCheckinAdapter("one-api", client, false)
 	return &Registry{adapters: map[string]ModelAdapter{
 		"openai":            openAI,
 		"openai-compatible": openAI,
 		"openaicompat":      openAI,
 		"new-api":           newAPI,
 		"newapi":            newAPI,
+	}, checkinAdapters: map[string]CheckinAdapter{
+		"new-api": newAPICheckin,
+		"newapi":  newAPICheckin,
+		"one-api": oneAPICheckin,
+		"oneapi":  oneAPICheckin,
 	}}
+}
+
+func (r *Registry) ResolveCheckin(platform string) (CheckinAdapter, bool) {
+	adapter, ok := r.checkinAdapters[canonical(platform)]
+	return adapter, ok
 }
 
 // Resolve gives channel type_hint precedence over the site's platform.

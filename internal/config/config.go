@@ -8,24 +8,38 @@ import (
 
 // Config holds the application configuration parsed from environment variables.
 type Config struct {
-	HTTPAddr   string
-	DataDir    string
-	AdminToken string
-	MasterKey  string
-	RetryTimes int
-	Cooldown   time.Duration
+	HTTPAddr       string
+	DataDir        string
+	AdminToken     string
+	MasterKey      string
+	RetryTimes     int
+	Cooldown       time.Duration
+	CheckinEnabled bool
+	CheckinCron    string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	return &Config{
-		HTTPAddr:   envStr("HTTP_ADDR", ":4100"),
-		DataDir:    envStr("DATA_DIR", "./data"),
-		AdminToken: envStr("ADMIN_TOKEN", ""),
-		MasterKey:  envStr("MASTER_KEY", ""),
-		RetryTimes: envInt("RETRY_TIMES", 2),
-		Cooldown:   time.Duration(envInt("COOLDOWN_SECONDS", 30)) * time.Second,
+		HTTPAddr:       envStr("HTTP_ADDR", ":4100"),
+		DataDir:        envStr("DATA_DIR", "./data"),
+		AdminToken:     envStr("ADMIN_TOKEN", ""),
+		MasterKey:      envStr("MASTER_KEY", ""),
+		RetryTimes:     envInt("RETRY_TIMES", 2),
+		Cooldown:       time.Duration(envInt("COOLDOWN_SECONDS", 30)) * time.Second,
+		CheckinEnabled: envBool("CHECKIN_ENABLED", false),
+		CheckinCron:    envStr("CHECKIN_CRON", "0 8 * * *"),
 	}
+}
+
+func envBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		parsed, err := strconv.ParseBool(v)
+		if err == nil {
+			return parsed
+		}
+	}
+	return def
 }
 
 func envStr(key, def string) string {

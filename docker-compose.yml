@@ -10,6 +10,8 @@ services:
       DATA_DIR: /data
       ADMIN_TOKEN: "${ADMIN_TOKEN:-dev-admin-token}"
       MASTER_KEY: "${MASTER_KEY:-dev-master-key-at-least-32-chars!!}"
+      CHECKIN_ENABLED: "${CHECKIN_ENABLED:-false}"
+      CHECKIN_CRON: "${CHECKIN_CRON:-0 8 * * *}"
     volumes:
       - meta-gateway-data:/data
     restart: unless-stopped

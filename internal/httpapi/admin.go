@@ -195,22 +195,24 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 	}
 	// Never expose secret_enc in JSON responses.
 	type safeCred struct {
-		ID        int64  `json:"id"`
-		SiteID    int64  `json:"site_id"`
-		Kind      string `json:"kind"`
-		HasSecret bool   `json:"has_secret"`
-		MetaJSON  string `json:"meta_json,omitempty"`
-		Status    string `json:"status"`
+		ID             int64  `json:"id"`
+		SiteID         int64  `json:"site_id"`
+		Kind           string `json:"kind"`
+		HasSecret      bool   `json:"has_secret"`
+		MetaJSON       string `json:"meta_json,omitempty"`
+		Status         string `json:"status"`
+		CheckinEnabled bool   `json:"checkin_enabled"`
 	}
 	result := make([]safeCred, 0, len(creds))
 	for _, c := range creds {
 		result = append(result, safeCred{
-			ID:        c.ID,
-			SiteID:    c.SiteID,
-			Kind:      c.Kind,
-			HasSecret: len(c.SecretEnc) > 0,
-			MetaJSON:  c.MetaJSON,
-			Status:    c.Status,
+			ID:             c.ID,
+			SiteID:         c.SiteID,
+			Kind:           c.Kind,
+			HasSecret:      len(c.SecretEnc) > 0,
+			MetaJSON:       c.MetaJSON,
+			Status:         c.Status,
+			CheckinEnabled: c.CheckinEnabled,
 		})
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -260,13 +262,14 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 	}
 	created, _ := h.db.Credential.GetByID(id)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":         created.ID,
-		"site_id":    created.SiteID,
-		"kind":       created.Kind,
-		"has_secret": true,
-		"meta_json":  created.MetaJSON,
-		"status":     created.Status,
-		"created_at": created.CreatedAt,
+		"id":              created.ID,
+		"site_id":         created.SiteID,
+		"kind":            created.Kind,
+		"has_secret":      true,
+		"meta_json":       created.MetaJSON,
+		"status":          created.Status,
+		"checkin_enabled": created.CheckinEnabled,
+		"created_at":      created.CreatedAt,
 	})
 }
 

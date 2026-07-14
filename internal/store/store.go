@@ -18,6 +18,7 @@ type DB struct {
 	RouteMember     *RouteMemberStore
 	DownstreamKey   *DownstreamKeyStore
 	ProxyLog        *ProxyLogStore
+	CheckinLog      *CheckinLogStore
 }
 
 // Open opens (or creates) the SQLite database at the given path and runs migrations.
@@ -46,6 +47,7 @@ func Open(dataDir string) (*DB, error) {
 		RouteMember:     &RouteMemberStore{db: sqldb},
 		DownstreamKey:   &DownstreamKeyStore{db: sqldb},
 		ProxyLog:        &ProxyLogStore{db: sqldb},
+		CheckinLog:      &CheckinLogStore{db: sqldb},
 	}
 	return db, nil
 }

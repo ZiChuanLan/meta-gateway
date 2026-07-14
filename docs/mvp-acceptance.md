@@ -1,4 +1,4 @@
-# MVP Acceptance (P0-P4)
+# MVP Acceptance (P0-P5)
 
 Evidence from local verification on 2026-07-14.
 
@@ -45,5 +45,7 @@ Evidence from local verification on 2026-07-14.
 - [x] Authenticated OpenAI-compatible and New API model discovery (P4)
 - [x] Atomic discovery snapshots and automatic exact-route reconciliation (P4)
 - [x] Mixed-result full refresh with redacted per-channel failures (P4)
-- Scheduled discovery / check-in (P5)
+- [x] Credential-scoped manual and scheduled New API / One API check-in (P5)
+- [x] Redacted check-in logs, deterministic batches, and overlap exclusion (P5)
+- [x] P0-P4 database upgrade defaults existing credentials to check-in disabled (P5)
 - AAH import/export APIs (P6)

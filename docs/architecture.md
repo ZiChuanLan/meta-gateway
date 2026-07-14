@@ -17,6 +17,11 @@ Admin
   -> Discovery service (eligibility, credentials, deterministic summaries)
   -> Platform adapter (bounded upstream /v1/models request)
   -> Discovery reconciliation (snapshot, models_csv, routes, members)
+
+Admin / Cron scheduler
+  -> Check-in service (eligibility, decryption, in-process exclusion)
+  -> Platform check-in adapter (bounded upstream /api/user/checkin request)
+  -> Check-in audit log (redacted result, reward, latency, source)
 ```
 
 ## Packages
@@ -30,8 +35,9 @@ Admin
 | `internal/routing` | Pure candidate evaluation, explain output, and weighted selection |
 | `internal/proxy` | Retry orchestration, credentials, cooldown updates, and attempt logs |
 | `internal/relay` | Context-bound upstream HTTP transport |
-| `internal/adapters` | Stateless platform registry and upstream model listing |
+| `internal/adapters` | Stateless platform registry, model listing, and check-in capabilities |
 | `internal/discovery` | Credential-aware refresh orchestration and redacted results |
+| `internal/checkin` | Credential-scoped check-in orchestration and cron lifecycle |
 | `internal/httpapi` | Admin and `/v1` HTTP adapters |
 | `internal/auth` | Admin and downstream-key authentication |
 | `internal/crypto` | AES-GCM credential encryption |
@@ -96,10 +102,30 @@ reconciles automatic route members. Missing models disable only automatic,
 non-overridden members. Existing routes and manual routing decisions remain
 operator-owned. A transport, status, size, or payload error changes no state.
 
+## Check-in And Scheduling
+
+P5 treats check-in as a credential-scoped capability independent from model
+discovery and routing. New API and One API session/access-token credentials use
+`POST /api/user/checkin`; New API can also receive a positive
+`platform_user_id` from credential metadata as `New-Api-User`.
+
+Manual single-target execution ignores only the per-credential scheduling flag.
+All other eligibility rules still apply. Batch execution selects
+`checkin_enabled` credentials in ID order and persists one redacted audit row
+for every selected attempt, including unsupported, disabled, failed, and
+concurrent-run skips. Network work never runs inside a database transaction.
+
+The optional process-local scheduler uses one strict five-field cron expression
+and the same service instance as Admin HTTP. That shared instance prevents two
+in-process runs for the same credential. Existing credentials migrate with
+check-in disabled, and `CHECKIN_ENABLED` defaults to false, so an upgrade cannot
+silently introduce external requests.
+
 ## Current Scope
 
-P0-P4 cover repository bootstrap, Admin CRUD, encrypted credentials,
+P0-P5 cover repository bootstrap, Admin CRUD, encrypted credentials,
 OpenAI-compatible Models and Chat Completions, SSE passthrough, multi-channel
 routing, retry/cooldown, Explain, tracked migrations, and manually triggered
-model discovery. Scheduled check-in, AAH exchange, broad hardening, and Web
-Admin remain later phases.
+model discovery, plus credential check-in, redacted audit logs, and optional
+cron scheduling. AAH exchange, broad hardening, and Web Admin remain later
+phases.

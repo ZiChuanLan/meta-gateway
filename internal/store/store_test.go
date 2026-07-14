@@ -132,14 +132,59 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 {
-		t.Fatalf("got %d applied migrations, want 3", count)
+	if count != 4 {
+		t.Fatalf("got %d applied migrations, want 4", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 3 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 4 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
+	}
+}
+
+func TestCheckinCredentialAndLogs(t *testing.T) {
+	db := openTestDB(t)
+	siteID, err := db.Site.Create(&domain.Site{Name: "checkin", BaseURL: "https://example.com", Platform: "new-api", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentialID, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "session", SecretEnc: []byte("cipher"), Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := db.Credential.GetByID(credentialID)
+	if err != nil || credential.CheckinEnabled {
+		t.Fatalf("new credential scheduling must default off: %+v err=%v", credential, err)
+	}
+	if err := db.Credential.SetCheckinEnabled(credentialID, true); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := db.Credential.ListCheckinEnabled()
+	if err != nil || len(enabled) != 1 || enabled[0].ID != credentialID {
+		t.Fatalf("enabled credentials: %+v err=%v", enabled, err)
+	}
+
+	older := time.Date(2026, 7, 14, 1, 2, 3, 456000000, time.UTC)
+	newer := older.Add(time.Minute)
+	for _, entry := range []domain.CheckinLog{
+		{SiteID: siteID, CredentialID: credentialID, Source: "manual", Status: "failed", Category: "upstream_status", Message: "upstream request failed", LatencyMs: 12, RanAt: older},
+		{SiteID: siteID, CredentialID: credentialID, Source: "scheduled", Status: "success", Category: "checked_in", Message: "check-in succeeded", Reward: "1.25", LatencyMs: 8, RanAt: newer},
+	} {
+		if err := db.CheckinLog.Create(&entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logs, err := db.CheckinLog.List(store.CheckinLogFilter{CredentialID: &credentialID, Status: "success", Limit: 10})
+	if err != nil || len(logs) != 1 || logs[0].Reward != "1.25" || !logs[0].RanAt.Equal(newer) {
+		t.Fatalf("filtered logs: %+v err=%v", logs, err)
+	}
+	if err := db.Credential.Delete(credentialID); err != nil {
+		t.Fatal(err)
+	}
+	logs, err = db.CheckinLog.List(store.CheckinLogFilter{SiteID: &siteID})
+	if err != nil || len(logs) != 0 {
+		t.Fatalf("credential cascade logs: %+v err=%v", logs, err)
 	}
 }
 
@@ -314,6 +359,45 @@ func TestP0P2DatabaseUpgradesWithoutDataLoss(t *testing.T) {
 	sites, err := db.Site.List()
 	if err != nil || len(sites) != 1 || sites[0].Name != "legacy" {
 		t.Fatalf("legacy data after upgrade: sites=%+v err=%v", sites, err)
+	}
+}
+
+func TestP0P4DatabaseUpgradesToCheckinWithoutEnablingCredentials(t *testing.T) {
+	dir := t.TempDir()
+	db, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	siteID, err := db.Site.Create(&domain.Site{Name: "legacy-p4", BaseURL: "https://legacy.example", Platform: "new-api", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentialID, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "session", SecretEnc: []byte("v1:legacy"), Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DROP TABLE checkin_logs; ALTER TABLE credentials DROP COLUMN checkin_enabled; DELETE FROM schema_migrations WHERE name = '004_checkin.sql'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	upgraded, err := store.Open(dir)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	defer upgraded.Close()
+	credential, err := upgraded.Credential.GetByID(credentialID)
+	if err != nil || credential == nil || credential.CheckinEnabled || credential.Kind != "session" {
+		t.Fatalf("credential after upgrade=%+v err=%v", credential, err)
+	}
+	var migrationCount int
+	if err := upgraded.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE name = '004_checkin.sql'`).Scan(&migrationCount); err != nil || migrationCount != 1 {
+		t.Fatalf("migration count=%d err=%v", migrationCount, err)
+	}
+	if err := store.Migrate(upgraded.DB); err != nil {
+		t.Fatalf("idempotent migration: %v", err)
 	}
 }
 

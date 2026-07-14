@@ -9,6 +9,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/auth"
+	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/discovery"
@@ -18,9 +19,27 @@ import (
 	"github.com/lan/meta-gateway/internal/store"
 )
 
+type Dependencies struct {
+	Registry       *adapters.Registry
+	CheckinService *checkin.Service
+}
+
 // New creates a fully wired chi.Router.
 func New(cfg *config.Config, db *store.DB, enc *crypto.Encrypter) http.Handler {
+	return NewWithDependencies(cfg, db, enc, Dependencies{})
+}
+
+// NewWithDependencies wires shared application services into the HTTP router.
+func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter, dependencies Dependencies) http.Handler {
 	r := chi.NewRouter()
+	registry := dependencies.Registry
+	if registry == nil {
+		registry = adapters.NewRegistry(nil)
+	}
+	checkinService := dependencies.CheckinService
+	if checkinService == nil {
+		checkinService = checkin.New(db, enc, registry)
+	}
 
 	// Global middleware
 	r.Use(chimw.RequestID)
@@ -38,8 +57,10 @@ func New(cfg *config.Config, db *store.DB, enc *crypto.Encrypter) http.Handler {
 	selector := routing.New(db.RouteMember)
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
-	discoveryHandler := NewDiscoveryHandler(db, discovery.New(db, enc, adapters.NewRegistry(nil)))
+	discoveryHandler := NewDiscoveryHandler(db, discovery.New(db, enc, registry))
 	discoveryHandler.Register(adminGroup)
+	checkinHandler := NewCheckinHandler(db, checkinService)
+	checkinHandler.Register(adminGroup)
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)

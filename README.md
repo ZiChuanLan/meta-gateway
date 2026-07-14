@@ -44,6 +44,8 @@ curl http://127.0.0.1:4100/healthz
 | `MASTER_KEY` | _(required)_ | Encryption key for secrets at rest (32+ chars) |
 | `RETRY_TIMES` | `2` | Maximum retries after the first upstream attempt |
 | `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
+| `CHECKIN_ENABLED` | `false` | Start scheduled credential check-in |
+| `CHECKIN_CRON` | `0 8 * * *` | Standard five-field check-in schedule |
 
 ## API Overview
 
@@ -87,6 +89,10 @@ GET /healthz → 200 {"status":"ok"}
 | POST | /admin/discovery/channels/{id}/refresh | Refresh one channel's models and automatic routes |
 | POST | /admin/discovery/refresh | Refresh all enabled channels with itemized results |
 | GET | /admin/discovery/models?channel_id={id} | List durable discovered-model snapshots |
+| PUT | /admin/credentials/{id}/checkin | Enable or disable scheduled check-in |
+| POST | /admin/checkin/credentials/{id}/run | Run one credential check-in manually |
+| POST | /admin/checkin/run | Run all check-in-enabled credentials |
+| GET | /admin/checkin/logs | List and filter redacted check-in logs |
 
 ### Public (requires `Authorization: Bearer <DownstreamKey>`)
 
@@ -146,5 +152,10 @@ to another eligible channel; ordinary client-error responses do not retry.
 
 Model discovery currently supports OpenAI-compatible and New API platforms.
 Set the site `platform` or channel `type_hint` to `openai-compatible`, `openai`,
-or `new-api`, then trigger a refresh manually. Scheduling is intentionally not
-enabled in P4.
+or `new-api`, then trigger a refresh manually.
+
+Credential check-in supports `session` and `access_token` credentials for New
+API and One API sites. Scheduling is disabled by default; enable individual
+credentials through the Admin API and then set `CHECKIN_ENABLED=true`. New API
+credentials may set `meta_json` to `{"platform_user_id": 42}` when the upstream
+requires the `New-Api-User` header.

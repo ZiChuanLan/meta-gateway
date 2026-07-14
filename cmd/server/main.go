@@ -4,11 +4,17 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
+	"github.com/lan/meta-gateway/internal/adapters"
+	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/httpapi"
@@ -44,8 +50,24 @@ func main() {
 	}
 	defer db.Close()
 
-	// Build router.
-	handler := httpapi.New(cfg, db, enc)
+	registry := adapters.NewRegistry(nil)
+	checkinService := checkin.New(db, enc, registry)
+	handler := httpapi.NewWithDependencies(cfg, db, enc, httpapi.Dependencies{
+		Registry:       registry,
+		CheckinService: checkinService,
+	})
+
+	var scheduler *checkin.Scheduler
+	if cfg.CheckinEnabled {
+		scheduler, err = checkin.NewScheduler(checkinService, cfg.CheckinCron, log.Default())
+		if err != nil {
+			log.Fatalf("check-in scheduler config: %v", err)
+		}
+		if err := scheduler.Start(); err != nil {
+			log.Fatalf("check-in scheduler start: %v", err)
+		}
+		log.Printf("Scheduled check-in enabled (cron: %s)", cfg.CheckinCron)
+	}
 
 	// Determine addr with host:port format.
 	addr := cfg.HTTPAddr
@@ -57,13 +79,37 @@ func main() {
 	dataDirAbs, _ := filepath.Abs(cfg.DataDir)
 	log.Printf("Meta Gateway starting on %s (data: %s)", addr, dataDirAbs)
 
-	// Start server.
 	srv := &http.Server{
-		Addr:    addr,
-		Handler: handler,
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server error: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	serverErrors := make(chan error, 1)
+	go func() {
+		serverErrors <- srv.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Printf("Meta Gateway shutting down")
+	case err := <-serverErrors:
+		if err != nil && err != http.ErrServerClosed {
+			log.Printf("server error: %v", err)
+		}
+		stop()
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if scheduler != nil {
+		if err := scheduler.Stop(shutdownCtx); err != nil {
+			log.Printf("check-in scheduler shutdown: %v", err)
+		}
+	}
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("server shutdown: %v", err)
 	}
 }
