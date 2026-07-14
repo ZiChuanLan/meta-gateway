@@ -28,6 +28,19 @@ Admin
   -> Exchange service (HMAC identity, encryption, legacy matching)
   -> Exchange repository (one Site/Credential/Channel transaction)
   -> Discovery service after commit (ordered, redacted outcomes)
+
+Inbound HTTP
+  -> request ID, trusted client identity, structured access log
+  -> endpoint authentication and isolated rate limiter
+  -> bounded Admin JSON or streaming-safe relay
+
+Outbound HTTP
+  -> shared URL, DNS/IP, redirect, and credential-forwarding policy
+
+Operations
+  -> liveness/readiness and protected low-cardinality metrics
+  -> append-only redacted Admin audit events and retention cleanup
+  -> verified online SQLite backup and offline rollback-safe restore
 ```
 
 ## Packages
@@ -48,6 +61,10 @@ Admin
 | `internal/httpapi` | Admin and `/v1` HTTP adapters |
 | `internal/auth` | Admin and downstream-key authentication |
 | `internal/crypto` | AES-GCM credential encryption and purpose-separated exchange HMAC identity |
+| `internal/outbound` | Connect-time SSRF policy and shared HTTP clients |
+| `internal/ratelimit` | Process-local token buckets for Admin and downstream keys |
+| `internal/observability` | Readiness state and Prometheus text metrics |
+| `internal/backup` | Confined online backup and offline restore workflow |
 
 ## Routing
 
@@ -94,6 +111,11 @@ delete.
 
 Credentials are encrypted at rest, downstream keys are hashed, and no API or
 ProxyLog field returns raw credential material.
+
+P7 adds append-only audit events and backup inventory. Readiness performs a
+bounded database probe. Online backup uses SQLite's backup API, verifies the
+snapshot, and publishes it by atomic rename. Restoration is deliberately an
+offline CLI operation and preserves the replaced database for rollback.
 
 ## Model Discovery
 
@@ -143,11 +165,32 @@ use one dedicated repository transaction. Discovery runs only after commit and
 continues with redacted per-channel outcomes; manual routing protection remains
 inside the existing reconciliation service.
 
+## Runtime Security And Operations
+
+Private, loopback, link-local, metadata, and other special upstream addresses
+are denied by default. DNS is validated during connection and redirects are
+rechecked. Exact hostname and CIDR exceptions support explicitly trusted
+self-hosted upstreams. Environment proxy variables are disabled because
+proxy-side DNS would bypass this guarantee.
+
+Forwarded client addresses are accepted only from configured proxy networks.
+Relay limits are isolated by authenticated downstream key while Admin uses a
+separate global limiter. Metrics use fixed-cardinality labels and a credential
+separate from Admin. Logs, errors, metrics, and audits exclude raw URLs,
+headers, bodies, keys, ciphertext, and database or crypto details.
+
+`/healthz` reports liveness. `/readyz` also requires a ready lifecycle state
+and usable SQLite connection. Server `WriteTimeout` remains zero so established
+SSE streams survive until cancellation or upstream closure. Shutdown marks
+readiness false before draining.
+
 ## Current Scope
 
-P0-P6 cover repository bootstrap, Admin CRUD, encrypted credentials,
+P0-P7 cover repository bootstrap, Admin CRUD, encrypted credentials,
 OpenAI-compatible Models and Chat Completions, SSE passthrough, multi-channel
 routing, retry/cooldown, Explain, tracked migrations, and manually triggered
 model discovery, plus credential check-in, redacted audit logs, and optional
-cron scheduling, plus secure versioned AAH/New API exchange. Broad P7
-hardening and the P8 Web Admin remain later phases.
+cron scheduling, secure versioned AAH/New API exchange, SSRF enforcement,
+trusted identities, rate limits, observability, audit retention, online backup,
+offline restore, hardened containers, and Linux race-test CI. P8 Web Admin is
+the next phase and is not part of this backend scope.

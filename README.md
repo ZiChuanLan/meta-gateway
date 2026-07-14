@@ -1,6 +1,8 @@
 # Meta Gateway
 
-A lightweight relay gateway for LLM API access. Routes chat completion requests to upstream API providers with model-based routing, secret encryption, and request logging.
+A production-oriented OpenAI-compatible relay gateway with multi-channel
+routing, retries, encrypted credentials, discovery, check-in, exchange,
+auditing, metrics, and online SQLite backups.
 
 ## Quick Start
 
@@ -15,7 +17,7 @@ A lightweight relay gateway for LLM API access. Routes chat completion requests 
 # Clone and build
 cd meta-gateway
 cp .env.example .env
-# Edit .env: set ADMIN_TOKEN and MASTER_KEY to strong random values
+# Set ADMIN_TOKEN, MASTER_KEY, and METRICS_TOKEN to independent random values
 
 go build -o bin/meta-gateway ./cmd/server
 ADMIN_TOKEN=my-admin-token MASTER_KEY=my-32-char-master-key-for-aes! ./bin/meta-gateway
@@ -24,7 +26,9 @@ ADMIN_TOKEN=my-admin-token MASTER_KEY=my-32-char-master-key-for-aes! ./bin/meta-
 ### Using Docker Compose
 
 ```bash
-ADMIN_TOKEN=my-admin-token MASTER_KEY=my-32-char-master-key-for-aes! docker compose up -d --build
+cp .env.example .env
+# Replace all required secret placeholders in .env.
+docker compose up -d --build
 ```
 
 ### Verify
@@ -42,10 +46,23 @@ curl http://127.0.0.1:4100/healthz
 | `DATA_DIR` | `./data` | SQLite storage directory |
 | `ADMIN_TOKEN` | _(required)_ | Bearer token for admin endpoints |
 | `MASTER_KEY` | _(required)_ | Encryption key for secrets at rest (32+ chars) |
+| `METRICS_TOKEN` | _(required*)_ | Independent Bearer token for `/metrics` |
+| `BACKUP_DIR` | `<DATA_DIR>/backups` | Confined online backup directory |
+| `OUTBOUND_ALLOW_HOSTS` | empty | Exact trusted private upstream host exceptions |
+| `OUTBOUND_ALLOW_CIDRS` | empty | Trusted private upstream network exceptions |
+| `TRUSTED_PROXY_CIDRS` | empty | Peers allowed to supply forwarded client addresses |
+| `TRUSTED_SCRAPER_CIDRS` | empty | Networks allowed to scrape without a metrics token |
+| `RELAY_RATE_PER_MINUTE` / `RELAY_RATE_BURST` | `600` / `100` | Per-key relay limiter; rate `0` disables it |
+| `ADMIN_RATE_PER_MINUTE` / `ADMIN_RATE_BURST` | `300` / `50` | Global Admin limiter; rate `0` disables it |
+| `AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_ROWS` | `90` / `100000` | Audit ceilings; `0` disables that dimension |
 | `RETRY_TIMES` | `2` | Maximum retries after the first upstream attempt |
 | `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
 | `CHECKIN_ENABLED` | `false` | Start scheduled credential check-in |
 | `CHECKIN_CRON` | `0 8 * * *` | Standard five-field check-in schedule |
+
+`METRICS_TOKEN` may be empty only when `TRUSTED_SCRAPER_CIDRS` is configured.
+See `.env.example` for all timeouts and body/header limits. Invalid security
+settings fail startup.
 
 ## API Overview
 
@@ -95,6 +112,10 @@ GET /healthz → 200 {"status":"ok"}
 | GET | /admin/checkin/logs | List and filter redacted check-in logs |
 | POST | /admin/exchange/export | Export all or selected channels; secrets require explicit opt-in |
 | POST | /admin/exchange/import | Atomically import canonical, New API, or AAH V2 channel assets |
+| GET | /admin/audit-events | List append-only redacted audit events |
+| POST | /admin/audit-events/cleanup | Apply configured retention now |
+| GET | /admin/backups | List generated backup inventory |
+| POST | /admin/backups | Create and verify an online SQLite backup |
 
 ### Public (requires `Authorization: Bearer <DownstreamKey>`)
 
@@ -146,6 +167,8 @@ curl -s -X POST http://127.0.0.1:4100/v1/chat/completions \
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture overview.
+See [docs/operations.md](docs/operations.md) for deployment, outbound security,
+metrics, audit retention, backup, and restore procedures.
 
 Routing evaluates higher numeric priority first and uses weight only within the
 selected priority tier. If all eligible weights in a tier are zero, selection
@@ -168,3 +191,27 @@ exports contain plaintext API keys and return `Cache-Control: no-store`; use
 metadata-only export unless portability is required. See
 [docs/aah-exchange-format.md](docs/aah-exchange-format.md) for the complete
 format, defaults, idempotency, and security contract.
+
+## Security Boundary
+
+All adapter, discovery, check-in, exchange, and relay requests use one outbound
+policy. Only HTTP(S) URLs without userinfo are accepted. DNS answers are checked
+at connect time, redirects are revalidated, cross-origin credentials are
+removed, and loopback/private/link-local/special addresses are denied by
+default. Environment proxy variables are intentionally ignored.
+
+Allow a trusted self-hosted upstream by its exact hostname and, when needed,
+the narrowest possible CIDR. Host exceptions do not include subdomains.
+
+## Backup And Restore
+
+Create backups with `POST /admin/backups`; callers cannot provide a filesystem
+path. Restore only while the service is stopped:
+
+```bash
+DATA_DIR=/data BACKUP_DIR=/data/backups \
+  meta-gateway restore --from meta-gateway-YYYYMMDDTHHMMSSZ-xxxxxxxxxxxx.db
+```
+
+The restored service must use the original `MASTER_KEY`. Backups contain
+encrypted credentials, never the key itself.

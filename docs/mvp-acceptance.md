@@ -1,55 +1,69 @@
-# MVP Acceptance (P0-P6)
+# Backend Acceptance (P0-P7)
 
-Evidence from local verification on 2026-07-14.
+Evidence refreshed on 2026-07-14. Automated behavior is implemented in Go
+unit and integration tests; Linux race behavior is enforced by CI.
 
-## C1 — Bootstrap
+## Foundation And Compatibility
 
-- [x] `go test ./...` passes (crypto, store, relay, httpapi integration)
-- [x] Binary builds: `go build -o bin/meta-gateway ./cmd/server`
-- [x] `GET /healthz` returns `{"status":"ok"}` (integration test + handler)
-- [ ] Docker compose smoke (optional; image uses `golang:1.22-alpine`, local Go is 1.26 — verify when Docker available)
+- [x] Admin CRUD, Admin Bearer authentication, encrypted credentials, and
+  one-time downstream key issuance
+- [x] OpenAI-compatible models and chat completions, including SSE passthrough
+  and downstream cancellation
+- [x] Multi-channel priority/weight routing, retry, cooldown, Explain, and one
+  metadata-only proxy log per attempt
+- [x] Model discovery with atomic reconciliation and deterministic mixed-result
+  refresh
+- [x] Credential-scoped New API/One API check-in, redacted durable logs, and
+  optional five-field cron scheduling
+- [x] Versioned canonical, New API, and reduced AAH V2 exchange with HMAC
+  identity, transactional persistence, and post-commit discovery
 
-## C2 — Admin CRUD
+## P7 Security And Operations
 
-- [x] Admin Bearer auth required; unauthorized calls fail (401) — integration test
-- [x] Site / Credential / Channel / Route / RouteMember CRUD APIs present under `/admin/*`
-- [x] Credential secrets encrypted with `MASTER_KEY` (AES-GCM); list responses use `has_secret` only
-- [x] DownstreamKey create returns raw token once; list never returns hash/token
+- [x] One outbound policy covers adapter, discovery, check-in, exchange, and
+  relay traffic
+- [x] Tests block direct and DNS-resolved special addresses, revalidate
+  redirects, strip cross-origin credentials, and prove exact host/CIDR
+  exceptions do not permit unrelated private destinations
+- [x] Environment HTTP proxies are disabled at the shared transport boundary
+- [x] Trusted-proxy tests prevent untrusted forwarding headers from selecting
+  the effective client identity
+- [x] Relay rate accounting is per authenticated downstream key; Admin uses a
+  separate global limiter with stable `429` and `Retry-After`
+- [x] Configurable header/body/time limits retain `WriteTimeout=0` for SSE
+- [x] `/healthz`, DB-backed `/readyz`, dedicated-token `/metrics`, structured
+  redacted logs, and bounded metric labels are covered
+- [x] Append-only Admin audit events cover authentication, mutation, and rate
+  rejection; retention supports independent age and row ceilings
+- [x] Online backup verifies integrity and generated path confinement; offline
+  restore verifies installation, preserves rollback state, and removes stale
+  WAL/SHM files
+- [x] Backup/restore tests retain audit state, manual routes, and
+  `manual_override` route members
+- [x] Discovery and exchange tests retain manual and `manual_override` members
+  during automatic reconciliation
+- [x] Compose requires explicit Admin, master, and metrics secrets; the runtime
+  image is non-root and probes `/readyz`
+- [x] Linux CI runs format, vet, tests, build, `go test -race ./...`, Compose
+  validation, and a deterministic container E2E
+- [x] E2E creates resources only through HTTP APIs and verifies relay retry,
+  SSE, discovery, check-in, versioned exchange, SSRF deny/allow behavior,
+  manual-route protection, metrics auth, audit, online backup, and persistence
+  after a gateway restart
 
-## C3 — Single-channel relay
+## Verification Commands
 
-- [x] Mock upstream non-stream chat completions via `/v1/chat/completions`
-- [x] SSE passthrough when `stream=true`
-- [x] Channel key resolved via encrypted credential
+```bash
+test -z "$(gofmt -l .)"
+go vet ./...
+go test ./...
+go build -trimpath ./cmd/server
+docker compose config --quiet
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml \
+  up --build --abort-on-container-exit --exit-code-from e2e e2e
+```
 
-## C4 — Models
-
-- [x] `GET /v1/models` returns enabled route patterns (fallback: channel `models_csv`)
-
-## C5 — Proxy logs
-
-- [x] ProxyLog written per relay attempt
-- [x] Integration asserts logs do not contain upstream secret
-
-## C6 — Packaging
-
-- [x] Dockerfile multi-stage
-- [x] docker-compose.yml + volume
-- [x] `.env.example` documents `ADMIN_TOKEN` / `MASTER_KEY`
-
-## P3 Evidence And Remaining Scope
-
-- [x] Multi-channel priority tiers, weighted selection, retry, and cooldown (P3)
-- [x] Authenticated route Explain endpoint with stable eligibility reasons (P3)
-- [x] Tracked transactional SQLite migrations and P0-P2 upgrade coverage (P3)
-- [x] Authenticated OpenAI-compatible and New API model discovery (P4)
-- [x] Atomic discovery snapshots and automatic exact-route reconciliation (P4)
-- [x] Mixed-result full refresh with redacted per-channel failures (P4)
-- [x] Credential-scoped manual and scheduled New API / One API check-in (P5)
-- [x] Redacted check-in logs, deterministic batches, and overlap exclusion (P5)
-- [x] P0-P4 database upgrade defaults existing credentials to check-in disabled (P5)
-- [x] Canonical version 1 secret and metadata channel export (P6)
-- [x] Canonical, New API, and reduced AAH V2 profile imports (P6)
-- [x] HMAC identity, repeat-import update, different-key separation, and unique legacy adoption (P6)
-- [x] Atomic asset transaction followed by ordered redacted discovery (P6)
-- [x] Admin auth, 10 MiB limit, no-store secret response, and stable exchange errors (P6)
+Local Windows results are not authoritative for race behavior. The GitHub
+Actions Linux job is the acceptance source for `go test -race ./...` and the
+container execution. The same E2E mock, runner, server, and restart verification
+also pass as separate local processes when Docker Hub is unavailable.
