@@ -84,6 +84,9 @@ GET /healthz → 200 {"status":"ok"}
 | POST | /admin/downstream-keys | Create downstream key |
 | DELETE | /admin/downstream-keys/{id} | Delete downstream key |
 | GET | /admin/proxy-logs | List proxy logs |
+| POST | /admin/discovery/channels/{id}/refresh | Refresh one channel's models and automatic routes |
+| POST | /admin/discovery/refresh | Refresh all enabled channels with itemized results |
+| GET | /admin/discovery/models?channel_id={id} | List durable discovered-model snapshots |
 
 ### Public (requires `Authorization: Bearer <DownstreamKey>`)
 
@@ -120,19 +123,12 @@ curl -s -X POST http://127.0.0.1:4100/admin/channels \
   -H "Content-Type: application/json" \
   -d '{"name":"GPT-4","site_id":1,"credential_id":1,"base_url":"https://api.openai.com","models_csv":"gpt-4,gpt-4-turbo","status":"enabled"}' | jq .
 
-# 5. Create a route
-curl -s -X POST http://127.0.0.1:4100/admin/routes \
+# 5. Discover models and create exact automatic routes
+curl -s -X POST http://127.0.0.1:4100/admin/discovery/channels/1/refresh \
   -H "Authorization: Bearer my-admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"model_pattern":"gpt-4","enabled":true}' | jq .
+  | jq .
 
-# 6. Add the channel to the route
-curl -s -X POST http://127.0.0.1:4100/admin/routes/1/members \
-  -H "Authorization: Bearer my-admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"channel_id":1,"priority":0,"weight":100,"enabled":true}' | jq .
-
-# 7. Call v1/chat/completions
+# 6. Call v1/chat/completions
 curl -s -X POST http://127.0.0.1:4100/v1/chat/completions \
   -H "Authorization: Bearer mg-abc123..." \
   -H "Content-Type: application/json" \
@@ -147,3 +143,8 @@ Routing evaluates higher numeric priority first and uses weight only within the
 selected priority tier. If all eligible weights in a tier are zero, selection
 is uniform. Retryable transport failures and transient upstream responses move
 to another eligible channel; ordinary client-error responses do not retry.
+
+Model discovery currently supports OpenAI-compatible and New API platforms.
+Set the site `platform` or channel `type_hint` to `openai-compatible`, `openai`,
+or `new-api`, then trigger a refresh manually. Scheduling is intentionally not
+enabled in P4.

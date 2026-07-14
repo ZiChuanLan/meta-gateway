@@ -60,6 +60,17 @@ type Channel struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// DiscoveredModel is one model observed during a successful channel refresh.
+type DiscoveredModel struct {
+	ID        int64     `json:"id"`
+	ChannelID int64     `json:"channel_id"`
+	ModelName string    `json:"model_name"`
+	Available bool      `json:"available"`
+	Source    string    `json:"source"`
+	LatencyMs int       `json:"latency_ms"`
+	CheckedAt time.Time `json:"checked_at"`
+}
+
 // ---------------------------------------------------------------------------
 // Route
 // ---------------------------------------------------------------------------

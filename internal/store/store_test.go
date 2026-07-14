@@ -132,14 +132,166 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Fatalf("got %d applied migrations, want 2", count)
+	if count != 3 {
+		t.Fatalf("got %d applied migrations, want 3", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 2 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
+	}
+}
+
+func TestDiscoveryReconcileIsIdempotentAndProtectsManualMembers(t *testing.T) {
+	db := openTestDB(t)
+	channelID, err := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 7, Weight: 33, Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkedAt := time.Date(2026, 7, 14, 1, 2, 3, 0, time.UTC)
+	input := store.ReconcileInput{ChannelID: channelID, Models: []string{"model-a", "model-b"}, Source: "openai-compatible", LatencyMs: 12, CheckedAt: checkedAt}
+	first, err := db.DiscoveredModel.Reconcile(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.CreatedRoutes != 2 || first.CreatedMembers != 2 {
+		t.Fatalf("unexpected first result: %+v", first)
+	}
+	second, err := db.DiscoveredModel.Reconcile(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != (store.ReconcileResult{}) {
+		t.Fatalf("repeated refresh was not idempotent: %+v", second)
+	}
+
+	routeA, _ := db.Route.GetByModel("model-a")
+	members, _ := db.RouteMember.ListByRoute(routeA.ID)
+	memberA := members[0]
+	memberA.Priority = 99
+	memberA.Weight = 5
+	memberA.ManualOverride = true
+	if err := db.RouteMember.Update(&memberA); err != nil {
+		t.Fatal(err)
+	}
+
+	input.Models = []string{"model-b"}
+	changed, err := db.DiscoveredModel.Reconcile(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.DisabledMembers != 0 {
+		t.Fatalf("manual override was disabled: %+v", changed)
+	}
+	got, _ := db.RouteMember.GetByID(memberA.ID)
+	if !got.Enabled || !got.ManualOverride || got.Priority != 99 || got.Weight != 5 {
+		t.Fatalf("manual member changed: %+v", got)
+	}
+
+	models, err := db.DiscoveredModel.List(&channelID)
+	if err != nil || len(models) != 1 || models[0].ModelName != "model-b" {
+		t.Fatalf("unexpected snapshot: %+v err=%v", models, err)
+	}
+	channel, _ := db.Channel.GetByID(channelID)
+	if channel.ModelsCSV != "model-b" {
+		t.Fatalf("models_csv=%q", channel.ModelsCSV)
+	}
+}
+
+func TestDiscoveryReconcileDisablesAndReenablesAutomaticMember(t *testing.T) {
+	db := openTestDB(t)
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 2, Weight: 10, Status: domain.StatusEnabled})
+	base := store.ReconcileInput{ChannelID: channelID, Models: []string{"model-a"}, Source: "new-api", CheckedAt: time.Now()}
+	if _, err := db.DiscoveredModel.Reconcile(t.Context(), base); err != nil {
+		t.Fatal(err)
+	}
+	route, _ := db.Route.GetByModel("model-a")
+	members, _ := db.RouteMember.ListByRoute(route.ID)
+	member := members[0]
+	member.Priority = 88
+	member.Weight = 4
+	if err := db.RouteMember.Update(&member); err != nil {
+		t.Fatal(err)
+	}
+	base.Models = nil
+	result, err := db.DiscoveredModel.Reconcile(t.Context(), base)
+	if err != nil || result.DisabledMembers != 1 {
+		t.Fatalf("empty reconcile: %+v err=%v", result, err)
+	}
+	base.Models = []string{"model-a"}
+	result, err = db.DiscoveredModel.Reconcile(t.Context(), base)
+	if err != nil || result.EnabledMembers != 1 {
+		t.Fatalf("restore reconcile: %+v err=%v", result, err)
+	}
+	got, _ := db.RouteMember.GetByID(member.ID)
+	if !got.Enabled || got.Priority != 88 || got.Weight != 4 {
+		t.Fatalf("automatic member defaults were reset: %+v", got)
+	}
+}
+
+func TestDiscoveryReconcileDoesNotChangeManualMember(t *testing.T) {
+	db := openTestDB(t)
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "manual", Status: domain.StatusEnabled})
+	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "manual-model", Enabled: true})
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Priority: 42, Weight: 9, Enabled: true, Auto: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := store.ReconcileInput{ChannelID: channelID, Models: []string{"manual-model"}, CheckedAt: time.Now()}
+	if _, err := db.DiscoveredModel.Reconcile(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	input.Models = nil
+	result, err := db.DiscoveredModel.Reconcile(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, _ := db.RouteMember.GetByID(memberID)
+	if result.DisabledMembers != 0 || !member.Enabled || member.Auto || member.Priority != 42 || member.Weight != 9 {
+		t.Fatalf("manual member changed: result=%+v member=%+v", result, member)
+	}
+}
+
+func TestDiscoveredModelsCascadeWithChannel(t *testing.T) {
+	db := openTestDB(t)
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "cascade", Status: domain.StatusEnabled})
+	_, err := db.DiscoveredModel.Reconcile(t.Context(), store.ReconcileInput{ChannelID: channelID, Models: []string{"model"}, CheckedAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Channel.Delete(channelID); err != nil {
+		t.Fatal(err)
+	}
+	models, err := db.DiscoveredModel.List(&channelID)
+	if err != nil || len(models) != 0 {
+		t.Fatalf("cascade failed: %+v err=%v", models, err)
+	}
+}
+
+func TestDiscoveryReconcileRollsBackAllState(t *testing.T) {
+	db := openTestDB(t)
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "rollback", Status: domain.StatusEnabled})
+	valid := store.ReconcileInput{ChannelID: channelID, Models: []string{"old-model"}, Source: "openai-compatible", CheckedAt: time.Now()}
+	if _, err := db.DiscoveredModel.Reconcile(t.Context(), valid); err != nil {
+		t.Fatal(err)
+	}
+	invalid := valid
+	invalid.Models = []string{"duplicate", "duplicate"}
+	if _, err := db.DiscoveredModel.Reconcile(t.Context(), invalid); err == nil {
+		t.Fatal("expected duplicate snapshot insert to fail")
+	}
+	models, err := db.DiscoveredModel.List(&channelID)
+	if err != nil || len(models) != 1 || models[0].ModelName != "old-model" {
+		t.Fatalf("snapshot did not roll back: models=%+v err=%v", models, err)
+	}
+	channel, _ := db.Channel.GetByID(channelID)
+	if channel.ModelsCSV != "old-model" {
+		t.Fatalf("channel models did not roll back: %q", channel.ModelsCSV)
+	}
+	var duplicateRoutes int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM routes WHERE model_pattern = 'duplicate'`).Scan(&duplicateRoutes); err != nil || duplicateRoutes != 0 {
+		t.Fatalf("route changes did not roll back: count=%d err=%v", duplicateRoutes, err)
 	}
 }
 

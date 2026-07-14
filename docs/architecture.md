@@ -12,6 +12,11 @@ Client
   -> Routing selector (eligibility, priority tiers, weighted choice)
   -> Store repositories (SQLite)
   -> Relay transport (context-bound upstream HTTP)
+
+Admin
+  -> Discovery service (eligibility, credentials, deterministic summaries)
+  -> Platform adapter (bounded upstream /v1/models request)
+  -> Discovery reconciliation (snapshot, models_csv, routes, members)
 ```
 
 ## Packages
@@ -25,6 +30,8 @@ Client
 | `internal/routing` | Pure candidate evaluation, explain output, and weighted selection |
 | `internal/proxy` | Retry orchestration, credentials, cooldown updates, and attempt logs |
 | `internal/relay` | Context-bound upstream HTTP transport |
+| `internal/adapters` | Stateless platform registry and upstream model listing |
+| `internal/discovery` | Credential-aware refresh orchestration and redacted results |
 | `internal/httpapi` | Admin and `/v1` HTTP adapters |
 | `internal/auth` | Admin and downstream-key authentication |
 | `internal/crypto` | AES-GCM credential encryption |
@@ -75,9 +82,24 @@ delete.
 Credentials are encrypted at rest, downstream keys are hashed, and no API or
 ProxyLog field returns raw credential material.
 
+## Model Discovery
+
+P4 resolves a channel adapter from `type_hint`, falling back to the attached
+site's `platform`. OpenAI-compatible and New API registrations share the
+OpenAI `GET /v1/models` protocol while retaining distinct source names.
+Responses are bounded, strictly decoded, normalized, and sorted before any
+database transaction starts.
+
+A successful channel refresh atomically replaces `discovered_models`, updates
+the canonical `channels.models_csv`, creates missing exact routes, and
+reconciles automatic route members. Missing models disable only automatic,
+non-overridden members. Existing routes and manual routing decisions remain
+operator-owned. A transport, status, size, or payload error changes no state.
+
 ## Current Scope
 
-P0-P3 cover repository bootstrap, Admin CRUD, encrypted credentials,
+P0-P4 cover repository bootstrap, Admin CRUD, encrypted credentials,
 OpenAI-compatible Models and Chat Completions, SSE passthrough, multi-channel
-routing, retry/cooldown, Explain, and tracked migrations. Discovery, check-in,
-AAH exchange, broad hardening, and Web Admin remain later phases.
+routing, retry/cooldown, Explain, tracked migrations, and manually triggered
+model discovery. Scheduled check-in, AAH exchange, broad hardening, and Web
+Admin remain later phases.

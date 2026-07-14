@@ -296,3 +296,80 @@ func TestChatCompletionsNonStreamAndStream(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoveryAdminEndpoints(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer upstream-secret" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":[{"id":" discovered-b "},{"id":"discovered-a"},{"id":"discovered-a"}]}`)
+	}))
+	defer upstream.Close()
+	base, _ := setupServer(t, upstream.URL)
+
+	unauthorized, err := http.Post(base+"/admin/discovery/channels/1/refresh", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthorized.Body.Close()
+	if unauthorized.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status=%d", unauthorized.StatusCode)
+	}
+
+	req, _ := http.NewRequest(http.MethodPost, base+"/admin/discovery/channels/1/refresh", nil)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"adapter":"openai-compatible"`) || strings.Contains(string(body), "upstream-secret") {
+		t.Fatalf("refresh status=%d body=%s", resp.StatusCode, body)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, base+"/admin/discovery/models?channel_id=1", nil)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "discovered-a") || strings.Contains(string(body), "upstream-secret") {
+		t.Fatalf("models status=%d body=%s", resp.StatusCode, body)
+	}
+
+	createBody := strings.NewReader(`{"name":"unsupported","base_url":"` + upstream.URL + `","status":"enabled","type_hint":"unknown"}`)
+	req, _ = http.NewRequest(http.MethodPost, base+"/admin/channels", createBody)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create unsupported channel status=%d", resp.StatusCode)
+	}
+
+	req, _ = http.NewRequest(http.MethodPost, base+"/admin/discovery/refresh", nil)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"success_count":1`) || !strings.Contains(string(body), `"failure_count":1`) || !strings.Contains(string(body), "site_unavailable") {
+		t.Fatalf("full refresh status=%d body=%s", resp.StatusCode, body)
+	}
+	if strings.Contains(string(body), "upstream-secret") {
+		t.Fatal("full refresh leaked secret")
+	}
+}

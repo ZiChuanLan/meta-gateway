@@ -1,4 +1,4 @@
-# MVP Acceptance (P0–P2)
+# MVP Acceptance (P0-P4)
 
 Evidence from local verification on 2026-07-14.
 
@@ -42,5 +42,8 @@ Evidence from local verification on 2026-07-14.
 - [x] Multi-channel priority tiers, weighted selection, retry, and cooldown (P3)
 - [x] Authenticated route Explain endpoint with stable eligibility reasons (P3)
 - [x] Tracked transactional SQLite migrations and P0-P2 upgrade coverage (P3)
-- Model discovery / checkin (P4–P5)
+- [x] Authenticated OpenAI-compatible and New API model discovery (P4)
+- [x] Atomic discovery snapshots and automatic exact-route reconciliation (P4)
+- [x] Mixed-result full refresh with redacted per-channel failures (P4)
+- Scheduled discovery / check-in (P5)
 - AAH import/export APIs (P6)

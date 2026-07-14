@@ -7,9 +7,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
+	"github.com/lan/meta-gateway/internal/discovery"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
@@ -36,6 +38,8 @@ func New(cfg *config.Config, db *store.DB, enc *crypto.Encrypter) http.Handler {
 	selector := routing.New(db.RouteMember)
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
+	discoveryHandler := NewDiscoveryHandler(db, discovery.New(db, enc, adapters.NewRegistry(nil)))
+	discoveryHandler.Register(adminGroup)
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)
