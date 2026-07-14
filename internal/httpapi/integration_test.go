@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
@@ -32,10 +33,14 @@ func setupServer(t *testing.T, upstreamURL string) (string, string, *store.DB) {
 	}
 
 	cfg := &config.Config{
-		HTTPAddr:   ":0",
-		DataDir:    dir,
-		AdminToken: "admin-secret",
-		MasterKey:  "integration-master-key-32b!!",
+		HTTPAddr:                      ":0",
+		DataDir:                       dir,
+		AdminToken:                    "admin-secret",
+		MasterKey:                     "integration-master-key-32b!!",
+		OutboundAllowCIDRs:            []string{"127.0.0.0/8", "::1/128"},
+		OutboundConnectTimeout:        2 * time.Second,
+		OutboundTLSHandshakeTimeout:   2 * time.Second,
+		OutboundResponseHeaderTimeout: 2 * time.Second,
 	}
 	handler := httpapi.New(cfg, db, enc)
 

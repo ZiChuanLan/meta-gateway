@@ -142,6 +142,27 @@ func TestModels(t *testing.T) {
 	}
 }
 
+func TestModelsBoundsAndRedactsUpstreamErrors(t *testing.T) {
+	secret := "upstream-secret-body"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.RequestURI, "large=true") {
+			_, _ = io.WriteString(w, strings.Repeat("x", (2<<20)+1))
+			return
+		}
+		http.Error(w, secret, http.StatusBadGateway)
+	}))
+	defer upstream.Close()
+
+	_, err := relay.New().Models(upstream.URL+"?error=true", "test-key")
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("error was not redacted: %v", err)
+	}
+	_, err = relay.New().Models(upstream.URL+"?large=true", "test-key")
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("oversized response error=%v", err)
+	}
+}
+
 func TestChatCompletionsPropagatesCancellation(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})

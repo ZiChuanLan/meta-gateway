@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -95,7 +94,7 @@ func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) listSites(w http.ResponseWriter, r *http.Request) {
 	sites, err := h.db.Site.List()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, sites)
@@ -103,8 +102,8 @@ func (h *AdminHandler) listSites(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) createSite(w http.ResponseWriter, r *http.Request) {
 	var site domain.Site
-	if err := json.NewDecoder(r.Body).Decode(&site); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &site, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if site.Status == "" {
@@ -112,12 +111,12 @@ func (h *AdminHandler) createSite(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := h.db.Site.Create(&site)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	created, err := h.db.Site.GetByID(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	if created == nil {
@@ -135,7 +134,7 @@ func (h *AdminHandler) getSite(w http.ResponseWriter, r *http.Request) {
 	}
 	site, err := h.db.Site.GetByID(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	if site == nil {
@@ -152,13 +151,13 @@ func (h *AdminHandler) updateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var site domain.Site
-	if err := json.NewDecoder(r.Body).Decode(&site); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &site, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	site.ID = id
 	if err := h.db.Site.Update(&site); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	updated, _ := h.db.Site.GetByID(id)
@@ -172,7 +171,7 @@ func (h *AdminHandler) deleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.db.Site.Delete(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -190,7 +189,7 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 	}
 	creds, err := h.db.Credential.ListBySite(siteID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	// Never expose secret_enc in JSON responses.
@@ -232,8 +231,8 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req createCredentialRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Secret == "" {
@@ -257,7 +256,7 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 	}
 	id, err := h.db.Credential.Create(cred)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	created, _ := h.db.Credential.GetByID(id)
@@ -280,7 +279,7 @@ func (h *AdminHandler) deleteCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := h.db.Credential.Delete(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -293,7 +292,7 @@ func (h *AdminHandler) deleteCredential(w http.ResponseWriter, r *http.Request) 
 func (h *AdminHandler) listChannels(w http.ResponseWriter, r *http.Request) {
 	channels, err := h.db.Channel.List()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, channels)
@@ -301,8 +300,8 @@ func (h *AdminHandler) listChannels(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 	var ch domain.Channel
-	if err := json.NewDecoder(r.Body).Decode(&ch); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &ch, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if ch.Status == "" {
@@ -310,7 +309,7 @@ func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := h.db.Channel.Create(&ch)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	created, _ := h.db.Channel.GetByID(id)
@@ -325,7 +324,7 @@ func (h *AdminHandler) getChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	ch, err := h.db.Channel.GetByID(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	if ch == nil {
@@ -342,13 +341,13 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var ch domain.Channel
-	if err := json.NewDecoder(r.Body).Decode(&ch); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &ch, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	ch.ID = id
 	if err := h.db.Channel.Update(&ch); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	updated, _ := h.db.Channel.GetByID(id)
@@ -362,7 +361,7 @@ func (h *AdminHandler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.db.Channel.Delete(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -375,7 +374,7 @@ func (h *AdminHandler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) listRoutes(w http.ResponseWriter, r *http.Request) {
 	routes, err := h.db.Route.List()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, routes)
@@ -383,8 +382,8 @@ func (h *AdminHandler) listRoutes(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 	var rt domain.Route
-	if err := json.NewDecoder(r.Body).Decode(&rt); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &rt, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if rt.ModelPattern == "" {
@@ -408,7 +407,7 @@ func (h *AdminHandler) getRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	rt, err := h.db.Route.GetByID(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	if rt == nil {
@@ -425,8 +424,8 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var rt domain.Route
-	if err := json.NewDecoder(r.Body).Decode(&rt); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &rt, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	rt.ID = id
@@ -449,7 +448,7 @@ func (h *AdminHandler) deleteRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.db.Route.Delete(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -467,7 +466,7 @@ func (h *AdminHandler) listRouteMembers(w http.ResponseWriter, r *http.Request) 
 	}
 	members, err := h.db.RouteMember.ListByRoute(routeID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, members)
@@ -480,8 +479,8 @@ func (h *AdminHandler) createRouteMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var rm domain.RouteMember
-	if err := json.NewDecoder(r.Body).Decode(&rm); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &rm, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	rm.RouteID = routeID
@@ -505,8 +504,8 @@ func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var rm domain.RouteMember
-	if err := json.NewDecoder(r.Body).Decode(&rm); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &rm, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	rm.ID = id
@@ -541,7 +540,7 @@ func (h *AdminHandler) deleteRouteMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := h.db.RouteMember.Delete(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -554,7 +553,7 @@ func (h *AdminHandler) deleteRouteMember(w http.ResponseWriter, r *http.Request)
 func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request) {
 	keys, err := h.db.DownstreamKey.List()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	// Never expose token_hash.
@@ -592,8 +591,8 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Name   string `json:"name"`
 		Scopes string `json:"scopes,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Name == "" {
@@ -618,7 +617,7 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 	}
 	id, err := h.db.DownstreamKey.Create(key)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 
@@ -644,7 +643,7 @@ func (h *AdminHandler) deleteDownstreamKey(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.db.DownstreamKey.Delete(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -657,7 +656,7 @@ func (h *AdminHandler) deleteDownstreamKey(w http.ResponseWriter, r *http.Reques
 func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 	logs, err := h.db.ProxyLog.List(100)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, logs)

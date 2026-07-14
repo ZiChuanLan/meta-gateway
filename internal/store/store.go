@@ -20,6 +20,8 @@ type DB struct {
 	ProxyLog        *ProxyLogStore
 	CheckinLog      *CheckinLogStore
 	Exchange        *ExchangeStore
+	AuditEvent      *AuditEventStore
+	BackupRecord    *BackupRecordStore
 }
 
 // Open opens (or creates) the SQLite database at the given path and runs migrations.
@@ -50,6 +52,8 @@ func Open(dataDir string) (*DB, error) {
 		ProxyLog:        &ProxyLogStore{db: sqldb},
 		CheckinLog:      &CheckinLogStore{db: sqldb},
 		Exchange:        &ExchangeStore{db: sqldb},
+		AuditEvent:      &AuditEventStore{db: sqldb},
+		BackupRecord:    &BackupRecordStore{db: sqldb},
 	}
 	return db, nil
 }

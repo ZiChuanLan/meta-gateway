@@ -1,12 +1,16 @@
 package config
 
 import (
+	"fmt"
+	"net"
+	"net/netip"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
-// Config holds the application configuration parsed from environment variables.
 type Config struct {
 	HTTPAddr       string
 	DataDir        string
@@ -16,44 +20,243 @@ type Config struct {
 	Cooldown       time.Duration
 	CheckinEnabled bool
 	CheckinCron    string
+
+	OutboundAllowHosts            []string
+	OutboundAllowCIDRs            []string
+	OutboundConnectTimeout        time.Duration
+	OutboundTLSHandshakeTimeout   time.Duration
+	OutboundResponseHeaderTimeout time.Duration
+	TrustedProxyCIDRs             []string
+	RelayRatePerMinute            int
+	RelayRateBurst                int
+	AdminRatePerMinute            int
+	AdminRateBurst                int
+	MetricsToken                  string
+	TrustedScraperCIDRs           []string
+	MaxHeaderBytes                int
+	MaxAdminBodyBytes             int64
+	ServerReadHeaderTimeout       time.Duration
+	ServerReadTimeout             time.Duration
+	ServerIdleTimeout             time.Duration
+	ServerShutdownTimeout         time.Duration
+	ReadinessTimeout              time.Duration
+	AuditRetentionDays            int
+	AuditRetentionRows            int
+	BackupDir                     string
 }
 
-// Load reads configuration from environment variables with sensible defaults.
-func Load() *Config {
+func Load() (*Config, error) {
+	retryTimes, err := envInt("RETRY_TIMES", 2, 0, 100)
+	if err != nil {
+		return nil, err
+	}
+	cooldownSeconds, err := envInt("COOLDOWN_SECONDS", 30, 0, 86400)
+	if err != nil {
+		return nil, err
+	}
+	checkinEnabled, err := envBool("CHECKIN_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	connectTimeout, err := envDurationSeconds("OUTBOUND_CONNECT_TIMEOUT_SECONDS", 10, 1, 300)
+	if err != nil {
+		return nil, err
+	}
+	tlsTimeout, err := envDurationSeconds("OUTBOUND_TLS_TIMEOUT_SECONDS", 10, 1, 300)
+	if err != nil {
+		return nil, err
+	}
+	headerTimeout, err := envDurationSeconds("OUTBOUND_HEADER_TIMEOUT_SECONDS", 60, 1, 3600)
+	if err != nil {
+		return nil, err
+	}
+	hosts, err := envHosts("OUTBOUND_ALLOW_HOSTS")
+	if err != nil {
+		return nil, err
+	}
+	cidrs, err := envCIDRs("OUTBOUND_ALLOW_CIDRS")
+	if err != nil {
+		return nil, err
+	}
+	trustedProxies, err := envCIDRs("TRUSTED_PROXY_CIDRS")
+	if err != nil {
+		return nil, err
+	}
+	relayRate, err := envInt("RELAY_RATE_PER_MINUTE", 600, 0, 1000000)
+	if err != nil {
+		return nil, err
+	}
+	relayBurst, err := envInt("RELAY_RATE_BURST", 100, 0, 1000000)
+	if err != nil {
+		return nil, err
+	}
+	adminRate, err := envInt("ADMIN_RATE_PER_MINUTE", 300, 0, 1000000)
+	if err != nil {
+		return nil, err
+	}
+	adminBurst, err := envInt("ADMIN_RATE_BURST", 50, 0, 1000000)
+	if err != nil {
+		return nil, err
+	}
+	trustedScrapers, err := envCIDRs("TRUSTED_SCRAPER_CIDRS")
+	if err != nil {
+		return nil, err
+	}
+	maxHeaderBytes, err := envInt("MAX_HEADER_BYTES", 1<<20, 4096, 16<<20)
+	if err != nil {
+		return nil, err
+	}
+	maxAdminBodyBytes, err := envInt("MAX_ADMIN_BODY_BYTES", 2<<20, 1024, 16<<20)
+	if err != nil {
+		return nil, err
+	}
+	readHeaderTimeout, err := envDurationSeconds("SERVER_READ_HEADER_TIMEOUT_SECONDS", 10, 1, 300)
+	if err != nil {
+		return nil, err
+	}
+	readTimeout, err := envDurationSeconds("SERVER_READ_TIMEOUT_SECONDS", 30, 1, 3600)
+	if err != nil {
+		return nil, err
+	}
+	idleTimeout, err := envDurationSeconds("SERVER_IDLE_TIMEOUT_SECONDS", 120, 1, 3600)
+	if err != nil {
+		return nil, err
+	}
+	shutdownTimeout, err := envDurationSeconds("SERVER_SHUTDOWN_TIMEOUT_SECONDS", 15, 1, 300)
+	if err != nil {
+		return nil, err
+	}
+	readinessTimeout, err := envDurationSeconds("READINESS_TIMEOUT_SECONDS", 2, 1, 30)
+	if err != nil {
+		return nil, err
+	}
+	auditDays, err := envInt("AUDIT_RETENTION_DAYS", 90, 0, 36500)
+	if err != nil {
+		return nil, err
+	}
+	auditRows, err := envInt("AUDIT_RETENTION_ROWS", 100000, 0, 10000000)
+	if err != nil {
+		return nil, err
+	}
+	metricsToken := envStr("METRICS_TOKEN", "")
+	if metricsToken == "" && len(trustedScrapers) == 0 {
+		return nil, fmt.Errorf("config: METRICS_TOKEN or TRUSTED_SCRAPER_CIDRS is required")
+	}
+	dataDir := envStr("DATA_DIR", "./data")
+
 	return &Config{
 		HTTPAddr:       envStr("HTTP_ADDR", ":4100"),
-		DataDir:        envStr("DATA_DIR", "./data"),
+		DataDir:        dataDir,
 		AdminToken:     envStr("ADMIN_TOKEN", ""),
 		MasterKey:      envStr("MASTER_KEY", ""),
-		RetryTimes:     envInt("RETRY_TIMES", 2),
-		Cooldown:       time.Duration(envInt("COOLDOWN_SECONDS", 30)) * time.Second,
-		CheckinEnabled: envBool("CHECKIN_ENABLED", false),
+		RetryTimes:     retryTimes,
+		Cooldown:       time.Duration(cooldownSeconds) * time.Second,
+		CheckinEnabled: checkinEnabled,
 		CheckinCron:    envStr("CHECKIN_CRON", "0 8 * * *"),
-	}
+
+		OutboundAllowHosts:            hosts,
+		OutboundAllowCIDRs:            cidrs,
+		OutboundConnectTimeout:        connectTimeout,
+		OutboundTLSHandshakeTimeout:   tlsTimeout,
+		OutboundResponseHeaderTimeout: headerTimeout,
+		TrustedProxyCIDRs:             trustedProxies,
+		RelayRatePerMinute:            relayRate, RelayRateBurst: relayBurst,
+		AdminRatePerMinute: adminRate, AdminRateBurst: adminBurst,
+		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
+		MaxHeaderBytes: maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),
+		ServerReadHeaderTimeout: readHeaderTimeout, ServerReadTimeout: readTimeout,
+		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
+		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
+		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
+	}, nil
 }
 
-func envBool(key string, def bool) bool {
-	if v := os.Getenv(key); v != "" {
-		parsed, err := strconv.ParseBool(v)
-		if err == nil {
-			return parsed
-		}
+func envBool(key string, def bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return def, nil
 	}
-	return def
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("config: %s must be a boolean", key)
+	}
+	return parsed, nil
 }
 
 func envStr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
 	return def
 }
 
-func envInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
+func envInt(key string, def, min, max int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < min || n > max {
+		return 0, fmt.Errorf("config: %s must be between %d and %d", key, min, max)
+	}
+	return n, nil
+}
+
+func envDurationSeconds(key string, def, min, max int) (time.Duration, error) {
+	seconds, err := envInt(key, def, min, max)
+	return time.Duration(seconds) * time.Second, err
+}
+
+func envHosts(key string) ([]string, error) {
+	values := splitList(os.Getenv(key))
+	for _, value := range values {
+		if !validHostname(value) {
+			return nil, fmt.Errorf("config: %s contains an invalid hostname", key)
 		}
 	}
-	return def
+	return values, nil
+}
+
+func validHostname(value string) bool {
+	if value == "" || len(value) > 253 || net.ParseIP(value) != nil || strings.ContainsAny(value, "/:@") {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func envCIDRs(key string) ([]string, error) {
+	values := splitList(os.Getenv(key))
+	for _, value := range values {
+		if _, err := netip.ParsePrefix(value); err != nil {
+			return nil, fmt.Errorf("config: %s contains an invalid CIDR", key)
+		}
+	}
+	return values, nil
+}
+
+func splitList(raw string) []string {
+	seen := make(map[string]struct{})
+	var result []string
+	for _, item := range strings.Split(raw, ",") {
+		value := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(item), "."))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }

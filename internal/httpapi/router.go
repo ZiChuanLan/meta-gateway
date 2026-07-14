@@ -3,18 +3,24 @@ package httpapi
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/auth"
+	"github.com/lan/meta-gateway/internal/backup"
 	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/discovery"
 	"github.com/lan/meta-gateway/internal/exchange"
+	"github.com/lan/meta-gateway/internal/observability"
+	"github.com/lan/meta-gateway/internal/outbound"
 	"github.com/lan/meta-gateway/internal/proxy"
+	"github.com/lan/meta-gateway/internal/ratelimit"
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
@@ -24,6 +30,11 @@ type Dependencies struct {
 	Registry        *adapters.Registry
 	CheckinService  *checkin.Service
 	ExchangeService *exchange.Service
+	OutboundClient  *http.Client
+	Logger          *slog.Logger
+	Metrics         *observability.Registry
+	State           *observability.State
+	BackupService   *backup.Service
 }
 
 // New creates a fully wired chi.Router.
@@ -34,9 +45,40 @@ func New(cfg *config.Config, db *store.DB, enc *crypto.Encrypter) http.Handler {
 // NewWithDependencies wires shared application services into the HTTP router.
 func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter, dependencies Dependencies) http.Handler {
 	r := chi.NewRouter()
+	logger := dependencies.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	}
+	metrics := dependencies.Metrics
+	if metrics == nil {
+		metrics = observability.NewRegistry()
+	}
+	state := dependencies.State
+	if state == nil {
+		state = observability.NewState()
+	}
+	clientIPs, err := newClientIPResolver(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		panic("httpapi: invalid trusted proxy policy")
+	}
+	outboundClient := dependencies.OutboundClient
+	if outboundClient == nil {
+		policy, err := outbound.NewPolicy(outbound.Options{
+			AllowHosts:  cfg.OutboundAllowHosts,
+			AllowCIDRs:  cfg.OutboundAllowCIDRs,
+			DialTimeout: cfg.OutboundConnectTimeout,
+		})
+		if err != nil {
+			panic("httpapi: invalid outbound policy")
+		}
+		outboundClient = outbound.NewClient(policy, outbound.ClientOptions{
+			ResponseHeaderTimeout: cfg.OutboundResponseHeaderTimeout,
+			TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
+		})
+	}
 	registry := dependencies.Registry
 	if registry == nil {
-		registry = adapters.NewRegistry(nil)
+		registry = adapters.NewRegistry(outboundClient)
 	}
 	checkinService := dependencies.CheckinService
 	if checkinService == nil {
@@ -50,17 +92,38 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 
 	// Global middleware
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
-	r.Use(chimw.Logger)
-	r.Use(chimw.Recoverer)
+	r.Use(clientIPs.Middleware)
+	r.Use(requestTelemetry(logger, metrics))
+	r.Use(recoverMiddleware(logger))
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if !state.Ready() || !pingReady(db, cfg.ReadinessTimeout) {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	trustedScrapers := parsePrefixes(cfg.TrustedScraperCIDRs)
+	r.Get("/metrics", func(w http.ResponseWriter, request *http.Request) {
+		if !metricsAuthorized(cfg.MetricsToken, trustedScrapers, request) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		if err := metrics.WritePrometheus(w, state.Ready()); err != nil {
+			logger.ErrorContext(request.Context(), "metrics write failed", "category", "write")
+		}
+	})
 
 	// Admin routes
 	adminGroup := chi.NewRouter()
+	adminGroup.Use(auditAdmin(logger, db.AuditEvent))
 	adminGroup.Use(auth.AdminMiddleware(cfg.AdminToken))
+	adminGroup.Use(rateLimitMiddleware(ratelimit.New(cfg.AdminRatePerMinute, cfg.AdminRateBurst), func(*http.Request) int64 { return 0 }, "admin", metrics))
+	adminGroup.Use(withAdminBodyLimit(cfg.MaxAdminBodyBytes))
 	selector := routing.New(db.RouteMember)
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
@@ -70,13 +133,20 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	checkinHandler.Register(adminGroup)
 	exchangeHandler := NewExchangeHandler(exchangeService)
 	exchangeHandler.Register(adminGroup)
+	NewAuditHandler(db, cfg.AuditRetentionDays, cfg.AuditRetentionRows).Register(adminGroup)
+	backupService := dependencies.BackupService
+	if backupService == nil {
+		backupService = backup.New(db, cfg.BackupDir)
+	}
+	NewBackupHandler(backupService).Register(adminGroup)
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)
-	proxyService := proxy.New(selector, relay.New(), db, enc, cfg.RetryTimes, cfg.Cooldown)
+	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	relayHandler := NewRelayHandler(db, proxyService)
 	v1Group := chi.NewRouter()
 	v1Group.Use(auth.NewDownstreamAuth(db.DownstreamKey).Middleware())
+	v1Group.Use(rateLimitMiddleware(ratelimit.New(cfg.RelayRatePerMinute, cfg.RelayRateBurst), downstreamRateKey, "relay", metrics))
 	relayHandler.Register(v1Group)
 	r.Mount("/v1", v1Group)
 

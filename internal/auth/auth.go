@@ -2,6 +2,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -12,6 +13,13 @@ import (
 
 	"github.com/lan/meta-gateway/internal/store"
 )
+
+type downstreamKeyIDContextKey struct{}
+
+func DownstreamKeyID(r *http.Request) (int64, bool) {
+	id, ok := r.Context().Value(downstreamKeyIDContextKey{}).(int64)
+	return id, ok
+}
 
 // AdminMiddleware returns an HTTP middleware that requires a valid ADMIN_TOKEN Bearer token.
 func AdminMiddleware(adminToken string) func(http.Handler) http.Handler {
@@ -58,11 +66,13 @@ func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, error) {
 func (da *DownstreamAuth) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, err := da.Authenticate(r); err != nil {
+			id, err := da.Authenticate(r)
+			if err != nil {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), downstreamKeyIDContextKey{}, id)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

@@ -2,9 +2,7 @@ package httpapi
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 
@@ -102,14 +100,7 @@ func (h *CheckinHandler) setCredentialEnabled(w http.ResponseWriter, r *http.Req
 	var request struct {
 		Enabled *bool `json:"enabled"`
 	}
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil || request.Enabled == nil {
-		writeError(w, http.StatusBadRequest, "invalid check-in configuration")
-		return
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+	if err := decodeJSON(w, r, &request, 0, true); err != nil || request.Enabled == nil {
 		writeError(w, http.StatusBadRequest, "invalid check-in configuration")
 		return
 	}

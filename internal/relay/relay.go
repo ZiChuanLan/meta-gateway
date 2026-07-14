@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 )
+
+const maxModelsBodyBytes = 2 << 20
 
 // Relay holds the configuration for forwarding requests.
 type Relay struct {
@@ -18,15 +21,18 @@ type Relay struct {
 
 // New creates a Relay with sensible timeouts.
 func New() *Relay {
-	return &Relay{
-		client: &http.Client{
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				ResponseHeaderTimeout: 60 * time.Second,
-				IdleConnTimeout:       90 * time.Second,
-			},
-		},
+	return NewWithClient(&http.Client{Transport: &http.Transport{
+		ResponseHeaderTimeout: 60 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+	}})
+}
+
+// NewWithClient creates a Relay using an injected outbound client.
+func NewWithClient(client *http.Client) *Relay {
+	if client == nil {
+		return New()
 	}
+	return &Relay{client: client}
 }
 
 // Result captures the outcome of a relayed request.
@@ -93,13 +99,16 @@ func (r *Relay) Models(upstreamURL string, apiKey string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxModelsBodyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("relay: read models: %w", err)
 	}
+	if len(body) > maxModelsBodyBytes {
+		return nil, errors.New("relay: models response too large")
+	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("relay: models status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("relay: models status %d", resp.StatusCode)
 	}
 
 	return body, nil
