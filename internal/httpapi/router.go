@@ -24,6 +24,7 @@ import (
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/webui"
 )
 
 type Dependencies struct {
@@ -117,6 +118,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			logger.ErrorContext(request.Context(), "metrics write failed", "category", "write")
 		}
 	})
+	r.Get("/admin-ui", func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, "/admin-ui/", http.StatusPermanentRedirect)
+	})
+	r.Handle("/admin-ui/*", webui.Handler())
 
 	// Admin routes
 	adminGroup := chi.NewRouter()
