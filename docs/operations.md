@@ -17,6 +17,36 @@ stores the database and backups under `/data`. A newly created named volume
 inherits the correct ownership. Before upgrading an existing bind mount or old
 volume, stop the service and make its data writable by UID/GID `10001`.
 
+## Web Admin
+
+The production Web Admin is embedded in the Go binary and served at
+`/admin-ui/`. Extensionless nested paths such as `/admin-ui/routing` return the
+SPA shell, while missing asset paths return `404` and never fall back to HTML.
+HTML uses `Cache-Control: no-cache`; content-hashed assets use a one-year
+immutable cache policy.
+
+Connect with `ADMIN_TOKEN`, not `METRICS_TOKEN`. The token is sent only in the
+`Authorization: Bearer` header. It remains in memory unless the operator opts
+into tab-scoped `sessionStorage`; it is not stored in cookies, `localStorage`,
+URLs, application configuration, or logs. A `401` response invalidates the UI
+session. Credential secrets use password inputs, newly created downstream
+tokens exist only in their one-time result dialog, and secret-bearing exports
+are downloaded without a browser preview.
+
+For a source build, generate the embedded distribution before compiling Go:
+
+```bash
+cd web
+npm ci
+npm run build
+cd ..
+go build -trimpath -o bin/meta-gateway ./cmd/server
+```
+
+Vite writes the production files to `internal/webui/dist`; `go:embed` then
+packages that directory into the executable. The Dockerfile and CI perform the
+same Node-before-Go build order.
+
 ## Outbound Policy
 
 Public HTTP(S) upstreams need no exception. Private and special addresses are

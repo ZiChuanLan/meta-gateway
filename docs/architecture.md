@@ -65,6 +65,8 @@ Operations
 | `internal/ratelimit` | Process-local token buckets for Admin and downstream keys |
 | `internal/observability` | Readiness state and Prometheus text metrics |
 | `internal/backup` | Confined online backup and offline restore workflow |
+| `internal/webui` | Embedded Web Admin assets, cache policy, and bounded SPA fallback |
+| `web` | React/TypeScript Web Admin source and browser-side Admin API client |
 
 ## Routing
 
@@ -192,5 +194,8 @@ routing, retry/cooldown, Explain, tracked migrations, and manually triggered
 model discovery, plus credential check-in, redacted audit logs, and optional
 cron scheduling, secure versioned AAH/New API exchange, SSRF enforcement,
 trusted identities, rate limits, observability, audit retention, online backup,
-offline restore, hardened containers, and Linux race-test CI. P8 Web Admin is
-the next phase and is not part of this backend scope.
+offline restore, hardened containers, and Linux race-test CI. P8 adds an
+embedded React Web Admin under `/admin-ui/` that consumes the existing
+authenticated Admin contracts without changing their security or ownership
+rules. Metrics collection and offline restore deliberately remain operational
+interfaces outside the browser application.

@@ -4,11 +4,15 @@ A production-oriented OpenAI-compatible relay gateway with multi-channel
 routing, retries, encrypted credentials, discovery, check-in, exchange,
 auditing, metrics, and online SQLite backups.
 
+The embedded Web Admin is available at `http://127.0.0.1:4100/admin-ui/`
+after the gateway starts.
+
 ## Quick Start
 
 ### Prerequisites
 
 - Go 1.26.4+ (or Docker)
+- Node.js 24+ for source builds
 - SQLite (embedded, no external dependency)
 
 ### Using Go
@@ -19,9 +23,18 @@ cd meta-gateway
 cp .env.example .env
 # Set ADMIN_TOKEN, MASTER_KEY, and METRICS_TOKEN to independent random values
 
+cd web
+npm ci
+npm run build
+cd ..
 go build -o bin/meta-gateway ./cmd/server
 ADMIN_TOKEN=my-admin-token MASTER_KEY=my-32-char-master-key-for-aes! ./bin/meta-gateway
 ```
+
+Open `http://127.0.0.1:4100/admin-ui/` and connect with `ADMIN_TOKEN`. The
+browser sends it only as an Admin Bearer token and retains it in memory or,
+when requested, `sessionStorage`; it is never placed in cookies, URLs, or
+`localStorage`.
 
 ### Using Docker Compose
 
@@ -169,6 +182,10 @@ curl -s -X POST http://127.0.0.1:4100/v1/chat/completions \
 See [docs/architecture.md](docs/architecture.md) for the full architecture overview.
 See [docs/operations.md](docs/operations.md) for deployment, outbound security,
 metrics, audit retention, backup, and restore procedures.
+
+The Web Admin covers day-to-day asset, routing, discovery, check-in, audit,
+backup, and exchange operations. Metrics collection and offline restore remain
+CLI/operations workflows rather than browser actions.
 
 Routing evaluates higher numeric priority first and uses weight only within the
 selected priority tier. If all eligible weights in a tier are zero, selection
