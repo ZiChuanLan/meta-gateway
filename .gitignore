@@ -3,3 +3,5 @@ data/
 .env
 *.db
 *.db-*
+web/node_modules/
+web/coverage/

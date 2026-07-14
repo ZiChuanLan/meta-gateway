@@ -33,6 +33,12 @@ func TestOperationsEndpointsAndAdminAudit(t *testing.T) {
 
 	assertStatus(t, http.MethodGet, server.URL+"/healthz", "", nil, http.StatusOK)
 	assertStatus(t, http.MethodGet, server.URL+"/readyz", "", nil, http.StatusOK)
+	adminShell := assertStatus(t, http.MethodGet, server.URL+"/admin-ui/", "", nil, http.StatusOK)
+	if !bytes.Contains(adminShell, []byte(`<div id="root"></div>`)) {
+		t.Fatalf("admin shell=%s", adminShell)
+	}
+	assertStatus(t, http.MethodGet, server.URL+"/admin-ui/routing", "", nil, http.StatusOK)
+	assertStatus(t, http.MethodGet, server.URL+"/admin-ui/assets/missing.js", "", nil, http.StatusNotFound)
 	assertStatus(t, http.MethodGet, server.URL+"/metrics", "", nil, http.StatusUnauthorized)
 	metrics := assertStatus(t, http.MethodGet, server.URL+"/metrics", "metrics-test", nil, http.StatusOK)
 	if !strings.Contains(string(metrics), "meta_gateway_ready 1") {

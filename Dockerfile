@@ -1,8 +1,16 @@
+FROM node:24-alpine AS web-builder
+WORKDIR /build/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM golang:1.26-alpine AS builder
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+COPY --from=web-builder /build/internal/webui/dist ./internal/webui/dist
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bin/meta-gateway ./cmd/server
 
 FROM alpine:3.22
