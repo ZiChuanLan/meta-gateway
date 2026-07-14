@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Race test
+        run: go test -race ./...
+      - name: Build
+        run: go build -trimpath ./cmd/server
+      - name: Validate Compose
+        env:
+          ADMIN_TOKEN: ci-admin-token
+          MASTER_KEY: ci-master-key-at-least-32-characters
+          METRICS_TOKEN: ci-metrics-token
+        run: docker compose config --quiet
+      - name: Compose E2E
+        env:
+          ADMIN_TOKEN: ci-admin-token
+          MASTER_KEY: ci-master-key-at-least-32-characters
+          METRICS_TOKEN: ci-metrics-token
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml \
+            up --build --detach --wait --wait-timeout 90 meta-gateway mock-upstream
+          test "$(docker compose exec -T meta-gateway id -u)" = "10001"
+          curl --fail --silent http://127.0.0.1:4100/readyz
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:4100/metrics)" = "401"
+          curl --fail --silent \
+            -H "Authorization: Bearer $METRICS_TOKEN" \
+            http://127.0.0.1:4100/metrics | grep -q '^meta_gateway_ready 1$'
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml run --rm e2e
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml restart meta-gateway
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml \
+            up --detach --wait --wait-timeout 90 meta-gateway
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml \
+            run --rm e2e verify
+      - name: Compose diagnostics
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs --no-color
+      - name: Compose cleanup
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml down --volumes

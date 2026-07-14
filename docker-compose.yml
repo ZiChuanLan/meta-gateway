@@ -1,19 +1,49 @@
-version: "3.9"
-
 services:
   meta-gateway:
     build: .
+    init: true
     ports:
       - "4100:4100"
     environment:
       HTTP_ADDR: ":4100"
       DATA_DIR: /data
-      ADMIN_TOKEN: "${ADMIN_TOKEN:-dev-admin-token}"
-      MASTER_KEY: "${MASTER_KEY:-dev-master-key-at-least-32-chars!!}"
+      BACKUP_DIR: /data/backups
+      ADMIN_TOKEN: "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
+      MASTER_KEY: "${MASTER_KEY:?MASTER_KEY is required}"
+      METRICS_TOKEN: "${METRICS_TOKEN:?METRICS_TOKEN is required}"
+      TRUSTED_SCRAPER_CIDRS: "${TRUSTED_SCRAPER_CIDRS:-}"
+      OUTBOUND_ALLOW_HOSTS: "${OUTBOUND_ALLOW_HOSTS:-}"
+      OUTBOUND_ALLOW_CIDRS: "${OUTBOUND_ALLOW_CIDRS:-}"
+      OUTBOUND_CONNECT_TIMEOUT_SECONDS: "${OUTBOUND_CONNECT_TIMEOUT_SECONDS:-10}"
+      OUTBOUND_TLS_TIMEOUT_SECONDS: "${OUTBOUND_TLS_TIMEOUT_SECONDS:-10}"
+      OUTBOUND_HEADER_TIMEOUT_SECONDS: "${OUTBOUND_HEADER_TIMEOUT_SECONDS:-60}"
+      TRUSTED_PROXY_CIDRS: "${TRUSTED_PROXY_CIDRS:-}"
+      RELAY_RATE_PER_MINUTE: "${RELAY_RATE_PER_MINUTE:-600}"
+      RELAY_RATE_BURST: "${RELAY_RATE_BURST:-100}"
+      ADMIN_RATE_PER_MINUTE: "${ADMIN_RATE_PER_MINUTE:-300}"
+      ADMIN_RATE_BURST: "${ADMIN_RATE_BURST:-50}"
+      MAX_HEADER_BYTES: "${MAX_HEADER_BYTES:-1048576}"
+      MAX_ADMIN_BODY_BYTES: "${MAX_ADMIN_BODY_BYTES:-2097152}"
+      SERVER_READ_HEADER_TIMEOUT_SECONDS: "${SERVER_READ_HEADER_TIMEOUT_SECONDS:-10}"
+      SERVER_READ_TIMEOUT_SECONDS: "${SERVER_READ_TIMEOUT_SECONDS:-30}"
+      SERVER_IDLE_TIMEOUT_SECONDS: "${SERVER_IDLE_TIMEOUT_SECONDS:-120}"
+      SERVER_SHUTDOWN_TIMEOUT_SECONDS: "${SERVER_SHUTDOWN_TIMEOUT_SECONDS:-15}"
+      READINESS_TIMEOUT_SECONDS: "${READINESS_TIMEOUT_SECONDS:-2}"
+      AUDIT_RETENTION_DAYS: "${AUDIT_RETENTION_DAYS:-90}"
+      AUDIT_RETENTION_ROWS: "${AUDIT_RETENTION_ROWS:-100000}"
+      RETRY_TIMES: "${RETRY_TIMES:-2}"
+      COOLDOWN_SECONDS: "${COOLDOWN_SECONDS:-30}"
       CHECKIN_ENABLED: "${CHECKIN_ENABLED:-false}"
       CHECKIN_CRON: "${CHECKIN_CRON:-0 8 * * *}"
     volumes:
       - meta-gateway-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:4100/readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    stop_grace_period: 20s
     restart: unless-stopped
 
 volumes:

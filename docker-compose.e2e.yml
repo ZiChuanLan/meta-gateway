@@ -1,0 +1,39 @@
+services:
+  meta-gateway:
+    environment:
+      OUTBOUND_ALLOW_HOSTS: mock-upstream
+    depends_on:
+      mock-upstream:
+        condition: service_healthy
+
+  mock-upstream:
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
+    entrypoint: ["e2e-mock"]
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "e2e-mock", "healthcheck"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
+    environment:
+      GATEWAY_URL: http://meta-gateway:4100
+      ADMIN_TOKEN: "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
+      METRICS_TOKEN: "${METRICS_TOKEN:?METRICS_TOKEN is required}"
+      UPSTREAM_URL: http://mock-upstream:8080
+      STATE_FILE: /state/state.json
+    depends_on:
+      meta-gateway:
+        condition: service_healthy
+    volumes:
+      - meta-gateway-e2e-state:/state
+
+volumes:
+  meta-gateway-e2e-state:

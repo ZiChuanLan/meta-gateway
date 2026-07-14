@@ -1,14 +1,17 @@
-# Stage 1: Build
 FROM golang:1.26-alpine AS builder
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /bin/meta-gateway ./cmd/server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bin/meta-gateway ./cmd/server
 
-# Stage 2: Runtime
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates curl \
+    && addgroup -S -g 10001 metagateway \
+    && adduser -S -D -H -u 10001 -G metagateway metagateway \
+    && install -d -o metagateway -g metagateway -m 0700 /data /data/backups
 COPY --from=builder /bin/meta-gateway /usr/local/bin/meta-gateway
+USER metagateway:metagateway
+WORKDIR /data
 EXPOSE 4100
 ENTRYPOINT ["meta-gateway"]
