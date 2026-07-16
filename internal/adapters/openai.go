@@ -115,12 +115,31 @@ func (a *OpenAIModelAdapter) ListModels(ctx context.Context, baseURL, apiKey str
 }
 
 func modelEndpoint(baseURL string) (string, error) {
+	return JoinOpenAIPath(baseURL, "models")
+}
+
+// JoinOpenAIPath joins an OpenAI-compatible base URL with a path under /v1.
+// If the base already ends with /v1, that segment is not duplicated.
+// path should be relative to /v1, e.g. "models" or "chat/completions".
+func JoinOpenAIPath(baseURL, path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "", errors.New("invalid base URL")
 	}
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/v1/models"
+	rel := strings.Trim(strings.TrimSpace(path), "/")
+	if rel == "" {
+		return "", errors.New("invalid base URL")
+	}
+	basePath := strings.TrimRight(parsed.Path, "/")
+	lower := strings.ToLower(basePath)
+	if lower == "/v1" || strings.HasSuffix(lower, "/v1") {
+		parsed.Path = basePath + "/" + rel
+	} else if basePath == "" {
+		parsed.Path = "/v1/" + rel
+	} else {
+		parsed.Path = basePath + "/v1/" + rel
+	}
 	return parsed.String(), nil
 }

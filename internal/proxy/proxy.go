@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/relay"
@@ -73,7 +74,10 @@ func (s *Service) ChatCompletions(ctx context.Context, req Request) *relay.Resul
 			return &relay.Result{Err: ErrCredential}
 		}
 
-		upstreamURL := strings.TrimRight(candidate.Channel.BaseURL, "/") + "/v1/chat/completions"
+		upstreamURL, err := s.resolveChatURL(candidate.Channel)
+		if err != nil {
+			return &relay.Result{Err: err}
+		}
 		result := s.relay.ChatCompletionsContext(ctx, upstreamURL, apiKey, req.Body, req.Stream)
 		category, retryable := classify(result)
 		s.recordAttempt(req, candidate, attempt+1, result, category)
@@ -127,6 +131,25 @@ func (s *Service) resolveAPIKey(channel domain.Channel) (string, error) {
 		return "", ErrCredential
 	}
 	return string(plaintext), nil
+}
+
+func (s *Service) resolveChatURL(channel domain.Channel) (string, error) {
+	baseURL := strings.TrimSpace(channel.BaseURL)
+	if baseURL == "" {
+		if channel.SiteID == nil {
+			return "", fmt.Errorf("proxy: channel base url unavailable")
+		}
+		site, err := s.db.Site.GetByID(*channel.SiteID)
+		if err != nil || site == nil || strings.TrimSpace(site.BaseURL) == "" {
+			return "", fmt.Errorf("proxy: channel base url unavailable")
+		}
+		baseURL = site.BaseURL
+	}
+	upstreamURL, err := adapters.JoinOpenAIPath(baseURL, "chat/completions")
+	if err != nil {
+		return "", fmt.Errorf("proxy: invalid base url")
+	}
+	return upstreamURL, nil
 }
 
 func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string) {

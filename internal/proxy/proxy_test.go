@@ -111,6 +111,54 @@ func TestRetryFallsBackAndRecordsCooldown(t *testing.T) {
 	}
 }
 
+func TestChatUsesSiteBaseWhenChannelBaseEmpty(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusOK, `{"ok":true}`)}}
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, err := crypto.New("proxy-test-master-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := enc.Encrypt([]byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	siteID, err := db.Site.Create(&domain.Site{Name: "site", BaseURL: "https://site.example/v1", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentialID, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(secret), Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelID, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credentialID, Name: "ch", BaseURL: "", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "model", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Priority: 10, Weight: 100, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, firstRandom{})
+	service := New(selector, upstream, db, enc, 0, time.Minute)
+	service.now = func() time.Time { return now }
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-site-base", Model: "model", Body: []byte(`{}`)})
+	defer result.Body.Close()
+	if result.Err != nil || result.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(upstream.calls) != 1 || upstream.calls[0] != "https://site.example/v1/chat/completions" {
+		t.Fatalf("unexpected upstream URL: %#v", upstream.calls)
+	}
+}
+
 func TestNonRetryableResponseStopsImmediately(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusBadRequest, `{"error":"bad request"}`)}}
 	service, db, highMember, _ := setupProxy(t, upstream)

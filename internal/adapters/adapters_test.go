@@ -13,6 +13,30 @@ import (
 	"github.com/lan/meta-gateway/internal/adapters"
 )
 
+func TestJoinOpenAIPathDoesNotDuplicateV1(t *testing.T) {
+	tests := []struct {
+		base string
+		path string
+		want string
+	}{
+		{base: "https://api.example.com", path: "models", want: "https://api.example.com/v1/models"},
+		{base: "https://api.example.com/", path: "models", want: "https://api.example.com/v1/models"},
+		{base: "https://api.example.com/v1", path: "models", want: "https://api.example.com/v1/models"},
+		{base: "https://api.example.com/v1/", path: "chat/completions", want: "https://api.example.com/v1/chat/completions"},
+		{base: "https://api.example.com/prefix", path: "models", want: "https://api.example.com/prefix/v1/models"},
+		{base: "https://api.example.com/prefix/v1", path: "models", want: "https://api.example.com/prefix/v1/models"},
+	}
+	for _, tc := range tests {
+		got, err := adapters.JoinOpenAIPath(tc.base, tc.path)
+		if err != nil {
+			t.Fatalf("base=%q path=%q err=%v", tc.base, tc.path, err)
+		}
+		if got != tc.want {
+			t.Fatalf("base=%q path=%q got=%q want=%q", tc.base, tc.path, got, tc.want)
+		}
+	}
+}
+
 func TestOpenAIModelAdapterNormalizesAndAuthenticates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/prefix/v1/models" || r.Header.Get("Authorization") != "Bearer very-secret" {

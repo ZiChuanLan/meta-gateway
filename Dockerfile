@@ -1,5 +1,6 @@
 FROM node:24-alpine AS web-builder
 WORKDIR /build/web
+ENV npm_config_registry=https://registry.npmmirror.com
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
@@ -7,6 +8,8 @@ RUN npm run build
 
 FROM golang:1.26-alpine AS builder
 WORKDIR /build
+ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
+ENV GOSUMDB=sum.golang.google.cn
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
