@@ -22,6 +22,9 @@ type DB struct {
 	Exchange        *ExchangeStore
 	AuditEvent      *AuditEventStore
 	BackupRecord    *BackupRecordStore
+	Plugin          *PluginStore
+	WebDAVSettings  *WebDAVSettingsStore
+	RuntimeSettings *RuntimeSettingsStore
 }
 
 // Open opens (or creates) the SQLite database at the given path and runs migrations.
@@ -54,6 +57,9 @@ func Open(dataDir string) (*DB, error) {
 		Exchange:        &ExchangeStore{db: sqldb},
 		AuditEvent:      &AuditEventStore{db: sqldb},
 		BackupRecord:    &BackupRecordStore{db: sqldb},
+		Plugin:          &PluginStore{db: sqldb},
+		WebDAVSettings:  &WebDAVSettingsStore{db: sqldb},
+		RuntimeSettings: &RuntimeSettingsStore{db: sqldb},
 	}
 	return db, nil
 }

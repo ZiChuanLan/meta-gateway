@@ -151,6 +151,73 @@ func (s *RouteMemberStore) ListByRoute(routeID int64) ([]domain.RouteMember, err
 	return result, rows.Err()
 }
 
+// ListRouteOverviews returns all routes and enriched members for the admin matrix.
+func (s *RouteMemberStore) ListRouteOverviews() ([]domain.RouteOverview, error) {
+	routes, err := (&RouteStore{db: s.db}).List()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.RouteOverview, 0, len(routes))
+	for _, route := range routes {
+		members, memberErr := s.listCandidatesByRoute(route.ID)
+		if memberErr != nil {
+			return nil, memberErr
+		}
+		result = append(result, domain.RouteOverview{Route: route, Members: members})
+	}
+	return result, nil
+}
+
+func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.RoutingCandidate, error) {
+	rows, err := s.db.Query(`SELECT
+		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
+		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
+		c.priority, c.weight, c.status, c.type_hint, c.created_at, c.updated_at,
+		CASE WHEN (
+			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
+			AND cred.site_id = c.site_id AND lower(cred.kind) = 'api_key'
+		) OR EXISTS (
+			SELECT 1 FROM credentials pool_cred
+			WHERE pool_cred.site_id = c.site_id
+			  AND pool_cred.status = 'enabled'
+			  AND pool_cred.secret_enc <> ''
+			  AND lower(pool_cred.kind) = 'api_key'
+		) THEN 1 ELSE 0 END
+		FROM route_members rm JOIN channels c ON c.id = rm.channel_id
+		LEFT JOIN credentials cred ON cred.id = c.credential_id
+		WHERE rm.route_id = ? ORDER BY rm.priority DESC, rm.weight DESC, rm.id`, routeID)
+	if err != nil {
+		return nil, fmt.Errorf("route overview members: %w", err)
+	}
+	defer rows.Close()
+	var result []domain.RoutingCandidate
+	for rows.Next() {
+		var candidate domain.RoutingCandidate
+		var enabled, auto, manual, credentialUsable int
+		if err := rows.Scan(
+			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
+			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual,
+			&candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
+			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
+			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
+			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
+			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
+			&candidate.Channel.Status, &candidate.Channel.TypeHint,
+			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
+			&credentialUsable,
+		); err != nil {
+			return nil, fmt.Errorf("route overview member scan: %w", err)
+		}
+		candidate.Member.Enabled = enabled != 0
+		candidate.Member.Auto = auto != 0
+		candidate.Member.ManualOverride = manual != 0
+		candidate.CredentialUsable = credentialUsable != 0
+		result = append(result, candidate)
+	}
+	return result, rows.Err()
+}
+
 // RoutingCandidates loads all member and channel facts for an exact enabled route.
 func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []domain.RoutingCandidate, error) {
 	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
@@ -166,7 +233,16 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
 		c.priority, c.weight, c.status, c.type_hint, c.created_at, c.updated_at,
-		CASE WHEN cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> '' THEN 1 ELSE 0 END
+		CASE WHEN (
+			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
+			AND lower(cred.kind) = 'api_key'
+		) OR EXISTS (
+			SELECT 1 FROM credentials pool_cred
+			WHERE pool_cred.site_id = c.site_id
+			  AND pool_cred.status = 'enabled'
+			  AND pool_cred.secret_enc <> ''
+			  AND lower(pool_cred.kind) = 'api_key'
+		) THEN 1 ELSE 0 END
 		FROM route_members rm JOIN channels c ON c.id = rm.channel_id
 		LEFT JOIN credentials cred ON cred.id = c.credential_id
 		WHERE rm.route_id = ? ORDER BY rm.priority DESC, rm.id`, route.ID)
@@ -202,10 +278,31 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 }
 
 func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.Duration, category string) error {
-	until := now.Add(cooldown).UTC().Format(time.RFC3339Nano)
-	_, err := s.db.Exec(`UPDATE route_members SET fail_count=fail_count+1, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`, until, category, id)
+	tx, err := s.db.Begin()
 	if err != nil {
+		return fmt.Errorf("route member record failure begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var currentFailures int
+	if err = tx.QueryRow(`SELECT fail_count FROM route_members WHERE id=?`, id).Scan(&currentFailures); err != nil {
+		return fmt.Errorf("route member record failure lookup: %w", err)
+	}
+	nextFailures := currentFailures + 1
+	backoff := cooldown
+	for step := 1; step < nextFailures && step < 6; step++ {
+		backoff *= 2
+	}
+	const maximumBackoff = 30 * time.Minute
+	if backoff > maximumBackoff {
+		backoff = maximumBackoff
+	}
+	until := now.Add(backoff).UTC().Format(time.RFC3339Nano)
+	if _, err = tx.Exec(`UPDATE route_members SET fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
+		nextFailures, until, category, id); err != nil {
 		return fmt.Errorf("route member record failure: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("route member record failure commit: %w", err)
 	}
 	return nil
 }
@@ -214,6 +311,22 @@ func (s *RouteMemberStore) RecordSuccess(id int64) error {
 	_, err := s.db.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
 	if err != nil {
 		return fmt.Errorf("route member record success: %w", err)
+	}
+	return nil
+}
+
+// ClearHealth manually returns a route member to the eligible pool.
+func (s *RouteMemberStore) ClearHealth(id int64) error {
+	res, err := s.db.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
+	if err != nil {
+		return fmt.Errorf("route member clear health: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("route member clear health rows: %w", err)
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }

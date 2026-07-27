@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
@@ -10,6 +11,20 @@ import (
 // ProxyLogStore provides insert and query operations for proxy logs.
 type ProxyLogStore struct {
 	db *sql.DB
+}
+
+// ProxyLogFilter selects a page of proxy logs for Admin list views.
+// Zero-value fields are ignored. SiteID matches via channels.site_id.
+// Status, when set, matches exactly. FailedOnly selects status >= 400
+// and is ignored when Status is set.
+type ProxyLogFilter struct {
+	SiteID     *int64
+	ChannelID  *int64
+	Model      string
+	Status     *int
+	FailedOnly bool
+	BeforeID   *int64
+	Limit      int
 }
 
 // Insert writes a proxy log entry.
@@ -22,12 +37,63 @@ func (s *ProxyLogStore) Insert(log *domain.ProxyLog) (int64, error) {
 	return res.LastInsertId()
 }
 
-// List returns proxy logs ordered by creation time descending.
+// List returns the newest proxy logs up to limit (legacy unfiltered path).
 func (s *ProxyLogStore) List(limit int) ([]domain.ProxyLog, error) {
-	if limit <= 0 || limit > 1000 {
+	return s.ListFilter(ProxyLogFilter{Limit: limit})
+}
+
+// ListFilter returns proxy logs ordered by id descending with optional filters.
+func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) {
+	limit := f.Limit
+	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.Query(`SELECT id, request_id, channel_id, model, status, latency_ms, attempt, error_brief, created_at FROM proxy_logs ORDER BY id DESC LIMIT ?`, limit)
+	if limit > 500 {
+		limit = 500
+	}
+
+	where := []string{"1=1"}
+	args := []any{}
+	needsChannelJoin := f.SiteID != nil
+
+	if f.SiteID != nil {
+		where = append(where, "c.site_id = ?")
+		args = append(args, *f.SiteID)
+	}
+	if f.ChannelID != nil {
+		where = append(where, "pl.channel_id = ?")
+		args = append(args, *f.ChannelID)
+	}
+	if model := strings.TrimSpace(f.Model); model != "" {
+		where = append(where, "pl.model = ?")
+		args = append(args, model)
+	}
+	if f.Status != nil {
+		where = append(where, "pl.status = ?")
+		args = append(args, *f.Status)
+	} else if f.FailedOnly {
+		where = append(where, "pl.status >= 400")
+	}
+	if f.BeforeID != nil {
+		where = append(where, "pl.id < ?")
+		args = append(args, *f.BeforeID)
+	}
+	args = append(args, limit)
+
+	from := "proxy_logs pl"
+	if needsChannelJoin {
+		// LEFT JOIN so orphan channel_id rows remain visible when not site-filtered;
+		// site filter still requires a matching channels.site_id row.
+		from = "proxy_logs pl INNER JOIN channels c ON c.id = pl.channel_id"
+	}
+
+	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief, pl.created_at
+FROM ` + from + `
+WHERE ` + strings.Join(where, " AND ") + `
+ORDER BY pl.id DESC
+LIMIT ?`
+
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("proxylog list: %w", err)
 	}

@@ -16,6 +16,7 @@ func TestParseSupportedShapes(t *testing.T) {
 		{"new-api-array", `[{"name":"main","base_url":"https://api.example.com","key":"secret","models":"b,a","group":"default","priority":0,"weight":100,"status":1,"type":"new-api"}]`},
 		{"new-api-wrapper", `{"channels":[{"name":"main","baseUrl":"https://api.example.com","apiKey":"secret"}]}`},
 		{"aah-v2", `{"version":"2.0","accounts":[],"channelConfigs":{},"apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}]}}`},
+		{"aah-v2-accounts-fallback", `{"version":"2.0","timestamp":1,"accounts":{"accounts":[{"id":"a1","site_name":"WONG","site_url":"https://wzw.pp.ua","site_type":"new-api","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"site-secret","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]},"apiCredentialProfiles":{"version":3,"profiles":[],"lastUpdated":1}}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -23,8 +24,27 @@ func TestParseSupportedShapes(t *testing.T) {
 			if err != nil || len(items) != 1 {
 				t.Fatalf("items=%+v err=%v", items, err)
 			}
-			if items[0].BaseURL != "https://api.example.com" && items[0].BaseURL != "https://api.example.com/v1" {
-				t.Fatalf("base URL not normalized: %q", items[0].BaseURL)
+			switch test.name {
+			case "aah-v2-accounts-fallback":
+				if items[0].BaseURL != "https://wzw.pp.ua" {
+					t.Fatalf("base URL not normalized: %q", items[0].BaseURL)
+				}
+				if items[0].APIKey != "site-secret" || items[0].Name != "WONG" {
+					t.Fatalf("account fields: %+v", items[0])
+				}
+				if items[0].CredentialKind != "access_token" {
+					t.Fatalf("kind=%q", items[0].CredentialKind)
+				}
+				if items[0].MetaJSON != `{"platform_user_id":1}` {
+					t.Fatalf("meta=%q", items[0].MetaJSON)
+				}
+				if !items[0].CheckinEnabled {
+					t.Fatal("expected checkin enabled")
+				}
+			default:
+				if items[0].BaseURL != "https://api.example.com" && items[0].BaseURL != "https://api.example.com/v1" {
+					t.Fatalf("base URL not normalized: %q", items[0].BaseURL)
+				}
 			}
 			if test.name == "canonical" && (len(items[0].Models) != 2 || items[0].Models[0] != "a") {
 				t.Fatalf("models not normalized: %+v", items[0].Models)
@@ -46,6 +66,7 @@ func TestParseRejectsUnsafeOrAmbiguousDocuments(t *testing.T) {
 		`[{"name":"main","base_url":"https://example.com","key":"secret","group":"a","groups":"b"}]`,
 		`[{"name":"main","base_url":"https://example.com","key":"secret","type":42}]`,
 		`[]`,
+		`{"version":"2.0","accounts":{"accounts":[]},"apiCredentialProfiles":{"version":3,"profiles":[]}}`,
 		`{} trailing`,
 	}
 	for _, body := range tests {

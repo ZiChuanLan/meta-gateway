@@ -116,3 +116,49 @@ func contains(value, substring string) bool {
 	}
 	return false
 }
+
+func TestExchangeImportReattachesOrphanFingerprint(t *testing.T) {
+	db := openTestDB(t)
+	// First import creates site+credential+channel under fingerprint.
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{exchangeItem("user-token", "fp-orphan")})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	channelID := first.CreatedChannelIDs[0]
+	channel, _ := db.Channel.GetByID(channelID)
+	if channel == nil || channel.CredentialID == nil {
+		t.Fatal("missing channel credential")
+	}
+	userCredID := *channel.CredentialID
+	// Simulate sync-keys: new api_key credential, rebind channel away from user token.
+	siteID := *channel.SiteID
+	apiKeyID, err := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "api_key", SecretEnc: []byte("v1:sk"), Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel.CredentialID = &apiKeyID
+	if err := db.Channel.Update(channel); err != nil {
+		t.Fatal(err)
+	}
+	// User credential still has import_fingerprint but zero channel references.
+	// Re-import same fingerprint must update, not identity_conflict.
+	second, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{exchangeItem("user-token-again", "fp-orphan")})
+	if err != nil {
+		t.Fatalf("reimport orphan fingerprint: %v", err)
+	}
+	if len(second.UpdatedChannelIDs) != 1 || second.UpdatedChannelIDs[0] != channelID {
+		t.Fatalf("expected update of original channel, got %+v", second)
+	}
+	// Channel should still use api_key for relay when it was rebound.
+	after, _ := db.Channel.GetByID(channelID)
+	if after == nil || after.CredentialID == nil || *after.CredentialID != apiKeyID {
+		t.Fatalf("relay api_key binding lost: %+v want apiKeyID=%d", after, apiKeyID)
+	}
+	// User credential still exists and was updated (name path goes through updateExchangeAsset on channel).
+	userCred, _ := db.Credential.GetByID(userCredID)
+	if userCred == nil || userCred.ImportFingerprint != "fp-orphan" {
+		t.Fatalf("user credential fingerprint lost: %+v", userCred)
+	}
+}

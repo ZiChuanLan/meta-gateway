@@ -5,3 +5,12 @@ data/
 *.db-*
 web/node_modules/
 web/coverage/
+
+# Local binaries / agent scratch
+/server
+.pi-subagents/
+.tools/
+*.exe
+
+# Accidental root lockfile (frontend lock lives under web/)
+/package-lock.json

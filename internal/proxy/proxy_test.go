@@ -111,6 +111,88 @@ func TestRetryFallsBackAndRecordsCooldown(t *testing.T) {
 	}
 }
 
+func TestKeyPoolFailsOverBeforeNextChannel(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusServiceUnavailable, `{"error":"key1 busy"}`),
+		response(http.StatusOK, `{"ok":true}`),
+	}}
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, err := crypto.New("proxy-key-pool-master")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretOne, err := enc.Encrypt([]byte("sk-first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretTwo, err := enc.Encrypt([]byte("sk-second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	siteID, err := db.Site.Create(&domain.Site{Name: "site", BaseURL: "https://pool.example", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstKeyID, err := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "api_key", SecretEnc: []byte(secretOne), Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "api_key", SecretEnc: []byte(secretTwo), Status: domain.StatusEnabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	channelID, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteID, CredentialID: &firstKeyID, Name: "pooled", BaseURL: "", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "model", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: channelID, Priority: 10, Weight: 100, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 27, 0, 0, 0, 0, time.UTC)
+	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, firstRandom{})
+	service := New(selector, upstream, db, enc, 0, time.Minute)
+	service.now = func() time.Time { return now }
+
+	result := service.ChatCompletions(context.Background(), Request{
+		RequestID: "req-pool", Model: "model", Body: []byte(`{}`),
+	})
+	if result.Err != nil || result.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	defer result.Body.Close()
+	if len(upstream.calls) != 2 {
+		t.Fatalf("expected two key attempts on same channel, got %#v", upstream.calls)
+	}
+	for _, call := range upstream.calls {
+		if !strings.Contains(call, "pool.example") {
+			t.Fatalf("unexpected upstream host: %#v", upstream.calls)
+		}
+	}
+	logs, err := db.ProxyLog.List(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the successful (or final) key attempt is recorded for the channel attempt.
+	if len(logs) != 1 || logs[0].Status != http.StatusOK {
+		t.Fatalf("logs=%+v", logs)
+	}
+}
+
 func TestChatUsesSiteBaseWhenChannelBaseEmpty(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusOK, `{"ok":true}`)}}
 	db, err := store.Open(t.TempDir())

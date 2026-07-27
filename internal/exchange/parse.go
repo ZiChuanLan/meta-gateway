@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
@@ -50,11 +51,21 @@ func parseObject(data []byte) ([]Item, error) {
 	_, channels := fields["channels"]
 	_, listData := fields["data"]
 	_, profiles := fields["apiCredentialProfiles"]
+	_, accounts := fields["accounts"]
 	if canonical {
-		if channels || listData || profiles {
+		if channels || listData || profiles || accounts {
 			return nil, formatError(ErrorUnsupported)
 		}
 		return parseCanonical(data)
+	}
+	// All API Hub V2 backups always declare version "2.0". Credentials may live in
+	// apiCredentialProfiles.profiles (API keys) or accounts[].account_info.access_token
+	// (site session tokens). Prefer profiles when non-empty; otherwise fall back.
+	if isAAHV2Document(fields) {
+		if channels || listData {
+			return nil, formatError(ErrorUnsupported)
+		}
+		return parseAAHV2(fields)
 	}
 	shapeCount := 0
 	if channels {
@@ -63,19 +74,27 @@ func parseObject(data []byte) ([]Item, error) {
 	if listData {
 		shapeCount++
 	}
-	if profiles {
-		shapeCount++
-	}
 	if shapeCount != 1 {
 		return nil, formatError(ErrorUnsupported)
 	}
 	if channels {
 		return parseNewAPIList(fields["channels"])
 	}
-	if listData {
-		return parseNewAPIList(fields["data"])
+	return parseNewAPIList(fields["data"])
+}
+
+func isAAHV2Document(fields map[string]json.RawMessage) bool {
+	raw, ok := fields["version"]
+	if !ok {
+		return false
 	}
-	return parseAAHV2(fields)
+	var version string
+	if json.Unmarshal(raw, &version) != nil || version != "2.0" {
+		return false
+	}
+	_, hasProfiles := fields["apiCredentialProfiles"]
+	_, hasAccounts := fields["accounts"]
+	return hasProfiles || hasAccounts
 }
 
 func parseCanonical(data []byte) ([]Item, error) {
@@ -193,29 +212,185 @@ func parseAAHV2(fields map[string]json.RawMessage) ([]Item, error) {
 	if raw, ok := fields["version"]; !ok || json.Unmarshal(raw, &version) != nil || version != "2.0" {
 		return nil, formatError(ErrorUnsupported)
 	}
-	var container struct {
-		Profiles []map[string]json.RawMessage `json:"profiles"`
+
+	// 1) Preferred: explicit API credential profiles (gateway keys).
+	if raw, ok := fields["apiCredentialProfiles"]; ok {
+		var container struct {
+			Profiles []map[string]json.RawMessage `json:"profiles"`
+		}
+		if err := json.Unmarshal(raw, &container); err != nil {
+			return nil, formatError(ErrorValidation)
+		}
+		if container.Profiles != nil && len(container.Profiles) > 0 {
+			items := make([]Item, 0, len(container.Profiles))
+			for _, profile := range container.Profiles {
+				item, err := parseAAHProfile(profile)
+				if err != nil {
+					return nil, err
+				}
+				items = append(items, item)
+			}
+			return items, nil
+		}
 	}
-	if err := json.Unmarshal(fields["apiCredentialProfiles"], &container); err != nil || container.Profiles == nil {
+
+	// 2) Fallback: site accounts with access_token (common full AAH backup).
+	// Real exports often ship empty profiles while accounts hold usable tokens.
+	if raw, ok := fields["accounts"]; ok {
+		items, err := parseAAHAccounts(raw)
+		if err != nil {
+			return nil, err
+		}
+		if len(items) > 0 {
+			return items, nil
+		}
+	}
+
+	return nil, formatError(ErrorValidation)
+}
+
+func parseAAHProfile(profile map[string]json.RawMessage) (Item, error) {
+	name, nameOK := stringAlias(profile, "name")
+	baseURL, urlOK := stringAlias(profile, "baseUrl", "base_url")
+	key, keyOK := stringAlias(profile, "apiKey", "api_key")
+	if !nameOK || !urlOK || !keyOK {
+		return Item{}, formatError(ErrorValidation)
+	}
+	typeHint, typeOK := stringAlias(profile, "apiType")
+	if !typeOK && hasAlias(profile, "apiType") {
+		return Item{}, formatError(ErrorValidation)
+	}
+	return Item{
+		Name: name, BaseURL: baseURL, APIKey: key,
+		Models: []string{}, Group: "default", Priority: 0, Weight: 100,
+		SiteTypeHint: typeHint, Status: domain.StatusEnabled,
+	}, nil
+}
+
+func parseAAHAccounts(raw json.RawMessage) ([]Item, error) {
+	// accounts may be a list or { "accounts": [...] } container from AAH V2.
+	var asList []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &asList); err == nil && asList != nil {
+		return parseAAHAccountRecords(asList)
+	}
+	var container struct {
+		Accounts []map[string]json.RawMessage `json:"accounts"`
+	}
+	if err := json.Unmarshal(raw, &container); err != nil || container.Accounts == nil {
 		return nil, formatError(ErrorValidation)
 	}
-	items := make([]Item, 0, len(container.Profiles))
-	for _, profile := range container.Profiles {
-		name, nameOK := stringAlias(profile, "name")
-		baseURL, urlOK := stringAlias(profile, "baseUrl", "base_url")
-		key, keyOK := stringAlias(profile, "apiKey", "api_key")
-		if !nameOK || !urlOK || !keyOK {
+	return parseAAHAccountRecords(container.Accounts)
+}
+
+func parseAAHAccountRecords(records []map[string]json.RawMessage) ([]Item, error) {
+	items := make([]Item, 0, len(records))
+	for _, record := range records {
+		// Skip explicitly disabled sites; they should not become relay channels.
+		if disabled, ok := boolAlias(record, "disabled"); ok && disabled {
+			continue
+		}
+		name, nameOK := stringAlias(record, "site_name", "name")
+		baseURL, urlOK := stringAlias(record, "site_url", "baseUrl", "base_url")
+		if !nameOK || !urlOK {
 			return nil, formatError(ErrorValidation)
 		}
-		typeHint, typeOK := stringAlias(profile, "apiType")
-		if !typeOK && hasAlias(profile, "apiType") {
+
+		key, keyOK := "", false
+		platformUserID := ""
+		usedAccessToken := false
+		if infoRaw, ok := record["account_info"]; ok {
+			var info map[string]json.RawMessage
+			if json.Unmarshal(infoRaw, &info) != nil {
+				return nil, formatError(ErrorValidation)
+			}
+			if k, ok := stringAlias(info, "access_token"); ok && strings.TrimSpace(k) != "" {
+				key, keyOK, usedAccessToken = k, true, true
+			} else if k, ok := stringAlias(info, "apiKey", "api_key", "token"); ok {
+				key, keyOK = k, true
+			}
+			if id, ok := stringAlias(info, "id"); ok {
+				platformUserID = strings.TrimSpace(id)
+			}
+		}
+		if !keyOK {
+			if k, ok := stringAlias(record, "access_token"); ok && strings.TrimSpace(k) != "" {
+				key, keyOK, usedAccessToken = k, true, true
+			} else {
+				key, keyOK = stringAlias(record, "apiKey", "api_key", "key")
+			}
+		}
+		if !keyOK || strings.TrimSpace(key) == "" {
 			return nil, formatError(ErrorValidation)
 		}
-		items = append(items, Item{Name: name, BaseURL: baseURL, APIKey: key,
+
+		typeHint, typeOK := stringAlias(record, "site_type", "apiType", "type")
+		if !typeOK && hasAlias(record, "site_type", "apiType", "type") {
+			return nil, formatError(ErrorValidation)
+		}
+
+		// AAH access_token is a user credential for /api/user/* and check-in.
+		kind := "api_key"
+		if usedAccessToken {
+			kind = "access_token"
+		}
+		if authType, ok := stringAlias(record, "authType", "auth_type"); ok {
+			switch strings.ToLower(strings.TrimSpace(authType)) {
+			case "access_token", "session":
+				kind = strings.ToLower(strings.TrimSpace(authType))
+			}
+		}
+
+		metaJSON := ""
+		if platformUserID != "" {
+			metaJSON = `{"platform_user_id":` + jsonNumberOrString(platformUserID) + `}`
+		}
+
+		checkinEnabled := false
+		if checkInRaw, ok := record["checkIn"]; ok {
+			var checkIn map[string]json.RawMessage
+			if json.Unmarshal(checkInRaw, &checkIn) == nil {
+				if enabled, ok := boolAlias(checkIn, "autoCheckInEnabled"); ok {
+					checkinEnabled = enabled
+				}
+			}
+		} else if usedAccessToken {
+			// No checkIn block: still mark access tokens as check-in capable by default.
+			checkinEnabled = true
+		}
+
+		items = append(items, Item{
+			Name: name, BaseURL: baseURL, APIKey: key,
 			Models: []string{}, Group: "default", Priority: 0, Weight: 100,
-			SiteTypeHint: typeHint, Status: domain.StatusEnabled})
+			SiteTypeHint: typeHint, Status: domain.StatusEnabled,
+			CredentialKind: kind, MetaJSON: metaJSON, CheckinEnabled: checkinEnabled,
+		})
 	}
 	return items, nil
+}
+
+// jsonNumberOrString encodes platform user ids that may be numeric strings.
+func jsonNumberOrString(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "0"
+	}
+	if _, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return raw
+	}
+	b, _ := json.Marshal(raw)
+	return string(b)
+}
+
+func boolAlias(record map[string]json.RawMessage, name string) (bool, bool) {
+	raw, ok := record[name]
+	if !ok {
+		return false, false
+	}
+	var value bool
+	if json.Unmarshal(raw, &value) != nil {
+		return false, false
+	}
+	return value, true
 }
 
 func normalizeItems(items []Item) ([]Item, error) {
@@ -325,15 +500,28 @@ func normalizeGroup(value string) string {
 }
 
 func normalizeType(value string) string {
+	// Preserve brand labels when possible for UI, but collapse known aliases.
+	// Discovery resolves brands via adapters.CanonicalType / Registry.Resolve.
 	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, "_", "-")
 	switch value {
-	case "", "openai", "openaicompat", "openai_compatible", "openai-compatible":
+	case "", "openai", "openaicompat", "openai-compatible", "openai-compat":
 		return "openai-compatible"
-	case "newapi", "new_api", "new-api":
+	case "newapi", "new-api":
 		return "new-api"
-	case "oneapi", "one_api", "one-api":
+	case "oneapi", "one-api":
 		return "one-api"
+	case "voapi":
+		return "voapi"
+	case "super-api", "superapi":
+		return "super-api"
+	case "rix-api", "rixapi":
+		return "rix-api"
+	case "neo-api", "neoapi":
+		return "neo-api"
 	default:
+		// Keep original brand id (anyrouter, axonhub, …) for operator visibility.
+		_ = adapters.CanonicalType(value)
 		return value
 	}
 }

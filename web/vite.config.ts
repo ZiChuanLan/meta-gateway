@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     port: 4173,
     proxy: {
-      '/admin': 'http://127.0.0.1:4100',
+      '/admin/': 'http://127.0.0.1:4100',
       '/healthz': 'http://127.0.0.1:4100',
       '/readyz': 'http://127.0.0.1:4100',
     },

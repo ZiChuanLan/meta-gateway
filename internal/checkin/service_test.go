@@ -55,7 +55,8 @@ func TestRunCredentialFailuresAreRedactedAndLogged(t *testing.T) {
 	}))
 	defer upstream.Close()
 	db, service, siteID := setupService(t, upstream.URL, "new-api")
-	credentialID := createCredential(t, db, siteID, "session", domain.StatusEnabled, true, "")
+	// Include platform_user_id so the run hits check-in (not the self-probe path).
+	credentialID := createCredential(t, db, siteID, "session", domain.StatusEnabled, true, `{"platform_user_id":7}`)
 	result, err := service.RunCredential(t.Context(), credentialID, checkin.SourceManual, false)
 	if err != nil || result.Status != checkin.StatusFailed || result.Category != string(adapters.ErrorStatus) {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -161,6 +162,11 @@ func TestRunCredentialConcurrentCollision(t *testing.T) {
 
 func TestRunAllOrdersAndContinuesAfterUpstreamFailure(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Self probe (user-id resolution) must succeed independently of check-in.
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/api/user/self") {
+			_, _ = io.WriteString(w, `{"success":true,"data":{"id":11,"username":"u"}}`)
+			return
+		}
 		if r.Header.Get("Authorization") == "Bearer fail-secret" {
 			w.WriteHeader(http.StatusBadGateway)
 			return
@@ -169,8 +175,9 @@ func TestRunAllOrdersAndContinuesAfterUpstreamFailure(t *testing.T) {
 	}))
 	defer upstream.Close()
 	db, service, siteID := setupService(t, upstream.URL, "new-api")
-	firstID := createCredentialWithSecret(t, db, siteID, "session", true, "fail-secret")
-	secondID := createCredentialWithSecret(t, db, siteID, "session", true, "session-secret")
+	// Pre-seed platform_user_id so the test focuses on check-in ordering, not self-probe.
+	firstID := createCredentialWithSecretMeta(t, db, siteID, "session", true, "fail-secret", `{"platform_user_id":11}`)
+	secondID := createCredentialWithSecretMeta(t, db, siteID, "session", true, "session-secret", `{"platform_user_id":11}`)
 	_ = createCredentialWithSecret(t, db, siteID, "api_key", true, "ignored-secret")
 
 	summary, err := service.RunAll(t.Context(), checkin.SourceScheduled)
@@ -215,15 +222,52 @@ func createCredential(t *testing.T, db *store.DB, siteID int64, kind, status str
 }
 
 func createCredentialWithSecret(t *testing.T, db *store.DB, siteID int64, kind string, enabled bool, plaintext string) int64 {
+	return createCredentialWithSecretMeta(t, db, siteID, kind, enabled, plaintext, "")
+}
+
+func createCredentialWithSecretMeta(t *testing.T, db *store.DB, siteID int64, kind string, enabled bool, plaintext, metadata string) int64 {
 	t.Helper()
 	enc, _ := crypto.New("checkin-test-key")
 	secret, err := enc.Encrypt([]byte(plaintext))
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: kind, SecretEnc: []byte(secret), Status: domain.StatusEnabled, CheckinEnabled: enabled})
+	id, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: kind, SecretEnc: []byte(secret), MetaJSON: metadata, Status: domain.StatusEnabled, CheckinEnabled: enabled})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return id
+}
+
+func TestRunCredentialResolvesPlatformUserIDFromSelf(t *testing.T) {
+	var checkinUser string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/api/user/self"):
+			_, _ = io.WriteString(w, `{"success":true,"data":{"id":99,"username":"bob"}}`)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/api/user/checkin"):
+			checkinUser = r.Header.Get("New-Api-User")
+			if r.Header.Get("Veloera-User") != "99" {
+				t.Errorf("expected fan-out Veloera-User=99 got %q", r.Header.Get("Veloera-User"))
+			}
+			_, _ = io.WriteString(w, `{"success":true,"data":{"reward":"1"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	db, service, siteID := setupService(t, upstream.URL, "new-api")
+	// No platform_user_id in meta — service should probe /api/user/self first.
+	credentialID := createCredential(t, db, siteID, "access_token", domain.StatusEnabled, true, "")
+	result, err := service.RunCredential(t.Context(), credentialID, checkin.SourceManual, false)
+	if err != nil || result.Status != checkin.StatusSuccess {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if checkinUser != "99" {
+		t.Fatalf("checkin user header=%q", checkinUser)
+	}
+	cred, err := db.Credential.GetByID(credentialID)
+	if err != nil || cred == nil || !strings.Contains(cred.MetaJSON, `"platform_user_id":99`) {
+		t.Fatalf("meta not persisted: %+v err=%v", cred, err)
+	}
 }

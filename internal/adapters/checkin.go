@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -37,15 +36,29 @@ type CheckinResult struct {
 
 type CheckinAdapter interface {
 	Name() string
+	// RequiresPlatformUserID reports whether the upstream expects user-id headers
+	// (New API family). One API typically does not.
+	RequiresPlatformUserID() bool
 	Checkin(context.Context, CheckinInput) (CheckinResult, error)
 }
 
 type CheckinError struct {
 	Kind   ErrorKind
 	Status int
+	// Message is a safe operator-facing detail (never secrets). Empty means use a generic fallback.
+	Message string
 }
 
 func (e *CheckinError) Error() string {
+	if e == nil {
+		return "check-in failed"
+	}
+	if strings.TrimSpace(e.Message) != "" {
+		if e.Status != 0 {
+			return fmt.Sprintf("check-in failed: %s (%d): %s", e.Kind, e.Status, e.Message)
+		}
+		return fmt.Sprintf("check-in failed: %s: %s", e.Kind, e.Message)
+	}
 	if e.Status != 0 {
 		return fmt.Sprintf("check-in failed: %s (%d)", e.Kind, e.Status)
 	}
@@ -67,6 +80,8 @@ func NewJSONCheckinAdapter(name string, client *http.Client, userHeader bool) *J
 
 func (a *JSONCheckinAdapter) Name() string { return a.name }
 
+func (a *JSONCheckinAdapter) RequiresPlatformUserID() bool { return a.userHeader }
+
 func (a *JSONCheckinAdapter) Checkin(ctx context.Context, input CheckinInput) (CheckinResult, error) {
 	endpoint, err := checkinEndpoint(input.BaseURL)
 	if err != nil {
@@ -78,8 +93,8 @@ func (a *JSONCheckinAdapter) Checkin(ctx context.Context, input CheckinInput) (C
 	}
 	req.Header.Set("Authorization", "Bearer "+input.Secret)
 	req.Header.Set("Accept", "application/json")
-	if a.userHeader && input.PlatformUserID > 0 {
-		req.Header.Set("New-Api-User", strconv.FormatInt(input.PlatformUserID, 10))
+	if a.userHeader {
+		ApplyCompatUserIDHeaders(req.Header, input.PlatformUserID)
 	}
 
 	resp, err := a.client.Do(req)
@@ -113,7 +128,10 @@ func (a *JSONCheckinAdapter) Checkin(ctx context.Context, input CheckinInput) (C
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil || payload.Success == nil {
-		return CheckinResult{}, &CheckinError{Kind: ErrorPayload}
+		return CheckinResult{}, &CheckinError{
+			Kind:    ErrorPayload,
+			Message: "upstream body was not valid check-in JSON (missing success field)",
+		}
 	}
 	if *payload.Success {
 		return CheckinResult{
@@ -129,19 +147,21 @@ func (a *JSONCheckinAdapter) Checkin(ctx context.Context, input CheckinInput) (C
 	if unsupportedCheckin(payload.Message) {
 		return CheckinResult{Outcome: CheckinSkipped, Category: "unsupported", Message: "check-in is not supported"}, nil
 	}
-	return CheckinResult{}, &CheckinError{Kind: ErrorPayload}
+	// success:false with an unrecognized message — surface the upstream text so operators can act.
+	detail := strings.TrimSpace(payload.Message)
+	if detail == "" {
+		detail = "upstream rejected check-in without a message"
+	}
+	return CheckinResult{}, &CheckinError{
+		Kind:    ErrorPayload,
+		Message: redactCheckinDetail(detail),
+	}
 }
 
 func checkinEndpoint(baseURL string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(baseURL))
-	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return "", errors.New("invalid base URL")
-	}
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	parsed.RawPath = ""
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/api/user/checkin"
-	return parsed.String(), nil
+	// Same base normalization as account self/token probes: strip trailing /v1 so
+	// OpenAI-style site URLs still hit /api/user/checkin on the site root.
+	return accountEndpoint(baseURL, "/api/user/checkin")
 }
 
 func rewardString(value any) string {
@@ -170,6 +190,26 @@ func alreadyCheckedIn(message string) bool {
 		}
 	}
 	return false
+}
+
+// redactCheckinDetail keeps upstream failure text useful while avoiding long dumps / obvious secrets.
+func redactCheckinDetail(message string) string {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		return ""
+	}
+	const maxLen = 240
+	if len(trimmed) > maxLen {
+		trimmed = trimmed[:maxLen] + "…"
+	}
+	// Drop common secret-looking fragments if an upstream echoes them.
+	lower := strings.ToLower(trimmed)
+	for _, marker := range []string{"bearer ", "sk-", "access_token", "session-secret"} {
+		if strings.Contains(lower, marker) {
+			return "upstream rejected check-in (detail redacted)"
+		}
+	}
+	return trimmed
 }
 
 func unsupportedCheckin(message string) bool {

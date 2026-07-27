@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { I18nProvider } from "./i18n";
 import { SessionProvider } from "./session";
+import { ToastProvider } from "./toast";
 import { App } from "./App";
 import "./styles.css";
 
@@ -18,11 +19,13 @@ createRoot(document.getElementById("root")!).render(
 	<StrictMode>
 		<QueryClientProvider client={queryClient}>
 			<I18nProvider>
-				<SessionProvider>
-					<BrowserRouter basename="/admin-ui">
-						<App />
-					</BrowserRouter>
-				</SessionProvider>
+				<ToastProvider>
+					<SessionProvider>
+						<BrowserRouter basename="/admin-ui">
+							<App />
+						</BrowserRouter>
+					</SessionProvider>
+				</ToastProvider>
 			</I18nProvider>
 		</QueryClientProvider>
 	</StrictMode>,

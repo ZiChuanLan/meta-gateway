@@ -21,6 +21,14 @@ type Config struct {
 	CheckinEnabled bool
 	CheckinCron    string
 
+	WebDAVSyncEnabled    bool
+	WebDAVURL            string
+	WebDAVUsername       string
+	WebDAVPassword       string
+	WebDAVBackupPassword string
+	WebDAVCron           string
+	WebDAVMaxBytes       int64
+
 	OutboundAllowHosts            []string
 	OutboundAllowCIDRs            []string
 	OutboundConnectTimeout        time.Duration
@@ -43,6 +51,8 @@ type Config struct {
 	AuditRetentionDays            int
 	AuditRetentionRows            int
 	BackupDir                     string
+	PluginsDir                    string
+	PluginCatalogURL              string
 }
 
 func Load() (*Config, error) {
@@ -55,6 +65,14 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	checkinEnabled, err := envBool("CHECKIN_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	webdavSyncEnabled, err := envBool("WEBDAV_SYNC_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	webdavMaxBytes, err := envInt("WEBDAV_MAX_BYTES", 10<<20, 1024, 32<<20)
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +172,14 @@ func Load() (*Config, error) {
 		CheckinEnabled: checkinEnabled,
 		CheckinCron:    envStr("CHECKIN_CRON", "0 8 * * *"),
 
+		WebDAVSyncEnabled:    webdavSyncEnabled,
+		WebDAVURL:            strings.TrimSpace(envStr("WEBDAV_URL", "")),
+		WebDAVUsername:       envStr("WEBDAV_USERNAME", ""),
+		WebDAVPassword:       envStr("WEBDAV_PASSWORD", ""),
+		WebDAVBackupPassword: envStr("WEBDAV_BACKUP_PASSWORD", ""),
+		WebDAVCron:           envStr("WEBDAV_CRON", "0 */6 * * *"),
+		WebDAVMaxBytes:       int64(webdavMaxBytes),
+
 		OutboundAllowHosts:            hosts,
 		OutboundAllowCIDRs:            cidrs,
 		OutboundConnectTimeout:        connectTimeout,
@@ -168,6 +194,8 @@ func Load() (*Config, error) {
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
 		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
+		PluginsDir:       envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
+		PluginCatalogURL: envStr("PLUGIN_CATALOG_URL", ""),
 	}, nil
 }
 

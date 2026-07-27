@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/auth"
@@ -37,10 +38,12 @@ func (h *AdminHandler) Register(r chi.Router) {
 	// Credentials
 	r.Get("/sites/{siteId}/credentials", h.listCredentials)
 	r.Post("/sites/{siteId}/credentials", h.createCredential)
+	r.Put("/credentials/{id}", h.updateCredential)
 	r.Delete("/credentials/{id}", h.deleteCredential)
 
 	// Channels
 	r.Get("/channels", h.listChannels)
+	r.Get("/channels/overview", h.listChannelOverviews)
 	r.Post("/channels", h.createChannel)
 	r.Get("/channels/{id}", h.getChannel)
 	r.Put("/channels/{id}", h.updateChannel)
@@ -48,6 +51,7 @@ func (h *AdminHandler) Register(r chi.Router) {
 
 	// Routes
 	r.Get("/routes", h.listRoutes)
+	r.Get("/routes/overview", h.listRouteOverviews)
 	r.Get("/routes/explain", h.explainRoute)
 	r.Post("/routes", h.createRoute)
 	r.Get("/routes/{id}", h.getRoute)
@@ -58,6 +62,7 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Get("/routes/{routeId}/members", h.listRouteMembers)
 	r.Post("/routes/{routeId}/members", h.createRouteMember)
 	r.Put("/route-members/{id}", h.updateRouteMember)
+	r.Post("/route-members/{id}/clear-health", h.clearRouteMemberHealth)
 	r.Delete("/route-members/{id}", h.deleteRouteMember)
 
 	// Downstream keys
@@ -272,6 +277,70 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+type updateCredentialRequest struct {
+	Kind     string `json:"kind,omitempty"`
+	Secret   string `json:"secret,omitempty"` // empty keeps existing secret
+	MetaJSON string `json:"meta_json,omitempty"`
+	Status   string `json:"status,omitempty"`
+}
+
+func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	existing, err := h.db.Credential.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	var req updateCredentialRequest
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.Kind != "" {
+		existing.Kind = req.Kind
+	}
+	if req.Status != "" {
+		existing.Status = req.Status
+	}
+	if req.MetaJSON != "" {
+		existing.MetaJSON = req.MetaJSON
+	}
+	if strings.TrimSpace(req.Secret) != "" {
+		encSecret, err := h.enc.Encrypt([]byte(req.Secret))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "encryption failed")
+			return
+		}
+		existing.SecretEnc = []byte(encSecret)
+		// Replacing secret invalidates any import fingerprint identity.
+		existing.ImportFingerprint = ""
+	}
+	if err := h.db.Credential.Update(existing); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	updated, _ := h.db.Credential.GetByID(id)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":              updated.ID,
+		"site_id":         updated.SiteID,
+		"kind":            updated.Kind,
+		"has_secret":      len(updated.SecretEnc) > 0,
+		"meta_json":       updated.MetaJSON,
+		"status":          updated.Status,
+		"checkin_enabled": updated.CheckinEnabled,
+		"created_at":      updated.CreatedAt,
+		"updated_at":      updated.UpdatedAt,
+	})
+}
+
 func (h *AdminHandler) deleteCredential(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -298,6 +367,15 @@ func (h *AdminHandler) listChannels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, channels)
 }
 
+func (h *AdminHandler) listChannelOverviews(w http.ResponseWriter, r *http.Request) {
+	channels, err := h.db.Channel.ListOverviews(time.Now())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, channels)
+}
+
 func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 	var ch domain.Channel
 	if err := decodeJSON(w, r, &ch, 0, false); err != nil {
@@ -306,6 +384,10 @@ func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if ch.Status == "" {
 		ch.Status = domain.StatusEnabled
+	}
+	if err := h.validateChannel(&ch); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	id, err := h.db.Channel.Create(&ch)
 	if err != nil {
@@ -340,12 +422,56 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
-	var ch domain.Channel
-	if err := decodeJSON(w, r, &ch, 0, false); err != nil {
+	existing, err := h.db.Channel.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "channel not found")
+		return
+	}
+	var patch domain.Channel
+	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
+	// Merge onto the stored row so clients that omit site_id (or send 0) cannot
+	// break credential ownership validation when rebinding API keys.
+	ch := *existing
+	if name := strings.TrimSpace(patch.Name); name != "" {
+		ch.Name = name
+	}
+	// BaseURL may intentionally be cleared to inherit site URL.
+	if patch.BaseURL != existing.BaseURL {
+		ch.BaseURL = strings.TrimSpace(patch.BaseURL)
+	}
+	if group := strings.TrimSpace(patch.GroupName); group != "" {
+		ch.GroupName = group
+	}
+	ch.Priority = patch.Priority
+	ch.Weight = patch.Weight
+	if patch.Status == domain.StatusEnabled || patch.Status == domain.StatusDisabled {
+		ch.Status = patch.Status
+	}
+	if hint := strings.TrimSpace(patch.TypeHint); hint != "" {
+		ch.TypeHint = hint
+	}
+	if patch.ModelsCSV != "" {
+		ch.ModelsCSV = patch.ModelsCSV
+	}
+	// Only accept a new site_id when it is a positive id; never wipe ownership.
+	if patch.SiteID != nil && *patch.SiteID > 0 {
+		ch.SiteID = patch.SiteID
+	}
+	if patch.CredentialID != nil && *patch.CredentialID > 0 {
+		ch.CredentialID = patch.CredentialID
+	}
 	ch.ID = id
+	if err := h.validateChannel(&ch); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := h.db.Channel.Update(&ch); err != nil {
 		writeStoreError(w, err)
 		return
@@ -367,12 +493,52 @@ func (h *AdminHandler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
+	ch.Name = strings.TrimSpace(ch.Name)
+	ch.BaseURL = strings.TrimSpace(ch.BaseURL)
+	ch.GroupName = strings.TrimSpace(ch.GroupName)
+	ch.TypeHint = strings.TrimSpace(ch.TypeHint)
+	if ch.Name == "" {
+		return errors.New("name is required")
+	}
+	if ch.Weight < 0 {
+		return errors.New("weight must be non-negative")
+	}
+	if ch.Status != domain.StatusEnabled && ch.Status != domain.StatusDisabled {
+		return errors.New("invalid channel status")
+	}
+	if ch.SiteID == nil || *ch.SiteID <= 0 {
+		return errors.New("site_id is required")
+	}
+	site, err := h.db.Site.GetByID(*ch.SiteID)
+	if err != nil || site == nil {
+		return errors.New("site not found")
+	}
+	if ch.CredentialID == nil || *ch.CredentialID <= 0 {
+		return errors.New("credential_id is required")
+	}
+	credential, err := h.db.Credential.GetByID(*ch.CredentialID)
+	if err != nil || credential == nil || credential.SiteID != *ch.SiteID {
+		return errors.New("credential does not belong to site")
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 
 func (h *AdminHandler) listRoutes(w http.ResponseWriter, r *http.Request) {
 	routes, err := h.db.Route.List()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, routes)
+}
+
+func (h *AdminHandler) listRouteOverviews(w http.ResponseWriter, r *http.Request) {
+	routes, err := h.db.RouteMember.ListRouteOverviews()
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -533,6 +699,24 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "database operation failed")
 }
 
+func (h *AdminHandler) clearRouteMemberHealth(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.db.RouteMember.ClearHealth(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	updated, err := h.db.RouteMember.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
 func (h *AdminHandler) deleteRouteMember(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -589,6 +773,9 @@ type createKeyResponse struct {
 func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name   string `json:"name"`
+		// Token is optional. When empty, the server generates an mg-… secret.
+		// When set, the provided secret is stored as a hash only (raw never re-readable).
+		Token  string `json:"token,omitempty"`
 		Scopes string `json:"scopes,omitempty"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
@@ -603,10 +790,30 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		req.Scopes = "relay"
 	}
 
-	hash, raw, err := auth.NewToken()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "token generation failed")
-		return
+	raw := auth.NormalizeDownstreamToken(req.Token)
+	var hash string
+	if raw == "" {
+		var genErr error
+		hash, raw, genErr = auth.NewToken()
+		if genErr != nil {
+			writeError(w, http.StatusInternalServerError, "token generation failed")
+			return
+		}
+	} else {
+		if err := validateCustomDownstreamToken(raw); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		hash = auth.HashToken(raw)
+		existing, lookupErr := h.db.DownstreamKey.GetByHash(hash)
+		if lookupErr != nil {
+			writeStoreError(w, lookupErr)
+			return
+		}
+		if existing != nil {
+			writeError(w, http.StatusConflict, "token already exists")
+			return
+		}
 	}
 
 	key := &domain.DownstreamKey{
@@ -649,12 +856,76 @@ func (h *AdminHandler) deleteDownstreamKey(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+func validateCustomDownstreamToken(token string) error {
+	if strings.ContainsAny(token, " \t\r\n") {
+		return errors.New("token must not contain whitespace")
+	}
+	// Allow operator-chosen secrets (OpenAI-style sk-…, random strings, etc.).
+	if len(token) < 16 {
+		return errors.New("token must be at least 16 characters")
+	}
+	if len(token) > 256 {
+		return errors.New("token must be at most 256 characters")
+	}
+	for _, r := range token {
+		if r < 32 || r == 127 {
+			return errors.New("token contains invalid control characters")
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Proxy Logs
 // ---------------------------------------------------------------------------
 
 func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
-	logs, err := h.db.ProxyLog.List(100)
+	query := r.URL.Query()
+	limit := 100
+	if raw := query.Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 500 {
+			writeError(w, http.StatusBadRequest, "limit must be between 1 and 500")
+			return
+		}
+		limit = parsed
+	}
+	siteID, ok := optionalPositiveQueryID(w, query.Get("site_id"), "site_id")
+	if !ok {
+		return
+	}
+	channelID, ok := optionalPositiveQueryID(w, query.Get("channel_id"), "channel_id")
+	if !ok {
+		return
+	}
+	beforeID, ok := optionalPositiveQueryID(w, query.Get("before_id"), "before_id")
+	if !ok {
+		return
+	}
+	model := strings.TrimSpace(query.Get("model"))
+	var status *int
+	failedOnly := false
+	if raw := strings.TrimSpace(query.Get("status")); raw != "" {
+		if raw == "failed" {
+			failedOnly = true
+		} else {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 100 || parsed > 599 {
+				writeError(w, http.StatusBadRequest, "invalid status")
+				return
+			}
+			status = &parsed
+		}
+	}
+	logs, err := h.db.ProxyLog.ListFilter(store.ProxyLogFilter{
+		SiteID:     siteID,
+		ChannelID:  channelID,
+		Model:      model,
+		Status:     status,
+		FailedOnly: failedOnly,
+		BeforeID:   beforeID,
+		Limit:      limit,
+	})
 	if err != nil {
 		writeStoreError(w, err)
 		return

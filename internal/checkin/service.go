@@ -131,6 +131,31 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 		zero(plaintext)
 		return s.persist(started, site.ID, credential.ID, source, StatusFailed, "credential_unavailable", "credential is unavailable", "")
 	}
+	// New-API family check-in usually needs a numeric user id header. Resolve via
+	// /api/user/self when meta is missing so operators are not blocked after import.
+	if platformUserID <= 0 && adapter.RequiresPlatformUserID() {
+		resolvedID, resolveErr := s.resolvePlatformUserID(ctx, site, string(plaintext))
+		if resolveErr != nil {
+			zero(plaintext)
+			status, category, message := normalizeAdapterError(resolveErr)
+			if category == "" || category == "invalid_payload" {
+				category = "user_id_unavailable"
+				message = "could not resolve platform user id"
+				status = StatusFailed
+			}
+			result, persistErr := s.persist(started, site.ID, credential.ID, source, status, category, message, "")
+			if persistErr != nil {
+				return RunResult{}, persistErr
+			}
+			return result, nil
+		}
+		if resolvedID <= 0 {
+			zero(plaintext)
+			return s.persist(started, site.ID, credential.ID, source, StatusFailed, "user_id_unavailable", "platform user id is required for check-in", "")
+		}
+		platformUserID = resolvedID
+		_ = s.persistPlatformUserID(credential, platformUserID)
+	}
 	adapterResult, adapterErr := adapter.Checkin(ctx, adapters.CheckinInput{
 		BaseURL:        site.BaseURL,
 		Secret:         string(plaintext),
@@ -223,6 +248,47 @@ func (s *Service) release(credentialID int64) {
 	s.runningMu.Unlock()
 }
 
+func (s *Service) resolvePlatformUserID(ctx context.Context, site *domain.Site, secret string) (int64, error) {
+	accountAdapter, ok := s.registry.ResolveAccount(site.Platform)
+	if !ok {
+		return 0, nil
+	}
+	self, err := accountAdapter.ProbeSelf(ctx, adapters.AccountInput{
+		BaseURL: site.BaseURL,
+		Secret:  secret,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return self.PlatformUserID, nil
+}
+
+func (s *Service) persistPlatformUserID(credential *domain.Credential, userID int64) error {
+	if credential == nil || userID <= 0 {
+		return nil
+	}
+	current, err := platformUserID(credential.MetaJSON)
+	if err != nil {
+		return err
+	}
+	if current == userID {
+		return nil
+	}
+	meta := map[string]any{}
+	if strings.TrimSpace(credential.MetaJSON) != "" {
+		if err := json.Unmarshal([]byte(credential.MetaJSON), &meta); err != nil {
+			meta = map[string]any{}
+		}
+	}
+	meta["platform_user_id"] = userID
+	encoded, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	credential.MetaJSON = string(encoded)
+	return s.db.Credential.Update(credential)
+}
+
 func platformUserID(raw string) (int64, error) {
 	if strings.TrimSpace(raw) == "" {
 		return 0, nil
@@ -267,9 +333,45 @@ func normalizeAdapterError(err error) (status, category, message string) {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return StatusFailed, "deadline_exceeded", "check-in deadline exceeded"
 	}
-	var adapterErr *adapters.CheckinError
-	if errors.As(err, &adapterErr) {
-		return StatusFailed, string(adapterErr.Kind), "upstream check-in failed"
+	var checkinErr *adapters.CheckinError
+	if errors.As(err, &checkinErr) {
+		category := string(checkinErr.Kind)
+		if category == string(adapters.ErrorPayload) {
+			category = "invalid_payload"
+		}
+		if category == string(adapters.ErrorStatus) {
+			category = "upstream_status"
+		}
+		message := strings.TrimSpace(checkinErr.Message)
+		if message == "" {
+			switch category {
+			case "invalid_payload":
+				message = "upstream response was not a valid check-in result"
+			case "upstream_status":
+				if checkinErr.Status > 0 {
+					message = fmt.Sprintf("upstream returned HTTP %d", checkinErr.Status)
+				} else {
+					message = "upstream returned an error status"
+				}
+			case "transport":
+				message = "could not reach upstream check-in endpoint"
+			case "invalid_base_url":
+				message = "site base URL is invalid for check-in"
+			default:
+				message = "upstream check-in failed"
+			}
+		} else if category == "upstream_status" && checkinErr.Status > 0 && !strings.Contains(message, fmt.Sprintf("%d", checkinErr.Status)) {
+			message = fmt.Sprintf("HTTP %d: %s", checkinErr.Status, message)
+		}
+		return StatusFailed, category, message
+	}
+	var modelErr *adapters.Error
+	if errors.As(err, &modelErr) {
+		// ProbeSelf failures while resolving platform user id.
+		if modelErr.Kind == adapters.ErrorStatus && (modelErr.Status == 401 || modelErr.Status == 403) {
+			return StatusFailed, "upstream_unauthorized", "account probe unauthorized while resolving user id"
+		}
+		return StatusFailed, string(modelErr.Kind), "could not resolve platform user id"
 	}
 	return StatusFailed, "upstream_failure", "upstream check-in failed"
 }

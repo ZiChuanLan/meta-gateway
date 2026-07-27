@@ -1,12 +1,12 @@
 import {
-	Activity,
-	Gauge,
+	Boxes,
+	Cable,
+	KeyRound,
 	LogOut,
 	Menu,
 	Network,
-	Route as RouteIcon,
-	Server,
-	Upload,
+	ScrollText,
+	Settings,
 	X,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,11 +30,11 @@ import {
 	Loading,
 	StatusBadge,
 } from "./components/ui";
-import { Dashboard } from "./features/Dashboard";
-import { Assets } from "./features/Assets";
-import { Routing } from "./features/Routing";
-import { Operations } from "./features/Operations";
-import { Exchange } from "./features/Exchange";
+import { Channels } from "./features/Channels";
+import { Keys } from "./features/Keys";
+import { Logs } from "./features/Logs";
+import { Maintain } from "./features/Maintain";
+import { Models } from "./features/Models";
 
 type TransitionPhase = "idle" | "fading" | "sealing" | "revealing";
 
@@ -196,7 +196,10 @@ function Connect({
 				"--scene-glow",
 				`${0.62 + Math.abs(rx) * 0.16 + Math.abs(ry) * 0.1}`,
 			);
-			node.style.setProperty("--blue-bias", `${0.55 + Math.max(0, -rx) * 0.2 + Math.max(0, ry) * 0.1}`);
+			node.style.setProperty(
+				"--blue-bias",
+				`${0.55 + Math.max(0, -rx) * 0.2 + Math.max(0, ry) * 0.1}`,
+			);
 		},
 		[],
 	);
@@ -466,8 +469,6 @@ function Authenticated({
 }) {
 	const { client } = useSession();
 	const { t } = useI18n();
-	const [open, setOpen] = useState(false);
-	const location = useLocation();
 	const ready = useQuery({
 		queryKey: ["ready"],
 		queryFn: async () => {
@@ -485,7 +486,6 @@ function Authenticated({
 		if (auth.error instanceof ApiError && auth.error.status === 401)
 			onUnauthorized();
 	}, [auth.error, onUnauthorized]);
-	useEffect(() => setOpen(false), [location.pathname]);
 	if (auth.isPending)
 		return (
 			<div className="fullscreen-state">
@@ -501,13 +501,37 @@ function Authenticated({
 				</Button>
 			</div>
 		);
-	const nav = [
-		{ to: "/", label: t("app.nav.dashboard"), icon: Gauge },
-		{ to: "/assets", label: t("app.nav.assets"), icon: Server },
-		{ to: "/routing", label: t("app.nav.routing"), icon: RouteIcon },
-		{ to: "/operations", label: t("app.nav.operations"), icon: Activity },
-		{ to: "/exchange", label: t("app.nav.exchange"), icon: Upload },
+	return (
+		<AuthenticatedShell
+			ready={ready.data === true}
+			onUnauthorized={onUnauthorized}
+		/>
+	);
+}
+
+function AuthenticatedShell({
+	ready,
+	onUnauthorized,
+}: {
+	ready: boolean;
+	onUnauthorized: () => void;
+}) {
+	const { t } = useI18n();
+	const [open, setOpen] = useState(false);
+	const location = useLocation();
+	useEffect(() => setOpen(false), [location.pathname]);
+	// Daily loop stays primary; Settings sinks above the session footer.
+	const primaryNav = [
+		{ to: "/", label: t("app.nav.channels"), icon: Cable },
+		{ to: "/models", label: t("app.nav.models"), icon: Boxes },
+		{ to: "/keys", label: t("app.nav.keys"), icon: KeyRound },
+		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
 	];
+	const settingsNav = {
+		to: "/settings",
+		label: t("app.nav.settings"),
+		icon: Settings,
+	};
 	return (
 		<div className="app-shell">
 			<header className="mobile-header">
@@ -516,7 +540,7 @@ function Authenticated({
 				</IconButton>
 				<strong>{t("app.brand")}</strong>
 				<LanguageSwitcher className="mobile-lang" />
-				<StatusBadge value={ready.data ? "ready" : "unavailable"} />
+				<StatusBadge value={ready ? "ready" : "unavailable"} />
 			</header>
 			<aside className={open ? "sidebar open" : "sidebar"}>
 				<div className="sidebar-brand">
@@ -532,7 +556,7 @@ function Authenticated({
 					</IconButton>
 				</div>
 				<nav className="sidebar-nav">
-					{nav.map(({ to, label, icon: Icon }) => (
+					{primaryNav.map(({ to, label, icon: Icon }) => (
 						<NavLink key={to} to={to} end={to === "/"}>
 							<span className="nav-icon" aria-hidden="true">
 								<Icon size={16} />
@@ -541,11 +565,26 @@ function Authenticated({
 						</NavLink>
 					))}
 				</nav>
+				<nav className="sidebar-settings" aria-label={t("app.nav.settings")}>
+					<NavLink
+						to={settingsNav.to}
+						className={({ isActive }) =>
+							isActive || location.pathname.startsWith("/maintain")
+								? "active"
+								: undefined
+						}
+					>
+						<span className="nav-icon" aria-hidden="true">
+							<Settings size={16} />
+						</span>
+						<span className="nav-label">{settingsNav.label}</span>
+					</NavLink>
+				</nav>
 				<div className="sidebar-footer">
 					<div className="connection">
-						<span className={ready.data ? "dot healthy" : "dot"} />
+						<span className={ready ? "dot healthy" : "dot"} />
 						<div>
-							<strong>{ready.data ? t("app.ready") : t("app.notReady")}</strong>
+							<strong>{ready ? t("app.ready") : t("app.notReady")}</strong>
 							<span>{t("app.sessionActive")}</span>
 						</div>
 					</div>
@@ -565,11 +604,27 @@ function Authenticated({
 			)}
 			<div className="content">
 				<Routes>
-					<Route index element={<Dashboard />} />
-					<Route path="assets" element={<Assets />} />
-					<Route path="routing" element={<Routing />} />
-					<Route path="operations" element={<Operations />} />
-					<Route path="exchange" element={<Exchange />} />
+					<Route index element={<Channels />} />
+					<Route path="channels" element={<Navigate to="/" replace />} />
+					<Route path="models" element={<Models />} />
+					<Route path="keys" element={<Keys />} />
+					<Route path="logs" element={<Logs />} />
+					<Route path="maintain" element={<Maintain />} />
+					<Route path="settings" element={<Maintain />} />
+					{/* Legacy paths map into the channel-first product. */}
+					<Route path="sites/*" element={<Navigate to="/" replace />} />
+					<Route path="routing" element={<Navigate to="/models" replace />} />
+					<Route
+						path="operations"
+						element={<Navigate to="/maintain?tab=discovery" replace />}
+					/>
+					<Route
+						path="exchange"
+						element={<Navigate to="/maintain?tab=exchange" replace />}
+					/>
+					<Route path="store" element={<Navigate to="/maintain" replace />} />
+					<Route path="assets" element={<Navigate to="/" replace />} />
+					<Route path="dashboard" element={<Navigate to="/" replace />} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
 			</div>

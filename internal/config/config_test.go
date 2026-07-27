@@ -70,3 +70,36 @@ func TestLoadRequiresProtectedMetrics(t *testing.T) {
 		t.Fatalf("trusted scraper should protect metrics: %v", err)
 	}
 }
+
+
+func TestLoadWebDAVDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("METRICS_TOKEN", "metrics-test-token")
+	t.Setenv("WEBDAV_SYNC_ENABLED", "")
+	t.Setenv("WEBDAV_CRON", "")
+	t.Setenv("WEBDAV_MAX_BYTES", "")
+	defaults, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.WebDAVSyncEnabled || defaults.WebDAVCron != "0 */6 * * *" || defaults.WebDAVMaxBytes != 10<<20 {
+		t.Fatalf("defaults=%+v", defaults)
+	}
+
+	t.Setenv("WEBDAV_SYNC_ENABLED", "true")
+	t.Setenv("WEBDAV_URL", "https://dav.example.com/files/")
+	t.Setenv("WEBDAV_USERNAME", "user")
+	t.Setenv("WEBDAV_PASSWORD", "pass")
+	t.Setenv("WEBDAV_BACKUP_PASSWORD", "enc")
+	t.Setenv("WEBDAV_CRON", "30 1 * * *")
+	t.Setenv("WEBDAV_MAX_BYTES", "2097152")
+	overrides, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !overrides.WebDAVSyncEnabled || overrides.WebDAVURL != "https://dav.example.com/files/" ||
+		overrides.WebDAVUsername != "user" || overrides.WebDAVPassword != "pass" ||
+		overrides.WebDAVBackupPassword != "enc" || overrides.WebDAVCron != "30 1 * * *" ||
+		overrides.WebDAVMaxBytes != 2097152 {
+		t.Fatalf("overrides=%+v", overrides)
+	}
+}

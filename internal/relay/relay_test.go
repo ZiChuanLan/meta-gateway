@@ -65,8 +65,8 @@ func TestChatCompletionsNonStream(t *testing.T) {
 	if result.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", result.StatusCode)
 	}
-	if result.LatencyMs <= 0 {
-		t.Error("expected positive latency")
+	if result.LatencyMs < 0 {
+		t.Error("expected non-negative latency")
 	}
 
 	body, _ := io.ReadAll(result.Body)

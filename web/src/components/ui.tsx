@@ -1,20 +1,26 @@
 import { AlertTriangle, LoaderCircle, X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ApiError } from "../api/client";
 import { useI18n } from "../i18n";
+import { formatErrorMessage } from "../formatError";
 
 export function Button({
 	children,
 	variant = "primary",
 	icon,
+	className,
 	...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
 	variant?: "primary" | "secondary" | "danger" | "quiet";
 	icon?: ReactNode;
 }) {
 	return (
-		<button className={`button button-${variant}`} {...props}>
+		<button
+			className={[`button button-${variant}`, className]
+				.filter(Boolean)
+				.join(" ")}
+			{...props}
+		>
 			{icon}
 			{children}
 		</button>
@@ -24,10 +30,16 @@ export function Button({
 export function IconButton({
 	label,
 	children,
+	className,
 	...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
 	return (
-		<button className="icon-button" aria-label={label} title={label} {...props}>
+		<button
+			className={["icon-button", className].filter(Boolean).join(" ")}
+			aria-label={label}
+			title={label}
+			{...props}
+		>
 			{children}
 		</button>
 	);
@@ -37,17 +49,21 @@ export function Page({
 	title,
 	description,
 	actions,
+	kicker,
 	children,
 }: {
 	title: string;
 	description: string;
 	actions?: ReactNode;
+	/** Small brand label above the title (ops console continuity). */
+	kicker?: string;
 	children: ReactNode;
 }) {
 	return (
 		<main className="page">
 			<header className="page-header">
 				<div className="page-heading">
+					{kicker ? <p className="page-kicker">{kicker}</p> : null}
 					<h1>{title}</h1>
 					<p>{description}</p>
 				</div>
@@ -232,13 +248,7 @@ export function ErrorState({
 	retry?: () => void;
 }) {
 	const { t } = useI18n();
-	const raw = error instanceof ApiError ? error.message : "common.error";
-	const text =
-		raw === "api.unreachable" || raw === "Unable to reach Meta Gateway"
-			? t("api.unreachable")
-			: raw === "common.error"
-				? t("common.error")
-				: raw;
+	const text = formatErrorMessage(error, t);
 	return (
 		<div className="state state-error">
 			<AlertTriangle size={18} />
@@ -283,7 +293,7 @@ export function Tabs({
 	active,
 	onChange,
 }: {
-	items: Array<{ value: string; label: string }>;
+	items: Array<{ value: string; label: string; icon?: ReactNode }>;
 	active: string;
 	onChange: (value: string) => void;
 }) {
@@ -296,6 +306,7 @@ export function Tabs({
 					key={item.value}
 					onClick={() => onChange(item.value)}
 				>
+					{item.icon}
 					{item.label}
 				</button>
 			))}

@@ -48,6 +48,9 @@ type ExchangeImportItem struct {
 	Fingerprint       string
 	AdoptChannelID    int64
 	AdoptCredentialID int64
+	CredentialKind    string
+	MetaJSON          string
+	CheckinEnabled    bool
 }
 
 type ExchangeImportResult struct {
@@ -194,9 +197,17 @@ func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 	if err != nil {
 		return 0, "", err
 	}
+	kind := item.CredentialKind
+	if kind == "" {
+		kind = "api_key"
+	}
+	checkinEnabled := 0
+	if item.CheckinEnabled {
+		checkinEnabled = 1
+	}
 	credentialResult, err := tx.ExecContext(ctx, `INSERT INTO credentials
         (site_id, kind, secret_enc, meta_json, status, checkin_enabled, import_fingerprint)
-        VALUES (?, 'api_key', ?, '', ?, 0, ?)`, siteID, item.SecretEnc, item.Status, item.Fingerprint)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`, siteID, kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, item.Fingerprint)
 	if err != nil {
 		return 0, "", fmt.Errorf("exchange credential create: %w", err)
 	}
@@ -244,10 +255,78 @@ func fingerprintIdentity(ctx context.Context, tx *sql.Tx, fingerprint string) (i
 	if err := rows.Err(); err != nil {
 		return 0, 0, false, fmt.Errorf("exchange identity channel rows: %w", err)
 	}
-	if len(ids) != 1 {
+	// Exactly one channel still bound to this fingerprint: normal update path.
+	if len(ids) == 1 {
+		return credentialID, ids[0], true, nil
+	}
+	// Multiple channels sharing one credential is a true identity conflict.
+	if len(ids) > 1 {
 		return 0, 0, false, ErrExchangeConflict
 	}
-	return credentialID, ids[0], true, nil
+	// Zero channels: orphan fingerprint. Common after "sync API keys" rebinds the
+	// channel to a new api_key credential while the imported access_token keeps
+	// import_fingerprint. Reattach to a site channel instead of failing re-import.
+	channelID, attachErr := reattachOrphanFingerprint(ctx, tx, credentialID)
+	if attachErr != nil {
+		return 0, 0, false, attachErr
+	}
+	return credentialID, channelID, true, nil
+}
+
+// reattachOrphanFingerprint finds or creates a channel for a fingerprint credential
+// that is no longer referenced by any channel.
+func reattachOrphanFingerprint(ctx context.Context, tx *sql.Tx, credentialID int64) (int64, error) {
+	var siteID int64
+	var kind, status, metaJSON string
+	var checkinEnabled int
+	err := tx.QueryRowContext(ctx, `SELECT site_id, kind, status, COALESCE(meta_json, ''), checkin_enabled
+		FROM credentials WHERE id = ?`, credentialID).Scan(&siteID, &kind, &status, &metaJSON, &checkinEnabled)
+	if err != nil {
+		return 0, fmt.Errorf("exchange orphan credential: %w", err)
+	}
+	// Prefer an existing channel on the same site (often the one rebound to api_key).
+	var channelID int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM channels WHERE site_id = ? ORDER BY id LIMIT 1`, siteID).Scan(&channelID)
+	if err == nil && channelID > 0 {
+		// Keep channel.credential_id if it already points at an api_key (relay path).
+		// Only re-point when current bind is missing/disabled/non-api_key.
+		var boundID sql.NullInt64
+		var boundKind string
+		_ = tx.QueryRowContext(ctx, `SELECT c.credential_id, COALESCE(cr.kind, '')
+			FROM channels c LEFT JOIN credentials cr ON cr.id = c.credential_id
+			WHERE c.id = ?`, channelID).Scan(&boundID, &boundKind)
+		shouldRebind := !boundID.Valid || boundID.Int64 == 0
+		if boundID.Valid && boundID.Int64 > 0 {
+			k := strings.ToLower(strings.TrimSpace(boundKind))
+			if k != "api_key" {
+				shouldRebind = true
+			}
+		}
+		if shouldRebind {
+			if _, err := tx.ExecContext(ctx, `UPDATE channels SET credential_id = ?, updated_at = datetime('now') WHERE id = ?`,
+				credentialID, channelID); err != nil {
+				return 0, fmt.Errorf("exchange orphan rebind: %w", err)
+			}
+		}
+		return channelID, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("exchange orphan channel lookup: %w", err)
+	}
+	// No channel on site: create one bound to this credential.
+	var siteBase, siteName, sitePlatform string
+	if err := tx.QueryRowContext(ctx, `SELECT name, base_url, platform FROM sites WHERE id = ?`, siteID).
+		Scan(&siteName, &siteBase, &sitePlatform); err != nil {
+		return 0, fmt.Errorf("exchange orphan site: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO channels
+		(site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint)
+		VALUES (?, ?, ?, ?, '', 'default', 0, 100, ?, ?)`,
+		siteID, credentialID, siteName, siteBase, status, sitePlatform)
+	if err != nil {
+		return 0, fmt.Errorf("exchange orphan channel create: %w", err)
+	}
+	return res.LastInsertId()
 }
 
 func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelID int64, item ExchangeImportItem) error {
@@ -259,7 +338,16 @@ func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelI
 		item.Name, item.BaseURL, item.TypeHint, item.Status, siteID); err != nil {
 		return fmt.Errorf("exchange site update: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE credentials SET secret_enc = ?, status = ?, updated_at = datetime('now') WHERE id = ?`, item.SecretEnc, item.Status, credentialID); err != nil {
+	kind := item.CredentialKind
+	if kind == "" {
+		kind = "api_key"
+	}
+	checkinEnabled := 0
+	if item.CheckinEnabled {
+		checkinEnabled = 1
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE credentials SET kind = ?, secret_enc = ?, meta_json = ?, status = ?, checkin_enabled = ?, updated_at = datetime('now') WHERE id = ?`,
+		kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, credentialID); err != nil {
 		return fmt.Errorf("exchange credential update: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE channels SET site_id = ?, name = ?, base_url = ?, models_csv = ?, group_name = ?, priority = ?, weight = ?, status = ?, type_hint = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -282,9 +370,17 @@ func adoptExchangeAsset(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 	if err != nil {
 		return fmt.Errorf("exchange adoption verify: %w", err)
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE credentials SET import_fingerprint = ?, secret_enc = ?, status = ?, updated_at = datetime('now')
+	kind := item.CredentialKind
+	if kind == "" {
+		kind = "api_key"
+	}
+	checkinEnabled := 0
+	if item.CheckinEnabled {
+		checkinEnabled = 1
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE credentials SET import_fingerprint = ?, kind = ?, secret_enc = ?, meta_json = ?, status = ?, checkin_enabled = ?, updated_at = datetime('now')
         WHERE id = ? AND (import_fingerprint IS NULL OR import_fingerprint = '')`,
-		item.Fingerprint, item.SecretEnc, item.Status, item.AdoptCredentialID)
+		item.Fingerprint, kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, item.AdoptCredentialID)
 	if err != nil {
 		return fmt.Errorf("exchange adoption credential: %w", err)
 	}
@@ -315,10 +411,8 @@ func getOrCreateExchangeSite(ctx context.Context, tx *sql.Tx, item ExchangeImpor
 	if err := rows.Close(); err != nil {
 		return 0, fmt.Errorf("exchange site rows: %w", err)
 	}
-	if len(ids) > 1 {
-		return 0, ErrExchangeConflict
-	}
-	if len(ids) == 1 {
+	if len(ids) >= 1 {
+		// Prefer the oldest site when duplicates exist (legacy data), instead of failing import.
 		return ids[0], nil
 	}
 	result, err := tx.ExecContext(ctx, `INSERT INTO sites (name, base_url, platform, status) VALUES (?, ?, ?, ?)`, item.Name, item.BaseURL, item.TypeHint, item.Status)

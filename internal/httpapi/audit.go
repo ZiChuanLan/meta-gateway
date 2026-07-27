@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -10,13 +11,30 @@ import (
 )
 
 type AuditHandler struct {
-	db                           *store.DB
-	retentionDays, retentionRows int
+	db            *store.DB
+	retentionDays atomic.Int64
+	retentionRows atomic.Int64
 }
 
 func NewAuditHandler(db *store.DB, days, rows int) *AuditHandler {
-	return &AuditHandler{db: db, retentionDays: days, retentionRows: rows}
+	handler := &AuditHandler{db: db}
+	handler.retentionDays.Store(int64(days))
+	handler.retentionRows.Store(int64(rows))
+	return handler
 }
+
+// SetRetention hot-updates cleanup thresholds used by the next cleanup run.
+func (h *AuditHandler) SetRetention(days, rows int) {
+	if days < 0 {
+		days = 0
+	}
+	if rows < 0 {
+		rows = 0
+	}
+	h.retentionDays.Store(int64(days))
+	h.retentionRows.Store(int64(rows))
+}
+
 func (h *AuditHandler) Register(r chi.Router) {
 	r.Get("/audit-events", h.list)
 	r.Post("/audit-events/cleanup", h.cleanup)
@@ -50,7 +68,7 @@ func (h *AuditHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuditHandler) cleanup(w http.ResponseWriter, _ *http.Request) {
-	removed, err := h.db.AuditEvent.Cleanup(time.Now(), h.retentionDays, h.retentionRows)
+	removed, err := h.db.AuditEvent.Cleanup(time.Now(), int(h.retentionDays.Load()), int(h.retentionRows.Load()))
 	if err != nil {
 		writeError(w, 500, "audit cleanup failed")
 		return

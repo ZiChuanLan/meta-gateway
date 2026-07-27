@@ -28,12 +28,12 @@ describe("i18n", () => {
 
 	it("switches locale, persists, and updates document language", () => {
 		const { result } = renderHook(() => useI18n(), { wrapper });
-		expect(result.current.t("app.nav.dashboard")).toBeTruthy();
+		expect(result.current.t("app.nav.channels")).toBeTruthy();
 		act(() => result.current.setLocale("zh-CN"));
 		expect(result.current.locale).toBe("zh-CN");
 		expect(localStorage.getItem("meta-gateway.locale")).toBe("zh-CN");
 		expect(document.documentElement.lang).toBe("zh-CN");
-		expect(result.current.t("app.nav.dashboard")).toBe("仪表盘");
+		expect(result.current.t("app.nav.channels")).toBe("连接");
 		expect(
 			result.current.t("assets.refreshResult", { models: 2, routes: 1 }),
 		).toContain("2");

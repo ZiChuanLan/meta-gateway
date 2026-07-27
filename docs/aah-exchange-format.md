@@ -69,13 +69,19 @@ Import accepts exactly three input families:
    Documented aliases include `key`/`api_key`/`apiKey`,
    `base_url`/`baseUrl`, and type hint aliases. Models and groups may be CSV
    strings or string arrays.
-3. An All API Hub V2 backup with `version: "2.0"` and
-   `apiCredentialProfiles.profiles`.
+3. An All API Hub V2 backup with `version: "2.0"`. Credentials are taken from
+   non-empty `apiCredentialProfiles.profiles` when present; otherwise from
+   `accounts.accounts[]` site records that include `account_info.access_token`
+   (or top-level API key fields). Disabled accounts are skipped.
 
-AAH profile imports use models `[]`, group `default`, priority `0`, weight
-`100`, enabled status, and normalized `apiType` or `openai-compatible` as the
-type hint. Accounts, preferences, WebDAV data, `channelConfigs`, notes, and
-other backup sections are ignored and never restored.
+AAH imports use models `[]`, group `default`, priority `0`, weight `100`,
+enabled status, and normalized `apiType` / `site_type` or `openai-compatible`
+as the type hint. Preferences, WebDAV data, `channelConfigs`, notes, tags, and
+other non-credential backup sections are ignored and never restored.
+
+**Note:** many real AAH full backups ship empty `profiles` while usable site
+session tokens live under `accounts`. That shape is supported. Metadata-only
+backups without secrets still cannot create relay credentials.
 
 ## Validation And Normalization
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/adapters"
@@ -31,13 +32,23 @@ type Error struct {
 func (e *Error) Error() string { return fmt.Sprintf("discovery failed: %s", e.Category) }
 
 type RefreshResult struct {
-	ChannelID       int64    `json:"channel_id"`
-	Adapter         string   `json:"adapter"`
-	Models          []string `json:"models"`
-	CreatedRoutes   int      `json:"created_routes"`
-	CreatedMembers  int      `json:"created_members"`
-	EnabledMembers  int      `json:"enabled_members"`
-	DisabledMembers int      `json:"disabled_members"`
+	ChannelID       int64     `json:"channel_id"`
+	Adapter         string    `json:"adapter"`
+	Models          []string  `json:"models"`
+	LatencyMs       int       `json:"latency_ms"`
+	CheckedAt       time.Time `json:"checked_at"`
+	CreatedRoutes   int       `json:"created_routes"`
+	CreatedMembers  int       `json:"created_members"`
+	EnabledMembers  int       `json:"enabled_members"`
+	DisabledMembers int       `json:"disabled_members"`
+}
+
+type ProbeResult struct {
+	ChannelID int64     `json:"channel_id"`
+	Adapter   string    `json:"adapter"`
+	Models    []string  `json:"models"`
+	LatencyMs int       `json:"latency_ms"`
+	CheckedAt time.Time `json:"checked_at"`
 }
 
 type RefreshItem struct {
@@ -63,7 +74,7 @@ func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Serv
 	return &Service{db: db, enc: enc, registry: registry, now: time.Now}
 }
 
-func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult, error) {
+func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, error) {
 	channel, err := s.db.Channel.GetByID(channelID)
 	if err != nil {
 		return nil, internalError("channel_lookup")
@@ -88,18 +99,12 @@ func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult,
 	if !ok {
 		return nil, unavailableError("unsupported_adapter")
 	}
-	if channel.CredentialID == nil {
-		return nil, unavailableError("credential_unavailable")
-	}
-	credential, err := s.db.Credential.GetByID(*channel.CredentialID)
+	credentials, err := s.resolveAPIKeyPool(channel, site.ID)
 	if err != nil {
-		return nil, internalError("credential_lookup")
+		return nil, err
 	}
-	if credential == nil || credential.Status != domain.StatusEnabled || len(credential.SecretEnc) == 0 || credential.SiteID != site.ID {
-		return nil, unavailableError("credential_unavailable")
-	}
-	plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
-	if err != nil {
+	if len(credentials) == 0 {
+		_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "credential_unavailable")
 		return nil, unavailableError("credential_unavailable")
 	}
 	baseURL := channel.BaseURL
@@ -107,38 +112,133 @@ func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult,
 		baseURL = site.BaseURL
 	}
 	started := s.now()
-	models, err := adapter.ListModels(ctx, baseURL, string(plaintext))
-	for i := range plaintext {
-		plaintext[i] = 0
+	var models []string
+	var lastErr error
+	var lastCredential *domain.Credential
+	for index := range credentials {
+		credential := credentials[index]
+		lastCredential = &credential
+		plaintext, decryptErr := s.enc.Decrypt(string(credential.SecretEnc))
+		if decryptErr != nil || len(plaintext) == 0 {
+			lastErr = unavailableError("credential_unavailable")
+			continue
+		}
+		listed, listErr := adapter.ListModels(ctx, baseURL, string(plaintext))
+		for i := range plaintext {
+			plaintext[i] = 0
+		}
+		if listErr == nil {
+			models = listed
+			lastErr = nil
+			break
+		}
+		lastErr = listErr
+		if errors.Is(listErr, context.Canceled) || errors.Is(listErr, context.DeadlineExceeded) {
+			return nil, listErr
+		}
+		// Non-retryable adapter failures stop the pool early.
+		var adapterErr *adapters.Error
+		if errors.As(listErr, &adapterErr) && adapterErr.Kind == adapters.ErrorInvalidURL {
+			_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "invalid_base_url")
+			return nil, unavailableError("invalid_base_url")
+		}
 	}
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
+	if lastErr != nil {
+		if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
+			return nil, lastErr
 		}
 		category := "upstream_failure"
 		var adapterErr *adapters.Error
-		if errors.As(err, &adapterErr) {
+		if errors.As(lastErr, &adapterErr) {
 			if adapterErr.Kind == adapters.ErrorInvalidURL {
+				_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "invalid_base_url")
 				return nil, unavailableError("invalid_base_url")
 			}
 			category = string(adapterErr.Kind)
+			// 401/403 on /v1/models with a user access_token is expected on many New API hosts.
+			if adapterErr.Kind == adapters.ErrorStatus &&
+				(adapterErr.Status == 401 || adapterErr.Status == 403) {
+				kind := ""
+				if lastCredential != nil {
+					kind = strings.ToLower(strings.TrimSpace(lastCredential.Kind))
+				}
+				if kind == "access_token" || kind == "session" {
+					category = "user_token_not_for_models"
+				} else {
+					category = "upstream_unauthorized"
+				}
+			}
 		}
+		_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), category)
 		return nil, &Error{Kind: ErrorUpstream, Category: category}
 	}
 	checkedAt := s.now()
 	latency := int(checkedAt.Sub(started).Milliseconds())
-	reconciled, err := s.db.DiscoveredModel.Reconcile(ctx, store.ReconcileInput{
+	_ = s.db.Channel.RecordProbeSuccess(channel.ID, checkedAt)
+	return &ProbeResult{
 		ChannelID: channel.ID,
+		Adapter:   adapter.Name(),
 		Models:    models,
-		Source:    adapter.Name(),
 		LatencyMs: latency,
 		CheckedAt: checkedAt,
+	}, nil
+}
+
+// resolveAPIKeyPool returns enabled api_key credentials for discovery, bound key first.
+func (s *Service) resolveAPIKeyPool(channel *domain.Channel, siteID int64) ([]domain.Credential, error) {
+	seen := make(map[int64]struct{})
+	var pool []domain.Credential
+	appendIfUsable := func(credential *domain.Credential) {
+		if credential == nil {
+			return
+		}
+		if _, exists := seen[credential.ID]; exists {
+			return
+		}
+		if credential.SiteID != siteID || credential.Status != domain.StatusEnabled || len(credential.SecretEnc) == 0 {
+			return
+		}
+		if !strings.EqualFold(credential.Kind, "api_key") {
+			return
+		}
+		seen[credential.ID] = struct{}{}
+		pool = append(pool, *credential)
+	}
+	if channel.CredentialID != nil {
+		bound, err := s.db.Credential.GetByID(*channel.CredentialID)
+		if err != nil {
+			return nil, internalError("credential_lookup")
+		}
+		appendIfUsable(bound)
+	}
+	siteKeys, err := s.db.Credential.ListEnabledAPIKeysBySite(siteID)
+	if err != nil {
+		return nil, internalError("credential_lookup")
+	}
+	for index := range siteKeys {
+		appendIfUsable(&siteKeys[index])
+	}
+	return pool, nil
+}
+
+func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult, error) {
+	probe, err := s.Probe(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	reconciled, err := s.db.DiscoveredModel.Reconcile(ctx, store.ReconcileInput{
+		ChannelID: probe.ChannelID,
+		Models:    probe.Models,
+		Source:    probe.Adapter,
+		LatencyMs: probe.LatencyMs,
+		CheckedAt: probe.CheckedAt,
 	})
 	if err != nil {
 		return nil, internalError("persistence_failure")
 	}
 	return &RefreshResult{
-		ChannelID: channel.ID, Adapter: adapter.Name(), Models: models,
+		ChannelID: probe.ChannelID, Adapter: probe.Adapter, Models: probe.Models,
+		LatencyMs: probe.LatencyMs, CheckedAt: probe.CheckedAt,
 		CreatedRoutes: reconciled.CreatedRoutes, CreatedMembers: reconciled.CreatedMembers,
 		EnabledMembers: reconciled.EnabledMembers, DisabledMembers: reconciled.DisabledMembers,
 	}, nil

@@ -35,6 +35,23 @@ func New(requestsPerMinute, burst int) *Limiter {
 	}
 }
 
+// SetLimits hot-updates rate and burst. Existing buckets keep remaining tokens
+// but are capped to the new burst on the next refill.
+func (l *Limiter) SetLimits(requestsPerMinute, burst int) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.perSec = float64(requestsPerMinute) / 60
+	l.burst = float64(burst)
+	for _, bucketState := range l.buckets {
+		if bucketState.tokens > l.burst {
+			bucketState.tokens = l.burst
+		}
+	}
+}
+
 // Allow consumes one token and returns the wait duration when denied.
 func (l *Limiter) Allow(key int64) (bool, time.Duration) {
 	if l == nil || l.perSec <= 0 || l.burst <= 0 {

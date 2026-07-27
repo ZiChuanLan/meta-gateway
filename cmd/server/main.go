@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -17,10 +18,14 @@ import (
 	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
+	"github.com/lan/meta-gateway/internal/discovery"
+	"github.com/lan/meta-gateway/internal/exchange"
 	"github.com/lan/meta-gateway/internal/httpapi"
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
+	"github.com/lan/meta-gateway/internal/plugins"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/webdavsync"
 )
 
 func main() {
@@ -62,9 +67,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Ensure data directory exists.
+	// Ensure data and plugins directories exist.
 	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
 		logger.Error("data directory initialization failed", "category", "filesystem")
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(cfg.PluginsDir, 0700); err != nil {
+		logger.Error("plugins directory initialization failed", "category", "filesystem")
 		os.Exit(1)
 	}
 
@@ -91,28 +100,93 @@ func main() {
 	})
 	registry := adapters.NewRegistry(outboundClient)
 	checkinService := checkin.New(db, enc, registry)
+	pluginService, err := plugins.NewService(cfg.PluginsDir, db.Plugin)
+	if err != nil {
+		logger.Error("plugin host initialization failed", "category", "plugins")
+		os.Exit(1)
+	}
 	metrics := observability.NewRegistry()
 	state := observability.NewState()
+	discoveryService := discovery.New(db, enc, registry)
+	exchangeService := exchange.NewService(db, enc, discoveryService)
+	webdavMaxBytes := cfg.WebDAVMaxBytes
+	if webdavMaxBytes <= 0 {
+		webdavMaxBytes = 10 << 20
+	}
+	webdavService := webdavsync.NewServiceWithSettings(webdavsync.Config{
+		Enabled:        cfg.WebDAVSyncEnabled,
+		URL:            cfg.WebDAVURL,
+		Username:       cfg.WebDAVUsername,
+		Password:       cfg.WebDAVPassword,
+		BackupPassword: cfg.WebDAVBackupPassword,
+		CronExpr:       cfg.WebDAVCron,
+		MaxBytes:       webdavMaxBytes,
+	}, &webdavsync.Client{HTTP: outboundClient, MaxBytes: webdavMaxBytes}, exchangeService, db.WebDAVSettings, enc)
+	// Always construct the check-in scheduler so Admin runtime settings can hot-enable it.
+	// Initial Start() still respects env + module gate; later toggles use SetSchedule.
+	var scheduler *checkin.Scheduler
+	scheduler, err = checkin.NewScheduler(checkinService, cfg.CheckinCron, slog.NewLogLogger(logger.Handler(), slog.LevelInfo))
+	if err != nil {
+		logger.Error("check-in scheduler configuration failed", "category", "configuration")
+		os.Exit(1)
+	}
+
+	var auditDays atomic.Int64
+	var auditRows atomic.Int64
+	auditDays.Store(int64(cfg.AuditRetentionDays))
+	auditRows.Store(int64(cfg.AuditRetentionRows))
+
 	handler := httpapi.NewWithDependencies(cfg, db, enc, httpapi.Dependencies{
-		Registry:       registry,
-		CheckinService: checkinService,
-		OutboundClient: outboundClient,
-		Logger:         logger, Metrics: metrics, State: state,
+		Registry:         registry,
+		CheckinService:   checkinService,
+		CheckinScheduler: scheduler,
+		ExchangeService:  exchangeService,
+		PluginService:    pluginService,
+		OutboundClient:   outboundClient,
+		Logger:           logger, Metrics: metrics, State: state,
 		BackupService: backup.New(db, cfg.BackupDir),
+		WebDAVService: webdavService,
+		SetAuditRetention: func(days, rows int) {
+			auditDays.Store(int64(days))
+			auditRows.Store(int64(rows))
+		},
 	})
 
-	var scheduler *checkin.Scheduler
-	if cfg.CheckinEnabled {
-		scheduler, err = checkin.NewScheduler(checkinService, cfg.CheckinCron, slog.NewLogLogger(logger.Handler(), slog.LevelInfo))
-		if err != nil {
-			logger.Error("check-in scheduler configuration failed", "category", "configuration")
-			os.Exit(1)
-		}
+	if cfg.CheckinEnabled && pluginService.IsEnabled("checkin") {
 		if err := scheduler.Start(); err != nil {
 			logger.Error("check-in scheduler start failed", "category", "scheduler")
 			os.Exit(1)
 		}
 		logger.Info("check-in scheduler enabled")
+	} else if cfg.CheckinEnabled {
+		logger.Info("check-in scheduler idle: activate checkin module or enable via Settings")
+	} else {
+		logger.Info("check-in scheduler constructed but not started (CHECKIN_ENABLED=false); Settings can enable without restart")
+	}
+
+	var webdavScheduler *webdavsync.Scheduler
+	webdavStatus := webdavService.Status()
+	if webdavStatus.Enabled {
+		if !webdavStatus.Configured {
+			logger.Info("webdav scheduler idle: URL/username/password incomplete")
+		} else {
+			cronExpr := webdavStatus.CronExpr
+			if cronExpr == "" {
+				cronExpr = cfg.WebDAVCron
+			}
+			var schedErr error
+			webdavScheduler, schedErr = webdavsync.NewScheduler(webdavService, cronExpr, slog.NewLogLogger(logger.Handler(), slog.LevelInfo))
+			if schedErr != nil {
+				logger.Error("webdav scheduler configuration failed", "category", "configuration")
+				os.Exit(1)
+			}
+			if err := webdavScheduler.Start(); err != nil {
+				logger.Error("webdav scheduler start failed", "category", "scheduler")
+				os.Exit(1)
+			}
+			webdavService.SetSchedulerArmed(true)
+			logger.Info("webdav read-only sync scheduler enabled", "source", webdavStatus.Source)
+		}
 	}
 
 	// Determine addr with host:port format.
@@ -137,7 +211,7 @@ func main() {
 	defer stop()
 	maintenanceCtx, cancelMaintenance := context.WithCancel(context.Background())
 	defer cancelMaintenance()
-	go runAuditCleanup(maintenanceCtx, logger, db, cfg.AuditRetentionDays, cfg.AuditRetentionRows)
+	go runAuditCleanup(maintenanceCtx, logger, db, &auditDays, &auditRows)
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- srv.ListenAndServe()
@@ -162,14 +236,19 @@ func main() {
 			logger.Error("check-in scheduler shutdown failed", "category", "scheduler")
 		}
 	}
+	if webdavScheduler != nil {
+		if err := webdavScheduler.Stop(shutdownCtx); err != nil {
+			logger.Error("webdav scheduler shutdown failed", "category", "scheduler")
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("http server shutdown failed", "category", "server")
 	}
 }
 
-func runAuditCleanup(ctx context.Context, logger *slog.Logger, db *store.DB, days, rows int) {
+func runAuditCleanup(ctx context.Context, logger *slog.Logger, db *store.DB, days, rows *atomic.Int64) {
 	cleanup := func() {
-		if _, err := db.AuditEvent.Cleanup(time.Now(), days, rows); err != nil {
+		if _, err := db.AuditEvent.Cleanup(time.Now(), int(days.Load()), int(rows.Load())); err != nil {
 			logger.ErrorContext(ctx, "audit cleanup failed", "category", "persistence")
 		}
 	}

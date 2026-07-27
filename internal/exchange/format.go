@@ -19,15 +19,21 @@ type Envelope struct {
 }
 
 type Item struct {
-	Name         string   `json:"name"`
-	BaseURL      string   `json:"base_url"`
-	APIKey       string   `json:"api_key,omitempty"`
-	Models       []string `json:"models"`
-	Group        string   `json:"group"`
-	Priority     int      `json:"priority"`
-	Weight       int      `json:"weight"`
-	SiteTypeHint string   `json:"site_type_hint"`
-	Status       string   `json:"-"`
+	Name           string   `json:"name"`
+	BaseURL        string   `json:"base_url"`
+	APIKey         string   `json:"api_key,omitempty"`
+	Models         []string `json:"models"`
+	Group          string   `json:"group"`
+	Priority       int      `json:"priority"`
+	Weight         int      `json:"weight"`
+	SiteTypeHint   string   `json:"site_type_hint"`
+	Status         string   `json:"-"`
+	// CredentialKind is stored on credentials.kind (api_key | access_token | session | ...).
+	CredentialKind string `json:"-"`
+	// MetaJSON is stored on credentials.meta_json (e.g. platform_user_id for New API check-in).
+	MetaJSON string `json:"-"`
+	// CheckinEnabled is stored on credentials.checkin_enabled.
+	CheckinEnabled bool `json:"-"`
 }
 
 type ErrorKind string

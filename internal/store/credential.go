@@ -32,6 +32,39 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 	return result, rows.Err()
 }
 
+// ListEnabledAPIKeysBySite returns enabled api_key credentials that still hold ciphertext.
+// Used as the site-level relay key pool (aggregation across many keys for one upstream).
+func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Credential, error) {
+	rows, err := s.db.Query(`
+		SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled,
+		       COALESCE(import_fingerprint, ''), created_at, updated_at
+		FROM credentials
+		WHERE site_id = ?
+		  AND status = 'enabled'
+		  AND secret_enc <> ''
+		  AND lower(kind) = 'api_key'
+		ORDER BY id`, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("credential api key pool list: %w", err)
+	}
+	defer rows.Close()
+
+	var result []domain.Credential
+	for rows.Next() {
+		var row domain.Credential
+		var secret string
+		if err := rows.Scan(
+			&row.ID, &row.SiteID, &row.Kind, &secret, &row.MetaJSON, &row.Status,
+			&row.CheckinEnabled, &row.ImportFingerprint, scanTime(&row.CreatedAt), scanTime(&row.UpdatedAt),
+		); err != nil {
+			return nil, fmt.Errorf("credential api key pool scan: %w", err)
+		}
+		row.SecretEnc = []byte(secret)
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 	row := s.db.QueryRow(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
 	var r domain.Credential

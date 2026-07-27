@@ -11,9 +11,15 @@ import (
 )
 
 func TestJSONCheckinAdapter(t *testing.T) {
-	var gotAuth, gotUser string
+	var gotAuth string
+	gotUsers := map[string]string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth, gotUser = r.Header.Get("Authorization"), r.Header.Get("New-Api-User")
+		gotAuth = r.Header.Get("Authorization")
+		for _, name := range CompatUserIDHeaderNames {
+			if value := r.Header.Get(name); value != "" {
+				gotUsers[name] = value
+			}
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/root/api/user/checkin" {
 			http.NotFound(w, r)
 			return
@@ -31,8 +37,13 @@ func TestJSONCheckinAdapter(t *testing.T) {
 	if err != nil || result.Category != "checked_in" || result.Reward != "1.25" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if gotAuth != "Bearer session-secret" || gotUser != "42" {
-		t.Fatalf("headers auth=%q user=%q", gotAuth, gotUser)
+	if gotAuth != "Bearer session-secret" {
+		t.Fatalf("headers auth=%q", gotAuth)
+	}
+	for _, name := range CompatUserIDHeaderNames {
+		if gotUsers[name] != "42" {
+			t.Fatalf("missing fan-out header %s: %#v", name, gotUsers)
+		}
 	}
 	if strings.Contains(result.Message, "secret response") {
 		t.Fatalf("raw message leaked: %+v", result)
@@ -55,6 +66,23 @@ func TestJSONCheckinNormalizationAndErrors(t *testing.T) {
 		{"payload", 200, `not json session-secret`, "", "", ErrorPayload},
 		{"missing-success", 200, `{"message":"looks plausible"}`, "", "", ErrorPayload},
 	}
+
+	t.Run("rejected-with-message", func(t *testing.T) {
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"success":false,"message":"余额不足，无法签到"}`)
+		}))
+		defer s.Close()
+		_, err := NewJSONCheckinAdapter("new-api", s.Client(), true).Checkin(t.Context(), CheckinInput{BaseURL: s.URL, Secret: "session-secret"})
+		var checkinErr *CheckinError
+		if !errors.As(err, &checkinErr) || checkinErr.Kind != ErrorPayload {
+			t.Fatalf("err=%v", err)
+		}
+		if checkinErr.Message != "余额不足，无法签到" {
+			t.Fatalf("message=%q", checkinErr.Message)
+		}
+	})
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -138,5 +166,25 @@ func TestResolveCheckinAliases(t *testing.T) {
 	}
 	if _, ok := r.ResolveCheckin("openai-compatible"); ok {
 		t.Fatal("openai-compatible must not advertise check-in")
+	}
+}
+
+func TestJSONCheckinAdapterStripsTrailingV1(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/user/checkin" {
+			t.Fatalf("path=%q", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"success":true,"data":{"reward":1}}`)
+	}))
+	defer server.Close()
+
+	adapter := NewJSONCheckinAdapter("new-api", server.Client(), true)
+	result, err := adapter.Checkin(context.Background(), CheckinInput{
+		BaseURL:        server.URL + "/v1",
+		Secret:         "tok",
+		PlatformUserID: 1,
+	})
+	if err != nil || result.Category != "checked_in" {
+		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }

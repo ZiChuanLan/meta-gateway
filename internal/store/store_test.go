@@ -132,14 +132,88 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 6 {
-		t.Fatalf("got %d applied migrations, want 6", count)
+	if count != 12 {
+		t.Fatalf("got %d applied migrations, want 12", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 6 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 12 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
+	}
+}
+
+func TestSiteDeleteCascadesChannelsModelsAndEmptyRoutes(t *testing.T) {
+	db := openTestDB(t)
+	siteID, err := db.Site.Create(&domain.Site{
+		Name: "owned", BaseURL: "https://owned.example", Platform: "openai-compatible", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credID, err := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "api_key", SecretEnc: []byte("v1:cipher"), Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelID, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteID, CredentialID: &credID, Name: "owned-ch", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DiscoveredModel.Reconcile(t.Context(), store.ReconcileInput{
+		ChannelID: channelID, Models: []string{"ghost-model"}, Source: "openai-compatible", CheckedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Site.Delete(siteID); err != nil {
+		t.Fatalf("delete site: %v", err)
+	}
+	ch, err := db.Channel.GetByID(channelID)
+	if err != nil || ch != nil {
+		t.Fatalf("channel should cascade-delete: ch=%+v err=%v", ch, err)
+	}
+	models, err := db.DiscoveredModel.List(&channelID)
+	if err != nil || len(models) != 0 {
+		t.Fatalf("discovered models should cascade: %+v err=%v", models, err)
+	}
+	route, err := db.Route.GetByModel("ghost-model")
+	if err != nil || route != nil {
+		t.Fatalf("empty route should be cleaned: route=%+v err=%v", route, err)
+	}
+}
+
+func TestChannelDeleteCleansEmptyRoutes(t *testing.T) {
+	db := openTestDB(t)
+	siteID, _ := db.Site.Create(&domain.Site{
+		Name: "ch-del", BaseURL: "https://ch.example", Platform: "openai-compatible", Status: domain.StatusEnabled,
+	})
+	credID, _ := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "api_key", SecretEnc: []byte("v1:cipher"), Status: domain.StatusEnabled,
+	})
+	channelID, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteID, CredentialID: &credID, Name: "only", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DiscoveredModel.Reconcile(t.Context(), store.ReconcileInput{
+		ChannelID: channelID, Models: []string{"only-model"}, Source: "openai-compatible", CheckedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Channel.Delete(channelID); err != nil {
+		t.Fatalf("delete channel: %v", err)
+	}
+	models, err := db.DiscoveredModel.List(&channelID)
+	if err != nil || len(models) != 0 {
+		t.Fatalf("models remain: %+v err=%v", models, err)
+	}
+	route, err := db.Route.GetByModel("only-model")
+	if err != nil || route != nil {
+		t.Fatalf("empty route remains: route=%+v err=%v", route, err)
 	}
 }
 
@@ -442,5 +516,195 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	want := now.Add(time.Minute)
 	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 1 {
 		t.Fatalf("cooldown round trip: %+v", member)
+	}
+	if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	member, err = db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = now.Add(2 * time.Minute)
+	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 2 {
+		t.Fatalf("escalated cooldown: %+v", member)
+	}
+	if err := db.RouteMember.ClearHealth(memberID); err != nil {
+		t.Fatal(err)
+	}
+	member, err = db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.CooldownUntil != nil || member.FailCount != 0 || member.LastError != "" {
+		t.Fatalf("cleared health: %+v", member)
+	}
+}
+
+func TestChannelUpdatePropagatesDefaultsOnlyToAutomaticMembers(t *testing.T) {
+	db := openTestDB(t)
+	channelID, err := db.Channel.Create(&domain.Channel{Name: "defaults", Priority: 1, Weight: 10, Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DiscoveredModel.Reconcile(t.Context(), store.ReconcileInput{
+		ChannelID: channelID,
+		Models:    []string{"auto-model"},
+		CheckedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	autoRoute, _ := db.Route.GetByModel("auto-model")
+	autoMembers, _ := db.RouteMember.ListByRoute(autoRoute.ID)
+
+	manualRouteID, _ := db.Route.Create(&domain.Route{ModelPattern: "manual-model", Enabled: true})
+	manualID, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: manualRouteID, ChannelID: channelID, Priority: 77, Weight: 7,
+		Enabled: true, Auto: false, ManualOverride: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, _ := db.Channel.GetByID(channelID)
+	channel.Priority = 9
+	channel.Weight = 90
+	if err := db.Channel.Update(channel); err != nil {
+		t.Fatal(err)
+	}
+	automatic, _ := db.RouteMember.GetByID(autoMembers[0].ID)
+	manual, _ := db.RouteMember.GetByID(manualID)
+	if automatic.Priority != 9 || automatic.Weight != 90 {
+		t.Fatalf("automatic member did not inherit defaults: %+v", automatic)
+	}
+	if manual.Priority != 77 || manual.Weight != 7 {
+		t.Fatalf("manual member changed: %+v", manual)
+	}
+}
+
+func TestProxyLogListFilter(t *testing.T) {
+	db := openTestDB(t)
+
+	siteA, err := db.Site.Create(&domain.Site{
+		Name: "site-a", BaseURL: "https://a.example.com", Platform: "openai-compatible", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatalf("site a: %v", err)
+	}
+	siteB, err := db.Site.Create(&domain.Site{
+		Name: "site-b", BaseURL: "https://b.example.com", Platform: "openai-compatible", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatalf("site b: %v", err)
+	}
+	chA, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteA, Name: "ch-a", Status: domain.StatusEnabled, Weight: 100,
+	})
+	if err != nil {
+		t.Fatalf("channel a: %v", err)
+	}
+	chB, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteB, Name: "ch-b", Status: domain.StatusEnabled, Weight: 100,
+	})
+	if err != nil {
+		t.Fatalf("channel b: %v", err)
+	}
+
+	insert := func(requestID string, channelID int64, model string, status int) int64 {
+		t.Helper()
+		id, err := db.ProxyLog.Insert(&domain.ProxyLog{
+			RequestID: requestID, ChannelID: channelID, Model: model,
+			Status: status, LatencyMs: 10, Attempt: 1, ErrorBrief: "",
+		})
+		if err != nil {
+			t.Fatalf("insert %s: %v", requestID, err)
+		}
+		return id
+	}
+	id1 := insert("req-a-ok", chA, "gpt-a", 200)
+	id2 := insert("req-a-fail", chA, "gpt-a", 502)
+	id3 := insert("req-b-ok", chB, "gpt-b", 200)
+	id4 := insert("req-b-fail", chB, "gpt-other", 500)
+	_ = id1
+
+	mustIDs := func(logs []domain.ProxyLog) []int64 {
+		out := make([]int64, len(logs))
+		for i, l := range logs {
+			out[i] = l.ID
+		}
+		return out
+	}
+	containsOnly := func(got []int64, want ...int64) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("len got=%v want=%v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("order/content got=%v want=%v", got, want)
+			}
+		}
+	}
+
+	// Default List still returns newest first, capped.
+	all, err := db.ProxyLog.List(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(all), id4, id3, id2, id1)
+
+	// Site filter via channel join.
+	siteLogs, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{SiteID: &siteA, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(siteLogs), id2, id1)
+
+	// Channel filter.
+	chLogs, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{ChannelID: &chB, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(chLogs), id4, id3)
+
+	// Exact model filter.
+	modelLogs, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Model: "gpt-a", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(modelLogs), id2, id1)
+
+	// Failed-only (status >= 400).
+	failed, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{FailedOnly: true, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(failed), id4, id2)
+
+	// Exact status.
+	status502 := 502
+	exact, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Status: &status502, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(exact), id2)
+
+	// before_id pagination (newest-first cursor).
+	page1, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(page1), id4, id3)
+	page2, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{BeforeID: &page1[len(page1)-1].ID, Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(page2), id2, id1)
+
+	// Site + channel AND: channel on other site yields empty.
+	empty, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{SiteID: &siteA, ChannelID: &chB, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected empty site/channel AND, got %v", mustIDs(empty))
 	}
 }

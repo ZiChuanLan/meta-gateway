@@ -11,19 +11,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { I18nProvider } from "./i18n";
 import { SessionProvider } from "./session";
+import { ToastProvider } from "./toast";
 
-function renderApp() {
+function renderApp(initialEntries: string[] = ["/"]) {
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 	});
 	return render(
 		<QueryClientProvider client={queryClient}>
 			<I18nProvider>
-				<SessionProvider>
-					<MemoryRouter>
-						<App />
-					</MemoryRouter>
-				</SessionProvider>
+				<ToastProvider>
+					<SessionProvider>
+						<MemoryRouter initialEntries={initialEntries}>
+							<App />
+						</MemoryRouter>
+					</SessionProvider>
+				</ToastProvider>
 			</I18nProvider>
 		</QueryClientProvider>,
 	);
@@ -44,7 +47,25 @@ async function flushAsyncWork() {
 	});
 }
 
-describe("login transition", () => {
+function stubAdminFetch() {
+	return vi.fn(async (input: RequestInfo | URL) => {
+		const path = String(input).split("?")[0];
+		if (path === "/readyz") return new Response(null, { status: 200 });
+		if (
+			path === "/admin/sites" ||
+			path === "/admin/channels" ||
+			path === "/admin/channels/overview" ||
+			path === "/admin/discovery/models" ||
+			path === "/admin/downstream-keys" ||
+			path === "/admin/proxy-logs"
+		) {
+			return jsonResponse([]);
+		}
+		return jsonResponse({ error: `unexpected GET ${path}` }, 500);
+	});
+}
+
+describe("channel-first shell", () => {
 	beforeEach(() => {
 		localStorage.clear();
 		sessionStorage.clear();
@@ -70,16 +91,9 @@ describe("login transition", () => {
 		vi.unstubAllGlobals();
 	});
 
-	it("seals the request before mounting and revealing the dashboard", async () => {
+	it("seals the request before mounting and revealing the channel workspace", async () => {
 		vi.useFakeTimers();
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async (input: RequestInfo | URL) => {
-				const path = String(input);
-				if (path === "/readyz") return new Response(null, { status: 200 });
-				return jsonResponse([]);
-			}),
-		);
+		vi.stubGlobal("fetch", stubAdminFetch());
 
 		renderApp();
 		fireEvent.change(screen.getByLabelText("Admin token"), {
@@ -98,7 +112,7 @@ describe("login transition", () => {
 		).toBeDisabled();
 
 		await act(async () => {
-			vi.advanceTimersByTime(720);
+			vi.advanceTimersByTime(1420);
 			await Promise.resolve();
 		});
 
@@ -109,10 +123,14 @@ describe("login transition", () => {
 			document.querySelector(".gateway-transition.is-revealing"),
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole("heading", { name: "Dashboard" }),
+			screen.getByRole("heading", { name: "Connections" }),
 		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Models" })).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Tokens" })).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Logs" })).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
 
-		act(() => vi.advanceTimersByTime(820));
+		act(() => vi.advanceTimersByTime(1620));
 		expect(
 			document.querySelector(".gateway-transition"),
 		).not.toBeInTheDocument();
@@ -137,6 +155,41 @@ describe("login transition", () => {
 		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBeNull();
 	});
 
+	it("lands legacy routes on the channel workspace", async () => {
+		sessionStorage.setItem("meta-gateway.admin-token", "redirect-token");
+		vi.stubGlobal("fetch", stubAdminFetch());
+
+		renderApp(["/assets"]);
+
+		expect(
+			await screen.findByRole("heading", { name: "Connections" }),
+		).toBeInTheDocument();
+	});
+
+	it("opens models, logs, and maintain from the product nav", async () => {
+		sessionStorage.setItem("meta-gateway.admin-token", "nav-token");
+		vi.stubGlobal("fetch", stubAdminFetch());
+
+		renderApp(["/models"]);
+		expect(
+			await screen.findByRole("heading", { level: 1, name: "Models" }),
+		).toBeInTheDocument();
+
+		cleanup();
+		renderApp(["/logs"]);
+		expect(
+			await screen.findByRole("heading", { name: "Logs" }),
+		).toBeInTheDocument();
+
+		cleanup();
+		renderApp(["/settings"]);
+		expect(
+			await screen.findByRole("heading", { name: "Settings" }),
+		).toBeInTheDocument();
+		expect(screen.getByRole("tab", { name: "Runtime" })).toBeInTheDocument();
+		expect(screen.getByRole("tab", { name: "Exchange" })).toBeInTheDocument();
+	});
+
 	it("uses the short safe path when reduced motion is requested", async () => {
 		vi.useFakeTimers();
 		vi.stubGlobal(
@@ -152,31 +205,25 @@ describe("login transition", () => {
 				dispatchEvent: vi.fn(),
 			})),
 		);
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async (input: RequestInfo | URL) => {
-				if (String(input) === "/readyz")
-					return new Response(null, { status: 200 });
-				return jsonResponse([]);
-			}),
-		);
+		vi.stubGlobal("fetch", stubAdminFetch());
 
 		renderApp();
 		fireEvent.change(screen.getByLabelText("Admin token"), {
 			target: { value: "reduced-token" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
-
 		await flushAsyncWork();
 
 		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBe(
 			"reduced-token",
 		);
 		expect(
-			document.querySelector(".gateway-transition.is-revealing"),
+			screen.getByRole("heading", { name: "Connections" }),
 		).toBeInTheDocument();
-
-		act(() => vi.advanceTimersByTime(160));
+		await act(async () => {
+			vi.advanceTimersByTime(200);
+			await Promise.resolve();
+		});
 		expect(
 			document.querySelector(".gateway-transition"),
 		).not.toBeInTheDocument();

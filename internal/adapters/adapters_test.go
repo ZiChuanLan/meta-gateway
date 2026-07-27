@@ -71,20 +71,35 @@ func TestOpenAIModelAdapterPropagatesCancellation(t *testing.T) {
 
 func TestRegistryAliasesAndPrecedence(t *testing.T) {
 	registry := adapters.NewRegistry(nil)
-	for _, alias := range []string{"openai", "OPENAI-COMPATIBLE", "openaicompat", "new-api", "newapi"} {
+	for _, alias := range []string{"openai", "OPENAI-COMPATIBLE", "openaicompat", "new-api", "newapi", "one-api", "anyrouter", "axonhub", "metapi"} {
 		got, ok := registry.Resolve(alias, "unsupported")
 		if !ok {
 			t.Fatalf("alias %q did not resolve", alias)
 		}
-		if strings.Contains(strings.ToLower(alias), "new") && got.Name() != "new-api" {
+		lower := strings.ToLower(alias)
+		if strings.Contains(lower, "new") && !strings.Contains(lower, "one") && got.Name() != "new-api" {
 			t.Fatalf("alias %q resolved as %q", alias, got.Name())
 		}
+		if lower == "one-api" && got.Name() != "one-api" {
+			t.Fatalf("alias %q resolved as %q", alias, got.Name())
+		}
+		if lower == "anyrouter" || lower == "axonhub" || lower == "metapi" {
+			if got.Name() != "openai-compatible" {
+				t.Fatalf("brand %q resolved as %q", alias, got.Name())
+			}
+		}
 	}
-	if _, ok := registry.Resolve("unsupported", "openai"); ok {
-		t.Fatal("type_hint must take precedence without fallback")
+	if _, ok := registry.Resolve("totally-unknown-xyz", ""); ok {
+		t.Fatal("unknown type must not resolve")
 	}
 	if got, ok := registry.Resolve("", "new-api"); !ok || got.Name() != "new-api" {
 		t.Fatal("site platform did not resolve")
+	}
+	if adapters.CanonicalType("ANYROUTER") != "openai-compatible" {
+		t.Fatal("CanonicalType anyrouter")
+	}
+	if adapters.CanonicalType("AxonHub") != "openai-compatible" {
+		t.Fatal("CanonicalType axonhub")
 	}
 }
 

@@ -77,6 +77,16 @@ func (da *DownstreamAuth) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
+// HashToken returns the SHA-256 hex digest used for downstream key storage/lookup.
+func HashToken(token string) string {
+	return hashToken(token)
+}
+
+// NormalizeDownstreamToken trims space; empty means “generate a random token”.
+func NormalizeDownstreamToken(token string) string {
+	return strings.TrimSpace(token)
+}
+
 // NewToken generates a random token and returns its hash and raw form.
 func NewToken() (hash, raw string, err error) {
 	b := make([]byte, 32)
@@ -88,7 +98,7 @@ func NewToken() (hash, raw string, err error) {
 	return hash, raw, nil
 }
 
-// HashToken creates a SHA-256 hex digest of the token.
+// hashToken creates a SHA-256 hex digest of the token.
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])

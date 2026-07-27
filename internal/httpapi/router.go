@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/lan/meta-gateway/internal/account"
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/backup"
@@ -19,23 +20,31 @@ import (
 	"github.com/lan/meta-gateway/internal/exchange"
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
+	"github.com/lan/meta-gateway/internal/plugins"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/ratelimit"
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
+	"github.com/lan/meta-gateway/internal/runtimeconfig"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/webdavsync"
 	"github.com/lan/meta-gateway/internal/webui"
 )
 
 type Dependencies struct {
-	Registry        *adapters.Registry
-	CheckinService  *checkin.Service
-	ExchangeService *exchange.Service
-	OutboundClient  *http.Client
-	Logger          *slog.Logger
-	Metrics         *observability.Registry
-	State           *observability.State
-	BackupService   *backup.Service
+	Registry          *adapters.Registry
+	CheckinService    *checkin.Service
+	CheckinScheduler  *checkin.Scheduler
+	ExchangeService   *exchange.Service
+	PluginService     *plugins.Service
+	OutboundClient    *http.Client
+	Logger            *slog.Logger
+	Metrics           *observability.Registry
+	State             *observability.State
+	BackupService     *backup.Service
+	WebDAVService     *webdavsync.Service
+	RuntimeController *runtimeconfig.Controller
+	SetAuditRetention func(days, rows int)
 }
 
 // New creates a fully wired chi.Router.
@@ -127,31 +136,79 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	adminGroup := chi.NewRouter()
 	adminGroup.Use(auditAdmin(logger, db.AuditEvent))
 	adminGroup.Use(auth.AdminMiddleware(cfg.AdminToken))
-	adminGroup.Use(rateLimitMiddleware(ratelimit.New(cfg.AdminRatePerMinute, cfg.AdminRateBurst), func(*http.Request) int64 { return 0 }, "admin", metrics))
+	adminLimiter := ratelimit.New(cfg.AdminRatePerMinute, cfg.AdminRateBurst)
+	relayLimiter := ratelimit.New(cfg.RelayRatePerMinute, cfg.RelayRateBurst)
+	adminGroup.Use(rateLimitMiddleware(adminLimiter, func(*http.Request) int64 { return 0 }, "admin", metrics))
 	adminGroup.Use(withAdminBodyLimit(cfg.MaxAdminBodyBytes))
 	selector := routing.New(db.RouteMember)
+	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)
 	discoveryHandler.Register(adminGroup)
-	checkinHandler := NewCheckinHandler(db, checkinService)
-	checkinHandler.Register(adminGroup)
-	exchangeHandler := NewExchangeHandler(exchangeService)
-	exchangeHandler.Register(adminGroup)
-	NewAuditHandler(db, cfg.AuditRetentionDays, cfg.AuditRetentionRows).Register(adminGroup)
+	accountService := account.New(db, enc, registry)
+	if exchangeService != nil {
+		exchangeService.SetKeySyncer(account.ExchangeKeySyncer{Service: accountService})
+	}
+	NewAccountHandler(accountService).Register(adminGroup)
+	NewTryHandler(proxyService).Register(adminGroup)
+
+	// Plugin catalog remains optional. Core product ops are always registered:
+	// check-in, exchange, audit, backup — these are first-class Admin surfaces.
+	pluginService := dependencies.PluginService
+	if pluginService != nil {
+		NewPluginHandler(pluginService).Register(adminGroup)
+	}
+
+	NewCheckinHandler(db, checkinService).Register(adminGroup)
+	NewExchangeHandler(exchangeService).Register(adminGroup)
+	webdavService := dependencies.WebDAVService
+	if webdavService == nil {
+		maxBytes := cfg.WebDAVMaxBytes
+		if maxBytes <= 0 {
+			maxBytes = 10 << 20
+		}
+		webdavService = webdavsync.NewServiceWithSettings(webdavsync.Config{
+			Enabled:        cfg.WebDAVSyncEnabled,
+			URL:            cfg.WebDAVURL,
+			Username:       cfg.WebDAVUsername,
+			Password:       cfg.WebDAVPassword,
+			BackupPassword: cfg.WebDAVBackupPassword,
+			CronExpr:       cfg.WebDAVCron,
+			MaxBytes:       maxBytes,
+		}, &webdavsync.Client{HTTP: outboundClient, MaxBytes: maxBytes}, exchangeService, db.WebDAVSettings, enc)
+	}
+	NewWebDAVHandler(webdavService).Register(adminGroup)
+	auditHandler := NewAuditHandler(db, cfg.AuditRetentionDays, cfg.AuditRetentionRows)
+	auditHandler.Register(adminGroup)
 	backupService := dependencies.BackupService
 	if backupService == nil {
 		backupService = backup.New(db, cfg.BackupDir)
 	}
 	NewBackupHandler(backupService).Register(adminGroup)
+
+	runtimeController := dependencies.RuntimeController
+	if runtimeController == nil {
+		runtimeController = runtimeconfig.New(cfg, db.RuntimeSettings, runtimeconfig.Appliers{
+			Proxy:        proxyService,
+			RelayLimiter: relayLimiter,
+			AdminLimiter: adminLimiter,
+			CheckinSched: dependencies.CheckinScheduler,
+			SetAudit:     auditHandler.SetRetention,
+			SetAuditLoop: dependencies.SetAuditRetention,
+		})
+		if err := runtimeController.Bootstrap(); err != nil {
+			logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
+		}
+	}
+	NewRuntimeSettingsHandler(runtimeController).Register(adminGroup)
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)
-	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	relayHandler := NewRelayHandler(db, proxyService)
 	v1Group := chi.NewRouter()
 	v1Group.Use(auth.NewDownstreamAuth(db.DownstreamKey).Middleware())
-	v1Group.Use(rateLimitMiddleware(ratelimit.New(cfg.RelayRatePerMinute, cfg.RelayRateBurst), downstreamRateKey, "relay", metrics))
+	v1Group.Use(rateLimitMiddleware(relayLimiter, downstreamRateKey, "relay", metrics))
 	relayHandler.Register(v1Group)
 	r.Mount("/v1", v1Group)
 

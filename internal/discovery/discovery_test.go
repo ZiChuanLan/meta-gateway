@@ -43,6 +43,33 @@ func TestRefreshSuccessAndFailurePreservesState(t *testing.T) {
 	}
 }
 
+func TestProbeChecksConnectivityWithoutChangingDiscoveryState(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[{"id":"model-a"}]}`)
+	}))
+	defer upstream.Close()
+	db, service, channelID := setupService(t, upstream.URL, "openai-compatible")
+
+	result, err := service.Probe(t.Context(), channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ChannelID != channelID || result.Adapter != "openai-compatible" || strings.Join(result.Models, ",") != "model-a" {
+		t.Fatalf("probe=%+v", result)
+	}
+	models, err := db.DiscoveredModel.List(&channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := db.Channel.GetByID(channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 0 || channel.ModelsCSV != "" {
+		t.Fatalf("probe mutated discovery: models=%+v channel=%+v", models, channel)
+	}
+}
+
 func TestRefreshAllContinuesAndOrdersByChannelID(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[]}`)

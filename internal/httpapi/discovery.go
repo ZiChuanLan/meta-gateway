@@ -20,9 +20,24 @@ func NewDiscoveryHandler(db *store.DB, service *discovery.Service) *DiscoveryHan
 }
 
 func (h *DiscoveryHandler) Register(r chi.Router) {
+	r.Post("/discovery/channels/{id}/probe", h.probeChannel)
 	r.Post("/discovery/channels/{id}/refresh", h.refreshChannel)
 	r.Post("/discovery/refresh", h.refreshAll)
 	r.Get("/discovery/models", h.listModels)
+}
+
+func (h *DiscoveryHandler) probeChannel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+	result, err := h.service.Probe(r.Context(), id)
+	if err != nil {
+		writeDiscoveryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *DiscoveryHandler) refreshChannel(w http.ResponseWriter, r *http.Request) {

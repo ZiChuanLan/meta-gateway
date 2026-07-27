@@ -75,6 +75,30 @@ type Channel struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// ChannelOverview combines channel configuration with discovery and routing health.
+type ChannelOverview struct {
+	Channel            Channel    `json:"channel"`
+	CredentialKind     string     `json:"credential_kind,omitempty"`
+	CheckinEnabled     bool       `json:"checkin_enabled"`
+	HasUserCredential  bool       `json:"has_user_credential"`
+	HasPlatformUserID  bool       `json:"has_platform_user_id"`
+	HasAPIKey          bool       `json:"has_api_key"`
+	SiteUsable         bool       `json:"site_usable"`
+	CredentialUsable   bool       `json:"credential_usable"`
+	ModelCount         int        `json:"model_count"`
+	LastCheckedAt      *time.Time `json:"last_checked_at,omitempty"`
+	LastLatencyMs      int        `json:"last_latency_ms"`
+	DiscoverySource    string     `json:"discovery_source,omitempty"`
+	RouteCount         int        `json:"route_count"`
+	EnabledMemberCount int        `json:"enabled_member_count"`
+	CoolingMemberCount int        `json:"cooling_member_count"`
+	FailureCount       int        `json:"failure_count"`
+	LastError          string     `json:"last_error,omitempty"`
+	LastProbeAt        *time.Time `json:"last_probe_at,omitempty"`
+	LastProbeOK        bool       `json:"last_probe_ok"`
+	LastProbeError     string     `json:"last_probe_error,omitempty"`
+}
+
 // DiscoveredModel is one model observed during a successful channel refresh.
 type DiscoveredModel struct {
 	ID        int64     `json:"id"`
@@ -158,4 +182,10 @@ type RoutingCandidate struct {
 	Member           RouteMember `json:"member"`
 	Channel          Channel     `json:"channel"`
 	CredentialUsable bool        `json:"credential_usable"`
+}
+
+// RouteOverview is the admin-facing route matrix with enriched channel members.
+type RouteOverview struct {
+	Route   Route              `json:"route"`
+	Members []RoutingCandidate `json:"members"`
 }

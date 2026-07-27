@@ -61,9 +61,21 @@ func (s *SiteStore) Update(site *domain.Site) error {
 }
 
 func (s *SiteStore) Delete(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM sites WHERE id = ?`, id)
+	// Channels cascade from sites (ON DELETE CASCADE).
+	// Empty routes without remaining members are cleaned to avoid ghost models.
+	tx, err := s.db.Begin()
 	if err != nil {
+		return fmt.Errorf("site delete begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM sites WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("site delete: %w", err)
+	}
+	if _, err := tx.Exec(`DELETE FROM routes WHERE id NOT IN (SELECT DISTINCT route_id FROM route_members)`); err != nil {
+		return fmt.Errorf("site delete empty routes: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("site delete commit: %w", err)
 	}
 	return nil
 }

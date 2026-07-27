@@ -19,6 +19,7 @@ import (
 
 type ChatProxy interface {
 	ChatCompletions(ctx context.Context, req proxy.Request) *relay.Result
+	ChatCompletionsWithMeta(ctx context.Context, req proxy.Request) (*relay.Result, *proxy.AttemptMeta)
 }
 
 // RelayHandler serves public /v1/* endpoints.

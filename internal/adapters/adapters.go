@@ -15,40 +15,165 @@ type ModelAdapter interface {
 type Registry struct {
 	adapters        map[string]ModelAdapter
 	checkinAdapters map[string]CheckinAdapter
+	accountAdapters map[string]AccountAdapter
 }
 
 func NewRegistry(client *http.Client) *Registry {
 	openAI := NewOpenAIModelAdapter("openai-compatible", client)
 	newAPI := NewOpenAIModelAdapter("new-api", client)
+	oneAPI := NewOpenAIModelAdapter("one-api", client)
 	newAPICheckin := NewJSONCheckinAdapter("new-api", client, true)
 	oneAPICheckin := NewJSONCheckinAdapter("one-api", client, false)
-	return &Registry{adapters: map[string]ModelAdapter{
+	newAPIAccount := NewNewAPIAccountAdapter("new-api", client, true)
+	oneAPIAccount := NewNewAPIAccountAdapter("one-api", client, false)
+
+	// Primary families. Aliases and third-party site brands resolve through FamilyOf.
+	modelAdapters := map[string]ModelAdapter{
 		"openai":            openAI,
 		"openai-compatible": openAI,
 		"openaicompat":      openAI,
 		"new-api":           newAPI,
 		"newapi":            newAPI,
-	}, checkinAdapters: map[string]CheckinAdapter{
+		"one-api":           oneAPI,
+		"oneapi":            oneAPI,
+	}
+	// Register common OpenAI-compatible relay brands so discovery works after AAH import.
+	for _, brand := range OpenAICompatibleBrands() {
+		modelAdapters[brand] = openAI
+	}
+
+	checkinMap := map[string]CheckinAdapter{
 		"new-api": newAPICheckin,
 		"newapi":  newAPICheckin,
 		"one-api": oneAPICheckin,
 		"oneapi":  oneAPICheckin,
-	}}
+		// Many New-API forks share the same check-in / account family.
+		"anyrouter":       newAPICheckin,
+		"done-hub":        newAPICheckin,
+		"one-hub":         newAPICheckin,
+		"veloera":         newAPICheckin,
+		"v-api":           newAPICheckin,
+		"voapi":           newAPICheckin,
+		"super-api":       newAPICheckin,
+		"rix-api":         newAPICheckin,
+		"neo-api":         newAPICheckin,
+		"sub2api":         newAPICheckin,
+		"wong-gongyi":     newAPICheckin,
+		"axonhub":         newAPICheckin,
+		"metapi":          newAPICheckin,
+		"aihubmix":        newAPICheckin,
+		"sharedchat":      newAPICheckin,
+		"octopus":         newAPICheckin,
+		"claude-code-hub": newAPICheckin,
+	}
+	accountMap := map[string]AccountAdapter{
+		"new-api": newAPIAccount,
+		"newapi":  newAPIAccount,
+		"one-api": oneAPIAccount,
+		"oneapi":  oneAPIAccount,
+	}
+	for brand := range checkinMap {
+		if brand == "one-api" || brand == "oneapi" {
+			accountMap[brand] = oneAPIAccount
+			continue
+		}
+		if _, exists := accountMap[brand]; !exists {
+			accountMap[brand] = newAPIAccount
+		}
+	}
+	return &Registry{
+		adapters:        modelAdapters,
+		checkinAdapters: checkinMap,
+		accountAdapters: accountMap,
+	}
+}
+
+// OpenAICompatibleBrands are site/channel type labels that speak OpenAI /v1.
+func OpenAICompatibleBrands() []string {
+	return []string{
+		"anyrouter",
+		"veloera",
+		"one-hub",
+		"done-hub",
+		"v-api",
+		"voapi",
+		"super-api",
+		"rix-api",
+		"neo-api",
+		"sub2api",
+		"octopus",
+		"axonhub",
+		"metapi",
+		"claude-code-hub",
+		"aihubmix",
+		"sharedchat",
+		"wong-gongyi",
+		"unknown",
+	}
+}
+
+func (r *Registry) ResolveAccount(platform string) (AccountAdapter, bool) {
+	name := CanonicalType(platform)
+	if adapter, ok := r.accountAdapters[name]; ok {
+		return adapter, true
+	}
+	adapter, ok := r.accountAdapters[canonical(platform)]
+	return adapter, ok
 }
 
 func (r *Registry) ResolveCheckin(platform string) (CheckinAdapter, bool) {
+	name := CanonicalType(platform)
+	if adapter, ok := r.checkinAdapters[name]; ok {
+		return adapter, true
+	}
+	// Fall back to brand map with original key.
 	adapter, ok := r.checkinAdapters[canonical(platform)]
 	return adapter, ok
 }
 
 // Resolve gives channel type_hint precedence over the site's platform.
+// When type_hint is set but unknown, platform is not used as a silent fallback.
 func (r *Registry) Resolve(typeHint, platform string) (ModelAdapter, bool) {
-	name := canonical(typeHint)
-	if name == "" {
-		name = canonical(platform)
+	if strings.TrimSpace(typeHint) != "" {
+		return r.resolveOne(typeHint)
 	}
-	adapter, ok := r.adapters[name]
-	return adapter, ok
+	return r.resolveOne(platform)
+}
+
+func (r *Registry) resolveOne(raw string) (ModelAdapter, bool) {
+	key := canonical(raw)
+	if adapter, ok := r.adapters[key]; ok {
+		return adapter, true
+	}
+	family := CanonicalType(raw)
+	if family != key {
+		if adapter, ok := r.adapters[family]; ok {
+			return adapter, true
+		}
+	}
+	return nil, false
+}
+
+// CanonicalType maps free-form site/channel type labels to a stable family id.
+func CanonicalType(value string) string {
+	value = canonical(value)
+	value = strings.ReplaceAll(value, "_", "-")
+	switch value {
+	case "", "openai", "openaicompat", "openai-compatible", "openai-compat":
+		return "openai-compatible"
+	case "newapi", "new-api":
+		return "new-api"
+	case "oneapi", "one-api":
+		return "one-api"
+	case "anyrouter", "veloera", "one-hub", "done-hub", "v-api", "voapi",
+		"super-api", "rix-api", "neo-api", "sub2api", "octopus", "axonhub",
+		"metapi", "claude-code-hub", "aihubmix", "sharedchat", "wong-gongyi",
+		"unknown":
+		// Brand-specific New-API / One-API style relays: OpenAI-compatible /v1 surface.
+		return "openai-compatible"
+	default:
+		return value
+	}
 }
 
 func canonical(value string) string {

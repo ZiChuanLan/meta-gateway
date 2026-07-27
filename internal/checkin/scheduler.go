@@ -3,6 +3,7 @@ package checkin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 
@@ -10,6 +11,9 @@ import (
 )
 
 var ErrSchedulerStopped = errors.New("check-in scheduler has been stopped")
+
+// ErrInvalidCron is returned when a hot-reload cron expression is invalid.
+var ErrInvalidCron = errors.New("invalid check-in cron expression")
 
 type BatchRunner interface {
 	RunAll(context.Context, string) (*RunSummary, error)
@@ -27,6 +31,7 @@ type Scheduler struct {
 	stopped     bool
 	runMu       sync.Mutex
 	running     bool
+	expression  string
 }
 
 func NewScheduler(runner BatchRunner, expression string, logger *log.Logger) (*Scheduler, error) {
@@ -36,11 +41,12 @@ func NewScheduler(runner BatchRunner, expression string, logger *log.Logger) (*S
 	ctx, cancel := context.WithCancel(context.Background())
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	scheduler := &Scheduler{
-		runner: runner,
-		cron:   cron.New(cron.WithParser(parser)),
-		logger: logger,
-		ctx:    ctx,
-		cancel: cancel,
+		runner:     runner,
+		cron:       cron.New(cron.WithParser(parser)),
+		logger:     logger,
+		ctx:        ctx,
+		cancel:     cancel,
+		expression: expression,
 	}
 	if _, err := scheduler.cron.AddFunc(expression, func() {
 		scheduler.run(scheduler.ctx)
@@ -63,6 +69,50 @@ func (s *Scheduler) Start() error {
 	s.started = true
 	s.cron.Start()
 	return nil
+}
+
+// SetSchedule replaces the cron expression. When enabled is false the scheduler
+// stops ticking without destroying the process; when true it restarts with the new cron.
+func (s *Scheduler) SetSchedule(expression string, enabled bool) error {
+	if s == nil {
+		return nil
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.stopped {
+		return ErrSchedulerStopped
+	}
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if enabled {
+		if _, err := parser.Parse(expression); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidCron, err)
+		}
+	}
+	if s.started {
+		stopCtx := s.cron.Stop()
+		<-stopCtx.Done()
+		s.started = false
+	}
+	if !enabled {
+		s.expression = expression
+		return nil
+	}
+	s.cron = cron.New(cron.WithParser(parser))
+	if _, err := s.cron.AddFunc(expression, func() {
+		s.run(s.ctx)
+	}); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidCron, err)
+	}
+	s.expression = expression
+	s.cron.Start()
+	s.started = true
+	return nil
+}
+
+func (s *Scheduler) Expression() string {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.expression
 }
 
 func (s *Scheduler) Stop(ctx context.Context) error {
