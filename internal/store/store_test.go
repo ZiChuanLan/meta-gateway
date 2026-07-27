@@ -528,6 +528,22 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 2 {
 		t.Fatalf("escalated cooldown: %+v", member)
 	}
+	// Old code capped at 30m and stopped doubling after 5 steps; keep escalating
+	// so long cool-downs can act as a soft disable.
+	for failureNumber := 3; failureNumber <= 6; failureNumber++ {
+		if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	member, err = db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fail_count 6 → cooldown * 2^5 = 32 minutes (above the former 30m cap)
+	want = now.Add(32 * time.Minute)
+	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 6 {
+		t.Fatalf("uncapped escalated cooldown: got %+v want until %v fail_count 6", member, want)
+	}
 	if err := db.RouteMember.ClearHealth(memberID); err != nil {
 		t.Fatal(err)
 	}

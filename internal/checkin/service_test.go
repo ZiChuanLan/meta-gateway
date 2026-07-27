@@ -61,6 +61,9 @@ func TestRunCredentialFailuresAreRedactedAndLogged(t *testing.T) {
 	if err != nil || result.Status != checkin.StatusFailed || result.Category != string(adapters.ErrorStatus) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
+	if !strings.Contains(result.Message, "503") {
+		t.Fatalf("expected HTTP status in message, got %q", result.Message)
+	}
 	logs, _ := db.CheckinLog.List(store.CheckinLogFilter{CredentialID: &credentialID})
 	if len(logs) != 1 || strings.Contains(logs[0].Message, "secret") || strings.Contains(logs[0].Message, "private") {
 		t.Fatalf("logs=%+v", logs)

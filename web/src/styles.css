@@ -525,6 +525,15 @@ td.status-col {
 	background: var(--surface);
 	color: var(--ink);
 }
+/* Keep form controls inside narrow panels; bare number inputs otherwise overflow. */
+.field input:not([type="checkbox"]):not([type="radio"]),
+.field select,
+.field textarea {
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	box-sizing: border-box;
+}
 .field textarea, .panel textarea { height: auto; min-height: 88px; padding: 10px 11px; resize: vertical; }
 .field input:focus, .field select:focus, .field textarea:focus,
 .panel input:focus, .panel select:focus, .directory-search input:focus {
@@ -3954,6 +3963,8 @@ th.actions, td.actions {
 }
 .runtime-settings-grid .panel {
 	margin-top: 0;
+	min-width: 0;
+	overflow: hidden;
 }
 .runtime-setting-row {
 	display: grid;
@@ -3990,8 +4001,32 @@ th.actions, td.actions {
 
 .runtime-inline-fields {
 	display: grid;
-	grid-template-columns: 1fr 1fr;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 	gap: 8px;
+	width: 100%;
+	min-width: 0;
+}
+.runtime-inline-field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+.runtime-inline-field > span {
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--muted);
+}
+.runtime-inline-fields input {
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+@media (max-width: 1100px) {
+	.runtime-inline-fields {
+		grid-template-columns: 1fr;
+	}
 }
 .runtime-settings-actions {
 	display: flex;

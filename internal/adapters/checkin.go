@@ -109,7 +109,11 @@ func (a *JSONCheckinAdapter) Checkin(ctx context.Context, input CheckinInput) (C
 		return CheckinResult{Outcome: CheckinSkipped, Category: "unsupported", Message: "check-in is not supported"}, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return CheckinResult{}, &CheckinError{Kind: ErrorStatus, Status: resp.StatusCode}
+		return CheckinResult{}, &CheckinError{
+			Kind:    ErrorStatus,
+			Status:  resp.StatusCode,
+			Message: explainCheckinHTTPStatus(resp.StatusCode),
+		}
 	}
 
 	limited := io.LimitReader(resp.Body, maxCheckinResponseBytes+1)
@@ -190,6 +194,39 @@ func alreadyCheckedIn(message string) bool {
 		}
 	}
 	return false
+}
+
+// explainCheckinHTTPStatus turns a non-2xx status into an operator-facing reason.
+// 404 is handled earlier as "unsupported" and never reaches here.
+func explainCheckinHTTPStatus(status int) string {
+	switch status {
+	case http.StatusUnauthorized:
+		return "HTTP 401 unauthorized — user token expired, wrong secret, or missing auth"
+	case http.StatusForbidden:
+		return "HTTP 403 forbidden — no permission, IP blocked, or Cloudflare/WAF challenge"
+	case http.StatusMethodNotAllowed:
+		return "HTTP 405 method not allowed — check-in path may differ on this site"
+	case http.StatusRequestTimeout:
+		return "HTTP 408 request timeout from upstream"
+	case http.StatusTooManyRequests:
+		return "HTTP 429 rate limited — slow down or wait before retrying"
+	case http.StatusBadGateway:
+		return "HTTP 502 bad gateway — upstream reverse proxy or origin is down"
+	case http.StatusServiceUnavailable:
+		return "HTTP 503 service unavailable — site overloaded, maintenance, or Cloudflare block"
+	case http.StatusGatewayTimeout:
+		return "HTTP 504 gateway timeout — origin did not answer in time"
+	case 520, 521, 522, 523, 524, 525, 526, 530:
+		return fmt.Sprintf("HTTP %d Cloudflare / edge error — origin unreachable or TLS issue", status)
+	default:
+		if status >= 500 {
+			return fmt.Sprintf("HTTP %d server error — site or gateway fault", status)
+		}
+		if status >= 400 {
+			return fmt.Sprintf("HTTP %d client error — request rejected by upstream", status)
+		}
+		return fmt.Sprintf("HTTP %d unexpected status from check-in endpoint", status)
+	}
 }
 
 // redactCheckinDetail keeps upstream failure text useful while avoiding long dumps / obvious secrets.

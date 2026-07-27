@@ -679,10 +679,10 @@ export function RuntimeSettingsPanel() {
 								patch(
 									"cooldown_seconds",
 									numberOr(e.target.value, draft.cooldown_seconds),
-								)
-							}
-						/>
-						<small>{t("ops.runtime.cooldownHint", { max: 30 })}</small>
+									)
+								}
+							/>
+						<small>{t("ops.runtime.cooldownHint")}</small>
 					</label>
 				</Panel>
 
@@ -715,65 +715,76 @@ export function RuntimeSettingsPanel() {
 					<div className="panel-header">
 						<strong>{t("ops.runtime.section.limits")}</strong>
 					</div>
-					<label className="field">
+					<div className="field">
 						<span>{t("ops.runtime.relayRate")}</span>
 						<div className="runtime-inline-fields">
-							<input
-								type="number"
-								min={0}
-								disabled={busy}
-								value={draft.relay_rate_per_minute}
-								onChange={(e) =>
-									patch(
-										"relay_rate_per_minute",
-										numberOr(e.target.value, draft.relay_rate_per_minute),
-									)
-								}
-							/>
-							<input
-								type="number"
-								min={0}
-								disabled={busy}
-								value={draft.relay_rate_burst}
-								onChange={(e) =>
-									patch(
-										"relay_rate_burst",
-										numberOr(e.target.value, draft.relay_rate_burst),
-									)
-								}
-							/>
+							<label className="runtime-inline-field">
+								<span>{t("ops.runtime.ratePerMinute")}</span>
+								<input
+									type="number"
+									min={0}
+									disabled={busy}
+									value={draft.relay_rate_per_minute}
+									onChange={(e) =>
+										patch(
+											"relay_rate_per_minute",
+											numberOr(e.target.value, draft.relay_rate_per_minute),
+										)
+									}
+								/>
+							</label>
+							<label className="runtime-inline-field">
+								<span>{t("ops.runtime.rateBurst")}</span>
+								<input
+									type="number"
+									min={0}
+									disabled={busy}
+									value={draft.relay_rate_burst}
+									onChange={(e) =>
+										patch(
+											"relay_rate_burst",
+											numberOr(e.target.value, draft.relay_rate_burst),
+										)
+									}
+								/>
+							</label>
 						</div>
-						<small>{t("ops.runtime.rateFieldsHint")}</small>
-					</label>
-					<label className="field">
+					</div>
+					<div className="field">
 						<span>{t("ops.runtime.adminRate")}</span>
 						<div className="runtime-inline-fields">
-							<input
-								type="number"
-								min={0}
-								disabled={busy}
-								value={draft.admin_rate_per_minute}
-								onChange={(e) =>
-									patch(
-										"admin_rate_per_minute",
-										numberOr(e.target.value, draft.admin_rate_per_minute),
-									)
-								}
-							/>
-							<input
-								type="number"
-								min={0}
-								disabled={busy}
-								value={draft.admin_rate_burst}
-								onChange={(e) =>
-									patch(
-										"admin_rate_burst",
-										numberOr(e.target.value, draft.admin_rate_burst),
-									)
-								}
-							/>
+							<label className="runtime-inline-field">
+								<span>{t("ops.runtime.ratePerMinute")}</span>
+								<input
+									type="number"
+									min={0}
+									disabled={busy}
+									value={draft.admin_rate_per_minute}
+									onChange={(e) =>
+										patch(
+											"admin_rate_per_minute",
+											numberOr(e.target.value, draft.admin_rate_per_minute),
+										)
+									}
+								/>
+							</label>
+							<label className="runtime-inline-field">
+								<span>{t("ops.runtime.rateBurst")}</span>
+								<input
+									type="number"
+									min={0}
+									disabled={busy}
+									value={draft.admin_rate_burst}
+									onChange={(e) =>
+										patch(
+											"admin_rate_burst",
+											numberOr(e.target.value, draft.admin_rate_burst),
+										)
+									}
+								/>
+							</label>
 						</div>
-					</label>
+					</div>
 				</Panel>
 
 				<Panel>

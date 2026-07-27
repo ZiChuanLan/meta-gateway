@@ -289,12 +289,10 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 	}
 	nextFailures := currentFailures + 1
 	backoff := cooldown
-	for step := 1; step < nextFailures && step < 6; step++ {
+	// Double per consecutive failure with no hard cap so repeated outages
+	// effectively park the member until success or manual clear-health.
+	for step := 1; step < nextFailures; step++ {
 		backoff *= 2
-	}
-	const maximumBackoff = 30 * time.Minute
-	if backoff > maximumBackoff {
-		backoff = maximumBackoff
 	}
 	until := now.Add(backoff).UTC().Format(time.RFC3339Nano)
 	if _, err = tx.Exec(`UPDATE route_members SET fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,

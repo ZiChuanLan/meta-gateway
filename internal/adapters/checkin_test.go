@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -101,6 +102,11 @@ func TestJSONCheckinNormalizationAndErrors(t *testing.T) {
 			var checkinErr *CheckinError
 			if !errors.As(err, &checkinErr) || checkinErr.Kind != tc.errKind {
 				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			if tc.errKind == ErrorStatus {
+				if checkinErr.Status != tc.status || !strings.Contains(checkinErr.Message, fmt.Sprintf("%d", tc.status)) {
+					t.Fatalf("status error should cite HTTP code: %+v", checkinErr)
+				}
 			}
 			if strings.Contains(err.Error(), "session-secret") || strings.Contains(err.Error(), "private") {
 				t.Fatalf("error leaked data: %v", err)

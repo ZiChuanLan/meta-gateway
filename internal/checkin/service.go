@@ -346,7 +346,7 @@ func normalizeAdapterError(err error) (status, category, message string) {
 		if message == "" {
 			switch category {
 			case "invalid_payload":
-				message = "upstream response was not a valid check-in result"
+				message = "upstream response was not a valid check-in result (not JSON or missing success)"
 			case "upstream_status":
 				if checkinErr.Status > 0 {
 					message = fmt.Sprintf("upstream returned HTTP %d", checkinErr.Status)
@@ -354,14 +354,20 @@ func normalizeAdapterError(err error) (status, category, message string) {
 					message = "upstream returned an error status"
 				}
 			case "transport":
-				message = "could not reach upstream check-in endpoint"
-			case "invalid_base_url":
+				message = "could not reach upstream check-in endpoint (DNS, TLS, or network)"
+			case "invalid_base_url", "invalid_url":
 				message = "site base URL is invalid for check-in"
+			case "response_too_large":
+				message = "upstream check-in response was too large"
 			default:
 				message = "upstream check-in failed"
 			}
-		} else if category == "upstream_status" && checkinErr.Status > 0 && !strings.Contains(message, fmt.Sprintf("%d", checkinErr.Status)) {
-			message = fmt.Sprintf("HTTP %d: %s", checkinErr.Status, message)
+		} else if category == "upstream_status" && checkinErr.Status > 0 {
+			// Adapter message already includes "HTTP N …"; avoid "HTTP N: HTTP N …".
+			code := fmt.Sprintf("%d", checkinErr.Status)
+			if !strings.Contains(message, code) {
+				message = fmt.Sprintf("HTTP %d: %s", checkinErr.Status, message)
+			}
 		}
 		return StatusFailed, category, message
 	}
@@ -369,11 +375,20 @@ func normalizeAdapterError(err error) (status, category, message string) {
 	if errors.As(err, &modelErr) {
 		// ProbeSelf failures while resolving platform user id.
 		if modelErr.Kind == adapters.ErrorStatus && (modelErr.Status == 401 || modelErr.Status == 403) {
-			return StatusFailed, "upstream_unauthorized", "account probe unauthorized while resolving user id"
+			return StatusFailed, "upstream_unauthorized", fmt.Sprintf(
+				"account probe HTTP %d while resolving user id — token may be expired",
+				modelErr.Status,
+			)
+		}
+		if modelErr.Status > 0 {
+			return StatusFailed, string(modelErr.Kind), fmt.Sprintf(
+				"could not resolve platform user id (HTTP %d)",
+				modelErr.Status,
+			)
 		}
 		return StatusFailed, string(modelErr.Kind), "could not resolve platform user id"
 	}
-	return StatusFailed, "upstream_failure", "upstream check-in failed"
+	return StatusFailed, "upstream_failure", "upstream check-in failed (unknown error type)"
 }
 
 func zero(value []byte) {
