@@ -197,7 +197,17 @@ func (s *Service) Sync(ctx context.Context, source, mode string) (*SyncResult, e
 }
 
 // RunScheduled implements the scheduler runner contract (always incremental).
+// Returns skipped when the service is not enabled (e.g. turned off via settings).
 func (s *Service) RunScheduled(ctx context.Context) (*SyncResult, error) {
+	if !s.runtimeConfig().Enabled {
+		result := &SyncResult{
+			Status: StatusSkipped, Source: SourceScheduled,
+			FetchedAt: s.now().UTC(),
+			Message:   "scheduled sync disabled",
+		}
+		s.remember(result)
+		return result, nil
+	}
 	return s.Sync(ctx, SourceScheduled, SyncModeIncremental)
 }
 

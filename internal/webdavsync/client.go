@@ -17,6 +17,8 @@ type Client struct {
 	MaxBytes int64
 }
 
+const downloadTimeout = 120 * time.Second
+
 func (c *Client) Download(ctx context.Context, targetURL, username, password string) ([]byte, error) {
 	if c == nil || c.HTTP == nil {
 		return nil, Error{Category: CategoryInternal, Message: "http client required"}
@@ -25,7 +27,10 @@ func (c *Client) Download(ctx context.Context, targetURL, username, password str
 	if maxBytes <= 0 {
 		maxBytes = 10 << 20
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	// Enforce a total download deadline so slow body transfers don't block indefinitely.
+	dlCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(dlCtx, http.MethodGet, targetURL, nil)
 	if err != nil {
 		return nil, Error{Category: CategoryValidation, Message: "invalid request"}
 	}
@@ -56,7 +61,13 @@ func (c *Client) Download(ctx context.Context, targetURL, username, password str
 	limited := io.LimitReader(response.Body, maxBytes+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, Error{Category: CategoryUpstream, Message: "webdav download timed out"}
+		}
 		return nil, Error{Category: CategoryUpstream, Message: "webdav body read failed"}
+	}
+	if err := dlCtx.Err(); err != nil {
+		return nil, Error{Category: CategoryUpstream, Message: "webdav download timed out"}
 	}
 	if int64(len(body)) > maxBytes {
 		return nil, Error{Category: CategoryTooLarge, Message: "webdav backup exceeds size limit"}

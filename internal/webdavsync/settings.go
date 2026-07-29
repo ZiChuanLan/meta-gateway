@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lan/meta-gateway/internal/store"
+	cronlib "github.com/robfig/cron/v3"
 )
 
 // SettingsView is the redacted Admin settings payload (never includes secrets).
@@ -83,6 +84,13 @@ func (s *Service) UpdateSettings(update SettingsUpdate) (*SettingsView, error) {
 	if url != "" {
 		if _, resolveErr := ResolveBackupURL(url); resolveErr != nil {
 			return nil, resolveErr
+		}
+	}
+	// Validate cron expression when a non-default value is provided.
+	if cron != "0 */6 * * *" {
+		parser := cronlib.NewParser(cronlib.Minute | cronlib.Hour | cronlib.Dom | cronlib.Month | cronlib.Dow)
+		if _, parseErr := parser.Parse(cron); parseErr != nil {
+			return nil, Error{Category: CategoryValidation, Message: "invalid cron expression: " + parseErr.Error()}
 		}
 	}
 

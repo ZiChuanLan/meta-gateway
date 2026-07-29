@@ -213,7 +213,11 @@ func parseAAHV2(fields map[string]json.RawMessage) ([]Item, error) {
 		return nil, formatError(ErrorUnsupported)
 	}
 
-	// 1) Preferred: explicit API credential profiles (gateway keys).
+	// Collect from BOTH profiles and accounts when both exist.
+	// Profiles carry api_key entries; accounts carry access_token/session entries
+	// for check-in. Silently dropping one leaks data, especially in replace mode.
+	var combined []Item
+
 	if raw, ok := fields["apiCredentialProfiles"]; ok {
 		var container struct {
 			Profiles []map[string]json.RawMessage `json:"profiles"`
@@ -222,31 +226,28 @@ func parseAAHV2(fields map[string]json.RawMessage) ([]Item, error) {
 			return nil, formatError(ErrorValidation)
 		}
 		if container.Profiles != nil && len(container.Profiles) > 0 {
-			items := make([]Item, 0, len(container.Profiles))
 			for _, profile := range container.Profiles {
 				item, err := parseAAHProfile(profile)
 				if err != nil {
 					return nil, err
 				}
-				items = append(items, item)
+				combined = append(combined, item)
 			}
-			return items, nil
 		}
 	}
 
-	// 2) Fallback: site accounts with access_token (common full AAH backup).
-	// Real exports often ship empty profiles while accounts hold usable tokens.
 	if raw, ok := fields["accounts"]; ok {
 		items, err := parseAAHAccounts(raw)
 		if err != nil {
 			return nil, err
 		}
-		if len(items) > 0 {
-			return items, nil
-		}
+		combined = append(combined, items...)
 	}
 
-	return nil, formatError(ErrorValidation)
+	if len(combined) == 0 {
+		return nil, formatError(ErrorValidation)
+	}
+	return combined, nil
 }
 
 func parseAAHProfile(profile map[string]json.RawMessage) (Item, error) {
@@ -264,6 +265,7 @@ func parseAAHProfile(profile map[string]json.RawMessage) (Item, error) {
 		Name: name, BaseURL: baseURL, APIKey: key,
 		Models: []string{}, Group: "default", Priority: 0, Weight: 100,
 		SiteTypeHint: typeHint, Status: domain.StatusEnabled,
+		CredentialKind: "api_key",
 	}, nil
 }
 

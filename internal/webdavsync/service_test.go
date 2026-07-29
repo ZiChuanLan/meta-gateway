@@ -100,13 +100,34 @@ func TestServiceScheduledSyncUsesIncrementalMode(t *testing.T) {
 	defer server.Close()
 	importer := &fakeImporter{}
 	service := NewService(Config{
-		URL: server.URL + "/file.json", Username: "u", Password: "p",
+		URL: server.URL + "/file.json", Username: "u", Password: "p", Enabled: true,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1024}, importer)
 	if _, err := service.RunScheduled(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if importer.lastMode != exchange.ImportModeIncremental {
 		t.Fatalf("scheduled mode=%q", importer.lastMode)
+	}
+}
+
+func TestServiceScheduledSyncDisabled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	importer := &fakeImporter{}
+	service := NewService(Config{
+		URL: server.URL + "/file.json", Username: "u", Password: "p", Enabled: false,
+	}, &Client{HTTP: server.Client(), MaxBytes: 1024}, importer)
+	result, err := service.RunScheduled(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusSkipped || result.Message != "scheduled sync disabled" {
+		t.Fatalf("result=%+v", result)
+	}
+	if importer.last != nil {
+		t.Fatal("scheduled sync should not have imported when disabled")
 	}
 }
 

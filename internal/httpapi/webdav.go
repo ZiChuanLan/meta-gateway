@@ -92,23 +92,28 @@ func (h *WebDAVHandler) sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode := webdavsync.SyncModeIncremental
-	if r.Body != nil && r.ContentLength != 0 {
+	// Always attempt to parse the JSON body for backward compatibility.
+	// Empty bodies (including chunked with no content) default to incremental.
+	if r.Body != nil {
 		var body struct {
 			Mode string `json:"mode"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil {
+		if err := decoder.Decode(&body); errors.Is(err, io.EOF) {
+			// No body provided — stay with default incremental mode.
+		} else if err != nil {
 			writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
 			return
-		}
-		var trailing any
-		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-			writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
-			return
-		}
-		if m := strings.TrimSpace(body.Mode); m != "" {
-			mode = strings.ToLower(m)
+		} else {
+			var trailing any
+			if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+				writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
+				return
+			}
+			if m := strings.TrimSpace(body.Mode); m != "" {
+				mode = strings.ToLower(m)
+			}
 		}
 	}
 	if mode != webdavsync.SyncModeIncremental && mode != webdavsync.SyncModeReplace {

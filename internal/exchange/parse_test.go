@@ -17,15 +17,19 @@ func TestParseSupportedShapes(t *testing.T) {
 		{"new-api-wrapper", `{"channels":[{"name":"main","baseUrl":"https://api.example.com","apiKey":"secret"}]}`},
 		{"aah-v2", `{"version":"2.0","accounts":[],"channelConfigs":{},"apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}]}}`},
 		{"aah-v2-accounts-fallback", `{"version":"2.0","timestamp":1,"accounts":{"accounts":[{"id":"a1","site_name":"WONG","site_url":"https://wzw.pp.ua","site_type":"new-api","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"site-secret","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]},"apiCredentialProfiles":{"version":3,"profiles":[],"lastUpdated":1}}`},
+		{"aah-v2-profiles-and-accounts", `{"version":"2.0","apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}]},"accounts":{"accounts":[{"id":"a1","site_name":"WONG","site_url":"https://wzw.pp.ua","site_type":"new-api","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"site-secret","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]}}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			items, err := Parse([]byte(test.body))
-			if err != nil || len(items) != 1 {
+			if err != nil || len(items) == 0 {
 				t.Fatalf("items=%+v err=%v", items, err)
 			}
 			switch test.name {
 			case "aah-v2-accounts-fallback":
+				if len(items) != 1 {
+					t.Fatalf("expected 1 item, got %d", len(items))
+				}
 				if items[0].BaseURL != "https://wzw.pp.ua" {
 					t.Fatalf("base URL not normalized: %q", items[0].BaseURL)
 				}
@@ -41,7 +45,25 @@ func TestParseSupportedShapes(t *testing.T) {
 				if !items[0].CheckinEnabled {
 					t.Fatal("expected checkin enabled")
 				}
+			case "aah-v2-profiles-and-accounts":
+				if len(items) != 2 {
+					t.Fatalf("expected 2 items (profile + account), got %d: %+v", len(items), items)
+				}
+				profile := items[0]
+				account := items[1]
+				if profile.Name != "main" || profile.APIKey != "secret" || profile.CredentialKind != "api_key" {
+					t.Fatalf("profile fields: %+v", profile)
+				}
+				if account.Name != "WONG" || account.APIKey != "site-secret" || account.CredentialKind != "access_token" {
+					t.Fatalf("account fields: %+v", account)
+				}
+				if !account.CheckinEnabled || account.MetaJSON != `{"platform_user_id":1}` {
+					t.Fatalf("account checkin fields: %+v", account)
+				}
 			default:
+				if len(items) != 1 {
+					t.Fatalf("expected 1 item, got %d", len(items))
+				}
 				if items[0].BaseURL != "https://api.example.com" && items[0].BaseURL != "https://api.example.com/v1" {
 					t.Fatalf("base URL not normalized: %q", items[0].BaseURL)
 				}
