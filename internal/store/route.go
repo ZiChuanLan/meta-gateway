@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -54,17 +56,16 @@ func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
 	return &r, nil
 }
 
-// GetByModel returns the first enabled route matching the given model.
+// GetByModel returns the best enabled route for the given model (exact, then wildcard).
 func (s *RouteStore) GetByModel(model string) (*domain.Route, error) {
 	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
-	var r domain.Route
-	if err := scanRoute(row, &r); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
+	var exact domain.Route
+	if err := scanRoute(row, &exact); err == nil {
+		return &exact, nil
+	} else if err != sql.ErrNoRows {
 		return nil, fmt.Errorf("route by model: %w", err)
 	}
-	return &r, nil
+	return findBestWildcardRoute(s.db, model)
 }
 
 func (s *RouteStore) Create(r *domain.Route) (int64, error) {
@@ -218,15 +219,24 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 	return result, rows.Err()
 }
 
-// RoutingCandidates loads all member and channel facts for an exact enabled route.
+// RoutingCandidates loads member and channel facts for the best matching enabled route.
+// Exact model_pattern wins; otherwise the longest wildcard (* or ?) match is used.
 func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []domain.RoutingCandidate, error) {
 	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
 	var route domain.Route
 	if err := scanRoute(routeRow, &route); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil, nil
+			wildcard, wildErr := findBestWildcardRoute(s.db, model)
+			if wildErr != nil {
+				return nil, nil, wildErr
+			}
+			if wildcard == nil {
+				return nil, nil, nil
+			}
+			route = *wildcard
+		} else {
+			return nil, nil, fmt.Errorf("routing route: %w", err)
 		}
-		return nil, nil, fmt.Errorf("routing route: %w", err)
 	}
 	rows, err := s.db.Query(`SELECT
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
@@ -387,4 +397,69 @@ func boolInt(v bool) int {
 		return 1
 	}
 	return 0
+}
+
+// findBestWildcardRoute selects the most specific enabled wildcard route for model.
+func findBestWildcardRoute(db *sql.DB, model string) (*domain.Route, error) {
+	rows, err := db.Query(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE enabled = 1 AND (instr(model_pattern, '*') > 0 OR instr(model_pattern, '?') > 0)`)
+	if err != nil {
+		return nil, fmt.Errorf("route wildcard list: %w", err)
+	}
+	defer rows.Close()
+	var matches []domain.Route
+	for rows.Next() {
+		var route domain.Route
+		if err := scanRoute(rows, &route); err != nil {
+			return nil, fmt.Errorf("route wildcard scan: %w", err)
+		}
+		if matchModelPattern(route.ModelPattern, model) {
+			matches = append(matches, route)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 {
+		return nil, nil
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		left, right := matches[i], matches[j]
+		if len(left.ModelPattern) != len(right.ModelPattern) {
+			return len(left.ModelPattern) > len(right.ModelPattern)
+		}
+		return left.ID < right.ID
+	})
+	best := matches[0]
+	return &best, nil
+}
+
+// matchModelPattern supports '*' (any run of runes) and '?' (single rune).
+func matchModelPattern(pattern, model string) bool {
+	pattern = strings.TrimSpace(pattern)
+	model = strings.TrimSpace(model)
+	if pattern == "" || (!strings.Contains(pattern, "*") && !strings.Contains(pattern, "?")) {
+		return pattern == model
+	}
+	return matchModelPatternRunes([]rune(pattern), []rune(model))
+}
+
+func matchModelPatternRunes(pattern, model []rune) bool {
+	if len(pattern) == 0 {
+		return len(model) == 0
+	}
+	if pattern[0] == '*' {
+		for consumed := 0; consumed <= len(model); consumed++ {
+			if matchModelPatternRunes(pattern[1:], model[consumed:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(model) == 0 {
+		return false
+	}
+	if pattern[0] == '?' || pattern[0] == model[0] {
+		return matchModelPatternRunes(pattern[1:], model[1:])
+	}
+	return false
 }

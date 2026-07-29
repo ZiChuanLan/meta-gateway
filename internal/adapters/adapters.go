@@ -22,6 +22,7 @@ func NewRegistry(client *http.Client) *Registry {
 	openAI := NewOpenAIModelAdapter("openai-compatible", client)
 	newAPI := NewOpenAIModelAdapter("new-api", client)
 	oneAPI := NewOpenAIModelAdapter("one-api", client)
+	anthropic := NewAnthropicModelAdapter("anthropic", client)
 	newAPICheckin := NewJSONCheckinAdapter("new-api", client, true)
 	oneAPICheckin := NewJSONCheckinAdapter("one-api", client, false)
 	newAPIAccount := NewNewAPIAccountAdapter("new-api", client, true)
@@ -36,6 +37,9 @@ func NewRegistry(client *http.Client) *Registry {
 		"newapi":            newAPI,
 		"one-api":           oneAPI,
 		"oneapi":            oneAPI,
+		"anthropic":         anthropic,
+		"claude":            anthropic,
+		"claude-official":   anthropic,
 	}
 	// Register common OpenAI-compatible relay brands so discovery works after AAH import.
 	for _, brand := range OpenAICompatibleBrands() {
@@ -165,6 +169,8 @@ func CanonicalType(value string) string {
 		return "new-api"
 	case "oneapi", "one-api":
 		return "one-api"
+	case "anthropic", "claude", "claude-official", "claude-api":
+		return "anthropic"
 	case "anyrouter", "veloera", "one-hub", "done-hub", "v-api", "voapi",
 		"super-api", "rix-api", "neo-api", "sub2api", "octopus", "axonhub",
 		"metapi", "claude-code-hub", "aihubmix", "sharedchat", "wong-gongyi",

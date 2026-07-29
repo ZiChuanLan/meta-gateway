@@ -47,6 +47,9 @@ type Appliers struct {
 	RelayLimiter *ratelimit.Limiter
 	AdminLimiter *ratelimit.Limiter
 	CheckinSched *checkin.Scheduler
+	// CheckinAllowed reports whether the check-in module may run (plugin gate).
+	// When nil, check-in enablement follows the editable flag alone.
+	CheckinAllowed func() bool
 	SetAudit     func(days, rows int)
 	SetAuditLoop func(days, rows int)
 }
@@ -193,6 +196,22 @@ func (c *Controller) applyLocked(values Editable) {
 	_ = c.applyWithError(values)
 }
 
+// ResyncCheckin re-applies the current check-in schedule using the latest editable
+// settings and CheckinAllowed gate. Call when the checkin add-on is toggled.
+func (c *Controller) ResyncCheckin() error {
+	c.mu.RLock()
+	values := c.current
+	c.mu.RUnlock()
+	if c.appliers.CheckinSched == nil {
+		return nil
+	}
+	enabled := values.CheckinEnabled
+	if c.appliers.CheckinAllowed != nil && !c.appliers.CheckinAllowed() {
+		enabled = false
+	}
+	return c.appliers.CheckinSched.SetSchedule(values.CheckinCron, enabled)
+}
+
 func (c *Controller) applyWithError(values Editable) error {
 	if c.appliers.Proxy != nil {
 		c.appliers.Proxy.SetRetryPolicy(values.RetryTimes, time.Duration(values.CooldownSeconds)*time.Second)
@@ -210,7 +229,11 @@ func (c *Controller) applyWithError(values Editable) error {
 		c.appliers.SetAuditLoop(values.AuditRetentionDays, values.AuditRetentionRows)
 	}
 	if c.appliers.CheckinSched != nil {
-		if err := c.appliers.CheckinSched.SetSchedule(values.CheckinCron, values.CheckinEnabled); err != nil {
+		enabled := values.CheckinEnabled
+		if c.appliers.CheckinAllowed != nil && !c.appliers.CheckinAllowed() {
+			enabled = false
+		}
+		if err := c.appliers.CheckinSched.SetSchedule(values.CheckinCron, enabled); err != nil {
 			return err
 		}
 	}

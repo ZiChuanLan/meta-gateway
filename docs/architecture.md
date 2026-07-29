@@ -70,16 +70,18 @@ Operations
 
 ## Routing
 
-Routes match exact model names. `RouteMember` is the runtime source of truth
-for priority and weight; Channel priority and weight are compatibility/default
-metadata.
+Routes prefer an exact `model_pattern` match. If none exists, the longest enabled
+wildcard pattern (`*` any run, `?` one rune) wins. `RouteMember` is the runtime
+source of truth for priority and weight; Channel priority and weight are
+compatibility/default metadata.
 
 1. Load the enabled exact route and all member/channel/credential facts.
-2. Exclude disabled members/channels, unavailable credentials, members in
+2. If no exact route, load the best wildcard route and its members.
+3. Exclude disabled members/channels, unavailable credentials, members in
    cooldown, and channels already attempted by the request.
-3. Choose the highest numeric priority tier with eligible members.
-4. Select by positive weight inside the tier.
-5. If every weight in the tier is zero, select uniformly.
+4. Choose the highest numeric priority tier with eligible members.
+5. Select by positive weight inside the tier.
+6. If every weight in the tier is zero, select uniformly.
 
 `GET /admin/routes/explain?model=<model>` uses the same evaluator and returns
 stable reason codes without changing state.

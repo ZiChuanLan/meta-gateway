@@ -4,8 +4,12 @@ A production-oriented OpenAI-compatible relay gateway with multi-channel
 routing, retries, encrypted credentials, discovery, check-in, exchange,
 auditing, metrics, and online SQLite backups.
 
+Simple usage metering records prompt/completion tokens from upstream `usage` fields, enforces optional per-token quotas, and shows estimated cost in Admin → Tokens.
+
 The embedded Web Admin is available at `http://127.0.0.1:4100/admin-ui/`
 after the gateway starts.
+
+The Admin **Store** (`/admin-ui/#/store` or sidebar **Store**) manages optional **add-ons** (Exchange import/export + WebDAV, Check-in). Core surfaces — connections, models, tokens, logs, runtime, discovery, **audit**, and **backups** — are always available and are not store-gated.
 
 ## Quick Start
 
@@ -58,7 +62,9 @@ curl http://127.0.0.1:4100/healthz
 | `HTTP_ADDR` | `:4100` | Listen address |
 | `DATA_DIR` | `./data` | SQLite storage directory |
 | `ADMIN_TOKEN` | _(required)_ | Bearer token for admin endpoints |
+| `ADMIN_TOKENS` | empty | Extra comma-separated admin tokens for rotation |
 | `MASTER_KEY` | _(required)_ | Encryption key for secrets at rest (32+ chars) |
+| `EXCHANGE_ALLOW_SECRET_EXPORT` | `true` | Allow `include_secrets` on exchange export |
 | `METRICS_TOKEN` | _(required*)_ | Independent Bearer token for `/metrics` |
 | `BACKUP_DIR` | `<DATA_DIR>/backups` | Confined online backup directory |
 | `OUTBOUND_ALLOW_HOSTS` | empty | Exact trusted private upstream host exceptions |
@@ -72,6 +78,12 @@ curl http://127.0.0.1:4100/healthz
 | `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
 | `CHECKIN_ENABLED` | `false` | Start scheduled credential check-in |
 | `CHECKIN_CRON` | `0 8 * * *` | Standard five-field check-in schedule |
+| `PLUGINS_DIR` | `<DATA_DIR>/plugins` | Official module package directory |
+| `WEBDAV_SYNC_ENABLED` | `false` | Enable read-only WebDAV backup pull |
+| `WEBDAV_URL` / `WEBDAV_USERNAME` / `WEBDAV_PASSWORD` | empty | WebDAV bootstrap credentials |
+| `WEBDAV_BACKUP_PASSWORD` | empty | Decrypt password for encrypted AAH envelopes |
+| `WEBDAV_CRON` | `0 */6 * * *` | WebDAV pull schedule |
+| `WEBDAV_MAX_BYTES` | `10485760` | Max WebDAV download size |
 
 `METRICS_TOKEN` may be empty only when `TRUSTED_SCRAPER_CIDRS` is configured.
 See `.env.example` for all timeouts and body/header limits. Invalid security
@@ -119,6 +131,13 @@ GET /healthz → 200 {"status":"ok"}
 | POST | /admin/discovery/channels/{id}/refresh | Refresh one channel's models and automatic routes |
 | POST | /admin/discovery/refresh | Refresh all enabled channels with itemized results |
 | GET | /admin/discovery/models?channel_id={id} | List durable discovered-model snapshots |
+| POST | /admin/discovery/channels/{id}/probe | Probe models without persisting |
+| POST | /admin/channels/{id}/account/probe | Probe upstream account |
+| POST | /admin/channels/{id}/account/sync-keys | Sync sk- keys from upstream account |
+| POST | /admin/try/chat | Admin console chat probe |
+| GET/POST | /admin/plugins/* | Module catalog, install, enable, disable |
+| GET/PUT | /admin/webdav/* | Read-only WebDAV sync status and settings |
+| GET/PUT/POST | /admin/runtime-settings | Hot runtime overrides (retry, rates, check-in, audit) |
 | PUT | /admin/credentials/{id}/checkin | Enable or disable scheduled check-in |
 | POST | /admin/checkin/credentials/{id}/run | Run one credential check-in manually |
 | POST | /admin/checkin/run | Run all check-in-enabled credentials |
@@ -136,6 +155,24 @@ GET /healthz → 200 {"status":"ok"}
 | --- | --- | --- |
 | GET | /v1/models | Available models from routes |
 | POST | /v1/chat/completions | Chat completions (supports SSE) |
+| POST | /v1/completions | Text completions (OpenAI-compatible) |
+| POST | /v1/embeddings | Embeddings |
+| POST | /v1/responses | OpenAI Responses API (pass-through) |
+| POST | /v1/messages | Anthropic Messages API (native clients) |
+
+Downstream key `scopes` are enforced: `relay` allows the full public surface;
+otherwise use `models`, `chat`, `completions`, `embeddings`, `responses`,
+and/or `messages`. Routes match
+exact model names first, then the longest `*` / `?` wildcard pattern.
+
+Connection type **Anthropic (Claude Official)** uses Anthropic auth headers and
+`/v1/messages` on the wire. OpenAI chat clients still call `/v1/chat/completions`;
+the gateway translates request/response for non-stream traffic. Streamed
+Anthropic SSE is forwarded as-is (not re-shaped to OpenAI SSE yet).
+
+Official modules (`exchange`, `checkin`, `operations`) are auto-installed on first
+boot. Disable a module to hide its Admin API group; check-in scheduling also
+requires the `checkin` module to be enabled.
 
 ## Example: Create a Channel and Call /v1
 

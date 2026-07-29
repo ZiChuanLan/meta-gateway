@@ -7,6 +7,7 @@ import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
+import { useModules } from "../hooks/useModules";
 import { PaginationBar } from "../components/PaginationBar";
 import {
 	Button,
@@ -244,20 +245,31 @@ function siteDisplayName(
 	};
 }
 
-export function CheckinsPanel() {
+﻿export function CheckinsPanel() {
 	const { client } = useSession();
 	const { t } = useI18n();
+	const { checkinEnabled, ready: modulesReady } = useModules();
 	const s = api(client!);
 	const qc = useQueryClient();
 	const [status, setStatus] = useState("");
+	const [confirmRun, setConfirmRun] = useState(false);
 	const logs = useQuery({
 		queryKey: ["checkin-logs", status],
 		queryFn: ({ signal }) =>
 			s.checkinLogs(`?limit=100${status ? `&status=${status}` : ""}`, signal),
+		enabled: modulesReady && checkinEnabled,
+		retry: (failureCount, error) => {
+			const message = error instanceof Error ? error.message : String(error);
+			if (/plugin_disabled/i.test(message)) return false;
+			const statusCode = (error as { status?: number } | null)?.status;
+			if (statusCode === 404) return false;
+			return failureCount < 2;
+		},
 	});
 	const sites = useQuery({
 		queryKey: ["sites"],
 		queryFn: ({ signal }) => s.sites(signal),
+		enabled: modulesReady && checkinEnabled,
 	});
 	const sitesById = useMemo(() => {
 		const map = new Map<number, { name: string; base_url: string }>();
@@ -269,12 +281,24 @@ export function CheckinsPanel() {
 	const run = useMutation({
 		mutationFn: s.runAllCheckins,
 		onSuccess: () => {
+			setConfirmRun(false);
 			void qc.invalidateQueries({ queryKey: ["checkin-logs"] });
 			void qc.invalidateQueries({ queryKey: ["credentials"] });
+			void qc.invalidateQueries({ queryKey: ["channel-overviews"] });
 		},
+		onError: () => setConfirmRun(false),
 	});
 	const checkinRows = logs.data ?? [];
 	const checkinPagination = useClientPagination(checkinRows, 15);
+
+	if (modulesReady && !checkinEnabled) {
+		return (
+			<Panel>
+				<p className="detail-empty">{t("ops.checkinModuleOff")}</p>
+			</Panel>
+		);
+	}
+
 	return (
 		<Panel
 			actions={
@@ -289,12 +313,19 @@ export function CheckinsPanel() {
 						<option value="failed">failed</option>
 						<option value="skipped">skipped</option>
 					</select>
-					<Button icon={<Play size={16} />} disabled={run.isPending} onClick={() => run.mutate()}>
+					<Button
+						icon={<Play size={16} />}
+						disabled={run.isPending || !checkinEnabled}
+						onClick={() => setConfirmRun(true)}
+					>
 						{run.isPending ? t("ops.running") : t("ops.runEnabled")}
 					</Button>
 				</>
 			}
 		>
+			<p className="exchange-panel-note" style={{ marginBottom: 12 }}>
+				{t("ops.checkinHint")}
+			</p>
 			{run.error && <ErrorState error={run.error} />}
 			{run.data && (
 				<div className="result-strip">
@@ -372,6 +403,17 @@ export function CheckinsPanel() {
 					/>
 				</>
 			)}
+			{confirmRun ? (
+				<ConfirmDialog
+					title={t("ops.runEnabled")}
+					message={t("ops.runEnabledConfirm")}
+					confirmLabel={t("ops.runEnabled")}
+					pending={run.isPending}
+					error={run.error}
+					onClose={() => setConfirmRun(false)}
+					onConfirm={() => run.mutate()}
+				/>
+			) : null}
 		</Panel>
 	);
 }

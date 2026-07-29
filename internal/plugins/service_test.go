@@ -117,3 +117,79 @@ func TestInstallRejectsUnknown(t *testing.T) {
 		t.Fatalf("Install unknown err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestOfficialCatalogIsAddonsOnly(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range svc.Catalog() {
+		if entry.ID == "operations" {
+			t.Fatal("operations must not be a store-gated catalog module")
+		}
+		if entry.Kind != KindAddon {
+			t.Fatalf("%s kind=%q want addon", entry.ID, entry.Kind)
+		}
+	}
+	status, err := svc.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawCore, sawExchange bool
+	for _, item := range status {
+		if item.Kind == KindCore {
+			sawCore = true
+			if item.CanToggle {
+				t.Fatalf("core %s should not toggle", item.ID)
+			}
+		}
+		if item.ID == "exchange" {
+			sawExchange = true
+			if !item.CanToggle {
+				t.Fatal("exchange should toggle")
+			}
+		}
+	}
+	if !sawCore || !sawExchange {
+		t.Fatalf("status incomplete core=%v exchange=%v", sawCore, sawExchange)
+	}
+}
+
+func TestEnsureOfficialBootstrapsAddons(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.EnsureOfficialModulesInstalled(); err != nil {
+		t.Fatal(err)
+	}
+	if !svc.IsEnabled("exchange") || !svc.IsEnabled("checkin") {
+		t.Fatal("expected addons enabled after bootstrap")
+	}
+	if svc.IsEnabled("operations") {
+		t.Fatal("operations should not be an enabled plugin gate")
+	}
+}
+
+func TestMultiOnChange(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []string
+	svc.SetOnChange(func(id string, enabled bool) {
+		calls = append(calls, id+":a")
+	})
+	svc.SetOnChange(func(id string, enabled bool) {
+		calls = append(calls, id+":b")
+	})
+	if _, err := svc.Activate("checkin"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) < 2 {
+		t.Fatalf("want multi listeners, got %v", calls)
+	}
+}

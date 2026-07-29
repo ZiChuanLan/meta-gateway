@@ -18,10 +18,10 @@ import (
 // Auth is the admin Bearer; upstream selection uses the same routing/proxy path as /v1.
 // Optional channel_id pins a specific upstream when multiple members share the model name.
 type TryHandler struct {
-	proxy ChatProxy
+	proxy RelayProxy
 }
 
-func NewTryHandler(service ChatProxy) *TryHandler {
+func NewTryHandler(service RelayProxy) *TryHandler {
 	return &TryHandler{proxy: service}
 }
 

@@ -11,11 +11,12 @@ import (
 )
 
 type ExchangeHandler struct {
-	service *exchange.Service
+	service           *exchange.Service
+	allowSecretExport bool
 }
 
-func NewExchangeHandler(service *exchange.Service) *ExchangeHandler {
-	return &ExchangeHandler{service: service}
+func NewExchangeHandler(service *exchange.Service, allowSecretExport bool) *ExchangeHandler {
+	return &ExchangeHandler{service: service, allowSecretExport: allowSecretExport}
 }
 
 func (h *ExchangeHandler) Register(r chi.Router) {
@@ -37,6 +38,14 @@ func (h *ExchangeHandler) export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.IncludeSecrets {
+		if !h.allowSecretExport {
+			writeError(w, http.StatusForbidden, "secret_export_disabled")
+			return
+		}
+		if len(request.ChannelIDs) == 0 {
+			writeError(w, http.StatusBadRequest, "channel_ids_required_for_secret_export")
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	envelope, err := h.service.Export(r.Context(), request)

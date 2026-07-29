@@ -1,9 +1,9 @@
-import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Copy, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { CreatedDownstreamKey } from "../api/types";
+import type { CreatedDownstreamKey, DownstreamKey } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -27,6 +27,22 @@ import {
 	formatDate,
 } from "../components/ui";
 
+function formatTokens(value?: number) {
+	if (value == null || Number.isNaN(value)) return "0";
+	return new Intl.NumberFormat().format(value);
+}
+
+function formatQuota(used?: number, total?: number) {
+	const usedLabel = formatTokens(used ?? 0);
+	if (!total || total <= 0) return `${usedLabel} / ∞`;
+	return `${usedLabel} / ${formatTokens(total)}`;
+}
+
+function formatCost(value?: number) {
+	if (value == null || value <= 0) return "—";
+	return value.toFixed(4);
+}
+
 export function Keys() {
 	const { client } = useSession();
 	const { t } = useI18n();
@@ -36,7 +52,12 @@ export function Keys() {
 		queryKey: ["keys"],
 		queryFn: ({ signal }) => service.keys(signal),
 	});
+	const usage = useQuery({
+		queryKey: ["usage-summary"],
+		queryFn: ({ signal }) => service.usageSummary(undefined, signal),
+	});
 	const [add, setAdd] = useState(false);
+	const [edit, setEdit] = useState<DownstreamKey | null>(null);
 	const [created, setCreated] = useState<CreatedDownstreamKey | null>(null);
 	const [remove, setRemove] = useState<number | null>(null);
 	const openedCreateFromQuery = useRef(false);
@@ -52,17 +73,39 @@ export function Keys() {
 	}, [searchParams, setSearchParams]);
 
 	const create = useAdminMutation({
-		mutationFn: (v: { name: string; scopes?: string; token?: string }) =>
-			service.createKey(v),
-		invalidateKeys: [["keys"]],
+		mutationFn: (v: {
+			name: string;
+			scopes?: string;
+			token?: string;
+			quota_total_tokens?: number;
+			price_prompt_per_1k?: number;
+			price_completion_per_1k?: number;
+		}) => service.createKey(v),
+		invalidateKeys: [["keys"], ["usage-summary"]],
 		onSuccess: (result) => {
 			setCreated(result);
 			setAdd(false);
 		},
 	});
+	const update = useAdminMutation({
+		mutationFn: (v: {
+			id: number;
+			body: {
+				name?: string;
+				enabled?: boolean;
+				scopes?: string;
+				quota_total_tokens?: number;
+				price_prompt_per_1k?: number;
+				price_completion_per_1k?: number;
+				reset_used?: boolean;
+			};
+		}) => service.updateKey(v.id, v.body),
+		invalidateKeys: [["keys"], ["usage-summary"]],
+		onSuccess: () => setEdit(null),
+	});
 	const del = useAdminMutation({
 		mutationFn: (id: number) => service.deleteKey(id),
-		invalidateKeys: [["keys"]],
+		invalidateKeys: [["keys"], ["usage-summary"]],
 		pendingIdOf: (id) => id,
 		onSuccess: () => setRemove(null),
 	});
@@ -72,6 +115,10 @@ export function Keys() {
 	const pageRows = pagination.pageItems;
 	const enabledCount = useMemo(
 		() => rows.filter((key) => key.enabled).length,
+		[rows],
+	);
+	const totalUsed = useMemo(
+		() => rows.reduce((sum, key) => sum + (key.quota_used_tokens ?? 0), 0),
 		[rows],
 	);
 
@@ -103,8 +150,14 @@ export function Keys() {
 							value: query.isPending ? "—" : enabledCount,
 						},
 						{
-							label: t("keys.stat.hint"),
-							value: t("keys.stat.hintValue"),
+							label: t("keys.stat.usedTokens"),
+							value: query.isPending
+								? "—"
+								: formatTokens(usage.data?.total_tokens ?? totalUsed),
+						},
+						{
+							label: t("keys.stat.requests"),
+							value: usage.isPending ? "—" : formatTokens(usage.data?.request_count ?? 0),
 						},
 					]}
 				/>
@@ -137,51 +190,66 @@ export function Keys() {
 						<ListShell
 							footer={
 								<PaginationBar
-								page={pagination.page}
-								totalPages={pagination.totalPages}
-								total={pagination.total}
-								pageSize={pagination.pageSize}
-								rangeStart={pagination.rangeStart}
-								rangeEnd={pagination.rangeEnd}
-								hasPrev={pagination.hasPrev}
-								hasNext={pagination.hasNext}
-								onPageChange={pagination.setPage}
-								onPageSizeChange={pagination.setPageSize}
+									page={pagination.page}
+									totalPages={pagination.totalPages}
+									total={pagination.total}
+									pageSize={pagination.pageSize}
+									rangeStart={pagination.rangeStart}
+									rangeEnd={pagination.rangeEnd}
+									hasPrev={pagination.hasPrev}
+									hasNext={pagination.hasNext}
+									onPageChange={pagination.setPage}
+									onPageSizeChange={pagination.setPageSize}
 								/>
 							}
 						>
-						<DataTable
-							headers={[
-								t("common.name"),
-								t("keys.accessCol"),
-								t("common.status"),
-								t("common.created"),
-								t("common.actions"),
-							]}
-						>
-							{pageRows.map((k) => (
-								<tr key={k.id}>
-									<td>
-										<strong>{k.name}</strong>
-										<small>#{k.id}</small>
-									</td>
-									<td>{t("keys.accessRelay")}</td>
-									<td>
-										<StatusBadge value={k.enabled} />
-									</td>
-									<td>{formatDate(k.created_at)}</td>
-									<td className="actions">
-										<IconButton
-											label={t("keys.delete")}
-											disabled={del.pendingId === k.id}
-											onClick={() => setRemove(k.id)}
-										>
-											<Trash2 />
-										</IconButton>
-									</td>
-								</tr>
-							))}
-						</DataTable>
+							<DataTable
+								headers={[
+									t("common.name"),
+									t("keys.accessCol"),
+									t("keys.quotaCol"),
+									t("keys.costCol"),
+									t("common.status"),
+									t("common.created"),
+									t("common.actions"),
+								]}
+							>
+								{pageRows.map((k) => (
+									<tr key={k.id}>
+										<td>
+											<strong>{k.name}</strong>
+											<small>#{k.id}</small>
+										</td>
+										<td>{k.scopes?.trim() || "relay"}</td>
+										<td>
+											<code>{formatQuota(k.quota_used_tokens, k.quota_total_tokens)}</code>
+										</td>
+										<td>{formatCost(k.estimated_cost)}</td>
+										<td>
+											<StatusBadge value={k.enabled} />
+										</td>
+										<td>{formatDate(k.created_at)}</td>
+										<td className="actions">
+											<IconButton
+												label={t("keys.edit")}
+												onClick={() => {
+													update.reset();
+													setEdit(k);
+												}}
+											>
+												<Pencil />
+											</IconButton>
+											<IconButton
+												label={t("keys.delete")}
+												disabled={del.pendingId === k.id}
+												onClick={() => setRemove(k.id)}
+											>
+												<Trash2 />
+											</IconButton>
+										</td>
+									</tr>
+								))}
+							</DataTable>
 						</ListShell>
 					</EntityState>
 				</Panel>
@@ -189,10 +257,33 @@ export function Keys() {
 
 			{add && (
 				<KeyDialog
+					mode="create"
 					pending={create.isPending}
 					error={create.error}
 					onClose={() => setAdd(false)}
 					onSave={(v) => create.mutate(v)}
+				/>
+			)}
+			{edit && (
+				<KeyDialog
+					mode="edit"
+					initial={edit}
+					pending={update.isPending}
+					error={update.error}
+					onClose={() => setEdit(null)}
+					onSave={(v) =>
+						update.mutate({
+							id: edit.id,
+							body: {
+								name: v.name,
+								scopes: v.scopes,
+								quota_total_tokens: v.quota_total_tokens,
+								price_prompt_per_1k: v.price_prompt_per_1k,
+								price_completion_per_1k: v.price_completion_per_1k,
+								reset_used: v.reset_used,
+							},
+						})
+					}
 				/>
 			)}
 			{created && (
@@ -230,30 +321,67 @@ export function Keys() {
 	);
 }
 
+type KeyFormValues = {
+	name: string;
+	scopes?: string;
+	token?: string;
+	quota_total_tokens?: number;
+	price_prompt_per_1k?: number;
+	price_completion_per_1k?: number;
+	reset_used?: boolean;
+};
+
 function KeyDialog({
+	mode,
+	initial,
 	pending,
 	error,
 	onClose,
 	onSave,
 }: {
+	mode: "create" | "edit";
+	initial?: DownstreamKey;
 	pending: boolean;
 	error: unknown;
 	onClose: () => void;
-	onSave: (v: { name: string; scopes?: string; token?: string }) => void;
+	onSave: (v: KeyFormValues) => void;
 }) {
 	const { t } = useI18n();
-	const [name, setName] = useState("");
+	const [name, setName] = useState(initial?.name ?? "");
 	const [customToken, setCustomToken] = useState("");
 	const [useCustomToken, setUseCustomToken] = useState(false);
+	const [scopes, setScopes] = useState(initial?.scopes?.trim() || "relay");
+	const [quotaTotal, setQuotaTotal] = useState(
+		String(initial?.quota_total_tokens && initial.quota_total_tokens > 0 ? initial.quota_total_tokens : ""),
+	);
+	const [pricePrompt, setPricePrompt] = useState(
+		String(initial?.price_prompt_per_1k && initial.price_prompt_per_1k > 0 ? initial.price_prompt_per_1k : ""),
+	);
+	const [priceCompletion, setPriceCompletion] = useState(
+		String(
+			initial?.price_completion_per_1k && initial.price_completion_per_1k > 0
+				? initial.price_completion_per_1k
+				: "",
+		),
+	);
+	const [resetUsed, setResetUsed] = useState(false);
 	const trimmedCustom = customToken.trim();
 	const customTooShort =
 		useCustomToken && trimmedCustom.length > 0 && trimmedCustom.length < 16;
 	const canSubmit =
 		Boolean(name.trim()) &&
-		(!useCustomToken || (trimmedCustom.length >= 16 && !customTooShort));
+		(mode === "edit" || !useCustomToken || (trimmedCustom.length >= 16 && !customTooShort));
+
+	const parseOptionalNumber = (raw: string) => {
+		const trimmed = raw.trim();
+		if (!trimmed) return 0;
+		const value = Number(trimmed);
+		return Number.isFinite(value) && value >= 0 ? value : 0;
+	};
+
 	return (
 		<Dialog
-			title={t("keys.createDialog")}
+			title={mode === "create" ? t("keys.createDialog") : t("keys.editDialog")}
 			onClose={onClose}
 			actions={
 				<>
@@ -266,18 +394,23 @@ function KeyDialog({
 						onClick={() =>
 							onSave({
 								name: name.trim(),
-								// Scopes are reserved for future fine-grained access; always relay today.
-								scopes: "relay",
-								token: useCustomToken ? trimmedCustom : undefined,
+								scopes: scopes.trim() || "relay",
+								token: mode === "create" && useCustomToken ? trimmedCustom : undefined,
+								quota_total_tokens: parseOptionalNumber(quotaTotal),
+								price_prompt_per_1k: parseOptionalNumber(pricePrompt),
+								price_completion_per_1k: parseOptionalNumber(priceCompletion),
+								reset_used: mode === "edit" ? resetUsed : undefined,
 							})
 						}
 					>
-						{t("common.create")}
+						{mode === "create" ? t("common.create") : t("common.save")}
 					</Button>
 				</>
 			}
 		>
-			<p className="channel-form-intro">{t("keys.createHint")}</p>
+			<p className="channel-form-intro">
+				{mode === "create" ? t("keys.createHint") : t("keys.editHint")}
+			</p>
 			<Field label={t("common.name")}>
 				<input
 					autoFocus
@@ -286,33 +419,92 @@ function KeyDialog({
 					placeholder={t("keys.namePlaceholder")}
 				/>
 			</Field>
-			<label className="check" style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
+			<Field label={t("common.scopes")}>
 				<input
-					type="checkbox"
-					checked={useCustomToken}
-					disabled={pending}
-					aria-label={t("keys.useCustomToken")}
-					onChange={(event) => {
-						setUseCustomToken(event.target.checked);
-						if (!event.target.checked) setCustomToken("");
-					}}
+					value={scopes}
+					onChange={(e) => setScopes(e.target.value)}
+					placeholder="relay | models,chat,embeddings"
 				/>
-				<span>{t("keys.useCustomToken")}</span>
-			</label>
-			{useCustomToken ? (
-				<Field label={t("keys.customToken")} hint={t("keys.customTokenHint")}>
+			</Field>
+			<Field label={t("keys.quotaTotal")} hint={t("keys.quotaTotalHint")}>
+				<input
+					type="number"
+					min={0}
+					step={1}
+					value={quotaTotal}
+					onChange={(e) => setQuotaTotal(e.target.value)}
+					placeholder="0 = unlimited"
+				/>
+			</Field>
+			<div className="split" style={{ gap: "0.75rem" }}>
+				<Field label={t("keys.pricePrompt")} hint={t("keys.priceHint")}>
 					<input
-						type="password"
-						autoComplete="new-password"
-						aria-label={t("keys.customToken")}
-						value={customToken}
-						onChange={(e) => setCustomToken(e.target.value)}
-						placeholder={t("keys.customTokenPlaceholder")}
-						disabled={pending}
+						type="number"
+						min={0}
+						step="0.0001"
+						value={pricePrompt}
+						onChange={(e) => setPricePrompt(e.target.value)}
+						placeholder="0"
 					/>
 				</Field>
+				<Field label={t("keys.priceCompletion")}>
+					<input
+						type="number"
+						min={0}
+						step="0.0001"
+						value={priceCompletion}
+						onChange={(e) => setPriceCompletion(e.target.value)}
+						placeholder="0"
+					/>
+				</Field>
+			</div>
+			{mode === "edit" ? (
+				<label
+					className="check"
+					style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "center" }}
+				>
+					<input
+						type="checkbox"
+						checked={resetUsed}
+						disabled={pending}
+						onChange={(event) => setResetUsed(event.target.checked)}
+					/>
+					<span>{t("keys.resetUsed")}</span>
+				</label>
 			) : (
-				<p className="exchange-panel-note">{t("keys.autoTokenHint")}</p>
+				<>
+					<label
+						className="check"
+						style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "center" }}
+					>
+						<input
+							type="checkbox"
+							checked={useCustomToken}
+							disabled={pending}
+							aria-label={t("keys.useCustomToken")}
+							onChange={(event) => {
+								setUseCustomToken(event.target.checked);
+								if (!event.target.checked) setCustomToken("");
+							}}
+						/>
+						<span>{t("keys.useCustomToken")}</span>
+					</label>
+					{useCustomToken ? (
+						<Field label={t("keys.customToken")} hint={t("keys.customTokenHint")}>
+							<input
+								type="password"
+								autoComplete="new-password"
+								aria-label={t("keys.customToken")}
+								value={customToken}
+								onChange={(e) => setCustomToken(e.target.value)}
+								placeholder={t("keys.customTokenPlaceholder")}
+								disabled={pending}
+							/>
+						</Field>
+					) : (
+						<p className="exchange-panel-note">{t("keys.autoTokenHint")}</p>
+					)}
+				</>
 			)}
 			{error ? <ErrorState error={error} /> : null}
 		</Dialog>

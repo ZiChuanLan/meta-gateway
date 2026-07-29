@@ -18,6 +18,7 @@ func NewPluginHandler(service *plugins.Service) *PluginHandler {
 
 func (h *PluginHandler) Register(r chi.Router) {
 	r.Get("/plugins/catalog", h.catalog)
+	r.Get("/plugins/status", h.status)
 	r.Get("/plugins", h.list)
 	r.Post("/plugins/{id}/activate", h.activate)
 	r.Post("/plugins/{id}/install", h.install)
@@ -32,6 +33,15 @@ func (h *PluginHandler) catalog(w http.ResponseWriter, _ *http.Request) {
 
 func (h *PluginHandler) list(w http.ResponseWriter, _ *http.Request) {
 	items, err := h.service.ListInstalled()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (h *PluginHandler) status(w http.ResponseWriter, _ *http.Request) {
+	items, err := h.service.Status()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error")
 		return
@@ -98,6 +108,8 @@ func writePluginError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "plugin_already_installed")
 	case errors.Is(err, plugins.ErrInvalidID):
 		writeError(w, http.StatusBadRequest, "plugin_invalid_id")
+	case errors.Is(err, plugins.ErrCoreImmutable):
+		writeError(w, http.StatusBadRequest, "plugin_core_immutable")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error")
 	}

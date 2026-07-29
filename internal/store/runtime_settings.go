@@ -11,18 +11,18 @@ import (
 // Pointer/null fields mean "not overridden" when HasOverride is false.
 // When HasOverride is true, all editable fields are set from Admin.
 type RuntimeSettingsRow struct {
-	HasOverride          bool
-	RetryTimes           int
-	CooldownSeconds       int
-	CheckinEnabled       bool
-	CheckinCron          string
-	RelayRatePerMinute   int
-	RelayRateBurst       int
-	AdminRatePerMinute   int
-	AdminRateBurst       int
-	AuditRetentionDays   int
-	AuditRetentionRows   int
-	UpdatedAt            time.Time
+	HasOverride        bool
+	RetryTimes         int
+	CooldownSeconds    int
+	CheckinEnabled     bool
+	CheckinCron        string
+	RelayRatePerMinute int
+	RelayRateBurst     int
+	AdminRatePerMinute int
+	AdminRateBurst     int
+	AuditRetentionDays int
+	AuditRetentionRows int
+	UpdatedAt          time.Time
 }
 
 // RuntimeSettingsStore persists a single-row runtime settings document.
@@ -37,10 +37,10 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       audit_retention_days, audit_retention_rows, updated_at
 		FROM runtime_settings WHERE id = 1`)
 	var (
-		hasOverride                                                          int
-		retry, cooldown, checkinEnabled, relayRate, relayBurst               sql.NullInt64
-		adminRate, adminBurst, auditDays, auditRows                          sql.NullInt64
-		cron, updated                                                        sql.NullString
+		hasOverride                                            int
+		retry, cooldown, checkinEnabled, relayRate, relayBurst sql.NullInt64
+		adminRate, adminBurst, auditDays, auditRows            sql.NullInt64
+		cron, updated                                          sql.NullString
 	)
 	if err := row.Scan(
 		&hasOverride, &retry, &cooldown, &checkinEnabled, &cron,

@@ -2,6 +2,7 @@ import { ExternalLink, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { AuditPanel, DiscoveryPanel } from "./OpsPanels";
 import { api } from "../api/client";
 import type { ProxyLog } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
@@ -15,13 +16,14 @@ import {
 	Page,
 	Panel,
 	StatusBadge,
+	Tabs,
 	formatDate,
 } from "../components/ui";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 
-export function Logs() {
+function ProxyLogsPanel() {
 	const { client } = useSession();
 	const { t } = useI18n();
 	const service = api(client!);
@@ -78,36 +80,29 @@ export function Logs() {
 	};
 
 	return (
-		<Page
-			kicker={t("logsPage.kicker")}
-			title={t("logsPage.title")}
-			description={t("logsPage.description")}
-			actions={
-				<>
-					<label className="check" style={{ margin: 0 }}>
-						<input
-							type="checkbox"
-							checked={failedOnly}
-							onChange={(e) =>
-								setFilter({ status: e.target.checked ? null : "all" })
-							}
-						/>
-						<span>{t("logsPage.failedOnly")}</span>
-					</label>
-					<Button
-						variant="secondary"
-						icon={<RefreshCw size={16} />}
-						onClick={() => {
-							setBeforeId(undefined);
-							void logs.refetch();
-						}}
-					>
-						{t("common.refresh")}
-					</Button>
-				</>
-			}
-		>
-			<div className="ops-canvas">
+		<>
+			<div className="toolbar" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+				<label className="check" style={{ margin: 0 }}>
+					<input
+						type="checkbox"
+						checked={failedOnly}
+						onChange={(e) =>
+							setFilter({ status: e.target.checked ? null : "all" })
+						}
+					/>
+					<span>{t("logsPage.failedOnly")}</span>
+				</label>
+				<Button
+					variant="secondary"
+					icon={<RefreshCw size={16} />}
+					onClick={() => {
+						setBeforeId(undefined);
+						void logs.refetch();
+					}}
+				>
+					{t("common.refresh")}
+				</Button>
+			</div>
 				<StatGrid
 					items={[
 						{
@@ -229,6 +224,7 @@ export function Logs() {
 									t("common.model"),
 									t("common.channel"),
 									t("common.status"),
+									t("common.tokens"),
 									t("common.latency"),
 								]}
 							>
@@ -262,6 +258,7 @@ export function Logs() {
 													}
 												/>
 											</td>
+											<td>{log.total_tokens ? log.total_tokens : "—"}</td>
 											<td>{t("common.ms", { n: log.latency_ms })}</td>
 										</tr>
 									);
@@ -318,6 +315,14 @@ export function Logs() {
 										<span>{t("common.ms", { n: selected.latency_ms })}</span>
 									</div>
 									<div>
+										<span className="label">{t("common.tokens")}</span>
+										<span>
+											{selected.total_tokens
+												? `${selected.prompt_tokens ?? 0} + ${selected.completion_tokens ?? 0} = ${selected.total_tokens}`
+												: "—"}
+										</span>
+									</div>
+									<div>
 										<span className="label">{t("common.attemptCol")}</span>
 										<span>{selected.attempt}</span>
 									</div>
@@ -347,6 +352,47 @@ export function Logs() {
 						)}
 					</div>
 				</div>
+		</>
+	);
+}
+
+export function Logs() {
+	const { t } = useI18n();
+	const [params, setParams] = useSearchParams();
+	const rawTab = params.get("tab");
+	const tabItems = [
+		{ value: "proxy", label: t("logsPage.tab.proxy") },
+		{ value: "discovery", label: t("logsPage.tab.discovery") },
+		{ value: "audit", label: t("logsPage.tab.audit") },
+	];
+	const active = tabItems.some((item) => item.value === rawTab)
+		? (rawTab as string)
+		: "proxy";
+
+	const changeTab = (value: string) => {
+		const next = new URLSearchParams(params);
+		if (value === "proxy") next.delete("tab");
+		else next.set("tab", value);
+		// Keep channel/model filters only on proxy tab.
+		if (value !== "proxy") {
+			next.delete("channel_id");
+			next.delete("model");
+			next.delete("status");
+		}
+		setParams(next, { replace: true });
+	};
+
+	return (
+		<Page
+			kicker={t("logsPage.kicker")}
+			title={t("logsPage.title")}
+			description={t("logsPage.hubDescription")}
+		>
+			<div className="ops-canvas">
+				<Tabs items={tabItems} active={active} onChange={changeTab} />
+				{active === "proxy" ? <ProxyLogsPanel /> : null}
+				{active === "discovery" ? <DiscoveryPanel /> : null}
+				{active === "audit" ? <AuditPanel /> : null}
 			</div>
 		</Page>
 	);

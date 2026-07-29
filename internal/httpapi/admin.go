@@ -14,6 +14,7 @@ import (
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
+	usagepkg "github.com/lan/meta-gateway/internal/usage"
 )
 
 // AdminHandler serves management endpoints under /admin.
@@ -68,7 +69,12 @@ func (h *AdminHandler) Register(r chi.Router) {
 	// Downstream keys
 	r.Get("/downstream-keys", h.listDownstreamKeys)
 	r.Post("/downstream-keys", h.createDownstreamKey)
+	r.Put("/downstream-keys/{id}", h.updateDownstreamKey)
 	r.Delete("/downstream-keys/{id}", h.deleteDownstreamKey)
+
+	// Usage / simple billing
+	r.Get("/usage/summary", h.usageSummary)
+	r.Get("/usage", h.listUsage)
 
 	// Proxy logs
 	r.Get("/proxy-logs", h.listProxyLogs)
@@ -742,41 +748,74 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 	}
 	// Never expose token_hash.
 	type safeKey struct {
-		ID        int64  `json:"id"`
-		Name      string `json:"name"`
-		Enabled   bool   `json:"enabled"`
-		Scopes    string `json:"scopes,omitempty"`
-		CreatedAt string `json:"created_at"`
+		ID                   int64   `json:"id"`
+		Name                 string  `json:"name"`
+		Enabled              bool    `json:"enabled"`
+		Scopes               string  `json:"scopes,omitempty"`
+		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
+		QuotaUsedTokens      int64   `json:"quota_used_tokens"`
+		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+		EstimatedCost        float64 `json:"estimated_cost"`
+		CreatedAt            string  `json:"created_at"`
 	}
 	result := make([]safeKey, 0, len(keys))
 	for _, k := range keys {
+		// Cost estimate uses used tokens split is unknown at key level; charge all used as prompt-equivalent mixed average.
+		estimated := 0.0
+		if k.QuotaUsedTokens > 0 {
+			// Prefer average of prompt/completion unit prices when both set; else whichever is set.
+			unit := 0.0
+			if k.PricePromptPer1k > 0 && k.PriceCompletionPer1k > 0 {
+				unit = (k.PricePromptPer1k + k.PriceCompletionPer1k) / 2
+			} else if k.PricePromptPer1k > 0 {
+				unit = k.PricePromptPer1k
+			} else {
+				unit = k.PriceCompletionPer1k
+			}
+			if unit > 0 {
+				estimated = (float64(k.QuotaUsedTokens) / 1000.0) * unit
+			}
+		}
 		result = append(result, safeKey{
-			ID:        k.ID,
-			Name:      k.Name,
-			Enabled:   k.Enabled,
-			Scopes:    k.Scopes,
-			CreatedAt: k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ID:                   k.ID,
+			Name:                 k.Name,
+			Enabled:              k.Enabled,
+			Scopes:               k.Scopes,
+			QuotaTotalTokens:     k.QuotaTotalTokens,
+			QuotaUsedTokens:      k.QuotaUsedTokens,
+			PricePromptPer1k:     k.PricePromptPer1k,
+			PriceCompletionPer1k: k.PriceCompletionPer1k,
+			EstimatedCost:        estimated,
+			CreatedAt:            k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		})
 	}
 	writeJSON(w, http.StatusOK, result)
 }
 
 type createKeyResponse struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Token     string `json:"token"`
-	Enabled   bool   `json:"enabled"`
-	Scopes    string `json:"scopes,omitempty"`
-	CreatedAt string `json:"created_at"`
+	ID                   int64   `json:"id"`
+	Name                 string  `json:"name"`
+	Token                string  `json:"token"`
+	Enabled              bool    `json:"enabled"`
+	Scopes               string  `json:"scopes,omitempty"`
+	QuotaTotalTokens     int64   `json:"quota_total_tokens"`
+	QuotaUsedTokens      int64   `json:"quota_used_tokens"`
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	CreatedAt            string  `json:"created_at"`
 }
 
 func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name   string `json:"name"`
+		Name string `json:"name"`
 		// Token is optional. When empty, the server generates an mg-… secret.
 		// When set, the provided secret is stored as a hash only (raw never re-readable).
-		Token  string `json:"token,omitempty"`
-		Scopes string `json:"scopes,omitempty"`
+		Token                string  `json:"token,omitempty"`
+		Scopes               string  `json:"scopes,omitempty"`
+		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
+		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -786,9 +825,12 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if req.Scopes == "" {
-		req.Scopes = "relay"
+	normalizedScopes, scopeErr := auth.NormalizeScopes(req.Scopes)
+	if scopeErr != nil {
+		writeError(w, http.StatusBadRequest, scopeErr.Error())
+		return
 	}
+	req.Scopes = auth.FormatScopes(normalizedScopes)
 
 	raw := auth.NormalizeDownstreamToken(req.Token)
 	var hash string
@@ -816,11 +858,22 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	if req.QuotaTotalTokens < 0 {
+		writeError(w, http.StatusBadRequest, "quota_total_tokens must be >= 0")
+		return
+	}
+	if req.PricePromptPer1k < 0 || req.PriceCompletionPer1k < 0 {
+		writeError(w, http.StatusBadRequest, "prices must be >= 0")
+		return
+	}
 	key := &domain.DownstreamKey{
-		TokenHash: hash,
-		Name:      req.Name,
-		Enabled:   true,
-		Scopes:    req.Scopes,
+		TokenHash:            hash,
+		Name:                 req.Name,
+		Enabled:              true,
+		Scopes:               req.Scopes,
+		QuotaTotalTokens:     req.QuotaTotalTokens,
+		PricePromptPer1k:     req.PricePromptPer1k,
+		PriceCompletionPer1k: req.PriceCompletionPer1k,
 	}
 	id, err := h.db.DownstreamKey.Create(key)
 	if err != nil {
@@ -834,13 +887,172 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusCreated, createKeyResponse{
-		ID:        id,
-		Name:      req.Name,
-		Token:     raw,
-		Enabled:   true,
-		Scopes:    req.Scopes,
-		CreatedAt: createdAt,
+		ID:                   id,
+		Name:                 req.Name,
+		Token:                raw,
+		Enabled:              true,
+		Scopes:               req.Scopes,
+		QuotaTotalTokens:     req.QuotaTotalTokens,
+		QuotaUsedTokens:      0,
+		PricePromptPer1k:     req.PricePromptPer1k,
+		PriceCompletionPer1k: req.PriceCompletionPer1k,
+		CreatedAt:            createdAt,
 	})
+}
+
+func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	existing, err := h.db.DownstreamKey.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "key not found")
+		return
+	}
+	var req struct {
+		Name                 *string  `json:"name"`
+		Enabled              *bool    `json:"enabled"`
+		Scopes               *string  `json:"scopes"`
+		QuotaTotalTokens     *int64   `json:"quota_total_tokens"`
+		PricePromptPer1k     *float64 `json:"price_prompt_per_1k"`
+		PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
+		ResetUsed            bool     `json:"reset_used"`
+	}
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "name is required")
+			return
+		}
+		existing.Name = name
+	}
+	if req.Enabled != nil {
+		existing.Enabled = *req.Enabled
+	}
+	if req.Scopes != nil {
+		normalizedScopes, scopeErr := auth.NormalizeScopes(*req.Scopes)
+		if scopeErr != nil {
+			writeError(w, http.StatusBadRequest, scopeErr.Error())
+			return
+		}
+		existing.Scopes = auth.FormatScopes(normalizedScopes)
+	}
+	if req.QuotaTotalTokens != nil {
+		if *req.QuotaTotalTokens < 0 {
+			writeError(w, http.StatusBadRequest, "quota_total_tokens must be >= 0")
+			return
+		}
+		existing.QuotaTotalTokens = *req.QuotaTotalTokens
+	}
+	if req.PricePromptPer1k != nil {
+		if *req.PricePromptPer1k < 0 {
+			writeError(w, http.StatusBadRequest, "price_prompt_per_1k must be >= 0")
+			return
+		}
+		existing.PricePromptPer1k = *req.PricePromptPer1k
+	}
+	if req.PriceCompletionPer1k != nil {
+		if *req.PriceCompletionPer1k < 0 {
+			writeError(w, http.StatusBadRequest, "price_completion_per_1k must be >= 0")
+			return
+		}
+		existing.PriceCompletionPer1k = *req.PriceCompletionPer1k
+	}
+	if err := h.db.DownstreamKey.Update(existing); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if req.ResetUsed {
+		if _, err := h.db.Exec(`UPDATE downstream_keys SET quota_used_tokens = 0 WHERE id = ?`, id); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		existing.QuotaUsedTokens = 0
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":                      existing.ID,
+		"name":                    existing.Name,
+		"enabled":                 existing.Enabled,
+		"scopes":                  existing.Scopes,
+		"quota_total_tokens":      existing.QuotaTotalTokens,
+		"quota_used_tokens":       existing.QuotaUsedTokens,
+		"price_prompt_per_1k":     existing.PricePromptPer1k,
+		"price_completion_per_1k": existing.PriceCompletionPer1k,
+		"created_at":              existing.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+func (h *AdminHandler) usageSummary(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	keyID, ok := optionalPositiveQueryID(w, query.Get("downstream_key_id"), "downstream_key_id")
+	if !ok {
+		return
+	}
+	summary, err := h.db.Usage.Summary(keyID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	// Attach estimated cost from exact prompt/completion sums using key prices when filtering one key.
+	if keyID != nil {
+		key, err := h.db.DownstreamKey.GetByID(*keyID)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		if key != nil {
+			summary.EstimatedCost = usagepkg.EstimateCost(
+				int(summary.PromptTokens),
+				int(summary.CompletionTokens),
+				key.PricePromptPer1k,
+				key.PriceCompletionPer1k,
+			)
+		}
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func (h *AdminHandler) listUsage(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	limit := 100
+	if raw := query.Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 500 {
+			writeError(w, http.StatusBadRequest, "limit must be between 1 and 500")
+			return
+		}
+		limit = parsed
+	}
+	keyID, ok := optionalPositiveQueryID(w, query.Get("downstream_key_id"), "downstream_key_id")
+	if !ok {
+		return
+	}
+	channelID, ok := optionalPositiveQueryID(w, query.Get("channel_id"), "channel_id")
+	if !ok {
+		return
+	}
+	model := strings.TrimSpace(query.Get("model"))
+	rows, err := h.db.Usage.List(store.UsageFilter{
+		DownstreamKeyID: keyID,
+		ChannelID:       channelID,
+		Model:           model,
+		Limit:           limit,
+	})
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
 }
 
 func (h *AdminHandler) deleteDownstreamKey(w http.ResponseWriter, r *http.Request) {

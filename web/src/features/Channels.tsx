@@ -41,6 +41,7 @@ import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { CONNECTION_TYPE_OPTIONS } from "../connectionTypes";
 import { useSession } from "../session";
+import { useModules } from "../hooks/useModules";
 
 const INVALIDATE = [
 	["channel-overviews"],
@@ -50,6 +51,12 @@ const INVALIDATE = [
 	["routes"],
 	["route-overviews"],
 ] as const;
+
+type ConnectionHealthFilter = "all" | "ready" | "attention" | "missing_key";
+
+function isMissingAPIKey(overview: ChannelOverview) {
+	return !overview.has_api_key;
+}
 
 type CreateConnectionInput = {
 	name: string;
@@ -156,6 +163,7 @@ export function capabilityFlags(overview: ChannelOverview) {
 
 export function Channels() {
 	const { client } = useSession();
+	const { checkinEnabled } = useModules();
 	const { t } = useI18n();
 	const service = api(client!);
 	const [params, setParams] = useSearchParams();
@@ -177,6 +185,7 @@ export function Channels() {
 		left: number;
 	} | null>(null);
 	const [query, setQuery] = useState("");
+	const [healthFilter, setHealthFilter] = useState<ConnectionHealthFilter>("all");
 	const [stageMessage, setStageMessage] = useState<{
 		kind: "created" | "created_and_verified" | "verify_failed";
 		name: string;
@@ -486,8 +495,26 @@ export function Channels() {
 	const rows = useMemo(() => {
 		const list = overviews.data ?? [];
 		const term = query.trim().toLowerCase();
-		if (!term) return list;
 		return list.filter((overview) => {
+			if (healthFilter === "ready" && channelHealth(overview) !== "ready") {
+				return false;
+			}
+			if (healthFilter === "missing_key" && !isMissingAPIKey(overview)) {
+				return false;
+			}
+			if (healthFilter === "attention") {
+				const health = channelHealth(overview);
+				// Missing API key has its own bucket; keep attention for reachability/site issues.
+				if (isMissingAPIKey(overview)) return false;
+				if (
+					health !== "degraded" &&
+					health !== "cooling_down" &&
+					health !== "blocked"
+				) {
+					return false;
+				}
+			}
+			if (!term) return true;
 			const ch = overview.channel;
 			const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
 			const base = (ch.base_url || site?.base_url || "").toLowerCase();
@@ -497,7 +524,7 @@ export function Channels() {
 				String(ch.id).includes(term)
 			);
 		});
-	}, [overviews.data, query, siteById]);
+	}, [overviews.data, query, siteById, healthFilter]);
 
 	const pagination = useClientPagination(rows, 12);
 	const pageRows = pagination.pageItems;
@@ -524,10 +551,18 @@ export function Channels() {
 	const readyCount = (overviews.data ?? []).filter(
 		(o) => channelHealth(o) === "ready",
 	).length;
-	const degradedCount = (overviews.data ?? []).filter((o) => {
+	const missingKeyCount = (overviews.data ?? []).filter((o) =>
+		isMissingAPIKey(o),
+	).length;
+	const attentionCount = (overviews.data ?? []).filter((o) => {
+		if (isMissingAPIKey(o)) return false;
 		const h = channelHealth(o);
 		return h === "degraded" || h === "cooling_down" || h === "blocked";
 	}).length;
+
+	const toggleHealthFilter = (next: ConnectionHealthFilter) => {
+		setHealthFilter((current) => (current === next ? "all" : next));
+	};
 
 	const selectRow = (id: number) => {
 		const next = new URLSearchParams(params);
@@ -684,6 +719,7 @@ export function Channels() {
 				},
 			},
 			...(() => {
+				if (!checkinEnabled) return [];
 				// Label must follow overview badge (site-level schedule), not an arbitrary first token.
 				const scheduleOn = Boolean(overview.checkin_enabled);
 				const checkinCred = userCredentialFor(overview);
@@ -800,12 +836,38 @@ export function Channels() {
 		>
 			<div className="ops-canvas">
 				<StatGrid
-				items={[
-					{ label: t("channels.stat.total"), value: overviews.data?.length ?? "—" },
-					{ label: t("channels.stat.ready"), value: overviews.isPending ? "—" : readyCount },
-					{ label: t("channels.stat.attention"), value: overviews.isPending ? "—" : degradedCount },
-				]}
-			/>
+					columns={4}
+					items={[
+						{
+							label: t("channels.stat.total"),
+							value: overviews.data?.length ?? "—",
+							onClick: () => setHealthFilter("all"),
+							active: healthFilter === "all",
+							hint: t("channels.stat.totalHint"),
+						},
+						{
+							label: t("channels.stat.ready"),
+							value: overviews.isPending ? "—" : readyCount,
+							onClick: () => toggleHealthFilter("ready"),
+							active: healthFilter === "ready",
+							hint: t("channels.stat.readyHint"),
+						},
+						{
+							label: t("channels.stat.missingKey"),
+							value: overviews.isPending ? "—" : missingKeyCount,
+							onClick: () => toggleHealthFilter("missing_key"),
+							active: healthFilter === "missing_key",
+							hint: t("channels.stat.missingKeyHint"),
+						},
+						{
+							label: t("channels.stat.attention"),
+							value: overviews.isPending ? "—" : attentionCount,
+							onClick: () => toggleHealthFilter("attention"),
+							active: healthFilter === "attention",
+							hint: t("channels.stat.attentionHint"),
+						},
+					]}
+				/>
 
 				{stageMessage?.kind === "created" ? (
 					<ResultStrip status="info">
@@ -914,13 +976,38 @@ export function Channels() {
 							isEmpty={!rows.length}
 							empty={
 								<EmptyHero
-									kicker={t("channels.emptyKicker")}
-									title={t("channels.emptyTitle")}
-									body={t("channels.empty")}
+									kicker={
+										healthFilter === "missing_key"
+											? t("channels.filter.missingKeyKicker")
+											: t("channels.emptyKicker")
+									}
+									title={
+										healthFilter === "missing_key"
+											? t("channels.filter.missingKeyTitle")
+											: healthFilter === "attention"
+												? t("channels.filter.attentionTitle")
+												: healthFilter === "ready"
+													? t("channels.filter.readyTitle")
+													: t("channels.emptyTitle")
+									}
+									body={
+										healthFilter === "all"
+											? t("channels.empty")
+											: t("channels.filter.clearHint")
+									}
 									actions={
-										<Button icon={<Plus size={16} />} onClick={openAdd}>
-											{t("channels.add")}
-										</Button>
+										healthFilter === "all" ? (
+											<Button icon={<Plus size={16} />} onClick={openAdd}>
+												{t("channels.add")}
+											</Button>
+										) : (
+											<Button
+												variant="secondary"
+												onClick={() => setHealthFilter("all")}
+											>
+												{t("common.clearFilters")}
+											</Button>
+										)
 									}
 								/>
 							}
@@ -1698,9 +1785,7 @@ function EditChannelDialog({
 									<div className="credential-key-main">
 										<strong>{label}</strong>
 										<small>
-											{t("channels.apiKeyGroup")}: {groupLabel}
-											{" · "}#{item.id}
-											{` · ${t("channels.apiKeyInPool")}`}
+											{`${groupLabel} · #${item.id}`}
 											{usedByThisConnection
 												? ` · ${t("channels.apiKeyUsedByConnection")}`
 												: ""}

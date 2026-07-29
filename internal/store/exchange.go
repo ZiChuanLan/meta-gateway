@@ -141,11 +141,24 @@ func (s *ExchangeStore) LegacyCandidates(ctx context.Context) ([]ExchangeLegacyC
 }
 
 func (s *ExchangeStore) Import(ctx context.Context, items []ExchangeImportItem) (ExchangeImportResult, error) {
+	return s.ImportReplacing(ctx, items, false)
+}
+
+// ImportReplacing imports all items in one transaction. When replace is true,
+// existing connection assets are removed only after parsing/preparation succeeds,
+// and the delete + import commit atomically.
+func (s *ExchangeStore) ImportReplacing(ctx context.Context, items []ExchangeImportItem, replace bool) (ExchangeImportResult, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ExchangeImportResult{}, fmt.Errorf("exchange import begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if replace {
+		if err := replaceExchangeAssets(ctx, tx); err != nil {
+			return ExchangeImportResult{}, err
+		}
+	}
 
 	var result ExchangeImportResult
 	for _, item := range items {
@@ -166,6 +179,22 @@ func (s *ExchangeStore) Import(ctx context.Context, items []ExchangeImportItem) 
 		return ExchangeImportResult{}, fmt.Errorf("exchange import commit: %w", err)
 	}
 	return result, nil
+}
+
+func replaceExchangeAssets(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM channels`); err != nil {
+		return fmt.Errorf("exchange replace channels: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM credentials`); err != nil {
+		return fmt.Errorf("exchange replace credentials: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sites`); err != nil {
+		return fmt.Errorf("exchange replace sites: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM routes WHERE id NOT IN (SELECT DISTINCT route_id FROM route_members)`); err != nil {
+		return fmt.Errorf("exchange replace empty routes: %w", err)
+	}
+	return nil
 }
 
 func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem) (int64, string, error) {
@@ -196,6 +225,23 @@ func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 	siteID, err := getOrCreateExchangeSite(ctx, tx, item)
 	if err != nil {
 		return 0, "", err
+	}
+	// Secondary match only for access_token/session (AAH account re-sync / token rotation).
+	// api_key imports stay multi-key: different secrets => different fingerprints => new channels.
+	kindForSlot := strings.ToLower(strings.TrimSpace(item.CredentialKind))
+	if kindForSlot == "access_token" || kindForSlot == "session" {
+		if reuseCredID, reuseChannelID, ok, matchErr := findReusableExchangeSlot(ctx, tx, siteID, item); matchErr != nil {
+			return 0, "", matchErr
+		} else if ok {
+			if err := updateExchangeAsset(ctx, tx, reuseCredID, reuseChannelID, item); err != nil {
+				return 0, "", err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE channels SET credential_id = ?, updated_at = datetime('now') WHERE id = ? AND (credential_id IS NULL OR credential_id != ?)`,
+				reuseCredID, reuseChannelID, reuseCredID); err != nil {
+				return 0, "", fmt.Errorf("exchange secondary rebind: %w", err)
+			}
+			return reuseChannelID, "updated", nil
+		}
 	}
 	kind := item.CredentialKind
 	if kind == "" {
@@ -346,8 +392,10 @@ func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelI
 	if item.CheckinEnabled {
 		checkinEnabled = 1
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE credentials SET kind = ?, secret_enc = ?, meta_json = ?, status = ?, checkin_enabled = ?, updated_at = datetime('now') WHERE id = ?`,
-		kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, credentialID); err != nil {
+	// Always refresh import_fingerprint so re-import with a rotated secret still
+	// hits the fingerprint path next time (and secondary-match updates stick).
+	if _, err := tx.ExecContext(ctx, `UPDATE credentials SET kind = ?, secret_enc = ?, meta_json = ?, status = ?, checkin_enabled = ?, import_fingerprint = ?, updated_at = datetime('now') WHERE id = ?`,
+		kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, item.Fingerprint, credentialID); err != nil {
 		return fmt.Errorf("exchange credential update: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE channels SET site_id = ?, name = ?, base_url = ?, models_csv = ?, group_name = ?, priority = ?, weight = ?, status = ?, type_hint = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -392,6 +440,197 @@ func adoptExchangeAsset(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 		return ErrExchangeConflict
 	}
 	return updateExchangeAsset(ctx, tx, item.AdoptCredentialID, item.AdoptChannelID, item)
+}
+
+// findReusableExchangeSlot locates an existing channel/credential on siteID that
+// should absorb this import item instead of inserting a duplicate connection.
+//
+// Match order (first exclusive hit wins):
+//  1. platform_user_id in meta_json (stable AAH account id)
+//  2. exact channel name on this site (operator-visible "same upstream")
+//  3. sole channel on the site (single-connection upstream)
+//  4. sole channel whose bound credential kind matches item kind
+//
+// Multiple intentional keys on one host still create when none of the above is unique.
+func findReusableExchangeSlot(ctx context.Context, tx *sql.Tx, siteID int64, item ExchangeImportItem) (credentialID, channelID int64, ok bool, err error) {
+	kind := strings.ToLower(strings.TrimSpace(item.CredentialKind))
+	if kind == "" {
+		kind = "api_key"
+	}
+	platformUserID := platformUserIDFromMeta(item.MetaJSON)
+
+	type slotRow struct {
+		ChannelID    int64
+		CredentialID int64
+		Name         string
+		Kind         string
+		MetaJSON     string
+	}
+	rows, qerr := tx.QueryContext(ctx, `SELECT c.id, COALESCE(c.credential_id, 0), c.name,
+		COALESCE(cr.kind, ''), COALESCE(cr.meta_json, '')
+		FROM channels c
+		LEFT JOIN credentials cr ON cr.id = c.credential_id
+		WHERE c.site_id = ?
+		ORDER BY c.id`, siteID)
+	if qerr != nil {
+		return 0, 0, false, fmt.Errorf("exchange secondary list: %w", qerr)
+	}
+	defer rows.Close()
+	var list []slotRow
+	for rows.Next() {
+		var r slotRow
+		if err := rows.Scan(&r.ChannelID, &r.CredentialID, &r.Name, &r.Kind, &r.MetaJSON); err != nil {
+			return 0, 0, false, fmt.Errorf("exchange secondary scan: %w", err)
+		}
+		list = append(list, r)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, false, fmt.Errorf("exchange secondary rows: %w", err)
+	}
+	if len(list) == 0 {
+		return 0, 0, false, nil
+	}
+
+	pick := func(r slotRow) (int64, int64, bool, error) {
+		credID := r.CredentialID
+		if alt, aerr := preferImportCredential(ctx, tx, siteID, kind, platformUserID, credID); aerr != nil {
+			return 0, 0, false, aerr
+		} else if alt > 0 {
+			credID = alt
+		}
+		if credID <= 0 {
+			return 0, 0, false, nil
+		}
+		return credID, r.ChannelID, true, nil
+	}
+
+	if platformUserID > 0 {
+		var hits []slotRow
+		for _, r := range list {
+			if platformUserIDFromMeta(r.MetaJSON) == platformUserID {
+				hits = append(hits, r)
+			}
+		}
+		if len(hits) == 0 {
+			var credID, chID int64
+			scanErr := tx.QueryRowContext(ctx, `SELECT cr.id, COALESCE((
+				SELECT c.id FROM channels c WHERE c.site_id = cr.site_id ORDER BY c.id LIMIT 1
+			), 0)
+			FROM credentials cr
+			WHERE cr.site_id = ?
+			  AND json_valid(cr.meta_json)
+			  AND CAST(json_extract(cr.meta_json, '$.platform_user_id') AS INTEGER) = ?
+			ORDER BY cr.id LIMIT 1`, siteID, platformUserID).Scan(&credID, &chID)
+			if scanErr == nil && credID > 0 && chID > 0 {
+				return credID, chID, true, nil
+			}
+		} else if len(hits) == 1 {
+			return pick(hits[0])
+		}
+	}
+
+	name := strings.TrimSpace(item.Name)
+	if name != "" {
+		var hits []slotRow
+		for _, r := range list {
+			if strings.EqualFold(strings.TrimSpace(r.Name), name) {
+				hits = append(hits, r)
+			}
+		}
+		if len(hits) == 1 {
+			return pick(hits[0])
+		}
+	}
+
+	if len(list) == 1 {
+		return pick(list[0])
+	}
+
+	var kindHits []slotRow
+	for _, r := range list {
+		if strings.EqualFold(strings.TrimSpace(r.Kind), kind) {
+			kindHits = append(kindHits, r)
+		}
+	}
+	if len(kindHits) == 1 {
+		return pick(kindHits[0])
+	}
+
+	return 0, 0, false, nil
+}
+
+func preferImportCredential(ctx context.Context, tx *sql.Tx, siteID int64, kind string, platformUserID, fallbackCredID int64) (int64, error) {
+	if fallbackCredID > 0 {
+		var existingKind string
+		_ = tx.QueryRowContext(ctx, `SELECT lower(kind) FROM credentials WHERE id = ?`, fallbackCredID).Scan(&existingKind)
+		if existingKind == kind {
+			return fallbackCredID, nil
+		}
+	}
+	if platformUserID > 0 {
+		var id int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM credentials
+			WHERE site_id = ? AND lower(kind) = ?
+			  AND json_valid(meta_json)
+			  AND CAST(json_extract(meta_json, '$.platform_user_id') AS INTEGER) = ?
+			ORDER BY id LIMIT 1`, siteID, kind, platformUserID).Scan(&id)
+		if err == nil && id > 0 {
+			return id, nil
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("exchange prefer cred by user: %w", err)
+		}
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM credentials WHERE site_id = ? AND lower(kind) = ? ORDER BY id`, siteID, kind)
+	if err != nil {
+		return 0, fmt.Errorf("exchange prefer cred list: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if len(ids) == 1 {
+		return ids[0], nil
+	}
+	var fpID int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM credentials
+		WHERE site_id = ? AND lower(kind) = ?
+		  AND import_fingerprint IS NOT NULL AND import_fingerprint != ''
+		ORDER BY id LIMIT 1`, siteID, kind).Scan(&fpID)
+	if err == nil && fpID > 0 {
+		return fpID, nil
+	}
+	return fallbackCredID, nil
+}
+
+func platformUserIDFromMeta(raw string) int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "{}" {
+		return 0
+	}
+	const key = `"platform_user_id"`
+	idx := strings.Index(raw, key)
+	if idx < 0 {
+		return 0
+	}
+	rest := raw[idx+len(key):]
+	rest = strings.TrimLeft(rest, " \t\r\n:")
+	var n int64
+	for _, r := range rest {
+		if r < '0' || r > '9' {
+			break
+		}
+		n = n*10 + int64(r-'0')
+		if n > 1_000_000_000_000 {
+			return 0
+		}
+	}
+	return n
 }
 
 func getOrCreateExchangeSite(ctx context.Context, tx *sql.Tx, item ExchangeImportItem) (int64, error) {

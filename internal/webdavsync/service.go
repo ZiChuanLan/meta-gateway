@@ -33,8 +33,14 @@ type Config struct {
 
 // Importer is the exchange import surface used after download/decrypt.
 type Importer interface {
-	Import(ctx context.Context, data []byte) (*exchange.ImportResult, error)
+	ImportWithOptions(ctx context.Context, data []byte, opts exchange.ImportOptions) (*exchange.ImportResult, error)
 }
+
+// Sync modes for manual / scheduled WebDAV import.
+const (
+	SyncModeIncremental = "incremental"
+	SyncModeReplace     = "replace"
+)
 
 // SyncResult is a redacted outcome for admin API and last-status.
 type SyncResult struct {
@@ -178,23 +184,24 @@ func (s *Service) runningSnapshot() bool {
 
 // TestConnection downloads the backup without importing.
 func (s *Service) TestConnection(ctx context.Context) (*SyncResult, error) {
-	return s.run(ctx, SourceManual, false)
+	return s.run(ctx, SourceManual, false, SyncModeIncremental)
 }
 
 // Sync downloads, optionally decrypts, and imports the AAH backup.
-func (s *Service) Sync(ctx context.Context, source string) (*SyncResult, error) {
+// mode is incremental (merge) or replace (wipe local connections first).
+func (s *Service) Sync(ctx context.Context, source, mode string) (*SyncResult, error) {
 	if source == "" {
 		source = SourceManual
 	}
-	return s.run(ctx, source, true)
+	return s.run(ctx, source, true, mode)
 }
 
-// RunScheduled implements the scheduler runner contract.
+// RunScheduled implements the scheduler runner contract (always incremental).
 func (s *Service) RunScheduled(ctx context.Context) (*SyncResult, error) {
-	return s.Sync(ctx, SourceScheduled)
+	return s.Sync(ctx, SourceScheduled, SyncModeIncremental)
 }
 
-func (s *Service) run(ctx context.Context, source string, doImport bool) (*SyncResult, error) {
+func (s *Service) run(ctx context.Context, source string, doImport bool, mode string) (*SyncResult, error) {
 	if s == nil {
 		return nil, Error{Category: CategoryInternal, Message: "service unavailable"}
 	}
@@ -309,7 +316,23 @@ func (s *Service) run(ctx context.Context, source string, doImport bool) (*SyncR
 		s.remember(result)
 		return result, Error{Category: result.Category, Message: result.Message}
 	}
-	importResult, importErr := s.importer.Import(ctx, plaintext)
+	importMode := strings.ToLower(strings.TrimSpace(mode))
+	if importMode == "" {
+		importMode = SyncModeIncremental
+	}
+	if importMode != SyncModeIncremental && importMode != SyncModeReplace {
+		result.Category = CategoryValidation
+		result.Message = "sync mode must be incremental or replace"
+		s.remember(result)
+		return result, Error{Category: result.Category, Message: result.Message}
+	}
+	var importResult *exchange.ImportResult
+	var importErr error
+	if importMode == SyncModeReplace {
+		importResult, importErr = s.importer.ImportWithOptions(ctx, plaintext, exchange.ImportOptions{Mode: exchange.ImportModeReplace})
+	} else {
+		importResult, importErr = s.importer.ImportWithOptions(ctx, plaintext, exchange.ImportOptions{Mode: exchange.ImportModeIncremental})
+	}
 	if importErr != nil {
 		result.Category = CategoryImportFailed
 		result.Message = "backup import failed"
@@ -329,7 +352,11 @@ func (s *Service) run(ctx context.Context, source string, doImport bool) (*SyncR
 	}
 	result.Import = importResult
 	result.Status = StatusSuccess
-	result.Message = "webdav backup imported"
+	if importMode == SyncModeReplace {
+		result.Message = "webdav backup imported (full replace)"
+	} else {
+		result.Message = "webdav backup imported (incremental)"
+	}
 	s.remember(result)
 	return result, nil
 }

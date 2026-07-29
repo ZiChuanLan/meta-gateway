@@ -27,7 +27,7 @@ func TestOperationsEndpointsAndAdminAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1024, AuditRetentionDays: 90, AuditRetentionRows: 100000}
+	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1024, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true}
 	server := httptest.NewServer(httpapi.New(cfg, db, enc))
 	defer server.Close()
 
@@ -88,7 +88,7 @@ func TestAdminBodyLimitAndTrailingJSON(t *testing.T) {
 	}
 	defer db.Close()
 	enc, _ := crypto.New("body-limit-test-master-key-at-least-32-characters")
-	cfg := &config.Config{AdminToken: "admin", MetricsToken: "metrics", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 64}
+	cfg := &config.Config{AdminToken: "admin", AdminTokens: []string{"admin"}, MetricsToken: "metrics", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 64, ExchangeAllowSecretExport: true}
 	server := httptest.NewServer(httpapi.New(cfg, db, enc))
 	defer server.Close()
 	assertStatus(t, http.MethodPost, server.URL+"/admin/sites", "admin", []byte(`{"name":"one"}{"name":"two"}`), http.StatusBadRequest)

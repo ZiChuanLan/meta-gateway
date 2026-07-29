@@ -116,6 +116,40 @@ func TestServiceRepeatedImportUpdatesAndExportsModes(t *testing.T) {
 	}
 }
 
+func TestServiceReplaceImportIsAtomicAndKeepsNonConnectionData(t *testing.T) {
+	db, _, _, service := openExchangeService(t)
+	oldBody := `[{"name":"old","base_url":"https://old.example.com","key":"old-key"}]`
+	oldResult, err := service.Import(t.Context(), []byte(oldBody))
+	if err != nil || oldResult.CreatedCount != 1 {
+		t.Fatalf("old import=%+v err=%v", oldResult, err)
+	}
+	if _, err := db.Exec(`INSERT INTO downstream_keys (token_hash, name, enabled, scopes) VALUES ('hash', 'client', 1, 'relay')`); err != nil {
+		t.Fatal(err)
+	}
+
+	badBody := `[{"name":"broken","base_url":"not-a-url","key":"new-key"}]`
+	if _, err := service.ImportWithOptions(t.Context(), []byte(badBody), exchange.ImportOptions{Mode: exchange.ImportModeReplace}); err == nil {
+		t.Fatal("invalid replacement should fail")
+	}
+	var oldChannels int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM channels WHERE name = 'old'`).Scan(&oldChannels); err != nil || oldChannels != 1 {
+		t.Fatalf("old asset was removed after failed replace: count=%d err=%v", oldChannels, err)
+	}
+
+	newBody := `[{"name":"new","base_url":"https://new.example.com","key":"new-key"}]`
+	result, err := service.ImportWithOptions(t.Context(), []byte(newBody), exchange.ImportOptions{Mode: exchange.ImportModeReplace})
+	if err != nil || result.CreatedCount != 1 {
+		t.Fatalf("replace=%+v err=%v", result, err)
+	}
+	var oldCount, newCount, keyCount int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM channels WHERE name = 'old'`).Scan(&oldCount)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM channels WHERE name = 'new'`).Scan(&newCount)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM downstream_keys`).Scan(&keyCount)
+	if oldCount != 0 || newCount != 1 || keyCount != 1 {
+		t.Fatalf("counts old=%d new=%d downstream_keys=%d", oldCount, newCount, keyCount)
+	}
+}
+
 func TestServiceAdoptsUniqueLegacyIdentity(t *testing.T) {
 	db, enc, _, service := openExchangeService(t)
 	secret, _ := enc.Encrypt([]byte("legacy-key"))

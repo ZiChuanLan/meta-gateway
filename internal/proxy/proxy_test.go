@@ -37,6 +37,14 @@ func (r *queuedRelay) ChatCompletionsContext(_ context.Context, upstreamURL, _ s
 	return result
 }
 
+func (r *queuedRelay) ForwardWithHeaders(_ context.Context, _, upstreamURL string, _ http.Header, _ []byte) *relay.Result {
+	return r.ChatCompletionsContext(context.Background(), upstreamURL, "", nil, false)
+}
+
+func (r *queuedRelay) ForwardContext(_ context.Context, _, upstreamURL, _ string, _ []byte) *relay.Result {
+	return r.ChatCompletionsContext(context.Background(), upstreamURL, "", nil, false)
+}
+
 func response(status int, body string) *relay.Result {
 	return &relay.Result{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), LatencyMs: 2}
 }

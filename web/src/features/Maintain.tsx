@@ -1,39 +1,57 @@
-import { useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo } from "react";
 import { useI18n } from "../i18n";
-import { Page, Tabs } from "../components/ui";
+import { Page, Panel, Tabs } from "../components/ui";
 import { Exchange } from "./Exchange";
-import {
-	AuditPanel,
-	BackupsPanel,
-	CheckinsPanel,
-	DiscoveryPanel,
-	RuntimeSettingsPanel,
-} from "./OpsPanels";
+import { BackupsPanel, RuntimeSettingsPanel } from "./OpsPanels";
+import { useModules } from "../hooks/useModules";
 
-type SystemTab =
-	| "runtime"
-	| "discovery"
-	| "checkins"
-	| "exchange"
-	| "audit"
-	| "backups";
+type SystemTab = "runtime" | "exchange" | "backups";
 
 /**
- * Low-frequency settings tools. Daily loop stays on
- * Connections → Models → Tokens → Logs.
+ * Settings: runtime, backups, and optional Exchange.
+ * Discovery + Audit live under Logs; Check-in is a top-level nav item.
  */
 export function Maintain() {
 	const { t } = useI18n();
 	const [params, setParams] = useSearchParams();
+	const modules = useModules();
 	const requested = params.get("tab");
-	const items: Array<{ value: SystemTab; label: string }> = [
-		{ value: "runtime", label: t("ops.tab.runtime") },
-		{ value: "discovery", label: t("ops.tab.discovery") },
-		{ value: "checkins", label: t("ops.tab.checkins") },
-		{ value: "exchange", label: t("maintain.tab.exchange") },
-		{ value: "audit", label: t("ops.tab.audit") },
-		{ value: "backups", label: t("ops.tab.backups") },
-	];
+
+	const items = useMemo(() => {
+		const next: Array<{ value: SystemTab; label: string }> = [
+			{ value: "runtime", label: t("ops.tab.runtime") },
+		];
+		if (modules.exchangeEnabled) {
+			next.push({ value: "exchange", label: t("maintain.tab.exchange") });
+		}
+		next.push({ value: "backups", label: t("ops.tab.backups") });
+		return next;
+	}, [modules.exchangeEnabled, t]);
+
+	const addonTabDisabled =
+		requested === "exchange" && !modules.exchangeEnabled;
+
+	useEffect(() => {
+		if (!modules.ready) return;
+		if (!addonTabDisabled) return;
+		const next = new URLSearchParams(params);
+		next.set("tab", "runtime");
+		next.delete("ops");
+		setParams(next, { replace: true });
+	}, [addonTabDisabled, modules.ready, params, setParams]);
+
+	// Legacy deep-links (after hooks).
+	if (requested === "discovery") {
+		return <Navigate to="/logs?tab=discovery" replace />;
+	}
+	if (requested === "audit") {
+		return <Navigate to="/logs?tab=audit" replace />;
+	}
+	if (requested === "checkins") {
+		return <Navigate to="/checkins" replace />;
+	}
+
 	const active: SystemTab = items.some((item) => item.value === requested)
 		? (requested as SystemTab)
 		: "runtime";
@@ -54,19 +72,29 @@ export function Maintain() {
 			<div className="ops-canvas">
 				<div className="system-banner">
 					<strong>{t("maintain.bannerTitle")}</strong>
-					<p>{t("maintain.bannerBody")}</p>
+					<p>
+						{t("maintain.bannerBody")}{" "}
+						<Link to="/store">{t("maintain.openStore")}</Link>
+					</p>
 				</div>
 				<Tabs items={items} active={active} onChange={changeTab} />
-				{active === "runtime" ? <RuntimeSettingsPanel /> : null}
-				{active === "discovery" ? <DiscoveryPanel /> : null}
-				{active === "checkins" ? <CheckinsPanel /> : null}
-				{active === "exchange" ? (
+				{addonTabDisabled ? (
+					<Panel>
+						<p className="detail-empty">{t("maintain.addonDisabled")}</p>
+						<Link className="button button-primary" to="/store">
+							{t("maintain.openStore")}
+						</Link>
+					</Panel>
+				) : null}
+				{!addonTabDisabled && active === "runtime" ? (
+					<RuntimeSettingsPanel />
+				) : null}
+				{!addonTabDisabled && active === "exchange" && modules.exchangeEnabled ? (
 					<div className="maintain-exchange">
 						<Exchange embedded />
 					</div>
 				) : null}
-				{active === "audit" ? <AuditPanel /> : null}
-				{active === "backups" ? <BackupsPanel /> : null}
+				{!addonTabDisabled && active === "backups" ? <BackupsPanel /> : null}
 			</div>
 		</Page>
 	);

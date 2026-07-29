@@ -51,21 +51,41 @@ func (r *Relay) ChatCompletions(upstreamURL string, apiKey string, reqBody []byt
 
 // ChatCompletionsContext forwards a request and propagates cancellation.
 func (r *Relay) ChatCompletionsContext(ctx context.Context, upstreamURL string, apiKey string, reqBody []byte, stream bool) *Result {
-	start := time.Now()
+	return r.ForwardContext(ctx, http.MethodPost, upstreamURL, apiKey, reqBody)
+}
 
+// ForwardContext sends an OpenAI-style Bearer-authenticated upstream request.
+func (r *Relay) ForwardContext(ctx context.Context, method, upstreamURL, apiKey string, reqBody []byte) *Result {
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer "+apiKey)
+	return r.ForwardWithHeaders(ctx, method, upstreamURL, headers, reqBody)
+}
+
+// ForwardWithHeaders sends an upstream request with caller-provided headers.
+// Content-Type is set to application/json when a body is present and not already set.
+func (r *Relay) ForwardWithHeaders(ctx context.Context, method, upstreamURL string, headers http.Header, reqBody []byte) *Result {
+	start := time.Now()
+	if method == "" {
+		method = http.MethodPost
+	}
 	var bodyReader io.Reader
-	if stream {
-		bodyReader = bytes.NewReader(reqBody)
-	} else {
+	if len(reqBody) > 0 || method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch {
 		bodyReader = bytes.NewReader(reqBody)
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bodyReader)
+	httpReq, err := http.NewRequestWithContext(ctx, method, upstreamURL, bodyReader)
 	if err != nil {
 		return &Result{Err: fmt.Errorf("relay: create request: %w", err)}
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	if bodyReader != nil {
+		if headers == nil || headers.Get("Content-Type") == "" {
+			httpReq.Header.Set("Content-Type", "application/json")
+		}
+	}
+	for key, values := range headers {
+		for _, value := range values {
+			httpReq.Header.Add(key, value)
+		}
+	}
 
 	resp, err := r.client.Do(httpReq)
 	latency := int(time.Since(start).Milliseconds())

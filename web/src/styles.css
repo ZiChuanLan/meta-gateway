@@ -364,6 +364,27 @@ a.button {
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
+	text-align: left;
+	color: inherit;
+	font: inherit;
+	width: 100%;
+}
+.stat-card:disabled {
+	opacity: 1;
+	cursor: default;
+}
+.stat-card.is-interactive {
+	cursor: pointer;
+	transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.stat-card.is-interactive:hover {
+	border-color: var(--line-strong);
+	background: var(--surface-hover);
+}
+.stat-card.is-active {
+	border-color: rgba(47, 79, 134, 0.35);
+	background: var(--accent-soft);
+	box-shadow: inset 0 0 0 1px rgba(47, 79, 134, 0.12);
 }
 .stat-card .stat-icon {
 	width: 28px; height: 28px;
@@ -402,8 +423,19 @@ tbody tr.is-selected { background: var(--accent-soft); }
 tbody tr.is-clickable { cursor: pointer; }
 tbody td strong { display: block; font-weight: 600; }
 tbody td small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
-td.actions, th.actions { white-space: nowrap; text-align: right; }
-td.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+/* Keep actions cells as real table-cells. display:flex on <td> breaks border
+   alignment so row dividers no longer form one continuous line. */
+td.actions, th.actions {
+	white-space: nowrap;
+	text-align: right;
+	vertical-align: middle;
+}
+td.actions .action-menu,
+td.actions .icon-button,
+td.actions > button {
+	display: inline-flex;
+	vertical-align: middle;
+}
 /* Status column: never squeeze badges (Chinese labels need room). */
 th.status-col,
 td.status-col {
@@ -442,7 +474,7 @@ td.status-col {
 .badge-failed, .badge-degraded, .badge-blocked, .badge-danger {
 	color: var(--danger); background: var(--danger-soft); border-color: rgba(163,59,50,0.18);
 }
-.badge-cooling-down, .badge-warning, .badge-unverified {
+.badge-partial, .badge-cooling-down, .badge-warning, .badge-unverified {
 	color: var(--warning); background: var(--warning-soft); border-color: rgba(138,93,0,0.18);
 }
 .state {
@@ -3796,6 +3828,62 @@ th.actions, td.actions {
 	background: var(--surface-subtle);
 	border: 1px solid var(--line);
 }
+.webdav-mode-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+}
+.webdav-mode-card {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	min-height: 76px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: var(--surface-subtle);
+	cursor: pointer;
+	transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+.webdav-mode-card:hover {
+	border-color: var(--line-strong);
+	background: var(--surface-hover);
+}
+.webdav-mode-card:focus-within {
+	outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+	outline-offset: 2px;
+}
+.webdav-mode-card.is-selected {
+	border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+	background: var(--accent-soft);
+	box-shadow: 0 0 0 3px rgba(47, 79, 134, 0.08);
+}
+.webdav-mode-card.is-danger.is-selected {
+	border-color: color-mix(in srgb, var(--danger) 58%, var(--line));
+	background: var(--danger-soft);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.webdav-mode-card input {
+	margin-top: 3px;
+	flex: 0 0 auto;
+}
+.webdav-mode-card strong,
+.webdav-mode-card small {
+	display: block;
+}
+.webdav-mode-card strong {
+	font-size: 13px;
+	line-height: 1.35;
+}
+.webdav-mode-card small {
+	margin-top: 4px;
+	color: var(--muted);
+	font-size: 12px;
+	line-height: 1.45;
+}
+@media (max-width: 640px) {
+	.webdav-mode-grid { grid-template-columns: 1fr; }
+}
 .webdav-actions {
 	display: flex;
 	flex-wrap: wrap;
@@ -4033,4 +4121,84 @@ th.actions, td.actions {
 	flex-wrap: wrap;
 	gap: 10px;
 	margin-top: 14px;
+}
+
+
+/* Feature modules (Settings → Modules) */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.module-card {
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 14px;
+  padding: 1rem;
+  background: var(--panel-elevated, rgba(255,255,255,0.03));
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.module-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.module-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  flex-shrink: 0;
+}
+.module-card-body {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+  line-height: 1.45;
+}
+.module-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+
+/* Feature store page */
+.store-section {
+  margin-bottom: 1.75rem;
+}
+.store-section-head {
+  margin-bottom: 0.85rem;
+}
+.store-section-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+.store-section-head p {
+  margin: 0;
+  opacity: 0.75;
+  font-size: 0.9rem;
+}
+.module-card.is-core {
+  opacity: 0.92;
+  border-style: dashed;
+}
+.module-unlocks {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  opacity: 0.8;
+  line-height: 1.45;
+}
+.module-core-tag {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
 }

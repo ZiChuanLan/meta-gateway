@@ -32,6 +32,8 @@ type Selector interface {
 
 type Relay interface {
 	ChatCompletionsContext(ctx context.Context, upstreamURL, apiKey string, body []byte, stream bool) *relay.Result
+	ForwardContext(ctx context.Context, method, upstreamURL, apiKey string, body []byte) *relay.Result
+	ForwardWithHeaders(ctx context.Context, method, upstreamURL string, headers http.Header, body []byte) *relay.Result
 }
 
 type Service struct {
@@ -49,8 +51,19 @@ type Request struct {
 	Model     string
 	Body      []byte
 	Stream    bool
+	Method    string
+	// OpenAIPath is the path under the upstream OpenAI root, e.g. "chat/completions".
+	OpenAIPath string
 	// PreferChannelID pins upstream selection (admin try). Zero means normal routing.
 	PreferChannelID int64
+	// DownstreamKeyID is the authenticated client key, used for usage metering.
+	DownstreamKeyID int64
+	// ContentType preserves client Content-Type for multipart passthrough.
+	ContentType string
+	// PromptTokens/CompletionTokens/TotalTokens optional post-response accounting.
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
 }
 
 // AttemptMeta describes which upstream was used for an admin try / last attempt.
@@ -88,12 +101,28 @@ func (s *Service) SetRetryPolicy(retryTimes int, cooldown time.Duration) {
 }
 
 func (s *Service) ChatCompletions(ctx context.Context, req Request) *relay.Result {
-	result, _ := s.ChatCompletionsWithMeta(ctx, req)
+	result, _ := s.ForwardWithMeta(ctx, req)
+	return result
+}
+
+func (s *Service) Forward(ctx context.Context, req Request) *relay.Result {
+	result, _ := s.ForwardWithMeta(ctx, req)
 	return result
 }
 
 // ChatCompletionsWithMeta is the same as ChatCompletions but also reports which upstream was used.
 func (s *Service) ChatCompletionsWithMeta(ctx context.Context, req Request) (*relay.Result, *AttemptMeta) {
+	return s.ForwardWithMeta(ctx, req)
+}
+
+// ForwardWithMeta selects a channel, resolves credentials, and forwards to the OpenAI-compatible path.
+func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Result, *AttemptMeta) {
+	if strings.TrimSpace(req.OpenAIPath) == "" {
+		req.OpenAIPath = "chat/completions"
+	}
+	if strings.TrimSpace(req.Method) == "" {
+		req.Method = http.MethodPost
+	}
 	excluded := make(map[int64]struct{})
 	var last *relay.Result
 	var lastMeta *AttemptMeta
@@ -126,7 +155,18 @@ func (s *Service) ChatCompletionsWithMeta(ctx context.Context, req Request) (*re
 			Priority:    candidate.Member.Priority,
 			Weight:      candidate.Member.Weight,
 		}
-		upstreamURL, err := s.resolveChatURL(candidate.Channel)
+		protocol := s.channelProtocol(candidate.Channel)
+		wirePath := req.OpenAIPath
+		if protocol == "anthropic" {
+			switch wirePath {
+			case "", "chat/completions", "messages":
+				wirePath = "messages"
+			default:
+				// Images/audio/etc. are OpenAI-compatible only; do not invent Anthropic mappings.
+				return &relay.Result{Err: fmt.Errorf("proxy: path %q is not supported on Anthropic channels", wirePath)}, meta
+			}
+		}
+		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, wirePath, protocol)
 		if err != nil {
 			return &relay.Result{Err: err}, meta
 		}
@@ -140,7 +180,53 @@ func (s *Service) ChatCompletionsWithMeta(ctx context.Context, req Request) (*re
 		var category string
 		var retryable bool
 		for keyIndex, apiKey := range apiKeys {
-			result = s.relay.ChatCompletionsContext(ctx, upstreamURL, apiKey, req.Body, req.Stream)
+			requestBody := req.Body
+			if protocol == "anthropic" {
+				if req.OpenAIPath == "messages" {
+					// Native Anthropic Messages clients already send Messages JSON.
+					result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, adapters.AnthropicAuthHeaders(apiKey), requestBody)
+				} else {
+					// OpenAI chat clients: translate request; non-stream responses translated back.
+					translated, translateErr := adapters.ChatToAnthropicMessages(req.Body)
+					if translateErr != nil {
+						result = &relay.Result{Err: fmt.Errorf("proxy: anthropic translate: %w", translateErr)}
+					} else {
+						requestBody = translated
+						result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, adapters.AnthropicAuthHeaders(apiKey), requestBody)
+						if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
+							if req.Stream {
+								// Reshape Anthropic SSE → OpenAI chat.completion.chunk for OpenAI clients.
+								result.Body = adapters.NewAnthropicToOpenAIStream(result.Body)
+								if result.Header == nil {
+									result.Header = make(http.Header)
+								}
+								result.Header.Set("Content-Type", "text/event-stream")
+							} else {
+								raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
+								_ = result.Body.Close()
+								if readErr != nil {
+									result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
+								} else if chatBody, convErr := adapters.AnthropicMessagesToChat(raw); convErr != nil {
+									result.Body = io.NopCloser(bytes.NewReader(raw))
+								} else {
+									result.Body = io.NopCloser(bytes.NewReader(chatBody))
+									if result.Header == nil {
+										result.Header = make(http.Header)
+									}
+									result.Header.Set("Content-Type", "application/json")
+								}
+							}
+						}
+					}
+				}
+			} else {
+				headers := http.Header{}
+				headers.Set("Authorization", "Bearer "+apiKey)
+				if ct := strings.TrimSpace(req.ContentType); ct != "" {
+					headers.Set("Content-Type", ct)
+				}
+				result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, headers, requestBody)
+			}
 			category, retryable = classify(result)
 			// Only the last key attempt for this channel is logged at the attempt counter
 			// used for cross-channel retry; intermediate key fails stay on the same attempt.
@@ -271,7 +357,20 @@ func (s *Service) resolveAPIKey(channel domain.Channel) (string, error) {
 	return keys[0], nil
 }
 
-func (s *Service) resolveChatURL(channel domain.Channel) (string, error) {
+func (s *Service) channelProtocol(channel domain.Channel) string {
+	platform := ""
+	if channel.SiteID != nil {
+		if site, err := s.db.Site.GetByID(*channel.SiteID); err == nil && site != nil {
+			platform = site.Platform
+		}
+	}
+	if adapters.IsAnthropicFamily(channel.TypeHint, platform) {
+		return "anthropic"
+	}
+	return "openai"
+}
+
+func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath, protocol string) (string, error) {
 	baseURL := strings.TrimSpace(channel.BaseURL)
 	if baseURL == "" {
 		if channel.SiteID == nil {
@@ -283,7 +382,21 @@ func (s *Service) resolveChatURL(channel domain.Channel) (string, error) {
 		}
 		baseURL = site.BaseURL
 	}
-	upstreamURL, err := adapters.JoinOpenAIPath(baseURL, "chat/completions")
+	path := strings.TrimSpace(apiPath)
+	if path == "" {
+		if protocol == "anthropic" {
+			path = "messages"
+		} else {
+			path = "chat/completions"
+		}
+	}
+	var upstreamURL string
+	var err error
+	if protocol == "anthropic" {
+		upstreamURL, err = adapters.JoinAnthropicPath(baseURL, path)
+	} else {
+		upstreamURL, err = adapters.JoinOpenAIPath(baseURL, path)
+	}
 	if err != nil {
 		return "", fmt.Errorf("proxy: invalid base url")
 	}
@@ -302,16 +415,66 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		errorBrief = category
 	}
 	_, err := s.db.ProxyLog.Insert(&domain.ProxyLog{
-		RequestID:  req.RequestID,
-		ChannelID:  candidate.Channel.ID,
-		Model:      req.Model,
-		Status:     status,
-		LatencyMs:  result.LatencyMs,
-		Attempt:    attempt,
-		ErrorBrief: errorBrief,
+		RequestID:        req.RequestID,
+		ChannelID:        candidate.Channel.ID,
+		Model:            req.Model,
+		Status:           status,
+		LatencyMs:        result.LatencyMs,
+		Attempt:          attempt,
+		ErrorBrief:       errorBrief,
+		DownstreamKeyID:  req.DownstreamKeyID,
+		PromptTokens:     req.PromptTokens,
+		CompletionTokens: req.CompletionTokens,
+		TotalTokens:      req.TotalTokens,
+		Stream:           req.Stream,
+		Path:             req.OpenAIPath,
 	})
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
+	}
+}
+
+
+// RecordUsage persists metered tokens for a completed relay response.
+func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}) {
+	total := tokens.TotalTokens
+	if total <= 0 {
+		total = tokens.PromptTokens + tokens.CompletionTokens
+	}
+	if total <= 0 {
+		return
+	}
+	if s.db == nil || s.db.Usage == nil {
+		return
+	}
+	_, err := s.db.Usage.Insert(&domain.UsageRecord{
+		RequestID:        req.RequestID,
+		DownstreamKeyID:  req.DownstreamKeyID,
+		ChannelID:        channelID,
+		Model:            req.Model,
+		Path:             req.OpenAIPath,
+		Stream:           req.Stream,
+		PromptTokens:     tokens.PromptTokens,
+		CompletionTokens: tokens.CompletionTokens,
+		TotalTokens:      total,
+		Status:           status,
+	})
+	if err != nil {
+		log.Printf("proxy: record usage request_id=%s: %v", req.RequestID, err)
+	}
+	if req.DownstreamKeyID > 0 && total > 0 && s.db.DownstreamKey != nil {
+		if err := s.db.DownstreamKey.AddUsage(req.DownstreamKeyID, total); err != nil {
+			log.Printf("proxy: add key usage request_id=%s: %v", req.RequestID, err)
+		}
+	}
+	if s.db.ProxyLog != nil && req.RequestID != "" {
+		if err := s.db.ProxyLog.UpdateTokensByRequestID(req.RequestID, tokens.PromptTokens, tokens.CompletionTokens, total); err != nil {
+			log.Printf("proxy: update log tokens request_id=%s: %v", req.RequestID, err)
+		}
 	}
 }
 

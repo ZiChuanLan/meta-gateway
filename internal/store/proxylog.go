@@ -29,8 +29,13 @@ type ProxyLogFilter struct {
 
 // Insert writes a proxy log entry.
 func (s *ProxyLogStore) Insert(log *domain.ProxyLog) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, model, status, latency_ms, attempt, error_brief) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		log.RequestID, log.ChannelID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief)
+	stream := 0
+	if log.Stream {
+		stream = 1
+	}
+	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, stream, path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		log.RequestID, log.ChannelID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief,
+		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, stream, log.Path)
 	if err != nil {
 		return 0, fmt.Errorf("proxylog insert: %w", err)
 	}
@@ -87,7 +92,8 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 		from = "proxy_logs pl INNER JOIN channels c ON c.id = pl.channel_id"
 	}
 
-	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief, pl.created_at
+	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief,
+		pl.downstream_key_id, pl.prompt_tokens, pl.completion_tokens, pl.total_tokens, pl.stream, pl.path, pl.created_at
 FROM ` + from + `
 WHERE ` + strings.Join(where, " AND ") + `
 ORDER BY pl.id DESC
@@ -102,10 +108,34 @@ LIMIT ?`
 	var result []domain.ProxyLog
 	for rows.Next() {
 		var r domain.ProxyLog
-		if err := rows.Scan(&r.ID, &r.RequestID, &r.ChannelID, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief, scanTime(&r.CreatedAt)); err != nil {
+		var stream int
+		if err := rows.Scan(
+			&r.ID, &r.RequestID, &r.ChannelID, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief,
+			&r.DownstreamKeyID, &r.PromptTokens, &r.CompletionTokens, &r.TotalTokens, &stream, &r.Path, scanTime(&r.CreatedAt),
+		); err != nil {
 			return nil, fmt.Errorf("proxylog scan: %w", err)
 		}
+		r.Stream = stream != 0
 		result = append(result, r)
 	}
 	return result, rows.Err()
+}
+
+// UpdateTokensByRequestID attaches metered tokens to the newest log row for a request.
+func (s *ProxyLogStore) UpdateTokensByRequestID(requestID string, promptTokens, completionTokens, totalTokens int) error {
+	if strings.TrimSpace(requestID) == "" || totalTokens <= 0 {
+		return nil
+	}
+	_, err := s.db.Exec(
+		`UPDATE proxy_logs
+		 SET prompt_tokens = ?, completion_tokens = ?, total_tokens = ?
+		 WHERE id = (
+		   SELECT id FROM proxy_logs WHERE request_id = ? ORDER BY id DESC LIMIT 1
+		 )`,
+		promptTokens, completionTokens, totalTokens, requestID,
+	)
+	if err != nil {
+		return fmt.Errorf("proxylog update tokens: %w", err)
+	}
+	return nil
 }

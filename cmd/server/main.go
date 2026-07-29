@@ -1,6 +1,6 @@
 // Meta Gateway — a lightweight relay gateway for LLM API access.
 //
-// P0–P2: Bootstrap, Admin CRUD, Single-channel relay with SSE passthrough.
+// Production OpenAI-compatible relay: multi-channel routing, discovery, check-in, exchange, ops, Web Admin.
 package main
 
 import (
@@ -51,7 +51,7 @@ func main() {
 	}
 
 	// Validate required config.
-	if cfg.AdminToken == "" {
+	if len(cfg.AdminTokenList()) == 0 {
 		logger.Error("configuration invalid", "category", "admin_token_required")
 		os.Exit(1)
 	}
@@ -100,9 +100,13 @@ func main() {
 	})
 	registry := adapters.NewRegistry(outboundClient)
 	checkinService := checkin.New(db, enc, registry)
-	pluginService, err := plugins.NewService(cfg.PluginsDir, db.Plugin)
+	pluginService, err := plugins.NewServiceWithOptions(cfg.PluginsDir, db.Plugin, cfg.PluginCatalogURL, outboundClient)
 	if err != nil {
 		logger.Error("plugin host initialization failed", "category", "plugins")
+		os.Exit(1)
+	}
+	if err := pluginService.EnsureOfficialModulesInstalled(); err != nil {
+		logger.Error("plugin bootstrap failed", "category", "plugins")
 		os.Exit(1)
 	}
 	metrics := observability.NewRegistry()
@@ -130,6 +134,7 @@ func main() {
 		logger.Error("check-in scheduler configuration failed", "category", "configuration")
 		os.Exit(1)
 	}
+	// Check-in scheduler resync on module toggle is wired in httpapi via runtimeconfig.ResyncCheckin.
 
 	var auditDays atomic.Int64
 	var auditRows atomic.Int64

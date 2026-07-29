@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/webdavsync"
@@ -90,7 +91,31 @@ func (h *WebDAVHandler) sync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, webdavsync.CategoryConfigIncomplete)
 		return
 	}
-	result, err := h.service.Sync(r.Context(), webdavsync.SourceManual)
+	mode := webdavsync.SyncModeIncremental
+	if r.Body != nil && r.ContentLength != 0 {
+		var body struct {
+			Mode string `json:"mode"`
+		}
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
+			return
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+			writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
+			return
+		}
+		if m := strings.TrimSpace(body.Mode); m != "" {
+			mode = strings.ToLower(m)
+		}
+	}
+	if mode != webdavsync.SyncModeIncremental && mode != webdavsync.SyncModeReplace {
+		writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
+		return
+	}
+	result, err := h.service.Sync(r.Context(), webdavsync.SourceManual, mode)
 	if err != nil {
 		writeWebDAVError(w, err, result)
 		return

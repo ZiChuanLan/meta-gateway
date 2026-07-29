@@ -4,7 +4,14 @@ export function StatGrid({
 	items,
 	columns = 3,
 }: {
-	items: Array<{ label: string; value: ReactNode }>;
+	items: Array<{
+		label: string;
+		value: ReactNode;
+		/** When set, the card is a toggle filter control. */
+		onClick?: () => void;
+		active?: boolean;
+		hint?: string;
+	}>;
 	columns?: number;
 }) {
 	return (
@@ -13,10 +20,24 @@ export function StatGrid({
 			style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
 		>
 			{items.map((item) => (
-				<div className="stat-card" key={item.label}>
+				<button
+					type="button"
+					key={item.label}
+					className={[
+						"stat-card",
+						item.onClick ? "is-interactive" : "",
+						item.active ? "is-active" : "",
+					]
+						.filter(Boolean)
+						.join(" ")}
+					onClick={item.onClick}
+					disabled={!item.onClick}
+					aria-pressed={item.onClick ? Boolean(item.active) : undefined}
+					title={item.hint}
+				>
 					<span>{item.label}</span>
 					<strong>{item.value}</strong>
-				</div>
+				</button>
 			))}
 		</div>
 	);

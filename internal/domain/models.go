@@ -157,6 +157,13 @@ type DownstreamKey struct {
 	Name      string    `json:"name"`
 	Enabled   bool      `json:"enabled"`
 	Scopes    string    `json:"scopes,omitempty"`
+	// QuotaTotalTokens is 0 for unlimited. When >0, relay is blocked once used >= total.
+	QuotaTotalTokens int64 `json:"quota_total_tokens"`
+	// QuotaUsedTokens is the cumulative total tokens charged to this key.
+	QuotaUsedTokens int64 `json:"quota_used_tokens"`
+	// Optional display prices (currency-agnostic units per 1k tokens).
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -174,7 +181,38 @@ type ProxyLog struct {
 	LatencyMs  int       `json:"latency_ms"`
 	Attempt    int       `json:"attempt"`
 	ErrorBrief string    `json:"error_brief,omitempty"`
+	DownstreamKeyID  int64  `json:"downstream_key_id,omitempty"`
+	PromptTokens     int    `json:"prompt_tokens,omitempty"`
+	CompletionTokens int    `json:"completion_tokens,omitempty"`
+	TotalTokens      int    `json:"total_tokens,omitempty"`
+	Stream           bool   `json:"stream,omitempty"`
+	Path             string `json:"path,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+// UsageRecord is one metered relay completion used for billing summaries.
+type UsageRecord struct {
+	ID               int64     `json:"id"`
+	RequestID        string    `json:"request_id"`
+	DownstreamKeyID  int64     `json:"downstream_key_id"`
+	ChannelID        int64     `json:"channel_id"`
+	Model            string    `json:"model"`
+	Path             string    `json:"path"`
+	Stream           bool      `json:"stream"`
+	PromptTokens     int       `json:"prompt_tokens"`
+	CompletionTokens int       `json:"completion_tokens"`
+	TotalTokens      int       `json:"total_tokens"`
+	Status           int       `json:"status"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// UsageSummary aggregates metered traffic for Admin views.
+type UsageSummary struct {
+	RequestCount     int64   `json:"request_count"`
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	TotalTokens      int64   `json:"total_tokens"`
+	EstimatedCost    float64 `json:"estimated_cost"`
 }
 
 // RoutingCandidate contains the persisted facts needed to evaluate one member.

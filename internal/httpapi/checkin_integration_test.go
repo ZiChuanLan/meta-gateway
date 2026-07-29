@@ -36,8 +36,10 @@ func TestCheckinAdminWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := httpapi.New(&config.Config{
-		AdminToken:         "admin-secret",
-		OutboundAllowCIDRs: []string{"127.0.0.0/8", "::1/128"},
+		AdminToken:                "admin-secret",
+		AdminTokens:               []string{"admin-secret"},
+		ExchangeAllowSecretExport: true,
+		OutboundAllowCIDRs:        []string{"127.0.0.0/8", "::1/128"},
 	}, db, enc)
 	server := httptest.NewServer(handler)
 	defer server.Close()

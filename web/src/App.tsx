@@ -1,10 +1,12 @@
 import {
 	Boxes,
 	Cable,
+	CalendarCheck,
 	KeyRound,
 	LogOut,
 	Menu,
 	Network,
+	Package,
 	ScrollText,
 	Settings,
 	X,
@@ -22,6 +24,7 @@ import { ApiClient, ApiError, api } from "./api/client";
 import type { Site } from "./api/types";
 import { LanguageSwitcher, useI18n } from "./i18n";
 import { useSession } from "./session";
+import { useModules } from "./hooks/useModules";
 import {
 	Button,
 	ErrorState,
@@ -31,10 +34,12 @@ import {
 	StatusBadge,
 } from "./components/ui";
 import { Channels } from "./features/Channels";
+import { Checkins } from "./features/Checkins";
 import { Keys } from "./features/Keys";
 import { Logs } from "./features/Logs";
 import { Maintain } from "./features/Maintain";
 import { Models } from "./features/Models";
+import { Store } from "./features/Store";
 
 type TransitionPhase = "idle" | "fading" | "sealing" | "revealing";
 
@@ -517,15 +522,20 @@ function AuthenticatedShell({
 	onUnauthorized: () => void;
 }) {
 	const { t } = useI18n();
+	const { checkinEnabled } = useModules();
 	const [open, setOpen] = useState(false);
 	const location = useLocation();
 	useEffect(() => setOpen(false), [location.pathname]);
-	// Daily loop stays primary; Settings sinks above the session footer.
+	// Daily loop: Connections → Models → Tokens → Logs → Check-in → Store
 	const primaryNav = [
 		{ to: "/", label: t("app.nav.channels"), icon: Cable },
 		{ to: "/models", label: t("app.nav.models"), icon: Boxes },
 		{ to: "/keys", label: t("app.nav.keys"), icon: KeyRound },
 		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
+		...(checkinEnabled
+			? [{ to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck }]
+			: []),
+		{ to: "/store", label: t("app.nav.store"), icon: Package },
 	];
 	const settingsNav = {
 		to: "/settings",
@@ -609,20 +619,21 @@ function AuthenticatedShell({
 					<Route path="models" element={<Models />} />
 					<Route path="keys" element={<Keys />} />
 					<Route path="logs" element={<Logs />} />
+					<Route path="checkins" element={<Checkins />} />
 					<Route path="maintain" element={<Maintain />} />
 					<Route path="settings" element={<Maintain />} />
+					<Route path="store" element={<Store />} />
 					{/* Legacy paths map into the channel-first product. */}
 					<Route path="sites/*" element={<Navigate to="/" replace />} />
 					<Route path="routing" element={<Navigate to="/models" replace />} />
 					<Route
 						path="operations"
-						element={<Navigate to="/maintain?tab=discovery" replace />}
+						element={<Navigate to="/logs?tab=discovery" replace />}
 					/>
 					<Route
 						path="exchange"
-						element={<Navigate to="/maintain?tab=exchange" replace />}
+						element={<Navigate to="/settings?tab=exchange" replace />}
 					/>
-					<Route path="store" element={<Navigate to="/maintain" replace />} />
 					<Route path="assets" element={<Navigate to="/" replace />} />
 					<Route path="dashboard" element={<Navigate to="/" replace />} />
 					<Route path="*" element={<Navigate to="/" replace />} />

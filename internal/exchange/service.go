@@ -134,14 +134,44 @@ func (s *Service) Export(ctx context.Context, request ExportRequest) (*Envelope,
 		Importable: request.IncludeSecrets, Items: items}, nil
 }
 
+// ImportMode controls how an AAH / exchange document is applied.
+const (
+	// ImportModeIncremental merges into existing connections (default).
+	// Same fingerprint updates; access_token/session may merge by site/name.
+	ImportModeIncremental = "incremental"
+	// ImportModeReplace deletes all existing sites/channels/credentials first,
+	// then imports the backup as the sole source of truth.
+	ImportModeReplace = "replace"
+)
+
+// ImportOptions customizes Import behavior.
+type ImportOptions struct {
+	// Mode is incremental (default) or replace.
+	Mode string
+}
+
 func (s *Service) Import(ctx context.Context, data []byte) (*ImportResult, error) {
+	return s.ImportWithOptions(ctx, data, ImportOptions{Mode: ImportModeIncremental})
+}
+
+func (s *Service) ImportWithOptions(ctx context.Context, data []byte, opts ImportOptions) (*ImportResult, error) {
+	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
+	if mode == "" {
+		mode = ImportModeIncremental
+	}
+	if mode != ImportModeIncremental && mode != ImportModeReplace {
+		return nil, formatError(ErrorValidation)
+	}
 	items, err := Parse(data)
 	if err != nil {
 		return nil, err
 	}
-	candidates, err := s.store.LegacyCandidates(ctx)
-	if err != nil {
-		return nil, formatError(ErrorInternal)
+	var candidates []store.ExchangeLegacyCandidate
+	if mode == ImportModeIncremental {
+		candidates, err = s.store.LegacyCandidates(ctx)
+		if err != nil {
+			return nil, formatError(ErrorInternal)
+		}
 	}
 	storeItems := make([]store.ExchangeImportItem, 0, len(items))
 	for _, item := range items {
@@ -152,11 +182,16 @@ func (s *Service) Import(ctx context.Context, data []byte) (*ImportResult, error
 			clearBytes(apiKey)
 			return nil, formatError(ErrorInternal)
 		}
-		adoptChannelID, adoptCredentialID, matchErr := s.matchLegacy(item.BaseURL, apiKey, candidates)
-		clearBytes(apiKey)
-		if matchErr != nil {
-			return nil, matchErr
+		var adoptChannelID, adoptCredentialID int64
+		if mode == ImportModeIncremental {
+			var matchErr error
+			adoptChannelID, adoptCredentialID, matchErr = s.matchLegacy(item.BaseURL, apiKey, candidates)
+			if matchErr != nil {
+				clearBytes(apiKey)
+				return nil, matchErr
+			}
 		}
+		clearBytes(apiKey)
 		storeItems = append(storeItems, store.ExchangeImportItem{
 			Name: item.Name, BaseURL: item.BaseURL, ModelsCSV: strings.Join(item.Models, ","),
 			GroupName: item.Group, Priority: item.Priority, Weight: item.Weight,
@@ -167,7 +202,7 @@ func (s *Service) Import(ctx context.Context, data []byte) (*ImportResult, error
 			CheckinEnabled: item.CheckinEnabled,
 		})
 	}
-	persisted, err := s.store.Import(ctx, storeItems)
+	persisted, err := s.store.ImportReplacing(ctx, storeItems, mode == ImportModeReplace)
 	if err != nil {
 		if errors.Is(err, store.ErrExchangeConflict) {
 			return nil, formatError(ErrorConflict)

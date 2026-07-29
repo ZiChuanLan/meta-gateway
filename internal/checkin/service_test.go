@@ -92,7 +92,7 @@ func TestRunCredentialPersistsIneligibleAndUnavailableResults(t *testing.T) {
 		{"site disabled", "new-api", domain.StatusDisabled, domain.StatusEnabled, true, false, false, checkin.StatusSkipped, "site_disabled"},
 		{"credential disabled", "new-api", domain.StatusEnabled, domain.StatusDisabled, true, false, false, checkin.StatusSkipped, "credential_disabled"},
 		{"unsupported platform", "openai-compatible", domain.StatusEnabled, domain.StatusEnabled, true, false, false, checkin.StatusSkipped, "unsupported"},
-		{"bad ciphertext", "new-api", domain.StatusEnabled, domain.StatusEnabled, true, false, true, checkin.StatusFailed, "credential_unavailable"},
+		{"bad ciphertext", "new-api", domain.StatusEnabled, domain.StatusEnabled, true, false, true, checkin.StatusFailed, "credential_decrypt_failed"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -187,7 +187,8 @@ func TestRunAllOrdersAndContinuesAfterUpstreamFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(summary.Items) != 3 || summary.Items[0].CredentialID != firstID || summary.Items[1].CredentialID != secondID || summary.SuccessCount != 1 || summary.FailureCount != 1 || summary.SkippedCount != 1 {
+	// API keys are no longer included in ListCheckinEnabled (not check-in capable).
+	if len(summary.Items) != 2 || summary.Items[0].CredentialID != firstID || summary.Items[1].CredentialID != secondID || summary.SuccessCount != 1 || summary.FailureCount != 1 || summary.SkippedCount != 0 {
 		t.Fatalf("summary=%+v", summary)
 	}
 }

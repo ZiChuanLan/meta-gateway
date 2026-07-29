@@ -48,7 +48,7 @@ func TestExchangeAdminRoundTripAndSecurity(t *testing.T) {
 	}
 	resp, portableRaw := do(`{"include_secrets":true,"channel_ids":[1]}`, true)
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "no-store" ||
-		!bytes.Contains(portableRaw, []byte("upstream-secret")) || bytes.Contains(portableRaw, []byte("v1:")) {
+		!bytes.Contains(portableRaw, []byte("upstream-secret")) || bytes.Contains(portableRaw, []byte("v1:")) || bytes.Contains(portableRaw, []byte("v2:")) {
 		t.Fatalf("portable status=%d cache=%q body=%s", resp.StatusCode, resp.Header.Get("Cache-Control"), portableRaw)
 	}
 	var portable exchange.Envelope
@@ -59,7 +59,7 @@ func TestExchangeAdminRoundTripAndSecurity(t *testing.T) {
 	resp, metadataRaw := do(`{"include_secrets":false}`, true)
 	if resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "" ||
 		bytes.Contains(metadataRaw, []byte("upstream-secret")) || bytes.Contains(metadataRaw, []byte("api_key")) ||
-		bytes.Contains(metadataRaw, []byte("v1:")) {
+		bytes.Contains(metadataRaw, []byte("v1:")) || bytes.Contains(metadataRaw, []byte("v2:")) {
 		t.Fatalf("metadata status=%d cache=%q body=%s", resp.StatusCode, resp.Header.Get("Cache-Control"), metadataRaw)
 	}
 

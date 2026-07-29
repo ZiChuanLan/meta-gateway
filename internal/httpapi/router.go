@@ -135,7 +135,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// Admin routes
 	adminGroup := chi.NewRouter()
 	adminGroup.Use(auditAdmin(logger, db.AuditEvent))
-	adminGroup.Use(auth.AdminMiddleware(cfg.AdminToken))
+	adminGroup.Use(auth.AdminMiddleware(cfg.AdminTokenList()...))
 	adminLimiter := ratelimit.New(cfg.AdminRatePerMinute, cfg.AdminRateBurst)
 	relayLimiter := ratelimit.New(cfg.RelayRatePerMinute, cfg.RelayRateBurst)
 	adminGroup.Use(rateLimitMiddleware(adminLimiter, func(*http.Request) int64 { return 0 }, "admin", metrics))
@@ -153,15 +153,25 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	NewAccountHandler(accountService).Register(adminGroup)
 	NewTryHandler(proxyService).Register(adminGroup)
 
-	// Plugin catalog remains optional. Core product ops are always registered:
-	// check-in, exchange, audit, backup — these are first-class Admin surfaces.
+	// Plugin catalog + add-on gates. Optional modules (exchange, checkin) must be
+	// enabled to expose their Admin surfaces. Core audit/backup stay always-on.
 	pluginService := dependencies.PluginService
 	if pluginService != nil {
 		NewPluginHandler(pluginService).Register(adminGroup)
 	}
 
-	NewCheckinHandler(db, checkinService).Register(adminGroup)
-	NewExchangeHandler(exchangeService).Register(adminGroup)
+	adminGroup.Group(func(module chi.Router) {
+		if pluginService != nil {
+			module.Use(requirePluginEnabled(pluginService, "checkin"))
+		}
+		NewCheckinHandler(db, checkinService).Register(module)
+	})
+	adminGroup.Group(func(module chi.Router) {
+		if pluginService != nil {
+			module.Use(requirePluginEnabled(pluginService, "exchange"))
+		}
+		NewExchangeHandler(exchangeService, cfg.ExchangeAllowSecretExport).Register(module)
+	})
 	webdavService := dependencies.WebDAVService
 	if webdavService == nil {
 		maxBytes := cfg.WebDAVMaxBytes
@@ -178,13 +188,19 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			MaxBytes:       maxBytes,
 		}, &webdavsync.Client{HTTP: outboundClient, MaxBytes: maxBytes}, exchangeService, db.WebDAVSettings, enc)
 	}
-	NewWebDAVHandler(webdavService).Register(adminGroup)
+	adminGroup.Group(func(module chi.Router) {
+		if pluginService != nil {
+			module.Use(requirePluginEnabled(pluginService, "exchange"))
+		}
+		NewWebDAVHandler(webdavService).Register(module)
+	})
 	auditHandler := NewAuditHandler(db, cfg.AuditRetentionDays, cfg.AuditRetentionRows)
 	auditHandler.Register(adminGroup)
 	backupService := dependencies.BackupService
 	if backupService == nil {
 		backupService = backup.New(db, cfg.BackupDir)
 	}
+	// Core: audit + online backups are always available (not store-gated).
 	NewBackupHandler(backupService).Register(adminGroup)
 
 	runtimeController := dependencies.RuntimeController
@@ -194,12 +210,27 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			RelayLimiter: relayLimiter,
 			AdminLimiter: adminLimiter,
 			CheckinSched: dependencies.CheckinScheduler,
+			CheckinAllowed: func() bool {
+				return pluginService == nil || pluginService.IsEnabled("checkin")
+			},
 			SetAudit:     auditHandler.SetRetention,
 			SetAuditLoop: dependencies.SetAuditRetention,
 		})
 		if err := runtimeController.Bootstrap(); err != nil {
 			logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
 		}
+	}
+	// Re-apply check-in schedule from effective runtime settings when the add-on is toggled.
+	if pluginService != nil && runtimeController != nil {
+		ctrl := runtimeController
+		pluginService.SetOnChange(func(id string, _enabled bool) {
+			if id != "checkin" {
+				return
+			}
+			if err := ctrl.ResyncCheckin(); err != nil {
+				logger.Error("check-in resync after module toggle failed", "category", "scheduler", "err", err.Error())
+			}
+		})
 	}
 	NewRuntimeSettingsHandler(runtimeController).Register(adminGroup)
 	r.Mount("/admin", adminGroup)

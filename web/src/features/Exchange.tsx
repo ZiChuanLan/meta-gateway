@@ -10,9 +10,15 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { ImportResult, WebDAVSettings, WebDAVSyncResult } from "../api/types";
+import type {
+	ImportResult,
+	WebDAVSettings,
+	WebDAVSyncMode,
+	WebDAVSyncResult,
+} from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
+import { useModules } from "../hooks/useModules";
 import {
 	Button,
 	Dialog,
@@ -134,6 +140,7 @@ function previewDocument(doc: unknown): Preview {
 export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const { client } = useSession();
 	const { t } = useI18n();
+	const { exchangeEnabled, ready: modulesReady } = useModules();
 	const s = api(client!);
 	const qc = useQueryClient();
 	const channels = useQuery({
@@ -150,6 +157,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const [dragging, setDragging] = useState(false);
 	const [importResult, setImportResult] = useState<ImportResult | null>(null);
 	const [webdavResult, setWebdavResult] = useState<WebDAVSyncResult | null>(null);
+	const [webdavSyncMode, setWebdavSyncMode] = useState<WebDAVSyncMode>("incremental");
+	const [confirmReplaceSync, setConfirmReplaceSync] = useState(false);
 	const [webdavForm, setWebdavForm] = useState({
 		url: "",
 		username: "",
@@ -221,10 +230,22 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const webdavStatus = useQuery({
 		queryKey: ["webdav-status"],
 		queryFn: ({ signal }) => s.webdavStatus(signal),
+		enabled: modulesReady && exchangeEnabled,
+		retry: (n, err) => {
+			const status = (err as { status?: number } | null)?.status;
+			if (status === 404) return false;
+			return n < 2;
+		},
 	});
 	const webdavSettings = useQuery({
 		queryKey: ["webdav-settings"],
 		queryFn: ({ signal }) => s.webdavSettings(signal),
+		enabled: modulesReady && exchangeEnabled,
+		retry: (n, err) => {
+			const status = (err as { status?: number } | null)?.status;
+			if (status === 404) return false;
+			return n < 2;
+		},
 	});
 
 	useEffect(() => {
@@ -336,9 +357,9 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	});
 
 	const webdavSync = useMutation({
-		mutationFn: async () => {
+		mutationFn: async (mode: WebDAVSyncMode) => {
 			await persistWebdavForm();
-			return s.webdavSync();
+			return s.webdavSync(mode);
 		},
 		onSuccess: (result) => {
 			setWebdavResult(result);
@@ -492,7 +513,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 										cron: mapped.cron,
 									};
 								});
-								}}
+							}}
 						>
 							{(
 								[
@@ -510,6 +531,40 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 								</option>
 							))}
 						</select>
+					</Field>
+
+					<Field
+						label={t("exchange.webdavMode")}
+						hint={t("exchange.webdavModeHint")}
+					>
+						<div className="webdav-mode-grid" role="radiogroup" aria-label={t("exchange.webdavMode")}>
+							<label className={webdavSyncMode === "incremental" ? "webdav-mode-card is-selected" : "webdav-mode-card"}>
+								<input
+									type="radio"
+									name="webdav-sync-mode"
+									value="incremental"
+									checked={webdavSyncMode === "incremental"}
+									onChange={() => setWebdavSyncMode("incremental")}
+								/>
+								<span>
+									<strong>{t("exchange.webdavMode.incremental")}</strong>
+									<small>{t("exchange.webdavMode.incrementalHint")}</small>
+								</span>
+							</label>
+							<label className={webdavSyncMode === "replace" ? "webdav-mode-card is-danger is-selected" : "webdav-mode-card is-danger"}>
+								<input
+									type="radio"
+									name="webdav-sync-mode"
+									value="replace"
+									checked={webdavSyncMode === "replace"}
+									onChange={() => setWebdavSyncMode("replace")}
+								/>
+								<span>
+									<strong>{t("exchange.webdavMode.replace")}</strong>
+									<small>{t("exchange.webdavMode.replaceHint")}</small>
+								</span>
+							</label>
+						</div>
 					</Field>
 
 					<Field
@@ -573,13 +628,19 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 						{webdavTest.isPending ? t("common.loading") : t("exchange.webdavTest")}
 					</Button>
 					<Button
-						variant="secondary"
+						variant={webdavSyncMode === "replace" ? "danger" : "secondary"}
 						disabled={
 							webdavSave.isPending ||
 							webdavTest.isPending ||
 							webdavSync.isPending
 						}
-						onClick={() => webdavSync.mutate()}
+						onClick={() => {
+							if (webdavSyncMode === "replace") {
+								setConfirmReplaceSync(true);
+								return;
+							}
+							webdavSync.mutate("incremental");
+						}}
 					>
 						{webdavSync.isPending ? t("common.loading") : t("exchange.webdavSync")}
 					</Button>
@@ -591,6 +652,33 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 						</span>
 					)}
 				</div>
+
+				{confirmReplaceSync ? (
+					<Dialog
+						title={t("exchange.webdavReplaceConfirmTitle")}
+						danger
+						onClose={() => setConfirmReplaceSync(false)}
+						actions={
+							<>
+								<Button variant="secondary" onClick={() => setConfirmReplaceSync(false)}>
+									{t("common.cancel")}
+								</Button>
+								<Button
+									variant="danger"
+									disabled={webdavSync.isPending}
+									onClick={() => {
+										setConfirmReplaceSync(false);
+										webdavSync.mutate("replace");
+									}}
+								>
+									{t("exchange.webdavReplaceConfirmAction")}
+								</Button>
+							</>
+						}
+					>
+						<p>{t("exchange.webdavReplaceConfirmBody")}</p>
+					</Dialog>
+				) : null}
 
 				{(webdavSave.isError || webdavTest.isError || webdavSync.isError) && (
 					<ErrorState
@@ -900,14 +988,22 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 						<div className="import-result">
 							<div className="exchange-preview-head">
 								<h3>{t("exchange.importComplete")}</h3>
-								<StatusBadge
-									value={
+								{(() => {
+									// Import always means rows were written. The badge only reflects
+									// post-import key sync / model discovery — never reuse channel
+									// health "degraded" (shown as 不可达 / Unreachable).
+									const postImportIssues =
 										(importResult.key_sync_failure_count ?? 0) > 0 ||
-										importResult.discovery_failure_count > 0
-											? "degraded"
-											: "success"
-									}
-								/>
+										importResult.discovery_failure_count > 0;
+									const missingKeys =
+										(importResult.missing_api_key_count ?? 0) > 0;
+									const badge = postImportIssues
+										? "partial"
+										: missingKeys
+											? "warning"
+											: "success";
+									return <StatusBadge value={badge} />;
+								})()}
 							</div>
 							<div className="import-result-stats">
 								<span>
@@ -944,6 +1040,21 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 									n: importResult.channel_ids?.length ?? 0,
 								})}
 							</p>
+							{(importResult.key_sync_failure_count ?? 0) > 0 ||
+							importResult.discovery_failure_count > 0 ? (
+								<p className="exchange-panel-note">
+									{t("exchange.importPartialNote", {
+										discovery: importResult.discovery_failure_count,
+										keySync: importResult.key_sync_failure_count ?? 0,
+									})}
+								</p>
+							) : (importResult.missing_api_key_count ?? 0) > 0 ? (
+								<p className="exchange-panel-note">
+									{t("exchange.importMissingKeyNote", {
+										n: importResult.missing_api_key_count ?? 0,
+									})}
+								</p>
+							) : null}
 							{(() => {
 								const keyIssues = (importResult.key_sync ?? []).filter(
 									(item) =>

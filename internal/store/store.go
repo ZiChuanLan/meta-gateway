@@ -25,6 +25,7 @@ type DB struct {
 	Plugin          *PluginStore
 	WebDAVSettings  *WebDAVSettingsStore
 	RuntimeSettings *RuntimeSettingsStore
+	Usage           *UsageStore
 }
 
 // Open opens (or creates) the SQLite database at the given path and runs migrations.
@@ -60,6 +61,7 @@ func Open(dataDir string) (*DB, error) {
 		Plugin:          &PluginStore{db: sqldb},
 		WebDAVSettings:  &WebDAVSettingsStore{db: sqldb},
 		RuntimeSettings: &RuntimeSettingsStore{db: sqldb},
+		Usage:           &UsageStore{db: sqldb},
 	}
 	return db, nil
 }

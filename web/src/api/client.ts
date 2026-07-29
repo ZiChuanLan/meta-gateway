@@ -6,17 +6,21 @@ import type {
 	CheckinLog,
 	CreatedDownstreamKey,
 	Credential,
+	UsageRecord,
+	UsageSummary,
 	DiscoveredModel,
 	DownstreamKey,
 	ExchangeEnvelope,
 	ImportResult,
 	PluginCatalogEntry,
+	ModuleStatus,
 	PluginRecord,
 	AccountProbeResult,
 	ProbeResult,
 	ProxyLog,
 	SyncKeysResult,
 	WebDAVStatus,
+	WebDAVSyncMode,
 	WebDAVSyncResult,
 	WebDAVSettings,
 	WebDAVSettingsUpdate,
@@ -178,9 +182,51 @@ export const api = (client: ApiClient) => ({
 		),
 	keys: (signal?: AbortSignal) =>
 		client.getList<DownstreamKey>("/admin/downstream-keys", signal),
-	createKey: (body: { name: string; scopes?: string; token?: string }) =>
-		client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
+	createKey: (body: {
+		name: string
+		scopes?: string
+		token?: string
+		quota_total_tokens?: number
+		price_prompt_per_1k?: number
+		price_completion_per_1k?: number
+	}) => client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
+	updateKey: (
+		id: number,
+		body: {
+			name?: string
+			enabled?: boolean
+			scopes?: string
+			quota_total_tokens?: number
+			price_prompt_per_1k?: number
+			price_completion_per_1k?: number
+			reset_used?: boolean
+		},
+	) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
 	deleteKey: (id: number) => client.delete(`/admin/downstream-keys/${id}`),
+	usageSummary: (downstreamKeyId?: number, signal?: AbortSignal) => {
+		const query = new URLSearchParams()
+		if (downstreamKeyId != null) query.set("downstream_key_id", String(downstreamKeyId))
+		const suffix = query.size ? `?${query.toString()}` : ""
+		return client.get<UsageSummary>(`/admin/usage/summary${suffix}`, signal)
+	},
+	usageRecords: (
+		filters?: {
+			downstream_key_id?: number
+			channel_id?: number
+			model?: string
+			limit?: number
+		},
+		signal?: AbortSignal,
+	) => {
+		const query = new URLSearchParams()
+		if (filters?.downstream_key_id != null)
+			query.set("downstream_key_id", String(filters.downstream_key_id))
+		if (filters?.channel_id != null) query.set("channel_id", String(filters.channel_id))
+		if (filters?.model) query.set("model", filters.model)
+		if (filters?.limit != null) query.set("limit", String(filters.limit))
+		const suffix = query.size ? `?${query.toString()}` : ""
+		return client.getList<UsageRecord>(`/admin/usage${suffix}`, signal)
+	},
 	proxyLogs: (
 		filters?: {
 			site_id?: number;
@@ -279,9 +325,12 @@ export const api = (client: ApiClient) => ({
 	updateWebdavSettings: (body: WebDAVSettingsUpdate) =>
 		client.put<WebDAVSettings>("/admin/webdav/settings", body),
 	webdavTest: () => client.post<WebDAVSyncResult>("/admin/webdav/test"),
-	webdavSync: () => client.post<WebDAVSyncResult>("/admin/webdav/sync"),
+	webdavSync: (mode: WebDAVSyncMode = "incremental") =>
+		client.post<WebDAVSyncResult>("/admin/webdav/sync", { mode }),
 	pluginsCatalog: (signal?: AbortSignal) =>
 		client.getList<PluginCatalogEntry>("/admin/plugins/catalog", signal),
+	pluginsStatus: (signal?: AbortSignal) =>
+		client.getList<ModuleStatus>("/admin/plugins/status", signal),
 	plugins: (signal?: AbortSignal) =>
 		client.getList<PluginRecord>("/admin/plugins", signal),
 	activatePlugin: (id: string) =>

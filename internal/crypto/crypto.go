@@ -1,6 +1,7 @@
 // Package crypto provides AES-256-GCM encryption for secrets at rest.
 //
-// The MASTER_KEY is used to derive a 256-bit encryption key via PBKDF2.
+// The MASTER_KEY is used to derive a 256-bit encryption key. New ciphertext uses
+// PBKDF2 (v2). Legacy v1 ciphertext sealed with SHA-256(master) remains readable.
 // Encrypted values are base64-encoded with a version prefix for future key rotation.
 package crypto
 
@@ -16,14 +17,22 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 const (
-	// currentVersion is the encryption format version marker.
-	currentVersion = "v1"
+	// currentVersion is the encryption format version marker for newly sealed secrets.
+	currentVersion = "v2"
+	// legacyVersion is the original SHA-256 derived key format.
+	legacyVersion = "v1"
 	// nonceSize for AES-GCM.
 	nonceSize               = 12
 	exchangeIdentityPurpose = "meta-gateway/exchange-identity/v1"
+	// Fixed application salt for v2 PBKDF2 so the same MASTER_KEY decrypts across processes.
+	masterKeySaltV2 = "meta-gateway/master-key/v2"
+	// pbkdf2Iterations balances startup cost with offline brute-force resistance.
+	pbkdf2Iterations = 120000
 )
 
 var (
@@ -34,13 +43,22 @@ var (
 
 // Encrypter handles encryption and decryption of secrets.
 type Encrypter struct {
+	// key is the active sealing key (v2 PBKDF2).
 	key []byte
+	// keyV1 is retained so existing ciphertext remains readable after upgrade.
+	keyV1 []byte
 }
 
 // ExchangeFingerprint returns a stable, purpose-separated identity for an
 // imported base URL and API key. It is safe to persist but must not be exposed.
 func (e *Encrypter) ExchangeFingerprint(normalizedBaseURL string, apiKey []byte) string {
-	derive := hmac.New(sha256.New, e.key)
+	// Fingerprints must stay stable across cipher format upgrades, so they are
+	// always derived from the legacy SHA-256 master material (keyV1).
+	material := e.keyV1
+	if len(material) == 0 {
+		material = e.key
+	}
+	derive := hmac.New(sha256.New, material)
 	_, _ = derive.Write([]byte(exchangeIdentityPurpose))
 	identityKey := derive.Sum(nil)
 
@@ -60,14 +78,16 @@ func New(masterKey string) (*Encrypter, error) {
 	if masterKey == "" {
 		return nil, ErrInvalidKey
 	}
-	// Derive a 256-bit key using SHA-256 (PBKDF2 would be better, but for
-	// embedded SQLite at-rest protection SHA-256 is a pragmatic start).
-	h := sha256.Sum256([]byte(masterKey))
-	return &Encrypter{key: h[:]}, nil
+	legacy := sha256.Sum256([]byte(masterKey))
+	modern := pbkdf2.Key([]byte(masterKey), []byte(masterKeySaltV2), pbkdf2Iterations, 32, sha256.New)
+	return &Encrypter{
+		key:   modern,
+		keyV1: legacy[:],
+	}, nil
 }
 
 // Encrypt returns a versioned base64-encoded ciphertext.
-// Format: "v1:<base64(nonce + ciphertext + tag)>"
+// Format: "v2:<base64(nonce + ciphertext + tag)>"
 func (e *Encrypter) Encrypt(plaintext []byte) (string, error) {
 	block, err := aes.NewCipher(e.key)
 	if err != nil {
@@ -94,7 +114,17 @@ func (e *Encrypter) Decrypt(encoded string) ([]byte, error) {
 	if !ok {
 		return nil, ErrInvalidCipher
 	}
-	if version != currentVersion {
+	var material []byte
+	switch version {
+	case currentVersion:
+		material = e.key
+	case legacyVersion:
+		material = e.keyV1
+		if len(material) == 0 {
+			// Older Encrypter values constructed only with SHA-256 still work.
+			material = e.key
+		}
+	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedVers, version)
 	}
 
@@ -106,7 +136,7 @@ func (e *Encrypter) Decrypt(encoded string) ([]byte, error) {
 		return nil, ErrInvalidCipher
 	}
 
-	block, err := aes.NewCipher(e.key)
+	block, err := aes.NewCipher(material)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: aes: %w", err)
 	}

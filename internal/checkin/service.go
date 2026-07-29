@@ -127,9 +127,13 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 	defer s.release(credential.ID)
 
 	plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
-	if err != nil || len(plaintext) == 0 {
+	if err != nil {
 		zero(plaintext)
-		return s.persist(started, site.ID, credential.ID, source, StatusFailed, "credential_unavailable", "credential is unavailable", "")
+		// Common after MASTER_KEY rotation or corrupt secret_enc — do not hit upstream.
+		return s.persist(started, site.ID, credential.ID, source, StatusFailed, "credential_decrypt_failed", "credential secret cannot be decrypted (re-enter the token after MASTER_KEY changes)", "")
+	}
+	if len(plaintext) == 0 {
+		return s.persist(started, site.ID, credential.ID, source, StatusFailed, "credential_empty", "credential secret is empty", "")
 	}
 	// New-API family check-in usually needs a numeric user id header. Resolve via
 	// /api/user/self when meta is missing so operators are not blocked after import.

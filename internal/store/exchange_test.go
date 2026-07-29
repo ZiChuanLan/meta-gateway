@@ -73,6 +73,51 @@ func TestExchangeImportAdoptsOnlyDedicatedLegacyAsset(t *testing.T) {
 	}
 }
 
+func TestExchangeReplaceRemovesRoutesFromDeletedConnections(t *testing.T) {
+	db := openTestDB(t)
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{exchangeItem("old", "route-old")})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "model-a", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: first.CreatedChannelIDs[0], Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exchange.ImportReplacing(t.Context(), []store.ExchangeImportItem{exchangeItem("new", "route-new")}, true); err != nil {
+		t.Fatal(err)
+	}
+	var routes, members int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM routes`).Scan(&routes)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM route_members`).Scan(&members)
+	if routes != 0 || members != 0 {
+		t.Fatalf("ghost routes after replace: routes=%d members=%d", routes, members)
+	}
+}
+
+func TestExchangeReplaceRollsBackDeleteAndImportTogether(t *testing.T) {
+	db := openTestDB(t)
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{exchangeItem("old", "replace-old")})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	if _, err := db.Exec(`CREATE TRIGGER fail_exchange_replace BEFORE INSERT ON channels WHEN NEW.name = 'fail' BEGIN SELECT RAISE(ABORT, 'forced'); END`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exchange.ImportReplacing(t.Context(), []store.ExchangeImportItem{exchangeItem("fail", "replace-new")}, true)
+	if err == nil {
+		t.Fatal("expected forced replacement failure")
+	}
+	var oldCount, newCount int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM channels WHERE name = 'old'`).Scan(&oldCount)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM channels WHERE name = 'fail'`).Scan(&newCount)
+	if oldCount != 1 || newCount != 0 {
+		t.Fatalf("replace rollback old=%d new=%d", oldCount, newCount)
+	}
+}
+
 func TestExchangeImportRollsBackAllAssets(t *testing.T) {
 	db := openTestDB(t)
 	if _, err := db.Exec(`CREATE TRIGGER fail_exchange_channel BEFORE INSERT ON channels WHEN NEW.name = 'fail' BEGIN SELECT RAISE(ABORT, 'forced'); END`); err != nil {
@@ -160,5 +205,43 @@ func TestExchangeImportReattachesOrphanFingerprint(t *testing.T) {
 	userCred, _ := db.Credential.GetByID(userCredID)
 	if userCred == nil || userCred.ImportFingerprint != "fp-orphan" {
 		t.Fatalf("user credential fingerprint lost: %+v", userCred)
+	}
+}
+
+func TestExchangeImportMergesSameUpstreamOnResync(t *testing.T) {
+	db := openTestDB(t)
+	// First import creates a session-style upstream connection (AAH account path).
+	firstItem := exchangeItem("WONG", "fp-old")
+	firstItem.CredentialKind = "access_token"
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{firstItem})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	// Second import: same base_url + same name, different fingerprint (rotated token).
+	// Must UPDATE the existing channel, not create a duplicate upstream connection.
+	rotated := exchangeItem("WONG", "fp-new")
+	rotated.CredentialKind = "access_token"
+	rotated.SecretEnc = "v1:new-cipher"
+	second, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{rotated})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.CreatedChannelIDs) != 0 || len(second.UpdatedChannelIDs) != 1 {
+		t.Fatalf("expected update only, got %+v", second)
+	}
+	if second.UpdatedChannelIDs[0] != first.CreatedChannelIDs[0] {
+		t.Fatalf("updated different channel: first=%d second=%d", first.CreatedChannelIDs[0], second.UpdatedChannelIDs[0])
+	}
+	var channels, credentials, sites int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM channels`).Scan(&channels)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM credentials`).Scan(&credentials)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM sites`).Scan(&sites)
+	if channels != 1 || sites != 1 {
+		t.Fatalf("duplicate upstream: channels=%d credentials=%d sites=%d", channels, credentials, sites)
+	}
+	var fp string
+	_ = db.QueryRow(`SELECT import_fingerprint FROM credentials ORDER BY id LIMIT 1`).Scan(&fp)
+	if fp != "fp-new" {
+		t.Fatalf("fingerprint not rotated: %q", fp)
 	}
 }

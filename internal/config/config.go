@@ -15,6 +15,7 @@ type Config struct {
 	HTTPAddr       string
 	DataDir        string
 	AdminToken     string
+	AdminTokens    []string
 	MasterKey      string
 	RetryTimes     int
 	Cooldown       time.Duration
@@ -53,6 +54,8 @@ type Config struct {
 	BackupDir                     string
 	PluginsDir                    string
 	PluginCatalogURL              string
+	// ExchangeAllowSecretExport gates include_secrets on export (default true for compat).
+	ExchangeAllowSecretExport bool
 }
 
 func Load() (*Config, error) {
@@ -162,10 +165,20 @@ func Load() (*Config, error) {
 	}
 	dataDir := envStr("DATA_DIR", "./data")
 
+	adminTokens, err := envAdminTokens()
+	if err != nil {
+		return nil, err
+	}
+	exchangeAllowSecretExport, err := envBool("EXCHANGE_ALLOW_SECRET_EXPORT", true)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		HTTPAddr:       envStr("HTTP_ADDR", ":4100"),
 		DataDir:        dataDir,
-		AdminToken:     envStr("ADMIN_TOKEN", ""),
+		AdminToken:     firstNonEmpty(adminTokens),
+		AdminTokens:    adminTokens,
 		MasterKey:      envStr("MASTER_KEY", ""),
 		RetryTimes:     retryTimes,
 		Cooldown:       time.Duration(cooldownSeconds) * time.Second,
@@ -196,7 +209,55 @@ func Load() (*Config, error) {
 		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
 		PluginsDir:       envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
 		PluginCatalogURL: envStr("PLUGIN_CATALOG_URL", ""),
+		ExchangeAllowSecretExport: exchangeAllowSecretExport,
 	}, nil
+}
+
+func envAdminTokens() ([]string, error) {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, 4)
+	add := func(raw string) {
+		for _, part := range strings.Split(raw, ",") {
+			token := strings.TrimSpace(part)
+			if token == "" {
+				continue
+			}
+			if _, exists := seen[token]; exists {
+				continue
+			}
+			seen[token] = struct{}{}
+			out = append(out, token)
+		}
+	}
+	add(os.Getenv("ADMIN_TOKEN"))
+	add(os.Getenv("ADMIN_TOKENS"))
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func firstNonEmpty(values []string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// AdminTokenList returns rotation candidates (AdminTokens, falling back to AdminToken).
+func (c *Config) AdminTokenList() []string {
+	if c == nil {
+		return nil
+	}
+	if len(c.AdminTokens) > 0 {
+		return c.AdminTokens
+	}
+	if strings.TrimSpace(c.AdminToken) != "" {
+		return []string{c.AdminToken}
+	}
+	return nil
 }
 
 func envBool(key string, def bool) (bool, error) {

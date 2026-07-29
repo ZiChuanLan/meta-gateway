@@ -27,9 +27,57 @@ export interface ChannelOverview {
 }
 export interface Route { id: number; model_pattern: string; enabled: boolean; mapping_json?: string; notes?: string; created_at: string; updated_at: string }
 export interface RouteMember { id: number; route_id: number; channel_id: number; priority: number; weight: number; enabled: boolean; auto: boolean; manual_override: boolean; fail_count: number; cooldown_until?: string; last_error?: string; created_at: string; updated_at: string }
-export interface DownstreamKey { id: number; name: string; enabled: boolean; scopes?: string; created_at: string }
+export interface DownstreamKey {
+  id: number
+  name: string
+  enabled: boolean
+  scopes?: string
+  quota_total_tokens?: number
+  quota_used_tokens?: number
+  price_prompt_per_1k?: number
+  price_completion_per_1k?: number
+  estimated_cost?: number
+  created_at: string
+}
 export interface CreatedDownstreamKey extends DownstreamKey { token: string }
-export interface ProxyLog { id: number; request_id: string; channel_id: number; model: string; status: number; latency_ms: number; attempt: number; error_brief?: string; created_at: string }
+export interface UsageSummary {
+  request_count: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  estimated_cost: number
+}
+export interface UsageRecord {
+  id: number
+  request_id: string
+  downstream_key_id: number
+  channel_id: number
+  model: string
+  path: string
+  stream: boolean
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  status: number
+  created_at: string
+}
+export interface ProxyLog {
+  id: number
+  request_id: string
+  channel_id: number
+  model: string
+  status: number
+  latency_ms: number
+  attempt: number
+  error_brief?: string
+  downstream_key_id?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  stream?: boolean
+  path?: string
+  created_at: string
+}
 export interface DiscoveredModel { id: number; channel_id: number; model_name: string; available: boolean; source: string; latency_ms: number; checked_at: string }
 export interface CheckinLog { id: number; site_id: number; credential_id: number; source: string; status: 'success' | 'failed' | 'skipped'; category: string; message: string; reward?: string; latency_ms: number; ran_at: string }
 export interface AuditEvent { id: number; request_id?: string; actor_kind: string; actor_id?: number; action: string; resource_kind?: string; resource_id?: number; outcome: string; status_code: number; category?: string; created_at: string }
@@ -147,6 +195,8 @@ export interface PluginCatalogEntry {
   name: string
   version: string
   description?: string
+  kind?: "core" | "addon" | string
+  unlocks?: string[]
   capabilities?: string[]
   source?: string
   checksum?: string
@@ -164,6 +214,24 @@ export interface PluginRecord {
   meta_json?: string
 }
 
+/** Combined store view: core orientation cards + add-ons + orphans. */
+export interface ModuleStatus {
+  id: string
+  name: string
+  version: string
+  description?: string
+  kind: "core" | "addon" | string
+  unlocks?: string[]
+  capabilities?: string[]
+  source?: string
+  installed: boolean
+  enabled: boolean
+  can_toggle: boolean
+  open_path?: string
+}
+
+
+export type WebDAVSyncMode = 'incremental' | 'replace'
 
 export interface WebDAVSyncResult {
   status: string

@@ -104,7 +104,7 @@ func (s *CredentialStore) SetCheckinEnabled(id int64, enabled bool) error {
 }
 
 func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE checkin_enabled = 1 ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE checkin_enabled = 1 AND status = 'enabled' AND lower(kind) IN ('session', 'access_token') ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("credential checkin list: %w", err)
 	}
