@@ -3,6 +3,7 @@ package exchange_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/crypto"
@@ -13,6 +14,7 @@ import (
 )
 
 type recordingDiscovery struct {
+	mu     sync.Mutex
 	db     *store.DB
 	calls  []int64
 	failID int64
@@ -23,7 +25,9 @@ func (r *recordingDiscovery) Refresh(_ context.Context, channelID int64) (*disco
 	if err := r.db.QueryRow(`SELECT COUNT(*) FROM channels WHERE id = ?`, channelID).Scan(&count); err != nil || count != 1 {
 		return nil, errors.New("discovery called before commit")
 	}
+	r.mu.Lock()
 	r.calls = append(r.calls, channelID)
+	r.mu.Unlock()
 	if channelID == r.failID {
 		return nil, &discovery.Error{Kind: discovery.ErrorUpstream, Category: "upstream_status"}
 	}
