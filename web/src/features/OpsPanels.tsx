@@ -245,7 +245,7 @@ function siteDisplayName(
 	};
 }
 
-﻿export function CheckinsPanel() {
+export function CheckinsPanel() {
 	const { client } = useSession();
 	const { t } = useI18n();
 	const { checkinEnabled, ready: modulesReady } = useModules();
