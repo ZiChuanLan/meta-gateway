@@ -71,7 +71,15 @@ jobs:
             run --rm e2e verify
       - name: Compose diagnostics
         if: failure()
+        env:
+          ADMIN_TOKEN: ci-admin-token
+          MASTER_KEY: ci-master-key-at-least-32-characters
+          METRICS_TOKEN: ci-metrics-token
         run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs --no-color
       - name: Compose cleanup
         if: always()
+        env:
+          ADMIN_TOKEN: ci-admin-token
+          MASTER_KEY: ci-master-key-at-least-32-characters
+          METRICS_TOKEN: ci-metrics-token
         run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml down --volumes
