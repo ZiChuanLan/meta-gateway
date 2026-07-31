@@ -51,6 +51,19 @@ function stubAdminFetch() {
 	return vi.fn(async (input: RequestInfo | URL) => {
 		const path = String(input).split("?")[0];
 		if (path === "/readyz") return new Response(null, { status: 200 });
+		if (path === "/admin/plugins/status") {
+			return jsonResponse([
+				{
+					id: "exchange",
+					name: "Exchange",
+					version: "0.0.0",
+					kind: "addon",
+					installed: true,
+					enabled: true,
+					can_toggle: true,
+				},
+			]);
+		}
 		if (
 			path === "/admin/sites" ||
 			path === "/admin/channels" ||
@@ -187,7 +200,9 @@ describe("channel-first shell", () => {
 			await screen.findByRole("heading", { name: "Settings" }),
 		).toBeInTheDocument();
 		expect(screen.getByRole("tab", { name: "Runtime" })).toBeInTheDocument();
-		expect(screen.getByRole("tab", { name: "Exchange" })).toBeInTheDocument();
+		expect(
+			await screen.findByRole("tab", { name: "Exchange" }),
+		).toBeInTheDocument();
 	});
 
 	it("uses the short safe path when reduced motion is requested", async () => {
