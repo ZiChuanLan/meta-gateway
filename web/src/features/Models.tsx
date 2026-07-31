@@ -158,6 +158,13 @@ function ModelCatalog({
 	const selectedRoute = selectedOverview?.route ?? null;
 	const selectedMembers = selectedOverview?.members ?? [];
 	const primary = primaryMember(selectedMembers);
+	/** Members of the route currently being edited (may differ from selection). */
+	const editingOverview =
+		edit?.id != null
+			? (overviews.data ?? []).find((item) => item.route.id === edit.id) ??
+				null
+			: null;
+	const editingMembers = editingOverview?.members ?? [];
 
 	const save = useAdminMutation({
 		mutationFn: (value: Partial<Route>) =>
@@ -208,7 +215,9 @@ function ModelCatalog({
 		invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
 		pendingIdOf: (id) => id,
 	});
-	/** Persist visual order as descending priority (top row = highest). */
+	/** Persist visual order as descending priority (top row = highest).
+	 *  Reordering makes the whole model independent, so the Connections page
+	 *  won't overwrite this hand-tuned order later. */
 	const reorderMembers = useAdminMutation({
 		mutationFn: async (ordered: RoutingCandidate[]) => {
 			const total = ordered.length;
@@ -216,7 +225,10 @@ function ModelCatalog({
 				ordered.map((candidate, index) => {
 					const nextPriority = total - index;
 					const entry = candidate.member;
-					if (entry.priority === nextPriority) {
+					if (
+						entry.priority === nextPriority &&
+						entry.manual_override
+					) {
 						return Promise.resolve(entry);
 					}
 					return service.updateMember(entry.id, {
@@ -224,6 +236,37 @@ function ModelCatalog({
 						priority: nextPriority,
 						manual_override: true,
 					});
+				}),
+			);
+		},
+		invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+	});
+	/** Batch toggle "independent priority/weight" for every member of a model.
+	 *  Turning it off snaps members back to the channel's global values. */
+	const pinAllMembers = useAdminMutation({
+		mutationFn: async (input: {
+			pinned: boolean;
+			members: RoutingCandidate[];
+		}) => {
+			await Promise.all(
+				input.members.map((candidate) => {
+					const entry = candidate.member;
+					const target = input.pinned
+						? { ...entry, manual_override: true }
+						: {
+								...entry,
+								manual_override: false,
+								priority: candidate.channel.priority,
+								weight: candidate.channel.weight,
+							};
+					if (
+						entry.manual_override === target.manual_override &&
+						entry.priority === target.priority &&
+						entry.weight === target.weight
+					) {
+						return Promise.resolve(entry);
+					}
+					return service.updateMember(entry.id, target);
 				}),
 			);
 		},
@@ -616,7 +659,7 @@ function ModelCatalog({
 													priority: (selectedMembers.length || 0) + 1,
 													weight: 100,
 													enabled: true,
-													manual_override: true,
+													manual_override: false,
 												});
 											}}
 										>
@@ -714,15 +757,17 @@ function ModelCatalog({
 															{t("routing.weightLabel")}: {entry.weight}
 															{" · "}
 															<StatusBadge value={state} />
-															{entry.manual_override ? (
-																<>
-																	{" "}
+														{entry.manual_override ? (
+															<>
+																{" "}
+																<span title={t("routing.protectedHint")}>
 																	<Shield
 																		size={12}
 																		style={{ verticalAlign: "middle" }}
 																	/>{" "}
-																	{t("routing.protectedLabel")}
-																</>
+																</span>
+																{t("routing.protectedLabel")}
+															</>
 															) : null}
 															{entry.last_error
 																? ` · ${entry.last_error}`
@@ -809,10 +854,20 @@ function ModelCatalog({
 			{edit ? (
 				<RouteDialog
 					value={edit}
+					members={editingMembers}
 					pending={save.isPending}
 					error={save.error}
 					onClose={() => setEdit(null)}
-					onSave={(value) => save.mutate(value)}
+					onSave={(value) => {
+						const { pin_priority, ...routeValue } = value;
+						save.mutate(routeValue);
+						if (pin_priority !== undefined && editingMembers.length) {
+							pinAllMembers.mutate({
+								pinned: pin_priority,
+								members: editingMembers,
+							});
+						}
+					}}
 				/>
 			) : null}
 			{member && selected ? (
@@ -870,19 +925,25 @@ function ModelCatalog({
 
 function RouteDialog({
 	value,
+	members,
 	pending,
 	error,
 	onClose,
 	onSave,
 }: {
 	value: Partial<Route>;
+	members: RoutingCandidate[];
 	pending: boolean;
 	error: unknown;
 	onClose: () => void;
-	onSave: (value: Partial<Route>) => void;
+	onSave: (value: Partial<Route> & { pin_priority?: boolean }) => void;
 }) {
 	const { t } = useI18n();
 	const [form, setForm] = useState(value);
+	const allPinned =
+		members.length > 0 &&
+		members.every((candidate) => candidate.member.manual_override);
+	const [pinPriority, setPinPriority] = useState(allPinned);
 	return (
 		<Dialog
 			title={value.id ? t("routing.editRoute") : t("routing.addRoute")}
@@ -894,7 +955,9 @@ function RouteDialog({
 					</Button>
 					<Button
 						disabled={pending || !form.model_pattern}
-						onClick={() => onSave(form)}
+						onClick={() =>
+							onSave({ ...form, pin_priority: pinPriority })
+						}
 					>
 						{pending ? t("common.working") : t("common.save")}
 					</Button>
@@ -921,6 +984,19 @@ function RouteDialog({
 				/>
 				<span>{t("routing.routeEnabled")}</span>
 			</label>
+			{members.length > 0 ? (
+				<label className="check check-with-hint">
+					<input
+						type="checkbox"
+						checked={pinPriority}
+						onChange={(event) => setPinPriority(event.target.checked)}
+					/>
+					<span>
+						<strong>{t("routing.independentLabel")}</strong>
+						<small>{t("routing.independentHint")}</small>
+					</span>
+				</label>
+			) : null}
 			{error ? <ErrorState error={error} /> : null}
 		</Dialog>
 	);

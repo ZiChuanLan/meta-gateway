@@ -247,6 +247,10 @@ const en: Dict = {
 	"channels.editSecretPlaceholder": "Leave blank to keep current secret",
 	"channels.userToken": "User access token",
 	"channels.userTokenHint": "New API / site login token. Used for check-in and /api/user/*. Leave blank to keep current.",
+	"channels.priorityHint":
+		"Higher number is tried first. Applied to every model of this connection, unless that model uses independent priority/weight (set in the Models page).",
+	"channels.weightHint":
+		"Shares traffic within the same priority. Applied to every model of this connection, unless that model uses independent priority/weight (set in the Models page).",
 
 	"channels.apiKeysTitle": "API keys",
 	"channels.apiKeysHint": "Enabled keys on this site form a failover pool for model sync and relay.",
@@ -894,9 +898,14 @@ const en: Dict = {
 	"routing.weightHint": "Only used when two channels share the same priority. Higher weight gets more traffic (e.g. 70 vs 30).",
 	"routing.enabledLabel": "Enabled",
 	"routing.enabledHint": "Off = skip this channel for this model (route still exists).",
-	"routing.protectedLabel": "Protect from sync",
-	"routing.protectedHint": "On = model sync will not overwrite or remove this member. Turn on for hand-tuned routes.",
-	"routing.reorderHint": "Drag rows to set order (updates priority). Weight still applies among equal priorities.",
+	"routing.protectedLabel": "Independent priority/weight",
+	"routing.protectedHint":
+		"This member keeps its own priority/weight; the Connections page and model discovery won't overwrite it. Usually set for the whole model from the model edit dialog instead.",
+	"routing.independentLabel": "Independent priority/weight for this model",
+	"routing.independentHint":
+		"On = every member of this model keeps its own priority/weight. Changes on the Connections page or a model re-sync won't overwrite them. Off = all members follow the connection's global priority/weight. New members follow the connection by default.",
+	"routing.reorderHint":
+		"Dragging rows writes priority and makes this model's members independent, so the Connections page won't overwrite them. Weight still applies among equal priorities.",
 	"routing.moveUp": "Move up",
 	"routing.moveDown": "Move down",
 	"routing.orderLabel": "Order",
@@ -1298,6 +1307,10 @@ const zh: Dict = {
 	"channels.editSecretPlaceholder": "留空则保持当前密钥",
 	"channels.userToken": "用户 Access Token",
 	"channels.userTokenHint": "New API / 站点登录令牌，用于签到与 /api/user/*。留空表示保持原值。",
+	"channels.priorityHint":
+		"数字越大越先尝试。会同步到该连接的所有模型；在模型页开启了「独立优先级/权重」的模型除外（带盾牌标记）。",
+	"channels.weightHint":
+		"同优先级内权重大的分流更多。同样会同步到该连接的所有模型；在模型页开启了「独立优先级/权重」的模型除外。",
 
 	"channels.apiKeysTitle": "API Key",
 	"channels.apiKeysHint": "本站已启用的 Key 组成故障转移池，用于同步模型与中继。",
@@ -1914,9 +1927,14 @@ const zh: Dict = {
 	"routing.weightHint": "仅当两条通道优先级相同时生效。权重大的分到更多流量（例如 70 对 30）。",
 	"routing.enabledLabel": "已启用",
 	"routing.enabledHint": "关闭后，该模型不会再走这条通道（配置仍保留）。",
-	"routing.protectedLabel": "保护不被同步覆盖",
-	"routing.protectedHint": "开启后，模型同步不会改写或删除这个成员。手动调过的路由请打开。",
-	"routing.reorderHint": "拖动行可调整顺序（会写入优先级）。同优先级内仍按权重分流。",
+	"routing.protectedLabel": "独立优先级/权重",
+	"routing.protectedHint":
+		"该成员保留自己的优先级/权重，连接页修改或重新拉取模型不会覆盖它。通常不必单独设置——整个模型可在「编辑模型」里统一开关。",
+	"routing.independentLabel": "此模型使用独立优先级/权重",
+	"routing.independentHint":
+		"开启后，该模型所有成员保留各自的优先级/权重，连接页修改或重新拉取模型都不会覆盖；关闭后，全部成员跟随连接页的全局优先级/权重。新添加的成员默认跟随连接页。",
+	"routing.reorderHint":
+		"拖动行会写入优先级，并使该模型转为独立优先级/权重（连接页修改不再覆盖）。同优先级内仍按权重分流。",
 	"routing.moveUp": "上移",
 	"routing.moveDown": "下移",
 	"routing.orderLabel": "顺序",

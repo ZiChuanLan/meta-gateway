@@ -1925,7 +1925,7 @@ function EditChannelDialog({
 							/>
 						) : null}
 					</Field>
-					<Field label={t("common.priority")}>
+					<Field label={t("common.priority")} hint={t("channels.priorityHint")}>
 						<input
 							type="number"
 							value={priority}
@@ -1933,7 +1933,7 @@ function EditChannelDialog({
 							disabled={pending}
 						/>
 					</Field>
-					<Field label={t("common.weight")}>
+					<Field label={t("common.weight")} hint={t("channels.weightHint")}>
 						<input
 							type="number"
 							value={weight}
