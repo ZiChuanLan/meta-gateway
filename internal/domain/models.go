@@ -152,19 +152,19 @@ type RouteMember struct {
 
 // DownstreamKey authenticates downstream clients.
 type DownstreamKey struct {
-	ID        int64     `json:"id"`
-	TokenHash string    `json:"-"` // never serialized
-	Name      string    `json:"name"`
-	Enabled   bool      `json:"enabled"`
-	Scopes    string    `json:"scopes,omitempty"`
+	ID        int64  `json:"id"`
+	TokenHash string `json:"-"` // never serialized
+	Name      string `json:"name"`
+	Enabled   bool   `json:"enabled"`
+	Scopes    string `json:"scopes,omitempty"`
 	// QuotaTotalTokens is 0 for unlimited. When >0, relay is blocked once used >= total.
 	QuotaTotalTokens int64 `json:"quota_total_tokens"`
 	// QuotaUsedTokens is the cumulative total tokens charged to this key.
 	QuotaUsedTokens int64 `json:"quota_used_tokens"`
 	// Optional display prices (currency-agnostic units per 1k tokens).
-	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
-	CreatedAt time.Time `json:"created_at"`
+	PricePromptPer1k     float64   `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64   `json:"price_completion_per_1k"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -173,21 +173,21 @@ type DownstreamKey struct {
 
 // ProxyLog records a relayed request (without secrets).
 type ProxyLog struct {
-	ID         int64     `json:"id"`
-	RequestID  string    `json:"request_id"`
-	ChannelID  int64     `json:"channel_id"`
-	Model      string    `json:"model"`
-	Status     int       `json:"status"`
-	LatencyMs  int       `json:"latency_ms"`
-	Attempt    int       `json:"attempt"`
-	ErrorBrief string    `json:"error_brief,omitempty"`
-	DownstreamKeyID  int64  `json:"downstream_key_id,omitempty"`
-	PromptTokens     int    `json:"prompt_tokens,omitempty"`
-	CompletionTokens int    `json:"completion_tokens,omitempty"`
-	TotalTokens      int    `json:"total_tokens,omitempty"`
-	Stream           bool   `json:"stream,omitempty"`
-	Path             string `json:"path,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID               int64     `json:"id"`
+	RequestID        string    `json:"request_id"`
+	ChannelID        int64     `json:"channel_id"`
+	Model            string    `json:"model"`
+	Status           int       `json:"status"`
+	LatencyMs        int       `json:"latency_ms"`
+	Attempt          int       `json:"attempt"`
+	ErrorBrief       string    `json:"error_brief,omitempty"`
+	DownstreamKeyID  int64     `json:"downstream_key_id,omitempty"`
+	PromptTokens     int       `json:"prompt_tokens,omitempty"`
+	CompletionTokens int       `json:"completion_tokens,omitempty"`
+	TotalTokens      int       `json:"total_tokens,omitempty"`
+	Stream           bool      `json:"stream,omitempty"`
+	Path             string    `json:"path,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // UsageRecord is one metered relay completion used for billing summaries.

@@ -434,7 +434,6 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 	}
 }
 
-
 // RecordUsage persists metered tokens for a completed relay response.
 func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens struct {
 	PromptTokens     int

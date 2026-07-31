@@ -207,8 +207,8 @@ func Load() (*Config, error) {
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
 		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
-		PluginsDir:       envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
-		PluginCatalogURL: envStr("PLUGIN_CATALOG_URL", ""),
+		PluginsDir:                envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
+		PluginCatalogURL:          envStr("PLUGIN_CATALOG_URL", ""),
 		ExchangeAllowSecretExport: exchangeAllowSecretExport,
 	}, nil
 }

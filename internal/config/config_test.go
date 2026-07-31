@@ -71,7 +71,6 @@ func TestLoadRequiresProtectedMetrics(t *testing.T) {
 	}
 }
 
-
 func TestLoadWebDAVDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("METRICS_TOKEN", "metrics-test-token")
 	t.Setenv("WEBDAV_SYNC_ENABLED", "")

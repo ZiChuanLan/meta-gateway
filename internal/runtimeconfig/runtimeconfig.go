@@ -50,8 +50,8 @@ type Appliers struct {
 	// CheckinAllowed reports whether the check-in module may run (plugin gate).
 	// When nil, check-in enablement follows the editable flag alone.
 	CheckinAllowed func() bool
-	SetAudit     func(days, rows int)
-	SetAuditLoop func(days, rows int)
+	SetAudit       func(days, rows int)
+	SetAuditLoop   func(days, rows int)
 }
 
 // Controller loads, validates, persists, and applies runtime settings.

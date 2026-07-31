@@ -23,11 +23,11 @@ const (
 )
 
 var (
-	ErrNotFound       = errors.New("plugin_not_found")
-	ErrNotInstalled   = errors.New("plugin_not_installed")
-	ErrAlreadyExists  = errors.New("plugin_already_installed")
-	ErrInvalidID      = errors.New("plugin_invalid_id")
-	ErrCoreImmutable  = errors.New("plugin_core_immutable")
+	ErrNotFound      = errors.New("plugin_not_found")
+	ErrNotInstalled  = errors.New("plugin_not_installed")
+	ErrAlreadyExists = errors.New("plugin_already_installed")
+	ErrInvalidID     = errors.New("plugin_invalid_id")
+	ErrCoreImmutable = errors.New("plugin_core_immutable")
 )
 
 // Module kinds: core is always-on platform capability; addon is optional store-managed.
@@ -163,9 +163,9 @@ func NewServiceWithOptions(dir string, pluginStore *store.PluginStore, catalogUR
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	s := &Service{
-		dir:     dir,
-		store:   pluginStore,
-		enabled: make(map[string]bool),
+		dir:        dir,
+		store:      pluginStore,
+		enabled:    make(map[string]bool),
 		catalogURL: strings.TrimSpace(catalogURL),
 		httpClient: client,
 	}
@@ -269,7 +269,6 @@ func (s *Service) Catalog() []CatalogEntry {
 	}
 	return out
 }
-
 
 // Status returns catalog add-ons (with install state) plus core orientation cards.
 func (s *Service) Status() ([]ModuleStatus, error) {
