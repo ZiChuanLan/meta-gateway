@@ -1,14 +1,17 @@
 import {
+	Activity,
 	Boxes,
 	Cable,
 	CalendarCheck,
 	KeyRound,
 	LogOut,
 	Menu,
+	Moon,
 	Network,
 	Package,
 	ScrollText,
 	Settings,
+	Sun,
 	X,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +37,7 @@ import {
 	StatusBadge,
 } from "./components/ui";
 import { Channels } from "./features/Channels";
+import { Dashboard } from "./features/Dashboard";
 import { ChannelModels } from "./features/ChannelModels";
 import { Checkins } from "./features/Checkins";
 import { Keys } from "./features/Keys";
@@ -525,11 +529,26 @@ function AuthenticatedShell({
 	const { t } = useI18n();
 	const { checkinEnabled } = useModules();
 	const [open, setOpen] = useState(false);
+	const [theme, setTheme] = useState<"light" | "dark">(() => {
+		const stored = window.localStorage.getItem("meta-gateway.theme");
+		return stored === "dark" ? "dark" : "light";
+	});
+	useEffect(() => {
+		document.documentElement.classList.toggle("dark", theme === "dark");
+		window.localStorage.setItem("meta-gateway.theme", theme);
+	}, [theme]);
 	const location = useLocation();
+	const [routeAnim, setRouteAnim] = useState(0);
+	useEffect(() => {
+		setRouteAnim(0);
+		const frame = window.requestAnimationFrame(() => setRouteAnim(1));
+		return () => window.cancelAnimationFrame(frame);
+	}, [location.pathname]);
 	useEffect(() => setOpen(false), [location.pathname]);
 	// Daily loop: Connections → Models → Tokens → Logs → Check-in → Store
 	const primaryNav = [
-		{ to: "/", label: t("app.nav.channels"), icon: Cable },
+		{ to: "/", label: t("app.nav.overview"), icon: Activity },
+		{ to: "/channels", label: t("app.nav.channels"), icon: Cable },
 		{ to: "/models", label: t("app.nav.models"), icon: Boxes },
 		{ to: "/keys", label: t("app.nav.keys"), icon: KeyRound },
 		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
@@ -600,6 +619,13 @@ function AuthenticatedShell({
 						</div>
 					</div>
 					<LanguageSwitcher className="sidebar-lang" />
+					<button
+						className="theme-toggle"
+						title={theme === "dark" ? t("app.themeLight") : t("app.themeDark")}
+						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+					>
+						{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+					</button>
 					<button onClick={onUnauthorized}>
 						<LogOut size={16} />
 						{t("app.disconnect")}
@@ -613,10 +639,10 @@ function AuthenticatedShell({
 					onClick={() => setOpen(false)}
 				/>
 			)}
-			<div className="content">
+			<div className={`content${routeAnim ? " route-enter" : ""}`}>
 				<Routes>
-					<Route index element={<Channels />} />
-					<Route path="channels" element={<Navigate to="/" replace />} />
+					<Route index element={<Dashboard />} />
+					<Route path="channels" element={<Channels />} />
 					<Route path="models/channel/:channelId" element={<ChannelModels />} />
 					<Route path="models" element={<Models />} />
 					<Route path="keys" element={<Keys />} />

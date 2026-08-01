@@ -136,7 +136,7 @@ describe("channel-first shell", () => {
 			document.querySelector(".gateway-transition.is-revealing"),
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole("heading", { name: "Connections" }),
+			screen.getByRole("heading", { name: "Overview" }),
 		).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Models" })).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Tokens" })).toBeInTheDocument();
@@ -175,7 +175,7 @@ describe("channel-first shell", () => {
 		renderApp(["/assets"]);
 
 		expect(
-			await screen.findByRole("heading", { name: "Connections" }),
+			await screen.findByRole("heading", { name: "Overview" }),
 		).toBeInTheDocument();
 	});
 
@@ -233,7 +233,7 @@ describe("channel-first shell", () => {
 			"reduced-token",
 		);
 		expect(
-			screen.getByRole("heading", { name: "Connections" }),
+			screen.getByRole("heading", { name: "Overview" }),
 		).toBeInTheDocument();
 		await act(async () => {
 			vi.advanceTimersByTime(200);
