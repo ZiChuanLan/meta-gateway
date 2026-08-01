@@ -48,6 +48,7 @@ import {
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
+import { formatErrorMessage } from "../formatError";
 import { CONNECTION_TYPE_OPTIONS } from "../connectionTypes";
 import { useSession } from "../session";
 import { useModules } from "../hooks/useModules";
@@ -76,7 +77,13 @@ const TYPE_GROUPS = ["core", "relay", "other"];
 type ConnectionHealthFilter = "all" | "ready" | "attention" | "missing_key";
 
 function isMissingAPIKey(overview: ChannelOverview) {
-	return !overview.has_api_key;
+	// Only meaningful when an access token exists and has passed verification:
+	// a connection without a working token is not "missing an API key".
+	return (
+		!overview.has_api_key &&
+		overview.has_user_credential &&
+		overview.last_probe_ok === true
+	);
 }
 
 type CreateConnectionInput = {
@@ -89,6 +96,8 @@ type CreateConnectionInput = {
 type CreateConnectionResult = {
 	channel: Channel;
 	reusedSite: boolean;
+	/** True when the supplied secret looks like a New API access token (not sk-). */
+	looksLikeAccessToken: boolean;
 };
 
 function hostLabel(url: string) {
@@ -137,7 +146,10 @@ function parseCredentialMeta(metaJSON?: string): {
 
 export function channelHealth(overview: ChannelOverview) {
 	if (overview.channel.status !== "enabled") return "disabled";
-	if (!overview.site_usable || !overview.credential_usable) return "blocked";
+	// A channel without an sk- API key is a config gap, not a network failure.
+	// It gets the neutral "missing key" treatment instead of a red "blocked" badge.
+	if (!overview.site_usable) return "blocked";
+	if (!overview.has_api_key) return "unverified";
 	// Explicit failed probe/sync wins over historical model inventory.
 	if (overview.last_probe_at && overview.last_probe_ok === false) {
 		return "degraded";
@@ -176,7 +188,7 @@ export function capabilityFlags(overview: ChannelOverview) {
 		checkinOff: checkinReady && !checkinScheduled,
 		/** No user token at all — cannot check in. */
 		noUserToken: !hasUser,
-		missingAPIKey: !hasAPIKey,
+		missingAPIKey: !hasAPIKey && hasUser && overview.last_probe_ok === true,
 		modelsReady,
 		needsKeyForRelay: !hasAPIKey,
 	};
@@ -205,6 +217,7 @@ export function Channels() {
 	const [remove, setRemove] = useState<Channel | null>(null);
 	const [edit, setEdit] = useState<Channel | null>(null);
 	const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
+	const [createKeyChannel, setCreateKeyChannel] = useState<Channel | null>(null);
 	const [contextMenu, setContextMenu] = useState<{
 		channelId: number;
 		top: number;
@@ -306,7 +319,11 @@ export function Channels() {
 				status: "enabled",
 				type_hint: input.type_hint || "openai-compatible",
 			});
-			return { channel, reusedSite };
+			return {
+				channel,
+				reusedSite,
+				looksLikeAccessToken: !/^sk-/i.test(input.secret.trim()),
+			};
 		},
 		invalidateKeys: [...INVALIDATE],
 		onSuccess: (result) => {
@@ -321,6 +338,12 @@ export function Channels() {
 			});
 			if (shouldVerify) {
 				runVerifyRef.current(result.channel.id, result.channel.name);
+			}
+			// Auto-check the access token right after creation so the UI can
+			// tell a good credential from a dead/blocked one immediately.
+			if (result.looksLikeAccessToken) {
+				accountProbe.reset();
+				accountProbe.mutate(result.channel.id);
 			}
 		},
 		onError: () => {
@@ -340,10 +363,24 @@ export function Channels() {
 		mutationFn: (id: number) => service.probeAccount(id),
 		pendingIdOf: (id) => id,
 	});
+	const checkAllTokens = useAdminMutation({
+		mutationFn: () => service.probeAllAccounts(),
+		invalidateKeys: [...INVALIDATE],
+	});
 	const syncKeys = useAdminMutation({
 		mutationFn: (id: number) => service.syncKeys(id),
 		invalidateKeys: [...INVALIDATE, ["credentials"]],
 		pendingIdOf: (id) => id,
+	});
+	const createUpstreamKey = useAdminMutation({
+		mutationFn: (input: { id: number; name?: string; group?: string }) =>
+			service.createUpstreamKey(input.id, {
+				name: input.name,
+				group: input.group,
+				unlimited_quota: true,
+			}),
+		invalidateKeys: [...INVALIDATE, ["credentials"]],
+		pendingIdOf: (input) => input.id,
 	});
 	const toggle = useAdminMutation({
 		mutationFn: async (overview: ChannelOverview) => {
@@ -573,6 +610,7 @@ export function Channels() {
 		rows.find((r) => r.channel.id === selectedId) ??
 		(overviews.data ?? []).find((r) => r.channel.id === selectedId) ??
 		null;
+	const capsForSelected = selected ? capabilityFlags(selected) : null;
 
 	const readyCount = (overviews.data ?? []).filter(
 		(o) => channelHealth(o) === "ready",
@@ -683,6 +721,27 @@ export function Channels() {
 					selectRow(ch.id);
 					syncKeys.reset();
 					syncKeys.mutate(ch.id);
+				},
+			});
+		}
+		// Only offer key creation when the account token is known-good (last
+		// "check account" succeeded for this channel) and the site has no key.
+		// A dead/blocked token should never show a create button that can only fail.
+		const canCreateKey =
+			caps.hasUser &&
+			caps.needsKeyForRelay &&
+			accountProbe.data?.channel_id === ch.id;
+		if (canCreateKey) {
+			items.push({
+				key: "create-key",
+				label: t("channels.createKey"),
+				icon: <Plus size={14} />,
+				disabled: busy,
+				onSelect: () => {
+					close();
+					selectRow(ch.id);
+					createUpstreamKey.reset();
+					setCreateKeyChannel(ch);
 				},
 			});
 		}
@@ -854,6 +913,22 @@ export function Channels() {
 					>
 						{t("channels.refreshAll")}
 					</Button>
+					<Button
+						variant="secondary"
+						icon={
+							<UserCheck
+								size={16}
+								className={checkAllTokens.isPending ? "spin" : ""}
+							/>
+						}
+						disabled={checkAllTokens.isPending || !rows.length}
+						onClick={() => {
+							checkAllTokens.reset();
+							checkAllTokens.mutate();
+						}}
+					>
+						{t("channels.checkAllTokens")}
+					</Button>
 					<Button icon={<Plus size={16} />} onClick={openAdd}>
 						{t("channels.add")}
 					</Button>
@@ -932,6 +1007,20 @@ export function Channels() {
 						})}
 					</ResultStrip>
 				) : null}
+				{checkAllTokens.data ? (
+					<ResultStrip
+						status={
+							checkAllTokens.data.items.some((item) => !item.ok)
+								? "error"
+								: "success"
+						}
+					>
+						{t("channels.checkAllTokensSummary", {
+							success: checkAllTokens.data.items.filter((item) => item.ok).length,
+							failure: checkAllTokens.data.items.filter((item) => !item.ok).length,
+						})}
+					</ResultStrip>
+				) : null}
 				{refresh.data && stageMessage?.kind !== "created_and_verified" ? (
 					<ResultStrip status="success">
 						{t("channels.refreshResult", {
@@ -980,7 +1069,7 @@ export function Channels() {
 								updated: syncKeys.data.updated_channels ?? 0,
 							})}`}
 							{syncKeys.data.message
-								? ` — ${syncKeys.data.message}`
+								? ` — ${formatErrorMessage(syncKeys.data.message, t)}`
 								: syncKeys.data.empty_list
 									? ` — ${t("channels.syncKeysEmpty")}`
 									: syncKeys.data.skipped_masked > 0 &&
@@ -1096,9 +1185,22 @@ export function Channels() {
 										>
 											<td>
 												<strong>{ch.name}</strong>
-												<small className="mono truncate" title={displayBase}>
-													{displayBase || t("channels.inheritsSite")}
-												</small>
+												{displayBase ? (
+													<a
+														className="mono truncate base-url-link"
+														href={displayBase}
+														target="_blank"
+														rel="noopener noreferrer"
+														title={displayBase}
+														onClick={(event) => event.stopPropagation()}
+													>
+														{displayBase}
+													</a>
+												) : (
+													<small className="mono truncate">
+														{t("channels.inheritsSite")}
+													</small>
+												)}
 											</td>
 											<td className="status-col">
 												<div className="capability-stack is-compact">
@@ -1209,6 +1311,17 @@ export function Channels() {
 									syncKeys.reset();
 									syncKeys.mutate(selected.channel.id);
 								}}
+								onCreateKey={() => {
+									createUpstreamKey.reset();
+									setCreateKeyChannel(selected.channel);
+								}}
+								canCreateKey={
+									capsForSelected
+										? capsForSelected.hasUser &&
+											capsForSelected.needsKeyForRelay &&
+											accountProbe.data?.channel_id === selected.channel.id
+										: false
+								}
 								onProbe={() => {
 									probe.reset();
 									probe.mutate(selected.channel.id);
@@ -1302,6 +1415,26 @@ export function Channels() {
 					}}
 				/>
 			) : null}
+			{createKeyChannel ? (
+				<CreateKeyDialog
+					channelName={createKeyChannel.name}
+					channelId={createKeyChannel.id}
+					pending={createUpstreamKey.isPending}
+					error={createUpstreamKey.error}
+					onClose={() => {
+						if (createUpstreamKey.isPending) return;
+						createUpstreamKey.reset();
+						setCreateKeyChannel(null);
+					}}
+					onCreate={(group) => {
+						createUpstreamKey.mutate({
+							id: createKeyChannel.id,
+							name: `gateway-${group || "default"}`,
+							group,
+						});
+					}}
+				/>
+			) : null}
 			{modelsChannel ? (
 				<Drawer
 					title={t("channels.modelsSection")}
@@ -1353,6 +1486,8 @@ function ChannelDetail({
 	busy,
 	onCheckAccount,
 	onSyncKeys,
+	onCreateKey,
+	canCreateKey,
 	onProbe,
 	onRefresh,
 	onEdit,
@@ -1362,6 +1497,8 @@ function ChannelDetail({
 	busy: boolean;
 	onCheckAccount: () => void;
 	onSyncKeys: () => void;
+	onCreateKey: () => void;
+	canCreateKey: boolean;
 	onProbe: () => void;
 	onRefresh: () => void;
 	onEdit: () => void;
@@ -1381,7 +1518,16 @@ function ChannelDetail({
 					<p className="detail-subtitle mono" title={displayBase}>
 						<span>#{ch.id}</span>
 						{displayBase ? <span className="detail-dot">·</span> : null}
-						{displayBase ? <span className="truncate">{displayBase}</span> : null}
+						{displayBase ? (
+							<a
+								className="truncate base-url-link"
+								href={displayBase}
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								{displayBase}
+							</a>
+						) : null}
 					</p>
 				</div>
 				<div className="capability-stack is-compact">
@@ -1457,6 +1603,16 @@ function ChannelDetail({
 						{t("channels.syncKeys")}
 					</Button>
 				) : null}
+				{canCreateKey ? (
+					<Button
+						variant="secondary"
+						icon={<Plus size={14} />}
+						disabled={busy}
+						onClick={onCreateKey}
+					>
+						{t("channels.createKey")}
+					</Button>
+				) : null}
 				<Button
 					variant={caps.hasUser ? "secondary" : undefined}
 					icon={<RefreshCw size={14} className={busy ? "spin" : ""} />}
@@ -1482,6 +1638,86 @@ function ChannelDetail({
 			</div>
 
 		</>
+	);
+}
+
+function CreateKeyDialog({
+	channelName,
+	channelId,
+	pending,
+	error,
+	onClose,
+	onCreate,
+}: {
+	channelName: string;
+	channelId: number;
+	pending: boolean;
+	error: unknown;
+	onClose: () => void;
+	onCreate: (group: string) => void;
+}) {
+	const { t } = useI18n();
+	const { client } = useSession();
+	const service = api(client!);
+	const groupsQuery = useQuery({
+		queryKey: ["token-groups", channelId],
+		queryFn: ({ signal }) => service.tokenGroups(channelId, signal),
+		retry: false,
+	});
+	const [group, setGroup] = useState("");
+	useEffect(() => {
+		if (group) return;
+		const groups = groupsQuery.data?.groups ?? [];
+		if (groups.length > 0) setGroup(groups[0] ?? "");
+	}, [groupsQuery.data, group]);
+	const groupOptions: SelectOption[] = (groupsQuery.data?.groups ?? []).map(
+		(value) => ({ value, label: value, group: "token-groups" }),
+	);
+	const groupsLoadFailed = Boolean(groupsQuery.isError);
+	const canSubmit = !groupsLoadFailed && Boolean(group.trim());
+
+	return (
+		<Dialog
+			title={t("channels.createKeyTitle")}
+			onClose={onClose}
+			actions={
+				<>
+					<Button variant="secondary" onClick={onClose} disabled={pending}>
+						{t("common.cancel")}
+					</Button>
+					<Button
+						disabled={pending || !canSubmit}
+						onClick={() => onCreate(group.trim())}
+					>
+						{t("channels.createKeyConfirm")}
+					</Button>
+				</>
+			}
+		>
+			<p className="dialog-hint">
+				{t("channels.createKeyHint")} <strong>{channelName}</strong>
+			</p>
+			<Field
+				label={t("channels.createKeyGroup")}
+				hint={t("channels.createKeyGroupHint")}
+			>
+				<SearchableSelect
+					options={groupOptions}
+					groups={["token-groups"]}
+					value={group}
+					onChange={(value) => setGroup(value ?? "")}
+					disabled={pending}
+					allowCustom
+					placeholder={t("channels.createKeyGroupPlaceholder")}
+				/>
+			</Field>
+			{groupsLoadFailed ? (
+				<div className="dialog-form-error">
+					{t("channels.createKeyGroupsUnavailable")}
+				</div>
+			) : null}
+			{error ? <ErrorState error={error} /> : null}
+		</Dialog>
 	);
 }
 

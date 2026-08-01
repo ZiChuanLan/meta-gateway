@@ -12,6 +12,7 @@ import { I18nProvider } from "../i18n";
 import { SessionProvider } from "../session";
 import { ToastProvider } from "../toast";
 import { Channels, capabilityFlags, channelHealth } from "./Channels";
+import type { ChannelOverview } from "../api/types";
 
 function renderChannels() {
 	const queryClient = new QueryClient({
@@ -217,6 +218,7 @@ describe("capabilityFlags", () => {
 			has_user_credential: true,
 			has_platform_user_id: true,
 			has_api_key: false,
+			last_probe_ok: true,
 			site_usable: true,
 			credential_usable: true,
 			model_count: 0,
@@ -257,6 +259,46 @@ describe("capabilityFlags", () => {
 			cooling_member_count: 0,
 			failure_count: 0,
 		})).toBe("unverified");
+	});
+
+	it("does not flag missing API key until the access token passes verification", () => {
+		const base: ChannelOverview = {
+			channel: {
+				id: 9,
+				name: "demo",
+				base_url: "",
+				models_csv: "",
+				group_name: "default",
+				priority: 0,
+				weight: 100,
+				status: "enabled",
+				created_at: "",
+				updated_at: "",
+			},
+			credential_kind: "access_token",
+			checkin_enabled: true,
+			has_user_credential: true,
+			has_platform_user_id: true,
+			has_api_key: false,
+			site_usable: true,
+			credential_usable: true,
+			model_count: 0,
+			last_latency_ms: 0,
+			route_count: 0,
+			enabled_member_count: 0,
+			cooling_member_count: 0,
+			failure_count: 0,
+		};
+		// Never probed → no verdict yet.
+		expect(capabilityFlags({ ...base }).missingAPIKey).toBe(false);
+		// Probe failed → token is not effective, do not blame a missing API key.
+		expect(capabilityFlags({ ...base, last_probe_ok: false }).missingAPIKey).toBe(
+			false,
+		);
+		// Probe passed → now the missing API key is the actionable gap.
+		expect(capabilityFlags({ ...base, last_probe_ok: true }).missingAPIKey).toBe(
+			true,
+		);
 	});
 
 	it("marks check-in as needing user id when token exists without platform_user_id", () => {

@@ -82,6 +82,23 @@ type SyncKeysResult struct {
 	Items           []SyncKeyItem      `json:"items"`
 }
 
+// CreateKeyRequest describes a token to create on the upstream via the account's
+// access_token / session credential.
+type CreateKeyRequest struct {
+	Name           string `json:"name"`
+	Group          string `json:"group"`
+	UnlimitedQuota bool   `json:"unlimited_quota"`
+}
+
+// CreateKeyResult is the outcome of creating and attaching a new API key.
+type CreateKeyResult struct {
+	CredentialID int64  `json:"credential_id"`
+	Name         string `json:"name"`
+	Group        string `json:"group"`
+	Category     string `json:"category"`
+	Message      string `json:"message"`
+}
+
 // GroupChannelItem is one connection ensured for a token group.
 type GroupChannelItem struct {
 	Group        string `json:"group"`
@@ -111,7 +128,9 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	self, err := resolved.adapter.ProbeSelf(ctx, resolved.input)
 	zeroString(&resolved.input.Secret)
 	if err != nil {
-		return nil, mapAdapterError(err)
+		probeErr := mapAdapterError(err)
+		_ = s.db.Channel.RecordProbeFailure(channelID, s.now(), probeCategory(probeErr))
+		return nil, probeErr
 	}
 	if self.PlatformUserID > 0 {
 		_ = s.persistPlatformUserID(resolved.credential, self.PlatformUserID)
@@ -121,6 +140,7 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	if latency < 0 {
 		latency = 0
 	}
+	_ = s.db.Channel.RecordProbeSuccess(channelID, checkedAt)
 	return &ProbeResult{
 		ChannelID:      channelID,
 		CredentialID:   resolved.credential.ID,
@@ -132,6 +152,45 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		LatencyMs:      latency,
 		CheckedAt:      checkedAt,
 	}, nil
+}
+
+// ProbeAllItem is one channel's access-token check result within a bulk run.
+type ProbeAllItem struct {
+	ChannelID   int64  `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	OK          bool   `json:"ok"`
+	Username    string `json:"username,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+// ProbeAll checks the access token of every enabled channel that has a user
+// credential, and reports per-channel success/failure. Used by the bulk
+// "check all access tokens" action in the Connections page.
+func (s *Service) ProbeAll(ctx context.Context) ([]ProbeAllItem, error) {
+	channels, err := s.db.Channel.ListEnabled()
+	if err != nil {
+		return nil, internalError("channel_list")
+	}
+	items := make([]ProbeAllItem, 0, len(channels))
+	for index := range channels {
+		channel := channels[index]
+		item := ProbeAllItem{
+			ChannelID:   channel.ID,
+			ChannelName: channel.Name,
+		}
+		probe, probeErr := s.Probe(ctx, channel.ID)
+		if probeErr != nil {
+			if errors.Is(probeErr, context.Canceled) || errors.Is(probeErr, context.DeadlineExceeded) {
+				return nil, probeErr
+			}
+			item.Error = errorCategory(probeErr)
+		} else {
+			item.OK = true
+			item.Username = probe.Username
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKeysRequest) (*SyncKeysResult, error) {
@@ -331,6 +390,137 @@ func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKey
 		}
 	}
 	return result, nil
+}
+
+// ListTokenGroups returns the distinct token groups the upstream account has
+// access to, so the create-key dialog can offer a pick list instead of a free
+// text field. An empty (non-nil) slice is returned when the upstream lists no
+// tokens; a transport/auth failure surfaces as an error so the caller can tell
+// "no groups" from "cannot reach the upstream".
+func (s *Service) ListTokenGroups(ctx context.Context, channelID int64) ([]string, error) {
+	resolved, err := s.resolveUserTarget(channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer zeroString(&resolved.input.Secret)
+
+	// Many New-API forks require New-Api-User (and siblings) for /api/token.
+	if resolved.input.PlatformUserID <= 0 {
+		if self, selfErr := resolved.adapter.ProbeSelf(ctx, resolved.input); selfErr == nil && self.PlatformUserID > 0 {
+			resolved.input.PlatformUserID = self.PlatformUserID
+			_ = s.persistPlatformUserID(resolved.credential, self.PlatformUserID)
+		}
+	}
+	keys, err := resolved.adapter.ListAPIKeys(ctx, resolved.input, 0, 100)
+	if err != nil {
+		return nil, mapAdapterError(err)
+	}
+	seen := make(map[string]struct{})
+	groups := make([]string, 0, 4)
+	for _, key := range keys {
+		group := normalizeTokenGroup(key.Group)
+		if _, exists := seen[group]; exists {
+			continue
+		}
+		seen[group] = struct{}{}
+		groups = append(groups, group)
+	}
+	if len(groups) == 0 {
+		// Upstream reached and returned an empty token list: treat "default"
+		// as the only guaranteed group rather than blocking creation.
+		groups = []string{"default"}
+	}
+	return groups, nil
+}
+
+// CreateKey creates a brand-new API key on the upstream via the account's
+// access_token / session credential, then stores it as an api_key credential on
+// the site (bound to the channel) so it can be used for model relay.
+func (s *Service) CreateKey(ctx context.Context, channelID int64, request CreateKeyRequest) (*CreateKeyResult, error) {
+	resolved, err := s.resolveUserTarget(channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer zeroString(&resolved.input.Secret)
+
+	// Many New-API forks require New-Api-User (and siblings) for /api/token.
+	// Resolve user id from /api/user/self when meta is empty.
+	if resolved.input.PlatformUserID <= 0 {
+		if self, selfErr := resolved.adapter.ProbeSelf(ctx, resolved.input); selfErr == nil && self.PlatformUserID > 0 {
+			resolved.input.PlatformUserID = self.PlatformUserID
+			_ = s.persistPlatformUserID(resolved.credential, self.PlatformUserID)
+		}
+	}
+
+	name := strings.TrimSpace(request.Name)
+	if name == "" {
+		name = "gateway-auto"
+	}
+	group := normalizeTokenGroup(request.Group)
+	created, err := resolved.adapter.CreateAPIKey(ctx, resolved.input, adapters.NewAPIKeyRequest{
+		Name:           name,
+		Group:          group,
+		UnlimitedQuota: request.UnlimitedQuota,
+	})
+	if err != nil {
+		return nil, mapAdapterError(err)
+	}
+	secret := strings.TrimSpace(created.Secret)
+	if secret == "" {
+		return nil, &Error{Kind: ErrorUpstream, Category: "token_created_but_secret_masked"}
+	}
+
+	// Store as an api_key credential; if the same secret somehow already exists,
+	// reuse that row instead of duplicating.
+	existing, err := s.db.Credential.ListBySite(resolved.site.ID)
+	if err != nil {
+		return nil, internalError("credential_list")
+	}
+	matchedID, matchErr := s.findMatchingAPIKey(existing, secret)
+	if matchErr != nil {
+		return nil, matchErr
+	}
+	credentialID := matchedID
+	if credentialID == 0 {
+		encSecret, encErr := s.enc.Encrypt([]byte(secret))
+		if encErr != nil {
+			return nil, internalError("encryption_failed")
+		}
+		metaPayload := map[string]any{"name": name, "group": group}
+		if created.ID > 0 {
+			metaPayload["upstream_token_id"] = created.ID
+		}
+		metaBytes, _ := json.Marshal(metaPayload)
+		newID, createErr := s.db.Credential.Create(&domain.Credential{
+			SiteID:    resolved.site.ID,
+			Kind:      "api_key",
+			SecretEnc: []byte(encSecret),
+			MetaJSON:  string(metaBytes),
+			Status:    domain.StatusEnabled,
+		})
+		if createErr != nil {
+			return nil, internalError("credential_create")
+		}
+		credentialID = newID
+	}
+
+	// Point the channel at the new key so relay can use it right away.
+	channel := resolved.channel
+	bound := channel.CredentialID
+	if bound == nil || *bound != credentialID {
+		channel.CredentialID = &credentialID
+		if updateErr := s.db.Channel.Update(channel); updateErr != nil {
+			return nil, internalError("channel_update")
+		}
+	}
+
+	return &CreateKeyResult{
+		CredentialID: credentialID,
+		Name:         name,
+		Group:        group,
+		Category:     "api_key_created",
+		Message:      "API key created and attached to the connection",
+	}, nil
 }
 
 // ensureGroupChannels creates or reuses one channel per New API token group on the site.
@@ -612,6 +802,15 @@ func (s *Service) persistPlatformUserID(credential *domain.Credential, userID in
 	return s.db.Credential.Update(credential)
 }
 
+// probeCategory extracts the redacted failure category used for last_probe_error.
+func probeCategory(err error) string {
+	var probeErr *Error
+	if errors.As(err, &probeErr) && probeErr.Category != "" {
+		return probeErr.Category
+	}
+	return "upstream_failure"
+}
+
 func mapAdapterError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
@@ -683,6 +882,16 @@ func unavailable(category string) error {
 
 func internalError(category string) error {
 	return &Error{Kind: ErrorInternal, Category: category}
+}
+
+// errorCategory extracts the stable category string from an account.Error so a
+// bulk result can carry a machine-readable reason without leaking internals.
+func errorCategory(err error) string {
+	var accountErr *Error
+	if errors.As(err, &accountErr) {
+		return accountErr.Category
+	}
+	return "upstream_failure"
 }
 
 func zero(value []byte) {
