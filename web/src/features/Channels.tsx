@@ -364,6 +364,7 @@ export function Channels() {
 	const accountProbe = useAdminMutation({
 		mutationFn: (id: number) => service.probeAccount(id),
 		pendingIdOf: (id) => id,
+		invalidateKeys: [...INVALIDATE],
 	});
 	const checkAllTokens = useAdminMutation({
 		mutationFn: () => service.probeAllAccounts(),
