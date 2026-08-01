@@ -189,6 +189,8 @@ export const api = (client: ApiClient) => ({
 		quota_total_tokens?: number
 		price_prompt_per_1k?: number
 		price_completion_per_1k?: number
+		model_allowlist?: string
+		model_denylist?: string
 	}) => client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
 	updateKey: (
 		id: number,
@@ -199,6 +201,8 @@ export const api = (client: ApiClient) => ({
 			quota_total_tokens?: number
 			price_prompt_per_1k?: number
 			price_completion_per_1k?: number
+			model_allowlist?: string
+			model_denylist?: string
 			reset_used?: boolean
 		},
 	) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),

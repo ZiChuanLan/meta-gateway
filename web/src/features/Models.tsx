@@ -4,6 +4,7 @@ import {
 	Pencil,
 	Plus,
 	Power,
+	RotateCcw,
 	Search,
 	Shield,
 	Sparkles,
@@ -88,6 +89,7 @@ function ModelCatalog({
 	const overviews = useQuery({
 		queryKey: ["route-overviews"],
 		queryFn: ({ signal }) => service.routeOverviews(signal),
+		refetchInterval: 15_000,
 	});
 	const channels = useQuery({
 		queryKey: ["channels"],
@@ -116,20 +118,21 @@ function ModelCatalog({
 	const rows = useMemo(() => {
 		const term = query.trim().toLowerCase();
 		return (overviews.data ?? []).filter((item) => {
+			const members = item.members ?? [];
 			if (channelFilter > 0) {
-				if (!item.members.some((m) => m.channel.id === channelFilter)) {
+				if (!members.some((m) => m.channel.id === channelFilter)) {
 					return false;
 				}
 			}
 			if (!term) return true;
 			if (item.route.model_pattern.toLowerCase().includes(term)) return true;
-			return item.members.some((m) =>
+			return members.some((m) =>
 				m.channel.name.toLowerCase().includes(term),
 			);
 		});
 	}, [channelFilter, overviews.data, query]);
 
-	const pagination = useClientPagination(rows, 12);
+	const pagination = useClientPagination(rows);
 	const pageRows = pagination.pageItems;
 
 	useEffect(() => {
@@ -375,7 +378,9 @@ function ModelCatalog({
 						label: t("modelsPage.stat.multi"),
 						value: overviews.isPending
 							? "—"
-							: (overviews.data ?? []).filter((o) => o.members.length > 1)
+							: (overviews.data ?? []).filter(
+									(o) => (o.members ?? []).length > 1,
+								)
 									.length,
 					},
 				]}
@@ -659,7 +664,7 @@ function ModelCatalog({
 													priority: (selectedMembers.length || 0) + 1,
 													weight: 100,
 													enabled: true,
-													manual_override: false,
+													manual_override: true,
 												});
 											}}
 										>
@@ -679,6 +684,7 @@ function ModelCatalog({
 										sortMembers(selectedMembers).map((candidate, rowIndex) => {
 											const state = candidateState(candidate);
 											const entry = candidate.member;
+											const activeCooldown = isActiveCooldown(entry);
 											const ordered = sortMembers(selectedMembers);
 											const busy =
 												toggleMember.pendingId === entry.id ||
@@ -769,9 +775,14 @@ function ModelCatalog({
 																{t("routing.protectedLabel")}
 															</>
 															) : null}
-															{entry.last_error
+															{activeCooldown && entry.last_error
 																? ` · ${entry.last_error}`
 																: null}
+															{activeCooldown ? (
+																<>{" "}
+																	<CooldownHint until={entry.cooldown_until!} />
+																</>
+															) : null}
 														</small>
 													</div>
 													<div className="member-controls">
@@ -797,6 +808,18 @@ function ModelCatalog({
 														>
 															↓
 														</button>
+														{activeCooldown ? (
+															<button
+																type="button"
+																className="member-clear-health"
+																title={t("routing.clearHealth")}
+																disabled={clearHealth.isPending}
+																onClick={() => clearHealth.mutate(entry.id)}
+															>
+																<RotateCcw size={13} />
+																{t("routing.clearHealth")}
+															</button>
+														) : null}
 														<ActionMenu
 															compact
 															label={t("common.moreActions")}
@@ -810,8 +833,7 @@ function ModelCatalog({
 																	onSelect: () =>
 																		toggleMember.mutate(entry),
 																},
-																...(entry.fail_count > 0 ||
-																entry.cooldown_until
+																...(activeCooldown
 																	? [
 																			{
 																				key: "clear",
@@ -1129,15 +1151,48 @@ function sortMembers(members: RoutingCandidate[]) {
 	});
 }
 
+function isActiveCooldown(member: Pick<RouteMember, "cooldown_until">) {
+	if (!member.cooldown_until) return false;
+	const until = new Date(member.cooldown_until).getTime();
+	return Number.isFinite(until) && until > Date.now();
+}
+
 function candidateState(candidate: RoutingCandidate) {
 	const member = candidate.member;
 	if (!member.enabled) return "disabled";
-	if (member.cooldown_until) {
-		const until = new Date(member.cooldown_until).getTime();
-		if (Number.isFinite(until) && until > Date.now()) return "cooling_down";
-	}
-	if (member.fail_count > 0 || member.last_error) return "degraded";
+	if (!candidate.credential_usable) return "no_credential";
+	// Historical failures do not keep a member degraded after its penalty ends.
+	if (isActiveCooldown(member)) return "cooling_down";
 	return "ready";
+}
+
+function formatCooldownLeft(iso: string, now = Date.now()) {
+	const until = new Date(iso).getTime();
+	if (!Number.isFinite(until)) return "?";
+	const seconds = Math.max(0, Math.ceil((until - now) / 1000));
+	if (seconds >= 60) {
+		const mins = Math.floor(seconds / 60);
+		return `${mins}m${seconds % 60 > 0 ? ` ${seconds % 60}s` : ""}`;
+	}
+	return `${seconds}s`;
+}
+
+/** Cooldown countdown that re-renders itself every second until expiry. */
+function CooldownHint({ until }: { until: string }) {
+	const { t } = useI18n();
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (new Date(until).getTime() - Date.now() <= 0) return;
+		const id = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(id);
+	}, [until]);
+	const remaining = new Date(until).getTime() - now;
+	if (remaining <= 0) return null;
+	return (
+		<span className="member-cooldown-hint">
+			{t("routing.cooldownHint", { left: formatCooldownLeft(until, now) })}
+		</span>
+	);
 }
 
 function positiveId(value: string | null) {

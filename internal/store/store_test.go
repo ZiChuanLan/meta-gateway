@@ -132,13 +132,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 13 {
-		t.Fatalf("got %d applied migrations, want 13", count)
+	if count != 15 {
+		t.Fatalf("got %d applied migrations, want 15", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 13 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 15 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -300,8 +300,8 @@ func TestDiscoveryReconcileIsIdempotentAndProtectsManualMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed.DisabledMembers != 0 {
-		t.Fatalf("manual override was disabled: %+v", changed)
+	if changed.DeletedMembers != 0 {
+		t.Fatalf("manual override was deleted: %+v", changed)
 	}
 	got, _ := db.RouteMember.GetByID(memberA.ID)
 	if !got.Enabled || !got.ManualOverride || got.Priority != 99 || got.Weight != 5 {
@@ -318,7 +318,7 @@ func TestDiscoveryReconcileIsIdempotentAndProtectsManualMembers(t *testing.T) {
 	}
 }
 
-func TestDiscoveryReconcileDisablesAndReenablesAutomaticMember(t *testing.T) {
+func TestDiscoveryReconcileRemovesAndRecreatesAutomaticMember(t *testing.T) {
 	db := openTestDB(t)
 	channelID, _ := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 2, Weight: 10, Status: domain.StatusEnabled})
 	base := store.ReconcileInput{ChannelID: channelID, Models: []string{"model-a"}, Source: "new-api", CheckedAt: time.Now()}
@@ -335,17 +335,27 @@ func TestDiscoveryReconcileDisablesAndReenablesAutomaticMember(t *testing.T) {
 	}
 	base.Models = nil
 	result, err := db.DiscoveredModel.Reconcile(t.Context(), base)
-	if err != nil || result.DisabledMembers != 1 {
+	if err != nil || result.DeletedMembers != 1 || result.DeletedRoutes != 1 {
 		t.Fatalf("empty reconcile: %+v err=%v", result, err)
+	}
+	if got, _ := db.RouteMember.GetByID(member.ID); got != nil {
+		t.Fatalf("automatic member was not deleted: %+v", got)
+	}
+	if got, _ := db.Route.GetByModel("model-a"); got != nil {
+		t.Fatalf("empty route was not deleted: %+v", got)
 	}
 	base.Models = []string{"model-a"}
 	result, err = db.DiscoveredModel.Reconcile(t.Context(), base)
-	if err != nil || result.EnabledMembers != 1 {
+	if err != nil || result.CreatedRoutes != 1 || result.CreatedMembers != 1 {
 		t.Fatalf("restore reconcile: %+v err=%v", result, err)
 	}
-	got, _ := db.RouteMember.GetByID(member.ID)
-	if !got.Enabled || got.Priority != 88 || got.Weight != 4 {
-		t.Fatalf("automatic member defaults were reset: %+v", got)
+	newRoute, _ := db.Route.GetByModel("model-a")
+	if newRoute == nil {
+		t.Fatal("route was not recreated")
+	}
+	restored, _ := db.RouteMember.ListByRoute(newRoute.ID)
+	if len(restored) != 1 || !restored[0].Enabled || restored[0].Priority != 2 || restored[0].Weight != 10 {
+		t.Fatalf("member was not recreated with channel defaults: %+v", restored)
 	}
 }
 
@@ -367,7 +377,7 @@ func TestDiscoveryReconcileDoesNotChangeManualMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	member, _ := db.RouteMember.GetByID(memberID)
-	if result.DisabledMembers != 0 || !member.Enabled || member.Auto || member.Priority != 42 || member.Weight != 9 {
+	if result.DeletedMembers != 0 || !member.Enabled || member.Auto || member.Priority != 42 || member.Weight != 9 {
 		t.Fatalf("manual member changed: result=%+v member=%+v", result, member)
 	}
 }
@@ -556,6 +566,76 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRouteMemberRecoverExpired(t *testing.T) {
+	db := openTestDB(t)
+	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "recover-model", Enabled: true})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "channel", Status: domain.StatusEnabled})
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fail with a cooldown that has already expired (past timestamp).
+	past := time.Now().UTC().Add(-10 * time.Minute)
+	if err := db.RouteMember.RecordFailure(memberID, past, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	member, err := db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.FailCount != 1 || member.CooldownUntil == nil {
+		t.Fatalf("expected recorded failure, got %+v", member)
+	}
+	// RecoverExpired clears the active health state after the penalty ends.
+	if err := db.RouteMember.RecoverExpired(); err != nil {
+		t.Fatal(err)
+	}
+	member, err = db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.CooldownUntil != nil || member.FailCount != 0 || member.LastError != "" {
+		t.Fatalf("expired cooldown not recovered: %+v", member)
+	}
+	// A future cooldown must NOT be cleared.
+	future := time.Now().UTC().Add(5 * time.Minute)
+	if err := db.RouteMember.RecordFailure(memberID, future, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RouteMember.RecoverExpired(); err != nil {
+		t.Fatal(err)
+	}
+	member, err = db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.CooldownUntil == nil || member.FailCount != 1 {
+		t.Fatalf("future cooldown must survive, got %+v", member)
+	}
+
+	// A separate member with an expired prior cooldown starts a fresh base cycle.
+	resetChannelID, _ := db.Channel.Create(&domain.Channel{Name: "reset-channel", Status: domain.StatusEnabled})
+	resetMemberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: resetChannelID, Enabled: true, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondPast := time.Now().UTC().Add(-10 * time.Minute)
+	if err := db.RouteMember.RecordFailure(resetMemberID, secondPast, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	secondNow := time.Now().UTC()
+	if err := db.RouteMember.RecordFailure(resetMemberID, secondNow, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	resetMember, err := db.RouteMember.GetByID(resetMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resetMember.FailCount != 1 || resetMember.CooldownUntil == nil || !resetMember.CooldownUntil.Equal(secondNow.Add(time.Minute)) {
+		t.Fatalf("expired failure cycle did not reset backoff: %+v", resetMember)
+	}
+}
+
 func TestChannelUpdatePropagatesDefaultsOnlyToAutomaticMembers(t *testing.T) {
 	db := openTestDB(t)
 	channelID, err := db.Channel.Create(&domain.Channel{Name: "defaults", Priority: 1, Weight: 10, Status: domain.StatusEnabled})
@@ -714,6 +794,44 @@ func TestProxyLogListFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	containsOnly(mustIDs(page2), id2, id1)
+
+	// Route association: a log with route_id surfaces the route pattern.
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "gpt-route-1", Enabled: true})
+	if err != nil {
+		t.Fatalf("route create: %v", err)
+	}
+	idRouted, err := db.ProxyLog.Insert(&domain.ProxyLog{
+		RequestID: "req-routed", ChannelID: chA, RouteID: routeID, Model: "gpt-a",
+		Status: 200, LatencyMs: 5, Attempt: 1,
+	})
+	if err != nil {
+		t.Fatalf("routed insert: %v", err)
+	}
+	routed, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Model: "gpt-a", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *domain.ProxyLog
+	for i := range routed {
+		if routed[i].ID == idRouted {
+			found = &routed[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("routed log not returned")
+	}
+	if found.RouteID != routeID || found.RoutePattern != "gpt-route-1" {
+		t.Fatalf("route join got route_id=%d pattern=%q, want %d / gpt-route-1", found.RouteID, found.RoutePattern, routeID)
+	}
+	// Unrouted logs keep an empty pattern (not NULL).
+	unrouted, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Model: "gpt-b", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unrouted) > 0 && unrouted[0].RoutePattern != "" {
+		t.Fatalf("unrouted log got pattern %q, want empty", unrouted[0].RoutePattern)
+	}
 
 	// Site + channel AND: channel on other site yields empty.
 	empty, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{SiteID: &siteA, ChannelID: &chB, Limit: 100})

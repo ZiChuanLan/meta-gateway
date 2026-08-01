@@ -100,7 +100,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			  AND pool_cred.secret_enc <> ''
 			  AND lower(pool_cred.kind) = 'api_key'
 		) THEN 1 ELSE 0 END,
-		(SELECT COUNT(*) FROM discovered_models dm WHERE dm.channel_id = c.id AND dm.available = 1),
+		(SELECT COUNT(DISTINCT rm.route_id) FROM route_members rm WHERE rm.channel_id = c.id),
 		(SELECT dm.checked_at FROM discovered_models dm WHERE dm.channel_id = c.id ORDER BY dm.checked_at DESC, dm.id DESC LIMIT 1),
 		COALESCE((SELECT dm.latency_ms FROM discovered_models dm WHERE dm.channel_id = c.id ORDER BY dm.checked_at DESC, dm.id DESC LIMIT 1), 0),
 		COALESCE((SELECT dm.source FROM discovered_models dm WHERE dm.channel_id = c.id ORDER BY dm.checked_at DESC, dm.id DESC LIMIT 1), ''),

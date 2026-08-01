@@ -222,6 +222,7 @@ function ProxyLogsPanel() {
 								headers={[
 									t("common.time"),
 									t("common.model"),
+									t("common.route"),
 									t("common.channel"),
 									t("common.status"),
 									t("common.tokens"),
@@ -248,6 +249,20 @@ function ProxyLogsPanel() {
 												<small className="mono">{log.request_id}</small>
 											</td>
 											<td>
+												{log.route_id ? (
+													<Link
+														to={`/models?model=${encodeURIComponent(
+															log.route_pattern ?? "",
+														)}`}
+														title={log.route_pattern || undefined}
+													>
+														<code>#{log.route_id}</code>
+													</Link>
+												) : (
+													"—"
+												)}
+											</td>
+											<td>
 												{channelName.get(log.channel_id) ??
 													`#${log.channel_id}`}
 											</td>
@@ -257,6 +272,11 @@ function ProxyLogsPanel() {
 														log.status >= 400 ? "failed" : String(log.status)
 													}
 												/>
+												{log.attempt > 1 ? (
+													<span className="log-retry-mark" title={t("logsPage.retried")}>
+														{t("logsPage.retried")}
+													</span>
+												) : null}
 											</td>
 											<td>{log.total_tokens ? log.total_tokens : "—"}</td>
 											<td>{t("common.ms", { n: log.latency_ms })}</td>
@@ -310,6 +330,25 @@ function ProxyLogsPanel() {
 												`#${selected.channel_id}`}
 										</span>
 									</div>
+									{selected.route_id ? (
+										<div>
+											<span className="label">{t("common.route")}</span>
+											<span>
+												<Link
+													to={`/models?model=${encodeURIComponent(
+														selected.route_pattern ?? "",
+													)}`}
+												>
+													<code>
+														#{selected.route_id}
+														{selected.route_pattern
+															? ` · ${selected.route_pattern}`
+															: ""}
+													</code>
+												</Link>
+											</span>
+										</div>
+									) : null}
 									<div>
 										<span className="label">{t("common.latency")}</span>
 										<span>{t("common.ms", { n: selected.latency_ms })}</span>
@@ -324,7 +363,12 @@ function ProxyLogsPanel() {
 									</div>
 									<div>
 										<span className="label">{t("common.attemptCol")}</span>
-										<span>{selected.attempt}</span>
+										<span>
+											{selected.attempt}
+											{selected.attempt > 1 ? (
+												<StatusBadge value="retried" />
+											) : null}
+										</span>
 									</div>
 									<div>
 										<span className="label">{t("common.errorBrief")}</span>

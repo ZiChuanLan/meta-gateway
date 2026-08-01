@@ -63,6 +63,46 @@ func TestSecureCompareAnyLengthSafe(t *testing.T) {
 	}
 }
 
+func TestModelFilterAllows(t *testing.T) {
+	// No restriction at all.
+	if !ParseModelFilter("", "").Allows("gpt-4o") {
+		t.Fatal("empty filter should allow everything")
+	}
+	// Allowlist only permits listed models.
+	allowOnly := ParseModelFilter("gpt-4o, gpt-4o-mini", "")
+	if !allowOnly.Allows("gpt-4o") || !allowOnly.Allows("gpt-4o-mini") {
+		t.Fatal("allowlisted models should be permitted")
+	}
+	if allowOnly.Allows("claude-3") {
+		t.Fatal("non-allowlisted model must be blocked")
+	}
+	// Denylist blocks even allowlisted models.
+	withDeny := ParseModelFilter("gpt-4o, claude-3", "claude-3")
+	if withDeny.Allows("claude-3") {
+		t.Fatal("denylisted model must be blocked even when allowlisted")
+	}
+	if !withDeny.Allows("gpt-4o") {
+		t.Fatal("allowlisted and non-denylisted model should pass")
+	}
+	// Whitespace and duplicates are handled.
+	noisy := ParseModelFilter("  gpt-4o , gpt-4o , claude-3 ", " x ")
+	if len(noisy.Allowlist) != 2 || len(noisy.Denylist) != 1 {
+		t.Fatalf("expected dedup, got allow=%v deny=%v", noisy.Allowlist, noisy.Denylist)
+	}
+}
+
+func TestModelFilterEmpty(t *testing.T) {
+	if !(*ModelFilter)(nil).Empty() {
+		t.Fatal("nil filter should be empty")
+	}
+	if !ParseModelFilter("", "").Empty() {
+		t.Fatal("empty lists should be empty")
+	}
+	if ParseModelFilter("gpt-4o", "").Empty() {
+		t.Fatal("allowlist should not be empty")
+	}
+}
+
 func TestDownstreamAuthAttachesScopes(t *testing.T) {
 	db, err := store.Open(t.TempDir())
 	if err != nil {

@@ -162,9 +162,14 @@ type DownstreamKey struct {
 	// QuotaUsedTokens is the cumulative total tokens charged to this key.
 	QuotaUsedTokens int64 `json:"quota_used_tokens"`
 	// Optional display prices (currency-agnostic units per 1k tokens).
-	PricePromptPer1k     float64   `json:"price_prompt_per_1k"`
-	PriceCompletionPer1k float64   `json:"price_completion_per_1k"`
-	CreatedAt            time.Time `json:"created_at"`
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	// ModelAllowlist, when non-empty, restricts this key to the listed models.
+	// ModelDenylist blocks the listed models even if they are allowlisted.
+	// Both are comma-separated model names.
+	ModelAllowlist string    `json:"model_allowlist,omitempty"`
+	ModelDenylist  string    `json:"model_denylist,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +181,8 @@ type ProxyLog struct {
 	ID               int64     `json:"id"`
 	RequestID        string    `json:"request_id"`
 	ChannelID        int64     `json:"channel_id"`
+	RouteID          int64     `json:"route_id,omitempty"`
+	RoutePattern     string    `json:"route_pattern,omitempty"`
 	Model            string    `json:"model"`
 	Status           int       `json:"status"`
 	LatencyMs        int       `json:"latency_ms"`

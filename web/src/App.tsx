@@ -34,6 +34,7 @@ import {
 	StatusBadge,
 } from "./components/ui";
 import { Channels } from "./features/Channels";
+import { ChannelModels } from "./features/ChannelModels";
 import { Checkins } from "./features/Checkins";
 import { Keys } from "./features/Keys";
 import { Logs } from "./features/Logs";
@@ -616,6 +617,7 @@ function AuthenticatedShell({
 				<Routes>
 					<Route index element={<Channels />} />
 					<Route path="channels" element={<Navigate to="/" replace />} />
+					<Route path="models/channel/:channelId" element={<ChannelModels />} />
 					<Route path="models" element={<Models />} />
 					<Route path="keys" element={<Keys />} />
 					<Route path="logs" element={<Logs />} />

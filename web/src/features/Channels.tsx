@@ -1,5 +1,6 @@
 import {
 	Cable,
+	ChevronDown,
 	ExternalLink,
 	KeyRound,
 	Pencil,
@@ -16,10 +17,18 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { Channel, ChannelOverview, Site } from "../api/types";
+import type {
+	Channel,
+	ChannelOverview,
+	RouteOverview,
+	Site,
+} from "../api/types";
+import { ChannelModelsPanel } from "./ChannelModels";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
+import { Drawer } from "../components/Drawer";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
+import { SearchableSelect, type SelectOption } from "../components/SearchableSelect";
 import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
 import { ResultStrip } from "../components/ResultStrip";
@@ -50,7 +59,19 @@ const INVALIDATE = [
 	["models"],
 	["routes"],
 	["route-overviews"],
+	["discovered-models"],
 ] as const;
+
+const TYPE_OPTIONS: SelectOption[] = [
+	...CONNECTION_TYPE_OPTIONS.map((option) => ({
+		value: option.value,
+		label: option.label,
+		group: option.group,
+	})),
+	{ value: "__custom__", label: "Custom…", group: "other" },
+];
+
+const TYPE_GROUPS = ["core", "relay", "other"];
 
 type ConnectionHealthFilter = "all" | "ready" | "attention" | "missing_key";
 
@@ -176,9 +197,14 @@ export function Channels() {
 		queryKey: ["sites"],
 		queryFn: ({ signal }) => service.sites(signal),
 	});
+	const routeOverviewsQuery = useQuery({
+		queryKey: ["route-overviews"],
+		queryFn: ({ signal }) => service.routeOverviews(signal),
+	});
 	const [addOpen, setAddOpen] = useState(false);
 	const [remove, setRemove] = useState<Channel | null>(null);
 	const [edit, setEdit] = useState<Channel | null>(null);
+	const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
 	const [contextMenu, setContextMenu] = useState<{
 		channelId: number;
 		top: number;
@@ -526,7 +552,7 @@ export function Channels() {
 		});
 	}, [overviews.data, query, siteById, healthFilter]);
 
-	const pagination = useClientPagination(rows, 12);
+	const pagination = useClientPagination(rows);
 	const pageRows = pagination.pageItems;
 
 	useEffect(() => {
@@ -1215,6 +1241,7 @@ export function Channels() {
 			{edit ? (
 				<EditChannelDialog
 					value={edit}
+					routeOverviews={routeOverviewsQuery.data}
 					site={
 						edit.site_id != null ? siteById.get(edit.site_id) : undefined
 					}
@@ -1247,7 +1274,10 @@ export function Channels() {
 						addApiKeyCredential.error ??
 						deleteApiKeyCredential.error
 					}
-					onClose={() => setEdit(null)}
+					onClose={() => {
+						setEdit(null);
+						setModelsChannel(null);
+					}}
 					onSave={(value) => saveEdit.mutate(value)}
 					onToggleKey={(id, enabled) =>
 						setCredentialStatus.mutate({
@@ -1267,7 +1297,41 @@ export function Channels() {
 						syncKeys.mutate(edit.id);
 					}}
 					syncKeysPending={syncKeys.isPending}
+					onManageModels={() => {
+						setModelsChannel(edit);
+					}}
 				/>
+			) : null}
+			{modelsChannel ? (
+				<Drawer
+					title={t("channels.modelsSection")}
+					width={780}
+					rightOffset={520}
+					plain
+					onClose={() => setModelsChannel(null)}
+					footer={
+						<Button
+							variant="secondary"
+							onClick={() => setModelsChannel(null)}
+						>
+							{t("common.close")}
+						</Button>
+					}
+				>
+					<ChannelModelsPanel
+						channelId={modelsChannel.id}
+						header={
+							<div className="channel-models-panel-head">
+								<div>
+									<p className="page-kicker">{modelsChannel.name}</p>
+									<p className="detail-section-empty is-quiet">
+										{t("channels.modelsManageHint")}
+									</p>
+								</div>
+							</div>
+						}
+					/>
+				</Drawer>
 			) : null}
 			{remove ? (
 				<ConfirmDialog
@@ -1416,6 +1480,7 @@ function ChannelDetail({
 				</Button>
 				<p className="detail-actions-hint is-quiet">{t("channels.pathHint")}</p>
 			</div>
+
 		</>
 	);
 }
@@ -1523,59 +1588,36 @@ function AddChannelDialog({
 			</div>
 			<button
 				type="button"
-				className="advanced-toggle"
+				className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
 				onClick={() => setShowAdvanced((value) => !value)}
 			>
+				<ChevronDown size={13} />
 				{showAdvanced ? t("channels.hideAdvanced") : t("channels.showAdvanced")}
 			</button>
 			{showAdvanced ? (
 				<div className="form-grid form-grid-single">
 					<Field label={t("common.type")}>
-						<select
-							value={
-								CONNECTION_TYPE_OPTIONS.some(
-									(item) => item.value === typeHint && item.value !== "custom",
-								)
-									? typeHint
-									: "custom"
-							}
-							onChange={(e) => {
-								const next = e.target.value;
-								if (next === "custom") {
-									setTypeHint("");
-									return;
-								}
-								setTypeHint(next);
-							}}
+						<SearchableSelect
+							options={TYPE_OPTIONS}
+							groups={TYPE_GROUPS}
+							value={typeHint}
+							onChange={setTypeHint}
 							disabled={pending}
-						>
-							{CONNECTION_TYPE_OPTIONS.map((item) => (
-								<option key={item.value} value={item.value}>
-									{item.label}
-								</option>
-							))}
-						</select>
-						{!CONNECTION_TYPE_OPTIONS.some(
-							(item) => item.value === typeHint && item.value !== "custom",
-						) ? (
-							<input
-								className="type-custom-input"
-								value={typeHint}
-								onChange={(e) => setTypeHint(e.target.value)}
-								placeholder="custom-type-id"
-								disabled={pending}
-							/>
-						) : null}
+							allowCustom
+							placeholder={t("common.type")}
+						/>
 					</Field>
 				</div>
 			) : null}
+
 			{error ? <ErrorState error={error} /> : null}
-		</Dialog>
+	</Dialog>
 	);
 }
 
 function EditChannelDialog({
 	value,
+	routeOverviews,
 	site,
 	credentials,
 	credential,
@@ -1590,8 +1632,10 @@ function EditChannelDialog({
 	addApiKeyPending,
 	onSyncKeys,
 	syncKeysPending,
+	onManageModels,
 }: {
 	value: Channel;
+	routeOverviews?: RouteOverview[];
 	site?: Site;
 	credentials: Array<{
 		id: number;
@@ -1645,6 +1689,7 @@ function EditChannelDialog({
 	addApiKeyPending?: boolean;
 	onSyncKeys: () => void;
 	syncKeysPending?: boolean;
+	onManageModels?: () => void;
 }) {
 	const { t } = useI18n();
 	const inheritedBase = !value.base_url.trim();
@@ -1661,12 +1706,35 @@ function EditChannelDialog({
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const canSubmit = Boolean(name.trim() && baseUrl.trim());
 	const apiKeys = credentials.filter((item) => item.kind === "api_key");
+	const service = api(useSession().client!);
+	const discovered = useQuery({
+		queryKey: ["discovered-models", value.id],
+		queryFn: ({ signal }) => service.discoveredModels(value.id, signal),
+	});
+	const editModels = discovered.data ?? [];
+	const aliasOf = (realModel: string) =>
+		routeOverviews?.find((overview) => {
+			if (!overview.route.mapping_json) return false;
+			try {
+				const parsed = JSON.parse(overview.route.mapping_json) as {
+					real?: string;
+				};
+				return (
+					parsed.real === realModel &&
+					(overview.members ?? []).some(
+						(member) => member.member.channel_id === value.id,
+					)
+				);
+			} catch {
+				return false;
+			}
+		});
 
 	return (
-		<Dialog
+		<Drawer
 			title={t("channels.edit")}
 			onClose={onClose}
-			actions={
+			footer={
 				<>
 					<Button variant="secondary" onClick={onClose} disabled={pending}>
 						{t("common.cancel")}
@@ -1694,6 +1762,7 @@ function EditChannelDialog({
 				</>
 			}
 		>
+			<>
 			<p className="channel-form-intro">{t("channels.editHintDual")}</p>
 			<div className="form-grid form-grid-single">
 				<Field label={t("common.name")}>
@@ -1879,51 +1948,69 @@ function EditChannelDialog({
 				</Field>
 			</section>
 
+			<section className="detail-section" aria-label={t("channels.modelsSection")}>
+				<div className="detail-section-head">
+					<h3>{t("channels.modelsSection")}</h3>
+					<span className="detail-section-count">{editModels.length}</span>
+					<button
+						type="button"
+						className="detail-section-expand"
+						onClick={onManageModels}
+					>
+						<ExternalLink size={12} />
+						{t("channels.modelsManage")}
+					</button>
+				</div>
+				{discovered.isLoading ? (
+					<p className="detail-section-empty is-quiet">
+						{t("common.loading")}…
+					</p>
+				) : editModels.length === 0 ? (
+					<p className="detail-section-empty is-quiet">
+						{t("channels.modelsEmpty")}
+					</p>
+				) : (
+					<ul className="channel-model-list is-compact">
+						{editModels.map((model) => {
+							const existingAlias = aliasOf(model.model_name);
+							const alias = existingAlias?.route.model_pattern ?? "";
+							return (
+								<li key={model.id} className="channel-model-row">
+									<span className="mono truncate" title={model.model_name}>
+										{model.model_name}
+									</span>
+									{alias ? (
+										<span className="capability-chip is-key">
+											{alias}
+										</span>
+									) : null}
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</section>
+
 			<button
 				type="button"
-				className="advanced-toggle"
+				className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
 				onClick={() => setShowAdvanced((v) => !v)}
 			>
+				<ChevronDown size={13} />
 				{showAdvanced ? t("channels.hideAdvanced") : t("channels.showAdvanced")}
 			</button>
 			{showAdvanced ? (
 				<div className="form-grid">
 					<Field label={t("common.type")}>
-						<select
-							value={
-								CONNECTION_TYPE_OPTIONS.some(
-									(item) => item.value === typeHint && item.value !== "custom",
-								)
-									? typeHint
-									: "custom"
-							}
-							onChange={(e) => {
-								const next = e.target.value;
-								if (next === "custom") {
-									setTypeHint("");
-									return;
-								}
-								setTypeHint(next);
-							}}
+						<SearchableSelect
+							options={TYPE_OPTIONS}
+							groups={TYPE_GROUPS}
+							value={typeHint}
+							onChange={setTypeHint}
 							disabled={pending}
-						>
-							{CONNECTION_TYPE_OPTIONS.map((item) => (
-								<option key={item.value} value={item.value}>
-									{item.label}
-								</option>
-							))}
-						</select>
-						{!CONNECTION_TYPE_OPTIONS.some(
-							(item) => item.value === typeHint && item.value !== "custom",
-						) ? (
-							<input
-								className="type-custom-input"
-								value={typeHint}
-								onChange={(e) => setTypeHint(e.target.value)}
-								placeholder="custom-type-id"
-								disabled={pending}
-							/>
-						) : null}
+							allowCustom
+							placeholder={t("common.type")}
+						/>
 					</Field>
 					<Field label={t("common.priority")} hint={t("channels.priorityHint")}>
 						<input
@@ -1943,7 +2030,9 @@ function EditChannelDialog({
 					</Field>
 				</div>
 			) : null}
+
 			{error ? <ErrorState error={error} /> : null}
-		</Dialog>
+			</>
+		</Drawer>
 	);
 }

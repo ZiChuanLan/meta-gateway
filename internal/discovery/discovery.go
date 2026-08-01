@@ -40,7 +40,8 @@ type RefreshResult struct {
 	CreatedRoutes   int       `json:"created_routes"`
 	CreatedMembers  int       `json:"created_members"`
 	EnabledMembers  int       `json:"enabled_members"`
-	DisabledMembers int       `json:"disabled_members"`
+	DeletedMembers  int       `json:"deleted_members"`
+	DeletedRoutes   int       `json:"deleted_routes"`
 }
 
 type ProbeResult struct {
@@ -240,7 +241,7 @@ func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult,
 		ChannelID: probe.ChannelID, Adapter: probe.Adapter, Models: probe.Models,
 		LatencyMs: probe.LatencyMs, CheckedAt: probe.CheckedAt,
 		CreatedRoutes: reconciled.CreatedRoutes, CreatedMembers: reconciled.CreatedMembers,
-		EnabledMembers: reconciled.EnabledMembers, DisabledMembers: reconciled.DisabledMembers,
+		EnabledMembers: reconciled.EnabledMembers, DeletedMembers: reconciled.DeletedMembers,
 	}, nil
 }
 

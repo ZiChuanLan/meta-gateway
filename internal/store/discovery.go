@@ -27,7 +27,8 @@ type ReconcileResult struct {
 	CreatedRoutes   int `json:"created_routes"`
 	CreatedMembers  int `json:"created_members"`
 	EnabledMembers  int `json:"enabled_members"`
-	DisabledMembers int `json:"disabled_members"`
+	DeletedMembers  int `json:"deleted_members"`
+	DeletedRoutes   int `json:"deleted_routes"`
 }
 
 func (s *DiscoveredModelStore) List(channelID *int64) ([]domain.DiscoveredModel, error) {
@@ -148,12 +149,31 @@ func (s *DiscoveredModelStore) Reconcile(ctx context.Context, input ReconcileInp
 		if _, exists := current[model]; exists {
 			continue
 		}
-		res, execErr := tx.ExecContext(ctx, `UPDATE route_members SET enabled = 0, updated_at = datetime('now') WHERE channel_id = ? AND auto = 1 AND manual_override = 0 AND enabled = 1 AND route_id = (SELECT id FROM routes WHERE model_pattern = ?)`, input.ChannelID, model)
+		// Upstream models that disappeared are dropped from automatic routing:
+		// auto-created members are removed (manual_override=1 members survive),
+		// and the route itself is deleted once no member references it anymore.
+		res, execErr := tx.ExecContext(ctx, `DELETE FROM route_members WHERE channel_id = ? AND auto = 1 AND manual_override = 0 AND route_id = (SELECT id FROM routes WHERE model_pattern = ?)`, input.ChannelID, model)
 		if execErr != nil {
-			return result, fmt.Errorf("discovery reconcile disable stale member: %w", execErr)
+			return result, fmt.Errorf("discovery reconcile remove stale member: %w", execErr)
 		}
 		if count, countErr := res.RowsAffected(); countErr == nil {
-			result.DisabledMembers += int(count)
+			result.DeletedMembers += int(count)
+		}
+		var routeID int64
+		rowErr := tx.QueryRowContext(ctx, `SELECT id FROM routes WHERE model_pattern = ?`, model).Scan(&routeID)
+		if rowErr == nil {
+			var remaining int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM route_members WHERE route_id = ?`, routeID).Scan(&remaining); err != nil {
+				return result, fmt.Errorf("discovery reconcile count route members: %w", err)
+			}
+			if remaining == 0 {
+				if _, delErr := tx.ExecContext(ctx, `DELETE FROM routes WHERE id = ?`, routeID); delErr != nil {
+					return result, fmt.Errorf("discovery reconcile remove empty route: %w", delErr)
+				}
+				result.DeletedRoutes++
+			}
+		} else if rowErr != sql.ErrNoRows {
+			return result, fmt.Errorf("discovery reconcile lookup route: %w", rowErr)
 		}
 	}
 

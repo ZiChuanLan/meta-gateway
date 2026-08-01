@@ -4,6 +4,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -155,6 +156,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			Priority:    candidate.Member.Priority,
 			Weight:      candidate.Member.Weight,
 		}
+		var result *relay.Result
+		var category string
+		var retryable bool
 		protocol := s.channelProtocol(candidate.Channel)
 		wirePath := req.OpenAIPath
 		if protocol == "anthropic" {
@@ -168,19 +172,47 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, wirePath, protocol)
 		if err != nil {
-			return &relay.Result{Err: err}, meta
+			// Channel config is broken (e.g. empty base URL): count it as a
+			// retryable failure so the request fails over to the next channel
+			// instead of aborting the whole attempt loop.
+			result = &relay.Result{Err: err}
+			category = "invalid_base_url"
+			retryable = true
+			s.recordAttempt(req, candidate, attempt+1, result, category)
+			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
+			}
+			excluded[candidate.Channel.ID] = struct{}{}
+			last = preserve(result)
+			lastMeta = meta
+			continue
 		}
 		// Aggregate all enabled site API keys; failover keys before leaving the channel.
 		apiKeys, err := s.resolveAPIKeyPool(candidate.Channel)
 		if err != nil || len(apiKeys) == 0 {
-			return &relay.Result{Err: ErrCredential}, meta
+			result = &relay.Result{Err: ErrCredential}
+			category = "no_credential"
+			retryable = true
+			s.recordAttempt(req, candidate, attempt+1, result, category)
+			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
+			}
+			excluded[candidate.Channel.ID] = struct{}{}
+			last = preserve(result)
+			lastMeta = meta
+			continue
 		}
 
-		var result *relay.Result
-		var category string
-		var retryable bool
+		// Channel-scoped model aliases: when the matched route carries a
+		// mapping_json of {"real":"…"}, clients requested the alias and we
+		// must rewrite the body back to the upstream's real model name.
+		mappedBody := req.Body
+		if mappingJSON := strings.TrimSpace(decision.RouteMappingJSON); mappingJSON != "" {
+			mappedBody = rewriteModelName(req.Body, req.Model, mappingJSON)
+		}
+
 		for keyIndex, apiKey := range apiKeys {
-			requestBody := req.Body
+			requestBody := mappedBody
 			if protocol == "anthropic" {
 				if req.OpenAIPath == "messages" {
 					// Native Anthropic Messages clients already send Messages JSON.
@@ -403,6 +435,38 @@ func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath, protocol s
 	return upstreamURL, nil
 }
 
+// rewriteModelName rewrites the JSON "model" field of a request body from the
+// client-facing alias back to the upstream's real model name. mappingJSON is
+// the route's mapping_json value, expected to be {"real":"upstream-model"}.
+// It is a no-op when the body is not JSON, the field is absent, or it does not
+// match the requested alias.
+func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
+	if len(body) == 0 || requestedModel == "" || mappingJSON == "" {
+		return body
+	}
+	var mapping struct {
+		Real string `json:"real"`
+	}
+	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil || mapping.Real == "" {
+		return body
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		// Not JSON (multipart etc.): leave untouched.
+		return body
+	}
+	current, ok := payload["model"].(string)
+	if !ok || current != requestedModel {
+		return body
+	}
+	payload["model"] = mapping.Real
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return rewritten
+}
+
 func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string) {
 	status := result.StatusCode
 	if result.Err != nil {
@@ -417,6 +481,7 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 	_, err := s.db.ProxyLog.Insert(&domain.ProxyLog{
 		RequestID:        req.RequestID,
 		ChannelID:        candidate.Channel.ID,
+		RouteID:          candidate.Member.RouteID,
 		Model:            req.Model,
 		Status:           status,
 		LatencyMs:        result.LatencyMs,
@@ -491,9 +556,17 @@ func classify(result *relay.Result) (string, bool) {
 }
 
 func isRetryableStatus(status int) bool {
+	// Any 4xx is retryable: a channel that rejects the request (bad auth, model
+	// unavailable, quota, malformed upstream mapping) should fail over to the
+	// next channel instead of surfacing the error immediately.
+	if status >= 400 && status < 500 {
+		return true
+	}
 	switch status {
 	case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError,
-		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout,
+		// Cloudflare origin-down / overload codes.
+		528, 529, 530:
 		return true
 	default:
 		return false

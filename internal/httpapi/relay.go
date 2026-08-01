@@ -69,9 +69,13 @@ func (h *RelayHandler) getModels(w http.ResponseWriter, r *http.Request) {
 	}
 	seen := map[string]struct{}{}
 	var models []map[string]interface{}
+	modelFilter := auth.DownstreamModelFilter(r)
 	add := func(id string) {
 		id = strings.TrimSpace(id)
 		if id == "" {
+			return
+		}
+		if modelFilter != nil && !modelFilter.Allows(id) {
 			return
 		}
 		if _, ok := seen[id]; ok {
@@ -212,6 +216,10 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
+	if filter := auth.DownstreamModelFilter(r); filter != nil && !filter.Allows(modelName) {
+		writeError(w, http.StatusForbidden, "model is not allowed for this token")
+		return
+	}
 
 	requestID, _ := r.Context().Value(chimw.RequestIDKey).(string)
 	keyID, _ := auth.DownstreamKeyID(r)
@@ -337,6 +345,10 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	}
 	if strings.TrimSpace(modelName) == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	if filter := auth.DownstreamModelFilter(r); filter != nil && !filter.Allows(modelName) {
+		writeError(w, http.StatusForbidden, "model is not allowed for this token")
 		return
 	}
 	if stream && (openAIPath == "chat/completions" || openAIPath == "completions") {

@@ -37,6 +37,7 @@ type Evaluation struct {
 type Explanation struct {
 	Model            string       `json:"model"`
 	RouteID          int64        `json:"route_id"`
+	RouteMappingJSON string       `json:"route_mapping_json,omitempty"`
 	EvaluatedAt      time.Time    `json:"evaluated_at"`
 	SelectedPriority *int         `json:"selected_priority,omitempty"`
 	Candidates       []Evaluation `json:"candidates"`
@@ -130,6 +131,7 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 	if route == nil {
 		return Explanation{}, ErrRouteNotFound
 	}
+	mappingJSON := route.MappingJSON
 	now := s.clock.Now().UTC()
 	evaluations := make([]Evaluation, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -161,7 +163,13 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		}
 		return left.ID < right.ID
 	})
-	return Explanation{Model: model, RouteID: route.ID, EvaluatedAt: now, Candidates: evaluations}, nil
+	return Explanation{
+		Model:            model,
+		RouteID:          route.ID,
+		RouteMappingJSON: mappingJSON,
+		EvaluatedAt:      now,
+		Candidates:       evaluations,
+	}, nil
 }
 
 func (s *Selector) pick(candidates []domain.RoutingCandidate) domain.RoutingCandidate {

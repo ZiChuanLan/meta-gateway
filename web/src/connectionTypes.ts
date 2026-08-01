@@ -33,8 +33,3 @@ export const CONNECTION_TYPE_OPTIONS: ConnectionTypeOption[] = [
 	{ value: "wong-gongyi", label: "Wong Gongyi", group: "relay" },
 	{ value: "custom", label: "Custom…", group: "other" },
 ];
-
-export function connectionTypeLabel(value: string): string {
-	const hit = CONNECTION_TYPE_OPTIONS.find((item) => item.value === value);
-	return hit?.label ?? value;
-}

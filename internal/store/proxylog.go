@@ -33,8 +33,8 @@ func (s *ProxyLogStore) Insert(log *domain.ProxyLog) (int64, error) {
 	if log.Stream {
 		stream = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, stream, path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		log.RequestID, log.ChannelID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief,
+	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, stream, path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		log.RequestID, log.ChannelID, log.RouteID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief,
 		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, stream, log.Path)
 	if err != nil {
 		return 0, fmt.Errorf("proxylog insert: %w", err)
@@ -91,8 +91,11 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 		// site filter still requires a matching channels.site_id row.
 		from = "proxy_logs pl INNER JOIN channels c ON c.id = pl.channel_id"
 	}
+	// Always LEFT JOIN routes so the route pattern (model_pattern) can be shown
+	// alongside each log row; route_id 0 / missing routes render as empty.
+	from += " LEFT JOIN routes rt ON rt.id = pl.route_id"
 
-	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief,
+	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.route_id, COALESCE(rt.model_pattern, ''), pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief,
 		pl.downstream_key_id, pl.prompt_tokens, pl.completion_tokens, pl.total_tokens, pl.stream, pl.path, pl.created_at
 FROM ` + from + `
 WHERE ` + strings.Join(where, " AND ") + `
@@ -110,7 +113,7 @@ LIMIT ?`
 		var r domain.ProxyLog
 		var stream int
 		if err := rows.Scan(
-			&r.ID, &r.RequestID, &r.ChannelID, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief,
+			&r.ID, &r.RequestID, &r.ChannelID, &r.RouteID, &r.RoutePattern, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief,
 			&r.DownstreamKeyID, &r.PromptTokens, &r.CompletionTokens, &r.TotalTokens, &stream, &r.Path, scanTime(&r.CreatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("proxylog scan: %w", err)

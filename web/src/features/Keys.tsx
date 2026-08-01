@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import type { CreatedDownstreamKey, DownstreamKey } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
+import { ModelPicker } from "../components/ModelPicker";
 import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
 import { StatGrid } from "../components/StatGrid";
@@ -52,6 +53,21 @@ export function Keys() {
 		queryKey: ["keys"],
 		queryFn: ({ signal }) => service.keys(signal),
 	});
+	const discovered = useQuery({
+		queryKey: ["discovered-models"],
+		queryFn: ({ signal }) => service.discoveredModels(undefined, signal),
+	});
+	const allModels = useMemo(() => {
+		const seen = new Set<string>();
+		const out: string[] = [];
+		for (const model of discovered.data ?? []) {
+			const name = model.model_name.trim();
+			if (!name || seen.has(name)) continue;
+			seen.add(name);
+			out.push(name);
+		}
+		return out.sort((a, b) => a.localeCompare(b));
+	}, [discovered.data]);
 	const usage = useQuery({
 		queryKey: ["usage-summary"],
 		queryFn: ({ signal }) => service.usageSummary(undefined, signal),
@@ -80,6 +96,8 @@ export function Keys() {
 			quota_total_tokens?: number;
 			price_prompt_per_1k?: number;
 			price_completion_per_1k?: number;
+			model_allowlist?: string;
+			model_denylist?: string;
 		}) => service.createKey(v),
 		invalidateKeys: [["keys"], ["usage-summary"]],
 		onSuccess: (result) => {
@@ -97,6 +115,8 @@ export function Keys() {
 				quota_total_tokens?: number;
 				price_prompt_per_1k?: number;
 				price_completion_per_1k?: number;
+				model_allowlist?: string;
+				model_denylist?: string;
 				reset_used?: boolean;
 			};
 		}) => service.updateKey(v.id, v.body),
@@ -262,6 +282,7 @@ export function Keys() {
 					error={create.error}
 					onClose={() => setAdd(false)}
 					onSave={(v) => create.mutate(v)}
+					allModels={allModels}
 				/>
 			)}
 			{edit && (
@@ -280,10 +301,13 @@ export function Keys() {
 								quota_total_tokens: v.quota_total_tokens,
 								price_prompt_per_1k: v.price_prompt_per_1k,
 								price_completion_per_1k: v.price_completion_per_1k,
+								model_allowlist: v.model_allowlist,
+								model_denylist: v.model_denylist,
 								reset_used: v.reset_used,
 							},
 						})
 					}
+					allModels={allModels}
 				/>
 			)}
 			{created && (
@@ -328,6 +352,8 @@ type KeyFormValues = {
 	quota_total_tokens?: number;
 	price_prompt_per_1k?: number;
 	price_completion_per_1k?: number;
+	model_allowlist?: string;
+	model_denylist?: string;
 	reset_used?: boolean;
 };
 
@@ -338,6 +364,7 @@ function KeyDialog({
 	error,
 	onClose,
 	onSave,
+	allModels,
 }: {
 	mode: "create" | "edit";
 	initial?: DownstreamKey;
@@ -345,6 +372,7 @@ function KeyDialog({
 	error: unknown;
 	onClose: () => void;
 	onSave: (v: KeyFormValues) => void;
+	allModels: string[];
 }) {
 	const { t } = useI18n();
 	const [name, setName] = useState(initial?.name ?? "");
@@ -363,6 +391,17 @@ function KeyDialog({
 				? initial.price_completion_per_1k
 				: "",
 		),
+	);
+	const splitModels = (raw?: string) =>
+		(raw ?? "")
+			.split(",")
+			.map((entry) => entry.trim())
+			.filter(Boolean);
+	const [allowlist, setAllowlist] = useState<string[]>(() =>
+		splitModels(initial?.model_allowlist),
+	);
+	const [denylist, setDenylist] = useState<string[]>(() =>
+		splitModels(initial?.model_denylist),
 	);
 	const [resetUsed, setResetUsed] = useState(false);
 	const trimmedCustom = customToken.trim();
@@ -399,6 +438,8 @@ function KeyDialog({
 								quota_total_tokens: parseOptionalNumber(quotaTotal),
 								price_prompt_per_1k: parseOptionalNumber(pricePrompt),
 								price_completion_per_1k: parseOptionalNumber(priceCompletion),
+								model_allowlist: allowlist.join(","),
+								model_denylist: denylist.join(","),
 								reset_used: mode === "edit" ? resetUsed : undefined,
 							})
 						}
@@ -458,6 +499,30 @@ function KeyDialog({
 					/>
 				</Field>
 			</div>
+			<Field
+				label={t("keys.modelAllowlist")}
+				hint={t("keys.modelAllowlistHint")}
+			>
+				<ModelPicker
+					allModels={allModels}
+					selected={allowlist}
+					onChange={setAllowlist}
+					placeholder={t("keys.modelPickerPlaceholder")}
+					emptyLabel={t("keys.modelPickerEmpty")}
+				/>
+			</Field>
+			<Field
+				label={t("keys.modelDenylist")}
+				hint={t("keys.modelDenylistHint")}
+			>
+				<ModelPicker
+					allModels={allModels}
+					selected={denylist}
+					onChange={setDenylist}
+					placeholder={t("keys.modelPickerPlaceholder")}
+					emptyLabel={t("keys.modelPickerEmpty")}
+				/>
+			</Field>
 			{mode === "edit" ? (
 				<label
 					className="check"

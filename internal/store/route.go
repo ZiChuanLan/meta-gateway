@@ -135,6 +135,9 @@ func scanRouteMember(scanner interface {
 }
 
 func (s *RouteMemberStore) ListByRoute(routeID int64) ([]domain.RouteMember, error) {
+	if err := s.RecoverExpired(); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
 	if err != nil {
 		return nil, fmt.Errorf("route member list: %w", err)
@@ -154,6 +157,9 @@ func (s *RouteMemberStore) ListByRoute(routeID int64) ([]domain.RouteMember, err
 
 // ListRouteOverviews returns all routes and enriched members for the admin matrix.
 func (s *RouteMemberStore) ListRouteOverviews() ([]domain.RouteOverview, error) {
+	if err := s.RecoverExpired(); err != nil {
+		return nil, err
+	}
 	routes, err := (&RouteStore{db: s.db}).List()
 	if err != nil {
 		return nil, err
@@ -216,7 +222,15 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 		candidate.CredentialUsable = credentialUsable != 0
 		result = append(result, candidate)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// A route without members must serialize as [] rather than null so the
+	// admin UI never crashes on .some()/.length over a nil slice.
+	if result == nil {
+		result = []domain.RoutingCandidate{}
+	}
+	return result, nil
 }
 
 // RoutingCandidates loads member and channel facts for the best matching enabled route.
@@ -294,8 +308,17 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 	}
 	defer func() { _ = tx.Rollback() }()
 	var currentFailures int
-	if err = tx.QueryRow(`SELECT fail_count FROM route_members WHERE id=?`, id).Scan(&currentFailures); err != nil {
+	var cooldownUntil *time.Time
+	if err = tx.QueryRow(`SELECT fail_count, cooldown_until FROM route_members WHERE id=?`, id).Scan(
+		&currentFailures,
+		scanNullTime(&cooldownUntil),
+	); err != nil {
 		return fmt.Errorf("route member record failure lookup: %w", err)
+	}
+	// Only consecutive failures within an active cooldown escalate backoff.
+	// Once the previous penalty expires, start a fresh cooldown cycle.
+	if cooldownUntil == nil || !cooldownUntil.After(now) {
+		currentFailures = 0
 	}
 	nextFailures := currentFailures + 1
 	backoff := cooldown
@@ -335,6 +358,17 @@ func (s *RouteMemberStore) ClearHealth(id int64) error {
 	}
 	if affected == 0 {
 		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// RecoverExpired returns members to a clean state after their penalty ends.
+// The failure history is already preserved in proxy_logs, so an expired
+// cooldown should not leave a stale red health state in the admin UI.
+func (s *RouteMemberStore) RecoverExpired() error {
+	_, err := s.db.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE cooldown_until IS NOT NULL AND julianday(cooldown_until) <= julianday('now')`)
+	if err != nil {
+		return fmt.Errorf("route member recover expired: %w", err)
 	}
 	return nil
 }

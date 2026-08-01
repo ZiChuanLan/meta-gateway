@@ -756,6 +756,8 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 		QuotaUsedTokens      int64   `json:"quota_used_tokens"`
 		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
 		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
+		ModelDenylist        string  `json:"model_denylist,omitempty"`
 		EstimatedCost        float64 `json:"estimated_cost"`
 		CreatedAt            string  `json:"created_at"`
 	}
@@ -786,6 +788,8 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 			QuotaUsedTokens:      k.QuotaUsedTokens,
 			PricePromptPer1k:     k.PricePromptPer1k,
 			PriceCompletionPer1k: k.PriceCompletionPer1k,
+			ModelAllowlist:       k.ModelAllowlist,
+			ModelDenylist:        k.ModelDenylist,
 			EstimatedCost:        estimated,
 			CreatedAt:            k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		})
@@ -803,6 +807,8 @@ type createKeyResponse struct {
 	QuotaUsedTokens      int64   `json:"quota_used_tokens"`
 	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
 	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	ModelAllowlist       string  `json:"model_allowlist,omitempty"`
+	ModelDenylist        string  `json:"model_denylist,omitempty"`
 	CreatedAt            string  `json:"created_at"`
 }
 
@@ -816,6 +822,8 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
 		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
 		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
+		ModelDenylist        string  `json:"model_denylist,omitempty"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -874,6 +882,8 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		QuotaTotalTokens:     req.QuotaTotalTokens,
 		PricePromptPer1k:     req.PricePromptPer1k,
 		PriceCompletionPer1k: req.PriceCompletionPer1k,
+		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
+		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 	}
 	id, err := h.db.DownstreamKey.Create(key)
 	if err != nil {
@@ -896,6 +906,8 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		QuotaUsedTokens:      0,
 		PricePromptPer1k:     req.PricePromptPer1k,
 		PriceCompletionPer1k: req.PriceCompletionPer1k,
+		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
+		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 		CreatedAt:            createdAt,
 	})
 }
@@ -922,6 +934,8 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		QuotaTotalTokens     *int64   `json:"quota_total_tokens"`
 		PricePromptPer1k     *float64 `json:"price_prompt_per_1k"`
 		PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
+		ModelAllowlist       *string  `json:"model_allowlist"`
+		ModelDenylist        *string  `json:"model_denylist"`
 		ResetUsed            bool     `json:"reset_used"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
@@ -967,6 +981,12 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		existing.PriceCompletionPer1k = *req.PriceCompletionPer1k
+	}
+	if req.ModelAllowlist != nil {
+		existing.ModelAllowlist = strings.TrimSpace(*req.ModelAllowlist)
+	}
+	if req.ModelDenylist != nil {
+		existing.ModelDenylist = strings.TrimSpace(*req.ModelDenylist)
 	}
 	if err := h.db.DownstreamKey.Update(existing); err != nil {
 		writeStoreError(w, err)

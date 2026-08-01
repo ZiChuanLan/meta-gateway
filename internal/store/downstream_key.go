@@ -26,6 +26,8 @@ func scanDownstreamKey(scanner interface {
 		&r.QuotaUsedTokens,
 		&r.PricePromptPer1k,
 		&r.PriceCompletionPer1k,
+		&r.ModelAllowlist,
+		&r.ModelDenylist,
 		scanTime(&r.CreatedAt),
 	); err != nil {
 		return err
@@ -34,7 +36,7 @@ func scanDownstreamKey(scanner interface {
 	return nil
 }
 
-const downstreamKeySelect = `SELECT id, token_hash, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, created_at FROM downstream_keys`
+const downstreamKeySelect = `SELECT id, token_hash, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist, created_at FROM downstream_keys`
 
 func (s *DownstreamKeyStore) List() ([]domain.DownstreamKey, error) {
 	rows, err := s.db.Query(downstreamKeySelect + ` ORDER BY id`)
@@ -81,8 +83,8 @@ func (s *DownstreamKeyStore) GetByHash(hash string) (*domain.DownstreamKey, erro
 
 func (s *DownstreamKeyStore) Create(k *domain.DownstreamKey) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO downstream_keys (token_hash, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		k.TokenHash, k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.PricePromptPer1k, k.PriceCompletionPer1k,
+		`INSERT INTO downstream_keys (token_hash, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		k.TokenHash, k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.ModelAllowlist, k.ModelDenylist,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("downstream key create: %w", err)
@@ -100,8 +102,8 @@ func (s *DownstreamKeyStore) Delete(id int64) error {
 
 func (s *DownstreamKeyStore) Update(k *domain.DownstreamKey) error {
 	_, err := s.db.Exec(
-		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, price_prompt_per_1k=?, price_completion_per_1k=? WHERE id=?`,
-		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.ID,
+		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, price_prompt_per_1k=?, price_completion_per_1k=?, model_allowlist=?, model_denylist=? WHERE id=?`,
+		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.ModelAllowlist, k.ModelDenylist, k.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("downstream key update: %w", err)

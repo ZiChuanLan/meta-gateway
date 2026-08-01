@@ -41,7 +41,7 @@ describe("i18n", () => {
 
 	it("falls back to english for missing keys and interpolates values", () => {
 		expect(translate("zh-CN", "missing.key")).toBe("missing.key");
-		expect(translate("en", "common.attempt", { n: 3 })).toBe("Attempt 3");
-		expect(translate("zh-CN", "common.attempt", { n: 3 })).toBe("第 3 次");
+		expect(translate("en", "common.siteId", { id: 3 })).toBe("Site #3");
+		expect(translate("zh-CN", "common.siteId", { id: 3 })).toBe("站点 #3");
 	});
 });

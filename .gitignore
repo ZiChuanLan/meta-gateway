@@ -14,3 +14,7 @@ web/coverage/
 
 # Accidental root lockfile (frontend lock lives under web/)
 /package-lock.json
+
+# Debug logs and ad-hoc analysis scripts
+*.log
+scripts/

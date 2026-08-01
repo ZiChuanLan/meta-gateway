@@ -249,17 +249,26 @@ func TestChatUsesSiteBaseWhenChannelBaseEmpty(t *testing.T) {
 	}
 }
 
-func TestNonRetryableResponseStopsImmediately(t *testing.T) {
-	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusBadRequest, `{"error":"bad request"}`)}}
-	service, db, highMember, _ := setupProxy(t, upstream)
+func TestClientErrorFailsOverAndRecordsCooldown(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusBadRequest, `{"error":"bad request"}`),
+		response(http.StatusBadRequest, `{"error":"bad request"}`),
+	}}
+	service, db, highMember, lowMember := setupProxy(t, upstream)
 	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-2", Model: "model", Body: []byte(`{}`)})
 	defer result.Body.Close()
-	if result.StatusCode != http.StatusBadRequest || len(upstream.calls) != 1 {
+	// 4xx is retryable: both channels get tried, both are cooled down, and
+	// the last upstream response is returned.
+	if result.StatusCode != http.StatusBadRequest || len(upstream.calls) != 2 {
 		t.Fatalf("result=%+v calls=%#v", result, upstream.calls)
 	}
 	high, _ := db.RouteMember.GetByID(highMember)
-	if high.FailCount != 0 || high.CooldownUntil != nil {
-		t.Fatalf("non-retryable response changed health: %+v", high)
+	low, _ := db.RouteMember.GetByID(lowMember)
+	if high.FailCount == 0 || high.CooldownUntil == nil {
+		t.Fatalf("high member not cooled down: %+v", high)
+	}
+	if low.FailCount == 0 || low.CooldownUntil == nil {
+		t.Fatalf("low member not cooled down: %+v", low)
 	}
 }
 

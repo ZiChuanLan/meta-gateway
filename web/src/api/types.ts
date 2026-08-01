@@ -36,6 +36,8 @@ export interface DownstreamKey {
   quota_used_tokens?: number
   price_prompt_per_1k?: number
   price_completion_per_1k?: number
+  model_allowlist?: string
+  model_denylist?: string
   estimated_cost?: number
   created_at: string
 }
@@ -65,6 +67,8 @@ export interface ProxyLog {
   id: number
   request_id: string
   channel_id: number
+  route_id?: number
+  route_pattern?: string
   model: string
   status: number
   latency_ms: number
@@ -153,7 +157,7 @@ export interface SyncKeysResult {
     category?: string
   }>
 }
-export interface RefreshResult extends ProbeResult { created_routes: number; created_members: number; enabled_members: number; disabled_members: number }
+export interface RefreshResult extends ProbeResult { created_routes: number; created_members: number; enabled_members: number; deleted_members: number; deleted_routes: number }
 export interface RefreshSummary { items: Array<{ channel_id: number; result?: RefreshResult; error?: string }>; success_count: number; failure_count: number }
 export interface RunResult { site_id: number; credential_id: number; source: string; status: string; category: string; message: string; reward?: string; latency_ms: number; ran_at: string }
 export interface RunSummary { items: RunResult[]; success_count: number; failure_count: number; skipped_count: number }
