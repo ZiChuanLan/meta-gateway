@@ -11,11 +11,18 @@ const (
 )
 
 type Envelope struct {
-	Format     string    `json:"format"`
-	Version    int       `json:"version"`
-	ExportedAt time.Time `json:"exported_at"`
-	Importable bool      `json:"importable"`
-	Items      []Item    `json:"items"`
+	Format     string           `json:"format"`
+	Version    int              `json:"version"`
+	ExportedAt time.Time        `json:"exported_at"`
+	Importable bool             `json:"importable"`
+	Items      []Item           `json:"items"`
+	Skipped    []SkippedChannel `json:"skipped,omitempty"`
+}
+
+type SkippedChannel struct {
+	ChannelID int64  `json:"channel_id"`
+	Name      string `json:"name"`
+	Reason    string `json:"reason"`
 }
 
 type Item struct {

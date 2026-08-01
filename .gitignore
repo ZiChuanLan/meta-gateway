@@ -4,6 +4,7 @@ data/
 *.db
 *.db-*
 web/node_modules/
+web/src/node_modules/
 web/coverage/
 
 # Local binaries / agent scratch

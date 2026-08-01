@@ -101,9 +101,13 @@ func (s *Service) Export(ctx context.Context, request ExportRequest) (*Envelope,
 		return nil, formatError(ErrorNotFound)
 	}
 	items := make([]Item, 0, len(rows))
+	var skipped []SkippedChannel
 	for _, row := range rows {
 		if row.CredentialID == 0 || row.SecretEnc == "" {
-			return nil, formatError(ErrorInternal)
+			// Channels without a usable credential cannot be restored on import,
+			// so skip them instead of failing the whole export.
+			skipped = append(skipped, SkippedChannel{ChannelID: row.ChannelID, Name: row.Name, Reason: "no_credential"})
+			continue
 		}
 		baseURL := row.BaseURL
 		if baseURL == "" {
@@ -111,7 +115,9 @@ func (s *Service) Export(ctx context.Context, request ExportRequest) (*Envelope,
 		}
 		baseURL, normalizeErr := NormalizeBaseURL(baseURL)
 		if normalizeErr != nil {
-			return nil, formatError(ErrorInternal)
+			// A channel without any resolvable base URL is not portable.
+			skipped = append(skipped, SkippedChannel{ChannelID: row.ChannelID, Name: row.Name, Reason: "invalid_base_url"})
+			continue
 		}
 		typeHint := row.TypeHint
 		if typeHint == "" {
@@ -131,7 +137,7 @@ func (s *Service) Export(ctx context.Context, request ExportRequest) (*Envelope,
 		items = append(items, item)
 	}
 	return &Envelope{Format: Format, Version: Version, ExportedAt: s.now().UTC(),
-		Importable: request.IncludeSecrets, Items: items}, nil
+		Importable: request.IncludeSecrets, Items: items, Skipped: skipped}, nil
 }
 
 // ImportMode controls how an AAH / exchange document is applied.

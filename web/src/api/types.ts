@@ -192,7 +192,7 @@ export interface ImportResult {
     discovery_category?: string
   }>
 }
-export interface ExchangeEnvelope { format: string; version: number; exported_at: string; importable: boolean; items: Array<Record<string, unknown>> }
+export interface ExchangeEnvelope { format: string; version: number; exported_at: string; importable: boolean; items: Array<Record<string, unknown>>; skipped?: Array<{ channel_id: number; name: string; reason: string }> }
 
 export interface PluginCatalogEntry {
   id: string

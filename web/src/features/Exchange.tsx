@@ -201,7 +201,17 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 			URL.revokeObjectURL(url);
 			return data;
 		},
-		onSuccess: () => setSecretWarning(false),
+		onSuccess: (data) => {
+			setSecretWarning(false);
+			if (data.skipped?.length) {
+				toast.push({
+					tone: "info",
+					message: t("exchange.exportSkipped", {
+						n: data.skipped.length,
+					}),
+				});
+			}
+		},
 	});
 
 	const imp = useMutation({

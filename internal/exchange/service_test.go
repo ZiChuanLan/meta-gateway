@@ -169,3 +169,47 @@ func TestServiceAdoptsUniqueLegacyIdentity(t *testing.T) {
 		t.Fatal("adoption did not persist fingerprint")
 	}
 }
+
+func TestServiceExportSkipsChannelsWithoutBaseURLOrCredential(t *testing.T) {
+	db, _, _, service := openExchangeService(t)
+	// Import a healthy channel that exports fine.
+	body := `[{"name":"healthy","base_url":"https://ok.example.com","key":"ok-key"}]`
+	res, err := service.Import(t.Context(), []byte(body))
+	if err != nil || res.CreatedCount != 1 {
+		t.Fatalf("import=%+v err=%v", res, err)
+	}
+	// Manually insert a channel with no credential and one whose base URL is
+	// empty on both channel and site.
+	if _, err := db.Exec(`INSERT INTO sites (name, base_url, platform, status) VALUES ('s-empty', '', 'new-api', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	// Channel with a credential but no resolvable base URL -> invalid_base_url.
+	if _, err := db.Exec(`INSERT INTO credentials (site_id, kind, secret_enc) VALUES (2, 'api_key', 'enc-secret')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO channels (name, site_id, base_url, status, priority, weight, models_csv, credential_id) VALUES ('c-no-url', 2, '', 1, 0, 1, '', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	// Channel with a base URL but no credential -> no_credential.
+	if _, err := db.Exec(`INSERT INTO channels (name, site_id, base_url, status, priority, weight, models_csv) VALUES ('c-no-cred', 2, 'https://nope.example.com', 1, 0, 1, '')`); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := service.Export(t.Context(), exchange.ExportRequest{})
+	if err != nil {
+		t.Fatalf("export should not fail with unexportable channels: %v", err)
+	}
+	if len(env.Items) != 1 || env.Items[0].Name != "healthy" {
+		t.Fatalf("expected only healthy channel, got %+v", env.Items)
+	}
+	if len(env.Skipped) != 2 {
+		t.Fatalf("expected 2 skipped channels, got %+v", env.Skipped)
+	}
+	reasons := map[string]bool{}
+	for _, s := range env.Skipped {
+		reasons[s.Reason] = true
+	}
+	if !reasons["invalid_base_url"] || !reasons["no_credential"] {
+		t.Fatalf("expected both skip reasons, got %+v", env.Skipped)
+	}
+}
