@@ -654,6 +654,13 @@ export function Channels() {
 			);
 		});
 		if (!onSite.length) return undefined;
+		// Match backend pickUserCredential: prefer the credential this channel is bound to,
+		// so editing/deleting the token operates on the same credential that checks use.
+		const boundId = overview?.channel.credential_id;
+		if (boundId) {
+			const bound = onSite.find((item) => item.id === boundId);
+			if (bound) return bound;
+		}
 		// Match badge: when schedule is on, operate on a credential that is actually scheduled.
 		if (overview?.checkin_enabled) {
 			const scheduled = onSite.find((item) => item.checkin_enabled);
