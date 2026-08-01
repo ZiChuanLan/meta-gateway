@@ -74,16 +74,13 @@ const TYPE_OPTIONS: SelectOption[] = [
 
 const TYPE_GROUPS = ["core", "relay", "other"];
 
+/** Value shown in secret inputs when a credential is stored; keeping it means "don't change". */
+const SECRET_MASK = "••••••••••";
+
 type ConnectionHealthFilter = "all" | "ready" | "attention" | "missing_key";
 
 function isMissingAPIKey(overview: ChannelOverview) {
-	// Only meaningful when an access token exists and has passed verification:
-	// a connection without a working token is not "missing an API key".
-	return (
-		!overview.has_api_key &&
-		overview.has_user_credential &&
-		overview.last_probe_ok === true
-	);
+	return !overview.has_api_key;
 }
 
 type CreateConnectionInput = {
@@ -149,7 +146,7 @@ export function channelHealth(overview: ChannelOverview) {
 	// A channel without an sk- API key is a config gap, not a network failure.
 	// It gets the neutral "missing key" treatment instead of a red "blocked" badge.
 	if (!overview.site_usable) return "blocked";
-	if (!overview.has_api_key) return "unverified";
+	if (!overview.has_api_key) return "missing_key";
 	// Explicit failed probe/sync wins over historical model inventory.
 	if (overview.last_probe_at && overview.last_probe_ok === false) {
 		return "degraded";
@@ -188,7 +185,12 @@ export function capabilityFlags(overview: ChannelOverview) {
 		checkinOff: checkinReady && !checkinScheduled,
 		/** No user token at all — cannot check in. */
 		noUserToken: !hasUser,
-		missingAPIKey: !hasAPIKey && hasUser && overview.last_probe_ok === true,
+		missingAPIKey: !hasAPIKey,
+		/** An access token is stored, was checked, and that check failed — the token itself is the problem. */
+		tokenProblem:
+			hasUser &&
+			Boolean(overview.last_probe_at) &&
+			overview.last_probe_ok === false,
 		modelsReady,
 		needsKeyForRelay: !hasAPIKey,
 	};
@@ -422,7 +424,10 @@ export function Channels() {
 			// Keep user token and API key as separate credentials.
 			// Never overwrite access_token with sk- on the same row.
 			let relayCredentialId = input.channel.credential_id;
-			const userToken = input.userToken.trim();
+			const userTokenRaw = input.userToken.trim();
+			// The mask means "keep the stored value"; an empty field means "remove the credential".
+			const userTokenKept = userTokenRaw === SECRET_MASK;
+			const userToken = userTokenKept ? "" : userTokenRaw;
 			const apiKey = input.apiKey.trim();
 			const userCred = input.userCredential;
 			const relayCred = input.relayCredential;
@@ -444,6 +449,9 @@ export function Channels() {
 						status: "enabled",
 					});
 				}
+			} else if (userCred?.id && input.site && !userTokenKept) {
+				// Field was explicitly cleared → remove the access-token credential.
+				await service.deleteCredential(userCred.id);
 			}
 			if (apiKey && input.site) {
 				if (relayCred?.id && relayCred.kind === "api_key") {
@@ -1205,6 +1213,11 @@ export function Channels() {
 											<td className="status-col">
 												<div className="capability-stack is-compact">
 													<StatusBadge value={health} />
+													{caps.tokenProblem ? (
+														<span className="capability-chip is-warn">
+															{t("channels.badge.tokenProblem")}
+														</span>
+													) : null}
 													{caps.checkinScheduled ? (
 														<span className="capability-chip is-checkin">
 															{t("channels.badge.checkinOn")}
@@ -1212,11 +1225,6 @@ export function Channels() {
 													) : caps.checkinNeedsUserID ? (
 														<span className="capability-chip is-warn">
 															{t("channels.badge.needsUserId")}
-														</span>
-													) : null}
-													{caps.missingAPIKey ? (
-														<span className="capability-chip is-warn">
-															{t("channels.badge.missingKey")}
 														</span>
 													) : null}
 													{caps.modelsReady ? (
@@ -1532,6 +1540,11 @@ function ChannelDetail({
 				</div>
 				<div className="capability-stack is-compact">
 					<StatusBadge value={health} />
+					{caps.tokenProblem ? (
+						<span className="capability-chip is-warn">
+							{t("channels.badge.tokenProblem")}
+						</span>
+					) : null}
 					{caps.checkinScheduled ? (
 						<span className="capability-chip is-checkin">{t("channels.badge.checkinOn")}</span>
 					) : caps.checkinNeedsUserID ? (
@@ -1539,11 +1552,9 @@ function ChannelDetail({
 					) : caps.hasUser ? (
 						<span className="capability-chip is-muted">{t("channels.badge.checkinOff")}</span>
 					) : null}
-					{caps.missingAPIKey ? (
-						<span className="capability-chip is-warn">{t("channels.badge.missingKey")}</span>
-					) : (
+					{caps.hasAPIKey ? (
 						<span className="capability-chip is-key">{t("channels.badge.hasKey")}</span>
-					)}
+					) : null}
 					{caps.modelsReady ? (
 						<span className="capability-chip is-models">{t("channels.badge.models")}</span>
 					) : null}
@@ -1937,7 +1948,9 @@ function EditChannelDialog({
 	);
 	const [priority, setPriority] = useState(value.priority);
 	const [weight, setWeight] = useState(value.weight);
-	const [userToken, setUserToken] = useState("");
+	const [userToken, setUserToken] = useState(
+		userCredential?.has_secret ? SECRET_MASK : "",
+	);
 	const [apiKey, setApiKey] = useState("");
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const canSubmit = Boolean(name.trim() && baseUrl.trim());

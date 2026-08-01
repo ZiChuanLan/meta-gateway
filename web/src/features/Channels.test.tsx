@@ -258,10 +258,10 @@ describe("capabilityFlags", () => {
 			enabled_member_count: 0,
 			cooling_member_count: 0,
 			failure_count: 0,
-		})).toBe("unverified");
+		})).toBe("missing_key");
 	});
 
-	it("does not flag missing API key until the access token passes verification", () => {
+	it("flags missing API key regardless of access token state", () => {
 		const base: ChannelOverview = {
 			channel: {
 				id: 9,
@@ -289,16 +289,72 @@ describe("capabilityFlags", () => {
 			cooling_member_count: 0,
 			failure_count: 0,
 		};
-		// Never probed → no verdict yet.
-		expect(capabilityFlags({ ...base }).missingAPIKey).toBe(false);
-		// Probe failed → token is not effective, do not blame a missing API key.
+		// Missing API key is independent of token probe state.
+		expect(capabilityFlags({ ...base }).missingAPIKey).toBe(true);
 		expect(capabilityFlags({ ...base, last_probe_ok: false }).missingAPIKey).toBe(
-			false,
+			true,
 		);
-		// Probe passed → now the missing API key is the actionable gap.
 		expect(capabilityFlags({ ...base, last_probe_ok: true }).missingAPIKey).toBe(
 			true,
 		);
+		// Without a user credential there is no token state at all.
+		expect(
+			capabilityFlags({ ...base, has_user_credential: false }).missingAPIKey,
+		).toBe(true);
+	});
+
+	it("flags access token problems only when a token exists and its probe failed", () => {
+		const base: ChannelOverview = {
+			channel: {
+				id: 10,
+				name: "demo",
+				base_url: "",
+				models_csv: "",
+				group_name: "default",
+				priority: 0,
+				weight: 100,
+				status: "enabled",
+				created_at: "",
+				updated_at: "",
+			},
+			credential_kind: "access_token",
+			checkin_enabled: true,
+			has_user_credential: true,
+			has_platform_user_id: true,
+			has_api_key: true,
+			site_usable: true,
+			credential_usable: true,
+			model_count: 3,
+			last_latency_ms: 0,
+			route_count: 1,
+			enabled_member_count: 1,
+			cooling_member_count: 0,
+			failure_count: 0,
+		};
+		// Never probed → no verdict.
+		expect(capabilityFlags({ ...base }).tokenProblem).toBe(false);
+		// Probe passed → token fine.
+		expect(capabilityFlags({ ...base, last_probe_ok: true }).tokenProblem).toBe(
+			false,
+		);
+		// Probe failed → token is the problem.
+		expect(
+			capabilityFlags({ ...base, last_probe_at: "2026-08-02T00:00:00Z", last_probe_ok: false })
+				.tokenProblem,
+		).toBe(true);
+		// last_probe_ok=false without a probe timestamp is "never checked", not "failed".
+		expect(capabilityFlags({ ...base, last_probe_ok: false }).tokenProblem).toBe(
+			false,
+		);
+		// No token stored → nothing to flag, even with a failed probe.
+		expect(
+			capabilityFlags({
+				...base,
+				has_user_credential: false,
+				last_probe_at: "2026-08-02T00:00:00Z",
+				last_probe_ok: false,
+			}).tokenProblem,
+		).toBe(false);
 	});
 
 	it("marks check-in as needing user id when token exists without platform_user_id", () => {
