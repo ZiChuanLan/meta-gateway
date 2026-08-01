@@ -56,9 +56,9 @@ export function SearchableSelect({
 		const rect = trigger.getBoundingClientRect();
 		setPanelStyle({
 			position: "fixed",
-			top: rect.bottom + 6,
+			top: rect.bottom + 8,
 			left: rect.left,
-			width: Math.max(rect.width, 320),
+			width: Math.max(rect.width, 240),
 		});
 		setOpen(true);
 	};
@@ -179,20 +179,22 @@ export function SearchableSelect({
 			)}
 			{open ? (
 				<div className="searchable-select-panel" style={panelStyle ?? undefined} role="listbox">
-					<div className="searchable-select-search">
-						<Search size={13} />
-						<input
-							ref={searchRef}
-							value={query}
-							onChange={(event) => setQuery(event.target.value)}
-							placeholder={placeholder ?? "Search…"}
-							spellCheck={false}
-						/>
-					</div>
+					{filtered.length > 4 ? (
+						<div className="searchable-select-search">
+							<Search size={13} />
+							<input
+								ref={searchRef}
+								value={query}
+								onChange={(event) => setQuery(event.target.value)}
+								placeholder={placeholder ?? "Search…"}
+								spellCheck={false}
+							/>
+						</div>
+					) : null}
 					<div className="searchable-select-list">
 						{byGroup.map(({ key, options: groupOptions }) => (
 							<div key={key} className="searchable-select-group">
-								{key !== "*" ? (
+								{key !== "*" && byGroup.length > 1 ? (
 									<div className="searchable-select-group-label">{key}</div>
 								) : null}
 								{groupOptions.map((option) => (

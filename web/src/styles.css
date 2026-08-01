@@ -4051,18 +4051,19 @@ th.actions, td.actions {
 }
 .searchable-select-trigger {
 	width:100%;
-	height:46px;
-	padding:0 14px;
+	height:40px;
+	padding:0 12px;
 	display:flex;
 	align-items:center;
 	justify-content:space-between;
 	gap:8px;
 	border:1px solid var(--line);
-	border-radius:9px;
+	border-radius:10px;
 	background:var(--surface);
 	color:var(--ink);
-	font-size:15px;
+	font-size:14px;
 	text-align:left;
+	transition:border-color .12s ease, background .12s ease;
 }
 .searchable-select-trigger:hover:not(:disabled) {
 	border-color:var(--line-strong);
@@ -4074,23 +4075,24 @@ th.actions, td.actions {
 .searchable-select-panel {
 	/* position / top / left / width are set inline as fixed positioning so
 	   scroll containers (Dialogs) cannot clip the panel */
-	z-index: 90;
-	min-width: 320px;
-	padding: 8px;
+	z-index: 1002;
+	min-width: 240px;
+	padding: 6px;
 	display:flex;
 	flex-direction:column;
-	gap:6px;
+	gap:4px;
 	background:var(--surface);
-	border:1px solid var(--line-strong);
-	border-radius:14px;
-	box-shadow:var(--shadow-md);
+	border:1px solid var(--line);
+	border-radius:12px;
+	box-shadow:0 6px 16px 0 rgba(0,0,0,.12), 0 3px 6px -4px rgba(0,0,0,.08);
 	animation:dialog-in .12s ease-out;
 }
 .searchable-select-search {
 	display:flex;
 	align-items:center;
 	gap:8px;
-	padding:9px 10px;
+	padding:8px 10px;
+	margin-bottom:2px;
 	border:1px solid var(--line);
 	border-radius:8px;
 	background:var(--surface-subtle);
@@ -4110,7 +4112,7 @@ th.actions, td.actions {
 	overflow-y:auto;
 	display:flex;
 	flex-direction:column;
-	gap:4px;
+	gap:2px;
 }
 .searchable-select-group-label {
 	padding:10px 10px 4px;
@@ -4122,18 +4124,19 @@ th.actions, td.actions {
 }
 .searchable-select-item {
 	width:100%;
-	height:42px;
-	padding:0 12px;
+	height:36px;
+	padding:0 10px;
 	display:flex;
 	align-items:center;
 	justify-content:space-between;
 	gap:8px;
 	border:0;
-	border-radius:10px;
+	border-radius:8px;
 	background:transparent;
 	color:var(--ink-soft);
 	font-size:14px;
 	text-align:left;
+	transition:background .1s ease, color .1s ease;
 }
 .searchable-select-item:hover {
 	background:var(--surface-hover);
@@ -4141,7 +4144,8 @@ th.actions, td.actions {
 .searchable-select-item.is-selected {
 	color:var(--accent);
 	background:var(--accent-soft);
-	font-weight:650;
+	font-weight:600;
+	box-shadow:inset 0 0 0 1px rgba(47,79,134,.28);
 }
 .searchable-select-empty {
 	padding:8px;
