@@ -4072,13 +4072,11 @@ th.actions, td.actions {
 	color:var(--muted);
 }
 .searchable-select-panel {
-	position:absolute;
-	top:calc(100% + 6px);
-	left:0;
-	right:0;
-	z-index:90;
-	min-width:320px;
-	padding:8px;
+	/* position / top / left / width are set inline as fixed positioning so
+	   scroll containers (Dialogs) cannot clip the panel */
+	z-index: 90;
+	min-width: 320px;
+	padding: 8px;
 	display:flex;
 	flex-direction:column;
 	gap:6px;

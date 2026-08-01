@@ -1,5 +1,11 @@
 import { Check, ChevronDown, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type CSSProperties,
+} from "react";
 
 export type SelectOption = {
 	value: string;
@@ -36,6 +42,26 @@ export function SearchableSelect({
 	const [customValue, setCustomValue] = useState("");
 	const rootRef = useRef<HTMLDivElement>(null);
 	const searchRef = useRef<HTMLInputElement>(null);
+	// The panel is fixed-positioned so scroll containers (e.g. Dialog) cannot clip it.
+	const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
+
+	const openPanel = () => {
+		const trigger = rootRef.current?.querySelector<HTMLElement>(
+			".searchable-select-trigger",
+		);
+		if (!trigger) {
+			setOpen(true);
+			return;
+		}
+		const rect = trigger.getBoundingClientRect();
+		setPanelStyle({
+			position: "fixed",
+			top: rect.bottom + 6,
+			left: rect.left,
+			width: Math.max(rect.width, 320),
+		});
+		setOpen(true);
+	};
 
 	const customSentinel = useMemo(
 		() => options.find((option) => option.value === "__custom__"),
@@ -58,11 +84,16 @@ export function SearchableSelect({
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key === "Escape") setOpen(false);
 		};
+		const onScrollOrResize = () => setOpen(false);
 		document.addEventListener("mousedown", onPointerDown);
 		document.addEventListener("keydown", onKeyDown);
+		window.addEventListener("scroll", onScrollOrResize, true);
+		window.addEventListener("resize", onScrollOrResize);
 		return () => {
 			document.removeEventListener("mousedown", onPointerDown);
 			document.removeEventListener("keydown", onKeyDown);
+			window.removeEventListener("scroll", onScrollOrResize, true);
+			window.removeEventListener("resize", onScrollOrResize);
 		};
 	}, [open]);
 
@@ -124,7 +155,7 @@ export function SearchableSelect({
 					type="button"
 					className="searchable-select-trigger"
 					disabled={disabled}
-					onClick={() => setOpen((value) => !value)}
+					onClick={() => (open ? setOpen(false) : openPanel())}
 					aria-haspopup="listbox"
 					aria-expanded={open}
 				>
@@ -147,7 +178,7 @@ export function SearchableSelect({
 				/>
 			)}
 			{open ? (
-				<div className="searchable-select-panel" role="listbox">
+				<div className="searchable-select-panel" style={panelStyle ?? undefined} role="listbox">
 					<div className="searchable-select-search">
 						<Search size={13} />
 						<input
