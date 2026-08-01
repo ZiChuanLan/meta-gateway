@@ -741,12 +741,13 @@ export function Channels() {
 			});
 		}
 		// Only offer key creation when the account token is known-good (last
-		// "check account" succeeded for this channel) and the site has no key.
+		// probe succeeded for this channel) and the site has no key.
 		// A dead/blocked token should never show a create button that can only fail.
 		const canCreateKey =
 			caps.hasUser &&
 			caps.needsKeyForRelay &&
-			accountProbe.data?.channel_id === ch.id;
+			Boolean(overview.last_probe_at) &&
+			overview.last_probe_ok === true;
 		if (canCreateKey) {
 			items.push({
 				key: "create-key",
@@ -1335,7 +1336,8 @@ export function Channels() {
 									capsForSelected
 										? capsForSelected.hasUser &&
 											capsForSelected.needsKeyForRelay &&
-											accountProbe.data?.channel_id === selected.channel.id
+											Boolean(selected.last_probe_at) &&
+											selected.last_probe_ok === true
 										: false
 								}
 								onProbe={() => {
