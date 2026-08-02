@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -107,8 +108,9 @@ func (a *NewAPIAccountAdapter) ListTokenGroups(ctx context.Context, input Accoun
 	if envelope.Success != nil && !*envelope.Success {
 		return nil, &Error{Kind: ErrorPayload}
 	}
-	// Canonical shape: data is a string array. Some forks nest {groups: [...]}
-	// or return an object array [{name: ...}]; a few put groups at the top level.
+	// Canonical shape: data is a string array. Some forks nest {groups: [...]},
+	// return an object array [{name: ...}], or an object map {groupName: {...}}
+	// (e.g. Ark / 42w); a few put groups at the top level.
 	var plain []string
 	if err := json.Unmarshal(envelope.Data, &plain); err == nil {
 		return plain, nil
@@ -118,6 +120,23 @@ func (a *NewAPIAccountAdapter) ListTokenGroups(ctx context.Context, input Accoun
 	}
 	if err := json.Unmarshal(envelope.Data, &nested); err == nil && len(nested.Groups) > 0 {
 		return nested.Groups, nil
+	}
+	var objectMap map[string]json.RawMessage
+	if err := json.Unmarshal(envelope.Data, &objectMap); err == nil && len(objectMap) > 0 {
+		groups := make([]string, 0, len(objectMap))
+		for name := range objectMap {
+			groups = append(groups, name)
+		}
+		sort.Strings(groups)
+		// Keep "default" first so the picker preselects it.
+		for index, name := range groups {
+			if name == "default" && index > 0 {
+				groups = append(groups[:index], groups[index+1:]...)
+				groups = append([]string{"default"}, groups...)
+				break
+			}
+		}
+		return groups, nil
 	}
 	var objects []struct {
 		Name      string `json:"name"`
