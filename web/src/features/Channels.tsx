@@ -2064,6 +2064,17 @@ function EditChannelDialog({
 			<>
 			<p className="channel-form-intro">{t("channels.editHintDual")}</p>
 			<div className="form-grid form-grid-single">
+				<Field label={t("common.type")}>
+					<SearchableSelect
+						options={TYPE_OPTIONS}
+						groups={TYPE_GROUPS}
+						value={typeHint}
+						onChange={setTypeHint}
+						disabled={pending}
+						allowCustom
+						placeholder={t("common.type")}
+					/>
+				</Field>
 				<Field label={t("common.name")}>
 					<input
 						value={name}
@@ -2300,17 +2311,6 @@ function EditChannelDialog({
 			</button>
 			{showAdvanced ? (
 				<div className="form-grid">
-					<Field label={t("common.type")}>
-						<SearchableSelect
-							options={TYPE_OPTIONS}
-							groups={TYPE_GROUPS}
-							value={typeHint}
-							onChange={setTypeHint}
-							disabled={pending}
-							allowCustom
-							placeholder={t("common.type")}
-						/>
-					</Field>
 					<Field label={t("common.priority")} hint={t("channels.priorityHint")}>
 						<input
 							type="number"
