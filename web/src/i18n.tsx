@@ -409,6 +409,10 @@ const en: Dict = {
 	"keys.modelAllowlistHint":
 		"When set, this token may only use the selected models. Leave empty for no restriction.",
 	"keys.modelDenylist": "Model denylist",
+	"keys.expiresAt": "Expires at",
+	"keys.expiresAtHint": "The key stops working after this time. Empty = never expires.",
+	"keys.allowedIPs": "Allowed IPs",
+	"keys.allowedIPsHint": "One IP or CIDR per line. Empty = any source. Leave empty unless you need to lock the key down.",
 	"keys.modelDenylistHint":
 		"Blocked models — denied even when they are in the allowlist.",
 	"keys.modelPickerPlaceholder": "Search models…",
@@ -1194,6 +1198,10 @@ const zh: Dict = {
 	"keys.modelAllowlist": "模型白名单",
 	"keys.modelAllowlistHint": "设置后该令牌只能使用选中的模型。留空表示不限制。",
 	"keys.modelDenylist": "模型黑名单",
+	"keys.expiresAt": "过期时间",
+	"keys.expiresAtHint": "到达该时间后密钥失效。留空 = 永不过期。",
+	"keys.allowedIPs": "允许的 IP",
+	"keys.allowedIPsHint": "每行一个 IP 或 CIDR。留空 = 不限制来源。给第三方密钥时建议填写。",
 	"keys.modelDenylistHint": "被禁止的模型——即使在白名单中也会被拦截。",
 	"keys.modelPickerPlaceholder": "搜索模型…",
 	"keys.modelPickerEmpty": "没有找到模型",

@@ -8,6 +8,11 @@ services:
       HTTP_ADDR: ":4100"
       DATA_DIR: /data
       BACKUP_DIR: /data/backups
+      # Outbound proxy for upstreams that need one (e.g. Google Gemini in CN
+      # networks). host.docker.internal resolves to the Docker Desktop host.
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-127.0.0.1,localhost}"
       ADMIN_TOKEN: "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
       ADMIN_TOKENS: "${ADMIN_TOKENS:-}"
       MASTER_KEY: "${MASTER_KEY:?MASTER_KEY is required}"
@@ -22,6 +27,8 @@ services:
       TRUSTED_PROXY_CIDRS: "${TRUSTED_PROXY_CIDRS:-}"
       RELAY_RATE_PER_MINUTE: "${RELAY_RATE_PER_MINUTE:-600}"
       RELAY_RATE_BURST: "${RELAY_RATE_BURST:-100}"
+      RELAY_MODEL_RATE_PER_MINUTE: "${RELAY_MODEL_RATE_PER_MINUTE:-0}"
+      RELAY_MODEL_RATE_BURST: "${RELAY_MODEL_RATE_BURST:-0}"
       ADMIN_RATE_PER_MINUTE: "${ADMIN_RATE_PER_MINUTE:-300}"
       ADMIN_RATE_BURST: "${ADMIN_RATE_BURST:-50}"
       MAX_HEADER_BYTES: "${MAX_HEADER_BYTES:-1048576}"

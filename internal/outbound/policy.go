@@ -24,10 +24,12 @@ type Resolver interface {
 }
 
 type Policy struct {
-	hosts    map[string]struct{}
-	prefixes []netip.Prefix
-	resolver Resolver
-	dialer   *net.Dialer
+	hosts      map[string]struct{}
+	prefixes   []netip.Prefix
+	resolver   Resolver
+	dialer     *net.Dialer
+	proxyHost  string
+	proxyPort  string
 }
 
 type Options struct {
@@ -67,9 +69,18 @@ func NewPolicy(opts Options) (*Policy, error) {
 		}
 		dialer = &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	}
-	return &Policy{hosts: hosts, prefixes: prefixes, resolver: resolver, dialer: dialer}, nil
+	policy := &Policy{hosts: hosts, prefixes: prefixes, resolver: resolver, dialer: dialer}
+	// Remember the environment proxy address so DialContext can exempt the
+	// proxy hop itself (commonly private: host.docker.internal, 127.0.0.1, ...)
+	// from SSRF checks.
+	if proxyURL, err := http.ProxyFromEnvironment(&http.Request{URL: &url.URL{Scheme: "https", Host: "example.com"}}); err == nil && proxyURL != nil {
+		if host, port, splitErr := net.SplitHostPort(proxyURL.Host); splitErr == nil {
+			policy.proxyHost = host
+			policy.proxyPort = port
+		}
+	}
+	return policy, nil
 }
-
 func (p *Policy) ValidateURL(raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || !u.IsAbs() || u.Host == "" || u.User != nil {
@@ -94,6 +105,12 @@ func (p *Policy) DialContext(ctx context.Context, network, address string) (net.
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || host == "" || port == "" {
 		return nil, ErrBlocked
+	}
+	// The proxy hop itself is exempt from SSRF validation: when an outbound
+	// proxy is configured, Go dials the proxy address through DialContext, and
+	// that address is commonly private (host.docker.internal, 127.0.0.1, ...).
+	if p.proxyHost != "" && strings.EqualFold(host, p.proxyHost) && port == p.proxyPort {
+		return p.dialer.DialContext(ctx, network, address)
 	}
 	normalized := normalizeHost(host)
 	allowedHost := p.hostAllowed(normalized)
@@ -195,7 +212,7 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 		idleTimeout = 90 * time.Second
 	}
 	transport := &http.Transport{
-		Proxy:                 nil,
+		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           policy.DialContext,
 		ForceAttemptHTTP2:     true,
 		TLSHandshakeTimeout:   tlsTimeout,

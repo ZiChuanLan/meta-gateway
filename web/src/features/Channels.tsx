@@ -50,7 +50,7 @@ import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useToast } from "../toast";
 import { formatErrorMessage } from "../formatError";
-import { CONNECTION_TYPE_OPTIONS } from "../connectionTypes";
+import { CONNECTION_TYPE_OPTIONS, PROVIDER_BASE_URLS } from "../connectionTypes";
 import { useSession } from "../session";
 import { useModules } from "../hooks/useModules";
 
@@ -1884,7 +1884,20 @@ function AddChannelDialog({
 							options={TYPE_OPTIONS}
 							groups={TYPE_GROUPS}
 							value={typeHint}
-							onChange={setTypeHint}
+							onChange={(next) => {
+								const provider = next ?? "openai-compatible";
+								// Auto-fill the provider default base URL when the field is
+								// empty or still holds the previous provider's default.
+								setBaseUrl((current) => {
+									const currentTrimmed = current.trim().replace(/\/+$/, "");
+									const previousDefault = PROVIDER_BASE_URLS[typeHint] ?? "";
+									if (currentTrimmed === "" || (previousDefault && currentTrimmed === previousDefault.replace(/\/+$/, ""))) {
+										return PROVIDER_BASE_URLS[provider] ?? "";
+									}
+									return current;
+								});
+								setTypeHint(provider);
+							}}
 							disabled={pending}
 							allowCustom
 							placeholder={t("common.type")}

@@ -49,6 +49,10 @@ func mockGeminiUpstream(t *testing.T) *httptest.Server {
 // setupGeminiRelay boots a full gateway with a gemini channel wired to baseURL
 // and returns the server URL plus a downstream relay token.
 func setupGeminiRelay(t *testing.T, baseURL string) (string, string, int64) {
+	return setupRelay(t, baseURL, "gemini")
+}
+
+func setupRelay(t *testing.T, baseURL, typeHint string) (string, string, int64) {
 	t.Helper()
 	dataDir := t.TempDir()
 	db, err := store.Open(dataDir)
@@ -76,8 +80,8 @@ func setupGeminiRelay(t *testing.T, baseURL string) (string, string, int64) {
 
 	var channel struct{ ID int64 }
 	json.Unmarshal(post(t, server.URL+"/admin/channels", map[string]any{
-		"site_id": site.ID, "credential_id": cred.ID, "name": "gemini-ch",
-		"base_url": baseURL, "type_hint": "gemini", "status": "enabled",
+		"site_id": site.ID, "credential_id": cred.ID, "name": "relay-ch",
+		"base_url": baseURL, "type_hint": typeHint, "status": "enabled",
 	}), &channel)
 
 	var route struct{ ID int64 }
@@ -236,5 +240,122 @@ func TestGeminiRelayEmbeddings(t *testing.T) {
 	}
 	if outbound.Object != "list" || len(outbound.Data) != 1 || len(outbound.Data[0].Embedding) != 3 {
 		t.Fatalf("outbound = %+v", outbound)
+	}
+}
+
+// mockOpenAIUpstream simulates an OpenAI-compatible upstream for the
+// /v1/messages downstream translation test.
+func mockOpenAIUpstream(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			http.Error(w, "no auth", http.StatusUnauthorized)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var payload struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		if strings.Contains(r.URL.Path, "chat/completions") && payload.Stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n")
+			fmt.Fprint(w, "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"content\":\"Hi from GPT\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"chatcmpl-1","object":"chat.completion","model":"gpt-4o","choices":[{"message":{"role":"assistant","content":"Hello from GPT"},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}`)
+	}))
+}
+
+func TestMessagesDownstreamOnOpenAIChannel(t *testing.T) {
+	upstream := mockOpenAIUpstream(t)
+	defer upstream.Close()
+	serverURL, token, _ := setupRelay(t, upstream.URL, "openai-compatible")
+
+	// The gemini channel type is irrelevant here; use the same helper to spin
+	// up the gateway, then re-point nothing — route "gemini-2.5-flash" already
+	// exists but the channel speaks OpenAI (mock). Send a native Anthropic
+	// Messages request through /v1/messages.
+	req, _ := http.NewRequest(http.MethodPost, serverURL+"/v1/messages", strings.NewReader(`{
+		"model": "gemini-2.5-flash",
+		"max_tokens": 64,
+		"messages": [{"role": "user", "content": "hi"}]
+	}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d body %s", resp.StatusCode, body)
+	}
+	var outbound struct {
+		Type       string `json:"type"`
+		Role       string `json:"role"`
+		Content    []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		StopReason string `json:"stop_reason"`
+		Usage      struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &outbound); err != nil {
+		t.Fatalf("decode: %v body %s", err, body)
+	}
+	if outbound.Type != "message" || outbound.Role != "assistant" {
+		t.Fatalf("outbound = %+v", outbound)
+	}
+	if len(outbound.Content) == 0 || outbound.Content[0].Text != "Hello from GPT" {
+		t.Fatalf("content = %+v", outbound.Content)
+	}
+	if outbound.Usage.InputTokens != 7 || outbound.Usage.OutputTokens != 3 {
+		t.Fatalf("usage = %+v", outbound.Usage)
+	}
+}
+
+func TestMessagesDownstreamStreamOnOpenAIChannel(t *testing.T) {
+	upstream := mockOpenAIUpstream(t)
+	defer upstream.Close()
+	serverURL, token, _ := setupRelay(t, upstream.URL, "openai-compatible")
+
+	req, _ := http.NewRequest(http.MethodPost, serverURL+"/v1/messages", strings.NewReader(`{
+		"model": "gemini-2.5-flash",
+		"max_tokens": 64,
+		"stream": true,
+		"messages": [{"role": "user", "content": "hi"}]
+	}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d body %s", resp.StatusCode, body)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"event: message_start",
+		"event: content_block_delta",
+		`"text":"Hi from GPT"`,
+		"event: message_delta",
+		`"stop_reason":"end_turn"`,
+		`"input_tokens":3`,
+		`"output_tokens":2`,
+		"event: message_stop",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("stream missing %q in %s", want, text)
+		}
 	}
 }

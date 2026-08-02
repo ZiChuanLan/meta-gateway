@@ -57,6 +57,10 @@ type Request struct {
 	Method    string
 	// OpenAIPath is the path under the upstream OpenAI root, e.g. "chat/completions".
 	OpenAIPath string
+	// DownstreamProtocol is the client-side wire contract: "openai" (default)
+	// or "anthropic" (native /v1/messages clients). Non-anthropic channels
+	// translate the request/response when "anthropic" is set.
+	DownstreamProtocol string
 	// PreferChannelID pins upstream selection (admin try). Zero means normal routing.
 	PreferChannelID int64
 	// DownstreamKeyID is the authenticated client key, used for usage metering.
@@ -192,7 +196,31 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			mappedBody = rewriteModelName(req.Body, req.Model, mappingJSON)
 		}
 
-		upstreamPath, requestBody, translateErr := adapter.TransformRequest(req.OpenAIPath, mappedBody)
+		// Downstream Anthropic clients (/v1/messages): translate to the internal
+		// OpenAI contract unless the channel is Anthropic-native (verbatim
+		// passthrough below via the adapter's "messages" path).
+		downstreamAnthropic := strings.EqualFold(req.DownstreamProtocol, "anthropic")
+		effectivePath := req.OpenAIPath
+		requestSource := mappedBody
+		if downstreamAnthropic && effectivePath == "messages" && adapter.Name() != "anthropic" {
+			translated, translateErr := adapters.MessagesToOpenAIChat(mappedBody)
+			if translateErr != nil {
+				result = &relay.Result{Err: fmt.Errorf("proxy: messages translate: %w", translateErr)}
+				category, retryable = classify(result)
+				s.recordAttempt(req, candidate, attempt+1, result, category)
+				if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+					log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
+				}
+				excluded[candidate.Channel.ID] = struct{}{}
+				last = preserve(result)
+				lastMeta = meta
+				continue
+			}
+			requestSource = translated
+			effectivePath = "chat/completions"
+		}
+
+		upstreamPath, requestBody, translateErr := adapter.TransformRequest(effectivePath, requestSource)
 		if translateErr != nil {
 			// Unsupported path or conversion failure: hard failure on this
 			// channel (no retry — a broken mapping will not heal).
@@ -250,7 +278,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
 				if req.Stream {
 					// Reshape native/upstream SSE into OpenAI chat.completion.chunk.
-					wrapped, wrapErr := adapter.WrapStream(req.OpenAIPath, result.Body)
+					wrapped, wrapErr := adapter.WrapStream(effectivePath, result.Body)
 					if wrapErr != nil {
 						result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
 					} else {
@@ -260,12 +288,16 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 						}
 						result.Header.Set("Content-Type", "text/event-stream")
 					}
+					// Downstream Anthropic clients expect the Anthropic event stream.
+					if downstreamAnthropic && result.Err == nil {
+						result.Body = adapters.NewOpenAIStreamToAnthropicStream(result.Body)
+					}
 				} else {
 					raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
 					_ = result.Body.Close()
 					if readErr != nil {
 						result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
-					} else if converted, convErr := adapter.TransformResponse(req.OpenAIPath, raw); convErr != nil {
+					} else if converted, convErr := adapter.TransformResponse(effectivePath, raw); convErr != nil {
 						// Conversion failed: surface the upstream body untouched so
 						// the client still sees the real upstream error payload.
 						result.Body = io.NopCloser(bytes.NewReader(raw))
@@ -275,6 +307,18 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 							result.Header = make(http.Header)
 						}
 						result.Header.Set("Content-Type", "application/json")
+						// Downstream Anthropic clients expect the Messages response shape.
+						if downstreamAnthropic && result.Err == nil {
+							raw2, readErr2 := io.ReadAll(io.LimitReader(result.Body, 8<<20))
+							_ = result.Body.Close()
+							if readErr2 != nil {
+								result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr2}
+							} else if messagesBody, convErr2 := adapters.OpenAIChatToMessages(raw2); convErr2 != nil {
+								result.Body = io.NopCloser(bytes.NewReader(raw2))
+							} else {
+								result.Body = io.NopCloser(bytes.NewReader(messagesBody))
+							}
+						}
 					}
 				}
 			}

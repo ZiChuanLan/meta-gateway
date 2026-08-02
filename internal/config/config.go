@@ -38,6 +38,8 @@ type Config struct {
 	TrustedProxyCIDRs             []string
 	RelayRatePerMinute            int
 	RelayRateBurst                int
+	RelayModelRatePerMinute       int
+	RelayModelRateBurst           int
 	AdminRatePerMinute            int
 	AdminRateBurst                int
 	MetricsToken                  string
@@ -104,6 +106,14 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	relayRate, err := envInt("RELAY_RATE_PER_MINUTE", 600, 0, 1000000)
+	relayModelRate, modelRateErr := envInt("RELAY_MODEL_RATE_PER_MINUTE", 0, 0, 1000000)
+	if modelRateErr != nil {
+		return nil, modelRateErr
+	}
+	relayModelBurst, modelBurstErr := envInt("RELAY_MODEL_RATE_BURST", 0, 0, 1000000)
+	if modelBurstErr != nil {
+		return nil, modelBurstErr
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +210,7 @@ func Load() (*Config, error) {
 		OutboundResponseHeaderTimeout: headerTimeout,
 		TrustedProxyCIDRs:             trustedProxies,
 		RelayRatePerMinute:            relayRate, RelayRateBurst: relayBurst,
+		RelayModelRatePerMinute:       relayModelRate, RelayModelRateBurst: relayModelBurst,
 		AdminRatePerMinute: adminRate, AdminRateBurst: adminBurst,
 		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
 		MaxHeaderBytes: maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),

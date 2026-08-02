@@ -8,7 +8,9 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
+	"time"
 	"strings"
 
 	"github.com/lan/meta-gateway/internal/store"
@@ -237,6 +239,12 @@ func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, []string, *Model
 	if key == nil || !key.Enabled {
 		return 0, nil, nil, fmt.Errorf("auth: invalid or disabled key")
 	}
+	if expiryErr := checkKeyExpiry(key.ExpiresAt); expiryErr != nil {
+		return 0, nil, nil, expiryErr
+	}
+	if ipErr := checkKeyAllowedIPs(key.AllowedIPs, clientIP(r)); ipErr != nil {
+		return 0, nil, nil, ipErr
+	}
 	scopes, err := NormalizeScopes(key.Scopes)
 	if err != nil {
 		// Corrupt historical scopes still allow full relay so ops can fix the row.
@@ -324,4 +332,60 @@ func secureCompareAny(presented string, candidates []string) bool {
 		matched |= subtle.ConstantTimeCompare(presentedBytes, candidateBytes)
 	}
 	return matched == 1
+}
+
+// checkKeyExpiry rejects keys whose expires_at timestamp is in the past.
+func checkKeyExpiry(expiresAt string) error {
+	expiresAt = strings.TrimSpace(expiresAt)
+	if expiresAt == "" {
+		return nil
+	}
+	expires, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		// Unparseable expiry: treat as expired so a corrupt row cannot bypass.
+		return fmt.Errorf("auth: key expired")
+	}
+	if time.Now().After(expires) {
+		return fmt.Errorf("auth: key expired")
+	}
+	return nil
+}
+
+// checkKeyAllowedIPs rejects requests whose client IP is not allowlisted.
+// allowedIps is a newline-separated list of IPs or CIDRs; empty allows all.
+func checkKeyAllowedIPs(allowedIps, clientIP string) error {
+	allowedIps = strings.TrimSpace(allowedIps)
+	if allowedIps == "" {
+		return nil
+	}
+	ip := net.ParseIP(strings.TrimSpace(clientIP))
+	if ip == nil {
+		return fmt.Errorf("auth: invalid client ip")
+	}
+	for _, entry := range strings.FieldsFunc(allowedIps, func(r rune) bool { return r == '\n' || r == ',' || r == ';' }) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "/") {
+			if _, network, err := net.ParseCIDR(entry); err == nil && network.Contains(ip) {
+				return nil
+			}
+			continue
+		}
+		if parsed := net.ParseIP(entry); parsed != nil && parsed.Equal(ip) {
+			return nil
+		}
+	}
+	return fmt.Errorf("auth: key ip not allowed")
+}
+
+// clientIP extracts the request source IP (remote address, no forwarded
+// headers — forwarded handling is governed by TRUSTED_PROXY_CIDRS upstream).
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return host
 }

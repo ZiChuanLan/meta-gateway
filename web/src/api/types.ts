@@ -38,6 +38,8 @@ export interface DownstreamKey {
   price_completion_per_1k?: number
   model_allowlist?: string
   model_denylist?: string
+  expires_at?: string
+  allowed_ips?: string
   estimated_cost?: number
   created_at: string
 }

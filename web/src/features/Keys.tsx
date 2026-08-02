@@ -355,6 +355,8 @@ type KeyFormValues = {
 	price_completion_per_1k?: number;
 	model_allowlist?: string;
 	model_denylist?: string;
+	expires_at?: string;
+	allowed_ips?: string;
 	reset_used?: boolean;
 };
 
@@ -409,6 +411,8 @@ function KeyDialog({
 	const [denylist, setDenylist] = useState<string[]>(() =>
 		splitModels(initial?.model_denylist),
 	);
+	const [expiresAt, setExpiresAt] = useState(initial?.expires_at ?? "");
+	const [allowedIPs, setAllowedIPs] = useState(initial?.allowed_ips ?? "");
 	const [resetUsed, setResetUsed] = useState(false);
 	const trimmedCustom = customToken.trim();
 	const customTooShort =
@@ -446,6 +450,8 @@ function KeyDialog({
 								price_completion_per_1k: parseOptionalNumber(priceCompletion),
 								model_allowlist: allowlist.join(","),
 								model_denylist: denylist.join(","),
+								expires_at: expiresAt.trim() || undefined,
+								allowed_ips: allowedIPs.trim() || undefined,
 								reset_used: mode === "edit" ? resetUsed : undefined,
 							})
 						}
@@ -528,6 +534,31 @@ function KeyDialog({
 					emptyLabel={t("keys.modelPickerEmpty")}
 				/>
 			</Field>
+			<div className="split" style={{ gap: "0.75rem" }}>
+				<Field
+					label={t("keys.expiresAt")}
+					hint={t("keys.expiresAtHint")}
+				>
+					<input
+						type="datetime-local"
+						value={expiresAt ? toLocalInput(expiresAt) : ""}
+						disabled={pending}
+						onChange={(e) => setExpiresAt(e.target.value ? toRFC3339(e.target.value) : "")}
+					/>
+				</Field>
+				<Field
+					label={t("keys.allowedIPs")}
+					hint={t("keys.allowedIPsHint")}
+				>
+					<textarea
+						value={allowedIPs}
+						disabled={pending}
+						onChange={(e) => setAllowedIPs(e.target.value)}
+						placeholder="1.2.3.4&#10;10.0.0.0/8"
+						style={{ minHeight: 64 }}
+					/>
+				</Field>
+			</div>
 			{mode === "edit" ? (
 				<label
 					className="check"
@@ -579,4 +610,19 @@ function KeyDialog({
 			{error ? <ErrorState error={error} /> : null}
 		</Dialog>
 	);
+}
+
+/** Converts an RFC3339 string to a local datetime-local input value. */
+function toLocalInput(iso: string): string {
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return "";
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Converts a datetime-local input value to RFC3339 (local time). */
+function toRFC3339(local: string): string {
+	const date = new Date(local);
+	if (Number.isNaN(date.getTime())) return "";
+	return date.toISOString();
 }

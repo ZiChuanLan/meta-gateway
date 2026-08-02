@@ -169,7 +169,11 @@ type DownstreamKey struct {
 	// Both are comma-separated model names.
 	ModelAllowlist string    `json:"model_allowlist,omitempty"`
 	ModelDenylist  string    `json:"model_denylist,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	// ExpiresAt is an RFC3339 timestamp; empty means the key never expires.
+	ExpiresAt string `json:"expires_at,omitempty"`
+	// AllowedIPs is a newline-separated list of IPs/CIDRs; empty means any source.
+	AllowedIPs string `json:"allowed_ips,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // ---------------------------------------------------------------------------

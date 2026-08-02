@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
@@ -145,5 +146,38 @@ func TestDownstreamAuthAttachesScopes(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
+func TestCheckKeyExpiry(t *testing.T) {
+	if err := checkKeyExpiry(""); err != nil {
+		t.Fatalf("empty expiry must pass, got %v", err)
+	}
+	if err := checkKeyExpiry(time.Now().Add(time.Hour).Format(time.RFC3339)); err != nil {
+		t.Fatalf("future expiry must pass, got %v", err)
+	}
+	if err := checkKeyExpiry(time.Now().Add(-time.Hour).Format(time.RFC3339)); err == nil {
+		t.Fatal("past expiry must fail")
+	}
+	if err := checkKeyExpiry("not-a-time"); err == nil {
+		t.Fatal("garbage expiry must fail closed")
+	}
+}
+
+func TestCheckKeyAllowedIPs(t *testing.T) {
+	if err := checkKeyAllowedIPs("", "1.2.3.4"); err != nil {
+		t.Fatalf("empty allowlist must pass, got %v", err)
+	}
+	if err := checkKeyAllowedIPs("1.2.3.4\n10.0.0.0/8", "1.2.3.4"); err != nil {
+		t.Fatalf("exact IP must pass, got %v", err)
+	}
+	if err := checkKeyAllowedIPs("1.2.3.4\n10.0.0.0/8", "10.5.6.7"); err != nil {
+		t.Fatalf("CIDR match must pass, got %v", err)
+	}
+	if err := checkKeyAllowedIPs("1.2.3.4", "8.8.8.8"); err == nil {
+		t.Fatal("non-allowlisted IP must fail")
+	}
+	if err := checkKeyAllowedIPs("1.2.3.4", "not-an-ip"); err == nil {
+		t.Fatal("invalid client IP must fail")
 	}
 }

@@ -5,10 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
+
+	"github.com/lan/meta-gateway/internal/ratelimit"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -37,10 +42,12 @@ type RelayProxy interface {
 type RelayHandler struct {
 	db    *store.DB
 	proxy RelayProxy
+	// modelLimiter is nil when per-model relay limiting is disabled.
+	modelLimiter *ratelimit.Limiter
 }
 
-func NewRelayHandler(db *store.DB, service RelayProxy) *RelayHandler {
-	return &RelayHandler{db: db, proxy: service}
+func NewRelayHandler(db *store.DB, service RelayProxy, modelLimiter *ratelimit.Limiter) *RelayHandler {
+	return &RelayHandler{db: db, proxy: service, modelLimiter: modelLimiter}
 }
 
 func (h *RelayHandler) Register(r chi.Router) {
@@ -139,9 +146,11 @@ func (h *RelayHandler) responses(w http.ResponseWriter, r *http.Request) {
 	h.forwardModelRequest(w, r, "responses", true, auth.ScopeResponses)
 }
 
-// messages is the Anthropic Messages API surface (native clients).
+// messages is the Anthropic Messages API surface (native clients). The
+// gateway serves any channel here: Anthropic-native channels pass through
+// verbatim; other channels translate the request/response (see proxy).
 func (h *RelayHandler) messages(w http.ResponseWriter, r *http.Request) {
-	h.forwardModelRequest(w, r, "messages", true, auth.ScopeMessages)
+	h.forwardModelRequest(w, r, "messages", true, auth.ScopeMessages, "anthropic")
 }
 
 func (h *RelayHandler) imagesGenerations(w http.ResponseWriter, r *http.Request) {
@@ -219,6 +228,9 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	}
 	if filter := auth.DownstreamModelFilter(r); filter != nil && !filter.Allows(modelName) {
 		writeError(w, http.StatusForbidden, "model is not allowed for this token")
+		return
+	}
+	if !h.checkModelRate(w, r, modelName) {
 		return
 	}
 
@@ -315,7 +327,7 @@ func (h *RelayHandler) ensureQuota(w http.ResponseWriter, r *http.Request) bool 
 	return true
 }
 
-func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Request, openAIPath string, allowStream bool, requiredScope string) {
+func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Request, openAIPath string, allowStream bool, requiredScope string, downstreamProtocol ...string) {
 	if !auth.HasScope(auth.DownstreamScopes(r), requiredScope) {
 		writeError(w, http.StatusForbidden, "insufficient scope")
 		return
@@ -356,20 +368,28 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusForbidden, "model is not allowed for this token")
 		return
 	}
+	if !h.checkModelRate(w, r, modelName) {
+		return
+	}
 	if stream && (openAIPath == "chat/completions" || openAIPath == "completions") {
 		body = ensureStreamUsageOption(body)
 	}
 
 	requestID, _ := r.Context().Value(chimw.RequestIDKey).(string)
 	keyID, _ := auth.DownstreamKeyID(r)
+	downstream := "openai"
+	if len(downstreamProtocol) > 0 && downstreamProtocol[0] != "" {
+		downstream = downstreamProtocol[0]
+	}
 	proxyReq := proxy.Request{
-		RequestID:       requestID,
-		Model:           modelName,
-		Body:            body,
-		Stream:          stream,
-		Method:          http.MethodPost,
-		OpenAIPath:      openAIPath,
-		DownstreamKeyID: keyID,
+		RequestID:          requestID,
+		Model:              modelName,
+		Body:               body,
+		Stream:             stream,
+		Method:             http.MethodPost,
+		OpenAIPath:         openAIPath,
+		DownstreamKeyID:    keyID,
+		DownstreamProtocol: downstream,
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	writeUpstreamResult(
@@ -503,4 +523,32 @@ func copyResponseHeaders(dst, src http.Header, stream bool) {
 	} else if dst.Get("Content-Type") == "" {
 		dst.Set("Content-Type", "application/json")
 	}
+}
+
+// checkModelRate enforces the per-(key, model) request limit, when configured.
+// Returns false after writing a 429 response.
+func (h *RelayHandler) checkModelRate(w http.ResponseWriter, r *http.Request, model string) bool {
+	if h.modelLimiter == nil {
+		return true
+	}
+	keyID, ok := auth.DownstreamKeyID(r)
+	if !ok || keyID <= 0 {
+		return true
+	}
+	// Composite bucket key: fnv64(keyID + "\x00" + model). Collisions are
+	// astronomically unlikely for realistic key/model counts and merely cause
+	// an occasional shared bucket — acceptable for a rate limit.
+	var buffer bytes.Buffer
+	buffer.WriteString(strconv.FormatInt(keyID, 10))
+	buffer.WriteByte(0)
+	buffer.WriteString(model)
+	hash := fnv.New64a()
+	_, _ = hash.Write(buffer.Bytes())
+	allowed, wait := h.modelLimiter.Allow(int64(hash.Sum64()))
+	if !allowed {
+		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", wait.Seconds()))
+		writeError(w, http.StatusTooManyRequests, "model rate limit exceeded")
+		return false
+	}
+	return true
 }

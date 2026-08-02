@@ -758,6 +758,8 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
 		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
+		ExpiresAt            string  `json:"expires_at,omitempty"`
+		AllowedIPs           string  `json:"allowed_ips,omitempty"`
 		EstimatedCost        float64 `json:"estimated_cost"`
 		CreatedAt            string  `json:"created_at"`
 	}
@@ -790,6 +792,8 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 			PriceCompletionPer1k: k.PriceCompletionPer1k,
 			ModelAllowlist:       k.ModelAllowlist,
 			ModelDenylist:        k.ModelDenylist,
+			ExpiresAt:            k.ExpiresAt,
+			AllowedIPs:           k.AllowedIPs,
 			EstimatedCost:        estimated,
 			CreatedAt:            k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		})
@@ -809,6 +813,8 @@ type createKeyResponse struct {
 	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
 	ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 	ModelDenylist        string  `json:"model_denylist,omitempty"`
+	ExpiresAt            string  `json:"expires_at,omitempty"`
+	AllowedIPs           string  `json:"allowed_ips,omitempty"`
 	CreatedAt            string  `json:"created_at"`
 }
 
@@ -824,6 +830,8 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
 		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
+		ExpiresAt            string  `json:"expires_at,omitempty"`
+		AllowedIPs           string  `json:"allowed_ips,omitempty"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -884,6 +892,8 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		PriceCompletionPer1k: req.PriceCompletionPer1k,
 		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
+		ExpiresAt:            strings.TrimSpace(req.ExpiresAt),
+		AllowedIPs:           strings.TrimSpace(req.AllowedIPs),
 	}
 	id, err := h.db.DownstreamKey.Create(key)
 	if err != nil {
@@ -936,6 +946,8 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
 		ModelAllowlist       *string  `json:"model_allowlist"`
 		ModelDenylist        *string  `json:"model_denylist"`
+		ExpiresAt            *string  `json:"expires_at"`
+		AllowedIPs           *string  `json:"allowed_ips"`
 		ResetUsed            bool     `json:"reset_used"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
@@ -987,6 +999,12 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 	}
 	if req.ModelDenylist != nil {
 		existing.ModelDenylist = strings.TrimSpace(*req.ModelDenylist)
+	}
+	if req.ExpiresAt != nil {
+		existing.ExpiresAt = strings.TrimSpace(*req.ExpiresAt)
+	}
+	if req.AllowedIPs != nil {
+		existing.AllowedIPs = strings.TrimSpace(*req.AllowedIPs)
 	}
 	if err := h.db.DownstreamKey.Update(existing); err != nil {
 		writeStoreError(w, err)

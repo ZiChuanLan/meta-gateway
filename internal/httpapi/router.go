@@ -247,7 +247,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)
-	relayHandler := NewRelayHandler(db, proxyService)
+	relayHandler := NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst))
 	v1Group := chi.NewRouter()
 	v1Group.Use(auth.NewDownstreamAuth(db.DownstreamKey).Middleware())
 	v1Group.Use(rateLimitMiddleware(relayLimiter, downstreamRateKey, "relay", metrics))

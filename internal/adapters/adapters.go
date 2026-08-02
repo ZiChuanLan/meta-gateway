@@ -123,6 +123,26 @@ func OpenAICompatibleBrands() []string {
 		"aihubmix",
 		"sharedchat",
 		"wong-gongyi",
+		// Domestic providers (OpenAI-compatible endpoints).
+		"deepseek",
+		"moonshot",
+		"zhipu",
+		"qwen",
+		"doubao",
+		"siliconflow",
+		"minimax",
+		"stepfun",
+		"lingyiwanwu",
+		"baichuan",
+		"spark",
+		"hunyuan",
+		"qianfan",
+		// International providers (OpenAI-compatible endpoints).
+		"openrouter",
+		"groq",
+		"xai",
+		"mistral",
+		"perplexity",
 		"unknown",
 	}
 }
@@ -198,6 +218,9 @@ func CanonicalType(value string) string {
 	case "anyrouter", "veloera", "one-hub", "done-hub", "v-api", "voapi",
 		"super-api", "rix-api", "neo-api", "sub2api", "octopus", "axonhub",
 		"metapi", "claude-code-hub", "aihubmix", "sharedchat", "wong-gongyi",
+		"deepseek", "moonshot", "zhipu", "qwen", "doubao", "siliconflow",
+		"minimax", "stepfun", "lingyiwanwu", "baichuan", "spark", "hunyuan",
+		"qianfan", "openrouter", "groq", "xai", "mistral", "perplexity",
 		"unknown":
 		// Brand-specific New-API / One-API style relays: OpenAI-compatible /v1 surface.
 		return "openai-compatible"
