@@ -45,7 +45,12 @@ export function SearchableSelect({
 	// The panel is fixed-positioned so scroll containers (e.g. Dialog) cannot clip it.
 	const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
 
+	// Guards against the panel re-opening right after a selection: keyboard
+	// users often hit Enter/Space again (focus sits on the trigger), which
+	// would otherwise re-open the dropdown immediately after it closes.
+	const suppressOpenUntil = useRef(0);
 	const openPanel = () => {
+		if (Date.now() < suppressOpenUntil.current) return;
 		const trigger = rootRef.current?.querySelector<HTMLElement>(
 			".searchable-select-trigger",
 		);
@@ -148,6 +153,9 @@ export function SearchableSelect({
 		onChange(next);
 		setOpen(false);
 		setQuery("");
+		suppressOpenUntil.current = Date.now() + 300;
+		// Move focus off the trigger so a following Enter/Space cannot re-open.
+		(document.activeElement as HTMLElement | null)?.blur?.();
 	};
 
 	const triggerValue = isCustom
