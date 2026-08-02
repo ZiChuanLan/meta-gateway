@@ -107,7 +107,8 @@ func (a *NewAPIAccountAdapter) ListTokenGroups(ctx context.Context, input Accoun
 	if envelope.Success != nil && !*envelope.Success {
 		return nil, &Error{Kind: ErrorPayload}
 	}
-	// Canonical shape: data is a string array. Some forks nest {groups: [...]}.
+	// Canonical shape: data is a string array. Some forks nest {groups: [...]}
+	// or return an object array [{name: ...}]; a few put groups at the top level.
 	var plain []string
 	if err := json.Unmarshal(envelope.Data, &plain); err == nil {
 		return plain, nil
@@ -115,8 +116,26 @@ func (a *NewAPIAccountAdapter) ListTokenGroups(ctx context.Context, input Accoun
 	var nested struct {
 		Groups []string `json:"groups"`
 	}
-	if err := json.Unmarshal(envelope.Data, &nested); err == nil {
+	if err := json.Unmarshal(envelope.Data, &nested); err == nil && len(nested.Groups) > 0 {
 		return nested.Groups, nil
+	}
+	var objects []struct {
+		Name      string `json:"name"`
+		GroupName string `json:"group_name"`
+		Value     string `json:"value"`
+	}
+	if err := json.Unmarshal(envelope.Data, &objects); err == nil && len(objects) > 0 {
+		groups := make([]string, 0, len(objects))
+		for _, item := range objects {
+			groups = append(groups, firstNonEmpty(item.Name, item.GroupName, item.Value))
+		}
+		return groups, nil
+	}
+	var topLevel struct {
+		Groups []string `json:"groups"`
+	}
+	if err := json.Unmarshal(body, &topLevel); err == nil && len(topLevel.Groups) > 0 {
+		return topLevel.Groups, nil
 	}
 	return nil, &Error{Kind: ErrorPayload}
 }
