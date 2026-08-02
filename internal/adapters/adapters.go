@@ -16,6 +16,7 @@ type Registry struct {
 	adapters        map[string]ModelAdapter
 	checkinAdapters map[string]CheckinAdapter
 	accountAdapters map[string]AccountAdapter
+	forwardAdapters []ForwardAdapter
 }
 
 func NewRegistry(client *http.Client) *Registry {
@@ -23,6 +24,7 @@ func NewRegistry(client *http.Client) *Registry {
 	newAPI := NewOpenAIModelAdapter("new-api", client)
 	oneAPI := NewOpenAIModelAdapter("one-api", client)
 	anthropic := NewAnthropicModelAdapter("anthropic", client)
+	gemini := NewGeminiModelAdapter("gemini", client)
 	newAPICheckin := NewJSONCheckinAdapter("new-api", client, true)
 	oneAPICheckin := NewJSONCheckinAdapter("one-api", client, false)
 	newAPIAccount := NewNewAPIAccountAdapter("new-api", client, true)
@@ -40,6 +42,8 @@ func NewRegistry(client *http.Client) *Registry {
 		"anthropic":         anthropic,
 		"claude":            anthropic,
 		"claude-official":   anthropic,
+		"gemini":            gemini,
+		"google-gemini":     gemini,
 	}
 	// Register common OpenAI-compatible relay brands so discovery works after AAH import.
 	for _, brand := range OpenAICompatibleBrands() {
@@ -89,6 +93,13 @@ func NewRegistry(client *http.Client) *Registry {
 		adapters:        modelAdapters,
 		checkinAdapters: checkinMap,
 		accountAdapters: accountMap,
+		// Registration order matters: the first adapter whose IsFor matches wins.
+		// OpenAIPassthroughAdapter is appended last as the universal fallback.
+		forwardAdapters: []ForwardAdapter{
+			AnthropicForwardAdapter{},
+			GeminiForwardAdapter{},
+			OpenAIPassthroughAdapter{},
+		},
 	}
 }
 
@@ -158,6 +169,17 @@ func (r *Registry) resolveOne(raw string) (ModelAdapter, bool) {
 	return nil, false
 }
 
+// ResolveForward returns the forwarding adapter for a channel's type hint and
+// site platform. The passthrough fallback guarantees a non-nil result.
+func (r *Registry) ResolveForward(typeHint, platform string) ForwardAdapter {
+	for _, adapter := range r.forwardAdapters {
+		if adapter.IsFor(typeHint, platform) {
+			return adapter
+		}
+	}
+	return OpenAIPassthroughAdapter{}
+}
+
 // CanonicalType maps free-form site/channel type labels to a stable family id.
 func CanonicalType(value string) string {
 	value = canonical(value)
@@ -171,6 +193,8 @@ func CanonicalType(value string) string {
 		return "one-api"
 	case "anthropic", "claude", "claude-official", "claude-api":
 		return "anthropic"
+	case "gemini", "google-gemini", "google":
+		return "gemini"
 	case "anyrouter", "veloera", "one-hub", "done-hub", "v-api", "voapi",
 		"super-api", "rix-api", "neo-api", "sub2api", "octopus", "axonhub",
 		"metapi", "claude-code-hub", "aihubmix", "sharedchat", "wong-gongyi",

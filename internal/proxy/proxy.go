@@ -46,6 +46,7 @@ type Service struct {
 	retryTimes atomic.Int64
 	cooldownNs atomic.Int64
 	now        func() time.Time
+	registry   *adapters.Registry
 }
 
 type Request struct {
@@ -88,6 +89,27 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 	service.retryTimes.Store(int64(retryTimes))
 	service.cooldownNs.Store(int64(cooldown))
 	return service
+}
+
+// SetAdapterRegistry installs the platform adapter registry used to resolve
+// per-channel forward adapters (OpenAI passthrough, Anthropic, Gemini, …).
+func (s *Service) SetAdapterRegistry(registry *adapters.Registry) {
+	s.registry = registry
+}
+
+// resolveForward returns the forward adapter for a channel, falling back to
+// the OpenAI passthrough adapter when no registry is installed.
+func (s *Service) resolveForward(channel domain.Channel) adapters.ForwardAdapter {
+	platform := ""
+	if channel.SiteID != nil {
+		if site, err := s.db.Site.GetByID(*channel.SiteID); err == nil && site != nil {
+			platform = site.Platform
+		}
+	}
+	if s.registry != nil {
+		return s.registry.ResolveForward(channel.TypeHint, platform)
+	}
+	return adapters.OpenAIPassthroughAdapter{}
 }
 
 // SetRetryPolicy hot-updates cross-channel retry count and cool-down base.
@@ -160,18 +182,32 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		var result *relay.Result
 		var category string
 		var retryable bool
-		protocol := s.channelProtocol(candidate.Channel)
-		wirePath := req.OpenAIPath
-		if protocol == "anthropic" {
-			switch wirePath {
-			case "", "chat/completions", "messages":
-				wirePath = "messages"
-			default:
-				// Images/audio/etc. are OpenAI-compatible only; do not invent Anthropic mappings.
-				return &relay.Result{Err: fmt.Errorf("proxy: path %q is not supported on Anthropic channels", wirePath)}, meta
-			}
+		adapter := s.resolveForward(candidate.Channel)
+
+		// Channel-scoped model aliases: when the matched route carries a
+		// mapping_json of {"real":"…"}, clients requested the alias and we
+		// must rewrite the body back to the upstream's real model name.
+		mappedBody := req.Body
+		if mappingJSON := strings.TrimSpace(decision.RouteMappingJSON); mappingJSON != "" {
+			mappedBody = rewriteModelName(req.Body, req.Model, mappingJSON)
 		}
-		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, wirePath, protocol)
+
+		upstreamPath, requestBody, translateErr := adapter.TransformRequest(req.OpenAIPath, mappedBody)
+		if translateErr != nil {
+			// Unsupported path or conversion failure: hard failure on this
+			// channel (no retry — a broken mapping will not heal).
+			result = &relay.Result{Err: fmt.Errorf("proxy: %s translate: %w", adapter.Name(), translateErr)}
+			category, retryable = classify(result)
+			s.recordAttempt(req, candidate, attempt+1, result, category)
+			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
+			}
+			excluded[candidate.Channel.ID] = struct{}{}
+			last = preserve(result)
+			lastMeta = meta
+			continue
+		}
+		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, upstreamPath, adapter)
 		if err != nil {
 			// Channel config is broken (e.g. empty base URL): count it as a
 			// retryable failure so the request fails over to the next channel
@@ -204,61 +240,43 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			continue
 		}
 
-		// Channel-scoped model aliases: when the matched route carries a
-		// mapping_json of {"real":"…"}, clients requested the alias and we
-		// must rewrite the body back to the upstream's real model name.
-		mappedBody := req.Body
-		if mappingJSON := strings.TrimSpace(decision.RouteMappingJSON); mappingJSON != "" {
-			mappedBody = rewriteModelName(req.Body, req.Model, mappingJSON)
-		}
-
 		for keyIndex, apiKey := range apiKeys {
-			requestBody := mappedBody
-			if protocol == "anthropic" {
-				if req.OpenAIPath == "messages" {
-					// Native Anthropic Messages clients already send Messages JSON.
-					result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, adapters.AnthropicAuthHeaders(apiKey), requestBody)
-				} else {
-					// OpenAI chat clients: translate request; non-stream responses translated back.
-					translated, translateErr := adapters.ChatToAnthropicMessages(req.Body)
-					if translateErr != nil {
-						result = &relay.Result{Err: fmt.Errorf("proxy: anthropic translate: %w", translateErr)}
+			headers := adapter.AuthHeaders(apiKey)
+			if headers.Get("Content-Type") == "" && strings.TrimSpace(req.ContentType) != "" {
+				headers.Set("Content-Type", req.ContentType)
+			}
+			result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, headers, requestBody)
+			// Convert upstream 2xx bodies back to the OpenAI contract.
+			if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
+				if req.Stream {
+					// Reshape native/upstream SSE into OpenAI chat.completion.chunk.
+					wrapped, wrapErr := adapter.WrapStream(req.OpenAIPath, result.Body)
+					if wrapErr != nil {
+						result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
 					} else {
-						requestBody = translated
-						result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, adapters.AnthropicAuthHeaders(apiKey), requestBody)
-						if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
-							if req.Stream {
-								// Reshape Anthropic SSE → OpenAI chat.completion.chunk for OpenAI clients.
-								result.Body = adapters.NewAnthropicToOpenAIStream(result.Body)
-								if result.Header == nil {
-									result.Header = make(http.Header)
-								}
-								result.Header.Set("Content-Type", "text/event-stream")
-							} else {
-								raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
-								_ = result.Body.Close()
-								if readErr != nil {
-									result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
-								} else if chatBody, convErr := adapters.AnthropicMessagesToChat(raw); convErr != nil {
-									result.Body = io.NopCloser(bytes.NewReader(raw))
-								} else {
-									result.Body = io.NopCloser(bytes.NewReader(chatBody))
-									if result.Header == nil {
-										result.Header = make(http.Header)
-									}
-									result.Header.Set("Content-Type", "application/json")
-								}
-							}
+						result.Body = wrapped
+						if result.Header == nil {
+							result.Header = make(http.Header)
 						}
+						result.Header.Set("Content-Type", "text/event-stream")
+					}
+				} else {
+					raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
+					_ = result.Body.Close()
+					if readErr != nil {
+						result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
+					} else if converted, convErr := adapter.TransformResponse(req.OpenAIPath, raw); convErr != nil {
+						// Conversion failed: surface the upstream body untouched so
+						// the client still sees the real upstream error payload.
+						result.Body = io.NopCloser(bytes.NewReader(raw))
+					} else {
+						result.Body = io.NopCloser(bytes.NewReader(converted))
+						if result.Header == nil {
+							result.Header = make(http.Header)
+						}
+						result.Header.Set("Content-Type", "application/json")
 					}
 				}
-			} else {
-				headers := http.Header{}
-				headers.Set("Authorization", "Bearer "+apiKey)
-				if ct := strings.TrimSpace(req.ContentType); ct != "" {
-					headers.Set("Content-Type", ct)
-				}
-				result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, headers, requestBody)
 			}
 			streamInterrupted := false
 			if req.Stream && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
@@ -411,20 +429,7 @@ func (s *Service) resolveAPIKey(channel domain.Channel) (string, error) {
 	return keys[0], nil
 }
 
-func (s *Service) channelProtocol(channel domain.Channel) string {
-	platform := ""
-	if channel.SiteID != nil {
-		if site, err := s.db.Site.GetByID(*channel.SiteID); err == nil && site != nil {
-			platform = site.Platform
-		}
-	}
-	if adapters.IsAnthropicFamily(channel.TypeHint, platform) {
-		return "anthropic"
-	}
-	return "openai"
-}
-
-func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath, protocol string) (string, error) {
+func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, adapter adapters.ForwardAdapter) (string, error) {
 	baseURL := strings.TrimSpace(channel.BaseURL)
 	if baseURL == "" {
 		if channel.SiteID == nil {
@@ -436,21 +441,7 @@ func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath, protocol s
 		}
 		baseURL = site.BaseURL
 	}
-	path := strings.TrimSpace(apiPath)
-	if path == "" {
-		if protocol == "anthropic" {
-			path = "messages"
-		} else {
-			path = "chat/completions"
-		}
-	}
-	var upstreamURL string
-	var err error
-	if protocol == "anthropic" {
-		upstreamURL, err = adapters.JoinAnthropicPath(baseURL, path)
-	} else {
-		upstreamURL, err = adapters.JoinOpenAIPath(baseURL, path)
-	}
+	upstreamURL, err := adapter.BuildUpstreamURL(baseURL, apiPath)
 	if err != nil {
 		return "", fmt.Errorf("proxy: invalid base url")
 	}

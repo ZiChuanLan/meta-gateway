@@ -152,6 +152,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	adminGroup.Use(withAdminBodyLimit(cfg.MaxAdminBodyBytes))
 	selector := routing.New(db.RouteMember)
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
+	proxyService.SetAdapterRegistry(registry)
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)

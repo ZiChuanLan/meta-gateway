@@ -14,6 +14,7 @@ export const CONNECTION_TYPE_OPTIONS: ConnectionTypeOption[] = [
 	{ value: "new-api", label: "New API", group: "core" },
 	{ value: "one-api", label: "One API", group: "core" },
 	{ value: "anthropic", label: "Anthropic (Claude Official)", group: "core" },
+	{ value: "gemini", label: "Google Gemini (Official)", group: "core" },
 	{ value: "axonhub", label: "AxonHub", group: "relay" },
 	{ value: "metapi", label: "Metapi", group: "relay" },
 	{ value: "anyrouter", label: "AnyRouter", group: "relay" },

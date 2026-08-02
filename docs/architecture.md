@@ -201,3 +201,28 @@ embedded React Web Admin under `/console/` that consumes the existing
 authenticated Admin contracts without changing their security or ownership
 rules. Metrics collection and offline restore deliberately remain operational
 interfaces outside the browser application.
+
+## Forward Adapters (platform translation)
+
+The relay path speaks the OpenAI wire contract to clients. Channels that natively
+speak OpenAI (`openai-compatible`, `new-api`, `one-api`, and relay brands) are
+forwarded verbatim by the default passthrough adapter. Native platforms are
+translated through per-platform **forward adapters** registered in
+`internal/adapters`:
+
+| Platform | Adapter | Translation |
+| --- | --- | --- |
+| OpenAI-compatible | `OpenAIPassthroughAdapter` (default) | none — verbatim passthrough |
+| Anthropic | `AnthropicForwardAdapter` | OpenAI chat ⇄ Messages API (`x-api-key`, `anthropic-version`); Anthropic SSE → OpenAI chunks |
+| Gemini | `GeminiForwardAdapter` | OpenAI chat ⇄ `generateContent` / `streamGenerateContent` (`x-goog-api-key`); embeddings ⇄ `batchEmbedContents` |
+
+The `ForwardAdapter` interface (`internal/adapters/forward.go`) covers: channel
+matching (`IsFor`), upstream URL building, request transformation
+(`TransformRequest`), response transformation (`TransformResponse`), SSE stream
+wrapping (`WrapStream`), and upstream auth headers (`AuthHeaders`). `proxy`
+resolves the adapter per channel via `Registry.ResolveForward(typeHint, platform)`
+and falls back to the passthrough adapter. Usage accounting runs on the
+converted OpenAI-style body (non-stream) or the final SSE chunk (stream), so
+native channels report real token usage.
+
+Adding a channel platform = one adapter implementation + one registration line.

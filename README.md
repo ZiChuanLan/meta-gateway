@@ -167,8 +167,13 @@ exact model names first, then the longest `*` / `?` wildcard pattern.
 
 Connection type **Anthropic (Claude Official)** uses Anthropic auth headers and
 `/v1/messages` on the wire. OpenAI chat clients still call `/v1/chat/completions`;
-the gateway translates request/response for non-stream traffic. Streamed
-Anthropic SSE is forwarded as-is (not re-shaped to OpenAI SSE yet).
+the gateway translates request and response for both non-stream and SSE traffic.
+
+Connection type **Google Gemini (Official)** talks to
+`generativelanguage.googleapis.com` (`x-goog-api-key`). OpenAI
+`/v1/chat/completions` is translated to `generateContent` (non-stream and SSE),
+and `/v1/embeddings` to `batchEmbedContents`. Model discovery lists Gemini models
+via `GET /v1beta/models`.
 
 Official modules (`exchange`, `checkin`, `operations`) are auto-installed on first
 boot. Disable a module to hide its Admin API group; check-in scheduling also

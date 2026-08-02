@@ -7,6 +7,7 @@ import type { CreatedDownstreamKey, DownstreamKey } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { ModelPicker } from "../components/ModelPicker";
+import { ScopePicker } from "../components/ScopePicker";
 import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
 import { StatGrid } from "../components/StatGrid";
@@ -378,7 +379,12 @@ function KeyDialog({
 	const [name, setName] = useState(initial?.name ?? "");
 	const [customToken, setCustomToken] = useState("");
 	const [useCustomToken, setUseCustomToken] = useState(false);
-	const [scopes, setScopes] = useState(initial?.scopes?.trim() || "relay");
+	const [scopes, setScopes] = useState<string[]>(() =>
+		(initial?.scopes?.trim() || "relay")
+			.split(/[,;|\s]+/)
+			.map((entry) => entry.trim())
+			.filter(Boolean),
+	);
 	const [quotaTotal, setQuotaTotal] = useState(
 		String(initial?.quota_total_tokens && initial.quota_total_tokens > 0 ? initial.quota_total_tokens : ""),
 	);
@@ -433,7 +439,7 @@ function KeyDialog({
 						onClick={() =>
 							onSave({
 								name: name.trim(),
-								scopes: scopes.trim() || "relay",
+								scopes: scopes.length > 0 ? scopes.join(",") : "relay",
 								token: mode === "create" && useCustomToken ? trimmedCustom : undefined,
 								quota_total_tokens: parseOptionalNumber(quotaTotal),
 								price_prompt_per_1k: parseOptionalNumber(pricePrompt),
@@ -460,12 +466,11 @@ function KeyDialog({
 					placeholder={t("keys.namePlaceholder")}
 				/>
 			</Field>
-			<Field label={t("common.scopes")}>
-				<input
-					value={scopes}
-					onChange={(e) => setScopes(e.target.value)}
-					placeholder="relay | models,chat,embeddings"
-				/>
+			<Field
+				label={t("common.scopes")}
+				hint={t("keys.scopesHint")}
+			>
+				<ScopePicker value={scopes} onChange={setScopes} disabled={pending} />
 			</Field>
 			<Field label={t("keys.quotaTotal")} hint={t("keys.quotaTotalHint")}>
 				<input
