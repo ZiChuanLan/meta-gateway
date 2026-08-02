@@ -1799,25 +1799,6 @@ function AddChannelDialog({
 					<Button variant="secondary" onClick={onClose} disabled={pending}>
 						{t("common.cancel")}
 					</Button>
-					{showAdvanced ? (
-						<Button
-							variant="secondary"
-							disabled={pending || !canSubmit}
-							onClick={() =>
-								onSave(
-									{
-										name,
-										base_url: baseUrl,
-										secret,
-										type_hint: typeHint,
-									},
-									{ verify: false },
-								)
-							}
-						>
-							{t("channels.saveOnly")}
-						</Button>
-					) : null}
 					<Button
 						icon={<Cable size={16} />}
 						disabled={pending || !canSubmit}
@@ -1840,6 +1821,30 @@ function AddChannelDialog({
 		>
 			<p className="channel-form-intro">{t("channels.addHint")}</p>
 			<div className="form-grid form-grid-single">
+				<Field label={t("common.type")}>
+					<SearchableSelect
+						options={TYPE_OPTIONS}
+						groups={TYPE_GROUPS}
+						value={typeHint}
+						onChange={(next) => {
+							const provider = next ?? "openai-compatible";
+							// Auto-fill the provider default base URL when the field is
+							// empty or still holds the previous provider's default.
+							setBaseUrl((current) => {
+								const currentTrimmed = current.trim().replace(/\/+$/, "");
+								const previousDefault = PROVIDER_BASE_URLS[typeHint] ?? "";
+								if (currentTrimmed === "" || (previousDefault && currentTrimmed === previousDefault.replace(/\/+$/, ""))) {
+									return PROVIDER_BASE_URLS[provider] ?? "";
+								}
+								return current;
+							});
+							setTypeHint(provider);
+						}}
+						disabled={pending}
+						allowCustom
+						placeholder={t("common.type")}
+					/>
+				</Field>
 				<Field label={t("common.name")}>
 					<input
 						value={name}
@@ -1878,31 +1883,27 @@ function AddChannelDialog({
 				{showAdvanced ? t("channels.hideAdvanced") : t("channels.showAdvanced")}
 			</button>
 			{showAdvanced ? (
-				<div className="form-grid form-grid-single">
-					<Field label={t("common.type")}>
-						<SearchableSelect
-							options={TYPE_OPTIONS}
-							groups={TYPE_GROUPS}
-							value={typeHint}
-							onChange={(next) => {
-								const provider = next ?? "openai-compatible";
-								// Auto-fill the provider default base URL when the field is
-								// empty or still holds the previous provider's default.
-								setBaseUrl((current) => {
-									const currentTrimmed = current.trim().replace(/\/+$/, "");
-									const previousDefault = PROVIDER_BASE_URLS[typeHint] ?? "";
-									if (currentTrimmed === "" || (previousDefault && currentTrimmed === previousDefault.replace(/\/+$/, ""))) {
-										return PROVIDER_BASE_URLS[provider] ?? "";
-									}
-									return current;
-								});
-								setTypeHint(provider);
-							}}
-							disabled={pending}
-							allowCustom
-							placeholder={t("common.type")}
-						/>
-					</Field>
+				<div style={{ marginTop: 4 }}>
+					<Button
+						variant="secondary"
+						disabled={pending || !canSubmit}
+						onClick={() =>
+							onSave(
+								{
+									name,
+									base_url: baseUrl,
+									secret,
+									type_hint: typeHint,
+								},
+								{ verify: false },
+							)
+						}
+					>
+						{t("channels.saveOnly")}
+					</Button>
+					<small className="muted" style={{ marginLeft: 8 }}>
+						{t("channels.saveOnlyHint")}
+					</small>
 				</div>
 			) : null}
 

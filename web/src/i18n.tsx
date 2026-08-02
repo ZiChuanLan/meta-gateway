@@ -260,6 +260,7 @@ const en: Dict = {
 	"channels.fetchModels": "Sync models",
 	"channels.saveAndVerify": "Save & verify",
 	"channels.saveOnly": "Save only",
+	"channels.saveOnlyHint": "Save without verifying the connection.",
 	"channels.retryVerify": "Retry verify",
 	"channels.createdOnly": "{name} saved. Verify when you are ready.",
 	"channels.verifyFailed":
@@ -1038,6 +1039,7 @@ const zh: Dict = {
 	"channels.fetchModels": "同步模型",
 	"channels.saveAndVerify": "保存并验证",
 	"channels.saveOnly": "仅保存",
+	"channels.saveOnlyHint": "保存但不验证连接。",
 	"channels.retryVerify": "重试验证",
 	"channels.createdOnly": "已保存 {name}。需要时再验证。",
 	"channels.verifyFailed":
