@@ -90,6 +90,128 @@ func TestProbeAndSyncKeys(t *testing.T) {
 	}
 }
 
+func TestListTokenGroupsPrefersUserGroupsEndpoint(t *testing.T) {
+	var tokenListHits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/self":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":7,"username":"bob"}}`))
+		case "/api/user/self/groups":
+			// Groups the account may use, even though its token list is empty.
+			_, _ = w.Write([]byte(`{"success":true,"data":["default","vip","claude code"]}`))
+		case "/api/token/":
+			tokenListHits++
+			_, _ = w.Write([]byte(`{"success":true,"data":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	db, err := store.Open(filepath.Join(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, err := crypto.New("groups-test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(db, enc, adapters.NewRegistry(server.Client()))
+
+	siteID, err := db.Site.Create(&domain.Site{
+		Name: "groups", BaseURL: server.URL, Platform: "new-api", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretEnc, _ := enc.Encrypt([]byte("user-access-token"))
+	credID, err := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "access_token", SecretEnc: []byte(secretEnc), Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelID, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteID, CredentialID: &credID, Name: "groups", BaseURL: "",
+		GroupName: "default", Priority: 0, Weight: 100, Status: domain.StatusEnabled, TypeHint: "new-api",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := svc.ListTokenGroups(context.Background(), channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 3 || groups[0] != "default" || groups[1] != "vip" || groups[2] != "claude code" {
+		t.Fatalf("groups=%v", groups)
+	}
+	if tokenListHits != 0 {
+		t.Fatalf("token list should not be consulted when the groups endpoint answers; hits=%d", tokenListHits)
+	}
+}
+
+func TestListTokenGroupsFallsBackToTokenList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/self":
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":7,"username":"bob"}}`))
+		case "/api/user/self/groups":
+			// Older forks 404 the groups endpoint; enumeration must fall back.
+			http.NotFound(w, r)
+		case "/api/token/":
+			_, _ = w.Write([]byte(`{"success":true,"data":[
+				{"id":1,"name":"def-key","key":"sk-default-aaa","status":1,"group":"default"},
+				{"id":2,"name":"vip-key","key":"sk-vip-bbb","status":1,"group":"vip"}
+			]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	db, err := store.Open(filepath.Join(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, err := crypto.New("groups-fallback-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(db, enc, adapters.NewRegistry(server.Client()))
+
+	siteID, err := db.Site.Create(&domain.Site{
+		Name: "fallback", BaseURL: server.URL, Platform: "new-api", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretEnc, _ := enc.Encrypt([]byte("user-access-token"))
+	credID, err := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "access_token", SecretEnc: []byte(secretEnc), Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelID, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteID, CredentialID: &credID, Name: "fallback", BaseURL: "",
+		GroupName: "default", Priority: 0, Weight: 100, Status: domain.StatusEnabled, TypeHint: "new-api",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := svc.ListTokenGroups(context.Background(), channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 2 || groups[0] != "default" || groups[1] != "vip" {
+		t.Fatalf("groups=%v", groups)
+	}
+}
+
 func TestSyncKeysAggregatesByDefault(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

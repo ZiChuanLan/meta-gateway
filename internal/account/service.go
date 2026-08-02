@@ -394,9 +394,11 @@ func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKey
 
 // ListTokenGroups returns the distinct token groups the upstream account has
 // access to, so the create-key dialog can offer a pick list instead of a free
-// text field. An empty (non-nil) slice is returned when the upstream lists no
-// tokens; a transport/auth failure surfaces as an error so the caller can tell
-// "no groups" from "cannot reach the upstream".
+// text field. It prefers the New-API family's /api/user/self/groups endpoint
+// (usable groups even with an empty token list) and falls back to enumerating
+// groups from the account's token list. An empty (non-nil) slice is returned
+// when neither source reports groups; a transport/auth failure surfaces as an
+// error so the caller can tell "no groups" from "cannot reach the upstream".
 func (s *Service) ListTokenGroups(ctx context.Context, channelID int64) ([]string, error) {
 	resolved, err := s.resolveUserTarget(channelID)
 	if err != nil {
@@ -411,6 +413,29 @@ func (s *Service) ListTokenGroups(ctx context.Context, channelID int64) ([]strin
 			_ = s.persistPlatformUserID(resolved.credential, self.PlatformUserID)
 		}
 	}
+
+	// Preferred source: /api/user/self/groups reports every group the account
+	// can use, even when the account holds no tokens yet (e.g. Ark-style sites
+	// whose token list comes back empty). Falls back to token-list enumeration.
+	if groups, groupsErr := resolved.adapter.ListTokenGroups(ctx, resolved.input); groupsErr == nil {
+		seen := make(map[string]struct{}, len(groups))
+		clean := make([]string, 0, len(groups))
+		for _, group := range groups {
+			normalized := normalizeTokenGroup(group)
+			if normalized == "" {
+				continue
+			}
+			if _, exists := seen[normalized]; exists {
+				continue
+			}
+			seen[normalized] = struct{}{}
+			clean = append(clean, normalized)
+		}
+		if len(clean) > 0 {
+			return clean, nil
+		}
+	}
+
 	keys, err := resolved.adapter.ListAPIKeys(ctx, resolved.input, 0, 100)
 	if err != nil {
 		return nil, mapAdapterError(err)

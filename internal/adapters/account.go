@@ -44,12 +44,26 @@ type UpstreamAPIKey struct {
 	Status int
 }
 
+// NewAPIKeyRequest describes a token to create on a New API family host.
+// Quota is in the site's remain_quota unit (USD cents-equivalent); zero means
+// unlimited when UnlimitedQuota is set.
+type NewAPIKeyRequest struct {
+	Name           string
+	Group          string
+	Quota          int64
+	UnlimitedQuota bool
+	ExpiredAtUnix  int64
+	ModelLimits    string
+}
+
 // AccountAdapter probes user identity and lists API keys for relay attachment.
 type AccountAdapter interface {
 	Name() string
 	ProbeSelf(context.Context, AccountInput) (AccountSelf, error)
+	ListTokenGroups(context.Context, AccountInput) ([]string, error)
 	ListAPIKeys(context.Context, AccountInput, int, int) ([]UpstreamAPIKey, error)
 	RevealAPIKey(context.Context, AccountInput, int64) (string, error)
+	CreateAPIKey(context.Context, AccountInput, NewAPIKeyRequest) (UpstreamAPIKey, error)
 }
 
 // NewAPIAccountAdapter implements AccountAdapter for New API / One API style hosts.
@@ -67,6 +81,45 @@ func NewNewAPIAccountAdapter(name string, client *http.Client, userHeader bool) 
 }
 
 func (a *NewAPIAccountAdapter) Name() string { return a.name }
+
+// ListTokenGroups returns every group the account may use, from the New-API
+// family's /api/user/self/groups endpoint. This reports usable groups even
+// when the account holds no tokens yet (token-list enumeration would be empty).
+func (a *NewAPIAccountAdapter) ListTokenGroups(ctx context.Context, input AccountInput) ([]string, error) {
+	endpoint, err := accountEndpoint(input.BaseURL, "/api/user/self/groups")
+	if err != nil {
+		return nil, &Error{Kind: ErrorInvalidURL}
+	}
+	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, &Error{Kind: ErrorStatus, Status: status}
+	}
+	var envelope struct {
+		Success *bool           `json:"success"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, &Error{Kind: ErrorPayload}
+	}
+	if envelope.Success != nil && !*envelope.Success {
+		return nil, &Error{Kind: ErrorPayload}
+	}
+	// Canonical shape: data is a string array. Some forks nest {groups: [...]}.
+	var plain []string
+	if err := json.Unmarshal(envelope.Data, &plain); err == nil {
+		return plain, nil
+	}
+	var nested struct {
+		Groups []string `json:"groups"`
+	}
+	if err := json.Unmarshal(envelope.Data, &nested); err == nil {
+		return nested.Groups, nil
+	}
+	return nil, &Error{Kind: ErrorPayload}
+}
 
 func (a *NewAPIAccountAdapter) ProbeSelf(ctx context.Context, input AccountInput) (AccountSelf, error) {
 	endpoint, err := accountEndpoint(input.BaseURL, "/api/user/self")
@@ -155,6 +208,12 @@ func (a *NewAPIAccountAdapter) ListAPIKeys(ctx context.Context, input AccountInp
 	if status < 200 || status >= 300 {
 		return nil, &Error{Kind: ErrorStatus, Status: status}
 	}
+	// Some New-API forks answer 200 with {"success":false} when the access
+	// token is invalid/expired. Surface that as an auth failure instead of a
+	// misleading "no tokens" empty list.
+	if isTokenListRejected(body) {
+		return nil, &Error{Kind: ErrorStatus, Status: http.StatusUnauthorized}
+	}
 	keys := parseTokenList(body)
 	// Some New-API forks are 1-based for page index.
 	if len(keys) == 0 && page == 0 {
@@ -162,10 +221,30 @@ func (a *NewAPIAccountAdapter) ListAPIKeys(ctx context.Context, input AccountInp
 		alt := strings.Split(endpoint, "?")[0] + "?" + query.Encode()
 		body, status, err = a.doJSON(ctx, http.MethodGet, alt, input)
 		if err == nil && status >= 200 && status < 300 {
+			if isTokenListRejected(body) {
+				return nil, &Error{Kind: ErrorStatus, Status: http.StatusUnauthorized}
+			}
 			keys = parseTokenList(body)
 		}
 	}
 	return keys, nil
+}
+
+// isTokenListRejected reports whether a /api/token/ response body carries
+// success:false, which means the upstream rejected the access token itself
+// rather than simply having an empty token list.
+func isTokenListRejected(body []byte) bool {
+	var envelope struct {
+		Success *bool  `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+	if envelope.Success != nil && !*envelope.Success {
+		return true
+	}
+	return false
 }
 
 func (a *NewAPIAccountAdapter) RevealAPIKey(ctx context.Context, input AccountInput, tokenID int64) (string, error) {
@@ -190,6 +269,96 @@ func (a *NewAPIAccountAdapter) RevealAPIKey(ctx context.Context, input AccountIn
 		}
 	}
 	return "", &Error{Kind: ErrorPayload}
+}
+
+// CreateAPIKey creates a token on a New API family host via POST /api/token/.
+// The response carries the freshly generated sk- secret exactly once.
+func (a *NewAPIAccountAdapter) CreateAPIKey(ctx context.Context, input AccountInput, request NewAPIKeyRequest) (UpstreamAPIKey, error) {
+	endpoint, err := accountEndpoint(input.BaseURL, "/api/token/")
+	if err != nil {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorInvalidURL}
+	}
+	payload := map[string]any{
+		"name":                 strings.TrimSpace(request.Name),
+		"remain_quota":         request.Quota,
+		"expired_time":         request.ExpiredAtUnix,
+		"model_limits_enabled": request.ModelLimits != "",
+		"model_limits":         request.ModelLimits,
+		"group":                strings.TrimSpace(request.Group),
+		"unlimited_quota":      request.UnlimitedQuota,
+	}
+	if request.UnlimitedQuota {
+		payload["remain_quota"] = -1
+	}
+	if request.ExpiredAtUnix == 0 {
+		payload["expired_time"] = -1
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorPayload}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(encoded)))
+	if err != nil {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorInvalidURL}
+	}
+	req.Header.Set("Authorization", "Bearer "+input.Secret)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if a.userHeader || input.UserHeader {
+		ApplyCompatUserIDHeaders(req.Header, input.PlatformUserID)
+	}
+	resp, err := a.client.Do(req)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return UpstreamAPIKey{}, err
+		}
+		return UpstreamAPIKey{}, &Error{Kind: ErrorTransport}
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxAccountResponseBytes+1))
+	if readErr != nil {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorTransport}
+	}
+	if len(body) > maxAccountResponseBytes {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorTooLarge}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorStatus, Status: resp.StatusCode}
+	}
+	var payload2 struct {
+		Success *bool `json:"success"`
+		Data    struct {
+			ID        int64  `json:"id"`
+			Name      string `json:"name"`
+			Key       string `json:"key"`
+			FullKey   string `json:"full_key"`
+			Token     string `json:"token"`
+			GroupName string `json:"group"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload2); err != nil {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorPayload}
+	}
+	if payload2.Success != nil && !*payload2.Success {
+		return UpstreamAPIKey{}, &Error{Kind: ErrorStatus, Status: resp.StatusCode}
+	}
+	secret := strings.TrimSpace(payload2.Data.FullKey)
+	if secret == "" {
+		secret = strings.TrimSpace(payload2.Data.Key)
+	}
+	if secret == "" {
+		secret = strings.TrimSpace(payload2.Data.Token)
+	}
+	if looksMasked(secret) {
+		secret = ""
+	}
+	return UpstreamAPIKey{
+		ID:     payload2.Data.ID,
+		Name:   strings.TrimSpace(payload2.Data.Name),
+		Group:  strings.TrimSpace(payload2.Data.GroupName),
+		Secret: secret,
+		Status: 1,
+	}, nil
 }
 
 func parseRevealedKey(body []byte) string {
