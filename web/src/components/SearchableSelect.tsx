@@ -84,7 +84,13 @@ export function SearchableSelect({
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key === "Escape") setOpen(false);
 		};
-		const onScrollOrResize = () => setOpen(false);
+		const onScrollOrResize = (event: Event) => {
+			// Scrolls inside the open panel must not dismiss it (mouse wheel over
+			// the option list otherwise closes the dropdown mid-selection).
+			const target = event.target as Node | null;
+			if (target && rootRef.current?.contains(target)) return;
+			setOpen(false);
+		};
 		document.addEventListener("mousedown", onPointerDown);
 		document.addEventListener("keydown", onKeyDown);
 		window.addEventListener("scroll", onScrollOrResize, true);
