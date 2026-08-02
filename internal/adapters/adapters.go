@@ -67,7 +67,9 @@ func NewRegistry(client *http.Client) *Registry {
 		"neo-api":         newAPICheckin,
 		"sub2api":         newAPICheckin,
 		"wong-gongyi":     newAPICheckin,
-		"axonhub":         newAPICheckin,
+		// AxonHub is NOT a New-API family site: it has its own JWT/OAuth
+		// account system (Gin + GraphQL) and no /api/token or /api/user/self,
+		// so check-in / account sync must not be offered for it.
 		"metapi":          newAPICheckin,
 		"aihubmix":        newAPICheckin,
 		"sharedchat":      newAPICheckin,

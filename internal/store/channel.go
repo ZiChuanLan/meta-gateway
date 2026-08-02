@@ -111,7 +111,8 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		COALESCE((SELECT rm.last_error FROM route_members rm WHERE rm.channel_id = c.id AND rm.last_error <> '' ORDER BY rm.updated_at DESC, rm.id DESC LIMIT 1), ''),
 		c.last_probe_at,
 		COALESCE(c.last_probe_ok, 0),
-		COALESCE(c.last_probe_error, '')
+		COALESCE(c.last_probe_error, ''),
+		COALESCE(site.platform, '')
 		FROM channels c
 		LEFT JOIN sites site ON site.id = c.site_id
 		LEFT JOIN credentials cred ON cred.id = c.credential_id
@@ -159,6 +160,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			scanNullTime(&overview.LastProbeAt),
 			&lastProbeOK,
 			&overview.LastProbeError,
+			&overview.SitePlatform,
 		); err != nil {
 			return nil, fmt.Errorf("channel overview scan: %w", err)
 		}

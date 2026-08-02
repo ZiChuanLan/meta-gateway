@@ -91,7 +91,7 @@ func TestRunCredentialPersistsIneligibleAndUnavailableResults(t *testing.T) {
 		{"schedule disabled", "new-api", domain.StatusEnabled, domain.StatusEnabled, false, true, false, checkin.StatusSkipped, "checkin_disabled"},
 		{"site disabled", "new-api", domain.StatusDisabled, domain.StatusEnabled, true, false, false, checkin.StatusSkipped, "site_disabled"},
 		{"credential disabled", "new-api", domain.StatusEnabled, domain.StatusDisabled, true, false, false, checkin.StatusSkipped, "credential_disabled"},
-		{"unsupported platform", "openai-compatible", domain.StatusEnabled, domain.StatusEnabled, true, false, false, checkin.StatusSkipped, "unsupported"},
+		{"unsupported platform", "openai-compatible", domain.StatusEnabled, domain.StatusEnabled, true, false, false, checkin.StatusSkipped, "checkin_not_supported"},
 		{"bad ciphertext", "new-api", domain.StatusEnabled, domain.StatusEnabled, true, false, true, checkin.StatusFailed, "credential_decrypt_failed"},
 	}
 	for _, tc := range tests {

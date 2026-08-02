@@ -113,6 +113,11 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 	if kind != "session" && kind != "access_token" {
 		return s.persist(started, site.ID, credential.ID, source, StatusSkipped, "unsupported_credential_kind", "credential kind does not support check-in", "")
 	}
+	// Site-family gate (All API Hub profile table): families such as
+	// sub2api / aihubmix / sharedchat do not expose the New-API check-in API.
+	if !adapters.CheckinSupported("", site.Platform) {
+		return s.persist(started, site.ID, credential.ID, source, StatusSkipped, "checkin_not_supported", "this site family does not support check-in", "")
+	}
 	adapter, ok := s.registry.ResolveCheckin(site.Platform)
 	if !ok {
 		return s.persist(started, site.ID, credential.ID, source, StatusSkipped, "unsupported", "check-in is not supported", "")

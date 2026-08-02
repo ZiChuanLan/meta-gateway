@@ -7,6 +7,8 @@ export interface ChannelOverview {
   channel: Channel
   credential_kind?: string
   checkin_enabled: boolean
+  checkin_supported: boolean
+  account_supported: boolean
   has_user_credential: boolean
   has_platform_user_id: boolean
   has_api_key: boolean

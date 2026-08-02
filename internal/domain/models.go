@@ -78,6 +78,11 @@ type Channel struct {
 // ChannelOverview combines channel configuration with discovery and routing health.
 type ChannelOverview struct {
 	Channel            Channel    `json:"channel"`
+	SitePlatform       string     `json:"site_platform,omitempty"`
+	// CheckinSupported / AccountSupported come from the site family profile
+	// (AAH-derived capability table), filled by the admin API layer.
+	CheckinSupported   bool       `json:"checkin_supported"`
+	AccountSupported   bool       `json:"account_supported"`
 	CredentialKind     string     `json:"credential_kind,omitempty"`
 	CheckinEnabled     bool       `json:"checkin_enabled"`
 	HasUserCredential  bool       `json:"has_user_credential"`

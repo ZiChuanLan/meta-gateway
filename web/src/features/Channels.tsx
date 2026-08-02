@@ -169,13 +169,20 @@ export function capabilityFlags(overview: ChannelOverview) {
 	const hasAPIKey = Boolean(overview.has_api_key);
 	const modelsReady = overview.model_count > 0;
 	const checkinScheduled = Boolean(overview.checkin_enabled);
+	// Site-family capabilities (AAH-derived profile): sub2api/aihubmix/
+	// sharedchat do not support check-in; unsupported families have no
+	// account APIs at all.
+	const checkinSupported = Boolean(overview.checkin_supported);
+	const accountSupported = Boolean(overview.account_supported);
 	// New-API family check-in needs user token + numeric user id (may be filled on first run).
-	const checkinReady = hasUser && hasPlatformUserID;
-	const checkinNeedsUserID = hasUser && !hasPlatformUserID;
+	const checkinReady = hasUser && hasPlatformUserID && checkinSupported;
+	const checkinNeedsUserID = hasUser && !hasPlatformUserID && checkinSupported;
 	return {
 		hasUser,
 		hasPlatformUserID,
 		hasAPIKey,
+		checkinSupported,
+		accountSupported,
 		/** Token + user id present; manual check-in is fully prepared. */
 		checkinCapable: checkinReady,
 		checkinReady,
@@ -716,7 +723,7 @@ export function Channels() {
 				},
 			},
 		];
-		if (caps.hasUser) {
+		if (caps.accountSupported && caps.hasUser) {
 			items.push({
 				key: "check-account",
 				label: t("channels.checkAccount"),
@@ -730,7 +737,7 @@ export function Channels() {
 				},
 			});
 		}
-		if (caps.hasUser && caps.needsKeyForRelay) {
+		if (caps.accountSupported && caps.hasUser && caps.needsKeyForRelay) {
 			items.push({
 				key: "sync-keys",
 				label: t("channels.syncKeys"),
@@ -748,6 +755,7 @@ export function Channels() {
 		// probe succeeded for this channel) and the site has no key.
 		// A dead/blocked token should never show a create button that can only fail.
 		const canCreateKey =
+			caps.accountSupported &&
 			caps.hasUser &&
 			caps.needsKeyForRelay &&
 			Boolean(overview.last_probe_at) &&
@@ -1338,7 +1346,8 @@ export function Channels() {
 								}}
 								canCreateKey={
 									capsForSelected
-										? capsForSelected.hasUser &&
+										? capsForSelected.accountSupported &&
+											capsForSelected.hasUser &&
 											capsForSelected.needsKeyForRelay &&
 											Boolean(selected.last_probe_at) &&
 											selected.last_probe_ok === true

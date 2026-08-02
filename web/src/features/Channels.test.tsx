@@ -143,6 +143,8 @@ describe("Channels two-phase create", () => {
 						model_count: 0,
 						cooling_member_count: 0,
 						failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 						last_error: "",
 						last_checked_at: null,
 						last_latency_ms: 0,
@@ -228,6 +230,8 @@ describe("capabilityFlags", () => {
 			enabled_member_count: 0,
 			cooling_member_count: 0,
 			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 		});
 		expect(flags.checkinCapable).toBe(true);
 		expect(flags.checkinOff).toBe(false);
@@ -259,6 +263,8 @@ describe("capabilityFlags", () => {
 			enabled_member_count: 0,
 			cooling_member_count: 0,
 			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 		})).toBe("missing_key");
 	});
 
@@ -289,6 +295,8 @@ describe("capabilityFlags", () => {
 			enabled_member_count: 0,
 			cooling_member_count: 0,
 			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 		};
 		// Missing API key is independent of token probe state.
 		expect(capabilityFlags({ ...base }).missingAPIKey).toBe(true);
@@ -331,6 +339,8 @@ describe("capabilityFlags", () => {
 			enabled_member_count: 1,
 			cooling_member_count: 0,
 			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 		};
 		// Never probed → no verdict.
 		expect(capabilityFlags({ ...base }).tokenProblem).toBe(false);
@@ -385,6 +395,8 @@ describe("capabilityFlags", () => {
 			enabled_member_count: 0,
 			cooling_member_count: 0,
 			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 		});
 		expect(flags.checkinCapable).toBe(false);
 		expect(flags.checkinNeedsUserID).toBe(true);
@@ -418,6 +430,8 @@ describe("capabilityFlags", () => {
 			enabled_member_count: 1,
 			cooling_member_count: 0,
 			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 		});
 		expect(flags.checkinCapable).toBe(true);
 		expect(flags.checkinScheduled).toBe(false);
@@ -469,6 +483,8 @@ describe("Channels create-key double-submit guard", () => {
 			enabled_member_count: 0,
 			cooling_member_count: 0,
 			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
 		};
 		let createKeyCalls = 0;
 		vi.stubGlobal(

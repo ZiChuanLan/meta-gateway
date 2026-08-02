@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
@@ -378,6 +379,12 @@ func (h *AdminHandler) listChannelOverviews(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	// Site-family capability flags (AAH-derived profile table).
+	for index := range channels {
+		profile := adapters.SiteProfileFor(channels[index].Channel.TypeHint, channels[index].SitePlatform)
+		channels[index].CheckinSupported = profile.Checkin
+		channels[index].AccountSupported = profile.Family != adapters.FamilyUnsupported
 	}
 	writeJSON(w, http.StatusOK, channels)
 }
