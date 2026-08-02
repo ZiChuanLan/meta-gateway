@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useCountUp } from "../hooks/useCountUp";
+import { useI18n } from "../i18n";
 
 function StatValue({ value }: { value: ReactNode }) {
 	if (typeof value === "number") {
@@ -13,24 +14,48 @@ function RollingNumber({ value }: { value: number }) {
 	return <>{display}</>;
 }
 
+export type StatTone = "primary" | "info" | "success" | "warning" | "danger";
+
+export type StatItem = {
+	label: string;
+	value: ReactNode;
+	/** When set, the card is a toggle filter control. */
+	onClick?: () => void;
+	active?: boolean;
+	hint?: string;
+	/** Optional leading icon chip (lucide icon or similar). */
+	icon?: ReactNode;
+	/** Optional tone for the icon chip and card accent. */
+	tone?: StatTone;
+	/** Optional trend delta (0.12 = +12%). Rendered only when not null. */
+	trend?: number | null;
+};
+
+function TrendBadge({ trend }: { trend: number }) {
+	const { t } = useI18n();
+	const up = trend >= 0;
+	const pct = `${up ? "+" : "−"}${Math.round(Math.abs(trend) * 100)}%`;
+	return (
+		<span
+			className={`stat-trend ${up ? "is-up" : "is-down"}`}
+			title={up ? t("dashboard.trendUp") : t("dashboard.trendDown")}
+		>
+			{up ? "↗" : "↘"} {pct}
+		</span>
+	);
+}
+
 export function StatGrid({
 	items,
 	columns = 3,
 }: {
-	items: Array<{
-		label: string;
-		value: ReactNode;
-		/** When set, the card is a toggle filter control. */
-		onClick?: () => void;
-		active?: boolean;
-		hint?: string;
-	}>;
+	items: StatItem[];
 	columns?: number;
 }) {
 	return (
 		<div
 			className="stat-grid"
-			style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+			style={{ "--stat-cols": columns } as React.CSSProperties}
 		>
 			{items.map((item) => (
 				<button
@@ -40,6 +65,7 @@ export function StatGrid({
 						"stat-card",
 						item.onClick ? "is-interactive" : "",
 						item.active ? "is-active" : "",
+						item.tone ? `tone-${item.tone}` : "",
 					]
 						.filter(Boolean)
 						.join(" ")}
@@ -48,7 +74,11 @@ export function StatGrid({
 					aria-pressed={item.onClick ? Boolean(item.active) : undefined}
 					title={item.hint}
 				>
-					<span>{item.label}</span>
+					<span className="stat-card-top">
+						{item.icon ? <span className="stat-icon">{item.icon}</span> : null}
+						<span className="stat-label">{item.label}</span>
+						{item.trend != null ? <TrendBadge trend={item.trend} /> : null}
+					</span>
 					<strong>
 						<StatValue value={item.value} />
 					</strong>

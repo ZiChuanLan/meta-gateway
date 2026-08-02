@@ -20,7 +20,7 @@ volume, stop the service and make its data writable by UID/GID `10001`.
 ## Web Admin
 
 The production Web Admin is embedded in the Go binary and served at
-`/admin-ui/`. Extensionless nested paths such as `/admin-ui/routing` return the
+`/console/`. Extensionless nested paths such as `/console/routing` return the
 SPA shell, while missing asset paths return `404` and never fall back to HTML.
 HTML uses `Cache-Control: no-cache`; content-hashed assets use a one-year
 immutable cache policy.
@@ -84,13 +84,13 @@ redacted append-only events. Cleanup runs daily using both configured ceilings:
 - `AUDIT_RETENTION_ROWS=100000`
 
 Set either value to `0` to disable only that dimension. Run the same policy on
-demand with `POST /admin/audit-events/cleanup`. There is no API to edit or
+demand with `POST /console/audit-events/cleanup`. There is no API to edit or
 delete individual events.
 
 ## Backup
 
-An authenticated `POST /admin/backups` creates a consistent online snapshot in
-`BACKUP_DIR`; `GET /admin/backups` returns safe inventory metadata. The gateway
+An authenticated `POST /console/backups` creates a consistent online snapshot in
+`BACKUP_DIR`; `GET /console/backups` returns safe inventory metadata. The gateway
 generates every filename and verifies SQLite integrity and schema before the
 snapshot is published.
 

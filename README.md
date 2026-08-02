@@ -6,10 +6,10 @@ auditing, metrics, and online SQLite backups.
 
 Simple usage metering records prompt/completion tokens from upstream `usage` fields, enforces optional per-token quotas, and shows estimated cost in Admin → Tokens.
 
-The embedded Web Admin is available at `http://127.0.0.1:4100/admin-ui/`
+The embedded Web Admin is available at `http://127.0.0.1:4100/console/`
 after the gateway starts.
 
-The Admin **Store** (`/admin-ui/#/store` or sidebar **Store**) manages optional **add-ons** (Exchange import/export + WebDAV, Check-in). Core surfaces — connections, models, tokens, logs, runtime, discovery, **audit**, and **backups** — are always available and are not store-gated.
+The Admin **Store** (`/console/#/store` or sidebar **Store**) manages optional **add-ons** (Exchange import/export + WebDAV, Check-in). Core surfaces — connections, models, tokens, logs, runtime, discovery, **audit**, and **backups** — are always available and are not store-gated.
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ go build -o bin/meta-gateway ./cmd/server
 ADMIN_TOKEN=my-admin-token MASTER_KEY=my-32-char-master-key-for-aes! ./bin/meta-gateway
 ```
 
-Open `http://127.0.0.1:4100/admin-ui/` and connect with `ADMIN_TOKEN`. The
+Open `http://127.0.0.1:4100/console/` and connect with `ADMIN_TOKEN`. The
 browser sends it only as an Admin Bearer token and retains it in memory or,
 when requested, `sessionStorage`; it is never placed in cookies, URLs, or
 `localStorage`.
@@ -101,53 +101,53 @@ GET /healthz → 200 {"status":"ok"}
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /admin/sites | List sites |
-| POST | /admin/sites | Create site |
-| GET | /admin/sites/{id} | Get site |
-| PUT | /admin/sites/{id} | Update site |
-| DELETE | /admin/sites/{id} | Delete site |
-| GET | /admin/sites/{siteId}/credentials | List credentials for site |
-| POST | /admin/sites/{siteId}/credentials | Create credential (encrypts secret) |
-| DELETE | /admin/credentials/{id} | Delete credential |
-| GET | /admin/channels | List channels |
-| POST | /admin/channels | Create channel |
-| GET | /admin/channels/{id} | Get channel |
-| PUT | /admin/channels/{id} | Update channel |
-| DELETE | /admin/channels/{id} | Delete channel |
-| GET | /admin/routes | List routes |
-| GET | /admin/routes/explain?model={model} | Explain candidate eligibility and priority |
-| POST | /admin/routes | Create route |
-| GET | /admin/routes/{id} | Get route |
-| PUT | /admin/routes/{id} | Update route |
-| DELETE | /admin/routes/{id} | Delete route |
-| GET | /admin/routes/{routeId}/members | List route members |
-| POST | /admin/routes/{routeId}/members | Create route member |
-| PUT | /admin/route-members/{id} | Update route member |
-| DELETE | /admin/route-members/{id} | Delete route member |
-| GET | /admin/downstream-keys | List downstream keys |
-| POST | /admin/downstream-keys | Create downstream key |
-| DELETE | /admin/downstream-keys/{id} | Delete downstream key |
-| GET | /admin/proxy-logs | List proxy logs |
-| POST | /admin/discovery/channels/{id}/refresh | Refresh one channel's models and automatic routes |
-| POST | /admin/discovery/refresh | Refresh all enabled channels with itemized results |
-| GET | /admin/discovery/models?channel_id={id} | List durable discovered-model snapshots |
-| POST | /admin/discovery/channels/{id}/probe | Probe models without persisting |
-| POST | /admin/channels/{id}/account/probe | Probe upstream account |
-| POST | /admin/channels/{id}/account/sync-keys | Sync sk- keys from upstream account |
-| POST | /admin/try/chat | Admin console chat probe |
-| GET/POST | /admin/plugins/* | Module catalog, install, enable, disable |
-| GET/PUT | /admin/webdav/* | Read-only WebDAV sync status and settings |
-| GET/PUT/POST | /admin/runtime-settings | Hot runtime overrides (retry, rates, check-in, audit) |
-| PUT | /admin/credentials/{id}/checkin | Enable or disable scheduled check-in |
-| POST | /admin/checkin/credentials/{id}/run | Run one credential check-in manually |
-| POST | /admin/checkin/run | Run all check-in-enabled credentials |
-| GET | /admin/checkin/logs | List and filter redacted check-in logs |
-| POST | /admin/exchange/export | Export all or selected channels; secrets require explicit opt-in |
-| POST | /admin/exchange/import | Atomically import canonical, New API, or AAH V2 channel assets |
-| GET | /admin/audit-events | List append-only redacted audit events |
-| POST | /admin/audit-events/cleanup | Apply configured retention now |
-| GET | /admin/backups | List generated backup inventory |
-| POST | /admin/backups | Create and verify an online SQLite backup |
+| GET | /console/sites | List sites |
+| POST | /console/sites | Create site |
+| GET | /console/sites/{id} | Get site |
+| PUT | /console/sites/{id} | Update site |
+| DELETE | /console/sites/{id} | Delete site |
+| GET | /console/sites/{siteId}/credentials | List credentials for site |
+| POST | /console/sites/{siteId}/credentials | Create credential (encrypts secret) |
+| DELETE | /console/credentials/{id} | Delete credential |
+| GET | /console/channels | List channels |
+| POST | /console/channels | Create channel |
+| GET | /console/channels/{id} | Get channel |
+| PUT | /console/channels/{id} | Update channel |
+| DELETE | /console/channels/{id} | Delete channel |
+| GET | /console/routes | List routes |
+| GET | /console/routes/explain?model={model} | Explain candidate eligibility and priority |
+| POST | /console/routes | Create route |
+| GET | /console/routes/{id} | Get route |
+| PUT | /console/routes/{id} | Update route |
+| DELETE | /console/routes/{id} | Delete route |
+| GET | /console/routes/{routeId}/members | List route members |
+| POST | /console/routes/{routeId}/members | Create route member |
+| PUT | /console/route-members/{id} | Update route member |
+| DELETE | /console/route-members/{id} | Delete route member |
+| GET | /console/downstream-keys | List downstream keys |
+| POST | /console/downstream-keys | Create downstream key |
+| DELETE | /console/downstream-keys/{id} | Delete downstream key |
+| GET | /console/proxy-logs | List proxy logs |
+| POST | /console/discovery/channels/{id}/refresh | Refresh one channel's models and automatic routes |
+| POST | /console/discovery/refresh | Refresh all enabled channels with itemized results |
+| GET | /console/discovery/models?channel_id={id} | List durable discovered-model snapshots |
+| POST | /console/discovery/channels/{id}/probe | Probe models without persisting |
+| POST | /console/channels/{id}/account/probe | Probe upstream account |
+| POST | /console/channels/{id}/account/sync-keys | Sync sk- keys from upstream account |
+| POST | /console/try/chat | Admin console chat probe |
+| GET/POST | /console/plugins/* | Module catalog, install, enable, disable |
+| GET/PUT | /console/webdav/* | Read-only WebDAV sync status and settings |
+| GET/PUT/POST | /console/runtime-settings | Hot runtime overrides (retry, rates, check-in, audit) |
+| PUT | /console/credentials/{id}/checkin | Enable or disable scheduled check-in |
+| POST | /console/checkin/credentials/{id}/run | Run one credential check-in manually |
+| POST | /console/checkin/run | Run all check-in-enabled credentials |
+| GET | /console/checkin/logs | List and filter redacted check-in logs |
+| POST | /console/exchange/export | Export all or selected channels; secrets require explicit opt-in |
+| POST | /console/exchange/import | Atomically import canonical, New API, or AAH V2 channel assets |
+| GET | /console/audit-events | List append-only redacted audit events |
+| POST | /console/audit-events/cleanup | Apply configured retention now |
+| GET | /console/backups | List generated backup inventory |
+| POST | /console/backups | Create and verify an online SQLite backup |
 
 ### Public (requires `Authorization: Bearer <DownstreamKey>`)
 
@@ -178,32 +178,32 @@ requires the `checkin` module to be enabled.
 
 ```bash
 # 1. Create a downstream key
-curl -s -X POST http://127.0.0.1:4100/admin/downstream-keys \
+curl -s -X POST http://127.0.0.1:4100/console/downstream-keys \
   -H "Authorization: Bearer my-admin-token" \
   -H "Content-Type: application/json" \
   -d '{"name":"my-app"}' | jq .
 # → {"id":1,"name":"my-app","token":"mg-abc123...","enabled":true,...}
 
 # 2. Create a site
-curl -s -X POST http://127.0.0.1:4100/admin/sites \
+curl -s -X POST http://127.0.0.1:4100/console/sites \
   -H "Authorization: Bearer my-admin-token" \
   -H "Content-Type: application/json" \
   -d '{"name":"OpenAI","base_url":"https://api.openai.com","platform":"openai"}' | jq .
 
 # 3. Create a credential (secret is encrypted at rest)
-curl -s -X POST http://127.0.0.1:4100/admin/sites/1/credentials \
+curl -s -X POST http://127.0.0.1:4100/console/sites/1/credentials \
   -H "Authorization: Bearer my-admin-token" \
   -H "Content-Type: application/json" \
   -d '{"kind":"api_key","secret":"sk-your-real-key"}' | jq .
 
 # 4. Create a channel
-curl -s -X POST http://127.0.0.1:4100/admin/channels \
+curl -s -X POST http://127.0.0.1:4100/console/channels \
   -H "Authorization: Bearer my-admin-token" \
   -H "Content-Type: application/json" \
   -d '{"name":"GPT-4","site_id":1,"credential_id":1,"base_url":"https://api.openai.com","models_csv":"gpt-4,gpt-4-turbo","status":"enabled"}' | jq .
 
 # 5. Discover models and create exact automatic routes
-curl -s -X POST http://127.0.0.1:4100/admin/discovery/channels/1/refresh \
+curl -s -X POST http://127.0.0.1:4100/console/discovery/channels/1/refresh \
   -H "Authorization: Bearer my-admin-token" \
   | jq .
 
@@ -259,7 +259,7 @@ the narrowest possible CIDR. Host exceptions do not include subdomains.
 
 ## Backup And Restore
 
-Create backups with `POST /admin/backups`; callers cannot provide a filesystem
+Create backups with `POST /console/backups`; callers cannot provide a filesystem
 path. Restore only while the service is stopped:
 
 ```bash

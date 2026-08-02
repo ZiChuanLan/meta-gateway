@@ -21,7 +21,7 @@ createRoot(document.getElementById("root")!).render(
 			<I18nProvider>
 				<ToastProvider>
 					<SessionProvider>
-						<BrowserRouter basename="/admin-ui">
+						<BrowserRouter basename="/console">
 							<App />
 						</BrowserRouter>
 					</SessionProvider>

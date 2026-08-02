@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -127,10 +128,19 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			logger.ErrorContext(request.Context(), "metrics write failed", "category", "write")
 		}
 	})
-	r.Get("/admin-ui", func(w http.ResponseWriter, request *http.Request) {
-		http.Redirect(w, request, "/admin-ui/", http.StatusPermanentRedirect)
+	r.Get("/console", func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, "/console/", http.StatusPermanentRedirect)
 	})
-	r.Handle("/admin-ui/*", webui.Handler())
+	r.Handle("/console/*", webui.Handler())
+	// Legacy paths: keep old /admin-ui bookmarks working.
+	r.Get("/admin-ui", func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, "/console/", http.StatusPermanentRedirect)
+	})
+	r.Handle("/admin-ui/*", http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		request.URL.Path = "/console/" + strings.TrimPrefix(request.URL.Path, "/admin-ui/")
+		http.Redirect(w, request, request.URL.String(), http.StatusPermanentRedirect)
+	}))
+	r.Get("/", handleLanding)
 
 	// Admin routes
 	adminGroup := chi.NewRouter()

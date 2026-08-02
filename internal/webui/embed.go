@@ -13,7 +13,7 @@ import (
 //go:embed dist
 var assets embed.FS
 
-// Handler returns a handler for files beneath /admin-ui/ with SPA fallback.
+// Handler returns a handler for files beneath /console/ with SPA fallback.
 func Handler() http.Handler {
 	dist, err := fs.Sub(assets, "dist")
 	if err != nil {
@@ -26,7 +26,7 @@ func Handler() http.Handler {
 			return
 		}
 
-		name := strings.TrimPrefix(r.URL.Path, "/admin-ui/")
+		name := strings.TrimPrefix(r.URL.Path, "/console/")
 		name = strings.TrimPrefix(path.Clean("/"+name), "/")
 		if name == "." || name == "" {
 			name = "index.html"

@@ -48,6 +48,7 @@ import {
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
+import { useToast } from "../toast";
 import { formatErrorMessage } from "../formatError";
 import { CONNECTION_TYPE_OPTIONS } from "../connectionTypes";
 import { useSession } from "../session";
@@ -200,6 +201,7 @@ export function Channels() {
 	const { client } = useSession();
 	const { checkinEnabled } = useModules();
 	const { t } = useI18n();
+	const toast = useToast();
 	const service = api(client!);
 	const [params, setParams] = useSearchParams();
 	const navigate = useNavigate();
@@ -220,6 +222,8 @@ export function Channels() {
 	const [edit, setEdit] = useState<Channel | null>(null);
 	const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
 	const [createKeyChannel, setCreateKeyChannel] = useState<Channel | null>(null);
+	// Synchronous lock for the create-key dialog (see onCreate re-entry guard).
+	const createKeyLocked = useRef(false);
 	const [contextMenu, setContextMenu] = useState<{
 		channelId: number;
 		top: number;
@@ -1445,10 +1449,32 @@ export function Channels() {
 						setCreateKeyChannel(null);
 					}}
 					onCreate={(group) => {
-						createUpstreamKey.mutate({
+						// Synchronous re-entry guard: the disabled={pending} button only
+						// takes effect after re-render, so rapid double-clicks could
+						// otherwise create several upstream tokens.
+						if (createKeyLocked.current) return;
+						createKeyLocked.current = true;
+						const input = {
 							id: createKeyChannel.id,
 							name: `gateway-${group || "default"}`,
 							group,
+						};
+						createUpstreamKey.mutate(input, {
+							onSuccess: () => {
+								// Close immediately so the operator cannot click again;
+								// the toast is the success signal.
+								createUpstreamKey.reset();
+								setCreateKeyChannel(null);
+								toast.push({
+									tone: "success",
+									message: t("channels.createKeySuccess", {
+										name: createKeyChannel.name,
+									}),
+								});
+							},
+							onSettled: () => {
+								createKeyLocked.current = false;
+							},
 						});
 					}}
 				/>

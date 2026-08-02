@@ -157,6 +157,13 @@ export interface SyncKeysResult {
     category?: string
   }>
 }
+export interface CreateUpstreamKeyResult {
+  credential_id: number
+  name: string
+  group: string
+  category: string
+  message: string
+}
 export interface RefreshResult extends ProbeResult { created_routes: number; created_members: number; enabled_members: number; deleted_members: number; deleted_routes: number }
 export interface RefreshSummary { items: Array<{ channel_id: number; result?: RefreshResult; error?: string }>; success_count: number; failure_count: number }
 export interface RunResult { site_id: number; credential_id: number; source: string; status: string; category: string; message: string; reward?: string; latency_ms: number; ran_at: string }

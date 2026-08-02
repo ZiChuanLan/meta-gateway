@@ -336,7 +336,7 @@ function Connect({
 					<div className="impact-code-body impact-code-body-row">
 						<span>Bearer ADMIN_TOKEN</span>
 						<span>
-							<b>/admin-ui/</b>
+							<b>/console/</b>
 						</span>
 						<span>sites · models · keys</span>
 						<span>healthz · metrics</span>

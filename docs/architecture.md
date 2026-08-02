@@ -83,7 +83,7 @@ compatibility/default metadata.
 5. Select by positive weight inside the tier.
 6. If every weight in the tier is zero, select uniformly.
 
-`GET /admin/routes/explain?model=<model>` uses the same evaluator and returns
+`GET /console/routes/explain?model=<model>` uses the same evaluator and returns
 stable reason codes without changing state.
 
 ## Retry And Streaming
@@ -197,7 +197,7 @@ model discovery, plus credential check-in, redacted audit logs, and optional
 cron scheduling, secure versioned AAH/New API exchange, SSRF enforcement,
 trusted identities, rate limits, observability, audit retention, online backup,
 offline restore, hardened containers, and Linux race-test CI. P8 adds an
-embedded React Web Admin under `/admin-ui/` that consumes the existing
+embedded React Web Admin under `/console/` that consumes the existing
 authenticated Admin contracts without changing their security or ownership
 rules. Metrics collection and offline restore deliberately remain operational
 interfaces outside the browser application.

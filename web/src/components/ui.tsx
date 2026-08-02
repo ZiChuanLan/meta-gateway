@@ -1,8 +1,8 @@
 import { AlertTriangle, LoaderCircle, X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
-import { formatErrorMessage } from "../formatError";
+import { formatErrorObject } from "../formatError";
 
 export function Button({
 	children,
@@ -112,11 +112,50 @@ export function Dialog({
 	danger?: boolean;
 }) {
 	const { t } = useI18n();
+	const dialogRef = useRef<HTMLElement | null>(null);
+	const onCloseRef = useRef(onClose);
+	onCloseRef.current = onClose;
 	useEffect(() => {
-		const close = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-		window.addEventListener("keydown", close);
-		return () => window.removeEventListener("keydown", close);
-	}, [onClose]);
+		const node = dialogRef.current;
+		const previous =
+			document.activeElement instanceof HTMLElement
+				? document.activeElement
+				: null;
+		const focusables = () =>
+			Array.from(
+				node?.querySelectorAll<HTMLElement>(
+					'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+				) ?? [],
+			);
+		// Move focus into the dialog on open so keyboard users land inside.
+		const first = focusables()[0];
+		(first ?? node)?.focus();
+		const onKeydown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				onCloseRef.current();
+				return;
+			}
+			if (e.key !== "Tab" || !node) return;
+			const items = focusables();
+			if (items.length === 0) return;
+			const firstItem = items[0];
+			const lastItem = items[items.length - 1];
+			const active = document.activeElement;
+			if (e.shiftKey && (active === firstItem || active === node)) {
+				e.preventDefault();
+				lastItem?.focus();
+			} else if (!e.shiftKey && active === lastItem) {
+				e.preventDefault();
+				firstItem?.focus();
+			}
+		};
+		window.addEventListener("keydown", onKeydown);
+		return () => {
+			window.removeEventListener("keydown", onKeydown);
+			previous?.focus();
+		};
+		// Mount-only: onClose is tracked via ref so re-renders do not steal focus.
+	}, []);
 	// Portal to document.body so fixed backdrop is not clipped by Panel/content
 	// overflow:hidden or filtered/transformed ancestors (common after ops shell restyle).
 	return createPortal(
@@ -126,6 +165,7 @@ export function Dialog({
 			onMouseDown={(e) => e.target === e.currentTarget && onClose()}
 		>
 			<section
+				ref={dialogRef}
 				className="dialog"
 				role="dialog"
 				aria-modal="true"
@@ -248,11 +288,15 @@ export function ErrorState({
 	retry?: () => void;
 }) {
 	const { t } = useI18n();
-	const text = formatErrorMessage(error, t);
+	const formatted = formatErrorObject(error, t);
 	return (
 		<div className="state state-error">
 			<AlertTriangle size={18} />
-			<span>{text}</span>
+			<div className="error-state-body">
+				<strong>{formatted.title}</strong>
+				{formatted.cause ? <span>{formatted.cause}</span> : null}
+				{formatted.fix ? <span className="error-state-fix">{formatted.fix}</span> : null}
+			</div>
 			{retry && (
 				<Button variant="secondary" onClick={retry}>
 					{t("common.retry")}

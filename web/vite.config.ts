@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  base: '/admin-ui/',
+  base: '/console/',
   plugins: [react()],
   build: { outDir: '../internal/webui/dist', emptyOutDir: true },
   server: {

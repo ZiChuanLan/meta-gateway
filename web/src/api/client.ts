@@ -19,6 +19,7 @@ import type {
 	ProbeResult,
 	ProxyLog,
 	SyncKeysResult,
+	CreateUpstreamKeyResult,
 	WebDAVStatus,
 	WebDAVSyncMode,
 	WebDAVSyncResult,
@@ -280,6 +281,10 @@ export const api = (client: ApiClient) => ({
 		}>("/admin/try/chat", body),
 	probeAccount: (id: number) =>
 		client.post<AccountProbeResult>(`/admin/channels/${id}/account/probe`),
+	probeAllAccounts: () =>
+		client.post<{ items: Array<{ channel_id: number; channel_name: string; ok: boolean; username?: string; error?: string }> }>(
+			"/admin/channels/account/probe-all",
+		),
 	syncKeys: (
 		id: number,
 		body?: {
@@ -293,6 +298,15 @@ export const api = (client: ApiClient) => ({
 			split_by_group: false,
 			...(body ?? {}),
 		}),
+	createUpstreamKey: (
+		id: number,
+		body: { name?: string; group?: string; unlimited_quota?: boolean },
+	) => client.post<CreateUpstreamKeyResult>(`/admin/channels/${id}/account/create-key`, body),
+	tokenGroups: (id: number, signal?: AbortSignal) =>
+		client.get<{ groups: string[] }>(
+			`/admin/channels/${id}/account/token-groups`,
+			signal,
+		),
 	refreshChannel: (id: number) =>
 		client.post<RefreshResult>(`/admin/discovery/channels/${id}/refresh`),
 	refreshAll: () => client.post<RefreshSummary>("/admin/discovery/refresh"),
