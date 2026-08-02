@@ -144,18 +144,6 @@ export function Store() {
 						)}
 					</section>
 
-					<section className="store-section">
-						<header className="store-section-head">
-							<h2>{t("store.section.core")}</h2>
-							<p>{t("store.section.coreHint")}</p>
-						</header>
-						<div className="module-grid">
-							{modules.core.map((row) => (
-								<ModuleCard key={row.id} row={row} busy={false} t={t} />
-							))}
-						</div>
-					</section>
-
 					{orphans.length > 0 ? (
 						<section className="store-section">
 							<header className="store-section-head">

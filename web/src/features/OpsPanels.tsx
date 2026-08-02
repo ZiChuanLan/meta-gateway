@@ -8,6 +8,13 @@ import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { useModules } from "../hooks/useModules";
+import { useToast } from "../toast";
+import {
+	SCHEDULE_PRESETS,
+	scheduleFromSettings,
+	settingsFromSchedule,
+	type SchedulePresetId,
+} from "../lib/schedulePresets";
 import { PaginationBar } from "../components/PaginationBar";
 import {
 	Button,
@@ -248,11 +255,46 @@ function siteDisplayName(
 export function CheckinsPanel() {
 	const { client } = useSession();
 	const { t } = useI18n();
+	const toast = useToast();
 	const { checkinEnabled, ready: modulesReady } = useModules();
 	const s = api(client!);
 	const qc = useQueryClient();
 	const [status, setStatus] = useState("");
 	const [confirmRun, setConfirmRun] = useState(false);
+	const runtime = useQuery({
+		queryKey: ["runtime-settings"],
+		queryFn: ({ signal }) => s.runtimeSettings(signal),
+		enabled: modulesReady && checkinEnabled,
+	});
+	const [scheduleDraft, setScheduleDraft] = useState<{
+		preset: SchedulePresetId;
+		cron: string;
+	} | null>(null);
+	useEffect(() => {
+		if (scheduleDraft) return;
+		if (!runtime.data?.editable) return;
+		setScheduleDraft(
+			scheduleFromSettings({
+				enabled: runtime.data.editable.checkin_enabled,
+				cron: runtime.data.editable.checkin_cron,
+			}),
+		);
+	}, [runtime.data, scheduleDraft]);
+	const saveSchedule = useAdminMutation({
+		mutationFn: (next: { enabled: boolean; cron: string }) => {
+			const editable = runtime.data?.editable;
+			if (!editable) throw new Error("runtime settings unavailable");
+			return s.updateRuntimeSettings({
+				...editable,
+				checkin_enabled: next.enabled,
+				checkin_cron: next.cron,
+			});
+		},
+		invalidateKeys: [["runtime-settings"]],
+		onSuccess: () => {
+			toast.push({ tone: "success", message: t("ops.checkin.scheduleSaved") });
+		},
+	});
 	const logs = useQuery({
 		queryKey: ["checkin-logs", status],
 		queryFn: ({ signal }) =>
@@ -299,8 +341,101 @@ export function CheckinsPanel() {
 		);
 	}
 
+	const schedule = scheduleDraft ?? { preset: "off" as const, cron: "" };
+	const scheduleDirty =
+		runtime.data != null &&
+		scheduleDraft != null &&
+		(scheduleDraft.preset === "off"
+			? runtime.data.editable.checkin_enabled
+			: !runtime.data.editable.checkin_enabled ||
+				runtime.data.editable.checkin_cron !== scheduleDraft.cron);
+
 	return (
-		<Panel
+		<>
+			<Panel title={t("ops.checkin.scheduleTitle")}>
+				<p className="exchange-panel-note" style={{ marginBottom: 12 }}>
+					{t("ops.checkin.scheduleHint")}
+				</p>
+				<label className="check" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+					<input
+						type="checkbox"
+						disabled={saveSchedule.isPending || scheduleDraft == null}
+						checked={schedule.preset !== "off"}
+						onChange={(e) => {
+							if (!scheduleDraft) return;
+							setScheduleDraft(
+								e.target.checked
+									? { preset: "daily", cron: "0 8 * * *" }
+									: { preset: "off", cron: scheduleDraft.cron },
+							);
+						}}
+					/>
+					<span>{t("ops.checkin.scheduleEnabled")}</span>
+				</label>
+				{schedule.preset !== "off" ? (
+					<div className="form-grid" style={{ marginTop: 12 }}>
+						<label className="field">
+							<span>{t("ops.checkin.schedulePreset")}</span>
+							<select
+								disabled={saveSchedule.isPending}
+								value={schedule.preset}
+								onChange={(e) => {
+									const preset = e.target.value as SchedulePresetId;
+									if (!scheduleDraft) return;
+									const known = SCHEDULE_PRESETS.find(
+										(item) => item.id === preset,
+									);
+									setScheduleDraft({
+										preset,
+										cron:
+											preset === "custom"
+												? scheduleDraft.cron
+												: (known?.cron ?? scheduleDraft.cron),
+									});
+								}}
+							>
+								{SCHEDULE_PRESETS.filter((item) => item.id !== "off").map((item) => (
+									<option key={item.id} value={item.id}>
+										{t(`ops.schedule.preset.${item.id}`)}
+									</option>
+								))}
+							</select>
+						</label>
+						{schedule.preset === "custom" ? (
+							<label className="field">
+								<span>{t("ops.checkin.scheduleCron")}</span>
+								<input
+									className="mono"
+									disabled={saveSchedule.isPending}
+									value={schedule.cron}
+									onChange={(e) =>
+										setScheduleDraft({ preset: "custom", cron: e.target.value })
+									}
+									placeholder="0 8 * * *"
+								/>
+							</label>
+						) : (
+							<div className="field">
+								<span>{t("ops.checkin.scheduleCron")}</span>
+								<input className="mono" disabled value={schedule.cron} readOnly />
+							</div>
+						)}
+					</div>
+				) : null}
+				<div style={{ marginTop: 4 }}>
+					<Button
+						variant="secondary"
+						disabled={!scheduleDirty || saveSchedule.isPending || scheduleDraft == null}
+						onClick={() =>
+							saveSchedule.mutate(settingsFromSchedule(scheduleDraft!))
+						}
+					>
+						{saveSchedule.isPending ? t("common.working") : t("ops.checkin.scheduleSave")}
+					</Button>
+				</div>
+			</Panel>
+
+			<Panel
 			actions={
 				<>
 					<select
@@ -414,7 +549,8 @@ export function CheckinsPanel() {
 					onConfirm={() => run.mutate()}
 				/>
 			) : null}
-		</Panel>
+			</Panel>
+		</>
 	);
 }
 

@@ -1,5 +1,6 @@
 import {
 	Activity,
+	ArrowLeftRight,
 	Boxes,
 	Cable,
 	CalendarCheck,
@@ -40,6 +41,7 @@ import { Channels } from "./features/Channels";
 import { Dashboard } from "./features/Dashboard";
 import { ChannelModels } from "./features/ChannelModels";
 import { Checkins } from "./features/Checkins";
+import { ExchangePage } from "./features/ExchangePage";
 import { Keys } from "./features/Keys";
 import { Logs } from "./features/Logs";
 import { Maintain } from "./features/Maintain";
@@ -527,7 +529,7 @@ function AuthenticatedShell({
 	onUnauthorized: () => void;
 }) {
 	const { t } = useI18n();
-	const { checkinEnabled } = useModules();
+	const { checkinEnabled, exchangeEnabled } = useModules();
 	const [open, setOpen] = useState(false);
 	const [theme, setTheme] = useState<"light" | "dark">(() => {
 		const stored = window.localStorage.getItem("meta-gateway.theme");
@@ -554,6 +556,9 @@ function AuthenticatedShell({
 		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
 		...(checkinEnabled
 			? [{ to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck }]
+			: []),
+		...(exchangeEnabled
+			? [{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight }]
 			: []),
 		{ to: "/store", label: t("app.nav.store"), icon: Package },
 	];
@@ -648,6 +653,7 @@ function AuthenticatedShell({
 					<Route path="keys" element={<Keys />} />
 					<Route path="logs" element={<Logs />} />
 					<Route path="checkins" element={<Checkins />} />
+					<Route path="exchange" element={<ExchangePage />} />
 					<Route path="maintain" element={<Maintain />} />
 					<Route path="settings" element={<Maintain />} />
 					<Route path="store" element={<Store />} />
@@ -657,10 +663,6 @@ function AuthenticatedShell({
 					<Route
 						path="operations"
 						element={<Navigate to="/logs?tab=discovery" replace />}
-					/>
-					<Route
-						path="exchange"
-						element={<Navigate to="/settings?tab=exchange" replace />}
 					/>
 					<Route path="assets" element={<Navigate to="/" replace />} />
 					<Route path="dashboard" element={<Navigate to="/" replace />} />
