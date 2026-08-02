@@ -30,6 +30,7 @@ type RelayProxy interface {
 		CompletionTokens int
 		TotalTokens      int
 	})
+	RecordStreamFailure(memberID int64)
 }
 
 // RelayHandler serves public /v1/* endpoints.
@@ -236,21 +237,25 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
 	forceSSE := stream
-	writeUpstreamResult(w, requestID, result, forceSSE, func(tokens usage.Tokens, status int) {
-		channelID := int64(0)
-		if meta != nil {
-			channelID = meta.ChannelID
-		}
-		h.proxy.RecordUsage(proxyReq, channelID, status, struct {
-			PromptTokens     int
-			CompletionTokens int
-			TotalTokens      int
-		}{
-			PromptTokens:     tokens.PromptTokens,
-			CompletionTokens: tokens.CompletionTokens,
-			TotalTokens:      tokens.TotalTokens,
-		})
-	})
+	writeUpstreamResult(
+		w, requestID, result, forceSSE,
+		func(tokens usage.Tokens, status int) {
+			channelID := int64(0)
+			if meta != nil {
+				channelID = meta.ChannelID
+			}
+			h.proxy.RecordUsage(proxyReq, channelID, status, struct {
+				PromptTokens     int
+				CompletionTokens int
+				TotalTokens      int
+			}{
+				PromptTokens:     tokens.PromptTokens,
+				CompletionTokens: tokens.CompletionTokens,
+				TotalTokens:      tokens.TotalTokens,
+			})
+		},
+		h.streamErrorCallback(r, meta),
+	)
 }
 
 // extractMultipartModel does a best-effort scan for name="model" in multipart bodies
@@ -367,21 +372,25 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		DownstreamKeyID: keyID,
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
-	writeUpstreamResult(w, requestID, result, stream, func(tokens usage.Tokens, status int) {
-		channelID := int64(0)
-		if meta != nil {
-			channelID = meta.ChannelID
-		}
-		h.proxy.RecordUsage(proxyReq, channelID, status, struct {
-			PromptTokens     int
-			CompletionTokens int
-			TotalTokens      int
-		}{
-			PromptTokens:     tokens.PromptTokens,
-			CompletionTokens: tokens.CompletionTokens,
-			TotalTokens:      tokens.TotalTokens,
-		})
-	})
+	writeUpstreamResult(
+		w, requestID, result, stream,
+		func(tokens usage.Tokens, status int) {
+			channelID := int64(0)
+			if meta != nil {
+				channelID = meta.ChannelID
+			}
+			h.proxy.RecordUsage(proxyReq, channelID, status, struct {
+				PromptTokens     int
+				CompletionTokens int
+				TotalTokens      int
+			}{
+				PromptTokens:     tokens.PromptTokens,
+				CompletionTokens: tokens.CompletionTokens,
+				TotalTokens:      tokens.TotalTokens,
+			})
+		},
+		h.streamErrorCallback(r, meta),
+	)
 }
 
 // ensureStreamUsageOption asks OpenAI-compatible upstreams to emit a final usage
@@ -409,7 +418,19 @@ func ensureStreamUsageOption(body []byte) []byte {
 	return encoded
 }
 
-func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int)) {
+// streamErrorCallback returns a callback that records a failure for the member
+// that served a stream when the upstream connection breaks mid-stream. Client
+// disconnects (context canceled) are not treated as upstream failures.
+func (h *RelayHandler) streamErrorCallback(r *http.Request, meta *proxy.AttemptMeta) func() {
+	return func() {
+		if r.Context().Err() != nil || meta == nil || meta.MemberID <= 0 {
+			return
+		}
+		h.proxy.RecordStreamFailure(meta.MemberID)
+	}
+}
+
+func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int), onStreamError func()) {
 	if result.Err != nil {
 		switch {
 		case errors.Is(result.Err, routing.ErrRouteNotFound), errors.Is(result.Err, routing.ErrNoEligible):
@@ -429,6 +450,9 @@ func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.
 	tee := usage.NewTee(io.NopCloser(result.Body), stream)
 	if err := copyUpstreamBody(w, tee, stream); err != nil {
 		log.Printf("relay: copy upstream response request_id=%s: %v", requestID, err)
+		if stream && onStreamError != nil {
+			onStreamError()
+		}
 	}
 	_ = tee.Close()
 	if onUsage != nil {

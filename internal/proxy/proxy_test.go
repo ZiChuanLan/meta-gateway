@@ -313,3 +313,62 @@ func TestCancellationDoesNotRetry(t *testing.T) {
 		t.Fatalf("result=%+v calls=%#v", result, upstream.calls)
 	}
 }
+
+func TestStreamFirstByteFailureFailsOver(t *testing.T) {
+	// First channel returns 200 and then dies before emitting any SSE data; the
+	// gateway must treat it as a retryable failure and fail over to the second
+	// channel instead of surfacing a silent truncated 200 to the client.
+	deadStream := response(http.StatusOK, "")
+	okStream := response(http.StatusOK, "data: {\"chunk\":1}\n\n")
+	upstream := &queuedRelay{results: []*relay.Result{deadStream, okStream}}
+	service, db, highMember, lowMember := setupProxy(t, upstream)
+
+	result := service.ChatCompletions(context.Background(), Request{
+		RequestID: "req-stream", Model: "model", Body: []byte(`{"model":"model","stream":true}`), Stream: true,
+	})
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	defer result.Body.Close()
+	if len(upstream.calls) != 2 || !strings.Contains(upstream.calls[0], "high.example") || !strings.Contains(upstream.calls[1], "low.example") {
+		t.Fatalf("unexpected calls: %#v", upstream.calls)
+	}
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "data: {\"chunk\":1}\n\n" {
+		t.Fatalf("unexpected body: %q", body)
+	}
+	high, _ := db.RouteMember.GetByID(highMember)
+	if high.FailCount == 0 || high.CooldownUntil == nil || high.LastError != "stream_interrupted" {
+		t.Fatalf("dead-stream channel should be cooled down: %+v", high)
+	}
+	low, _ := db.RouteMember.GetByID(lowMember)
+	if low.FailCount != 0 || low.CooldownUntil != nil {
+		t.Fatalf("successful channel should be healthy: %+v", low)
+	}
+}
+
+func TestRetryAfterExtendsCooldown(t *testing.T) {
+	busy := response(http.StatusServiceUnavailable, `{"error":"busy"}`)
+	busy.Header.Set("Retry-After", "3600")
+	ok := response(http.StatusOK, `{"ok":true}`)
+	upstream := &queuedRelay{results: []*relay.Result{busy, ok}}
+	service, db, highMember, _ := setupProxy(t, upstream)
+
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-ra", Model: "model", Body: []byte(`{}`)})
+	if result.Err != nil || result.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	defer result.Body.Close()
+	high, _ := db.RouteMember.GetByID(highMember)
+	if high.CooldownUntil == nil {
+		t.Fatalf("member not cooled down: %+v", high)
+	}
+	// Base cool-down is 1 minute; Retry-After: 3600 must win.
+	want := service.now().Add(time.Hour)
+	if !high.CooldownUntil.Equal(want) {
+		t.Fatalf("Retry-After not honored: cooldown_until=%v want=%v", high.CooldownUntil, want)
+	}
+}

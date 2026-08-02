@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -259,7 +260,31 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				}
 				result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, headers, requestBody)
 			}
+			streamInterrupted := false
+			if req.Stream && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
+				first, peekErr := peekFirstChunk(result.Body)
+				if peekErr != nil {
+					// Upstream answered 200 and then died before emitting any
+					// data. The client has not received a byte yet, so this is a
+					// normal retryable failure — fail over to the next key/channel.
+					_ = result.Body.Close()
+					result = &relay.Result{
+						StatusCode: result.StatusCode,
+						Header:     result.Header,
+						LatencyMs:  result.LatencyMs,
+						Err:        fmt.Errorf("proxy: stream closed before first byte: %w", peekErr),
+					}
+					streamInterrupted = true
+				} else {
+					// Replay the buffered prefix, then continue streaming the rest.
+					result.Body = io.NopCloser(io.MultiReader(bytes.NewReader(first), result.Body))
+				}
+			}
 			category, retryable = classify(result)
+			if streamInterrupted {
+				category = "stream_interrupted"
+				retryable = true
+			}
 			// Only the last key attempt for this channel is logged at the attempt counter
 			// used for cross-channel retry; intermediate key fails stay on the same attempt.
 			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
@@ -269,10 +294,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				break
 			}
 			if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
-				break
-			}
-			if !retryable {
-				// Auth / client errors on one key usually apply to the whole site for this model path.
 				break
 			}
 			// Retryable: try next key in the pool before failing over to another channel.
@@ -297,7 +318,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			return result, meta
 		}
 		if retryable {
-			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+			penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
+			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), penalty, category); err != nil {
 				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
 			}
 		}
@@ -582,4 +604,65 @@ func preserve(result *relay.Result) *relay.Result {
 		return &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("proxy: preserve upstream response: %w", err)}
 	}
 	return &relay.Result{StatusCode: result.StatusCode, Header: result.Header.Clone(), LatencyMs: result.LatencyMs, Body: io.NopCloser(bytes.NewReader(body))}
+}
+
+// maxStreamFirstChunkBytes bounds how much of a stream prefix we buffer before
+// committing the response to the client.
+const maxStreamFirstChunkBytes = 256 * 1024
+
+// peekFirstChunk reads the leading bytes of an upstream stream response. SSE
+// frames end with a blank line, so reading until "\n\n" (or a bounded amount of
+// data) lets the gateway detect a 200 that immediately died and fail over to
+// the next channel instead of surfacing a silent truncated response.
+func peekFirstChunk(body io.Reader) ([]byte, error) {
+	var buffered bytes.Buffer
+	buffer := make([]byte, 4096)
+	for {
+		readN, readErr := body.Read(buffer)
+		if readN > 0 {
+			buffered.Write(buffer[:readN])
+			if buffered.Len() >= maxStreamFirstChunkBytes || bytes.Contains(buffered.Bytes(), []byte("\n\n")) {
+				return buffered.Bytes(), nil
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF && buffered.Len() > 0 {
+				return buffered.Bytes(), nil
+			}
+			return nil, readErr
+		}
+	}
+}
+
+// retryAfterCooldown extends the base cool-down with the upstream's Retry-After
+// header when present (whole seconds or an HTTP-date). It never shrinks the base.
+func retryAfterCooldown(header http.Header, now time.Time, base time.Duration) time.Duration {
+	if header == nil {
+		return base
+	}
+	value := strings.TrimSpace(header.Get("Retry-After"))
+	if value == "" {
+		return base
+	}
+	var penalty time.Duration
+	if seconds, err := strconv.Atoi(value); err == nil && seconds >= 0 {
+		penalty = time.Duration(seconds) * time.Second
+	} else if when, err := http.ParseTime(value); err == nil {
+		penalty = when.Sub(now)
+	}
+	if penalty > base {
+		return penalty
+	}
+	return base
+}
+
+// RecordStreamFailure marks the member that served a stream as failed after the
+// upstream connection broke mid-stream. The partial response is already on the
+// wire, so the current request cannot be retried, but cooling the member down
+// makes the next request fail over to a healthier channel.
+func (s *Service) RecordStreamFailure(memberID int64) {
+	cooldown := time.Duration(s.cooldownNs.Load())
+	if err := s.db.RouteMember.RecordFailure(memberID, s.now(), cooldown, "stream_interrupted"); err != nil {
+		log.Printf("proxy: record stream failure member_id=%d: %v", memberID, err)
+	}
 }

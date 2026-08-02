@@ -10,6 +10,18 @@ import (
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
+const (
+	// maxCooldownBackoff caps exponential cooldown growth so repeated failures
+	// can never overflow time.Duration into a past timestamp. The member simply
+	// stays parked until the penalty expires or an admin clears health.
+	maxCooldownBackoff = 24 * time.Hour
+
+	// disableAfterConsecutiveFailures is the consecutive-failure threshold that
+	// trips a circuit breaker: the member is disabled outright and must be
+	// re-enabled by an admin (toggle or clear-health) before it is tried again.
+	disableAfterConsecutiveFailures = 3
+)
+
 // RouteStore provides CRUD operations for routes.
 type RouteStore struct {
 	db *sql.DB
@@ -322,15 +334,28 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 	}
 	nextFailures := currentFailures + 1
 	backoff := cooldown
-	// Double per consecutive failure with no hard cap so repeated outages
-	// effectively park the member until success or manual clear-health.
+	// Double per consecutive failure, capped so the cooldown can never grow
+	// past maxCooldownBackoff and overflow time.Duration into a past timestamp.
 	for step := 1; step < nextFailures; step++ {
 		backoff *= 2
+		if backoff > maxCooldownBackoff {
+			backoff = maxCooldownBackoff
+		}
 	}
-	until := now.Add(backoff).UTC().Format(time.RFC3339Nano)
-	if _, err = tx.Exec(`UPDATE route_members SET fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
-		nextFailures, until, category, id); err != nil {
-		return fmt.Errorf("route member record failure: %w", err)
+	if nextFailures >= disableAfterConsecutiveFailures {
+		// Circuit breaker: park the member outright instead of relying on an
+		// ever-growing cooldown. The admin re-enables it from the model list
+		// (toggle or clear-health); the next success resets fail_count.
+		if _, err = tx.Exec(`UPDATE route_members SET fail_count=?, enabled=0, cooldown_until=NULL, last_error=?, updated_at=datetime('now') WHERE id=?`,
+			nextFailures, category, id); err != nil {
+			return fmt.Errorf("route member record failure disable: %w", err)
+		}
+	} else {
+		until := now.Add(backoff).UTC().Format(time.RFC3339Nano)
+		if _, err = tx.Exec(`UPDATE route_members SET fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
+			nextFailures, until, category, id); err != nil {
+			return fmt.Errorf("route member record failure: %w", err)
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("route member record failure commit: %w", err)

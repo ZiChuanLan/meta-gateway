@@ -538,21 +538,28 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 2 {
 		t.Fatalf("escalated cooldown: %+v", member)
 	}
-	// Old code capped at 30m and stopped doubling after 5 steps; keep escalating
-	// so long cool-downs can act as a soft disable.
-	for failureNumber := 3; failureNumber <= 6; failureNumber++ {
-		if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
-			t.Fatal(err)
-		}
+	// The third consecutive failure within the active backoff trips the circuit
+	// breaker: the member is disabled outright instead of growing the cooldown.
+	if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
 	}
 	member, err = db.RouteMember.GetByID(memberID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// fail_count 6 → cooldown * 2^5 = 32 minutes (above the former 30m cap)
-	want = now.Add(32 * time.Minute)
-	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 6 {
-		t.Fatalf("uncapped escalated cooldown: got %+v want until %v fail_count 6", member, want)
+	if member.Enabled || member.CooldownUntil != nil || member.FailCount != 3 || member.LastError != "transport" {
+		t.Fatalf("expected circuit breaker disable: %+v", member)
+	}
+	// The disabled member is excluded from routing until an admin re-enables it.
+	route, candidates, err := db.RouteMember.RoutingCandidates("cooldown-model")
+	if err != nil || route == nil || len(candidates) != 1 {
+		t.Fatalf("candidates=%+v err=%v", candidates, err)
+	}
+	if candidates[0].Member.Enabled {
+		t.Fatalf("disabled member still eligible: %+v", candidates[0])
+	}
+	if err := db.RouteMember.Update(&domain.RouteMember{ID: memberID, RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1, Priority: 0}); err != nil {
+		t.Fatal(err)
 	}
 	if err := db.RouteMember.ClearHealth(memberID); err != nil {
 		t.Fatal(err)
@@ -563,6 +570,33 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	}
 	if member.CooldownUntil != nil || member.FailCount != 0 || member.LastError != "" {
 		t.Fatalf("cleared health: %+v", member)
+	}
+}
+
+func TestRouteMemberBackoffCapsAtMax(t *testing.T) {
+	db := openTestDB(t)
+	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "cap-model", Enabled: true})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "channel", Status: domain.StatusEnabled})
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	// A base cool-down of 20h doubles to 40h on the second consecutive failure,
+	// which must be capped at maxCooldownBackoff (24h) rather than overflowing.
+	if err := db.RouteMember.RecordFailure(memberID, now, 20*time.Hour, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RouteMember.RecordFailure(memberID, now, 20*time.Hour, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	member, err := db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := now.Add(24 * time.Hour)
+	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 2 {
+		t.Fatalf("backoff not capped: %+v want until %v", member, want)
 	}
 }
 

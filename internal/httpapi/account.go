@@ -20,8 +20,20 @@ func NewAccountHandler(service *account.Service) *AccountHandler {
 }
 
 func (h *AccountHandler) Register(r chi.Router) {
+	r.Post("/channels/account/probe-all", h.probeAll)
 	r.Post("/channels/{id}/account/probe", h.probeAccount)
 	r.Post("/channels/{id}/account/sync-keys", h.syncKeys)
+	r.Post("/channels/{id}/account/create-key", h.createKey)
+	r.Get("/channels/{id}/account/token-groups", h.tokenGroups)
+}
+
+func (h *AccountHandler) probeAll(w http.ResponseWriter, r *http.Request) {
+	items, err := h.service.ProbeAll(r.Context())
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *AccountHandler) probeAccount(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +74,46 @@ func (h *AccountHandler) syncKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *AccountHandler) createKey(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+	var request account.CreateKeyRequest
+	body, readErr := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if readErr != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+	}
+	result, err := h.service.CreateKey(r.Context(), id, request)
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *AccountHandler) tokenGroups(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+	groups, err := h.service.ListTokenGroups(r.Context(), id)
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
 }
 
 func writeAccountError(w http.ResponseWriter, err error) {
