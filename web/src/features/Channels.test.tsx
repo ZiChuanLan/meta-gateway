@@ -5,6 +5,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -423,5 +424,116 @@ describe("capabilityFlags", () => {
 		expect(flags.checkinOff).toBe(true);
 		expect(flags.missingAPIKey).toBe(false);
 		expect(flags.noUserToken).toBe(false);
+	});
+});
+
+describe("Channels create-key double-submit guard", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		sessionStorage.clear();
+		localStorage.setItem("meta-gateway.locale", "en");
+		sessionStorage.setItem("meta-gateway.admin-token", "test-token");
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("creates exactly one upstream key despite rapid repeated clicks", async () => {
+		const overview = {
+			channel: {
+				id: 7,
+				name: "newapi-demo",
+				base_url: "https://api.example.com",
+				models_csv: "",
+				group_name: "default",
+				priority: 0,
+				weight: 100,
+				status: "enabled",
+				created_at: "",
+				updated_at: "",
+			},
+			credential_kind: "access_token",
+			checkin_enabled: false,
+			has_user_credential: true,
+			has_platform_user_id: true,
+			has_api_key: false,
+			site_usable: true,
+			credential_usable: true,
+			model_count: 0,
+			last_probe_at: "2026-08-02T00:00:00Z",
+			last_probe_ok: true,
+			last_latency_ms: 5,
+			route_count: 0,
+			enabled_member_count: 0,
+			cooling_member_count: 0,
+			failure_count: 0,
+		};
+		let createKeyCalls = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = String(input).split("?")[0] ?? "";
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (path === "/admin/channels/overview" && method === "GET") {
+					return jsonResponse([overview]);
+				}
+				if (path === "/admin/sites" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/plugins/status" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (
+					/\/admin\/channels\/7\/account\/token-groups$/.test(path) &&
+					method === "GET"
+				) {
+					return jsonResponse({ groups: ["default"] });
+				}
+				if (
+					/\/admin\/channels\/7\/account\/create-key$/.test(path) &&
+					method === "POST"
+				) {
+					createKeyCalls += 1;
+					return jsonResponse({
+						credential_id: 100 + createKeyCalls,
+						name: "gateway-default",
+						group: "default",
+						category: "created",
+						message: "ok",
+					});
+				}
+				if (path === "/admin/channels" && method === "GET") {
+					return jsonResponse([]);
+				}
+				return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+			}),
+		);
+
+		renderChannels();
+		await waitFor(async () => {
+			const trigger = screen.getByRole("button", {
+				name: /more actions/i,
+			});
+			trigger.click();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const createItem = screen.getByRole("menuitem", {
+				name: /create api key/i,
+			});
+			createItem.click();
+		});
+
+		const dialog = await screen.findByRole("dialog");
+		const confirm = await within(dialog).findByRole("button", {
+			name: /^create$/i,
+		});
+		// Rapid-fire the confirm button before React can re-render the disabled state.
+		fireEvent.click(confirm);
+		fireEvent.click(confirm);
+		fireEvent.click(confirm);
+
+		await waitFor(() => expect(createKeyCalls).toBe(1));
+		expect(createKeyCalls).toBe(1);
 	});
 });

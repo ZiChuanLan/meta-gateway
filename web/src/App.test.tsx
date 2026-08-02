@@ -200,9 +200,7 @@ describe("channel-first shell", () => {
 			await screen.findByRole("heading", { name: "Settings" }),
 		).toBeInTheDocument();
 		expect(screen.getByRole("tab", { name: "Runtime" })).toBeInTheDocument();
-		expect(
-			await screen.findByRole("tab", { name: "Exchange" }),
-		).toBeInTheDocument();
+		expect(screen.getByRole("tab", { name: "Backups" })).toBeInTheDocument();
 	});
 
 	it("uses the short safe path when reduced motion is requested", async () => {

@@ -88,11 +88,6 @@ export function Store() {
 			}
 		>
 			<div className="ops-canvas">
-				<div className="system-banner">
-					<strong>{t("store.bannerTitle")}</strong>
-					<p>{t("store.bannerBody")}</p>
-				</div>
-
 				<EntityState
 					isLoading={modules.isPending}
 					isError={modules.isError}

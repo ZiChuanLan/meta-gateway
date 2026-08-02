@@ -99,7 +99,7 @@ function ModelCatalog({
 	const [selected, setSelected] = useState<number | null>(null);
 	const [query, setQuery] = useState(initialModel);
 	const [channelFilter, setChannelFilter] = useState(channelIdFromUrl ?? 0);
-	const [showAdvanced, setShowAdvanced] = useState(false);
+	const [showAdvanced, setShowAdvanced] = useState(true);
 	const [edit, setEdit] = useState<Partial<Route> | null>(null);
 	const [remove, setRemove] = useState<Route | null>(null);
 	const [member, setMember] = useState<Partial<RouteMember> | null>(null);

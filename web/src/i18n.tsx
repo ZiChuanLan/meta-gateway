@@ -567,8 +567,6 @@ const en: Dict = {
 	"store.title": "Store",
 
 	"store.kicker": "Extensions",
-	"store.bannerTitle": "Add capabilities, never remove core",
-	"store.bannerBody": "Enable optional add-ons for import/export and check-in. Relay, tokens, logs, audit, and backups stay built-in.",
 	"store.section.enabled": "Enabled add-ons",
 	"store.section.enabledHint": "These extensions are active and unlock extra Admin surfaces.",
 	"store.section.available": "Available add-ons",
@@ -1326,8 +1324,6 @@ const zh: Dict = {
 	"store.title": "商店",
 
 	"store.kicker": "扩展能力",
-	"store.bannerTitle": "只做能力补充，不砍必备功能",
-	"store.bannerBody": "按需启用导入导出、签到等扩展。中继、Token、日志、审计与备份始终内置可用。",
 	"store.section.enabled": "已启用扩展",
 	"store.section.enabledHint": "这些扩展已激活，并解锁对应管理界面。",
 	"store.section.available": "可添加扩展",
