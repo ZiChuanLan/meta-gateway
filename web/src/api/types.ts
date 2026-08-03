@@ -2,7 +2,7 @@ export type Status = 'enabled' | 'disabled'
 
 export interface Site { id: number; name: string; base_url: string; platform: string; status: Status; created_at: string; updated_at: string }
 export interface Credential { id: number; site_id: number; kind: string; has_secret: boolean; meta_json?: string; status: Status; checkin_enabled: boolean; created_at?: string }
-export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; created_at: string; updated_at: string }
+export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; header_override?: string; system_prompt?: string; created_at: string; updated_at: string }
 export interface ChannelOverview {
   channel: Channel
   credential_kind?: string

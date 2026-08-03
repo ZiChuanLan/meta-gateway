@@ -359,3 +359,97 @@ func TestMessagesDownstreamStreamOnOpenAIChannel(t *testing.T) {
 		}
 	}
 }
+
+// mockEchoUpstream returns the request body and headers it received so tests
+// can assert overrides/injections end to end.
+func mockEchoUpstream(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		response := map[string]any{
+			"echo_headers": map[string]string{
+				"x-channel-header": r.Header.Get("X-Channel-Header"),
+				"user-agent":       r.Header.Get("User-Agent"),
+			},
+			"echo_body": string(body),
+		}
+		encoded, _ := json.Marshal(response)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(encoded)
+	}))
+}
+
+func TestChannelOverridesEndToEnd(t *testing.T) {
+	upstream := mockEchoUpstream(t)
+	defer upstream.Close()
+	serverURL, token, _ := setupRelay(t, upstream.URL, "openai-compatible")
+
+	// Set header override + system prompt on the channel via admin API.
+	channels := get(t, serverURL+"/admin/channels")
+	var rows []struct {
+		ID int64 `json:"id"`
+	}
+	json.Unmarshal(channels, &rows)
+	if len(rows) == 0 {
+		t.Fatal("no channels")
+	}
+	channelID := rows[0].ID
+	put(t, serverURL+"/admin/channels/"+itoa(channelID), map[string]any{
+		"header_override": `{"X-Channel-Header": "mg-test", "User-Agent": "MetaGateway/1.0"}`,
+		"system_prompt":   "You are the relay gateway.",
+	})
+
+	status, body := relayChat(t, serverURL, token, `{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}]}`)
+	if status != http.StatusOK {
+		t.Fatalf("status %d body %s", status, body)
+	}
+	var echo struct {
+		Headers map[string]string `json:"echo_headers"`
+		Body    string            `json:"echo_body"`
+	}
+	if err := json.Unmarshal(body, &echo); err != nil {
+		t.Fatalf("decode echo: %v body %s", err, body)
+	}
+	if echo.Headers["x-channel-header"] != "mg-test" {
+		t.Fatalf("header override missing: %+v", echo.Headers)
+	}
+	if echo.Headers["user-agent"] != "MetaGateway/1.0" {
+		t.Fatalf("user-agent override missing: %+v", echo.Headers)
+	}
+	if !strings.Contains(echo.Body, `"role":"system"`) || !strings.Contains(echo.Body, "You are the relay gateway.") {
+		t.Fatalf("system prompt not injected: %s", echo.Body)
+	}
+}
+
+func get(t *testing.T, url string) []byte {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer admin-test")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		t.Fatalf("GET %s: %d %s", url, resp.StatusCode, body)
+	}
+	return body
+}
+
+func put(t *testing.T, url string, payload any) {
+	t.Helper()
+	encoded, _ := json.Marshal(payload)
+	req, _ := http.NewRequest(http.MethodPut, url, strings.NewReader(string(encoded)))
+	req.Header.Set("Authorization", "Bearer admin-test")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		t.Fatalf("PUT %s: %d %s", url, resp.StatusCode, body)
+	}
+}

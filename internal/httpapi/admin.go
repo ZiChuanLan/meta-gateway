@@ -473,6 +473,13 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if patch.ModelsCSV != "" {
 		ch.ModelsCSV = patch.ModelsCSV
 	}
+	// Header overrides and system prompt: empty string clears the stored value.
+	if patch.HeaderOverride != existing.HeaderOverride {
+		ch.HeaderOverride = strings.TrimSpace(patch.HeaderOverride)
+	}
+	if patch.SystemPrompt != existing.SystemPrompt {
+		ch.SystemPrompt = strings.TrimSpace(patch.SystemPrompt)
+	}
 	// Only accept a new site_id when it is a positive id; never wipe ownership.
 	if patch.SiteID != nil && *patch.SiteID > 0 {
 		ch.SiteID = patch.SiteID

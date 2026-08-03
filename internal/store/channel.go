@@ -28,13 +28,15 @@ func scanChannel(scanner interface {
 		&r.Weight,
 		&r.Status,
 		&r.TypeHint,
+		&r.HeaderOverride,
+		&r.SystemPrompt,
 		scanTime(&r.CreatedAt),
 		scanTime(&r.UpdatedAt),
 	)
 }
 
 func (s *ChannelStore) List() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, created_at, updated_at FROM channels ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, created_at, updated_at FROM channels ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("channel list: %w", err)
 	}
@@ -178,7 +180,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 
 // ListEnabled returns all enabled channels.
 func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list enabled: %w", err)
 	}
@@ -196,7 +198,7 @@ func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
 }
 
 func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
-	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, created_at, updated_at FROM channels WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, created_at, updated_at FROM channels WHERE id = ?`, id)
 	var r domain.Channel
 	if err := scanChannel(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -208,8 +210,8 @@ func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
 }
 
 func (s *ChannelStore) Create(c *domain.Channel) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint)
+	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt)
 	if err != nil {
 		return 0, fmt.Errorf("channel create: %w", err)
 	}
@@ -222,8 +224,8 @@ func (s *ChannelStore) Update(c *domain.Channel) error {
 		return fmt.Errorf("channel update begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, updated_at=datetime('now') WHERE id=?`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.ID); err != nil {
+	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, header_override=?, system_prompt=?, updated_at=datetime('now') WHERE id=?`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt, c.ID); err != nil {
 		return fmt.Errorf("channel update: %w", err)
 	}
 	if _, err = tx.Exec(`UPDATE route_members SET priority=?, weight=?, updated_at=datetime('now')

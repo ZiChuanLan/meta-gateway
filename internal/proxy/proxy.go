@@ -220,6 +220,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			effectivePath = "chat/completions"
 		}
 
+		// Channel-level system prompt injection (OpenAI-format chat bodies only;
+		// downstream translation and adapters carry the system message through).
+		if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && effectivePath == "chat/completions" {
+			requestSource = injectSystemPrompt(requestSource, prompt)
+		}
+
 		upstreamPath, requestBody, translateErr := adapter.TransformRequest(effectivePath, requestSource)
 		if translateErr != nil {
 			// Unsupported path or conversion failure: hard failure on this
@@ -272,6 +278,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			headers := adapter.AuthHeaders(apiKey)
 			if headers.Get("Content-Type") == "" && strings.TrimSpace(req.ContentType) != "" {
 				headers.Set("Content-Type", req.ContentType)
+			}
+			if overrideErr := mergeHeaderOverrides(headers, candidate.Channel.HeaderOverride); overrideErr != nil {
+				result = &relay.Result{Err: fmt.Errorf("proxy: header override: %w", overrideErr)}
+				category, retryable = classify(result)
+				break
 			}
 			result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, headers, requestBody)
 			// Convert upstream 2xx bodies back to the OpenAI contract.
@@ -700,4 +711,75 @@ func (s *Service) RecordStreamFailure(memberID int64) {
 	if err := s.db.RouteMember.RecordFailure(memberID, s.now(), cooldown, "stream_interrupted"); err != nil {
 		log.Printf("proxy: record stream failure member_id=%d: %v", memberID, err)
 	}
+}
+
+// injectSystemPrompt prepends a system message to an OpenAI chat/completions
+// body. Non-JSON or non-chat bodies are returned unchanged.
+func injectSystemPrompt(body []byte, prompt string) []byte {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+	messages, ok := payload["messages"].([]any)
+	if !ok {
+		return body
+	}
+	system := map[string]any{"role": "system", "content": prompt}
+	// Skip if an identical system message is already first.
+	if len(messages) > 0 {
+		if first, ok := messages[0].(map[string]any); ok {
+			if role, _ := first["role"].(string); role == "system" {
+				if existing, _ := first["content"].(string); existing == prompt {
+					return body
+				}
+			}
+		}
+	}
+	updated := make([]any, 0, len(messages)+1)
+	updated = append(updated, system)
+	updated = append(updated, messages...)
+	payload["messages"] = updated
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return rewritten
+}
+
+// forbiddenOverrideHeaders cannot be overridden by channel config (transport
+// level or authentication-critical).
+var forbiddenOverrideHeaders = map[string]struct{}{
+	"host":              {},
+	"content-length":    {},
+	"transfer-encoding": {},
+	"connection":        {},
+	"proxy-authorization": {},
+	"proxy-connection":  {},
+	"te":                {},
+	"trailer":           {},
+	"upgrade":           {},
+}
+
+// mergeHeaderOverrides applies a channel's header_override JSON onto headers.
+// Values replace existing ones; hop-by-hop and auth-critical names are ignored.
+func mergeHeaderOverrides(headers http.Header, raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var overrides map[string]string
+	if err := json.Unmarshal([]byte(raw), &overrides); err != nil {
+		return fmt.Errorf("invalid header_override JSON: %w", err)
+	}
+	for name, value := range overrides {
+		key := http.CanonicalHeaderKey(strings.TrimSpace(name))
+		if key == "" {
+			continue
+		}
+		if _, blocked := forbiddenOverrideHeaders[strings.ToLower(key)]; blocked {
+			continue
+		}
+		headers.Set(key, value)
+	}
+	return nil
 }

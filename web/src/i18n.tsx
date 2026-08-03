@@ -300,6 +300,12 @@ const en: Dict = {
 		"Higher number is tried first. Applied to every model of this connection, unless that model uses independent priority/weight (set in the Models page).",
 	"channels.weightHint":
 		"Shares traffic within the same priority. Applied to every model of this connection, unless that model uses independent priority/weight (set in the Models page).",
+	"channels.overrides": "Request overrides",
+	"channels.headerOverride": "Header overrides (JSON)",
+	"channels.headerOverrideHint": "Extra upstream request headers, merged after auth headers. Hop-by-hop headers are ignored.",
+	"channels.systemPrompt": "System prompt",
+	"channels.systemPromptHint": "Injected as a system message ahead of user messages for chat requests on this channel.",
+	"channels.systemPromptPlaceholder": "e.g. You are a helpful relay gateway…",
 
 	"channels.apiKeysTitle": "API keys",
 	"channels.apiKeysHint": "Enabled keys on this site form a failover pool for model sync and relay.",
@@ -1078,6 +1084,12 @@ const zh: Dict = {
 		"数字越大越先尝试。会同步到该连接的所有模型；在模型页开启了「独立优先级/权重」的模型除外（带盾牌标记）。",
 	"channels.weightHint":
 		"同优先级内权重大的分流更多。同样会同步到该连接的所有模型；在模型页开启了「独立优先级/权重」的模型除外。",
+	"channels.overrides": "请求改写",
+	"channels.headerOverride": "Header 改写 (JSON)",
+	"channels.headerOverrideHint": "转发到上游时附加/覆盖的请求头(在认证头之后合并)。跳转头会被忽略。",
+	"channels.systemPrompt": "系统提示词",
+	"channels.systemPromptHint": "作为 system 消息注入到该渠道聊天请求的最前面。",
+	"channels.systemPromptPlaceholder": "例如:你是一个中继网关…",
 
 	"channels.apiKeysTitle": "API Key",
 	"channels.apiKeysHint": "本站已启用的 Key 组成故障转移池，用于同步模型与中继。",

@@ -192,7 +192,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
 		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
 			AND cred.site_id = c.site_id AND lower(cred.kind) = 'api_key'
@@ -223,6 +223,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
 			&candidate.Channel.Status, &candidate.Channel.TypeHint,
+			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
 			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
 			&credentialUsable,
 		); err != nil {
@@ -268,7 +269,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
 		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
 			AND lower(cred.kind) = 'api_key'
@@ -299,6 +300,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
 			&candidate.Channel.Status, &candidate.Channel.TypeHint,
+			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
 			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
 			&credentialUsable,
 		); err != nil {

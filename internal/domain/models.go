@@ -71,6 +71,11 @@ type Channel struct {
 	Weight       int       `json:"weight"`
 	Status       string    `json:"status"`
 	TypeHint     string    `json:"type_hint,omitempty"`
+	// HeaderOverride is a JSON object of extra upstream request headers
+	// (merged after the adapter's auth headers; hop-by-hop names rejected).
+	HeaderOverride string `json:"header_override,omitempty"`
+	// SystemPrompt is injected as a system message ahead of user messages.
+	SystemPrompt string `json:"system_prompt,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

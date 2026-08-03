@@ -419,6 +419,8 @@ export function Channels() {
 			type_hint: string;
 			priority: number;
 			weight: number;
+			header_override?: string;
+			system_prompt?: string;
 			userToken: string;
 			apiKey: string;
 		}) => {
@@ -500,6 +502,8 @@ export function Channels() {
 				type_hint: typeHint,
 				priority: input.priority,
 				weight: input.weight,
+				header_override: input.header_override ?? "",
+				system_prompt: input.system_prompt ?? "",
 				site_id: siteId,
 				credential_id: relayCredentialId,
 			});
@@ -1986,6 +1990,8 @@ function EditChannelDialog({
 		type_hint: string;
 		priority: number;
 		weight: number;
+		header_override?: string;
+		system_prompt?: string;
 		userToken: string;
 		apiKey: string;
 	}) => void;
@@ -2007,6 +2013,8 @@ function EditChannelDialog({
 	);
 	const [priority, setPriority] = useState(value.priority);
 	const [weight, setWeight] = useState(value.weight);
+	const [headerOverride, setHeaderOverride] = useState(value.header_override ?? "");
+	const [systemPrompt, setSystemPrompt] = useState(value.system_prompt ?? "");
 	const [userToken, setUserToken] = useState(
 		userCredential?.has_secret ? SECRET_MASK : "",
 	);
@@ -2060,6 +2068,8 @@ function EditChannelDialog({
 								type_hint: typeHint,
 								priority,
 								weight,
+								header_override: headerOverride,
+								system_prompt: systemPrompt,
 								userToken,
 								apiKey,
 							})
@@ -2338,6 +2348,30 @@ function EditChannelDialog({
 					</Field>
 				</div>
 			) : null}
+			<section className="detail-section">
+				<div className="detail-section-head">
+					<h3>{t("channels.overrides")}</h3>
+				</div>
+				<Field label={t("channels.headerOverride")} hint={t("channels.headerOverrideHint")}>
+					<textarea
+						className="mono"
+						value={headerOverride}
+						onChange={(e) => setHeaderOverride(e.target.value)}
+						disabled={pending}
+						placeholder='{"User-Agent": "…", "X-Custom": "value"}'
+						style={{ minHeight: 64 }}
+					/>
+				</Field>
+				<Field label={t("channels.systemPrompt")} hint={t("channels.systemPromptHint")}>
+					<textarea
+						value={systemPrompt}
+						onChange={(e) => setSystemPrompt(e.target.value)}
+						disabled={pending}
+						placeholder={t("channels.systemPromptPlaceholder")}
+						style={{ minHeight: 72 }}
+					/>
+				</Field>
+			</section>
 
 			{error ? <ErrorState error={error} /> : null}
 			</>
