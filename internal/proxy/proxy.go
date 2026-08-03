@@ -3,6 +3,7 @@ package proxy
 
 import (
 	"bytes"
+	"sync"
 	"context"
 	"encoding/json"
 	"errors"
@@ -50,6 +51,10 @@ type Service struct {
 	// autoDisableThreshold: consecutive member failures before a channel is
 	// auto-disabled (0 = feature off).
 	autoDisableThreshold int
+	// latencyAware enables latency-weighted channel picking.
+	latencyAware bool
+	latencyMu    sync.Mutex
+	latencyEMA   map[int64]float64
 }
 
 type Request struct {
@@ -102,6 +107,39 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 // member failures (0 disables).
 func (s *Service) SetAutoDisableThreshold(n int) {
 	s.autoDisableThreshold = n
+}
+
+// SetLatencyAware enables latency-weighted routing and installs this service
+// as the latency provider (smoothed per-channel latency in ms).
+func (s *Service) SetLatencyAware(enabled bool) {
+	s.latencyAware = enabled
+}
+
+// ChannelLatency returns the EWMA latency for a channel, false if no sample.
+func (s *Service) ChannelLatency(channelID int64) (float64, bool) {
+	s.latencyMu.Lock()
+	defer s.latencyMu.Unlock()
+	value, ok := s.latencyEMA[channelID]
+	return value, ok
+}
+
+// observeLatency updates the per-channel EWMA from a successful relay.
+func (s *Service) observeLatency(channelID int64, latencyMs int) {
+	if channelID <= 0 || latencyMs < 0 {
+		return
+	}
+	s.latencyMu.Lock()
+	defer s.latencyMu.Unlock()
+	if s.latencyEMA == nil {
+		s.latencyEMA = make(map[int64]float64)
+	}
+	previous, ok := s.latencyEMA[channelID]
+	if !ok {
+		s.latencyEMA[channelID] = float64(latencyMs)
+		return
+	}
+	// EWMA with alpha 0.2: new = 0.2*sample + 0.8*previous.
+	s.latencyEMA[channelID] = 0.2*float64(latencyMs) + 0.8*previous
 }
 
 // SetAdapterRegistry installs the platform adapter registry used to resolve
@@ -396,6 +434,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				log.Printf("proxy: record success member_id=%d: %v", candidate.Member.ID, err)
 			}
 			s.recordMemberSuccess(candidate.Channel.ID)
+			if s.latencyAware && result.LatencyMs > 0 {
+				s.observeLatency(candidate.Channel.ID, result.LatencyMs)
+			}
 			return result, meta
 		}
 		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {

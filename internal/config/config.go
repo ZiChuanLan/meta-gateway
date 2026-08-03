@@ -43,6 +43,8 @@ type Config struct {
 	// ChannelAutoDisableThreshold: consecutive member failures before a channel
 	// is auto-disabled. 0 disables the feature.
 	ChannelAutoDisableThreshold int
+	// RoutingLatencyAware enables latency-weighted channel selection.
+	RoutingLatencyAware bool
 	AdminRatePerMinute            int
 	AdminRateBurst                int
 	MetricsToken                  string
@@ -120,6 +122,10 @@ func Load() (*Config, error) {
 	autoDisableThreshold, autoDisableErr := envInt("CHANNEL_AUTO_DISABLE_THRESHOLD", 5, 0, 1000)
 	if autoDisableErr != nil {
 		return nil, autoDisableErr
+	}
+	latencyAware, err := envBool("ROUTING_LATENCY_AWARE", false)
+	if err != nil {
+		return nil, err
 	}
 	if err != nil {
 		return nil, err
@@ -219,6 +225,7 @@ func Load() (*Config, error) {
 		RelayRatePerMinute:            relayRate, RelayRateBurst: relayBurst,
 		RelayModelRatePerMinute:       relayModelRate, RelayModelRateBurst: relayModelBurst,
 		ChannelAutoDisableThreshold:   autoDisableThreshold,
+		RoutingLatencyAware:           latencyAware,
 		AdminRatePerMinute: adminRate, AdminRateBurst: adminBurst,
 		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
 		MaxHeaderBytes: maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),

@@ -58,6 +58,8 @@ type Clock interface {
 
 type Random interface {
 	Intn(n int) int
+	// Float64 returns a random float in [0,1); used by latency-aware picking.
+	Float64() float64
 }
 
 type systemClock struct{}
@@ -75,10 +77,30 @@ func (r *lockedRandom) Intn(n int) int {
 	return r.r.Intn(n)
 }
 
+func (r *lockedRandom) Float64() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.r.Float64()
+}
+
+// LatencyProvider returns the smoothed latency (ms) for a channel, with false
+// when no sample exists yet.
+type LatencyProvider func(channelID int64) (float64, bool)
+
 type Selector struct {
 	repo   Repository
 	clock  Clock
 	random Random
+	// latencyAware enables latency-weighted selection within a priority tier.
+	latencyAware bool
+	latency      LatencyProvider
+}
+
+// SetLatencyAware turns on latency-weighted picking. provider may be nil,
+// in which case channels without latency data keep their plain weight.
+func (s *Selector) SetLatencyAware(provider LatencyProvider) {
+	s.latencyAware = provider != nil
+	s.latency = provider
 }
 
 func New(repo Repository) *Selector {
@@ -173,6 +195,49 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 }
 
 func (s *Selector) pick(candidates []domain.RoutingCandidate) domain.RoutingCandidate {
+	if s.latencyAware && s.latency != nil {
+		return s.pickLatencyAware(candidates)
+	}
+	return s.pickWeighted(candidates)
+}
+
+// pickLatencyAware weights each candidate by weight / (1 + latency/base) so
+// slower channels lose share within the same priority tier. Channels without
+// latency samples keep their full weight (cold start).
+func (s *Selector) pickLatencyAware(candidates []domain.RoutingCandidate) domain.RoutingCandidate {
+	const baseLatencyMs = 1000.0
+	type scored struct {
+		candidate domain.RoutingCandidate
+		score     float64
+	}
+	scoredList := make([]scored, 0, len(candidates))
+	total := 0.0
+	for _, candidate := range candidates {
+		weight := float64(candidate.Member.Weight)
+		if weight <= 0 {
+			weight = 1
+		}
+		score := weight
+		if latency, ok := s.latency(candidate.Channel.ID); ok && latency > 0 {
+			score = weight * (baseLatencyMs / (baseLatencyMs + latency))
+		}
+		scoredList = append(scoredList, scored{candidate: candidate, score: score})
+		total += score
+	}
+	if total <= 0 || len(scoredList) == 0 {
+		return candidates[s.random.Intn(len(candidates))]
+	}
+	value := s.random.Float64() * total
+	for _, entry := range scoredList {
+		if value < entry.score {
+			return entry.candidate
+		}
+		value -= entry.score
+	}
+	return scoredList[len(scoredList)-1].candidate
+}
+
+func (s *Selector) pickWeighted(candidates []domain.RoutingCandidate) domain.RoutingCandidate {
 	total := 0
 	for _, candidate := range candidates {
 		if candidate.Member.Weight > 0 {

@@ -30,6 +30,8 @@ type firstRandom struct{}
 
 func (firstRandom) Intn(int) int { return 0 }
 
+func (firstRandom) Float64() float64 { return 0 }
+
 func (r *queuedRelay) ChatCompletionsContext(_ context.Context, upstreamURL, _ string, _ []byte, _ bool) *relay.Result {
 	r.calls = append(r.calls, upstreamURL)
 	result := r.results[0]

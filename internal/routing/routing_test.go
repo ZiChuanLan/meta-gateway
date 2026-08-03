@@ -30,6 +30,15 @@ func (r *fakeRandom) Intn(n int) int {
 	return value % n
 }
 
+func (r *fakeRandom) Float64() float64 {
+	value := float64(r.values[0])
+	r.values = r.values[1:]
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
 func candidate(id, priority, weight int64) domain.RoutingCandidate {
 	return domain.RoutingCandidate{
 		Member:           domain.RouteMember{ID: id, RouteID: 1, ChannelID: id, Priority: int(priority), Weight: int(weight), Enabled: true},
@@ -107,5 +116,49 @@ func TestSelectNoRouteAndNoEligible(t *testing.T) {
 	selector = NewWithDependencies(fakeRepo{route: &domain.Route{ID: 1}, candidates: []domain.RoutingCandidate{disabled}}, fakeClock{}, &fakeRandom{})
 	if _, err := selector.Select(context.Background(), "model", nil); !errors.Is(err, ErrNoEligible) {
 		t.Fatalf("expected eligibility error, got %v", err)
+	}
+}
+
+func TestPickLatencyAwarePrefersFastChannel(t *testing.T) {
+	// Two candidates, equal weight; channel 1 fast, channel 2 slow.
+	fast := candidate(1, 0, 100)
+	slow := candidate(2, 0, 100)
+	latency := func(channelID int64) (float64, bool) {
+		switch channelID {
+		case 1:
+			return 200, true
+		case 2:
+			return 5000, true
+		}
+		return 0, false
+	}
+	selector := NewWithDependencies(fakeRepo{}, systemClock{}, &fakeRandom{values: []int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}})
+	selector.SetLatencyAware(latency)
+
+	fastCount, slowCount := 0, 0
+	for i := 0; i < 10; i++ {
+		picked := selector.pick([]domain.RoutingCandidate{fast, slow})
+		if picked.Channel.ID == 1 {
+			fastCount++
+		} else {
+			slowCount++
+		}
+	}
+	// Fast channel should dominate (score 100*1000/1200 vs 100*1000/6000).
+	if fastCount < 7 {
+		t.Fatalf("fast channel picked %d/10, want majority", fastCount)
+	}
+	_ = slowCount
+}
+
+func TestPickLatencyAwareColdStartKeepsWeight(t *testing.T) {
+	// No latency data: plain weighted behavior.
+	a := candidate(1, 0, 100)
+	b := candidate(2, 0, 100)
+	selector := NewWithDependencies(fakeRepo{}, systemClock{}, &fakeRandom{values: []int{0}})
+	selector.SetLatencyAware(func(int64) (float64, bool) { return 0, false })
+	picked := selector.pick([]domain.RoutingCandidate{a, b})
+	if picked.Channel.ID != 1 {
+		t.Fatalf("cold start picked %d, want 1 (random=0)", picked.Channel.ID)
 	}
 }
