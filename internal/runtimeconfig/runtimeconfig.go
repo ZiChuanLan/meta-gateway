@@ -9,6 +9,7 @@ import (
 	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/proxy"
+	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/ratelimit"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/robfig/cron/v3"
@@ -26,6 +27,10 @@ type Editable struct {
 	AdminRateBurst     int    `json:"admin_rate_burst"`
 	AuditRetentionDays int    `json:"audit_retention_days"`
 	AuditRetentionRows int    `json:"audit_retention_rows"`
+	// ChannelAutoDisableThreshold: consecutive failures before auto-disable
+	// (0 = feature off). RoutingLatencyAware enables latency-weighted picking.
+	ChannelAutoDisableThreshold int  `json:"channel_auto_disable_threshold"`
+	RoutingLatencyAware         bool `json:"routing_latency_aware"`
 }
 
 // Snapshot is the effective runtime view returned to Admin UI.
@@ -44,6 +49,8 @@ type Snapshot struct {
 // Appliers are optional hot-reload targets. Nil entries are skipped.
 type Appliers struct {
 	Proxy        *proxy.Service
+	// Selector receives latency-awareness updates (hot reload target).
+	Selector     *routing.Selector
 	RelayLimiter *ratelimit.Limiter
 	AdminLimiter *ratelimit.Limiter
 	CheckinSched *checkin.Scheduler
@@ -78,6 +85,8 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		AdminRateBurst:     cfg.AdminRateBurst,
 		AuditRetentionDays: cfg.AuditRetentionDays,
 		AuditRetentionRows: cfg.AuditRetentionRows,
+		ChannelAutoDisableThreshold: cfg.ChannelAutoDisableThreshold,
+		RoutingLatencyAware:         cfg.RoutingLatencyAware,
 	}
 	c := &Controller{
 		env:      env,
@@ -103,7 +112,7 @@ func (c *Controller) Bootstrap() error {
 		c.applyLocked(c.env)
 		return nil
 	}
-	editable := rowToEditable(row)
+	editable := c.rowToEditableWithEnv(row)
 	if err := Validate(editable); err != nil {
 		// Fall back to env if stored row is corrupt.
 		c.applyLocked(c.env)
@@ -237,6 +246,14 @@ func (c *Controller) applyWithError(values Editable) error {
 			return err
 		}
 	}
+	// Channel auto-disable threshold + latency-aware routing hot reload.
+	if c.appliers.Proxy != nil {
+		c.appliers.Proxy.SetAutoDisableThreshold(values.ChannelAutoDisableThreshold)
+		c.appliers.Proxy.SetLatencyAware(values.RoutingLatencyAware)
+	}
+	if c.appliers.Selector != nil && c.appliers.Proxy != nil {
+		c.appliers.Selector.SetLatencyAware(values.RoutingLatencyAware, c.appliers.Proxy.ChannelLatency)
+	}
 	return nil
 }
 
@@ -252,7 +269,22 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		AdminRateBurst:     row.AdminRateBurst,
 		AuditRetentionDays: row.AuditRetentionDays,
 		AuditRetentionRows: row.AuditRetentionRows,
+		ChannelAutoDisableThreshold: row.ChannelAutoDisableThreshold,
+		RoutingLatencyAware:         row.RoutingLatencyAware == 1,
 	}
+}
+
+// rowToEditableWithEnv resolves NULL (unset) override fields against the env
+// bootstrap so an older override row cannot accidentally zero new settings.
+func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editable {
+	editable := rowToEditable(row)
+	if editable.ChannelAutoDisableThreshold < 0 {
+		editable.ChannelAutoDisableThreshold = c.env.ChannelAutoDisableThreshold
+	}
+	if editable.RoutingLatencyAware == false && row.RoutingLatencyAware == -1 {
+		editable.RoutingLatencyAware = c.env.RoutingLatencyAware
+	}
+	return editable
 }
 
 // Validate enforces the same bounds as env loading for Admin-writable fields.
@@ -277,6 +309,9 @@ func Validate(values Editable) error {
 	}
 	if values.AuditRetentionDays < 0 || values.AuditRetentionDays > 36500 {
 		return fmt.Errorf("audit_retention_days out of range")
+	}
+	if values.ChannelAutoDisableThreshold < 0 || values.ChannelAutoDisableThreshold > 1000 {
+		return fmt.Errorf("channel_auto_disable_threshold out of range")
 	}
 	if values.AuditRetentionRows < 0 || values.AuditRetentionRows > 10_000_000 {
 		return fmt.Errorf("audit_retention_rows out of range")

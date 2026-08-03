@@ -133,7 +133,7 @@ func TestPickLatencyAwarePrefersFastChannel(t *testing.T) {
 		return 0, false
 	}
 	selector := NewWithDependencies(fakeRepo{}, systemClock{}, &fakeRandom{values: []int{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}})
-	selector.SetLatencyAware(latency)
+	selector.SetLatencyAware(true, latency)
 
 	fastCount, slowCount := 0, 0
 	for i := 0; i < 10; i++ {
@@ -156,7 +156,7 @@ func TestPickLatencyAwareColdStartKeepsWeight(t *testing.T) {
 	a := candidate(1, 0, 100)
 	b := candidate(2, 0, 100)
 	selector := NewWithDependencies(fakeRepo{}, systemClock{}, &fakeRandom{values: []int{0}})
-	selector.SetLatencyAware(func(int64) (float64, bool) { return 0, false })
+	selector.SetLatencyAware(true, func(int64) (float64, bool) { return 0, false })
 	picked := selector.pick([]domain.RoutingCandidate{a, b})
 	if picked.Channel.ID != 1 {
 		t.Fatalf("cold start picked %d, want 1 (random=0)", picked.Channel.ID)

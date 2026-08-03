@@ -96,10 +96,10 @@ type Selector struct {
 	latency      LatencyProvider
 }
 
-// SetLatencyAware turns on latency-weighted picking. provider may be nil,
+// SetLatencyAware turns latency-weighted picking on/off. provider may be nil,
 // in which case channels without latency data keep their plain weight.
-func (s *Selector) SetLatencyAware(provider LatencyProvider) {
-	s.latencyAware = provider != nil
+func (s *Selector) SetLatencyAware(enabled bool, provider LatencyProvider) {
+	s.latencyAware = enabled
 	s.latency = provider
 }
 

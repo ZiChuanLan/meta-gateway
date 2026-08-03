@@ -1000,6 +1000,39 @@ export function RuntimeSettingsPanel() {
 						/>
 					</label>
 				</Panel>
+				<Panel>
+					<div className="panel-header">
+						<strong>{t("ops.runtime.section.routing")}</strong>
+					</div>
+					<label className="field">
+						<span>{t("ops.runtime.autoDisable")}</span>
+						<input
+							type="number"
+							min={0}
+							disabled={busy}
+							value={draft.channel_auto_disable_threshold}
+							onChange={(e) =>
+								patch(
+									"channel_auto_disable_threshold",
+									numberOr(e.target.value, draft.channel_auto_disable_threshold),
+								)
+							}
+						/>
+						<small>{t("ops.runtime.autoDisableHint")}</small>
+					</label>
+					<label className="check" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+						<input
+							type="checkbox"
+							disabled={busy}
+							checked={draft.routing_latency_aware}
+							onChange={(e) => patch("routing_latency_aware", e.target.checked)}
+						/>
+						<span>{t("ops.runtime.latencyAware")}</span>
+					</label>
+					<small className="muted">{t("ops.runtime.latencyAwareHint")}</small>
+				</Panel>
+
+
 
 				<Panel>
 					<div className="panel-header">

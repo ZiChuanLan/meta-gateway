@@ -156,7 +156,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	if cfg.RoutingLatencyAware {
 		proxyService.SetLatencyAware(true)
-		selector.SetLatencyAware(proxyService.ChannelLatency)
+		selector.SetLatencyAware(true, proxyService.ChannelLatency)
 	}
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
@@ -223,6 +223,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	if runtimeController == nil {
 		runtimeController = runtimeconfig.New(cfg, db.RuntimeSettings, runtimeconfig.Appliers{
 			Proxy:        proxyService,
+			Selector:     selector,
 			RelayLimiter: relayLimiter,
 			AdminLimiter: adminLimiter,
 			CheckinSched: dependencies.CheckinScheduler,

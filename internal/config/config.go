@@ -123,7 +123,7 @@ func Load() (*Config, error) {
 	if autoDisableErr != nil {
 		return nil, autoDisableErr
 	}
-	latencyAware, err := envBool("ROUTING_LATENCY_AWARE", false)
+	latencyAware, err := envBool("ROUTING_LATENCY_AWARE", true)
 	if err != nil {
 		return nil, err
 	}

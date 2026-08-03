@@ -103,6 +103,8 @@ export interface RuntimeEditableSettings {
   admin_rate_burst: number
   audit_retention_days: number
   audit_retention_rows: number
+  channel_auto_disable_threshold: number
+  routing_latency_aware: boolean
 }
 
 export interface RuntimeSettings {
