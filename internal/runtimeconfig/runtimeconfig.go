@@ -9,8 +9,8 @@ import (
 	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/proxy"
-	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/ratelimit"
+	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/robfig/cron/v3"
 )
@@ -48,7 +48,7 @@ type Snapshot struct {
 
 // Appliers are optional hot-reload targets. Nil entries are skipped.
 type Appliers struct {
-	Proxy        *proxy.Service
+	Proxy *proxy.Service
 	// Selector receives latency-awareness updates (hot reload target).
 	Selector     *routing.Selector
 	RelayLimiter *ratelimit.Limiter
@@ -75,16 +75,16 @@ type Controller struct {
 
 func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers Appliers) *Controller {
 	env := Editable{
-		RetryTimes:         cfg.RetryTimes,
-		CooldownSeconds:    int(cfg.Cooldown / time.Second),
-		CheckinEnabled:     cfg.CheckinEnabled,
-		CheckinCron:        cfg.CheckinCron,
-		RelayRatePerMinute: cfg.RelayRatePerMinute,
-		RelayRateBurst:     cfg.RelayRateBurst,
-		AdminRatePerMinute: cfg.AdminRatePerMinute,
-		AdminRateBurst:     cfg.AdminRateBurst,
-		AuditRetentionDays: cfg.AuditRetentionDays,
-		AuditRetentionRows: cfg.AuditRetentionRows,
+		RetryTimes:                  cfg.RetryTimes,
+		CooldownSeconds:             int(cfg.Cooldown / time.Second),
+		CheckinEnabled:              cfg.CheckinEnabled,
+		CheckinCron:                 cfg.CheckinCron,
+		RelayRatePerMinute:          cfg.RelayRatePerMinute,
+		RelayRateBurst:              cfg.RelayRateBurst,
+		AdminRatePerMinute:          cfg.AdminRatePerMinute,
+		AdminRateBurst:              cfg.AdminRateBurst,
+		AuditRetentionDays:          cfg.AuditRetentionDays,
+		AuditRetentionRows:          cfg.AuditRetentionRows,
 		ChannelAutoDisableThreshold: cfg.ChannelAutoDisableThreshold,
 		RoutingLatencyAware:         cfg.RoutingLatencyAware,
 	}
@@ -259,16 +259,16 @@ func (c *Controller) applyWithError(values Editable) error {
 
 func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 	return Editable{
-		RetryTimes:         row.RetryTimes,
-		CooldownSeconds:    row.CooldownSeconds,
-		CheckinEnabled:     row.CheckinEnabled,
-		CheckinCron:        row.CheckinCron,
-		RelayRatePerMinute: row.RelayRatePerMinute,
-		RelayRateBurst:     row.RelayRateBurst,
-		AdminRatePerMinute: row.AdminRatePerMinute,
-		AdminRateBurst:     row.AdminRateBurst,
-		AuditRetentionDays: row.AuditRetentionDays,
-		AuditRetentionRows: row.AuditRetentionRows,
+		RetryTimes:                  row.RetryTimes,
+		CooldownSeconds:             row.CooldownSeconds,
+		CheckinEnabled:              row.CheckinEnabled,
+		CheckinCron:                 row.CheckinCron,
+		RelayRatePerMinute:          row.RelayRatePerMinute,
+		RelayRateBurst:              row.RelayRateBurst,
+		AdminRatePerMinute:          row.AdminRatePerMinute,
+		AdminRateBurst:              row.AdminRateBurst,
+		AuditRetentionDays:          row.AuditRetentionDays,
+		AuditRetentionRows:          row.AuditRetentionRows,
 		ChannelAutoDisableThreshold: row.ChannelAutoDisableThreshold,
 		RoutingLatencyAware:         row.RoutingLatencyAware == 1,
 	}

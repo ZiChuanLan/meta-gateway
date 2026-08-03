@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/store"
 )

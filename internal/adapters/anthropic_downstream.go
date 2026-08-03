@@ -22,21 +22,21 @@ type anthropicMessagePart struct {
 }
 
 type anthropicRequestMessage struct {
-	Role    string                 `json:"role"`
-	Content json.RawMessage        `json:"content"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
 }
 
 // MessagesToOpenAIChat converts a native Anthropic Messages request body into
 // an OpenAI chat/completions body (system extracted, stream flag preserved).
 func MessagesToOpenAIChat(body []byte) ([]byte, error) {
 	var incoming struct {
-		Model       string                   `json:"model"`
-		MaxTokens   *int                     `json:"max_tokens"`
-		Temperature *float64                 `json:"temperature"`
-		TopP        *float64                 `json:"top_p"`
-		Stream      bool                     `json:"stream"`
-		Stop        json.RawMessage          `json:"stop_sequences"`
-		System      json.RawMessage          `json:"system"`
+		Model       string                    `json:"model"`
+		MaxTokens   *int                      `json:"max_tokens"`
+		Temperature *float64                  `json:"temperature"`
+		TopP        *float64                  `json:"top_p"`
+		Stream      bool                      `json:"stream"`
+		Stop        json.RawMessage           `json:"stop_sequences"`
+		System      json.RawMessage           `json:"system"`
 		Messages    []anthropicRequestMessage `json:"messages"`
 	}
 	if err := json.Unmarshal(body, &incoming); err != nil {
@@ -162,12 +162,12 @@ func OpenAIChatToMessages(openaiBody []byte) ([]byte, error) {
 		stopReason = mapOpenAIStopReason(incoming.Choices[0].FinishReason)
 	}
 	outbound := map[string]any{
-		"id":         "msg_" + strings.TrimPrefix(incoming.ID, "chatcmpl-"),
-		"type":       "message",
-		"role":       "assistant",
-		"model":      incoming.Model,
-		"content":    []map[string]any{{"type": "text", "text": content}},
-		"stop_reason": stopReason,
+		"id":            "msg_" + strings.TrimPrefix(incoming.ID, "chatcmpl-"),
+		"type":          "message",
+		"role":          "assistant",
+		"model":         incoming.Model,
+		"content":       []map[string]any{{"type": "text", "text": content}},
+		"stop_reason":   stopReason,
 		"stop_sequence": nil,
 		"usage": map[string]any{
 			"input_tokens":  incoming.Usage.PromptTokens,

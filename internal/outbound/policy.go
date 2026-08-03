@@ -24,12 +24,12 @@ type Resolver interface {
 }
 
 type Policy struct {
-	hosts      map[string]struct{}
-	prefixes   []netip.Prefix
-	resolver   Resolver
-	dialer     *net.Dialer
-	proxyHost  string
-	proxyPort  string
+	hosts     map[string]struct{}
+	prefixes  []netip.Prefix
+	resolver  Resolver
+	dialer    *net.Dialer
+	proxyHost string
+	proxyPort string
 }
 
 type Options struct {

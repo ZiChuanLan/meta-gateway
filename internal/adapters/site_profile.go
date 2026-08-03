@@ -9,10 +9,10 @@ package adapters
 type SiteBackendFamily string
 
 const (
-	FamilyNewAPI     SiteBackendFamily = "new-api"
-	FamilySub2API    SiteBackendFamily = "sub2api"
-	FamilyAIHubMix   SiteBackendFamily = "aihubmix"
-	FamilySharedChat SiteBackendFamily = "sharedchat"
+	FamilyNewAPI      SiteBackendFamily = "new-api"
+	FamilySub2API     SiteBackendFamily = "sub2api"
+	FamilyAIHubMix    SiteBackendFamily = "aihubmix"
+	FamilySharedChat  SiteBackendFamily = "sharedchat"
 	FamilyUnsupported SiteBackendFamily = "unsupported"
 )
 
@@ -76,7 +76,7 @@ var siteProfiles = map[string]SiteProfile{
 		Family: FamilyNewAPI, Checkin: true,
 		UsagePath: "/log", CheckinPath: "/panel", RedeemPath: "/topup",
 	},
-	"neo-api":  {Family: FamilyNewAPI, Checkin: true},
+	"neo-api": {Family: FamilyNewAPI, Checkin: true},
 	"wong-gongyi": {
 		Family: FamilyNewAPI, Checkin: true,
 		CheckinPath: "/console/topup",
@@ -93,10 +93,10 @@ var siteProfiles = map[string]SiteProfile{
 		Family: FamilySharedChat, Checkin: false,
 	},
 	// Families with no server-side account adapter yet.
-	"octopus":        {Family: FamilyUnsupported},
-	"axonhub":        {Family: FamilyUnsupported},
+	"octopus":         {Family: FamilyUnsupported},
+	"axonhub":         {Family: FamilyUnsupported},
 	"claude-code-hub": {Family: FamilyUnsupported},
-	"unknown":        {Family: FamilyNewAPI, Checkin: true},
+	"unknown":         {Family: FamilyNewAPI, Checkin: true},
 }
 
 // SiteProfileFor returns the capability profile for a site/channel family.
@@ -124,4 +124,3 @@ func CheckinSupported(typeHint, platform string) bool {
 func AccountSupported(typeHint, platform string) bool {
 	return SiteProfileFor(typeHint, platform).Family != FamilyUnsupported
 }
-

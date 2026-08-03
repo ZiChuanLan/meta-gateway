@@ -3,7 +3,6 @@ package proxy
 
 import (
 	"bytes"
-	"sync"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -837,15 +837,15 @@ func injectSystemPrompt(body []byte, prompt string) []byte {
 // forbiddenOverrideHeaders cannot be overridden by channel config (transport
 // level or authentication-critical).
 var forbiddenOverrideHeaders = map[string]struct{}{
-	"host":              {},
-	"content-length":    {},
-	"transfer-encoding": {},
-	"connection":        {},
+	"host":                {},
+	"content-length":      {},
+	"transfer-encoding":   {},
+	"connection":          {},
 	"proxy-authorization": {},
-	"proxy-connection":  {},
-	"te":                {},
-	"trailer":           {},
-	"upgrade":           {},
+	"proxy-connection":    {},
+	"te":                  {},
+	"trailer":             {},
+	"upgrade":             {},
 }
 
 // mergeHeaderOverrides applies a channel's header_override JSON onto headers.

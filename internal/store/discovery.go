@@ -24,11 +24,11 @@ type ReconcileInput struct {
 }
 
 type ReconcileResult struct {
-	CreatedRoutes   int `json:"created_routes"`
-	CreatedMembers  int `json:"created_members"`
-	EnabledMembers  int `json:"enabled_members"`
-	DeletedMembers  int `json:"deleted_members"`
-	DeletedRoutes   int `json:"deleted_routes"`
+	CreatedRoutes  int `json:"created_routes"`
+	CreatedMembers int `json:"created_members"`
+	EnabledMembers int `json:"enabled_members"`
+	DeletedMembers int `json:"deleted_members"`
+	DeletedRoutes  int `json:"deleted_routes"`
 }
 
 func (s *DiscoveredModelStore) List(channelID *int64) ([]domain.DiscoveredModel, error) {

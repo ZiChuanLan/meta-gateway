@@ -32,16 +32,16 @@ type Error struct {
 func (e *Error) Error() string { return fmt.Sprintf("discovery failed: %s", e.Category) }
 
 type RefreshResult struct {
-	ChannelID       int64     `json:"channel_id"`
-	Adapter         string    `json:"adapter"`
-	Models          []string  `json:"models"`
-	LatencyMs       int       `json:"latency_ms"`
-	CheckedAt       time.Time `json:"checked_at"`
-	CreatedRoutes   int       `json:"created_routes"`
-	CreatedMembers  int       `json:"created_members"`
-	EnabledMembers  int       `json:"enabled_members"`
-	DeletedMembers  int       `json:"deleted_members"`
-	DeletedRoutes   int       `json:"deleted_routes"`
+	ChannelID      int64     `json:"channel_id"`
+	Adapter        string    `json:"adapter"`
+	Models         []string  `json:"models"`
+	LatencyMs      int       `json:"latency_ms"`
+	CheckedAt      time.Time `json:"checked_at"`
+	CreatedRoutes  int       `json:"created_routes"`
+	CreatedMembers int       `json:"created_members"`
+	EnabledMembers int       `json:"enabled_members"`
+	DeletedMembers int       `json:"deleted_members"`
+	DeletedRoutes  int       `json:"deleted_routes"`
 }
 
 type ProbeResult struct {

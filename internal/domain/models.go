@@ -63,32 +63,32 @@ type CheckinLog struct {
 
 // Channel represents a relay target (upstream API endpoint + model group).
 type Channel struct {
-	ID           int64     `json:"id"`
-	SiteID       *int64    `json:"site_id,omitempty"`
-	CredentialID *int64    `json:"credential_id,omitempty"`
-	Name         string    `json:"name"`
-	BaseURL      string    `json:"base_url"`
-	ModelsCSV    string    `json:"models_csv"`
-	GroupName    string    `json:"group_name"`
-	Priority     int       `json:"priority"`
-	Weight       int       `json:"weight"`
-	Status       string    `json:"status"`
-	TypeHint     string    `json:"type_hint,omitempty"`
+	ID           int64  `json:"id"`
+	SiteID       *int64 `json:"site_id,omitempty"`
+	CredentialID *int64 `json:"credential_id,omitempty"`
+	Name         string `json:"name"`
+	BaseURL      string `json:"base_url"`
+	ModelsCSV    string `json:"models_csv"`
+	GroupName    string `json:"group_name"`
+	Priority     int    `json:"priority"`
+	Weight       int    `json:"weight"`
+	Status       string `json:"status"`
+	TypeHint     string `json:"type_hint,omitempty"`
 	// HeaderOverride is a JSON object of extra upstream request headers
 	// (merged after the adapter's auth headers; hop-by-hop names rejected).
 	HeaderOverride string `json:"header_override,omitempty"`
 	// SystemPrompt is injected as a system message ahead of user messages.
 	SystemPrompt string `json:"system_prompt,omitempty"`
 	// ConsecutiveFailures counts failed relay attempts (auto-disable input).
-	ConsecutiveFailures int `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ConsecutiveFailures int       `json:"-"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // ChannelOverview combines channel configuration with discovery and routing health.
 type ChannelOverview struct {
-	Channel            Channel    `json:"channel"`
-	SitePlatform       string     `json:"site_platform,omitempty"`
+	Channel      Channel `json:"channel"`
+	SitePlatform string  `json:"site_platform,omitempty"`
 	// CheckinSupported / AccountSupported come from the site family profile
 	// (AAH-derived capability table), filled by the admin API layer.
 	CheckinSupported   bool       `json:"checkin_supported"`
@@ -182,12 +182,12 @@ type DownstreamKey struct {
 	// ModelAllowlist, when non-empty, restricts this key to the listed models.
 	// ModelDenylist blocks the listed models even if they are allowlisted.
 	// Both are comma-separated model names.
-	ModelAllowlist string    `json:"model_allowlist,omitempty"`
-	ModelDenylist  string    `json:"model_denylist,omitempty"`
+	ModelAllowlist string `json:"model_allowlist,omitempty"`
+	ModelDenylist  string `json:"model_denylist,omitempty"`
 	// ExpiresAt is an RFC3339 timestamp; empty means the key never expires.
 	ExpiresAt string `json:"expires_at,omitempty"`
 	// AllowedIPs is a newline-separated list of IPs/CIDRs; empty means any source.
-	AllowedIPs string `json:"allowed_ips,omitempty"`
+	AllowedIPs string    `json:"allowed_ips,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 

@@ -295,9 +295,9 @@ func TestMessagesDownstreamOnOpenAIChannel(t *testing.T) {
 		t.Fatalf("status %d body %s", resp.StatusCode, body)
 	}
 	var outbound struct {
-		Type       string `json:"type"`
-		Role       string `json:"role"`
-		Content    []struct {
+		Type    string `json:"type"`
+		Role    string `json:"role"`
+		Content []struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`

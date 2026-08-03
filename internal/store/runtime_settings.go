@@ -11,17 +11,17 @@ import (
 // Pointer/null fields mean "not overridden" when HasOverride is false.
 // When HasOverride is true, all editable fields are set from Admin.
 type RuntimeSettingsRow struct {
-	HasOverride        bool
-	RetryTimes         int
-	CooldownSeconds    int
-	CheckinEnabled     bool
-	CheckinCron        string
-	RelayRatePerMinute int
-	RelayRateBurst     int
-	AdminRatePerMinute int
-	AdminRateBurst     int
-	AuditRetentionDays int
-	AuditRetentionRows int
+	HasOverride                 bool
+	RetryTimes                  int
+	CooldownSeconds             int
+	CheckinEnabled              bool
+	CheckinCron                 string
+	RelayRatePerMinute          int
+	RelayRateBurst              int
+	AdminRatePerMinute          int
+	AdminRateBurst              int
+	AuditRetentionDays          int
+	AuditRetentionRows          int
 	ChannelAutoDisableThreshold int
 	RoutingLatencyAware         int
 	UpdatedAt                   time.Time

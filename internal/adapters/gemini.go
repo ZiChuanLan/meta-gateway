@@ -5,13 +5,13 @@ package adapters
 import (
 	"context"
 	"encoding/json"
-	"time"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // DefaultGeminiBaseURL is the AI Studio (developer API) endpoint.
@@ -106,25 +106,25 @@ type geminiContent struct {
 }
 
 type geminiGenerationConfig struct {
-	Temperature    *float64  `json:"temperature,omitempty"`
-	TopP           *float64  `json:"topP,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	TopP            *float64 `json:"topP,omitempty"`
 	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
-	StopSequences  []string  `json:"stopSequences,omitempty"`
+	StopSequences   []string `json:"stopSequences,omitempty"`
 }
 
 type geminiGenerateRequest struct {
-	Contents          []geminiContent        `json:"contents"`
-	SystemInstruction *geminiContent         `json:"systemInstruction,omitempty"`
+	Contents          []geminiContent         `json:"contents"`
+	SystemInstruction *geminiContent          `json:"systemInstruction,omitempty"`
 	GenerationConfig  *geminiGenerationConfig `json:"generationConfig,omitempty"`
 }
 
 type openAIChatPayload struct {
-	Model       string `json:"model"`
-	Stream      bool   `json:"stream"`
+	Model       string   `json:"model"`
+	Stream      bool     `json:"stream"`
 	Temperature *float64 `json:"temperature"`
 	TopP        *float64 `json:"top_p"`
-	MaxTokens   *int   `json:"max_tokens"`
-	Stop        any    `json:"stop"`
+	MaxTokens   *int     `json:"max_tokens"`
+	Stop        any      `json:"stop"`
 	Messages    []struct {
 		Role    string `json:"role"`
 		Content any    `json:"content"`

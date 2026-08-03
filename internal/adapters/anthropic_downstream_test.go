@@ -24,10 +24,10 @@ func TestMessagesToOpenAIChat(t *testing.T) {
 		t.Fatalf("MessagesToOpenAIChat: %v", err)
 	}
 	var outbound struct {
-		Model         string `json:"model"`
-		Stream        bool   `json:"stream"`
-		MaxTokens     int    `json:"max_tokens"`
-		Messages      []struct {
+		Model     string `json:"model"`
+		Stream    bool   `json:"stream"`
+		MaxTokens int    `json:"max_tokens"`
+		Messages  []struct {
 			Role    string `json:"role"`
 			Content string `json:"content"`
 		} `json:"messages"`

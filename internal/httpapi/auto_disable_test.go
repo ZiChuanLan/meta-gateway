@@ -82,4 +82,3 @@ func TestChannelAutoDisable(t *testing.T) {
 		t.Fatalf("after recovery status = %q, want enabled", ch.Status)
 	}
 }
-

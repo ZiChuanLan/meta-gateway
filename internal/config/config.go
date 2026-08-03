@@ -44,23 +44,23 @@ type Config struct {
 	// is auto-disabled. 0 disables the feature.
 	ChannelAutoDisableThreshold int
 	// RoutingLatencyAware enables latency-weighted channel selection.
-	RoutingLatencyAware bool
-	AdminRatePerMinute            int
-	AdminRateBurst                int
-	MetricsToken                  string
-	TrustedScraperCIDRs           []string
-	MaxHeaderBytes                int
-	MaxAdminBodyBytes             int64
-	ServerReadHeaderTimeout       time.Duration
-	ServerReadTimeout             time.Duration
-	ServerIdleTimeout             time.Duration
-	ServerShutdownTimeout         time.Duration
-	ReadinessTimeout              time.Duration
-	AuditRetentionDays            int
-	AuditRetentionRows            int
-	BackupDir                     string
-	PluginsDir                    string
-	PluginCatalogURL              string
+	RoutingLatencyAware     bool
+	AdminRatePerMinute      int
+	AdminRateBurst          int
+	MetricsToken            string
+	TrustedScraperCIDRs     []string
+	MaxHeaderBytes          int
+	MaxAdminBodyBytes       int64
+	ServerReadHeaderTimeout time.Duration
+	ServerReadTimeout       time.Duration
+	ServerIdleTimeout       time.Duration
+	ServerShutdownTimeout   time.Duration
+	ReadinessTimeout        time.Duration
+	AuditRetentionDays      int
+	AuditRetentionRows      int
+	BackupDir               string
+	PluginsDir              string
+	PluginCatalogURL        string
 	// ExchangeAllowSecretExport gates include_secrets on export (default true for compat).
 	ExchangeAllowSecretExport bool
 }
@@ -223,10 +223,10 @@ func Load() (*Config, error) {
 		OutboundResponseHeaderTimeout: headerTimeout,
 		TrustedProxyCIDRs:             trustedProxies,
 		RelayRatePerMinute:            relayRate, RelayRateBurst: relayBurst,
-		RelayModelRatePerMinute:       relayModelRate, RelayModelRateBurst: relayModelBurst,
-		ChannelAutoDisableThreshold:   autoDisableThreshold,
-		RoutingLatencyAware:           latencyAware,
-		AdminRatePerMinute: adminRate, AdminRateBurst: adminBurst,
+		RelayModelRatePerMinute: relayModelRate, RelayModelRateBurst: relayModelBurst,
+		ChannelAutoDisableThreshold: autoDisableThreshold,
+		RoutingLatencyAware:         latencyAware,
+		AdminRatePerMinute:          adminRate, AdminRateBurst: adminBurst,
 		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
 		MaxHeaderBytes: maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),
 		ServerReadHeaderTimeout: readHeaderTimeout, ServerReadTimeout: readTimeout,
