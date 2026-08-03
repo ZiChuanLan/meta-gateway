@@ -6,6 +6,9 @@ import "time"
 const (
 	StatusEnabled  = "enabled"
 	StatusDisabled = "disabled"
+	// StatusAutoDisabled marks a channel that hit the consecutive-failure
+	// threshold; it is excluded from routing until manually or probe-recovered.
+	StatusAutoDisabled = "auto_disabled"
 )
 
 // ---------------------------------------------------------------------------
@@ -76,6 +79,8 @@ type Channel struct {
 	HeaderOverride string `json:"header_override,omitempty"`
 	// SystemPrompt is injected as a system message ahead of user messages.
 	SystemPrompt string `json:"system_prompt,omitempty"`
+	// ConsecutiveFailures counts failed relay attempts (auto-disable input).
+	ConsecutiveFailures int `json:"-"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

@@ -47,6 +47,9 @@ type Service struct {
 	cooldownNs atomic.Int64
 	now        func() time.Time
 	registry   *adapters.Registry
+	// autoDisableThreshold: consecutive member failures before a channel is
+	// auto-disabled (0 = feature off).
+	autoDisableThreshold int
 }
 
 type Request struct {
@@ -93,6 +96,12 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 	service.retryTimes.Store(int64(retryTimes))
 	service.cooldownNs.Store(int64(cooldown))
 	return service
+}
+
+// SetAutoDisableThreshold enables channel auto-disable after N consecutive
+// member failures (0 disables).
+func (s *Service) SetAutoDisableThreshold(n int) {
+	s.autoDisableThreshold = n
 }
 
 // SetAdapterRegistry installs the platform adapter registry used to resolve
@@ -208,9 +217,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				result = &relay.Result{Err: fmt.Errorf("proxy: messages translate: %w", translateErr)}
 				category, retryable = classify(result)
 				s.recordAttempt(req, candidate, attempt+1, result, category)
-				if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
-					log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
-				}
+				s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
+
 				excluded[candidate.Channel.ID] = struct{}{}
 				last = preserve(result)
 				lastMeta = meta
@@ -233,9 +241,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			result = &relay.Result{Err: fmt.Errorf("proxy: %s translate: %w", adapter.Name(), translateErr)}
 			category, retryable = classify(result)
 			s.recordAttempt(req, candidate, attempt+1, result, category)
-			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
-				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
-			}
+			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
+
 			excluded[candidate.Channel.ID] = struct{}{}
 			last = preserve(result)
 			lastMeta = meta
@@ -250,9 +257,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			category = "invalid_base_url"
 			retryable = true
 			s.recordAttempt(req, candidate, attempt+1, result, category)
-			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
-				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
-			}
+			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
+
 			excluded[candidate.Channel.ID] = struct{}{}
 			last = preserve(result)
 			lastMeta = meta
@@ -265,9 +271,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			category = "no_credential"
 			retryable = true
 			s.recordAttempt(req, candidate, attempt+1, result, category)
-			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
-				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
-			}
+			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
+
 			excluded[candidate.Channel.ID] = struct{}{}
 			last = preserve(result)
 			lastMeta = meta
@@ -363,6 +368,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
 				s.recordAttempt(req, candidate, attempt+1, result, category)
 			}
+			// Every failed key attempt counts towards the channel auto-disable
+			// counter (a request failing through a 3-key pool counts 3).
+			if retryable {
+				s.recordChannelFailure(candidate.Channel.ID)
+			}
 			if result.Err == nil && !retryable {
 				break
 			}
@@ -385,6 +395,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if err := s.db.RouteMember.RecordSuccess(candidate.Member.ID); err != nil {
 				log.Printf("proxy: record success member_id=%d: %v", candidate.Member.ID, err)
 			}
+			s.recordMemberSuccess(candidate.Channel.ID)
 			return result, meta
 		}
 		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
@@ -392,9 +403,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		if retryable {
 			penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
-			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), penalty, category); err != nil {
-				log.Printf("proxy: record failure member_id=%d: %v", candidate.Member.ID, err)
-			}
+			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, penalty, category)
 		}
 		if !retryable || req.PreferChannelID > 0 {
 			return result, meta
@@ -501,6 +510,44 @@ func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, ada
 		return "", fmt.Errorf("proxy: invalid base url")
 	}
 	return upstreamURL, nil
+}
+
+// recordMemberFailure records a member failure (member cooldown + channel
+// consecutive counter) and auto-disables the channel once the channel-level
+// consecutive failures reach the configured threshold.
+func (s *Service) recordMemberFailure(memberID, channelID int64, cooldown time.Duration, category string) {
+	if err := s.db.RouteMember.RecordFailure(memberID, s.now(), cooldown, category); err != nil {
+		log.Printf("proxy: record failure member_id=%d: %v", memberID, err)
+	}
+	s.recordChannelFailure(channelID)
+}
+
+// recordChannelFailure increments the channel consecutive-failure counter and
+// auto-disables the channel once the threshold is reached.
+func (s *Service) recordChannelFailure(channelID int64) {
+	if s.autoDisableThreshold <= 0 || channelID <= 0 {
+		return
+	}
+	count, err := s.db.Channel.RecordRelayFailure(channelID)
+	if err != nil {
+		log.Printf("proxy: channel relay failure channel_id=%d: %v", channelID, err)
+		return
+	}
+	if count >= s.autoDisableThreshold {
+		if err := s.db.Channel.AutoDisable(channelID); err != nil {
+			log.Printf("proxy: auto disable channel_id=%d: %v", channelID, err)
+		}
+	}
+}
+
+// recordMemberSuccess resets the channel consecutive-failure counter.
+func (s *Service) recordMemberSuccess(channelID int64) {
+	if channelID <= 0 {
+		return
+	}
+	if err := s.db.Channel.RecordRelaySuccess(channelID); err != nil {
+		log.Printf("proxy: channel relay success channel_id=%d: %v", channelID, err)
+	}
 }
 
 // rewriteModelName rewrites the JSON "model" field of a request body from the

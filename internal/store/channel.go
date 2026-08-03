@@ -30,13 +30,14 @@ func scanChannel(scanner interface {
 		&r.TypeHint,
 		&r.HeaderOverride,
 		&r.SystemPrompt,
+		&r.ConsecutiveFailures,
 		scanTime(&r.CreatedAt),
 		scanTime(&r.UpdatedAt),
 	)
 }
 
 func (s *ChannelStore) List() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, created_at, updated_at FROM channels ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, consecutive_failures, created_at, updated_at FROM channels ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("channel list: %w", err)
 	}
@@ -180,7 +181,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 
 // ListEnabled returns all enabled channels.
 func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, consecutive_failures, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list enabled: %w", err)
 	}
@@ -198,7 +199,7 @@ func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
 }
 
 func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
-	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, created_at, updated_at FROM channels WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, consecutive_failures, created_at, updated_at FROM channels WHERE id = ?`, id)
 	var r domain.Channel
 	if err := scanChannel(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -260,6 +261,61 @@ func (s *ChannelStore) Delete(id int64) error {
 }
 
 // RecordProbeSuccess marks the channel as recently verified by discovery/probe.
+// AutoDisable marks a channel auto_disabled unless it is already manually
+// disabled (manual intent wins). No-op when the channel is enabled.
+func (s *ChannelStore) AutoDisable(channelID int64) error {
+	res, err := s.db.Exec(`UPDATE channels SET status = ?, consecutive_failures = 0 WHERE id = ? AND status = ?`,
+		domain.StatusAutoDisabled, channelID, domain.StatusEnabled)
+	if err != nil {
+		return fmt.Errorf("channel auto disable: %w", err)
+	}
+	// Also clear per-member cooldowns so recovery probing is not blocked.
+	affected, _ := res.RowsAffected()
+	if affected > 0 {
+		if _, err := s.db.Exec(`UPDATE route_members SET cooldown_until = NULL WHERE channel_id = ?`, channelID); err != nil {
+			return fmt.Errorf("channel auto disable clear cooldown: %w", err)
+		}
+	}
+	return nil
+}
+
+// RecoverAutoDisabled restores an auto-disabled channel to enabled.
+func (s *ChannelStore) RecoverAutoDisabled(channelID int64) error {
+	res, err := s.db.Exec(`UPDATE channels SET status = ? WHERE id = ? AND status = ?`,
+		domain.StatusEnabled, channelID, domain.StatusAutoDisabled)
+	if err != nil {
+		return fmt.Errorf("channel recover: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		if _, err := s.db.Exec(`UPDATE route_members SET fail_count = 0, cooldown_until = NULL, last_error = '' WHERE channel_id = ?`, channelID); err != nil {
+			return fmt.Errorf("channel recover clear health: %w", err)
+		}
+	}
+	return nil
+}
+
+// RecordRelayFailure increments the channel consecutive-failure counter and
+// returns the new value.
+func (s *ChannelStore) RecordRelayFailure(channelID int64) (int, error) {
+	var next int
+	if err := s.db.QueryRow(`UPDATE channels SET consecutive_failures = consecutive_failures + 1 WHERE id = ? RETURNING consecutive_failures`, channelID).Scan(&next); err != nil {
+		// SQLite supports RETURNING since 3.35; fall back for older builds.
+		if _, err2 := s.db.Exec(`UPDATE channels SET consecutive_failures = consecutive_failures + 1 WHERE id = ?`, channelID); err2 != nil {
+			return 0, fmt.Errorf("channel relay failure: %w", err2)
+		}
+		_ = s.db.QueryRow(`SELECT consecutive_failures FROM channels WHERE id = ?`, channelID).Scan(&next)
+	}
+	return next, nil
+}
+
+// RecordRelaySuccess resets the channel consecutive-failure counter.
+func (s *ChannelStore) RecordRelaySuccess(channelID int64) error {
+	if _, err := s.db.Exec(`UPDATE channels SET consecutive_failures = 0 WHERE id = ?`, channelID); err != nil {
+		return fmt.Errorf("channel relay success: %w", err)
+	}
+	return nil
+}
+
 func (s *ChannelStore) RecordProbeSuccess(channelID int64, at time.Time) error {
 	_, err := s.db.Exec(`UPDATE channels SET last_probe_at=?, last_probe_ok=1, last_probe_error='', updated_at=datetime('now') WHERE id=?`,
 		at.UTC().Format(time.RFC3339Nano), channelID)

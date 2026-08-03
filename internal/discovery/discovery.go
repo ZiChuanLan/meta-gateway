@@ -176,6 +176,8 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	checkedAt := s.now()
 	latency := int(checkedAt.Sub(started).Milliseconds())
 	_ = s.db.Channel.RecordProbeSuccess(channel.ID, checkedAt)
+	// A healthy probe restores an auto-disabled channel.
+	_ = s.db.Channel.RecoverAutoDisabled(channel.ID)
 	return &ProbeResult{
 		ChannelID: channel.ID,
 		Adapter:   adapter.Name(),

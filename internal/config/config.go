@@ -40,6 +40,9 @@ type Config struct {
 	RelayRateBurst                int
 	RelayModelRatePerMinute       int
 	RelayModelRateBurst           int
+	// ChannelAutoDisableThreshold: consecutive member failures before a channel
+	// is auto-disabled. 0 disables the feature.
+	ChannelAutoDisableThreshold int
 	AdminRatePerMinute            int
 	AdminRateBurst                int
 	MetricsToken                  string
@@ -113,6 +116,10 @@ func Load() (*Config, error) {
 	relayModelBurst, modelBurstErr := envInt("RELAY_MODEL_RATE_BURST", 0, 0, 1000000)
 	if modelBurstErr != nil {
 		return nil, modelBurstErr
+	}
+	autoDisableThreshold, autoDisableErr := envInt("CHANNEL_AUTO_DISABLE_THRESHOLD", 5, 0, 1000)
+	if autoDisableErr != nil {
+		return nil, autoDisableErr
 	}
 	if err != nil {
 		return nil, err
@@ -211,6 +218,7 @@ func Load() (*Config, error) {
 		TrustedProxyCIDRs:             trustedProxies,
 		RelayRatePerMinute:            relayRate, RelayRateBurst: relayBurst,
 		RelayModelRatePerMinute:       relayModelRate, RelayModelRateBurst: relayModelBurst,
+		ChannelAutoDisableThreshold:   autoDisableThreshold,
 		AdminRatePerMinute: adminRate, AdminRateBurst: adminBurst,
 		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
 		MaxHeaderBytes: maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),

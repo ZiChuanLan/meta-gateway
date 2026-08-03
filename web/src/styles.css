@@ -502,6 +502,11 @@ td.status-col {
 .badge-disabled, .badge-false, .badge-ineligible {
 	color: var(--muted); background: var(--surface-subtle);
 }
+.badge-auto-disabled {
+	color: var(--warning);
+	background: var(--warning-soft);
+	border-color: rgba(138, 93, 0, 0.18);
+}
 .badge-failed, .badge-degraded, .badge-blocked, .badge-danger {
 	color: var(--danger); background: var(--danger-soft); border-color: rgba(163,59,50,0.18);
 }

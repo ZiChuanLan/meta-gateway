@@ -365,6 +365,15 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 	return nil
 }
 
+// FailureCount returns the consecutive failure count for a member.
+func (s *RouteMemberStore) FailureCount(id int64) (int, error) {
+	var count int
+	if err := s.db.QueryRow(`SELECT fail_count FROM route_members WHERE id = ?`, id).Scan(&count); err != nil {
+		return 0, fmt.Errorf("route member failure count: %w", err)
+	}
+	return count, nil
+}
+
 func (s *RouteMemberStore) RecordSuccess(id int64) error {
 	_, err := s.db.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
 	if err != nil {

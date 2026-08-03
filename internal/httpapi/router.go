@@ -153,6 +153,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	selector := routing.New(db.RouteMember)
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	proxyService.SetAdapterRegistry(registry)
+	proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	adminHandler := NewAdminHandler(db, enc, selector)
 	adminHandler.Register(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)

@@ -131,6 +131,7 @@ const en: Dict = {
 
 	"status.enabled": "Enabled",
 	"status.disabled": "Disabled",
+	"status.auto_disabled": "Auto-disabled",
 	"status.ready": "Ready",
 	"status.unavailable": "Unavailable",
 	"status.success": "Success",
@@ -922,6 +923,7 @@ const zh: Dict = {
 
 	"status.enabled": "已启用",
 	"status.disabled": "已禁用",
+	"status.auto_disabled": "已自动禁用",
 	"status.ready": "就绪",
 	"status.unavailable": "不可用",
 	"status.success": "成功",
