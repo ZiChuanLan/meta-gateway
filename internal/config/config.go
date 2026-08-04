@@ -21,6 +21,9 @@ type Config struct {
 	Cooldown       time.Duration
 	CheckinEnabled bool
 	CheckinCron    string
+	// CheckinTZ is the IANA timezone (e.g. "Asia/Shanghai") the check-in cron is
+	// interpreted in. Empty means the process local timezone (UTC in containers).
+	CheckinTZ string
 
 	WebDAVSyncEnabled    bool
 	WebDAVURL            string
@@ -77,6 +80,12 @@ func Load() (*Config, error) {
 	checkinEnabled, err := envBool("CHECKIN_ENABLED", false)
 	if err != nil {
 		return nil, err
+	}
+	checkinTZ := strings.TrimSpace(envStr("CHECKIN_TZ", ""))
+	if checkinTZ != "" {
+		if _, err := time.LoadLocation(checkinTZ); err != nil {
+			return nil, fmt.Errorf("config: CHECKIN_TZ must be a valid IANA timezone (e.g. Asia/Shanghai): %v", err)
+		}
 	}
 	webdavSyncEnabled, err := envBool("WEBDAV_SYNC_ENABLED", false)
 	if err != nil {
@@ -207,6 +216,7 @@ func Load() (*Config, error) {
 		Cooldown:       time.Duration(cooldownSeconds) * time.Second,
 		CheckinEnabled: checkinEnabled,
 		CheckinCron:    envStr("CHECKIN_CRON", "0 8 * * *"),
+		CheckinTZ:      checkinTZ,
 
 		WebDAVSyncEnabled:    webdavSyncEnabled,
 		WebDAVURL:            strings.TrimSpace(envStr("WEBDAV_URL", "")),
@@ -284,6 +294,19 @@ func (c *Config) AdminTokenList() []string {
 		return []string{c.AdminToken}
 	}
 	return nil
+}
+
+// CheckinLocation returns the timezone check-in schedules run in. Falls back to
+// the process local timezone when CHECKIN_TZ is unset (Load already validated
+// the value when set, so a load error here is not expected).
+func (c *Config) CheckinLocation() *time.Location {
+	if c == nil || strings.TrimSpace(c.CheckinTZ) == "" {
+		return time.Local
+	}
+	if loc, err := time.LoadLocation(strings.TrimSpace(c.CheckinTZ)); err == nil {
+		return loc
+	}
+	return time.Local
 }
 
 func envBool(key string, def bool) (bool, error) {

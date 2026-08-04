@@ -6,22 +6,39 @@ func TestLoadCheckinDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("METRICS_TOKEN", "metrics-test-token")
 	t.Setenv("CHECKIN_ENABLED", "")
 	t.Setenv("CHECKIN_CRON", "")
+	t.Setenv("CHECKIN_TZ", "")
 	defaults, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.CheckinEnabled || defaults.CheckinCron != "0 8 * * *" {
+	if defaults.CheckinEnabled || defaults.CheckinCron != "0 8 * * *" || defaults.CheckinTZ != "" {
 		t.Fatalf("defaults=%+v", defaults)
+	}
+	if loc := defaults.CheckinLocation(); loc == nil {
+		t.Fatal("CheckinLocation must never be nil")
 	}
 
 	t.Setenv("CHECKIN_ENABLED", "true")
 	t.Setenv("CHECKIN_CRON", "15 7 * * 1-5")
+	t.Setenv("CHECKIN_TZ", "Asia/Shanghai")
 	overrides, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !overrides.CheckinEnabled || overrides.CheckinCron != "15 7 * * 1-5" {
+	if !overrides.CheckinEnabled || overrides.CheckinCron != "15 7 * * 1-5" || overrides.CheckinTZ != "Asia/Shanghai" {
 		t.Fatalf("overrides=%+v", overrides)
+	}
+	loc := overrides.CheckinLocation()
+	if loc.String() != "Asia/Shanghai" {
+		t.Fatalf("CheckinLocation=%v", loc)
+	}
+}
+
+func TestLoadRejectsInvalidCheckinTimezone(t *testing.T) {
+	t.Setenv("METRICS_TOKEN", "metrics-test-token")
+	t.Setenv("CHECKIN_TZ", "Not/AZone")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid CHECKIN_TZ to fail")
 	}
 }
 

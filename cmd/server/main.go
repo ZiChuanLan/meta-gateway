@@ -26,6 +26,7 @@ import (
 	"github.com/lan/meta-gateway/internal/plugins"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/webdavsync"
+	_ "time/tzdata" // embed IANA tz database so CHECKIN_TZ works in minimal containers
 )
 
 func main() {
@@ -128,11 +129,18 @@ func main() {
 	}, &webdavsync.Client{HTTP: outboundClient, MaxBytes: webdavMaxBytes}, exchangeService, db.WebDAVSettings, enc)
 	// Always construct the check-in scheduler so Admin runtime settings can hot-enable it.
 	// Initial Start() still respects env + module gate; later toggles use SetSchedule.
+	checkinLocation := cfg.CheckinLocation()
+	if cfg.CheckinTZ == "" && checkinLocation == time.UTC {
+		logger.Warn("check-in scheduler uses UTC because TZ is unset — set CHECKIN_TZ (e.g. Asia/Shanghai) to schedule in local time")
+	}
 	var scheduler *checkin.Scheduler
-	scheduler, err = checkin.NewScheduler(checkinService, cfg.CheckinCron, slog.NewLogLogger(logger.Handler(), slog.LevelInfo))
+	scheduler, err = checkin.NewScheduler(checkinService, cfg.CheckinCron, slog.NewLogLogger(logger.Handler(), slog.LevelInfo), checkinLocation)
 	if err != nil {
 		logger.Error("check-in scheduler configuration failed", "category", "configuration")
 		os.Exit(1)
+	}
+	if cfg.CheckinTZ != "" {
+		logger.Info("check-in scheduler timezone", "tz", cfg.CheckinTZ)
 	}
 	// Check-in scheduler resync on module toggle is wired in httpapi via runtimeconfig.ResyncCheckin.
 

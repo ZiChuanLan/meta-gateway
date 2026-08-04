@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 )
@@ -20,11 +21,12 @@ type BatchRunner interface {
 }
 
 type Scheduler struct {
-	runner BatchRunner
-	cron   *cron.Cron
-	logger *log.Logger
-	ctx    context.Context
-	cancel context.CancelFunc
+	runner   BatchRunner
+	cron     *cron.Cron
+	logger   *log.Logger
+	ctx      context.Context
+	cancel   context.CancelFunc
+	location *time.Location
 
 	lifecycleMu sync.Mutex
 	started     bool
@@ -34,18 +36,25 @@ type Scheduler struct {
 	expression  string
 }
 
-func NewScheduler(runner BatchRunner, expression string, logger *log.Logger) (*Scheduler, error) {
+// NewScheduler builds a scheduler for the given five-field cron expression.
+// location is the timezone schedules are interpreted in; nil means the process
+// local timezone (which is UTC inside most containers unless TZ is set).
+func NewScheduler(runner BatchRunner, expression string, logger *log.Logger, location *time.Location) (*Scheduler, error) {
 	if runner == nil {
 		return nil, errors.New("check-in scheduler runner is required")
+	}
+	if location == nil {
+		location = time.Local
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	scheduler := &Scheduler{
 		runner:     runner,
-		cron:       cron.New(cron.WithParser(parser)),
+		cron:       cron.New(cron.WithParser(parser), cron.WithLocation(location)),
 		logger:     logger,
 		ctx:        ctx,
 		cancel:     cancel,
+		location:   location,
 		expression: expression,
 	}
 	if _, err := scheduler.cron.AddFunc(expression, func() {
@@ -55,6 +64,14 @@ func NewScheduler(runner BatchRunner, expression string, logger *log.Logger) (*S
 		return nil, err
 	}
 	return scheduler, nil
+}
+
+// Location returns the timezone schedules are interpreted in.
+func (s *Scheduler) Location() *time.Location {
+	if s == nil || s.location == nil {
+		return time.Local
+	}
+	return s.location
 }
 
 func (s *Scheduler) Start() error {
@@ -97,7 +114,7 @@ func (s *Scheduler) SetSchedule(expression string, enabled bool) error {
 		s.expression = expression
 		return nil
 	}
-	s.cron = cron.New(cron.WithParser(parser))
+	s.cron = cron.New(cron.WithParser(parser), cron.WithLocation(s.Location()))
 	if _, err := s.cron.AddFunc(expression, func() {
 		s.run(s.ctx)
 	}); err != nil {

@@ -42,13 +42,13 @@ func (r *fakeBatchRunner) RunAll(ctx context.Context, source string) (*RunSummar
 
 func TestSchedulerRejectsInvalidFiveFieldCron(t *testing.T) {
 	runner := &fakeBatchRunner{}
-	if _, err := NewScheduler(runner, "0 0 8 * * *", nil); err == nil {
+	if _, err := NewScheduler(runner, "0 0 8 * * *", nil, time.UTC); err == nil {
 		t.Fatal("six-field expression must be rejected")
 	}
-	if _, err := NewScheduler(runner, "@every 1h", nil); err == nil {
+	if _, err := NewScheduler(runner, "@every 1h", nil, time.UTC); err == nil {
 		t.Fatal("descriptor expression must be rejected")
 	}
-	if _, err := NewScheduler(runner, "0 8 * * *", nil); err != nil {
+	if _, err := NewScheduler(runner, "0 8 * * *", nil, time.UTC); err != nil {
 		t.Fatalf("valid expression: %v", err)
 	}
 }
@@ -60,7 +60,7 @@ func TestSchedulerRunPreventsBatchOverlapAndLogsAggregate(t *testing.T) {
 		release: make(chan struct{}),
 		result:  &RunSummary{SuccessCount: 1, FailureCount: 2, SkippedCount: 3},
 	}
-	scheduler, err := NewScheduler(runner, "0 8 * * *", log.New(&output, "", 0))
+	scheduler, err := NewScheduler(runner, "0 8 * * *", log.New(&output, "", 0), time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,9 +79,31 @@ func TestSchedulerRunPreventsBatchOverlapAndLogsAggregate(t *testing.T) {
 	}
 }
 
+func TestSchedulerLocation(t *testing.T) {
+	runner := &fakeBatchRunner{}
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Skipf("tz database unavailable: %v", err)
+	}
+	s, err := NewScheduler(runner, "0 8 * * *", nil, shanghai)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Location() != shanghai {
+		t.Fatalf("location=%v, want Asia/Shanghai", s.Location())
+	}
+	local, err := NewScheduler(runner, "0 8 * * *", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if local.Location() != time.Local {
+		t.Fatalf("default location=%v, want time.Local", local.Location())
+	}
+}
+
 func TestSchedulerStopCancelsRunningBatch(t *testing.T) {
 	runner := &fakeBatchRunner{entered: make(chan struct{}, 1), release: make(chan struct{})}
-	scheduler, err := NewScheduler(runner, "0 8 * * *", nil)
+	scheduler, err := NewScheduler(runner, "0 8 * * *", nil, time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
