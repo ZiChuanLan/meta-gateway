@@ -201,17 +201,38 @@ func (s *Service) RunAll(ctx context.Context, source string) (*RunSummary, error
 	if err != nil {
 		return nil, internalError("credential_list")
 	}
+	return runAll(ctx, credentials, source, s.RunCredential)
+}
+
+// runAll executes one credential at a time and never lets a single internal
+// failure abort the batch. runOne returns the persisted result, or a non-ctx
+// error when the attempt could not be recorded (e.g. a transient DB failure);
+// such errors become a synthetic failed item and the loop continues.
+func runAll(ctx context.Context, credentials []domain.Credential, source string, runOne func(context.Context, int64, string, bool) (RunResult, error)) (*RunSummary, error) {
 	summary := &RunSummary{Items: make([]RunResult, 0, len(credentials))}
 	for _, credential := range credentials {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		result, runErr := s.RunCredential(ctx, credential.ID, source, true)
+		result, runErr := runOne(ctx, credential.ID, source, true)
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
 				return nil, runErr
 			}
-			return nil, runErr
+			// Infra failure (e.g. transient DB error) with no persisted result:
+			// record a synthetic failure and continue so one credential cannot
+			// starve the rest of the daily batch.
+			summary.Items = append(summary.Items, RunResult{
+				SiteID:       credential.SiteID,
+				CredentialID: credential.ID,
+				Source:       source,
+				Status:       StatusFailed,
+				Category:     "internal",
+				Message:      "check-in aborted before upstream call (internal error)",
+				RanAt:        time.Now(),
+			})
+			summary.FailureCount++
+			continue
 		}
 		summary.Items = append(summary.Items, result)
 		switch result.Status {
