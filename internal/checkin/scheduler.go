@@ -38,12 +38,13 @@ type Scheduler struct {
 	now      func() time.Time
 	schedule cron.Schedule
 
-	lifecycleMu sync.Mutex
-	started     bool
-	stopped     bool
-	runMu       sync.Mutex
-	running     bool
-	expression  string
+	lifecycleMu     sync.Mutex
+	started         bool
+	stopped         bool
+	scheduleApplied bool // runtime layer (env/admin override) has made the arming decision
+	runMu           sync.Mutex
+	running         bool
+	expression      string
 
 	lastRunMu      sync.Mutex
 	seeded         bool
@@ -102,6 +103,12 @@ func (s *Scheduler) Start() error {
 	if s.stopped {
 		return ErrSchedulerStopped
 	}
+	if s.scheduleApplied {
+		// The runtime layer (Bootstrap / admin override) already decided whether
+		// the scheduler should tick. Starting here would clobber an explicit
+		// "disabled" override on every boot.
+		return nil
+	}
 	if s.started {
 		return nil
 	}
@@ -109,6 +116,17 @@ func (s *Scheduler) Start() error {
 	s.cron.Start()
 	s.maybeCatchUp()
 	return nil
+}
+
+// Started reports whether the scheduler is currently ticking. It reflects the
+// last SetSchedule decision, so it is safe to read after Bootstrap applied.
+func (s *Scheduler) Started() bool {
+	if s == nil {
+		return false
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.started
 }
 
 // SetSchedule replaces the cron expression. When enabled is false the scheduler
@@ -131,9 +149,13 @@ func (s *Scheduler) SetSchedule(expression string, enabled bool) error {
 			return fmt.Errorf("%w: %v", ErrInvalidCron, err)
 		}
 	}
+	s.scheduleApplied = true
 	if s.started {
-		stopCtx := s.cron.Stop()
-		<-stopCtx.Done()
+		// Non-blocking teardown: Stop() only stops dispatching new ticks; an
+		// in-flight batch finishes on its own and the batch-level run guard
+		// prevents overlaps. Waiting here would hold the admin HTTP request for
+		// the entire remaining batch duration.
+		_ = s.cron.Stop()
 		s.started = false
 	}
 	if !enabled {

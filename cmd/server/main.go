@@ -165,15 +165,23 @@ func main() {
 		},
 	})
 
-	if cfg.CheckinEnabled && pluginService.IsEnabled("checkin") {
-		if err := scheduler.Start(); err != nil {
-			logger.Error("check-in scheduler start failed", "category", "scheduler")
-			os.Exit(1)
-		}
+	// Scheduler arming is owned by runtimeconfig.Bootstrap (admin override or
+	// env, honoring the checkin module gate), which runs inside
+	// NewWithDependencies. Start() below only serves embedders who bypass the
+	// runtime controller; it is a no-op once a schedule decision was applied,
+	// so a stored admin "disabled" override is never clobbered at boot.
+	if err := scheduler.Start(); err != nil {
+		logger.Error("check-in scheduler start failed", "category", "scheduler")
+		os.Exit(1)
+	}
+	switch {
+	case scheduler.Started():
 		logger.Info("check-in scheduler enabled")
-	} else if cfg.CheckinEnabled {
+	case cfg.CheckinEnabled && pluginService.IsEnabled("checkin"):
+		logger.Info("check-in scheduler idle: disabled via Admin Settings (override wins over CHECKIN_ENABLED)")
+	case cfg.CheckinEnabled:
 		logger.Info("check-in scheduler idle: activate checkin module or enable via Settings")
-	} else {
+	default:
 		logger.Info("check-in scheduler constructed but not started (CHECKIN_ENABLED=false); Settings can enable without restart")
 	}
 

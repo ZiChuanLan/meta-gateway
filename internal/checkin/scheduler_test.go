@@ -131,6 +131,96 @@ func TestSchedulerStopCancelsRunningBatch(t *testing.T) {
 	}
 }
 
+func TestStartNoOpAfterSetScheduleDecision(t *testing.T) {
+	// Regression: Bootstrap applies the admin override via SetSchedule before
+	// main.go calls Start(). A disabling override must survive the boot sequence
+	// (no ticking, no catch-up run).
+	lastRun := time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 8, 4, 8, 30, 0, 0, time.UTC)
+	scheduler, runner := newCatchUpScheduler(t, "0 8 * * *", now, lastRun)
+	if err := scheduler.SetSchedule("0 8 * * *", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if scheduler.Started() {
+		t.Fatal("scheduler must stay disabled after Start() once SetSchedule decided")
+	}
+	assertNoCalls(t, runner)
+}
+
+func TestStartedReflectsSetSchedule(t *testing.T) {
+	runner := &fakeBatchRunner{result: &RunSummary{}}
+	scheduler, err := NewScheduler(runner, "0 8 * * *", nil, time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scheduler.Started() {
+		t.Fatal("initially not started")
+	}
+	if err := scheduler.SetSchedule("0 8 * * *", true); err != nil {
+		t.Fatal(err)
+	}
+	if !scheduler.Started() {
+		t.Fatal("enabled via SetSchedule must report started")
+	}
+	if err := scheduler.SetSchedule("0 8 * * *", false); err != nil {
+		t.Fatal(err)
+	}
+	if scheduler.Started() {
+		t.Fatal("disabled via SetSchedule must report stopped")
+	}
+}
+
+func TestStartWorksWithoutScheduleDecision(t *testing.T) {
+	// Embedder path: no SetSchedule before Start keeps the legacy behavior.
+	runner := &fakeBatchRunner{result: &RunSummary{}}
+	scheduler, err := NewScheduler(runner, "0 8 * * *", nil, time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if !scheduler.Started() {
+		t.Fatal("Start without a schedule decision must start the scheduler")
+	}
+}
+
+func TestSetScheduleDoesNotBlockOnRunningBatch(t *testing.T) {
+	runner := &fakeBatchRunner{
+		entered: make(chan struct{}, 1),
+		release: make(chan struct{}),
+		result:  &RunSummary{},
+	}
+	scheduler, err := NewScheduler(runner, "0 8 * * *", nil, time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan bool, 1)
+	go func() { done <- scheduler.run(t.Context()) }()
+	<-runner.entered
+
+	setDone := make(chan error, 1)
+	go func() { setDone <- scheduler.SetSchedule("0 8 * * *", false) }()
+	select {
+	case err := <-setDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("SetSchedule must not block while a batch is running")
+	}
+	close(runner.release)
+	if !<-done {
+		t.Fatal("running batch did not start")
+	}
+	if runner.calls.Load() != 1 {
+		t.Fatalf("calls=%d, want 1", runner.calls.Load())
+	}
+}
+
 // waitForCalls polls until the runner has been invoked at least want times.
 func waitForCalls(t *testing.T, runner *fakeBatchRunner, want int32) {
 	t.Helper()
