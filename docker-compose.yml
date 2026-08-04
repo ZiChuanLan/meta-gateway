@@ -42,8 +42,12 @@ services:
       AUDIT_RETENTION_ROWS: "${AUDIT_RETENTION_ROWS:-100000}"
       RETRY_TIMES: "${RETRY_TIMES:-2}"
       COOLDOWN_SECONDS: "${COOLDOWN_SECONDS:-30}"
+      # Daily check-in: enable explicitly (default off) and pick the timezone
+      # the cron is interpreted in — containers default to UTC, so 0 8 * * *
+      # fires at 16:00 Beijing time without CHECKIN_TZ.
       CHECKIN_ENABLED: "${CHECKIN_ENABLED:-false}"
       CHECKIN_CRON: "${CHECKIN_CRON:-0 8 * * *}"
+      CHECKIN_TZ: "${CHECKIN_TZ:-}"
       PLUGINS_DIR: "${PLUGINS_DIR:-/data/plugins}"
       WEBDAV_SYNC_ENABLED: "${WEBDAV_SYNC_ENABLED:-false}"
       WEBDAV_URL: "${WEBDAV_URL:-}"

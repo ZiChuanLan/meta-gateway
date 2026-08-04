@@ -166,7 +166,7 @@ func newCatchUpScheduler(t *testing.T, expression string, now, lastRunAt time.Ti
 func TestCatchUpRunsWhenDailyTickWasMissed(t *testing.T) {
 	// Restart at 08:30 with the last scheduled run yesterday: catch up once.
 	lastRun := time.Date(2026, 8, 3, 8, 0, 0, 0, time.UTC) // Monday
-	now := time.Date(2026, 8, 4, 8, 30, 0, 0, time.UTC)   // Tuesday 08:30
+	now := time.Date(2026, 8, 4, 8, 30, 0, 0, time.UTC)    // Tuesday 08:30
 	scheduler, runner := newCatchUpScheduler(t, "0 8 * * *", now, lastRun)
 	if err := scheduler.Start(); err != nil {
 		t.Fatal(err)

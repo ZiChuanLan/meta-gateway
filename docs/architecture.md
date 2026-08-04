@@ -150,7 +150,21 @@ concurrent-run skips. Network work never runs inside a database transaction.
 
 The optional process-local scheduler uses one strict five-field cron expression
 and the same service instance as Admin HTTP. That shared instance prevents two
-in-process runs for the same credential. Existing credentials migrate with
+in-process runs for the same credential. The expression is interpreted in the
+`CHECKIN_TZ` timezone (IANA name, e.g. `Asia/Shanghai`) when set; otherwise the
+process local timezone is used, which is UTC inside the default container image
+(no `TZ`, no tzdata) — set `CHECKIN_TZ` to avoid an 8-hour shift for operators
+in UTC+8. The timezone database is embedded in the binary, so named zones
+resolve in any container.
+
+The scheduler catches up a missed daily tick: on start or schedule re-enable it
+runs once immediately when today's fire time already passed and no scheduled
+run is recorded for today (seeded from `checkin_logs`). A fresh install with no
+history never surprise-runs. A batch tolerates per-credential internal failures
+(transient DB errors) as synthetic failed items; only cancellation aborts the
+remaining credentials.
+
+Existing credentials migrate with
 check-in disabled, and `CHECKIN_ENABLED` defaults to false, so an upgrade cannot
 silently introduce external requests.
 
