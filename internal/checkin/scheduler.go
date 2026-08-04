@@ -20,6 +20,14 @@ type BatchRunner interface {
 	RunAll(context.Context, string) (*RunSummary, error)
 }
 
+// lastRunReporter is implemented by runners that can report the most recent
+// scheduled run from persisted history (see Service.LastScheduledRunAt).
+type lastRunReporter interface {
+	LastScheduledRunAt(ctx context.Context) (time.Time, error)
+}
+
+const dateLayout = "2006-01-02"
+
 type Scheduler struct {
 	runner   BatchRunner
 	cron     *cron.Cron
@@ -27,6 +35,8 @@ type Scheduler struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	location *time.Location
+	now      func() time.Time
+	schedule cron.Schedule
 
 	lifecycleMu sync.Mutex
 	started     bool
@@ -34,6 +44,11 @@ type Scheduler struct {
 	runMu       sync.Mutex
 	running     bool
 	expression  string
+
+	lastRunMu      sync.Mutex
+	seeded         bool
+	lastRunDay     string // local date (2006-01-02) of the most recent completed run
+	catchUpPending bool   // a catch-up batch has been spawned and not yet finished
 }
 
 // NewScheduler builds a scheduler for the given five-field cron expression.
@@ -48,6 +63,11 @@ func NewScheduler(runner BatchRunner, expression string, logger *log.Logger, loc
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	schedule, err := parser.Parse(expression)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	scheduler := &Scheduler{
 		runner:     runner,
 		cron:       cron.New(cron.WithParser(parser), cron.WithLocation(location)),
@@ -55,6 +75,8 @@ func NewScheduler(runner BatchRunner, expression string, logger *log.Logger, loc
 		ctx:        ctx,
 		cancel:     cancel,
 		location:   location,
+		now:        time.Now,
+		schedule:   schedule,
 		expression: expression,
 	}
 	if _, err := scheduler.cron.AddFunc(expression, func() {
@@ -85,6 +107,7 @@ func (s *Scheduler) Start() error {
 	}
 	s.started = true
 	s.cron.Start()
+	s.maybeCatchUp()
 	return nil
 }
 
@@ -100,8 +123,11 @@ func (s *Scheduler) SetSchedule(expression string, enabled bool) error {
 		return ErrSchedulerStopped
 	}
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	var schedule cron.Schedule
 	if enabled {
-		if _, err := parser.Parse(expression); err != nil {
+		var err error
+		schedule, err = parser.Parse(expression)
+		if err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidCron, err)
 		}
 	}
@@ -121,8 +147,10 @@ func (s *Scheduler) SetSchedule(expression string, enabled bool) error {
 		return fmt.Errorf("%w: %v", ErrInvalidCron, err)
 	}
 	s.expression = expression
+	s.schedule = schedule
 	s.cron.Start()
 	s.started = true
+	s.maybeCatchUp()
 	return nil
 }
 
@@ -151,6 +179,67 @@ func (s *Scheduler) Stop(ctx context.Context) error {
 	}
 }
 
+// maybeCatchUp runs a batch immediately when today's scheduled tick was missed
+// (process restarted or schedule disabled past the fire time). It seeds per-day
+// tracking from persisted history on first use: a fresh install with no history
+// never surprise-runs, while a restart after the daily tick catches up once.
+func (s *Scheduler) maybeCatchUp() {
+	s.lastRunMu.Lock()
+	defer s.lastRunMu.Unlock()
+	if !s.seeded {
+		s.seedLastRunDayLocked()
+		s.seeded = true
+	}
+	if s.lastRunDay == s.today() {
+		return
+	}
+	now := s.now().In(s.Location())
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, s.Location())
+	if s.schedule.Next(midnight.Add(-time.Minute)).After(now) {
+		return // today's scheduled time has not arrived yet
+	}
+	if s.catchUpPending {
+		return // a catch-up batch is already in flight
+	}
+	s.catchUpPending = true
+	// Overlap guard in run() dedupes concurrent triggers.
+	go s.run(s.ctx)
+}
+
+// seedLastRunDayLocked initializes lastRunDay from persisted scheduled-run
+// history. lastRunMu must be held.
+func (s *Scheduler) seedLastRunDayLocked() {
+	reporter, ok := s.runner.(lastRunReporter)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+	defer cancel()
+	last, err := reporter.LastScheduledRunAt(ctx)
+	if err != nil {
+		return
+	}
+	if last.IsZero() {
+		// No history at all: treat today as handled so a first deployment
+		// does not fire an unexpected run.
+		s.lastRunDay = s.today()
+		return
+	}
+	s.lastRunDay = last.In(s.Location()).Format(dateLayout)
+}
+
+// markRan records the local day on which a batch completed.
+func (s *Scheduler) markRan() {
+	s.lastRunMu.Lock()
+	s.lastRunDay = s.today()
+	s.catchUpPending = false
+	s.lastRunMu.Unlock()
+}
+
+func (s *Scheduler) today() string {
+	return s.now().In(s.Location()).Format(dateLayout)
+}
+
 func (s *Scheduler) run(ctx context.Context) bool {
 	s.runMu.Lock()
 	if s.running {
@@ -163,6 +252,7 @@ func (s *Scheduler) run(ctx context.Context) bool {
 		s.runMu.Lock()
 		s.running = false
 		s.runMu.Unlock()
+		s.markRan()
 	}()
 
 	summary, err := s.runner.RunAll(ctx, SourceScheduled)

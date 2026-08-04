@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
@@ -67,4 +68,18 @@ func (s *CheckinLogStore) List(f CheckinLogFilter) ([]domain.CheckinLog, error) 
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// LastScheduledRunAt returns the most recent scheduled check-in timestamp, or
+// the zero time when no scheduled run has ever been recorded. The scheduler
+// uses it to detect a missed daily tick after a restart.
+func (s *CheckinLogStore) LastScheduledRunAt() (time.Time, error) {
+	logs, err := s.List(CheckinLogFilter{Source: "scheduled", Limit: 1})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if len(logs) == 0 {
+		return time.Time{}, nil
+	}
+	return logs[0].RanAt, nil
 }

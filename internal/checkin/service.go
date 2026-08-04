@@ -189,6 +189,13 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 	return s.persist(started, site.ID, credential.ID, source, status, adapterResult.Category, adapterResult.Message, adapterResult.Reward)
 }
 
+// LastScheduledRunAt reports the most recent scheduled check-in run from
+// persisted logs. The scheduler uses it to seed per-day tracking so a restart
+// after the daily tick triggers exactly one catch-up run.
+func (s *Service) LastScheduledRunAt(ctx context.Context) (time.Time, error) {
+	return s.db.CheckinLog.LastScheduledRunAt()
+}
+
 func (s *Service) RunAll(ctx context.Context, source string) (*RunSummary, error) {
 	credentials, err := s.db.Credential.ListCheckinEnabled()
 	if err != nil {
