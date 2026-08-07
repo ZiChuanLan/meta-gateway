@@ -2,7 +2,7 @@
 
 > 基于对 `meta-gateway` 全量代码审计，对比 new-api / axonhub / sub2api / metapi / all-api-hub 五个同类项目。
 > 每条标注：【优化】= 自身病灶修复；【借鉴】= 从其他项目引入的模式；【功能】= 新增能力。
-> 状态列：`未开始 / 进行中 / 已完成 / 暂缓`。
+> 状态列：`未开始 / 进行中 / 已完成 / 暂缓`（2026-08-08 对照 `c32e7aa` 全量复核）。
 
 ---
 
@@ -34,7 +34,7 @@
 | UI-15 | 清掉内联样式与魔法数（`style={{marginTop:4}}`、px/rem 混用、Drawer 宽度内联计算）改为类/变体 | 优化 | `Channels.tsx:2127/2609/2636`、`Drawer.tsx:58` | 未开始 |
 | UI-16 | 路由切换不再每次 `requestAnimationFrame` 重挂载动画（与 15s 轮询叠加导致页面脉冲）；按 route key 播一次或移除 | 优化 | `App.tsx:543-548`、`Models.tsx:94/104` | 未开始 |
 | UI-17 | `DataTable` 支持列对齐/吸顶表头/排序；`StatusBadge` 不再按原始值拼 class（新后端状态会无样式）；非交互统计卡别用 `<button disabled>` | 优化 | `ui.tsx:474-498/423`、`StatGrid.tsx:61-73` | 未开始 |
-| UI-18 | 空态文案给出"下一步操作指引"而非泛泛 "Nothing here yet." | 优化 | `i18n.tsx:36` | 未开始 |
+| UI-18 | 空态文案给出"下一步操作指引"而非泛泛 "Nothing here yet." | 优化 | `i18n.tsx:36` | 已完成（Keys 空态指引 + 测试） |
 
 ### 危险操作 UX（admin 台安全）
 
@@ -53,15 +53,15 @@
 | --- | --- | --- | --- | --- |
 | BE-1 | `httpapi/admin.go` 按资源拆 `handler/admin/`，一个 struct 一个文件（sites/credentials/channels/routes/members/keys/usage/groups/logs），聚合进 `Handlers` 树 | 借鉴 | sub2api `internal/handler/handler.go`（~35 个小 struct） | 未开始 |
 | BE-2 | 路由按面拆文件：`SetAdminRouter/SetRelayRouter/SetWebRouter` 各自独立，注册只声明策略 | 借鉴 | new-api `router/main.go`（35 行调度） | 未开始 |
-| BE-3 | **新增 `POST /admin/connections` 编排端点**：一次完成 site（按规范化 URL 去重）→ credential（加密）→ channel，失败回滚已建部分；替代前端 3 连调无回滚 | 优化 | 前端 `Channels.tsx:348-391` 现状 | 进行中（测试已写） |
+| BE-3 | **新增 `POST /admin/connections` 编排端点**：一次完成 site（按规范化 URL 去重）→ credential（加密）→ channel，失败回滚已建部分；替代前端 3 连调无回滚 | 优化 | 前端 `Channels.tsx:348-391` 现状 | 已完成（2026-08-08，`c32e7aa`；site 复用 + 逐级回滚，`connection_test.go` 3 用例） |
 | BE-4 | 渠道选择/分发移入 middleware + `Ability(group, model, channel, priority, weight)` 反规范化表（带优先级重试阶梯），handler 不再内嵌选路 | 借鉴 | new-api `middleware/distributor.go`、`model/ability.go` | 未开始 |
 
 ### Proxy 管道（根源问题：1443 行 proxy.go 装 48 个方法）
 
 | # | 事项 | 类型 | 来源/依据 | 状态 |
 | --- | --- | --- | --- | --- |
-| BE-5 | 按管道阶段拆 proxy：选择/重试/熔断/计费/密钥轮换/流式探活/系统提示注入各自成模块；`Retryable`（跨渠道）/`ChannelRetryable`（同渠道）声明式重试 | 借鉴 | axonhub `llm/pipeline/pipeline.go`、`middleware.go` | 未开始 |
-| BE-6 | **Adaptor 接口 + 每 provider 子包 + `RelayInfo` 请求上下文对象**：适配器只接 `RelayInfo` 值对象，不摸 gin.Context/DB model | 借鉴 | new-api `relay/channel/adapter.go`、`relay/common/relay_info.go` | 未开始 |
+| BE-5 | 按管道阶段拆 proxy：选择/重试/熔断/计费/密钥轮换/流式探活/系统提示注入各自成模块；`Retryable`（跨渠道）/`ChannelRetryable`（同渠道）声明式重试 | 借鉴 | axonhub `llm/pipeline/pipeline.go`、`middleware.go` | 部分（熔断 `circuit_breaker.go`、粘性 `routing/sticky.go`、密钥轮换已模块化；计费/系统提示仍在 proxy 主体） |
+| BE-6 | **Adaptor 接口 + 每 provider 子包 + `RelayInfo` 请求上下文对象**：适配器只接 `RelayInfo` 值对象，不摸 gin.Context/DB model | 借鉴 | new-api `relay/channel/adapter.go`、`relay/common/relay_info.go` | 大部分完成（`ForwardAdapter` 注册表 + `proxy.Request` 值对象 + openai 默认回退；未按 provider 拆子包，单文件即可扩展） |
 | BE-7 | 计费/日志/配额/覆盖改为**管道装饰器**（10 个钩子点：OnInboundRequest/OnOutboundRawRequest/…），而非写死在 proxy 主体 | 借鉴 | axonhub `llm/pipeline/middleware.go` | 未开始 |
 | BE-8 | 统一流抽象 `Stream[T]{Next/Current/Err/Close}`，原始 SSE 与统一事件共用迭代契约，中间件可泛型包装 | 借鉴 | axonhub `llm/streams/stream.go` | 未开始 |
 
@@ -71,8 +71,8 @@
 | --- | --- | --- | --- | --- |
 | BE-9 | **消费侧定义 Repository 接口**：`service` 包声明 `AccountRepository` 等，`store` 包实现并在构造函数返回接口 → 可替换/可 mock | 借鉴 | sub2api `service/account_service.go:50` + `repository/account_repo.go:76` | 未开始 |
 | BE-10 | 统一错误契约 `ApplicationError{Code, Reason, Message, Metadata}`，store→service→handler 一路透传；前端按 `code` 匹配而非英文 message | 借鉴 | sub2api `internal/pkg/errors/errors.go` | 未开始 |
-| BE-11 | 渠道健康/能力枚举（`channelHealth`/`capabilityFlags`）由**后端返回**，删除前端按 8 个字段重推导的逻辑（注释里写 "Match backend pickUserCredential"，极易静默发散） | 优化 | `Channels.tsx:152-223/737-763` | 未开始 |
-| BE-12 | DTO 映射与密钥脱敏集中在 handler 边界的 mapper，不散落各 handler（已有 `safeCred` 局部 struct 的雏形，推广成统一模式） | 借鉴 | sub2api `internal/handler/dto/mappers.go`、`credentials_redact.go` | 未开始 |
+| BE-11 | 渠道健康/能力枚举（`channelHealth`/`capabilityFlags`）由**后端返回**，删除前端按 8 个字段重推导的逻辑（注释里写 "Match backend pickUserCredential"，极易静默发散） | 优化 | `Channels.tsx:152-223/737-763` | 部分（后端已返回 `HealthState` 五态 + `CheckinSupported/AccountSupported`；前端仍有重推导残留） |
+| BE-12 | DTO 映射与密钥脱敏集中在 handler 边界的 mapper，不散落各 handler（已有 `safeCred` 局部 struct 的雏形，推广成统一模式） | 借鉴 | sub2api `internal/handler/dto/mappers.go`、`credentials_redact.go` | 部分（`safeCred` 模式存在；未推广成统一 mapper 层） |
 
 ### 装配（可选、改动大）
 
@@ -89,7 +89,7 @@
 | FN-1 | **设置/导航命令面板**（cmdk）：每个设置项有唯一 target-id，DOM id + 搜索索引 + URL anchor 深链三处共用 | 借鉴 | all-api-hub `OptionsSearchDialog.tsx` | 未开始 |
 | FN-2 | 仪表盘统计卡由纯函数 `buildStatusCards()` 生成（带 severity + 点击深链到对应页），逻辑可测试 | 借鉴 | all-api-hub `features/OptionsOverview/statusCards.ts` | 未开始 |
 | FN-3 | 多租户分组配额/限流的 UI 呈现与后端 `groups` 打通（后端已有 `PUT/DELETE /admin/groups`，前端暂无可视化） | 优化 | `admin.go:99-101` | 未开始 |
-| FN-4 | 模型可用性探测（冷却/熔断状态）在前端可视，配"输入确认句"后手动重置 | 借鉴 | metapi 模型探测 + 确认 UX | 未开始 |
+| FN-4 | 模型可用性探测（冷却/熔断状态）在前端可视，配"输入确认句"后手动重置 | 借鉴 | metapi 模型探测 + 确认 UX | 部分（healthsweep 探测 + `health_state` 字段已后端化；前端可视化 + 手动重置未做） |
 | FN-5 | 架构守护测试：`*.architecture.test.ts` 强制分层规则（如 handler 不得直接 import store），防回潮 | 借鉴 | metapi 的 `*.architecture.test.ts` | 未开始 |
 
 ---
@@ -98,7 +98,7 @@
 
 | 阶段 | 内容 | 对应条目 | 量级 |
 | --- | --- | --- | --- |
-| **P0 止血** | 连接编排端点 + 测试 | BE-3（联动 UI-7 的 hook） | 小 |
+| **P0 止血** | 连接编排端点 + 测试 | BE-3（联动 UI-7 的 hook） | ✅ 已完成 |
 | **P1 设计系统** | Tailwind+shadcn 落地、token、登录页 CSS 隔离、清 `!important` | UI-1~6 | 中 |
 | **P2 前端结构** | 拆 Channels、统一 DataTable + useTableLoader、合并失效常量、i18n 类型化 | UI-7~17 | 中大 |
 | **P3 后端 handler 拆分** | admin.go 按资源拆 + 路由按面拆 | BE-1~2 | 中（机械） |
@@ -119,3 +119,4 @@
 ### 进度记录
 
 - 2026-08-07：初版清单建立；P0（BE-3）测试先行、P1（UI-1）依赖安装完成。
+- 2026-08-08：全量复核（对照 `c32e7aa`）。BE-3 已完成（连接编排端点 + 3 测试）；BE-5/BE-6/BE-11/BE-12/FN-4 部分落地（熔断、ForwardAdapter 注册表、HealthState、safeCred、healthsweep）；UI-18 已完成（Keys 空态指引）。其余保持未开始，按 `04-优化清单执行` goal 推进。
