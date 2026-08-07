@@ -24,6 +24,7 @@ import {
 	Dialog,
 	ErrorState,
 	Field,
+	InfoTip,
 	Page,
 	Panel,
 	StatusBadge,
@@ -558,7 +559,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 								/>
 								<span>
 									<strong>{t("exchange.webdavMode.incremental")}</strong>
-									<small>{t("exchange.webdavMode.incrementalHint")}</small>
+									<InfoTip label={t("exchange.webdavMode.incrementalHint")} />
 								</span>
 							</label>
 							<label className={webdavSyncMode === "replace" ? "webdav-mode-card is-danger is-selected" : "webdav-mode-card is-danger"}>
@@ -571,7 +572,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 								/>
 								<span>
 									<strong>{t("exchange.webdavMode.replace")}</strong>
-									<small>{t("exchange.webdavMode.replaceHint")}</small>
+									<InfoTip label={t("exchange.webdavMode.replaceHint")} />
 								</span>
 							</label>
 						</div>

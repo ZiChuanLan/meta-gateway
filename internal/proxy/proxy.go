@@ -4,6 +4,8 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +24,8 @@ import (
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/usage"
+	"github.com/lan/meta-gateway/internal/webhook"
 )
 
 var (
@@ -31,6 +35,10 @@ var (
 
 type Selector interface {
 	Select(ctx context.Context, model string, excluded map[int64]struct{}) (routing.Decision, error)
+	// SelectSticky is Select with an optional session key for affinity routing.
+	SelectSticky(ctx context.Context, model string, excluded map[int64]struct{}, sessionKey string) (routing.Decision, error)
+	// SetConcurrencyAware wires the in-flight burst guard into scoring.
+	SetConcurrencyAware(enabled bool, limit int, provider routing.ConcurrencyProvider)
 }
 
 type Relay interface {
@@ -48,13 +56,54 @@ type Service struct {
 	cooldownNs atomic.Int64
 	now        func() time.Time
 	registry   *adapters.Registry
+	// breaker is the model-level circuit breaker (channel × model).
+	breaker *ModelCircuitBreaker
+	// keyErrCounts tracks per channel × api-key × status-code consecutive
+	// failures (AxonHub-style triple-key counting); a key that hits the
+	// auto-disable threshold is temporarily excluded from the pool.
+	keyErrMu     sync.Mutex
+	keyErrCounts map[int64]map[string]map[int]int
+	// disabledKeys scopes the exclusion per channel (a key is only lifted by a
+	// success on the same channel that disabled it).
+	disabledKeys map[disabledKey]time.Time
 	// autoDisableThreshold: consecutive member failures before a channel is
 	// auto-disabled (0 = feature off).
 	autoDisableThreshold int
 	// latencyAware enables latency-weighted channel picking.
 	latencyAware bool
 	latencyMu    sync.Mutex
-	latencyEMA   map[int64]float64
+	latencyEMA   map[channelModel]float64
+	errorMu      sync.Mutex
+	errorEMA     map[channelModel]float64
+	// sticky is the optional session-affinity store; nil disables sticky routing.
+	sticky *routing.StickyStore
+	// grayPromoteRequests is the stable-first promotion threshold (successful
+	// grayscale relay attempts before the channel graduates; 0 disables).
+	grayPromoteRequests atomic.Int64
+	// inflight counts in-flight relays per channel for the burst guard.
+	inflightMu sync.Mutex
+	inflight   map[int64]int
+	// concurrencyAware enables the burst guard (selector-side scoring);
+	// concurrencyLimit is the per-channel ceiling.
+	concurrencyAware bool
+	concurrencyLimit int
+	// notifier delivers operational webhooks (auto-disable/recovery).
+	notifier *webhook.Notifier
+}
+
+// channelModel scopes adaptive latency/error EWMA to one channel on one model,
+// so a slow or failing route on model X never drags down the same channel on
+// model Y.
+type channelModel struct {
+	channelID int64
+	model     string
+}
+
+// disabledKey identifies a per-channel key exclusion (channelID + fingerprint)
+// so one channel's auto-disable is never lifted by another channel's success.
+type disabledKey struct {
+	channelID int64
+	fp        string
 }
 
 type Request struct {
@@ -75,6 +124,13 @@ type Request struct {
 	DownstreamKeyID int64
 	// ContentType preserves client Content-Type for multipart passthrough.
 	ContentType string
+	// SessionKey is an explicit sticky-session identifier from the client
+	// (e.g. X-Meta-Session-Id). When empty, the gateway derives a content
+	// digest session key from the request body.
+	SessionKey string
+	// ReasoningEffort is the client-requested OpenAI-style reasoning effort
+	// (low / medium / high / max / xhigh) for observability logging.
+	ReasoningEffort string
 	// PromptTokens/CompletionTokens/TotalTokens optional post-response accounting.
 	PromptTokens     int
 	CompletionTokens int
@@ -98,6 +154,9 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 		cooldown = 0
 	}
 	service := &Service{selector: selector, relay: upstream, db: db, enc: enc, now: time.Now}
+	service.breaker = NewModelCircuitBreaker()
+	service.keyErrCounts = make(map[int64]map[string]map[int]int)
+	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.retryTimes.Store(int64(retryTimes))
 	service.cooldownNs.Store(int64(cooldown))
 	return service
@@ -109,37 +168,147 @@ func (s *Service) SetAutoDisableThreshold(n int) {
 	s.autoDisableThreshold = n
 }
 
+// SetStableFirstPromote configures the grayscale promotion threshold: after
+// that many successful relay attempts on a stable-first channel (with no
+// consecutive failures), the channel is promoted. 0 disables promotion.
+func (s *Service) SetStableFirstPromote(n int) {
+	s.grayPromoteRequests.Store(int64(n))
+}
+
+// SetWebhookNotifier installs the operational webhook notifier (nil disables).
+func (s *Service) SetWebhookNotifier(notifier *webhook.Notifier) {
+	s.notifier = notifier
+}
+func (s *Service) SetConcurrencyAware(enabled bool, limit int) {
+	s.concurrencyAware = enabled && limit > 0
+	s.concurrencyLimit = limit
+	if s.concurrencyAware {
+		s.selector.SetConcurrencyAware(true, limit, s.Inflight)
+	} else {
+		s.selector.SetConcurrencyAware(false, 0, nil)
+	}
+}
+
+// Inflight returns the number of relay attempts currently occupying a channel.
+func (s *Service) Inflight(channelID int64) int {
+	s.inflightMu.Lock()
+	defer s.inflightMu.Unlock()
+	return s.inflight[channelID]
+}
+
+// acquireChannel reserves one in-flight slot for the channel; releaseChannel
+// returns it. The slot is held for the whole attempt sequence (keys + retries)
+// so the guard sees real occupancy, not just first-pick volume.
+func (s *Service) acquireChannel(channelID int64) {
+	if !s.concurrencyAware {
+		return
+	}
+	s.inflightMu.Lock()
+	if s.inflight == nil {
+		s.inflight = make(map[int64]int)
+	}
+	s.inflight[channelID]++
+	s.inflightMu.Unlock()
+}
+
+func (s *Service) releaseChannel(channelID int64) {
+	if !s.concurrencyAware {
+		return
+	}
+	s.inflightMu.Lock()
+	if n := s.inflight[channelID]; n > 1 {
+		s.inflight[channelID] = n - 1
+	} else {
+		delete(s.inflight, channelID)
+	}
+	s.inflightMu.Unlock()
+}
+
+// SetSticky installs the sticky-session store (nil disables). The service
+// binds successful relays to their session key and passes the key to the
+// selector so affinity is honored on the next request.
+func (s *Service) SetSticky(store *routing.StickyStore) {
+	s.sticky = store
+}
+
 // SetLatencyAware enables latency-weighted routing and installs this service
 // as the latency provider (smoothed per-channel latency in ms).
 func (s *Service) SetLatencyAware(enabled bool) {
 	s.latencyAware = enabled
 }
 
-// ChannelLatency returns the EWMA latency for a channel, false if no sample.
-func (s *Service) ChannelLatency(channelID int64) (float64, bool) {
-	s.latencyMu.Lock()
-	defer s.latencyMu.Unlock()
-	value, ok := s.latencyEMA[channelID]
+// ChannelErrorRate returns the EWMA failure propensity (0..1) for a channel on
+// a model, false when no failure has been observed yet. Fresh channels score 0.
+func (s *Service) ChannelErrorRate(channelID int64, model string) (float64, bool) {
+	s.errorMu.Lock()
+	defer s.errorMu.Unlock()
+	value, ok := s.errorEMA[channelModel{channelID: channelID, model: model}]
 	return value, ok
 }
 
-// observeLatency updates the per-channel EWMA from a successful relay.
-func (s *Service) observeLatency(channelID int64, latencyMs int) {
+// observeError moves the channel's error EMA toward 1 for the model (alpha
+// 0.5 — a single failure halves the channel's share on that model).
+func (s *Service) observeError(channelID int64, model string) {
+	if channelID <= 0 {
+		return
+	}
+	key := channelModel{channelID: channelID, model: model}
+	s.errorMu.Lock()
+	defer s.errorMu.Unlock()
+	if s.errorEMA == nil {
+		s.errorEMA = make(map[channelModel]float64)
+	}
+	previous, ok := s.errorEMA[key]
+	if !ok {
+		s.errorEMA[key] = 0.5
+		return
+	}
+	// EWMA toward 1: new = 0.5*1 + 0.5*previous.
+	s.errorEMA[key] = 0.5 + 0.5*previous
+}
+
+// decayError moves the channel's error EMA toward 0 after a success (halving).
+func (s *Service) decayError(channelID int64, model string) {
+	if channelID <= 0 {
+		return
+	}
+	key := channelModel{channelID: channelID, model: model}
+	s.errorMu.Lock()
+	defer s.errorMu.Unlock()
+	previous, ok := s.errorEMA[key]
+	if !ok || previous == 0 {
+		return
+	}
+	s.errorEMA[key] = 0.5 * previous
+}
+
+// ChannelLatency returns the EWMA latency for a channel on a model, false if no
+// sample exists yet.
+func (s *Service) ChannelLatency(channelID int64, model string) (float64, bool) {
+	s.latencyMu.Lock()
+	defer s.latencyMu.Unlock()
+	value, ok := s.latencyEMA[channelModel{channelID: channelID, model: model}]
+	return value, ok
+}
+
+// observeLatency updates the per channel × model EWMA from a successful relay.
+func (s *Service) observeLatency(channelID int64, model string, latencyMs int) {
 	if channelID <= 0 || latencyMs < 0 {
 		return
 	}
+	key := channelModel{channelID: channelID, model: model}
 	s.latencyMu.Lock()
 	defer s.latencyMu.Unlock()
 	if s.latencyEMA == nil {
-		s.latencyEMA = make(map[int64]float64)
+		s.latencyEMA = make(map[channelModel]float64)
 	}
-	previous, ok := s.latencyEMA[channelID]
+	previous, ok := s.latencyEMA[key]
 	if !ok {
-		s.latencyEMA[channelID] = float64(latencyMs)
+		s.latencyEMA[key] = float64(latencyMs)
 		return
 	}
 	// EWMA with alpha 0.2: new = 0.2*sample + 0.8*previous.
-	s.latencyEMA[channelID] = 0.2*float64(latencyMs) + 0.8*previous
+	s.latencyEMA[key] = 0.2*float64(latencyMs) + 0.8*previous
 }
 
 // SetAdapterRegistry installs the platform adapter registry used to resolve
@@ -199,6 +368,14 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		req.Method = http.MethodPost
 	}
 	excluded := make(map[int64]struct{})
+	// Resolve the sticky session key: an explicit client header wins;
+	// otherwise derive a content digest from the request body (stateless
+	// clients get affinity through their conversation content).
+	sessionKey := strings.TrimSpace(req.SessionKey)
+	if sessionKey == "" {
+		sessionKey = routing.SessionKeyFromBody(req.Body)
+	}
+	req.SessionKey = sessionKey
 	var last *relay.Result
 	var lastMeta *AttemptMeta
 	maxAttempts := int(s.retryTimes.Load())
@@ -208,7 +385,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		maxAttempts = 0
 	}
 	for attempt := 0; attempt <= maxAttempts; attempt++ {
-		decision, err := s.selector.Select(ctx, req.Model, excluded)
+		decision, err := s.selector.SelectSticky(ctx, req.Model, excluded, sessionKey)
 		if err != nil {
 			if last != nil {
 				return last, lastMeta
@@ -216,6 +393,23 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			return &relay.Result{Err: err}, nil
 		}
 		candidate := decision.Selected
+		// Circuit breaker: an open channel × model is skipped entirely (weight
+		// 0) until its probe window allows a single probe request through.
+		if s.breaker != nil && s.breaker.EffectiveWeight(candidate.Channel.ID, req.Model, 1) <= 0 {
+			excluded[candidate.Channel.ID] = struct{}{}
+			if last != nil && last.Body != nil {
+				_ = last.Body.Close()
+			}
+			last = preserve(&relay.Result{StatusCode: http.StatusServiceUnavailable, Err: fmt.Errorf("proxy: circuit open for %s on channel %d", req.Model, candidate.Channel.ID)})
+			lastMeta = &AttemptMeta{
+				ChannelID:   candidate.Channel.ID,
+				ChannelName: candidate.Channel.Name,
+				MemberID:    candidate.Member.ID,
+				Priority:    candidate.Member.Priority,
+				Weight:      candidate.Member.Weight,
+			}
+			continue
+		}
 		if req.PreferChannelID > 0 {
 			pinned, ok := pickPreferred(decision, req.PreferChannelID)
 			if !ok {
@@ -223,6 +417,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			candidate = pinned
 		}
+		// Burst guard: reserve one in-flight slot for the whole attempt sequence
+		// on this channel (all keys + retries), so the selector sees real
+		// occupancy while the request is in flight.
+		s.acquireChannel(candidate.Channel.ID)
+		defer s.releaseChannel(candidate.Channel.ID)
 		meta := &AttemptMeta{
 			ChannelID:   candidate.Channel.ID,
 			ChannelName: candidate.Channel.Name,
@@ -235,6 +434,26 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		var retryable bool
 		adapter := s.resolveForward(candidate.Channel)
 
+		// Downstream Anthropic clients (/v1/messages): compose the upstream
+		// adapter with the Anthropic pivot segment unless the channel is
+		// Anthropic-native (verbatim passthrough via the adapter's "messages"
+		// path). Composition keeps the OpenAI pivot between client protocol and
+		// upstream platform — no N×M conversion matrix.
+		downstreamAnthropic := strings.EqualFold(req.DownstreamProtocol, "anthropic")
+		if downstreamAnthropic && req.OpenAIPath == "messages" && adapter.Name() != "anthropic" {
+			composed := adapters.ComposeDownstream(adapter, "anthropic")
+			if c, ok := composed.(*adapters.ComposeForwardAdapter); ok {
+				prompt := strings.TrimSpace(candidate.Channel.SystemPrompt)
+				c.OnOpenAI = func(openaiBody []byte) ([]byte, error) {
+					if prompt != "" {
+						return injectSystemPrompt(openaiBody, prompt), nil
+					}
+					return openaiBody, nil
+				}
+			}
+			adapter = composed
+		}
+
 		// Channel-scoped model aliases: when the matched route carries a
 		// mapping_json of {"real":"…"}, clients requested the alias and we
 		// must rewrite the body back to the upstream's real model name.
@@ -243,64 +462,41 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			mappedBody = rewriteModelName(req.Body, req.Model, mappingJSON)
 		}
 
-		// Downstream Anthropic clients (/v1/messages): translate to the internal
-		// OpenAI contract unless the channel is Anthropic-native (verbatim
-		// passthrough below via the adapter's "messages" path).
-		downstreamAnthropic := strings.EqualFold(req.DownstreamProtocol, "anthropic")
 		effectivePath := req.OpenAIPath
 		requestSource := mappedBody
-		if downstreamAnthropic && effectivePath == "messages" && adapter.Name() != "anthropic" {
-			translated, translateErr := adapters.MessagesToOpenAIChat(mappedBody)
-			if translateErr != nil {
-				result = &relay.Result{Err: fmt.Errorf("proxy: messages translate: %w", translateErr)}
-				category, retryable = classify(result)
-				s.recordAttempt(req, candidate, attempt+1, result, category)
-				s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
-
-				excluded[candidate.Channel.ID] = struct{}{}
-				last = preserve(result)
-				lastMeta = meta
-				continue
+		if !downstreamAnthropic || adapter.Name() == "anthropic" {
+			// Channel-level system prompt injection (OpenAI-format chat bodies
+			// only; translated requests are injected inside the composed
+			// adapter at the pivot step).
+			if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && effectivePath == "chat/completions" {
+				requestSource = injectSystemPrompt(requestSource, prompt)
 			}
-			requestSource = translated
-			effectivePath = "chat/completions"
-		}
-
-		// Channel-level system prompt injection (OpenAI-format chat bodies only;
-		// downstream translation and adapters carry the system message through).
-		if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && effectivePath == "chat/completions" {
-			requestSource = injectSystemPrompt(requestSource, prompt)
 		}
 
 		upstreamPath, requestBody, translateErr := adapter.TransformRequest(effectivePath, requestSource)
 		if translateErr != nil {
-			// Unsupported path or conversion failure: hard failure on this
-			// channel (no retry — a broken mapping will not heal).
-			result = &relay.Result{Err: fmt.Errorf("proxy: %s translate: %w", adapter.Name(), translateErr)}
-			category, retryable = classify(result)
+			// Request conversion is local validation, not an upstream health signal.
+			// Return it directly instead of retrying the same malformed request on
+			// every channel.
+			result = &relay.Result{
+				StatusCode: adapterErrorStatus(translateErr, http.StatusBadRequest),
+				Err:        fmt.Errorf("proxy: %s translate: %w", adapter.Name(), translateErr),
+			}
+			category = adapterErrorCategory(translateErr)
 			s.recordAttempt(req, candidate, attempt+1, result, category)
-			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
-
-			excluded[candidate.Channel.ID] = struct{}{}
-			last = preserve(result)
-			lastMeta = meta
-			continue
+			return result, meta
 		}
 		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, upstreamPath, adapter)
 		if err != nil {
-			// Channel config is broken (e.g. empty base URL): count it as a
-			// retryable failure so the request fails over to the next channel
-			// instead of aborting the whole attempt loop.
+			// URL construction is local configuration validation. Do not treat it
+			// as an upstream health signal or retry it on another channel: a local
+			// adapter/configuration failure must not mutate breaker, cooldown, or
+			// API-key state.
 			result = &relay.Result{Err: err}
-			category = "invalid_base_url"
-			retryable = true
+			category = "invalid_url"
+			result.Err = fmt.Errorf("proxy: %w: %v", adapters.ErrInvalidURL, result.Err)
 			s.recordAttempt(req, candidate, attempt+1, result, category)
-			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
-
-			excluded[candidate.Channel.ID] = struct{}{}
-			last = preserve(result)
-			lastMeta = meta
-			continue
+			return result, meta
 		}
 		// Aggregate all enabled site API keys; failover keys before leaving the channel.
 		apiKeys, err := s.resolveAPIKeyPool(candidate.Channel)
@@ -308,8 +504,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			result = &relay.Result{Err: ErrCredential}
 			category = "no_credential"
 			retryable = true
+			if s.breaker != nil {
+				s.breaker.RecordError(candidate.Channel.ID, req.Model, false)
+			}
 			s.recordAttempt(req, candidate, attempt+1, result, category)
-			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, cooldown, category)
+			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
 
 			excluded[candidate.Channel.ID] = struct{}{}
 			last = preserve(result)
@@ -324,17 +523,27 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			if overrideErr := mergeHeaderOverrides(headers, candidate.Channel.HeaderOverride); overrideErr != nil {
 				result = &relay.Result{Err: fmt.Errorf("proxy: header override: %w", overrideErr)}
-				category, retryable = classify(result)
+				category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
 				break
 			}
+			// Time the upstream round trip for first-byte latency on streams.
+			forwardStarted := s.now()
+			// Circuit-breaker probe: an open breaker whose window is due lets
+			// exactly one request through as a probe; its outcome drives the
+			// recovery backoff.
+			wasProbe := s.breaker != nil && s.breaker.TryBeginProbe(candidate.Channel.ID, req.Model)
 			result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, headers, requestBody)
 			// Convert upstream 2xx bodies back to the OpenAI contract.
 			if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
 				if req.Stream {
-					// Reshape native/upstream SSE into OpenAI chat.completion.chunk.
+					// Reshape native/upstream SSE into the downstream contract (the
+					// composed adapter pivots through OpenAI SSE internally).
 					wrapped, wrapErr := adapter.WrapStream(effectivePath, result.Body)
 					if wrapErr != nil {
-						result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
+						// The upstream stream is not handed to the client; close it so
+						// the connection returns to the pool instead of leaking.
+						_ = result.Body.Close()
+						result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
 					} else {
 						result.Body = wrapped
 						if result.Header == nil {
@@ -342,37 +551,24 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 						}
 						result.Header.Set("Content-Type", "text/event-stream")
 					}
-					// Downstream Anthropic clients expect the Anthropic event stream.
-					if downstreamAnthropic && result.Err == nil {
-						result.Body = adapters.NewOpenAIStreamToAnthropicStream(result.Body)
-					}
 				} else {
 					raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
 					_ = result.Body.Close()
 					if readErr != nil {
-						result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
+						result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
 					} else if converted, convErr := adapter.TransformResponse(effectivePath, raw); convErr != nil {
-						// Conversion failed: surface the upstream body untouched so
-						// the client still sees the real upstream error payload.
-						result.Body = io.NopCloser(bytes.NewReader(raw))
+						result = &relay.Result{
+							StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
+							Header:     result.Header,
+							LatencyMs:  result.LatencyMs,
+							Err:        fmt.Errorf("proxy: %s response: %w", adapter.Name(), convErr),
+						}
 					} else {
 						result.Body = io.NopCloser(bytes.NewReader(converted))
 						if result.Header == nil {
 							result.Header = make(http.Header)
 						}
 						result.Header.Set("Content-Type", "application/json")
-						// Downstream Anthropic clients expect the Messages response shape.
-						if downstreamAnthropic && result.Err == nil {
-							raw2, readErr2 := io.ReadAll(io.LimitReader(result.Body, 8<<20))
-							_ = result.Body.Close()
-							if readErr2 != nil {
-								result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr2}
-							} else if messagesBody, convErr2 := adapters.OpenAIChatToMessages(raw2); convErr2 != nil {
-								result.Body = io.NopCloser(bytes.NewReader(raw2))
-							} else {
-								result.Body = io.NopCloser(bytes.NewReader(messagesBody))
-							}
-						}
 					}
 				}
 			}
@@ -392,25 +588,72 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					}
 					streamInterrupted = true
 				} else {
-					// Replay the buffered prefix, then continue streaming the rest.
-					result.Body = io.NopCloser(io.MultiReader(bytes.NewReader(first), result.Body))
+					// Semantic check: a 200 stream that immediately delivers a
+					// terminal/empty SSE frame ([DONE] or a delta with neither
+					// content nor role) is a silent failure — the client would
+					// receive an empty response. Treat it like a first-byte death
+					// and fail over.
+					if isSilentSSEStart(first) {
+						_ = result.Body.Close()
+						result = &relay.Result{
+							StatusCode: result.StatusCode,
+							Header:     result.Header,
+							LatencyMs:  result.LatencyMs,
+							Err:        fmt.Errorf("proxy: stream ended silently before any content"),
+						}
+						streamInterrupted = true
+					} else {
+						// Replay the buffered prefix, then continue streaming the rest.
+						result.Body = io.NopCloser(io.MultiReader(bytes.NewReader(first), result.Body))
+						// First-byte latency measured from relay start to the first
+						// upstream byte (the peek above consumed it).
+						result.FirstByteMs = int(s.now().Sub(forwardStarted).Milliseconds())
+					}
 				}
 			}
-			category, retryable = classify(result)
-			if streamInterrupted {
+			category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
+			localAdapterFailure := isAdapterError(result.Err)
+			if streamInterrupted && !localAdapterFailure {
 				category = "stream_interrupted"
 				retryable = true
+			}
+			// Circuit breaker bookkeeping: upstream failures on this channel x
+			// model count; local conversion/feature errors do not.
+			if s.breaker != nil {
+				if !localAdapterFailure {
+					if result.Err != nil || result.StatusCode >= 400 {
+						s.breaker.RecordError(candidate.Channel.ID, req.Model, wasProbe)
+					} else {
+						s.breaker.RecordSuccess(candidate.Channel.ID, req.Model)
+					}
+				}
+				if wasProbe {
+					s.breaker.EndProbe(candidate.Channel.ID, req.Model)
+				}
+			}
+			// Per-key auto-disable (AxonHub): a key that fails N times with the
+			// same status code is excluded from the pool. Adapter-local errors do
+			// not implicate the key and must not poison its health state.
+			if !localAdapterFailure {
+				if result.Err != nil || result.StatusCode >= 400 {
+					if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
+						log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
+						// All keys down → cascade to the channel-level disable.
+						s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
+					}
+				} else {
+					s.recordKeySuccess(candidate.Channel.ID, apiKey)
+				}
 			}
 			// Only the last key attempt for this channel is logged at the attempt counter
 			// used for cross-channel retry; intermediate key fails stay on the same attempt.
 			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
 				s.recordAttempt(req, candidate, attempt+1, result, category)
 			}
-			// Every failed key attempt counts towards the channel auto-disable
-			// counter (a request failing through a 3-key pool counts 3).
-			if retryable {
-				s.recordChannelFailure(candidate.Channel.ID)
-			}
+			// The channel consecutive-failure counter is incremented exactly once
+			// per failed attempt (inside recordMemberFailure below); counting here
+			// too would over-count a multi-key pool (3 keys + member = 4) and
+			// trip auto-disable prematurely.
 			if result.Err == nil && !retryable {
 				break
 			}
@@ -430,12 +673,19 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if last != nil && last.Body != nil {
 				_ = last.Body.Close()
 			}
-			if err := s.db.RouteMember.RecordSuccess(candidate.Member.ID); err != nil {
+			if err := s.db.RouteMember.RecordSuccess(candidate.Member.ID, s.now()); err != nil {
 				log.Printf("proxy: record success member_id=%d: %v", candidate.Member.ID, err)
 			}
+			s.decayError(candidate.Channel.ID, req.Model)
 			s.recordMemberSuccess(candidate.Channel.ID)
 			if s.latencyAware && result.LatencyMs > 0 {
-				s.observeLatency(candidate.Channel.ID, result.LatencyMs)
+				s.observeLatency(candidate.Channel.ID, req.Model, result.LatencyMs)
+			}
+			// Bind the successful relay to its session key so the next request
+			// of the same conversation prefers this channel (prompt-cache and
+			// multi-turn continuity). Admin-pinned probes never bind.
+			if s.sticky != nil && sessionKey != "" && req.PreferChannelID == 0 {
+				s.sticky.Bind(sessionKey, candidate.Channel.ID, s.now())
 			}
 			return result, meta
 		}
@@ -444,7 +694,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		if retryable {
 			penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
-			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, penalty, category)
+			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
 		}
 		if !retryable || req.PreferChannelID > 0 {
 			return result, meta
@@ -477,6 +727,7 @@ func pickPreferred(decision routing.Decision, channelID int64) (domain.RoutingCa
 
 // resolveAPIKeyPool builds the ordered list of plaintext API keys for a channel.
 // Prefer the bound credential first, then every other enabled api_key on the same site.
+// Keys that hit the per-key auto-disable threshold are excluded until they heal.
 func (s *Service) resolveAPIKeyPool(channel domain.Channel) ([]string, error) {
 	seen := make(map[int64]struct{})
 	var keys []string
@@ -496,6 +747,12 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel) ([]string, error) {
 		}
 		plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
 		if err != nil || len(plaintext) == 0 {
+			return
+		}
+		// Per-key auto-disable: keys on the disabled list are skipped until
+		// their penalty expires (AxonHub-style, avoids nuking the whole
+		// channel for one bad key). Scoped to this channel.
+		if s.keyDisabled(channel.ID, string(plaintext)) {
 			return
 		}
 		seen[credential.ID] = struct{}{}
@@ -556,11 +813,12 @@ func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, ada
 // recordMemberFailure records a member failure (member cooldown + channel
 // consecutive counter) and auto-disables the channel once the channel-level
 // consecutive failures reach the configured threshold.
-func (s *Service) recordMemberFailure(memberID, channelID int64, cooldown time.Duration, category string) {
+func (s *Service) recordMemberFailure(memberID, channelID int64, model string, cooldown time.Duration, category string) {
 	if err := s.db.RouteMember.RecordFailure(memberID, s.now(), cooldown, category); err != nil {
 		log.Printf("proxy: record failure member_id=%d: %v", memberID, err)
 	}
 	s.recordChannelFailure(channelID)
+	s.observeError(channelID, model)
 }
 
 // recordChannelFailure increments the channel consecutive-failure counter and
@@ -577,6 +835,17 @@ func (s *Service) recordChannelFailure(channelID int64) {
 	if count >= s.autoDisableThreshold {
 		if err := s.db.Channel.AutoDisable(channelID); err != nil {
 			log.Printf("proxy: auto disable channel_id=%d: %v", channelID, err)
+		} else if s.notifier != nil {
+			name := ""
+			if ch, err := s.db.Channel.GetByID(channelID); err == nil && ch != nil {
+				name = ch.Name
+			}
+			s.notifier.Notify(context.Background(), webhook.ChannelDisabled, channelID, name,
+				fmt.Sprintf("%d consecutive failures", count))
+			// Request-failure alert through the full matrix (bark/serverchan/
+			// telegram/smtp too, not just the legacy webhook URL).
+			s.notifier.SendAlert(context.Background(), webhook.AlertWarning, "请求失败告警",
+				fmt.Sprintf("渠道 #%d (%s) 连续 %d 次失败，已自动禁用。", channelID, name, count))
 		}
 	}
 }
@@ -625,7 +894,7 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
 
 func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string) {
 	status := result.StatusCode
-	if result.Err != nil {
+	if status == 0 && result.Err != nil {
 		status = http.StatusBadGateway
 	} else if status == 0 {
 		status = http.StatusOK
@@ -649,6 +918,8 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		TotalTokens:      req.TotalTokens,
 		Stream:           req.Stream,
 		Path:             req.OpenAIPath,
+		SessionKey:       req.SessionKey,
+		ReasoningEffort:  req.ReasoningEffort,
 	})
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
@@ -656,45 +927,184 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 }
 
 // RecordUsage persists metered tokens for a completed relay response.
-func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens struct {
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
-}) {
+func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens usage.Tokens) {
+	// Stable-first promotion: successful traffic on a grayscale channel counts
+	// toward graduation; the store clears the mark when the threshold is met
+	// with no consecutive failures.
+	if status >= 200 && status < 300 {
+		if threshold := int(s.grayPromoteRequests.Load()); threshold > 0 && s.db != nil && s.db.Channel != nil {
+			if promoted, err := s.db.Channel.RecordGraySuccess(channelID, threshold); err != nil {
+				log.Printf("proxy: gray success channel_id=%d: %v", channelID, err)
+			} else if promoted {
+				log.Printf("proxy: channel %d promoted from stable-first grayscale", channelID)
+			}
+		}
+	}
 	total := tokens.TotalTokens
 	if total <= 0 {
 		total = tokens.PromptTokens + tokens.CompletionTokens
 	}
-	if total <= 0 {
+	if total <= 0 || s.db == nil {
 		return
 	}
-	if s.db == nil || s.db.Usage == nil {
-		return
+	// Billing: cost = key unit prices × model ratio, computed and persisted at
+	// record time so bills are stable even if prices are edited later.
+	record := &domain.UsageRecord{
+		RequestID:           req.RequestID,
+		DownstreamKeyID:     req.DownstreamKeyID,
+		ChannelID:           channelID,
+		Model:               req.Model,
+		Path:                req.OpenAIPath,
+		Stream:              req.Stream,
+		PromptTokens:        tokens.PromptTokens,
+		CompletionTokens:    tokens.CompletionTokens,
+		TotalTokens:         total,
+		CacheReadTokens:     tokens.CacheReadTokens,
+		CacheCreationTokens: tokens.CacheCreationTokens,
+		Status:              status,
 	}
-	_, err := s.db.Usage.Insert(&domain.UsageRecord{
-		RequestID:        req.RequestID,
-		DownstreamKeyID:  req.DownstreamKeyID,
-		ChannelID:        channelID,
-		Model:            req.Model,
-		Path:             req.OpenAIPath,
-		Stream:           req.Stream,
-		PromptTokens:     tokens.PromptTokens,
-		CompletionTokens: tokens.CompletionTokens,
-		TotalTokens:      total,
-		Status:           status,
-	})
-	if err != nil {
+	// Tenant group for group-quota accrual (same transaction).
+	if req.DownstreamKeyID > 0 && s.db.DownstreamKey != nil {
+		if key, err := s.db.DownstreamKey.GetByID(req.DownstreamKeyID); err == nil && key != nil {
+			record.GroupName = key.GroupName
+		}
+	}
+	record.Cost = s.billingCost(req, tokens)
+	// Usage row, downstream-key quota increment, and proxy-log token backfill
+	// commit in one transaction (store.RecordRelayUsage), so a partial failure
+	// can never leave metered usage without its quota charge.
+	if err := s.db.RecordRelayUsage(record, req.DownstreamKeyID); err != nil {
 		log.Printf("proxy: record usage request_id=%s: %v", req.RequestID, err)
 	}
-	if req.DownstreamKeyID > 0 && total > 0 && s.db.DownstreamKey != nil {
-		if err := s.db.DownstreamKey.AddUsage(req.DownstreamKeyID, total); err != nil {
-			log.Printf("proxy: add key usage request_id=%s: %v", req.RequestID, err)
+}
+
+// billingCost computes the persisted cost for a usage record: per-1k unit
+// prices of the downstream key, multiplied by the model's billing ratio.
+// Cache-read tokens are billed at the prompt rate. Failures are never fatal;
+// a price lookup error degrades to 0 cost rather than dropping the record.
+func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
+	if s.db == nil {
+		return 0
+	}
+	ratio := 1.0
+	if s.db.ModelRatio != nil {
+		if r, err := s.db.ModelRatio.GetRatio(req.Model); err == nil {
+			ratio = r
+		} else {
+			log.Printf("proxy: billing ratio model=%s: %v", req.Model, err)
 		}
 	}
-	if s.db.ProxyLog != nil && req.RequestID != "" {
-		if err := s.db.ProxyLog.UpdateTokensByRequestID(req.RequestID, tokens.PromptTokens, tokens.CompletionTokens, total); err != nil {
-			log.Printf("proxy: update log tokens request_id=%s: %v", req.RequestID, err)
+	pricePrompt, priceCompletion := 0.0, 0.0
+	if req.DownstreamKeyID > 0 && s.db.DownstreamKey != nil {
+		if key, err := s.db.DownstreamKey.GetByID(req.DownstreamKeyID); err == nil && key != nil {
+			pricePrompt, priceCompletion = key.PricePromptPer1k, key.PriceCompletionPer1k
 		}
+	}
+	prompt := float64(tokens.PromptTokens + tokens.CacheReadTokens + tokens.CacheCreationTokens)
+	completion := float64(tokens.CompletionTokens)
+	return (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion) * ratio
+}
+
+// keyFingerprint hashes an upstream api key so the in-memory failure tables
+// never hold (or log) the plaintext secret.
+func keyFingerprint(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:8])
+}
+
+// recordKeyFailure increments the per channel × key × status counter and
+// returns true when the auto-disable threshold was crossed (the key is then
+// excluded from the pool until a success or the penalty TTL expires).
+func (s *Service) recordKeyFailure(channelID int64, key string, status int) bool {
+	threshold := s.autoDisableThreshold
+	if threshold <= 0 {
+		threshold = 5
+	}
+	fp := keyFingerprint(key)
+	now := s.now()
+	s.keyErrMu.Lock()
+	defer s.keyErrMu.Unlock()
+	// Expire stale penalties (30 minutes) so a fixed key heals automatically.
+	// Scoped per channel: one channel's exclusion must not be lifted by another.
+	for dk, until := range s.disabledKeys {
+		if dk.channelID == channelID && now.After(until) {
+			delete(s.disabledKeys, dk)
+		}
+	}
+	if s.keyErrCounts[channelID] == nil {
+		s.keyErrCounts[channelID] = make(map[string]map[int]int)
+	}
+	if s.keyErrCounts[channelID][fp] == nil {
+		s.keyErrCounts[channelID][fp] = make(map[int]int)
+	}
+	s.keyErrCounts[channelID][fp][status]++
+	if s.keyErrCounts[channelID][fp][status] >= threshold {
+		delete(s.keyErrCounts[channelID], fp)
+		s.disabledKeys[disabledKey{channelID: channelID, fp: fp}] = now.Add(30 * time.Minute)
+		return true
+	}
+	return false
+}
+
+// recordKeySuccess clears a key's failure counters and lifts its disable on
+// the same channel only (another channel using the same key must not heal it).
+func (s *Service) recordKeySuccess(channelID int64, key string) {
+	fp := keyFingerprint(key)
+	s.keyErrMu.Lock()
+	defer s.keyErrMu.Unlock()
+	delete(s.disabledKeys, disabledKey{channelID: channelID, fp: fp})
+	if s.keyErrCounts[channelID] != nil {
+		delete(s.keyErrCounts[channelID], fp)
+	}
+}
+
+// keyDisabled reports whether the key is currently excluded from the pool on
+// the given channel.
+func (s *Service) keyDisabled(channelID int64, key string) bool {
+	fp := keyFingerprint(key)
+	s.keyErrMu.Lock()
+	defer s.keyErrMu.Unlock()
+	until, ok := s.disabledKeys[disabledKey{channelID: channelID, fp: fp}]
+	if !ok {
+		return false
+	}
+	if s.now().After(until) {
+		delete(s.disabledKeys, disabledKey{channelID: channelID, fp: fp})
+		return false
+	}
+	return true
+}
+
+// cascadeChannelIfAllKeysDisabled implements the AxonHub all-keys-down rule:
+// when the per-key disabled set leaves the channel with no usable key (the
+// pool is empty because every key is disabled), the channel itself is
+// auto-disabled — a bad-key storm must not leave a half-broken channel in the
+// routing pool with zero credentials.
+func (s *Service) cascadeChannelIfAllKeysDisabled(channel domain.Channel) {
+	if s.autoDisableThreshold <= 0 || channel.ID <= 0 {
+		return
+	}
+	// Pool still resolves keys → other keys remain usable, no cascade.
+	if keys, err := s.resolveAPIKeyPool(channel); err == nil && len(keys) > 0 {
+		return
+	}
+	// Pool empty: distinguish "channel has no keys at all" (nothing to
+	// cascade) from "every enabled key is now disabled" (cascade).
+	if channel.SiteID == nil {
+		return
+	}
+	all, err := s.db.Credential.ListEnabledAPIKeysBySite(*channel.SiteID)
+	if err != nil || len(all) == 0 {
+		return
+	}
+	if err := s.db.Channel.AutoDisable(channel.ID); err != nil {
+		log.Printf("proxy: cascade disable channel_id=%d (all keys disabled): %v", channel.ID, err)
+		return
+	}
+	log.Printf("proxy: auto-disabled channel %d: all api keys disabled", channel.ID)
+	if s.notifier != nil {
+		go s.notifier.Notify(context.Background(), webhook.ChannelDisabled, channel.ID, channel.Name, "all api keys disabled")
+		s.notifier.SendAlert(context.Background(), webhook.AlertWarning, "请求失败告警", fmt.Sprintf("渠道 #%d (%s) 所有 API Key 均被禁用，渠道已级联禁用。", channel.ID, channel.Name))
 	}
 }
 
@@ -711,13 +1121,107 @@ func classify(result *relay.Result) (string, bool) {
 	return "", false
 }
 
-func isRetryableStatus(status int) bool {
-	// Any 4xx is retryable: a channel that rejects the request (bad auth, model
-	// unavailable, quota, malformed upstream mapping) should fail over to the
-	// next channel instead of surfacing the error immediately.
-	if status >= 400 && status < 500 {
-		return true
+// classifyForChannel is classify plus the channel's retry_config: custom
+// status codes and error-text patterns can make a non-default failure
+// retryable (or keep a default one retryable).
+func adapterErrorStatus(err error, fallback int) int {
+	switch {
+	case errors.Is(err, adapters.ErrUnsupportedPath), errors.Is(err, adapters.ErrUnsupportedFeature):
+		return http.StatusNotImplemented
+	case errors.Is(err, adapters.ErrContentBlocked):
+		return http.StatusBadRequest
+	default:
+		return fallback
 	}
+}
+
+func adapterErrorCategory(err error) string {
+	switch {
+	case errors.Is(err, adapters.ErrInvalidURL):
+		return "invalid_url"
+	case errors.Is(err, adapters.ErrUnsupportedPath):
+		return "unsupported_path"
+	case errors.Is(err, adapters.ErrUnsupportedFeature):
+		return "unsupported_feature"
+	case errors.Is(err, adapters.ErrContentBlocked):
+		return "content_blocked"
+	default:
+		return "adapter_request"
+	}
+}
+
+func isAdapterError(err error) bool {
+	return errors.Is(err, adapters.ErrInvalidURL) ||
+		errors.Is(err, adapters.ErrUnsupportedPath) ||
+		errors.Is(err, adapters.ErrUnsupportedFeature) ||
+		errors.Is(err, adapters.ErrContentBlocked)
+}
+
+func classifyForChannel(result *relay.Result, cfg domain.RetryConfig) (string, bool) {
+	if result.Err != nil {
+		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) {
+			return "cancelled", false
+		}
+		switch {
+		case errors.Is(result.Err, adapters.ErrInvalidURL):
+			return "invalid_url", false
+		case errors.Is(result.Err, adapters.ErrUnsupportedPath):
+			return "unsupported_path", false
+		case errors.Is(result.Err, adapters.ErrUnsupportedFeature):
+			return "unsupported_feature", false
+		case errors.Is(result.Err, adapters.ErrContentBlocked):
+			return "content_blocked", false
+		}
+		// Transport errors stay retryable; patterns may add text-matched cases.
+		if isRetryableForChannel(0, result.Err.Error(), cfg) {
+			return "transport", true
+		}
+		return "transport", true
+	}
+	category := fmt.Sprintf("upstream_status_%d", result.StatusCode)
+	if isRetryableForChannel(result.StatusCode, upstreamErrorText(result), cfg) {
+		return category, true
+	}
+	return category, false
+}
+
+// upstreamErrorText extracts the upstream error message from a non-2xx relay
+// result body (OpenAI-style {error:{message}}), for error-pattern matching.
+// The body is restored after reading so the client still receives it.
+func upstreamErrorText(result *relay.Result) string {
+	if result == nil || result.Body == nil || result.StatusCode >= 200 && result.StatusCode < 300 {
+		return ""
+	}
+	raw, err := io.ReadAll(io.LimitReader(result.Body, 64<<10))
+	// Close the live upstream body before swapping in the replay buffer so the
+	// connection returns to the pool.
+	_ = result.Body.Close()
+	// Restore the body for downstream consumers.
+	result.Body = io.NopCloser(bytes.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return string(raw)
+	}
+	if payload.Error.Message != "" {
+		return payload.Error.Message
+	}
+	return payload.Message
+}
+
+func isRetryableStatus(status int) bool {
+	// AxonHub default set: 429 (rate limit) and 5xx (transient upstream
+	// failures) are retryable. Other 4xx are NOT retried by default — a bad
+	// request (auth, missing model, malformed payload) will not heal by
+	// failing over. Channels can opt into additional codes/patterns via
+	// retry_config.
 	switch status {
 	case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError,
 		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout,
@@ -725,15 +1229,67 @@ func isRetryableStatus(status int) bool {
 		528, 529, 530:
 		return true
 	default:
-		return false
+		return status >= 500 && status < 600
 	}
 }
+
+// isRetryableForChannel adds the channel's retry_config on top of the
+// global default set (mirrors AxonHub retry.go): custom status codes and
+// error-message patterns (substring or regex). Regex patterns arrive
+// pre-compiled from ParseRetryConfig; nil entries are skipped.
+func isRetryableForChannel(status int, errMsg string, cfg domain.RetryConfig) bool {
+	if isRetryableStatus(status) {
+		return true
+	}
+	for _, code := range cfg.StatusCodes {
+		if code == status {
+			return true
+		}
+	}
+	if errMsg == "" {
+		return false
+	}
+	for i, pattern := range cfg.ErrorPatterns {
+		if pattern.Pattern == "" {
+			continue
+		}
+		if pattern.Regex {
+			compiled := cfg.CompiledPatterns()
+			if i < len(compiled) && compiled[i] != nil && compiled[i].MatchString(errMsg) {
+				return true
+			}
+			continue
+		}
+		if strings.Contains(errMsg, pattern.Pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// preserveReadLimit caps how many bytes preserve() buffers from an upstream
+// response before handing the body back. Successful responses may legitimately
+// be large (non-stream completions), so only error responses are capped to the
+// error-text bound; the failure body is never surfaced whole to the client and
+// only its leading text matters for retry classification.
+const preserveErrorReadLimit = 64 * 1024
+
+// preserveErrorReadLimitUpper is the cap for non-error (2xx) bodies, matching
+// the historical relay bound.
+const preserveBodyReadLimit = 10 * 1024 * 1024
 
 func preserve(result *relay.Result) *relay.Result {
 	if result == nil || result.Body == nil {
 		return result
 	}
-	body, err := io.ReadAll(io.LimitReader(result.Body, 10*1024*1024))
+	limit := int64(preserveBodyReadLimit)
+	if result.StatusCode >= 400 {
+		limit = preserveErrorReadLimit
+	}
+	body, err := io.ReadAll(io.LimitReader(result.Body, limit))
+	// The original (possibly live) body is fully consumed; close it before
+	// handing the replay buffer to the caller so the connection is released.
+	_ = result.Body.Close()
 	if err != nil {
 		return &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("proxy: preserve upstream response: %w", err)}
 	}
@@ -766,6 +1322,60 @@ func peekFirstChunk(body io.Reader) ([]byte, error) {
 			return nil, readErr
 		}
 	}
+}
+
+// isSilentSSEStart reports whether a buffered SSE prefix contains only
+// terminal or empty frames — i.e. the stream is 200 but will deliver no
+// content. A standard OpenAI first chunk carries {"role":"assistant"} with
+// no content, which is NOT silent; only frames with neither content nor role,
+// or an immediate [DONE], are treated as silent failure.
+func isSilentSSEStart(prefix []byte) bool {
+	if len(prefix) == 0 {
+		return false // empty prefix is handled by peekErr (death before first byte)
+	}
+	seenAnyData := false
+	for _, line := range bytes.Split(prefix, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		if len(payload) == 0 {
+			continue
+		}
+		seenAnyData = true
+		if bytes.Equal(payload, []byte("[DONE]")) {
+			continue
+		}
+		var frame struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+					Role    string `json:"role"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(payload, &frame); err != nil {
+			// Non-JSON SSE (e.g. raw keep-alive comments) — not silent.
+			return false
+		}
+		if frame.Choices == nil {
+			// A JSON frame without a choices array is not a standard OpenAI
+			// shape (e.g. nonstandard upstreams, proxies); never classify it
+			// as silent — fail open rather than retry valid streams.
+			return false
+		}
+		if len(frame.Choices) == 0 {
+			continue // usage-only frame; not content, but also not fatal yet
+		}
+		for _, choice := range frame.Choices {
+			if choice.Delta.Content != "" || choice.Delta.Role != "" {
+				return false // real content or a proper role header frame
+			}
+		}
+	}
+	// Silent only when we saw data frames and none carried content/role.
+	return seenAnyData
 }
 
 // retryAfterCooldown extends the base cool-down with the upstream's Retry-After

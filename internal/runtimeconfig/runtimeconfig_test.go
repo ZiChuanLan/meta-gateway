@@ -26,7 +26,7 @@ func (f *fakeSched) SetSchedule(expr string, enabled bool) error {
 // and CheckinAllowed gating through a custom apply path with nil CheckinSched plus allowed flag.
 
 func TestValidateBoundsAndCron(t *testing.T) {
-	if err := Validate(Editable{RetryTimes: 1, CooldownSeconds: 1, CheckinCron: "0 8 * * *"}); err != nil {
+	if err := Validate(Editable{RetryTimes: 1, CooldownSeconds: 1, CheckinCron: "0 8 * * *", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300}); err != nil {
 		t.Fatal(err)
 	}
 	if err := Validate(Editable{RetryTimes: -1, CheckinCron: "0 8 * * *"}); err == nil {
@@ -97,16 +97,20 @@ func TestUpdateAndClearOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := Editable{
-		RetryTimes:         5,
-		CooldownSeconds:    60,
-		CheckinEnabled:     true,
-		CheckinCron:        "15 7 * * 1-5",
-		RelayRatePerMinute: 100,
-		RelayRateBurst:     10,
-		AdminRatePerMinute: 50,
-		AdminRateBurst:     5,
-		AuditRetentionDays: 7,
-		AuditRetentionRows: 500,
+		RetryTimes:                 5,
+		CooldownSeconds:            60,
+		CheckinEnabled:             true,
+		CheckinCron:                "15 7 * * 1-5",
+		RelayRatePerMinute:         100,
+		RelayRateBurst:             10,
+		AdminRatePerMinute:         50,
+		AdminRateBurst:             5,
+		AuditRetentionDays:         7,
+		AuditRetentionRows:         500,
+		StableFirstDenominator:     25,
+		StableFirstPromoteRequests: 100,
+		RoutingConcurrencyLimit:    64,
+		WebhookThrottleSeconds:     300,
 	}
 	snap, err := controller.Update(next)
 	if err != nil {

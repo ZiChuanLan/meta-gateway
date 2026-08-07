@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/account"
+	"github.com/lan/meta-gateway/internal/adapters"
 )
 
 type AccountHandler struct {
@@ -21,10 +22,21 @@ func NewAccountHandler(service *account.Service) *AccountHandler {
 
 func (h *AccountHandler) Register(r chi.Router) {
 	r.Post("/channels/account/probe-all", h.probeAll)
+	r.Get("/channels/account/finance", h.finance)
 	r.Post("/channels/{id}/account/probe", h.probeAccount)
 	r.Post("/channels/{id}/account/sync-keys", h.syncKeys)
 	r.Post("/channels/{id}/account/create-key", h.createKey)
+	r.Get("/channels/{id}/account/pricing", h.pricing)
 	r.Get("/channels/{id}/account/token-groups", h.tokenGroups)
+}
+
+func (h *AccountHandler) finance(w http.ResponseWriter, r *http.Request) {
+	items, err := h.service.FinanceOverview(r.Context())
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *AccountHandler) probeAll(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +112,23 @@ func (h *AccountHandler) createKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *AccountHandler) pricing(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+	prices, err := h.service.GetPricing(r.Context(), id)
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	if prices == nil {
+		prices = []adapters.ModelPrice{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"prices": prices})
 }
 
 func (h *AccountHandler) tokenGroups(w http.ResponseWriter, r *http.Request) {

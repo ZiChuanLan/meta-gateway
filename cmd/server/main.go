@@ -79,7 +79,7 @@ func main() {
 	}
 
 	// Open database.
-	db, err := store.Open(cfg.DataDir)
+	db, err := store.OpenWithMaxConns(cfg.DataDir, cfg.SQLiteMaxOpenConns)
 	if err != nil {
 		logger.Error("store initialization failed", "category", "database")
 		os.Exit(1)
@@ -98,6 +98,8 @@ func main() {
 	outboundClient := outbound.NewClient(outboundPolicy, outbound.ClientOptions{
 		ResponseHeaderTimeout: cfg.OutboundResponseHeaderTimeout,
 		TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
+		MaxIdleConns:          cfg.OutboundMaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.OutboundMaxIdleConnsPerHost,
 	})
 	registry := adapters.NewRegistry(outboundClient)
 	checkinService := checkin.New(db, enc, registry)
@@ -252,6 +254,10 @@ func main() {
 	cancelMaintenance()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ServerShutdownTimeout)
 	defer cancel()
+	// Halt router-owned background loops (alert sweep, daily summary, health
+	// sweep, recovery) before the database closes, so none of them can touch a
+	// closed DB during shutdown.
+	httpapi.StopBackground(shutdownCtx)
 	if scheduler != nil {
 		if err := scheduler.Stop(shutdownCtx); err != nil {
 			logger.Error("check-in scheduler shutdown failed", "category", "scheduler")

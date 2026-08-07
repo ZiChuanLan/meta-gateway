@@ -24,20 +24,24 @@ type Resolver interface {
 }
 
 type Policy struct {
-	hosts     map[string]struct{}
-	prefixes  []netip.Prefix
-	resolver  Resolver
-	dialer    *net.Dialer
-	proxyHost string
-	proxyPort string
+	hosts    map[string]struct{}
+	prefixes []netip.Prefix
+	resolver Resolver
+	dialer   Dialer
 }
 
 type Options struct {
 	AllowHosts  []string
 	AllowCIDRs  []string
 	Resolver    Resolver
-	Dialer      *net.Dialer
+	Dialer      Dialer
 	DialTimeout time.Duration
+}
+
+// Dialer abstracts the socket dialer so tests can record dial targets (the
+// policy dials validated IPs, never hostnames).
+type Dialer interface {
+	DialContext(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 func NewPolicy(opts Options) (*Policy, error) {
@@ -70,15 +74,6 @@ func NewPolicy(opts Options) (*Policy, error) {
 		dialer = &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	}
 	policy := &Policy{hosts: hosts, prefixes: prefixes, resolver: resolver, dialer: dialer}
-	// Remember the environment proxy address so DialContext can exempt the
-	// proxy hop itself (commonly private: host.docker.internal, 127.0.0.1, ...)
-	// from SSRF checks.
-	if proxyURL, err := http.ProxyFromEnvironment(&http.Request{URL: &url.URL{Scheme: "https", Host: "example.com"}}); err == nil && proxyURL != nil {
-		if host, port, splitErr := net.SplitHostPort(proxyURL.Host); splitErr == nil {
-			policy.proxyHost = host
-			policy.proxyPort = port
-		}
-	}
 	return policy, nil
 }
 func (p *Policy) ValidateURL(raw string) error {
@@ -105,12 +100,6 @@ func (p *Policy) DialContext(ctx context.Context, network, address string) (net.
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || host == "" || port == "" {
 		return nil, ErrBlocked
-	}
-	// The proxy hop itself is exempt from SSRF validation: when an outbound
-	// proxy is configured, Go dials the proxy address through DialContext, and
-	// that address is commonly private (host.docker.internal, 127.0.0.1, ...).
-	if p.proxyHost != "" && strings.EqualFold(host, p.proxyHost) && port == p.proxyPort {
-		return p.dialer.DialContext(ctx, network, address)
 	}
 	normalized := normalizeHost(host)
 	allowedHost := p.hostAllowed(normalized)
@@ -181,7 +170,13 @@ func isSpecial(addr netip.Addr) bool {
 var specialPrefixes = mustPrefixes(
 	"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24",
 	"198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4",
-	"64:ff9b:1::/48", "100::/64", "2001:2::/48", "2001:10::/28",
+	// NAT64 well-known prefix (RFC 6052): encodes IPv4 inside IPv6 and would
+	// otherwise smuggle private/loopback/metadata addresses past Unmap().
+	"64:ff9b::/96", "64:ff9b:1::/48",
+	// IPv4-compatible (deprecated) and ORCHIDv2 (RFC 7343) are not routable
+	// public destinations; deny them outright.
+	"::/96", "2001:20::/28",
+	"100::/64", "2001:2::/48", "2001:10::/28",
 	"2001:db8::/32",
 )
 
@@ -197,7 +192,21 @@ type ClientOptions struct {
 	ResponseHeaderTimeout time.Duration
 	TLSHandshakeTimeout   time.Duration
 	IdleConnTimeout       time.Duration
+	// MaxIdleConns is the total outbound idle connection ceiling.
+	// 0 uses DefaultMaxIdleConns.
+	MaxIdleConns int
+	// MaxIdleConnsPerHost is the per-upstream-host idle connection ceiling.
+	// 0 uses DefaultMaxIdleConnsPerHost.
+	MaxIdleConnsPerHost int
 }
+
+// DefaultMaxIdleConns is the total outbound idle connection ceiling.
+const DefaultMaxIdleConns = 512
+
+// DefaultMaxIdleConnsPerHost is the per-upstream-host idle connection ceiling.
+// The Go zero value is 2, which starves multi-channel gateways that fan out to
+// the same upstream host under concurrency.
+const DefaultMaxIdleConnsPerHost = 64
 
 func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 	if policy == nil {
@@ -211,13 +220,26 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 	if idleTimeout <= 0 {
 		idleTimeout = 90 * time.Second
 	}
+	maxIdleConns := opts.MaxIdleConns
+	if maxIdleConns <= 0 {
+		maxIdleConns = DefaultMaxIdleConns
+	}
+	maxIdleConnsPerHost := opts.MaxIdleConnsPerHost
+	if maxIdleConnsPerHost <= 0 {
+		maxIdleConnsPerHost = DefaultMaxIdleConnsPerHost
+	}
 	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		// Environment proxies are intentionally disabled (P7 contract): proxy-
+		// side DNS resolution would bypass DialContext's address validation and
+		// re-open the SSRF surface.
+		Proxy:                 nil,
 		DialContext:           policy.DialContext,
 		ForceAttemptHTTP2:     true,
 		TLSHandshakeTimeout:   tlsTimeout,
 		ResponseHeaderTimeout: opts.ResponseHeaderTimeout,
 		IdleConnTimeout:       idleTimeout,
+		MaxIdleConns:          maxIdleConns,
+		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 	client := &http.Client{Transport: validatingTransport{policy: policy, next: transport}}

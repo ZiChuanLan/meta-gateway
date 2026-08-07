@@ -90,6 +90,21 @@ func TestSiteChannelRouteCRUD(t *testing.T) {
 	if !gotRoute.Enabled {
 		t.Fatal("route should be enabled")
 	}
+	if gotRoute.RoutingMode != domain.RoutingModeAuto {
+		t.Fatalf("default routing mode = %q, want %q", gotRoute.RoutingMode, domain.RoutingModeAuto)
+	}
+
+	gotRoute.RoutingMode = domain.RoutingModeLatency
+	if err := db.Route.Update(gotRoute); err != nil {
+		t.Fatalf("update routing mode: %v", err)
+	}
+	reloaded, err := db.Route.GetByID(routeID)
+	if err != nil || reloaded == nil {
+		t.Fatalf("reload route: %v %#v", err, reloaded)
+	}
+	if reloaded.RoutingMode != domain.RoutingModeLatency {
+		t.Fatalf("routing mode after update = %q, want %q", reloaded.RoutingMode, domain.RoutingModeLatency)
+	}
 
 	members, err := db.RouteMember.ListByRoute(routeID)
 	if err != nil {
@@ -132,14 +147,71 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 19 {
-		t.Fatalf("got %d applied migrations, want 19", count)
+	if count != 39 {
+		t.Fatalf("got %d applied migrations, want 39", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 19 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 39 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
+	}
+}
+
+func TestDeriveHealthStateFiveStates(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name     string
+		overview domain.ChannelOverview
+		want     string
+	}{
+		{"disabled", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusDisabled}}, "disabled"},
+		{"auto-disabled", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusAutoDisabled}}, "unhealthy"},
+		{"probe-failed", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeAt: &now, LastProbeOK: false, SiteUsable: true}, "unhealthy"},
+		{"probe-ok-with-failures", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeOK: true, FailureCount: 3, SiteUsable: true}, "degraded"},
+		{"probe-ok-with-cooling", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeOK: true, CoolingMemberCount: 1, SiteUsable: true}, "degraded"},
+		{"healthy", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeOK: true, SiteUsable: true}, "healthy"},
+		{"unknown-no-probe", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, SiteUsable: true}, "unknown"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := store.DeriveHealthState(tc.overview); got != tc.want {
+				t.Fatalf("deriveHealthState=%q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSiteDisableCascadesChannels(t *testing.T) {
+	db := openTestDB(t)
+	siteID, err := db.Site.Create(&domain.Site{Name: "cascade", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch1, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, Name: "c1", Status: domain.StatusEnabled})
+	ch2, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, Name: "c2", Status: domain.StatusEnabled})
+	manualID, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, Name: "manual", Status: domain.StatusDisabled})
+	otherSite, _ := db.Site.Create(&domain.Site{Name: "other", Status: domain.StatusEnabled})
+	otherID, _ := db.Channel.Create(&domain.Channel{SiteID: &otherSite, Name: "other", Status: domain.StatusEnabled})
+
+	site, _ := db.Site.GetByID(siteID)
+	site.Status = domain.StatusDisabled
+	if err := db.Site.Update(site); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{ch1, ch2} {
+		ch, err := db.Channel.GetByID(id)
+		if err != nil || ch.Status != domain.StatusDisabled {
+			t.Fatalf("channel %d status=%s err=%v, want disabled", id, ch.Status, err)
+		}
+	}
+	manual, _ := db.Channel.GetByID(manualID)
+	if manual.Status != domain.StatusDisabled {
+		t.Fatalf("already-disabled channel must stay disabled: %s", manual.Status)
+	}
+	other, _ := db.Channel.GetByID(otherID)
+	if other.Status != domain.StatusEnabled {
+		t.Fatalf("other site's channel must stay enabled: %s", other.Status)
 	}
 }
 
@@ -874,5 +946,324 @@ func TestProxyLogListFilter(t *testing.T) {
 	}
 	if len(empty) != 0 {
 		t.Fatalf("expected empty site/channel AND, got %v", mustIDs(empty))
+	}
+}
+
+// TestCacheTokenAccounting verifies cache-read/creation tokens flow through
+// ProxyLog insert + token update and Usage insert + list.
+func TestCacheTokenAccounting(t *testing.T) {
+	db := openTestDB(t)
+
+	ch, err := db.Channel.Create(&domain.Channel{Name: "ch-cache", Status: domain.StatusEnabled, Weight: 100})
+	if err != nil {
+		t.Fatalf("channel: %v", err)
+	}
+
+	// ProxyLog: insert then update tokens with cache detail.
+	logID, err := db.ProxyLog.Insert(&domain.ProxyLog{
+		RequestID: "req-cache", ChannelID: ch, Model: "claude-x", Status: 200,
+		LatencyMs: 10, Attempt: 1,
+	})
+	if err != nil {
+		t.Fatalf("log insert: %v", err)
+	}
+	if err := db.ProxyLog.UpdateTokensByRequestID("req-cache", 100, 50, 150, 40, 20); err != nil {
+		t.Fatalf("log update: %v", err)
+	}
+	logs, err := db.ProxyLog.List(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 1 || logs[0].ID != logID {
+		t.Fatalf("log list: %+v", logs)
+	}
+	log := logs[0]
+	if log.PromptTokens != 100 || log.CompletionTokens != 50 || log.TotalTokens != 150 {
+		t.Fatalf("log tokens: %+v", log)
+	}
+	if log.CacheReadTokens != 40 || log.CacheCreationTokens != 20 {
+		t.Fatalf("log cache tokens: %+v", log)
+	}
+
+	// UsageRecord: insert with cache detail and read it back.
+	if _, err := db.Usage.Insert(&domain.UsageRecord{
+		RequestID: "req-cache", DownstreamKeyID: 7, ChannelID: ch, Model: "claude-x",
+		Path: "chat/completions", Stream: true,
+		PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150,
+		CacheReadTokens: 40, CacheCreationTokens: 20,
+		Status: 200,
+	}); err != nil {
+		t.Fatalf("usage insert: %v", err)
+	}
+	usage, err := db.Usage.List(store.UsageFilter{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(usage) != 1 {
+		t.Fatalf("usage list: %+v", usage)
+	}
+	if usage[0].CacheReadTokens != 40 || usage[0].CacheCreationTokens != 20 {
+		t.Fatalf("usage cache tokens: %+v", usage[0])
+	}
+}
+
+// TestProgressiveCooldownTiers verifies tiered backoff: fail 2 → levels[0],
+// fail 3 → levels[1], fail 4 → levels[2], and the configurable breaker
+// threshold parks the member once reached.
+func TestProgressiveCooldownTiers(t *testing.T) {
+	db := openTestDB(t)
+	db.RouteMember.SetProgressiveCooldown(true, 30*time.Second,
+		[3]time.Duration{10 * time.Minute, time.Hour, 24 * time.Hour}, 5)
+
+	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "tiered", Enabled: true})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "tiered-ch", Status: domain.StatusEnabled})
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	base := 30 * time.Second
+
+	cooldownFor := func() time.Duration {
+		t.Helper()
+		member, err := db.RouteMember.GetByID(memberID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if member.CooldownUntil == nil {
+			t.Fatalf("no cooldown set, fail_count=%d", member.FailCount)
+		}
+		return member.CooldownUntil.Sub(now)
+	}
+
+	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cooldownFor(); got != base {
+		t.Fatalf("fail 1 cooldown = %v, want %v", got, base)
+	}
+	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cooldownFor(); got != 10*time.Minute {
+		t.Fatalf("fail 2 cooldown = %v, want 10m", got)
+	}
+	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cooldownFor(); got != time.Hour {
+		t.Fatalf("fail 3 cooldown = %v, want 1h", got)
+	}
+	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cooldownFor(); got != 24*time.Hour {
+		t.Fatalf("fail 4 cooldown = %v, want 24h", got)
+	}
+
+	// Fifth consecutive failure trips the breaker (threshold 5): disabled.
+	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	member, err := db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.Enabled || member.CooldownUntil != nil {
+		t.Fatalf("breaker did not park member: %+v", member)
+	}
+}
+
+// TestProgressiveCooldownSuccessDecay verifies one-tier-per-success recovery:
+// a member with a 24h penalty steps down to 1h after one success, then 10m,
+// then base, then fully clear — never skipping tiers.
+func TestProgressiveCooldownSuccessDecay(t *testing.T) {
+	db := openTestDB(t)
+	db.RouteMember.SetProgressiveCooldown(true, 30*time.Second,
+		[3]time.Duration{10 * time.Minute, time.Hour, 24 * time.Hour}, 5)
+
+	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "decay", Enabled: true})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "decay-ch", Status: domain.StatusEnabled})
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+
+	// Reach fail_count 4 (24h tier).
+	for i := 0; i < 4; i++ {
+		if err := db.RouteMember.RecordFailure(memberID, now, 30*time.Second, "transport"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cooldownFor := func() time.Duration {
+		t.Helper()
+		member, err := db.RouteMember.GetByID(memberID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if member.CooldownUntil == nil {
+			t.Fatalf("no cooldown, fail_count=%d", member.FailCount)
+		}
+		return member.CooldownUntil.Sub(now)
+	}
+
+	// Success 1: 24h → 1h.
+	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := cooldownFor(); got != time.Hour {
+		t.Fatalf("after 1 success cooldown = %v, want 1h", got)
+	}
+	// Success 2: 1h → 10m.
+	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := cooldownFor(); got != 10*time.Minute {
+		t.Fatalf("after 2 successes cooldown = %v, want 10m", got)
+	}
+	// Success 3: 10m → base (30s).
+	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := cooldownFor(); got != 30*time.Second {
+		t.Fatalf("after 3 successes cooldown = %v, want 30s", got)
+	}
+	// Success 4: fully clear.
+	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
+		t.Fatal(err)
+	}
+	member, err := db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if member.FailCount != 0 || member.CooldownUntil != nil {
+		t.Fatalf("not fully recovered: %+v", member)
+	}
+}
+
+// TestProgressiveCooldownDisabledRestoresExponentialBackoff verifies that
+// disabling progressive mode restores the legacy 2^n behavior exactly.
+func TestProgressiveCooldownDisabledRestoresExponentialBackoff(t *testing.T) {
+	db := openTestDB(t)
+	db.RouteMember.SetProgressiveCooldown(true, 30*time.Second, [3]time.Duration{10 * time.Minute, time.Hour, 24 * time.Hour}, 5)
+	db.RouteMember.SetProgressiveCooldown(false, 0, [3]time.Duration{}, 0)
+
+	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "legacy", Enabled: true})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "legacy-ch", Status: domain.StatusEnabled})
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
+		t.Fatal(err)
+	}
+	member, err := db.RouteMember.GetByID(memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Legacy exponential: 1m → 2m.
+	if member.FailCount != 2 || member.CooldownUntil == nil || !member.CooldownUntil.Equal(now.Add(2*time.Minute)) {
+		t.Fatalf("legacy backoff broken: %+v", member)
+	}
+}
+
+// TestProxyLogObservabilityMeta verifies first-byte latency and client family
+// attach to the newest log row after a relay.
+func TestProxyLogObservabilityMeta(t *testing.T) {
+	db := openTestDB(t)
+	ch, err := db.Channel.Create(&domain.Channel{Name: "ch-meta", Status: domain.StatusEnabled, Weight: 100})
+	if err != nil {
+		t.Fatalf("channel: %v", err)
+	}
+	if _, err := db.ProxyLog.Insert(&domain.ProxyLog{
+		RequestID: "req-meta", ChannelID: ch, Model: "m", Status: 200,
+		LatencyMs: 10, Attempt: 1, Stream: true,
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := db.ProxyLog.UpdateMetaByRequestID("req-meta", 42, "cli"); err != nil {
+		t.Fatalf("update meta: %v", err)
+	}
+	logs, err := db.ProxyLog.List(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 1 || logs[0].FirstByteMs != 42 || logs[0].ClientFamily != "cli" {
+		t.Fatalf("observability meta not persisted: %+v", logs)
+	}
+}
+
+func TestChannelStableFirstLifecycle(t *testing.T) {
+	db := openTestDB(t)
+	siteID, _ := db.Site.Create(&domain.Site{Name: "gray", BaseURL: "https://gray.example", Platform: "openai-compatible", Status: domain.StatusEnabled})
+	credID, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte("v1:cipher"), Status: domain.StatusEnabled})
+
+	id, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credID, Name: "gray", Status: domain.StatusEnabled, StableFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := db.Channel.GetByID(id)
+	if err != nil || ch == nil || !ch.StableFirst {
+		t.Fatalf("stable_first not persisted: %+v err=%v", ch, err)
+	}
+
+	// Successes count toward promotion; promote after 3 with no failures.
+	promoted, err := db.Channel.RecordGraySuccess(id, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promoted {
+		t.Fatal("promoted too early")
+	}
+	promoted, _ = db.Channel.RecordGraySuccess(id, 3)
+	if promoted {
+		t.Fatal("promoted too early (2)")
+	}
+	promoted, err = db.Channel.RecordGraySuccess(id, 3)
+	if err != nil || !promoted {
+		t.Fatalf("expected promotion on 3rd success: promoted=%v err=%v", promoted, err)
+	}
+	ch, _ = db.Channel.GetByID(id)
+	if ch.StableFirst || ch.StableFirstRequests != 0 {
+		t.Fatalf("promotion did not clear mark: %+v", ch)
+	}
+}
+
+func TestChannelStableFirstFailureBlocksPromotion(t *testing.T) {
+	db := openTestDB(t)
+	siteID, _ := db.Site.Create(&domain.Site{Name: "gray2", BaseURL: "https://gray2.example", Platform: "openai-compatible", Status: domain.StatusEnabled})
+	credID, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte("v1:cipher"), Status: domain.StatusEnabled})
+	id, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credID, Name: "gray2", Status: domain.StatusEnabled, StableFirst: true})
+
+	// One failure keeps consecutive_failures at 1; successes reach the count
+	// but promotion is withheld until failures clear.
+	_, _ = db.Channel.RecordRelayFailure(id)
+	for i := 0; i < 5; i++ {
+		if promoted, err := db.Channel.RecordGraySuccess(id, 3); err != nil || promoted {
+			t.Fatalf("promotion with pending failure: promoted=%v err=%v", promoted, err)
+		}
+	}
+	_ = db.Channel.RecordRelaySuccess(id)
+	promoted, err := db.Channel.RecordGraySuccess(id, 3)
+	if err != nil || !promoted {
+		t.Fatalf("expected promotion after failure cleared: promoted=%v err=%v", promoted, err)
+	}
+}
+
+func TestChannelStableFirstNonGrayNoop(t *testing.T) {
+	db := openTestDB(t)
+	siteID, _ := db.Site.Create(&domain.Site{Name: "plain", BaseURL: "https://plain.example", Platform: "openai-compatible", Status: domain.StatusEnabled})
+	credID, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte("v1:cipher"), Status: domain.StatusEnabled})
+	id, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credID, Name: "plain", Status: domain.StatusEnabled})
+
+	promoted, err := db.Channel.RecordGraySuccess(id, 3)
+	if err != nil || promoted {
+		t.Fatalf("non-gray channel must no-op: promoted=%v err=%v", promoted, err)
 	}
 }

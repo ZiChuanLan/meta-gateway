@@ -3,6 +3,8 @@ package adapters
 import (
 	"io"
 	"net/http"
+
+	"github.com/lan/meta-gateway/internal/usage"
 )
 
 // AnthropicForwardAdapter translates between the OpenAI wire contract and the
@@ -43,7 +45,13 @@ func (AnthropicForwardAdapter) TransformRequest(openAIPath string, body []byte) 
 	}
 }
 
-func (AnthropicForwardAdapter) TransformResponse(_ string, body []byte) ([]byte, error) {
+func (AnthropicForwardAdapter) TransformResponse(openAIPath string, body []byte) ([]byte, error) {
+	// Native /v1/messages callers expect the Anthropic response contract. The
+	// request is already in Messages format, so preserve the upstream body;
+	// chat/completions callers still receive the OpenAI pivot response.
+	if openAIPath == "messages" {
+		return body, nil
+	}
 	converted, err := AnthropicMessagesToChat(body)
 	if err != nil {
 		return nil, err
@@ -51,12 +59,20 @@ func (AnthropicForwardAdapter) TransformResponse(_ string, body []byte) ([]byte,
 	return converted, nil
 }
 
-func (AnthropicForwardAdapter) WrapStream(_ string, body io.ReadCloser) (io.ReadCloser, error) {
+func (AnthropicForwardAdapter) WrapStream(openAIPath string, body io.ReadCloser) (io.ReadCloser, error) {
+	if openAIPath == "messages" {
+		return body, nil
+	}
 	return NewAnthropicToOpenAIStream(body), nil
 }
 
 func (AnthropicForwardAdapter) AuthHeaders(apiKey string) http.Header {
 	return AnthropicAuthHeaders(apiKey)
+}
+
+func (AnthropicForwardAdapter) ExtractUsage(_ string, body []byte) (usage.Tokens, bool) {
+	tokens := usage.ExtractFromJSONBody(body)
+	return tokens, tokens.Valid()
 }
 
 var _ ForwardAdapter = AnthropicForwardAdapter{}

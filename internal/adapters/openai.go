@@ -29,6 +29,9 @@ const (
 type Error struct {
 	Kind   ErrorKind
 	Status int
+	// RetryAfter is the upstream Retry-After hint (seconds) when the failure
+	// is a rate limit; 0 when unknown.
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string {

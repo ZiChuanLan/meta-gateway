@@ -2,6 +2,7 @@ package adapters_test
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 
@@ -64,6 +65,31 @@ func TestChatToAnthropicMessages(t *testing.T) {
 	messages, _ := parsed["messages"].([]any)
 	if len(messages) != 1 {
 		t.Fatalf("messages=%v", messages)
+	}
+}
+
+func TestAnthropicForwardAdapterPreservesNativeMessages(t *testing.T) {
+	body := []byte(`{"id":"msg_1","type":"message","usage":{"input_tokens":3,"output_tokens":1}}`)
+	adapter := adapters.AnthropicForwardAdapter{}
+	converted, err := adapter.TransformResponse("messages", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(converted) != string(body) {
+		t.Fatalf("native response changed: got %s", converted)
+	}
+
+	stream, err := adapter.WrapStream("messages", io.NopCloser(strings.NewReader("event: message_start\n\ndata: {}\n\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	streamBody, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(streamBody), "event: message_start") {
+		t.Fatalf("native stream changed: %s", streamBody)
 	}
 }
 

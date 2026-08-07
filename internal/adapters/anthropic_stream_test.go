@@ -50,3 +50,60 @@ func TestAnthropicToOpenAIStream(t *testing.T) {
 		t.Fatalf("missing finish: %s", text)
 	}
 }
+
+func TestAnthropicToOpenAIStreamMergesSplitUsage(t *testing.T) {
+	anthropicSSE := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_split","type":"message","role":"assistant","model":"claude-3-5","content":[],"usage":{"input_tokens":50}}}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+	stream := adapters.NewAnthropicToOpenAIStream(io.NopCloser(strings.NewReader(anthropicSSE)))
+	out, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(out)
+	if !strings.Contains(text, `"prompt_tokens":50`) || !strings.Contains(text, `"completion_tokens":20`) {
+		t.Fatalf("split usage was not preserved: %s", text)
+	}
+}
+
+func TestAnthropicToOpenAIStreamCacheUsage(t *testing.T) {
+	// message_delta usage carries Anthropic cache accounting; the converter must
+	// pass it through as internal pipeline aliases so downstream metering can
+	// record cache reads/creations.
+	anthropicSSE := strings.Join([]string{
+		"event: message_start",
+		`data: {"type":"message_start","message":{"id":"msg_c","type":"message","role":"assistant","model":"claude-3-5","content":[]}}`,
+		"",
+		"event: message_delta",
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":50,"output_tokens":20,"cache_read_input_tokens":12,"cache_creation_input_tokens":8}}`,
+		"",
+		"event: message_stop",
+		`data: {"type":"message_stop"}`,
+		"",
+	}, "\n")
+
+	stream := adapters.NewAnthropicToOpenAIStream(io.NopCloser(strings.NewReader(anthropicSSE)))
+	out, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = stream.Close()
+	text := string(out)
+	if !strings.Contains(text, `"prompt_tokens":50`) || !strings.Contains(text, `"completion_tokens":20`) {
+		t.Fatalf("missing base usage: %s", text)
+	}
+	if !strings.Contains(text, `"cache_read_tokens":12`) {
+		t.Fatalf("missing cache_read passthrough: %s", text)
+	}
+	if !strings.Contains(text, `"cache_creation_tokens":8`) {
+		t.Fatalf("missing cache_creation passthrough: %s", text)
+	}
+}

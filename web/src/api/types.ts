@@ -2,7 +2,7 @@ export type Status = 'enabled' | 'disabled'
 
 export interface Site { id: number; name: string; base_url: string; platform: string; status: Status; created_at: string; updated_at: string }
 export interface Credential { id: number; site_id: number; kind: string; has_secret: boolean; meta_json?: string; status: Status; checkin_enabled: boolean; created_at?: string }
-export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; header_override?: string; system_prompt?: string; created_at: string; updated_at: string }
+export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; header_override?: string; system_prompt?: string; retry_config?: string; stable_first?: boolean; stable_first_requests?: number; created_at: string; updated_at: string }
 export interface ChannelOverview {
   channel: Channel
   credential_kind?: string
@@ -25,9 +25,10 @@ export interface ChannelOverview {
   last_error?: string
   last_probe_at?: string
   last_probe_ok?: boolean
-  last_probe_error?: string
+	last_probe_error?: string
+	health_state?: "disabled" | "unhealthy" | "degraded" | "healthy" | "unknown"
 }
-export interface Route { id: number; model_pattern: string; enabled: boolean; mapping_json?: string; notes?: string; created_at: string; updated_at: string }
+export interface Route { id: number; model_pattern: string; enabled: boolean; routing_mode: string; mapping_json?: string; notes?: string; created_at: string; updated_at: string }
 export interface RouteMember { id: number; route_id: number; channel_id: number; priority: number; weight: number; enabled: boolean; auto: boolean; manual_override: boolean; fail_count: number; cooldown_until?: string; last_error?: string; created_at: string; updated_at: string }
 export interface DownstreamKey {
   id: number
@@ -64,6 +65,8 @@ export interface UsageRecord {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
   status: number
   created_at: string
 }
@@ -82,7 +85,13 @@ export interface ProxyLog {
   prompt_tokens?: number
   completion_tokens?: number
   total_tokens?: number
-  stream?: boolean
+	  cache_read_tokens?: number
+	  cache_creation_tokens?: number
+	first_byte_ms?: number
+	client_family?: string
+	reasoning_effort?: string
+	tokens_per_second?: number
+	stream?: boolean
   path?: string
   created_at: string
 }
@@ -103,8 +112,26 @@ export interface RuntimeEditableSettings {
   admin_rate_burst: number
   audit_retention_days: number
   audit_retention_rows: number
-  channel_auto_disable_threshold: number
-  routing_latency_aware: boolean
+	channel_auto_disable_threshold: number
+	routing_latency_aware: boolean
+	routing_error_aware: boolean
+	recovery_probe_enabled: boolean
+	recovery_probe_interval_seconds: number
+	stable_first_enabled: boolean
+	stable_first_denominator: number
+	stable_first_promote_requests: number
+	routing_concurrency_enabled: boolean
+	routing_concurrency_limit: number
+	webhook_url?: string
+	webhook_throttle_seconds: number
+	progressive_cooldown_enabled: boolean
+	cooldown_level2_seconds: number
+	cooldown_level3_seconds: number
+	cooldown_level4_seconds: number
+	breaker_fail_count: number
+	alert_config_json?: string
+	alert_sweep_interval_seconds: number
+	alert_daily_summary_interval_seconds: number
 }
 
 export interface RuntimeSettings {
@@ -120,8 +147,17 @@ export interface RuntimeSettings {
 
 export interface RoutingCandidate { member: RouteMember; channel: Channel; credential_usable: boolean }
 export interface RouteOverview { route: Route; members: RoutingCandidate[] }
-export interface RouteEvaluation { candidate: RoutingCandidate; eligible: boolean; reasons: string[] }
-export interface RouteExplanation { model: string; route_id: number; evaluated_at: string; selected_priority?: number; candidates: RouteEvaluation[] }
+export interface RouteEvaluation { candidate: RoutingCandidate; eligible: boolean; reasons: string[]; score?: number }
+export interface RouteExplanation { model: string; route_id: number; routing_mode?: string; evaluated_at: string; selected_priority?: number; candidates: RouteEvaluation[]; session_key?: string; sticky_channel_id?: number; sticky_hit?: boolean; sticky_reason?: string }
+
+export interface StickyStats { bound_sessions: number; hits: number; binds: number; escapes: number }
+export interface StickyEntry { key: string; channel_id: number; expires_at: string }
+export interface StickySnapshot {
+  enabled: boolean
+  stats: StickyStats
+  entries: StickyEntry[]
+  ttl_seconds: number
+}
 
 export interface ProbeResult { channel_id: number; adapter: string; models: string[]; latency_ms: number; checked_at: string }
 export interface AccountProbeResult {
@@ -135,12 +171,30 @@ export interface AccountProbeResult {
   latency_ms: number
   checked_at: string
 }
+export interface ModelPrice {
+  model: string
+  currency?: string
+  price_usd?: number
+  mode?: "fixed" | "token" | "legacy"
+  ratio?: number
+  quota_per_1m?: number
+}
+export interface FinanceItem {
+  channel_id: number
+  balance: number
+  quota_total?: number
+  quota_used?: number
+  quota_per_unit: number
+  prices: Record<string, ModelPrice>
+}
 export interface SyncKeysResult {
   channel_id: number
   listed: number
   created_credentials: number
   reused_credentials: number
   skipped_masked: number
+  /** Local api_key credentials removed because their upstream token no longer exists. */
+  deleted_credentials?: number
   empty_list?: boolean
   category?: string
   message?: string

@@ -68,7 +68,7 @@ func (r ExchangeImportResult) ChannelIDs() []int64 {
 }
 
 type ExchangeStore struct {
-	db *sql.DB
+	db *DB
 }
 
 func (s *ExchangeStore) Export(ctx context.Context, channelIDs []int64) ([]ExchangeExportRow, error) {
@@ -178,6 +178,11 @@ func (s *ExchangeStore) ImportReplacing(ctx context.Context, items []ExchangeImp
 	if err := tx.Commit(); err != nil {
 		return ExchangeImportResult{}, fmt.Errorf("exchange import commit: %w", err)
 	}
+	// The import wrote sites/credentials directly in the transaction, bypassing
+	// the per-entity write paths — drop the process caches so relay reads
+	// observe the imported assets immediately.
+	s.db.Site.ClearCache()
+	s.db.Credential.ClearCache()
 	return result, nil
 }
 

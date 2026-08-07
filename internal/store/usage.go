@@ -2,8 +2,10 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
@@ -22,8 +24,9 @@ func (s *UsageStore) Insert(record *domain.UsageRecord) (int64, error) {
 	res, err := s.db.Exec(
 		`INSERT INTO usage_records (
 			request_id, downstream_key_id, channel_id, model, path, stream,
-			prompt_tokens, completion_tokens, total_tokens, status
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			prompt_tokens, completion_tokens, total_tokens,
+			cache_read_tokens, cache_creation_tokens, status, cost
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID,
 		record.DownstreamKeyID,
 		record.ChannelID,
@@ -33,7 +36,10 @@ func (s *UsageStore) Insert(record *domain.UsageRecord) (int64, error) {
 		record.PromptTokens,
 		record.CompletionTokens,
 		record.TotalTokens,
+		record.CacheReadTokens,
+		record.CacheCreationTokens,
 		record.Status,
+		record.Cost,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("usage insert: %w", err)
@@ -74,9 +80,10 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 	}
 	args = append(args, limit)
 	query := `SELECT id, request_id, downstream_key_id, channel_id, model, path, stream,
-		prompt_tokens, completion_tokens, total_tokens, status, created_at
-		FROM usage_records WHERE ` + strings.Join(where, " AND ") + `
-		ORDER BY id DESC LIMIT ?`
+	prompt_tokens, completion_tokens, total_tokens,
+	cache_read_tokens, cache_creation_tokens, status, created_at
+	FROM usage_records WHERE ` + strings.Join(where, " AND ") + `
+	ORDER BY id DESC LIMIT ?`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("usage list: %w", err)
@@ -97,6 +104,8 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 			&record.PromptTokens,
 			&record.CompletionTokens,
 			&record.TotalTokens,
+			&record.CacheReadTokens,
+			&record.CacheCreationTokens,
 			&record.Status,
 			scanTime(&record.CreatedAt),
 		); err != nil {
@@ -113,7 +122,8 @@ func (s *UsageStore) Summary(downstreamKeyID *int64) (domain.UsageSummary, error
 	query := `SELECT COUNT(*),
 		COALESCE(SUM(prompt_tokens),0),
 		COALESCE(SUM(completion_tokens),0),
-		COALESCE(SUM(total_tokens),0)
+		COALESCE(SUM(total_tokens),0),
+		COALESCE(SUM(cost),0)
 		FROM usage_records`
 	args := []any{}
 	if downstreamKeyID != nil {
@@ -126,8 +136,186 @@ func (s *UsageStore) Summary(downstreamKeyID *int64) (domain.UsageSummary, error
 		&summary.PromptTokens,
 		&summary.CompletionTokens,
 		&summary.TotalTokens,
+		&summary.Cost,
 	); err != nil {
 		return domain.UsageSummary{}, fmt.Errorf("usage summary: %w", err)
 	}
 	return summary, nil
+}
+
+// RecordRelayUsage atomically persists one relay's usage accounting: the
+// usage_records row, the downstream-key quota increment, and the token
+// backfill on the newest proxy_log row for the request. A single transaction
+// removes the partial-write window where usage lands but the key quota does
+// not (or vice versa) and cuts the hot-path write round-trips from three
+// to one. Rows with no measurable tokens are a no-op.
+func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
+	if record == nil || record.TotalTokens <= 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("usage record begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stream := 0
+	if record.Stream {
+		stream = 1
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO usage_records (
+			request_id, downstream_key_id, channel_id, model, path, stream,
+			prompt_tokens, completion_tokens, total_tokens,
+			cache_read_tokens, cache_creation_tokens, status, cost
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		record.RequestID,
+		record.DownstreamKeyID,
+		record.ChannelID,
+		record.Model,
+		record.Path,
+		stream,
+		record.PromptTokens,
+		record.CompletionTokens,
+		record.TotalTokens,
+		record.CacheReadTokens,
+		record.CacheCreationTokens,
+		record.Status,
+		record.Cost,
+	); err != nil {
+		return fmt.Errorf("usage record insert: %w", err)
+	}
+
+	if keyID > 0 {
+		if _, err := tx.Exec(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ?`, record.TotalTokens, keyID); err != nil {
+			return fmt.Errorf("usage record key quota: %w", err)
+		}
+	}
+
+	// Accrue the tenant group quota in the same transaction (no-op when the
+	// group row does not exist — absent groups are unlimited).
+	if groupName := normalizeGroupName(record.GroupName); groupName != "" {
+		if _, err := tx.Exec(`UPDATE key_groups SET quota_used_tokens = quota_used_tokens + ?, updated_at = datetime('now') WHERE name = ?`, record.TotalTokens, groupName); err != nil {
+			return fmt.Errorf("usage record group quota: %w", err)
+		}
+		db.Group.invalidateCache(groupName)
+	}
+
+	if strings.TrimSpace(record.RequestID) != "" {
+		if _, err := tx.Exec(
+			`UPDATE proxy_logs
+			 SET prompt_tokens = ?, completion_tokens = ?, total_tokens = ?,
+			     cache_read_tokens = ?, cache_creation_tokens = ?,
+			     tokens_per_second = CASE
+			       WHEN ? > 0 AND latency_ms > 0
+			         THEN ? / MAX((latency_ms - COALESCE(first_byte_ms, 0)) / 1000.0, 0.01)
+			       ELSE 0 END
+			 WHERE id = (
+			   SELECT id FROM proxy_logs WHERE request_id = ? ORDER BY id DESC LIMIT 1
+			 )`,
+			record.PromptTokens, record.CompletionTokens, record.TotalTokens,
+			record.CacheReadTokens, record.CacheCreationTokens,
+			record.CompletionTokens, float64(record.CompletionTokens), record.RequestID,
+		); err != nil {
+			return fmt.Errorf("usage record log backfill: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("usage record commit: %w", err)
+	}
+	// Keep the downstream-key cache in sync with the committed increment so
+	// quota checks see the new used count without a reload.
+	db.DownstreamKey.bumpCachedUsage(keyID, record.TotalTokens)
+	return nil
+}
+
+// ModelRatioStore persists per-model billing markup (ratio 1.0 = no markup).
+// The table is tiny and written only by admins; reads on the usage path are
+// served from a small process cache invalidated by SetRatio.
+type ModelRatioStore struct {
+	db *sql.DB
+
+	mu    sync.RWMutex
+	cache map[string]float64
+}
+
+func newModelRatioStore(db *sql.DB) *ModelRatioStore {
+	return &ModelRatioStore{db: db, cache: make(map[string]float64)}
+}
+
+// GetRatio returns the markup for a model (1.0 when unset).
+func (s *ModelRatioStore) GetRatio(model string) (float64, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return 1.0, nil
+	}
+	s.mu.RLock()
+	ratio, ok := s.cache[model]
+	s.mu.RUnlock()
+	if ok {
+		return ratio, nil
+	}
+	var stored float64
+	err := s.db.QueryRow(`SELECT ratio FROM model_ratios WHERE model = ?`, model).Scan(&stored)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			s.mu.Lock()
+			s.cache[model] = 1.0
+			s.mu.Unlock()
+			return 1.0, nil
+		}
+		return 1.0, fmt.Errorf("model ratio get: %w", err)
+	}
+	s.mu.Lock()
+	s.cache[model] = stored
+	s.mu.Unlock()
+	return stored, nil
+}
+
+// SetRatio upserts a model's markup and refreshes the cache. Deleting a ratio
+// (ratio < 0) falls back to 1.0.
+func (s *ModelRatioStore) SetRatio(model string, ratio float64) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return fmt.Errorf("model ratio: empty model")
+	}
+	if ratio < 0 {
+		if _, err := s.db.Exec(`DELETE FROM model_ratios WHERE model = ?`, model); err != nil {
+			return fmt.Errorf("model ratio delete: %w", err)
+		}
+		s.mu.Lock()
+		delete(s.cache, model)
+		s.mu.Unlock()
+		return nil
+	}
+	if _, err := s.db.Exec(
+		`INSERT INTO model_ratios (model, ratio, updated_at) VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(model) DO UPDATE SET ratio = excluded.ratio, updated_at = datetime('now')`,
+		model, ratio,
+	); err != nil {
+		return fmt.Errorf("model ratio set: %w", err)
+	}
+	s.mu.Lock()
+	s.cache[model] = ratio
+	s.mu.Unlock()
+	return nil
+}
+
+// ListRatios returns all configured model ratios ordered by model.
+func (s *ModelRatioStore) ListRatios() ([]domain.ModelRatio, error) {
+	rows, err := s.db.Query(`SELECT model, ratio, updated_at FROM model_ratios ORDER BY model`)
+	if err != nil {
+		return nil, fmt.Errorf("model ratio list: %w", err)
+	}
+	defer rows.Close()
+	var result []domain.ModelRatio
+	for rows.Next() {
+		var r domain.ModelRatio
+		if err := rows.Scan(&r.Model, &r.Ratio, scanTime(&r.UpdatedAt)); err != nil {
+			return nil, fmt.Errorf("model ratio scan: %w", err)
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
 }

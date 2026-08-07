@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -16,7 +17,8 @@ type ChannelStore struct {
 func scanChannel(scanner interface {
 	Scan(dest ...any) error
 }, r *domain.Channel) error {
-	return scanner.Scan(
+	var stableFirst int
+	if err := scanner.Scan(
 		&r.ID,
 		&r.SiteID,
 		&r.CredentialID,
@@ -30,14 +32,22 @@ func scanChannel(scanner interface {
 		&r.TypeHint,
 		&r.HeaderOverride,
 		&r.SystemPrompt,
+		&r.RetryConfig,
+		&r.Tags,
 		&r.ConsecutiveFailures,
+		&stableFirst,
+		&r.StableFirstRequests,
 		scanTime(&r.CreatedAt),
 		scanTime(&r.UpdatedAt),
-	)
+	); err != nil {
+		return err
+	}
+	r.StableFirst = stableFirst != 0
+	return nil
 }
 
 func (s *ChannelStore) List() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, consecutive_failures, created_at, updated_at FROM channels ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("channel list: %w", err)
 	}
@@ -58,7 +68,7 @@ func (s *ChannelStore) List() ([]domain.Channel, error) {
 func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, error) {
 	rows, err := s.db.Query(`SELECT
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.retry_config, c.stable_first, c.created_at, c.updated_at,
 		COALESCE(cred.kind, ''),
 		CASE WHEN EXISTS (
 			SELECT 1 FROM credentials user_checkin
@@ -129,7 +139,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 	var result []domain.ChannelOverview
 	for rows.Next() {
 		var overview domain.ChannelOverview
-		var checkinEnabled, hasUserCredential, hasPlatformUserID, hasAPIKey, siteUsable, credentialUsable, lastProbeOK int
+		var checkinEnabled, hasUserCredential, hasPlatformUserID, hasAPIKey, siteUsable, credentialUsable, lastProbeOK, stableFirst int
 		if err := rows.Scan(
 			&overview.Channel.ID,
 			&overview.Channel.SiteID,
@@ -142,6 +152,10 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			&overview.Channel.Weight,
 			&overview.Channel.Status,
 			&overview.Channel.TypeHint,
+			&overview.Channel.HeaderOverride,
+			&overview.Channel.SystemPrompt,
+			&overview.Channel.RetryConfig,
+			&stableFirst,
 			scanTime(&overview.Channel.CreatedAt),
 			scanTime(&overview.Channel.UpdatedAt),
 			&overview.CredentialKind,
@@ -174,6 +188,8 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		overview.HasAPIKey = hasAPIKey != 0
 		overview.SiteUsable = siteUsable != 0
 		overview.CredentialUsable = credentialUsable != 0
+		overview.Channel.StableFirst = stableFirst != 0
+		overview.HealthState = DeriveHealthState(overview)
 		result = append(result, overview)
 	}
 	return result, rows.Err()
@@ -181,7 +197,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 
 // ListEnabled returns all enabled channels.
 func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, consecutive_failures, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list enabled: %w", err)
 	}
@@ -198,8 +214,49 @@ func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
 	return result, rows.Err()
 }
 
+// ListAutoDisabled returns channels currently parked by the auto-disable
+// circuit (recovery-probe candidates).
+func (s *ChannelStore) ListAutoDisabled() ([]domain.Channel, error) {
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status = ? ORDER BY id`, domain.StatusAutoDisabled)
+	if err != nil {
+		return nil, fmt.Errorf("channel list auto disabled: %w", err)
+	}
+	defer rows.Close()
+
+	var result []domain.Channel
+	for rows.Next() {
+		var r domain.Channel
+		if err := scanChannel(rows, &r); err != nil {
+			return nil, fmt.Errorf("channel scan: %w", err)
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+// ListProbeable returns channels eligible for connectivity probing: enabled
+// channels plus auto-disabled ones (passive recovery candidates). Manually
+// disabled channels are never probed — manual intent wins.
+func (s *ChannelStore) ListProbeable() ([]domain.Channel, error) {
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status IN (?, ?) ORDER BY priority, id`, domain.StatusEnabled, domain.StatusAutoDisabled)
+	if err != nil {
+		return nil, fmt.Errorf("channel list probeable: %w", err)
+	}
+	defer rows.Close()
+
+	var result []domain.Channel
+	for rows.Next() {
+		var r domain.Channel
+		if err := scanChannel(rows, &r); err != nil {
+			return nil, fmt.Errorf("channel scan: %w", err)
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
 func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
-	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, consecutive_failures, created_at, updated_at FROM channels WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE id = ?`, id)
 	var r domain.Channel
 	if err := scanChannel(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -211,8 +268,8 @@ func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
 }
 
 func (s *ChannelStore) Create(c *domain.Channel) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt)
+	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, stable_first) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, normalizeTags(c.Tags), boolInt(c.StableFirst))
 	if err != nil {
 		return 0, fmt.Errorf("channel create: %w", err)
 	}
@@ -225,8 +282,8 @@ func (s *ChannelStore) Update(c *domain.Channel) error {
 		return fmt.Errorf("channel update begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, header_override=?, system_prompt=?, updated_at=datetime('now') WHERE id=?`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt, c.ID); err != nil {
+	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, header_override=?, system_prompt=?, retry_config=?, tags=?, stable_first=?, updated_at=datetime('now') WHERE id=?`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, normalizeTags(c.Tags), boolInt(c.StableFirst), c.ID); err != nil {
 		return fmt.Errorf("channel update: %w", err)
 	}
 	if _, err = tx.Exec(`UPDATE route_members SET priority=?, weight=?, updated_at=datetime('now')
@@ -279,19 +336,21 @@ func (s *ChannelStore) AutoDisable(channelID int64) error {
 	return nil
 }
 
-// RecoverAutoDisabled restores an auto-disabled channel to enabled.
-func (s *ChannelStore) RecoverAutoDisabled(channelID int64) error {
+// RecoverAutoDisabled restores an auto-disabled channel to enabled. It returns
+// true when the channel was actually transitioned (was auto-disabled).
+func (s *ChannelStore) RecoverAutoDisabled(channelID int64) (bool, error) {
 	res, err := s.db.Exec(`UPDATE channels SET status = ? WHERE id = ? AND status = ?`,
 		domain.StatusEnabled, channelID, domain.StatusAutoDisabled)
 	if err != nil {
-		return fmt.Errorf("channel recover: %w", err)
+		return false, fmt.Errorf("channel recover: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
+	n, _ := res.RowsAffected()
+	if n > 0 {
 		if _, err := s.db.Exec(`UPDATE route_members SET fail_count = 0, cooldown_until = NULL, last_error = '' WHERE channel_id = ?`, channelID); err != nil {
-			return fmt.Errorf("channel recover clear health: %w", err)
+			return false, fmt.Errorf("channel recover clear health: %w", err)
 		}
 	}
-	return nil
+	return n > 0, nil
 }
 
 // RecordRelayFailure increments the channel consecutive-failure counter and
@@ -316,11 +375,81 @@ func (s *ChannelStore) RecordRelaySuccess(channelID int64) error {
 	return nil
 }
 
+// RecordGraySuccess counts a successful relay attempt on a stable-first
+// (grayscale) channel. When the counter reaches promoteAfter with no
+// consecutive failures, the channel is promoted (grayscale mark cleared) and
+// promoted=true is returned. Non-grayscale channels are a no-op.
+func (s *ChannelStore) RecordGraySuccess(channelID int64, promoteAfter int) (bool, error) {
+	if promoteAfter <= 0 {
+		return false, nil
+	}
+	res, err := s.db.Exec(`UPDATE channels SET stable_first_requests = stable_first_requests + 1 WHERE id = ? AND stable_first = 1`, channelID)
+	if err != nil {
+		return false, fmt.Errorf("channel gray success: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil // not marked (or already promoted)
+	}
+	var count, failures int
+	if err := s.db.QueryRow(`SELECT stable_first_requests, consecutive_failures FROM channels WHERE id = ?`, channelID).Scan(&count, &failures); err != nil {
+		return false, fmt.Errorf("channel gray read: %w", err)
+	}
+	if count >= promoteAfter && failures == 0 {
+		if _, err := s.db.Exec(`UPDATE channels SET stable_first = 0, stable_first_requests = 0 WHERE id = ?`, channelID); err != nil {
+			return false, fmt.Errorf("channel gray promote: %w", err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// DeriveHealthState computes the five-state channel health machine
+// (Metapi-inspired): disabled > unhealthy > degraded > healthy > unknown.
+func DeriveHealthState(overview domain.ChannelOverview) string {
+	switch overview.Channel.Status {
+	case domain.StatusDisabled:
+		return "disabled"
+	case domain.StatusAutoDisabled:
+		return "unhealthy"
+	}
+	if !overview.LastProbeOK {
+		// No probe record at all → not yet evaluated.
+		if overview.LastProbeAt == nil && overview.FailureCount == 0 {
+			return "unknown"
+		}
+		return "unhealthy"
+	}
+	if overview.FailureCount > 0 || overview.CoolingMemberCount > 0 {
+		return "degraded"
+	}
+	return "healthy"
+}
+
 func (s *ChannelStore) RecordProbeSuccess(channelID int64, at time.Time) error {
 	_, err := s.db.Exec(`UPDATE channels SET last_probe_at=?, last_probe_ok=1, last_probe_error='', updated_at=datetime('now') WHERE id=?`,
 		at.UTC().Format(time.RFC3339Nano), channelID)
 	if err != nil {
 		return fmt.Errorf("channel probe success: %w", err)
+	}
+	return nil
+}
+
+// RecordRateLimited parks a channel until the given time (429 verdict); the
+// channel is excluded from routing while parked.
+func (s *ChannelStore) RecordRateLimited(channelID int64, until time.Time) error {
+	_, err := s.db.Exec(`UPDATE channels SET rate_limited_until = ?, updated_at = datetime('now') WHERE id = ?`,
+		until.UTC().Format(time.RFC3339Nano), channelID)
+	if err != nil {
+		return fmt.Errorf("channel rate limit: %w", err)
+	}
+	return nil
+}
+
+// ClearRateLimit lifts a channel's rate-limit pause (probe success or admin).
+func (s *ChannelStore) ClearRateLimit(channelID int64) error {
+	_, err := s.db.Exec(`UPDATE channels SET rate_limited_until = NULL, updated_at = datetime('now') WHERE id = ?`, channelID)
+	if err != nil {
+		return fmt.Errorf("channel clear rate limit: %w", err)
 	}
 	return nil
 }
@@ -336,4 +465,79 @@ func (s *ChannelStore) RecordProbeFailure(channelID int64, at time.Time, categor
 		return fmt.Errorf("channel probe failure: %w", err)
 	}
 	return nil
+}
+
+// normalizeTags trims and canonicalizes a comma-separated tag list.
+func normalizeTags(raw string) string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		tag := strings.TrimSpace(part)
+		if tag == "" {
+			continue
+		}
+		if _, exists := seen[tag]; exists {
+			continue
+		}
+		seen[tag] = struct{}{}
+		out = append(out, tag)
+	}
+	return strings.Join(out, ",")
+}
+
+// UpdateByTag applies a partial bulk update to every channel carrying the tag.
+// Only non-nil fields are applied. Returns the number of affected channels.
+func (s *ChannelStore) UpdateByTag(tag string, fields domain.ChannelPatch) (int64, error) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return 0, fmt.Errorf("channel bulk: empty tag")
+	}
+	sets := []string{}
+	args := []any{}
+	// Tags match via a comma-anchored pattern so "prod" does not hit
+	// "production": stored tags are canonical comma-joined.
+	if fields.Priority != nil {
+		sets = append(sets, "priority = ?")
+		args = append(args, *fields.Priority)
+	}
+	if fields.Weight != nil {
+		sets = append(sets, "weight = ?")
+		args = append(args, *fields.Weight)
+	}
+	if fields.Status != nil {
+		sets = append(sets, "status = ?")
+		args = append(args, *fields.Status)
+	}
+	if fields.ModelsCSV != nil {
+		sets = append(sets, "models_csv = ?")
+		args = append(args, *fields.ModelsCSV)
+	}
+	if fields.GroupName != nil {
+		sets = append(sets, "group_name = ?")
+		args = append(args, *fields.GroupName)
+	}
+	if fields.RetryConfig != nil {
+		sets = append(sets, "retry_config = ?")
+		args = append(args, *fields.RetryConfig)
+	}
+	if fields.SystemPrompt != nil {
+		sets = append(sets, "system_prompt = ?")
+		args = append(args, *fields.SystemPrompt)
+	}
+	if fields.HeaderOverride != nil {
+		sets = append(sets, "header_override = ?")
+		args = append(args, *fields.HeaderOverride)
+	}
+	if len(sets) == 0 {
+		return 0, nil
+	}
+	sets = append(sets, "updated_at = datetime('now')")
+	query := `UPDATE channels SET ` + strings.Join(sets, ", ") +
+		` WHERE (',' || tags || ',') LIKE ?`
+	args = append(args, "%,"+tag+",%")
+	res, err := s.db.Exec(query, args...)
+	if err != nil {
+		return 0, fmt.Errorf("channel bulk update: %w", err)
+	}
+	return res.RowsAffected()
 }

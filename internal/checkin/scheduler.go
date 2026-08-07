@@ -274,16 +274,19 @@ func (s *Scheduler) run(ctx context.Context) bool {
 		s.runMu.Lock()
 		s.running = false
 		s.runMu.Unlock()
-		s.markRan()
 	}()
 
 	summary, err := s.runner.RunAll(ctx, SourceScheduled)
 	if err != nil {
+		// Interrupted (stop/restart/cancellation): do NOT mark today as ran.
+		// The durable batch marker was also not written, so the next start
+		// catches up the remaining credentials.
 		if s.logger != nil && !errors.Is(err, context.Canceled) {
 			s.logger.Printf("scheduled check-in failed")
 		}
 		return true
 	}
+	s.markRan()
 	if s.logger != nil {
 		s.logger.Printf(
 			"scheduled check-in completed: success=%d failed=%d skipped=%d",

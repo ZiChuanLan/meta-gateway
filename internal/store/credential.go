@@ -3,13 +3,77 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"sync"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
 // CredentialStore provides CRUD operations for credentials.
+//
+// Credentials are read on every relay attempt (bound credential lookup plus
+// the site-wide api_key pool), so reads are served from an in-process cache:
+// by id and by the enabled api_key pool per site. Every write path
+// invalidates the affected entries; bulk imports clear everything.
 type CredentialStore struct {
 	db *sql.DB
+
+	mu   sync.RWMutex
+	byID map[int64]*domain.Credential
+	// bySiteKeys caches the enabled api_key pool per site (nil value = cached empty).
+	bySiteKeys map[int64][]domain.Credential
+}
+
+func newCredentialStore(db *sql.DB) *CredentialStore {
+	return &CredentialStore{
+		db:         db,
+		byID:       make(map[int64]*domain.Credential),
+		bySiteKeys: make(map[int64][]domain.Credential),
+	}
+}
+
+// ClearCache drops every cached credential and site key pool (used after bulk
+// imports that write credentials outside this store).
+func (s *CredentialStore) ClearCache() {
+	s.mu.Lock()
+	s.byID = make(map[int64]*domain.Credential)
+	s.bySiteKeys = make(map[int64][]domain.Credential)
+	s.mu.Unlock()
+}
+
+// cloneCredential returns a deep copy (SecretEnc buffer included) so callers
+// can never mutate the cached object through a shared pointer.
+func cloneCredential(credential *domain.Credential) *domain.Credential {
+	if credential == nil {
+		return nil
+	}
+	copy := *credential
+	copy.SecretEnc = append([]byte(nil), credential.SecretEnc...)
+	return &copy
+}
+
+func (s *CredentialStore) invalidate(id int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if old, ok := s.byID[id]; ok {
+		delete(s.bySiteKeys, old.SiteID)
+		delete(s.byID, id)
+		return
+	}
+	// Unknown entry: clear every site pool conservatively (the pool depends on
+	// status/kind/secret of every credential on the site).
+	for siteID := range s.bySiteKeys {
+		delete(s.bySiteKeys, siteID)
+	}
+}
+
+func (s *CredentialStore) cachePut(credential *domain.Credential) {
+	if credential == nil || credential.ID <= 0 {
+		return
+	}
+	cloned := cloneCredential(credential)
+	s.mu.Lock()
+	s.byID[cloned.ID] = cloned
+	s.mu.Unlock()
 }
 
 func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) {
@@ -34,7 +98,14 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 
 // ListEnabledAPIKeysBySite returns enabled api_key credentials that still hold ciphertext.
 // Used as the site-level relay key pool (aggregation across many keys for one upstream).
+// Results are cached per site and invalidated by any credential write.
 func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Credential, error) {
+	s.mu.RLock()
+	cached, ok := s.bySiteKeys[siteID]
+	s.mu.RUnlock()
+	if ok {
+		return cloneCredentialSlice(cached), nil
+	}
 	rows, err := s.db.Query(`
 		SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled,
 		       COALESCE(import_fingerprint, ''), created_at, updated_at
@@ -62,10 +133,38 @@ func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Crede
 		row.SecretEnc = []byte(secret)
 		result = append(result, row)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("credential api key pool rows: %w", err)
+	}
+	s.mu.Lock()
+	s.bySiteKeys[siteID] = cloneCredentialSlice(result)
+	s.mu.Unlock()
+	return result, nil
+}
+
+// cloneCredentialSlice deep-copies a credential slice for cache storage.
+func cloneCredentialSlice(in []domain.Credential) []domain.Credential {
+	if in == nil {
+		return nil
+	}
+	out := make([]domain.Credential, len(in))
+	for i := range in {
+		c := in[i]
+		c.SecretEnc = append([]byte(nil), in[i].SecretEnc...)
+		out[i] = c
+	}
+	return out
 }
 
 func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
+	if id > 0 {
+		s.mu.RLock()
+		cached, ok := s.byID[id]
+		s.mu.RUnlock()
+		if ok {
+			return cloneCredential(cached), nil
+		}
+	}
 	row := s.db.QueryRow(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
 	var r domain.Credential
 	var secret string
@@ -76,6 +175,7 @@ func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 		return nil, fmt.Errorf("credential get: %w", err)
 	}
 	r.SecretEnc = []byte(secret)
+	s.cachePut(&r)
 	return &r, nil
 }
 
@@ -85,7 +185,15 @@ func (s *CredentialStore) Create(c *domain.Credential) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("credential create: %w", err)
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err == nil {
+		c.ID = id
+		s.cachePut(c)
+		s.mu.Lock()
+		delete(s.bySiteKeys, c.SiteID)
+		s.mu.Unlock()
+	}
+	return id, err
 }
 
 func (s *CredentialStore) SetCheckinEnabled(id int64, enabled bool) error {
@@ -100,6 +208,7 @@ func (s *CredentialStore) SetCheckinEnabled(id int64, enabled bool) error {
 	if n == 0 {
 		return sql.ErrNoRows
 	}
+	s.invalidate(id)
 	return nil
 }
 
@@ -128,6 +237,8 @@ func (s *CredentialStore) Update(c *domain.Credential) error {
 	if err != nil {
 		return fmt.Errorf("credential update: %w", err)
 	}
+	s.invalidate(c.ID)
+	s.cachePut(c)
 	return nil
 }
 
@@ -136,5 +247,6 @@ func (s *CredentialStore) Delete(id int64) error {
 	if err != nil {
 		return fmt.Errorf("credential delete: %w", err)
 	}
+	s.invalidate(id)
 	return nil
 }

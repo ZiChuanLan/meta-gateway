@@ -41,7 +41,11 @@ type Result struct {
 	Body       io.ReadCloser
 	Header     http.Header
 	LatencyMs  int
-	Err        error
+	// FirstByteMs is the time from relay start to the first streamed byte
+	// (stream responses only; 0 when unknown). Populated by the proxy after
+	// its first-chunk peek.
+	FirstByteMs int
+	Err         error
 }
 
 // ChatCompletions forwards a /v1/chat/completions request to the given upstream.

@@ -69,6 +69,9 @@ curl http://127.0.0.1:4100/healthz
 | `BACKUP_DIR` | `<DATA_DIR>/backups` | Confined online backup directory |
 | `OUTBOUND_ALLOW_HOSTS` | empty | Exact trusted private upstream host exceptions |
 | `OUTBOUND_ALLOW_CIDRS` | empty | Trusted private upstream network exceptions |
+| `OUTBOUND_MAX_IDLE_CONNS` | `512` | Total outbound idle connection ceiling |
+| `OUTBOUND_MAX_IDLE_CONNS_PER_HOST` | `64` | Per-upstream-host idle connection ceiling (Go default is 2) |
+| `SQLITE_MAX_OPEN_CONNS` | `4` | SQLite connection-pool ceiling (WAL allows concurrent readers; `1` fully serializes) |
 | `TRUSTED_PROXY_CIDRS` | empty | Peers allowed to supply forwarded client addresses |
 | `TRUSTED_SCRAPER_CIDRS` | empty | Networks allowed to scrape without a metrics token |
 | `RELAY_RATE_PER_MINUTE` / `RELAY_RATE_BURST` | `600` / `100` | Per-key relay limiter; rate `0` disables it |
@@ -234,9 +237,10 @@ selected priority tier. If all eligible weights in a tier are zero, selection
 is uniform. Retryable transport failures and transient upstream responses move
 to another eligible channel; ordinary client-error responses do not retry.
 
-Model discovery currently supports OpenAI-compatible and New API platforms.
+Model discovery supports OpenAI-compatible, New API, Anthropic (official
+`GET /v1/models`), and Gemini (official `GET /v1beta/models`) platforms.
 Set the site `platform` or channel `type_hint` to `openai-compatible`, `openai`,
-or `new-api`, then trigger a refresh manually.
+`new-api`, `anthropic`, or `gemini`, then trigger a refresh manually.
 
 Credential check-in supports `session` and `access_token` credentials for New
 API and One API sites. Scheduling is disabled by default; enable individual

@@ -56,6 +56,14 @@ services:
       WEBDAV_BACKUP_PASSWORD: "${WEBDAV_BACKUP_PASSWORD:-}"
       WEBDAV_CRON: "${WEBDAV_CRON:-0 */6 * * *}"
       WEBDAV_MAX_BYTES: "${WEBDAV_MAX_BYTES:-10485760}"
+      # Alert matrix (multi-channel): JSON with bark/serverchan/telegram/smtp
+      # config + cooldown. Example:
+      # {"bark_url":"https://api.day.app/KEY","cooldown_seconds":300,"daily_summary_enabled":true}
+      ALERT_CONFIG_JSON: "${ALERT_CONFIG_JSON:-}"
+      # Daily summary interval in seconds (0 = off; 86400 = once a day).
+      ALERT_DAILY_SUMMARY_INTERVAL_SECONDS: "${ALERT_DAILY_SUMMARY_INTERVAL_SECONDS:-0}"
+      # Proactive health sweep interval in seconds (0 = off; e.g. 900 = every 15m).
+      ALERT_SWEEP_INTERVAL_SECONDS: "${ALERT_SWEEP_INTERVAL_SECONDS:-0}"
     volumes:
       - meta-gateway-data:/data
     healthcheck:

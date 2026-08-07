@@ -16,6 +16,7 @@ import (
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/webhook"
 )
 
 const (
@@ -65,6 +66,8 @@ type Service struct {
 	enc      *crypto.Encrypter
 	registry *adapters.Registry
 	now      func() time.Time
+	// notifier delivers checkin-failed alerts.
+	notifier *webhook.Notifier
 
 	runningMu sync.Mutex
 	running   map[int64]struct{}
@@ -78,6 +81,11 @@ func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Serv
 		now:      time.Now,
 		running:  make(map[int64]struct{}),
 	}
+}
+
+// SetNotifier attaches the alert notifier (checkin-failed events).
+func (s *Service) SetNotifier(n *webhook.Notifier) {
+	s.notifier = n
 }
 
 func (s *Service) RunCredential(ctx context.Context, credentialID int64, source string, requireScheduleEnabled bool) (RunResult, error) {
@@ -177,6 +185,11 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 		if persistErr != nil {
 			return RunResult{}, persistErr
 		}
+		// Checkin-failed alert (cooldown-protected; scheduled source only to
+		// avoid manual-run noise).
+		if status == StatusFailed && source == SourceScheduled && s.notifier != nil {
+			s.notifier.SendAlert(ctx, webhook.AlertWarning, "签到失败", fmt.Sprintf("站点 %s 的每日签到失败：%s (%s)", site.Name, message, category))
+		}
 		if errors.Is(adapterErr, context.Canceled) || errors.Is(adapterErr, context.DeadlineExceeded) {
 			return result, adapterErr
 		}
@@ -201,7 +214,20 @@ func (s *Service) RunAll(ctx context.Context, source string) (*RunSummary, error
 	if err != nil {
 		return nil, internalError("credential_list")
 	}
-	return runAll(ctx, credentials, source, s.RunCredential)
+	summary, err := runAll(ctx, credentials, source, s.RunCredential)
+	if err != nil {
+		// Interrupted (restart/stop): no durable batch-completed marker, so the
+		// next start catches up the remaining credentials instead of assuming
+		// today was fully handled.
+		return nil, err
+	}
+	// The whole batch finished: persist a durable marker so a restart does not
+	// re-run today's check-in (this is the authoritative signal, unlike the
+	// per-credential logs that an interrupted batch already wrote).
+	if recordErr := s.db.CheckinLog.RecordBatchCompleted(s.now()); recordErr != nil {
+		return nil, internalError("batch_state")
+	}
+	return summary, nil
 }
 
 // runAll executes one credential at a time and never lets a single internal

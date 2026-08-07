@@ -31,6 +31,8 @@ func main() {
 	var err error
 	if mode == "verify" {
 		err = r.verifyRestart()
+	} else if mode == "sticky" {
+		err = r.sticky()
 	} else {
 		err = r.setup()
 	}
@@ -150,9 +152,114 @@ func (r *runner) verifyRestart() error {
 	return nil
 }
 
+// sticky exercises sticky-session routing end to end: three same-session
+// requests must land on one channel, a channel outage must escape to the
+// survivor, and explain must report the sticky binding.
+func (r *runner) sticky() error {
+	site := r.adminJSON(http.MethodPost, "/admin/sites", map[string]any{"name": "sticky-site", "base_url": r.upstream + "/ok", "platform": "new-api", "status": "enabled"})
+	siteID := number(site, "id")
+	credential := r.adminJSON(http.MethodPost, fmt.Sprintf("/admin/sites/%d/credentials", siteID), map[string]any{"kind": "api_key", "secret": "e2e-upstream-secret", "status": "enabled"})
+	credentialID := number(credential, "id")
+	channelA := r.adminJSON(http.MethodPost, "/admin/channels", map[string]any{"site_id": siteID, "credential_id": credentialID, "name": "sticky-a", "base_url": r.upstream + "/ok", "models_csv": "sticky-model", "group_name": "e2e", "priority": 10, "weight": 100, "status": "enabled", "type_hint": "new-api"})
+	channelAID := number(channelA, "id")
+	channelB := r.adminJSON(http.MethodPost, "/admin/channels", map[string]any{"site_id": siteID, "credential_id": credentialID, "name": "sticky-b", "base_url": r.upstream + "/ok", "models_csv": "sticky-model", "group_name": "e2e", "priority": 10, "weight": 100, "status": "enabled", "type_hint": "new-api"})
+	channelBID := number(channelB, "id")
+	route := r.adminJSON(http.MethodPost, "/admin/routes", map[string]any{"model_pattern": "sticky-model", "enabled": true})
+	routeID := number(route, "id")
+	r.adminJSON(http.MethodPost, fmt.Sprintf("/admin/routes/%d/members", routeID), map[string]any{"channel_id": channelAID, "priority": 10, "weight": 100, "enabled": true, "auto": false, "manual_override": true})
+	r.adminJSON(http.MethodPost, fmt.Sprintf("/admin/routes/%d/members", routeID), map[string]any{"channel_id": channelBID, "priority": 10, "weight": 100, "enabled": true, "auto": false, "manual_override": true})
+	key := r.adminJSON(http.MethodPost, "/admin/downstream-keys", map[string]any{"name": "sticky"})
+	token, _ := key["token"].(string)
+	if token == "" {
+		return fmt.Errorf("downstream token missing")
+	}
+
+	const session = "e2e-session-1"
+	headers := map[string]string{"X-Meta-Session-Id": session}
+	for i := 0; i < 3; i++ {
+		if err := r.relayModel(token, false, "sticky-model", headers); err != nil {
+			return fmt.Errorf("sticky relay #%d: %w", i+1, err)
+		}
+	}
+	logs := r.adminArray(http.MethodGet, "/admin/proxy-logs?model=sticky-model&limit=10", nil)
+	boundChannel, ok := singleSuccessfulChannel(logs)
+	if !ok {
+		return fmt.Errorf("sticky: expected 3 same-channel successes, got %#v", logs)
+	}
+	if countSuccessful(logs) != 3 {
+		return fmt.Errorf("sticky: expected exactly 3 successful attempts before outage, got %#v", logs)
+	}
+
+	// Break the bound channel; the next same-session request must escape.
+	failURL := r.upstream + "/fail"
+	r.adminJSON(http.MethodPut, fmt.Sprintf("/admin/channels/%d", boundChannel), map[string]any{"base_url": failURL})
+	if err := r.relayModel(token, false, "sticky-model", headers); err != nil {
+		return fmt.Errorf("sticky escape relay: %w", err)
+	}
+	logs = r.adminArray(http.MethodGet, "/admin/proxy-logs?model=sticky-model&limit=10", nil)
+	// Logs are newest-first: the escape request's successful attempt must be
+	// the newest entry and land on the survivor, not the broken channel.
+	if len(logs) == 0 || number(logs[0], "status") != 200 {
+		return fmt.Errorf("sticky: latest attempt not successful: %#v", logs)
+	}
+	escaped := number(logs[0], "channel_id")
+	if escaped == boundChannel {
+		return fmt.Errorf("sticky: escape stayed on the broken channel %d: %#v", boundChannel, logs)
+	}
+	if !hasFailedAttempt(logs, boundChannel) {
+		return fmt.Errorf("sticky: expected a failed attempt on broken channel %d: %#v", boundChannel, logs)
+	}
+
+	// Explain must carry the sticky binding for the session.
+	status, body, err := r.do(http.MethodGet, "/admin/routes/explain?model=sticky-model&session="+session, r.admin, nil)
+	if err != nil || status != http.StatusOK || !bytes.Contains(body, []byte(`"session_key":"`+session+`"`)) || !bytes.Contains(body, []byte(`"sticky_channel_id"`)) {
+		return fmt.Errorf("sticky: explain missing session annotations: status=%d body=%s err=%v", status, body, err)
+	}
+	return nil
+}
+
+func singleSuccessfulChannel(logs []map[string]any) (int64, bool) {
+	var channelID int64
+	for _, entry := range logs {
+		if number(entry, "status") != 200 {
+			continue
+		}
+		current := number(entry, "channel_id")
+		if channelID == 0 {
+			channelID = current
+		} else if current != channelID {
+			return 0, false
+		}
+	}
+	return channelID, channelID != 0
+}
+
+func countSuccessful(logs []map[string]any) int {
+	count := 0
+	for _, entry := range logs {
+		if number(entry, "status") == 200 {
+			count++
+		}
+	}
+	return count
+}
+
+func hasFailedAttempt(logs []map[string]any, channelID int64) bool {
+	for _, entry := range logs {
+		if number(entry, "status") >= 400 && number(entry, "channel_id") == channelID {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *runner) relay(token string, stream bool) error {
-	payload := map[string]any{"model": "e2e-model", "messages": []map[string]string{{"role": "user", "content": "hello"}}, "stream": stream}
-	status, body, err := r.do(http.MethodPost, "/v1/chat/completions", token, payload)
+	return r.relayModel(token, stream, "e2e-model", nil)
+}
+
+func (r *runner) relayModel(token string, stream bool, model string, headers map[string]string) error {
+	payload := map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": "hello"}}, "stream": stream}
+	status, body, err := r.doWithHeaders(http.MethodPost, "/v1/chat/completions", token, payload, headers)
 	if err != nil || status != http.StatusOK || (stream && !bytes.Contains(body, []byte("[DONE]"))) || (!stream && !bytes.Contains(body, []byte("chat.completion"))) {
 		return fmt.Errorf("relay stream=%v status=%d body=%s err=%v", stream, status, body, err)
 	}
@@ -184,6 +291,10 @@ func (r *runner) adminArray(method, path string, body any) []map[string]any {
 }
 
 func (r *runner) do(method, path, token string, body any) (int, []byte, error) {
+	return r.doWithHeaders(method, path, token, body, nil)
+}
+
+func (r *runner) doWithHeaders(method, path, token string, body any, headers map[string]string) (int, []byte, error) {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -201,6 +312,9 @@ func (r *runner) do(method, path, token string, body any) (int, []byte, error) {
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
 	}
 	response, err := r.client.Do(request)
 	if err != nil {

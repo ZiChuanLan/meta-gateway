@@ -55,6 +55,35 @@ func TestOpenAIModelAdapterNormalizesAndAuthenticates(t *testing.T) {
 	}
 }
 
+func TestGeminiModelAdapterNormalizesAndAuthenticates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/prefix/v1beta/models" || r.Header.Get("x-goog-api-key") != "gemini-secret" {
+			t.Fatalf("unexpected request: path=%s key=%s", r.URL.Path, r.Header.Get("x-goog-api-key"))
+		}
+		_, _ = io.WriteString(w, `{"models":[{"name":"models/z-model"},{"name":"models/a-model"},{"name":"a-model"},{"name":" "}]}`)
+	}))
+	defer server.Close()
+	adapter := adapters.NewGeminiModelAdapter("gemini", server.Client())
+	models, err := adapter.ListModels(t.Context(), server.URL+"/prefix/v1beta/", "gemini-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(models, ",") != "a-model,z-model" {
+		t.Fatalf("models=%v", models)
+	}
+}
+
+func TestGeminiModelAdapterRejectsUnsafeURL(t *testing.T) {
+	adapter := adapters.NewGeminiModelAdapter("gemini", nil)
+	for _, value := range []string{"relative", "ftp://example.com", "https://user:pass@example.com", "https://example.com/v1beta?key=secret"} {
+		_, err := adapter.ListModels(t.Context(), value, "secret")
+		var adapterErr *adapters.Error
+		if !errors.As(err, &adapterErr) || adapterErr.Kind != adapters.ErrorInvalidURL {
+			t.Fatalf("url=%q err=%v", value, err)
+		}
+	}
+}
+
 func TestOpenAIModelAdapterPropagatesCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()

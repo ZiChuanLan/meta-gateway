@@ -1,6 +1,11 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"regexp"
+	"strings"
+	"time"
+)
 
 // Entity status values.
 const (
@@ -79,10 +84,84 @@ type Channel struct {
 	HeaderOverride string `json:"header_override,omitempty"`
 	// SystemPrompt is injected as a system message ahead of user messages.
 	SystemPrompt string `json:"system_prompt,omitempty"`
+	// RetryConfig is a JSON-encoded RetryConfig (per-channel retryable status
+	// codes and error-text patterns). Empty string = global defaults only.
+	RetryConfig string `json:"retry_config,omitempty"`
+	// Tags is a comma-separated free-form tag list for bulk operations
+	// (priority/weight/status updates by tag).
+	Tags string `json:"tags,omitempty"`
+	// StableFirst marks the channel as a grayscale candidate: it receives a
+	// small 1/N fraction of traffic until it earns promotion.
+	StableFirst bool `json:"stable_first,omitempty"`
+	// StableFirstRequests counts successful relay attempts since the channel
+	// was marked grayscale (promotion input).
+	StableFirstRequests int `json:"stable_first_requests,omitempty"`
 	// ConsecutiveFailures counts failed relay attempts (auto-disable input).
 	ConsecutiveFailures int       `json:"-"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+// RetryableErrorPattern matches an upstream error message (substring or regex).
+type RetryableErrorPattern struct {
+	Pattern string `json:"pattern"`
+	Regex   bool   `json:"regex,omitempty"`
+}
+
+// ChannelPatch is a partial channel update applied to every channel with a
+// given tag (bulk operations). Nil fields are left untouched.
+type ChannelPatch struct {
+	Priority      *int    `json:"priority"`
+	Weight        *int    `json:"weight"`
+	Status        *string `json:"status"`
+	ModelsCSV     *string `json:"models_csv"`
+	GroupName     *string `json:"group_name"`
+	RetryConfig   *string `json:"retry_config"`
+	SystemPrompt  *string `json:"system_prompt"`
+	HeaderOverride *string `json:"header_override"`
+}
+
+// RetryConfig is the per-channel retry policy (mirrors AxonHub retry.go).
+// The global default set (429 + 5xx) always applies; these are additive.
+type RetryConfig struct {
+	StatusCodes   []int                   `json:"status_codes,omitempty"`
+	ErrorPatterns []RetryableErrorPattern `json:"error_patterns,omitempty"`
+	// compiled holds pre-compiled regexes aligned with ErrorPatterns entries
+	// whose Regex flag is set (nil for substring entries or failed compiles).
+	// Unexported so JSON round-trips and equality comparisons are unaffected;
+	// populated by ParseRetryConfig so the hot path never recompiles regexes.
+	compiled []*regexp.Regexp
+}
+
+// CompiledPatterns returns the pre-compiled regexes aligned with
+// ErrorPatterns (nil entries for substring patterns or compile failures).
+// Non-nil only after ParseRetryConfig populated them.
+func (c RetryConfig) CompiledPatterns() []*regexp.Regexp {
+	return c.compiled
+}
+
+// ParseRetryConfig decodes a channel's retry_config JSON. Malformed or empty
+// input yields an empty config (global defaults only). Regex patterns are
+// compiled once here; invalid patterns are stored as nil and skipped at match
+// time, matching the old per-call behavior (a compile error never matched).
+func ParseRetryConfig(raw string) RetryConfig {
+	var cfg RetryConfig
+	if strings.TrimSpace(raw) == "" {
+		return cfg
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return RetryConfig{}
+	}
+	cfg.compiled = make([]*regexp.Regexp, len(cfg.ErrorPatterns))
+	for i, p := range cfg.ErrorPatterns {
+		if !p.Regex || p.Pattern == "" {
+			continue
+		}
+		if re, err := regexp.Compile(p.Pattern); err == nil {
+			cfg.compiled[i] = re
+		}
+	}
+	return cfg
 }
 
 // ChannelOverview combines channel configuration with discovery and routing health.
@@ -112,6 +191,9 @@ type ChannelOverview struct {
 	LastProbeAt        *time.Time `json:"last_probe_at,omitempty"`
 	LastProbeOK        bool       `json:"last_probe_ok"`
 	LastProbeError     string     `json:"last_probe_error,omitempty"`
+	// HealthState is the derived five-state health machine (Metapi-inspired):
+	// disabled / unhealthy / degraded / healthy / unknown.
+	HealthState string `json:"health_state,omitempty"`
 }
 
 // DiscoveredModel is one model observed during a successful channel refresh.
@@ -129,11 +211,29 @@ type DiscoveredModel struct {
 // Route
 // ---------------------------------------------------------------------------
 
+// RoutingMode values for Route.RoutingMode. The empty string is treated as
+// RoutingModeAuto for compatibility with older clients.
+const (
+	RoutingModeAuto     = "auto"
+	RoutingModeLatency  = "latency"
+	RoutingModeWeighted = "weighted"
+	RoutingModeAdaptive = "adaptive"
+)
+
+// NormalizeRoutingMode maps an empty or unknown-format mode to RoutingModeAuto.
+func NormalizeRoutingMode(mode string) string {
+	if mode == "" {
+		return RoutingModeAuto
+	}
+	return mode
+}
+
 // Route maps a model pattern to channels.
 type Route struct {
 	ID           int64     `json:"id"`
 	ModelPattern string    `json:"model_pattern"`
 	Enabled      bool      `json:"enabled"`
+	RoutingMode  string    `json:"routing_mode"`
 	MappingJSON  string    `json:"mapping_json,omitempty"`
 	Notes        string    `json:"notes,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -187,8 +287,23 @@ type DownstreamKey struct {
 	// ExpiresAt is an RFC3339 timestamp; empty means the key never expires.
 	ExpiresAt string `json:"expires_at,omitempty"`
 	// AllowedIPs is a newline-separated list of IPs/CIDRs; empty means any source.
-	AllowedIPs string    `json:"allowed_ips,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	AllowedIPs string `json:"allowed_ips,omitempty"`
+	// GroupName is the multi-tenant group this key belongs to ("default" when
+	// unset). Group quotas/rate limits apply on top of the key's own limits.
+	GroupName string    `json:"group_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// KeyGroup is a multi-tenant token group with its own quota and rate limits.
+// QuotaTotalTokens 0 = unlimited; RatePerMinute 0 = no group-level limiting.
+type KeyGroup struct {
+	Name             string    `json:"name"`
+	QuotaTotalTokens int64     `json:"quota_total_tokens"`
+	QuotaUsedTokens  int64     `json:"quota_used_tokens"`
+	RatePerMinute    int       `json:"rate_per_minute"`
+	RateBurst        int       `json:"rate_burst"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -211,8 +326,24 @@ type ProxyLog struct {
 	PromptTokens     int       `json:"prompt_tokens,omitempty"`
 	CompletionTokens int       `json:"completion_tokens,omitempty"`
 	TotalTokens      int       `json:"total_tokens,omitempty"`
+	// CacheReadTokens / CacheCreationTokens record upstream prompt-cache
+	// accounting (Anthropic cache_read/creation, OpenAI cached_tokens,
+	// Gemini cachedContentTokenCount).
+	CacheReadTokens     int       `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int       `json:"cache_creation_tokens,omitempty"`
+	// FirstByteMs is the time to the first streamed byte (0 for non-stream).
+	FirstByteMs int `json:"first_byte_ms,omitempty"`
+	// ClientFamily is the coarse client classification from the User-Agent.
+	ClientFamily string `json:"client_family,omitempty"`
+	// ReasoningEffort is the client-requested reasoning effort (OpenAI style,
+	// e.g. low / medium / high / max / xhigh) when present in the request body.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// TokensPerSecond is the derived stream throughput (completion tokens over
+	// effective latency), AxonHub-style TPS metric.
+	TokensPerSecond float64 `json:"tokens_per_second,omitempty"`
 	Stream           bool      `json:"stream,omitempty"`
 	Path             string    `json:"path,omitempty"`
+	SessionKey       string    `json:"session_key,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -228,8 +359,17 @@ type UsageRecord struct {
 	PromptTokens     int       `json:"prompt_tokens"`
 	CompletionTokens int       `json:"completion_tokens"`
 	TotalTokens      int       `json:"total_tokens"`
+	CacheReadTokens     int       `json:"cache_read_tokens"`
+	CacheCreationTokens int       `json:"cache_creation_tokens"`
 	Status           int       `json:"status"`
-	CreatedAt        time.Time `json:"created_at"`
+	// Cost is the persisted monetary amount for this relay (key unit prices ×
+	// model ratio), computed at record time so bills never depend on later
+	// price edits.
+	Cost float64 `json:"cost"`
+	// GroupName is the key's tenant group; used only to accrue group quota in
+	// the same transaction (not persisted on the usage row itself).
+	GroupName string    `json:"-"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // UsageSummary aggregates metered traffic for Admin views.
@@ -238,7 +378,14 @@ type UsageSummary struct {
 	PromptTokens     int64   `json:"prompt_tokens"`
 	CompletionTokens int64   `json:"completion_tokens"`
 	TotalTokens      int64   `json:"total_tokens"`
-	EstimatedCost    float64 `json:"estimated_cost"`
+	Cost             float64 `json:"cost"`
+}
+
+// ModelRatio is the per-model billing markup (1.0 = no markup).
+type ModelRatio struct {
+	Model     string    `json:"model"`
+	Ratio     float64   `json:"ratio"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // RoutingCandidate contains the persisted facts needed to evaluate one member.
@@ -246,6 +393,9 @@ type RoutingCandidate struct {
 	Member           RouteMember `json:"member"`
 	Channel          Channel     `json:"channel"`
 	CredentialUsable bool        `json:"credential_usable"`
+	// ModelPattern is the route's model_pattern, used to scope per-model
+	// adaptive scoring (latency/error EMA is tracked per channel × model).
+	ModelPattern string `json:"model_pattern,omitempty"`
 }
 
 // RouteOverview is the admin-facing route matrix with enriched channel members.

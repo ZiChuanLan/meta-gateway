@@ -22,6 +22,11 @@ type AccountInput struct {
 	Secret         string
 	PlatformUserID int64
 	UserHeader     bool
+	// NoUserHeader suppresses the compat user-id headers even when the
+	// adapter defaults to sending them (a.{userHeader}). Some forks reject
+	// the headers, others require them; callers retry with the opposite
+	// setting on 401/403.
+	NoUserHeader bool
 }
 
 // AccountSelf is a redacted account probe result (no secrets).
@@ -57,6 +62,48 @@ type NewAPIKeyRequest struct {
 	ModelLimits    string
 }
 
+// ModelPrice is one model's price on an upstream, mirroring the All API Hub
+// modelPricing.ts normalization (source-verified):
+//   - token billing:  inputUSD = model_ratio × (1e6 / quota_per_unit) × group_ratio
+//                     outputUSD = inputUSD × completion_ratio
+//   - direct USD:     token_price_usd_per_million.input wins (no ratio semantics)
+//   - per-call:       model_price × group_ratio (fixed price per request)
+//   - legacy map:     quota-per-1M ÷ quota_per_unit
+type ModelPrice struct {
+	Model    string `json:"model"`
+	Currency string `json:"currency,omitempty"`
+	// PriceUSD is set by the account service after conversion (input price).
+	PriceUSD float64 `json:"price_usd,omitempty"`
+	// OutputUSD is input × completion_ratio for token-billed models.
+	OutputUSD float64 `json:"output_usd,omitempty"`
+	// Mode is the billing mode: "fixed" (per-call), "token", or "legacy".
+	Mode string `json:"mode,omitempty"`
+	// Ratio is the raw New-API model_ratio (per-token billing multiplier).
+	Ratio float64 `json:"ratio,omitempty"`
+	// CompletionRatio is the raw New-API completion_ratio (output × ratio).
+	CompletionRatio float64 `json:"completion_ratio,omitempty"`
+	// QuotaType mirrors New-API quota_type: 0 = token billing, 1 = per-call.
+	QuotaType int `json:"quota_type,omitempty"`
+	// ModelPrice is the raw model_price (per-call fixed price when QuotaType=1).
+	ModelPrice float64 `json:"model_price,omitempty"`
+	// TokenUSD is the direct USD/1M price when the site has no ratio semantics.
+	TokenUSD *TokenUSDPerMillion `json:"token_usd,omitempty"`
+	// GroupRatio is the user-group multiplier from the pricing response
+	// (defaults to 1 when the site has no group ratios).
+	GroupRatio float64 `json:"group_ratio,omitempty"`
+	// QuotaPer1M is the raw quota price per 1M tokens (legacy map format).
+	QuotaPer1M float64 `json:"quota_per_1m,omitempty"`
+}
+
+// TokenUSDPerMillion is a direct USD-per-1M-token price for sites without
+// New-API ratio semantics (mirrors AAH token_price_usd_per_million).
+type TokenUSDPerMillion struct {
+	Input      float64 `json:"input,omitempty"`
+	Output     float64 `json:"output,omitempty"`
+	CacheRead  float64 `json:"cache_read,omitempty"`
+	CacheWrite float64 `json:"cache_write,omitempty"`
+}
+
 // AccountAdapter probes user identity and lists API keys for relay attachment.
 type AccountAdapter interface {
 	Name() string
@@ -65,6 +112,8 @@ type AccountAdapter interface {
 	ListAPIKeys(context.Context, AccountInput, int, int) ([]UpstreamAPIKey, error)
 	RevealAPIKey(context.Context, AccountInput, int64) (string, error)
 	CreateAPIKey(context.Context, AccountInput, NewAPIKeyRequest) (UpstreamAPIKey, error)
+	Pricing(context.Context, AccountInput) ([]ModelPrice, error)
+	QuotaPerUnit(context.Context, AccountInput) (int64, error)
 }
 
 // NewAPIAccountAdapter implements AccountAdapter for New API / One API style hosts.
@@ -83,6 +132,165 @@ func NewNewAPIAccountAdapter(name string, client *http.Client, userHeader bool) 
 
 func (a *NewAPIAccountAdapter) Name() string { return a.name }
 
+// QuotaPerUnit fetches the site's quota-per-unit conversion from /api/status
+// (public endpoint). New API sites define 1 unit = N quota; prices are quoted
+// in quota, so dividing by this value yields the price in site currency.
+func (a *NewAPIAccountAdapter) QuotaPerUnit(ctx context.Context, input AccountInput) (int64, error) {
+	endpoint, err := accountEndpoint(input.BaseURL, "/api/status")
+	if err != nil {
+		return 0, &Error{Kind: ErrorInvalidURL}
+	}
+	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	if err != nil {
+		return 0, err
+	}
+	if status < 200 || status >= 300 {
+		return 0, &Error{Kind: ErrorStatus, Status: status}
+	}
+	var envelope struct {
+		Success *bool `json:"success"`
+		Data    struct {
+			QuotaPerUnit int64 `json:"quota_per_unit"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return 0, &Error{Kind: ErrorPayload}
+	}
+	if envelope.Success != nil && !*envelope.Success {
+		return 0, &Error{Kind: ErrorPayload}
+	}
+	if envelope.Data.QuotaPerUnit <= 0 {
+		return 0, &Error{Kind: ErrorPayload}
+	}
+	return envelope.Data.QuotaPerUnit, nil
+}
+
+// Pricing fetches the site-wide model price table from the New-API family's
+// /api/pricing endpoint. Values are either plain numbers (default currency) or
+// {currency, price} objects.
+func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) ([]ModelPrice, error) {
+	endpoint, err := accountEndpoint(input.BaseURL, "/api/pricing")
+	if err != nil {
+		return nil, &Error{Kind: ErrorInvalidURL}
+	}
+	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, &Error{Kind: ErrorStatus, Status: status}
+	}
+	var envelope struct {
+		Success *bool           `json:"success"`
+		Data    json.RawMessage `json:"data"`
+		// GroupRatio is the top-level user-group multiplier map.
+		GroupRatio map[string]float64 `json:"group_ratio"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, &Error{Kind: ErrorPayload}
+	}
+	if envelope.Success != nil && !*envelope.Success {
+		return nil, &Error{Kind: ErrorPayload}
+	}
+	if len(envelope.Data) == 0 {
+		return nil, nil
+	}
+	// Resolve the user-group multiplier: prefer "default", else the first
+	// group ratio present, else 1 (mirrors AAH resolveGroupRatio).
+	groupRatio := 1.0
+	if ratio, ok := envelope.GroupRatio["default"]; ok && ratio > 0 {
+		groupRatio = ratio
+	} else {
+		for _, ratio := range envelope.GroupRatio {
+			if ratio > 0 {
+				groupRatio = ratio
+				break
+			}
+		}
+	}
+		var table map[string]json.RawMessage
+	if err := json.Unmarshal(envelope.Data, &table); err == nil {
+		// Legacy object form: {model: quota-per-1M} or {model: {currency, price}}.
+		out := make([]ModelPrice, 0, len(table))
+		for model, raw := range table {
+			item := ModelPrice{Model: model}
+			var plain float64
+			if json.Unmarshal(raw, &plain) == nil {
+				item.QuotaPer1M = plain
+				item.Mode = "legacy"
+				out = append(out, item)
+				continue
+			}
+			var obj struct {
+				Currency string  `json:"currency"`
+				Price    float64 `json:"price"`
+			}
+			if json.Unmarshal(raw, &obj) == nil {
+				item.Currency = obj.Currency
+				item.PriceUSD = obj.Price
+				item.Mode = "fixed"
+				out = append(out, item)
+			}
+		}
+		return out, nil
+	}
+	// New API v0.13+ list form: [{model_name, model_price, model_ratio, ...}]
+	// with optional token_price_usd_per_million and top-level group_ratio.
+	var list []struct {
+		ModelName                 string  `json:"model_name"`
+		ModelPrice                float64 `json:"model_price"`
+		ModelRatio                float64 `json:"model_ratio"`
+		CompletionRatio           float64 `json:"completion_ratio"`
+		QuotaType                 int     `json:"quota_type"`
+		Currency                  string  `json:"currency"`
+		TokenPriceUSDPerMillion   *struct {
+			Input      float64 `json:"input"`
+			Output     float64 `json:"output"`
+			CacheRead  float64 `json:"cache_read"`
+			CacheWrite float64 `json:"cache_write"`
+		} `json:"token_price_usd_per_million"`
+	}
+	if err := json.Unmarshal(envelope.Data, &list); err != nil || len(list) == 0 {
+		return nil, &Error{Kind: ErrorPayload}
+	}
+	out := make([]ModelPrice, 0, len(list))
+	for _, item := range list {
+		name := strings.TrimSpace(item.ModelName)
+		if name == "" {
+			continue
+		}
+		// Unpriced (both 0 and no direct USD) → skip.
+		var direct *TokenUSDPerMillion
+		if item.TokenPriceUSDPerMillion != nil {
+			direct = &TokenUSDPerMillion{
+				Input:      item.TokenPriceUSDPerMillion.Input,
+				Output:     item.TokenPriceUSDPerMillion.Output,
+				CacheRead:  item.TokenPriceUSDPerMillion.CacheRead,
+				CacheWrite: item.TokenPriceUSDPerMillion.CacheWrite,
+			}
+		}
+		if item.ModelPrice <= 0 && item.ModelRatio <= 0 && (direct == nil || direct.Input <= 0) {
+			continue
+		}
+		mode := "token"
+		if item.QuotaType == 1 || item.ModelPrice > 0 && item.ModelRatio <= 0 {
+			mode = "fixed"
+		}
+		out = append(out, ModelPrice{
+			Model:           name,
+			Currency:        strings.TrimSpace(item.Currency),
+			PriceUSD:        item.ModelPrice, // fixed: site currency per request
+			Ratio:           item.ModelRatio,
+			CompletionRatio: item.CompletionRatio,
+			QuotaType:       item.QuotaType,
+			ModelPrice:      item.ModelPrice,
+			TokenUSD:        direct,
+			GroupRatio:      groupRatio,
+			Mode:            mode,
+		})
+	}
+	return out, nil
+}
 // ListTokenGroups returns every group the account may use, from the New-API
 // family's /api/user/self/groups endpoint. This reports usable groups even
 // when the account holds no tokens yet (token-list enumeration would be empty).
@@ -94,6 +302,14 @@ func (a *NewAPIAccountAdapter) ListTokenGroups(ctx context.Context, input Accoun
 	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
 	if err != nil {
 		return nil, err
+	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		// Same user-id header requirement as the token list on some forks.
+		if retry, retryable := a.alternateUserHeaderInput(ctx, input); retryable {
+			if body2, status2, err2 := a.doJSON(ctx, http.MethodGet, endpoint, retry); err2 == nil && status2 >= 200 && status2 < 300 {
+				body, status = body2, status2
+			}
+		}
 	}
 	if status < 200 || status >= 300 {
 		return nil, &Error{Kind: ErrorStatus, Status: status}
@@ -243,6 +459,18 @@ func (a *NewAPIAccountAdapter) ListAPIKeys(ctx context.Context, input AccountInp
 	if err != nil {
 		return nil, err
 	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden || isTokenListRejected(body) {
+		// Some forks gate /api/token/ on the user-id compat headers
+		// (New-Api-User et al.) and reject requests without them; a few
+		// reject the headers entirely (e.g. a stale stored user id). Retry
+		// once with the opposite header configuration before giving up.
+		if retry, retryable := a.alternateUserHeaderInput(ctx, input); retryable {
+			if body2, status2, err2 := a.doJSON(ctx, http.MethodGet, endpoint, retry); err2 == nil &&
+				status2 >= 200 && status2 < 300 && !isTokenListRejected(body2) {
+				return a.listAPIKeysFromBody(ctx, endpoint, body2, page, retry)
+			}
+		}
+	}
 	if status < 200 || status >= 300 {
 		return nil, &Error{Kind: ErrorStatus, Status: status}
 	}
@@ -252,20 +480,49 @@ func (a *NewAPIAccountAdapter) ListAPIKeys(ctx context.Context, input AccountInp
 	if isTokenListRejected(body) {
 		return nil, &Error{Kind: ErrorStatus, Status: http.StatusUnauthorized}
 	}
+	return a.listAPIKeysFromBody(ctx, endpoint, body, page, input)
+}
+
+// listAPIKeysFromBody parses a token-list body, retrying with the p=1 page
+// index for forks that are 1-based.
+func (a *NewAPIAccountAdapter) listAPIKeysFromBody(ctx context.Context, endpoint string, body []byte, page int, input AccountInput) ([]UpstreamAPIKey, error) {
 	keys := parseTokenList(body)
 	// Some New-API forks are 1-based for page index.
 	if len(keys) == 0 && page == 0 {
+		query := url.Values{}
 		query.Set("p", "1")
+		query.Set("size", "100")
 		alt := strings.Split(endpoint, "?")[0] + "?" + query.Encode()
-		body, status, err = a.doJSON(ctx, http.MethodGet, alt, input)
-		if err == nil && status >= 200 && status < 300 {
-			if isTokenListRejected(body) {
+		if body2, status2, err2 := a.doJSON(ctx, http.MethodGet, alt, input); err2 == nil && status2 >= 200 && status2 < 300 {
+			if isTokenListRejected(body2) {
 				return nil, &Error{Kind: ErrorStatus, Status: http.StatusUnauthorized}
 			}
-			keys = parseTokenList(body)
+			keys = parseTokenList(body2)
 		}
 	}
 	return keys, nil
+}
+
+// alternateUserHeaderInput returns an AccountInput with the opposite user-id
+// header configuration of the current one. Returns retryable=false when no
+// useful alternative exists (e.g. headers are wanted but no user id is known
+// and cannot be resolved).
+func (a *NewAPIAccountAdapter) alternateUserHeaderInput(ctx context.Context, input AccountInput) (AccountInput, bool) {
+	carried := !input.NoUserHeader && (a.userHeader || input.UserHeader)
+	retry := input
+	retry.NoUserHeader = carried
+	retry.UserHeader = !carried
+	if carried {
+		return retry, true
+	}
+	if retry.PlatformUserID <= 0 {
+		if self, selfErr := a.ProbeSelf(ctx, input); selfErr == nil && self.PlatformUserID > 0 {
+			retry.PlatformUserID = self.PlatformUserID
+			return retry, true
+		}
+		return retry, false
+	}
+	return retry, true
 }
 
 // isTokenListRejected reports whether a /api/token/ response body carries
@@ -342,7 +599,7 @@ func (a *NewAPIAccountAdapter) CreateAPIKey(ctx context.Context, input AccountIn
 	req.Header.Set("Authorization", "Bearer "+input.Secret)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if a.userHeader || input.UserHeader {
+	if !input.NoUserHeader && (a.userHeader || input.UserHeader) {
 		ApplyCompatUserIDHeaders(req.Header, input.PlatformUserID)
 	}
 	resp, err := a.client.Do(req)
@@ -451,7 +708,7 @@ func (a *NewAPIAccountAdapter) doJSON(ctx context.Context, method, endpoint stri
 	}
 	req.Header.Set("Authorization", "Bearer "+input.Secret)
 	req.Header.Set("Accept", "application/json")
-	if a.userHeader || input.UserHeader {
+	if !input.NoUserHeader && (a.userHeader || input.UserHeader) {
 		ApplyCompatUserIDHeaders(req.Header, input.PlatformUserID)
 	}
 	resp, err := a.client.Do(req)

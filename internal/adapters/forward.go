@@ -9,12 +9,29 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/lan/meta-gateway/internal/usage"
 )
 
 // ErrUnsupportedPath is returned by TransformRequest when the adapter has no
 // mapping for the requested OpenAI path. The proxy treats it as a hard
 // (non-retryable) failure.
 var ErrUnsupportedPath = errors.New("adapter: path not supported")
+
+// ErrUnsupportedFeature indicates a valid endpoint request that asks for a
+// provider capability this adapter deliberately does not implement.
+var ErrUnsupportedFeature = errors.New("adapter: feature not supported")
+
+// ErrContentBlocked indicates that the native provider rejected the prompt or
+// candidate for safety/content policy reasons. The HTTP layer maps this to a
+// client-visible 400 instead of retrying the same request.
+var ErrContentBlocked = errors.New("adapter: content blocked")
+
+// ErrInvalidURL indicates a malformed channel/site base URL discovered while
+// constructing an upstream request. It is local configuration failure, not an
+// upstream health signal, so the proxy must not retry or mutate channel/key
+// health state.
+var ErrInvalidURL = errors.New("adapter: invalid URL")
 
 // ForwardAdapter transforms a request/response between the OpenAI wire
 // contract and a native upstream platform.
@@ -39,6 +56,8 @@ type ForwardAdapter interface {
 	WrapStream(openAIPath string, body io.ReadCloser) (io.ReadCloser, error)
 	// AuthHeaders returns the upstream authentication headers for an API key.
 	AuthHeaders(apiKey string) http.Header
+	// ExtractUsage extracts token usage from a converted response body.
+	ExtractUsage(openAIPath string, body []byte) (usage.Tokens, bool)
 }
 
 // OpenAIPassthroughAdapter is the default adapter: the channel already speaks
@@ -77,4 +96,9 @@ func (OpenAIPassthroughAdapter) AuthHeaders(apiKey string) http.Header {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+apiKey)
 	return headers
+}
+
+func (OpenAIPassthroughAdapter) ExtractUsage(_ string, body []byte) (usage.Tokens, bool) {
+	tokens := usage.ExtractFromJSONBody(body)
+	return tokens, tokens.Valid()
 }

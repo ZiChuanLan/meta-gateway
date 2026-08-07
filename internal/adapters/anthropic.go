@@ -192,62 +192,58 @@ func messageContentText(raw json.RawMessage) string {
 	return strings.TrimSpace(string(raw))
 }
 
-// AnthropicMessagesToChat converts a non-stream Anthropic Messages response into
-// an OpenAI chat.completion-shaped JSON object for clients that only speak chat.
 func AnthropicMessagesToChat(anthropicBody []byte) ([]byte, error) {
 	var incoming struct {
-		ID         string `json:"id"`
-		Type       string `json:"type"`
-		Role       string `json:"role"`
-		Model      string `json:"model"`
-		StopReason string `json:"stop_reason"`
-		Content    []struct {
+		ID      string `json:"id"`
+		Model   string `json:"model"`
+		Role    string `json:"role"`
+		Content []struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
-		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
+		StopReason string `json:"stop_reason"`
+		Usage      struct {
+			InputTokens              int `json:"input_tokens"`
+			OutputTokens             int `json:"output_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(anthropicBody, &incoming); err != nil {
 		return nil, fmt.Errorf("anthropic: decode messages response: %w", err)
 	}
-	var textBuilder strings.Builder
-	for _, block := range incoming.Content {
-		if block.Type == "text" {
-			textBuilder.WriteString(block.Text)
+	var content strings.Builder
+	for _, part := range incoming.Content {
+		if part.Type == "text" {
+			content.WriteString(part.Text)
 		}
 	}
-	finishReason := "stop"
-	switch incoming.StopReason {
-	case "max_tokens":
-		finishReason = "length"
-	case "stop_sequence":
-		finishReason = "stop"
-	case "tool_use":
-		finishReason = "tool_calls"
+	finishReason := mapAnthropicStopReason(incoming.StopReason)
+	usage := map[string]any{
+		"prompt_tokens":     incoming.Usage.InputTokens,
+		"completion_tokens": incoming.Usage.OutputTokens,
+		"total_tokens":      incoming.Usage.InputTokens + incoming.Usage.OutputTokens,
+	}
+	if incoming.Usage.CacheReadInputTokens > 0 {
+		usage["cache_read_tokens"] = incoming.Usage.CacheReadInputTokens
+	}
+	if incoming.Usage.CacheCreationInputTokens > 0 {
+		usage["cache_creation_tokens"] = incoming.Usage.CacheCreationInputTokens
 	}
 	outbound := map[string]any{
 		"id":      incoming.ID,
 		"object":  "chat.completion",
-		"created": time.Now().Unix(),
+		"created": nowUnix(),
 		"model":   incoming.Model,
-		"choices": []map[string]any{
-			{
-				"index": 0,
-				"message": map[string]any{
-					"role":    "assistant",
-					"content": textBuilder.String(),
-				},
-				"finish_reason": finishReason,
+		"choices": []map[string]any{{
+			"index": 0,
+			"message": map[string]any{
+				"role":    "assistant",
+				"content": content.String(),
 			},
-		},
-		"usage": map[string]any{
-			"prompt_tokens":     incoming.Usage.InputTokens,
-			"completion_tokens": incoming.Usage.OutputTokens,
-			"total_tokens":      incoming.Usage.InputTokens + incoming.Usage.OutputTokens,
-		},
+			"finish_reason": finishReason,
+		}},
+		"usage": usage,
 	}
 	return json.Marshal(outbound)
 }

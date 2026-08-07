@@ -26,16 +26,39 @@ type DB struct {
 	WebDAVSettings  *WebDAVSettingsStore
 	RuntimeSettings *RuntimeSettingsStore
 	Usage           *UsageStore
+	ModelRatio      *ModelRatioStore
+	Group           *GroupStore
 }
 
-// Open opens (or creates) the SQLite database at the given path and runs migrations.
+// DefaultMaxOpenConns is the SQLite connection-pool ceiling used when no
+// explicit value is provided. WAL mode allows concurrent readers alongside a
+// single writer, so a small pool (rather than 1) removes the serialization
+// bottleneck on hot paths while keeping write contention bounded by
+// busy_timeout.
+const DefaultMaxOpenConns = 4
+
+// Open opens (or creates) the SQLite database at the given path and runs
+// migrations, using DefaultMaxOpenConns.
 func Open(dataDir string) (*DB, error) {
+	return OpenWithMaxConns(dataDir, DefaultMaxOpenConns)
+}
+
+// OpenWithMaxConns opens (or creates) the SQLite database at the given path
+// and runs migrations with an explicit connection-pool ceiling. The pool must
+// be at least 1; values outside 1..16 are clamped defensively.
+func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
+	if maxOpenConns < 1 {
+		maxOpenConns = 1
+	}
+	if maxOpenConns > 16 {
+		maxOpenConns = 16
+	}
 	dsn := fmt.Sprintf("file:%s/meta-gateway.db?cache=shared&_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)", dataDir)
 	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open: %w", err)
 	}
-	sqldb.SetMaxOpenConns(1)
+	sqldb.SetMaxOpenConns(maxOpenConns)
 
 	if err := sqldb.Ping(); err != nil {
 		return nil, fmt.Errorf("store: ping: %w", err)
@@ -46,23 +69,27 @@ func Open(dataDir string) (*DB, error) {
 
 	db := &DB{
 		DB:              sqldb,
-		Site:            &SiteStore{db: sqldb},
-		Credential:      &CredentialStore{db: sqldb},
+		Site:            newSiteStore(sqldb),
+		Credential:      newCredentialStore(sqldb),
 		Channel:         &ChannelStore{db: sqldb},
 		DiscoveredModel: &DiscoveredModelStore{db: sqldb},
 		Route:           &RouteStore{db: sqldb},
 		RouteMember:     &RouteMemberStore{db: sqldb},
-		DownstreamKey:   &DownstreamKeyStore{db: sqldb},
+		DownstreamKey:   newDownstreamKeyStore(sqldb),
 		ProxyLog:        &ProxyLogStore{db: sqldb},
 		CheckinLog:      &CheckinLogStore{db: sqldb},
-		Exchange:        &ExchangeStore{db: sqldb},
 		AuditEvent:      &AuditEventStore{db: sqldb},
 		BackupRecord:    &BackupRecordStore{db: sqldb},
 		Plugin:          &PluginStore{db: sqldb},
 		WebDAVSettings:  &WebDAVSettingsStore{db: sqldb},
 		RuntimeSettings: &RuntimeSettingsStore{db: sqldb},
 		Usage:           &UsageStore{db: sqldb},
+		ModelRatio:      newModelRatioStore(sqldb),
+		Group:           newGroupStore(sqldb),
 	}
+	// Exchange needs the full DB handle to clear the site/credential caches
+	// after direct-SQL imports.
+	db.Exchange = &ExchangeStore{db: db}
 	return db, nil
 }
 

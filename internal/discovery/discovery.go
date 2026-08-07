@@ -5,14 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/webhook"
 )
 
 type ErrorKind string
@@ -69,10 +72,37 @@ type Service struct {
 	enc      *crypto.Encrypter
 	registry *adapters.Registry
 	now      func() time.Time
+
+	// recoveryMu guards the passive-recovery probe configuration.
+	recoveryMu       sync.RWMutex
+	recoveryEnabled  bool
+	recoveryInterval time.Duration
+	// notifier delivers operational webhooks (auto-disable/recovery).
+	notifier *webhook.Notifier
+}
+
+// SetRecoveryConfig hot-applies the passive-recovery probe configuration.
+func (s *Service) SetRecoveryConfig(enabled bool, interval time.Duration) {
+	s.recoveryMu.Lock()
+	defer s.recoveryMu.Unlock()
+	s.recoveryEnabled = enabled
+	s.recoveryInterval = interval
+}
+
+// recoveryConfig returns the current passive-recovery probe configuration.
+func (s *Service) recoveryConfig() (bool, time.Duration) {
+	s.recoveryMu.RLock()
+	defer s.recoveryMu.RUnlock()
+	return s.recoveryEnabled, s.recoveryInterval
 }
 
 func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Service {
 	return &Service{db: db, enc: enc, registry: registry, now: time.Now}
+}
+
+// SetWebhookNotifier installs the operational webhook notifier (nil disables).
+func (s *Service) SetWebhookNotifier(notifier *webhook.Notifier) {
+	s.notifier = notifier
 }
 
 func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, error) {
@@ -83,7 +113,7 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	if channel == nil {
 		return nil, &Error{Kind: ErrorNotFound, Category: "channel_not_found"}
 	}
-	if channel.Status != domain.StatusEnabled {
+	if channel.Status != domain.StatusEnabled && channel.Status != domain.StatusAutoDisabled {
 		return nil, unavailableError("channel_disabled")
 	}
 	if channel.SiteID == nil {
@@ -113,33 +143,29 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		baseURL = site.BaseURL
 	}
 	started := s.now()
-	var models []string
-	var lastErr error
-	var lastCredential *domain.Credential
-	for index := range credentials {
-		credential := credentials[index]
-		lastCredential = &credential
-		plaintext, decryptErr := s.enc.Decrypt(string(credential.SecretEnc))
-		if decryptErr != nil || len(plaintext) == 0 {
-			lastErr = unavailableError("credential_unavailable")
-			continue
+	models, lastErr, lastCredential, fatal := s.probeModels(ctx, adapter, baseURL, credentials)
+	if fatal != nil {
+		if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
+			return nil, fatal
 		}
-		listed, listErr := adapter.ListModels(ctx, baseURL, string(plaintext))
-		for i := range plaintext {
-			plaintext[i] = 0
+		_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "invalid_base_url")
+		return nil, unavailableError("invalid_base_url")
+	}
+	if lastErr != nil && isTransientListError(lastErr) {
+		// Cloudflare-protected public sites often drop a single request
+		// (challenge, TLS, timeout). Retry once before recording a failure so
+		// a flaky upstream does not flip the badge to "unreachable" for one
+		// bad sample. Auth rejections are not retried.
+		select {
+		case <-ctx.Done():
+			return nil, lastErr
+		case <-time.After(1200 * time.Millisecond):
 		}
-		if listErr == nil {
-			models = listed
-			lastErr = nil
-			break
-		}
-		lastErr = listErr
-		if errors.Is(listErr, context.Canceled) || errors.Is(listErr, context.DeadlineExceeded) {
-			return nil, listErr
-		}
-		// Non-retryable adapter failures stop the pool early.
-		var adapterErr *adapters.Error
-		if errors.As(listErr, &adapterErr) && adapterErr.Kind == adapters.ErrorInvalidURL {
+		models, lastErr, lastCredential, fatal = s.probeModels(ctx, adapter, baseURL, credentials)
+		if fatal != nil {
+			if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
+				return nil, fatal
+			}
 			_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "invalid_base_url")
 			return nil, unavailableError("invalid_base_url")
 		}
@@ -151,10 +177,6 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		category := "upstream_failure"
 		var adapterErr *adapters.Error
 		if errors.As(lastErr, &adapterErr) {
-			if adapterErr.Kind == adapters.ErrorInvalidURL {
-				_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "invalid_base_url")
-				return nil, unavailableError("invalid_base_url")
-			}
 			category = string(adapterErr.Kind)
 			// 401/403 on /v1/models with a user access_token is expected on many New API hosts.
 			if adapterErr.Kind == adapters.ErrorStatus &&
@@ -175,9 +197,12 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	}
 	checkedAt := s.now()
 	latency := int(checkedAt.Sub(started).Milliseconds())
+	// A healthy probe restores an auto-disabled channel and reports recovery.
+	recovered, _ := s.db.Channel.RecoverAutoDisabled(channel.ID)
+	if recovered && s.notifier != nil {
+		s.notifier.Notify(context.Background(), webhook.ChannelRecovered, channel.ID, channel.Name, "probe ok")
+	}
 	_ = s.db.Channel.RecordProbeSuccess(channel.ID, checkedAt)
-	// A healthy probe restores an auto-disabled channel.
-	_ = s.db.Channel.RecoverAutoDisabled(channel.ID)
 	return &ProbeResult{
 		ChannelID: channel.ID,
 		Adapter:   adapter.Name(),
@@ -185,6 +210,49 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		LatencyMs: latency,
 		CheckedAt: checkedAt,
 	}, nil
+}
+
+// probeModels tries every credential in the pool against /v1/models. Returns
+// the first successful model list, or the last error. fatal carries errors that
+// must abort immediately (invalid base URL, context cancellation) — these are
+// never retried.
+func (s *Service) probeModels(ctx context.Context, adapter adapters.ModelAdapter, baseURL string, credentials []domain.Credential) (models []string, lastErr error, lastCredential *domain.Credential, fatal error) {
+	for index := range credentials {
+		credential := credentials[index]
+		lastCredential = &credential
+		plaintext, decryptErr := s.enc.Decrypt(string(credential.SecretEnc))
+		if decryptErr != nil || len(plaintext) == 0 {
+			lastErr = unavailableError("credential_unavailable")
+			continue
+		}
+		listed, listErr := adapter.ListModels(ctx, baseURL, string(plaintext))
+		for i := range plaintext {
+			plaintext[i] = 0
+		}
+		if listErr == nil {
+			return listed, nil, lastCredential, nil
+		}
+		lastErr = listErr
+		if errors.Is(listErr, context.Canceled) || errors.Is(listErr, context.DeadlineExceeded) {
+			return nil, nil, nil, listErr
+		}
+		var adapterErr *adapters.Error
+		if errors.As(listErr, &adapterErr) && adapterErr.Kind == adapters.ErrorInvalidURL {
+			return nil, nil, nil, listErr
+		}
+	}
+	return nil, lastErr, lastCredential, nil
+}
+
+// isTransientListError reports whether a model-list failure is worth one
+// retry: transport-level failures only (timeout, TLS, connection reset, CF
+// challenge). Auth and payload rejections are excluded.
+func isTransientListError(err error) bool {
+	var adapterErr *adapters.Error
+	if errors.As(err, &adapterErr) {
+		return adapterErr.Kind == adapters.ErrorTransport
+	}
+	return false
 }
 
 // resolveAPIKeyPool returns enabled api_key credentials for discovery, bound key first.
@@ -248,7 +316,7 @@ func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult,
 }
 
 func (s *Service) RefreshAll(ctx context.Context) (*RefreshSummary, error) {
-	channels, err := s.db.Channel.ListEnabled()
+	channels, err := s.db.Channel.ListProbeable()
 	if err != nil {
 		return nil, internalError("channel_list")
 	}
@@ -257,6 +325,20 @@ func (s *Service) RefreshAll(ctx context.Context) (*RefreshSummary, error) {
 	for _, channel := range channels {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		// Auto-disabled channels are probed for passive recovery without
+		// touching their model reconciliation state.
+		if channel.Status == domain.StatusAutoDisabled {
+			item := RefreshItem{ChannelID: channel.ID}
+			if _, probeErr := s.Probe(ctx, channel.ID); probeErr != nil {
+				item.Error = "recovery_probe_failed"
+				summary.FailureCount++
+			} else {
+				// Probe restores the channel via RecoverAutoDisabled on success.
+				summary.SuccessCount++
+			}
+			summary.Items = append(summary.Items, item)
+			continue
 		}
 		result, refreshErr := s.Refresh(ctx, channel.ID)
 		item := RefreshItem{ChannelID: channel.ID, Result: result}
@@ -274,6 +356,57 @@ func (s *Service) RefreshAll(ctx context.Context) (*RefreshSummary, error) {
 		summary.Items = append(summary.Items, item)
 	}
 	return summary, nil
+}
+
+// RunRecoveryLoop periodically probes auto-disabled channels and restores them
+// when the upstream answers again. The enabled flag and interval come from the
+// recovery configuration (hot-reloadable via SetRecoveryConfig).
+func (s *Service) RunRecoveryLoop(ctx context.Context) {
+	lastRun := time.Time{}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			enabled, interval := s.recoveryConfig()
+			if !enabled || interval <= 0 {
+				lastRun = time.Time{} // re-arm when re-enabled
+				continue
+			}
+			if time.Since(lastRun) < interval {
+				continue
+			}
+			lastRun = time.Now()
+			probeCtx, cancel := context.WithTimeout(ctx, time.Minute)
+			recovered := s.probeAutoDisabledOnce(probeCtx)
+			cancel()
+			if recovered > 0 {
+				log.Printf("discovery: recovery probe restored %d auto-disabled channel(s)", recovered)
+			}
+		}
+	}
+}
+
+// probeAutoDisabledOnce probes every auto-disabled channel once and returns how
+// many recovered (Probe restores them internally on success).
+func (s *Service) probeAutoDisabledOnce(ctx context.Context) int {
+	channels, err := s.db.Channel.ListAutoDisabled()
+	if err != nil {
+		log.Printf("discovery: recovery list: %v", err)
+		return 0
+	}
+	recovered := 0
+	for _, channel := range channels {
+		if ctx.Err() != nil {
+			break
+		}
+		if _, probeErr := s.Probe(ctx, channel.ID); probeErr == nil {
+			recovered++
+		}
+	}
+	return recovered
 }
 
 func unavailableError(category string) error {

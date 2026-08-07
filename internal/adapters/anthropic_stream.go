@@ -164,12 +164,27 @@ func (s *AnthropicToOpenAIStream) onMessageStart(payload map[string]any) {
 	if s.messageID == "" {
 		s.messageID = fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
 	}
-	// Emit role-only first chunk (OpenAI convention).
+	// Emit role-only first chunk (OpenAI convention). Anthropic may place the
+	// input-token count on message_start and output-token count on message_delta;
+	// preserve the former so the usage tee can merge both snapshots.
+	var usage map[string]any
+	if rawUsage, ok := message["usage"].(map[string]any); ok {
+		prompt := intFromAny(rawUsage["input_tokens"])
+		if prompt > 0 {
+			usage = map[string]any{"prompt_tokens": prompt}
+			if cached := intFromAny(rawUsage["cache_read_input_tokens"]); cached > 0 {
+				usage["cache_read_tokens"] = cached
+			}
+			if created := intFromAny(rawUsage["cache_creation_input_tokens"]); created > 0 {
+				usage["cache_creation_tokens"] = created
+			}
+		}
+	}
 	if !s.roleSent {
 		s.roleSent = true
 		s.writeChunk(map[string]any{
 			"role": "assistant",
-		}, nil, nil)
+		}, nil, usage)
 	}
 }
 
@@ -208,7 +223,16 @@ func (s *AnthropicToOpenAIStream) onMessageDelta(payload map[string]any) {
 		usage = map[string]any{
 			"prompt_tokens":     prompt,
 			"completion_tokens": completion,
-			"total_tokens":      prompt + completion,
+		}
+		if prompt > 0 && completion > 0 {
+			usage["total_tokens"] = prompt + completion
+		}
+		// Pass cache accounting through for downstream usage metering.
+		if cached := intFromAny(rawUsage["cache_read_input_tokens"]); cached > 0 {
+			usage["cache_read_tokens"] = cached
+		}
+		if created := intFromAny(rawUsage["cache_creation_input_tokens"]); created > 0 {
+			usage["cache_creation_tokens"] = created
 		}
 	}
 	if finishReason != nil || usage != nil {

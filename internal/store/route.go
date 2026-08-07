@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -16,9 +17,11 @@ const (
 	// stays parked until the penalty expires or an admin clears health.
 	maxCooldownBackoff = 24 * time.Hour
 
-	// disableAfterConsecutiveFailures is the consecutive-failure threshold that
-	// trips a circuit breaker: the member is disabled outright and must be
-	// re-enabled by an admin (toggle or clear-health) before it is tried again.
+	// disableAfterConsecutiveFailures is the default consecutive-failure
+	// threshold that trips a circuit breaker: the member is disabled outright
+	// and must be re-enabled by an admin (toggle or clear-health) before it is
+	// tried again. Progressive mode (SetProgressiveCooldown) overrides this
+	// with a configurable threshold.
 	disableAfterConsecutiveFailures = 3
 )
 
@@ -27,19 +30,60 @@ type RouteStore struct {
 	db *sql.DB
 }
 
+// RouteMemberStore provides CRUD operations for route members.
+//
+// Cooldown policy: by default members back off exponentially (2^n × base,
+// capped) and are circuit-broken (disabled) after a consecutive-failure
+// threshold. Progressive mode replaces exponential backoff with an explicit
+// tier table [base, level1, level2, level3] and recovers one tier per success
+// instead of clearing on the first success.
+type RouteMemberStore struct {
+	db *sql.DB
+
+	// mu guards the progressive cooldown policy configuration.
+	mu sync.RWMutex
+
+	// progressive holds the tiered-cooldown configuration; nil = exponential
+	// backoff with the legacy constants (default behavior).
+	progressive *progressiveCooldown
+}
+
+// progressiveCooldown is the tiered failure/backoff policy.
+type progressiveCooldown struct {
+	base         time.Duration // fail 1 penalty
+	levels       [3]time.Duration // fail 2 → levels[0], fail 3 → levels[1], fail 4 → levels[2]
+	breakerCount int              // consecutive failures before disable (0 = legacy 3)
+}
+
+// SetProgressiveCooldown configures tiered cooldown with per-success decay.
+// base is the fail-1 penalty; levels holds the 10m/1h/24h-style durations for
+// the second, third, and fourth consecutive failures; breakerCount is the
+// disable threshold (<=0 falls back to the legacy constant 3). Pass
+// enabled=false to restore exponential backoff.
+func (s *RouteMemberStore) SetProgressiveCooldown(enabled bool, base time.Duration, levels [3]time.Duration, breakerCount int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !enabled {
+		s.progressive = nil
+		return
+	}
+	s.progressive = &progressiveCooldown{base: base, levels: levels, breakerCount: breakerCount}
+}
+
 func scanRoute(scanner interface {
 	Scan(dest ...any) error
 }, r *domain.Route) error {
 	var enabled int
-	if err := scanner.Scan(&r.ID, &r.ModelPattern, &enabled, &r.MappingJSON, &r.Notes, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	if err := scanner.Scan(&r.ID, &r.ModelPattern, &enabled, &r.RoutingMode, &r.MappingJSON, &r.Notes, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		return err
 	}
 	r.Enabled = enabled != 0
+	r.RoutingMode = domain.NormalizeRoutingMode(r.RoutingMode)
 	return nil
 }
 
 func (s *RouteStore) List() ([]domain.Route, error) {
-	rows, err := s.db.Query(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("route list: %w", err)
 	}
@@ -57,7 +101,7 @@ func (s *RouteStore) List() ([]domain.Route, error) {
 }
 
 func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
-	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE id = ?`, id)
 	var r domain.Route
 	if err := scanRoute(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -70,7 +114,7 @@ func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
 
 // GetByModel returns the best enabled route for the given model (exact, then wildcard).
 func (s *RouteStore) GetByModel(model string) (*domain.Route, error) {
-	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
+	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
 	var exact domain.Route
 	if err := scanRoute(row, &exact); err == nil {
 		return &exact, nil
@@ -85,8 +129,8 @@ func (s *RouteStore) Create(r *domain.Route) (int64, error) {
 	if r.Enabled {
 		enabled = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO routes (model_pattern, enabled, mapping_json, notes) VALUES (?, ?, ?, ?)`,
-		r.ModelPattern, enabled, r.MappingJSON, r.Notes)
+	res, err := s.db.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes) VALUES (?, ?, ?, ?, ?)`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes)
 	if err != nil {
 		return 0, fmt.Errorf("route create: %w", err)
 	}
@@ -98,8 +142,8 @@ func (s *RouteStore) Update(r *domain.Route) error {
 	if r.Enabled {
 		enabled = 1
 	}
-	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, mapping_json=?, notes=?, updated_at=datetime('now') WHERE id=?`,
-		r.ModelPattern, enabled, r.MappingJSON, r.Notes, r.ID)
+	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, routing_mode=?, mapping_json=?, notes=?, updated_at=datetime('now') WHERE id=?`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, r.ID)
 	if err != nil {
 		return fmt.Errorf("route update: %w", err)
 	}
@@ -112,11 +156,6 @@ func (s *RouteStore) Delete(id int64) error {
 		return fmt.Errorf("route delete: %w", err)
 	}
 	return nil
-}
-
-// RouteMemberStore provides CRUD operations for route members.
-type RouteMemberStore struct {
-	db *sql.DB
 }
 
 func scanRouteMember(scanner interface {
@@ -192,7 +231,8 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
 		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.retry_config, c.tags,
+		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
 			AND cred.site_id = c.site_id AND lower(cred.kind) = 'api_key'
@@ -202,9 +242,11 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 			  AND pool_cred.status = 'enabled'
 			  AND pool_cred.secret_enc <> ''
 			  AND lower(pool_cred.kind) = 'api_key'
-		) THEN 1 ELSE 0 END
+		) THEN 1 ELSE 0 END,
+		COALESCE(rt.model_pattern, '')
 		FROM route_members rm JOIN channels c ON c.id = rm.channel_id
 		LEFT JOIN credentials cred ON cred.id = c.credential_id
+		LEFT JOIN routes rt ON rt.id = rm.route_id
 		WHERE rm.route_id = ? ORDER BY rm.priority DESC, rm.weight DESC, rm.id`, routeID)
 	if err != nil {
 		return nil, fmt.Errorf("route overview members: %w", err)
@@ -213,7 +255,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 	var result []domain.RoutingCandidate
 	for rows.Next() {
 		var candidate domain.RoutingCandidate
-		var enabled, auto, manual, credentialUsable int
+		var enabled, auto, manual, credentialUsable, stableFirst int
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual,
@@ -224,8 +266,10 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
 			&candidate.Channel.Status, &candidate.Channel.TypeHint,
 			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
+			&candidate.Channel.RetryConfig, &candidate.Channel.Tags,
+			&stableFirst, &candidate.Channel.StableFirstRequests,
 			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
-			&credentialUsable,
+			&credentialUsable, &candidate.ModelPattern,
 		); err != nil {
 			return nil, fmt.Errorf("route overview member scan: %w", err)
 		}
@@ -233,6 +277,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 		candidate.Member.Auto = auto != 0
 		candidate.Member.ManualOverride = manual != 0
 		candidate.CredentialUsable = credentialUsable != 0
+		candidate.Channel.StableFirst = stableFirst != 0
 		result = append(result, candidate)
 	}
 	if err := rows.Err(); err != nil {
@@ -249,7 +294,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 // RoutingCandidates loads member and channel facts for the best matching enabled route.
 // Exact model_pattern wins; otherwise the longest wildcard (* or ?) match is used.
 func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []domain.RoutingCandidate, error) {
-	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
+	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
 	var route domain.Route
 	if err := scanRoute(routeRow, &route); err != nil {
 		if err == sql.ErrNoRows {
@@ -269,7 +314,8 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
 		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.retry_config, c.tags,
+		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
 			AND lower(cred.kind) = 'api_key'
@@ -279,10 +325,14 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 			  AND pool_cred.status = 'enabled'
 			  AND pool_cred.secret_enc <> ''
 			  AND lower(pool_cred.kind) = 'api_key'
-		) THEN 1 ELSE 0 END
+		) THEN 1 ELSE 0 END,
+		COALESCE(rt.model_pattern, '')
 		FROM route_members rm JOIN channels c ON c.id = rm.channel_id
 		LEFT JOIN credentials cred ON cred.id = c.credential_id
-		WHERE rm.route_id = ? ORDER BY rm.priority DESC, rm.id`, route.ID)
+		LEFT JOIN routes rt ON rt.id = rm.route_id
+		WHERE rm.route_id = ?
+		  AND (c.rate_limited_until IS NULL OR julianday(c.rate_limited_until) <= julianday('now'))
+		ORDER BY rm.priority DESC, rm.id`, route.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("routing candidates: %w", err)
 	}
@@ -290,7 +340,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 	var result []domain.RoutingCandidate
 	for rows.Next() {
 		var candidate domain.RoutingCandidate
-		var enabled, auto, manual, credentialUsable int
+		var enabled, auto, manual, credentialUsable, stableFirst int
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual,
@@ -301,8 +351,10 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
 			&candidate.Channel.Status, &candidate.Channel.TypeHint,
 			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
+			&candidate.Channel.RetryConfig, &candidate.Channel.Tags,
+			&stableFirst, &candidate.Channel.StableFirstRequests,
 			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
-			&credentialUsable,
+			&credentialUsable, &candidate.ModelPattern,
 		); err != nil {
 			return nil, nil, fmt.Errorf("routing candidate scan: %w", err)
 		}
@@ -310,7 +362,11 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		candidate.Member.Auto = auto != 0
 		candidate.Member.ManualOverride = manual != 0
 		candidate.CredentialUsable = credentialUsable != 0
+		candidate.Channel.StableFirst = stableFirst != 0
 		result = append(result, candidate)
+	}
+	if result == nil {
+		result = []domain.RoutingCandidate{}
 	}
 	return &route, result, rows.Err()
 }
@@ -335,16 +391,31 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 		currentFailures = 0
 	}
 	nextFailures := currentFailures + 1
+
+	policy := s.progressivePolicy()
+	breaker := disableAfterConsecutiveFailures
+	if policy != nil && policy.breakerCount > 0 {
+		breaker = policy.breakerCount
+	}
 	backoff := cooldown
-	// Double per consecutive failure, capped so the cooldown can never grow
-	// past maxCooldownBackoff and overflow time.Duration into a past timestamp.
-	for step := 1; step < nextFailures; step++ {
-		backoff *= 2
-		if backoff > maxCooldownBackoff {
-			backoff = maxCooldownBackoff
+	if policy != nil {
+		// Progressive tiers keep the caller's base as the fail-1 penalty only
+		// when the caller passes it; the tier table covers fails 2-4.
+		backoff = tieredBackoff(cooldown, nextFailures, policy.levels)
+	} else {
+		// Double per consecutive failure, capped so the cooldown can never grow
+		// past maxCooldownBackoff and overflow time.Duration into a past timestamp.
+		for step := 1; step < nextFailures; step++ {
+			backoff *= 2
+			if backoff > maxCooldownBackoff {
+				backoff = maxCooldownBackoff
+			}
 		}
 	}
-	if nextFailures >= disableAfterConsecutiveFailures {
+	if backoff > maxCooldownBackoff {
+		backoff = maxCooldownBackoff
+	}
+	if nextFailures >= breaker {
 		// Circuit breaker: park the member outright instead of relying on an
 		// ever-growing cooldown. The admin re-enables it from the model list
 		// (toggle or clear-health); the next success resets fail_count.
@@ -374,12 +445,71 @@ func (s *RouteMemberStore) FailureCount(id int64) (int, error) {
 	return count, nil
 }
 
-func (s *RouteMemberStore) RecordSuccess(id int64) error {
-	_, err := s.db.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
+func (s *RouteMemberStore) RecordSuccess(id int64, now time.Time) error {
+	policy := s.progressivePolicy()
+	if policy == nil {
+		_, err := s.db.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
+		if err != nil {
+			return fmt.Errorf("route member record success: %w", err)
+		}
+		return nil
+	}
+	// Progressive recovery: step down one tier per success instead of clearing
+	// the whole penalty on the first success (metapi-style decay).
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("route member record success begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var currentFailures int
+	var cooldownUntil *time.Time
+	if err = tx.QueryRow(`SELECT fail_count, cooldown_until FROM route_members WHERE id=?`, id).Scan(
+		&currentFailures,
+		scanNullTime(&cooldownUntil),
+	); err != nil {
+		return fmt.Errorf("route member record success lookup: %w", err)
+	}
+	if currentFailures <= 0 {
+		_, err = tx.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
+	} else if currentFailures == 1 {
+		_, err = tx.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
+	} else {
+		nextFailures := currentFailures - 1
+		backoff := tieredBackoff(policy.base, nextFailures, policy.levels)
+		until := now.Add(backoff).UTC().Format(time.RFC3339Nano)
+		_, err = tx.Exec(`UPDATE route_members SET fail_count=?, cooldown_until=?, last_error='', updated_at=datetime('now') WHERE id=?`,
+			nextFailures, until, id)
+	}
 	if err != nil {
 		return fmt.Errorf("route member record success: %w", err)
 	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("route member record success commit: %w", err)
+	}
 	return nil
+}
+
+// progressivePolicy returns the configured tiered policy, or nil for the
+// legacy exponential backoff. Guarded by the store mutex.
+func (s *RouteMemberStore) progressivePolicy() *progressiveCooldown {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.progressive
+}
+
+// tieredBackoff maps a consecutive-failure count to its cooldown tier:
+// fail 1 → base, fail 2 → levels[0], fail 3 → levels[1], fail >= 4 → levels[2].
+func tieredBackoff(base time.Duration, failures int, levels [3]time.Duration) time.Duration {
+	switch {
+	case failures <= 1:
+		return base
+	case failures == 2:
+		return levels[0]
+	case failures == 3:
+		return levels[1]
+	default:
+		return levels[2]
+	}
 }
 
 // ClearHealth manually returns a route member to the eligible pool.
@@ -471,7 +601,7 @@ func boolInt(v bool) int {
 
 // findBestWildcardRoute selects the most specific enabled wildcard route for model.
 func findBestWildcardRoute(db *sql.DB, model string) (*domain.Route, error) {
-	rows, err := db.Query(`SELECT id, model_pattern, enabled, mapping_json, notes, created_at, updated_at FROM routes WHERE enabled = 1 AND (instr(model_pattern, '*') > 0 OR instr(model_pattern, '?') > 0)`)
+	rows, err := db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE enabled = 1 AND (instr(model_pattern, '*') > 0 OR instr(model_pattern, '?') > 0)`)
 	if err != nil {
 		return nil, fmt.Errorf("route wildcard list: %w", err)
 	}

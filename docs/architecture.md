@@ -233,10 +233,42 @@ translated through per-platform **forward adapters** registered in
 The `ForwardAdapter` interface (`internal/adapters/forward.go`) covers: channel
 matching (`IsFor`), upstream URL building, request transformation
 (`TransformRequest`), response transformation (`TransformResponse`), SSE stream
-wrapping (`WrapStream`), and upstream auth headers (`AuthHeaders`). `proxy`
-resolves the adapter per channel via `Registry.ResolveForward(typeHint, platform)`
-and falls back to the passthrough adapter. Usage accounting runs on the
-converted OpenAI-style body (non-stream) or the final SSE chunk (stream), so
-native channels report real token usage.
+wrapping (`WrapStream`), upstream auth headers (`AuthHeaders`), and provider
+usage extraction (`ExtractUsage`). `proxy` resolves the adapter per channel via
+`Registry.ResolveForward(typeHint, platform)` and falls back to the passthrough
+adapter. Usage accounting runs on the converted OpenAI-style body (non-stream)
+or the final SSE chunk (stream), so native channels report real token usage.
 
 Adding a channel platform = one adapter implementation + one registration line.
+
+## Intermediate-Format Conversion Chain (pivot)
+
+Client protocols (the downstream wire contract) and upstream platforms are
+connected through a **pivot**: the internal OpenAI chat/completions format.
+Every downstream protocol implements a `SegmentConverter`
+(`internal/adapters/intermediate.go`) with four pieces: request-to-pivot
+(`ToOpenAI`), pivot-to-response (`FromOpenAI`), path mapping (`PivotPath`), and
+OpenAI-SSE-to-protocol stream wrapping (`WrapOpenAIStream`).
+
+```text
+client protocol --ToOpenAI--> OpenAI pivot --TransformRequest--> upstream format
+upstream format --TransformResponse--> OpenAI pivot --FromOpenAI--> client protocol
+```
+
+`ComposeForwardAdapter` pairs a downstream segment with an upstream
+`ForwardAdapter`; the upstream adapter keeps its own URL building, auth
+headers, and stream reshaping, so no N×M conversion matrix is needed:
+
+| Client protocol | Upstream platform | Adapter |
+| --- | --- | --- |
+| OpenAI | any | upstream adapter unchanged |
+| Anthropic (`/v1/messages`) | Anthropic-native | verbatim passthrough (`messages` path) |
+| Anthropic (`/v1/messages`) | OpenAI / Gemini | `ComposeForwardAdapter{AnthropicDownstreamSegment, upstream}` |
+
+`proxy` composes automatically when `DownstreamProtocol=anthropic` meets a
+non-Anthropic channel; the previous inline translation branches in `proxy.go`
+were replaced by this composition (behavior unchanged). An `OnOpenAI` hook on
+the composed adapter runs between the pivot step and the upstream transform
+(system-prompt injection on translated requests). Adding a new client
+protocol = one `SegmentConverter`; adding a new upstream platform stays one
+`ForwardAdapter`.

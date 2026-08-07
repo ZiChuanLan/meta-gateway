@@ -17,5 +17,9 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: true,
+    // React's development build exports `act`; the production build does not.
+    // The shell sets NODE_ENV=production, which breaks @testing-library/react
+    // (it falls back to the deprecated react-dom/test-utils entry and throws).
+    env: { NODE_ENV: 'development' },
   },
 })

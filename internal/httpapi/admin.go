@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -14,8 +15,8 @@ import (
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/routing"
+	"github.com/lan/meta-gateway/internal/sitedetect"
 	"github.com/lan/meta-gateway/internal/store"
-	usagepkg "github.com/lan/meta-gateway/internal/usage"
 )
 
 // AdminHandler serves management endpoints under /admin.
@@ -23,10 +24,24 @@ type AdminHandler struct {
 	db     *store.DB
 	enc    *crypto.Encrypter
 	router *routing.Selector
+	sticky *routing.StickyStore
+	// httpClient is used for outbound site-detection probes; it is the shared
+	// SSRF-policy client so admin input can never reach private/loopback space.
+	httpClient *http.Client
+	// modelsCache is invalidated on route/channel writes so /v1/models never
+	// serves stale ids after admin changes.
+	modelsCache *modelsCache
 }
 
-func NewAdminHandler(db *store.DB, enc *crypto.Encrypter, selector *routing.Selector) *AdminHandler {
-	return &AdminHandler{db: db, enc: enc, router: selector}
+func NewAdminHandler(db *store.DB, enc *crypto.Encrypter, selector *routing.Selector, sticky *routing.StickyStore, outboundClient *http.Client, modelsCache *modelsCache) *AdminHandler {
+	return &AdminHandler{
+		db:          db,
+		enc:         enc,
+		router:      selector,
+		sticky:      sticky,
+		httpClient:  outboundClient,
+		modelsCache: modelsCache,
+	}
 }
 
 func (h *AdminHandler) Register(r chi.Router) {
@@ -36,6 +51,11 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Get("/sites/{id}", h.getSite)
 	r.Put("/sites/{id}", h.updateSite)
 	r.Delete("/sites/{id}", h.deleteSite)
+	// Site-type detection (AAH chain) for the connection editor.
+	r.Get("/site-type", h.detectSiteType)
+	// One-shot connection creation: site + credential + channel, with site
+	// reuse by normalized URL and rollback of partially created rows.
+	r.Post("/connections", h.createConnection)
 
 	// Credentials
 	r.Get("/sites/{siteId}/credentials", h.listCredentials)
@@ -76,9 +96,22 @@ func (h *AdminHandler) Register(r chi.Router) {
 	// Usage / simple billing
 	r.Get("/usage/summary", h.usageSummary)
 	r.Get("/usage", h.listUsage)
+	// Billing ratios (model markup; 1.0 = no markup)
+	r.Get("/ratios", h.listModelRatios)
+	r.Put("/ratios/{model}", h.setModelRatio)
+	// Tenant groups (multi-tenant quotas / rate limits)
+	r.Get("/groups", h.listGroups)
+	r.Put("/groups/{name}", h.upsertGroup)
+	r.Delete("/groups/{name}", h.deleteGroup)
+	// Bulk channel operations by tag
+	r.Patch("/channels/tag/{tag}", h.patchChannelsByTag)
+
+	// Sticky session routing (available when enabled at boot)
+	r.Get("/sticky", h.stickyStats)
 
 	// Proxy logs
 	r.Get("/proxy-logs", h.listProxyLogs)
+	r.Get("/proxy-logs/latency-histogram", h.latencyHistogram)
 }
 
 func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +120,7 @@ func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
-	explanation, err := h.router.Explain(r.Context(), model)
+	explanation, err := h.router.ExplainWithSession(r.Context(), model, r.URL.Query().Get("session"))
 	if err != nil {
 		if errors.Is(err, routing.ErrRouteNotFound) {
 			writeError(w, http.StatusNotFound, "route not found")
@@ -97,6 +130,27 @@ func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, explanation)
+}
+
+// stickyStats returns a stable response for the admin UI. Sticky routing is
+// optional, so a disabled instance is represented as an ordinary successful
+// response instead of a noisy 404 from the model page's status query.
+func (h *AdminHandler) stickyStats(w http.ResponseWriter, _ *http.Request) {
+	if h.sticky == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled":     false,
+			"stats":       routing.StickyStats{},
+			"entries":     []routing.StickyEntrySnapshot{},
+			"ttl_seconds": 0,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":     true,
+		"stats":       h.sticky.Stats(),
+		"entries":     h.sticky.Snapshot(100),
+		"ttl_seconds": int(h.sticky.TTL() / time.Second),
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +164,22 @@ func (h *AdminHandler) listSites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sites)
+}
+
+// detectSiteType runs the AAH-style site-detection chain against a candidate
+// URL and returns the normalized family (new-api/one-api/sub2api/…).
+func (h *AdminHandler) detectSiteType(w http.ResponseWriter, r *http.Request) {
+	url := strings.TrimSpace(r.URL.Query().Get("url"))
+	if url == "" {
+		writeError(w, http.StatusBadRequest, "missing url")
+		return
+	}
+	result, err := sitedetect.Detect(r.Context(), h.httpClient, url)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "site detection failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *AdminHandler) createSite(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +257,156 @@ func (h *AdminHandler) deleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// ---------------------------------------------------------------------------
+// Connections (one-shot create: site + credential + channel)
+// ---------------------------------------------------------------------------
+
+type createConnectionRequest struct {
+	Name     string `json:"name"`
+	BaseURL  string `json:"base_url"`
+	Secret   string `json:"secret"`
+	TypeHint string `json:"type_hint"`
+	Platform string `json:"platform"`
+	Status   string `json:"status"`
+}
+
+// normalizeBaseURL canonicalizes a provider base URL for site reuse matching
+// (trim whitespace and trailing slashes).
+func normalizeBaseURL(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
+}
+
+func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) {
+	var req createConnectionRequest
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	baseURL := normalizeBaseURL(req.BaseURL)
+	if baseURL == "" {
+		writeError(w, http.StatusBadRequest, "base_url is required")
+		return
+	}
+	if strings.TrimSpace(req.Secret) == "" {
+		writeError(w, http.StatusBadRequest, "secret is required")
+		return
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		writeError(w, http.StatusBadRequest, "invalid base_url")
+		return
+	}
+	platform := strings.TrimSpace(req.Platform)
+	if platform == "" {
+		platform = strings.TrimSpace(req.TypeHint)
+	}
+	if platform == "" {
+		platform = "openai-compatible"
+	}
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		status = domain.StatusEnabled
+	}
+	if status != domain.StatusEnabled && status != domain.StatusDisabled {
+		writeError(w, http.StatusBadRequest, "invalid status")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = hostLabel(baseURL)
+	}
+
+	// Reuse an existing site with the same normalized base URL.
+	siteID, reusedSite := int64(0), false
+	if existing, ok := h.findSiteByBaseURL(baseURL); ok {
+		siteID = existing.ID
+		reusedSite = true
+	} else {
+		id, err := h.db.Site.Create(&domain.Site{Name: name, BaseURL: baseURL, Platform: platform, Status: status})
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		siteID = id
+	}
+	// Roll back a site we created when a later step fails.
+	rollbackSite := func() {
+		if !reusedSite {
+			_ = h.db.Site.Delete(siteID)
+		}
+	}
+
+	encSecret, err := h.enc.Encrypt([]byte(req.Secret))
+	if err != nil {
+		rollbackSite()
+		writeError(w, http.StatusInternalServerError, "encryption failed")
+		return
+	}
+	credID, err := h.db.Credential.Create(&domain.Credential{
+		SiteID:    siteID,
+		Kind:      "api_key",
+		SecretEnc: []byte(encSecret),
+		Status:    domain.StatusEnabled,
+	})
+	if err != nil {
+		rollbackSite()
+		writeStoreError(w, err)
+		return
+	}
+	channelID, err := h.db.Channel.Create(&domain.Channel{
+		SiteID:       &siteID,
+		CredentialID: &credID,
+		Name:         name,
+		GroupName:    "default",
+		Priority:     0,
+		Weight:       100,
+		Status:       status,
+		TypeHint:     strings.TrimSpace(req.TypeHint),
+	})
+	if err != nil {
+		_ = h.db.Credential.Delete(credID)
+		rollbackSite()
+		writeStoreError(w, err)
+		return
+	}
+	h.modelsCache.Invalidate()
+
+	channel, _ := h.db.Channel.GetByID(channelID)
+	site, _ := h.db.Site.GetByID(siteID)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"channel":           channel,
+		"site":              site,
+		"credential_id":     credID,
+		"reused_site":       reusedSite,
+		"has_secret":        true,
+		"platform":          platform,
+		"detection_matched": false,
+	})
+}
+
+// findSiteByBaseURL returns the first site whose normalized base URL equals
+// the given one (used to reuse a site across connection creations).
+func (h *AdminHandler) findSiteByBaseURL(baseURL string) (*domain.Site, bool) {
+	sites, err := h.db.Site.List()
+	if err != nil {
+		return nil, false
+	}
+	for i := range sites {
+		if normalizeBaseURL(sites[i].BaseURL) == baseURL {
+			return &sites[i], true
+		}
+	}
+	return nil, false
+}
+
+func hostLabel(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return raw
+	}
+	return parsed.Host
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +627,7 @@ func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	created, _ := h.db.Channel.GetByID(id)
 	writeJSON(w, http.StatusCreated, created)
 }
@@ -480,6 +701,18 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if patch.SystemPrompt != existing.SystemPrompt {
 		ch.SystemPrompt = strings.TrimSpace(patch.SystemPrompt)
 	}
+	// Retry config: empty string clears it (global defaults only).
+	if patch.RetryConfig != existing.RetryConfig {
+		ch.RetryConfig = strings.TrimSpace(patch.RetryConfig)
+	}
+	// Tags: empty string clears the tag list.
+	if patch.Tags != existing.Tags {
+		ch.Tags = strings.TrimSpace(patch.Tags)
+	}
+	// StableFirst: grayscale flag follows the patch when explicitly toggled.
+	if patch.StableFirst != existing.StableFirst {
+		ch.StableFirst = patch.StableFirst
+	}
 	// Only accept a new site_id when it is a positive id; never wipe ownership.
 	if patch.SiteID != nil && *patch.SiteID > 0 {
 		ch.SiteID = patch.SiteID
@@ -496,6 +729,7 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	updated, _ := h.db.Channel.GetByID(id)
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -510,6 +744,7 @@ func (h *AdminHandler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -548,6 +783,14 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 // Routes
 // ---------------------------------------------------------------------------
 
+func validRoutingMode(mode string) bool {
+	return mode == "" ||
+		mode == domain.RoutingModeAuto ||
+		mode == domain.RoutingModeLatency ||
+		mode == domain.RoutingModeWeighted ||
+		mode == domain.RoutingModeAdaptive
+}
+
 func (h *AdminHandler) listRoutes(w http.ResponseWriter, r *http.Request) {
 	routes, err := h.db.Route.List()
 	if err != nil {
@@ -576,11 +819,16 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "model_pattern is required")
 		return
 	}
+	if !validRoutingMode(rt.RoutingMode) {
+		writeError(w, http.StatusBadRequest, "invalid routing_mode")
+		return
+	}
 	id, err := h.db.Route.Create(&rt)
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	created, _ := h.db.Route.GetByID(id)
 	writeJSON(w, http.StatusCreated, created)
 }
@@ -619,10 +867,15 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "model_pattern is required")
 		return
 	}
+	if !validRoutingMode(rt.RoutingMode) {
+		writeError(w, http.StatusBadRequest, "invalid routing_mode")
+		return
+	}
 	if err := h.db.Route.Update(&rt); err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	updated, _ := h.db.Route.GetByID(id)
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -637,6 +890,7 @@ func (h *AdminHandler) deleteRoute(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -834,14 +1088,15 @@ type createKeyResponse struct {
 
 func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
-		// Token is optional. When empty, the server generates an mg-… secret.
-		// When set, the provided secret is stored as a hash only (raw never re-readable).
-		Token                string  `json:"token,omitempty"`
-		Scopes               string  `json:"scopes,omitempty"`
-		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
-		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	Name                 string  `json:"name"`
+	// Token is optional. When empty, the server generates an mg-… secret.
+	// When set, the provided secret is stored as a hash only (raw never re-readable).
+	Token                string  `json:"token,omitempty"`
+	Scopes               string  `json:"scopes,omitempty"`
+	QuotaTotalTokens     int64   `json:"quota_total_tokens"`
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	GroupName            string  `json:"group_name,omitempty"`
 		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
 		ExpiresAt            string  `json:"expires_at,omitempty"`
@@ -908,6 +1163,7 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 		ExpiresAt:            strings.TrimSpace(req.ExpiresAt),
 		AllowedIPs:           strings.TrimSpace(req.AllowedIPs),
+		GroupName:            strings.TrimSpace(req.GroupName),
 	}
 	id, err := h.db.DownstreamKey.Create(key)
 	if err != nil {
@@ -958,6 +1214,7 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		QuotaTotalTokens     *int64   `json:"quota_total_tokens"`
 		PricePromptPer1k     *float64 `json:"price_prompt_per_1k"`
 		PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
+		GroupName            *string  `json:"group_name"`
 		ModelAllowlist       *string  `json:"model_allowlist"`
 		ModelDenylist        *string  `json:"model_denylist"`
 		ExpiresAt            *string  `json:"expires_at"`
@@ -1020,12 +1277,15 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 	if req.AllowedIPs != nil {
 		existing.AllowedIPs = strings.TrimSpace(*req.AllowedIPs)
 	}
+	if req.GroupName != nil {
+		existing.GroupName = strings.TrimSpace(*req.GroupName)
+	}
 	if err := h.db.DownstreamKey.Update(existing); err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	if req.ResetUsed {
-		if _, err := h.db.Exec(`UPDATE downstream_keys SET quota_used_tokens = 0 WHERE id = ?`, id); err != nil {
+		if err := h.db.DownstreamKey.ResetUsage(id); err != nil {
 			writeStoreError(w, err)
 			return
 		}
@@ -1055,23 +1315,47 @@ func (h *AdminHandler) usageSummary(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	// Attach estimated cost from exact prompt/completion sums using key prices when filtering one key.
-	if keyID != nil {
-		key, err := h.db.DownstreamKey.GetByID(*keyID)
-		if err != nil {
-			writeStoreError(w, err)
-			return
-		}
-		if key != nil {
-			summary.EstimatedCost = usagepkg.EstimateCost(
-				int(summary.PromptTokens),
-				int(summary.CompletionTokens),
-				key.PricePromptPer1k,
-				key.PriceCompletionPer1k,
-			)
-		}
-	}
+	// Cost is now persisted per record at relay time (key prices × model
+	// ratio); the summary aggregates the stored amounts directly.
 	writeJSON(w, http.StatusOK, summary)
+}
+
+// listModelRatios returns all configured billing ratios.
+func (h *AdminHandler) listModelRatios(w http.ResponseWriter, r *http.Request) {
+	ratios, err := h.db.ModelRatio.ListRatios()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if ratios == nil {
+		ratios = []domain.ModelRatio{}
+	}
+	writeJSON(w, http.StatusOK, ratios)
+}
+
+// setModelRatio upserts a model's billing ratio (ratio < 0 deletes it).
+func (h *AdminHandler) setModelRatio(w http.ResponseWriter, r *http.Request) {
+	model := strings.TrimSpace(chi.URLParam(r, "model"))
+	if model == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	var body struct {
+		Ratio float64 `json:"ratio"`
+	}
+	if err := decodeJSON(w, r, &body, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if body.Ratio < 0 || body.Ratio > 1000 {
+		writeError(w, http.StatusBadRequest, "ratio must be between 0 and 1000")
+		return
+	}
+	if err := h.db.ModelRatio.SetRatio(model, body.Ratio); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"model": model, "ratio": body.Ratio})
 }
 
 func (h *AdminHandler) listUsage(w http.ResponseWriter, r *http.Request) {
@@ -1143,6 +1427,23 @@ func validateCustomDownstreamToken(token string) error {
 // Proxy Logs
 // ---------------------------------------------------------------------------
 
+// latencyHistogram returns the latency distribution over the newest proxy
+// logs (AAH-style 10-bucket histogram; slow = >= 5s).
+func (h *AdminHandler) latencyHistogram(w http.ResponseWriter, r *http.Request) {
+	sample := 1000
+	if raw := r.URL.Query().Get("sample"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 10000 {
+			sample = parsed
+		}
+	}
+	hist, err := h.db.ProxyLog.LatencyHistogram(sample)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, hist)
+}
+
 func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	limit := 100
@@ -1195,4 +1496,122 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, logs)
+}
+
+// listGroups returns all tenant groups (the default group is always present).
+func (h *AdminHandler) listGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.db.Group.List()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	found := false
+	for _, g := range groups {
+		if g.Name == "default" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		groups = append(groups, domain.KeyGroup{Name: "default"})
+	}
+	writeJSON(w, http.StatusOK, groups)
+}
+
+// upsertGroup creates or updates a group's quota/rate limits.
+func (h *AdminHandler) upsertGroup(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(chi.URLParam(r, "name"))
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	var req struct {
+		QuotaTotalTokens *int64 `json:"quota_total_tokens"`
+		RatePerMinute    *int   `json:"rate_per_minute"`
+		RateBurst        *int   `json:"rate_burst"`
+	}
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	quota := int64(0)
+	if req.QuotaTotalTokens != nil {
+		if *req.QuotaTotalTokens < 0 {
+			writeError(w, http.StatusBadRequest, "quota_total_tokens must be >= 0")
+			return
+		}
+		quota = *req.QuotaTotalTokens
+	}
+	rpm, burst := 0, 0
+	if req.RatePerMinute != nil {
+		rpm = *req.RatePerMinute
+	}
+	if req.RateBurst != nil {
+		burst = *req.RateBurst
+	}
+	if rpm < 0 || burst < 0 {
+		writeError(w, http.StatusBadRequest, "rate limits must be >= 0")
+		return
+	}
+	if err := h.db.Group.Upsert(name, quota, rpm, burst); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "quota_total_tokens": quota, "rate_per_minute": rpm, "rate_burst": burst})
+}
+
+// deleteGroup removes a tenant group (default is protected).
+func (h *AdminHandler) deleteGroup(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(chi.URLParam(r, "name"))
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if name == "default" {
+		writeError(w, http.StatusBadRequest, "cannot delete the default group")
+		return
+	}
+	if err := h.db.Group.Delete(name); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": name})
+}
+
+// patchChannelsByTag applies a partial update to every channel carrying the
+// tag (bulk priority/weight/status/mapping operations).
+func (h *AdminHandler) patchChannelsByTag(w http.ResponseWriter, r *http.Request) {
+	tag := strings.TrimSpace(chi.URLParam(r, "tag"))
+	if tag == "" {
+		writeError(w, http.StatusBadRequest, "tag is required")
+		return
+	}
+	var patch domain.ChannelPatch
+	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	// Validate enum-ish fields early so a typo does not silently no-op.
+	if patch.Status != nil {
+		switch *patch.Status {
+		case domain.StatusEnabled, domain.StatusDisabled, domain.StatusAutoDisabled:
+		default:
+			writeError(w, http.StatusBadRequest, "invalid status")
+			return
+		}
+	}
+	if patch.Priority != nil && (*patch.Priority < 0 || *patch.Priority > 1000) {
+		writeError(w, http.StatusBadRequest, "priority out of range")
+		return
+	}
+	if patch.Weight != nil && (*patch.Weight < 0 || *patch.Weight > 10000) {
+		writeError(w, http.StatusBadRequest, "weight out of range")
+		return
+	}
+	affected, err := h.db.Channel.UpdateByTag(tag, patch)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tag": tag, "affected": affected})
 }

@@ -2,7 +2,9 @@ package adapters
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -51,6 +53,55 @@ func TestChatToGeminiBasic(t *testing.T) {
 	}
 }
 
+func TestChatToGeminiDeveloperRoleMapsToSystemInstruction(t *testing.T) {
+	body := []byte(`{
+		"model": "gemini-2.5-flash",
+		"messages": [
+			{"role": "developer", "content": "Follow these rules."},
+			{"role": "user", "content": "Hello"}
+		]
+	}`)
+	_, converted, err := chatToGemini(body)
+	if err != nil {
+		t.Fatalf("chatToGemini: %v", err)
+	}
+	var request geminiGenerateRequest
+	if err := json.Unmarshal(converted, &request); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if request.SystemInstruction == nil || request.SystemInstruction.Parts[0].Text != "Follow these rules." {
+		t.Fatalf("systemInstruction = %+v, want developer text hoisted to systemInstruction", request.SystemInstruction)
+	}
+	if len(request.Contents) != 1 || request.Contents[0].Role != "user" {
+		t.Fatalf("contents = %+v, want only the user message (developer must not become a user turn)", request.Contents)
+	}
+}
+
+func TestGeminiBuildUpstreamURLPreservesStreamQuery(t *testing.T) {
+	adapter := GeminiForwardAdapter{}
+	got, err := adapter.BuildUpstreamURL("https://generativelanguage.googleapis.com/v1beta", "models/gemini-2.5-pro:streamGenerateContent?alt=sse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Path != "/v1beta/models/gemini-2.5-pro:streamGenerateContent" {
+		t.Fatalf("path = %q", parsed.Path)
+	}
+	if parsed.Query().Get("alt") != "sse" {
+		t.Fatalf("query = %q", parsed.RawQuery)
+	}
+}
+
+func TestChatToGeminiRejectsTools(t *testing.T) {
+	_, _, err := chatToGemini([]byte(`{"model":"gemini-2.5-flash","tools":[{}],"messages":[{"role":"user","content":"hi"}]}`))
+	if !errors.Is(err, ErrUnsupportedFeature) {
+		t.Fatalf("error = %v, want ErrUnsupportedFeature", err)
+	}
+}
+
 func TestChatToGeminiStreamingPath(t *testing.T) {
 	body := []byte(`{"model":"gemini-2.5-pro","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
 	path, _, err := chatToGemini(body)
@@ -59,6 +110,35 @@ func TestChatToGeminiStreamingPath(t *testing.T) {
 	}
 	if !strings.HasPrefix(path, "models/gemini-2.5-pro:streamGenerateContent") {
 		t.Fatalf("path = %q, want streamGenerateContent", path)
+	}
+}
+
+func TestGeminiToOpenAIStreamContentBlockReturnsLocalError(t *testing.T) {
+	upstream := strings.NewReader(`data: {"promptFeedback":{"blockReason":"SAFETY"}}
+
+`)
+	stream := NewGeminiToOpenAIStream(io.NopCloser(upstream))
+	_, err := io.ReadAll(stream)
+	if !errors.Is(err, ErrContentBlocked) {
+		t.Fatalf("error = %v, want ErrContentBlocked", err)
+	}
+}
+
+func TestGeminiToOpenAIStreamUsageOnlyStartsWithRole(t *testing.T) {
+	upstream := strings.NewReader(`data: {"candidates":[],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1}}
+
+`)
+	stream := NewGeminiToOpenAIStream(io.NopCloser(upstream))
+	raw, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"delta":{"role":"assistant"}`) {
+		t.Fatalf("missing role chunk: %s", text)
+	}
+	if !strings.Contains(text, `"choices":[]`) || !strings.Contains(text, `"total_tokens":3`) {
+		t.Fatalf("invalid usage-only chunk: %s", text)
 	}
 }
 
@@ -76,6 +156,7 @@ func TestGeminiToChatResponse(t *testing.T) {
 		t.Fatalf("geminiToChat: %v", err)
 	}
 	var outbound struct {
+		ID      string `json:"id"`
 		Object  string `json:"object"`
 		Model   string `json:"model"`
 		Choices []struct {
@@ -96,6 +177,9 @@ func TestGeminiToChatResponse(t *testing.T) {
 	}
 	if outbound.Object != "chat.completion" {
 		t.Fatalf("object = %q", outbound.Object)
+	}
+	if outbound.ID == "" {
+		t.Fatal("response id must not be empty")
 	}
 	if len(outbound.Choices) != 1 {
 		t.Fatalf("choices = %d", len(outbound.Choices))

@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/webhook"
 )
 
 type ErrorKind string
@@ -58,9 +60,12 @@ type SyncKeyItem struct {
 	Name         string `json:"name,omitempty"`
 	Group        string `json:"group,omitempty"`
 	CredentialID int64  `json:"credential_id,omitempty"`
-	Enabled      bool   `json:"enabled,omitempty"`
-	Status       string `json:"status"`
-	Category     string `json:"category,omitempty"`
+	// UpstreamTokenID is the token id on the upstream site (when known), so
+	// callers can locate the item created by a specific create-key call.
+	UpstreamTokenID int64  `json:"upstream_token_id,omitempty"`
+	Enabled         bool   `json:"enabled,omitempty"`
+	Status          string `json:"status"`
+	Category        string `json:"category,omitempty"`
 }
 
 type SyncKeysResult struct {
@@ -69,6 +74,9 @@ type SyncKeysResult struct {
 	CreatedCredentials int   `json:"created_credentials"`
 	ReusedCredentials  int   `json:"reused_credentials"`
 	SkippedMasked      int   `json:"skipped_masked"`
+	// DeletedCredentials counts local api_key credentials whose upstream token
+	// no longer exists (pruned during sync).
+	DeletedCredentials int `json:"deleted_credentials"`
 	// EmptyList means upstream returned zero tokens (not necessarily expired).
 	EmptyList bool `json:"empty_list,omitempty"`
 	// Category explains overall outcome for UI (optional).
@@ -113,10 +121,21 @@ type Service struct {
 	enc      *crypto.Encrypter
 	registry *adapters.Registry
 	now      func() time.Time
+	// notifier delivers operational alerts (token expired / balance low).
+	notifier *webhook.Notifier
+
+	financeMu    sync.Mutex
+	financeCache *financeCache
 }
 
 func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Service {
 	return &Service{db: db, enc: enc, registry: registry, now: time.Now}
+}
+
+// SetNotifier attaches the operational alert notifier (token expired / low
+// balance events).
+func (s *Service) SetNotifier(n *webhook.Notifier) {
+	s.notifier = n
 }
 
 func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, error) {
@@ -125,11 +144,49 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	if err != nil {
 		return nil, err
 	}
+	defer zeroString(&resolved.input.Secret)
 	self, err := resolved.adapter.ProbeSelf(ctx, resolved.input)
-	zeroString(&resolved.input.Secret)
+	if err != nil && isTransientProbeError(err) {
+		// Cloudflare-protected public sites frequently hiccup on a single
+		// request (challenge, TLS, timeout). Retry once before recording a
+		// failure so a flaky upstream does not flip the badge to "token
+		// invalid / unreachable" for one bad sample. Auth rejections (401/403)
+		// are not retried — a truly dead token stays dead.
+		select {
+		case <-ctx.Done():
+			return nil, mapAdapterError(err)
+		case <-time.After(1200 * time.Millisecond):
+		}
+		self, err = resolved.adapter.ProbeSelf(ctx, resolved.input)
+	}
 	if err != nil {
 		probeErr := mapAdapterError(err)
 		_ = s.db.Channel.RecordProbeFailure(channelID, s.now(), probeCategory(probeErr))
+		// Verdict-driven state machine: 429 parks the channel until the rate
+		// window passes (Retry-After when the upstream provides one); 401/403
+		// mark the credential dead. Alerts are per-verdict and throttled.
+		var typed *Error
+		if errors.As(probeErr, &typed) {
+			switch typed.Category {
+			case "rate_limited":
+				until := s.now().Add(defaultRateLimitPause)
+				if retryAfter := retryAfterFrom(err); retryAfter > 0 && retryAfter < maxRateLimitPause {
+					until = s.now().Add(retryAfter)
+				}
+				_ = s.db.Channel.RecordRateLimited(channelID, until)
+				if s.notifier != nil {
+					s.notifier.SendAlert(ctx, webhook.AlertWarning, "连接触发限流", fmt.Sprintf("连接 #%d (%s) 被上游限流，暂停至 %s。", channelID, resolved.channel.Name, until.Format(time.RFC3339)))
+				}
+			case "account_banned":
+				if s.notifier != nil {
+					s.notifier.SendAlert(ctx, webhook.AlertError, "账号疑似封禁", fmt.Sprintf("连接 #%d (%s) 返回 403，账号可能已被上游封禁。", channelID, resolved.channel.Name))
+				}
+			case "upstream_unauthorized":
+				if s.notifier != nil {
+					s.notifier.SendAlert(ctx, webhook.AlertError, "访问令牌失效", fmt.Sprintf("连接 #%d (%s) 的访问令牌已失效，请重新生成后更新凭据。", channelID, resolved.channel.Name))
+				}
+			}
+		}
 		return nil, probeErr
 	}
 	if self.PlatformUserID > 0 {
@@ -141,6 +198,8 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		latency = 0
 	}
 	_ = s.db.Channel.RecordProbeSuccess(channelID, checkedAt)
+	// A successful probe lifts any previous rate-limit pause.
+	_ = s.db.Channel.ClearRateLimit(channelID)
 	return &ProbeResult{
 		ChannelID:      channelID,
 		CredentialID:   resolved.credential.ID,
@@ -260,7 +319,7 @@ func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKey
 		if secret == "" {
 			result.SkippedMasked++
 			result.Items = append(result.Items, SyncKeyItem{
-				Name: name, Group: key.Group, Status: "skipped_masked", Category: "key_masked",
+				Name: name, Group: key.Group, UpstreamTokenID: key.ID, Status: "skipped_masked", Category: "key_masked",
 			})
 			continue
 		}
@@ -286,7 +345,7 @@ func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKey
 			}
 			result.Items = append(result.Items, SyncKeyItem{
 				Name: name, Group: key.Group, CredentialID: matchedID,
-				Enabled: true, Status: "reused", Category: "existing_api_key",
+				UpstreamTokenID: key.ID, Enabled: true, Status: "reused", Category: "existing_api_key",
 			})
 			if attachID == 0 {
 				attachID = matchedID
@@ -331,21 +390,38 @@ func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKey
 		result.CreatedCredentials++
 		result.Items = append(result.Items, SyncKeyItem{
 			Name: name, Group: key.Group, CredentialID: newID,
-			Enabled: status == domain.StatusEnabled,
-			Status:  "created", Category: "api_key_imported",
+			UpstreamTokenID: key.ID, Enabled: status == domain.StatusEnabled,
+			Status: "created", Category: "api_key_imported",
 		})
 		if attachID == 0 {
 			attachID = newID
 		}
+	}
+
+	// Prune local api_key credentials whose upstream token no longer exists.
+	// Compare against the FULL upstream list (up to 100), not the truncated
+	// MaxKeys slice, so keys beyond the import cap are never misjudged as
+	// deleted.
+	if fullKeys, listErr := resolved.adapter.ListAPIKeys(ctx, resolved.input, 0, 100); listErr == nil {
+		deleted, removedItems, deleteErr := s.deleteOrphanAPIKeys(resolved, fullKeys, existing)
+		if deleteErr != nil {
+			zeroString(&resolved.input.Secret)
+			return nil, deleteErr
+		}
+		result.DeletedCredentials = deleted
+		result.Items = append(result.Items, removedItems...)
 	}
 	zeroString(&resolved.input.Secret)
 
 	if attachID == 0 && result.SkippedMasked > 0 && result.CreatedCredentials == 0 && result.ReusedCredentials == 0 {
 		result.Category = "keys_masked"
 		result.Message = "upstream listed tokens but secrets were masked and could not be revealed; paste an sk- manually or use a site that exposes full keys"
-	} else if attachID > 0 {
+	} else if attachID > 0 || result.DeletedCredentials > 0 {
 		result.Category = "keys_attached"
 		result.Message = "API key ready for relay"
+		if result.DeletedCredentials > 0 {
+			result.Message = fmt.Sprintf("API key sync done; removed %d key(s) deleted upstream", result.DeletedCredentials)
+		}
 	}
 
 	if attachToChannel && attachID > 0 {
@@ -390,6 +466,202 @@ func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKey
 		}
 	}
 	return result, nil
+}
+
+// GetPricing fetches the site-wide model price table for a channel's account.
+func (s *Service) GetPricing(ctx context.Context, channelID int64) ([]adapters.ModelPrice, error) {
+	resolved, err := s.resolveUserTarget(channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer zeroString(&resolved.input.Secret)
+	prices, err := resolved.adapter.Pricing(ctx, resolved.input)
+	if err != nil {
+		return nil, mapAdapterError(err)
+	}
+	return prices, nil
+}
+
+// FinanceItem is one channel's account finances: balance (in quota), the
+// quota-per-unit conversion, and the model price table (quota per 1M tokens).
+type FinanceItem struct {
+	ChannelID    int64                     `json:"channel_id"`
+	Balance      int64                     `json:"balance"`
+	QuotaTotal   int64                     `json:"quota_total,omitempty"`
+	QuotaUsed    int64                     `json:"quota_used,omitempty"`
+	QuotaPerUnit int64                     `json:"quota_per_unit"`
+	Prices       map[string]adapters.ModelPrice `json:"prices"`
+}
+
+const financeCacheTTL = 2 * time.Minute
+
+// financeCache holds the last FinanceOverview result with its timestamp.
+type financeCache struct {
+	items []FinanceItem
+	at    time.Time
+}
+
+// FinanceOverview returns balance + model pricing for every enabled channel
+// that has a user credential, cached for a short TTL so the models page does
+// not hammer upstreams on every visit. It runs on a detached context so a
+// client disconnect does not abort every in-flight upstream probe.
+func (s *Service) FinanceOverview(ctx context.Context) ([]FinanceItem, error) {
+	s.financeMu.Lock()
+	if s.financeCache != nil && time.Since(s.financeCache.at) < financeCacheTTL {
+		items := s.financeCache.items
+		s.financeMu.Unlock()
+		return items, nil
+	}
+	s.financeMu.Unlock()
+
+	// Detach from the request context: finance is read-only and the cache
+	// serves the next visitor; a browser/curl timeout must not cancel the
+	// whole sweep mid-flight.
+	workCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	channels, err := s.db.Channel.ListEnabled()
+	if err != nil {
+		return nil, internalError("channel_list")
+	}
+	// Only channels with a usable user credential are worth probing.
+	targets := make([]*resolvedTarget, 0, len(channels))
+	for index := range channels {
+		resolved, resolveErr := s.resolveUserTarget(channels[index].ID)
+		if resolveErr != nil {
+			continue
+		}
+		targets = append(targets, resolved)
+	}
+	if len(targets) == 0 {
+		items := []FinanceItem{}
+		s.financeMu.Lock()
+		s.financeCache = &financeCache{items: items, at: s.now()}
+		s.financeMu.Unlock()
+		return items, nil
+	}
+
+	sem := make(chan struct{}, 4)
+	items := make([]FinanceItem, 0, len(targets))
+	var itemMu sync.Mutex
+	var wg sync.WaitGroup
+	for index := range targets {
+		resolved := targets[index]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-workCtx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			item := s.financeForChannel(workCtx, resolved)
+			if item == nil {
+				return
+			}
+			itemMu.Lock()
+			items = append(items, *item)
+			itemMu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	s.financeMu.Lock()
+	s.financeCache = &financeCache{items: items, at: s.now()}
+	s.financeMu.Unlock()
+	return items, nil
+}
+
+func (s *Service) financeForChannel(ctx context.Context, resolved *resolvedTarget) *FinanceItem {
+	defer zeroString(&resolved.input.Secret)
+	// Bound each upstream call so a slow public site cannot stall the sweep.
+	callCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	self, selfErr := resolved.adapter.ProbeSelf(callCtx, resolved.input)
+	if selfErr != nil {
+		return nil
+	}
+	prices, priceErr := resolved.adapter.Pricing(callCtx, resolved.input)
+	if priceErr != nil {
+		prices = nil
+	}
+	quotaPerUnit, quotaErr := resolved.adapter.QuotaPerUnit(callCtx, resolved.input)
+	if quotaErr != nil || quotaPerUnit <= 0 {
+		quotaPerUnit = 500000 // New-API default: 1 unit = 500k quota.
+	}
+	// New-API family semantics: /api/user/self returns quota as the remaining
+	// balance (site currency × quota_per_unit) and used_quota as historical
+	// cumulative usage. Subtracting used_quota would double-count past
+	// consumption and turn a healthy balance negative (42 API case), so the
+	// balance is the quota field as-is.
+	balance := self.Quota
+	if balance == nil {
+		zero := int64(0)
+		balance = &zero
+	}
+	// Low-balance alert: remaining quota below one unit (site currency).
+	if balance != nil && *balance < quotaPerUnit && s.notifier != nil {
+		s.notifier.SendAlert(context.Background(), webhook.AlertWarning, "余额不足", fmt.Sprintf("连接 #%d (%s) 余额仅剩 %d 额度（低于 1 单位），请及时充值。", resolved.channel.ID, resolved.channel.Name, *balance))
+	}
+	priceMap := make(map[string]adapters.ModelPrice, len(prices))
+	for _, p := range prices {
+		// Convert every pricing shape to USD following the All API Hub
+		// modelPricing.ts normalization:
+		//   - direct USD/1M (token_price_usd_per_million) wins when present;
+		//   - token: inputUSD = ratio × 1e6 / quota_per_unit × group_ratio;
+		//   - per-call: model_price × group_ratio;
+		//   - legacy map: quota-per-1M ÷ quota_per_unit.
+		mode := p.Mode
+		inputUSD := p.PriceUSD
+		gr := p.GroupRatio
+		if gr <= 0 {
+			gr = 1
+		}
+		switch {
+		case p.TokenUSD != nil && p.TokenUSD.Input > 0:
+			inputUSD = p.TokenUSD.Input // direct USD, no ratio semantics
+			mode = "token"
+		case p.Ratio > 0:
+			inputUSD = p.Ratio * 1_000_000 / float64(quotaPerUnit) * gr
+			mode = "token"
+		case p.QuotaPer1M > 0:
+			inputUSD = p.QuotaPer1M / float64(quotaPerUnit)
+			mode = "token"
+		case p.ModelPrice > 0:
+			inputUSD = p.ModelPrice * gr
+			mode = "fixed"
+		}
+		if inputUSD <= 0 {
+			continue
+		}
+		outputUSD := inputUSD
+		if p.CompletionRatio > 0 && mode == "token" {
+			outputUSD = inputUSD * p.CompletionRatio
+		}
+		priceMap[p.Model] = adapters.ModelPrice{
+			Model:    p.Model,
+			Currency: p.Currency,
+			PriceUSD: inputUSD,
+			OutputUSD: outputUSD,
+			Mode:     mode,
+		}
+	}
+	return &FinanceItem{
+		ChannelID:    resolved.channel.ID,
+		Balance:      int64Value(balance),
+		QuotaTotal:   int64Value(self.Quota),
+		QuotaUsed:    int64Value(self.UsedQuota),
+		QuotaPerUnit: quotaPerUnit,
+		Prices:       priceMap,
+	}
+}
+
+func int64Value(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 // ListTokenGroups returns the distinct token groups the upstream account has
@@ -491,42 +763,82 @@ func (s *Service) CreateKey(ctx context.Context, channelID int64, request Create
 		return nil, mapAdapterError(err)
 	}
 	secret := strings.TrimSpace(created.Secret)
+	// Fast path: many forks serve the full key from the per-token reveal
+	// endpoint right away; only fall back to the full-list import when that
+	// fails.
+	if secret == "" && created.ID > 0 {
+		if revealed, revealErr := resolved.adapter.RevealAPIKey(ctx, resolved.input, created.ID); revealErr == nil {
+			secret = strings.TrimSpace(revealed)
+		}
+	}
+	// credentialID is resolved either from the direct secret path below or by
+	// the full-list import fallback when the create response came back masked.
+	var credentialID int64
 	if secret == "" {
-		return nil, &Error{Kind: ErrorUpstream, Category: "token_created_but_secret_masked"}
-	}
-
-	// Store as an api_key credential; if the same secret somehow already exists,
-	// reuse that row instead of duplicating.
-	existing, err := s.db.Credential.ListBySite(resolved.site.ID)
-	if err != nil {
-		return nil, internalError("credential_list")
-	}
-	matchedID, matchErr := s.findMatchingAPIKey(existing, secret)
-	if matchErr != nil {
-		return nil, matchErr
-	}
-	credentialID := matchedID
-	if credentialID == 0 {
-		encSecret, encErr := s.enc.Encrypt([]byte(secret))
-		if encErr != nil {
-			return nil, internalError("encryption_failed")
+		// Some forks mask the secret in the create response (and often in the
+		// token list too), exposing the full sk- only through the per-token
+		// reveal endpoint — and the fresh token may take a moment to appear in
+		// the list at all. Rather than guessing which list item we just
+		// created (create-response ids and names are unreliable across forks),
+		// mirror the manual "Sync API keys" action: import the whole list with
+		// per-item reveal and dedupe. Retry once for list-propagation delay.
+		attachFalse := false
+		for attempt := 0; attempt < 2 && credentialID == 0; attempt++ {
+			if attempt > 0 {
+				select {
+				case <-ctx.Done():
+					return nil, mapAdapterError(ctx.Err())
+				case <-time.After(time.Second):
+				}
+			}
+			syncResult, syncErr := s.SyncKeys(ctx, channelID, SyncKeysRequest{AttachToChannel: &attachFalse})
+			if syncErr != nil {
+				break
+			}
+			credentialID = pickCreatedItem(syncResult.Items, created.ID, name)
+			if credentialID == 0 && syncResult.SkippedMasked > 0 {
+				// Tokens are listed but every secret is masked and cannot be
+				// revealed — the sync path cannot help either; fail fast.
+				break
+			}
 		}
-		metaPayload := map[string]any{"name": name, "group": group}
-		if created.ID > 0 {
-			metaPayload["upstream_token_id"] = created.ID
+		if credentialID == 0 {
+			return nil, &Error{Kind: ErrorUpstream, Category: "token_created_but_secret_masked"}
 		}
-		metaBytes, _ := json.Marshal(metaPayload)
-		newID, createErr := s.db.Credential.Create(&domain.Credential{
-			SiteID:    resolved.site.ID,
-			Kind:      "api_key",
-			SecretEnc: []byte(encSecret),
-			MetaJSON:  string(metaBytes),
-			Status:    domain.StatusEnabled,
-		})
-		if createErr != nil {
-			return nil, internalError("credential_create")
+	} else {
+		// Store as an api_key credential; if the same secret somehow already
+		// exists, reuse that row instead of duplicating.
+		existing, err := s.db.Credential.ListBySite(resolved.site.ID)
+		if err != nil {
+			return nil, internalError("credential_list")
 		}
-		credentialID = newID
+		matchedID, matchErr := s.findMatchingAPIKey(existing, secret)
+		if matchErr != nil {
+			return nil, matchErr
+		}
+		credentialID = matchedID
+		if credentialID == 0 {
+			encSecret, encErr := s.enc.Encrypt([]byte(secret))
+			if encErr != nil {
+				return nil, internalError("encryption_failed")
+			}
+			metaPayload := map[string]any{"name": name, "group": group}
+			if created.ID > 0 {
+				metaPayload["upstream_token_id"] = created.ID
+			}
+			metaBytes, _ := json.Marshal(metaPayload)
+			newID, createErr := s.db.Credential.Create(&domain.Credential{
+				SiteID:    resolved.site.ID,
+				Kind:      "api_key",
+				SecretEnc: []byte(encSecret),
+				MetaJSON:  string(metaBytes),
+				Status:    domain.StatusEnabled,
+			})
+			if createErr != nil {
+				return nil, internalError("credential_create")
+			}
+			credentialID = newID
+		}
 	}
 
 	// Point the channel at the new key so relay can use it right away.
@@ -546,6 +858,113 @@ func (s *Service) CreateKey(ctx context.Context, channelID int64, request Create
 		Category:     "api_key_created",
 		Message:      "API key created and attached to the connection",
 	}, nil
+}
+
+// pickCreatedItem locates the credential imported by a sync result that
+// corresponds to the token just created upstream. Preference order: exact
+// upstream token id (create responses usually carry one), then name, then the
+// first freshly imported item as a last resort (forks that neither return an id
+// nor keep the name). Returns 0 when nothing matches.
+func pickCreatedItem(items []SyncKeyItem, upstreamID int64, name string) int64 {
+	var firstCreated int64
+	for _, item := range items {
+		if item.CredentialID <= 0 {
+			continue
+		}
+		if item.Status != "created" && item.Status != "reused" {
+			continue
+		}
+		if upstreamID > 0 && item.UpstreamTokenID == upstreamID {
+			return item.CredentialID
+		}
+		if item.Status == "created" && firstCreated == 0 {
+			firstCreated = item.CredentialID
+		}
+		if upstreamID == 0 && item.Name == name && item.Status == "created" {
+			return item.CredentialID
+		}
+	}
+	return firstCreated
+}
+
+// deleteOrphanAPIKeys removes local api_key credentials whose upstream token
+// no longer exists (identified via meta upstream_token_id), keeping the local
+// key pool aligned with the upstream. Credentials pasted manually (no upstream
+// id) are left alone. Channels bound to a removed key are unbound so relay
+// falls back to the remaining site pool instead of a dangling reference.
+func (s *Service) deleteOrphanAPIKeys(resolved *resolvedTarget, upstream []adapters.UpstreamAPIKey, existing []domain.Credential) (int, []SyncKeyItem, error) {
+	upstreamIDs := make(map[int64]struct{}, len(upstream))
+	for _, key := range upstream {
+		if key.ID > 0 {
+			upstreamIDs[key.ID] = struct{}{}
+		}
+	}
+	if len(upstreamIDs) == 0 {
+		// No upstream ids to compare against — nothing provably orphaned.
+		return 0, nil, nil
+	}
+	allChannels, err := s.db.Channel.List()
+	if err != nil {
+		return 0, nil, internalError("channel_list")
+	}
+	removed := make([]SyncKeyItem, 0, 1)
+	for index := range existing {
+		cred := existing[index]
+		if !strings.EqualFold(cred.Kind, "api_key") {
+			continue
+		}
+		upstreamID, metaErr := upstreamTokenID(cred.MetaJSON)
+		if metaErr != nil || upstreamID <= 0 {
+			continue
+		}
+		if _, stillThere := upstreamIDs[upstreamID]; stillThere {
+			continue
+		}
+		// Upstream deleted this token: remove it locally too.
+		if err := s.db.Credential.Delete(cred.ID); err != nil {
+			return 0, nil, internalError("credential_delete")
+		}
+		for channelIndex := range allChannels {
+			channel := &allChannels[channelIndex]
+			if channel.CredentialID == nil || *channel.CredentialID != cred.ID {
+				continue
+			}
+			channel.CredentialID = nil
+			if updateErr := s.db.Channel.Update(channel); updateErr != nil {
+				return 0, nil, internalError("channel_update")
+			}
+		}
+		removed = append(removed, SyncKeyItem{
+			CredentialID: cred.ID,
+			UpstreamTokenID: upstreamID,
+			Status:       "deleted",
+			Category:     "api_key_removed",
+		})
+	}
+	return len(removed), removed, nil
+}
+
+// upstreamTokenID extracts the upstream token id from a credential's meta JSON.
+func upstreamTokenID(raw string) (int64, error) {
+	if strings.TrimSpace(raw) == "" {
+		return 0, nil
+	}
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.UseNumber()
+	var metadata struct {
+		UpstreamTokenID *json.Number `json:"upstream_token_id"`
+	}
+	if err := decoder.Decode(&metadata); err != nil {
+		return 0, err
+	}
+	if metadata.UpstreamTokenID == nil {
+		return 0, nil
+	}
+	id, err := metadata.UpstreamTokenID.Int64()
+	if err != nil || id <= 0 {
+		return 0, errors.New("upstream_token_id must be a positive integer")
+	}
+	return id, nil
 }
 
 // ensureGroupChannels creates or reuses one channel per New API token group on the site.
@@ -827,6 +1246,23 @@ func (s *Service) persistPlatformUserID(credential *domain.Credential, userID in
 	return s.db.Credential.Update(credential)
 }
 
+// Rate-limit pause bounds: default 60s when the upstream sends no Retry-After;
+// upstream Retry-After values above 1h are capped.
+const (
+	defaultRateLimitPause = 60 * time.Second
+	maxRateLimitPause     = time.Hour
+)
+
+// retryAfterFrom extracts an upstream Retry-After hint from an adapter status
+// error, when present. Returns 0 when unknown.
+func retryAfterFrom(err error) time.Duration {
+	var adapterErr *adapters.Error
+	if !errors.As(err, &adapterErr) || adapterErr.RetryAfter <= 0 {
+		return 0
+	}
+	return adapterErr.RetryAfter
+}
+
 // probeCategory extracts the redacted failure category used for last_probe_error.
 func probeCategory(err error) string {
 	var probeErr *Error
@@ -834,6 +1270,17 @@ func probeCategory(err error) string {
 		return probeErr.Category
 	}
 	return "upstream_failure"
+}
+
+// isTransientProbeError reports whether an adapter error is worth one retry:
+// transport-level failures (timeout, TLS, connection reset, CF challenge)
+// only. Auth rejections are excluded — retrying a 401 is pointless.
+func isTransientProbeError(err error) bool {
+	var adapterErr *adapters.Error
+	if errors.As(err, &adapterErr) {
+		return adapterErr.Kind == adapters.ErrorTransport
+	}
+	return false
 }
 
 func mapAdapterError(err error) error {
@@ -846,8 +1293,14 @@ func mapAdapterError(err error) error {
 		case adapters.ErrorInvalidURL:
 			return unavailable("invalid_base_url")
 		case adapters.ErrorStatus:
-			if adapterErr.Status == 401 || adapterErr.Status == 403 {
+			if adapterErr.Status == 401 {
 				return &Error{Kind: ErrorUpstream, Category: "upstream_unauthorized"}
+			}
+			if adapterErr.Status == 403 {
+				return &Error{Kind: ErrorUpstream, Category: "account_banned"}
+			}
+			if adapterErr.Status == 429 {
+				return &Error{Kind: ErrorUpstream, Category: "rate_limited"}
 			}
 			return &Error{Kind: ErrorUpstream, Category: "upstream_status"}
 		case adapters.ErrorTransport:

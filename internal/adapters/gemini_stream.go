@@ -101,6 +101,9 @@ func (s *GeminiToOpenAIStream) pullEvent() error {
 		return nil
 	}
 	var payload struct {
+		PromptFeedback *struct {
+			BlockReason string `json:"blockReason"`
+		} `json:"promptFeedback"`
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
@@ -110,15 +113,19 @@ func (s *GeminiToOpenAIStream) pullEvent() error {
 			FinishReason string `json:"finishReason"`
 		} `json:"candidates"`
 		UsageMetadata *struct {
-			PromptTokenCount     int `json:"promptTokenCount"`
-			CandidatesTokenCount int `json:"candidatesTokenCount"`
-			TotalTokenCount      int `json:"totalTokenCount"`
+			PromptTokenCount        int `json:"promptTokenCount"`
+			CandidatesTokenCount    int `json:"candidatesTokenCount"`
+			TotalTokenCount         int `json:"totalTokenCount"`
+			CachedContentTokenCount int `json:"cachedContentTokenCount"`
 		} `json:"usageMetadata"`
 		ModelVersion string `json:"modelVersion"`
 	}
 	if err := json.Unmarshal([]byte(line), &payload); err != nil {
 		// Not a JSON payload line (e.g. comments) — skip.
 		return nil
+	}
+	if payload.PromptFeedback != nil && strings.TrimSpace(payload.PromptFeedback.BlockReason) != "" {
+		return fmt.Errorf("%w: %s", ErrContentBlocked, payload.PromptFeedback.BlockReason)
 	}
 	if payload.ModelVersion != "" {
 		s.model = payload.ModelVersion
@@ -137,31 +144,49 @@ func (s *GeminiToOpenAIStream) pullEvent() error {
 	if payload.UsageMetadata != nil {
 		prompt := payload.UsageMetadata.PromptTokenCount
 		completion := payload.UsageMetadata.CandidatesTokenCount
+		total := payload.UsageMetadata.TotalTokenCount
+		if total <= 0 {
+			total = prompt + completion
+		}
 		usage = map[string]any{
 			"prompt_tokens":     prompt,
 			"completion_tokens": completion,
-			"total_tokens":      payload.UsageMetadata.TotalTokenCount,
+			"total_tokens":      total,
+		}
+		// Cache detail flows through the internal alias so the usage Tee
+		// (which only ever sees the converted OpenAI SSE) can meter it.
+		if cached := payload.UsageMetadata.CachedContentTokenCount; cached > 0 {
+			usage["cache_read_tokens"] = cached
 		}
 	}
 	if finishReason != "" || usage != nil {
+		// Gemini may send a terminal usage-only event without a text delta.
+		// OpenAI clients still expect the stream to begin with an assistant role.
+		s.writeRole()
 		s.writeChunk(finishReason, usage)
 	}
 	return nil
 }
 
+// writeRole emits the OpenAI assistant-role prefix exactly once.
+func (s *GeminiToOpenAIStream) writeRole() {
+	if s.roleSent {
+		return
+	}
+	s.roleSent = true
+	s.writeChunkPayload(map[string]any{
+		"choices": []any{
+			map[string]any{
+				"index": 0,
+				"delta": map[string]any{"role": "assistant"},
+			},
+		},
+	})
+}
+
 // writeTextDelta emits a content delta chunk, prefixed by the role chunk.
 func (s *GeminiToOpenAIStream) writeTextDelta(text string) {
-	if !s.roleSent {
-		s.roleSent = true
-		s.writeChunkPayload(map[string]any{
-			"choices": []any{
-				map[string]any{
-					"index": 0,
-					"delta": map[string]any{"role": "assistant"},
-				},
-			},
-		})
-	}
+	s.writeRole()
 	s.writeChunkPayload(map[string]any{
 		"choices": []any{
 			map[string]any{
@@ -172,23 +197,26 @@ func (s *GeminiToOpenAIStream) writeTextDelta(text string) {
 	})
 }
 
-// writeChunk emits a chunk carrying finish_reason and/or usage.
+// writeChunk emits a chunk carrying finish_reason and/or usage in the standard
+// OpenAI shape: finish_reason on the choice, usage at the chunk top level.
 func (s *GeminiToOpenAIStream) writeChunk(finishReason string, usage map[string]any) {
-	delta := map[string]any{}
+	chunk := map[string]any{}
 	if finishReason != "" {
-		delta["finish_reason"] = finishReason
+		chunk["choices"] = []any{
+			map[string]any{
+				"index":         0,
+				"delta":         map[string]any{},
+				"finish_reason": finishReason,
+			},
+		}
+	} else {
+		// OpenAI usage-only terminal chunks use an empty choices array.
+		chunk["choices"] = []any{}
 	}
 	if usage != nil {
-		delta["usage"] = usage
+		chunk["usage"] = usage
 	}
-	s.writeChunkPayload(map[string]any{
-		"choices": []any{
-			map[string]any{
-				"index": 0,
-				"delta": delta,
-			},
-		},
-	})
+	s.writeChunkPayload(chunk)
 }
 
 func (s *GeminiToOpenAIStream) writeChunkPayload(chunk map[string]any) {

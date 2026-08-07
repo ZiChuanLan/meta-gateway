@@ -13,12 +13,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
 type downstreamKeyIDContextKey struct{}
 type downstreamScopesContextKey struct{}
 type downstreamModelFilterContextKey struct{}
+type downstreamKeyContextKey struct{}
+
+// DownstreamKey returns the authenticated downstream key attached by
+// DownstreamAuth. Nil when unauthenticated or not attached.
+func DownstreamKey(r *http.Request) *domain.DownstreamKey {
+	if r == nil {
+		return nil
+	}
+	key, _ := r.Context().Value(downstreamKeyContextKey{}).(*domain.DownstreamKey)
+	return key
+}
 
 // Well-known downstream scopes. "relay" is a superset of public /v1 access.
 const (
@@ -224,26 +236,27 @@ func NewDownstreamAuth(s *store.DownstreamKeyStore) *DownstreamAuth {
 }
 
 // Authenticate extracts the Bearer token, hashes it, and looks up in the DB.
-// Returns key id, normalized scopes, model filter, and nil if valid.
+// Returns key id, normalized scopes, model filter, the authenticated key
+// (cached snapshot, never nil on success), and nil if valid.
 // The model filter is nil when the key has no model restriction.
-func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, []string, *ModelFilter, error) {
+func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, []string, *ModelFilter, *domain.DownstreamKey, error) {
 	token, err := extractBearer(r)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("auth: %w", err)
+		return 0, nil, nil, nil, fmt.Errorf("auth: %w", err)
 	}
 	hash := hashToken(token)
 	key, err := da.store.GetByHash(hash)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("auth: lookup: %w", err)
+		return 0, nil, nil, nil, fmt.Errorf("auth: lookup: %w", err)
 	}
 	if key == nil || !key.Enabled {
-		return 0, nil, nil, fmt.Errorf("auth: invalid or disabled key")
+		return 0, nil, nil, nil, fmt.Errorf("auth: invalid or disabled key")
 	}
 	if expiryErr := checkKeyExpiry(key.ExpiresAt); expiryErr != nil {
-		return 0, nil, nil, expiryErr
+		return 0, nil, nil, nil, expiryErr
 	}
 	if ipErr := checkKeyAllowedIPs(key.AllowedIPs, clientIP(r)); ipErr != nil {
-		return 0, nil, nil, ipErr
+		return 0, nil, nil, nil, ipErr
 	}
 	scopes, err := NormalizeScopes(key.Scopes)
 	if err != nil {
@@ -254,14 +267,14 @@ func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, []string, *Model
 	if filter.Empty() {
 		filter = nil
 	}
-	return key.ID, scopes, filter, nil
+	return key.ID, scopes, filter, key, nil
 }
 
 // Middleware returns an HTTP middleware that uses DownstreamAuth.
 func (da *DownstreamAuth) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id, scopes, filter, err := da.Authenticate(r)
+			id, scopes, filter, key, err := da.Authenticate(r)
 			if err != nil {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
@@ -270,6 +283,11 @@ func (da *DownstreamAuth) Middleware() func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, downstreamScopesContextKey{}, scopes)
 			if filter != nil {
 				ctx = context.WithValue(ctx, downstreamModelFilterContextKey{}, filter)
+			}
+			if key != nil {
+				// Share the authenticated key snapshot so later quota checks
+				// reuse it instead of issuing a second DB read.
+				ctx = context.WithValue(ctx, downstreamKeyContextKey{}, key)
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

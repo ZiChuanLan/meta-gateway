@@ -1,7 +1,7 @@
 import type {
-	AuditEvent,
-	BackupRecord,
-	Channel,
+  AuditEvent,
+  BackupRecord,
+  Channel,
 	ChannelOverview,
 	CheckinLog,
 	CreatedDownstreamKey,
@@ -16,6 +16,8 @@ import type {
 	ModuleStatus,
 	PluginRecord,
 	AccountProbeResult,
+	FinanceItem,
+	ModelPrice,
 	ProbeResult,
 	ProxyLog,
 	SyncKeysResult,
@@ -33,6 +35,7 @@ import type {
 	RouteOverview,
 	RunResult,
 	RunSummary,
+	StickySnapshot,
 	RuntimeEditableSettings,
 	RuntimeSettings,
 	Site,
@@ -128,6 +131,11 @@ function isErrorBody(value: unknown): value is { error: string } {
 export const api = (client: ApiClient) => ({
 	sites: (signal?: AbortSignal) => client.getList<Site>("/admin/sites", signal),
 	createSite: (body: Partial<Site>) => client.post<Site>("/admin/sites", body),
+	detectSiteType: (url: string, signal?: AbortSignal) =>
+		client.get<{ family?: string; site_type?: string; title_matched?: boolean; evidence?: string; title?: string }>(
+			`/admin/site-type?url=${encodeURIComponent(url)}`,
+			signal,
+		),
 	updateSite: (id: number, body: Partial<Site>) =>
 		client.put<Site>(`/admin/sites/${id}`, body),
 	deleteSite: (id: number) => client.delete(`/admin/sites/${id}`),
@@ -181,6 +189,8 @@ export const api = (client: ApiClient) => ({
 			`/admin/routes/explain?model=${encodeURIComponent(model)}`,
 			signal,
 		),
+	sticky: (signal?: AbortSignal) =>
+		client.get<StickySnapshot>("/admin/sticky", signal),
 	keys: (signal?: AbortSignal) =>
 		client.getList<DownstreamKey>("/admin/downstream-keys", signal),
 	createKey: (body: {
@@ -255,6 +265,14 @@ export const api = (client: ApiClient) => ({
 		const suffix = query.size ? `?${query.toString()}` : "";
 		return client.getList<ProxyLog>(`/admin/proxy-logs${suffix}`, signal);
 	},
+	proxyLogLatencyHistogram: (sample = 1000, signal?: AbortSignal) =>
+		client.get<{
+			buckets: number[];
+			total: number;
+			slow_count: number;
+			p50_ms: number;
+			p95_ms: number;
+		}>(`/admin/proxy-logs/latency-histogram?sample=${sample}`, signal),
 	discoveredModels: (channelId?: number, signal?: AbortSignal) =>
 		client.getList<DiscoveredModel>(
 			`/admin/discovery/models${channelId ? `?channel_id=${channelId}` : ""}`,
@@ -285,6 +303,11 @@ export const api = (client: ApiClient) => ({
 		client.post<{ items: Array<{ channel_id: number; channel_name: string; ok: boolean; username?: string; error?: string }> }>(
 			"/admin/channels/account/probe-all",
 		),
+	finance: (signal?: AbortSignal) =>
+		client.get<{ items: FinanceItem[] }>(
+			"/admin/channels/account/finance",
+			signal,
+		),
 	syncKeys: (
 		id: number,
 		body?: {
@@ -305,6 +328,11 @@ export const api = (client: ApiClient) => ({
 	tokenGroups: (id: number, signal?: AbortSignal) =>
 		client.get<{ groups: string[] }>(
 			`/admin/channels/${id}/account/token-groups`,
+			signal,
+		),
+	pricing: (id: number, signal?: AbortSignal) =>
+		client.get<{ prices: ModelPrice[] }>(
+			`/admin/channels/${id}/account/pricing`,
 			signal,
 		),
 	refreshChannel: (id: number) =>

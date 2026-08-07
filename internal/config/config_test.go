@@ -119,3 +119,48 @@ func TestLoadWebDAVDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("overrides=%+v", overrides)
 	}
 }
+
+func TestLoadConnectionPoolDefaultsAndRanges(t *testing.T) {
+	t.Setenv("METRICS_TOKEN", "metrics-test-token")
+	t.Setenv("SQLITE_MAX_OPEN_CONNS", "")
+	t.Setenv("OUTBOUND_MAX_IDLE_CONNS", "")
+	t.Setenv("OUTBOUND_MAX_IDLE_CONNS_PER_HOST", "")
+	defaults, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.SQLiteMaxOpenConns != 4 {
+		t.Fatalf("SQLiteMaxOpenConns default=%d, want 4", defaults.SQLiteMaxOpenConns)
+	}
+	if defaults.OutboundMaxIdleConns != 512 {
+		t.Fatalf("OutboundMaxIdleConns default=%d, want 512", defaults.OutboundMaxIdleConns)
+	}
+	if defaults.OutboundMaxIdleConnsPerHost != 64 {
+		t.Fatalf("OutboundMaxIdleConnsPerHost default=%d, want 64", defaults.OutboundMaxIdleConnsPerHost)
+	}
+
+	t.Setenv("SQLITE_MAX_OPEN_CONNS", "8")
+	t.Setenv("OUTBOUND_MAX_IDLE_CONNS", "1024")
+	t.Setenv("OUTBOUND_MAX_IDLE_CONNS_PER_HOST", "128")
+	overrides, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overrides.SQLiteMaxOpenConns != 8 || overrides.OutboundMaxIdleConns != 1024 || overrides.OutboundMaxIdleConnsPerHost != 128 {
+		t.Fatalf("overrides=%+v", overrides)
+	}
+
+	t.Setenv("SQLITE_MAX_OPEN_CONNS", "0")
+	if _, err := Load(); err == nil {
+		t.Fatal("SQLITE_MAX_OPEN_CONNS=0 must be rejected")
+	}
+	t.Setenv("SQLITE_MAX_OPEN_CONNS", "17")
+	if _, err := Load(); err == nil {
+		t.Fatal("SQLITE_MAX_OPEN_CONNS=17 must be rejected")
+	}
+	t.Setenv("SQLITE_MAX_OPEN_CONNS", "")
+	t.Setenv("OUTBOUND_MAX_IDLE_CONNS", "-1")
+	if _, err := Load(); err == nil {
+		t.Fatal("OUTBOUND_MAX_IDLE_CONNS=-1 must be rejected")
+	}
+}

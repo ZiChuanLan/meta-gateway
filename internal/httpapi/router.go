@@ -2,16 +2,19 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/account"
 	"github.com/lan/meta-gateway/internal/adapters"
+	"github.com/lan/meta-gateway/internal/alert"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/backup"
 	"github.com/lan/meta-gateway/internal/checkin"
@@ -19,6 +22,7 @@ import (
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/discovery"
 	"github.com/lan/meta-gateway/internal/exchange"
+	"github.com/lan/meta-gateway/internal/healthsweep"
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
 	"github.com/lan/meta-gateway/internal/plugins"
@@ -29,6 +33,7 @@ import (
 	"github.com/lan/meta-gateway/internal/runtimeconfig"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/webdavsync"
+	"github.com/lan/meta-gateway/internal/webhook"
 	"github.com/lan/meta-gateway/internal/webui"
 )
 
@@ -131,7 +136,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	r.Get("/console", func(w http.ResponseWriter, request *http.Request) {
 		http.Redirect(w, request, "/console/", http.StatusPermanentRedirect)
 	})
-	r.Handle("/console/*", webui.Handler())
+	r.Group(func(console chi.Router) {
+		console.Use(securityHeaders)
+		console.Handle("/console/*", webui.Handler())
+	})
 	// Legacy paths: keep old /admin-ui bookmarks working.
 	r.Get("/admin-ui", func(w http.ResponseWriter, request *http.Request) {
 		http.Redirect(w, request, "/console/", http.StatusPermanentRedirect)
@@ -151,18 +159,70 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	adminGroup.Use(rateLimitMiddleware(adminLimiter, func(*http.Request) int64 { return 0 }, "admin", metrics))
 	adminGroup.Use(withAdminBodyLimit(cfg.MaxAdminBodyBytes))
 	selector := routing.New(db.RouteMember)
+	var stickyStore *routing.StickyStore
+	if cfg.StickyEnabled {
+		stickyStore = routing.NewStickyStore(cfg.StickyTTL, nil)
+		selector.SetSticky(stickyStore)
+	}
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	proxyService.SetAdapterRegistry(registry)
 	proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
+	proxyService.SetStableFirstPromote(cfg.StableFirstPromoteRequests)
+	proxyService.SetSticky(stickyStore)
+	// Operational webhook notifier: auto-disable/recovery events, throttled.
+	webhookNotifier := webhook.New(cfg.WebhookURL, time.Duration(cfg.WebhookThrottleSeconds)*time.Second)
+	proxyService.SetWebhookNotifier(webhookNotifier)
+	discoveryService.SetWebhookNotifier(webhookNotifier)
+	// Alert matrix (webhook/bark/serverchan/telegram/smtp) + daily summary.
+	var alertCfg webhook.AlertConfig
+	if cfg.AlertConfigJSON != "" {
+		if err := json.Unmarshal([]byte(cfg.AlertConfigJSON), &alertCfg); err == nil {
+			webhookNotifier.SetAlertConfig(alertCfg)
+		}
+	}
+	dailySummary := alert.NewDailySummary(db, webhookNotifier, cfg.AlertDailySummaryInterval, alertCfg.DailySummaryEnabled)
+	dailySummary.Start()
+	RegisterStopper(dailySummary.Stop)
+	selector.SetStableFirst(cfg.StableFirstEnabled, cfg.StableFirstDenominator)
 	if cfg.RoutingLatencyAware {
 		proxyService.SetLatencyAware(true)
 		selector.SetLatencyAware(true, proxyService.ChannelLatency)
 	}
-	adminHandler := NewAdminHandler(db, enc, selector)
+	// Shared /v1/models cache: recomputed on expiry or admin route/channel writes.
+	modelsCache := newModelsCache(5 * time.Second)
+	adminHandler := NewAdminHandler(db, enc, selector, stickyStore, outboundClient, modelsCache)
 	adminHandler.Register(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)
 	discoveryHandler.Register(adminGroup)
+	// Periodic channel health sweep (opt-in): jittered probes grade each
+	// enabled channel operational/degraded/error and alert on transitions.
+	if cfg.HealthSweepEnabled {
+		healthSweep := healthsweep.New(db, discoveryService, webhookNotifier, healthsweep.Config{
+			Enabled:             true,
+			IntervalSeconds:     cfg.HealthSweepIntervalSeconds,
+			JitterSeconds:       cfg.HealthSweepJitterSeconds,
+			DegradedThresholdMs: cfg.HealthSweepDegradedMs,
+			Concurrency:         cfg.HealthSweepConcurrency,
+			TimeoutSeconds:      cfg.HealthSweepTimeoutSeconds,
+		})
+		healthSweep.Start()
+		RegisterStopper(healthSweep.Stop)
+		adminGroup.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			status := healthSweep.Status()
+			if status == nil {
+				status = []healthsweep.ChannelHealth{}
+			}
+			writeJSON(w, http.StatusOK, status)
+		})
+	}
 	accountService := account.New(db, enc, registry)
+	accountService.SetNotifier(webhookNotifier)
+	checkinService.SetNotifier(webhookNotifier)
+	// Proactive sweep: refresh finance (balance-low) + probe tokens (expired)
+	// on a timer so alerts fire without an operator opening the admin pages.
+	alertSweep := alert.NewSweep(accountService, webhookNotifier, cfg.AlertSweepInterval)
+	alertSweep.Start()
+	RegisterStopper(alertSweep.Stop)
 	if exchangeService != nil {
 		exchangeService.SetKeySyncer(account.ExchangeKeySyncer{Service: accountService})
 	}
@@ -232,11 +292,40 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			},
 			SetAudit:     auditHandler.SetRetention,
 			SetAuditLoop: dependencies.SetAuditRetention,
-		})
+			SetProgressiveCooldown: func(enabled bool, base time.Duration, levels [3]time.Duration, breakerCount int) {
+				db.RouteMember.SetProgressiveCooldown(enabled, base, levels, breakerCount)
+			},
+	SetRecoveryProbe: func(enabled bool, interval time.Duration) {
+		discoveryService.SetRecoveryConfig(enabled, interval)
+	},
+	SetStableFirst: func(enabled bool, denominator, promoteRequests int) {
+		selector.SetStableFirst(enabled, denominator)
+		proxyService.SetStableFirstPromote(promoteRequests)
+	},
+	SetConcurrencyAware: func(enabled bool, limit int) {
+		proxyService.SetConcurrencyAware(enabled, limit)
+	},
+	SetWebhook: func(url string, throttle time.Duration) {
+		webhookNotifier.SetConfig(url, throttle)
+	},
+	SetAlert: func(cfg webhook.AlertConfig, sweepInterval, dailySummaryInterval time.Duration) {
+		webhookNotifier.SetAlertConfig(cfg)
+		alertSweep.SetInterval(sweepInterval)
+		if !cfg.DailySummaryEnabled {
+			dailySummaryInterval = 0
+		}
+		dailySummary.SetInterval(dailySummaryInterval)
+	},
+})
 		if err := runtimeController.Bootstrap(); err != nil {
 			logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
 		}
 	}
+	// Passive-recovery loop: probes auto-disabled channels on a schedule and
+	// restores them when the upstream answers (config hot-reloadable).
+	recoveryCtx, recoveryCancel := context.WithCancel(context.Background())
+	RegisterStopper(recoveryCancel)
+	go discoveryService.RunRecoveryLoop(recoveryCtx)
 	// Re-apply check-in schedule from effective runtime settings when the add-on is toggled.
 	if pluginService != nil && runtimeController != nil {
 		ctrl := runtimeController
@@ -253,7 +342,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)
-	relayHandler := NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst))
+	relayHandler := NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst), newGroupRateLimiter(), modelsCache)
 	v1Group := chi.NewRouter()
 	v1Group.Use(auth.NewDownstreamAuth(db.DownstreamKey).Middleware())
 	v1Group.Use(rateLimitMiddleware(relayLimiter, downstreamRateKey, "relay", metrics))

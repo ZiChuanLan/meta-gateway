@@ -159,6 +159,36 @@ func asInt64(t *testing.T, v any) int64 {
 	}
 }
 
+func TestStickyStatsDisabled(t *testing.T) {
+	base, _, _ := setupServer(t, "http://127.0.0.1:1")
+	req, err := http.NewRequest(http.MethodGet, base+"/admin/sticky", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var body struct {
+		Enabled bool  `json:"enabled"`
+		Entries []any `json:"entries"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Enabled {
+		t.Fatal("sticky endpoint reported enabled while sticky routing is disabled")
+	}
+	if body.Entries == nil {
+		t.Fatal("sticky endpoint returned null entries")
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -467,6 +497,95 @@ func TestChannelAndRouteOperationalEndpoints(t *testing.T) {
 	}
 }
 
+func TestRouteRoutingModeRoundTripAndValidation(t *testing.T) {
+	base, _, _ := setupServer(t, "http://127.0.0.1:1")
+
+	routeBody := map[string]any{
+		"model_pattern": "routing-mode-model",
+		"enabled":       true,
+		"routing_mode":  domain.RoutingModeLatency,
+	}
+	raw, _ := json.Marshal(routeBody)
+	req, _ := http.NewRequest(http.MethodPost, base+"/admin/routes", bytes.NewReader(raw))
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created map[string]any
+	json.NewDecoder(resp.Body).Decode(&created)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status=%d body=%#v", resp.StatusCode, created)
+	}
+	routeID := asInt64(t, created["id"])
+	if mode, _ := created["routing_mode"].(string); mode != domain.RoutingModeLatency {
+		t.Fatalf("created routing_mode=%v, want %q", created["routing_mode"], domain.RoutingModeLatency)
+	}
+
+	// Update to "weighted" and confirm it round-trips.
+	updateBody := map[string]any{
+		"model_pattern": "routing-mode-model",
+		"enabled":       true,
+		"routing_mode":  domain.RoutingModeWeighted,
+	}
+	raw, _ = json.Marshal(updateBody)
+	req, _ = http.NewRequest(http.MethodPut, fmt.Sprintf(base+"/admin/routes/%d", routeID), bytes.NewReader(raw))
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updated map[string]any
+	json.NewDecoder(resp.Body).Decode(&updated)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update status=%d body=%#v", resp.StatusCode, updated)
+	}
+	if mode, _ := updated["routing_mode"].(string); mode != domain.RoutingModeWeighted {
+		t.Fatalf("updated routing_mode=%v, want %q", updated["routing_mode"], domain.RoutingModeWeighted)
+	}
+
+	// Explain must report the effective mode.
+	explainReq, _ := http.NewRequest(http.MethodGet, base+"/admin/routes/explain?model=routing-mode-model", nil)
+	explainReq.Header.Set("Authorization", "Bearer admin-secret")
+	explainResp, err := http.DefaultClient.Do(explainReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var explanation map[string]any
+	json.NewDecoder(explainResp.Body).Decode(&explanation)
+	explainResp.Body.Close()
+	if explainResp.StatusCode != http.StatusOK {
+		t.Fatalf("explain status=%d body=%#v", explainResp.StatusCode, explanation)
+	}
+	if mode, _ := explanation["routing_mode"].(string); mode != domain.RoutingModeWeighted {
+		t.Fatalf("explain routing_mode=%v, want %q", explanation["routing_mode"], domain.RoutingModeWeighted)
+	}
+
+	// Unknown values are rejected with 400.
+	badBody := map[string]any{
+		"model_pattern": "routing-mode-model",
+		"enabled":       true,
+		"routing_mode":  "randomize",
+	}
+	raw, _ = json.Marshal(badBody)
+	req, _ = http.NewRequest(http.MethodPut, fmt.Sprintf(base+"/admin/routes/%d", routeID), bytes.NewReader(raw))
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid routing_mode status=%d, want 400", resp.StatusCode)
+	}
+}
+
 func TestProxyLogsListFilters(t *testing.T) {
 	dir := t.TempDir()
 	db, err := store.Open(dir)
@@ -626,5 +745,80 @@ func TestProxyLogsListFilters(t *testing.T) {
 		if strings.Contains(body, "SQL") || strings.Contains(strings.ToLower(body), "sqlite") {
 			t.Fatalf("%s leaked SQL detail: %s", badPath, body)
 		}
+	}
+}
+
+// TestStreamCacheUsageMetering verifies the full pipeline: an upstream SSE
+// stream whose final chunk carries cache-token detail (OpenAI cached_tokens
+// and Anthropic cache_* aliases) must meter those tokens into ProxyLog rows.
+func TestStreamCacheUsageMetering(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// Small delay so first-byte latency is measurably > 0.
+		time.Sleep(15 * time.Millisecond)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		// Final chunk with usage: OpenAI cached prompt tokens + Anthropic cache aliases.
+		_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":30,\"total_tokens\":150,\"prompt_tokens_details\":{\"cached_tokens\":90},\"cache_read_input_tokens\":12,\"cache_creation_input_tokens\":8}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+
+	base, token, _ := setupServer(t, upstream.URL)
+
+	reqBody := `{"model":"gpt-test","messages":[{"role":"user","content":"hi"}],"stream":true}`
+	req, _ := http.NewRequest(http.MethodPost, base+"/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("stream status %d", resp.StatusCode)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, base+"/admin/proxy-logs", nil)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logsBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("logs status %d", resp.StatusCode)
+	}
+	var logs []map[string]any
+	if err := json.Unmarshal(logsBody, &logs); err != nil {
+		t.Fatalf("decode logs: %v body %s", err, logsBody)
+	}
+	if len(logs) == 0 {
+		t.Fatal("expected proxy logs after relay")
+	}
+	entry := logs[0]
+	if got := asInt64(t, entry["prompt_tokens"]); got != 120 {
+		t.Fatalf("prompt_tokens=%d want 120", got)
+	}
+	if got := asInt64(t, entry["completion_tokens"]); got != 30 {
+		t.Fatalf("completion_tokens=%d want 30", got)
+	}
+	// cached_tokens (90) wins over cache_read_input_tokens (12) because the
+	// OpenAI detail is read first; the last non-zero source fills the field.
+	if got := asInt64(t, entry["cache_read_tokens"]); got != 90 {
+		t.Fatalf("cache_read_tokens=%d want 90", got)
+	}
+	if got := asInt64(t, entry["cache_creation_tokens"]); got != 8 {
+		t.Fatalf("cache_creation_tokens=%d want 8", got)
+	}
+	// Streaming observability: first-byte latency recorded and client family
+	// derived from the test client's User-Agent (Go-http-client → browser).
+	if got := asInt64(t, entry["first_byte_ms"]); got <= 0 {
+		t.Fatalf("first_byte_ms=%d want > 0; entry=%#v", got, entry)
+	}
+	if family, _ := entry["client_family"].(string); family == "" {
+		t.Fatalf("client_family missing: %#v", entry)
 	}
 }

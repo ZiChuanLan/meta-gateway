@@ -93,6 +93,63 @@ func TestPolicyAddressRules(t *testing.T) {
 	}
 }
 
+func TestPolicyBlocksNAT64AndSpecialIPv6(t *testing.T) {
+	policy, err := NewPolicy(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// NAT64 well-known prefix (RFC 6052) encoding loopback/metadata/private.
+	for _, value := range []string{
+		"64:ff9b::7f00:1",   // 127.0.0.1 via NAT64
+		"64:ff9b::a9fe:a9fe", // 169.254.169.254 via NAT64
+		"64:ff9b::a00:1",     // 10.0.0.1 via NAT64
+		"64:ff9b:1::7f00:1",  // local-use NAT64 (RFC 8215)
+		"::7f00:1",           // IPv4-compatible loopback
+		"2001:20::1",         // ORCHIDv2
+	} {
+		if policy.addressAllowed(netip.MustParseAddr(value)) {
+			t.Fatalf("expected %s to be blocked", value)
+		}
+	}
+}
+
+func TestClientIgnoresEnvironmentProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:9999")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:9999")
+	t.Setenv("NO_PROXY", "")
+	policy, err := NewPolicy(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(policy, ClientOptions{})
+	transport, ok := client.Transport.(validatingTransport)
+	if !ok {
+		t.Fatalf("unexpected transport type %T", client.Transport)
+	}
+	inner, ok := transport.next.(*http.Transport)
+	if !ok {
+		t.Fatalf("unexpected inner transport %T", transport.next)
+	}
+	if inner.Proxy != nil {
+		t.Fatal("environment proxy must be disabled (SSRF contract)")
+	}
+	// With a loopback exception, the client must dial directly (no proxy hop).
+	proxyTrap := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("request went through the environment proxy")
+	}))
+	defer proxyTrap.Close()
+	allowPolicy, err := NewPolicy(Options{AllowCIDRs: []string{"127.0.0.0/8"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedClient := NewClient(allowPolicy, ClientOptions{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer server.Close()
+	if _, err := allowedClient.Get(server.URL); err != nil {
+		t.Fatalf("direct dial must succeed without proxy: %v", err)
+	}
+}
+
 func TestPolicyHostAllowlistIsExact(t *testing.T) {
 	policy, err := NewPolicy(Options{AllowHosts: []string{"internal.example"}})
 	if err != nil {
@@ -128,5 +185,66 @@ func TestDialNeverAttemptsDeniedDNSAnswer(t *testing.T) {
 	_, err = policy.DialContext(t.Context(), "tcp", "blocked.example:80")
 	if !errors.Is(err, ErrBlocked) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+// recordingDialer records the exact address passed to the socket dial, so a
+// test can prove DialContext dials the validated IP — never re-resolving the
+// hostname (which is what makes DNS-rebinding attacks impossible: the answer
+// is validated once and pinned). It embeds net.Dialer so it fits the policy's
+// *net.Dialer field while overriding DialContext.
+type recordingDialer struct {
+	net.Dialer
+	addresses []string
+}
+
+func (d *recordingDialer) DialContext(_ context.Context, network, address string) (net.Conn, error) {
+	d.addresses = append(d.addresses, address)
+	return nil, errors.New("no real dial in test")
+}
+
+// TestDialPinsValidatedIPAgainstDNSRebinding: the first resolution returns a
+// public IP (allowed); a rebinding attack would make a second resolution
+// return a private IP. DialContext must dial the pinned public IP directly
+// and never re-resolve the hostname — the socket layer never sees the
+// hostname, so the attack cannot land.
+func TestDialPinsValidatedIPAgainstDNSRebinding(t *testing.T) {
+	var dialer recordingDialer
+	policy, err := NewPolicy(Options{
+		Resolver: resolverMap{"rebind.example": {netip.MustParseAddr("93.184.216.34")}},
+		Dialer:   &dialer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = policy.DialContext(t.Context(), "tcp", "rebind.example:443")
+	if len(dialer.addresses) != 1 {
+		t.Fatalf("expected exactly one dial attempt, got %#v", dialer.addresses)
+	}
+	// The dial target must be the IP:port — the hostname must never reach
+	// the socket layer (no second resolution = no rebinding window).
+	if dialer.addresses[0] != "93.184.216.34:443" {
+		t.Fatalf("dialed %q, want pinned IP 93.184.216.34:443", dialer.addresses[0])
+	}
+}
+
+// TestDialRejectsPrivateAfterPublicMix: when DNS returns a mix of public and
+// private answers, only the public one is dialable; private answers are
+// skipped (not dialed).
+func TestDialSkipsPrivateAnswersInMixedSet(t *testing.T) {
+	var dialer recordingDialer
+	policy, err := NewPolicy(Options{
+		Resolver: resolverMap{"mixed.example": {
+			netip.MustParseAddr("10.0.0.5"),   // private — must be skipped
+			netip.MustParseAddr("93.184.216.34"), // public — dialed
+		}},
+		Dialer: &dialer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = policy.DialContext(t.Context(), "tcp", "mixed.example:443")
+	if len(dialer.addresses) != 1 || dialer.addresses[0] != "93.184.216.34:443" {
+		t.Fatalf("dialed %#v, want only public IP 93.184.216.34:443", dialer.addresses)
 	}
 }

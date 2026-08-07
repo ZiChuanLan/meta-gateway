@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -70,10 +71,22 @@ func (s *CheckinLogStore) List(f CheckinLogFilter) ([]domain.CheckinLog, error) 
 	return out, rows.Err()
 }
 
-// LastScheduledRunAt returns the most recent scheduled check-in timestamp, or
-// the zero time when no scheduled run has ever been recorded. The scheduler
-// uses it to detect a missed daily tick after a restart.
+// LastScheduledRunAt returns the most recent completed scheduled check-in
+// batch timestamp (from the durable batch marker), falling back to the newest
+// scheduled log row for installations created before the marker existed. The
+// scheduler uses it to detect a missed daily tick after a restart; an
+// interrupted batch never writes a marker, so the next start catches up.
 func (s *CheckinLogStore) LastScheduledRunAt() (time.Time, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT completed_at FROM checkin_batch_state ORDER BY id DESC LIMIT 1`).Scan(&raw)
+	if err == nil {
+		if parsed, parseErr := time.Parse(time.RFC3339Nano, raw); parseErr == nil {
+			return parsed, nil
+		}
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, fmt.Errorf("checkin batch state: %w", err)
+	}
 	logs, err := s.List(CheckinLogFilter{Source: "scheduled", Limit: 1})
 	if err != nil {
 		return time.Time{}, err
@@ -82,4 +95,14 @@ func (s *CheckinLogStore) LastScheduledRunAt() (time.Time, error) {
 		return time.Time{}, nil
 	}
 	return logs[0].RanAt, nil
+}
+
+// RecordBatchCompleted persists a durable marker for a fully finished
+// scheduled batch so restarts do not re-run today's check-in.
+func (s *CheckinLogStore) RecordBatchCompleted(completedAt time.Time) error {
+	_, err := s.db.Exec(`INSERT INTO checkin_batch_state (completed_at) VALUES (?)`, completedAt.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("checkin batch state insert: %w", err)
+	}
+	return nil
 }
