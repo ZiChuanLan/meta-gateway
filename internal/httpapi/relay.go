@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/ratelimit"
 
@@ -52,11 +53,13 @@ func NewRelayHandler(db *store.DB, service RelayProxy, modelLimiter *ratelimit.L
 
 func (h *RelayHandler) Register(r chi.Router) {
 	r.Get("/models", h.getModels)
+	r.Get("/dashboard/billing/credit_summary", h.creditSummary)
 	r.Post("/chat/completions", h.chatCompletions)
 	r.Post("/completions", h.completions)
 	r.Post("/embeddings", h.embeddings)
 	r.Post("/responses", h.responses)
 	r.Post("/messages", h.messages)
+	r.Post("/messages/count_tokens", h.countTokens)
 	// OpenAI-compatible passthrough surfaces (JSON body + model routing).
 	r.Post("/images/generations", h.imagesGenerations)
 	r.Post("/images/edits", h.imagesEdits)
@@ -65,6 +68,40 @@ func (h *RelayHandler) Register(r chi.Router) {
 	r.Post("/audio/transcriptions", h.audioTranscriptions)
 	r.Post("/audio/translations", h.audioTranslations)
 	r.Post("/moderations", h.moderations)
+}
+
+// creditSummary is the OpenAI-compatible billing surface: a downstream key
+// can check its own quota with a standard client call. Total/used/available
+// are token counts (OpenAI's field names); expires_at is 0 for keys without
+// an expiry. No scope is required beyond being a valid downstream key.
+func (h *RelayHandler) creditSummary(w http.ResponseWriter, r *http.Request) {
+	key := auth.DownstreamKey(r)
+	if key == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	total := key.QuotaTotalTokens
+	used := key.QuotaUsedTokens
+	if used < 0 {
+		used = 0
+	}
+	available := total - used
+	if available < 0 {
+		available = 0
+	}
+	expiresAt := int64(0)
+	if key.ExpiresAt != "" {
+		if t, err := time.Parse(time.RFC3339, key.ExpiresAt); err == nil {
+			expiresAt = t.Unix()
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"object":          "credit_summary",
+		"total_granted":   total,
+		"total_used":      used,
+		"total_available": available,
+		"expires_at":      expiresAt,
+	})
 }
 
 func (h *RelayHandler) getModels(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +214,16 @@ func (h *RelayHandler) responses(w http.ResponseWriter, r *http.Request) {
 // verbatim; other channels translate the request/response (see proxy).
 func (h *RelayHandler) messages(w http.ResponseWriter, r *http.Request) {
 	h.forwardModelRequest(w, r, "messages", true, auth.ScopeMessages, "anthropic")
+}
+
+// countTokens is the Anthropic count_tokens surface: Claude Code and other
+// Claude clients call it to estimate the context a message will occupy before
+// sending it. The request is routed like /v1/messages and forwarded to the
+// upstream's real count_tokens endpoint (Anthropic-native channels support
+// it; OpenAI-compatible channels return their upstream 404, which clients
+// degrade gracefully). No tokens are generated, so no usage is recorded.
+func (h *RelayHandler) countTokens(w http.ResponseWriter, r *http.Request) {
+	h.forwardModelRequest(w, r, "messages/count_tokens", true, auth.ScopeMessages, "anthropic")
 }
 
 func (h *RelayHandler) imagesGenerations(w http.ResponseWriter, r *http.Request) {

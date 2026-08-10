@@ -573,6 +573,40 @@ func (s *Service) FinanceOverview(ctx context.Context) ([]FinanceItem, error) {
 	return items, nil
 }
 
+// RecordBalanceHistory snapshots every channel's current balance into
+// balance_history. It reuses the FinanceOverview cache when warm (the daily
+// sweep and admin visits share the same upstream probes) and forces a fresh
+// probe when the cache has expired. Returns the number of rows written.
+func (s *Service) RecordBalanceHistory(ctx context.Context) (int, error) {
+	items, err := s.FinanceOverview(ctx)
+	if err != nil {
+		return 0, err
+	}
+	now := s.now()
+	written := 0
+	for _, item := range items {
+		name := ""
+		if channel, err := s.db.Channel.GetByID(item.ChannelID); err == nil && channel != nil {
+			name = channel.Name
+		}
+		if err := s.db.InsertBalanceHistory(item.ChannelID, name, item.Balance, now); err != nil {
+			continue // one bad row must not abort the whole snapshot
+		}
+		written++
+	}
+	return written, nil
+}
+
+// BalanceHistory returns snapshots from the last N days, newest first.
+func (s *Service) BalanceHistory(ctx context.Context, days int) ([]store.BalanceHistoryPoint, error) {
+	return s.db.ListBalanceHistory(days)
+}
+
+// PruneBalanceHistory removes snapshots older than retentionDays.
+func (s *Service) PruneBalanceHistory(ctx context.Context, retentionDays int) (int, error) {
+	return s.db.PruneBalanceHistory(retentionDays)
+}
+
 func (s *Service) financeForChannel(ctx context.Context, resolved *resolvedTarget) *FinanceItem {
 	defer zeroString(&resolved.input.Secret)
 	// Bound each upstream call so a slow public site cannot stall the sweep.

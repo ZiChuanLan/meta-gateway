@@ -1,6 +1,7 @@
 import {
   ExternalLink,
   GripVertical,
+  Info,
   Pencil,
   Plus,
   Power,
@@ -9,6 +10,7 @@ import {
   Shield,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -116,6 +118,12 @@ function ModelCatalog({
     retry: false,
     refetchInterval: 120_000,
   });
+  // Models exposed by channels but not covered by any enabled route.
+  const missing = useQuery({
+    queryKey: ["missing-models"],
+    queryFn: ({ signal }) => service.missingModels(signal),
+    refetchInterval: 60_000,
+  });
 
   const [selected, setSelected] = useState<number | null>(null);
   const [query, setQuery] = useState(initialModel);
@@ -126,6 +134,10 @@ function ModelCatalog({
   const [member, setMember] = useState<Partial<RouteMember> | null>(null);
   const [removeMember, setRemoveMember] = useState<RouteMember | null>(null);
   const [tryOpen, setTryOpen] = useState(false);
+  const [priceSort, setPriceSort] = useState(false);
+  const [missingDismissed, setMissingDismissed] = useState(
+    () => sessionStorage.getItem("models.missingDismissed") === "1",
+  );
   const [contextMenu, setContextMenu] = useState<{
     routeId: number;
     top: number;
@@ -179,7 +191,34 @@ function ModelCatalog({
     overviews.data?.find((item) => item.route.id === selected) ?? null;
   const selectedRoute = selectedOverview?.route ?? null;
   const selectedMembers = selectedOverview?.members ?? [];
-const selectedModel = selectedRoute?.model_pattern ?? "";
+  const selectedModel = selectedRoute?.model_pattern ?? "";
+  // Price-aware member ordering (cheapest first) when the toggle is on.
+  const financeItems = finance.data?.items ?? [];
+  const orderedMembers = useMemo(
+    () =>
+      priceSort
+        ? sortMembersByPrice(selectedMembers, selectedModel, financeItems)
+        : sortMembers(selectedMembers),
+    [priceSort, selectedMembers, selectedModel, financeItems],
+  );
+  // Cheapest priced member (for the "cheapest" badge); null when none priced.
+  const cheapestMemberId = useMemo(() => {
+    if (!selectedModel || !financeItems.length) return null;
+    let bestId: number | null = null;
+    let bestPrice = Number.POSITIVE_INFINITY;
+    for (const candidate of selectedMembers) {
+      const price = memberPriceUsd(
+        candidate.member,
+        selectedModel,
+        financeItems,
+      );
+      if (price != null && price < bestPrice) {
+        bestPrice = price;
+        bestId = candidate.member.id;
+      }
+    }
+    return bestId;
+  }, [selectedMembers, selectedModel, financeItems]);
   const primary = primaryMember(selectedMembers);
   const selectedRoutingMode = selectedRoute?.routing_mode || "auto";
   const effectivePolicy = getEffectiveRoutingPolicy(
@@ -497,6 +536,39 @@ const enableChannel = useAdminMutation({
             <Empty>{t("sticky.empty")}</Empty>
           )}
         </Panel>
+      ) : null}
+
+      {missing.data?.items?.length && !missingDismissed ? (
+        <div className="missing-models-banner">
+          <Info size={13} />
+          <span>
+            {t("modelsPage.missingModels", {
+              count: missing.data.items.length,
+            })}
+          </span>
+          <button
+            type="button"
+            className="missing-models-focus"
+            onClick={() => {
+              const first = missing.data!.items[0];
+              if (first) setQuery(first.model);
+            }}
+          >
+            {t("modelsPage.missingModelsFocus")}
+          </button>
+          <button
+            type="button"
+            className="missing-models-close"
+            aria-label={t("common.dismiss")}
+            title={t("common.dismiss")}
+            onClick={() => {
+              sessionStorage.setItem("models.missingDismissed", "1");
+              setMissingDismissed(true);
+            }}
+          >
+            <X size={12} />
+          </button>
+        </div>
       ) : null}
 
       <div className="split models-split">
@@ -866,9 +938,17 @@ const enableChannel = useAdminMutation({
                         });
                       }}
                     >
-                      {t("routing.addMember")}
-                    </Button>
-                  </div>
+                  {t("routing.addMember")}
+                </Button>
+                <label className="price-sort-toggle" title={t("routing.priceSortHint")}>
+                  <input
+                    type="checkbox"
+                    checked={priceSort}
+                    onChange={(e) => setPriceSort(e.target.checked)}
+                  />
+                  <span>{t("routing.priceSort")}</span>
+                </label>
+              </div>
                   {selectedMembers.length > 1 ? (
                     <div className="routing-reorder-hint">
                       <span>
@@ -882,7 +962,7 @@ const enableChannel = useAdminMutation({
                   {!selectedMembers.length ? (
                     <Empty>{t("routing.noMembers")}</Empty>
                   ) : (
-                    sortMembers(selectedMembers).map((candidate, rowIndex) => {
+                    orderedMembers.map((candidate, rowIndex) => {
                       const entry = candidate.member;
                       const evaluation = explain.data?.candidates.find(
                         (item) => item.candidate.member.id === entry.id,
@@ -905,7 +985,7 @@ const enableChannel = useAdminMutation({
                           (!entry.enabled && entry.fail_count > 0));
                       const resetActionIsCooldown =
                         activeCooldown && entry.enabled;
-                      const ordered = sortMembers(selectedMembers);
+                      const ordered = orderedMembers;
                       const busy =
                         toggleMember.pendingId === entry.id ||
                         clearHealth.pendingId === entry.id ||
@@ -929,7 +1009,7 @@ const enableChannel = useAdminMutation({
                         <div
                           className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}`}
                           key={entry.id}
-                          draggable={!reorderMembers.isPending}
+                              draggable={!reorderMembers.isPending && !priceSort}
                           onDragStart={(event) => {
                             setDragMemberId(entry.id);
                             event.dataTransfer.effectAllowed = "move";
@@ -1013,12 +1093,12 @@ const enableChannel = useAdminMutation({
                                   {t("routing.protectedLabel")}
                                 </>
                               ) : null}
-                              {memberFinance(entry, selectedModel, finance.data?.items ?? [])
+                              {memberFinance(entry, selectedModel, financeItems)
                                 ? (() => {
                                     const info = memberFinance(
                                       entry,
                                       selectedModel,
-                                      finance.data?.items ?? [],
+                                      financeItems,
                                     )!;
                                     return (
                                       <>
@@ -1038,6 +1118,11 @@ const enableChannel = useAdminMutation({
                                               })}
                                           {info.fixed ? t("routing.financeUnitCalls") : t("routing.financeUnitM")}
                                         </span>
+                                        {cheapestMemberId === entry.id ? (
+                                          <span className="member-cheapest">
+                                            {t("routing.cheapest")}
+                                          </span>
+                                        ) : null}
                                       </>
                                     );
                                   })()
@@ -1117,7 +1202,9 @@ const enableChannel = useAdminMutation({
                               className="icon-button"
                               aria-label={t("routing.moveDown")}
                               title={t("routing.moveDown")}
-                              disabled={busy || rowIndex >= ordered.length - 1}
+                              disabled={
+                                busy || rowIndex >= ordered.length - 1 || priceSort
+                              }
                               onClick={() => moveBy(1)}
                             >
                               ↓
@@ -1498,6 +1585,40 @@ function sortMembers(members: RoutingCandidate[]) {
       return right.member.weight - left.member.weight;
     }
     return left.channel.name.localeCompare(right.channel.name);
+  });
+}
+
+/** Raw per-1M-token USD price for a member on a model, or null when unpriced. */
+function memberPriceUsd(
+  member: RouteMember,
+  model: string,
+  items: FinanceItem[],
+): number | null {
+  if (!member || !model || !items.length) return null;
+  const item = items.find((entry) => entry.channel_id === member.channel_id);
+  if (!item || item.quota_per_unit <= 0) return null;
+  const price = item.prices?.[model];
+  if (!price || !price.price_usd || price.price_usd <= 0) return null;
+  return price.price_usd;
+}
+
+/** Price-aware ordering: cheapest first, unpriced members sink to the bottom. */
+function sortMembersByPrice(
+  members: RoutingCandidate[],
+  model: string,
+  items: FinanceItem[],
+) {
+  return [...members].sort((left, right) => {
+    const lp = memberPriceUsd(left.member, model, items);
+    const rp = memberPriceUsd(right.member, model, items);
+    if (lp != null && rp != null) {
+      if (lp !== rp) return lp - rp;
+    } else if (lp != null) {
+      return -1;
+    } else if (rp != null) {
+      return 1;
+    }
+    return sortMembers([left, right])[0] === left ? -1 : 1;
   });
 }
 

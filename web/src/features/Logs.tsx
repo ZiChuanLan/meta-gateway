@@ -30,10 +30,12 @@ function ProxyLogsPanel() {
   const { t } = useI18n();
   const service = api(client!);
   const [params, setParams] = useSearchParams();
-  const channelId = positiveId(params.get("channel_id"));
-  const modelParam = params.get("model")?.trim() || "";
-  const failedOnly = params.get("status") !== "all";
-  const [modelDraft, setModelDraft] = useState(modelParam);
+	const channelId = positiveId(params.get("channel_id"));
+	const modelParam = params.get("model")?.trim() || "";
+	const failedOnly = params.get("status") !== "all";
+	const upstreamIdParam = params.get("upstream_request_id")?.trim() || "";
+	const [modelDraft, setModelDraft] = useState(modelParam);
+	const [upstreamIdDraft, setUpstreamIdDraft] = useState(upstreamIdParam);
   const [slowOnly, setSlowOnly] = useState(false);
   const [histogram, setHistogram] = useState<{
     buckets: number[];
@@ -43,15 +45,16 @@ function ProxyLogsPanel() {
     p95_ms: number;
   } | null>(null);
 
-  const filters = useMemo(
-    () => ({
-      channel_id: channelId,
-      model: modelParam || undefined,
-      status: failedOnly ? ("failed" as const) : undefined,
-      limit: 100,
-    }),
-    [channelId, failedOnly, modelParam],
-  );
+	const filters = useMemo(
+		() => ({
+			channel_id: channelId,
+			model: modelParam || undefined,
+			status: failedOnly ? ("failed" as const) : undefined,
+			upstream_request_id: upstreamIdParam || undefined,
+			limit: 100,
+		}),
+		[channelId, failedOnly, modelParam, upstreamIdParam],
+	);
 
   const logs = useQuery({
     queryKey: ["proxy-logs", filters],
@@ -245,33 +248,45 @@ function ProxyLogsPanel() {
                 </option>
               ))}
             </select>
-            <input
-              value={modelDraft}
-              placeholder={t("common.model")}
-              onChange={(e) => setModelDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  setFilter({ model: modelDraft.trim() || null });
-                }
-              }}
-            />
+			<input
+				value={modelDraft}
+				placeholder={t("common.model")}
+				onChange={(e) => setModelDraft(e.target.value)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") {
+						setFilter({ model: modelDraft.trim() || null });
+					}
+				}}
+			/>
+			<input
+				value={upstreamIdDraft}
+				placeholder={t("logsPage.upstreamRequestId")}
+				onChange={(e) => setUpstreamIdDraft(e.target.value)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") {
+						setFilter({ upstream_request_id: upstreamIdDraft.trim() || null });
+					}
+				}}
+			/>
             <Button
               variant="secondary"
               onClick={() => setFilter({ model: modelDraft.trim() || null })}
             >
               {t("common.apply")}
             </Button>
-            {(channelId || modelParam || !failedOnly) && (
-              <Button
-                variant="quiet"
-                onClick={() => {
-                  setModelDraft("");
-                  setFilter({
-                    channel_id: null,
-                    model: null,
-                    status: null,
-                  });
-                }}
+			{(channelId || modelParam || upstreamIdParam || !failedOnly) && (
+				<Button
+					variant="quiet"
+					onClick={() => {
+						setModelDraft("");
+						setUpstreamIdDraft("");
+						setFilter({
+							channel_id: null,
+							model: null,
+							status: null,
+							upstream_request_id: null,
+						});
+					}}
               >
                 {t("common.clearFilters")}
               </Button>

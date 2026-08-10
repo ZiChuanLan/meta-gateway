@@ -10,6 +10,7 @@ import {
 	Moon,
 	Network,
 	Package,
+	Plug,
 	ScrollText,
 	Settings,
 	Sun,
@@ -42,6 +43,7 @@ import { Dashboard } from "./features/Dashboard";
 import { ChannelModels } from "./features/ChannelModels";
 import { Checkins } from "./features/Checkins";
 import { ExchangePage } from "./features/ExchangePage";
+import { CpaPanel } from "./features/CpaPanel";
 import { Keys } from "./features/Keys";
 import { Logs } from "./features/Logs";
 import { Maintain } from "./features/Maintain";
@@ -529,7 +531,7 @@ function AuthenticatedShell({
 	onUnauthorized: () => void;
 }) {
 	const { t } = useI18n();
-	const { checkinEnabled, exchangeEnabled } = useModules();
+	const { checkinEnabled, exchangeEnabled, cpaEnabled } = useModules();
 	const [open, setOpen] = useState(false);
 	const [theme, setTheme] = useState<"light" | "dark">(() => {
 		const stored = window.localStorage.getItem("meta-gateway.theme");
@@ -559,6 +561,9 @@ function AuthenticatedShell({
 			: []),
 		...(exchangeEnabled
 			? [{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight }]
+			: []),
+		...(cpaEnabled
+			? [{ to: "/cpa", label: t("app.nav.cpa"), icon: Plug }]
 			: []),
 		{ to: "/store", label: t("app.nav.store"), icon: Package },
 	];
@@ -654,6 +659,7 @@ function AuthenticatedShell({
 					<Route path="logs" element={<Logs />} />
 					<Route path="checkins" element={<Checkins />} />
 					<Route path="exchange" element={<ExchangePage />} />
+					<Route path="cpa" element={<CpaPanel />} />
 					<Route path="maintain" element={<Maintain />} />
 					<Route path="settings" element={<Maintain />} />
 					<Route path="store" element={<Store />} />

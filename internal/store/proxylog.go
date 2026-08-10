@@ -19,13 +19,14 @@ type ProxyLogStore struct {
 // Status, when set, matches exactly. FailedOnly selects status >= 400
 // and is ignored when Status is set.
 type ProxyLogFilter struct {
-	SiteID     *int64
-	ChannelID  *int64
-	Model      string
-	Status     *int
-	FailedOnly bool
-	BeforeID   *int64
-	Limit      int
+	SiteID            *int64
+	ChannelID         *int64
+	Model             string
+	Status            *int
+	FailedOnly        bool
+	UpstreamRequestID string
+	BeforeID          *int64
+	Limit             int
 }
 
 // Insert writes a proxy log entry.
@@ -34,9 +35,9 @@ func (s *ProxyLogStore) Insert(log *domain.ProxyLog) (int64, error) {
 	if log.Stream {
 		stream = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort, key_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort, key_fingerprint, upstream_request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RequestID, log.ChannelID, log.RouteID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief,
-		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort, log.KeyFingerprint)
+		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort, log.KeyFingerprint, log.UpstreamRequestID)
 	if err != nil {
 		return 0, fmt.Errorf("proxylog insert: %w", err)
 	}
@@ -179,6 +180,10 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 		where = append(where, "pl.id < ?")
 		args = append(args, *f.BeforeID)
 	}
+	if id := strings.TrimSpace(f.UpstreamRequestID); id != "" {
+		where = append(where, "pl.upstream_request_id = ?")
+		args = append(args, id)
+	}
 	args = append(args, limit)
 
 	from := "proxy_logs pl"
@@ -193,7 +198,7 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 
 	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.route_id, COALESCE(rt.model_pattern, ''), pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief,
 		pl.downstream_key_id, pl.prompt_tokens, pl.completion_tokens, pl.total_tokens,
-		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.created_at
+		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.upstream_request_id, pl.created_at
 FROM ` + from + `
 WHERE ` + strings.Join(where, " AND ") + `
 ORDER BY pl.id DESC
@@ -212,7 +217,7 @@ LIMIT ?`
 		if err := rows.Scan(
 			&r.ID, &r.RequestID, &r.ChannelID, &r.RouteID, &r.RoutePattern, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief,
 			&r.DownstreamKeyID, &r.PromptTokens, &r.CompletionTokens, &r.TotalTokens,
-			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, scanTime(&r.CreatedAt),
+			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, &r.UpstreamRequestID, scanTime(&r.CreatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("proxylog scan: %w", err)
 		}

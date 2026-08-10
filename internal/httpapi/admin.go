@@ -1605,6 +1605,7 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := strings.TrimSpace(query.Get("model"))
+	upstreamRequestID := strings.TrimSpace(query.Get("upstream_request_id"))
 	var status *int
 	failedOnly := false
 	if raw := strings.TrimSpace(query.Get("status")); raw != "" {
@@ -1620,13 +1621,14 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	logs, err := h.db.ProxyLog.ListFilter(store.ProxyLogFilter{
-		SiteID:     siteID,
-		ChannelID:  channelID,
-		Model:      model,
-		Status:     status,
-		FailedOnly: failedOnly,
-		BeforeID:   beforeID,
-		Limit:      limit,
+		SiteID:            siteID,
+		ChannelID:         channelID,
+		Model:             model,
+		Status:            status,
+		FailedOnly:        failedOnly,
+		UpstreamRequestID: upstreamRequestID,
+		BeforeID:          beforeID,
+		Limit:             limit,
 	})
 	if err != nil {
 		writeStoreError(w, err)

@@ -9,6 +9,7 @@ export const MODULES_QUERY_KEY = ["plugins-status"] as const;
 /** Official optional add-ons managed by the store. */
 export const ADDON_EXCHANGE = "exchange";
 export const ADDON_CHECKIN = "checkin";
+export const ADDON_CPA = "cliproxyapi";
 
 /**
  * Loads module status for Admin UI gating.
@@ -65,5 +66,6 @@ export function useModules() {
 		ready: Boolean(query.data),
 		exchangeEnabled: isAddonEnabled(ADDON_EXCHANGE),
 		checkinEnabled: isAddonEnabled(ADDON_CHECKIN),
+		cpaEnabled: isAddonEnabled(ADDON_CPA),
 	};
 }

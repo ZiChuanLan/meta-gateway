@@ -41,6 +41,17 @@ const (
 // connections, relay, …) are always on and are not store-gated.
 var officialCatalog = []CatalogEntry{
 	{
+		ID:           "cliproxyapi",
+		Name:         "CLIProxyAPI (OAuth 池)",
+		Version:      "1.0.0",
+		Description:  "Local CLIProxyAPI integration: OAuth subscription account pool (ChatGPT Plus / Claude Pro / Grok) exposed as an upstream channel.",
+		Kind:         KindAddon,
+		Unlocks:      []string{"nav.cpa"},
+		Capabilities: []string{"admin_page", "external_service"},
+		Source:       "official",
+		Checksum:     "embedded:cliproxyapi:1.0.0",
+	},
+	{
 		ID:           "exchange",
 		Name:         "Exchange",
 		Version:      "1.0.0",
@@ -336,6 +347,8 @@ func (s *Service) Status() ([]ModuleStatus, error) {
 
 func openPathFor(id string) string {
 	switch id {
+	case "cliproxyapi":
+		return "/cpa"
 	case "exchange":
 		return "/settings?tab=exchange"
 	case "checkin":

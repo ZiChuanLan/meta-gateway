@@ -102,6 +102,8 @@ export interface ProxyLog {
 	tokens_per_second?: number
 	stream?: boolean
   path?: string
+  session_key?: string
+  upstream_request_id?: string
   created_at: string
 }
 export interface DiscoveredModel { id: number; channel_id: number; model_name: string; available: boolean; source: string; latency_ms: number; checked_at: string }

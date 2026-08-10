@@ -58,6 +58,12 @@ import { useI18n } from "../i18n";
 import { useToast } from "../toast";
 import { formatErrorMessage } from "../formatError";
 import {
+  UA_PRESETS,
+  isValidUserAgent,
+  setUAInHeaderOverride,
+  uaFromHeaderOverride,
+} from "../lib/uaPresets";
+import {
   CONNECTION_TYPE_OPTIONS,
   PROVIDER_BASE_URLS,
 } from "../connectionTypes";
@@ -2353,6 +2359,13 @@ function EditChannelDialog({
   const [headerOverride, setHeaderOverride] = useState(
     value.header_override ?? "",
   );
+  const [uaDraft, setUaDraft] = useState(
+    uaFromHeaderOverride(value.header_override ?? ""),
+  );
+  const applyUA = (ua: string) => {
+    setUaDraft(ua);
+    setHeaderOverride(setUAInHeaderOverride(headerOverride, ua));
+  };
   const [systemPrompt, setSystemPrompt] = useState(value.system_prompt ?? "");
   const [retryConfig, setRetryConfig] = useState(value.retry_config ?? "");
   const [stableFirst, setStableFirst] = useState(value.stable_first ?? false);
@@ -2740,13 +2753,49 @@ function EditChannelDialog({
             <h3>{t("channels.overrides")}</h3>
           </div>
           <Field
+            label={t("channels.uaPreset")}
+            hint={t("channels.uaPresetHint")}
+          >
+            <div className="ua-preset-row">
+              <select
+                aria-label={t("channels.uaPreset")}
+                value={uaDraft && UA_PRESETS.includes(uaDraft) ? uaDraft : "custom"}
+                onChange={(e) => {
+                  const preset = e.target.value;
+                  if (preset !== "custom") applyUA(preset);
+                }}
+                disabled={pending}
+              >
+                <option value="custom">{t("channels.uaCustom")}</option>
+                {UA_PRESETS.map((preset) => (
+                  <option key={preset} value={preset}>
+                    {preset}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={uaDraft}
+                onChange={(e) => applyUA(e.target.value)}
+                placeholder={t("channels.uaPlaceholder")}
+                disabled={pending}
+              />
+            </div>
+            {uaDraft && !isValidUserAgent(uaDraft) ? (
+              <p className="ua-preset-error">{t("channels.uaInvalid")}</p>
+            ) : null}
+          </Field>
+          <Field
             label={t("channels.headerOverride")}
             hint={t("channels.headerOverrideHint")}
           >
             <textarea
               className="mono"
               value={headerOverride}
-              onChange={(e) => setHeaderOverride(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setHeaderOverride(next);
+                setUaDraft(uaFromHeaderOverride(next));
+              }}
               disabled={pending}
               placeholder='{"User-Agent": "…", "X-Custom": "value"}'
               style={{ minHeight: 64 }}

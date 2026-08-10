@@ -1185,10 +1185,20 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		SessionKey:       req.SessionKey,
 		ReasoningEffort:  req.ReasoningEffort,
 		KeyFingerprint:   keyFP,
+		UpstreamRequestID: upstreamRequestID(result),
 	})
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
 	}
+}
+
+// upstreamRequestID reads the upstream x-request-id header for the attempt.
+// A nil result header (adapter-local failures) yields an empty string.
+func upstreamRequestID(result *relay.Result) string {
+	if result == nil || result.Header == nil {
+		return ""
+	}
+	return strings.TrimSpace(result.Header.Get("X-Request-Id"))
 }
 
 // RecordUsage persists metered tokens for a completed relay response.

@@ -28,6 +28,23 @@ func (h *AccountHandler) Register(r chi.Router) {
 	r.Post("/channels/{id}/account/create-key", h.createKey)
 	r.Get("/channels/{id}/account/pricing", h.pricing)
 	r.Get("/channels/{id}/account/token-groups", h.tokenGroups)
+	r.Get("/balance-history", h.balanceHistory)
+}
+
+// balanceHistory serves the dashboard balance trend chart.
+func (h *AccountHandler) balanceHistory(w http.ResponseWriter, r *http.Request) {
+	days := 30
+	if raw := r.URL.Query().Get("days"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 365 {
+			days = parsed
+		}
+	}
+	points, err := h.service.BalanceHistory(r.Context(), days)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "balance history")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": points})
 }
 
 func (h *AccountHandler) finance(w http.ResponseWriter, r *http.Request) {

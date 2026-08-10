@@ -38,6 +38,9 @@ func (AnthropicForwardAdapter) TransformRequest(openAIPath string, body []byte) 
 	case "messages":
 		// Native Anthropic Messages clients already send Messages JSON.
 		return "messages", body, nil
+	case "messages/count_tokens":
+		// Native Anthropic count_tokens requests pass through verbatim.
+		return "messages/count_tokens", body, nil
 	default:
 		// Images/audio/etc. are OpenAI-compatible only; do not invent
 		// Anthropic mappings.
@@ -49,7 +52,7 @@ func (AnthropicForwardAdapter) TransformResponse(openAIPath string, body []byte)
 	// Native /v1/messages callers expect the Anthropic response contract. The
 	// request is already in Messages format, so preserve the upstream body;
 	// chat/completions callers still receive the OpenAI pivot response.
-	if openAIPath == "messages" {
+	if openAIPath == "messages" || openAIPath == "messages/count_tokens" {
 		return body, nil
 	}
 	converted, err := AnthropicMessagesToChat(body)

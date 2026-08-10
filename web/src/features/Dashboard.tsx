@@ -184,6 +184,11 @@ export function Dashboard() {
     queryFn: ({ signal }) => s.channelOverviews(signal),
     refetchInterval: 30_000,
   });
+  const balanceHistory = useQuery({
+    queryKey: ["balance-history", 14],
+    queryFn: ({ signal }) => s.balanceHistory(14, signal),
+    refetchInterval: 10 * 60 * 1000,
+  });
   const logs = useQuery({
     queryKey: ["proxy-logs", { limit: 5 }],
     queryFn: ({ signal }) => s.proxyLogs({ limit: 5 }, signal),
@@ -308,7 +313,79 @@ export function Dashboard() {
           ? "warning"
           : "danger";
 
-  // Model usage ranking over the visible 24h window.
+  // Balance trend line chart: one polyline per channel over the 14d window.
+function BalanceChart({ data }: { data: { series: Array<{ channelId: number; name: string; points: Array<{ date: string; balance: number }> }>; maxB: number } }) {
+  const W = 640;
+  const H = 150;
+  const padL = 8;
+  const padR = 8;
+  const padT = 8;
+  const padB = 18;
+  const colors = ["#2f6fed", "#e06a60", "#2f9e6e", "#b07fd6", "#d9a441", "#4aa3c2"];
+  return (
+    <div className="balance-chart">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={data.series.map((s) => s.name).join(", ")}>
+        {[0.25, 0.5, 0.75].map((f) => (
+          <line
+            key={f}
+            x1={padL}
+            x2={W - padR}
+            y1={padT + (H - padT - padB) * f}
+            y2={padT + (H - padT - padB) * f}
+            className="balance-chart-grid"
+          />
+        ))}
+        {data.series.map((series, si) => {
+          const n = series.points.length;
+          const pts = series.points
+            .map((p, i) => {
+              const x = padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
+              const y = padT + (H - padT - padB) * (1 - p.balance / data.maxB);
+              return `${x.toFixed(1)},${y.toFixed(1)}`;
+            })
+            .join(" ");
+          return (
+            <g key={series.channelId}>
+              <polyline
+                points={pts}
+                fill="none"
+                stroke={colors[si % colors.length]}
+                strokeWidth={1.6}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+              {series.points.map((p, i) => {
+                const x = padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
+                const y = padT + (H - padT - padB) * (1 - p.balance / data.maxB);
+                return <circle key={i} cx={x} cy={y} r={2.2} fill={colors[si % colors.length]} />;
+              })}
+            </g>
+          );
+        })}
+        {data.series[0]?.points.map((p, i) => {
+          const first = data.series[0]!;
+          const n = first.points.length;
+          const x = padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
+          return (
+            <text key={i} x={x} y={H - 5} textAnchor="middle" className="balance-chart-x">
+              {p.date}
+            </text>
+          );
+        })}
+      </svg>
+      <ul className="balance-chart-legend">
+        {data.series.map((s, si) => (
+          <li key={s.channelId}>
+            <i style={{ background: colors[si % colors.length] }} />
+            <span title={s.name}>{s.name}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Model usage ranking over the visible 24h window.
   const topModels = useMemo(() => {
     const map = new Map<string, { requests: number; tokens: number }>();
     for (const row of recent) {
@@ -326,6 +403,38 @@ export function Dashboard() {
       .map(([model, stats]) => ({ model, ...stats }));
   }, [recent]);
   const maxModelRequests = Math.max(1, ...topModels.map((m) => m.requests));
+
+  // Balance trend: daily snapshots per channel (14d window), rendered as lines.
+  const balanceChart = useMemo(() => {
+    const points = balanceHistory.data?.items ?? [];
+    if (points.length === 0) return null;
+    const byChannel = new Map<
+      number,
+      Array<{ date: string; balance: number }>
+    >();
+    for (const p of points) {
+      const list = byChannel.get(p.channel_id) ?? [];
+      const d = new Date(p.probed_at);
+      const date = `${d.getMonth() + 1}/${d.getDate()}`;
+      if (list.length === 0 || list[list.length - 1]!.date !== date) {
+        list.push({ date, balance: p.balance });
+      } else {
+        list[list.length - 1]!.balance = p.balance; // latest probe of the day
+      }
+      byChannel.set(p.channel_id, list);
+    }
+    const series = [...byChannel.entries()]
+      .filter(([, pts]) => pts.length >= 1)
+      .slice(0, 6)
+      .map(([id, pts]) => ({
+        channelId: id,
+        name: points.find((p) => p.channel_id === id)?.channel_name || `#${id}`,
+        points: pts,
+      }));
+    if (series.length === 0) return null;
+    const maxB = Math.max(1, ...points.map((p) => p.balance));
+    return { series, maxB };
+  }, [balanceHistory.data]);
 
   // Drill-down detail for the selected chart bucket (aggregated by model).
   const bucketDetail = useMemo(() => {
@@ -735,6 +844,19 @@ export function Dashboard() {
               </ul>
             )}
           </Panel>
+
+          {balanceChart ? (
+            <Panel className="dashboard-panel">
+              <div className="panel-header">
+                <Wallet size={15} />
+                <strong>{t("dashboard.balanceTrend")}</strong>
+                <span className="panel-muted">
+                  {t("dashboard.balanceTrendHint")}
+                </span>
+              </div>
+              <BalanceChart data={balanceChart} />
+            </Panel>
+          ) : null}
 
           <Panel className="dashboard-panel">
             <div className="panel-header">

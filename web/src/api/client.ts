@@ -249,6 +249,7 @@ export const api = (client: ApiClient) => ({
 			channel_id?: number;
 			model?: string;
 			status?: number | "failed";
+			upstream_request_id?: string;
 			before_id?: number;
 			limit?: number;
 		},
@@ -260,6 +261,8 @@ export const api = (client: ApiClient) => ({
 			query.set("channel_id", String(filters.channel_id));
 		if (filters?.model) query.set("model", filters.model);
 		if (filters?.status != null) query.set("status", String(filters.status));
+		if (filters?.upstream_request_id)
+			query.set("upstream_request_id", filters.upstream_request_id);
 		if (filters?.before_id != null)
 			query.set("before_id", String(filters.before_id));
 		if (filters?.limit != null) query.set("limit", String(filters.limit));
@@ -279,6 +282,15 @@ export const api = (client: ApiClient) => ({
 			`/admin/discovery/models${channelId ? `?channel_id=${channelId}` : ""}`,
 			signal,
 		),
+	missingModels: (signal?: AbortSignal) =>
+		client.get<{
+			items: Array<{
+				model: string;
+				channel_id: number;
+				channel_name: string;
+				source: "models_csv" | "discovered";
+			}>;
+		}>("/admin/discovery/missing-models", signal),
 	probeChannel: (id: number) =>
 		client.post<ProbeResult>(`/admin/discovery/channels/${id}/probe`),
 	tryChat: (body: {
@@ -309,6 +321,16 @@ export const api = (client: ApiClient) => ({
 			"/admin/channels/account/finance",
 			signal,
 		),
+	balanceHistory: (days: number, signal?: AbortSignal) =>
+		client.get<{
+			items: Array<{
+				id: number;
+				channel_id: number;
+				channel_name: string;
+				balance: number;
+				probed_at: string;
+			}>;
+		}>(`/admin/balance-history?days=${days}`, signal),
 	syncKeys: (
 		id: number,
 		body?: {
@@ -382,6 +404,19 @@ export const api = (client: ApiClient) => ({
 		client.getList<PluginCatalogEntry>("/admin/plugins/catalog", signal),
 	pluginsStatus: (signal?: AbortSignal) =>
 		client.getList<ModuleStatus>("/admin/plugins/status", signal),
+	cpaStatus: (
+		baseUrl: string,
+		signal?: AbortSignal,
+	) =>
+		client.get<{
+			running: boolean;
+			latency_ms: number;
+			base_url: string;
+			error?: string;
+		}>(
+			`/admin/cpa/status?base_url=${encodeURIComponent(baseUrl)}`,
+			signal,
+		),
 	plugins: (signal?: AbortSignal) =>
 		client.getList<PluginRecord>("/admin/plugins", signal),
 	activatePlugin: (id: string) =>

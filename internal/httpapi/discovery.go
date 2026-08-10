@@ -24,6 +24,20 @@ func (h *DiscoveryHandler) Register(r chi.Router) {
 	r.Post("/discovery/channels/{id}/refresh", h.refreshChannel)
 	r.Post("/discovery/refresh", h.refreshAll)
 	r.Get("/discovery/models", h.listModels)
+	r.Get("/discovery/missing-models", h.missingModels)
+}
+
+// missingModels reports channel-exposed models no enabled route covers.
+func (h *DiscoveryHandler) missingModels(w http.ResponseWriter, r *http.Request) {
+	missing, err := h.db.MissingModels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "missing models")
+		return
+	}
+	if missing == nil {
+		missing = []store.MissingModel{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": missing})
 }
 
 func (h *DiscoveryHandler) probeChannel(w http.ResponseWriter, r *http.Request) {

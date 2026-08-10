@@ -229,6 +229,43 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	alertSweep := alert.NewSweep(accountService, webhookNotifier, cfg.AlertSweepInterval)
 	alertSweep.Start()
 	RegisterStopper(alertSweep.Stop)
+	// Daily balance-history snapshot: records each channel's balance once a day
+	// (plus a first snapshot shortly after boot when the table is empty) so the
+	// dashboard trend chart has data without waiting 24h. Retention-prunes
+	// snapshots older than 90 days on the same cadence.
+	const balanceRetentionDays = 90
+	balanceStop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		run := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			if n, err := accountService.RecordBalanceHistory(ctx); err != nil {
+				logger.Warn("balance history snapshot failed", "error", err)
+			} else if n > 0 {
+				logger.Info("balance history snapshot", "channels", n)
+			}
+			if _, err := accountService.PruneBalanceHistory(ctx, balanceRetentionDays); err != nil {
+				logger.Warn("balance history prune failed", "error", err)
+			}
+		}
+		// First run shortly after boot if there is no data yet, then daily.
+		time.Sleep(30 * time.Second)
+		points, err := accountService.BalanceHistory(context.Background(), 2)
+		if err == nil && len(points) == 0 {
+			run()
+		}
+		for {
+			select {
+			case <-ticker.C:
+				run()
+			case <-balanceStop:
+				return
+			}
+		}
+	}()
+	RegisterStopper(func() { close(balanceStop) })
 	if exchangeService != nil {
 		exchangeService.SetKeySyncer(account.ExchangeKeySyncer{Service: accountService})
 	}
@@ -241,6 +278,8 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	if pluginService != nil {
 		NewPluginHandler(pluginService).Register(adminGroup)
 	}
+	// Local CLIProxyAPI integration surface (OAuth subscription pool add-on).
+	NewCPAHandler().Register(adminGroup)
 
 	adminGroup.Group(func(module chi.Router) {
 		if pluginService != nil {

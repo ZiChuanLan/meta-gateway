@@ -1678,6 +1678,26 @@ td.status-col {
   opacity: 0.48;
   cursor: progress;
 }
+.price-sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  margin-left: auto;
+}
+.member-cheapest {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, var(--line));
+}
 .member-effective-weight {
   display: inline;
   color: var(--info);
@@ -4274,6 +4294,49 @@ td.actions {
   border: 0;
 }
 
+.missing-models-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+.missing-models-banner svg {
+  color: var(--info);
+  flex: none;
+}
+.missing-models-banner span {
+  flex: 1;
+}
+.missing-models-banner .missing-models-focus {
+  border: none;
+  background: none;
+  color: var(--info);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 6px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.missing-models-banner .missing-models-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 2px;
+}
+.missing-models-banner .missing-models-close:hover {
+  color: var(--ink);
+  background: var(--surface-raised);
+}
 .models-simple-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -5129,9 +5192,74 @@ td.actions {
   gap: 6px;
   flex-wrap: wrap;
 }
-.checkin-time-picker select {
+.ua-preset-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.cpa-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.cpa-status-chip.is-running {
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--line));
+}
+.cpa-status-chip.is-stopped {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
+}
+.cpa-url-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.cpa-url-row input {
+  flex: 1;
+  min-width: 0;
+}
+.cpa-guide {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 2px;
+  background: var(--surface-subtle);
+  font-size: 13px;
+}
+.cpa-guide ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cpa-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.ua-preset-row select {
   width: auto;
-  min-width: 72px;
+  min-width: 200px;
+  max-width: 60%;
+}
+.ua-preset-row input {
+  flex: 1;
+  min-width: 180px;
+}
+.ua-preset-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--danger);
 }
 .checkin-time-picker b {
   color: var(--muted);
@@ -5228,6 +5356,52 @@ td.actions {
   height: 8px;
   border-radius: 2px;
   display: inline-block;
+}
+.balance-chart {
+  margin-top: 6px;
+}
+.balance-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.balance-chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.balance-chart-x {
+  font-size: 9px;
+  fill: var(--muted);
+}
+.balance-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.balance-chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  min-width: 0;
+}
+.balance-chart-legend li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+.balance-chart-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+  flex: none;
 }
 .model-rank {
   list-style: none;

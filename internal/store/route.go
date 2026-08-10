@@ -109,6 +109,24 @@ func (s *RouteStore) List() ([]domain.Route, error) {
 	return result, rows.Err()
 }
 
+// ListEnabledPatterns returns the model_pattern of every enabled route.
+func (s *RouteStore) ListEnabledPatterns() ([]string, error) {
+	rows, err := s.db.Query(`SELECT model_pattern FROM routes WHERE enabled = 1`)
+	if err != nil {
+		return nil, fmt.Errorf("route enabled patterns: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var pattern string
+		if err := rows.Scan(&pattern); err != nil {
+			return nil, fmt.Errorf("route enabled patterns scan: %w", err)
+		}
+		out = append(out, pattern)
+	}
+	return out, rows.Err()
+}
+
 func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
 	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE id = ?`, id)
 	var r domain.Route

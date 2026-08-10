@@ -385,7 +385,10 @@ type ProxyLog struct {
 	// the attempt (never the plaintext). Empty when no key was used.
 	KeyFingerprint string `json:"key_fingerprint,omitempty"`
 	SessionKey      string    `json:"session_key,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	// UpstreamRequestID is the upstream x-request-id header echoed by the
+	// serving channel, enabling cross-referencing with the upstream's logs.
+	UpstreamRequestID string    `json:"upstream_request_id,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // UsageRecord is one metered relay completion used for billing summaries.
