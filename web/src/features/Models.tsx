@@ -186,6 +186,14 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
     selectedRoutingMode,
     runtimeSettings.data?.editable,
   );
+  const effectiveRetryRounds =
+    selectedRoute?.retry_times ?? runtimeSettings.data?.editable.retry_times;
+  const effectiveChannelRetries =
+    selectedRoute?.channel_retry_times ??
+    runtimeSettings.data?.editable.channel_retry_times;
+  const retryPolicyIsOverridden = selectedRoute?.retry_times != null;
+  const channelRetryPolicyIsOverridden =
+    selectedRoute?.channel_retry_times != null;
   const explain = useQuery({
     queryKey: ["explain", selected],
     queryFn: ({ signal }) =>
@@ -228,11 +236,21 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     onSuccess: () => setMember(null),
   });
-  const delMember = useAdminMutation({
-    mutationFn: (memberId: number) => service.deleteMember(memberId),
-    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
-    onSuccess: () => setRemoveMember(null),
-  });
+const delMember = useAdminMutation({
+	mutationFn: (memberId: number) => service.deleteMember(memberId),
+	invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+	onSuccess: () => setRemoveMember(null),
+});
+const enableChannel = useAdminMutation({
+	mutationFn: async (channelId: number) => {
+		const list = channels.data ?? [];
+		const ch = list.find((item) => item.id === channelId);
+		if (!ch) throw new Error("channel not found");
+		return service.updateChannel(channelId, { ...ch, status: "enabled" });
+	},
+	invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+	pendingIdOf: (channelId) => channelId,
+});
   const toggleRoute = useAdminMutation({
     mutationFn: (route: Route) =>
       service.updateRoute(route.id, { ...route, enabled: !route.enabled }),
@@ -481,7 +499,7 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
         </Panel>
       ) : null}
 
-      <div className="split">
+      <div className="split models-split">
         <Panel
           className="ops-list-panel"
           title={t("modelsPage.listTitle")}
@@ -784,6 +802,40 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                   </span>
                 )}
               </div>
+              <div className="routing-retry-summary">
+                <span className="routing-policy-title">
+                  {t("routing.retryPolicy")}
+                </span>
+                <span className="routing-policy-value">
+                  {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
+                  <small>
+                    {t(
+                      retryPolicyIsOverridden
+                        ? "routing.policySource.model"
+                        : "routing.policySource.global",
+                    )}
+                  </small>
+                </span>
+                <span className="routing-policy-value">
+                  {t("routing.channelRetry")}: {effectiveChannelRetries ?? "?"}
+                  <small>
+                    {t(
+                      channelRetryPolicyIsOverridden
+                        ? "routing.policySource.model"
+                        : "routing.policySource.global",
+                    )}
+                  </small>
+                </span>
+                <span
+                  className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
+                >
+                  {t("routing.failover")}: {runtimeSettings.data
+                    ? runtimeSettings.data.editable.cross_channel_failover_enabled
+                      ? t("routing.signal.on")
+                      : t("routing.signal.off")
+                    : "?"}
+                </span>
+              </div>
 
               <button
                 type="button"
@@ -831,9 +883,28 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                     <Empty>{t("routing.noMembers")}</Empty>
                   ) : (
                     sortMembers(selectedMembers).map((candidate, rowIndex) => {
-                      const state = candidateState(candidate);
                       const entry = candidate.member;
+                      const evaluation = explain.data?.candidates.find(
+                        (item) => item.candidate.member.id === entry.id,
+                      );
                       const activeCooldown = isActiveCooldown(entry);
+                      const autoDisabled =
+                        candidate.channel.status === "auto_disabled";
+                      const state = autoDisabled
+                        ? "auto_disabled"
+                        : evaluation?.reasons.includes("circuit_open")
+                          ? "circuit_open"
+                          : candidateState(candidate);
+                      // An expired cooldown is history, not an actionable
+                      // cooldown. A disabled member still needs an explicit
+                      // recovery action, unless the whole channel is parked
+                      // (the channel-level recovery button handles that).
+                      const canResetMemberHealth =
+                        !autoDisabled &&
+                        (activeCooldown ||
+                          (!entry.enabled && entry.fail_count > 0));
+                      const resetActionIsCooldown =
+                        activeCooldown && entry.enabled;
                       const ordered = sortMembers(selectedMembers);
                       const busy =
                         toggleMember.pendingId === entry.id ||
@@ -856,7 +927,7 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                       };
                       return (
                         <div
-                          className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}`}
+                          className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}`}
                           key={entry.id}
                           draggable={!reorderMembers.isPending}
                           onDragStart={(event) => {
@@ -911,11 +982,7 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                               {" · "}
                               {t("routing.weightLabel")}: {entry.weight}
                               {(() => {
-                                const score = explain.data?.candidates.find(
-                                  (evaluation) =>
-                                    evaluation.candidate.member.id ===
-                                    entry.id,
-                                )?.score;
+                                const score = evaluation?.score;
                                 if (
                                   score == null ||
                                   Math.abs(score - entry.weight) < 0.01
@@ -934,8 +1001,6 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                                   </>
                                 );
                               })()}
-                              {" · "}
-                              <StatusBadge value={state} />
                               {entry.manual_override ? (
                                 <>
                                   {" "}
@@ -977,6 +1042,14 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                                     );
                                   })()
                                 : null}
+                              {entry.fail_count > 0
+                                ? ` · ${t(
+                                    activeCooldown
+                                      ? "routing.failCount"
+                                      : "routing.failureHistory",
+                                    { count: entry.fail_count },
+                                  )}`
+                                : null}
                               {activeCooldown && entry.last_error
                                 ? ` · ${entry.last_error}`
                                 : null}
@@ -989,6 +1062,46 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                             </small>
                           </div>
                           <div className="member-controls">
+                            <span className="member-row-state">
+                              <StatusBadge value={state} />
+                            </span>
+                            {candidate.channel.status === "auto_disabled" ? (
+                              <button
+                                type="button"
+                                className="member-clear-health"
+                                title={t("routing.reenableChannelHint")}
+                                disabled={
+                                  enableChannel.pendingId ===
+                                  candidate.channel.id
+                                }
+                                onClick={() =>
+                                  enableChannel.mutate(candidate.channel.id)
+                                }
+                              >
+                                <Power size={13} />
+                                {t("routing.reenableChannel")}
+                              </button>
+                            ) : null}
+                            {canResetMemberHealth ? (
+                              <button
+                                type="button"
+                                className="member-clear-health"
+                                title={t(
+                                  resetActionIsCooldown
+                                    ? "routing.clearHealth"
+                                    : "routing.recoverMemberHint",
+                                )}
+                                disabled={clearHealth.isPending}
+                                onClick={() => clearHealth.mutate(entry.id)}
+                              >
+                                <RotateCcw size={13} />
+                                {t(
+                                  resetActionIsCooldown
+                                    ? "routing.clearHealth"
+                                    : "routing.recoverMember",
+                                )}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="icon-button"
@@ -1009,18 +1122,6 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                             >
                               ↓
                             </button>
-                            {activeCooldown ? (
-                              <button
-                                type="button"
-                                className="member-clear-health"
-                                title={t("routing.clearHealth")}
-                                disabled={clearHealth.isPending}
-                                onClick={() => clearHealth.mutate(entry.id)}
-                              >
-                                <RotateCcw size={13} />
-                                {t("routing.clearHealth")}
-                              </button>
-                            ) : null}
                             <ActionMenu
                               compact
                               label={t("common.moreActions")}
@@ -1033,11 +1134,15 @@ const selectedModel = selectedRoute?.model_pattern ?? "";
                                     : t("common.enableAction"),
                                   onSelect: () => toggleMember.mutate(entry),
                                 },
-                                ...(activeCooldown
+                                ...(canResetMemberHealth
                                   ? [
                                       {
                                         key: "clear",
-                                        label: t("routing.clearHealth"),
+                                        label: t(
+                                          resetActionIsCooldown
+                                            ? "routing.clearHealth"
+                                            : "routing.recoverMember",
+                                        ),
                                         onSelect: () =>
                                           clearHealth.mutate(entry.id),
                                       },
@@ -1206,6 +1311,49 @@ function RouteDialog({
         />
         <span>{t("routing.routeEnabled")}</span>
       </label>
+      <div className="ops-panel-context" style={{ marginTop: 12 }}>
+        <span>{t("routing.retryOverrideTitle")}</span>
+      </div>
+      <div className="form-grid">
+        <Field
+          label={t("routing.retryRounds")}
+          hint={t("routing.retryRoundsHint")}
+        >
+          <input
+            type="number"
+            min={0}
+            max={100}
+            placeholder={t("routing.retryFollowGlobal")}
+            value={form.retry_times ?? ""}
+            onChange={(event) => {
+              const v = event.target.value;
+              setForm({
+                ...form,
+                retry_times: v === "" ? null : Number(v),
+              });
+            }}
+          />
+        </Field>
+        <Field
+          label={t("routing.channelRetry")}
+          hint={t("routing.channelRetryHint")}
+        >
+          <input
+            type="number"
+            min={0}
+            max={5}
+            placeholder={t("routing.retryFollowGlobal")}
+            value={form.channel_retry_times ?? ""}
+            onChange={(event) => {
+              const v = event.target.value;
+              setForm({
+                ...form,
+                channel_retry_times: v === "" ? null : Number(v),
+              });
+            }}
+          />
+        </Field>
+      </div>
       {members.length > 0 ? (
         <label className="check check-with-hint">
           <input
@@ -1361,6 +1509,10 @@ function isActiveCooldown(member: Pick<RouteMember, "cooldown_until">) {
 
 function candidateState(candidate: RoutingCandidate) {
   const member = candidate.member;
+  // Channel-level guard: an auto-disabled channel is parked by the
+  // consecutive-failure circuit. Surface it as the dominant state on every
+  // member row so the model page (the routing view) shows it clearly.
+  if (candidate.channel.status === "auto_disabled") return "auto_disabled";
   if (!member.enabled) return "disabled";
   if (!candidate.credential_usable) return "no_credential";
   // Historical failures do not keep a member degraded after its penalty ends.

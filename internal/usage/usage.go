@@ -184,7 +184,14 @@ func (t *Tee) Close() error {
 	}
 	t.mu.Lock()
 	if !t.Stream && t.buf.Len() > 0 {
-		t.tokens = ExtractFromJSONBody(t.buf.Bytes())
+		// Most upstreams answer without any usage block (or the response is a
+		// non-completions payload); skip the full-body JSON parse unless the
+		// usage marker is actually present. Note: usage sits at the END of
+		// OpenAI-compatible bodies, so a fixed head-truncation would lose it —
+		// keyword presence is the safe filter.
+		if bytes.Contains(t.buf.Bytes(), []byte("usage")) {
+			t.tokens = ExtractFromJSONBody(t.buf.Bytes())
+		}
 	}
 	t.mu.Unlock()
 	if t.Source != nil {
@@ -270,6 +277,14 @@ func (t *Tee) consumeSSELine(line string) Tokens {
 		// "data:" prefix; treat the bare JSON line as an SSE payload.
 		payload = line
 	default:
+		return Tokens{}
+	}
+	// Cheap pre-filter: the overwhelming majority of stream lines are content
+	// deltas that cannot carry usage (OpenAI usage / Gemini usageMetadata are
+	// the only carriers). Skipping the full JSON parse for them keeps long
+	// streams near-zero overhead instead of one allocation-heavy Unmarshal per
+	// line.
+	if !strings.Contains(payload, "usage") {
 		return Tokens{}
 	}
 	return ExtractFromSSELine(payload)

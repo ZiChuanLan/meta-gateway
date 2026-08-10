@@ -74,10 +74,3 @@ func (c *Client) Download(ctx context.Context, targetURL, username, password str
 	}
 	return body, nil
 }
-
-// Probe performs a GET and discards the body after verifying status (capped).
-func (c *Client) Probe(ctx context.Context, targetURL, username, password string) (latency time.Duration, err error) {
-	started := time.Now()
-	_, err = c.Download(ctx, targetURL, username, password)
-	return time.Since(started), err
-}

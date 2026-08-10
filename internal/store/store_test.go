@@ -147,13 +147,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 39 {
-		t.Fatalf("got %d applied migrations, want 39", count)
+	if count != 49 {
+		t.Fatalf("got %d applied migrations, want 49", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 39 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 49 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -170,6 +170,7 @@ func TestDeriveHealthStateFiveStates(t *testing.T) {
 		{"probe-failed", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeAt: &now, LastProbeOK: false, SiteUsable: true}, "unhealthy"},
 		{"probe-ok-with-failures", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeOK: true, FailureCount: 3, SiteUsable: true}, "degraded"},
 		{"probe-ok-with-cooling", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeOK: true, CoolingMemberCount: 1, SiteUsable: true}, "degraded"},
+		{"probe-slow", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeOK: true, LastProbeError: "probe_slow", SiteUsable: true}, "degraded"},
 		{"healthy", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, LastProbeOK: true, SiteUsable: true}, "healthy"},
 		{"unknown-no-probe", domain.ChannelOverview{Channel: domain.Channel{Status: domain.StatusEnabled}, SiteUsable: true}, "unknown"},
 	}
@@ -179,6 +180,46 @@ func TestDeriveHealthStateFiveStates(t *testing.T) {
 				t.Fatalf("deriveHealthState=%q want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestDeriveHealthReasonAndConnectivityAreIndependent(t *testing.T) {
+	now := time.Now()
+	overview := domain.ChannelOverview{
+		Channel:           domain.Channel{Status: domain.StatusEnabled},
+		LastProbeOK:       true,
+		FailureCount:      2,
+		CoolingMemberCount: 0,
+	}
+	if got := store.DeriveHealthState(overview); got != domain.HealthStateDegraded {
+		t.Fatalf("health state=%q want degraded", got)
+	}
+	if got := store.DeriveHealthReason(overview); got != "route_failures" {
+		t.Fatalf("health reason=%q want route_failures", got)
+	}
+	overview.LastProbeError = "probe_slow"
+	if got := store.DeriveHealthReason(overview); got != "probe_slow" {
+		t.Fatalf("slow probe reason=%q want probe_slow", got)
+	}
+	if got := store.DeriveConnectivityState(overview); got != domain.ConnectivityStateUnknown {
+		t.Fatalf("connectivity without ping=%q want unknown", got)
+	}
+
+	overview.LastPingAt = &now
+	overview.LastPingOK = true
+	if got := store.DeriveConnectivityState(overview); got != domain.ConnectivityStateReachable {
+		t.Fatalf("successful ping=%q want reachable", got)
+	}
+	overview.LastPingOK = false
+	if got := store.DeriveConnectivityState(overview); got != domain.ConnectivityStateUnreachable {
+		t.Fatalf("failed ping=%q want unreachable", got)
+	}
+
+	overview.LastProbeOK = false
+	overview.LastProbeAt = &now
+	overview.LastProbeError = "upstream_unauthorized"
+	if got := store.DeriveHealthReason(overview); got != "authentication_failed" {
+		t.Fatalf("auth probe reason=%q want authentication_failed", got)
 	}
 }
 
@@ -579,6 +620,117 @@ func TestRoutingUniqueConstraints(t *testing.T) {
 	}
 }
 
+func TestRuntimeSettingsPreservesExplicitFalse(t *testing.T) {
+	db := openTestDB(t)
+	// Explicitly turning latency-aware routing OFF must survive a save/load
+	// round trip. The old Save() mapped 0 → 1 ("default on"), silently
+	// re-enabling the feature on the next process start.
+	row := &store.RuntimeSettingsRow{
+		HasOverride:            true,
+		RoutingLatencyAware:    0,
+		RoutingErrorAware:      1,
+		RoutingConcurrencyLimit: 64,
+	}
+	if err := db.RuntimeSettings.Save(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RoutingLatencyAware != 0 {
+		t.Fatalf("latency aware explicit false lost: got %d want 0", got.RoutingLatencyAware)
+	}
+}
+
+func TestRuntimeSettingsHealthSweepRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	row := &store.RuntimeSettingsRow{
+		HasOverride:                  true,
+		HealthSweepEnabled:           1,
+		HealthSweepIntervalSeconds:   120,
+		HealthSweepJitterSeconds:     15,
+		HealthSweepDegradedMs:        1500,
+		HealthSweepConcurrency:       6,
+		HealthSweepTimeoutSeconds:    20,
+		ChannelRetryTimes:            2,
+		KeyPoolRotation:              0,
+	}
+	if err := db.RuntimeSettings.Save(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasOverride || got.HealthSweepEnabled != 1 ||
+		got.HealthSweepIntervalSeconds != 120 || got.HealthSweepJitterSeconds != 15 ||
+		got.HealthSweepDegradedMs != 1500 || got.HealthSweepConcurrency != 6 ||
+		got.HealthSweepTimeoutSeconds != 20 || got.ChannelRetryTimes != 2 || got.KeyPoolRotation != 0 {
+		t.Fatalf("health sweep round trip mismatch: %+v", got)
+	}
+}
+
+func TestRuntimeSettingsHealthSweepUnsetFollowsEnv(t *testing.T) {
+	db := openTestDB(t)
+	// A row saved before the health-sweep columns existed (NULL) must fall back
+	// to the env bootstrap instead of zeroing the sweep.
+	if _, err := db.Exec(`INSERT OR REPLACE INTO runtime_settings (id, has_override, updated_at) VALUES (1, 1, datetime('now'))`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]int{
+		"enabled": got.HealthSweepEnabled, "interval": got.HealthSweepIntervalSeconds,
+		"jitter": got.HealthSweepJitterSeconds, "degraded": got.HealthSweepDegradedMs,
+		"concurrency": got.HealthSweepConcurrency, "timeout": got.HealthSweepTimeoutSeconds,
+	} {
+		if v != -1 {
+			t.Fatalf("%s: unset column must read -1, got %d", name, v)
+		}
+	}
+	if got.ChannelRetryTimes != -1 {
+		t.Fatalf("channel_retry_times: unset column must read -1, got %d", got.ChannelRetryTimes)
+	}
+	if got.KeyPoolRotation != -1 {
+		t.Fatalf("key_pool_rotation: unset column must read -1, got %d", got.KeyPoolRotation)
+	}
+}
+
+func TestRouteRetryOverridesRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	// Route with overrides: retry 3 rounds, same-key re-send 2.
+	retryTimes, channelRetry := 3, 2
+	id, err := db.Route.Create(&domain.Route{
+		ModelPattern:      "override-model",
+		Enabled:           true,
+		RetryTimes:        &retryTimes,
+		ChannelRetryTimes: &channelRetry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Route.GetByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RetryTimes == nil || *got.RetryTimes != 3 || got.ChannelRetryTimes == nil || *got.ChannelRetryTimes != 2 {
+		t.Fatalf("route overrides lost: %+v", got)
+	}
+	// Update to nil must clear the override back to NULL (follow global).
+	got.RetryTimes = nil
+	got.ChannelRetryTimes = nil
+	if err := db.Route.Update(got); err != nil {
+		t.Fatal(err)
+	}
+	cleared, _ := db.Route.GetByID(id)
+	if cleared.RetryTimes != nil || cleared.ChannelRetryTimes != nil {
+		t.Fatalf("override clear failed: %+v", cleared)
+	}
+}
+
 func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	db := openTestDB(t)
 	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "cooldown-model", Enabled: true})
@@ -622,16 +774,14 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	if member.Enabled || member.CooldownUntil != nil || member.FailCount != 3 || member.LastError != "transport" {
 		t.Fatalf("expected circuit breaker disable: %+v", member)
 	}
-	// The disabled member is excluded from routing until an admin re-enables it.
+	// The disabled member is excluded from routing until an admin clears its
+	// automatic health state.
 	route, candidates, err := db.RouteMember.RoutingCandidates("cooldown-model")
 	if err != nil || route == nil || len(candidates) != 1 {
 		t.Fatalf("candidates=%+v err=%v", candidates, err)
 	}
 	if candidates[0].Member.Enabled {
 		t.Fatalf("disabled member still eligible: %+v", candidates[0])
-	}
-	if err := db.RouteMember.Update(&domain.RouteMember{ID: memberID, RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1, Priority: 0}); err != nil {
-		t.Fatal(err)
 	}
 	if err := db.RouteMember.ClearHealth(memberID); err != nil {
 		t.Fatal(err)
@@ -640,7 +790,7 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if member.CooldownUntil != nil || member.FailCount != 0 || member.LastError != "" {
+	if !member.Enabled || member.CooldownUntil != nil || member.FailCount != 0 || member.LastError != "" {
 		t.Fatalf("cleared health: %+v", member)
 	}
 }

@@ -1,7 +1,10 @@
-export type Status = 'enabled' | 'disabled'
+export type Status = 'enabled' | 'disabled' | 'auto_disabled'
+
+export type ChannelHealthState = 'disabled' | 'unhealthy' | 'degraded' | 'healthy' | 'unknown'
+export type ChannelConnectivityState = 'unknown' | 'reachable' | 'unreachable'
 
 export interface Site { id: number; name: string; base_url: string; platform: string; status: Status; created_at: string; updated_at: string }
-export interface Credential { id: number; site_id: number; kind: string; has_secret: boolean; meta_json?: string; status: Status; checkin_enabled: boolean; created_at?: string }
+export interface Credential { id: number; site_id: number; kind: string; has_secret: boolean; meta_json?: string; status: Status; checkin_enabled: boolean; models_csv?: string; created_at?: string }
 export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; header_override?: string; system_prompt?: string; retry_config?: string; stable_first?: boolean; stable_first_requests?: number; created_at: string; updated_at: string }
 export interface ChannelOverview {
   channel: Channel
@@ -23,12 +26,18 @@ export interface ChannelOverview {
   cooling_member_count: number
   failure_count: number
   last_error?: string
-  last_probe_at?: string
-  last_probe_ok?: boolean
+	last_probe_at?: string
+	last_probe_ok?: boolean
 	last_probe_error?: string
-	health_state?: "disabled" | "unhealthy" | "degraded" | "healthy" | "unknown"
+	last_ping_at?: string
+	last_ping_ok?: boolean
+	last_ping_error?: string
+	last_ping_ms?: number
+	health_state?: ChannelHealthState
+	health_reason?: string
+	connectivity_state?: ChannelConnectivityState
 }
-export interface Route { id: number; model_pattern: string; enabled: boolean; routing_mode: string; mapping_json?: string; notes?: string; created_at: string; updated_at: string }
+export interface Route { id: number; model_pattern: string; enabled: boolean; routing_mode: string; mapping_json?: string; notes?: string; retry_times?: number | null; channel_retry_times?: number | null; created_at: string; updated_at: string }
 export interface RouteMember { id: number; route_id: number; channel_id: number; priority: number; weight: number; enabled: boolean; auto: boolean; manual_override: boolean; fail_count: number; cooldown_until?: string; last_error?: string; created_at: string; updated_at: string }
 export interface DownstreamKey {
   id: number
@@ -103,6 +112,7 @@ export interface BackupRecord { id: number; name: string; status: string; size_b
 /** Effective runtime parameters (editable subset + env bootstrap). Secrets never included. */
 export interface RuntimeEditableSettings {
   retry_times: number
+  cross_channel_failover_enabled: boolean
   cooldown_seconds: number
   checkin_enabled: boolean
   checkin_cron: string
@@ -129,9 +139,21 @@ export interface RuntimeEditableSettings {
 	cooldown_level3_seconds: number
 	cooldown_level4_seconds: number
 	breaker_fail_count: number
+	model_breaker_fail_count: number
+	key_fail_threshold: number
+	sticky_enabled: boolean
+	sticky_ttl_minutes: number
 	alert_config_json?: string
 	alert_sweep_interval_seconds: number
 	alert_daily_summary_interval_seconds: number
+	health_sweep_enabled: boolean
+	health_sweep_interval_seconds: number
+	health_sweep_jitter_seconds: number
+	health_sweep_degraded_ms: number
+	health_sweep_concurrency: number
+	health_sweep_timeout_seconds: number
+	channel_retry_times: number
+	key_pool_rotation: boolean
 }
 
 export interface RuntimeSettings {
@@ -141,14 +163,17 @@ export interface RuntimeSettings {
   editable: RuntimeEditableSettings
   env_bootstrap: RuntimeEditableSettings
   updated_at?: string
-  server_http_addr: string
-  data_dir: string
+	server_http_addr: string
+	data_dir: string
+	backup_dir: string
+	plugins_dir: string
+	metrics_token_masked: string
 }
 
 export interface RoutingCandidate { member: RouteMember; channel: Channel; credential_usable: boolean }
 export interface RouteOverview { route: Route; members: RoutingCandidate[] }
 export interface RouteEvaluation { candidate: RoutingCandidate; eligible: boolean; reasons: string[]; score?: number }
-export interface RouteExplanation { model: string; route_id: number; routing_mode?: string; evaluated_at: string; selected_priority?: number; candidates: RouteEvaluation[]; session_key?: string; sticky_channel_id?: number; sticky_hit?: boolean; sticky_reason?: string }
+export interface RouteExplanation { model: string; route_id: number; routing_mode?: string; evaluated_at: string; selected_priority?: number; candidates: RouteEvaluation[]; session_key?: string; sticky_channel_id?: number; sticky_hit?: boolean; sticky_reason?: string; retry_times_override?: number; channel_retry_times_override?: number }
 
 export interface StickyStats { bound_sessions: number; hits: number; binds: number; escapes: number }
 export interface StickyEntry { key: string; channel_id: number; expires_at: string }
@@ -225,6 +250,14 @@ export interface CreateUpstreamKeyResult {
   message: string
 }
 export interface RefreshResult extends ProbeResult { created_routes: number; created_members: number; enabled_members: number; deleted_members: number; deleted_routes: number }
+export interface ChannelPingResult {
+  channel_id: number
+  reachable: boolean
+  latency_ms?: number
+  status_code?: number
+  error?: string
+  checked_at?: string
+}
 export interface RefreshSummary { items: Array<{ channel_id: number; result?: RefreshResult; error?: string }>; success_count: number; failure_count: number }
 export interface RunResult { site_id: number; credential_id: number; source: string; status: string; category: string; message: string; reward?: string; latency_ms: number; ran_at: string }
 export interface RunSummary { items: RunResult[]; success_count: number; failure_count: number; skipped_count: number }

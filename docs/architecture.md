@@ -89,9 +89,15 @@ stable reason codes without changing state.
 ## Retry And Streaming
 
 The proxy service retries transport failures and upstream statuses 408, 429,
-500, 502, 503, and 504. Ordinary 4xx responses are returned immediately. A
-channel is attempted once per request, and retry count is bounded by
-`RETRY_TIMES` and candidate exhaustion.
+500, 502, 503, and 504 with a full failure tally (member cooldown plus
+channel consecutive-failure count). Upstream 4xx client errors are also
+failed over to the next channel — channel capabilities are heterogeneous, so
+one upstream may reject a request another accepts (e.g. a
+`reasoning_effort` value one gateway supports and another does not) — but a
+4xx only cools the member down; it never counts toward the channel
+consecutive-failure tally or auto-disable, because the request itself may be
+at fault. Local adapter/configuration errors are returned immediately, as
+failover cannot help. A channel is attempted once per request, and retry count is bounded by `RETRY_TIMES` and candidate exhaustion. `CROSS_CHANNEL_FAILOVER_ENABLED=false` forces the request to stop after the first selected channel without changing the saved retry limit; same-channel API-key rotation remains enabled.
 
 Retryable failure increments the member failure count and applies a fixed
 cooldown. Success clears member failure state. Each upstream attempt writes one

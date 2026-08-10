@@ -16,6 +16,25 @@ const (
 	StatusAutoDisabled = "auto_disabled"
 )
 
+// Channel health is the business/service dimension. It must not be used as a
+// synonym for network reachability: a reachable upstream can still have a
+// failed model probe or degraded route members.
+const (
+	HealthStateDisabled  = "disabled"
+	HealthStateUnhealthy = "unhealthy"
+	HealthStateDegraded  = "degraded"
+	HealthStateHealthy   = "healthy"
+	HealthStateUnknown   = "unknown"
+)
+
+// Connectivity is the network-layer dimension recorded by the explicit Ping
+// check. Unknown means that no Ping result has been recorded yet.
+const (
+	ConnectivityStateUnknown     = "unknown"
+	ConnectivityStateReachable   = "reachable"
+	ConnectivityStateUnreachable = "unreachable"
+)
+
 // ---------------------------------------------------------------------------
 // Site
 // ---------------------------------------------------------------------------
@@ -45,8 +64,11 @@ type Credential struct {
 	Status            string    `json:"status"`
 	CheckinEnabled    bool      `json:"checkin_enabled"`
 	ImportFingerprint string    `json:"-"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	// ModelsCSV is the per-key model allowlist (comma-separated, "*" suffix
+	// wildcards). Empty = the key serves every model on its channel.
+	ModelsCSV string    `json:"models_csv,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type CheckinLog struct {
@@ -111,13 +133,13 @@ type RetryableErrorPattern struct {
 // ChannelPatch is a partial channel update applied to every channel with a
 // given tag (bulk operations). Nil fields are left untouched.
 type ChannelPatch struct {
-	Priority      *int    `json:"priority"`
-	Weight        *int    `json:"weight"`
-	Status        *string `json:"status"`
-	ModelsCSV     *string `json:"models_csv"`
-	GroupName     *string `json:"group_name"`
-	RetryConfig   *string `json:"retry_config"`
-	SystemPrompt  *string `json:"system_prompt"`
+	Priority       *int    `json:"priority"`
+	Weight         *int    `json:"weight"`
+	Status         *string `json:"status"`
+	ModelsCSV      *string `json:"models_csv"`
+	GroupName      *string `json:"group_name"`
+	RetryConfig    *string `json:"retry_config"`
+	SystemPrompt   *string `json:"system_prompt"`
 	HeaderOverride *string `json:"header_override"`
 }
 
@@ -190,10 +212,20 @@ type ChannelOverview struct {
 	LastError          string     `json:"last_error,omitempty"`
 	LastProbeAt        *time.Time `json:"last_probe_at,omitempty"`
 	LastProbeOK        bool       `json:"last_probe_ok"`
+	// LastProbeError stores a redacted failure category or a non-error verdict
+	// such as probe_slow when the health sweep grades latency.
 	LastProbeError     string     `json:"last_probe_error,omitempty"`
+	// LastPing* record the most recent connectivity ping (network-layer
+	// reachability, separate from model/auth probing).
+	LastPingAt    *time.Time `json:"last_ping_at,omitempty"`
+	LastPingOK    bool       `json:"last_ping_ok"`
+	LastPingError string     `json:"last_ping_error,omitempty"`
+	LastPingMs    int        `json:"last_ping_ms"`
 	// HealthState is the derived five-state health machine (Metapi-inspired):
 	// disabled / unhealthy / degraded / healthy / unknown.
-	HealthState string `json:"health_state,omitempty"`
+	HealthState        string `json:"health_state,omitempty"`
+	HealthReason       string `json:"health_reason,omitempty"`
+	ConnectivityState  string `json:"connectivity_state"`
 }
 
 // DiscoveredModel is one model observed during a successful channel refresh.
@@ -236,8 +268,14 @@ type Route struct {
 	RoutingMode  string    `json:"routing_mode"`
 	MappingJSON  string    `json:"mapping_json,omitempty"`
 	Notes        string    `json:"notes,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	// RetryTimes overrides the global retry rounds (RETRY_TIMES) for this
+	// model. nil = follow the global setting; 0 = no cross-channel retry.
+	RetryTimes *int `json:"retry_times,omitempty"`
+	// ChannelRetryTimes overrides the global same-key re-send count
+	// (CHANNEL_RETRY_TIMES) for this model. nil = follow the global setting.
+	ChannelRetryTimes *int `json:"channel_retry_times,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -312,25 +350,25 @@ type KeyGroup struct {
 
 // ProxyLog records a relayed request (without secrets).
 type ProxyLog struct {
-	ID               int64     `json:"id"`
-	RequestID        string    `json:"request_id"`
-	ChannelID        int64     `json:"channel_id"`
-	RouteID          int64     `json:"route_id,omitempty"`
-	RoutePattern     string    `json:"route_pattern,omitempty"`
-	Model            string    `json:"model"`
-	Status           int       `json:"status"`
-	LatencyMs        int       `json:"latency_ms"`
-	Attempt          int       `json:"attempt"`
-	ErrorBrief       string    `json:"error_brief,omitempty"`
-	DownstreamKeyID  int64     `json:"downstream_key_id,omitempty"`
-	PromptTokens     int       `json:"prompt_tokens,omitempty"`
-	CompletionTokens int       `json:"completion_tokens,omitempty"`
-	TotalTokens      int       `json:"total_tokens,omitempty"`
+	ID               int64  `json:"id"`
+	RequestID        string `json:"request_id"`
+	ChannelID        int64  `json:"channel_id"`
+	RouteID          int64  `json:"route_id,omitempty"`
+	RoutePattern     string `json:"route_pattern,omitempty"`
+	Model            string `json:"model"`
+	Status           int    `json:"status"`
+	LatencyMs        int    `json:"latency_ms"`
+	Attempt          int    `json:"attempt"`
+	ErrorBrief       string `json:"error_brief,omitempty"`
+	DownstreamKeyID  int64  `json:"downstream_key_id,omitempty"`
+	PromptTokens     int    `json:"prompt_tokens,omitempty"`
+	CompletionTokens int    `json:"completion_tokens,omitempty"`
+	TotalTokens      int    `json:"total_tokens,omitempty"`
 	// CacheReadTokens / CacheCreationTokens record upstream prompt-cache
 	// accounting (Anthropic cache_read/creation, OpenAI cached_tokens,
 	// Gemini cachedContentTokenCount).
-	CacheReadTokens     int       `json:"cache_read_tokens,omitempty"`
-	CacheCreationTokens int       `json:"cache_creation_tokens,omitempty"`
+	CacheReadTokens     int `json:"cache_read_tokens,omitempty"`
+	CacheCreationTokens int `json:"cache_creation_tokens,omitempty"`
 	// FirstByteMs is the time to the first streamed byte (0 for non-stream).
 	FirstByteMs int `json:"first_byte_ms,omitempty"`
 	// ClientFamily is the coarse client classification from the User-Agent.
@@ -340,28 +378,31 @@ type ProxyLog struct {
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// TokensPerSecond is the derived stream throughput (completion tokens over
 	// effective latency), AxonHub-style TPS metric.
-	TokensPerSecond float64 `json:"tokens_per_second,omitempty"`
-	Stream           bool      `json:"stream,omitempty"`
-	Path             string    `json:"path,omitempty"`
-	SessionKey       string    `json:"session_key,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
+	TokensPerSecond float64   `json:"tokens_per_second,omitempty"`
+	Stream          bool      `json:"stream,omitempty"`
+	Path            string    `json:"path,omitempty"`
+	// KeyFingerprint is the sha256 prefix of the upstream API key that served
+	// the attempt (never the plaintext). Empty when no key was used.
+	KeyFingerprint string `json:"key_fingerprint,omitempty"`
+	SessionKey      string    `json:"session_key,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // UsageRecord is one metered relay completion used for billing summaries.
 type UsageRecord struct {
-	ID               int64     `json:"id"`
-	RequestID        string    `json:"request_id"`
-	DownstreamKeyID  int64     `json:"downstream_key_id"`
-	ChannelID        int64     `json:"channel_id"`
-	Model            string    `json:"model"`
-	Path             string    `json:"path"`
-	Stream           bool      `json:"stream"`
-	PromptTokens     int       `json:"prompt_tokens"`
-	CompletionTokens int       `json:"completion_tokens"`
-	TotalTokens      int       `json:"total_tokens"`
-	CacheReadTokens     int       `json:"cache_read_tokens"`
-	CacheCreationTokens int       `json:"cache_creation_tokens"`
-	Status           int       `json:"status"`
+	ID                  int64  `json:"id"`
+	RequestID           string `json:"request_id"`
+	DownstreamKeyID     int64  `json:"downstream_key_id"`
+	ChannelID           int64  `json:"channel_id"`
+	Model               string `json:"model"`
+	Path                string `json:"path"`
+	Stream              bool   `json:"stream"`
+	PromptTokens        int    `json:"prompt_tokens"`
+	CompletionTokens    int    `json:"completion_tokens"`
+	TotalTokens         int    `json:"total_tokens"`
+	CacheReadTokens     int    `json:"cache_read_tokens"`
+	CacheCreationTokens int    `json:"cache_creation_tokens"`
+	Status              int    `json:"status"`
 	// Cost is the persisted monetary amount for this relay (key unit prices ×
 	// model ratio), computed at record time so bills never depend on later
 	// price edits.

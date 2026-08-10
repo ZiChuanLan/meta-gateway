@@ -32,10 +32,6 @@ type SiteProfile struct {
 	RedeemPath  string
 }
 
-type siteProfileEntry struct {
-	profile SiteProfile
-}
-
 // siteProfiles mirrors AAH's ACCOUNT_SITE_DEFINITIONS (subset that matters to
 // a server-side gateway: check-in support, forced token auth, one-time keys).
 var siteProfiles = map[string]SiteProfile{

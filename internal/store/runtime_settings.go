@@ -11,34 +11,39 @@ import (
 // Pointer/null fields mean "not overridden" when HasOverride is false.
 // When HasOverride is true, all editable fields are set from Admin.
 type RuntimeSettingsRow struct {
-	HasOverride                 bool
-	RetryTimes                  int
-	CooldownSeconds             int
-	CheckinEnabled              bool
-	CheckinCron                 string
-	RelayRatePerMinute          int
-	RelayRateBurst              int
-	AdminRatePerMinute          int
-	AdminRateBurst              int
-	AuditRetentionDays          int
-	AuditRetentionRows          int
-	ChannelAutoDisableThreshold int
-	RoutingLatencyAware         int
-	RoutingErrorAware           int
-	RoutingConcurrencyEnabled   int
-	RoutingConcurrencyLimit     int
-	WebhookURL                  string
-	WebhookThrottleSeconds      int
-	StableFirstEnabled          int
-	StableFirstDenominator      int
-	StableFirstPromoteRequests  int
-	RecoveryProbeEnabled        int
+	HasOverride                  bool
+	RetryTimes                   int
+	CrossChannelFailoverEnabled  int
+	CooldownSeconds              int
+	CheckinEnabled               bool
+	CheckinCron                  string
+	RelayRatePerMinute           int
+	RelayRateBurst               int
+	AdminRatePerMinute           int
+	AdminRateBurst               int
+	AuditRetentionDays           int
+	AuditRetentionRows           int
+	ChannelAutoDisableThreshold  int
+	RoutingLatencyAware          int
+	RoutingErrorAware            int
+	RoutingConcurrencyEnabled    int
+	RoutingConcurrencyLimit      int
+	WebhookURL                   string
+	WebhookThrottleSeconds       int
+	StableFirstEnabled           int
+	StableFirstDenominator       int
+	StableFirstPromoteRequests   int
+	RecoveryProbeEnabled         int
 	RecoveryProbeIntervalSeconds int
-	ProgressiveCooldownEnabled  int
-	CooldownLevel2Seconds       int
-	CooldownLevel3Seconds       int
-	CooldownLevel4Seconds       int
-	BreakerFailCount            int
+	ProgressiveCooldownEnabled   int
+	CooldownLevel2Seconds        int
+	CooldownLevel3Seconds        int
+	CooldownLevel4Seconds        int
+	BreakerFailCount             int
+	ModelBreakerFailCount        int
+	KeyFailThreshold             int
+	StickyEnabled                int
+	StickyTTLMinutes             int
 	// AlertConfigJSON is the multi-channel alert matrix (webhook/bark/
 	// serverchan/telegram/smtp), JSON-encoded; "" = use env bootstrap.
 	AlertConfigJSON string
@@ -46,7 +51,21 @@ type RuntimeSettingsRow struct {
 	AlertSweepIntervalSeconds int
 	// AlertDailySummaryIntervalSeconds: daily digest cadence (0 = off).
 	AlertDailySummaryIntervalSeconds int
-	UpdatedAt                       time.Time
+	// HealthSweepEnabled/IntervalSeconds/JitterSeconds/DegradedMs/
+	// Concurrency/TimeoutSeconds: periodic channel health sweep (grades
+	// operational/degraded/error and alerts on transitions). -1 = env bootstrap.
+	HealthSweepEnabled          int
+	HealthSweepIntervalSeconds  int
+	HealthSweepJitterSeconds    int
+	HealthSweepDegradedMs       int
+	HealthSweepConcurrency      int
+	HealthSweepTimeoutSeconds   int
+	// ChannelRetryTimes: how many times the same upstream key is re-sent after
+	// a retryable failure before moving to the next key/channel. -1 = env.
+	ChannelRetryTimes int
+	// KeyPoolRotation: rotate through the site key pool on failure. -1 = env.
+	KeyPoolRotation int
+	UpdatedAt       time.Time
 }
 
 // RuntimeSettingsStore persists a single-row runtime settings document.
@@ -56,7 +75,7 @@ type RuntimeSettingsStore struct {
 
 func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	row := s.db.QueryRow(`
-		SELECT has_override, retry_times, cooldown_seconds, checkin_enabled, checkin_cron,
+		SELECT has_override, retry_times, cross_channel_failover_enabled, cooldown_seconds, checkin_enabled, checkin_cron,
 		       relay_rate_per_minute, relay_rate_burst, admin_rate_per_minute, admin_rate_burst,
 		       audit_retention_days, audit_retention_rows,
 		       channel_auto_disable_threshold, routing_latency_aware,
@@ -67,26 +86,36 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       recovery_probe_enabled, recovery_probe_interval_seconds,
 		       progressive_cooldown_enabled, cooldown_level2_seconds, cooldown_level3_seconds,
 		       cooldown_level4_seconds, breaker_fail_count,
+		       model_breaker_fail_count, key_fail_threshold,
+		       sticky_enabled, sticky_ttl_minutes,
 		       alert_config_json, alert_sweep_interval_seconds, alert_daily_summary_interval_seconds,
+		       health_sweep_enabled, health_sweep_interval_seconds, health_sweep_jitter_seconds,
+		       health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
+		       channel_retry_times,
+		       key_pool_rotation,
 		       updated_at
 		FROM runtime_settings WHERE id = 1`)
 	var (
-		hasOverride                                                                   int
-		retry, cooldown, checkinEnabled, relayRate, relayBurst                       sql.NullInt64
-		adminRate, adminBurst, auditDays, auditRows                                   sql.NullInt64
+		hasOverride                                                                        int
+		retry, crossChannelFailover, cooldown, checkinEnabled, relayRate, relayBurst       sql.NullInt64
+		adminRate, adminBurst, auditDays, auditRows                                        sql.NullInt64
 		autoDisableThreshold, latencyAware, errorAware, concurrencyAware, concurrencyLimit sql.NullInt64
-		webhookURL                                                                   sql.NullString
-		webhookThrottle                                                              sql.NullInt64
-		sfEnabled, sfDenominator, sfPromote                               sql.NullInt64
-		recovery, recoveryInterval                                                    sql.NullInt64
-		progressive, level2, level3, level4                                           sql.NullInt64
-		breakerCount                                                                  sql.NullInt64
-		alertConfigJSON                                                              sql.NullString
-		alertSweep, alertDaily                                                        sql.NullInt64
-		cron, updated                                                                 sql.NullString
+		webhookURL                                                                         sql.NullString
+		webhookThrottle                                                                    sql.NullInt64
+		sfEnabled, sfDenominator, sfPromote                                                sql.NullInt64
+		recovery, recoveryInterval                                                         sql.NullInt64
+		progressive, level2, level3, level4                                                sql.NullInt64
+		breakerCount                                                                       sql.NullInt64
+		modelBreaker, keyThreshold, stickyEnabled, stickyTTL                              sql.NullInt64
+		alertConfigJSON                                                                    sql.NullString
+		alertSweep, alertDaily                                                             sql.NullInt64
+		hsEnabled, hsInterval, hsJitter, hsDegraded, hsConcurrency, hsTimeout              sql.NullInt64
+		channelRetry                                                                      sql.NullInt64
+		keyPoolRotation                                                                   sql.NullInt64
+		cron, updated                                                                     sql.NullString
 	)
 	if err := row.Scan(
-		&hasOverride, &retry, &cooldown, &checkinEnabled, &cron,
+		&hasOverride, &retry, &crossChannelFailover, &cooldown, &checkinEnabled, &cron,
 		&relayRate, &relayBurst, &adminRate, &adminBurst,
 		&auditDays, &auditRows,
 		&autoDisableThreshold, &latencyAware, &errorAware,
@@ -95,7 +124,10 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&sfEnabled, &sfDenominator, &sfPromote,
 		&recovery, &recoveryInterval,
 		&progressive, &level2, &level3, &level4, &breakerCount,
-		&alertConfigJSON, &alertSweep, &alertDaily, &updated,
+		&modelBreaker, &keyThreshold, &stickyEnabled, &stickyTTL,
+		&alertConfigJSON, &alertSweep, &alertDaily,
+		&hsEnabled, &hsInterval, &hsJitter, &hsDegraded, &hsConcurrency, &hsTimeout,
+		&channelRetry, &keyPoolRotation, &updated,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return &RuntimeSettingsRow{}, nil
@@ -105,6 +137,11 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	out := &RuntimeSettingsRow{HasOverride: hasOverride != 0}
 	if retry.Valid {
 		out.RetryTimes = int(retry.Int64)
+	}
+	if crossChannelFailover.Valid {
+		out.CrossChannelFailoverEnabled = int(crossChannelFailover.Int64)
+	} else {
+		out.CrossChannelFailoverEnabled = -1
 	}
 	if cooldown.Valid {
 		out.CooldownSeconds = int(cooldown.Int64)
@@ -217,6 +254,26 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	} else {
 		out.BreakerFailCount = -1
 	}
+	if modelBreaker.Valid {
+		out.ModelBreakerFailCount = int(modelBreaker.Int64)
+	} else {
+		out.ModelBreakerFailCount = -1
+	}
+	if keyThreshold.Valid {
+		out.KeyFailThreshold = int(keyThreshold.Int64)
+	} else {
+		out.KeyFailThreshold = -1
+	}
+	if stickyEnabled.Valid {
+		out.StickyEnabled = int(stickyEnabled.Int64)
+	} else {
+		out.StickyEnabled = -1
+	}
+	if stickyTTL.Valid {
+		out.StickyTTLMinutes = int(stickyTTL.Int64)
+	} else {
+		out.StickyTTLMinutes = -1
+	}
 	if alertConfigJSON.Valid {
 		out.AlertConfigJSON = strings.TrimSpace(alertConfigJSON.String)
 	}
@@ -229,6 +286,46 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		out.AlertDailySummaryIntervalSeconds = int(alertDaily.Int64)
 	} else {
 		out.AlertDailySummaryIntervalSeconds = -1
+	}
+	if hsEnabled.Valid {
+		out.HealthSweepEnabled = int(hsEnabled.Int64)
+	} else {
+		out.HealthSweepEnabled = -1
+	}
+	if hsInterval.Valid {
+		out.HealthSweepIntervalSeconds = int(hsInterval.Int64)
+	} else {
+		out.HealthSweepIntervalSeconds = -1
+	}
+	if hsJitter.Valid {
+		out.HealthSweepJitterSeconds = int(hsJitter.Int64)
+	} else {
+		out.HealthSweepJitterSeconds = -1
+	}
+	if hsDegraded.Valid {
+		out.HealthSweepDegradedMs = int(hsDegraded.Int64)
+	} else {
+		out.HealthSweepDegradedMs = -1
+	}
+	if hsConcurrency.Valid {
+		out.HealthSweepConcurrency = int(hsConcurrency.Int64)
+	} else {
+		out.HealthSweepConcurrency = -1
+	}
+	if hsTimeout.Valid {
+		out.HealthSweepTimeoutSeconds = int(hsTimeout.Int64)
+	} else {
+		out.HealthSweepTimeoutSeconds = -1
+	}
+	if channelRetry.Valid {
+		out.ChannelRetryTimes = int(channelRetry.Int64)
+	} else {
+		out.ChannelRetryTimes = -1
+	}
+	if keyPoolRotation.Valid {
+		out.KeyPoolRotation = int(keyPoolRotation.Int64)
+	} else {
+		out.KeyPoolRotation = -1
 	}
 	if updated.Valid {
 		if parsed, err := time.Parse("2006-01-02 15:04:05", updated.String); err == nil {
@@ -254,12 +351,12 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 	}
 	cron := strings.TrimSpace(settings.CheckinCron)
 	latencyState := settings.RoutingLatencyAware
-	if settings.RoutingLatencyAware == 0 || settings.RoutingLatencyAware == -1 {
-		latencyState = 1 // default on
+	if settings.RoutingLatencyAware == -1 {
+		latencyState = 1 // unset → default on
 	}
 	_, err := s.db.Exec(`
 		INSERT INTO runtime_settings (
-			id, has_override, retry_times, cooldown_seconds, checkin_enabled, checkin_cron,
+			id, has_override, retry_times, cross_channel_failover_enabled, cooldown_seconds, checkin_enabled, checkin_cron,
 			relay_rate_per_minute, relay_rate_burst, admin_rate_per_minute, admin_rate_burst,
 			audit_retention_days, audit_retention_rows,
 			channel_auto_disable_threshold, routing_latency_aware,
@@ -270,12 +367,19 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			recovery_probe_enabled, recovery_probe_interval_seconds,
 			progressive_cooldown_enabled, cooldown_level2_seconds, cooldown_level3_seconds,
 			cooldown_level4_seconds, breaker_fail_count,
+			model_breaker_fail_count, key_fail_threshold,
+			sticky_enabled, sticky_ttl_minutes,
 			alert_config_json, alert_sweep_interval_seconds, alert_daily_summary_interval_seconds,
+			health_sweep_enabled, health_sweep_interval_seconds, health_sweep_jitter_seconds,
+			health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
+			channel_retry_times,
+			key_pool_rotation,
 			updated_at
-		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(id) DO UPDATE SET
 			has_override = excluded.has_override,
 			retry_times = excluded.retry_times,
+			cross_channel_failover_enabled = excluded.cross_channel_failover_enabled,
 			cooldown_seconds = excluded.cooldown_seconds,
 			checkin_enabled = excluded.checkin_enabled,
 			checkin_cron = excluded.checkin_cron,
@@ -302,12 +406,25 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			cooldown_level3_seconds = excluded.cooldown_level3_seconds,
 			cooldown_level4_seconds = excluded.cooldown_level4_seconds,
 			breaker_fail_count = excluded.breaker_fail_count,
+			model_breaker_fail_count = excluded.model_breaker_fail_count,
+			key_fail_threshold = excluded.key_fail_threshold,
+			sticky_enabled = excluded.sticky_enabled,
+			sticky_ttl_minutes = excluded.sticky_ttl_minutes,
 			alert_config_json = excluded.alert_config_json,
 			alert_sweep_interval_seconds = excluded.alert_sweep_interval_seconds,
 			alert_daily_summary_interval_seconds = excluded.alert_daily_summary_interval_seconds,
+			health_sweep_enabled = excluded.health_sweep_enabled,
+			health_sweep_interval_seconds = excluded.health_sweep_interval_seconds,
+			health_sweep_jitter_seconds = excluded.health_sweep_jitter_seconds,
+			health_sweep_degraded_ms = excluded.health_sweep_degraded_ms,
+			health_sweep_concurrency = excluded.health_sweep_concurrency,
+			health_sweep_timeout_seconds = excluded.health_sweep_timeout_seconds,
+			channel_retry_times = excluded.channel_retry_times,
+			key_pool_rotation = excluded.key_pool_rotation,
 			updated_at = datetime('now')`,
 		hasOverride,
 		settings.RetryTimes,
+		settings.CrossChannelFailoverEnabled,
 		settings.CooldownSeconds,
 		checkinEnabled,
 		cron,
@@ -334,9 +451,21 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.CooldownLevel3Seconds,
 		settings.CooldownLevel4Seconds,
 		settings.BreakerFailCount,
+		settings.ModelBreakerFailCount,
+		settings.KeyFailThreshold,
+		settings.StickyEnabled,
+		settings.StickyTTLMinutes,
 		settings.AlertConfigJSON,
 		settings.AlertSweepIntervalSeconds,
 		settings.AlertDailySummaryIntervalSeconds,
+		settings.HealthSweepEnabled,
+		settings.HealthSweepIntervalSeconds,
+		settings.HealthSweepJitterSeconds,
+		settings.HealthSweepDegradedMs,
+		settings.HealthSweepConcurrency,
+		settings.HealthSweepTimeoutSeconds,
+		settings.ChannelRetryTimes,
+		settings.KeyPoolRotation,
 	)
 	if err != nil {
 		return fmt.Errorf("runtime settings save: %w", err)

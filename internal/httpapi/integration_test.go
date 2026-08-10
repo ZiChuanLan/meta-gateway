@@ -447,6 +447,47 @@ func dbCount(base, path string, count *int) error {
 	return nil
 }
 
+func TestChannelPingIsNetworkOnly(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			_, _ = io.WriteString(w, `{"data":[]}`)
+			return
+		}
+		http.Error(w, "application is alive but this path is not supported", http.StatusNotFound)
+	}))
+	defer upstream.Close()
+	base, _, _ := setupServer(t, upstream.URL)
+
+	req, _ := http.NewRequest(http.MethodPost, base+"/admin/channels/1/ping", nil)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK ||
+		!strings.Contains(string(body), `"reachable":true`) ||
+		!strings.Contains(string(body), `"connectivity_state":"reachable"`) ||
+		!strings.Contains(string(body), `"status_code":404`) {
+		t.Fatalf("ping status=%d body=%s", resp.StatusCode, body)
+	}
+
+	req, _ = http.NewRequest(http.MethodGet, base+"/admin/channels/overview", nil)
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK ||
+		!strings.Contains(string(body), `"connectivity_state":"reachable"`) ||
+		!strings.Contains(string(body), `"health_state":"unknown"`) {
+		t.Fatalf("overview status=%d body=%s", resp.StatusCode, body)
+	}
+}
+
 func TestChannelAndRouteOperationalEndpoints(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
@@ -583,6 +624,30 @@ func TestRouteRoutingModeRoundTripAndValidation(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid routing_mode status=%d, want 400", resp.StatusCode)
+	}
+
+	// Route-level retry overrides are validated server-side as well as in the
+	// console form; direct Admin API callers must not be able to write an
+	// unbounded retry loop.
+	badRetryBody := map[string]any{
+		"model_pattern": "routing-mode-model",
+		"enabled":       true,
+		"routing_mode":  domain.RoutingModeWeighted,
+		"retry_times":   -1,
+		"channel_retry_times": 1,
+	}
+	raw, _ = json.Marshal(badRetryBody)
+	req, _ = http.NewRequest(http.MethodPut, fmt.Sprintf(base+"/admin/routes/%d", routeID), bytes.NewReader(raw))
+	req.Header.Set("Authorization", "Bearer admin-secret")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid retry_times status=%d, want 400", resp.StatusCode)
 	}
 }
 

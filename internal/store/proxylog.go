@@ -34,9 +34,9 @@ func (s *ProxyLogStore) Insert(log *domain.ProxyLog) (int64, error) {
 	if log.Stream {
 		stream = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort, key_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RequestID, log.ChannelID, log.RouteID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief,
-		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort)
+		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort, log.KeyFingerprint)
 	if err != nil {
 		return 0, fmt.Errorf("proxylog insert: %w", err)
 	}
@@ -78,11 +78,11 @@ var LatencyBucketBounds = []int{250, 500, 1000, 2000, 3000, 5000, 8000, 13000, 2
 type LatencyHistogram struct {
 	// Buckets[i] counts rows with latency in [bounds[i-1], bounds[i]) (first
 	// bucket < 250ms, last bucket >= 34s).
-	Buckets   []int   `json:"buckets"`
-	Total     int     `json:"total"`
-	SlowCount int     `json:"slow_count"`
-	P50Ms     int     `json:"p50_ms"`
-	P95Ms     int     `json:"p95_ms"`
+	Buckets   []int `json:"buckets"`
+	Total     int   `json:"total"`
+	SlowCount int   `json:"slow_count"`
+	P50Ms     int   `json:"p50_ms"`
+	P95Ms     int   `json:"p95_ms"`
 }
 
 // LatencyHistogram aggregates the newest sampleSize proxy log latencies.

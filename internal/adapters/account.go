@@ -65,7 +65,7 @@ type NewAPIKeyRequest struct {
 // ModelPrice is one model's price on an upstream, mirroring the All API Hub
 // modelPricing.ts normalization (source-verified):
 //   - token billing:  inputUSD = model_ratio × (1e6 / quota_per_unit) × group_ratio
-//                     outputUSD = inputUSD × completion_ratio
+//     outputUSD = inputUSD × completion_ratio
 //   - direct USD:     token_price_usd_per_million.input wins (no ratio semantics)
 //   - per-call:       model_price × group_ratio (fixed price per request)
 //   - legacy map:     quota-per-1M ÷ quota_per_unit
@@ -140,12 +140,12 @@ func (a *NewAPIAccountAdapter) QuotaPerUnit(ctx context.Context, input AccountIn
 	if err != nil {
 		return 0, &Error{Kind: ErrorInvalidURL}
 	}
-	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	body, status, retryAfter, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
 	if err != nil {
 		return 0, err
 	}
 	if status < 200 || status >= 300 {
-		return 0, &Error{Kind: ErrorStatus, Status: status}
+		return 0, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
 	}
 	var envelope struct {
 		Success *bool `json:"success"`
@@ -173,12 +173,12 @@ func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) 
 	if err != nil {
 		return nil, &Error{Kind: ErrorInvalidURL}
 	}
-	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	body, status, retryAfter, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
 	if err != nil {
 		return nil, err
 	}
 	if status < 200 || status >= 300 {
-		return nil, &Error{Kind: ErrorStatus, Status: status}
+		return nil, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
 	}
 	var envelope struct {
 		Success *bool           `json:"success"`
@@ -208,7 +208,7 @@ func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) 
 			}
 		}
 	}
-		var table map[string]json.RawMessage
+	var table map[string]json.RawMessage
 	if err := json.Unmarshal(envelope.Data, &table); err == nil {
 		// Legacy object form: {model: quota-per-1M} or {model: {currency, price}}.
 		out := make([]ModelPrice, 0, len(table))
@@ -237,13 +237,13 @@ func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) 
 	// New API v0.13+ list form: [{model_name, model_price, model_ratio, ...}]
 	// with optional token_price_usd_per_million and top-level group_ratio.
 	var list []struct {
-		ModelName                 string  `json:"model_name"`
-		ModelPrice                float64 `json:"model_price"`
-		ModelRatio                float64 `json:"model_ratio"`
-		CompletionRatio           float64 `json:"completion_ratio"`
-		QuotaType                 int     `json:"quota_type"`
-		Currency                  string  `json:"currency"`
-		TokenPriceUSDPerMillion   *struct {
+		ModelName               string  `json:"model_name"`
+		ModelPrice              float64 `json:"model_price"`
+		ModelRatio              float64 `json:"model_ratio"`
+		CompletionRatio         float64 `json:"completion_ratio"`
+		QuotaType               int     `json:"quota_type"`
+		Currency                string  `json:"currency"`
+		TokenPriceUSDPerMillion *struct {
 			Input      float64 `json:"input"`
 			Output     float64 `json:"output"`
 			CacheRead  float64 `json:"cache_read"`
@@ -291,6 +291,7 @@ func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) 
 	}
 	return out, nil
 }
+
 // ListTokenGroups returns every group the account may use, from the New-API
 // family's /api/user/self/groups endpoint. This reports usable groups even
 // when the account holds no tokens yet (token-list enumeration would be empty).
@@ -299,20 +300,20 @@ func (a *NewAPIAccountAdapter) ListTokenGroups(ctx context.Context, input Accoun
 	if err != nil {
 		return nil, &Error{Kind: ErrorInvalidURL}
 	}
-	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	body, status, retryAfter, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
 	if err != nil {
 		return nil, err
 	}
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		// Same user-id header requirement as the token list on some forks.
 		if retry, retryable := a.alternateUserHeaderInput(ctx, input); retryable {
-			if body2, status2, err2 := a.doJSON(ctx, http.MethodGet, endpoint, retry); err2 == nil && status2 >= 200 && status2 < 300 {
+			if body2, status2, _, err2 := a.doJSON(ctx, http.MethodGet, endpoint, retry); err2 == nil && status2 >= 200 && status2 < 300 {
 				body, status = body2, status2
 			}
 		}
 	}
 	if status < 200 || status >= 300 {
-		return nil, &Error{Kind: ErrorStatus, Status: status}
+		return nil, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
 	}
 	var envelope struct {
 		Success *bool           `json:"success"`
@@ -380,12 +381,12 @@ func (a *NewAPIAccountAdapter) ProbeSelf(ctx context.Context, input AccountInput
 	if err != nil {
 		return AccountSelf{}, &Error{Kind: ErrorInvalidURL}
 	}
-	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	body, status, retryAfter, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
 	if err != nil {
 		return AccountSelf{}, err
 	}
 	if status < 200 || status >= 300 {
-		return AccountSelf{}, &Error{Kind: ErrorStatus, Status: status}
+		return AccountSelf{}, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
 	}
 	var payload struct {
 		Success *bool `json:"success"`
@@ -455,7 +456,7 @@ func (a *NewAPIAccountAdapter) ListAPIKeys(ctx context.Context, input AccountInp
 		return nil, &Error{Kind: ErrorInvalidURL}
 	}
 	endpoint += "?" + query.Encode()
-	body, status, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
+	body, status, retryAfter, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
 	if err != nil {
 		return nil, err
 	}
@@ -465,14 +466,14 @@ func (a *NewAPIAccountAdapter) ListAPIKeys(ctx context.Context, input AccountInp
 		// reject the headers entirely (e.g. a stale stored user id). Retry
 		// once with the opposite header configuration before giving up.
 		if retry, retryable := a.alternateUserHeaderInput(ctx, input); retryable {
-			if body2, status2, err2 := a.doJSON(ctx, http.MethodGet, endpoint, retry); err2 == nil &&
+			if body2, status2, _, err2 := a.doJSON(ctx, http.MethodGet, endpoint, retry); err2 == nil &&
 				status2 >= 200 && status2 < 300 && !isTokenListRejected(body2) {
 				return a.listAPIKeysFromBody(ctx, endpoint, body2, page, retry)
 			}
 		}
 	}
 	if status < 200 || status >= 300 {
-		return nil, &Error{Kind: ErrorStatus, Status: status}
+		return nil, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
 	}
 	// Some New-API forks answer 200 with {"success":false} when the access
 	// token is invalid/expired. Surface that as an auth failure instead of a
@@ -493,7 +494,7 @@ func (a *NewAPIAccountAdapter) listAPIKeysFromBody(ctx context.Context, endpoint
 		query.Set("p", "1")
 		query.Set("size", "100")
 		alt := strings.Split(endpoint, "?")[0] + "?" + query.Encode()
-		if body2, status2, err2 := a.doJSON(ctx, http.MethodGet, alt, input); err2 == nil && status2 >= 200 && status2 < 300 {
+		if body2, status2, _, err2 := a.doJSON(ctx, http.MethodGet, alt, input); err2 == nil && status2 >= 200 && status2 < 300 {
 			if isTokenListRejected(body2) {
 				return nil, &Error{Kind: ErrorStatus, Status: http.StatusUnauthorized}
 			}
@@ -552,7 +553,7 @@ func (a *NewAPIAccountAdapter) RevealAPIKey(ctx context.Context, input AccountIn
 	}
 	// All API Hub defaults to POST for secret reveal on some forks; others use GET.
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		body, status, reqErr := a.doJSON(ctx, method, endpoint, input)
+		body, status, _, reqErr := a.doJSON(ctx, method, endpoint, input)
 		if reqErr != nil {
 			continue
 		}
@@ -618,7 +619,7 @@ func (a *NewAPIAccountAdapter) CreateAPIKey(ctx context.Context, input AccountIn
 		return UpstreamAPIKey{}, &Error{Kind: ErrorTooLarge}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return UpstreamAPIKey{}, &Error{Kind: ErrorStatus, Status: resp.StatusCode}
+		return UpstreamAPIKey{}, &Error{Kind: ErrorStatus, Status: resp.StatusCode, RetryAfter: retryAfterFromHeader(resp.Header)}
 	}
 	var payload2 struct {
 		Success *bool `json:"success"`
@@ -635,7 +636,7 @@ func (a *NewAPIAccountAdapter) CreateAPIKey(ctx context.Context, input AccountIn
 		return UpstreamAPIKey{}, &Error{Kind: ErrorPayload}
 	}
 	if payload2.Success != nil && !*payload2.Success {
-		return UpstreamAPIKey{}, &Error{Kind: ErrorStatus, Status: resp.StatusCode}
+		return UpstreamAPIKey{}, &Error{Kind: ErrorStatus, Status: resp.StatusCode, RetryAfter: retryAfterFromHeader(resp.Header)}
 	}
 	secret := strings.TrimSpace(payload2.Data.FullKey)
 	if secret == "" {
@@ -701,10 +702,10 @@ func parseRevealedKey(body []byte) string {
 	return ""
 }
 
-func (a *NewAPIAccountAdapter) doJSON(ctx context.Context, method, endpoint string, input AccountInput) ([]byte, int, error) {
+func (a *NewAPIAccountAdapter) doJSON(ctx context.Context, method, endpoint string, input AccountInput) ([]byte, int, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
 	if err != nil {
-		return nil, 0, &Error{Kind: ErrorInvalidURL}
+		return nil, 0, 0, &Error{Kind: ErrorInvalidURL}
 	}
 	req.Header.Set("Authorization", "Bearer "+input.Secret)
 	req.Header.Set("Accept", "application/json")
@@ -714,20 +715,20 @@ func (a *NewAPIAccountAdapter) doJSON(ctx context.Context, method, endpoint stri
 	resp, err := a.client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, 0, err
+			return nil, 0, 0, err
 		}
-		return nil, 0, &Error{Kind: ErrorTransport}
+		return nil, 0, 0, &Error{Kind: ErrorTransport}
 	}
 	defer resp.Body.Close()
 	limited := io.LimitReader(resp.Body, maxAccountResponseBytes+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return nil, 0, &Error{Kind: ErrorTransport}
+		return nil, 0, 0, &Error{Kind: ErrorTransport}
 	}
 	if len(body) > maxAccountResponseBytes {
-		return nil, 0, &Error{Kind: ErrorTooLarge}
+		return nil, 0, 0, &Error{Kind: ErrorTooLarge}
 	}
-	return body, resp.StatusCode, nil
+	return body, resp.StatusCode, retryAfterFromHeader(resp.Header), nil
 }
 
 func accountEndpoint(baseURL, suffix string) (string, error) {

@@ -1,8 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -44,6 +47,12 @@ func NewAdminHandler(db *store.DB, enc *crypto.Encrypter, selector *routing.Sele
 	}
 }
 
+// SetSticky hot-swaps the sticky-session store backing the admin read-only
+// stats endpoint (nil = disabled). Used by the runtime-settings hot reload.
+func (h *AdminHandler) SetSticky(store *routing.StickyStore) {
+	h.sticky = store
+}
+
 func (h *AdminHandler) Register(r chi.Router) {
 	// Sites
 	r.Get("/sites", h.listSites)
@@ -63,13 +72,14 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Put("/credentials/{id}", h.updateCredential)
 	r.Delete("/credentials/{id}", h.deleteCredential)
 
-	// Channels
-	r.Get("/channels", h.listChannels)
-	r.Get("/channels/overview", h.listChannelOverviews)
-	r.Post("/channels", h.createChannel)
-	r.Get("/channels/{id}", h.getChannel)
-	r.Put("/channels/{id}", h.updateChannel)
-	r.Delete("/channels/{id}", h.deleteChannel)
+// Channels
+r.Get("/channels", h.listChannels)
+r.Get("/channels/overview", h.listChannelOverviews)
+r.Post("/channels", h.createChannel)
+r.Get("/channels/{id}", h.getChannel)
+r.Put("/channels/{id}", h.updateChannel)
+r.Delete("/channels/{id}", h.deleteChannel)
+r.Post("/channels/{id}/ping", h.pingChannel)
 
 	// Routes
 	r.Get("/routes", h.listRoutes)
@@ -433,6 +443,7 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 		MetaJSON       string `json:"meta_json,omitempty"`
 		Status         string `json:"status"`
 		CheckinEnabled bool   `json:"checkin_enabled"`
+		ModelsCSV      string `json:"models_csv,omitempty"`
 	}
 	result := make([]safeCred, 0, len(creds))
 	for _, c := range creds {
@@ -444,6 +455,7 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 			MetaJSON:       c.MetaJSON,
 			Status:         c.Status,
 			CheckinEnabled: c.CheckinEnabled,
+			ModelsCSV:      c.ModelsCSV,
 		})
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -454,6 +466,8 @@ type createCredentialRequest struct {
 	Secret   string `json:"secret"`
 	MetaJSON string `json:"meta_json,omitempty"`
 	Status   string `json:"status,omitempty"`
+	// ModelsCSV is the per-key model allowlist (comma-separated; empty = all).
+	ModelsCSV string `json:"models_csv,omitempty"`
 }
 
 func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) {
@@ -485,6 +499,7 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		SecretEnc: []byte(encSecret),
 		MetaJSON:  req.MetaJSON,
 		Status:    req.Status,
+		ModelsCSV: req.ModelsCSV,
 	}
 	id, err := h.db.Credential.Create(cred)
 	if err != nil {
@@ -500,6 +515,7 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		"meta_json":       created.MetaJSON,
 		"status":          created.Status,
 		"checkin_enabled": created.CheckinEnabled,
+		"models_csv":      created.ModelsCSV,
 		"created_at":      created.CreatedAt,
 	})
 }
@@ -509,6 +525,8 @@ type updateCredentialRequest struct {
 	Secret   string `json:"secret,omitempty"` // empty keeps existing secret
 	MetaJSON string `json:"meta_json,omitempty"`
 	Status   string `json:"status,omitempty"`
+	// ModelsCSV is the per-key model allowlist; nil keeps the existing value.
+	ModelsCSV *string `json:"models_csv,omitempty"`
 }
 
 func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) {
@@ -540,6 +558,9 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 	if req.MetaJSON != "" {
 		existing.MetaJSON = req.MetaJSON
 	}
+	if req.ModelsCSV != nil {
+		existing.ModelsCSV = strings.TrimSpace(*req.ModelsCSV)
+	}
 	if strings.TrimSpace(req.Secret) != "" {
 		encSecret, err := h.enc.Encrypt([]byte(req.Secret))
 		if err != nil {
@@ -563,6 +584,7 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		"meta_json":       updated.MetaJSON,
 		"status":          updated.Status,
 		"checkin_enabled": updated.CheckinEnabled,
+		"models_csv":      updated.ModelsCSV,
 		"created_at":      updated.CreatedAt,
 		"updated_at":      updated.UpdatedAt,
 	})
@@ -650,6 +672,87 @@ func (h *AdminHandler) getChannel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ch)
 }
 
+// pingChannel performs a network-layer reachability check (connectivity ping)
+// against the channel's base URL. Any HTTP response counts as reachable;
+// only connection-level failures (DNS, dial, TLS, timeout) are unreachable.
+// The result is persisted for the overview UI (separate from model/auth probe).
+func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	ch, err := h.db.Channel.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if ch == nil {
+		writeError(w, http.StatusNotFound, "channel not found")
+		return
+	}
+	baseURL := strings.TrimSpace(ch.BaseURL)
+	if baseURL == "" && ch.SiteID != nil {
+		site, siteErr := h.db.Site.GetByID(*ch.SiteID)
+		if siteErr == nil && site != nil {
+			baseURL = strings.TrimSpace(site.BaseURL)
+		}
+	}
+	if baseURL == "" {
+		checkedAt := time.Now()
+		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, "invalid_base_url")
+		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": "invalid_base_url", "checked_at": checkedAt})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	started := time.Now()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
+	if err != nil {
+		checkedAt := time.Now()
+		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, "invalid_url")
+		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": "invalid_url", "checked_at": checkedAt})
+		return
+	}
+	resp, err := h.httpClient.Do(req)
+	latencyMs := int(time.Since(started).Milliseconds())
+	if err != nil {
+		category := classifyPingError(err)
+		checkedAt := time.Now()
+		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, category)
+		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": category, "latency_ms": latencyMs, "checked_at": checkedAt})
+		return
+	}
+	defer resp.Body.Close()
+	// Drain a bounded amount so the connection returns to the pool.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	checkedAt := time.Now()
+	_ = h.db.Channel.RecordPingSuccess(ch.ID, checkedAt, latencyMs)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"channel_id": ch.ID, "reachable": true, "connectivity_state": domain.ConnectivityStateReachable, "latency_ms": latencyMs, "status_code": resp.StatusCode, "checked_at": checkedAt,
+	})
+}
+
+// classifyPingError maps a connection error to a stable redacted category.
+func classifyPingError(err error) string {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "timeout"
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "dns"
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		if opErr.Err != nil && strings.Contains(strings.ToLower(opErr.Err.Error()), "refused") {
+			return "connection_refused"
+		}
+		return "connection_failed"
+	}
+	return "unreachable"
+}
+
 func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -725,6 +828,16 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Manual recovery of an auto-disabled channel must also clear the route
+	// members' failure/cooldown state. Otherwise the channel badge turns green
+	// while its model members remain parked from the same failure burst.
+	recoverAutoHealth := existing.Status == domain.StatusAutoDisabled && ch.Status == domain.StatusEnabled
+	if recoverAutoHealth {
+		if _, err := h.db.Channel.RecoverAutoDisabled(id); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
 	if err := h.db.Channel.Update(&ch); err != nil {
 		writeStoreError(w, err)
 		return
@@ -791,6 +904,22 @@ func validRoutingMode(mode string) bool {
 		mode == domain.RoutingModeAdaptive
 }
 
+// validateRouteRetryOverrides keeps the model-level policy within the same
+// bounds as the global runtime policy. The UI supplies these limits too, but
+// the API must enforce them because routes can be edited by any Admin client.
+func validateRouteRetryOverrides(route *domain.Route) error {
+	if route == nil {
+		return errors.New("route is required")
+	}
+	if route.RetryTimes != nil && (*route.RetryTimes < 0 || *route.RetryTimes > 100) {
+		return errors.New("retry_times must be between 0 and 100")
+	}
+	if route.ChannelRetryTimes != nil && (*route.ChannelRetryTimes < 0 || *route.ChannelRetryTimes > 5) {
+		return errors.New("channel_retry_times must be between 0 and 5")
+	}
+	return nil
+}
+
 func (h *AdminHandler) listRoutes(w http.ResponseWriter, r *http.Request) {
 	routes, err := h.db.Route.List()
 	if err != nil {
@@ -821,6 +950,10 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validRoutingMode(rt.RoutingMode) {
 		writeError(w, http.StatusBadRequest, "invalid routing_mode")
+		return
+	}
+	if err := validateRouteRetryOverrides(&rt); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	id, err := h.db.Route.Create(&rt)
@@ -869,6 +1002,10 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validRoutingMode(rt.RoutingMode) {
 		writeError(w, http.StatusBadRequest, "invalid routing_mode")
+		return
+	}
+	if err := validateRouteRetryOverrides(&rt); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := h.db.Route.Update(&rt); err != nil {
@@ -1088,15 +1225,15 @@ type createKeyResponse struct {
 
 func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-	Name                 string  `json:"name"`
-	// Token is optional. When empty, the server generates an mg-… secret.
-	// When set, the provided secret is stored as a hash only (raw never re-readable).
-	Token                string  `json:"token,omitempty"`
-	Scopes               string  `json:"scopes,omitempty"`
-	QuotaTotalTokens     int64   `json:"quota_total_tokens"`
-	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
-	GroupName            string  `json:"group_name,omitempty"`
+		Name string `json:"name"`
+		// Token is optional. When empty, the server generates an mg-… secret.
+		// When set, the provided secret is stored as a hash only (raw never re-readable).
+		Token                string  `json:"token,omitempty"`
+		Scopes               string  `json:"scopes,omitempty"`
+		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
+		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+		GroupName            string  `json:"group_name,omitempty"`
 		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
 		ExpiresAt            string  `json:"expires_at,omitempty"`

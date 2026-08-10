@@ -43,7 +43,8 @@ func TestChannelAutoDisable(t *testing.T) {
 	json.Unmarshal(post(t, server.URL+"/admin/channels", map[string]any{"site_id": site.ID, "credential_id": cred.ID, "name": "ch", "base_url": upstream.URL, "type_hint": "openai-compatible", "status": "enabled"}), &channel)
 	var route struct{ ID int64 }
 	json.Unmarshal(post(t, server.URL+"/admin/routes", map[string]any{"model_pattern": "test-model", "enabled": true}), &route)
-	post(t, server.URL+"/admin/routes/"+itoa(route.ID)+"/members", map[string]any{"channel_id": channel.ID, "priority": 1, "weight": 100, "enabled": true})
+	var member struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/routes/"+itoa(route.ID)+"/members", map[string]any{"channel_id": channel.ID, "priority": 1, "weight": 100, "enabled": true}), &member)
 	var key struct{ Token string }
 	json.Unmarshal(post(t, server.URL+"/admin/downstream-keys", map[string]any{"name": "k", "scopes": "relay"}), &key)
 
@@ -87,5 +88,12 @@ func TestChannelAutoDisable(t *testing.T) {
 	json.Unmarshal(body, &ch)
 	if ch.Status != "enabled" {
 		t.Fatalf("after recovery status = %q, want enabled", ch.Status)
+	}
+	cleared, err := db.RouteMember.GetByID(member.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cleared.Enabled || cleared.FailCount != 0 || cleared.CooldownUntil != nil || cleared.LastError != "" {
+		t.Fatalf("manual channel recovery left member health parked: %+v", cleared)
 	}
 }

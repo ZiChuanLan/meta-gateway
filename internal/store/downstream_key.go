@@ -208,18 +208,24 @@ func (s *DownstreamKeyStore) ResetUsage(id int64) error {
 	return nil
 }
 
-// bumpCachedUsage applies an already-persisted usage increment by dropping the
-// cached entry (the caller owns the write, e.g. inside the RecordRelayUsage
-// transaction); the next read reloads the fresh quota from the database.
+// bumpCachedUsage applies an already-persisted usage increment to the cached
+// entry in place (the caller owns the write, e.g. inside the RecordRelayUsage
+// transaction), so the next auth read still hits the cache instead of
+// reloading from SQLite. The database remains authoritative; the cache is
+// only an accelerator.
 func (s *DownstreamKeyStore) bumpCachedUsage(id int64, totalTokens int) {
 	if id <= 0 || totalTokens <= 0 {
 		return
 	}
-	s.invalidate(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cached, ok := s.byID[id]; ok {
+		cached.QuotaUsedTokens += int64(totalTokens)
+	}
 }
 
-// AddUsage increments quota_used_tokens for a key and drops the cached entry;
-// the next read reloads the fresh used count from the database.
+// AddUsage increments quota_used_tokens for a key and applies the same
+// increment to the cached entry in place; the next read still hits the cache.
 func (s *DownstreamKeyStore) AddUsage(id int64, totalTokens int) error {
 	if id <= 0 || totalTokens <= 0 {
 		return nil
@@ -228,7 +234,7 @@ func (s *DownstreamKeyStore) AddUsage(id int64, totalTokens int) error {
 	if err != nil {
 		return fmt.Errorf("downstream key add usage: %w", err)
 	}
-	s.invalidate(id)
+	s.bumpCachedUsage(id, totalTokens)
 	return nil
 }
 

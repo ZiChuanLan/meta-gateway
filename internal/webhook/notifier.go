@@ -52,18 +52,18 @@ type Notifier struct {
 // AlertConfig is the multi-channel alert matrix (Metapi-inspired). Empty
 // fields disable their channel.
 type AlertConfig struct {
-	WebhookURL         string `json:"webhook_url,omitempty"`
-	BarkURL            string `json:"bark_url,omitempty"`
-	ServerChanKey      string `json:"serverchan_key,omitempty"`
-	TelegramBotToken   string `json:"telegram_bot_token,omitempty"`
-	TelegramChatID     string `json:"telegram_chat_id,omitempty"`
-	SMTPHost           string `json:"smtp_host,omitempty"`
-	SMTPPort           int    `json:"smtp_port,omitempty"`
-	SMTPUser           string `json:"smtp_user,omitempty"`
-	SMTPPassword       string `json:"smtp_password,omitempty"`
-	SMTPFrom           string `json:"smtp_from,omitempty"`
-	SMTPTo             string `json:"smtp_to,omitempty"`
-	CooldownSeconds    int    `json:"cooldown_seconds,omitempty"`
+	WebhookURL       string `json:"webhook_url,omitempty"`
+	BarkURL          string `json:"bark_url,omitempty"`
+	ServerChanKey    string `json:"serverchan_key,omitempty"`
+	TelegramBotToken string `json:"telegram_bot_token,omitempty"`
+	TelegramChatID   string `json:"telegram_chat_id,omitempty"`
+	SMTPHost         string `json:"smtp_host,omitempty"`
+	SMTPPort         int    `json:"smtp_port,omitempty"`
+	SMTPUser         string `json:"smtp_user,omitempty"`
+	SMTPPassword     string `json:"smtp_password,omitempty"`
+	SMTPFrom         string `json:"smtp_from,omitempty"`
+	SMTPTo           string `json:"smtp_to,omitempty"`
+	CooldownSeconds  int    `json:"cooldown_seconds,omitempty"`
 	// DailySummaryEnabled gates the scheduled daily digest.
 	DailySummaryEnabled bool `json:"daily_summary_enabled,omitempty"`
 }

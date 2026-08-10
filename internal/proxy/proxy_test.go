@@ -109,6 +109,7 @@ func TestAdapterLocalFailureDoesNotHealKeyState(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.SetAutoDisableThreshold(2)
+	service.SetKeyFailThreshold(2)
 	service.recordKeyFailure(channel.ID, "secret", 500)
 	channel.TypeHint = "gemini"
 	channel.BaseURL = "https://gemini.example"
@@ -178,9 +179,14 @@ func TestInvalidBaseURLIsLocalFailureWithoutHealthMutation(t *testing.T) {
 
 func TestChannelFailureCountsOncePerRequestMultiKey(t *testing.T) {
 	// A 2-key pool failing on one request must increment the channel
-	// consecutive-failure counter exactly once (not once per key). Two channels
-	// exist (high/low), so the retry chain can make 4 upstream calls.
+	// consecutive-failure counter exactly once (not once per key). Each key is
+	// re-sent once (channel retry = 1), so the retry chain makes 8 upstream
+	// calls: 2 keys × 2 re-sends × 2 channels.
 	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusInternalServerError, `{"error":"boom"}`),
+		response(http.StatusInternalServerError, `{"error":"boom"}`),
+		response(http.StatusInternalServerError, `{"error":"boom"}`),
+		response(http.StatusInternalServerError, `{"error":"boom"}`),
 		response(http.StatusInternalServerError, `{"error":"boom"}`),
 		response(http.StatusInternalServerError, `{"error":"boom"}`),
 		response(http.StatusInternalServerError, `{"error":"boom"}`),
@@ -208,8 +214,8 @@ func TestChannelFailureCountsOncePerRequestMultiKey(t *testing.T) {
 	if result.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("status=%d, want 500", result.StatusCode)
 	}
-	if len(upstream.calls) != 4 {
-		t.Fatalf("expected 4 upstream calls (2 keys x 2 channels), got %d: %#v", len(upstream.calls), upstream.calls)
+	if len(upstream.calls) != 8 {
+		t.Fatalf("expected 8 upstream calls (2 keys x 2 re-sends x 2 channels), got %d: %#v", len(upstream.calls), upstream.calls)
 	}
 	fresh, _ := db.Channel.GetByID(member.ChannelID)
 	if fresh.ConsecutiveFailures != 1 {
@@ -218,14 +224,20 @@ func TestChannelFailureCountsOncePerRequestMultiKey(t *testing.T) {
 }
 
 func TestRetryFallsBackAndRecordsCooldown(t *testing.T) {
-	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusServiceUnavailable, `{"error":"busy"}`), response(http.StatusOK, `{"ok":true}`)}}
+	// First channel fails twice (initial + same-key retry), then the request
+	// fails over to the second channel and succeeds.
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusServiceUnavailable, `{"error":"busy"}`),
+		response(http.StatusServiceUnavailable, `{"error":"busy"}`),
+		response(http.StatusOK, `{"ok":true}`),
+	}}
 	service, db, highMember, lowMember := setupProxy(t, upstream)
 	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-1", Model: "model", Body: []byte(`{"model":"model"}`)})
 	defer result.Body.Close()
 	if result.Err != nil || result.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if len(upstream.calls) != 2 || !strings.Contains(upstream.calls[0], "high.example") || !strings.Contains(upstream.calls[1], "low.example") {
+	if len(upstream.calls) != 3 || !strings.Contains(upstream.calls[0], "high.example") || !strings.Contains(upstream.calls[1], "high.example") || !strings.Contains(upstream.calls[2], "low.example") {
 		t.Fatalf("unexpected calls: %#v", upstream.calls)
 	}
 	high, _ := db.RouteMember.GetByID(highMember)
@@ -378,23 +390,76 @@ func TestChatUsesSiteBaseWhenChannelBaseEmpty(t *testing.T) {
 func TestClientErrorFailsOverAndRecordsCooldown(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{
 		response(http.StatusBadRequest, `{"error":"bad request"}`),
+		response(http.StatusOK, `{"ok":true}`),
 	}}
-	service, db, highMember, _ := setupProxy(t, upstream)
+	service, db, highMember, lowMember := setupProxy(t, upstream)
 	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-2", Model: "model", Body: []byte(`{}`)})
 	defer result.Body.Close()
-	// AxonHub semantics: 4xx is NOT retryable by default — a bad request will
-	// not heal by failing over. Exactly one upstream call, no cooldown.
-	if result.StatusCode != http.StatusBadRequest || len(upstream.calls) != 1 {
+	// 4xx fails over to the next channel: a different upstream may accept the
+	// same request (heterogeneous channel capabilities).
+	if result.StatusCode != http.StatusOK || len(upstream.calls) != 2 {
 		t.Fatalf("result=%+v calls=%#v", result, upstream.calls)
 	}
 	high, _ := db.RouteMember.GetByID(highMember)
-	if high.FailCount != 0 {
-		t.Fatalf("4xx must not cool down the member: %+v", high)
+	if high.FailCount != 1 || high.CooldownUntil == nil {
+		t.Fatalf("4xx must cool the member down: %+v", high)
+	}
+	low, _ := db.RouteMember.GetByID(lowMember)
+	if low.FailCount != 0 || low.CooldownUntil != nil {
+		t.Fatalf("successful member should be healthy: %+v", low)
+	}
+}
+
+func TestCrossChannelFailoverCanBeDisabled(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusBadRequest, `{"error":"bad request"}`),
+	}}
+	service, _, _, _ := setupProxy(t, upstream)
+	service.SetCrossChannelFailoverEnabled(false)
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-no-failover", Model: "model", Body: []byte(`{}`)})
+	defer result.Body.Close()
+	if result.StatusCode != http.StatusBadRequest || len(upstream.calls) != 1 {
+		t.Fatalf("failover disabled must stop after first channel: result=%+v calls=%#v", result, upstream.calls)
+	}
+}
+
+func TestClientErrorAllChannelsExhausted(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusBadRequest, `{"error":"bad request"}`),
+		response(http.StatusBadRequest, `{"error":"bad request"}`),
+	}}
+	service, db, highMember, lowMember := setupProxy(t, upstream)
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-4xx-all", Model: "model", Body: []byte(`{}`)})
+	defer result.Body.Close()
+	// Both channels tried; the last failure is returned to the client.
+	if result.StatusCode != http.StatusBadRequest || len(upstream.calls) != 2 {
+		t.Fatalf("result=%+v calls=%#v", result, upstream.calls)
+	}
+	// Both members are cooled down (skipped on subsequent requests)...
+	high, _ := db.RouteMember.GetByID(highMember)
+	low, _ := db.RouteMember.GetByID(lowMember)
+	if high.FailCount != 1 || high.CooldownUntil == nil || low.FailCount != 1 || low.CooldownUntil == nil {
+		t.Fatalf("members not cooled: high=%+v low=%+v", high, low)
+	}
+	// ...but the channel-level consecutive-failure tally is untouched: a bad
+	// client request must not auto-disable every channel.
+	for _, memberID := range []int64{highMember, lowMember} {
+		member, _ := db.RouteMember.GetByID(memberID)
+		channel, err := db.Channel.GetByID(member.ChannelID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if channel.Status != domain.StatusEnabled {
+			t.Fatalf("channel %d must stay enabled after 4xx, got %s", channel.ID, channel.Status)
+		}
 	}
 }
 
 func TestChannelRetryConfigAddsCustomStatusCodes(t *testing.T) {
+	// Each channel tries its key twice (initial + same-key retry) before
+	// failing over.
 	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusBadRequest, `{"error":"bad request"}`),
 		response(http.StatusBadRequest, `{"error":"bad request"}`),
 		response(http.StatusBadRequest, `{"error":"bad request"}`),
 	}}
@@ -410,21 +475,154 @@ func TestChannelRetryConfigAddsCustomStatusCodes(t *testing.T) {
 	}
 	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-cfg", Model: "model", Body: []byte(`{}`)})
 	defer result.Body.Close()
-	// Channel config makes 400 retryable → failover to the second channel.
-	if len(upstream.calls) != 2 {
-		t.Fatalf("expected 2 calls with channel retry config, got %#v", upstream.calls)
+	// Channel config makes 400 retryable → same-key retry, then failover to
+	// the second channel (2 re-sends + 1 on the fallback = 3 calls).
+	if len(upstream.calls) != 3 {
+		t.Fatalf("expected 3 calls with channel retry config, got %#v", upstream.calls)
 	}
 	if result.StatusCode != http.StatusBadRequest {
 		t.Fatalf("result=%+v", result)
 	}
 }
 
-func TestRetryExhaustionReturnsLastUpstreamResponse(t *testing.T) {
-	final := response(http.StatusGatewayTimeout, `{"error":"still busy"}`)
-	final.Header.Set("Retry-After", "7")
+func TestResolveAPIKeyPoolModelAllowlist(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, _ := crypto.New("allowlist-test-master")
+	siteID, _ := db.Site.Create(&domain.Site{Name: "s", Status: domain.StatusEnabled})
+	keyA, _ := enc.Encrypt([]byte("sk-allow-a"))
+	keyB, _ := enc.Encrypt([]byte("sk-allow-b"))
+	credA, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(keyA), Status: domain.StatusEnabled, ModelsCSV: "gpt-4*,gpt-5"})
+	_, _ = db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(keyB), Status: domain.StatusEnabled})
+	channelID, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credA, Name: "c", Status: domain.StatusEnabled})
+	channel, _ := db.Channel.GetByID(channelID)
+
+	service := &Service{db: db, enc: enc}
+	service.keyErrCounts = make(map[int64]map[string]map[int]int)
+	service.disabledKeys = make(map[disabledKey]time.Time)
+	service.SetKeyPoolRotation(true)
+
+	// gpt-4o: matches key A (wildcard) and key B (empty = all).
+	keys, err := service.resolveAPIKeyPool(*channel, "gpt-4o")
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("gpt-4o pool=%v err=%v, want both keys", keys, err)
+	}
+	// gpt-5: exact match on A plus B.
+	keys, _ = service.resolveAPIKeyPool(*channel, "gpt-5")
+	if len(keys) != 2 {
+		t.Fatalf("gpt-5 pool=%v, want both keys", keys)
+	}
+	// claude: only key B (A's allowlist excludes it).
+	keys, _ = service.resolveAPIKeyPool(*channel, "claude-3-5-sonnet")
+	if len(keys) != 1 || keys[0] != "sk-allow-b" {
+		t.Fatalf("claude pool=%v, want only sk-allow-b", keys)
+	}
+}
+
+func TestKeyPoolRotationOffUsesBoundKeyOnly(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, _ := crypto.New("rotation-off-test-master")
+	siteID, _ := db.Site.Create(&domain.Site{Name: "s", Status: domain.StatusEnabled})
+	key1, _ := enc.Encrypt([]byte("sk-rot-1"))
+	key2, _ := enc.Encrypt([]byte("sk-rot-2"))
+	cred1, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(key1), Status: domain.StatusEnabled})
+	_, _ = db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(key2), Status: domain.StatusEnabled})
+	channelID, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &cred1, Name: "c", Status: domain.StatusEnabled})
+	channel, _ := db.Channel.GetByID(channelID)
+
+	service := &Service{db: db, enc: enc}
+	service.keyErrCounts = make(map[int64]map[string]map[int]int)
+	service.disabledKeys = make(map[disabledKey]time.Time)
+	service.SetKeyPoolRotation(false)
+
+	// Rotation off: only the bound key is returned, never the pool sibling.
+	keys, err := service.resolveAPIKeyPool(*channel, "")
+	if err != nil || len(keys) != 1 || keys[0] != "sk-rot-1" {
+		t.Fatalf("rotation-off pool=%v err=%v, want only bound key", keys, err)
+	}
+}
+
+func TestSameKeyResendCountsAreConfigurable(t *testing.T) {
+	// Channel retry = 2: the same key is re-sent twice after a 503 before the
+	// key pool / channel failover kicks in.
 	upstream := &queuedRelay{results: []*relay.Result{
 		response(http.StatusServiceUnavailable, `{"error":"busy"}`),
-		final,
+		response(http.StatusServiceUnavailable, `{"error":"busy"}`),
+		response(http.StatusServiceUnavailable, `{"error":"busy"}`),
+		response(http.StatusOK, `{"ok":true}`),
+	}}
+	service, db, highMember, _ := setupProxy(t, upstream)
+	service.SetChannelRetryTimes(2)
+
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-resend", Model: "model", Body: []byte(`{}`)})
+	defer result.Body.Close()
+	if result.Err != nil || result.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	// 3 sends on high (initial + 2 re-sends), then failover to low succeeds.
+	if len(upstream.calls) != 4 {
+		t.Fatalf("expected 4 calls (1 initial + 2 re-sends + 1 failover), got %#v", upstream.calls)
+	}
+	if !strings.Contains(upstream.calls[0], "high.example") || !strings.Contains(upstream.calls[1], "high.example") || !strings.Contains(upstream.calls[2], "high.example") || !strings.Contains(upstream.calls[3], "low.example") {
+		t.Fatalf("expected 3 same-key sends on high then failover to low: %#v", upstream.calls)
+	}
+	high, _ := db.RouteMember.GetByID(highMember)
+	if high.FailCount != 1 || high.CooldownUntil == nil {
+		t.Fatalf("failed channel must be cooled down after re-sends exhaust: %+v", high)
+	}
+}
+
+func TestTransportErrorFailsFastAfterSameKeyResend(t *testing.T) {
+	// A network error (dial refused) is re-sent once on the same key, then the
+	// request fails fast instead of fanning out to every channel.
+	upstream := &queuedRelay{results: []*relay.Result{
+		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
+		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
+	}}
+	service, db, highMember, _ := setupProxy(t, upstream)
+
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-net", Model: "model", Body: []byte(`{}`)})
+	if result.Body != nil {
+		_ = result.Body.Close()
+	}
+	if result.Err == nil {
+		t.Fatalf("expected transport error, got %+v", result)
+	}
+	// Exactly 2 sends on the SAME channel, then fail fast — no failover to low.
+	if len(upstream.calls) != 2 {
+		t.Fatalf("expected 2 same-key sends, got %#v", upstream.calls)
+	}
+	for _, call := range upstream.calls {
+		if !strings.Contains(call, "high.example") {
+			t.Fatalf("transport error must not fail over: %#v", upstream.calls)
+		}
+	}
+	// The channel is cooled down so the next request skips it.
+	high, _ := db.RouteMember.GetByID(highMember)
+	if high.FailCount != 1 || high.CooldownUntil == nil {
+		t.Fatalf("failed channel must be cooled down: %+v", high)
+	}
+}
+
+func TestRetryExhaustionReturnsLastUpstreamResponse(t *testing.T) {
+	mkFinal := func() *relay.Result {
+		f := response(http.StatusGatewayTimeout, `{"error":"still busy"}`)
+		f.Header.Set("Retry-After", "7")
+		return f
+	}
+	// First channel: 503 then 504 (same-key retry). Fallback channel: 504 twice.
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusServiceUnavailable, `{"error":"busy"}`),
+		mkFinal(),
+		mkFinal(),
+		mkFinal(),
 	}}
 	service, db, _, _ := setupProxy(t, upstream)
 
@@ -440,14 +638,14 @@ func TestRetryExhaustionReturnsLastUpstreamResponse(t *testing.T) {
 	if string(body) != `{"error":"still busy"}` || result.Header.Get("Retry-After") != "7" {
 		t.Fatalf("body=%q header=%q", body, result.Header.Get("Retry-After"))
 	}
-	if len(upstream.calls) != 2 {
+	if len(upstream.calls) != 4 {
 		t.Fatalf("unexpected calls: %#v", upstream.calls)
 	}
 	logs, err := db.ProxyLog.List(10)
 	if err != nil || len(logs) != 2 {
 		t.Fatalf("logs=%+v err=%v", logs, err)
 	}
-	if logs[0].Status != http.StatusGatewayTimeout || logs[0].Attempt != 2 || logs[1].Status != http.StatusServiceUnavailable || logs[1].Attempt != 1 {
+	if logs[0].Status != http.StatusGatewayTimeout || logs[0].Attempt != 2 || logs[1].Status != http.StatusGatewayTimeout || logs[1].Attempt != 1 {
 		t.Fatalf("unexpected logs: %+v", logs)
 	}
 }
@@ -461,14 +659,14 @@ func TestCancellationDoesNotRetry(t *testing.T) {
 	}
 }
 
-func TestStreamFirstByteFailureFailsOver(t *testing.T) {
+func TestStreamFirstByteFailureResendsSameKey(t *testing.T) {
 	// First channel returns 200 and then dies before emitting any SSE data; the
-	// gateway must treat it as a retryable failure and fail over to the second
-	// channel instead of surfacing a silent truncated 200 to the client.
+	// gateway must re-send on the same key (channel retry = 1) instead of
+	// surfacing a silent truncated 200 to the client.
 	deadStream := response(http.StatusOK, "")
 	okStream := response(http.StatusOK, "data: {\"chunk\":1}\n\n")
 	upstream := &queuedRelay{results: []*relay.Result{deadStream, okStream}}
-	service, db, highMember, lowMember := setupProxy(t, upstream)
+	service, db, highMember, _ := setupProxy(t, upstream)
 
 	result := service.ChatCompletions(context.Background(), Request{
 		RequestID: "req-stream", Model: "model", Body: []byte(`{"model":"model","stream":true}`), Stream: true,
@@ -477,7 +675,7 @@ func TestStreamFirstByteFailureFailsOver(t *testing.T) {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
 	defer result.Body.Close()
-	if len(upstream.calls) != 2 || !strings.Contains(upstream.calls[0], "high.example") || !strings.Contains(upstream.calls[1], "low.example") {
+	if len(upstream.calls) != 2 || !strings.Contains(upstream.calls[0], "high.example") || !strings.Contains(upstream.calls[1], "high.example") {
 		t.Fatalf("unexpected calls: %#v", upstream.calls)
 	}
 	body, err := io.ReadAll(result.Body)
@@ -488,20 +686,18 @@ func TestStreamFirstByteFailureFailsOver(t *testing.T) {
 		t.Fatalf("unexpected body: %q", body)
 	}
 	high, _ := db.RouteMember.GetByID(highMember)
-	if high.FailCount == 0 || high.CooldownUntil == nil || high.LastError != "stream_interrupted" {
-		t.Fatalf("dead-stream channel should be cooled down: %+v", high)
-	}
-	low, _ := db.RouteMember.GetByID(lowMember)
-	if low.FailCount != 0 || low.CooldownUntil != nil {
-		t.Fatalf("successful channel should be healthy: %+v", low)
+	if high.FailCount != 0 || high.CooldownUntil != nil {
+		t.Fatalf("same-key retry success must keep the channel healthy: %+v", high)
 	}
 }
 
 func TestRetryAfterExtendsCooldown(t *testing.T) {
 	busy := response(http.StatusServiceUnavailable, `{"error":"busy"}`)
 	busy.Header.Set("Retry-After", "3600")
+	busy2 := response(http.StatusServiceUnavailable, `{"error":"busy"}`)
+	busy2.Header.Set("Retry-After", "3600")
 	ok := response(http.StatusOK, `{"ok":true}`)
-	upstream := &queuedRelay{results: []*relay.Result{busy, ok}}
+	upstream := &queuedRelay{results: []*relay.Result{busy, busy2, ok}}
 	service, db, highMember, _ := setupProxy(t, upstream)
 
 	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-ra", Model: "model", Body: []byte(`{}`)})

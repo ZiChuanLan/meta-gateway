@@ -75,7 +75,7 @@ func (a *OpenAIModelAdapter) ListModels(ctx context.Context, baseURL, apiKey str
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &Error{Kind: ErrorStatus, Status: resp.StatusCode}
+		return nil, &Error{Kind: ErrorStatus, Status: resp.StatusCode, RetryAfter: retryAfterFromHeader(resp.Header)}
 	}
 
 	limited := io.LimitReader(resp.Body, maxModelResponseBytes+1)

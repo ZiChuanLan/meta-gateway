@@ -12,18 +12,27 @@ import (
 )
 
 type Config struct {
-	HTTPAddr       string
-	DataDir        string
-	AdminToken     string
-	AdminTokens    []string
-	MasterKey      string
-	RetryTimes     int
-	Cooldown       time.Duration
+	HTTPAddr                    string
+	DataDir                     string
+	AdminToken                  string
+	AdminTokens                 []string
+	MasterKey                   string
+	RetryTimes                  int
+	// ChannelRetryTimes is how many times the same upstream key is re-sent
+	// after a retryable failure before moving to the next key/channel.
+	// Network errors (transport) fail fast after these retries instead of
+	// fanning out across every channel.
+	ChannelRetryTimes           int
+	// KeyPoolRotation enables rotating through the site key pool on failure.
+	// Disabled = only the channel's bound key is used.
+	KeyPoolRotation             bool
+	CrossChannelFailoverEnabled bool
+	Cooldown                    time.Duration
 	// SQLiteMaxOpenConns is the SQLite connection-pool ceiling (WAL allows
 	// concurrent readers). Default 4; 1 restores the fully serialized behavior.
 	SQLiteMaxOpenConns int
-	CheckinEnabled bool
-	CheckinCron    string
+	CheckinEnabled     bool
+	CheckinCron        string
 	// CheckinTZ is the IANA timezone (e.g. "Asia/Shanghai") the check-in cron is
 	// interpreted in. Empty means the process local timezone (UTC in containers).
 	CheckinTZ string
@@ -45,11 +54,11 @@ type Config struct {
 	OutboundMaxIdleConns int
 	// OutboundMaxIdleConnsPerHost is the per-upstream-host idle connection ceiling.
 	OutboundMaxIdleConnsPerHost int
-	TrustedProxyCIDRs             []string
-	RelayRatePerMinute            int
-	RelayRateBurst                int
-	RelayModelRatePerMinute       int
-	RelayModelRateBurst           int
+	TrustedProxyCIDRs           []string
+	RelayRatePerMinute          int
+	RelayRateBurst              int
+	RelayModelRatePerMinute     int
+	RelayModelRateBurst         int
 	// ChannelAutoDisableThreshold: consecutive member failures before a channel
 	// is auto-disabled. 0 disables the feature.
 	ChannelAutoDisableThreshold int
@@ -61,17 +70,17 @@ type Config struct {
 	RoutingConcurrencyEnabled bool
 	// RoutingConcurrencyLimit is the per-channel in-flight ceiling.
 	RoutingConcurrencyLimit int
-// WebhookURL is the operational notification endpoint ("" disables).
-WebhookURL string
-// WebhookThrottleSeconds coalesces repeated events within the window.
-WebhookThrottleSeconds int
-// AlertConfigJSON is the multi-channel alert matrix config (bark/serverchan/
-// telegram/smtp + cooldown + daily summary flag), JSON-encoded.
-AlertConfigJSON string
-// AlertDailySummaryInterval is how often the daily digest runs (0 = off).
-AlertDailySummaryInterval time.Duration
-// AlertSweepInterval is how often the proactive health sweep runs (0 = off).
-AlertSweepInterval time.Duration
+	// WebhookURL is the operational notification endpoint ("" disables).
+	WebhookURL string
+	// WebhookThrottleSeconds coalesces repeated events within the window.
+	WebhookThrottleSeconds int
+	// AlertConfigJSON is the multi-channel alert matrix config (bark/serverchan/
+	// telegram/smtp + cooldown + daily summary flag), JSON-encoded.
+	AlertConfigJSON string
+	// AlertDailySummaryInterval is how often the daily digest runs (0 = off).
+	AlertDailySummaryInterval time.Duration
+	// AlertSweepInterval is how often the proactive health sweep runs (0 = off).
+	AlertSweepInterval time.Duration
 	// RecoveryProbeEnabled enables the passive-recovery loop for auto-disabled channels.
 	RecoveryProbeEnabled bool
 	// RecoveryProbeIntervalSeconds is the recovery-loop cadence.
@@ -83,8 +92,16 @@ AlertSweepInterval time.Duration
 	CooldownLevel2Seconds int
 	CooldownLevel3Seconds int
 	CooldownLevel4Seconds int
-	// BreakerFailCount is the consecutive-failure threshold that parks a member.
+	// BreakerFailCount is the consecutive-failure threshold that parks a member
+	// (route_members.enabled=0). 0 disables member parking (cooldown only).
 	BreakerFailCount int
+	// ModelBreakerFailCount is the consecutive-failure threshold for the
+	// in-memory channel×model circuit breaker (weight 0 until probe recovers).
+	// 0 disables the memory breaker.
+	ModelBreakerFailCount int
+	// KeyFailThreshold is the per channel×key×status consecutive-failure count
+	// that temporarily excludes an upstream API key from the pool. 0 disables.
+	KeyFailThreshold int
 	// StickyEnabled enables sticky-session routing (same conversation prefers
 	// the previously successful channel).
 	StickyEnabled bool
@@ -97,22 +114,22 @@ AlertSweepInterval time.Duration
 	// StableFirstPromoteRequests is the successful-attempt threshold for
 	// automatic promotion out of the grayscale pool.
 	StableFirstPromoteRequests int
-	AdminRatePerMinute      int
-	AdminRateBurst          int
-	MetricsToken            string
-	TrustedScraperCIDRs     []string
-	MaxHeaderBytes          int
-	MaxAdminBodyBytes       int64
-	ServerReadHeaderTimeout time.Duration
-	ServerReadTimeout       time.Duration
-	ServerIdleTimeout       time.Duration
-	ServerShutdownTimeout   time.Duration
-	ReadinessTimeout        time.Duration
-	AuditRetentionDays      int
-	AuditRetentionRows      int
-	BackupDir               string
-	PluginsDir              string
-	PluginCatalogURL        string
+	AdminRatePerMinute         int
+	AdminRateBurst             int
+	MetricsToken               string
+	TrustedScraperCIDRs        []string
+	MaxHeaderBytes             int
+	MaxAdminBodyBytes          int64
+	ServerReadHeaderTimeout    time.Duration
+	ServerReadTimeout          time.Duration
+	ServerIdleTimeout          time.Duration
+	ServerShutdownTimeout      time.Duration
+	ReadinessTimeout           time.Duration
+	AuditRetentionDays         int
+	AuditRetentionRows         int
+	BackupDir                  string
+	PluginsDir                 string
+	PluginCatalogURL           string
 	// ExchangeAllowSecretExport gates include_secrets on export (default true for compat).
 	ExchangeAllowSecretExport bool
 	// HealthSweepEnabled enables the periodic channel health sweep (jittered
@@ -132,6 +149,18 @@ AlertSweepInterval time.Duration
 
 func Load() (*Config, error) {
 	retryTimes, err := envInt("RETRY_TIMES", 2, 0, 100)
+	if err != nil {
+		return nil, err
+	}
+	channelRetryTimes, err := envInt("CHANNEL_RETRY_TIMES", 1, 0, 5)
+	if err != nil {
+		return nil, err
+	}
+	keyPoolRotation, err := envBool("KEY_POOL_ROTATION", true)
+	if err != nil {
+		return nil, err
+	}
+	crossChannelFailover, err := envBool("CROSS_CHANNEL_FAILOVER_ENABLED", true)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +289,15 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	breakerFailCount, err := envInt("BREAKER_FAIL_COUNT", 3, 2, 100)
+	breakerFailCount, err := envInt("BREAKER_FAIL_COUNT", 5, 2, 100)
+	if err != nil {
+		return nil, err
+	}
+	modelBreakerFailCount, err := envInt("MODEL_BREAKER_FAIL_COUNT", 5, 0, 100)
+	if err != nil {
+		return nil, err
+	}
+	keyFailThreshold, err := envInt("KEY_FAIL_THRESHOLD", 5, 0, 100)
 	if err != nil {
 		return nil, err
 	}
@@ -379,16 +416,19 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		HTTPAddr:       envStr("HTTP_ADDR", ":4100"),
-		DataDir:        dataDir,
-		AdminToken:     firstNonEmpty(adminTokens),
-		AdminTokens:    adminTokens,
-		MasterKey:      envStr("MASTER_KEY", ""),
-		RetryTimes:     retryTimes,
-		Cooldown:       time.Duration(cooldownSeconds) * time.Second,
-		CheckinEnabled: checkinEnabled,
-		CheckinCron:    envStr("CHECKIN_CRON", "0 8 * * *"),
-		CheckinTZ:      checkinTZ,
+		HTTPAddr:                    envStr("HTTP_ADDR", ":4100"),
+		DataDir:                     dataDir,
+		AdminToken:                  firstNonEmpty(adminTokens),
+		AdminTokens:                 adminTokens,
+		MasterKey:                   envStr("MASTER_KEY", ""),
+		RetryTimes:                  retryTimes,
+		ChannelRetryTimes:           channelRetryTimes,
+		KeyPoolRotation:             keyPoolRotation,
+		CrossChannelFailoverEnabled: crossChannelFailover,
+		Cooldown:                    time.Duration(cooldownSeconds) * time.Second,
+		CheckinEnabled:              checkinEnabled,
+		CheckinCron:                 envStr("CHECKIN_CRON", "0 8 * * *"),
+		CheckinTZ:                   checkinTZ,
 
 		WebDAVSyncEnabled:    webdavSyncEnabled,
 		WebDAVURL:            strings.TrimSpace(envStr("WEBDAV_URL", "")),
@@ -409,39 +449,41 @@ func Load() (*Config, error) {
 		TrustedProxyCIDRs:             trustedProxies,
 		RelayRatePerMinute:            relayRate, RelayRateBurst: relayBurst,
 		RelayModelRatePerMinute: relayModelRate, RelayModelRateBurst: relayModelBurst,
-		ChannelAutoDisableThreshold: autoDisableThreshold,
-		RoutingLatencyAware:         latencyAware,
-		RoutingErrorAware:           errorAware,
-		RoutingConcurrencyEnabled:  concurrencyAware,
-		RoutingConcurrencyLimit:    concurrencyLimit,
-		WebhookURL:                 webhookURL,
-		WebhookThrottleSeconds:     webhookThrottle,
-		AlertConfigJSON:            alertConfigJSON,
-		AlertDailySummaryInterval:  alertDailyInterval,
-		AlertSweepInterval:         alertSweepInterval,
-		RecoveryProbeEnabled:        recoveryProbe,
+		ChannelAutoDisableThreshold:  autoDisableThreshold,
+		RoutingLatencyAware:          latencyAware,
+		RoutingErrorAware:            errorAware,
+		RoutingConcurrencyEnabled:    concurrencyAware,
+		RoutingConcurrencyLimit:      concurrencyLimit,
+		WebhookURL:                   webhookURL,
+		WebhookThrottleSeconds:       webhookThrottle,
+		AlertConfigJSON:              alertConfigJSON,
+		AlertDailySummaryInterval:    alertDailyInterval,
+		AlertSweepInterval:           alertSweepInterval,
+		RecoveryProbeEnabled:         recoveryProbe,
 		RecoveryProbeIntervalSeconds: recoveryProbeInterval,
-		ProgressiveCooldownEnabled:  progressiveCooldown,
-		CooldownLevel2Seconds:       cooldownLevel2,
-		CooldownLevel3Seconds:       cooldownLevel3,
-		CooldownLevel4Seconds:       cooldownLevel4,
-		BreakerFailCount:            breakerFailCount,
-		StickyEnabled:               stickyEnabled,
-		StickyTTL:                   time.Duration(stickyTTLMinutes) * time.Minute,
-		StableFirstEnabled:          stableFirstEnabled,
-		StableFirstDenominator:      stableFirstDenominator,
-		StableFirstPromoteRequests:  stableFirstPromote,
-		AdminRatePerMinute:          adminRate, AdminRateBurst: adminBurst,
+		ProgressiveCooldownEnabled:   progressiveCooldown,
+		CooldownLevel2Seconds:        cooldownLevel2,
+		CooldownLevel3Seconds:        cooldownLevel3,
+		CooldownLevel4Seconds:        cooldownLevel4,
+		BreakerFailCount:        breakerFailCount,
+		ModelBreakerFailCount:   modelBreakerFailCount,
+		KeyFailThreshold:        keyFailThreshold,
+		StickyEnabled:                stickyEnabled,
+		StickyTTL:                    time.Duration(stickyTTLMinutes) * time.Minute,
+		StableFirstEnabled:           stableFirstEnabled,
+		StableFirstDenominator:       stableFirstDenominator,
+		StableFirstPromoteRequests:   stableFirstPromote,
+		AdminRatePerMinute:           adminRate, AdminRateBurst: adminBurst,
 		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
 		MaxHeaderBytes: maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),
 		ServerReadHeaderTimeout: readHeaderTimeout, ServerReadTimeout: readTimeout,
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
 		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
-		PluginsDir:                envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
-		PluginCatalogURL:          envStr("PLUGIN_CATALOG_URL", ""),
-		ExchangeAllowSecretExport: exchangeAllowSecretExport,
-		HealthSweepEnabled:        healthSweepEnabled,
+		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
+		PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
+		ExchangeAllowSecretExport:  exchangeAllowSecretExport,
+		HealthSweepEnabled:         healthSweepEnabled,
 		HealthSweepIntervalSeconds: healthSweepInterval,
 		HealthSweepJitterSeconds:   healthSweepJitter,
 		HealthSweepDegradedMs:      healthSweepDegraded,

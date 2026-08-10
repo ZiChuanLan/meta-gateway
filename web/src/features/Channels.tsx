@@ -1,4 +1,5 @@
 import {
+  Activity,
   Cable,
   ChevronDown,
   ExternalLink,
@@ -20,6 +21,7 @@ import { api } from "../api/client";
 import type {
   AccountProbeResult,
   Channel,
+  ChannelPingResult,
   ChannelOverview,
   RouteOverview,
   Site,
@@ -61,6 +63,21 @@ import {
 } from "../connectionTypes";
 import { useSession } from "../session";
 import { useModules } from "../hooks/useModules";
+import {
+  channelConnectivityState,
+  channelHealthState,
+  channelNeedsAttention,
+  channelReadiness,
+  isChannelReady,
+} from "./channelHealth";
+
+export {
+  channelHealthState,
+  channelConnectivityState,
+  channelNeedsAttention,
+  channelReadiness,
+  isChannelReady,
+} from "./channelHealth";
 
 const INVALIDATE = [
   ["channel-overviews"],
@@ -149,36 +166,8 @@ function parseCredentialMeta(metaJSON?: string): {
   }
 }
 
-export function channelHealth(overview: ChannelOverview) {
-  if (overview.channel.status !== "enabled") return "disabled";
-  // A channel without an sk- API key is a config gap, not a network failure.
-  // It gets the neutral "missing key" treatment instead of a red "blocked" badge.
-  if (!overview.site_usable) return "blocked";
-  if (!overview.has_api_key) return "missing_key";
-  // Explicit failed probe/sync wins over historical model inventory.
-  // Distinguish auth rejections (401/403 = dead access token) from
-  // reachability failures (timeout / DNS / 404 / 5xx = unreachable).
-  if (overview.last_probe_at && overview.last_probe_ok === false) {
-    if (overview.last_probe_error === "upstream_unauthorized") {
-      return "token_invalid";
-    }
-    return "degraded";
-  }
-  if (overview.cooling_member_count > 0) return "cooling_down";
-  if (
-    overview.failure_count > 0 ||
-    overview.last_probe_error ||
-    overview.last_error
-  )
-    return "degraded";
-  if (overview.last_probe_ok === true || overview.model_count > 0)
-    return "ready";
-  return "unverified";
-}
-
 function needsVerify(overview: ChannelOverview) {
-  const health = channelHealth(overview);
-  return health === "unverified" || overview.model_count === 0;
+  return channelReadiness(overview) === "unverified" || overview.model_count === 0;
 }
 
 export function capabilityFlags(overview: ChannelOverview) {
@@ -316,11 +305,9 @@ export function Channels() {
     });
   };
 
-  // Entering the Connections page pings every enabled connection that has a
-  // relay key (lightweight /v1/models reachability check, batched to avoid
-  // hammering the upstreams). Access-token checks stay on-demand (menu items)
-  // and after operations like model sync. Switching connections inside the
-  // page does not re-ping.
+  // Entering the Connections page records a network-layer Ping for every
+  // enabled connection. This deliberately does not run the authenticated
+  // model probe; model/auth verification remains an explicit action.
   const autoPinged = useRef(false);
   const pingAll = useAdminMutation({
     mutationFn: async (ids: number[]) => {
@@ -328,7 +315,7 @@ export function Channels() {
       // flaky site does not toast on page entry.
       for (let index = 0; index < ids.length; index += 8) {
         await Promise.allSettled(
-          ids.slice(index, index + 8).map((id) => service.probeChannel(id)),
+          ids.slice(index, index + 8).map((id) => service.pingChannel(id)),
         );
       }
     },
@@ -337,7 +324,7 @@ export function Channels() {
   useEffect(() => {
     if (autoPinged.current) return;
     const ids = (overviews.data ?? [])
-      .filter((row) => row.channel.status === "enabled" && row.has_api_key)
+      .filter((row) => row.channel.status === "enabled")
       .map((row) => row.channel.id);
     if (!ids.length) return;
     autoPinged.current = true;
@@ -418,11 +405,16 @@ export function Channels() {
     mutationFn: () => service.refreshAll(),
     invalidateKeys: [...INVALIDATE],
   });
-  const probe = useAdminMutation({
-    mutationFn: (id: number) => service.probeChannel(id),
-    invalidateKeys: [...INVALIDATE],
-    pendingIdOf: (id) => id,
-  });
+const probe = useAdminMutation({
+	mutationFn: (id: number) => service.probeChannel(id),
+	invalidateKeys: [...INVALIDATE],
+	pendingIdOf: (id) => id,
+});
+const ping = useAdminMutation({
+	mutationFn: (id: number) => service.pingChannel(id),
+	invalidateKeys: [...INVALIDATE],
+	pendingIdOf: (id) => id,
+});
   const accountProbe = useAdminMutation({
     mutationFn: (id: number) => service.probeAccount(id),
     pendingIdOf: (id) => id,
@@ -577,20 +569,32 @@ export function Channels() {
     onSuccess: () => setEdit(null),
   });
 
-  const setCredentialStatus = useAdminMutation({
-    mutationFn: async (input: {
-      id: number;
-      status: "enabled" | "disabled";
-    }) => {
-      const list = credentials.data ?? [];
-      const current = list.find((item) => item.id === input.id);
-      return service.updateCredential(input.id, {
-        kind: current?.kind || "api_key",
-        status: input.status,
-      });
-    },
-    invalidateKeys: [...INVALIDATE, ["credentials"]],
-  });
+	const setCredentialStatus = useAdminMutation({
+		mutationFn: async (input: {
+			id: number;
+			status: "enabled" | "disabled";
+		}) => {
+			const list = credentials.data ?? [];
+			const current = list.find((item) => item.id === input.id);
+			return service.updateCredential(input.id, {
+				kind: current?.kind || "api_key",
+				status: input.status,
+			});
+		},
+		invalidateKeys: [...INVALIDATE, ["credentials"]],
+	});
+
+	const updateKeyModels = useAdminMutation({
+		mutationFn: async (input: { id: number; modelsCsv: string }) => {
+			const list = credentials.data ?? [];
+			const current = list.find((item) => item.id === input.id);
+			return service.updateCredential(input.id, {
+				kind: current?.kind || "api_key",
+				models_csv: input.modelsCsv,
+			});
+		},
+		invalidateKeys: [...INVALIDATE, ["credentials"]],
+	});
 
   const addApiKeyCredential = useAdminMutation({
     mutationFn: async (input: { siteId: number; secret: string }) => {
@@ -652,25 +656,15 @@ export function Channels() {
     const list = overviews.data ?? [];
     const term = query.trim().toLowerCase();
     return list.filter((overview) => {
-      if (healthFilter === "ready" && channelHealth(overview) !== "ready") {
+      if (healthFilter === "ready" && !isChannelReady(overview)) {
         return false;
       }
       if (healthFilter === "missing_key" && !isMissingAPIKey(overview)) {
         return false;
       }
-    if (healthFilter === "attention") {
-      const health = channelHealth(overview);
-      // Missing API key has its own bucket; keep attention for reachability/site issues.
-      if (isMissingAPIKey(overview)) return false;
-      if (
-        health !== "degraded" &&
-        health !== "cooling_down" &&
-        health !== "blocked" &&
-        health !== "token_invalid"
-      ) {
+      if (healthFilter === "attention" && !channelNeedsAttention(overview)) {
         return false;
       }
-    }
       if (!term) return true;
       const ch = overview.channel;
       const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
@@ -704,23 +698,15 @@ export function Channels() {
     rows.find((r) => r.channel.id === selectedId) ??
     (overviews.data ?? []).find((r) => r.channel.id === selectedId) ??
     null;
-  const capsForSelected = selected ? capabilityFlags(selected) : null;
 
   const readyCount = (overviews.data ?? []).filter(
-    (o) => channelHealth(o) === "ready",
+    isChannelReady,
   ).length;
   const missingKeyCount = (overviews.data ?? []).filter((o) =>
     isMissingAPIKey(o),
   ).length;
   const attentionCount = (overviews.data ?? []).filter((o) => {
-    if (isMissingAPIKey(o)) return false;
-    const h = channelHealth(o);
-    return (
-      h === "degraded" ||
-      h === "cooling_down" ||
-      h === "blocked" ||
-      h === "token_invalid"
-    );
+    return channelNeedsAttention(o);
   }).length;
 
   const toggleHealthFilter = (next: ConnectionHealthFilter) => {
@@ -1277,7 +1263,6 @@ export function Channels() {
                     const site =
                       ch.site_id != null ? siteById.get(ch.site_id) : undefined;
                     const displayBase = ch.base_url || site?.base_url || "";
-                    const health = channelHealth(overview);
                     const caps = capabilityFlags(overview);
                     const active = selected?.channel.id === ch.id;
                     const rowBusy =
@@ -1323,7 +1308,7 @@ export function Channels() {
                         </td>
                         <td className="status-col">
                           <div className="capability-stack is-compact">
-                            <StatusBadge value={health} />
+                            <ChannelStatusBadges overview={overview} />
                             {caps.tokenProblem ? (
                               <span className="capability-chip is-warn">
                                 {t("channels.badge.tokenProblem")}
@@ -1427,33 +1412,23 @@ export function Channels() {
                   accountProbe.pendingId === selected.channel.id ||
                   syncKeys.pendingId === selected.channel.id ||
                   toggle.pendingId === selected.channel.id ||
-                  del.pendingId === selected.channel.id
+                  del.pendingId === selected.channel.id ||
+                  ping.pendingId === selected.channel.id
                 }
                 onCheckAccount={() => {
                   accountProbe.reset();
                   accountProbe.mutate(selected.channel.id);
                 }}
-                onSyncKeys={() => {
-                  syncKeys.reset();
-                  syncKeys.mutate(selected.channel.id);
+                onPing={() => {
+                  ping.reset();
+                  ping.mutate(selected.channel.id);
                 }}
-                onCreateKey={() => {
-                  createUpstreamKey.reset();
-                  setCreateKeyChannel(selected.channel);
-                }}
-                canCreateKey={
-                  capsForSelected
-                    ? capsForSelected.accountSupported &&
-                      capsForSelected.hasUser &&
-                      capsForSelected.needsKeyForRelay &&
-                      Boolean(selected.last_probe_at) &&
-                      selected.last_probe_ok === true
-                    : false
+                pingPending={ping.pendingId === selected.channel.id}
+                pingResult={
+                  ping.data?.channel_id === selected.channel.id
+                    ? ping.data
+                    : null
                 }
-                onProbe={() => {
-                  probe.reset();
-                  probe.mutate(selected.channel.id);
-                }}
                 onRefresh={() => {
                   refresh.reset();
                   refresh.mutate(selected.channel.id);
@@ -1516,12 +1491,15 @@ export function Channels() {
             setModelsChannel(null);
           }}
           onSave={(value) => saveEdit.mutate(value)}
-          onToggleKey={(id, enabled) =>
-            setCredentialStatus.mutate({
-              id,
-              status: enabled ? "enabled" : "disabled",
-            })
-          }
+	onToggleKey={(id, enabled) =>
+		setCredentialStatus.mutate({
+			id,
+			status: enabled ? "enabled" : "disabled",
+		})
+	}
+	onUpdateKeyModels={(id, modelsCsv) =>
+		updateKeyModels.mutate({ id, modelsCsv })
+	}
           onDeleteKey={(id) => deleteApiKeyCredential.mutate(id)}
           onAddApiKey={(secret) => {
             const siteId = edit.site_id;
@@ -1631,16 +1609,149 @@ export function Channels() {
   );
 }
 
+function channelHealthReasonLabel(
+  overview: ChannelOverview,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  switch (overview.health_reason) {
+    case "manual_disabled":
+      return t("channels.healthReason.manualDisabled");
+    case "auto_disabled":
+      return t("channels.healthReason.autoDisabled");
+    case "not_checked":
+      return t("channels.healthReason.notChecked");
+    case "authentication_failed":
+      return t("channels.healthReason.authenticationFailed");
+    case "credential_scope":
+      return t("channels.healthReason.credentialScope");
+    case "credential_unavailable":
+      return t("channels.healthReason.credentialUnavailable");
+    case "invalid_base_url":
+      return t("channels.healthReason.invalidBaseUrl");
+    case "probe_failed":
+      return t("channels.healthReason.probeFailed");
+    case "probe_slow":
+      return t("channels.healthReason.probeSlow");
+    case "route_cooling":
+      return t("channels.healthReason.routeCooling", {
+        count: overview.cooling_member_count,
+      });
+    case "route_failures":
+      return t("channels.healthReason.routeFailures", {
+        count: overview.failure_count,
+      });
+    case "probe_ok":
+      return t("channels.healthReason.probeOk");
+    default:
+      return t("channels.healthReason.unknown");
+  }
+}
+
+function ChannelHealthBadge({ overview }: { overview: ChannelOverview }) {
+  const { t } = useI18n();
+  const state = channelHealthState(overview);
+  const reason = channelHealthReasonLabel(overview, t);
+  return (
+    <span
+      className={`badge badge-${state}`}
+      title={reason}
+      data-testid="channel-health-badge"
+    >
+      {t(`channels.healthState.${state}`)}
+    </span>
+  );
+}
+
+/**
+ * Health + readiness as one badge. When a connection merely lacks an API key
+ * the two stacked badges read as noise on every row, so they merge into a
+ * single "state · needs key" badge; the tooltip keeps the health reason.
+ */
+function ChannelStatusBadges({ overview }: { overview: ChannelOverview }) {
+  const { t } = useI18n();
+  const readiness = channelReadiness(overview);
+  if (readiness === "missing_key") {
+    const health = channelHealthState(overview);
+    return (
+      <span
+        className="badge badge-missing-key"
+        title={channelHealthReasonLabel(overview, t)}
+      >
+        {t(`channels.healthState.${health}`)} · {t("channels.badge.missingKey")}
+      </span>
+    );
+  }
+  return (
+    <>
+      <ChannelHealthBadge overview={overview} />
+      <ChannelReadinessBadge overview={overview} />
+    </>
+  );
+}
+
+function ChannelReadinessBadge({ overview }: { overview: ChannelOverview }) {
+  const readiness = channelReadiness(overview);
+  if (
+    readiness !== "auto_disabled" &&
+    readiness !== "blocked" &&
+    readiness !== "missing_key" &&
+    readiness !== "token_invalid"
+  ) {
+    return null;
+  }
+  return <StatusBadge value={readiness} />;
+}
+
+function ChannelConnectivityBadge({
+  overview,
+  live,
+}: {
+  overview: ChannelOverview;
+  live?: ChannelPingResult | null;
+}) {
+  const { t, status } = useI18n();
+  const state = channelConnectivityState(overview, live);
+  const latency = live?.latency_ms ?? overview.last_ping_ms;
+  const error = live ? live.error : overview.last_ping_error;
+  const detail =
+    state === "reachable"
+      ? latency != null && latency > 0
+        ? t("channels.pingOkShort", { ms: latency })
+        : ""
+      : state === "unreachable" && error
+        ? status(error)
+        : "";
+  const checkedAt = live?.checked_at ?? overview.last_ping_at;
+  const stateLabel =
+    state === "reachable"
+      ? t("channels.reachable")
+      : state === "unreachable"
+        ? t("channels.unreachable")
+        : t("channels.connectivityUnknown");
+  // The error label often repeats the state label ("不可达 · 不可达");
+  // only append detail when it adds information.
+  const suffix = detail && detail !== stateLabel ? ` · ${detail}` : "";
+  return (
+    <span
+      className={`health-chip is-${state}`}
+      title={checkedAt ? formatDate(checkedAt) : undefined}
+      data-testid="channel-connectivity-badge"
+    >
+      {stateLabel}
+      {suffix}
+    </span>
+  );
+}
+
 function ChannelDetail({
   overview,
   site,
   busy,
   accountData,
   onCheckAccount,
-  onSyncKeys,
-  onCreateKey,
-  canCreateKey,
-  onProbe,
+  onPing,
+  pingPending,
+  pingResult,
   onRefresh,
   onEdit,
 }: {
@@ -1649,10 +1760,9 @@ function ChannelDetail({
   busy: boolean;
   accountData: AccountProbeResult | null;
   onCheckAccount: () => void;
-  onSyncKeys: () => void;
-  onCreateKey: () => void;
-  canCreateKey: boolean;
-  onProbe: () => void;
+  onPing: () => void;
+  pingPending: boolean;
+  pingResult: ChannelPingResult | null;
   onRefresh: () => void;
   onEdit: () => void;
 }) {
@@ -1661,8 +1771,11 @@ function ChannelDetail({
   const service = api(client!);
   const ch = overview.channel;
   const displayBase = ch.base_url || site?.base_url || "";
-  const health = channelHealth(overview);
   const caps = capabilityFlags(overview);
+  const probeError =
+    overview.last_probe_error === "probe_slow"
+      ? ""
+      : overview.last_probe_error;
   const finance = useQuery({
     queryKey: ["finance"],
     queryFn: ({ signal }) => service.finance(signal),
@@ -1710,7 +1823,7 @@ function ChannelDetail({
           </p>
         </div>
         <div className="capability-stack is-compact">
-          <StatusBadge value={health} />
+          <ChannelStatusBadges overview={overview} />
           {caps.tokenProblem ? (
             <span className="capability-chip is-warn">
               {t("channels.badge.tokenProblem")}
@@ -1776,25 +1889,25 @@ function ChannelDetail({
               : t("channels.neverChecked")}
           </span>
         </div>
-        {overview.health_state ? (
-          <div>
-            <span className="label">{t("channels.healthState")}</span>
-            <span
-              className={`health-chip is-${overview.health_state}`}
-              title={t(`channels.healthState.${overview.health_state}`)}
-            >
-              {t(`channels.healthState.${overview.health_state}`)}
-            </span>
-          </div>
-        ) : null}
-      {overview.last_probe_error || overview.last_error ? (
+        <div>
+          <span className="label">{t("channels.healthState")}</span>
+          <span className="detail-health-value">
+            <ChannelHealthBadge overview={overview} />
+            <small>{channelHealthReasonLabel(overview, t)}</small>
+          </span>
+        </div>
+        <div>
+          <span className="label">{t("channels.reachability")}</span>
+          <ChannelConnectivityBadge overview={overview} live={pingResult} />
+        </div>
+      {probeError || overview.last_error ? (
         <div className="detail-meta-error">
           <span className="label">{t("common.error")}</span>
           <span
             className="truncate"
-            title={overview.last_probe_error || overview.last_error}
+            title={probeError || overview.last_error}
           >
-            {status(overview.last_probe_error ?? overview.last_error ?? "")}
+            {status(probeError ?? overview.last_error ?? "")}
           </span>
         </div>
       ) : null}
@@ -1829,8 +1942,29 @@ function ChannelDetail({
       })()}
 
       <div className="detail-primary-bar is-compact">
+        <Button
+          icon={
+            <Activity
+              size={14}
+              className={pingPending ? "spin" : ""}
+            />
+          }
+          disabled={busy}
+          onClick={onPing}
+        >
+          {pingPending
+            ? t("channels.pinging")
+            : pingResult
+              ? pingResult.reachable
+                ? t("channels.pingOk", {
+                    ms: pingResult.latency_ms ?? "",
+                  })
+                : t("channels.pingFail", { error: pingResult.error ?? "" })
+              : t("channels.ping")}
+        </Button>
         {caps.hasUser ? (
           <Button
+            variant="secondary"
             icon={<UserCheck size={14} />}
             disabled={busy}
             onClick={onCheckAccount}
@@ -1838,44 +1972,14 @@ function ChannelDetail({
             {t("channels.checkAccount")}
           </Button>
         ) : null}
-        {caps.hasUser && caps.needsKeyForRelay ? (
-          <Button
-            variant="secondary"
-            icon={<KeyRound size={14} />}
-            disabled={busy}
-            onClick={onSyncKeys}
-          >
-            {t("channels.syncKeys")}
-          </Button>
-        ) : null}
-        {canCreateKey ? (
-          <Button
-            variant="secondary"
-            icon={<Plus size={14} />}
-            disabled={busy}
-            onClick={onCreateKey}
-          >
-            {t("channels.createKey")}
-          </Button>
-        ) : null}
         <Button
-          variant={caps.hasUser ? "secondary" : undefined}
+          variant="secondary"
           icon={<RefreshCw size={14} className={busy ? "spin" : ""} />}
           disabled={busy}
           onClick={onRefresh}
         >
           {t("channels.fetchModels")}
         </Button>
-        {caps.hasAPIKey && !needsVerify(overview) ? (
-          <Button
-            variant="secondary"
-            icon={<Play size={14} />}
-            disabled={busy}
-            onClick={onProbe}
-          >
-            {t("channels.test")}
-          </Button>
-        ) : null}
         <Button
           variant="secondary"
           disabled={busy}
@@ -2160,27 +2264,29 @@ function EditChannelDialog({
   userCredential,
   pending,
   error,
-  onClose,
-  onSave,
-  onToggleKey,
-  onDeleteKey,
-  onAddApiKey,
-  addApiKeyPending,
-  onSyncKeys,
-  syncKeysPending,
-  onManageModels,
+	onClose,
+	onSave,
+	onToggleKey,
+	onUpdateKeyModels,
+	onDeleteKey,
+	onAddApiKey,
+	addApiKeyPending,
+	onSyncKeys,
+	syncKeysPending,
+	onManageModels,
 }: {
   value: Channel;
   routeOverviews?: RouteOverview[];
   site?: Site;
-  credentials: Array<{
-    id: number;
-    kind: string;
-    has_secret: boolean;
-    status: string;
-    checkin_enabled: boolean;
-    meta_json?: string;
-  }>;
+	credentials: Array<{
+		id: number;
+		kind: string;
+		has_secret: boolean;
+		status: string;
+		checkin_enabled: boolean;
+		meta_json?: string;
+		models_csv?: string;
+	}>;
   credential?: {
     id: number;
     kind: string;
@@ -2223,19 +2329,22 @@ function EditChannelDialog({
     userToken: string;
     apiKey: string;
   }) => void;
-  onToggleKey: (id: number, enabled: boolean) => void;
-  onDeleteKey: (id: number) => void;
+	onToggleKey: (id: number, enabled: boolean) => void;
+	onUpdateKeyModels: (id: number, modelsCsv: string) => void;
+	onDeleteKey: (id: number) => void;
   onAddApiKey: (secret: string) => void;
   addApiKeyPending?: boolean;
   onSyncKeys: () => void;
   syncKeysPending?: boolean;
   onManageModels?: () => void;
 }) {
-  const { t } = useI18n();
-  const inheritedBase = !value.base_url.trim();
-  const initialBase = value.base_url || site?.base_url || "";
-  const [name, setName] = useState(value.name);
-  const [baseUrl, setBaseUrl] = useState(initialBase);
+	const { t } = useI18n();
+	const inheritedBase = !value.base_url.trim();
+	const initialBase = value.base_url || site?.base_url || "";
+	const [name, setName] = useState(value.name);
+	const [baseUrl, setBaseUrl] = useState(initialBase);
+	// Per-key model allowlist drafts: id → input value while editing.
+	const [keyModelsDraft, setKeyModelsDraft] = useState<Record<number, string>>({});
   const [typeHint, setTypeHint] = useState(
     value.type_hint || site?.platform || "openai-compatible",
   );
@@ -2419,18 +2528,52 @@ function EditChannelDialog({
                       .filter(Boolean)
                       .join(" ")}
                   >
-                    <div className="credential-key-main">
-                      <strong>{label}</strong>
-                      <small>
-                        {`${groupLabel} · #${item.id}`}
-                        {usedByThisConnection
-                          ? ` · ${t("channels.apiKeyUsedByConnection")}`
-                          : ""}
-                        {!item.has_secret
-                          ? ` · ${t("channels.apiKeyNoSecret")}`
-                          : ""}
-                      </small>
-                    </div>
+						<div className="credential-key-main">
+							<strong>{label}</strong>
+							<small>
+								{`${groupLabel} · #${item.id}`}
+								{usedByThisConnection
+									? ` · ${t("channels.apiKeyUsedByConnection")}`
+									: ""}
+								{!item.has_secret
+									? ` · ${t("channels.apiKeyNoSecret")}`
+									: ""}
+							</small>
+							<div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+								<input
+									className="mono"
+									style={{ flex: 1, minWidth: 0, fontSize: 12 }}
+									placeholder={t("channels.keyModelsPlaceholder")}
+									title={t("channels.keyModelsHint")}
+									value={keyModelsDraft[item.id] ?? item.models_csv ?? ""}
+									disabled={pending}
+									onChange={(event) =>
+										setKeyModelsDraft((prev) => ({
+												...prev,
+												[item.id]: event.target.value,
+											}))
+									}
+									onBlur={() => {
+										const draft = keyModelsDraft[item.id];
+										if (draft === undefined) return;
+										const next = draft.trim();
+										if (next !== (item.models_csv ?? "")) {
+											onUpdateKeyModels(item.id, next);
+										}
+										setKeyModelsDraft((prev) => {
+												const copy = { ...prev };
+												delete copy[item.id];
+												return copy;
+											});
+									}}
+									onKeyDown={(event) => {
+										if (event.key === "Enter") {
+											(event.target as HTMLInputElement).blur();
+										}
+									}}
+								/>
+							</div>
+						</div>
                     <div className="credential-key-actions">
                       <label className="check credential-key-enable">
                         <input

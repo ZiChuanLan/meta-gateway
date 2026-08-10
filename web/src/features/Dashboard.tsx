@@ -1,17 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   Activity,
   ArrowRight,
   Boxes,
+  Check,
+  CheckCircle2,
   Coins,
+  Copy,
   Cpu,
+  Database,
   HeartPulse,
   KeyRound,
   Plug,
   ScrollText,
+  TrendingUp,
+  Wallet,
+  X,
   Zap,
 } from "lucide-react";
 import { api } from "../api/client";
@@ -20,10 +27,17 @@ import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { StatGrid } from "../components/StatGrid";
 import { HourlyTrafficChart } from "../components/charts";
-import { Page, Panel } from "../components/ui";
-import { formatTokens } from "../lib/format";
+import { Button, Page, Panel } from "../components/ui";
+import { formatCost, formatTokens } from "../lib/format";
+import { channelHealthState } from "./channelHealth";
 
 const HOUR_24 = 24 * 3600 * 1000;
+
+/** Chart window options: hourly buckets over the last N hours. */
+const WINDOWS = [
+  { hours: 24, labelKey: "dashboard.window24h" },
+  { hours: 48, labelKey: "dashboard.window48h" },
+] as const;
 
 function relativeTime(
   iso: string,
@@ -44,6 +58,110 @@ function statusTone(status: number): "ok" | "warn" | "danger" | "neutral" {
   if (status >= 400 && status < 500) return "warn";
   if (status >= 500) return "danger";
   return "neutral";
+}
+
+function EndpointStrip() {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const ready = useQuery({
+    queryKey: ["ready"],
+    queryFn: async () => {
+      const response = await fetch("/readyz");
+      return response.ok;
+    },
+    refetchInterval: 30_000,
+  });
+  const endpoint =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/v1/chat/completions`
+      : "/v1/chat/completions";
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(endpoint);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard unavailable (e.g. insecure context); leave as-is.
+    }
+  };
+  return (
+    <div className="endpoint-strip">
+      <span
+        className={`endpoint-dot${ready.data === true ? " is-healthy" : ""}`}
+      />
+      <div className="endpoint-copy">
+        <strong>{t("dashboard.endpoint")}</strong>
+        <code>{endpoint}</code>
+      </div>
+      <Button
+        variant="secondary"
+        icon={copied ? <Check size={14} /> : <Copy size={14} />}
+        onClick={copy}
+      >
+        {copied ? t("dashboard.copied") : t("dashboard.copy")}
+      </Button>
+    </div>
+  );
+}
+
+function ResultDistribution({
+  ok,
+  clientError,
+  serverError,
+  other,
+}: {
+  ok: number;
+  clientError: number;
+  serverError: number;
+  other: number;
+}) {
+  const { t } = useI18n();
+  const total = ok + clientError + serverError + other;
+  if (total === 0) return null;
+  const pct = (n: number) => `${(n / total) * 100}%`;
+  const segments = [
+    {
+      key: "ok",
+      n: ok,
+      cls: "rd-ok",
+      label: t("dashboard.resultOk"),
+    },
+    {
+      key: "client",
+      n: clientError,
+      cls: "rd-warn",
+      label: t("dashboard.resultClientError"),
+    },
+    {
+      key: "server",
+      n: serverError,
+      cls: "rd-danger",
+      label: t("dashboard.resultServerError"),
+    },
+    {
+      key: "other",
+      n: other,
+      cls: "rd-neutral",
+      label: t("dashboard.resultOther"),
+    },
+  ].filter((s) => s.n > 0);
+  return (
+    <div className="result-distribution">
+      <div className="result-distribution-bar">
+        {segments.map((s) => (
+          <span key={s.key} className={s.cls} style={{ width: pct(s.n) }} />
+        ))}
+      </div>
+      <div className="result-distribution-legend">
+        {segments.map((s) => (
+          <span key={s.key}>
+            <i className={s.cls} />
+            {s.label} {s.n}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function Dashboard() {
@@ -67,11 +185,13 @@ export function Dashboard() {
     refetchInterval: 30_000,
   });
   const logs = useQuery({
-    queryKey: ["proxy-logs", { limit: 8 }],
-    queryFn: ({ signal }) => s.proxyLogs({ limit: 8 }, signal),
+    queryKey: ["proxy-logs", { limit: 5 }],
+    queryFn: ({ signal }) => s.proxyLogs({ limit: 5 }, signal),
     refetchInterval: 15_000,
   });
 
+  const [windowHours, setWindowHours] = useState<24 | 48>(24);
+  const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
   const now = Date.now();
   const recent = useMemo(() => {
     const cutoff = now - HOUR_24;
@@ -84,36 +204,47 @@ export function Dashboard() {
     const all = channels.data ?? [];
     const enabled = all.filter((c) => c.channel.status === "enabled").length;
     const healthy = all.filter(
-      (c) => c.channel.status === "enabled" && !c.last_probe_error,
+      (c) => channelHealthState(c) === "healthy",
     ).length;
     return { total: all.length, enabled, healthy };
   }, [channels.data]);
 
-  /** Hourly buckets (oldest → newest) for the SVG chart. */
+  /** Windowed hourly buckets (oldest → newest) for the SVG chart. */
   const hourly = useMemo(() => {
-    const buckets = Array.from({ length: 24 }, () => ({ req: 0, tok: 0 }));
+    const n = windowHours;
+    const buckets = Array.from({ length: n }, () => ({
+      req: 0,
+      tok: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    }));
     for (const row of usage.data ?? []) {
       const h = Math.floor(
         (now - new Date(row.created_at).getTime()) / 3600_000,
       );
-      if (h >= 0 && h < 24) {
-        const bucket = buckets[23 - h];
+      if (h >= 0 && h < n) {
+        const bucket = buckets[n - 1 - h];
         if (bucket) {
           bucket.req += 1;
           bucket.tok += row.total_tokens ?? 0;
+          bucket.cacheRead += row.cache_read_tokens ?? 0;
+          bucket.cacheWrite += row.cache_creation_tokens ?? 0;
         }
       }
     }
     const labels = buckets.map((_, i) => {
-      const d = new Date(now - (23 - i) * 3600_000);
-      return `${String(d.getHours()).padStart(2, "0")}:00`;
+      const d = new Date(now - (n - 1 - i) * 3600_000);
+      const hh = `${String(d.getHours()).padStart(2, "0")}:00`;
+      return n > 24 ? `${d.getMonth() + 1}/${d.getDate()} ${hh}` : hh;
     });
     return {
       requests: buckets.map((b) => b.req),
       tokens: buckets.map((b) => b.tok),
+      cacheReads: buckets.map((b) => b.cacheRead),
+      cacheWrites: buckets.map((b) => b.cacheWrite),
       labels,
     };
-  }, [usage.data, now]);
+  }, [usage.data, now, windowHours]);
 
   /** Requests in the previous 24h window, for the trend badge. */
   const prev24 = useMemo(() => {
@@ -131,6 +262,10 @@ export function Dashboard() {
   );
   const recentRequests = recent.length;
   const recentCost = summary.data?.estimated_cost ?? 0;
+  const cacheRead24h = recent.reduce(
+    (sum, row) => sum + (row.cache_read_tokens ?? 0),
+    0,
+  );
   const requestTrend =
     recentRequests > 0 && prev24 > 0 ? recentRequests / prev24 - 1 : null;
   const healthyRatio =
@@ -144,7 +279,100 @@ export function Dashboard() {
           ? "warning"
           : "danger";
 
-  const recentLogs = (logs.data ?? []).slice(0, 8);
+  // Status-code buckets over the visible chart window.
+  const windowRows = useMemo(() => {
+    const cutoff = now - windowHours * 3600_000;
+    return (usage.data ?? []).filter(
+      (row) => new Date(row.created_at).getTime() >= cutoff,
+    );
+  }, [usage.data, now, windowHours]);
+  const breakdown = useMemo(() => {
+    const buckets = { ok: 0, clientError: 0, serverError: 0, other: 0 };
+    for (const row of windowRows) {
+      const s = row.status;
+      if (s >= 200 && s < 300) buckets.ok += 1;
+      else if (s >= 400 && s < 500) buckets.clientError += 1;
+      else if (s >= 500) buckets.serverError += 1;
+      else buckets.other += 1;
+    }
+    return buckets;
+  }, [windowRows]);
+  const successRate =
+    recentRequests > 0 ? breakdown.ok / recentRequests : null;
+  const successTone =
+    successRate === null
+      ? "primary"
+      : successRate >= 0.99
+        ? "success"
+        : successRate >= 0.9
+          ? "warning"
+          : "danger";
+
+  // Model usage ranking over the visible 24h window.
+  const topModels = useMemo(() => {
+    const map = new Map<string, { requests: number; tokens: number }>();
+    for (const row of recent) {
+      const entry = map.get(row.model) ?? { requests: 0, tokens: 0 };
+      entry.requests += 1;
+      entry.tokens += row.total_tokens ?? 0;
+      map.set(row.model, entry);
+    }
+    return [...map.entries()]
+      .sort(
+        (a, b) =>
+          b[1].tokens - a[1].tokens || b[1].requests - a[1].requests,
+      )
+      .slice(0, 6)
+      .map(([model, stats]) => ({ model, ...stats }));
+  }, [recent]);
+  const maxModelRequests = Math.max(1, ...topModels.map((m) => m.requests));
+
+  // Drill-down detail for the selected chart bucket (aggregated by model).
+  const bucketDetail = useMemo(() => {
+    if (selectedBucket == null) return null;
+    const n = windowHours;
+    const startMs = now - (n - selectedBucket) * 3600_000;
+    const endMs = startMs + 3600_000;
+    const rows = (usage.data ?? []).filter((row) => {
+      const ms = new Date(row.created_at).getTime();
+      return ms >= startMs && ms < endMs;
+    });
+    const byModel = new Map<string, { requests: number; tokens: number }>();
+    let tok = 0;
+    let cacheRead = 0;
+    let ok = 0;
+    let fail = 0;
+    for (const row of rows) {
+      const entry = byModel.get(row.model) ?? { requests: 0, tokens: 0 };
+      entry.requests += 1;
+      entry.tokens += row.total_tokens ?? 0;
+      byModel.set(row.model, entry);
+      tok += row.total_tokens ?? 0;
+      cacheRead += row.cache_read_tokens ?? 0;
+      if (row.status >= 200 && row.status < 300) ok += 1;
+      else fail += 1;
+    }
+    const start = new Date(startMs);
+    const label = `${start.getMonth() + 1}/${start.getDate()} ${String(
+      start.getHours(),
+    ).padStart(2, "0")}:00`;
+    const models = [...byModel.entries()]
+      .sort((a, b) => b[1].tokens - a[1].tokens)
+      .slice(0, 6)
+      .map(([model, stats]) => ({ model, ...stats }));
+    return {
+      label,
+      requests: rows.length,
+      tok,
+      cacheRead,
+      ok,
+      fail,
+      models,
+      maxReq: Math.max(1, ...models.map((m) => m.requests)),
+    };
+  }, [selectedBucket, windowHours, usage.data, now]);
+
+  const recentLogs = (logs.data ?? []).slice(0, 5);
 
   return (
     <Page
@@ -153,6 +381,7 @@ export function Dashboard() {
       description={t("dashboard.description")}
     >
       <div className="stack">
+        <EndpointStrip />
         {!channels.isPending && channelCounts.total === 0 && (
           <section className="quickstart">
             <div className="quickstart-head">
@@ -244,6 +473,30 @@ export function Dashboard() {
               icon: <HeartPulse size={14} />,
               tone: healthTone,
             },
+            {
+              label: t("dashboard.cost24h"),
+              value: summary.isPending ? "—" : formatCost(recentCost),
+              hint: t("dashboard.cost24hHint"),
+              icon: <Wallet size={14} />,
+              tone: "warning",
+            },
+            {
+              label: t("dashboard.successRate"),
+              value:
+                summary.isPending || successRate === null
+                  ? "—"
+                  : `${Math.round(successRate * 100)}%`,
+              hint: t("dashboard.successRateHint"),
+              icon: <CheckCircle2 size={14} />,
+              tone: successTone,
+            },
+            {
+              label: t("dashboard.cacheRead"),
+              value: summary.isPending ? "—" : formatTokens(cacheRead24h),
+              hint: t("dashboard.cacheReadHint"),
+              icon: <Database size={14} />,
+              tone: "info",
+            },
           ]}
         />
 
@@ -254,12 +507,103 @@ export function Dashboard() {
             <span className="panel-muted">
               {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
             </span>
+            <div
+              className="chart-window-tabs"
+              role="tablist"
+              aria-label={t("dashboard.chartWindow")}
+            >
+              {WINDOWS.map((w) => (
+                <button
+                  key={w.hours}
+                  type="button"
+                  role="tab"
+                  aria-selected={windowHours === w.hours}
+                  className={windowHours === w.hours ? "is-active" : ""}
+                  onClick={() => {
+                    setWindowHours(w.hours);
+                    setSelectedBucket(null);
+                  }}
+                >
+                  {t(w.labelKey)}
+                </button>
+              ))}
+            </div>
           </div>
           <HourlyTrafficChart
             requests={hourly.requests}
             tokens={hourly.tokens}
             labels={hourly.labels}
+            labelStep={windowHours > 24 ? 8 : 4}
+            selected={selectedBucket}
+            onSelect={setSelectedBucket}
           />
+          <ResultDistribution
+            ok={breakdown.ok}
+            clientError={breakdown.clientError}
+            serverError={breakdown.serverError}
+            other={breakdown.other}
+          />
+          {bucketDetail ? (
+            <div className="bucket-detail">
+              <div className="bucket-detail-head">
+                <strong>{bucketDetail.label}</strong>
+                <span className="bucket-detail-stats">
+                  {t("dashboard.bucketStats", {
+                    req: bucketDetail.requests,
+                    tok: formatTokens(bucketDetail.tok),
+                    cache: formatTokens(bucketDetail.cacheRead),
+                  })}
+                </span>
+                <Button
+                  variant="quiet"
+                  icon={<X size={14} />}
+                  onClick={() => setSelectedBucket(null)}
+                >
+                  {t("common.close")}
+                </Button>
+              </div>
+              {bucketDetail.models.length === 0 ? (
+                <p className="dashboard-empty">{t("dashboard.bucketEmpty")}</p>
+              ) : (
+                <ul className="model-rank">
+                  {bucketDetail.models.map((m) => (
+                    <li key={m.model}>
+                      <Link
+                        className="model-rank-name"
+                        to={`/models?model=${encodeURIComponent(m.model)}`}
+                        title={m.model}
+                      >
+                        {m.model}
+                      </Link>
+                      <span className="model-rank-track">
+                        <span
+                          className="model-rank-fill"
+                          style={{
+                            width: `${(m.requests / bucketDetail.maxReq) * 100}%`,
+                          }}
+                        />
+                      </span>
+                      <span className="model-rank-meta">
+                        <strong>{m.requests}</strong>
+                        <small>{t("dashboard.colRequests")}</small>
+                        <i>·</i>
+                        <strong>{formatTokens(m.tokens)}</strong>
+                        <small>{t("dashboard.colTokens")}</small>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="bucket-detail-meta">
+                <span className="badge badge-ok">
+                  {t("dashboard.resultOk")} {bucketDetail.ok}
+                </span>
+                <span className="badge badge-danger">
+                  {t("dashboard.resultServerError")} {bucketDetail.fail}
+                </span>
+              </div>
+            </div>
+          ) : null}
         </Panel>
 
         <div className="dashboard-grid">
@@ -275,37 +619,46 @@ export function Dashboard() {
               </span>
             </div>
             <ul className="dashboard-list">
-              {(channels.data ?? []).slice(0, 8).map((c) => (
-                <li key={c.channel.id}>
-                  <span
-                    className={`dot dot-${c.channel.status === "enabled" ? (c.last_probe_error ? "warn" : "ok") : "off"}`}
-                  />
-                  <Link
-                    className="dashboard-model"
-                    to={`/channels?id=${c.channel.id}`}
-                  >
-                    {c.channel.name}
-                  </Link>
-                  <span className="dashboard-meta">
-                    {c.channel.status === "enabled" ? (
-                      c.last_probe_error ? (
-                        <span className="badge badge-warn">
-                          <AlertTriangle size={11} />
-                          {t("dashboard.degraded")}
-                        </span>
-                      ) : (
+              {(channels.data ?? []).slice(0, 8).map((c) => {
+                const health = channelHealthState(c);
+                const tone =
+                  health === "healthy"
+                    ? "ok"
+                    : health === "unhealthy"
+                      ? "danger"
+                      : health === "disabled"
+                        ? "off"
+                        : "warn";
+                return (
+                  <li key={c.channel.id}>
+                    <span className={`dot dot-${tone}`} />
+                    <Link
+                      className="dashboard-model"
+                      to={`/channels?id=${c.channel.id}`}
+                    >
+                      {c.channel.name}
+                    </Link>
+                    <span className="dashboard-meta">
+                      {health === "healthy" ? (
                         <span className="badge badge-ok">
                           <Zap size={11} /> {t("dashboard.ready")}
                         </span>
-                      )
-                    ) : (
-                      <span className="badge badge-neutral">
-                        {t("dashboard.disabled")}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
+                      ) : health === "disabled" ? (
+                        <span className="badge badge-neutral">
+                          {t("dashboard.disabled")}
+                        </span>
+                      ) : (
+                        <span
+                          className={`badge badge-${health === "unhealthy" ? "danger" : "warn"}`}
+                        >
+                          <AlertTriangle size={11} />
+                          {t(`channels.healthState.${health}`)}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </Panel>
 
@@ -340,14 +693,57 @@ export function Dashboard() {
           </Panel>
         </div>
 
-        <Panel className="dashboard-panel">
-          <div className="panel-header">
-            <ScrollText size={15} />
-            <strong>{t("dashboard.recentLogs")}</strong>
-            <span className="panel-muted">
-              {t("dashboard.cost", { n: recentCost.toFixed(6) })}
-            </span>
-          </div>
+        <div className="dashboard-grid">
+          <Panel className="dashboard-panel">
+            <div className="panel-header">
+              <TrendingUp size={15} />
+              <strong>{t("dashboard.topModels")}</strong>
+              <span className="panel-muted">
+                {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
+              </span>
+            </div>
+            {topModels.length === 0 ? (
+              <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
+            ) : (
+              <ul className="model-rank">
+                {topModels.map((m) => (
+                  <li key={m.model}>
+                    <Link
+                      className="model-rank-name"
+                      to={`/models?model=${encodeURIComponent(m.model)}`}
+                      title={m.model}
+                    >
+                      {m.model}
+                    </Link>
+                    <span className="model-rank-track">
+                      <span
+                        className="model-rank-fill"
+                        style={{
+                          width: `${(m.requests / maxModelRequests) * 100}%`,
+                        }}
+                      />
+                    </span>
+                    <span className="model-rank-meta">
+                      <strong>{m.requests}</strong>
+                      <small>{t("dashboard.colRequests")}</small>
+                      <i>·</i>
+                      <strong>{formatTokens(m.tokens)}</strong>
+                      <small>{t("dashboard.colTokens")}</small>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+
+          <Panel className="dashboard-panel">
+            <div className="panel-header">
+              <ScrollText size={15} />
+              <strong>{t("dashboard.recentLogs")}</strong>
+              <span className="panel-muted">
+                {t("dashboard.cost", { n: recentCost.toFixed(6) })}
+              </span>
+            </div>
           {recentLogs.length === 0 ? (
             <p className="dashboard-empty">{t("dashboard.noLogs")}</p>
           ) : (
@@ -377,7 +773,8 @@ export function Dashboard() {
               })}
             </ul>
           )}
-        </Panel>
+          </Panel>
+        </div>
       </div>
     </Page>
   );

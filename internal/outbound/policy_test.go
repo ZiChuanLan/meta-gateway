@@ -100,7 +100,7 @@ func TestPolicyBlocksNAT64AndSpecialIPv6(t *testing.T) {
 	}
 	// NAT64 well-known prefix (RFC 6052) encoding loopback/metadata/private.
 	for _, value := range []string{
-		"64:ff9b::7f00:1",   // 127.0.0.1 via NAT64
+		"64:ff9b::7f00:1",    // 127.0.0.1 via NAT64
 		"64:ff9b::a9fe:a9fe", // 169.254.169.254 via NAT64
 		"64:ff9b::a00:1",     // 10.0.0.1 via NAT64
 		"64:ff9b:1::7f00:1",  // local-use NAT64 (RFC 8215)
@@ -235,7 +235,7 @@ func TestDialSkipsPrivateAnswersInMixedSet(t *testing.T) {
 	var dialer recordingDialer
 	policy, err := NewPolicy(Options{
 		Resolver: resolverMap{"mixed.example": {
-			netip.MustParseAddr("10.0.0.5"),   // private — must be skipped
+			netip.MustParseAddr("10.0.0.5"),      // private — must be skipped
 			netip.MustParseAddr("93.184.216.34"), // public — dialed
 		}},
 		Dialer: &dialer,

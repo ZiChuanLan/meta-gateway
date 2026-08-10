@@ -77,8 +77,15 @@ curl http://127.0.0.1:4100/healthz
 | `RELAY_RATE_PER_MINUTE` / `RELAY_RATE_BURST` | `600` / `100` | Per-key relay limiter; rate `0` disables it |
 | `ADMIN_RATE_PER_MINUTE` / `ADMIN_RATE_BURST` | `300` / `50` | Global Admin limiter; rate `0` disables it |
 | `AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_ROWS` | `90` / `100000` | Audit ceilings; `0` disables that dimension |
-| `RETRY_TIMES` | `2` | Maximum retries after the first upstream attempt |
+| `RETRY_TIMES` | `2` | Retry rounds: how many additional channels are attempted after the first upstream attempt (each round = one more channel) |
+| `CHANNEL_RETRY_TIMES` | `1` | Same-key re-sends: how many times a retryable failure is re-sent on the same upstream key before moving to the next key/channel (0-5; network errors fail fast after these) |
+| `KEY_POOL_ROTATION` | `true` | Rotate through the site's API keys when one fails; off = only the channel's bound key is used |
+| `CROSS_CHANNEL_FAILOVER_ENABLED` | `true` | Whether failed requests may move to another channel; disabled means only the first selected channel is tried |
 | `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
+| `BREAKER_FAIL_COUNT` | `5` | Consecutive failures before a route member is parked (0 disables; progressive mode floor 5) |
+| `MODEL_BREAKER_FAIL_COUNT` | `5` | Consecutive failures before the in-memory channel×model breaker opens (0 disables) |
+| `KEY_FAIL_THRESHOLD` | `5` | Per-key consecutive failures before the key is excluded for 30m (0 disables) |
+| `STICKY_ENABLED` / `STICKY_TTL_MINUTES` | `false` / `30` | Sticky-session routing toggle + binding TTL (hot-swappable) |
 | `CHECKIN_ENABLED` | `false` | Start scheduled credential check-in |
 | `CHECKIN_CRON` | `0 8 * * *` | Standard five-field check-in schedule |
 | `PLUGINS_DIR` | `<DATA_DIR>/plugins` | Official module package directory |

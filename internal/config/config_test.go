@@ -34,6 +34,27 @@ func TestLoadCheckinDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadCrossChannelFailoverDefaultAndOverride(t *testing.T) {
+	t.Setenv("METRICS_TOKEN", "metrics-test-token")
+	t.Setenv("CROSS_CHANNEL_FAILOVER_ENABLED", "")
+	defaults, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !defaults.CrossChannelFailoverEnabled {
+		t.Fatal("cross-channel failover should be enabled by default")
+	}
+
+	t.Setenv("CROSS_CHANNEL_FAILOVER_ENABLED", "false")
+	override, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if override.CrossChannelFailoverEnabled {
+		t.Fatal("CROSS_CHANNEL_FAILOVER_ENABLED=false should disable failover")
+	}
+}
+
 func TestLoadRejectsInvalidCheckinTimezone(t *testing.T) {
 	t.Setenv("METRICS_TOKEN", "metrics-test-token")
 	t.Setenv("CHECKIN_TZ", "Not/AZone")

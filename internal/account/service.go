@@ -485,11 +485,11 @@ func (s *Service) GetPricing(ctx context.Context, channelID int64) ([]adapters.M
 // FinanceItem is one channel's account finances: balance (in quota), the
 // quota-per-unit conversion, and the model price table (quota per 1M tokens).
 type FinanceItem struct {
-	ChannelID    int64                     `json:"channel_id"`
-	Balance      int64                     `json:"balance"`
-	QuotaTotal   int64                     `json:"quota_total,omitempty"`
-	QuotaUsed    int64                     `json:"quota_used,omitempty"`
-	QuotaPerUnit int64                     `json:"quota_per_unit"`
+	ChannelID    int64                          `json:"channel_id"`
+	Balance      int64                          `json:"balance"`
+	QuotaTotal   int64                          `json:"quota_total,omitempty"`
+	QuotaUsed    int64                          `json:"quota_used,omitempty"`
+	QuotaPerUnit int64                          `json:"quota_per_unit"`
 	Prices       map[string]adapters.ModelPrice `json:"prices"`
 }
 
@@ -640,11 +640,11 @@ func (s *Service) financeForChannel(ctx context.Context, resolved *resolvedTarge
 			outputUSD = inputUSD * p.CompletionRatio
 		}
 		priceMap[p.Model] = adapters.ModelPrice{
-			Model:    p.Model,
-			Currency: p.Currency,
-			PriceUSD: inputUSD,
+			Model:     p.Model,
+			Currency:  p.Currency,
+			PriceUSD:  inputUSD,
 			OutputUSD: outputUSD,
-			Mode:     mode,
+			Mode:      mode,
 		}
 	}
 	return &FinanceItem{
@@ -935,10 +935,10 @@ func (s *Service) deleteOrphanAPIKeys(resolved *resolvedTarget, upstream []adapt
 			}
 		}
 		removed = append(removed, SyncKeyItem{
-			CredentialID: cred.ID,
+			CredentialID:    cred.ID,
 			UpstreamTokenID: upstreamID,
-			Status:       "deleted",
-			Category:     "api_key_removed",
+			Status:          "deleted",
+			Category:        "api_key_removed",
 		})
 	}
 	return len(removed), removed, nil

@@ -110,7 +110,8 @@ func (s *GroupStore) Delete(name string) error {
 
 // AddUsage increments a group's used quota and invalidates the cache; the next
 // read reloads the fresh count.
-func (s *GroupStore) AddUsage(name string, totalTokens int64) error {	name = normalizeGroupName(name)
+func (s *GroupStore) AddUsage(name string, totalTokens int64) error {
+	name = normalizeGroupName(name)
 	if name == "" || totalTokens <= 0 {
 		return nil
 	}

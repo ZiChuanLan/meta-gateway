@@ -48,14 +48,17 @@ type Relay interface {
 }
 
 type Service struct {
-	selector   Selector
-	relay      Relay
-	db         *store.DB
-	enc        *crypto.Encrypter
-	retryTimes atomic.Int64
-	cooldownNs atomic.Int64
-	now        func() time.Time
-	registry   *adapters.Registry
+	selector                    Selector
+	relay                       Relay
+	db                          *store.DB
+	enc                         *crypto.Encrypter
+	retryTimes                  atomic.Int64
+	channelRetryTimes           atomic.Int64
+	crossChannelFailoverEnabled atomic.Bool
+	keyPoolRotation             atomic.Bool
+	cooldownNs                  atomic.Int64
+	now                         func() time.Time
+	registry                    *adapters.Registry
 	// breaker is the model-level circuit breaker (channel × model).
 	breaker *ModelCircuitBreaker
 	// keyErrCounts tracks per channel × api-key × status-code consecutive
@@ -68,15 +71,18 @@ type Service struct {
 	disabledKeys map[disabledKey]time.Time
 	// autoDisableThreshold: consecutive member failures before a channel is
 	// auto-disabled (0 = feature off).
-	autoDisableThreshold int
+	autoDisableThreshold atomic.Int64
+	// keyFailThreshold: consecutive failures (per channel × key × status)
+	// before an upstream API key is excluded from the pool (0 = feature off).
+	keyFailThreshold atomic.Int64
 	// latencyAware enables latency-weighted channel picking.
-	latencyAware bool
+	latencyAware atomic.Bool
 	latencyMu    sync.Mutex
 	latencyEMA   map[channelModel]float64
 	errorMu      sync.Mutex
 	errorEMA     map[channelModel]float64
 	// sticky is the optional session-affinity store; nil disables sticky routing.
-	sticky *routing.StickyStore
+	sticky atomic.Pointer[routing.StickyStore]
 	// grayPromoteRequests is the stable-first promotion threshold (successful
 	// grayscale relay attempts before the channel graduates; 0 disables).
 	grayPromoteRequests atomic.Int64
@@ -85,10 +91,14 @@ type Service struct {
 	inflight   map[int64]int
 	// concurrencyAware enables the burst guard (selector-side scoring);
 	// concurrencyLimit is the per-channel ceiling.
-	concurrencyAware bool
-	concurrencyLimit int
+	concurrencyAware atomic.Bool
+	concurrencyLimit atomic.Int64
 	// notifier delivers operational webhooks (auto-disable/recovery).
 	notifier *webhook.Notifier
+	// nonStreamTimeout caps a non-streaming upstream attempt (request + body
+	// read); 0 uses the package default nonStreamRequestTimeout. Streaming
+	// requests are exempt. Injectable for tests.
+	nonStreamTimeout time.Duration
 }
 
 // channelModel scopes adaptive latency/error EWMA to one channel on one model,
@@ -154,10 +164,14 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 		cooldown = 0
 	}
 	service := &Service{selector: selector, relay: upstream, db: db, enc: enc, now: time.Now}
-	service.breaker = NewModelCircuitBreaker()
+	service.breaker = NewModelCircuitBreaker(0)
 	service.keyErrCounts = make(map[int64]map[string]map[int]int)
 	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.retryTimes.Store(int64(retryTimes))
+	service.channelRetryTimes.Store(1)
+	service.crossChannelFailoverEnabled.Store(true)
+	service.keyPoolRotation.Store(true)
+	service.keyFailThreshold.Store(5)
 	service.cooldownNs.Store(int64(cooldown))
 	return service
 }
@@ -165,7 +179,33 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 // SetAutoDisableThreshold enables channel auto-disable after N consecutive
 // member failures (0 disables).
 func (s *Service) SetAutoDisableThreshold(n int) {
-	s.autoDisableThreshold = n
+	s.autoDisableThreshold.Store(int64(n))
+}
+
+// SetBreakerFailCount hot-applies the model circuit breaker's open threshold
+// (MODEL_BREAKER_FAIL_COUNT / runtime settings). 0 disables the memory
+// breaker; negative values reset to the default. Nil breaker (tests) is a
+// no-op.
+func (s *Service) SetBreakerFailCount(n int) {
+	if s.breaker != nil {
+		s.breaker.SetOpenThreshold(n)
+	}
+}
+
+// CircuitWeight exposes the live channel×model breaker multiplier to the
+// routing selector and Admin explanation endpoint. It is intentionally
+// read-only; recovery still happens only through a successful probe/relay.
+func (s *Service) CircuitWeight(channelID int64, model string) float64 {
+	if s == nil || s.breaker == nil {
+		return 1
+	}
+	return s.breaker.EffectiveWeight(channelID, model, 1)
+}
+
+// SetKeyFailThreshold hot-applies the per-key failure threshold (0 disables
+// key auto-exclusion).
+func (s *Service) SetKeyFailThreshold(n int) {
+	s.keyFailThreshold.Store(int64(n))
 }
 
 // SetStableFirstPromote configures the grayscale promotion threshold: after
@@ -180,9 +220,9 @@ func (s *Service) SetWebhookNotifier(notifier *webhook.Notifier) {
 	s.notifier = notifier
 }
 func (s *Service) SetConcurrencyAware(enabled bool, limit int) {
-	s.concurrencyAware = enabled && limit > 0
-	s.concurrencyLimit = limit
-	if s.concurrencyAware {
+	s.concurrencyLimit.Store(int64(limit))
+	s.concurrencyAware.Store(enabled && limit > 0)
+	if enabled && limit > 0 {
 		s.selector.SetConcurrencyAware(true, limit, s.Inflight)
 	} else {
 		s.selector.SetConcurrencyAware(false, 0, nil)
@@ -200,7 +240,7 @@ func (s *Service) Inflight(channelID int64) int {
 // returns it. The slot is held for the whole attempt sequence (keys + retries)
 // so the guard sees real occupancy, not just first-pick volume.
 func (s *Service) acquireChannel(channelID int64) {
-	if !s.concurrencyAware {
+	if !s.concurrencyAware.Load() {
 		return
 	}
 	s.inflightMu.Lock()
@@ -212,9 +252,6 @@ func (s *Service) acquireChannel(channelID int64) {
 }
 
 func (s *Service) releaseChannel(channelID int64) {
-	if !s.concurrencyAware {
-		return
-	}
 	s.inflightMu.Lock()
 	if n := s.inflight[channelID]; n > 1 {
 		s.inflight[channelID] = n - 1
@@ -228,13 +265,13 @@ func (s *Service) releaseChannel(channelID int64) {
 // binds successful relays to their session key and passes the key to the
 // selector so affinity is honored on the next request.
 func (s *Service) SetSticky(store *routing.StickyStore) {
-	s.sticky = store
+	s.sticky.Store(store)
 }
 
 // SetLatencyAware enables latency-weighted routing and installs this service
 // as the latency provider (smoothed per-channel latency in ms).
 func (s *Service) SetLatencyAware(enabled bool) {
-	s.latencyAware = enabled
+	s.latencyAware.Store(enabled)
 }
 
 // ChannelErrorRate returns the EWMA failure propensity (0..1) for a channel on
@@ -344,12 +381,32 @@ func (s *Service) SetRetryPolicy(retryTimes int, cooldown time.Duration) {
 	s.cooldownNs.Store(int64(cooldown))
 }
 
-func (s *Service) ChatCompletions(ctx context.Context, req Request) *relay.Result {
-	result, _ := s.ForwardWithMeta(ctx, req)
-	return result
+// SetCrossChannelFailoverEnabled hot-applies whether a request may move to a
+// different channel after the first channel fails. The retry_times value is
+// retained while disabled, so re-enabling restores the configured behavior.
+func (s *Service) SetCrossChannelFailoverEnabled(enabled bool) {
+	s.crossChannelFailoverEnabled.Store(enabled)
 }
 
-func (s *Service) Forward(ctx context.Context, req Request) *relay.Result {
+// SetChannelRetryTimes hot-updates how many times the same upstream key is
+// re-sent after a retryable failure before moving to the next key/channel.
+// Network (transport) errors fail fast after these retries instead of fanning
+// out across every channel. 0 = no same-key re-send.
+func (s *Service) SetChannelRetryTimes(times int) {
+	if times < 0 {
+		times = 0
+	}
+	s.channelRetryTimes.Store(int64(times))
+}
+
+// SetKeyPoolRotation hot-applies whether the site key pool is rotated through
+// on failure. Off = only the channel's bound key (or the first pool key) is
+// used; the pool is never rotated.
+func (s *Service) SetKeyPoolRotation(enabled bool) {
+	s.keyPoolRotation.Store(enabled)
+}
+
+func (s *Service) ChatCompletions(ctx context.Context, req Request) *relay.Result {
 	result, _ := s.ForwardWithMeta(ctx, req)
 	return result
 }
@@ -376,14 +433,23 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		sessionKey = routing.SessionKeyFromBody(req.Body)
 	}
 	req.SessionKey = sessionKey
+	stickyStore := s.sticky.Load()
 	var last *relay.Result
 	var lastMeta *AttemptMeta
 	maxAttempts := int(s.retryTimes.Load())
+	if !s.crossChannelFailoverEnabled.Load() {
+		maxAttempts = 0
+	}
 	cooldown := time.Duration(s.cooldownNs.Load())
 	if req.PreferChannelID > 0 {
 		// Admin pin: only hit the chosen channel once (no cross-channel retry).
 		maxAttempts = 0
 	}
+	// Route-level retry overrides: the first selection decision carries the
+	// model's policy (nil = follow the global setting). Applied to the loop
+	// bound and the same-key re-send count for the whole request.
+	var retryOverride *int
+	var channelRetryOverride *int
 	for attempt := 0; attempt <= maxAttempts; attempt++ {
 		decision, err := s.selector.SelectSticky(ctx, req.Model, excluded, sessionKey)
 		if err != nil {
@@ -392,7 +458,25 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			return &relay.Result{Err: err}, nil
 		}
+		if retryOverride == nil && decision.RetryTimesOverride != nil {
+			retryOverride = decision.RetryTimesOverride
+			if req.PreferChannelID <= 0 {
+				// Route rows are validated by the Admin API, but clamp here as a
+				// last line of defence for old/corrupt rows and non-HTTP callers.
+				maxAttempts = clampInt(*retryOverride, 0, 100)
+			}
+		}
+		if channelRetryOverride == nil && decision.ChannelRetryTimesOverride != nil {
+			channelRetryOverride = decision.ChannelRetryTimesOverride
+		}
 		candidate := decision.Selected
+		if req.PreferChannelID > 0 {
+			pinned, ok := pickPreferred(decision, req.PreferChannelID)
+			if !ok {
+				return &relay.Result{Err: ErrPreferredChannel}, nil
+			}
+			candidate = pinned
+		}
 		// Circuit breaker: an open channel × model is skipped entirely (weight
 		// 0) until its probe window allows a single probe request through.
 		if s.breaker != nil && s.breaker.EffectiveWeight(candidate.Channel.ID, req.Model, 1) <= 0 {
@@ -410,24 +494,50 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			continue
 		}
-		if req.PreferChannelID > 0 {
-			pinned, ok := pickPreferred(decision, req.PreferChannelID)
-			if !ok {
-				return &relay.Result{Err: ErrPreferredChannel}, nil
-			}
-			candidate = pinned
-		}
 		// Burst guard: reserve one in-flight slot for the whole attempt sequence
 		// on this channel (all keys + retries), so the selector sees real
 		// occupancy while the request is in flight.
 		s.acquireChannel(candidate.Channel.ID)
-		defer s.releaseChannel(candidate.Channel.ID)
+		released := false
+		releaseAttempt := func() {
+			if released {
+				return
+			}
+			s.releaseChannel(candidate.Channel.ID)
+			released = true
+		}
+		defer releaseAttempt()
 		meta := &AttemptMeta{
 			ChannelID:   candidate.Channel.ID,
 			ChannelName: candidate.Channel.Name,
 			MemberID:    candidate.Member.ID,
 			Priority:    candidate.Member.Priority,
 			Weight:      candidate.Member.Weight,
+		}
+		probeReserved := false
+		probeEnded := false
+		endProbe := func() {
+			if probeReserved && !probeEnded {
+				s.breaker.EndProbe(candidate.Channel.ID, req.Model)
+				probeEnded = true
+			}
+		}
+		defer endProbe()
+		// EffectiveWeight returns a half-open weight when an open breaker is
+		// due for recovery. Reserve the single probe slot before doing any
+		// request setup so concurrent requests cannot all pass as probes.
+		if s.breaker != nil && s.breaker.IsOpen(candidate.Channel.ID, req.Model) {
+			if !s.breaker.TryBeginProbe(candidate.Channel.ID, req.Model) {
+				excluded[candidate.Channel.ID] = struct{}{}
+				last = preserve(&relay.Result{
+					StatusCode: http.StatusServiceUnavailable,
+					Err:        fmt.Errorf("proxy: circuit probe busy for %s on channel %d", req.Model, candidate.Channel.ID),
+				})
+				lastMeta = meta
+				releaseAttempt()
+				continue
+			}
+			probeReserved = true
 		}
 		var result *relay.Result
 		var category string
@@ -482,9 +592,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				StatusCode: adapterErrorStatus(translateErr, http.StatusBadRequest),
 				Err:        fmt.Errorf("proxy: %s translate: %w", adapter.Name(), translateErr),
 			}
-			category = adapterErrorCategory(translateErr)
-			s.recordAttempt(req, candidate, attempt+1, result, category)
-			return result, meta
+	category = adapterErrorCategory(translateErr)
+		s.recordAttempt(req, candidate, attempt+1, result, category, "")
+		return result, meta
 		}
 		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, upstreamPath, adapter)
 		if err != nil {
@@ -494,12 +604,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// API-key state.
 			result = &relay.Result{Err: err}
 			category = "invalid_url"
-			result.Err = fmt.Errorf("proxy: %w: %v", adapters.ErrInvalidURL, result.Err)
-			s.recordAttempt(req, candidate, attempt+1, result, category)
-			return result, meta
+		result.Err = fmt.Errorf("proxy: %w: %v", adapters.ErrInvalidURL, result.Err)
+		s.recordAttempt(req, candidate, attempt+1, result, category, "")
+		return result, meta
 		}
-		// Aggregate all enabled site API keys; failover keys before leaving the channel.
-		apiKeys, err := s.resolveAPIKeyPool(candidate.Channel)
+	// Aggregate all enabled site API keys; failover keys before leaving the channel.
+	apiKeys, err := s.resolveAPIKeyPool(candidate.Channel, req.Model)
 		if err != nil || len(apiKeys) == 0 {
 			result = &relay.Result{Err: ErrCredential}
 			category = "no_credential"
@@ -507,17 +617,24 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if s.breaker != nil {
 				s.breaker.RecordError(candidate.Channel.ID, req.Model, false)
 			}
-			s.recordAttempt(req, candidate, attempt+1, result, category)
-			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
+		s.recordAttempt(req, candidate, attempt+1, result, category, "")
+		s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
 
 			excluded[candidate.Channel.ID] = struct{}{}
 			last = preserve(result)
 			lastMeta = meta
+			endProbe()
+			releaseAttempt()
 			continue
 		}
 
 		for keyIndex, apiKey := range apiKeys {
-			headers := adapter.AuthHeaders(apiKey)
+			keyRetries := int(s.channelRetryTimes.Load())
+			if channelRetryOverride != nil {
+				keyRetries = clampInt(*channelRetryOverride, 0, 5)
+			}
+			for keyAttempt := 0; ; keyAttempt++ {
+				headers := adapter.AuthHeaders(apiKey)
 			if headers.Get("Content-Type") == "" && strings.TrimSpace(req.ContentType) != "" {
 				headers.Set("Content-Type", req.ContentType)
 			}
@@ -531,8 +648,23 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// Circuit-breaker probe: an open breaker whose window is due lets
 			// exactly one request through as a probe; its outcome drives the
 			// recovery backoff.
-			wasProbe := s.breaker != nil && s.breaker.TryBeginProbe(candidate.Channel.ID, req.Model)
-			result = s.relay.ForwardWithHeaders(ctx, req.Method, upstreamURL, headers, requestBody)
+			wasProbe := probeReserved
+			// Non-streaming requests get an overall cap: an upstream that answers
+			// headers and then stalls mid-body would otherwise pin this goroutine
+			// until the client disconnects. Streaming requests are exempt — long
+			// SSE sessions legitimately exceed any fixed budget, and their idle
+			// detection is the stream path's responsibility.
+			fwdCtx := ctx
+			if !req.Stream {
+				timeout := s.nonStreamTimeout
+				if timeout <= 0 {
+					timeout = nonStreamRequestTimeout
+				}
+				var cancel context.CancelFunc
+				fwdCtx, cancel = context.WithTimeout(ctx, timeout)
+				defer cancel()
+			}
+			result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, upstreamURL, headers, requestBody)
 			// Convert upstream 2xx bodies back to the OpenAI contract.
 			if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
 				if req.Stream {
@@ -617,38 +749,23 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				category = "stream_interrupted"
 				retryable = true
 			}
-			// Circuit breaker bookkeeping: upstream failures on this channel x
-			// model count; local conversion/feature errors do not.
-			if s.breaker != nil {
-				if !localAdapterFailure {
-					if result.Err != nil || result.StatusCode >= 400 {
-						s.breaker.RecordError(candidate.Channel.ID, req.Model, wasProbe)
-					} else {
-						s.breaker.RecordSuccess(candidate.Channel.ID, req.Model)
-					}
-				}
-				if wasProbe {
-					s.breaker.EndProbe(candidate.Channel.ID, req.Model)
-				}
+			// Circuit breaker bookkeeping: a success resets the breaker right away.
+			// Failures are NOT counted per attempt here — the same-key re-send
+			// loop would otherwise advance the breaker by (retries+1) for a
+			// single request. They are counted exactly once per request after
+			// the re-sends are exhausted (transport branch / channel tail).
+			if s.breaker != nil && !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
+				s.breaker.RecordSuccess(candidate.Channel.ID, req.Model)
 			}
 			// Per-key auto-disable (AxonHub): a key that fails N times with the
-			// same status code is excluded from the pool. Adapter-local errors do
-			// not implicate the key and must not poison its health state.
-			if !localAdapterFailure {
-				if result.Err != nil || result.StatusCode >= 400 {
-					if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
-						log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
-						// All keys down → cascade to the channel-level disable.
-						s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
-					}
-				} else {
-					s.recordKeySuccess(candidate.Channel.ID, apiKey)
-				}
-			}
-			// Only the last key attempt for this channel is logged at the attempt counter
-			// used for cross-channel retry; intermediate key fails stay on the same attempt.
-			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
-				s.recordAttempt(req, candidate, attempt+1, result, category)
+			// same status code is excluded from the pool. A successful re-send
+			// clears the key's counters immediately; the failure path is
+			// counted once per key after that key's re-sends are exhausted
+			// (transport branch / key-loop tail below), so a single request
+			// does not advance the counter once per attempt. Adapter-local
+			// errors do not implicate the key.
+			if !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
+				s.recordKeySuccess(candidate.Channel.ID, apiKey)
 			}
 			// The channel consecutive-failure counter is incremented exactly once
 			// per failed attempt (inside recordMemberFailure below); counting here
@@ -657,19 +774,84 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if result.Err == nil && !retryable {
 				break
 			}
+			if !retryable {
+				// Local adapter/configuration errors do not heal by re-sending;
+				// move to the next key (the channel-level branch decides failover).
+				break
+			}
 			if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
 				break
 			}
-			// Retryable: try next key in the pool before failing over to another channel.
+			// Network errors fail fast: re-send the same key up to
+			// channelRetryTimes, then cool the channel and return instead of
+			// fanning out across every channel (a dead network link usually
+			// affects all channels equally). The failure counters advance
+			// exactly once here — after the re-sends are exhausted.
+			if category == "transport" && keyAttempt >= keyRetries {
+				if result.Body != nil {
+					_ = result.Body.Close()
+				}
+				if s.breaker != nil && !localAdapterFailure {
+					s.breaker.RecordError(candidate.Channel.ID, req.Model, wasProbe)
+				}
+				if !localAdapterFailure {
+					if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
+						log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
+						// All keys down → cascade to the channel-level disable.
+						s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
+					}
+				}
+				penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
+				s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
+				s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
+				return result, meta
+			}
+			// Business retryables (5xx/429): re-send the same key up to
+			// channelRetryTimes, then try the next key in the pool before
+			// failing over to another channel.
+			if keyAttempt >= keyRetries {
+				break
+			}
 			if result.Body != nil {
 				_ = result.Body.Close()
 			}
 		}
+		// Only the last key attempt for this channel is logged at the attempt counter
+		// used for cross-channel retry; intermediate key fails stay on the same attempt.
+		if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
+			s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
+		}
+		// Per-key failure accounting: this key's re-sends are exhausted (or the
+		// error is not retryable) — count the key's failure exactly once per
+		// request. Client-cancelled requests are not upstream failures.
+		if !isAdapterError(result.Err) && (result.Err != nil || result.StatusCode >= 400) &&
+			!errors.Is(result.Err, context.Canceled) && !errors.Is(result.Err, context.DeadlineExceeded) && ctx.Err() == nil {
+			if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
+				log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
+				// All keys down → cascade to the channel-level disable.
+				s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
+			}
+		}
+		if result.Err == nil && !retryable {
+			break
+		}
+		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
+			break
+		}
+		if result.Body != nil {
+			_ = result.Body.Close()
+		}
+		endProbe()
+		releaseAttempt()
+	}
 		if result == nil {
 			return &relay.Result{Err: ErrCredential}, meta
 		}
 
-		if result.Err == nil && !retryable {
+		// Success is a 2xx upstream result. A 4xx client error is NOT success:
+		// it falls through to the failover branch below so the next channel
+		// gets a chance (channel capabilities are heterogeneous).
+		if result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
 			if last != nil && last.Body != nil {
 				_ = last.Body.Close()
 			}
@@ -678,14 +860,14 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			s.decayError(candidate.Channel.ID, req.Model)
 			s.recordMemberSuccess(candidate.Channel.ID)
-			if s.latencyAware && result.LatencyMs > 0 {
+			if s.latencyAware.Load() && result.LatencyMs > 0 {
 				s.observeLatency(candidate.Channel.ID, req.Model, result.LatencyMs)
 			}
 			// Bind the successful relay to its session key so the next request
 			// of the same conversation prefers this channel (prompt-cache and
 			// multi-turn continuity). Admin-pinned probes never bind.
-			if s.sticky != nil && sessionKey != "" && req.PreferChannelID == 0 {
-				s.sticky.Bind(sessionKey, candidate.Channel.ID, s.now())
+			if stickyStore != nil && sessionKey != "" && req.PreferChannelID == 0 {
+				stickyStore.Bind(sessionKey, candidate.Channel.ID, s.now())
 			}
 			return result, meta
 		}
@@ -693,10 +875,39 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			return result, meta
 		}
 		if retryable {
+			// Channel-level breaker: all keys on this channel failed after
+			// their re-sends — one failure per request, not per attempt.
+			if s.breaker != nil && !isAdapterError(result.Err) {
+				s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
+			}
 			penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
 			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
-		}
-		if !retryable || req.PreferChannelID > 0 {
+			if req.PreferChannelID > 0 {
+				return result, meta
+			}
+		} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
+			// 4xx client error: fail over to the next channel — a different
+			// upstream may accept the same request (channel capabilities are
+			// heterogeneous: one gateway may reject reasoning_effort=max while
+			// another accepts it). Cool the member down so this channel is
+			// skipped for a while, but do NOT count toward the channel's
+			// consecutive-failure tally or auto-disable: the request itself may
+			// be at fault, and counting would let a bad client request take
+			// down every channel via repeated 4xx failover.
+			if s.breaker != nil && !isAdapterError(result.Err) {
+				s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
+			}
+			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+				log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
+			}
+			s.observeError(candidate.Channel.ID, req.Model)
+			if req.PreferChannelID > 0 {
+				return result, meta
+			}
+		} else {
+			// Local adapter/configuration errors and non-4xx client errors are
+			// returned directly: the same adapter logic would fail identically
+			// on every channel, so failover cannot help.
 			return result, meta
 		}
 
@@ -725,10 +936,23 @@ func pickPreferred(decision routing.Decision, channelID int64) (domain.RoutingCa
 	return domain.RoutingCandidate{}, false
 }
 
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
 // resolveAPIKeyPool builds the ordered list of plaintext API keys for a channel.
 // Prefer the bound credential first, then every other enabled api_key on the same site.
 // Keys that hit the per-key auto-disable threshold are excluded until they heal.
-func (s *Service) resolveAPIKeyPool(channel domain.Channel) ([]string, error) {
+// Keys whose models_csv allowlist does not cover the requested model are skipped
+// (empty model = no filtering). With key-pool rotation disabled, only the bound
+// key (or the first pool key) is used.
+func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]string, error) {
 	seen := make(map[int64]struct{})
 	var keys []string
 
@@ -745,6 +969,9 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel) ([]string, error) {
 		if !strings.EqualFold(credential.Kind, "api_key") {
 			return
 		}
+		if !modelAllowedByKey(model, credential.ModelsCSV) {
+			return
+		}
 		plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
 		if err != nil || len(plaintext) == 0 {
 			return
@@ -757,6 +984,26 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel) ([]string, error) {
 		}
 		seen[credential.ID] = struct{}{}
 		keys = append(keys, string(plaintext))
+	}
+
+	if !s.keyPoolRotation.Load() {
+		// Rotation off: never rotate through the pool — bound key first, or
+		// the first enabled pool key as a fallback.
+		if channel.CredentialID != nil {
+			bound, err := s.db.Credential.GetByID(*channel.CredentialID)
+			if err == nil {
+				appendCredential(bound)
+			}
+		} else if channel.SiteID != nil {
+			pool, err := s.db.Credential.ListEnabledAPIKeysBySite(*channel.SiteID)
+			if err == nil && len(pool) > 0 {
+				appendCredential(&pool[0])
+			}
+		}
+		if len(keys) == 0 {
+			return nil, ErrCredential
+		}
+		return keys, nil
 	}
 
 	if channel.CredentialID != nil {
@@ -783,12 +1030,28 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel) ([]string, error) {
 	return keys, nil
 }
 
-func (s *Service) resolveAPIKey(channel domain.Channel) (string, error) {
-	keys, err := s.resolveAPIKeyPool(channel)
-	if err != nil || len(keys) == 0 {
-		return "", ErrCredential
+// modelAllowedByKey reports whether a key's model allowlist (models_csv)
+// permits serving the model. Empty allowlist = all models; entries support
+// "*" suffix wildcards ("gpt-4*" matches "gpt-4o"). An empty model skips
+// filtering entirely.
+func modelAllowedByKey(model, modelsCSV string) bool {
+	if strings.TrimSpace(model) == "" || strings.TrimSpace(modelsCSV) == "" {
+		return true
 	}
-	return keys[0], nil
+	for _, part := range strings.Split(modelsCSV, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.HasSuffix(part, "*") {
+			if strings.HasPrefix(model, strings.TrimSuffix(part, "*")) {
+				return true
+			}
+		} else if part == model {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, adapter adapters.ForwardAdapter) (string, error) {
@@ -824,7 +1087,8 @@ func (s *Service) recordMemberFailure(memberID, channelID int64, model string, c
 // recordChannelFailure increments the channel consecutive-failure counter and
 // auto-disables the channel once the threshold is reached.
 func (s *Service) recordChannelFailure(channelID int64) {
-	if s.autoDisableThreshold <= 0 || channelID <= 0 {
+	threshold := int(s.autoDisableThreshold.Load())
+	if threshold <= 0 || channelID <= 0 {
 		return
 	}
 	count, err := s.db.Channel.RecordRelayFailure(channelID)
@@ -832,7 +1096,7 @@ func (s *Service) recordChannelFailure(channelID int64) {
 		log.Printf("proxy: channel relay failure channel_id=%d: %v", channelID, err)
 		return
 	}
-	if count >= s.autoDisableThreshold {
+	if count >= threshold {
 		if err := s.db.Channel.AutoDisable(channelID); err != nil {
 			log.Printf("proxy: auto disable channel_id=%d: %v", channelID, err)
 		} else if s.notifier != nil {
@@ -892,7 +1156,7 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
 	return rewritten
 }
 
-func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string) {
+func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string) {
 	status := result.StatusCode
 	if status == 0 && result.Err != nil {
 		status = http.StatusBadGateway
@@ -920,6 +1184,7 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		Path:             req.OpenAIPath,
 		SessionKey:       req.SessionKey,
 		ReasoningEffort:  req.ReasoningEffort,
+		KeyFingerprint:   keyFP,
 	})
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
@@ -1016,9 +1281,9 @@ func keyFingerprint(key string) string {
 // returns true when the auto-disable threshold was crossed (the key is then
 // excluded from the pool until a success or the penalty TTL expires).
 func (s *Service) recordKeyFailure(channelID int64, key string, status int) bool {
-	threshold := s.autoDisableThreshold
+	threshold := int(s.keyFailThreshold.Load())
 	if threshold <= 0 {
-		threshold = 5
+		return false // key auto-exclusion disabled
 	}
 	fp := keyFingerprint(key)
 	now := s.now()
@@ -1081,11 +1346,11 @@ func (s *Service) keyDisabled(channelID int64, key string) bool {
 // auto-disabled — a bad-key storm must not leave a half-broken channel in the
 // routing pool with zero credentials.
 func (s *Service) cascadeChannelIfAllKeysDisabled(channel domain.Channel) {
-	if s.autoDisableThreshold <= 0 || channel.ID <= 0 {
+	if s.autoDisableThreshold.Load() <= 0 || channel.ID <= 0 {
 		return
 	}
 	// Pool still resolves keys → other keys remain usable, no cascade.
-	if keys, err := s.resolveAPIKeyPool(channel); err == nil && len(keys) > 0 {
+	if keys, err := s.resolveAPIKeyPool(channel, ""); err == nil && len(keys) > 0 {
 		return
 	}
 	// Pool empty: distinguish "channel has no keys at all" (nothing to
@@ -1106,19 +1371,6 @@ func (s *Service) cascadeChannelIfAllKeysDisabled(channel domain.Channel) {
 		go s.notifier.Notify(context.Background(), webhook.ChannelDisabled, channel.ID, channel.Name, "all api keys disabled")
 		s.notifier.SendAlert(context.Background(), webhook.AlertWarning, "请求失败告警", fmt.Sprintf("渠道 #%d (%s) 所有 API Key 均被禁用，渠道已级联禁用。", channel.ID, channel.Name))
 	}
-}
-
-func classify(result *relay.Result) (string, bool) {
-	if result.Err != nil {
-		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) {
-			return "cancelled", false
-		}
-		return "transport", true
-	}
-	if isRetryableStatus(result.StatusCode) {
-		return fmt.Sprintf("upstream_status_%d", result.StatusCode), true
-	}
-	return "", false
 }
 
 // classifyForChannel is classify plus the channel's retry_config: custom
@@ -1299,6 +1551,10 @@ func preserve(result *relay.Result) *relay.Result {
 // maxStreamFirstChunkBytes bounds how much of a stream prefix we buffer before
 // committing the response to the client.
 const maxStreamFirstChunkBytes = 256 * 1024
+
+// nonStreamRequestTimeout caps the total duration of a non-streaming upstream
+// attempt (request + full body read). Streaming requests are exempt.
+const nonStreamRequestTimeout = 5 * time.Minute
 
 // peekFirstChunk reads the leading bytes of an upstream stream response. SSE
 // frames end with a blank line, so reading until "\n\n" (or a bounded amount of

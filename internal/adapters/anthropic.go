@@ -284,7 +284,7 @@ func (a *AnthropicModelAdapter) ListModels(ctx context.Context, baseURL, apiKey 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &Error{Kind: ErrorStatus, Status: resp.StatusCode}
+		return nil, &Error{Kind: ErrorStatus, Status: resp.StatusCode, RetryAfter: retryAfterFromHeader(resp.Header)}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxModelResponseBytes+1))
 	if err != nil {

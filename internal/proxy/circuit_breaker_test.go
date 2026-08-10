@@ -13,7 +13,7 @@ import (
 )
 
 func TestCircuitBreakerStateMachine(t *testing.T) {
-	breaker := NewModelCircuitBreaker()
+	breaker := NewModelCircuitBreaker(0)
 	clock := fixedClock{now: time.Now()}
 	breaker.now = func() time.Time { return clock.now }
 
@@ -65,7 +65,7 @@ func TestCircuitBreakerStateMachine(t *testing.T) {
 }
 
 func TestCircuitBreakerBackoffOnlyAdvancesOnProbeFailure(t *testing.T) {
-	breaker := NewModelCircuitBreaker()
+	breaker := NewModelCircuitBreaker(0)
 	clock := fixedClock{now: time.Now()}
 	breaker.now = func() time.Time { return clock.now }
 
@@ -100,12 +100,64 @@ func TestCircuitBreakerBackoffOnlyAdvancesOnProbeFailure(t *testing.T) {
 	}
 }
 
+func TestCircuitBreakerRuntimeThreshold(t *testing.T) {
+	breaker := NewModelCircuitBreaker(0)
+	clock := fixedClock{now: time.Now()}
+	breaker.now = func() time.Time { return clock.now }
+
+	// Default: open after 5 failures (half-open from 3).
+	for i := 0; i < breakerOpenThreshold-1; i++ {
+		breaker.RecordError(1, "m", false)
+	}
+	if breaker.IsOpen(1, "m") {
+		t.Fatal("must not open before default threshold")
+	}
+	breaker.RecordError(1, "m", false)
+	if !breaker.IsOpen(1, "m") {
+		t.Fatal("must open at default threshold")
+	}
+	breaker.RecordSuccess(1, "m")
+
+	// Runtime override: open after 3 (half-open from 2).
+	breaker.SetOpenThreshold(3)
+	for i := 0; i < 2; i++ {
+		breaker.RecordError(1, "m", false)
+	}
+	if w := breaker.EffectiveWeight(1, "m", 100); w != 30 {
+		t.Fatalf("half-open at ceil(3/2)=2 failures, weight=%v want 30", w)
+	}
+	breaker.RecordError(1, "m", false)
+	if !breaker.IsOpen(1, "m") {
+		t.Fatal("must open at configured threshold 3")
+	}
+	breaker.RecordSuccess(1, "m")
+
+	// Threshold 0 disables the breaker entirely: failures are ignored, weight
+	// stays full, and the breaker never opens.
+	breaker.SetOpenThreshold(0)
+	for i := 0; i < 10; i++ {
+		breaker.RecordError(1, "m", false)
+	}
+	if breaker.IsOpen(1, "m") {
+		t.Fatal("threshold 0 must disable the breaker")
+	}
+	if w := breaker.EffectiveWeight(1, "m", 100); w != 100 {
+		t.Fatalf("disabled breaker must keep full weight, got %v", w)
+	}
+	// Negative value resets to the default.
+	breaker.SetOpenThreshold(-1)
+	breaker.RecordError(1, "m", false)
+	if breaker.IsOpen(1, "m") {
+		t.Fatal("negative threshold must reset to default")
+	}
+}
+
 func TestPerKeyAutoDisableExcludesBadKeyOnly(t *testing.T) {
 	service := &Service{}
 	service.keyErrCounts = make(map[int64]map[string]map[int]int)
 	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.now = time.Now
-	service.autoDisableThreshold = 3
+	service.SetKeyFailThreshold(3)
 
 	good := "sk-good-abcdef"
 	bad := "sk-bad-abcdef"
@@ -171,7 +223,9 @@ func TestAllKeysDisabledCascadesChannelDisable(t *testing.T) {
 	service.keyErrCounts = make(map[int64]map[string]map[int]int)
 	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.now = time.Now
-	service.autoDisableThreshold = 2
+	service.SetKeyFailThreshold(2)
+	service.SetAutoDisableThreshold(2)
+	service.SetKeyPoolRotation(true)
 	channel, _ := db.Channel.GetByID(channelID)
 
 	// Disable key 1: pool still has key 2 → no cascade.
@@ -198,7 +252,7 @@ func TestPerKeyCountersAreScopedByChannel(t *testing.T) {
 	service.keyErrCounts = make(map[int64]map[string]map[int]int)
 	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.now = time.Now
-	service.autoDisableThreshold = 2
+	service.SetKeyFailThreshold(2)
 
 	key := "sk-shared-abcdef"
 	service.recordKeyFailure(1, key, 403)
@@ -241,4 +295,3 @@ func TestCircuitBreakerSkipsOpenChannelInRelay(t *testing.T) {
 		t.Fatalf("expected 1 call on healthy channel, got %#v", upstream.calls)
 	}
 }
-

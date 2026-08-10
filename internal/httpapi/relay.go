@@ -27,7 +27,6 @@ import (
 )
 
 type RelayProxy interface {
-	Forward(ctx context.Context, req proxy.Request) *relay.Result
 	ForwardWithMeta(ctx context.Context, req proxy.Request) (*relay.Result, *proxy.AttemptMeta)
 	ChatCompletions(ctx context.Context, req proxy.Request) *relay.Result
 	ChatCompletionsWithMeta(ctx context.Context, req proxy.Request) (*relay.Result, *proxy.AttemptMeta)
@@ -286,7 +285,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
 	forceSSE := stream
 	writeUpstreamResult(
-		w, requestID, result, forceSSE, clientFamily,
+		w, requestID, result, forceSSE,
 		func(tokens usage.Tokens, status int, firstByteMs int) {
 			channelID := int64(0)
 			if meta != nil {
@@ -440,7 +439,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	writeUpstreamResult(
-		w, requestID, result, stream, clientFamily,
+		w, requestID, result, stream,
 		func(tokens usage.Tokens, status int, firstByteMs int) {
 			channelID := int64(0)
 			if meta != nil {
@@ -518,7 +517,7 @@ func (h *RelayHandler) streamErrorCallback(r *http.Request, meta *proxy.AttemptM
 	}
 }
 
-func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.Result, stream bool, clientFamily string, onUsage func(usage.Tokens, int, int), onStreamError func()) {
+func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int, int), onStreamError func()) {
 	if result.Err != nil {
 		switch {
 		case errors.Is(result.Err, routing.ErrRouteNotFound), errors.Is(result.Err, routing.ErrNoEligible):
@@ -595,6 +594,9 @@ func ClientFamily(userAgent string) string {
 		return "cursor"
 	case strings.Contains(ua, "windsurf"):
 		return "windsurf"
+	case strings.Contains(ua, "pi-coding-agent"),
+		(strings.Contains(ua, "pi/") && !strings.Contains(ua, "api/")):
+		return "pi"
 	case strings.Contains(ua, "anthropic"):
 		return "anthropic"
 	case strings.Contains(ua, "openai") && strings.Contains(ua, "python"):
@@ -652,7 +654,7 @@ func ClientFamilyOf(r *http.Request) string {
 // dimension; keep in sync with ClientFamily's outputs.
 var knownClientFamilies = []string{
 	"claude-code", "claude-desktop", "cherry-studio", "lobe", "chatbox",
-	"nextchat", "opencat", "copilot", "cursor", "windsurf", "anthropic",
+	"nextchat", "opencat", "copilot", "cursor", "windsurf", "pi", "anthropic",
 	"openai-python", "openai", "cli", "python", "node", "postman",
 	"insomnia", "browser", "unknown",
 }

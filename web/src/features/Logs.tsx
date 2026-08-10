@@ -4,6 +4,7 @@ import { useMemo, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuditPanel, DiscoveryPanel } from "./OpsPanels";
 import { api } from "../api/client";
+import type { ProxyLog } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -22,6 +23,7 @@ import {
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
+import { formatCost } from "../lib/format";
 
 function ProxyLogsPanel() {
   const { client } = useSession();
@@ -32,7 +34,6 @@ function ProxyLogsPanel() {
   const modelParam = params.get("model")?.trim() || "";
   const failedOnly = params.get("status") !== "all";
   const [modelDraft, setModelDraft] = useState(modelParam);
-  const [beforeId, setBeforeId] = useState<number | undefined>(undefined);
   const [slowOnly, setSlowOnly] = useState(false);
   const [histogram, setHistogram] = useState<{
     buckets: number[];
@@ -47,10 +48,9 @@ function ProxyLogsPanel() {
       channel_id: channelId,
       model: modelParam || undefined,
       status: failedOnly ? ("failed" as const) : undefined,
-      before_id: beforeId,
       limit: 100,
     }),
-    [beforeId, channelId, failedOnly, modelParam],
+    [channelId, failedOnly, modelParam],
   );
 
   const logs = useQuery({
@@ -80,13 +80,40 @@ function ProxyLogsPanel() {
     return map;
   }, [channels.data]);
 
+  // Downstream-key pricing: per-1k prompt/completion unit prices set on the
+  // key that issued the request. Used to render a per-log cost column.
+  const keys = useQuery({
+    queryKey: ["keys"],
+    queryFn: ({ signal }) => service.keys(signal),
+  });
+  const priceMap = useMemo(() => {
+    const map = new Map<number, { prompt: number; completion: number }>();
+    for (const k of keys.data ?? []) {
+      if (k.price_prompt_per_1k || k.price_completion_per_1k) {
+        map.set(k.id, {
+          prompt: k.price_prompt_per_1k ?? 0,
+          completion: k.price_completion_per_1k ?? 0,
+        });
+      }
+    }
+    return map;
+  }, [keys.data]);
+  const logCost = (log: ProxyLog): number | null => {
+    if (log.downstream_key_id == null) return null;
+    const price = priceMap.get(log.downstream_key_id);
+    if (!price) return null;
+    const total =
+      ((log.prompt_tokens ?? 0) / 1000) * price.prompt +
+      ((log.completion_tokens ?? 0) / 1000) * price.completion;
+    return total > 0 ? total : null;
+  };
+
   const rows = logs.data ?? [];
   const pagination = useClientPagination(
     slowOnly ? rows.filter((log) => log.latency_ms >= 5000) : rows,
     20,
   );
   const pageRows = pagination.pageItems;
-  const canLoadMore = rows.length >= 100;
   const failedCount = rows.filter((log) => log.status >= 400).length;
 
   // Friendly, translatable label for a raw backend error category.
@@ -102,7 +129,6 @@ function ProxyLogsPanel() {
       if (value == null || value === "") next.delete(key);
       else next.set(key, value);
     }
-    setBeforeId(undefined);
     setParams(next, { replace: true });
   };
 
@@ -134,7 +160,6 @@ function ProxyLogsPanel() {
           variant="secondary"
           icon={<RefreshCw size={16} />}
           onClick={() => {
-            setBeforeId(undefined);
             void logs.refetch();
           }}
         >
@@ -152,10 +177,11 @@ function ProxyLogsPanel() {
             value: logs.isPending ? "—" : failedCount,
           },
           {
-            label: t("logsPage.stat.focus"),
-            value: failedOnly
-              ? t("logsPage.focus.failures")
-              : t("logsPage.focus.all"),
+            label: t("logsPage.stat.failRate"),
+            value:
+              logs.isPending || rows.length === 0
+                ? "—"
+                : `${Math.round((failedCount / rows.length) * 100)}%`,
           },
         ]}
       />
@@ -173,7 +199,9 @@ function ProxyLogsPanel() {
               })}
             </span>
           </div>
-          <div className="latency-histogram-bars">
+          <div
+            className={`latency-histogram-bars${histogram.total === 0 ? " is-empty" : ""}`}
+          >
             {histogram.buckets.map((count, index) => {
               const max = Math.max(...histogram.buckets, 1);
               const slow = index >= 6; // buckets 6+ = >= 5s
@@ -305,7 +333,7 @@ function ProxyLogsPanel() {
                   t("common.cacheTokens"),
 					t("common.latency"),
 					t("common.firstByte"),
-					t("logsPage.throughput"),
+					t("common.cost"),
 					t("common.clientFamily"),
                 ]}
               >
@@ -386,29 +414,14 @@ function ProxyLogsPanel() {
 							? t("common.ms", { n: log.first_byte_ms })
 							: "—"}
 					</td>
-					<td>
-						{log.tokens_per_second && log.tokens_per_second > 0
-							? `${Math.round(log.tokens_per_second)} t/s`
-							: "—"}
+					<td className="log-cost">
+						{logCost(log) != null ? formatCost(logCost(log)!) : "—"}
 					</td>
 					<td>{log.client_family || "—"}</td>
                   </tr>
                 ))}
               </DataTable>
             </ListShell>
-            {canLoadMore ? (
-              <div style={{ marginTop: 12, textAlign: "center" }}>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    const last = rows[rows.length - 1];
-                    if (last) setBeforeId(last.id);
-                  }}
-                >
-                  {t("common.loadMore")}
-                </Button>
-              </div>
-            ) : null}
           </EntityState>
         </Panel>
       </div>

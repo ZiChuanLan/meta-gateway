@@ -31,6 +31,9 @@ export function HourlyTrafficChart({
 	tokens,
 	labels,
 	height = 168,
+	selected = null,
+	onSelect,
+	labelStep = 4,
 }: {
 	/** One value per hour, oldest → newest, aligned to local wall-clock hours. */
 	requests: number[];
@@ -39,6 +42,12 @@ export function HourlyTrafficChart({
 	/** Short display label per hour (e.g. "14:00"). Same length as requests. */
 	labels: string[];
 	height?: number;
+	/** Bucket index to render as selected (drill-down target). */
+	selected?: number | null;
+	/** Called with the bucket index when a bar is clicked. */
+	onSelect?: (index: number) => void;
+	/** Label one tick every N buckets (4 for 24h, 8 for 48h). */
+	labelStep?: number;
 }) {
 	const [hot, setHot] = useState<number | null>(null);
 	const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -184,13 +193,20 @@ export function HourlyTrafficChart({
 								width={b.w}
 								height={b.h}
 								rx={2}
-								className={hot === i ? "chart-bar is-hot" : "chart-bar"}
+								className={
+									hot === i
+										? "chart-bar is-hot"
+										: selected === i
+											? "chart-bar is-selected"
+											: "chart-bar"
+								}
 								onMouseEnter={() => setHot(i)}
+								onClick={() => onSelect?.(i)}
 							/>
 						))}
-						{/* hour ticks every 4 hours */}
+						{/* bucket ticks every labelStep buckets */}
 						{labels.map((label, i) =>
-							i % 4 === 0 ? (
+							i % labelStep === 0 ? (
 								<text
 									key={i}
 									x={PAD_L + i * (720 / labels.length) + 720 / labels.length / 2}

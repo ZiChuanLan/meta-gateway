@@ -4,7 +4,6 @@ package relay
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -136,18 +135,4 @@ func (r *Relay) Models(upstreamURL string, apiKey string) ([]byte, error) {
 	}
 
 	return body, nil
-}
-
-// DecodeJSONRequestBody decodes a JSON request body safely (with max size limit).
-func DecodeJSONRequestBody(r *http.Request, maxBytes int64, target interface{}) error {
-	if maxBytes <= 0 {
-		maxBytes = 10 * 1024 * 1024 // 10 MB default
-	}
-	r.Body = http.MaxBytesReader(nil, r.Body, maxBytes)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(target); err != nil {
-		return fmt.Errorf("relay: decode body: %w", err)
-	}
-	return nil
 }

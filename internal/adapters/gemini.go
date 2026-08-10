@@ -501,7 +501,7 @@ func (a *GeminiModelAdapter) ListModels(ctx context.Context, baseURL, apiKey str
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &Error{Kind: ErrorStatus, Status: resp.StatusCode}
+		return nil, &Error{Kind: ErrorStatus, Status: resp.StatusCode, RetryAfter: retryAfterFromHeader(resp.Header)}
 	}
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxModelResponseBytes+1))
 	if readErr != nil {

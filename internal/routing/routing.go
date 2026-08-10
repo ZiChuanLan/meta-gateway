@@ -27,6 +27,7 @@ const (
 	ReasonCoolingDown      Reason = "cooling_down"
 	ReasonExcluded         Reason = "already_attempted"
 	ReasonInvalidWeight    Reason = "invalid_weight"
+	ReasonCircuitOpen      Reason = "circuit_open"
 )
 
 type Evaluation struct {
@@ -61,6 +62,11 @@ type Explanation struct {
 	StableFirstHit bool `json:"stable_first_hit,omitempty"`
 	// StableFirstDenominator is the active 1/N gray ratio (0 = disabled).
 	StableFirstDenominator int `json:"stable_first_denominator,omitempty"`
+	// RetryTimesOverride / ChannelRetryTimesOverride carry the route-level
+	// retry policy (nil = follow the global runtime setting). The proxy reads
+	// them from the selection decision.
+	RetryTimesOverride         *int `json:"retry_times_override,omitempty"`
+	ChannelRetryTimesOverride  *int `json:"channel_retry_times_override,omitempty"`
 }
 
 type Decision struct {
@@ -112,6 +118,12 @@ type LatencyProvider func(channelID int64, model string) (float64, bool)
 // weight).
 type ErrorProvider func(channelID int64, model string) (float64, bool)
 
+// CircuitWeightProvider returns the live model-circuit multiplier for a
+// channel. A non-positive value means the channel is currently open and must
+// not be selected; a value between zero and one represents a half-open probe
+// share.
+type CircuitWeightProvider func(channelID int64, model string) float64
+
 // ConcurrencyProvider returns the number of in-flight relay attempts currently
 // occupying a channel (0 when none). It is the input to the burst guard that
 // keeps a sudden spike from overwhelming the healthiest channel.
@@ -127,6 +139,9 @@ type Selector struct {
 	// errorAware penalizes channels with a high EWMA failure propensity.
 	errorAware bool
 	errorRate  ErrorProvider
+	// circuitWeight is optional so the selector remains usable in unit tests
+	// and lightweight callers that do not own a proxy circuit breaker.
+	circuitWeight CircuitWeightProvider
 	// concurrencyAware applies an in-flight burst guard: channels at or above
 	// the limit are nearly skipped so spikes spread across the fleet.
 	concurrencyAware bool
@@ -165,6 +180,12 @@ func (s *Selector) SetStableFirst(enabled bool, denominator int) {
 func (s *Selector) SetErrorAware(enabled bool, provider ErrorProvider) {
 	s.errorAware = enabled
 	s.errorRate = provider
+}
+
+// SetCircuitAware wires the proxy's per-channel×model circuit state into
+// selection and route explanations. A nil provider disables this extra gate.
+func (s *Selector) SetCircuitAware(provider CircuitWeightProvider) {
+	s.circuitWeight = provider
 }
 
 // SetConcurrencyAware turns the in-flight burst guard on/off. limit is the
@@ -275,6 +296,7 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 	evaluations := make([]Evaluation, 0, len(candidates))
 	for _, candidate := range candidates {
 		reasons := make([]Reason, 0, 2)
+		circuitWeight := 1.0
 		if !candidate.Member.Enabled {
 			reasons = append(reasons, ReasonMemberDisabled)
 		}
@@ -293,11 +315,23 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		if candidate.Member.Weight < 0 {
 			reasons = append(reasons, ReasonInvalidWeight)
 		}
+		if s.circuitWeight != nil {
+			circuitWeight = s.circuitWeight(candidate.Channel.ID, model)
+			if circuitWeight <= 0 {
+				reasons = append(reasons, ReasonCircuitOpen)
+			}
+		}
+		score := s.scoreFor(candidate, route.RoutingMode)
+		if circuitWeight <= 0 {
+			score = 0
+		} else if circuitWeight < 1 {
+			score *= circuitWeight
+		}
 		evaluations = append(evaluations, Evaluation{
 			Candidate: candidate,
 			Eligible:  len(reasons) == 0,
 			Reasons:   reasons,
-			Score:     s.scoreFor(candidate, route.RoutingMode),
+			Score:     score,
 		})
 	}
 	sort.SliceStable(evaluations, func(i, j int) bool {
@@ -314,6 +348,8 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		RoutingMode:      domain.NormalizeRoutingMode(route.RoutingMode),
 		EvaluatedAt:      now,
 		Candidates:       evaluations,
+		RetryTimesOverride:        route.RetryTimes,
+		ChannelRetryTimesOverride: route.ChannelRetryTimes,
 	}, nil
 }
 
@@ -477,12 +513,12 @@ func (s *Selector) pickLatencyAware(candidates []domain.RoutingCandidate, errorA
 		if weight <= 0 {
 			weight = 1
 		}
-	score := weight
-	if latency, ok := s.latency(candidate.Channel.ID, candidate.ModelPattern); ok && latency > 0 {
-		score = weight * (baseLatencyMs / (baseLatencyMs + latency))
-	}
-	if errorAware && s.errorRate != nil {
-		if propensity, ok := s.errorRate(candidate.Channel.ID, candidate.ModelPattern); ok && propensity > 0 {
+		score := weight
+		if latency, ok := s.latency(candidate.Channel.ID, candidate.ModelPattern); ok && latency > 0 {
+			score = weight * (baseLatencyMs / (baseLatencyMs + latency))
+		}
+		if errorAware && s.errorRate != nil {
+			if propensity, ok := s.errorRate(candidate.Channel.ID, candidate.ModelPattern); ok && propensity > 0 {
 				factor := 1 - propensity
 				if factor < 0.05 {
 					factor = 0.05 // floor: an unhealthy channel keeps a small chance

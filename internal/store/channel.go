@@ -125,6 +125,10 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		c.last_probe_at,
 		COALESCE(c.last_probe_ok, 0),
 		COALESCE(c.last_probe_error, ''),
+		c.last_ping_at,
+		COALESCE(c.last_ping_ok, 0),
+		COALESCE(c.last_ping_error, ''),
+		COALESCE(c.last_ping_ms, 0),
 		COALESCE(site.platform, '')
 		FROM channels c
 		LEFT JOIN sites site ON site.id = c.site_id
@@ -139,7 +143,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 	var result []domain.ChannelOverview
 	for rows.Next() {
 		var overview domain.ChannelOverview
-		var checkinEnabled, hasUserCredential, hasPlatformUserID, hasAPIKey, siteUsable, credentialUsable, lastProbeOK, stableFirst int
+		var checkinEnabled, hasUserCredential, hasPlatformUserID, hasAPIKey, siteUsable, credentialUsable, lastProbeOK, stableFirst, lastPingOK int
 		if err := rows.Scan(
 			&overview.Channel.ID,
 			&overview.Channel.SiteID,
@@ -177,6 +181,10 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			scanNullTime(&overview.LastProbeAt),
 			&lastProbeOK,
 			&overview.LastProbeError,
+			scanNullTime(&overview.LastPingAt),
+			&lastPingOK,
+			&overview.LastPingError,
+			&overview.LastPingMs,
 			&overview.SitePlatform,
 		); err != nil {
 			return nil, fmt.Errorf("channel overview scan: %w", err)
@@ -185,11 +193,14 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		overview.HasUserCredential = hasUserCredential != 0
 		overview.HasPlatformUserID = hasPlatformUserID != 0
 		overview.LastProbeOK = lastProbeOK != 0
+		overview.LastPingOK = lastPingOK != 0
 		overview.HasAPIKey = hasAPIKey != 0
 		overview.SiteUsable = siteUsable != 0
 		overview.CredentialUsable = credentialUsable != 0
 		overview.Channel.StableFirst = stableFirst != 0
 		overview.HealthState = DeriveHealthState(overview)
+		overview.HealthReason = DeriveHealthReason(overview)
+		overview.ConnectivityState = DeriveConnectivityState(overview)
 		result = append(result, overview)
 	}
 	return result, rows.Err()
@@ -336,8 +347,9 @@ func (s *ChannelStore) AutoDisable(channelID int64) error {
 	return nil
 }
 
-// RecoverAutoDisabled restores an auto-disabled channel to enabled. It returns
-// true when the channel was actually transitioned (was auto-disabled).
+// RecoverAutoDisabled restores an auto-disabled channel and its automatically
+// parked route members to enabled. It returns true when the channel was
+// actually transitioned (was auto-disabled).
 func (s *ChannelStore) RecoverAutoDisabled(channelID int64) (bool, error) {
 	res, err := s.db.Exec(`UPDATE channels SET status = ? WHERE id = ? AND status = ?`,
 		domain.StatusEnabled, channelID, domain.StatusAutoDisabled)
@@ -346,7 +358,7 @@ func (s *ChannelStore) RecoverAutoDisabled(channelID int64) (bool, error) {
 	}
 	n, _ := res.RowsAffected()
 	if n > 0 {
-		if _, err := s.db.Exec(`UPDATE route_members SET fail_count = 0, cooldown_until = NULL, last_error = '' WHERE channel_id = ?`, channelID); err != nil {
+		if _, err := s.db.Exec(`UPDATE route_members SET enabled = CASE WHEN fail_count > 0 THEN 1 ELSE enabled END, fail_count = 0, cooldown_until = NULL, last_error = '' WHERE channel_id = ?`, channelID); err != nil {
 			return false, fmt.Errorf("channel recover clear health: %w", err)
 		}
 	}
@@ -408,26 +420,86 @@ func (s *ChannelStore) RecordGraySuccess(channelID int64, promoteAfter int) (boo
 func DeriveHealthState(overview domain.ChannelOverview) string {
 	switch overview.Channel.Status {
 	case domain.StatusDisabled:
-		return "disabled"
+		return domain.HealthStateDisabled
 	case domain.StatusAutoDisabled:
-		return "unhealthy"
+		return domain.HealthStateUnhealthy
 	}
 	if !overview.LastProbeOK {
 		// No probe record at all → not yet evaluated.
 		if overview.LastProbeAt == nil && overview.FailureCount == 0 {
-			return "unknown"
+			return domain.HealthStateUnknown
 		}
-		return "unhealthy"
+		return domain.HealthStateUnhealthy
 	}
-	if overview.FailureCount > 0 || overview.CoolingMemberCount > 0 {
-		return "degraded"
+	if overview.LastProbeError == "probe_slow" || overview.FailureCount > 0 || overview.CoolingMemberCount > 0 {
+		return domain.HealthStateDegraded
 	}
-	return "healthy"
+	return domain.HealthStateHealthy
+}
+
+// DeriveHealthReason explains the business-health verdict without exposing
+// secrets or raw upstream error text. The UI combines this stable category
+// with overview counters to provide an actionable explanation.
+func DeriveHealthReason(overview domain.ChannelOverview) string {
+	switch overview.Channel.Status {
+	case domain.StatusDisabled:
+		return "manual_disabled"
+	case domain.StatusAutoDisabled:
+		return "auto_disabled"
+	}
+	if !overview.LastProbeOK {
+		if overview.LastProbeAt == nil && overview.FailureCount == 0 {
+			return "not_checked"
+		}
+		switch overview.LastProbeError {
+		case "upstream_unauthorized", "account_banned":
+			return "authentication_failed"
+		case "user_token_not_for_models":
+			return "credential_scope"
+		case "credential_unavailable":
+			return "credential_unavailable"
+		case "invalid_base_url":
+			return "invalid_base_url"
+		default:
+			return "probe_failed"
+		}
+	}
+	if overview.LastProbeError == "probe_slow" {
+		return "probe_slow"
+	}
+	if overview.CoolingMemberCount > 0 {
+		return "route_cooling"
+	}
+	if overview.FailureCount > 0 {
+		return "route_failures"
+	}
+	return "probe_ok"
+}
+
+// DeriveConnectivityState computes the network-layer verdict from the latest
+// persisted Ping. A false boolean without a timestamp is the legacy zero
+// value, not an observed failure.
+func DeriveConnectivityState(overview domain.ChannelOverview) string {
+	if overview.LastPingAt == nil {
+		return domain.ConnectivityStateUnknown
+	}
+	if overview.LastPingOK {
+		return domain.ConnectivityStateReachable
+	}
+	return domain.ConnectivityStateUnreachable
 }
 
 func (s *ChannelStore) RecordProbeSuccess(channelID int64, at time.Time) error {
-	_, err := s.db.Exec(`UPDATE channels SET last_probe_at=?, last_probe_ok=1, last_probe_error='', updated_at=datetime('now') WHERE id=?`,
-		at.UTC().Format(time.RFC3339Nano), channelID)
+	return s.RecordProbeSuccessWithVerdict(channelID, at, "")
+}
+
+// RecordProbeSuccessWithVerdict records a successful business probe and an
+// optional non-error verdict such as probe_slow. Keeping the verdict beside
+// the probe timestamp lets the overview API expose health-sweep degradation
+// consistently with manual probes.
+func (s *ChannelStore) RecordProbeSuccessWithVerdict(channelID int64, at time.Time, verdict string) error {
+	_, err := s.db.Exec(`UPDATE channels SET last_probe_at=?, last_probe_ok=1, last_probe_error=?, updated_at=datetime('now') WHERE id=?`,
+		at.UTC().Format(time.RFC3339Nano), verdict, channelID)
 	if err != nil {
 		return fmt.Errorf("channel probe success: %w", err)
 	}
@@ -463,6 +535,29 @@ func (s *ChannelStore) RecordProbeFailure(channelID int64, at time.Time, categor
 		at.UTC().Format(time.RFC3339Nano), category, channelID)
 	if err != nil {
 		return fmt.Errorf("channel probe failure: %w", err)
+	}
+	return nil
+}
+
+// RecordPingSuccess stores a successful connectivity ping (network reachability).
+func (s *ChannelStore) RecordPingSuccess(channelID int64, at time.Time, latencyMs int) error {
+	_, err := s.db.Exec(`UPDATE channels SET last_ping_at=?, last_ping_ok=1, last_ping_error='', last_ping_ms=?, updated_at=datetime('now') WHERE id=?`,
+		at.UTC().Format(time.RFC3339Nano), latencyMs, channelID)
+	if err != nil {
+		return fmt.Errorf("channel ping success: %w", err)
+	}
+	return nil
+}
+
+// RecordPingFailure stores a failed connectivity ping with a redacted category.
+func (s *ChannelStore) RecordPingFailure(channelID int64, at time.Time, category string) error {
+	if category == "" {
+		category = "unreachable"
+	}
+	_, err := s.db.Exec(`UPDATE channels SET last_ping_at=?, last_ping_ok=0, last_ping_error=?, last_ping_ms=0, updated_at=datetime('now') WHERE id=?`,
+		at.UTC().Format(time.RFC3339Nano), category, channelID)
+	if err != nil {
+		return fmt.Errorf("channel ping failure: %w", err)
 	}
 	return nil
 }

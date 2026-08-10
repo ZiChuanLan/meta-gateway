@@ -107,6 +107,37 @@ func TestExplainSharesEligibilityAndStableOrder(t *testing.T) {
 	}
 }
 
+func TestCircuitProviderMarksOpenCandidatesInExplanation(t *testing.T) {
+	selector := NewWithDependencies(fakeRepo{
+		route: &domain.Route{ID: 1},
+		candidates: []domain.RoutingCandidate{
+			candidate(1, 10, 100),
+			candidate(2, 10, 100),
+		},
+	}, fakeClock{time.Now()}, &fakeRandom{values: []int{0}})
+	selector.SetCircuitAware(func(channelID int64, _ string) float64 {
+		if channelID == 1 {
+			return 0
+		}
+		return 0.3
+	})
+
+	explanation, err := selector.Explain(context.Background(), "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explanation.Candidates[0].Eligible || explanation.Candidates[0].Reasons[0] != ReasonCircuitOpen || explanation.Candidates[0].Score != 0 {
+		t.Fatalf("open circuit was not surfaced: %+v", explanation.Candidates[0])
+	}
+	decision, err := selector.Select(context.Background(), "model", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Selected.Channel.ID != 2 {
+		t.Fatalf("open circuit candidate selected: %+v", decision)
+	}
+}
+
 func TestSelectNoRouteAndNoEligible(t *testing.T) {
 	selector := NewWithDependencies(fakeRepo{}, fakeClock{}, &fakeRandom{})
 	if _, err := selector.Select(context.Background(), "missing", nil); !errors.Is(err, ErrRouteNotFound) {

@@ -88,15 +88,18 @@ export function Panel({
   actions,
   children,
   className = "",
+  id,
 }: {
   title?: string;
   titleHelp?: string;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Optional DOM id (used by in-page section navigation). */
+  id?: string;
 }) {
   return (
-    <section className={`panel ${className}`.trim()}>
+    <section id={id} className={`panel ${className}`.trim()}>
       {(title || actions) && (
         <header className="panel-header">
           {title ? (

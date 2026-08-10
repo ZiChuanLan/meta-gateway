@@ -172,6 +172,8 @@ func TestStickyBindsSuccessfulRelay(t *testing.T) {
 }
 
 func TestStickyDoesNotBindFailedRelay(t *testing.T) {
+	// The 503 is retried on the same key (channel retry = 1) and succeeds, so
+	// the session binds to the channel that actually served it (a, id 1).
 	upstream := &queuedRelay{results: []*relay.Result{
 		response(http.StatusServiceUnavailable, `{"error":"down"}`),
 		response(http.StatusOK, `{"ok":true}`),
@@ -179,22 +181,22 @@ func TestStickyDoesNotBindFailedRelay(t *testing.T) {
 	}}
 	service, sticky, now := setupStickyProxyWithRetries(t, upstream, 1)
 
-	// First request fails on A (sticky not bound yet), falls back to B and
-	// binds the session to the channel that actually succeeded.
+	// First request fails on A once, is re-sent on the same key and succeeds
+	// there — no cross-channel fallback needed.
 	first := service.ChatCompletions(context.Background(), Request{RequestID: "r1", Model: "model", Body: []byte(`{"model":"model"}`), SessionKey: "sess-1"})
 	defer first.Body.Close()
 	if first.Err != nil || first.StatusCode != http.StatusOK {
-		t.Fatalf("first request must succeed via failover: %+v", first)
+		t.Fatalf("first request must succeed via same-key retry: %+v", first)
 	}
 	bound, ok := sticky.Lookup("sess-1", now)
-	if !ok || !strings.Contains(upstream.calls[1], "b.example") || bound != 2 {
-		t.Fatalf("session must be bound to the successful fallback channel b, got bound=%d ok=%v calls=%#v", bound, ok, upstream.calls)
+	if !ok || !strings.Contains(upstream.calls[1], "a.example") || bound != 1 {
+		t.Fatalf("session must be bound to channel a (served the retry), got bound=%d ok=%v calls=%#v", bound, ok, upstream.calls)
 	}
 
 	second := service.ChatCompletions(context.Background(), Request{RequestID: "r2", Model: "model", Body: []byte(`{"model":"model"}`), SessionKey: "sess-1"})
 	defer second.Body.Close()
-	if len(upstream.calls) != 3 || !strings.Contains(upstream.calls[2], "b.example") {
-		t.Fatalf("second request must reuse the bound channel b, got %#v", upstream.calls)
+	if len(upstream.calls) != 3 || !strings.Contains(upstream.calls[2], "a.example") {
+		t.Fatalf("second request must reuse the bound channel a, got %#v", upstream.calls)
 	}
 }
 

@@ -12,7 +12,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "../i18n";
 import { SessionProvider } from "../session";
 import { ToastProvider } from "../toast";
-import { Channels, capabilityFlags, channelHealth } from "./Channels";
+import { Channels, capabilityFlags, channelReadiness } from "./Channels";
 import type { ChannelOverview } from "../api/types";
 
 function renderChannels() {
@@ -238,7 +238,7 @@ describe("capabilityFlags", () => {
 		expect(flags.checkinScheduled).toBe(true);
 		expect(flags.missingAPIKey).toBe(true);
 		expect(flags.modelsReady).toBe(false);
-		expect(channelHealth({
+        expect(channelReadiness({
 			channel: {
 				id: 1,
 				name: "demo",

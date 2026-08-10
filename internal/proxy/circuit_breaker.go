@@ -10,11 +10,15 @@ import (
 // Model-level circuit breaker, ported from AxonHub's model_circuit_breaker.go
 // (source-verified): closed → half-open (weight × 0.3) → open (weight 0),
 // with lazy probe release, exponential backoff (cap 8×), 30m failure TTL and
-// full reset on a single success.
+// full reset on a single success. The open threshold is runtime-configurable
+// (BREAKER_FAIL_COUNT / runtime settings); the half-open threshold derives as
+// ceil(open/2) so a lower configured threshold still leaves a meaningful
+// half-open stage.
 
 const (
-	breakerHalfOpenThreshold = 3  // consecutive failures → half-open
-	breakerOpenThreshold     = 5  // consecutive failures → open
+	// breakerOpenThreshold is the default consecutive-failure count that parks
+	// the breaker open; BREAKER_FAIL_COUNT overrides it at runtime.
+	breakerOpenThreshold     = 5 // consecutive failures → open
 	breakerFailureStatsTTL   = 30 * time.Minute
 	breakerProbeInterval     = 5 * time.Minute
 	breakerHalfOpenWeight    = 0.3
@@ -48,13 +52,55 @@ type ModelCircuitBreaker struct {
 	mu    sync.Mutex
 	stats map[channelModelKey]*breakerStats
 	now   func() time.Time
+	// openThreshold is the consecutive-failure count that parks the breaker
+	// open (weight 0). Runtime-configurable via SetOpenThreshold; zero falls
+	// back to breakerOpenThreshold. The half-open threshold derives as
+	// ceil(open/2), clamped to at least 1.
+	openThreshold atomic.Int32
 }
 
-func NewModelCircuitBreaker() *ModelCircuitBreaker {
-	return &ModelCircuitBreaker{
+func NewModelCircuitBreaker(openThreshold int) *ModelCircuitBreaker {
+	b := &ModelCircuitBreaker{
 		stats: make(map[channelModelKey]*breakerStats),
 		now:   time.Now,
 	}
+	if openThreshold == 0 {
+		// Constructor zero means "use the default"; SetOpenThreshold(0) after
+		// construction is the explicit "disable breaker" signal.
+		openThreshold = breakerOpenThreshold
+	}
+	b.SetOpenThreshold(openThreshold)
+	return b
+}
+
+// SetOpenThreshold hot-applies the open threshold. 0 disables the breaker
+// entirely (weight always full, no failure accounting); negative values reset
+// to the default. Existing per-model stats keep their state; the new
+// threshold applies from the next RecordError/EffectiveWeight read.
+func (b *ModelCircuitBreaker) SetOpenThreshold(n int) {
+	if n < 0 {
+		n = breakerOpenThreshold
+	}
+	b.openThreshold.Store(int32(n))
+}
+
+func (b *ModelCircuitBreaker) currentOpenThreshold() int {
+	return int(b.openThreshold.Load())
+}
+
+// disabled reports whether the breaker is turned off entirely (0 threshold).
+func (b *ModelCircuitBreaker) disabled() bool {
+	return b.currentOpenThreshold() <= 0
+}
+
+// halfOpenThreshold derives the half-open stage from the open threshold so a
+// runtime-configured open count still leaves a meaningful degraded stage.
+func (b *ModelCircuitBreaker) halfOpenThreshold() int {
+	h := (b.currentOpenThreshold() + 1) / 2
+	if h < 1 {
+		h = 1
+	}
+	return h
 }
 
 func (b *ModelCircuitBreaker) get(key channelModelKey) *breakerStats {
@@ -69,7 +115,7 @@ func (b *ModelCircuitBreaker) get(key channelModelKey) *breakerStats {
 // RecordError advances the failure state. wasProbe=true only for failures of
 // an actual probe request — only those push the backoff.
 func (b *ModelCircuitBreaker) RecordError(channelID int64, model string, wasProbe bool) {
-	if channelID <= 0 {
+	if channelID <= 0 || b.disabled() {
 		return
 	}
 	key := channelModelKey{channelID: channelID, model: model}
@@ -87,7 +133,7 @@ func (b *ModelCircuitBreaker) RecordError(channelID int64, model string, wasProb
 	st.consecutiveFailures++
 	st.lastFailureAt = now
 	switch {
-	case st.consecutiveFailures >= breakerOpenThreshold:
+	case st.consecutiveFailures >= b.currentOpenThreshold():
 		if st.state != breakerOpen {
 			st.state = breakerOpen
 			st.nextProbeAt = now.Add(breakerProbeInterval)
@@ -103,7 +149,7 @@ func (b *ModelCircuitBreaker) RecordError(channelID int64, model string, wasProb
 			st.nextProbeAt = now.Add(time.Duration(float64(breakerProbeInterval) * multiplier))
 			st.probeAttempts++
 		}
-	case st.consecutiveFailures >= breakerHalfOpenThreshold:
+	case st.consecutiveFailures >= b.halfOpenThreshold():
 		if st.state != breakerHalfOpen {
 			st.state = breakerHalfOpen
 		}
@@ -130,7 +176,7 @@ func (b *ModelCircuitBreaker) RecordSuccess(channelID int64, model string) {
 // closed → base; half-open → base × 0.3; open → 0, unless the probe window is
 // due AND a probe slot was acquired (lazy release) → base × 0.3.
 func (b *ModelCircuitBreaker) EffectiveWeight(channelID int64, model string, base float64) float64 {
-	if channelID <= 0 {
+	if channelID <= 0 || b.disabled() {
 		return base
 	}
 	key := channelModelKey{channelID: channelID, model: model}
@@ -165,7 +211,7 @@ func (b *ModelCircuitBreaker) EffectiveWeight(channelID int64, model string, bas
 // TryBeginProbe acquires the single probe slot for an open breaker whose
 // probe window is due. Returns false when the channel is not probeable.
 func (b *ModelCircuitBreaker) TryBeginProbe(channelID int64, model string) bool {
-	if channelID <= 0 {
+	if channelID <= 0 || b.disabled() {
 		return false
 	}
 	key := channelModelKey{channelID: channelID, model: model}
@@ -195,7 +241,7 @@ func (b *ModelCircuitBreaker) EndProbe(channelID int64, model string) {
 // IsOpen reports whether the channel × model breaker is currently open
 // (weight zero) — used for diagnostics/tests.
 func (b *ModelCircuitBreaker) IsOpen(channelID int64, model string) bool {
-	if channelID <= 0 {
+	if channelID <= 0 || b.disabled() {
 		return false
 	}
 	key := channelModelKey{channelID: channelID, model: model}

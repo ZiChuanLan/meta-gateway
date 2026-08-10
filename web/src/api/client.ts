@@ -16,6 +16,7 @@ import type {
 	ModuleStatus,
 	PluginRecord,
 	AccountProbeResult,
+	ChannelPingResult,
 	FinanceItem,
 	ModelPrice,
 	ProbeResult,
@@ -143,11 +144,11 @@ export const api = (client: ApiClient) => ({
 		client.getList<Credential>(`/admin/sites/${siteId}/credentials`, signal),
 	createCredential: (
 		siteId: number,
-		body: { kind: string; secret: string; meta_json?: string; status: string },
+		body: { kind: string; secret: string; meta_json?: string; status: string; models_csv?: string },
 	) => client.post<Credential>(`/admin/sites/${siteId}/credentials`, body),
 	updateCredential: (
 		id: number,
-		body: { kind?: string; secret?: string; meta_json?: string; status?: string },
+		body: { kind?: string; secret?: string; meta_json?: string; status?: string; models_csv?: string },
 	) => client.put<Credential>(`/admin/credentials/${id}`, body),
 	deleteCredential: (id: number) => client.delete(`/admin/credentials/${id}`),
 	setCheckin: (id: number, enabled: boolean) =>
@@ -338,6 +339,10 @@ export const api = (client: ApiClient) => ({
 	refreshChannel: (id: number) =>
 		client.post<RefreshResult>(`/admin/discovery/channels/${id}/refresh`),
 	refreshAll: () => client.post<RefreshSummary>("/admin/discovery/refresh"),
+	pingChannel: (id: number) =>
+		client.post<ChannelPingResult>(
+			`/admin/channels/${id}/ping`,
+		),
 	checkinLogs: (query: string, signal?: AbortSignal) =>
 		client.getList<CheckinLog>(`/admin/checkin/logs${query}`, signal),
 	runAllCheckins: () => client.post<RunSummary>("/admin/checkin/run"),

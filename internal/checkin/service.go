@@ -223,9 +223,14 @@ func (s *Service) RunAll(ctx context.Context, source string) (*RunSummary, error
 	}
 	// The whole batch finished: persist a durable marker so a restart does not
 	// re-run today's check-in (this is the authoritative signal, unlike the
-	// per-credential logs that an interrupted batch already wrote).
-	if recordErr := s.db.CheckinLog.RecordBatchCompleted(s.now()); recordErr != nil {
-		return nil, internalError("batch_state")
+	// per-credential logs that an interrupted batch already wrote). Manual
+	// batches (the "check in now" button) must NOT write this marker: they are
+	// not the daily tick, and writing one would suppress the scheduler's
+	// catch-up after a restart.
+	if source == SourceScheduled {
+		if recordErr := s.db.CheckinLog.RecordBatchCompleted(s.now()); recordErr != nil {
+			return nil, internalError("batch_state")
+		}
 	}
 	return summary, nil
 }

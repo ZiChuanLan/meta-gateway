@@ -66,11 +66,22 @@ type prober interface {
 }
 
 // Service owns the sweep lifecycle and per-channel state.
+// cfg is guarded by cfgMu so SetConfig can hot-swap the sweep policy while
+// the loops run; loops read the current config at the start of every round.
 type Service struct {
-	db        *store.DB
-	probe     prober
-	notifier  *webhook.Notifier
-	cfg       Config
+	db       *store.DB
+	probe    prober
+	notifier *webhook.Notifier
+
+	cfgMu sync.RWMutex
+	cfg   Config
+
+	// probeMu gates the actual upstream probes. Channel loops remain separate
+	// so each channel keeps its own jitter, while this gate makes the exposed
+	// Concurrency setting a real global ceiling and supports hot changes.
+	probeMu     sync.Mutex
+	probeActive int
+	probeWake   chan struct{}
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -80,8 +91,30 @@ type Service struct {
 	status map[int64]ChannelHealth
 }
 
-// New builds the sweep service. notifier may be nil (alerts disabled).
-func New(db *store.DB, probe prober, notifier *webhook.Notifier, cfg Config) *Service {
+// SetConfig hot-applies a new sweep policy while the service runs. Loops pick
+// it up at the next round; disabling stops spawning (existing loops drain on
+// their next round boundary). Enabling while running spawns immediately so a
+// toggle from Admin takes effect without waiting for the supervisor tick.
+func (s *Service) SetConfig(cfg Config) {
+	s.cfgMu.Lock()
+	s.cfg = sanitizeConfig(cfg)
+	enabled := s.cfg.Enabled
+	s.cfgMu.Unlock()
+	s.wakeProbeWaiters()
+	if enabled && s.cancel != nil {
+		s.spawnForEnabled()
+	}
+}
+
+// loadCfg returns a copy of the current sweep policy.
+func (s *Service) loadCfg() Config {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg
+}
+
+// sanitizeConfig clamps a sweep policy into its safe domain (same rules as New).
+func sanitizeConfig(cfg Config) Config {
 	if cfg.IntervalSeconds <= 0 {
 		cfg.IntervalSeconds = 300
 	}
@@ -97,12 +130,18 @@ func New(db *store.DB, probe prober, notifier *webhook.Notifier, cfg Config) *Se
 	if cfg.TimeoutSeconds <= 0 {
 		cfg.TimeoutSeconds = 15
 	}
+	return cfg
+}
+
+// New builds the sweep service. notifier may be nil (alerts disabled).
+func New(db *store.DB, probe prober, notifier *webhook.Notifier, cfg Config) *Service {
 	return &Service{
 		db:        db,
 		probe:     probe,
 		notifier:  notifier,
-		cfg:       cfg,
+		cfg:       sanitizeConfig(cfg),
 		status:    make(map[int64]ChannelHealth),
+		probeWake: make(chan struct{}),
 	}
 }
 
@@ -138,11 +177,12 @@ func (s *Service) Status() []ChannelHealth {
 }
 
 // supervisor periodically reloads the enabled channel set so admin edits are
-// picked up without a restart, and (re)spawns per-channel loops.
+// picked up without a restart, and (re)spawns per-channel loops. The tick is
+// fixed at 15s (independent of the sweep interval) so both channel-set changes
+// and a runtime enable/disable toggle take effect quickly.
 func (s *Service) supervisor() {
 	defer s.wg.Done()
-	// Reload cadence: every interval; new channels start immediately.
-	ticker := time.NewTicker(time.Duration(s.cfg.IntervalSeconds) * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	s.spawnForEnabled()
 	for {
@@ -156,9 +196,13 @@ func (s *Service) supervisor() {
 }
 
 // spawnForEnabled starts loops for enabled channels that have none. Loops
-// self-terminate when the channel disappears from the enabled set; the
-// supervisor re-creates them on the next reload.
+// self-terminate when the channel disappears from the enabled set or the sweep
+// is switched off; the supervisor re-creates them on the next reload.
 func (s *Service) spawnForEnabled() {
+	if !s.loadCfg().Enabled {
+		// Sweep disabled: do not spawn; live loops drain on their next round.
+		return
+	}
 	channels, err := s.db.Channel.ListEnabled()
 	if err != nil {
 		log.Printf("healthsweep: list channels: %v", err)
@@ -192,7 +236,9 @@ func (s *Service) loopRunning(channelID int64) bool {
 	return ok
 }
 
-// channelLoop probes one channel forever, with jitter between rounds.
+// channelLoop probes one channel forever, with jitter between rounds. It
+// re-reads the sweep config at every round so interval/jitter changes are
+// picked up live, and exits when the sweep is disabled at runtime.
 func (s *Service) channelLoop(channelID int64) {
 	defer s.wg.Done()
 	// Register liveness (entry with unknown state) so the supervisor does not
@@ -206,8 +252,12 @@ func (s *Service) channelLoop(channelID int64) {
 		s.mu.Unlock()
 	}()
 	for {
-		delay := time.Duration(s.cfg.IntervalSeconds)*time.Second +
-			time.Duration(rand.IntN(s.cfg.JitterSeconds+1))*time.Second
+		cfg := s.loadCfg()
+		if !cfg.Enabled {
+			return // sweep switched off at runtime
+		}
+		delay := time.Duration(cfg.IntervalSeconds)*time.Second +
+			time.Duration(rand.IntN(cfg.JitterSeconds+1))*time.Second
 		timer := time.NewTimer(delay)
 		select {
 		case <-s.ctx.Done():
@@ -221,11 +271,17 @@ func (s *Service) channelLoop(channelID int64) {
 
 // probeOnce runs one bounded probe and records/grade/alert on transitions.
 func (s *Service) probeOnce(channelID int64) {
+	cfg := s.loadCfg()
 	parent := s.ctx
 	if parent == nil {
 		parent = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(parent, time.Duration(s.cfg.TimeoutSeconds)*time.Second)
+	if !s.acquireProbeSlot(parent, cfg.Concurrency) {
+		return
+	}
+	defer s.releaseProbeSlot()
+	cfg = s.loadCfg()
+	ctx, cancel := context.WithTimeout(parent, time.Duration(cfg.TimeoutSeconds)*time.Second)
 	defer cancel()
 
 	result, err := s.probe.Probe(ctx, channelID)
@@ -235,11 +291,13 @@ func (s *Service) probeOnce(channelID int64) {
 	if err == nil {
 		latency = result.LatencyMs
 		state = StateOperational
-		if latency > s.cfg.DegradedThresholdMs {
+		verdict := ""
+		if latency > cfg.DegradedThresholdMs {
 			state = StateDegraded
+			verdict = "probe_slow"
 		}
 		if s.db.Channel != nil {
-			_ = s.db.Channel.RecordProbeSuccess(channelID, checkedAt)
+			_ = s.db.Channel.RecordProbeSuccessWithVerdict(channelID, checkedAt, verdict)
 		}
 	} else {
 		if s.db.Channel != nil {
@@ -276,6 +334,55 @@ func (s *Service) probeOnce(channelID int64) {
 				channelAlertText(channelID, health.Error))
 		}
 	}
+}
+
+func (s *Service) acquireProbeSlot(ctx context.Context, limit int) bool {
+	if limit < 1 {
+		limit = 1
+	}
+	for {
+		if current := s.loadCfg().Concurrency; current > 0 {
+			limit = current
+		}
+		s.probeMu.Lock()
+		if s.probeWake == nil {
+			s.probeWake = make(chan struct{})
+		}
+		if s.probeActive < limit {
+			s.probeActive++
+			s.probeMu.Unlock()
+			return true
+		}
+		wake := s.probeWake
+		s.probeMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return false
+		case <-wake:
+		}
+	}
+}
+
+func (s *Service) releaseProbeSlot() {
+	s.probeMu.Lock()
+	if s.probeActive > 0 {
+		s.probeActive--
+	}
+	s.wakeProbeWaitersLocked()
+	s.probeMu.Unlock()
+}
+
+func (s *Service) wakeProbeWaiters() {
+	s.probeMu.Lock()
+	s.wakeProbeWaitersLocked()
+	s.probeMu.Unlock()
+}
+
+func (s *Service) wakeProbeWaitersLocked() {
+	if s.probeWake != nil {
+		close(s.probeWake)
+	}
+	s.probeWake = make(chan struct{})
 }
 
 // probeCategory maps a discovery error to a stable redacted category.

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -34,13 +35,13 @@ func (s *Service) Create(ctx context.Context) (*store.BackupRecord, error) {
 	started := time.Now()
 	name, err := generatedName(started)
 	if err != nil {
-		return nil, errors.New("backup generation failed")
+		return nil, fmt.Errorf("backup generation failed: %w", err)
 	}
 	record := &store.BackupRecord{Name: name, Status: "failed"}
 	if err := ensureDirectory(s.dir); err != nil {
 		record.Category = "directory"
 		_ = s.record(record, started)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	temporary := filepath.Join(s.dir, "."+name+".tmp")
 	final := filepath.Join(s.dir, name)
@@ -48,38 +49,38 @@ func (s *Service) Create(ctx context.Context) (*store.BackupRecord, error) {
 	if err := onlineCopy(ctx, s.db.DB, temporary); err != nil {
 		record.Category = "snapshot"
 		_ = s.record(record, started)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	if err := os.Chmod(temporary, 0o600); err != nil {
 		record.Category = "permissions"
 		_ = s.record(record, started)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	if err := Verify(temporary); err != nil {
 		record.Category = "integrity"
 		_ = s.record(record, started)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	info, checksum, err := fileMetadata(temporary)
 	if err != nil {
 		record.Category = "metadata"
 		_ = s.record(record, started)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	if _, err := os.Lstat(final); !errors.Is(err, os.ErrNotExist) {
 		record.Category = "collision"
 		_ = s.record(record, started)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	if err := os.Rename(temporary, final); err != nil {
 		record.Category = "install"
 		_ = s.record(record, started)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	record.Status, record.SizeBytes, record.Checksum = "success", info.Size(), checksum
 	if err := s.record(record, started); err != nil {
 		_ = os.Remove(final)
-		return nil, errors.New("backup failed")
+		return nil, fmt.Errorf("backup failed: %w", err)
 	}
 	return record, nil
 }

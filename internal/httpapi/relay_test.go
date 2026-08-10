@@ -1,4 +1,3 @@
-
 package httpapi
 
 import (
@@ -9,28 +8,31 @@ import (
 
 func TestClientFamilyClassification(t *testing.T) {
 	cases := map[string]string{
-		"Claude-Code/1.0":                        "claude-code",
-		"claude-code/1.0 (cli)":                  "claude-code",
-		"ClaudeDesktop/1.0.4":                    "claude-desktop",
-		"CherryStudio/1.0.3":                     "cherry-studio",
-		"Cherry Studio/0.9.22":                   "cherry-studio",
-		"LobeChat/1.0.0":                         "lobe",
-		"Chatbox/1.0.0":                          "chatbox",
-		"NextChat/2.14":                          "nextchat",
-		"OpenCat/1.0":                            "opencat",
-		"Copilot/1.0":                            "copilot",
-		"Cursor/0.40":                            "cursor",
-		"Windsurf/1.0":                           "windsurf",
-		"Anthropic/2.0":                          "anthropic",
-		"OpenAI/Python 1.30.0":                   "openai-python",
-		"OpenAI-API/1.0 ChatGPT/1.0":             "openai",
-		"curl/8.5.0":                             "cli",
-		"python-requests/2.31":                   "python",
-		"node-fetch/3.0":                         "node",
-		"PostmanRuntime/7.36":                    "postman",
-		"Insomnia/2023.5":                        "insomnia",
-		"Mozilla/5.0 (Windows NT 10.0; Win64)":   "browser",
-		"":                                       "unknown",
+		"Claude-Code/1.0":                      "claude-code",
+		"claude-code/1.0 (cli)":                "claude-code",
+		"ClaudeDesktop/1.0.4":                  "claude-desktop",
+		"CherryStudio/1.0.3":                   "cherry-studio",
+		"Cherry Studio/0.9.22":                 "cherry-studio",
+		"LobeChat/1.0.0":                       "lobe",
+		"Chatbox/1.0.0":                        "chatbox",
+		"NextChat/2.14":                        "nextchat",
+		"OpenCat/1.0":                          "opencat",
+		"Copilot/1.0":                          "copilot",
+		"Cursor/0.40":                          "cursor",
+		"Windsurf/1.0":                         "windsurf",
+		"pi/1.2.3 (win32; bun/1.1.0; x64)":    "pi",
+		"pi-coding-agent":                     "pi",
+		"api/v1/status":                       "browser",
+		"Anthropic/2.0":                        "anthropic",
+		"OpenAI/Python 1.30.0":                 "openai-python",
+		"OpenAI-API/1.0 ChatGPT/1.0":           "openai",
+		"curl/8.5.0":                           "cli",
+		"python-requests/2.31":                 "python",
+		"node-fetch/3.0":                       "node",
+		"PostmanRuntime/7.36":                  "postman",
+		"Insomnia/2023.5":                      "insomnia",
+		"Mozilla/5.0 (Windows NT 10.0; Win64)": "browser",
+		"":                                     "unknown",
 	}
 	for ua, want := range cases {
 		if got := ClientFamily(ua); got != want {

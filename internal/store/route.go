@@ -50,7 +50,7 @@ type RouteMemberStore struct {
 
 // progressiveCooldown is the tiered failure/backoff policy.
 type progressiveCooldown struct {
-	base         time.Duration // fail 1 penalty
+	base         time.Duration    // fail 1 penalty
 	levels       [3]time.Duration // fail 2 → levels[0], fail 3 → levels[1], fail 4 → levels[2]
 	breakerCount int              // consecutive failures before disable (0 = legacy 3)
 }
@@ -74,16 +74,25 @@ func scanRoute(scanner interface {
 	Scan(dest ...any) error
 }, r *domain.Route) error {
 	var enabled int
-	if err := scanner.Scan(&r.ID, &r.ModelPattern, &enabled, &r.RoutingMode, &r.MappingJSON, &r.Notes, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	var retryTimes, channelRetryTimes sql.NullInt64
+	if err := scanner.Scan(&r.ID, &r.ModelPattern, &enabled, &r.RoutingMode, &r.MappingJSON, &r.Notes, &retryTimes, &channelRetryTimes, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		return err
 	}
 	r.Enabled = enabled != 0
 	r.RoutingMode = domain.NormalizeRoutingMode(r.RoutingMode)
+	if retryTimes.Valid {
+		v := int(retryTimes.Int64)
+		r.RetryTimes = &v
+	}
+	if channelRetryTimes.Valid {
+		v := int(channelRetryTimes.Int64)
+		r.ChannelRetryTimes = &v
+	}
 	return nil
 }
 
 func (s *RouteStore) List() ([]domain.Route, error) {
-	rows, err := s.db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("route list: %w", err)
 	}
@@ -101,7 +110,7 @@ func (s *RouteStore) List() ([]domain.Route, error) {
 }
 
 func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
-	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE id = ?`, id)
 	var r domain.Route
 	if err := scanRoute(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -114,7 +123,7 @@ func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
 
 // GetByModel returns the best enabled route for the given model (exact, then wildcard).
 func (s *RouteStore) GetByModel(model string) (*domain.Route, error) {
-	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
+	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
 	var exact domain.Route
 	if err := scanRoute(row, &exact); err == nil {
 		return &exact, nil
@@ -129,8 +138,8 @@ func (s *RouteStore) Create(r *domain.Route) (int64, error) {
 	if r.Enabled {
 		enabled = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes) VALUES (?, ?, ?, ?, ?)`,
-		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes)
+	res, err := s.db.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times) VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes))
 	if err != nil {
 		return 0, fmt.Errorf("route create: %w", err)
 	}
@@ -142,8 +151,8 @@ func (s *RouteStore) Update(r *domain.Route) error {
 	if r.Enabled {
 		enabled = 1
 	}
-	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, routing_mode=?, mapping_json=?, notes=?, updated_at=datetime('now') WHERE id=?`,
-		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, r.ID)
+	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, routing_mode=?, mapping_json=?, notes=?, retry_times=NULLIF(?, ''), channel_retry_times=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), r.ID)
 	if err != nil {
 		return fmt.Errorf("route update: %w", err)
 	}
@@ -294,7 +303,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 // RoutingCandidates loads member and channel facts for the best matching enabled route.
 // Exact model_pattern wins; otherwise the longest wildcard (* or ?) match is used.
 func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []domain.RoutingCandidate, error) {
-	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
+	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
 	var route domain.Route
 	if err := scanRoute(routeRow, &route); err != nil {
 		if err == sql.ErrNoRows {
@@ -394,7 +403,9 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 
 	policy := s.progressivePolicy()
 	breaker := disableAfterConsecutiveFailures
-	if policy != nil && policy.breakerCount > 0 {
+	if policy != nil {
+		// Progressive mode owns the threshold: 0 = parking disabled (cooldown
+		// only), any positive value = park after N consecutive failures.
 		breaker = policy.breakerCount
 	}
 	backoff := cooldown
@@ -415,10 +426,11 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 	if backoff > maxCooldownBackoff {
 		backoff = maxCooldownBackoff
 	}
-	if nextFailures >= breaker {
+	if nextFailures >= breaker && breaker > 0 {
 		// Circuit breaker: park the member outright instead of relying on an
 		// ever-growing cooldown. The admin re-enables it from the model list
-		// (toggle or clear-health); the next success resets fail_count.
+		// (toggle or clear-health); the next success resets fail_count. A
+		// configured breakerCount of 0 disables parking (cooldown only).
 		if _, err = tx.Exec(`UPDATE route_members SET fail_count=?, enabled=0, cooldown_until=NULL, last_error=?, updated_at=datetime('now') WHERE id=?`,
 			nextFailures, category, id); err != nil {
 			return fmt.Errorf("route member record failure disable: %w", err)
@@ -514,7 +526,10 @@ func tieredBackoff(base time.Duration, failures int, levels [3]time.Duration) ti
 
 // ClearHealth manually returns a route member to the eligible pool.
 func (s *RouteMemberStore) ClearHealth(id int64) error {
-	res, err := s.db.Exec(`UPDATE route_members SET fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
+	// A member disabled by the failure breaker has fail_count > 0. Clearing
+	// health is the explicit recovery action for that automatic parking; keep
+	// an intentionally disabled member disabled when it has no failure history.
+	res, err := s.db.Exec(`UPDATE route_members SET enabled=CASE WHEN fail_count > 0 THEN 1 ELSE enabled END, fail_count=0, cooldown_until=NULL, last_error='', updated_at=datetime('now') WHERE id=?`, id)
 	if err != nil {
 		return fmt.Errorf("route member clear health: %w", err)
 	}
@@ -599,9 +614,18 @@ func boolInt(v bool) int {
 	return 0
 }
 
+// nullableInt converts a *int override to a SQL parameter: nil becomes NULL
+// (used with NULLIF(?, '') so an unset override stays NULL = follow global).
+func nullableInt(v *int) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
 // findBestWildcardRoute selects the most specific enabled wildcard route for model.
 func findBestWildcardRoute(db *sql.DB, model string) (*domain.Route, error) {
-	rows, err := db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, created_at, updated_at FROM routes WHERE enabled = 1 AND (instr(model_pattern, '*') > 0 OR instr(model_pattern, '?') > 0)`)
+	rows, err := db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE enabled = 1 AND (instr(model_pattern, '*') > 0 OR instr(model_pattern, '?') > 0)`)
 	if err != nil {
 		return nil, fmt.Errorf("route wildcard list: %w", err)
 	}

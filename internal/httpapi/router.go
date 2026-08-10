@@ -164,11 +164,16 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		stickyStore = routing.NewStickyStore(cfg.StickyTTL, nil)
 		selector.SetSticky(stickyStore)
 	}
-	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
-	proxyService.SetAdapterRegistry(registry)
-	proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
+proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
+proxyService.SetAdapterRegistry(registry)
+selector.SetCircuitAware(proxyService.CircuitWeight)
+proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)
+proxyService.SetKeyPoolRotation(cfg.KeyPoolRotation)
+proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
+	proxyService.SetKeyFailThreshold(cfg.KeyFailThreshold)
 	proxyService.SetStableFirstPromote(cfg.StableFirstPromoteRequests)
 	proxyService.SetSticky(stickyStore)
+	proxyService.SetBreakerFailCount(cfg.ModelBreakerFailCount)
 	// Operational webhook notifier: auto-disable/recovery events, throttled.
 	webhookNotifier := webhook.New(cfg.WebhookURL, time.Duration(cfg.WebhookThrottleSeconds)*time.Second)
 	proxyService.SetWebhookNotifier(webhookNotifier)
@@ -194,27 +199,28 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	adminHandler.Register(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)
 	discoveryHandler.Register(adminGroup)
-	// Periodic channel health sweep (opt-in): jittered probes grade each
-	// enabled channel operational/degraded/error and alert on transitions.
-	if cfg.HealthSweepEnabled {
-		healthSweep := healthsweep.New(db, discoveryService, webhookNotifier, healthsweep.Config{
-			Enabled:             true,
-			IntervalSeconds:     cfg.HealthSweepIntervalSeconds,
-			JitterSeconds:       cfg.HealthSweepJitterSeconds,
-			DegradedThresholdMs: cfg.HealthSweepDegradedMs,
-			Concurrency:         cfg.HealthSweepConcurrency,
-			TimeoutSeconds:      cfg.HealthSweepTimeoutSeconds,
-		})
-		healthSweep.Start()
-		RegisterStopper(healthSweep.Stop)
-		adminGroup.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-			status := healthSweep.Status()
-			if status == nil {
-				status = []healthsweep.ChannelHealth{}
-			}
-			writeJSON(w, http.StatusOK, status)
-		})
-	}
+	// Periodic channel health sweep (runtime-configurable): jittered probes
+	// grade each enabled channel operational/degraded/error and alert on
+	// transitions. The service always exists so the sweep can be toggled from
+	// Admin without a restart; Enabled is driven by config (env bootstrap or
+	// runtime override), and SetHealthSweep hot-applies policy changes.
+	healthSweep := healthsweep.New(db, discoveryService, webhookNotifier, healthsweep.Config{
+		Enabled:             cfg.HealthSweepEnabled,
+		IntervalSeconds:     cfg.HealthSweepIntervalSeconds,
+		JitterSeconds:       cfg.HealthSweepJitterSeconds,
+		DegradedThresholdMs: cfg.HealthSweepDegradedMs,
+		Concurrency:         cfg.HealthSweepConcurrency,
+		TimeoutSeconds:      cfg.HealthSweepTimeoutSeconds,
+	})
+	healthSweep.Start()
+	RegisterStopper(healthSweep.Stop)
+	adminGroup.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		status := healthSweep.Status()
+		if status == nil {
+			status = []healthsweep.ChannelHealth{}
+		}
+		writeJSON(w, http.StatusOK, status)
+	})
 	accountService := account.New(db, enc, registry)
 	accountService.SetNotifier(webhookNotifier)
 	checkinService.SetNotifier(webhookNotifier)
@@ -295,28 +301,44 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			SetProgressiveCooldown: func(enabled bool, base time.Duration, levels [3]time.Duration, breakerCount int) {
 				db.RouteMember.SetProgressiveCooldown(enabled, base, levels, breakerCount)
 			},
-	SetRecoveryProbe: func(enabled bool, interval time.Duration) {
-		discoveryService.SetRecoveryConfig(enabled, interval)
-	},
-	SetStableFirst: func(enabled bool, denominator, promoteRequests int) {
-		selector.SetStableFirst(enabled, denominator)
-		proxyService.SetStableFirstPromote(promoteRequests)
-	},
-	SetConcurrencyAware: func(enabled bool, limit int) {
-		proxyService.SetConcurrencyAware(enabled, limit)
-	},
-	SetWebhook: func(url string, throttle time.Duration) {
-		webhookNotifier.SetConfig(url, throttle)
-	},
-	SetAlert: func(cfg webhook.AlertConfig, sweepInterval, dailySummaryInterval time.Duration) {
-		webhookNotifier.SetAlertConfig(cfg)
-		alertSweep.SetInterval(sweepInterval)
-		if !cfg.DailySummaryEnabled {
-			dailySummaryInterval = 0
-		}
-		dailySummary.SetInterval(dailySummaryInterval)
-	},
-})
+			// Sticky hot-swap: rewire selector + proxy + admin handler so an
+			// admin toggle takes effect without a restart.
+			SetSticky: func(store *routing.StickyStore, ttl time.Duration) {
+				selector.SetSticky(store)
+				proxyService.SetSticky(store)
+				adminHandler.SetSticky(store)
+			},
+			SetRecoveryProbe: func(enabled bool, interval time.Duration) {
+				discoveryService.SetRecoveryConfig(enabled, interval)
+			},
+			SetStableFirst: func(enabled bool, denominator, promoteRequests int) {
+				selector.SetStableFirst(enabled, denominator)
+				proxyService.SetStableFirstPromote(promoteRequests)
+			},
+			SetConcurrencyAware: func(enabled bool, limit int) {
+				proxyService.SetConcurrencyAware(enabled, limit)
+			},
+			SetWebhook: func(url string, throttle time.Duration) {
+				webhookNotifier.SetConfig(url, throttle)
+			},
+			SetAlert: func(cfg webhook.AlertConfig, sweepInterval, dailySummaryInterval time.Duration) {
+				webhookNotifier.SetAlertConfig(cfg)
+				alertSweep.SetInterval(sweepInterval)
+				if !cfg.DailySummaryEnabled {
+					dailySummaryInterval = 0
+				}
+				dailySummary.SetInterval(dailySummaryInterval)
+			},
+			SetHealthSweep: func(cfg healthsweep.Config) {
+				healthSweep.SetConfig(cfg)
+			},
+			SetChannelRetryTimes: func(times int) {
+				proxyService.SetChannelRetryTimes(times)
+			},
+			SetKeyPoolRotation: func(enabled bool) {
+				proxyService.SetKeyPoolRotation(enabled)
+			},
+		})
 		if err := runtimeController.Bootstrap(); err != nil {
 			logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
 		}
