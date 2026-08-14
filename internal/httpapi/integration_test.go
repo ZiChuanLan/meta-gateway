@@ -630,10 +630,10 @@ func TestRouteRoutingModeRoundTripAndValidation(t *testing.T) {
 	// console form; direct Admin API callers must not be able to write an
 	// unbounded retry loop.
 	badRetryBody := map[string]any{
-		"model_pattern": "routing-mode-model",
-		"enabled":       true,
-		"routing_mode":  domain.RoutingModeWeighted,
-		"retry_times":   -1,
+		"model_pattern":       "routing-mode-model",
+		"enabled":             true,
+		"routing_mode":        domain.RoutingModeWeighted,
+		"retry_times":         -1,
 		"channel_retry_times": 1,
 	}
 	raw, _ = json.Marshal(badRetryBody)

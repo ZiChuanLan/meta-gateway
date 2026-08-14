@@ -57,12 +57,12 @@ type RuntimeSettingsRow struct {
 	// HealthSweepEnabled/IntervalSeconds/JitterSeconds/DegradedMs/
 	// Concurrency/TimeoutSeconds: periodic channel health sweep (grades
 	// operational/degraded/error and alerts on transitions). -1 = env bootstrap.
-	HealthSweepEnabled          int
-	HealthSweepIntervalSeconds  int
-	HealthSweepJitterSeconds    int
-	HealthSweepDegradedMs       int
-	HealthSweepConcurrency      int
-	HealthSweepTimeoutSeconds   int
+	HealthSweepEnabled         int
+	HealthSweepIntervalSeconds int
+	HealthSweepJitterSeconds   int
+	HealthSweepDegradedMs      int
+	HealthSweepConcurrency     int
+	HealthSweepTimeoutSeconds  int
 	// ChannelRetryTimes: how many times the same upstream key is re-sent after
 	// a retryable failure before moving to the next key/channel. -1 = env.
 	ChannelRetryTimes int
@@ -115,13 +115,13 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		recovery, recoveryInterval                                                         sql.NullInt64
 		progressive, level2, level3, level4                                                sql.NullInt64
 		breakerCount                                                                       sql.NullInt64
-		modelBreaker, keyThreshold, stickyEnabled, stickyTTL                              sql.NullInt64
+		modelBreaker, keyThreshold, stickyEnabled, stickyTTL                               sql.NullInt64
 		alertConfigJSON                                                                    sql.NullString
 		alertSweep, alertDaily                                                             sql.NullInt64
 		hsEnabled, hsInterval, hsJitter, hsDegraded, hsConcurrency, hsTimeout              sql.NullInt64
-		channelRetry                                                                      sql.NullInt64
-		keyPoolRotation                                                                   sql.NullInt64
-		cron, updated                                                                     sql.NullString
+		channelRetry                                                                       sql.NullInt64
+		keyPoolRotation                                                                    sql.NullInt64
+		cron, updated                                                                      sql.NullString
 	)
 	if err := row.Scan(
 		&hasOverride, &retry, &crossChannelFailover, &cooldown, &checkinEnabled, &cron,

@@ -197,7 +197,6 @@ func TestMultiOnChange(t *testing.T) {
 	}
 }
 
-
 // fakeSidecar spins up a minimal sidecar plugin service serving /plugin.json,
 // /healthz, and an echo endpoint that requires X-Plugin-Key.
 func fakeSidecar(t *testing.T, id, name string, requireKey bool) string {

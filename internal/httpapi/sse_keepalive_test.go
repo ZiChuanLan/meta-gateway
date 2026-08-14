@@ -91,6 +91,6 @@ func TestSSEKeepaliveClientDisconnect(t *testing.T) {
 
 type errorWriter struct{}
 
-func (errorWriter) Header() http.Header       { return http.Header{} }
-func (errorWriter) WriteHeader(int)           {}
+func (errorWriter) Header() http.Header         { return http.Header{} }
+func (errorWriter) WriteHeader(int)             {}
 func (errorWriter) Write(p []byte) (int, error) { return 0, io.ErrClosedPipe }

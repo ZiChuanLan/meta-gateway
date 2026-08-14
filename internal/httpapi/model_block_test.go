@@ -29,7 +29,7 @@ func TestModelNotFoundBlacklistAndClear(t *testing.T) {
 
 	serverURL, token, _ := setupRelay(t, upstream.URL, "openai")
 	post := func() (*http.Response, string) {
-			req, _ := http.NewRequest(http.MethodPost, serverURL+"/v1/chat/completions", strings.NewReader(
+		req, _ := http.NewRequest(http.MethodPost, serverURL+"/v1/chat/completions", strings.NewReader(
 			`{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}]}`,
 		))
 		req.Header.Set("Authorization", "Bearer "+token)

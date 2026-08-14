@@ -8,7 +8,10 @@ import (
 )
 
 func TestGlobMatch(t *testing.T) {
-	cases := []struct{ pattern, s string; want bool }{
+	cases := []struct {
+		pattern, s string
+		want       bool
+	}{
 		{"gpt-*", "gpt-4o", true},
 		{"gpt-*", "claude-3", false},
 		{"*", "anything", true},

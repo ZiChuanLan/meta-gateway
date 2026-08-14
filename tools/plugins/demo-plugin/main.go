@@ -36,13 +36,13 @@ const expectedKey = "demo-secret"
 var hits atomic.Int64
 
 type manifest struct {
-	ID          string   `json:"id"`
-	Version     string   `json:"version"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
+	ID           string   `json:"id"`
+	Version      string   `json:"version"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description,omitempty"`
 	Capabilities []string `json:"capabilities,omitempty"`
-	PagePath    string   `json:"page_path,omitempty"`
-	HealthPath  string   `json:"health_path,omitempty"`
+	PagePath     string   `json:"page_path,omitempty"`
+	HealthPath   string   `json:"health_path,omitempty"`
 }
 
 func main() {
@@ -56,13 +56,13 @@ func main() {
 	mux.HandleFunc("/plugin.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(manifest{
-			ID:          "demo-plugin",
-			Version:     "1.0.0",
-			Name:        "Demo Plugin",
-			Description: "Reference sidecar plugin: shows how the protocol works.",
+			ID:           "demo-plugin",
+			Version:      "1.0.0",
+			Name:         "Demo Plugin",
+			Description:  "Reference sidecar plugin: shows how the protocol works.",
 			Capabilities: []string{"admin_page"},
-			PagePath:    "/",
-			HealthPath:  "/healthz",
+			PagePath:     "/",
+			HealthPath:   "/healthz",
 		})
 	})
 

@@ -9,18 +9,18 @@ import (
 
 // AlertRule is one configurable metric→webhook alert rule.
 type AlertRule struct {
-	ID              int64   `json:"id"`
-	Name            string  `json:"name"`
-	Metric          string  `json:"metric"`
-	Operator        string  `json:"operator"`
-	Threshold       float64 `json:"threshold"`
-	WindowSeconds   int     `json:"window_seconds"`
-	SustainedSeconds int    `json:"sustained_seconds"`
-	CooldownSeconds int     `json:"cooldown_seconds"`
-	Level           string  `json:"level"`
-	Enabled         bool    `json:"enabled"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	ID               int64   `json:"id"`
+	Name             string  `json:"name"`
+	Metric           string  `json:"metric"`
+	Operator         string  `json:"operator"`
+	Threshold        float64 `json:"threshold"`
+	WindowSeconds    int     `json:"window_seconds"`
+	SustainedSeconds int     `json:"sustained_seconds"`
+	CooldownSeconds  int     `json:"cooldown_seconds"`
+	Level            string  `json:"level"`
+	Enabled          bool    `json:"enabled"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
 }
 
 // AlertRuleStore owns the alert_rules table.
@@ -61,7 +61,7 @@ func (s *AlertRuleStore) List() ([]AlertRule, error) {
 
 // ListEnabled returns only enabled rules.
 func (s *AlertRuleStore) ListEnabled() ([]AlertRule, error) {
-	rows, err := s.db.Query(`SELECT `+alertRuleColumns+` FROM alert_rules WHERE enabled = 1 ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + alertRuleColumns + ` FROM alert_rules WHERE enabled = 1 ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("alert rules enabled: %w", err)
 	}

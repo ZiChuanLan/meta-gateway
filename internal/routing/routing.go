@@ -65,8 +65,8 @@ type Explanation struct {
 	// RetryTimesOverride / ChannelRetryTimesOverride carry the route-level
 	// retry policy (nil = follow the global runtime setting). The proxy reads
 	// them from the selection decision.
-	RetryTimesOverride         *int `json:"retry_times_override,omitempty"`
-	ChannelRetryTimesOverride  *int `json:"channel_retry_times_override,omitempty"`
+	RetryTimesOverride        *int `json:"retry_times_override,omitempty"`
+	ChannelRetryTimesOverride *int `json:"channel_retry_times_override,omitempty"`
 }
 
 type Decision struct {
@@ -350,12 +350,12 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		return left.ID < right.ID
 	})
 	return Explanation{
-		Model:            model,
-		RouteID:          route.ID,
-		RouteMappingJSON: mappingJSON,
-		RoutingMode:      domain.NormalizeRoutingMode(route.RoutingMode),
-		EvaluatedAt:      now,
-		Candidates:       evaluations,
+		Model:                     model,
+		RouteID:                   route.ID,
+		RouteMappingJSON:          mappingJSON,
+		RoutingMode:               domain.NormalizeRoutingMode(route.RoutingMode),
+		EvaluatedAt:               now,
+		Candidates:                evaluations,
 		RetryTimesOverride:        route.RetryTimes,
 		ChannelRetryTimesOverride: route.ChannelRetryTimes,
 	}, nil

@@ -607,7 +607,17 @@ func TestMessagesDownstreamOnGeminiChannel(t *testing.T) {
 // adminLogsGET fetches proxy logs with the admin token.
 func adminLogsGET(t *testing.T, serverURL string) []map[string]any {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, serverURL+"/admin/proxy-logs", nil)
+	return adminLogsGETLimit(t, serverURL, 0)
+}
+
+// adminLogsGETLimit fetches proxy logs with an explicit limit (0 = server default).
+func adminLogsGETLimit(t *testing.T, serverURL string, limit int) []map[string]any {
+	t.Helper()
+	url := serverURL + "/admin/proxy-logs"
+	if limit > 0 {
+		url += fmt.Sprintf("?limit=%d", limit)
+	}
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("Authorization", "Bearer admin-test")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -876,8 +886,9 @@ func TestStableFirstGraySplitAndPromotion(t *testing.T) {
 	}
 
 	// (c) After promotion the channel serves a full share: 20 more requests and
-	// both channels must see traffic.
-	before := adminLogsGET(t, server.URL)
+	// both channels must see traffic. Use a full log window so the before/after
+	// counts are not truncated by the API default limit of 100 rows.
+	before := adminLogsGETLimit(t, server.URL, 500)
 	beforeStable, beforeGray := 0, 0
 	for _, entry := range before {
 		switch intField(t, entry, "channel_id") {
@@ -890,7 +901,7 @@ func TestStableFirstGraySplitAndPromotion(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		relay()
 	}
-	after := adminLogsGET(t, server.URL)
+	after := adminLogsGETLimit(t, server.URL, 500)
 	afterStable, afterGray := 0, 0
 	for _, entry := range after {
 		switch intField(t, entry, "channel_id") {

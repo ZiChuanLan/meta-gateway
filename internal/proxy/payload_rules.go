@@ -39,25 +39,25 @@ type PayloadRule struct {
 }
 
 type PayloadMatch struct {
-	Model    string            `json:"model"`    // glob: * and ? wildcards; empty = any
-	Protocol string            `json:"protocol"` // "openai" | "anthropic"; empty = any
-	Headers  map[string]string `json:"header"`   // header name → required substring (case-insensitive); empty = any
-	Payload  map[string]PayloadCond `json:"payload"` // JSON path → condition
+	Model    string                 `json:"model"`    // glob: * and ? wildcards; empty = any
+	Protocol string                 `json:"protocol"` // "openai" | "anthropic"; empty = any
+	Headers  map[string]string      `json:"header"`   // header name → required substring (case-insensitive); empty = any
+	Payload  map[string]PayloadCond `json:"payload"`  // JSON path → condition
 }
 
 // PayloadCond is a JSON-path condition. Exactly one of Exists / Eq may be set.
 type PayloadCond struct {
-	Exists *bool       `json:"exists,omitempty"` // require path present (true) or absent (false)
-	Eq     *Value      `json:"eq,omitempty"`     // require path equals this value
-	Neq    *Value      `json:"neq,omitempty"`    // require path differs from this value
+	Exists *bool  `json:"exists,omitempty"` // require path present (true) or absent (false)
+	Eq     *Value `json:"eq,omitempty"`     // require path equals this value
+	Neq    *Value `json:"neq,omitempty"`    // require path differs from this value
 }
 
 // Value is a JSON literal for comparisons (string, number, bool, null).
 type Value struct {
-	Str   *string `json:"str,omitempty"`
-	Num   *float64 `json:"num,omitempty"`
-	Bool  *bool    `json:"bool,omitempty"`
-	Null  bool     `json:"null,omitempty"`
+	Str  *string  `json:"str,omitempty"`
+	Num  *float64 `json:"num,omitempty"`
+	Bool *bool    `json:"bool,omitempty"`
+	Null bool     `json:"null,omitempty"`
 }
 
 type PayloadAction struct {

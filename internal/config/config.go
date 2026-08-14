@@ -12,17 +12,17 @@ import (
 )
 
 type Config struct {
-	HTTPAddr                    string
-	DataDir                     string
-	AdminToken                  string
-	AdminTokens                 []string
-	MasterKey                   string
-	RetryTimes                  int
+	HTTPAddr    string
+	DataDir     string
+	AdminToken  string
+	AdminTokens []string
+	MasterKey   string
+	RetryTimes  int
 	// ChannelRetryTimes is how many times the same upstream key is re-sent
 	// after a retryable failure before moving to the next key/channel.
 	// Network errors (transport) fail fast after these retries instead of
 	// fanning out across every channel.
-	ChannelRetryTimes           int
+	ChannelRetryTimes int
 	// KeyPoolRotation enables rotating through the site key pool on failure.
 	// Disabled = only the channel's bound key is used.
 	KeyPoolRotation             bool
@@ -468,9 +468,9 @@ func Load() (*Config, error) {
 		CooldownLevel2Seconds:        cooldownLevel2,
 		CooldownLevel3Seconds:        cooldownLevel3,
 		CooldownLevel4Seconds:        cooldownLevel4,
-		BreakerFailCount:        breakerFailCount,
-		ModelBreakerFailCount:   modelBreakerFailCount,
-		KeyFailThreshold:        keyFailThreshold,
+		BreakerFailCount:             breakerFailCount,
+		ModelBreakerFailCount:        modelBreakerFailCount,
+		KeyFailThreshold:             keyFailThreshold,
 		StickyEnabled:                stickyEnabled,
 		StickyTTL:                    time.Duration(stickyTTLMinutes) * time.Minute,
 		StableFirstEnabled:           stableFirstEnabled,
@@ -483,9 +483,9 @@ func Load() (*Config, error) {
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
 		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
-	PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
-	PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
-	PluginMarketURLs:           envList("PLUGIN_MARKET_URLS"),
+		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
+		PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
+		PluginMarketURLs:           envList("PLUGIN_MARKET_URLS"),
 		ExchangeAllowSecretExport:  exchangeAllowSecretExport,
 		HealthSweepEnabled:         healthSweepEnabled,
 		HealthSweepIntervalSeconds: healthSweepInterval,

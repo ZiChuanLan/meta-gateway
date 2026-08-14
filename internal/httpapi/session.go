@@ -16,10 +16,10 @@ const sessionTTL = 12 * time.Hour
 // sessionHandler serves the public login/session exchange and the admin
 // TOTP management endpoints.
 type sessionHandler struct {
-	db           *store.DB
-	adminTokens  []string
-	sessionKey   []byte // HMAC key for session tokens (master-key derived)
-	enc          encryptor
+	db          *store.DB
+	adminTokens []string
+	sessionKey  []byte // HMAC key for session tokens (master-key derived)
+	enc         encryptor
 }
 
 type encryptor interface {
@@ -53,7 +53,7 @@ func (h *sessionHandler) RegisterAdmin(r interface {
 // client can show the second factor step.
 func (h *sessionHandler) login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Token   string `json:"token"`
+		Token    string `json:"token"`
 		TOTPCode string `json:"totp_code"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {

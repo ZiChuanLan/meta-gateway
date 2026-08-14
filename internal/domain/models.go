@@ -56,14 +56,14 @@ type Site struct {
 
 // Credential holds encrypted secrets for a site.
 type Credential struct {
-	ID                int64     `json:"id"`
-	SiteID            int64     `json:"site_id"`
-	Kind              string    `json:"kind"` // api_key | session | access_token | password
-	SecretEnc         []byte    `json:"-"`    // never serialized in JSON
-	MetaJSON          string    `json:"meta_json,omitempty"`
-	Status            string    `json:"status"`
-	CheckinEnabled    bool      `json:"checkin_enabled"`
-	ImportFingerprint string    `json:"-"`
+	ID                int64  `json:"id"`
+	SiteID            int64  `json:"site_id"`
+	Kind              string `json:"kind"` // api_key | session | access_token | password
+	SecretEnc         []byte `json:"-"`    // never serialized in JSON
+	MetaJSON          string `json:"meta_json,omitempty"`
+	Status            string `json:"status"`
+	CheckinEnabled    bool   `json:"checkin_enabled"`
+	ImportFingerprint string `json:"-"`
 	// ModelsCSV is the per-key model allowlist (comma-separated, "*" suffix
 	// wildcards). Empty = the key serves every model on its channel.
 	ModelsCSV string    `json:"models_csv,omitempty"`
@@ -227,7 +227,7 @@ type ChannelOverview struct {
 	LastProbeOK        bool       `json:"last_probe_ok"`
 	// LastProbeError stores a redacted failure category or a non-error verdict
 	// such as probe_slow when the health sweep grades latency.
-	LastProbeError     string     `json:"last_probe_error,omitempty"`
+	LastProbeError string `json:"last_probe_error,omitempty"`
 	// LastPing* record the most recent connectivity ping (network-layer
 	// reachability, separate from model/auth probing).
 	LastPingAt    *time.Time `json:"last_ping_at,omitempty"`
@@ -236,9 +236,9 @@ type ChannelOverview struct {
 	LastPingMs    int        `json:"last_ping_ms"`
 	// HealthState is the derived five-state health machine (Metapi-inspired):
 	// disabled / unhealthy / degraded / healthy / unknown.
-	HealthState        string `json:"health_state,omitempty"`
-	HealthReason       string `json:"health_reason,omitempty"`
-	ConnectivityState  string `json:"connectivity_state"`
+	HealthState       string `json:"health_state,omitempty"`
+	HealthReason      string `json:"health_reason,omitempty"`
+	ConnectivityState string `json:"connectivity_state"`
 }
 
 // DiscoveredModel is one model observed during a successful channel refresh.
@@ -260,15 +260,15 @@ type DiscoveredModel struct {
 // (context window, modalities, thinking support, vendor). Empty fields mean
 // unknown; SupportsThinking -1 = unknown, 0 = no, 1 = yes.
 type ModelMetadata struct {
-	ID                int64  `json:"id"`
-	ModelName         string `json:"model_name"`
-	ContextWindow     int64  `json:"context_window"`
-	InputModalities   string `json:"input_modalities"`
-	OutputModalities  string `json:"output_modalities"`
-	SupportsThinking  int    `json:"supports_thinking"`
-	Vendor            string `json:"vendor"`
-	Notes             string `json:"notes"`
-	UpdatedAt         string `json:"updated_at"`
+	ID               int64  `json:"id"`
+	ModelName        string `json:"model_name"`
+	ContextWindow    int64  `json:"context_window"`
+	InputModalities  string `json:"input_modalities"`
+	OutputModalities string `json:"output_modalities"`
+	SupportsThinking int    `json:"supports_thinking"`
+	Vendor           string `json:"vendor"`
+	Notes            string `json:"notes"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -294,18 +294,18 @@ func NormalizeRoutingMode(mode string) string {
 
 // Route maps a model pattern to channels.
 type Route struct {
-	ID           int64     `json:"id"`
-	ModelPattern string    `json:"model_pattern"`
-	Enabled      bool      `json:"enabled"`
-	RoutingMode  string    `json:"routing_mode"`
-	MappingJSON  string    `json:"mapping_json,omitempty"`
-	Notes        string    `json:"notes,omitempty"`
+	ID           int64  `json:"id"`
+	ModelPattern string `json:"model_pattern"`
+	Enabled      bool   `json:"enabled"`
+	RoutingMode  string `json:"routing_mode"`
+	MappingJSON  string `json:"mapping_json,omitempty"`
+	Notes        string `json:"notes,omitempty"`
 	// RetryTimes overrides the global retry rounds (RETRY_TIMES) for this
 	// model. nil = follow the global setting; 0 = no cross-channel retry.
 	RetryTimes *int `json:"retry_times,omitempty"`
 	// ChannelRetryTimes overrides the global same-key re-send count
 	// (CHANNEL_RETRY_TIMES) for this model. nil = follow the global setting.
-	ChannelRetryTimes *int `json:"channel_retry_times,omitempty"`
+	ChannelRetryTimes *int      `json:"channel_retry_times,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 }
@@ -416,13 +416,13 @@ type ProxyLog struct {
 	MappedReasoningEffort string `json:"mapped_reasoning_effort,omitempty"`
 	// TokensPerSecond is the derived stream throughput (completion tokens over
 	// effective latency), AxonHub-style TPS metric.
-	TokensPerSecond float64   `json:"tokens_per_second,omitempty"`
-	Stream          bool      `json:"stream,omitempty"`
-	Path            string    `json:"path,omitempty"`
+	TokensPerSecond float64 `json:"tokens_per_second,omitempty"`
+	Stream          bool    `json:"stream,omitempty"`
+	Path            string  `json:"path,omitempty"`
 	// KeyFingerprint is the sha256 prefix of the upstream API key that served
 	// the attempt (never the plaintext). Empty when no key was used.
 	KeyFingerprint string `json:"key_fingerprint,omitempty"`
-	SessionKey      string    `json:"session_key,omitempty"`
+	SessionKey     string `json:"session_key,omitempty"`
 	// UpstreamRequestID is the upstream x-request-id header echoed by the
 	// serving channel, enabling cross-referencing with the upstream's logs.
 	UpstreamRequestID string    `json:"upstream_request_id,omitempty"`

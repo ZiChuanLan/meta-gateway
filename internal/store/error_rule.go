@@ -10,8 +10,8 @@ import (
 
 // ErrorRuleAction values for ErrorPassRule.Action.
 const (
-	ErrorRulePassthrough = "passthrough"
-	ErrorRuleRewrite     = "rewrite"
+	ErrorRulePassthrough   = "passthrough"
+	ErrorRuleRewrite       = "rewrite"
 	ErrorRuleIgnoreMonitor = "ignore_monitor"
 )
 

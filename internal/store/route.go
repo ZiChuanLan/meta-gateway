@@ -641,7 +641,7 @@ func boolInt(v bool) int {
 }
 
 // nullableInt converts a *int override to a SQL parameter: nil becomes NULL
-// (used with NULLIF(?, '') so an unset override stays NULL = follow global).
+// (used with NULLIF(?, ”) so an unset override stays NULL = follow global).
 func nullableInt(v *int) any {
 	if v == nil {
 		return nil

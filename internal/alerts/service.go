@@ -21,9 +21,9 @@ const TickInterval = 60 * time.Second
 // Supported metrics (all computed from tables the gateway already maintains).
 const (
 	MetricChannelAvailability = "channel_availability" // min per-channel availability (0..1) over window
-	MetricRequestFailRate     = "request_fail_rate"     // failed requests / total over window (0..1)
-	MetricChannelError        = "channel_error"         // 1 when any channel's latest probe failed
-	MetricErrorRate           = "error_rate"            // alias of request_fail_rate
+	MetricRequestFailRate     = "request_fail_rate"    // failed requests / total over window (0..1)
+	MetricChannelError        = "channel_error"        // 1 when any channel's latest probe failed
+	MetricErrorRate           = "error_rate"           // alias of request_fail_rate
 )
 
 // MetricDescriptions documents each metric for the admin UI.
@@ -50,7 +50,7 @@ type Service struct {
 	notifier delivery
 	now      func() time.Time
 
-	mu       sync.Mutex
+	mu sync.Mutex
 	// sustainedSince tracks per-rule first-tick time of the firing condition.
 	sustainedSince map[int64]time.Time
 	// lastFiredAt tracks per-rule cooldown expiry.
@@ -115,7 +115,7 @@ func (s *Service) Tick(ctx context.Context) {
 		}
 		s.lastFiredAt[rule.ID] = now
 		if s.notifier != nil {
-			s.notifier.SendAlert(ctx, webhook.AlertLevel(rule.Level), fmt.Sprintf("告警规则: %s", rule.Name),				fmt.Sprintf("规则 %q 触发: %s = %.3f (阈值 %s %.3f)", rule.Name, rule.Metric, value, rule.Operator, rule.Threshold))
+			s.notifier.SendAlert(ctx, webhook.AlertLevel(rule.Level), fmt.Sprintf("告警规则: %s", rule.Name), fmt.Sprintf("规则 %q 触发: %s = %.3f (阈值 %s %.3f)", rule.Name, rule.Metric, value, rule.Operator, rule.Threshold))
 		}
 		log.Printf("alerts: rule %q fired metric=%s value=%.3f threshold=%s %.3f", rule.Name, rule.Metric, value, rule.Operator, rule.Threshold)
 	}

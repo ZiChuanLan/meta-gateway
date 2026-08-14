@@ -15,9 +15,8 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/account"
 	"github.com/lan/meta-gateway/internal/adapters"
-	"github.com/lan/meta-gateway/internal/alerts"
-	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/alert"
+	"github.com/lan/meta-gateway/internal/alerts"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/backup"
 	"github.com/lan/meta-gateway/internal/checkin"
@@ -26,6 +25,7 @@ import (
 	"github.com/lan/meta-gateway/internal/discovery"
 	"github.com/lan/meta-gateway/internal/exchange"
 	"github.com/lan/meta-gateway/internal/healthsweep"
+	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
 	"github.com/lan/meta-gateway/internal/plugins"
@@ -190,10 +190,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	proxyService.SetAdapterRegistry(registry)
 	proxyService.SetCredentialRefresher(checkinService)
-selector.SetCircuitAware(proxyService.CircuitWeight)
-proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)
-proxyService.SetKeyPoolRotation(cfg.KeyPoolRotation)
-proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
+	selector.SetCircuitAware(proxyService.CircuitWeight)
+	proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)
+	proxyService.SetKeyPoolRotation(cfg.KeyPoolRotation)
+	proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	proxyService.SetKeyFailThreshold(cfg.KeyFailThreshold)
 	proxyService.SetStableFirstPromote(cfg.StableFirstPromoteRequests)
 	proxyService.SetSticky(stickyStore)
@@ -292,13 +292,13 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 			if _, err := accountService.PruneBalanceHistory(ctx, balanceRetentionDays); err != nil {
 				logger.Warn("balance history prune failed", "error", err)
 			}
-	if _, err := db.PruneDecisionSnapshots(7); err != nil {
-		logger.Warn("decision snapshot prune failed", "error", err)
-	}
-	// Channel health history retention: 90 days by default.
-	if _, err := db.HealthHistory.Prune(time.Now().AddDate(0, 0, -90)); err != nil {
-		logger.Warn("health history prune failed", "error", err)
-	}
+			if _, err := db.PruneDecisionSnapshots(7); err != nil {
+				logger.Warn("decision snapshot prune failed", "error", err)
+			}
+			// Channel health history retention: 90 days by default.
+			if _, err := db.HealthHistory.Prune(time.Now().AddDate(0, 0, -90)); err != nil {
+				logger.Warn("health history prune failed", "error", err)
+			}
 		}
 		// First run shortly after boot if there is no data yet, then daily.
 		time.Sleep(30 * time.Second)
@@ -388,9 +388,9 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 			Selector:     selector,
 			RelayLimiter: relayLimiter,
 			AdminLimiter: adminLimiter,
-		SetGlobalProxy: func(raw string) error {
-			return globalProxy.Set(raw, nil)
-		},
+			SetGlobalProxy: func(raw string) error {
+				return globalProxy.Set(raw, nil)
+			},
 			SetDiscoveryCron: func(expression string) error {
 				return discoveryScheduler.SetSchedule(expression, true)
 			},

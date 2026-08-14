@@ -251,6 +251,7 @@ func (s *Service) SetStableFirstPromote(n int) {
 func (s *Service) SetWebhookNotifier(notifier *webhook.Notifier) {
 	s.notifier = notifier
 }
+
 // SetCredentialRefresher wires the 401 session-refresh hook (check-in
 // service). Optional: without it, 401s follow the normal failover path.
 func (s *Service) SetCredentialRefresher(refresher CredentialRefresher) {
@@ -708,46 +709,46 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// Channel-level system prompt injection (OpenAI-format chat bodies
 			// only; translated requests are injected inside the composed
 			// adapter at the pivot step).
-		if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && effectivePath == "chat/completions" {
-			requestSource = injectSystemPrompt(requestSource, prompt)
-		}
-	}
-	// Channel capability-aware reasoning effort downgrade: when the channel
-	// declares a max_reasoning_effort and the client asked for more, rewrite
-	// the body so the request succeeds instead of burning a failover round
-	// (e.g. gateways that reject reasoning_effort=max). The original value is
-	// kept in the log; the mapping is recorded as "max→high".
-	mappedReasoning := ""
-	if maxEffort := strings.TrimSpace(candidate.Channel.MaxReasoningEffort); maxEffort != "" {
-		if downgraded, note := downgradeReasoningEffort(requestSource, maxEffort); downgraded != nil {
-			requestSource = downgraded
-			mappedReasoning = note
-		}
-	}
-	if mappedReasoning != "" {
-		req.MappedReasoningEffort = mappedReasoning
-	}
-
-	// Channel-level payload rules (body rewrite chain): model/protocol/
-	// header/payload conditions → set/delete/filter actions. A filter
-	// short-circuits with a synthesized 403 so the channel is skipped like
-	// any other local rejection (it is not an upstream health signal).
-	if rulesJSON := strings.TrimSpace(candidate.Channel.PayloadRules); rulesJSON != "" {
-		out, filter, err := ApplyPayloadRules(requestSource, rulesJSON, req.Model, req.DownstreamProtocol, req.Headers)
-		if err != nil {
-			log.Printf("proxy: payload rules channel=%d model=%s: %v", candidate.Channel.ID, req.Model, err)
-		} else if filter != nil {
-			result = &relay.Result{
-				StatusCode: http.StatusForbidden,
-				Err:        fmt.Errorf("%w: %s (rule %q)", ErrPayloadFiltered, filter.Reason, filter.Rule),
+			if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && effectivePath == "chat/completions" {
+				requestSource = injectSystemPrompt(requestSource, prompt)
 			}
-			category = "payload_filter"
-			s.recordAttempt(req, candidate, attempt+1, result, category, "")
-			return result, meta
-		} else {
-			requestSource = out
 		}
-	}
+		// Channel capability-aware reasoning effort downgrade: when the channel
+		// declares a max_reasoning_effort and the client asked for more, rewrite
+		// the body so the request succeeds instead of burning a failover round
+		// (e.g. gateways that reject reasoning_effort=max). The original value is
+		// kept in the log; the mapping is recorded as "max→high".
+		mappedReasoning := ""
+		if maxEffort := strings.TrimSpace(candidate.Channel.MaxReasoningEffort); maxEffort != "" {
+			if downgraded, note := downgradeReasoningEffort(requestSource, maxEffort); downgraded != nil {
+				requestSource = downgraded
+				mappedReasoning = note
+			}
+		}
+		if mappedReasoning != "" {
+			req.MappedReasoningEffort = mappedReasoning
+		}
+
+		// Channel-level payload rules (body rewrite chain): model/protocol/
+		// header/payload conditions → set/delete/filter actions. A filter
+		// short-circuits with a synthesized 403 so the channel is skipped like
+		// any other local rejection (it is not an upstream health signal).
+		if rulesJSON := strings.TrimSpace(candidate.Channel.PayloadRules); rulesJSON != "" {
+			out, filter, err := ApplyPayloadRules(requestSource, rulesJSON, req.Model, req.DownstreamProtocol, req.Headers)
+			if err != nil {
+				log.Printf("proxy: payload rules channel=%d model=%s: %v", candidate.Channel.ID, req.Model, err)
+			} else if filter != nil {
+				result = &relay.Result{
+					StatusCode: http.StatusForbidden,
+					Err:        fmt.Errorf("%w: %s (rule %q)", ErrPayloadFiltered, filter.Reason, filter.Rule),
+				}
+				category = "payload_filter"
+				s.recordAttempt(req, candidate, attempt+1, result, category, "")
+				return result, meta
+			} else {
+				requestSource = out
+			}
+		}
 
 		upstreamPath, requestBody, translateErr := adapter.TransformRequest(effectivePath, requestSource)
 		if translateErr != nil {
@@ -758,9 +759,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				StatusCode: adapterErrorStatus(translateErr, http.StatusBadRequest),
 				Err:        fmt.Errorf("proxy: %s translate: %w", adapter.Name(), translateErr),
 			}
-	category = adapterErrorCategory(translateErr)
-		s.recordAttempt(req, candidate, attempt+1, result, category, "")
-		return result, meta
+			category = adapterErrorCategory(translateErr)
+			s.recordAttempt(req, candidate, attempt+1, result, category, "")
+			return result, meta
 		}
 		// Registered N×M translation path: the (anthropic → upstream family)
 		// pair exists in the matrix, so translate directly instead of going
@@ -793,12 +794,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// API-key state.
 			result = &relay.Result{Err: err}
 			category = "invalid_url"
-		result.Err = fmt.Errorf("proxy: %w: %v", adapters.ErrInvalidURL, result.Err)
-		s.recordAttempt(req, candidate, attempt+1, result, category, "")
-		return result, meta
+			result.Err = fmt.Errorf("proxy: %w: %v", adapters.ErrInvalidURL, result.Err)
+			s.recordAttempt(req, candidate, attempt+1, result, category, "")
+			return result, meta
 		}
-	// Aggregate all enabled site API keys; failover keys before leaving the channel.
-	apiKeys, err := s.resolveAPIKeyPool(candidate.Channel, req.Model)
+		// Aggregate all enabled site API keys; failover keys before leaving the channel.
+		apiKeys, err := s.resolveAPIKeyPool(candidate.Channel, req.Model)
 		if err != nil || len(apiKeys) == 0 {
 			result = &relay.Result{Err: ErrCredential}
 			category = "no_credential"
@@ -806,8 +807,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if s.breaker != nil {
 				s.breaker.RecordError(candidate.Channel.ID, req.Model, false)
 			}
-		s.recordAttempt(req, candidate, attempt+1, result, category, "")
-		s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
+			s.recordAttempt(req, candidate, attempt+1, result, category, "")
+			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
 
 			excluded[candidate.Channel.ID] = struct{}{}
 			last = preserve(result)
@@ -825,51 +826,87 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			for keyAttempt := 0; ; keyAttempt++ {
 				headers := adapter.AuthHeaders(apiKey)
-			if headers.Get("Content-Type") == "" && strings.TrimSpace(req.ContentType) != "" {
-				headers.Set("Content-Type", req.ContentType)
-			}
-			if overrideErr := mergeHeaderOverrides(headers, candidate.Channel.HeaderOverride); overrideErr != nil {
-				result = &relay.Result{Err: fmt.Errorf("proxy: header override: %w", overrideErr)}
-				category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
-				break
-			}
-			// Time the upstream round trip for first-byte latency on streams.
-			forwardStarted := s.now()
-			// Circuit-breaker probe: an open breaker whose window is due lets
-			// exactly one request through as a probe; its outcome drives the
-			// recovery backoff.
-			wasProbe := probeReserved
-			// Non-streaming requests get an overall cap: an upstream that answers
-			// headers and then stalls mid-body would otherwise pin this goroutine
-			// until the client disconnects. Streaming requests are exempt — long
-			// SSE sessions legitimately exceed any fixed budget, and their idle
-			// detection is the stream path's responsibility.
-			fwdCtx := ctx
-			if !req.Stream {
-				timeout := s.nonStreamTimeout
-				if timeout <= 0 {
-					timeout = nonStreamRequestTimeout
+				if headers.Get("Content-Type") == "" && strings.TrimSpace(req.ContentType) != "" {
+					headers.Set("Content-Type", req.ContentType)
 				}
-				var cancel context.CancelFunc
-				fwdCtx, cancel = context.WithTimeout(ctx, timeout)
-				defer cancel()
-			}
-			// Per-channel outbound proxy: an override on the channel routes this
-			// request through it (the transport's proxy hook reads the context).
-			if proxyURL := strings.TrimSpace(candidate.Channel.ProxyURL); proxyURL != "" {
-				fwdCtx = outbound.WithChannelProxy(fwdCtx, proxyURL)
-			}
-			// (gate slot is held at the channel-attempt level, above the retry
-			// loops — see the Acquire/releaseGate pair near the meta setup)
-			result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, upstreamURL, headers, requestBody)
-			// Convert upstream 2xx bodies back to the OpenAI contract.
-			if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
-				// N×M matrix path: the (anthropic → family) pair's Response/Stream
-				// modes convert upstream output back to the Anthropic contract.
-				if registryTranslation != nil {
-					if req.Stream && registryTranslation.Stream != nil {
-						wrapped, wrapErr := registryTranslation.Stream(effectivePath, result.Body)
+				if overrideErr := mergeHeaderOverrides(headers, candidate.Channel.HeaderOverride); overrideErr != nil {
+					result = &relay.Result{Err: fmt.Errorf("proxy: header override: %w", overrideErr)}
+					category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
+					break
+				}
+				// Time the upstream round trip for first-byte latency on streams.
+				forwardStarted := s.now()
+				// Circuit-breaker probe: an open breaker whose window is due lets
+				// exactly one request through as a probe; its outcome drives the
+				// recovery backoff.
+				wasProbe := probeReserved
+				// Non-streaming requests get an overall cap: an upstream that answers
+				// headers and then stalls mid-body would otherwise pin this goroutine
+				// until the client disconnects. Streaming requests are exempt — long
+				// SSE sessions legitimately exceed any fixed budget, and their idle
+				// detection is the stream path's responsibility.
+				fwdCtx := ctx
+				if !req.Stream {
+					timeout := s.nonStreamTimeout
+					if timeout <= 0 {
+						timeout = nonStreamRequestTimeout
+					}
+					var cancel context.CancelFunc
+					fwdCtx, cancel = context.WithTimeout(ctx, timeout)
+					defer cancel()
+				}
+				// Per-channel outbound proxy: an override on the channel routes this
+				// request through it (the transport's proxy hook reads the context).
+				if proxyURL := strings.TrimSpace(candidate.Channel.ProxyURL); proxyURL != "" {
+					fwdCtx = outbound.WithChannelProxy(fwdCtx, proxyURL)
+				}
+				// (gate slot is held at the channel-attempt level, above the retry
+				// loops — see the Acquire/releaseGate pair near the meta setup)
+				result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, upstreamURL, headers, requestBody)
+				// Convert upstream 2xx bodies back to the OpenAI contract.
+				if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
+					// N×M matrix path: the (anthropic → family) pair's Response/Stream
+					// modes convert upstream output back to the Anthropic contract.
+					if registryTranslation != nil {
+						if req.Stream && registryTranslation.Stream != nil {
+							wrapped, wrapErr := registryTranslation.Stream(effectivePath, result.Body)
+							if wrapErr != nil {
+								_ = result.Body.Close()
+								result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
+							} else {
+								result.Body = wrapped
+								if result.Header == nil {
+									result.Header = make(http.Header)
+								}
+								result.Header.Set("Content-Type", "text/event-stream")
+							}
+						} else if !req.Stream && registryTranslation.Response != nil {
+							raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
+							_ = result.Body.Close()
+							if readErr != nil {
+								result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
+							} else if converted, convErr := registryTranslation.Response(effectivePath, raw); convErr != nil {
+								result = &relay.Result{
+									StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
+									Header:     result.Header,
+									LatencyMs:  result.LatencyMs,
+									Err:        fmt.Errorf("proxy: anthropic response: %w", convErr),
+								}
+							} else {
+								result.Body = io.NopCloser(bytes.NewReader(converted))
+								if result.Header == nil {
+									result.Header = make(http.Header)
+								}
+								result.Header.Set("Content-Type", "application/json")
+							}
+						}
+					} else if req.Stream {
+						// Reshape native/upstream SSE into the downstream contract (the
+						// composed adapter pivots through OpenAI SSE internally).
+						wrapped, wrapErr := adapter.WrapStream(effectivePath, result.Body)
 						if wrapErr != nil {
+							// The upstream stream is not handed to the client; close it so
+							// the connection returns to the pool instead of leaking.
 							_ = result.Body.Close()
 							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
 						} else {
@@ -879,17 +916,17 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 							}
 							result.Header.Set("Content-Type", "text/event-stream")
 						}
-					} else if !req.Stream && registryTranslation.Response != nil {
+					} else {
 						raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
 						_ = result.Body.Close()
 						if readErr != nil {
 							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
-						} else if converted, convErr := registryTranslation.Response(effectivePath, raw); convErr != nil {
+						} else if converted, convErr := adapter.TransformResponse(effectivePath, raw); convErr != nil {
 							result = &relay.Result{
 								StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
 								Header:     result.Header,
 								LatencyMs:  result.LatencyMs,
-								Err:        fmt.Errorf("proxy: anthropic response: %w", convErr),
+								Err:        fmt.Errorf("proxy: %s response: %w", adapter.Name(), convErr),
 							}
 						} else {
 							result.Body = io.NopCloser(bytes.NewReader(converted))
@@ -899,207 +936,171 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 							result.Header.Set("Content-Type", "application/json")
 						}
 					}
-				} else if req.Stream {
-					// Reshape native/upstream SSE into the downstream contract (the
-					// composed adapter pivots through OpenAI SSE internally).
-					wrapped, wrapErr := adapter.WrapStream(effectivePath, result.Body)
-					if wrapErr != nil {
-						// The upstream stream is not handed to the client; close it so
-						// the connection returns to the pool instead of leaking.
-						_ = result.Body.Close()
-						result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
-					} else {
-						result.Body = wrapped
-						if result.Header == nil {
-							result.Header = make(http.Header)
-						}
-						result.Header.Set("Content-Type", "text/event-stream")
-					}
-				} else {
-					raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
-					_ = result.Body.Close()
-					if readErr != nil {
-						result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
-					} else if converted, convErr := adapter.TransformResponse(effectivePath, raw); convErr != nil {
-						result = &relay.Result{
-							StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
-							Header:     result.Header,
-							LatencyMs:  result.LatencyMs,
-							Err:        fmt.Errorf("proxy: %s response: %w", adapter.Name(), convErr),
-						}
-					} else {
-						result.Body = io.NopCloser(bytes.NewReader(converted))
-						if result.Header == nil {
-							result.Header = make(http.Header)
-						}
-						result.Header.Set("Content-Type", "application/json")
-					}
 				}
-			}
-			streamInterrupted := false
-			if req.Stream && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
-				first, peekErr := peekFirstChunkWithTimeout(result.Body, streamFirstByteTimeout)
-				if peekErr != nil {
-					// Upstream answered 200 and then died before emitting any
-					// data. The client has not received a byte yet, so this is a
-					// normal retryable failure — fail over to the next key/channel.
-					_ = result.Body.Close()
-					result = &relay.Result{
-						StatusCode: result.StatusCode,
-						Header:     result.Header,
-						LatencyMs:  result.LatencyMs,
-						Err:        fmt.Errorf("proxy: stream closed before first byte: %w", peekErr),
-					}
-					streamInterrupted = true
-				} else {
-					// Semantic check: a 200 stream that immediately delivers a
-					// terminal/empty SSE frame ([DONE] or a delta with neither
-					// content nor role) is a silent failure — the client would
-					// receive an empty response. Treat it like a first-byte death
-					// and fail over.
-					if isSilentSSEStart(first) {
+				streamInterrupted := false
+				if req.Stream && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
+					first, peekErr := peekFirstChunkWithTimeout(result.Body, streamFirstByteTimeout)
+					if peekErr != nil {
+						// Upstream answered 200 and then died before emitting any
+						// data. The client has not received a byte yet, so this is a
+						// normal retryable failure — fail over to the next key/channel.
 						_ = result.Body.Close()
 						result = &relay.Result{
 							StatusCode: result.StatusCode,
 							Header:     result.Header,
 							LatencyMs:  result.LatencyMs,
-							Err:        fmt.Errorf("proxy: stream ended silently before any content"),
+							Err:        fmt.Errorf("proxy: stream closed before first byte: %w", peekErr),
 						}
 						streamInterrupted = true
 					} else {
-						// Replay the buffered prefix, then continue streaming the rest.
-						result.Body = io.NopCloser(io.MultiReader(bytes.NewReader(first), result.Body))
-						// First-byte latency measured from relay start to the first
-						// upstream byte (the peek above consumed it).
-						result.FirstByteMs = int(s.now().Sub(forwardStarted).Milliseconds())
+						// Semantic check: a 200 stream that immediately delivers a
+						// terminal/empty SSE frame ([DONE] or a delta with neither
+						// content nor role) is a silent failure — the client would
+						// receive an empty response. Treat it like a first-byte death
+						// and fail over.
+						if isSilentSSEStart(first) {
+							_ = result.Body.Close()
+							result = &relay.Result{
+								StatusCode: result.StatusCode,
+								Header:     result.Header,
+								LatencyMs:  result.LatencyMs,
+								Err:        fmt.Errorf("proxy: stream ended silently before any content"),
+							}
+							streamInterrupted = true
+						} else {
+							// Replay the buffered prefix, then continue streaming the rest.
+							result.Body = io.NopCloser(io.MultiReader(bytes.NewReader(first), result.Body))
+							// First-byte latency measured from relay start to the first
+							// upstream byte (the peek above consumed it).
+							result.FirstByteMs = int(s.now().Sub(forwardStarted).Milliseconds())
+						}
 					}
 				}
-			}
-		category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
-			localAdapterFailure := isAdapterError(result.Err)
-			// 401 refresh-retry: an expired session/access-token credential is
-			// re-established through the check-in machinery exactly once per
-			// request, then the request is replayed from the first key in the
-			// refreshed pool. A successful replay is logged as refresh_retry.
-			if !refreshed && !localAdapterFailure && result.Err == nil && result.StatusCode == http.StatusUnauthorized && s.credentialRefresher != nil {
-				if s.refreshCredentialAndReplay(ctx, &candidate, &apiKeys) {
-					refreshed = true
-					category = "refresh_retry"
-					// Replay in place with the refreshed credential: swap the
-					// current key for the pool's first key and re-enter the
-					// keyAttempt loop without consuming a retry budget.
-					if len(apiKeys) > 0 {
-						apiKey = apiKeys[0]
+				category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
+				localAdapterFailure := isAdapterError(result.Err)
+				// 401 refresh-retry: an expired session/access-token credential is
+				// re-established through the check-in machinery exactly once per
+				// request, then the request is replayed from the first key in the
+				// refreshed pool. A successful replay is logged as refresh_retry.
+				if !refreshed && !localAdapterFailure && result.Err == nil && result.StatusCode == http.StatusUnauthorized && s.credentialRefresher != nil {
+					if s.refreshCredentialAndReplay(ctx, &candidate, &apiKeys) {
+						refreshed = true
+						category = "refresh_retry"
+						// Replay in place with the refreshed credential: swap the
+						// current key for the pool's first key and re-enter the
+						// keyAttempt loop without consuming a retry budget.
+						if len(apiKeys) > 0 {
+							apiKey = apiKeys[0]
+						}
+						if keyAttempt > 0 {
+							keyAttempt--
+						}
+						continue
 					}
-					if keyAttempt > 0 {
-						keyAttempt--
+				}
+				if streamInterrupted && !localAdapterFailure {
+					category = "stream_interrupted"
+					retryable = true
+				}
+				// Circuit breaker bookkeeping: a success resets the breaker right away.
+				// Failures are NOT counted per attempt here — the same-key re-send
+				// loop would otherwise advance the breaker by (retries+1) for a
+				// single request. They are counted exactly once per request after
+				// the re-sends are exhausted (transport branch / channel tail).
+				if s.breaker != nil && !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
+					s.breaker.RecordSuccess(candidate.Channel.ID, req.Model)
+				}
+				// Per-key auto-disable (AxonHub): a key that fails N times with the
+				// same status code is excluded from the pool. A successful re-send
+				// clears the key's counters immediately; the failure path is
+				// counted once per key after that key's re-sends are exhausted
+				// (transport branch / key-loop tail below), so a single request
+				// does not advance the counter once per attempt. Adapter-local
+				// errors do not implicate the key.
+				if !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
+					s.recordKeySuccess(candidate.Channel.ID, apiKey)
+				}
+				// The channel consecutive-failure counter is incremented exactly once
+				// per failed attempt (inside recordMemberFailure below); counting here
+				// too would over-count a multi-key pool (3 keys + member = 4) and
+				// trip auto-disable prematurely.
+				if result.Err == nil && !retryable {
+					break
+				}
+				if !retryable {
+					// Local adapter/configuration errors do not heal by re-sending;
+					// move to the next key (the channel-level branch decides failover).
+					break
+				}
+				if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
+					break
+				}
+				// Network errors fail fast: re-send the same key up to
+				// channelRetryTimes, then cool the channel and return instead of
+				// fanning out across every channel (a dead network link usually
+				// affects all channels equally). The failure counters advance
+				// exactly once here — after the re-sends are exhausted.
+				if category == "transport" && keyAttempt >= keyRetries {
+					if result.Body != nil {
+						_ = result.Body.Close()
 					}
-					continue
+					if s.breaker != nil && !localAdapterFailure {
+						s.breaker.RecordError(candidate.Channel.ID, req.Model, wasProbe)
+					}
+					if !localAdapterFailure {
+						if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
+							log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
+							// All keys down → cascade to the channel-level disable.
+							s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
+						}
+					}
+					penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
+					s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
+					s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
+					return result, meta
+				}
+				// Business retryables (5xx/429): re-send the same key up to
+				// channelRetryTimes, then try the next key in the pool before
+				// failing over to another channel.
+				if keyAttempt >= keyRetries {
+					break
+				}
+				if result.Body != nil {
+					_ = result.Body.Close()
 				}
 			}
-			if streamInterrupted && !localAdapterFailure {
-				category = "stream_interrupted"
-				retryable = true
+			// Only the last key attempt for this channel is logged at the attempt counter
+			// used for cross-channel retry; intermediate key fails stay on the same attempt.
+			// A successful post-refresh replay keeps the refresh_retry attribution.
+			if refreshed && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
+				category = "refresh_retry"
 			}
-			// Circuit breaker bookkeeping: a success resets the breaker right away.
-			// Failures are NOT counted per attempt here — the same-key re-send
-			// loop would otherwise advance the breaker by (retries+1) for a
-			// single request. They are counted exactly once per request after
-			// the re-sends are exhausted (transport branch / channel tail).
-			if s.breaker != nil && !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
-				s.breaker.RecordSuccess(candidate.Channel.ID, req.Model)
+			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
+				s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
 			}
-			// Per-key auto-disable (AxonHub): a key that fails N times with the
-			// same status code is excluded from the pool. A successful re-send
-			// clears the key's counters immediately; the failure path is
-			// counted once per key after that key's re-sends are exhausted
-			// (transport branch / key-loop tail below), so a single request
-			// does not advance the counter once per attempt. Adapter-local
-			// errors do not implicate the key.
-			if !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
-				s.recordKeySuccess(candidate.Channel.ID, apiKey)
+			// Per-key failure accounting: this key's re-sends are exhausted (or the
+			// error is not retryable) — count the key's failure exactly once per
+			// request. Client-cancelled requests are not upstream failures.
+			if !isAdapterError(result.Err) && (result.Err != nil || result.StatusCode >= 400) &&
+				!errors.Is(result.Err, context.Canceled) && !errors.Is(result.Err, context.DeadlineExceeded) && ctx.Err() == nil {
+				if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
+					log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
+					// All keys down → cascade to the channel-level disable.
+					s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
+				}
 			}
-			// The channel consecutive-failure counter is incremented exactly once
-			// per failed attempt (inside recordMemberFailure below); counting here
-			// too would over-count a multi-key pool (3 keys + member = 4) and
-			// trip auto-disable prematurely.
 			if result.Err == nil && !retryable {
-				break
-			}
-			if !retryable {
-				// Local adapter/configuration errors do not heal by re-sending;
-				// move to the next key (the channel-level branch decides failover).
 				break
 			}
 			if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
 				break
 			}
-			// Network errors fail fast: re-send the same key up to
-			// channelRetryTimes, then cool the channel and return instead of
-			// fanning out across every channel (a dead network link usually
-			// affects all channels equally). The failure counters advance
-			// exactly once here — after the re-sends are exhausted.
-			if category == "transport" && keyAttempt >= keyRetries {
-				if result.Body != nil {
-					_ = result.Body.Close()
-				}
-				if s.breaker != nil && !localAdapterFailure {
-					s.breaker.RecordError(candidate.Channel.ID, req.Model, wasProbe)
-				}
-				if !localAdapterFailure {
-					if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
-						log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
-						// All keys down → cascade to the channel-level disable.
-						s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
-					}
-				}
-				penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
-				s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
-				s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
-				return result, meta
-			}
-			// Business retryables (5xx/429): re-send the same key up to
-			// channelRetryTimes, then try the next key in the pool before
-			// failing over to another channel.
-			if keyAttempt >= keyRetries {
-				break
-			}
 			if result.Body != nil {
 				_ = result.Body.Close()
 			}
+			endProbe()
+			releaseAttempt()
 		}
-		// Only the last key attempt for this channel is logged at the attempt counter
-		// used for cross-channel retry; intermediate key fails stay on the same attempt.
-		// A successful post-refresh replay keeps the refresh_retry attribution.
-		if refreshed && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
-			category = "refresh_retry"
-		}
-		if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
-			s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
-		}
-		// Per-key failure accounting: this key's re-sends are exhausted (or the
-		// error is not retryable) — count the key's failure exactly once per
-		// request. Client-cancelled requests are not upstream failures.
-		if !isAdapterError(result.Err) && (result.Err != nil || result.StatusCode >= 400) &&
-			!errors.Is(result.Err, context.Canceled) && !errors.Is(result.Err, context.DeadlineExceeded) && ctx.Err() == nil {
-			if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
-				log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
-				// All keys down → cascade to the channel-level disable.
-				s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
-			}
-		}
-		if result.Err == nil && !retryable {
-			break
-		}
-		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
-			break
-		}
-		if result.Body != nil {
-			_ = result.Body.Close()
-		}
-		endProbe()
-		releaseAttempt()
-	}
 		if result == nil {
 			return &relay.Result{Err: ErrCredential}, meta
 		}
@@ -1149,9 +1150,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		//   passthrough     → return the upstream error, no failover/cooldown
 		//   rewrite         → passthrough with a rewritten status code
 		//   ignore_monitor  → keep failover, skip breaker/cooldown/counters
-		if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {		errorText := modelNotFoundText(result)
-		rule, mErr := s.db.ErrorRule.MatchErrorRule(result.StatusCode, errorText, req.Model, candidate.Channel.ID)
-		if mErr == nil && rule != nil {
+		if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
+			errorText := modelNotFoundText(result)
+			rule, mErr := s.db.ErrorRule.MatchErrorRule(result.StatusCode, errorText, req.Model, candidate.Channel.ID)
+			if mErr == nil && rule != nil {
 				switch rule.Action {
 				case store.ErrorRulePassthrough, store.ErrorRuleRewrite:
 					if rule.Action == store.ErrorRuleRewrite && rule.RewriteTo >= 100 && rule.RewriteTo <= 599 {
@@ -1181,38 +1183,38 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if req.PreferChannelID > 0 {
 				return result, meta
 			}
-	} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
-		// 4xx client error: fail over to the next channel — a different
-		// upstream may accept the same request (channel capabilities are
-		// heterogeneous: one gateway may reject reasoning_effort=max while
-		// another accepts it). Cool the member down so this channel is
-		// skipped for a while, but do NOT count toward the channel's
-		// consecutive-failure tally or auto-disable: the request itself may
-		// be at fault, and counting would let a bad client request take
-		// down every channel via repeated 4xx failover.
-		if !monitorSkipped {
-			// A model_not_found / unknown-model response is permanent for this
-			// channel × model: blacklist the combination so routing skips it
-			// outright instead of failing over on every request.
-			if isModelNotFoundError(result.StatusCode, modelNotFoundText(result)) {
-				if err := s.db.BlockModel(candidate.Channel.ID, req.Model, category); err != nil {
-					log.Printf("proxy: block model channel=%d model=%s: %v", candidate.Channel.ID, req.Model, err)
+		} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
+			// 4xx client error: fail over to the next channel — a different
+			// upstream may accept the same request (channel capabilities are
+			// heterogeneous: one gateway may reject reasoning_effort=max while
+			// another accepts it). Cool the member down so this channel is
+			// skipped for a while, but do NOT count toward the channel's
+			// consecutive-failure tally or auto-disable: the request itself may
+			// be at fault, and counting would let a bad client request take
+			// down every channel via repeated 4xx failover.
+			if !monitorSkipped {
+				// A model_not_found / unknown-model response is permanent for this
+				// channel × model: blacklist the combination so routing skips it
+				// outright instead of failing over on every request.
+				if isModelNotFoundError(result.StatusCode, modelNotFoundText(result)) {
+					if err := s.db.BlockModel(candidate.Channel.ID, req.Model, category); err != nil {
+						log.Printf("proxy: block model channel=%d model=%s: %v", candidate.Channel.ID, req.Model, err)
+					}
+					log.Printf("proxy: model %s not found on channel %d — blacklisted (request_id=%s)", req.Model, candidate.Channel.ID, req.RequestID)
 				}
-				log.Printf("proxy: model %s not found on channel %d — blacklisted (request_id=%s)", req.Model, candidate.Channel.ID, req.RequestID)
+				if s.breaker != nil && !isAdapterError(result.Err) {
+					s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
+				}
+				if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+					log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
+				}
+				s.observeError(candidate.Channel.ID, req.Model)
 			}
-			if s.breaker != nil && !isAdapterError(result.Err) {
-				s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
+			if req.PreferChannelID > 0 {
+				return result, meta
 			}
-			if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
-				log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
-			}
-			s.observeError(candidate.Channel.ID, req.Model)
-		}
-		if req.PreferChannelID > 0 {
-			return result, meta
-		}
-		goto nextCandidate
-	} else {
+			goto nextCandidate
+		} else {
 			// Local adapter/configuration errors and non-4xx client errors are
 			// returned directly: the same adapter logic would fail identically
 			// on every channel, so failover cannot help.
@@ -1553,7 +1555,8 @@ func downgradeReasoningEffort(body []byte, maxEffort string) ([]byte, string) {
 	return rewritten, effort + "→" + maxEffort
 }
 
-func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string) {	status := result.StatusCode
+func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string) {
+	status := result.StatusCode
 	if status == 0 && result.Err != nil {
 		status = http.StatusBadGateway
 	} else if status == 0 {
@@ -1564,25 +1567,25 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		errorBrief = category
 	}
 	_, err := s.db.ProxyLog.Insert(&domain.ProxyLog{
-		RequestID:        req.RequestID,
-		ChannelID:        candidate.Channel.ID,
-		RouteID:          candidate.Member.RouteID,
-		Model:            req.Model,
-		Status:           status,
-		LatencyMs:        result.LatencyMs,
-		Attempt:          attempt,
-		ErrorBrief:       errorBrief,
-		DownstreamKeyID:  req.DownstreamKeyID,
-		PromptTokens:     req.PromptTokens,
-		CompletionTokens: req.CompletionTokens,
-		TotalTokens:      req.TotalTokens,
-		Stream:           req.Stream,
-		Path:             req.OpenAIPath,
-		SessionKey:       req.SessionKey,
-	ReasoningEffort:       req.ReasoningEffort,
-	MappedReasoningEffort: req.MappedReasoningEffort,
-		KeyFingerprint:   keyFP,
-		UpstreamRequestID: upstreamRequestID(result),
+		RequestID:             req.RequestID,
+		ChannelID:             candidate.Channel.ID,
+		RouteID:               candidate.Member.RouteID,
+		Model:                 req.Model,
+		Status:                status,
+		LatencyMs:             result.LatencyMs,
+		Attempt:               attempt,
+		ErrorBrief:            errorBrief,
+		DownstreamKeyID:       req.DownstreamKeyID,
+		PromptTokens:          req.PromptTokens,
+		CompletionTokens:      req.CompletionTokens,
+		TotalTokens:           req.TotalTokens,
+		Stream:                req.Stream,
+		Path:                  req.OpenAIPath,
+		SessionKey:            req.SessionKey,
+		ReasoningEffort:       req.ReasoningEffort,
+		MappedReasoningEffort: req.MappedReasoningEffort,
+		KeyFingerprint:        keyFP,
+		UpstreamRequestID:     upstreamRequestID(result),
 	})
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)

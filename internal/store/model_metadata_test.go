@@ -40,8 +40,8 @@ func TestModelMetadataLifecycle(t *testing.T) {
 
 	// Upsert updates in place (same row).
 	if err := db.ModelMetadata.Upsert(&domain.ModelMetadata{
-		ModelName:       "deepseek-v4-flash",
-		ContextWindow:   262144,
+		ModelName:        "deepseek-v4-flash",
+		ContextWindow:    262144,
 		SupportsThinking: 0,
 	}); err != nil {
 		t.Fatal(err)

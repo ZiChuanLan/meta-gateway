@@ -17,10 +17,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/alerts"
-	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/sitedetect"
@@ -93,17 +93,17 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Put("/credentials/{id}", h.updateCredential)
 	r.Delete("/credentials/{id}", h.deleteCredential)
 
-// Channels
+	// Channels
 	r.Get("/channels", h.listChannels)
 	r.Get("/search", h.globalSearch)
-r.Get("/channels/overview", h.listChannelOverviews)
+	r.Get("/channels/overview", h.listChannelOverviews)
 	r.Post("/channels", h.createChannel)
 	r.Post("/channels/{id}/duplicate", h.duplicateChannel)
 	r.Post("/reset", h.factoryReset)
-r.Get("/channels/{id}", h.getChannel)
-r.Put("/channels/{id}", h.updateChannel)
-r.Delete("/channels/{id}", h.deleteChannel)
-r.Post("/channels/{id}/ping", h.pingChannel)
+	r.Get("/channels/{id}", h.getChannel)
+	r.Put("/channels/{id}", h.updateChannel)
+	r.Delete("/channels/{id}", h.deleteChannel)
+	r.Post("/channels/{id}/ping", h.pingChannel)
 
 	// Routes
 	r.Get("/routes", h.listRoutes)
@@ -1866,14 +1866,14 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 		Scopes               string  `json:"scopes,omitempty"`
 		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
 		QuotaUsedTokens      int64   `json:"quota_used_tokens"`
-	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
-	PriceCachePer1k      float64 `json:"price_cache_per_1k"`
-	ModelAllowlist       string  `json:"model_allowlist,omitempty"`
-	ModelDenylist        string  `json:"model_denylist,omitempty"`
-	ExpiresAt            string  `json:"expires_at,omitempty"`
-	AllowedIPs           string  `json:"allowed_ips,omitempty"`
-	EstimatedCost        float64 `json:"estimated_cost"`
+		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+		PriceCachePer1k      float64 `json:"price_cache_per_1k"`
+		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
+		ModelDenylist        string  `json:"model_denylist,omitempty"`
+		ExpiresAt            string  `json:"expires_at,omitempty"`
+		AllowedIPs           string  `json:"allowed_ips,omitempty"`
+		EstimatedCost        float64 `json:"estimated_cost"`
 		CreatedAt            string  `json:"created_at"`
 	}
 	result := make([]safeKey, 0, len(keys))
@@ -1938,13 +1938,13 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Name string `json:"name"`
 		// Token is optional. When empty, the server generates an mg-… secret.
 		// When set, the provided secret is stored as a hash only (raw never re-readable).
-	Token                string  `json:"token,omitempty"`
-	Scopes               string  `json:"scopes,omitempty"`
-	QuotaTotalTokens     int64   `json:"quota_total_tokens"`
-	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
-	PriceCachePer1k      float64 `json:"price_cache_per_1k"`
-	GroupName            string  `json:"group_name,omitempty"`
+		Token                string  `json:"token,omitempty"`
+		Scopes               string  `json:"scopes,omitempty"`
+		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
+		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+		PriceCachePer1k      float64 `json:"price_cache_per_1k"`
+		GroupName            string  `json:"group_name,omitempty"`
 		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
 		ExpiresAt            string  `json:"expires_at,omitempty"`
@@ -2005,10 +2005,10 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Enabled:              true,
 		Scopes:               req.Scopes,
 		QuotaTotalTokens:     req.QuotaTotalTokens,
-	PricePromptPer1k:     req.PricePromptPer1k,
-	PriceCompletionPer1k: req.PriceCompletionPer1k,
-	PriceCachePer1k:      req.PriceCachePer1k,
-	ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
+		PricePromptPer1k:     req.PricePromptPer1k,
+		PriceCompletionPer1k: req.PriceCompletionPer1k,
+		PriceCachePer1k:      req.PriceCachePer1k,
+		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 		ExpiresAt:            strings.TrimSpace(req.ExpiresAt),
 		AllowedIPs:           strings.TrimSpace(req.AllowedIPs),
@@ -2033,10 +2033,10 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Scopes:               req.Scopes,
 		QuotaTotalTokens:     req.QuotaTotalTokens,
 		QuotaUsedTokens:      0,
-	PricePromptPer1k:     req.PricePromptPer1k,
-	PriceCompletionPer1k: req.PriceCompletionPer1k,
-	PriceCachePer1k:      req.PriceCachePer1k,
-	ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
+		PricePromptPer1k:     req.PricePromptPer1k,
+		PriceCompletionPer1k: req.PriceCompletionPer1k,
+		PriceCachePer1k:      req.PriceCachePer1k,
+		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 		CreatedAt:            createdAt,
 	})
@@ -2062,10 +2062,10 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Enabled              *bool    `json:"enabled"`
 		Scopes               *string  `json:"scopes"`
 		QuotaTotalTokens     *int64   `json:"quota_total_tokens"`
-	PricePromptPer1k     *float64 `json:"price_prompt_per_1k"`
-	PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
-	PriceCachePer1k      *float64 `json:"price_cache_per_1k"`
-	GroupName            *string  `json:"group_name"`
+		PricePromptPer1k     *float64 `json:"price_prompt_per_1k"`
+		PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
+		PriceCachePer1k      *float64 `json:"price_cache_per_1k"`
+		GroupName            *string  `json:"group_name"`
 		ModelAllowlist       *string  `json:"model_allowlist"`
 		ModelDenylist        *string  `json:"model_denylist"`
 		ExpiresAt            *string  `json:"expires_at"`
@@ -2156,9 +2156,9 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		"scopes":                  existing.Scopes,
 		"quota_total_tokens":      existing.QuotaTotalTokens,
 		"quota_used_tokens":       existing.QuotaUsedTokens,
-	"price_prompt_per_1k":     existing.PricePromptPer1k,
-	"price_completion_per_1k": existing.PriceCompletionPer1k,
-	"price_cache_per_1k":      existing.PriceCachePer1k,
+		"price_prompt_per_1k":     existing.PricePromptPer1k,
+		"price_completion_per_1k": existing.PriceCompletionPer1k,
+		"price_cache_per_1k":      existing.PriceCachePer1k,
 		"created_at":              existing.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }

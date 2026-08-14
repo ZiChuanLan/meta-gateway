@@ -36,14 +36,14 @@ type SearchCredHit struct {
 }
 
 type SearchLogHit struct {
-	ID          int64  `json:"id"`
-	RequestID   string `json:"request_id"`
-	Model       string `json:"model"`
-	ChannelID   int64  `json:"channel_id"`
-	Status      int    `json:"status"`
-	CreatedAt   string `json:"created_at"`
-	UpstreamID  string `json:"upstream_request_id"`
-	KeyFP       string `json:"key_fingerprint"`
+	ID         int64  `json:"id"`
+	RequestID  string `json:"request_id"`
+	Model      string `json:"model"`
+	ChannelID  int64  `json:"channel_id"`
+	Status     int    `json:"status"`
+	CreatedAt  string `json:"created_at"`
+	UpstreamID string `json:"upstream_request_id"`
+	KeyFP      string `json:"key_fingerprint"`
 }
 
 // Search runs the global admin search across channels, routes, credentials

@@ -60,7 +60,7 @@ func (s *PromptGuardStore) List() ([]PromptGuardRule, error) {
 
 // ListEnabled returns only enabled rules.
 func (s *PromptGuardStore) ListEnabled() ([]PromptGuardRule, error) {
-	rows, err := s.db.Query(`SELECT `+promptGuardColumns+` FROM prompt_guard_rules WHERE enabled = 1 ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + promptGuardColumns + ` FROM prompt_guard_rules WHERE enabled = 1 ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("prompt guard enabled: %w", err)
 	}

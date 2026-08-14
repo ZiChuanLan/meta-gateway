@@ -4,6 +4,13 @@ A production-oriented OpenAI-compatible relay gateway with multi-channel
 routing, retries, encrypted credentials, discovery, check-in, exchange,
 auditing, metrics, and online SQLite backups.
 
+Beyond the core relay path it ships with: alert rules (metric → webhook),
+sensitive prompt-guard rules, error passthrough/rewrite rules, a plugin
+market, admin TOTP two-factor, redemption codes for downstream quota,
+per-model metadata and not-found blacklists, routing decision snapshots,
+health history with availability summaries, and scheduled database
+maintenance (orphan GC + VACUUM).
+
 Simple usage metering records prompt/completion tokens from upstream `usage` fields, enforces optional per-token quotas, and shows estimated cost in Admin → Tokens.
 
 The embedded Web Admin is available at `http://127.0.0.1:4100/console/`
@@ -80,6 +87,18 @@ curl http://127.0.0.1:4100/healthz
 | `RETRY_TIMES` | `2` | Retry rounds: how many additional channels are attempted after the first upstream attempt (each round = one more channel) |
 | `CHANNEL_RETRY_TIMES` | `1` | Same-key re-sends: how many times a retryable failure is re-sent on the same upstream key before moving to the next key/channel (0-5; network errors fail fast after these) |
 | `KEY_POOL_ROTATION` | `true` | Rotate through the site's API keys when one fails; off = only the channel's bound key is used |
+| `PROGRESSIVE_COOLDOWN_ENABLED` | `true` | Escalate member cooldown after repeated failures (`COOLDOWN_LEVEL2/3/4_SECONDS`) instead of a fixed pause |
+| `CHANNEL_AUTO_DISABLE_THRESHOLD` | `5` | Consecutive relay failures before a channel is auto-disabled (0 disables) |
+| `RECOVERY_PROBE_ENABLED` / `RECOVERY_PROBE_INTERVAL_SECONDS` | `true` / `600` | Re-probe auto-disabled channels for recovery |
+| `ROUTING_LATENCY_AWARE` / `ROUTING_ERROR_AWARE` / `ROUTING_CONCURRENCY_AWARE` | `true` | Routing signal toggles (latency, error history, concurrency load) |
+| `ROUTING_CONCURRENCY_LIMIT` | `64` | Per-model in-flight ceiling for the concurrency signal |
+| `STABLE_FIRST_ENABLED` / `STABLE_FIRST_DENOMINATOR` / `STABLE_FIRST_PROMOTE_REQUESTS` | `false` / `25` / `100` | Gray-release routing: a `stable_first` channel takes ~1/N of traffic until it accumulates enough successful requests, then is promoted |
+| `HEALTH_SWEEP_ENABLED` / `HEALTH_SWEEP_INTERVAL_SECONDS` | `false` / `300` | Proactive health sweep (latency sampling) over channels |
+| `ALERT_CONFIG_JSON` | empty | Alert matrix JSON (bark / serverchan / telegram / SMTP + cooldown) |
+| `ALERT_SWEEP_INTERVAL_SECONDS` / `ALERT_DAILY_SUMMARY_INTERVAL_SECONDS` | `0` / `0` | Alert evaluation and daily summary cadence (0 = off) |
+| `CHECKIN_TZ` | empty | Timezone for `CHECKIN_CRON` (containers default to UTC; set e.g. `Asia/Shanghai`) |
+| `RELAY_MODEL_RATE_PER_MINUTE` / `RELAY_MODEL_RATE_BURST` | `0` / `0` | Optional per-model relay limiter (0 disables) |
+| `PLUGIN_CATALOG_URL` | empty | Extra plugin market registry URLs (comma-separated) |
 | `CROSS_CHANNEL_FAILOVER_ENABLED` | `true` | Whether failed requests may move to another channel; disabled means only the first selected channel is tried |
 | `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
 | `BREAKER_FAIL_COUNT` | `5` | Consecutive failures before a route member is parked (0 disables; progressive mode floor 5) |
@@ -116,15 +135,23 @@ GET /healthz → 200 {"status":"ok"}
 | GET | /console/sites/{id} | Get site |
 | PUT | /console/sites/{id} | Update site |
 | DELETE | /console/sites/{id} | Delete site |
+| GET | /console/site-type?url=… | Detect upstream platform (AAH chain) |
+| POST | /console/connections | One-shot create: site + credential + channel with rollback |
 | GET | /console/sites/{siteId}/credentials | List credentials for site |
 | POST | /console/sites/{siteId}/credentials | Create credential (encrypts secret) |
 | DELETE | /console/credentials/{id} | Delete credential |
 | GET | /console/channels | List channels |
+| GET | /console/channels/overview | Channel overviews with health/readiness |
+| GET | /console/search?q=… | Global search across assets |
 | POST | /console/channels | Create channel |
+| POST | /console/channels/{id}/duplicate | Duplicate a channel |
+| POST | /console/channels/{id}/ping | Connectivity ping |
 | GET | /console/channels/{id} | Get channel |
 | PUT | /console/channels/{id} | Update channel |
 | DELETE | /console/channels/{id} | Delete channel |
+| POST | /console/reset | Factory reset (wipes business data) |
 | GET | /console/routes | List routes |
+| GET | /console/routes/overview | Route overviews with members |
 | GET | /console/routes/explain?model={model} | Explain candidate eligibility and priority |
 | POST | /console/routes | Create route |
 | GET | /console/routes/{id} | Get route |
@@ -133,11 +160,31 @@ GET /healthz → 200 {"status":"ok"}
 | GET | /console/routes/{routeId}/members | List route members |
 | POST | /console/routes/{routeId}/members | Create route member |
 | PUT | /console/route-members/{id} | Update route member |
+| POST | /console/route-members/{id}/clear-health | Clear member failure/cooldown state |
 | DELETE | /console/route-members/{id} | Delete route member |
 | GET | /console/downstream-keys | List downstream keys |
 | POST | /console/downstream-keys | Create downstream key |
+| PUT | /console/downstream-keys/{id} | Update downstream key |
 | DELETE | /console/downstream-keys/{id} | Delete downstream key |
+| GET | /console/usage/summary | Usage summary (requests/tokens/cost) |
+| GET | /console/usage?limit=… | Usage records |
+| GET/PUT | /console/ratios | Model cost ratios (1.0 = no markup) |
+| GET/PUT/DELETE | /console/groups | Tenant groups (quotas / rate limits) |
+| PATCH | /console/channels/tag/{tag} | Bulk channel operations by tag |
+| GET | /console/sticky | Sticky-session routing stats |
 | GET | /console/proxy-logs | List proxy logs |
+| GET | /console/proxy-logs/latency-histogram | Latency distribution |
+| GET | /console/decision-snapshot | Routing decision audit trail |
+| GET/DELETE | /console/model-blocks | Model not-found blacklist |
+| POST/GET/DELETE | /console/redemption-codes | Quota top-up vouchers |
+| GET/PUT/DELETE | /console/model-metadata | Per-model capability annotations |
+| GET | /console/health-history?channel_id=&hours= | Recent probe points |
+| GET | /console/health-history/summary?hours= | Per-channel availability summaries |
+| GET/POST/PUT/DELETE | /console/alert-rules | Alert rules (metric → webhook) |
+| GET/POST/PUT/DELETE | /console/prompt-guards | Sensitive prompt guard rules |
+| GET/POST/PUT/DELETE | /console/error-rules | Error passthrough/rewrite rules |
+| POST/GET | /console/db/gc | Run / inspect database maintenance |
+| GET/POST | /console/totp/status, /console/totp/setup, /console/totp/enable, /console/totp/disable | Admin TOTP two-factor |
 | POST | /console/discovery/channels/{id}/refresh | Refresh one channel's models and automatic routes |
 | POST | /console/discovery/refresh | Refresh all enabled channels with itemized results |
 | GET | /console/discovery/models?channel_id={id} | List durable discovered-model snapshots |
@@ -169,6 +216,10 @@ GET /healthz → 200 {"status":"ok"}
 | POST | /v1/embeddings | Embeddings |
 | POST | /v1/responses | OpenAI Responses API (pass-through) |
 | POST | /v1/messages | Anthropic Messages API (native clients) |
+| POST | /v1/messages/count_tokens | Anthropic token counting |
+| POST | /v1/images/generations, /v1/images/edits | Image generation (pass-through) |
+| GET | /v1/dashboard/billing/credit_summary | Quota / credit summary for the key |
+| POST | /v1/redemption/redeem | Redeem a quota top-up code |
 
 Downstream key `scopes` are enforced: `relay` allows the full public surface;
 otherwise use `models`, `chat`, `completions`, `embeddings`, `responses`,

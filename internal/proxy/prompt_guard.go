@@ -13,12 +13,12 @@ import (
 
 // GuardHit describes the first rule that matched a request body.
 type GuardHit struct {
-	Rule      string `json:"rule"`
-	Action    string `json:"action"`
-	Pattern   string `json:"pattern"`
-	Message   string `json:"message,omitempty"`
-	Exclude   []int64 `json:"exclude,omitempty"`
-	Masked    bool   `json:"masked,omitempty"`
+	Rule    string  `json:"rule"`
+	Action  string  `json:"action"`
+	Pattern string  `json:"pattern"`
+	Message string  `json:"message,omitempty"`
+	Exclude []int64 `json:"exclude,omitempty"`
+	Masked  bool    `json:"masked,omitempty"`
 }
 
 // ApplyPromptGuards walks every string value in a JSON body and applies the

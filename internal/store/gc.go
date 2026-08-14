@@ -6,21 +6,21 @@ import (
 
 // GCResult reports what a maintenance pass deleted and whether VACUUM ran.
 type GCResult struct {
-	RouteMembers    int64 `json:"route_members"`
-	ProxyLogs       int64 `json:"proxy_logs"`
-	Discovered      int64 `json:"discovered_models"`
-	CheckinLogs     int64 `json:"checkin_logs"`
-	UsageRecords    int64 `json:"usage_records"`
-	BalanceHistory  int64 `json:"balance_history"`
-	DecisionSnaps   int64 `json:"decision_snapshots"`
-	HealthHistory  int64 `json:"channel_health_history"`
-	ModelBlocks    int64 `json:"channel_model_blocks"`
-	Redemptions     int64 `json:"redemption_codes"`
-	ErrorRules      int64 `json:"error_passthrough_rules"`
-	FreelistPages   int64 `json:"freelist_pages"`
-	PageSize        int64 `json:"page_size"`
+	RouteMembers     int64 `json:"route_members"`
+	ProxyLogs        int64 `json:"proxy_logs"`
+	Discovered       int64 `json:"discovered_models"`
+	CheckinLogs      int64 `json:"checkin_logs"`
+	UsageRecords     int64 `json:"usage_records"`
+	BalanceHistory   int64 `json:"balance_history"`
+	DecisionSnaps    int64 `json:"decision_snapshots"`
+	HealthHistory    int64 `json:"channel_health_history"`
+	ModelBlocks      int64 `json:"channel_model_blocks"`
+	Redemptions      int64 `json:"redemption_codes"`
+	ErrorRules       int64 `json:"error_passthrough_rules"`
+	FreelistPages    int64 `json:"freelist_pages"`
+	PageSize         int64 `json:"page_size"`
 	VacuumFreedBytes int64 `json:"vacuum_freed_bytes"`
-	Vacuumed        bool   `json:"vacuumed"`
+	Vacuumed         bool  `json:"vacuumed"`
 }
 
 // vacuumFreeListPages is the freelist threshold (in pages) above which a

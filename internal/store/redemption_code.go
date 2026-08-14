@@ -12,7 +12,6 @@ import (
 // ErrCodeInvalid marks an unknown, already-used or expired redemption code.
 var ErrCodeInvalid = errors.New("redemption code invalid")
 
-
 // RedemptionCode is a single-use quota top-up voucher for downstream keys.
 type RedemptionCode struct {
 	ID              int64      `json:"id"`

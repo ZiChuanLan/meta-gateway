@@ -24,20 +24,20 @@ type Editable struct {
 	RetryTimes                  int    `json:"retry_times"`
 	CrossChannelFailoverEnabled bool   `json:"cross_channel_failover_enabled"`
 	CooldownSeconds             int    `json:"cooldown_seconds"`
-	CheckinEnabled bool   `json:"checkin_enabled"`
-	CheckinCron    string `json:"checkin_cron"`
+	CheckinEnabled              bool   `json:"checkin_enabled"`
+	CheckinCron                 string `json:"checkin_cron"`
 	// DiscoveryCron is the scheduled model-list refresh expression (five-field
 	// cron; empty = disabled). Same format as checkin_cron.
 	DiscoveryCron string `json:"discovery_cron"`
 	// DBGCCron is the scheduled database maintenance expression (orphan GC +
 	// VACUUM; empty = disabled).
-	DBGCCron string `json:"db_gc_cron"`
-	RelayRatePerMinute          int    `json:"relay_rate_per_minute"`
-	RelayRateBurst              int    `json:"relay_rate_burst"`
-	AdminRatePerMinute          int    `json:"admin_rate_per_minute"`
-	AdminRateBurst              int    `json:"admin_rate_burst"`
-	AuditRetentionDays          int    `json:"audit_retention_days"`
-	AuditRetentionRows          int    `json:"audit_retention_rows"`
+	DBGCCron           string `json:"db_gc_cron"`
+	RelayRatePerMinute int    `json:"relay_rate_per_minute"`
+	RelayRateBurst     int    `json:"relay_rate_burst"`
+	AdminRatePerMinute int    `json:"admin_rate_per_minute"`
+	AdminRateBurst     int    `json:"admin_rate_burst"`
+	AuditRetentionDays int    `json:"audit_retention_days"`
+	AuditRetentionRows int    `json:"audit_retention_rows"`
 	// ChannelAutoDisableThreshold: consecutive failures before auto-disable
 	// (0 = feature off). RoutingLatencyAware enables latency-weighted picking.
 	ChannelAutoDisableThreshold int  `json:"channel_auto_disable_threshold"`
@@ -84,8 +84,8 @@ type Editable struct {
 	KeyFailThreshold int `json:"key_fail_threshold"`
 	// StickyEnabled enables sticky-session routing (same conversation prefers
 	// the previously successful channel). StickyTTLMinutes is the binding TTL.
-	StickyEnabled     bool `json:"sticky_enabled"`
-	StickyTTLMinutes  int  `json:"sticky_ttl_minutes"`
+	StickyEnabled    bool `json:"sticky_enabled"`
+	StickyTTLMinutes int  `json:"sticky_ttl_minutes"`
 	// AlertConfigJSON is the multi-channel alert matrix (webhook/bark/
 	// serverchan/telegram/smtp + cooldown + daily summary flag). Empty string
 	// keeps the env bootstrap ("" itself disables all alert channels).
@@ -283,16 +283,16 @@ func (c *Controller) Snapshot() Snapshot {
 		note = "Using environment bootstrap. Save from Admin to override and hot-reload. Secrets are never editable here."
 	}
 	return Snapshot{
-		Source:         c.source,
-		HasOverride:    c.source == "admin_override",
-		Editable:       c.current,
-		EnvBootstrap:   c.env,
-		UpdatedAt:      c.updated,
-		Note:           note,
-		ServerHTTPAddr: c.cfg.HTTPAddr,
-		DataDir:        c.cfg.DataDir,
-		BackupDir:      c.cfg.BackupDir,
-		PluginsDir:     c.cfg.PluginsDir,
+		Source:             c.source,
+		HasOverride:        c.source == "admin_override",
+		Editable:           c.current,
+		EnvBootstrap:       c.env,
+		UpdatedAt:          c.updated,
+		Note:               note,
+		ServerHTTPAddr:     c.cfg.HTTPAddr,
+		DataDir:            c.cfg.DataDir,
+		BackupDir:          c.cfg.BackupDir,
+		PluginsDir:         c.cfg.PluginsDir,
 		MetricsTokenMasked: maskToken(c.cfg.MetricsToken),
 	}
 }

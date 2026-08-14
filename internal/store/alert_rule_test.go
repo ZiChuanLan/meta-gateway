@@ -9,15 +9,15 @@ import (
 func TestAlertRuleLifecycle(t *testing.T) {
 	db := openTestDB(t)
 	rule := &store.AlertRule{
-		Name:            "low availability",
-		Metric:          "channel_availability",
-		Operator:        "lt",
-		Threshold:       0.8,
-		WindowSeconds:   3600,
+		Name:             "low availability",
+		Metric:           "channel_availability",
+		Operator:         "lt",
+		Threshold:        0.8,
+		WindowSeconds:    3600,
 		SustainedSeconds: 300,
-		CooldownSeconds: 900,
-		Level:           "warning",
-		Enabled:         true,
+		CooldownSeconds:  900,
+		Level:            "warning",
+		Enabled:          true,
 	}
 	if err := db.AlertRule.Upsert(rule); err != nil {
 		t.Fatal(err)

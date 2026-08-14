@@ -18,11 +18,11 @@ import (
 const (
 	// breakerOpenThreshold is the default consecutive-failure count that parks
 	// the breaker open; BREAKER_FAIL_COUNT overrides it at runtime.
-	breakerOpenThreshold     = 5 // consecutive failures → open
-	breakerFailureStatsTTL   = 30 * time.Minute
-	breakerProbeInterval     = 5 * time.Minute
-	breakerHalfOpenWeight    = 0.3
-	breakerMaxBackoff        = 8 // probe-interval multiplier cap
+	breakerOpenThreshold   = 5 // consecutive failures → open
+	breakerFailureStatsTTL = 30 * time.Minute
+	breakerProbeInterval   = 5 * time.Minute
+	breakerHalfOpenWeight  = 0.3
+	breakerMaxBackoff      = 8 // probe-interval multiplier cap
 )
 
 type breakerState string
