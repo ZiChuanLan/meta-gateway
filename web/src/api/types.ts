@@ -5,7 +5,7 @@ export type ChannelConnectivityState = 'unknown' | 'reachable' | 'unreachable'
 
 export interface Site { id: number; name: string; base_url: string; platform: string; status: Status; created_at: string; updated_at: string }
 export interface Credential { id: number; site_id: number; kind: string; has_secret: boolean; meta_json?: string; status: Status; checkin_enabled: boolean; models_csv?: string; created_at?: string }
-export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; header_override?: string; system_prompt?: string; retry_config?: string; stable_first?: boolean; stable_first_requests?: number; created_at: string; updated_at: string }
+export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; max_reasoning_effort?: string; payload_rules?: string; max_concurrent?: number; proxy_url?: string; header_override?: string; system_prompt?: string; retry_config?: string; stable_first?: boolean; stable_first_requests?: number; created_at: string; updated_at: string }
 export interface ChannelOverview {
   channel: Channel
   credential_kind?: string
@@ -48,6 +48,7 @@ export interface DownstreamKey {
   quota_used_tokens?: number
   price_prompt_per_1k?: number
   price_completion_per_1k?: number
+  price_cache_per_1k?: number
   model_allowlist?: string
   model_denylist?: string
   expires_at?: string
@@ -107,6 +108,117 @@ export interface ProxyLog {
   created_at: string
 }
 export interface DiscoveredModel { id: number; channel_id: number; model_name: string; available: boolean; source: string; latency_ms: number; checked_at: string }
+
+export interface ModelMetadata {
+  id?: number;
+  model_name: string;
+  context_window: number;
+  input_modalities: string;
+  output_modalities: string;
+  supports_thinking: number; // -1 unknown, 0 no, 1 yes
+  vendor: string;
+  notes: string;
+  updated_at?: string;
+}
+
+export interface SidecarSpec {
+  url: string;
+  page_path?: string;
+  health_path?: string;
+  api_key?: string;
+}
+
+export interface ErrorPassRule {
+  id?: number;
+  name: string;
+  status_code: number; // 0 = any 4xx
+  keyword: string;
+  model_glob: string;
+  channel_id: number; // 0 = all
+  action: "passthrough" | "rewrite" | "ignore_monitor";
+  rewrite_to: number;
+  enabled: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AlertRule {
+  id?: number;
+  name: string;
+  metric: string;
+  operator: "gt" | "gte" | "lt" | "lte" | "eq" | "neq";
+  threshold: number;
+  window_seconds: number;
+  sustained_seconds: number;
+  cooldown_seconds: number;
+  level: string;
+  enabled: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SearchHits {
+  channels: { id: number; name: string; url: string }[];
+  routes: { id: number; model: string; status: string }[];
+  credentials: { id: number; name: string; kind: string; site_id: number }[];
+  logs: {
+    id: number;
+    request_id: string;
+    model: string;
+    channel_id: number;
+    status: number;
+    created_at: string;
+    upstream_request_id: string;
+    key_fingerprint: string;
+  }[];
+}
+
+export interface DBGCResult {
+  route_members: number;
+  proxy_logs: number;
+  discovered_models: number;
+  checkin_logs: number;
+  usage_records: number;
+  balance_history: number;
+  decision_snapshots: number;
+  channel_health_history: number;
+  channel_model_blocks: number;
+  redemption_codes: number;
+  error_passthrough_rules: number;
+  freelist_pages: number;
+  page_size: number;
+  vacuum_freed_bytes: number;
+  vacuumed: boolean;
+}
+
+export interface PromptGuardRule {
+  id?: number;
+  name: string;
+  pattern: string;
+  action: "mask" | "reject" | "exclude";
+  replacement?: string;
+  exclude_channels?: string;
+  channel_scope: number;
+  enabled: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface HealthPoint {
+  id: number;
+  channel_id: number;
+  ok: boolean;
+  latency_ms: number;
+  verdict: string;
+  probed_at: string;
+}
+
+export interface HealthSummaryItem {
+  channel_id: number;
+  total: number;
+  ok: number;
+  availability: number;
+}
 export interface CheckinLog { id: number; site_id: number; credential_id: number; source: string; status: 'success' | 'failed' | 'skipped'; category: string; message: string; reward?: string; latency_ms: number; ran_at: string }
 export interface AuditEvent { id: number; request_id?: string; actor_kind: string; actor_id?: number; action: string; resource_kind?: string; resource_id?: number; outcome: string; status_code: number; category?: string; created_at: string }
 export interface BackupRecord { id: number; name: string; status: string; size_bytes: number; checksum: string; duration_ms: number; category?: string; created_at: string }
@@ -134,7 +246,11 @@ export interface RuntimeEditableSettings {
 	stable_first_promote_requests: number
 	routing_concurrency_enabled: boolean
 	routing_concurrency_limit: number
-	webhook_url?: string
+  webhook_url?: string
+  proxy_url?: string
+  max_concurrent?: number
+  discovery_cron?: string
+  db_gc_cron?: string
 	webhook_throttle_seconds: number
 	progressive_cooldown_enabled: boolean
 	cooldown_level2_seconds: number
@@ -306,6 +422,7 @@ export interface PluginCatalogEntry {
   capabilities?: string[]
   source?: string
   checksum?: string
+  sidecar?: SidecarSpec
 }
 
 export interface PluginRecord {

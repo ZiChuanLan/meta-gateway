@@ -147,13 +147,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 51 {
-		t.Fatalf("got %d applied migrations, want 51", count)
+	if count != 69 {
+		t.Fatalf("got %d applied migrations, want 68", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 51 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 69 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -186,9 +186,9 @@ func TestDeriveHealthStateFiveStates(t *testing.T) {
 func TestDeriveHealthReasonAndConnectivityAreIndependent(t *testing.T) {
 	now := time.Now()
 	overview := domain.ChannelOverview{
-		Channel:           domain.Channel{Status: domain.StatusEnabled},
-		LastProbeOK:       true,
-		FailureCount:      2,
+		Channel:            domain.Channel{Status: domain.StatusEnabled},
+		LastProbeOK:        true,
+		FailureCount:       2,
 		CoolingMemberCount: 0,
 	}
 	if got := store.DeriveHealthState(overview); got != domain.HealthStateDegraded {
@@ -336,13 +336,13 @@ func TestCheckinCredentialAndLogs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentialID, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "session", SecretEnc: []byte("cipher"), Status: domain.StatusEnabled})
+	credentialID, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "session", SecretEnc: []byte("cipher"), Status: domain.StatusEnabled, ModelsCSV: "model-a,model-b*"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	credential, err := db.Credential.GetByID(credentialID)
-	if err != nil || credential.CheckinEnabled {
-		t.Fatalf("new credential scheduling must default off: %+v err=%v", credential, err)
+	if err != nil || credential.CheckinEnabled || credential.ModelsCSV != "model-a,model-b*" {
+		t.Fatalf("new credential fields: %+v err=%v", credential, err)
 	}
 	if err := db.Credential.SetCheckinEnabled(credentialID, true); err != nil {
 		t.Fatal(err)
@@ -620,15 +620,42 @@ func TestRoutingUniqueConstraints(t *testing.T) {
 	}
 }
 
+func TestRuntimeSettingsProxyURLRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	row := &store.RuntimeSettingsRow{
+		HasOverride: true,
+		ProxyURL:    "http://127.0.0.1:7897",
+	}
+	if err := db.RuntimeSettings.Save(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProxyURL != "http://127.0.0.1:7897" {
+		t.Fatalf("proxy_url roundtrip = %q", got.ProxyURL)
+	}
+	// Clearing persists the empty value (a fresh read must not resurrect it).
+	row.ProxyURL = ""
+	if err := db.RuntimeSettings.Save(row); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = db.RuntimeSettings.Get()
+	if got.ProxyURL != "" {
+		t.Fatalf("proxy_url clear = %q", got.ProxyURL)
+	}
+}
+
 func TestRuntimeSettingsPreservesExplicitFalse(t *testing.T) {
 	db := openTestDB(t)
 	// Explicitly turning latency-aware routing OFF must survive a save/load
 	// round trip. The old Save() mapped 0 → 1 ("default on"), silently
 	// re-enabling the feature on the next process start.
 	row := &store.RuntimeSettingsRow{
-		HasOverride:            true,
-		RoutingLatencyAware:    0,
-		RoutingErrorAware:      1,
+		HasOverride:             true,
+		RoutingLatencyAware:     0,
+		RoutingErrorAware:       1,
 		RoutingConcurrencyLimit: 64,
 	}
 	if err := db.RuntimeSettings.Save(row); err != nil {
@@ -646,15 +673,15 @@ func TestRuntimeSettingsPreservesExplicitFalse(t *testing.T) {
 func TestRuntimeSettingsHealthSweepRoundTrip(t *testing.T) {
 	db := openTestDB(t)
 	row := &store.RuntimeSettingsRow{
-		HasOverride:                  true,
-		HealthSweepEnabled:           1,
-		HealthSweepIntervalSeconds:   120,
-		HealthSweepJitterSeconds:     15,
-		HealthSweepDegradedMs:        1500,
-		HealthSweepConcurrency:       6,
-		HealthSweepTimeoutSeconds:    20,
-		ChannelRetryTimes:            2,
-		KeyPoolRotation:              0,
+		HasOverride:                true,
+		HealthSweepEnabled:         1,
+		HealthSweepIntervalSeconds: 120,
+		HealthSweepJitterSeconds:   15,
+		HealthSweepDegradedMs:      1500,
+		HealthSweepConcurrency:     6,
+		HealthSweepTimeoutSeconds:  20,
+		ChannelRetryTimes:          2,
+		KeyPoolRotation:            0,
 	}
 	if err := db.RuntimeSettings.Save(row); err != nil {
 		t.Fatal(err)

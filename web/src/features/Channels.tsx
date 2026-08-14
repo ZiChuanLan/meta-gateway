@@ -9,12 +9,13 @@ import {
   Plus,
   Power,
   RefreshCw,
+  Copy,
   Search,
   CalendarCheck,
   Trash2,
   UserCheck,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -27,6 +28,8 @@ import type {
   Site,
 } from "../api/types";
 import { ChannelModelsPanel } from "./ChannelModels";
+import { ChannelKeysDrawer } from "./ChannelKeys";
+import { parseCredentialMeta } from "./credentialMeta";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
 import { Drawer } from "../components/Drawer";
 import { EmptyHero } from "../components/EmptyHero";
@@ -147,31 +150,6 @@ function positiveId(value: string | null) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function parseCredentialMeta(metaJSON?: string): {
-  name?: string;
-  group?: string;
-  upstream_token_id?: number;
-} {
-  if (!metaJSON?.trim()) return {};
-  try {
-    const parsed = JSON.parse(metaJSON) as Record<string, unknown>;
-    const name = typeof parsed.name === "string" ? parsed.name : undefined;
-    const group =
-      typeof parsed.group === "string"
-        ? parsed.group
-        : typeof parsed.Group === "string"
-          ? parsed.Group
-          : undefined;
-    const upstream =
-      typeof parsed.upstream_token_id === "number"
-        ? parsed.upstream_token_id
-        : undefined;
-    return { name, group, upstream_token_id: upstream };
-  } catch {
-    return {};
-  }
-}
-
 function needsVerify(overview: ChannelOverview) {
   return channelReadiness(overview) === "unverified" || overview.model_count === 0;
 }
@@ -239,8 +217,9 @@ export function Channels() {
   });
   const [addOpen, setAddOpen] = useState(false);
   const [remove, setRemove] = useState<Channel | null>(null);
-  const [edit, setEdit] = useState<Channel | null>(null);
-  const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
+const [edit, setEdit] = useState<Channel | null>(null);
+const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
+const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
   const [createKeyChannel, setCreateKeyChannel] = useState<Channel | null>(
     null,
   );
@@ -435,6 +414,11 @@ const ping = useAdminMutation({
     invalidateKeys: [...INVALIDATE, ["credentials"]],
     pendingIdOf: (id) => id,
   });
+  const duplicate = useAdminMutation({
+    mutationFn: (id: number) => service.duplicateChannel(id),
+    invalidateKeys: [...INVALIDATE] as const,
+    pendingIdOf: (id) => id,
+  });
   const createUpstreamKey = useAdminMutation({
     mutationFn: (input: { id: number; name?: string; group?: string }) =>
       service.createUpstreamKey(input.id, {
@@ -476,6 +460,10 @@ const ping = useAdminMutation({
       name: string;
       base_url: string;
       type_hint: string;
+      max_reasoning_effort?: string;
+  payload_rules?: string;
+  proxy_url?: string;
+  max_concurrent?: number;
       priority: number;
       weight: number;
       header_override?: string;
@@ -563,9 +551,13 @@ const ping = useAdminMutation({
         type_hint: typeHint,
         priority: input.priority,
         weight: input.weight,
+        max_reasoning_effort: input.max_reasoning_effort ?? "",
+        payload_rules: input.payload_rules ?? "",
+        proxy_url: input.proxy_url ?? "",
+        max_concurrent: input.max_concurrent ?? 0,
         header_override: input.header_override ?? "",
         system_prompt: input.system_prompt ?? "",
-  retry_config: input.retry_config ?? "",
+        retry_config: input.retry_config ?? "",
         stable_first: input.stable_first ?? false,
         site_id: siteId,
         credential_id: relayCredentialId,
@@ -859,6 +851,17 @@ const ping = useAdminMutation({
         },
       });
     }
+    items.push({
+      key: "duplicate",
+      label: t("channels.duplicate"),
+      icon: <Copy size={14} />,
+      disabled: busy,
+      onSelect: () => {
+        close();
+        duplicate.reset();
+        duplicate.mutate(ch.id);
+      },
+    });
     items.push(
       {
         key: "sync",
@@ -1495,31 +1498,16 @@ const ping = useAdminMutation({
           onClose={() => {
             setEdit(null);
             setModelsChannel(null);
+            setKeysChannel(null);
           }}
           onSave={(value) => saveEdit.mutate(value)}
-	onToggleKey={(id, enabled) =>
-		setCredentialStatus.mutate({
-			id,
-			status: enabled ? "enabled" : "disabled",
-		})
-	}
-	onUpdateKeyModels={(id, modelsCsv) =>
-		updateKeyModels.mutate({ id, modelsCsv })
-	}
-          onDeleteKey={(id) => deleteApiKeyCredential.mutate(id)}
-          onAddApiKey={(secret) => {
-            const siteId = edit.site_id;
-            if (!siteId) return;
-            addApiKeyCredential.mutate({ siteId, secret });
-          }}
-          addApiKeyPending={addApiKeyCredential.isPending}
-          onSyncKeys={() => {
-            syncKeys.reset();
-            syncKeys.mutate(edit.id);
-          }}
-          syncKeysPending={syncKeys.isPending}
           onManageModels={() => {
+            setKeysChannel(null);
             setModelsChannel(edit);
+          }}
+          onManageKeys={() => {
+            setModelsChannel(null);
+            setKeysChannel(edit);
           }}
         />
       ) : null}
@@ -1577,6 +1565,7 @@ const ping = useAdminMutation({
         <Drawer
           title={t("channels.modelsSection")}
           width={780}
+          side="left"
           rightOffset={520}
           plain
           onClose={() => setModelsChannel(null)}
@@ -1600,6 +1589,40 @@ const ping = useAdminMutation({
             }
           />
         </Drawer>
+      ) : null}
+      {keysChannel ? (
+        <ChannelKeysDrawer
+          channel={keysChannel}
+          apiKeys={(credentials.data ?? []).filter(
+            (item) => item.kind === "api_key",
+          )}
+          pending={
+            setCredentialStatus.isPending ||
+            deleteApiKeyCredential.isPending
+          }
+          addApiKeyPending={addApiKeyCredential.isPending}
+          syncKeysPending={syncKeys.isPending}
+          onToggleKey={(id, enabled) =>
+            setCredentialStatus.mutate({
+              id,
+              status: enabled ? "enabled" : "disabled",
+            })
+          }
+          onUpdateKeyModels={(id, modelsCsv) =>
+            updateKeyModels.mutate({ id, modelsCsv })
+          }
+          onDeleteKey={(id) => deleteApiKeyCredential.mutate(id)}
+          onAddApiKey={(secret) => {
+            const siteId = keysChannel.site_id;
+            if (!siteId) return;
+            addApiKeyCredential.mutate({ siteId, secret });
+          }}
+          onSyncKeys={() => {
+            syncKeys.reset();
+            syncKeys.mutate(keysChannel.id);
+          }}
+          onClose={() => setKeysChannel(null)}
+        />
       ) : null}
       {remove ? (
         <ConfirmDialog
@@ -1749,6 +1772,48 @@ function ChannelConnectivityBadge({
   );
 }
 
+// Channel × model not-found blacklist: entries auto-created when the
+// upstream reports a model as unknown; cleared manually here.
+function ChannelModelBlocks({ channelId }: { channelId: number }) {
+	const { client } = useSession();
+	const service = api(client!);
+	const { t } = useI18n();
+	const query = useQuery({
+		queryKey: ["model-blocks"],
+		queryFn: ({ signal }) => service.modelBlocks(signal),
+		refetchInterval: 30_000,
+	});
+	const queryClient = useQueryClient();
+	const unblock = (model: string) =>
+		service.unblockModel(channelId, model).then(() => {
+			queryClient.invalidateQueries({ queryKey: ["model-blocks"] });
+		});
+	const blocks = (query.data?.items ?? []).filter(
+		(block) => block.channel_id === channelId,
+	);
+	if (!blocks.length) return null;
+	return (
+		<div className="detail-pricing">
+			<span className="label is-warn">{t("channels.modelBlocks")}</span>
+			<div className="detail-pricing-list">
+				{blocks.map((block) => (
+					<div key={block.id} className="detail-pricing-row is-blocked">
+						<code>{block.model}</code>
+						<button
+							type="button"
+							className="model-block-clear"
+							title={t("channels.modelBlockClear")}
+							onClick={() => void unblock(block.model)}
+						>
+							{t("channels.modelBlockClear")}
+						</button>
+					</div>
+				))}
+			</div>
+		</div>
+	);
+}
+
 function ChannelDetail({
   overview,
   site,
@@ -1806,6 +1871,26 @@ function ChannelDetail({
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+
+  // Health probe history: availability over 24h + recent probe dots.
+  const healthSummary = useQuery({
+    queryKey: ["health-summary"],
+    queryFn: ({ signal }) => service.healthSummary(24, signal),
+    refetchInterval: 60_000,
+  });
+  const healthHistory = useQuery({
+    queryKey: ["health-history", ch.id],
+    queryFn: ({ signal }) => service.healthHistory(ch.id, signal),
+    refetchInterval: 60_000,
+  });
+  const summaryItem = (healthSummary.data?.items ?? []).find(
+    (item) => item.channel_id === ch.id,
+  );
+  const availability =
+    summaryItem && summaryItem.total > 0
+      ? Math.round(summaryItem.availability * 100)
+      : null;
+  const probePoints = healthHistory.data?.items ?? [];
 
   return (
     <>
@@ -1946,6 +2031,51 @@ function ChannelDetail({
           </div>
         );
       })()}
+
+      <ChannelModelBlocks channelId={ch.id} />
+
+      <div className="detail-pricing">
+        <span className="label">{t("channels.healthTitle")}</span>
+        <div className="health-summary-row">
+          <strong className={"health-availability" + (availability == null ? " is-na" : availability >= 90 ? " is-good" : availability >= 70 ? " is-warn" : " is-bad")}>
+            {availability == null
+              ? t("channels.healthNoData")
+              : `${availability}%`}
+          </strong>
+          {summaryItem ? (
+            <span className="is-quiet" style={{ fontSize: 12 }}>
+              {t("channels.healthProbes", {
+                ok: summaryItem.ok,
+                total: summaryItem.total,
+              })}
+            </span>
+          ) : null}
+        </div>
+        {probePoints.length ? (
+          <div
+            className="health-dots"
+            title={probePoints
+              .slice()
+              .reverse()
+              .map(
+                (p) =>
+                  `${p.ok ? "✓" : "✗"} ${p.latency_ms}ms ${p.verdict} ${new Date(p.probed_at).toLocaleString()}`,
+              )
+              .join("\n")}
+          >
+            {probePoints
+              .slice()
+              .reverse()
+              .slice(-30)
+              .map((p) => (
+                <span
+                  key={p.id}
+                  className={"health-dot" + (p.ok ? " is-ok" : " is-fail")}
+                />
+              ))}
+          </div>
+        ) : null}
+      </div>
 
       <div className="detail-primary-bar is-compact">
         <Button
@@ -2270,29 +2400,23 @@ function EditChannelDialog({
   userCredential,
   pending,
   error,
-	onClose,
-	onSave,
-	onToggleKey,
-	onUpdateKeyModels,
-	onDeleteKey,
-	onAddApiKey,
-	addApiKeyPending,
-	onSyncKeys,
-	syncKeysPending,
-	onManageModels,
+  onClose,
+  onSave,
+  onManageModels,
+  onManageKeys,
 }: {
   value: Channel;
   routeOverviews?: RouteOverview[];
   site?: Site;
-	credentials: Array<{
-		id: number;
-		kind: string;
-		has_secret: boolean;
-		status: string;
-		checkin_enabled: boolean;
-		meta_json?: string;
-		models_csv?: string;
-	}>;
+  credentials: Array<{
+    id: number;
+    kind: string;
+    has_secret: boolean;
+    status: string;
+    checkin_enabled: boolean;
+    meta_json?: string;
+    models_csv?: string;
+  }>;
   credential?: {
     id: number;
     kind: string;
@@ -2326,6 +2450,10 @@ function EditChannelDialog({
     name: string;
     base_url: string;
     type_hint: string;
+    max_reasoning_effort?: string;
+    payload_rules?: string;
+    proxy_url?: string;
+    max_concurrent?: number;
     priority: number;
     weight: number;
     header_override?: string;
@@ -2335,25 +2463,23 @@ function EditChannelDialog({
     userToken: string;
     apiKey: string;
   }) => void;
-	onToggleKey: (id: number, enabled: boolean) => void;
-	onUpdateKeyModels: (id: number, modelsCsv: string) => void;
-	onDeleteKey: (id: number) => void;
-  onAddApiKey: (secret: string) => void;
-  addApiKeyPending?: boolean;
-  onSyncKeys: () => void;
-  syncKeysPending?: boolean;
   onManageModels?: () => void;
+  onManageKeys?: () => void;
 }) {
 	const { t } = useI18n();
 	const inheritedBase = !value.base_url.trim();
 	const initialBase = value.base_url || site?.base_url || "";
 	const [name, setName] = useState(value.name);
-	const [baseUrl, setBaseUrl] = useState(initialBase);
-	// Per-key model allowlist drafts: id → input value while editing.
-	const [keyModelsDraft, setKeyModelsDraft] = useState<Record<number, string>>({});
-  const [typeHint, setTypeHint] = useState(
-    value.type_hint || site?.platform || "openai-compatible",
-  );
+const [baseUrl, setBaseUrl] = useState(initialBase);
+const [typeHint, setTypeHint] = useState(
+		value.type_hint || site?.platform || "openai-compatible",
+	);
+	const [maxReasoningEffort, setMaxReasoningEffort] = useState(
+		value.max_reasoning_effort ?? "",
+	);
+	const [payloadRules, setPayloadRules] = useState(value.payload_rules ?? "");
+	const [proxyUrl, setProxyUrl] = useState(value.proxy_url ?? "");
+	const [maxConcurrent, setMaxConcurrent] = useState(value.max_concurrent ?? 0);
   const [priority, setPriority] = useState(value.priority);
   const [weight, setWeight] = useState(value.weight);
   const [headerOverride, setHeaderOverride] = useState(
@@ -2369,11 +2495,10 @@ function EditChannelDialog({
   const [systemPrompt, setSystemPrompt] = useState(value.system_prompt ?? "");
   const [retryConfig, setRetryConfig] = useState(value.retry_config ?? "");
   const [stableFirst, setStableFirst] = useState(value.stable_first ?? false);
-  const [userToken, setUserToken] = useState(
-    userCredential?.has_secret ? SECRET_MASK : "",
-  );
-  const [apiKey, setApiKey] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
+const [userToken, setUserToken] = useState(
+  userCredential?.has_secret ? SECRET_MASK : "",
+);
+const [showAdvanced, setShowAdvanced] = useState(false);
   const canSubmit = Boolean(name.trim() && baseUrl.trim());
   const apiKeys = credentials.filter((item) => item.kind === "api_key");
   const service = api(useSession().client!);
@@ -2420,14 +2545,18 @@ function EditChannelDialog({
                 name,
                 base_url: baseUrl,
                 type_hint: typeHint,
+                max_reasoning_effort: maxReasoningEffort,
+                payload_rules: payloadRules,
+                proxy_url: proxyUrl,
+                max_concurrent: maxConcurrent,
                 priority,
                 weight,
-    header_override: headerOverride,
-    system_prompt: systemPrompt,
-    retry_config: retryConfig,
-    stable_first: stableFirst,
+                header_override: headerOverride,
+                system_prompt: systemPrompt,
+                retry_config: retryConfig,
+                stable_first: stableFirst,
                 userToken,
-                apiKey,
+                apiKey: "",
               })
             }
           >
@@ -2441,6 +2570,13 @@ function EditChannelDialog({
 				<span>{t("channels.editHintDual")}</span>
 			</div>
         <div className="form-grid form-grid-single">
+          <Field label={t("common.name")}>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={pending}
+            />
+          </Field>
           <Field label={t("common.type")}>
             <SearchableSelect
               options={TYPE_OPTIONS}
@@ -2450,13 +2586,6 @@ function EditChannelDialog({
               disabled={pending}
               allowCustom
               placeholder={t("common.type")}
-            />
-          </Field>
-          <Field label={t("common.name")}>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={pending}
             />
           </Field>
           <Field
@@ -2506,175 +2635,72 @@ function EditChannelDialog({
           <div className="credential-key-panel-head">
             <div>
               <strong>{t("channels.apiKeysTitle")}</strong>
-              <p>{t("channels.apiKeysHint")}</p>
+              <p>
+                {apiKeys.length === 0
+                  ? t("channels.apiKeysEmpty")
+                  : t("channels.apiKeysSummary", {
+                      n: apiKeys.filter((item) => item.status === "enabled")
+                        .length,
+                      total: apiKeys.length,
+                    })}
+              </p>
             </div>
             <Button
               variant="secondary"
-              disabled={pending || Boolean(syncKeysPending)}
-              onClick={onSyncKeys}
+              disabled={pending}
+              onClick={onManageKeys}
             >
-              {syncKeysPending ? t("common.loading") : t("channels.syncKeys")}
+              <ExternalLink size={12} />
+              {t("channels.apiKeysManage")}
             </Button>
           </div>
-
-          {apiKeys.length === 0 ? (
-            <p className="exchange-panel-note">{t("channels.apiKeysEmpty")}</p>
-          ) : (
-            <ul className="credential-key-list">
-              {apiKeys.map((item) => {
+          {apiKeys.length > 0 ? (
+            <ul className="credential-key-list is-summary">
+              {apiKeys.slice(0, 3).map((item) => {
                 const meta = parseCredentialMeta(item.meta_json);
-                const enabled = item.status === "enabled";
-                const usedByThisConnection = value.credential_id === item.id;
                 const label =
                   meta.name?.trim() ||
                   t("channels.apiKeyUnnamed", { id: item.id });
-                const groupLabel =
-                  meta.group?.trim() || t("channels.apiKeyGroupDefault");
+                const usedByThisConnection = value.credential_id === item.id;
                 return (
                   <li
                     key={item.id}
                     className={[
                       "credential-key-row",
                       usedByThisConnection ? "is-bound" : "",
-                      !enabled ? "is-disabled" : "",
+                      item.status !== "enabled" ? "is-disabled" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
                   >
-						<div className="credential-key-main">
-							<strong>{label}</strong>
-							<small>
-								{`${groupLabel} · #${item.id}`}
-								{usedByThisConnection
-									? ` · ${t("channels.apiKeyUsedByConnection")}`
-									: ""}
-								{!item.has_secret
-									? ` · ${t("channels.apiKeyNoSecret")}`
-									: ""}
-							</small>
-							<div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
-								<input
-									className="mono"
-									style={{ flex: 1, minWidth: 0, fontSize: 12 }}
-									placeholder={t("channels.keyModelsPlaceholder")}
-									title={t("channels.keyModelsHint")}
-									value={keyModelsDraft[item.id] ?? item.models_csv ?? ""}
-									disabled={pending}
-									onChange={(event) =>
-										setKeyModelsDraft((prev) => ({
-												...prev,
-												[item.id]: event.target.value,
-											}))
-									}
-									onBlur={() => {
-										const draft = keyModelsDraft[item.id];
-										if (draft === undefined) return;
-										const next = draft.trim();
-										if (next !== (item.models_csv ?? "")) {
-											onUpdateKeyModels(item.id, next);
-										}
-										setKeyModelsDraft((prev) => {
-												const copy = { ...prev };
-												delete copy[item.id];
-												return copy;
-											});
-									}}
-									onKeyDown={(event) => {
-										if (event.key === "Enter") {
-											(event.target as HTMLInputElement).blur();
-										}
-									}}
-								/>
-							</div>
-						</div>
-                    <div className="credential-key-actions">
-                      <label className="check credential-key-enable">
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          disabled={pending}
-                          onChange={(event) =>
-                            onToggleKey(item.id, event.target.checked)
-                          }
-                        />
-                        <span>
-                          {enabled ? t("common.enabled") : t("common.disabled")}
-                        </span>
-                      </label>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={t("channels.apiKeyDelete")}
-                        title={t("channels.apiKeyDelete")}
-                        disabled={pending}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              t("channels.apiKeyDeleteConfirm", {
-                                name: label,
-                              }),
-                            )
-                          ) {
-                            onDeleteKey(item.id);
-                          }
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                    <div className="credential-key-main">
+                      <strong>{label}</strong>
+                      <small>
+                        {`#${item.id}`}
+                        {usedByThisConnection
+                          ? ` · ${t("channels.apiKeyUsedByConnection")}`
+                          : ""}
+                      </small>
                     </div>
+                    <StatusBadge
+                      value={item.status === "enabled" ? "enabled" : "disabled"}
+                    />
                   </li>
                 );
               })}
             </ul>
-          )}
-
-          <Field
-            label={t("channels.apiKeyAdd")}
-            hint={t("channels.apiKeyAddHint")}
-          >
-            <div className="credential-key-add-row">
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={t("channels.apiKeyPlaceholder")}
-                disabled={pending || Boolean(addApiKeyPending)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    const secret = apiKey.trim();
-                    if (!secret || pending || addApiKeyPending) return;
-                    onAddApiKey(secret);
-                    setApiKey("");
-                  }
-                }}
-              />
-              <Button
-                variant="secondary"
-                disabled={
-                  pending || Boolean(addApiKeyPending) || !apiKey.trim()
-                }
-                onClick={() => {
-                  const secret = apiKey.trim();
-                  if (!secret) return;
-                  // First key becomes the relay key; later keys just join the pool.
-                  onAddApiKey(secret);
-                  setApiKey("");
-                }}
-              >
-                {addApiKeyPending
-                  ? t("common.loading")
-                  : t("channels.apiKeyAddSave")}
-              </Button>
-            </div>
-          </Field>
+          ) : null}
+          {apiKeys.length > 3 ? (
+            <p className="credential-key-more">
+              {t("channels.apiKeysMore", { n: apiKeys.length - 3 })}
+            </p>
+          ) : null}
         </section>
 
-        <section
-          className="detail-section"
-          aria-label={t("channels.modelsSection")}
-        >
+         <section
+           className="detail-section channel-model-summary-section"
+           aria-label={t("channels.modelsSection")}
+         >
           <div className="detail-section-head">
             <h3>{t("channels.modelsSection")}</h3>
             <span className="detail-section-count">{editModels.length}</span>
@@ -2726,115 +2752,200 @@ function EditChannelDialog({
             : t("channels.showAdvanced")}
         </button>
         {showAdvanced ? (
-          <div className="form-grid">
-            <Field
-              label={t("common.priority")}
-              hint={t("channels.priorityHint")}
-            >
-              <input
-                type="number"
-                value={priority}
-                onChange={(e) => setPriority(Number(e.target.value) || 0)}
-                disabled={pending}
-              />
-            </Field>
-            <Field label={t("common.weight")} hint={t("channels.weightHint")}>
-              <input
-                type="number"
-                value={weight}
-                onChange={(e) => setWeight(Number(e.target.value) || 0)}
-                disabled={pending}
-              />
-            </Field>
+          <div className="advanced-fields">
+            <div className="form-grid">
+              <Field
+                label={t("common.priority")}
+                hint={t("channels.priorityHint")}
+              >
+                <input
+                  type="number"
+                  value={priority}
+                  onChange={(e) => setPriority(Number(e.target.value) || 0)}
+                  disabled={pending}
+                />
+              </Field>
+              <Field label={t("common.weight")} hint={t("channels.weightHint")}>
+                <input
+                  type="number"
+                  value={weight}
+                  onChange={(e) => setWeight(Number(e.target.value) || 0)}
+                  disabled={pending}
+                />
+              </Field>
+              <Field
+                label={t("channels.maxReasoningEffort")}
+                hint={t("channels.maxReasoningEffortHint")}
+              >
+                <select
+                  value={maxReasoningEffort}
+                  onChange={(e) => setMaxReasoningEffort(e.target.value)}
+                  disabled={pending}
+                >
+                  <option value="">{t("channels.maxReasoningEffortNone")}</option>
+                  {["none", "minimal", "low", "medium", "high", "xhigh", "max"].map(
+                    (level) => (
+                      <option key={level} value={level}>
+                        {level}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </Field>
+              <Field
+                label={t("channels.maxConcurrent")}
+                hint={t("channels.maxConcurrentHint")}
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={maxConcurrent}
+                  onChange={(e) =>
+                    setMaxConcurrent(Math.max(0, Number(e.target.value) || 0))
+                  }
+                  disabled={pending}
+                />
+              </Field>
+              <Field
+                label={t("channels.proxyUrl")}
+                hint={t("channels.proxyUrlHint")}
+              >
+                <input
+                  type="url"
+                  value={proxyUrl}
+                  placeholder="http://127.0.0.1:7897"
+                  onChange={(e) => setProxyUrl(e.target.value)}
+                  disabled={pending}
+                />
+              </Field>
+            </div>
+
+            <section className="detail-section">
+              <div className="detail-section-head">
+                <h3>{t("channels.overrides")}</h3>
+              </div>
+              <Field
+                label={t("channels.uaPreset")}
+                hint={t("channels.uaPresetHint")}
+              >
+                <div className="ua-preset-row">
+                  <select
+                    aria-label={t("channels.uaPreset")}
+                    value={
+                      uaDraft && UA_PRESETS.includes(uaDraft)
+                        ? uaDraft
+                        : "custom"
+                    }
+                    onChange={(e) => {
+                      const preset = e.target.value;
+                      if (preset !== "custom") applyUA(preset);
+                    }}
+                    disabled={pending}
+                  >
+                    <option value="custom">{t("channels.uaCustom")}</option>
+                    {UA_PRESETS.map((preset) => (
+                      <option key={preset} value={preset}>
+                        {preset}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={uaDraft}
+                    onChange={(e) => applyUA(e.target.value)}
+                    placeholder={t("channels.uaPlaceholder")}
+                    disabled={pending}
+                  />
+                </div>
+                {uaDraft && !isValidUserAgent(uaDraft) ? (
+                  <p className="ua-preset-error">{t("channels.uaInvalid")}</p>
+                ) : null}
+              </Field>
+              <Field
+                label={t("channels.headerOverride")}
+                hint={t("channels.headerOverrideHint")}
+              >
+                <textarea
+                  className="mono"
+                  value={headerOverride}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setHeaderOverride(next);
+                    setUaDraft(uaFromHeaderOverride(next));
+                  }}
+                  disabled={pending}
+                  placeholder='{"User-Agent": "…", "X-Custom": "value"}'
+                  style={{ minHeight: 64 }}
+                />
+              </Field>
+              <Field
+                label={t("channels.systemPrompt")}
+                hint={t("channels.systemPromptHint")}
+              >
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  disabled={pending}
+                  placeholder={t("channels.systemPromptPlaceholder")}
+                  style={{ minHeight: 72 }}
+                />
+              </Field>
+              <Field
+                label={t("channels.retryConfig")}
+                hint={t("channels.retryConfigHint")}
+              >
+                <textarea
+                  value={retryConfig}
+                  onChange={(e) => setRetryConfig(e.target.value)}
+                  disabled={pending}
+                  placeholder={t("channels.retryConfigPlaceholder")}
+                  style={{ minHeight: 72, fontFamily: "var(--font-mono)" }}
+                />
+              </Field>
+              <label className="check" style={{ marginTop: "0.75rem" }}>
+                <input
+                  type="checkbox"
+                  checked={stableFirst}
+                  onChange={(e) => setStableFirst(e.target.checked)}
+                  disabled={pending}
+                />
+                <span>{t("channels.stableFirst")}</span>
+              </label>
+              <Field
+                label={t("channels.payloadRules")}
+                hint={t("channels.payloadRulesHint")}
+              >
+                <textarea
+                  className="mono"
+                  value={payloadRules}
+                  onChange={(e) => setPayloadRules(e.target.value)}
+                  disabled={pending}
+                  placeholder={JSON.stringify(
+                    [
+                      {
+                        name: "cap max tokens",
+                        match: {
+                          model: "gpt-*",
+                          payload: { max_tokens: { exists: true } },
+                        },
+                        actions: [
+                          {
+                            op: "set",
+                            path: "max_tokens",
+                            value: { num: 8000 },
+                          },
+                        ],
+                      },
+                    ],
+                    null,
+                    2,
+                  )}
+                  style={{ minHeight: 90 }}
+                />
+              </Field>
+            </section>
           </div>
         ) : null}
-        <section className="detail-section">
-          <div className="detail-section-head">
-            <h3>{t("channels.overrides")}</h3>
-          </div>
-          <Field
-            label={t("channels.uaPreset")}
-            hint={t("channels.uaPresetHint")}
-          >
-            <div className="ua-preset-row">
-              <select
-                aria-label={t("channels.uaPreset")}
-                value={uaDraft && UA_PRESETS.includes(uaDraft) ? uaDraft : "custom"}
-                onChange={(e) => {
-                  const preset = e.target.value;
-                  if (preset !== "custom") applyUA(preset);
-                }}
-                disabled={pending}
-              >
-                <option value="custom">{t("channels.uaCustom")}</option>
-                {UA_PRESETS.map((preset) => (
-                  <option key={preset} value={preset}>
-                    {preset}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={uaDraft}
-                onChange={(e) => applyUA(e.target.value)}
-                placeholder={t("channels.uaPlaceholder")}
-                disabled={pending}
-              />
-            </div>
-            {uaDraft && !isValidUserAgent(uaDraft) ? (
-              <p className="ua-preset-error">{t("channels.uaInvalid")}</p>
-            ) : null}
-          </Field>
-          <Field
-            label={t("channels.headerOverride")}
-            hint={t("channels.headerOverrideHint")}
-          >
-            <textarea
-              className="mono"
-              value={headerOverride}
-              onChange={(e) => {
-                const next = e.target.value;
-                setHeaderOverride(next);
-                setUaDraft(uaFromHeaderOverride(next));
-              }}
-              disabled={pending}
-              placeholder='{"User-Agent": "…", "X-Custom": "value"}'
-              style={{ minHeight: 64 }}
-            />
-          </Field>
-          <Field
-            label={t("channels.systemPrompt")}
-            hint={t("channels.systemPromptHint")}
-          >
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              disabled={pending}
-              placeholder={t("channels.systemPromptPlaceholder")}
-              style={{ minHeight: 72 }}
-            />
-          </Field>
-          <Field
-            label={t("channels.retryConfig")}
-            hint={t("channels.retryConfigHint")}
-          >
-            <textarea
-              value={retryConfig}
-              onChange={(e) => setRetryConfig(e.target.value)}
-              disabled={pending}
-              placeholder={t("channels.retryConfigPlaceholder")}
-              style={{ minHeight: 72, fontFamily: "var(--font-mono)" }}
-            />
-          </Field>
-          <label className="check" style={{ marginTop: "0.75rem" }}>
-            <input
-              type="checkbox"
-              checked={stableFirst}
-              onChange={(e) => setStableFirst(e.target.checked)}
-              disabled={pending}
-            />
-            <span>{t("channels.stableFirst")}</span>
-          </label>
-        </section>
 
         {error ? <ErrorState error={error} /> : null}
       </>

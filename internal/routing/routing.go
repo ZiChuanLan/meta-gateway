@@ -253,9 +253,17 @@ func (s *Selector) SelectSticky(ctx context.Context, model string, excluded map[
 	var selected domain.RoutingCandidate
 	selectedSet := false
 	if explanation.StickyHit && explanation.StickyChannelID != nil {
-		for _, candidate := range eligible {
-			if candidate.Channel.ID == *explanation.StickyChannelID {
-				selected = candidate
+		// Binding outranks the priority tier: the bound channel is chosen even
+		// when a higher-priority member appeared since the binding was made.
+		// Channel continuity (prompt cache, multi-turn coherence) wins over
+		// tier order; the binding still yields when the channel is excluded,
+		// cooled, or otherwise ineligible (no hard pinning).
+		for _, candidate := range explanation.Candidates {
+			if !candidate.Eligible {
+				continue
+			}
+			if candidate.Candidate.Channel.ID == *explanation.StickyChannelID {
+				selected = candidate.Candidate
 				selectedSet = true
 				break
 			}

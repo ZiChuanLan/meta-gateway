@@ -187,14 +187,20 @@ func (s *DownstreamKeyStore) Delete(id int64) error {
 
 func (s *DownstreamKeyStore) Update(k *domain.DownstreamKey) error {
 	_, err := s.db.Exec(
-		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, price_prompt_per_1k=?, price_completion_per_1k=?, model_allowlist=?, model_denylist=?, expires_at=?, allowed_ips=?, group_name=? WHERE id=?`,
-		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), k.ID,
+		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, price_prompt_per_1k=?, price_completion_per_1k=?, price_cache_per_1k=?, model_allowlist=?, model_denylist=?, expires_at=?, allowed_ips=?, group_name=? WHERE id=?`,
+		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.PriceCachePer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), k.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("downstream key update: %w", err)
 	}
 	s.invalidate(k.ID)
 	return nil
+}
+
+// Invalidate drops a key from the in-process cache so the next read observes
+// external quota changes (e.g. a redemption top-up).
+func (s *DownstreamKeyStore) Invalidate(id int64) {
+	s.invalidate(id)
 }
 
 // ResetUsage zeroes the key's used quota in the database and drops the cached

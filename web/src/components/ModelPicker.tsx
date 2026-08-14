@@ -12,12 +12,14 @@ export function ModelPicker({
 	onChange,
 	placeholder,
 	emptyLabel,
+	className,
 }: {
 	allModels: string[];
 	selected: string[];
 	onChange: (next: string[]) => void;
 	placeholder?: string;
 	emptyLabel?: string;
+	className?: string;
 }) {
 	const [query, setQuery] = useState("");
 	const selectedSet = useMemo(() => new Set(selected), [selected]);
@@ -40,7 +42,7 @@ export function ModelPicker({
 	};
 
 	return (
-		<div className="model-picker">
+		<div className={`model-picker${className ? ` ${className}` : ""}`}>
 			{selected.length > 0 ? (
 				<div className="model-picker-selected">
 					{selected.map((model) => (

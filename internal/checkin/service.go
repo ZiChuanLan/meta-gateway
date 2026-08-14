@@ -22,6 +22,9 @@ import (
 const (
 	SourceManual    = "manual"
 	SourceScheduled = "scheduled"
+	// SourceRefresh marks an on-demand session refresh triggered by an
+	// upstream 401 during relaying (not a user action, not the daily job).
+	SourceRefresh = "refresh"
 
 	StatusSuccess = "success"
 	StatusFailed  = "failed"
@@ -89,7 +92,7 @@ func (s *Service) SetNotifier(n *webhook.Notifier) {
 }
 
 func (s *Service) RunCredential(ctx context.Context, credentialID int64, source string, requireScheduleEnabled bool) (RunResult, error) {
-	if source != SourceManual && source != SourceScheduled {
+	if source != SourceManual && source != SourceScheduled && source != SourceRefresh {
 		return RunResult{}, internalError("invalid_source")
 	}
 	started := s.now()
@@ -200,6 +203,18 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 		status = StatusSkipped
 	}
 	return s.persist(started, site.ID, credential.ID, source, status, adapterResult.Category, adapterResult.Message, adapterResult.Reward)
+}
+
+// RefreshForRelay re-establishes a session/access-token credential for the
+// proxy's 401 refresh-retry path. It runs the same machinery as a manual
+// check-in but with source=refresh (no schedule requirement, no alerting).
+// ok = StatusSuccess.
+func (s *Service) RefreshForRelay(ctx context.Context, credentialID int64) (bool, error) {
+	res, err := s.RunCredential(ctx, credentialID, SourceRefresh, false)
+	if err != nil {
+		return false, err
+	}
+	return res.Status == StatusSuccess, nil
 }
 
 // LastScheduledRunAt reports the most recent scheduled check-in run from

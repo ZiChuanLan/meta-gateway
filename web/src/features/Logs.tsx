@@ -23,7 +23,79 @@ import {
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import { formatCost } from "../lib/format";
+import { formatCost, logCostUsd } from "../lib/format";
+
+// Routing decision audit view: fetched on demand when a log row expands.
+function DecisionSnapshotView({ requestId }: { requestId: string }) {
+	const { client } = useSession();
+	const service = api(client!);
+	const { t } = useI18n();
+	const snap = useQuery({
+		queryKey: ["decision-snapshot", requestId],
+		queryFn: ({ signal }) => service.decisionSnapshot(requestId, signal),
+		retry: false,
+	});
+	if (snap.isLoading) {
+		return <p className="log-decision-loading">{t("common.working")}</p>;
+	}
+	const payload = snap.data?.payload;
+	if (!payload) {
+		return <p className="log-decision-empty">{t("logsPage.decisionEmpty")}</p>;
+	}
+	const candidates = payload.candidates ?? [];
+	const selected = candidates.find((c) => c.eligible)?.candidate?.channel?.name;
+	return (
+		<div className="log-decision">
+			<div className="log-decision-head">
+				<strong>{t("logsPage.decisionTitle")}</strong>
+				{selected ? (
+					<span>
+						{t("logsPage.decisionSelected", { channel: selected })}
+					</span>
+				) : null}
+				{payload.routing_mode ? <code>{payload.routing_mode}</code> : null}
+				{payload.sticky_hit ? (
+					<span className="log-decision-sticky">
+						{t("logsPage.decisionStickyHit")}
+					</span>
+				) : null}
+				{payload.sticky_reason ? (
+					<span className="log-decision-sticky">
+						{t("logsPage.decisionStickyMiss", {
+							reason: payload.sticky_reason,
+						})}
+					</span>
+				) : null}
+			</div>
+			<ul className="log-decision-candidates">
+				{candidates.map((candidate, index) => (
+					<li
+						key={index}
+						className={candidate.eligible ? "is-eligible" : ""}
+					>
+						<span className="log-decision-channel">
+							{candidate.candidate?.channel?.name ??
+								`#${candidate.candidate?.channel?.id ?? "?"}`}
+						</span>
+						{candidate.score != null && candidate.score > 0 ? (
+							<code>{Math.round(candidate.score)}</code>
+						) : null}
+						{candidate.eligible ? (
+							<span className="log-decision-tag is-ok">
+								{t("status.enabled")}
+							</span>
+						) : (
+							<span className="log-decision-tag is-skip">
+								{(candidate.reasons ?? []).join(", ") ||
+									t("logsPage.decisionSkipped")}
+							</span>
+						)}
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
 
 function ProxyLogsPanel() {
   const { client } = useSession();
@@ -36,7 +108,8 @@ function ProxyLogsPanel() {
 	const upstreamIdParam = params.get("upstream_request_id")?.trim() || "";
 	const [modelDraft, setModelDraft] = useState(modelParam);
 	const [upstreamIdDraft, setUpstreamIdDraft] = useState(upstreamIdParam);
-  const [slowOnly, setSlowOnly] = useState(false);
+	const [slowOnly, setSlowOnly] = useState(false);
+	const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
   const [histogram, setHistogram] = useState<{
     buckets: number[];
     total: number;
@@ -89,27 +162,35 @@ function ProxyLogsPanel() {
     queryKey: ["keys"],
     queryFn: ({ signal }) => service.keys(signal),
   });
-  const priceMap = useMemo(() => {
-    const map = new Map<number, { prompt: number; completion: number }>();
-    for (const k of keys.data ?? []) {
-      if (k.price_prompt_per_1k || k.price_completion_per_1k) {
-        map.set(k.id, {
-          prompt: k.price_prompt_per_1k ?? 0,
-          completion: k.price_completion_per_1k ?? 0,
-        });
-      }
-    }
-    return map;
-  }, [keys.data]);
-  const logCost = (log: ProxyLog): number | null => {
-    if (log.downstream_key_id == null) return null;
-    const price = priceMap.get(log.downstream_key_id);
-    if (!price) return null;
-    const total =
-      ((log.prompt_tokens ?? 0) / 1000) * price.prompt +
-      ((log.completion_tokens ?? 0) / 1000) * price.completion;
-    return total > 0 ? total : null;
-  };
+	const priceMap = useMemo(() => {
+		const map = new Map<
+			number,
+			{ prompt: number; completion: number; cache: number }
+		>();
+		for (const k of keys.data ?? []) {
+			if (k.price_prompt_per_1k || k.price_completion_per_1k || k.price_cache_per_1k) {
+				map.set(k.id, {
+					prompt: k.price_prompt_per_1k ?? 0,
+					completion: k.price_completion_per_1k ?? 0,
+					cache: k.price_cache_per_1k ?? 0,
+				});
+			}
+		}
+		return map;
+	}, [keys.data]);
+	const logCost = (log: ProxyLog): number | null => {
+		if (log.downstream_key_id == null) return null;
+		const price = priceMap.get(log.downstream_key_id);
+		if (!price) return null;
+		return logCostUsd({
+			promptTokens: log.prompt_tokens ?? 0,
+			completionTokens: log.completion_tokens ?? 0,
+			cacheReadTokens: log.cache_read_tokens ?? 0,
+			pricePromptPer1k: price.prompt,
+			priceCompletionPer1k: price.completion,
+			priceCachePer1k: price.cache,
+		});
+	};
 
   const rows = logs.data ?? [];
   const pagination = useClientPagination(
@@ -352,11 +433,18 @@ function ProxyLogsPanel() {
 					t("common.clientFamily"),
                 ]}
               >
-                {pageRows.map((log) => (
-                  <tr
-                    key={log.id}
-                    className={log.status >= 400 ? "row-failed" : ""}
-                  >
+				{pageRows.map((log) => (
+					<>
+					<tr
+						key={log.id}
+						className={`${log.status >= 400 ? "row-failed" : ""} log-row-clickable${expandedRequest === log.request_id ? " is-expanded" : ""}`}
+						onClick={() =>
+							setExpandedRequest((current) =>
+								current === log.request_id ? null : log.request_id,
+							)
+						}
+						title={t("logsPage.decisionHint")}
+					>
                     <td>{formatDate(log.created_at)}</td>
                     <td>
                       <strong>{log.model}</strong>
@@ -433,8 +521,16 @@ function ProxyLogsPanel() {
 						{logCost(log) != null ? formatCost(logCost(log)!) : "—"}
 					</td>
 					<td>{log.client_family || "—"}</td>
-                  </tr>
-                ))}
+					</tr>
+					{expandedRequest === log.request_id ? (
+						<tr className="log-decision-row" key={`${log.id}-decision`}>
+							<td colSpan={12}>
+								<DecisionSnapshotView requestId={log.request_id} />
+							</td>
+						</tr>
+					) : null}
+					</>
+				))}
               </DataTable>
             </ListShell>
           </EntityState>

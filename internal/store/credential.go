@@ -165,10 +165,10 @@ func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 			return cloneCredential(cached), nil
 		}
 	}
-	row := s.db.QueryRow(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
 	var r domain.Credential
 	var secret string
-	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}

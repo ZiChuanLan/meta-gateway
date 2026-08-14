@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
@@ -35,9 +36,9 @@ func (s *ProxyLogStore) Insert(log *domain.ProxyLog) (int64, error) {
 	if log.Stream {
 		stream = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort, key_fingerprint, upstream_request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort, key_fingerprint, upstream_request_id, mapped_reasoning_effort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RequestID, log.ChannelID, log.RouteID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief,
-		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort, log.KeyFingerprint, log.UpstreamRequestID)
+		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort, log.KeyFingerprint, log.UpstreamRequestID, log.MappedReasoningEffort)
 	if err != nil {
 		return 0, fmt.Errorf("proxylog insert: %w", err)
 	}
@@ -84,6 +85,20 @@ type LatencyHistogram struct {
 	SlowCount int   `json:"slow_count"`
 	P50Ms     int   `json:"p50_ms"`
 	P95Ms     int   `json:"p95_ms"`
+}
+
+// FailRate returns (total, failed) relay requests since the given time.
+// Failed = status >= 400 or a non-empty error_brief. The since bound is
+// formatted to match proxy_logs.created_at (datetime('now') = SQLite UTC
+// "YYYY-MM-DD HH:MM:SS"); an RFC3339 bound would string-compare greater
+// than every row and silently return zeros.
+func (s *ProxyLogStore) FailRate(since time.Time) (total, failed int) {
+	row := s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status >= 400 OR error_brief <> '' THEN 1 ELSE 0 END), 0) FROM proxy_logs WHERE created_at >= ?`,
+		since.UTC().Format("2006-01-02 15:04:05"),
+	)
+	_ = row.Scan(&total, &failed)
+	return total, failed
 }
 
 // LatencyHistogram aggregates the newest sampleSize proxy log latencies.
@@ -198,7 +213,7 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 
 	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.route_id, COALESCE(rt.model_pattern, ''), pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief,
 		pl.downstream_key_id, pl.prompt_tokens, pl.completion_tokens, pl.total_tokens,
-		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.upstream_request_id, pl.created_at
+		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.mapped_reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.upstream_request_id, pl.created_at
 FROM ` + from + `
 WHERE ` + strings.Join(where, " AND ") + `
 ORDER BY pl.id DESC
@@ -217,7 +232,7 @@ LIMIT ?`
 		if err := rows.Scan(
 			&r.ID, &r.RequestID, &r.ChannelID, &r.RouteID, &r.RoutePattern, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief,
 			&r.DownstreamKeyID, &r.PromptTokens, &r.CompletionTokens, &r.TotalTokens,
-			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, &r.UpstreamRequestID, scanTime(&r.CreatedAt),
+			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.MappedReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, &r.UpstreamRequestID, scanTime(&r.CreatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("proxylog scan: %w", err)
 		}

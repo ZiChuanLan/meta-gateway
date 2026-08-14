@@ -101,6 +101,19 @@ type Channel struct {
 	Weight       int    `json:"weight"`
 	Status       string `json:"status"`
 	TypeHint     string `json:"type_hint,omitempty"`
+	// MaxReasoningEffort is the highest reasoning_effort this channel's
+	// upstream accepts (none/minimal/low/medium/high/xhigh/max). Empty =
+	// passthrough. Requests asking for more are downgraded at forward time.
+	MaxReasoningEffort string `json:"max_reasoning_effort,omitempty"`
+	// PayloadRules is a JSON array of body-rewrite rules (match conditions +
+	// set/delete/filter actions) applied before forwarding. Empty = passthrough.
+	PayloadRules string `json:"payload_rules,omitempty"`
+	// MaxConcurrent is the hard per-channel concurrency ceiling (FIFO wait
+	// queue at the proxy; 0 = unlimited).
+	MaxConcurrent int `json:"max_concurrent,omitempty"`
+	// ProxyURL is the per-channel outbound HTTP(S) proxy; empty inherits the
+	// global proxy (runtime setting proxy_url).
+	ProxyURL string `json:"proxy_url,omitempty"`
 	// HeaderOverride is a JSON object of extra upstream request headers
 	// (merged after the adapter's auth headers; hop-by-hop names rejected).
 	HeaderOverride string `json:"header_override,omitempty"`
@@ -240,6 +253,25 @@ type DiscoveredModel struct {
 }
 
 // ---------------------------------------------------------------------------
+// Model metadata
+// ---------------------------------------------------------------------------
+
+// ModelMetadata annotates a canonical model name with capability information
+// (context window, modalities, thinking support, vendor). Empty fields mean
+// unknown; SupportsThinking -1 = unknown, 0 = no, 1 = yes.
+type ModelMetadata struct {
+	ID                int64  `json:"id"`
+	ModelName         string `json:"model_name"`
+	ContextWindow     int64  `json:"context_window"`
+	InputModalities   string `json:"input_modalities"`
+	OutputModalities  string `json:"output_modalities"`
+	SupportsThinking  int    `json:"supports_thinking"`
+	Vendor            string `json:"vendor"`
+	Notes             string `json:"notes"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+// ---------------------------------------------------------------------------
 // Route
 // ---------------------------------------------------------------------------
 
@@ -317,6 +349,9 @@ type DownstreamKey struct {
 	// Optional display prices (currency-agnostic units per 1k tokens).
 	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
 	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	// PriceCachePer1k is the unit price for cache-read tokens. 0 = fall back
+	// to the prompt price (cache-read is billed as prompt).
+	PriceCachePer1k float64 `json:"price_cache_per_1k"`
 	// ModelAllowlist, when non-empty, restricts this key to the listed models.
 	// ModelDenylist blocks the listed models even if they are allowlisted.
 	// Both are comma-separated model names.
@@ -376,6 +411,9 @@ type ProxyLog struct {
 	// ReasoningEffort is the client-requested reasoning effort (OpenAI style,
 	// e.g. low / medium / high / max / xhigh) when present in the request body.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// MappedReasoningEffort records a capability downgrade such as "max→high"
+	// applied before forwarding (channel max_reasoning_effort). Empty = unchanged.
+	MappedReasoningEffort string `json:"mapped_reasoning_effort,omitempty"`
 	// TokensPerSecond is the derived stream throughput (completion tokens over
 	// effective latency), AxonHub-style TPS metric.
 	TokensPerSecond float64   `json:"tokens_per_second,omitempty"`

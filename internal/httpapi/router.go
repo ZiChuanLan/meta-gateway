@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -14,6 +15,8 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/account"
 	"github.com/lan/meta-gateway/internal/adapters"
+	"github.com/lan/meta-gateway/internal/alerts"
+	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/alert"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/backup"
@@ -101,6 +104,14 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		checkinService = checkin.New(db, enc, registry)
 	}
 	discoveryService := discovery.New(db, enc, registry)
+	// Scheduled model-list refresh: a five-field cron expression from the
+	// runtime settings drives discovery.RefreshAll on schedule ("" = off).
+	discoveryScheduler := discovery.NewScheduler(discoveryService, "", nil, nil)
+	RegisterStopper(discoveryScheduler.Stop)
+	// Scheduled database maintenance: orphan GC + VACUUM on a cron from the
+	// runtime settings ("" = off). Manual runs are exposed via the admin API.
+	gcService := maintenance.New(db, "")
+	RegisterStopper(gcService.Stop)
 	exchangeService := dependencies.ExchangeService
 	if exchangeService == nil {
 		exchangeService = exchange.NewService(db, enc, discoveryService)
@@ -153,7 +164,19 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// Admin routes
 	adminGroup := chi.NewRouter()
 	adminGroup.Use(auditAdmin(logger, db.AuditEvent))
-	adminGroup.Use(auth.AdminMiddleware(cfg.AdminTokenList()...))
+	// Session-token verification uses the master-key-derived HMAC key (with a
+	// fallback to the raw key material when the encrypter is unavailable).
+	sessionKey := enc.KeyMaterial()
+	sessionHandler := &sessionHandler{
+		db:          db,
+		adminTokens: cfg.AdminTokenList(),
+		sessionKey:  sessionKey,
+		enc:         enc,
+	}
+	sessionHandler.RegisterPublic(r)
+	adminGroup.Use(auth.AdminMiddlewareWithSession(cfg.AdminTokenList(), func(token string) bool {
+		return auth.VerifySessionToken(sessionKey, token)
+	}))
 	adminLimiter := ratelimit.New(cfg.AdminRatePerMinute, cfg.AdminRateBurst)
 	relayLimiter := ratelimit.New(cfg.RelayRatePerMinute, cfg.RelayRateBurst)
 	adminGroup.Use(rateLimitMiddleware(adminLimiter, func(*http.Request) int64 { return 0 }, "admin", metrics))
@@ -164,8 +187,9 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		stickyStore = routing.NewStickyStore(cfg.StickyTTL, nil)
 		selector.SetSticky(stickyStore)
 	}
-proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
-proxyService.SetAdapterRegistry(registry)
+	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
+	proxyService.SetAdapterRegistry(registry)
+	proxyService.SetCredentialRefresher(checkinService)
 selector.SetCircuitAware(proxyService.CircuitWeight)
 proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)
 proxyService.SetKeyPoolRotation(cfg.KeyPoolRotation)
@@ -196,7 +220,20 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	// Shared /v1/models cache: recomputed on expiry or admin route/channel writes.
 	modelsCache := newModelsCache(5 * time.Second)
 	adminHandler := NewAdminHandler(db, enc, selector, stickyStore, outboundClient, modelsCache)
+	adminHandler.SetGCService(gcService)
+	// Global outbound proxy (runtime setting proxy_url, hot-swappable): the
+	// transport's proxy hook resolves per-request channel overrides first.
+	globalProxy := outbound.NewGlobalProxy()
+	if outboundClient != nil {
+		outbound.SetClientProxy(outboundClient, func(req *http.Request) (*url.URL, error) {
+			return globalProxy.ForRequest(req, nil)
+		})
+	}
+	adminHandler.SetProxyValidator(func(raw string) error {
+		return globalProxy.Set(raw, nil)
+	})
 	adminHandler.Register(adminGroup)
+	sessionHandler.RegisterAdmin(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)
 	discoveryHandler.Register(adminGroup)
 	// Periodic channel health sweep (runtime-configurable): jittered probes
@@ -229,6 +266,12 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	alertSweep := alert.NewSweep(accountService, webhookNotifier, cfg.AlertSweepInterval)
 	alertSweep.Start()
 	RegisterStopper(alertSweep.Stop)
+	// Configurable alert rules (metric/operator/threshold/window/sustained):
+	// evaluated every 60s, delivered through the same notifier.
+	alertRules := alerts.New(db, webhookNotifier)
+	alertRulesCtx, alertRulesCancel := context.WithCancel(context.Background())
+	go alertRules.Run(alertRulesCtx)
+	RegisterStopper(alertRulesCancel)
 	// Daily balance-history snapshot: records each channel's balance once a day
 	// (plus a first snapshot shortly after boot when the table is empty) so the
 	// dashboard trend chart has data without waiting 24h. Retention-prunes
@@ -249,6 +292,13 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 			if _, err := accountService.PruneBalanceHistory(ctx, balanceRetentionDays); err != nil {
 				logger.Warn("balance history prune failed", "error", err)
 			}
+	if _, err := db.PruneDecisionSnapshots(7); err != nil {
+		logger.Warn("decision snapshot prune failed", "error", err)
+	}
+	// Channel health history retention: 90 days by default.
+	if _, err := db.HealthHistory.Prune(time.Now().AddDate(0, 0, -90)); err != nil {
+		logger.Warn("health history prune failed", "error", err)
+	}
 		}
 		// First run shortly after boot if there is no data yet, then daily.
 		time.Sleep(30 * time.Second)
@@ -276,10 +326,17 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	// enabled to expose their Admin surfaces. Core audit/backup stay always-on.
 	pluginService := dependencies.PluginService
 	if pluginService != nil {
-		NewPluginHandler(pluginService).Register(adminGroup)
+		pluginHandler := NewPluginHandler(pluginService)
+		pluginHandler.SetTokenVerifier(func(token string) bool {
+			return auth.ValidateAdminToken(token, cfg.AdminTokenList(), func(s string) bool {
+				return auth.VerifySessionToken(sessionKey, s)
+			})
+		})
+		pluginHandler.Register(adminGroup)
+		// Public proxy route for iframe embedding (self-verifies ?t=/header).
+		// Registered before r.Mount("/admin", …) so it wins the match.
+		pluginHandler.RegisterPublic(r)
 	}
-	// Local CLIProxyAPI integration surface (OAuth subscription pool add-on).
-	NewCPAHandler().Register(adminGroup)
 
 	adminGroup.Group(func(module chi.Router) {
 		if pluginService != nil {
@@ -331,6 +388,15 @@ proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 			Selector:     selector,
 			RelayLimiter: relayLimiter,
 			AdminLimiter: adminLimiter,
+		SetGlobalProxy: func(raw string) error {
+			return globalProxy.Set(raw, nil)
+		},
+			SetDiscoveryCron: func(expression string) error {
+				return discoveryScheduler.SetSchedule(expression, true)
+			},
+			SetDBGCCron: func(expression string) error {
+				return gcService.SetSchedule(expression)
+			},
 			CheckinSched: dependencies.CheckinScheduler,
 			CheckinAllowed: func() bool {
 				return pluginService == nil || pluginService.IsEnabled("checkin")

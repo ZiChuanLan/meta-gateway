@@ -1,6 +1,9 @@
 package plugins
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -191,5 +194,177 @@ func TestMultiOnChange(t *testing.T) {
 	}
 	if len(calls) < 2 {
 		t.Fatalf("want multi listeners, got %v", calls)
+	}
+}
+
+
+// fakeSidecar spins up a minimal sidecar plugin service serving /plugin.json,
+// /healthz, and an echo endpoint that requires X-Plugin-Key.
+func fakeSidecar(t *testing.T, id, name string, requireKey bool) string {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/plugin.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"id":%q,"version":"1.0.0","name":%q,"description":"test plugin","page_path":"/app","health_path":"healthz"}`, id, name)
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if requireKey && r.Header.Get("X-Plugin-Key") != "sekrit" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/app", func(w http.ResponseWriter, r *http.Request) {
+		if requireKey && r.Header.Get("X-Plugin-Key") != "sekrit" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		fmt.Fprintf(w, "plugin-page:%s", id)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestRegisterSidecarInstallsAndEnables(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	base := fakeSidecar(t, "test-plugin", "Test Plugin", false)
+
+	rec, err := svc.RegisterSidecar(base, "", nil)
+	if err != nil {
+		t.Fatalf("RegisterSidecar: %v", err)
+	}
+	if rec == nil || !rec.Enabled || rec.Source != "sidecar" {
+		t.Fatalf("record = %+v", rec)
+	}
+	spec, err := svc.SidecarFor("test-plugin")
+	if err != nil || spec == nil {
+		t.Fatalf("SidecarFor: %v %v", spec, err)
+	}
+	if spec.URL != base || spec.PagePath != "app" || spec.HealthPath != "healthz" {
+		t.Fatalf("spec = %+v", spec)
+	}
+	// Appears in the store catalog as a normal add-on.
+	found := false
+	for _, e := range svc.Catalog() {
+		if e.ID == "test-plugin" && e.Source == "sidecar" && e.Sidecar != nil {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("sidecar plugin missing from catalog")
+	}
+}
+
+func TestRegisterSidecarRequiresHealthyService(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	// 401 on healthz because the key is missing.
+	base := fakeSidecar(t, "keyed-plugin", "Keyed Plugin", true)
+	if _, err := svc.RegisterSidecar(base, "", nil); err == nil {
+		t.Fatal("expected health check failure")
+	}
+	// With the key the registration succeeds.
+	rec, err := svc.RegisterSidecar(base, "sekrit", nil)
+	if err != nil {
+		t.Fatalf("RegisterSidecar with key: %v", err)
+	}
+	if rec == nil || !rec.Enabled {
+		t.Fatalf("record = %+v", rec)
+	}
+}
+
+func TestSidecarSurvivesRestart(t *testing.T) {
+	db := openPluginTestDB(t)
+	dir := filepath.Join(t.TempDir(), "plugins")
+	svc, err := NewService(dir, db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	base := fakeSidecar(t, "restart-plugin", "Restart Plugin", false)
+	if _, err := svc.RegisterSidecar(base, "", nil); err != nil {
+		t.Fatalf("RegisterSidecar: %v", err)
+	}
+	// Simulate restart: fresh service over the same DB (no remote catalog).
+	svc2, err := NewService(dir, db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	if !svc2.IsEnabled("restart-plugin") {
+		t.Fatal("expected enabled after restart")
+	}
+	spec, err := svc2.SidecarFor("restart-plugin")
+	if err != nil || spec == nil {
+		t.Fatalf("SidecarFor after restart: %v %v", spec, err)
+	}
+	if spec.URL != base {
+		t.Fatalf("spec url = %q want %q", spec.URL, base)
+	}
+	found := false
+	for _, e := range svc2.Catalog() {
+		if e.ID == "restart-plugin" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("sidecar missing from catalog after restart")
+	}
+}
+
+func TestRegisterSidecarRejectsBadURL(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	for _, bad := range []string{"", "ftp://x", "http://", "not a url"} {
+		if _, err := svc.RegisterSidecar(bad, "", nil); err == nil {
+			t.Fatalf("expected error for %q", bad)
+		}
+	}
+}
+
+func TestRegisterSidecarManualManifestFallback(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	// Service WITHOUT /plugin.json (like CLIProxyAPI's built-in CPAMC page).
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	// Without manual fields → registration fails (no manifest).
+	if _, err := svc.RegisterSidecar(srv.URL, "", nil); err == nil {
+		t.Fatal("expected failure without manifest or manual fields")
+	}
+
+	// With manual identity → registers, page_path honored.
+	manual := &SidecarManifest{ID: "cpa-console", Version: "1.0.0", Name: "CPA Console", PagePath: "/management.html", HealthPath: "healthz"}
+	rec, err := svc.RegisterSidecar(srv.URL, "", manual)
+	if err != nil {
+		t.Fatalf("RegisterSidecar manual: %v", err)
+	}
+	if rec == nil || !rec.Enabled || rec.Source != "sidecar" {
+		t.Fatalf("record = %+v", rec)
+	}
+	spec, err := svc.SidecarFor("cpa-console")
+	if err != nil || spec == nil {
+		t.Fatalf("SidecarFor: %v %v", spec, err)
+	}
+	if spec.PagePath != "management.html" {
+		t.Fatalf("page path = %q, want management.html", spec.PagePath)
+	}
+	if spec.HealthPath != "healthz" {
+		t.Fatalf("health path = %q, want healthz", spec.HealthPath)
 	}
 }

@@ -79,7 +79,10 @@ func TestUpstreamRequestIDAbsentWhenUpstreamOmits(t *testing.T) {
 
 	logsReq, _ := http.NewRequest(http.MethodGet, serverURL+"/admin/proxy-logs?limit=1", nil)
 	logsReq.Header.Set("Authorization", "Bearer admin-test")
-	logsResp, _ := http.DefaultClient.Do(logsReq)
+	logsResp, err := http.DefaultClient.Do(logsReq)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer logsResp.Body.Close()
 	var logs []map[string]any
 	if err := json.NewDecoder(logsResp.Body).Decode(&logs); err != nil {

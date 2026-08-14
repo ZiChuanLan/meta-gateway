@@ -81,7 +81,7 @@ func main() {
 	// Open database.
 	db, err := store.OpenWithMaxConns(cfg.DataDir, cfg.SQLiteMaxOpenConns)
 	if err != nil {
-		logger.Error("store initialization failed", "category", "database")
+		logger.Error("store initialization failed", "category", "database", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
@@ -108,6 +108,7 @@ func main() {
 		logger.Error("plugin host initialization failed", "category", "plugins")
 		os.Exit(1)
 	}
+	pluginService.SetMarketURLs(cfg.PluginMarketURLs)
 	if err := pluginService.EnsureOfficialModulesInstalled(); err != nil {
 		logger.Error("plugin bootstrap failed", "category", "plugins")
 		os.Exit(1)

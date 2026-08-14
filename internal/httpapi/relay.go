@@ -60,6 +60,7 @@ func (h *RelayHandler) Register(r chi.Router) {
 	r.Post("/responses", h.responses)
 	r.Post("/messages", h.messages)
 	r.Post("/messages/count_tokens", h.countTokens)
+	r.Post("/redemption/redeem", h.redeemCode)
 	// OpenAI-compatible passthrough surfaces (JSON body + model routing).
 	r.Post("/images/generations", h.imagesGenerations)
 	r.Post("/images/edits", h.imagesEdits)
@@ -216,6 +217,36 @@ func (h *RelayHandler) messages(w http.ResponseWriter, r *http.Request) {
 	h.forwardModelRequest(w, r, "messages", true, auth.ScopeMessages, "anthropic")
 }
 
+// redeemCode lets a downstream key holder top up their quota with a
+// one-time redemption code (minted by the admin).
+func (h *RelayHandler) redeemCode(w http.ResponseWriter, r *http.Request) {
+	key := auth.DownstreamKey(r)
+	if key == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	quota, err := h.db.RedeemCode(req.Code, key.ID, time.Now())
+	if err != nil {
+		if errors.Is(err, store.ErrCodeInvalid) {
+			writeError(w, http.StatusBadRequest, "invalid, expired or already-used code")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "redeem failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":           true,
+		"quota_tokens": quota,
+	})
+}
+
 // countTokens is the Anthropic count_tokens surface: Claude Code and other
 // Claude clients call it to estimate the context a message will occupy before
 // sending it. The request is routed like /v1/messages and forwarded to the
@@ -327,6 +358,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		ContentType:     contentType,
 		SessionKey:      r.Header.Get("X-Meta-Session-Id"),
 		ReasoningEffort: reasoningEffort,
+		Headers:         clientHeaders(r.Header),
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
@@ -483,6 +515,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		DownstreamProtocol: downstream,
 		SessionKey:         r.Header.Get("X-Meta-Session-Id"),
 		ReasoningEffort:    reasoningEffort,
+		Headers:            clientHeaders(r.Header),
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	writeUpstreamResult(
@@ -575,6 +608,12 @@ func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.
 			writeError(w, http.StatusNotImplemented, "requested capability is not supported by this channel")
 		case errors.Is(result.Err, adapters.ErrContentBlocked):
 			writeError(w, http.StatusBadRequest, "request blocked by upstream safety policy")
+		case errors.Is(result.Err, proxy.ErrModelBlacklisted):
+			writeError(w, http.StatusServiceUnavailable, "model not available on any channel")
+		case errors.Is(result.Err, proxy.ErrPayloadFiltered):
+			writeError(w, http.StatusForbidden, strings.TrimPrefix(result.Err.Error(), "proxy: "))
+		case errors.Is(result.Err, proxy.ErrGuardRejected):
+			writeError(w, http.StatusBadRequest, strings.TrimPrefix(result.Err.Error(), "proxy: "))
 		case errors.Is(result.Err, context.Canceled), errors.Is(result.Err, context.DeadlineExceeded):
 			return
 		default:
@@ -609,6 +648,21 @@ func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.
 		}
 		onUsage(tokens, result.StatusCode, result.FirstByteMs)
 	}
+}
+
+// clientHeaders snapshots the client request headers (canonical key → first
+// value) for payload-rule header conditions. Hop-by-hop headers are skipped.
+func clientHeaders(h http.Header) map[string]string {
+	out := make(map[string]string, 8)
+	for key, values := range h {
+		if key == "Authorization" || key == "Host" {
+			continue
+		}
+		if len(values) > 0 && values[0] != "" {
+			out[http.CanonicalHeaderKey(key)] = values[0]
+		}
+	}
+	return out
 }
 
 // streamEstimateBytesPerToken is the conservative byte-per-token ratio used to
@@ -706,35 +760,88 @@ var knownClientFamilies = []string{
 	"insomnia", "browser", "unknown",
 }
 
+// sseKeepaliveInterval is how long a streaming response may stay silent
+// before the gateway injects an SSE comment frame (": keepalive\n\n").
+// Comments are ignored by every SSE parser, so they keep intermediaries and
+// client stream readers alive without altering the payload.
+const sseKeepaliveInterval = 15 * time.Second
+
 // copyUpstreamBody streams the upstream body to the client. For SSE, it flushes
 // after every successful write so intermediaries and ResponseControllers do not
-// hold chunks until the stream ends. It returns the number of bytes written to
-// the client (used to estimate usage when an interrupted stream never delivered
-// its final usage chunk).
+// hold chunks until the stream ends, and injects keepalive comments when the
+// upstream stays silent past sseKeepaliveInterval. It returns the number of
+// bytes written to the client (used to estimate usage when an interrupted
+// stream never delivered its final usage chunk).
 func copyUpstreamBody(w http.ResponseWriter, body io.Reader, stream bool) (int64, error) {
 	if !stream {
 		n, err := io.Copy(w, body)
 		return n, err
 	}
+	return copySSEWithKeepalive(w, body, sseKeepaliveInterval)
+}
+
+// copySSEWithKeepalive pumps an SSE stream to the client. A single reader
+// goroutine feeds chunks through a channel; the main loop selects on it and an
+// idle timer. When the timer fires first, a keepalive comment frame is written
+// and flushed, which keeps proxies/clients from timing the connection out
+// during long silent stretches (e.g. a model "thinking" for minutes before the
+// first token).
+func copySSEWithKeepalive(w http.ResponseWriter, body io.Reader, idle time.Duration) (int64, error) {
 	flusher, canFlush := w.(http.Flusher)
-	buffer := make([]byte, 32*1024)
+	type readRes struct {
+		data []byte
+		err  error
+	}
+	readCh := make(chan readRes, 1)
+	done := make(chan struct{})
+	go func() {
+		for {
+			// A fresh buffer per Read lets the main loop write the chunk
+			// without racing the next read.
+			buf := make([]byte, 32*1024)
+			n, err := body.Read(buf)
+			select {
+			case readCh <- readRes{buf[:n], err}:
+			case <-done:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	timer := time.NewTimer(idle)
+	defer timer.Stop()
 	var written int64
 	for {
-		bytesRead, readErr := body.Read(buffer)
-		if bytesRead > 0 {
-			if _, writeErr := w.Write(buffer[:bytesRead]); writeErr != nil {
+		select {
+		case res := <-readCh:
+			timer.Reset(idle)
+			if len(res.data) > 0 {
+				if _, writeErr := w.Write(res.data); writeErr != nil {
+					close(done)
+					return written, writeErr
+				}
+				written += int64(len(res.data))
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+			if res.err != nil {
+				if errors.Is(res.err, io.EOF) {
+					return written, nil
+				}
+				return written, res.err
+			}
+		case <-timer.C:
+			if _, writeErr := io.WriteString(w, ": keepalive\n\n"); writeErr != nil {
+				close(done)
 				return written, writeErr
 			}
-			written += int64(bytesRead)
 			if canFlush {
 				flusher.Flush()
 			}
-		}
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				return written, nil
-			}
-			return written, readErr
+			timer.Reset(idle)
 		}
 	}
 }

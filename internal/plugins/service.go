@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,17 +42,6 @@ const (
 // Only optional add-ons appear here. Core platform features (audit, backups,
 // connections, relay, …) are always on and are not store-gated.
 var officialCatalog = []CatalogEntry{
-	{
-		ID:           "cliproxyapi",
-		Name:         "CLIProxyAPI (OAuth 池)",
-		Version:      "1.0.0",
-		Description:  "Local CLIProxyAPI integration: OAuth subscription account pool (ChatGPT Plus / Claude Pro / Grok) exposed as an upstream channel.",
-		Kind:         KindAddon,
-		Unlocks:      []string{"nav.cpa"},
-		Capabilities: []string{"admin_page", "external_service"},
-		Source:       "official",
-		Checksum:     "embedded:cliproxyapi:1.0.0",
-	},
 	{
 		ID:           "exchange",
 		Name:         "Exchange",
@@ -107,6 +98,8 @@ var CoreFeatureCards = []CatalogEntry{
 	},
 }
 
+// CatalogEntry is one store-listed module. Embedded official entries, remote
+// catalog entries, and registered sidecar plugins all surface through this.
 type CatalogEntry struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
@@ -117,6 +110,32 @@ type CatalogEntry struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 	Source       string   `json:"source,omitempty"`
 	Checksum     string   `json:"checksum,omitempty"`
+	// Sidecar is set for third-party plugins: an external HTTP service that
+	// meta-gateway embeds (iframe) and reverse-proxies. Nil for built-ins.
+	Sidecar *SidecarSpec `json:"sidecar,omitempty"`
+}
+
+// SidecarSpec describes a third-party sidecar plugin service.
+type SidecarSpec struct {
+	// URL is the plugin service base URL (http/https), e.g. http://127.0.0.1:9100.
+	URL string `json:"url"`
+	// PagePath is the plugin's embeddable page path (default "/").
+	PagePath string `json:"page_path,omitempty"`
+	// HealthPath is the health-check path (default "/healthz").
+	HealthPath string `json:"health_path,omitempty"`
+	// APIPrefix is an optional root-level URL prefix (e.g. "/v0/management")
+	// that is reverse-proxied to this plugin. Plugins whose frontend calls a
+	// fixed absolute API path (CLIProxyAPI's CPAMC calls /v0/management/*)
+	// declare it here so requests land without manual address configuration.
+	APIPrefix string `json:"api_prefix,omitempty"`
+	// ChannelPath is an optional OpenAI-compatible API path prefix (e.g.
+	// "/v1") the plugin exposes as an upstream. When set, the store offers
+	// "create channel" — the channel's base_url is {URL}{ChannelPath} and the
+	// plugin participates in routing/cooldown/logs like any other upstream.
+	ChannelPath string `json:"channel_path,omitempty"`
+	// APIKey is the shared secret meta-gateway sends as X-Plugin-Key on every
+	// proxied request; the plugin validates it. Empty disables the header.
+	APIKey string `json:"api_key,omitempty"`
 }
 
 // ModuleStatus is the admin-facing combined view of catalog + install state.
@@ -141,9 +160,12 @@ type Manifest struct {
 	ID           string            `json:"id"`
 	Version      string            `json:"version"`
 	Name         string            `json:"name"`
+	Description  string            `json:"description,omitempty"`
 	Capabilities []string          `json:"capabilities"`
 	Admin        map[string]string `json:"admin,omitempty"`
 	Permissions  []string          `json:"permissions,omitempty"`
+	// Sidecar carries the embedded sidecar spec for third-party plugins.
+	Sidecar *SidecarSpec `json:"sidecar,omitempty"`
 }
 
 type Service struct {
@@ -157,6 +179,14 @@ type Service struct {
 	// catalogURL optionally loads additional official entries at Catalog() time.
 	catalogURL string
 	httpClient *http.Client
+	// sidecarClient is the dedicated client for plugin manifest fetches,
+	// health checks and proxying. Sidecar plugins are locally/privately
+	// hosted services the admin explicitly registers (trust model: same as
+	// the CPA add-on), so this client intentionally bypasses the outbound
+	// SSRF policy that guards relay traffic.
+	sidecarClient *http.Client
+	// market fetches, validates and caches remote plugin registries.
+	market *market
 	// remoteCatalog caches the last successful remote fetch for install lookups.
 	remoteCatalog []CatalogEntry
 }
@@ -174,16 +204,56 @@ func NewServiceWithOptions(dir string, pluginStore *store.PluginStore, catalogUR
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	s := &Service{
-		dir:        dir,
-		store:      pluginStore,
-		enabled:    make(map[string]bool),
-		catalogURL: strings.TrimSpace(catalogURL),
-		httpClient: client,
+		dir:           dir,
+		store:         pluginStore,
+		enabled:       make(map[string]bool),
+		catalogURL:    strings.TrimSpace(catalogURL),
+		httpClient:    client,
+		sidecarClient: &http.Client{Timeout: 10 * time.Second},
 	}
 	if err := s.reloadEnabled(); err != nil {
 		return nil, err
 	}
+	s.market = newMarket(s.sidecarClient, nil)
 	return s, nil
+}
+
+// SetMarketURLs appends extra registry URLs to the plugin market (called
+// with the PLUGIN_MARKET_URLS env value at startup).
+func (s *Service) SetMarketURLs(extra []string) {
+	s.market = newMarket(s.sidecarClient, extra)
+}
+
+// MarketSources lists the configured registry sources.
+func (s *Service) MarketSources() []MarketSource {
+	return s.market.Sources()
+}
+
+// MarketPlugins lists all installable plugins from all market sources,
+// deduplicated by ID (first source wins). A failed source is skipped so one
+// bad registry does not empty the market.
+func (s *Service) MarketPlugins(ctx context.Context) []MarketEntry {
+	entries, err := s.market.List(ctx)
+	if err != nil {
+		return nil
+	}
+	return entries
+}
+
+// InstallMarket registers a market entry as a sidecar plugin: fetches its
+// manifest (or uses the entry's manual fields), health-checks the service,
+// then installs + enables — same path as a manual store registration.
+func (s *Service) InstallMarket(ctx context.Context, id string) (*store.PluginRecord, error) {
+	entries, err := s.market.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("plugin_market_unavailable")
+	}
+	for _, e := range entries {
+		if e.ID == id {
+			return s.RegisterSidecar(e.URL, "", e.InstallSpec())
+		}
+	}
+	return nil, ErrNotFound
 }
 
 // SetOnChange appends a listener for enablement changes (e.g. check-in scheduler).
@@ -217,6 +287,14 @@ func (s *Service) EnsureOfficialModulesInstalled() error {
 			}
 			continue
 		}
+		// Legacy: the CPA surface moved to the sidecar plugin (cpa-console);
+		// the built-in cliproxyapi add-on is retired. Drop the leftover row.
+		if rec.ID == "cliproxyapi" {
+			if err := s.Uninstall("cliproxyapi"); err != nil && err != ErrNotInstalled {
+				return fmt.Errorf("plugins: retire legacy cliproxyapi: %w", err)
+			}
+			continue
+		}
 	}
 	// Re-list after possible legacy cleanup.
 	installed, err = s.store.List()
@@ -242,11 +320,11 @@ func (s *Service) Catalog() []CatalogEntry {
 	out := make([]CatalogEntry, len(officialCatalog))
 	copy(out, officialCatalog)
 	if s.catalogURL == "" {
-		return out
+		return s.mergeInstalledSidecars(out)
 	}
 	remote, err := s.fetchRemoteCatalog()
 	if err != nil || len(remote) == 0 {
-		return out
+		return s.mergeInstalledSidecars(out)
 	}
 	s.mu.Lock()
 	s.remoteCatalog = append([]CatalogEntry(nil), remote...)
@@ -277,6 +355,45 @@ func (s *Service) Catalog() []CatalogEntry {
 		}
 		out = append(out, entry)
 		seen[entry.ID] = struct{}{}
+	}
+	return s.mergeInstalledSidecars(out)
+}
+
+// mergeInstalledSidecars appends persisted sidecar plugins (installed via
+// RegisterSidecar) that are not already in the catalog, so the store lists
+// them after a restart even though the remote catalog is gone.
+func (s *Service) mergeInstalledSidecars(out []CatalogEntry) []CatalogEntry {
+	installed, err := s.store.List()
+	if err != nil {
+		return out
+	}
+	seen := make(map[string]struct{}, len(out))
+	for _, entry := range out {
+		seen[entry.ID] = struct{}{}
+	}
+	for _, rec := range installed {
+		if rec.Source != "sidecar" || rec.MetaJSON == "" {
+			continue
+		}
+		if _, exists := seen[rec.ID]; exists {
+			continue
+		}
+		var manifest Manifest
+		if err := json.Unmarshal([]byte(rec.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil || manifest.Sidecar.URL == "" {
+			continue
+		}
+		out = append(out, CatalogEntry{
+			ID:           manifest.ID,
+			Name:         manifest.Name,
+			Version:      manifest.Version,
+			Description:  manifest.Description,
+			Kind:         KindAddon,
+			Capabilities: manifest.Capabilities,
+			Source:       "sidecar",
+			Checksum:     rec.Checksum,
+			Sidecar:      manifest.Sidecar,
+		})
+		seen[rec.ID] = struct{}{}
 	}
 	return out
 }
@@ -324,7 +441,7 @@ func (s *Service) Status() ([]ModuleStatus, error) {
 			Installed:    ok && rec.Status == StatusInstalled,
 			Enabled:      ok && rec.Enabled,
 			CanToggle:    kind == KindAddon,
-			OpenPath:     openPathFor(entry.ID),
+			OpenPath:     openPathFor(entry.ID, entry.Sidecar != nil),
 		}
 		out = append(out, st)
 		delete(byID, entry.ID)
@@ -345,10 +462,11 @@ func (s *Service) Status() ([]ModuleStatus, error) {
 	return out, nil
 }
 
-func openPathFor(id string) string {
+func openPathFor(id string, sidecar bool) string {
+	if sidecar {
+		return "/plugins/" + id
+	}
 	switch id {
-	case "cliproxyapi":
-		return "/cpa"
 	case "exchange":
 		return "/settings?tab=exchange"
 	case "checkin":
@@ -358,6 +476,8 @@ func openPathFor(id string) string {
 	}
 }
 
+// fetchRemoteCatalog downloads additional catalog entries from catalogURL.
+// The payload is either {"plugins":[...]} or a bare array of CatalogEntry.
 func (s *Service) fetchRemoteCatalog() ([]CatalogEntry, error) {
 	resp, err := s.httpClient.Get(s.catalogURL)
 	if err != nil {
@@ -404,6 +524,351 @@ func (s *Service) EnabledSnapshot() map[string]bool {
 	return out
 }
 
+// RegisterSidecar fetches a plugin manifest from an external sidecar service,
+// validates it, health-checks the service, and installs + enables the plugin.
+// The manifest is persisted (MetaJSON) so the plugin survives restarts.
+//
+// When the service has no /plugin.json (e.g. CLIProxyAPI's built-in CPAMC
+// page), the caller can provide id/name/pagePath explicitly — the health
+// check still runs, so a dead service is never registered.
+func (s *Service) RegisterSidecar(baseURL, apiKey string, manual *SidecarManifest) (*store.PluginRecord, error) {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return nil, fmt.Errorf("plugin_url_required")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, fmt.Errorf("plugin_url_invalid")
+	}
+	manifest, err := s.fetchSidecarManifest(baseURL)
+	if err != nil {
+		// No manifest: fall back to caller-supplied identity when provided.
+		if manual != nil && validatePluginID(manual.ID) == nil && strings.TrimSpace(manual.Name) != "" {
+			manifest = manual
+		} else {
+			return nil, err
+		}
+	}
+	if err := validatePluginID(manifest.ID); err != nil {
+		return nil, fmt.Errorf("plugin_manifest_invalid_id")
+	}
+	if strings.TrimSpace(manifest.Version) == "" {
+		manifest.Version = "1.0.0"
+	}
+	if strings.TrimSpace(manifest.Name) == "" {
+		return nil, fmt.Errorf("plugin_manifest_missing_name")
+	}
+	spec := &SidecarSpec{
+		URL:         baseURL,
+		PagePath:    strings.TrimPrefix(strings.TrimSpace(manifest.SidecarPagePath()), "/"),
+		HealthPath:  strings.TrimPrefix(strings.TrimSpace(manifest.SidecarHealthPath()), "/"),
+		APIPrefix:   normalizeAPIPrefix(manifest.APIPrefix),
+		ChannelPath: normalizeChannelPath(manifest.ChannelPath),
+		APIKey:      strings.TrimSpace(apiKey),
+	}
+	if spec.PagePath == "" {
+		spec.PagePath = "/"
+	}
+	if spec.HealthPath == "" {
+		spec.HealthPath = "healthz"
+	}
+	// API prefix routes must not shadow gateway surfaces.
+	if spec.APIPrefix != "" {
+		if err := validateAPIPrefix(spec.APIPrefix); err != nil {
+			return nil, err
+		}
+	} // Health check: the sidecar must answer before we consider it installed.
+	if err := s.healthCheck(spec); err != nil {
+		return nil, fmt.Errorf("plugin_health_check_failed: %w", err)
+	}
+	entry := CatalogEntry{
+		ID:           manifest.ID,
+		Name:         manifest.Name,
+		Version:      manifest.Version,
+		Description:  manifest.Description,
+		Kind:         KindAddon,
+		Capabilities: manifest.Capabilities,
+		Source:       "sidecar",
+		Sidecar:      spec,
+	}
+	s.mu.Lock()
+	found := false
+	for i := range s.remoteCatalog {
+		if s.remoteCatalog[i].ID == entry.ID {
+			s.remoteCatalog[i] = entry
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.remoteCatalog = append(s.remoteCatalog, entry)
+	}
+	s.mu.Unlock()
+	// Force the WAL into the main file so a container restart right after
+	// registration cannot lose the persisted record.
+	_ = s.store.Checkpoint()
+	return s.Activate(entry.ID)
+}
+
+// UpdateSidecar changes a sidecar plugin's connection spec (URL, API key,
+// page/health paths) and re-runs the health check against the new settings.
+// The record stays installed/enabled; the persisted manifest is refreshed so
+// the change survives restarts.
+func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.PluginRecord, error) {
+	if spec == nil || strings.TrimSpace(spec.URL) == "" {
+		return nil, fmt.Errorf("plugin_url_required")
+	}
+	parsed, err := url.Parse(strings.TrimSpace(spec.URL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, fmt.Errorf("plugin_url_invalid")
+	}
+	entry, err := s.catalogEntry(id)
+	if err != nil {
+		return nil, err
+	}
+	if entry.Sidecar == nil {
+		return nil, fmt.Errorf("plugin_not_sidecar")
+	}
+	rec, err := s.store.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil || rec.Status != StatusInstalled {
+		return nil, ErrNotInstalled
+	}
+	spec.URL = strings.TrimSpace(spec.URL)
+	spec.PagePath = strings.TrimPrefix(strings.TrimSpace(spec.PagePath), "/")
+	spec.HealthPath = strings.TrimPrefix(strings.TrimSpace(spec.HealthPath), "/")
+	spec.APIPrefix = normalizeAPIPrefix(spec.APIPrefix)
+	spec.ChannelPath = normalizeChannelPath(spec.ChannelPath)
+	if spec.PagePath == "" {
+		spec.PagePath = "/"
+	}
+	if spec.HealthPath == "" {
+		spec.HealthPath = "healthz"
+	}
+	if spec.APIPrefix != "" {
+		if err := validateAPIPrefix(spec.APIPrefix); err != nil {
+			return nil, err
+		}
+	}
+	// The health check uses the new settings, so a mistyped URL or a dead
+	// service is rejected and the old config stays in place.
+	if err := s.healthCheck(spec); err != nil {
+		return nil, fmt.Errorf("plugin_health_check_failed: %w", err)
+	}
+	s.mu.Lock()
+	for i := range s.remoteCatalog {
+		if s.remoteCatalog[i].ID == id {
+			if strings.TrimSpace(name) != "" {
+				s.remoteCatalog[i].Name = strings.TrimSpace(name)
+			}
+			s.remoteCatalog[i].Sidecar = spec
+			break
+		}
+	}
+	s.mu.Unlock()
+	// Persist the refreshed manifest so restart recovery picks up the new spec.
+	manifest := Manifest{
+		ID:           id,
+		Version:      entry.Version,
+		Name:         entry.Name,
+		Description:  entry.Description,
+		Capabilities: entry.Capabilities,
+		Admin: map[string]string{
+			"route":     "/" + id,
+			"nav_label": entry.Name,
+		},
+		Permissions: []string{"admin_api:" + id},
+		Sidecar:     spec,
+	}
+	body, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.store.UpdateMeta(id, string(body)); err != nil {
+		return nil, err
+	}
+	_ = s.store.Checkpoint()
+	return s.store.Get(id)
+}
+
+// SidecarManifest is the JSON a third-party plugin serves at /plugin.json.
+// It embeds the plugin's identity plus optional page/health paths.
+type SidecarManifest struct {
+	ID           string   `json:"id"`
+	Version      string   `json:"version"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	PagePath     string   `json:"page_path,omitempty"`
+	HealthPath   string   `json:"health_path,omitempty"`
+	APIPrefix    string   `json:"api_prefix,omitempty"`
+	ChannelPath  string   `json:"channel_path,omitempty"`
+}
+
+// SidecarPagePath returns the plugin's embeddable page path (default "/").
+func (m *SidecarManifest) SidecarPagePath() string {
+	if p := strings.TrimSpace(m.PagePath); p != "" {
+		return p
+	}
+	return "/"
+}
+
+// SidecarHealthPath returns the plugin's health path (default "/healthz").
+func (m *SidecarManifest) SidecarHealthPath() string {
+	if p := strings.TrimSpace(m.HealthPath); p != "" {
+		return p
+	}
+	return "healthz"
+}
+
+// normalizeAPIPrefix trims whitespace and guarantees a leading slash with no
+// trailing slash ("" stays empty).
+func normalizeAPIPrefix(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return strings.TrimRight(p, "/")
+}
+
+// normalizeChannelPath is normalizeAPIPrefix for the OpenAI-compatible
+// channel prefix (e.g. "/v1").
+func normalizeChannelPath(p string) string {
+	return normalizeAPIPrefix(p)
+}
+
+// validateAPIPrefix rejects prefixes that would shadow gateway surfaces.
+func validateAPIPrefix(p string) error {
+	if p == "" {
+		return nil
+	}
+	if !strings.HasPrefix(p, "/") {
+		return fmt.Errorf("plugin_api_prefix_invalid")
+	}
+	first := strings.TrimPrefix(p, "/")
+	seg := first
+	if i := strings.IndexByte(seg, '/'); i >= 0 {
+		seg = seg[:i]
+	}
+	switch seg {
+	case "admin", "console", "v1", "readyz", "healthz", "metrics", "cpa":
+		return fmt.Errorf("plugin_api_prefix_conflict")
+	}
+	return nil
+}
+
+// PrefixForwarder pairs a root-level API prefix with the sidecar spec that
+// serves it.
+type PrefixForwarder struct {
+	Prefix string
+	Spec   *SidecarSpec
+}
+
+// PrefixForwarders returns all root-level API prefixes declared by enabled
+// sidecar plugins (deduplicated, first plugin wins). It includes plugins
+// recovered from the store, so a restart does not lose declared prefixes.
+func (s *Service) PrefixForwarders() []PrefixForwarder {
+	entries := s.Catalog()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	seen := map[string]bool{}
+	var out []PrefixForwarder
+	for _, entry := range entries {
+		if entry.Sidecar == nil || entry.Sidecar.APIPrefix == "" {
+			continue
+		}
+		if !s.enabled[entry.ID] {
+			continue
+		}
+		p := normalizeAPIPrefix(entry.Sidecar.APIPrefix)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		spec := entry.Sidecar
+		out = append(out, PrefixForwarder{Prefix: p, Spec: spec})
+	}
+	return out
+}
+
+func (s *Service) fetchSidecarManifest(url string) (*SidecarManifest, error) {
+	manifestURL := strings.TrimRight(url, "/") + "/plugin.json"
+	req, err := http.NewRequest(http.MethodGet, manifestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("plugin_manifest_request")
+	}
+	resp, err := s.sidecarClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("plugin_manifest_unreachable")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("plugin_manifest_status_%d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("plugin_manifest_read")
+	}
+	var manifest SidecarManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return nil, fmt.Errorf("plugin_manifest_invalid_json")
+	}
+	if validatePluginID(manifest.ID) != nil {
+		return nil, fmt.Errorf("plugin_manifest_invalid_id")
+	}
+	return &manifest, nil
+}
+
+// healthCheck probes the sidecar's health path.
+func (s *Service) healthCheck(spec *SidecarSpec) error {
+	if spec == nil || spec.URL == "" {
+		return fmt.Errorf("no sidecar spec")
+	}
+	healthURL := strings.TrimRight(spec.URL, "/") + "/" + strings.TrimPrefix(spec.HealthPath, "/")
+	client := s.sidecarClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return err
+	}
+	if spec.APIKey != "" {
+		req.Header.Set("X-Plugin-Key", spec.APIKey)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// SidecarFor returns the sidecar spec of an installed, enabled plugin, or nil.
+func (s *Service) SidecarFor(id string) (*SidecarSpec, error) {
+	if !s.IsEnabled(id) {
+		return nil, ErrNotInstalled
+	}
+	entry, err := s.catalogEntry(id)
+	if err != nil {
+		return nil, err
+	}
+	if entry.Sidecar == nil {
+		return nil, ErrNotFound
+	}
+	return entry.Sidecar, nil
+}
+
 func (s *Service) Install(id string) (*store.PluginRecord, error) {
 	entry, err := s.catalogEntry(id)
 	if err != nil {
@@ -439,12 +904,14 @@ func (s *Service) Install(id string) (*store.PluginRecord, error) {
 		ID:           entry.ID,
 		Version:      entry.Version,
 		Name:         entry.Name,
+		Description:  entry.Description,
 		Capabilities: entry.Capabilities,
 		Admin: map[string]string{
 			"route":     "/" + entry.ID,
 			"nav_label": entry.Name,
 		},
 		Permissions: []string{"admin_api:" + entry.ID},
+		Sidecar:     entry.Sidecar,
 	}
 	body, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -675,14 +1142,42 @@ func (s *Service) catalogEntry(id string) (*CatalogEntry, error) {
 		return entry, nil
 	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	for i := range s.remoteCatalog {
 		if s.remoteCatalog[i].ID == id {
 			entry := s.remoteCatalog[i]
+			s.mu.RUnlock()
 			return &entry, nil
 		}
 	}
-	return nil, ErrNotFound
+	s.mu.RUnlock()
+	// Restart recovery: a registered sidecar plugin is persisted in the
+	// plugins table (MetaJSON holds its manifest). Rebuild the catalog entry
+	// so enable/disable/proxy keep working after a restart without the
+	// original registration request.
+	rec, err := s.store.Get(id)
+	if err != nil || rec == nil || rec.Source != "sidecar" || rec.MetaJSON == "" {
+		return nil, ErrNotFound
+	}
+	var manifest Manifest
+	if err := json.Unmarshal([]byte(rec.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil || manifest.Sidecar.URL == "" {
+		return nil, ErrNotFound
+	}
+	entry := CatalogEntry{
+		ID:           manifest.ID,
+		Name:         manifest.Name,
+		Version:      manifest.Version,
+		Description:  manifest.Description,
+		Kind:         KindAddon,
+		Capabilities: manifest.Capabilities,
+		Source:       "sidecar",
+		Checksum:     rec.Checksum,
+		Sidecar:      manifest.Sidecar,
+	}
+	// Cache it so subsequent lookups skip the DB round-trip.
+	s.mu.Lock()
+	s.remoteCatalog = append(s.remoteCatalog, entry)
+	s.mu.Unlock()
+	return &entry, nil
 }
 
 func validatePluginID(id string) error {

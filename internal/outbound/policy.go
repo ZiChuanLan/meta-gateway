@@ -198,6 +198,12 @@ type ClientOptions struct {
 	// MaxIdleConnsPerHost is the per-upstream-host idle connection ceiling.
 	// 0 uses DefaultMaxIdleConnsPerHost.
 	MaxIdleConnsPerHost int
+	// Proxy resolves the outbound proxy for a request (per-request channel
+	// override first, then the global proxy, then direct). nil = direct only
+	// (the historical P7 behavior). The returned URL must already be policy-
+	// validated; the transport dials the proxy through DialContext so the
+	// SSRF policy still applies to the proxy host itself.
+	Proxy func(*http.Request) (*url.URL, error)
 }
 
 // DefaultMaxIdleConns is the total outbound idle connection ceiling.
@@ -231,8 +237,10 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 	transport := &http.Transport{
 		// Environment proxies are intentionally disabled (P7 contract): proxy-
 		// side DNS resolution would bypass DialContext's address validation and
-		// re-open the SSRF surface.
-		Proxy:                 nil,
+		// re-open the SSRF surface. An explicit configured proxy (opts.Proxy) is
+		// still honored — it is policy-validated and dialed through
+		// DialContext, so the validation stays intact.
+		Proxy:                 opts.Proxy,
 		DialContext:           policy.DialContext,
 		ForceAttemptHTTP2:     true,
 		TLSHandshakeTimeout:   tlsTimeout,

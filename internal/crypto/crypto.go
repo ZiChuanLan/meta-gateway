@@ -49,6 +49,12 @@ type Encrypter struct {
 	keyV1 []byte
 }
 
+// KeyMaterial returns the current key bytes for purpose-separated HMAC use
+// (e.g. admin session tokens). Callers must treat it as secret.
+func (e *Encrypter) KeyMaterial() []byte {
+	return e.key
+}
+
 // ExchangeFingerprint returns a stable, purpose-separated identity for an
 // imported base URL and API key. It is safe to persist but must not be exposed.
 func (e *Encrypter) ExchangeFingerprint(normalizedBaseURL string, apiKey []byte) string {

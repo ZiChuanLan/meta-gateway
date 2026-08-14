@@ -17,6 +17,7 @@ export function Drawer({
 	width = 520,
 	rightOffset,
 	plain,
+	side = "right",
 }: {
 	title: string;
 	children: ReactNode;
@@ -27,6 +28,9 @@ export function Drawer({
 	rightOffset?: number;
 	/** Transparent backdrop: keep an already-open drawer behind interactive. */
 	plain?: boolean;
+	/** Which edge the drawer slides in from. Left drawers stack beside a
+	 *  right-hand editor without covering it (model manager, key manager). */
+	side?: "left" | "right";
 }) {
 	const { t } = useI18n();
 
@@ -46,16 +50,24 @@ export function Drawer({
 
 	return createPortal(
 		<div
-			className={`drawer-backdrop${plain ? " is-plain" : ""}`}
+			className={`drawer-backdrop${plain ? " is-plain" : ""}${side === "left" ? " is-left" : ""}`}
 			style={rightOffset != null ? { right: rightOffset } : undefined}
 			role="presentation"
 			onMouseDown={(event) =>
-				event.target === event.currentTarget && onClose()
+				!plain && event.target === event.currentTarget && onClose()
 			}
 		>
 			<aside
-				className="drawer"
-				style={{ width: `min(${width}px, 100vw)` }}
+				className={`drawer${side === "left" ? " is-left" : ""}`}
+				style={
+					side === "left" && rightOffset != null
+						? {
+								width: `min(${width}px, 100vw)`,
+								right: rightOffset,
+								["--drawer-offset" as string]: `${rightOffset}px`,
+							}
+						: { width: `min(${width}px, 100vw)` }
+				}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="drawer-title"

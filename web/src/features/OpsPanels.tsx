@@ -8,7 +8,12 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { RuntimeEditableSettings } from "../api/types";
+import type {
+	AlertRule,
+	ErrorPassRule,
+  PromptGuardRule,
+  RuntimeEditableSettings,
+} from "../api/types";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
@@ -26,8 +31,10 @@ import {
   Button,
   ConfirmDialog,
   DataTable,
+  Dialog,
   Empty,
   ErrorState,
+  Field,
   Loading,
   Panel,
   InfoTip,
@@ -824,6 +831,724 @@ function SettingLabel({ label, hint }: { label: string; hint: string }) {
       <span>{label}</span>
       <InfoTip label={hint} />
     </span>
+  );
+}
+
+// Alert rules: metric/operator/threshold/window/sustained → webhook.
+function AlertRulesPanel() {
+  const { client } = useSession();
+  const service = api(client!);
+  const { t } = useI18n();
+  const query = useQuery({
+    queryKey: ["alert-rules"],
+    queryFn: ({ signal }) => service.alertRules(signal),
+  });
+  const [draft, setDraft] = useState<Partial<AlertRule> | null>(null);
+  const save = useAdminMutation({
+    mutationFn: (value: AlertRule) =>
+      value.id
+        ? service.updateAlertRule(value.id, value)
+        : service.createAlertRule(value),
+    invalidateKeys: [["alert-rules"]],
+  });
+  const remove = useAdminMutation({
+    mutationFn: (id: number) => service.deleteAlertRule(id),
+    invalidateKeys: [["alert-rules"]],
+  });
+  const items = query.data?.items ?? [];
+  const metrics = query.data?.metrics ?? {};
+  return (
+    <Panel
+      className="runtime-card runtime-tool-alert-rules"
+      id="runtime-alert-rules"
+    >
+      <div className="panel-header">
+        <strong>{t("ops.alertRules.title")}</strong>
+        <button
+          type="button"
+          className="icon-button"
+          title={t("ops.alertRules.add")}
+          onClick={() =>
+            setDraft({
+              name: "",
+              metric: "request_fail_rate",
+              operator: "gt",
+              threshold: 0.5,
+              window_seconds: 3600,
+              sustained_seconds: 300,
+              cooldown_seconds: 900,
+              level: "warning",
+              enabled: true,
+            })
+          }
+        >
+          +
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        {t("ops.alertRules.hint")}
+      </p>
+      {items.length === 0 ? (
+        <p className="is-quiet" style={{ fontSize: 12 }}>
+          {t("ops.alertRules.empty")}
+        </p>
+      ) : (
+        <div className="error-rules-list">
+          {items.map((rule) => (
+            <div key={rule.id} className="error-rule-row">
+              <span className={"error-rule-badge " + (rule.enabled ? "is-passthrough" : "is-off")}>
+                {rule.metric}
+              </span>
+              <span className="error-rule-name">{rule.name}</span>
+              <code className="error-rule-cond">
+                {rule.operator} {rule.threshold}
+              </code>
+              <code className="error-rule-cond">
+                {rule.sustained_seconds}s / {rule.cooldown_seconds}s
+              </code>
+              {!rule.enabled ? (
+                <span className="error-rule-off">{t("common.disabled")}</span>
+              ) : null}
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="error-rule-edit"
+                onClick={() => setDraft({ ...rule })}
+              >
+                {t("common.edit")}
+              </button>
+              <button
+                type="button"
+                className="error-rule-del"
+                onClick={() => remove.mutate(rule.id!)}
+              >
+                {t("common.delete")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {draft ? (
+        <AlertRuleEditor
+          value={draft}
+          metrics={metrics}
+		  pending={save.isPending}
+		  error={save.error instanceof Error ? save.error : null}
+		  onClose={() => setDraft(null)}
+          onSave={(value) => {
+            save.mutate(value as AlertRule);
+            setDraft(null);
+          }}
+        />
+      ) : null}
+    </Panel>
+  );
+}
+
+function AlertRuleEditor({
+  value,
+  metrics,
+  pending,
+  error,
+  onClose,
+  onSave,
+}: {
+  value: Partial<AlertRule>;
+  metrics: Record<string, string>;
+  pending: boolean;
+  error?: Error | null;
+  onClose: () => void;
+  onSave: (value: Partial<AlertRule>) => void;
+}) {
+  const { t } = useI18n();
+  const [form, setForm] = useState<Partial<AlertRule>>(value);
+  const patch = (p: Partial<AlertRule>) =>
+    setForm((current) => ({ ...current, ...p }));
+  return (
+    <Dialog
+      title={form.id ? t("ops.alertRules.edit") : t("ops.alertRules.add")}
+      onClose={onClose}
+    >
+      <div className="meta-form">
+        <Field label={t("ops.alertRules.name")}>
+          <input
+            value={form.name ?? ""}
+            onChange={(e) => patch({ name: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("ops.alertRules.metric")}>
+          <select
+            value={form.metric}
+            onChange={(e) => patch({ metric: e.target.value })}
+            disabled={pending}
+          >
+            {Object.entries(metrics).map(([key, desc]) => (
+              <option key={key} value={key} title={desc}>
+                {key}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="alert-rule-row2">
+          <Field label={t("ops.alertRules.operator")}>
+            <select
+              value={form.operator}
+              onChange={(e) =>
+                patch({
+                  operator: e.target.value as AlertRule["operator"],
+                })
+              }
+              disabled={pending}
+            >
+              {["gt", "gte", "lt", "lte", "eq", "neq"].map((op) => (
+                <option key={op} value={op}>
+                  {op}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t("ops.alertRules.threshold")}>
+            <input
+              type="number"
+              step={0.05}
+              value={form.threshold ?? 0}
+              onChange={(e) =>
+                patch({ threshold: Number(e.target.value) || 0 })
+              }
+              disabled={pending}
+            />
+          </Field>
+        </div>
+        <div className="alert-rule-row3">
+          <Field label={t("ops.alertRules.window")}>
+            <input
+              type="number"
+              min={60}
+              value={form.window_seconds ?? 3600}
+              onChange={(e) =>
+                patch({ window_seconds: Number(e.target.value) || 3600 })
+              }
+              disabled={pending}
+            />
+          </Field>
+          <Field label={t("ops.alertRules.sustained")}>
+            <input
+              type="number"
+              min={0}
+              value={form.sustained_seconds ?? 0}
+              onChange={(e) =>
+                patch({ sustained_seconds: Number(e.target.value) || 0 })
+              }
+              disabled={pending}
+            />
+          </Field>
+          <Field label={t("ops.alertRules.cooldown")}>
+            <input
+              type="number"
+              min={60}
+              value={form.cooldown_seconds ?? 900}
+              onChange={(e) =>
+                patch({ cooldown_seconds: Number(e.target.value) || 900 })
+              }
+              disabled={pending}
+            />
+          </Field>
+        </div>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={form.enabled ?? true}
+            onChange={(e) => patch({ enabled: e.target.checked })}
+            disabled={pending}
+          />
+          <span>{t("common.enabled")}</span>
+        </label>
+      </div>
+      {error ? <div className="inline-error">{error.message}</div> : null}
+      <div className="dialog-actions">
+        <span style={{ flex: 1 }} />
+        <Button variant="secondary" disabled={pending} onClick={onClose}>
+          {t("common.cancel")}
+        </Button>
+        <Button disabled={pending} onClick={() => onSave(form)}>
+          {pending ? t("common.working") : t("common.save")}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+// Sensitive prompt guards: regex rules that mask, reject, or channel-exclude
+// request bodies containing sensitive content (API keys, credentials…).
+function PromptGuardPanel() {
+  const { client } = useSession();
+  const service = api(client!);
+  const { t } = useI18n();
+  const query = useQuery({
+    queryKey: ["prompt-guards"],
+    queryFn: ({ signal }) => service.promptGuards(signal),
+  });
+  const [draft, setDraft] = useState<Partial<PromptGuardRule> | null>(null);
+  const save = useAdminMutation({
+    mutationFn: (value: PromptGuardRule) =>
+      value.id
+        ? service.updatePromptGuard(value.id, value)
+        : service.createPromptGuard(value),
+    invalidateKeys: [["prompt-guards"]],
+  });
+  const remove = useAdminMutation({
+    mutationFn: (id: number) => service.deletePromptGuard(id),
+    invalidateKeys: [["prompt-guards"]],
+  });
+  const items = query.data?.items ?? [];
+  return (
+    <Panel
+      className="runtime-card runtime-tool-prompt-guard"
+      id="runtime-prompt-guards"
+    >
+      <div className="panel-header">
+        <strong>{t("ops.guard.title")}</strong>
+        <button
+          type="button"
+          className="icon-button"
+          title={t("ops.guard.add")}
+          onClick={() =>
+            setDraft({
+              name: "",
+              pattern: "",
+              action: "mask",
+              replacement: "[REDACTED]",
+              exclude_channels: "",
+              channel_scope: 0,
+              enabled: true,
+            })
+          }
+        >
+          +
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        {t("ops.guard.hint")}
+      </p>
+      {items.length === 0 ? (
+        <p className="is-quiet" style={{ fontSize: 12 }}>
+          {t("ops.guard.empty")}
+        </p>
+      ) : (
+        <div className="error-rules-list">
+          {items.map((rule) => (
+            <div key={rule.id} className="error-rule-row">
+              <span className={"error-rule-badge is-" + rule.action}>
+                {rule.action}
+              </span>
+              <span className="error-rule-name">{rule.name}</span>
+              <code className="error-rule-cond">{rule.pattern}</code>
+              {rule.action === "exclude" ? (
+                <code className="error-rule-cond">{rule.exclude_channels}</code>
+              ) : null}
+              {!rule.enabled ? (
+                <span className="error-rule-off">{t("common.disabled")}</span>
+              ) : null}
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="error-rule-edit"
+                onClick={() => setDraft({ ...rule })}
+              >
+                {t("common.edit")}
+              </button>
+              <button
+                type="button"
+                className="error-rule-del"
+                onClick={() => remove.mutate(rule.id!)}
+              >
+                {t("common.delete")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {draft ? (
+        <PromptGuardEditor
+          value={draft}
+          pending={save.isPending}
+          error={save.error instanceof Error ? save.error : null}
+          onClose={() => setDraft(null)}
+          onSave={(value) => {
+            save.mutate(value as PromptGuardRule);
+            setDraft(null);
+          }}
+        />
+      ) : null}
+    </Panel>
+  );
+}
+
+function PromptGuardEditor({
+  value,
+  pending,
+  error,
+  onClose,
+  onSave,
+}: {
+  value: Partial<PromptGuardRule>;
+  pending: boolean;
+  error?: Error | null;
+  onClose: () => void;
+  onSave: (value: Partial<PromptGuardRule>) => void;
+}) {
+  const { t } = useI18n();
+  const [form, setForm] = useState<Partial<PromptGuardRule>>(value);
+  const patch = (p: Partial<PromptGuardRule>) =>
+    setForm((current) => ({ ...current, ...p }));
+  return (
+    <Dialog
+      title={form.id ? t("ops.guard.edit") : t("ops.guard.add")}
+      onClose={onClose}
+    >
+      <div className="meta-form">
+        <Field label={t("ops.guard.name")}>
+          <input
+            value={form.name ?? ""}
+            onChange={(e) => patch({ name: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("ops.guard.pattern")}>
+          <input
+            value={form.pattern ?? ""}
+            placeholder="sk-[A-Za-z0-9]{16,}"
+            onChange={(e) => patch({ pattern: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("ops.guard.action")}>
+          <select
+            value={form.action ?? "mask"}
+            onChange={(e) =>
+              patch({
+                action: e.target.value as PromptGuardRule["action"],
+              })
+            }
+            disabled={pending}
+          >
+            <option value="mask">{t("ops.guard.actionMask")}</option>
+            <option value="reject">{t("ops.guard.actionReject")}</option>
+            <option value="exclude">{t("ops.guard.actionExclude")}</option>
+          </select>
+        </Field>
+        {form.action === "mask" ? (
+          <Field label={t("ops.guard.replacement")}>
+            <input
+              value={form.replacement ?? "[REDACTED]"}
+              onChange={(e) => patch({ replacement: e.target.value })}
+              disabled={pending}
+            />
+          </Field>
+        ) : null}
+        {form.action === "exclude" ? (
+          <Field label={t("ops.guard.excludeChannels")}>
+            <input
+              value={form.exclude_channels ?? ""}
+              placeholder="5, 12"
+              onChange={(e) => patch({ exclude_channels: e.target.value })}
+              disabled={pending}
+            />
+          </Field>
+        ) : null}
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={form.enabled ?? true}
+            onChange={(e) => patch({ enabled: e.target.checked })}
+            disabled={pending}
+          />
+          <span>{t("common.enabled")}</span>
+        </label>
+      </div>
+      {error ? <div className="inline-error">{error.message}</div> : null}
+      <div className="dialog-actions">
+        <span style={{ flex: 1 }} />
+        <Button variant="secondary" disabled={pending} onClick={onClose}>
+          {t("common.cancel")}
+        </Button>
+        <Button disabled={pending} onClick={() => onSave(form)}>
+          {pending ? t("common.working") : t("common.save")}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+// Factory reset: wipe all business data (channels, keys, routes, logs,
+// histories, rules) while preserving configuration. Requires typing RESET.
+function FactoryResetPanel() {
+  const { client } = useSession();
+  const service = api(client!);
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const [arm, setArm] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const reset = useAdminMutation({
+    mutationFn: () => service.factoryReset(confirm),
+    onSuccess: () => {
+      queryClient.clear();
+      setArm(false);
+      setConfirm("");
+    },
+  });
+  return (
+    <Panel
+      className="runtime-card runtime-tool-factory-reset is-danger-zone"
+      id="runtime-factory-reset"
+    >
+      <div className="panel-header">
+        <strong>{t("ops.factoryReset.title")}</strong>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        {t("ops.factoryReset.hint")}
+      </p>
+      {!arm ? (
+        <Button variant="danger" onClick={() => setArm(true)}>
+          {t("ops.factoryReset.start")}
+        </Button>
+      ) : (
+        <div className="factory-reset-arm">
+          <input
+            type="text"
+            placeholder={t("ops.factoryReset.typeConfirm")}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            disabled={reset.isPending}
+          />
+          <Button
+            variant="danger"
+            disabled={confirm !== "RESET" || reset.isPending}
+            onClick={() => reset.mutate()}
+          >
+            {reset.isPending ? t("common.working") : t("ops.factoryReset.confirm")}
+          </Button>
+          <Button variant="secondary" disabled={reset.isPending} onClick={() => setArm(false)}>
+            {t("common.cancel")}
+          </Button>
+        </div>
+      )}
+      {reset.isSuccess ? (
+        <p className="factory-reset-done">
+          {t("ops.factoryReset.done")}
+        </p>
+      ) : null}
+      {reset.error instanceof Error ? (
+        <div className="inline-error">{reset.error.message}</div>
+      ) : null}
+    </Panel>
+  );
+}
+
+// Database maintenance: scheduled orphan GC + VACUUM (cron) and a manual
+// run button with the last pass summary.
+function MaintenancePanel() {
+  const { client } = useSession();
+  const service = api(client!);
+  const { t } = useI18n();
+  const last = useQuery({
+    queryKey: ["db-gc-last"],
+    queryFn: ({ signal }) => service.lastDBGC(signal),
+    refetchInterval: 60_000,
+  });
+  const run = useAdminMutation({
+    mutationFn: () => service.runDBGC(),
+    invalidateKeys: [["db-gc-last"]],
+  });
+  const res = last.data?.result;
+  const total = res
+	    ? res.route_members + res.proxy_logs + res.discovered_models +
+	      res.checkin_logs + res.usage_records + res.balance_history +
+	      res.decision_snapshots + res.channel_health_history +
+	      res.channel_model_blocks +
+	      res.redemption_codes + res.error_passthrough_rules
+	    : 0;
+  return (
+    <Panel
+      className="runtime-card runtime-tool-maintenance"
+      id="runtime-db-maintenance"
+    >
+      <div className="panel-header">
+        <strong>{t("ops.maintenance.title")}</strong>
+        <span style={{ flex: 1 }} />
+        <Button
+          variant="secondary"
+          disabled={run.isPending}
+          onClick={() => run.mutate()}
+        >
+          {run.isPending ? t("common.working") : t("ops.maintenance.run")}
+        </Button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        {t("ops.maintenance.hint")}
+      </p>
+      {run.data ? (
+        <p className="maintenance-result">
+          {t("ops.maintenance.result", {
+	            total: run.data.route_members + run.data.proxy_logs + run.data.discovered_models + run.data.checkin_logs + run.data.usage_records + run.data.balance_history + run.data.decision_snapshots + run.data.channel_health_history + run.data.channel_model_blocks + run.data.redemption_codes + run.data.error_passthrough_rules,
+            vacuumed: run.data.vacuumed
+              ? t("ops.maintenance.vacuumed", {
+                  bytes: formatBytes(run.data.vacuum_freed_bytes),
+                })
+              : t("ops.maintenance.noVacuum"),
+          })}
+        </p>
+      ) : res ? (
+        <p className="muted" style={{ fontSize: 12 }}>
+          {t("ops.maintenance.lastRun", {
+            total,
+            at: last.data?.ran_at
+              ? new Date(last.data.ran_at).toLocaleString()
+              : "—",
+          })}
+        </p>
+	      ) : null}
+    </Panel>
+  );
+}
+
+// Admin TOTP 2FA panel: setup (show secret + otpauth URI), enable with a
+// code, and disable with a current code.
+function TOTPPanel() {
+  const { client } = useSession();
+  const service = api(client!);
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const [phase, setPhase] = useState<"idle" | "setup">("idle");
+  const [setupData, setSetupData] = useState<{ secret: string; otpauth_uri: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const status = useQuery({
+    queryKey: ["totp-status"],
+    queryFn: ({ signal }) => service.totpStatus(signal),
+    refetchInterval: 30_000,
+  });
+  const enabled = status.data?.enabled ?? false;
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["totp-status"] });
+    setPhase("idle");
+    setSetupData(null);
+    setCode("");
+    setError("");
+  };
+  const run = async (fn: () => Promise<unknown>, onSuccess?: () => void) => {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+      onSuccess?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("common.failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Panel
+      className="runtime-card runtime-tool-totp"
+      id="runtime-totp"
+    >
+      <div className="panel-header">
+        <strong>{t("ops.runtime.totpTitle")}</strong>
+        {enabled ? (
+          <StatusBadge value="success" />
+        ) : (
+          <span className="runtime-setting-value muted">
+            {t("ops.runtime.totpDisabled")}
+          </span>
+        )}
+      </div>
+      {!enabled && phase === "idle" ? (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() =>
+            void run(async () => {
+              const res = await service.totpSetup();
+              setSetupData(res);
+              setPhase("setup");
+            })
+          }
+        >
+          {t("ops.runtime.totpSetup")}
+        </Button>
+      ) : null}
+      {!enabled && phase === "setup" && setupData ? (
+        <div className="totp-setup">
+          <p className="muted" style={{ fontSize: 12 }}>
+            {t("ops.runtime.totpSetupHint")}
+          </p>
+          <div className="totp-secret-row mono">
+            <code>{setupData.secret}</code>
+            <button
+              type="button"
+              className="redemption-copy"
+              onClick={() => void navigator.clipboard.writeText(setupData.secret)}
+            >
+              {t("keys.redemptionCopy")}
+            </button>
+          </div>
+          <a
+            className="totp-uri-link"
+            href={setupData.otpauth_uri}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t("ops.runtime.totpOpenApp")}
+          </a>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="123456"
+            disabled={busy}
+            style={{ width: 160 }}
+          />
+          <Button
+            disabled={busy || code.length !== 6}
+            onClick={() => void run(() => service.totpEnable(code), refresh)}
+          >
+            {t("ops.runtime.totpEnable")}
+          </Button>
+        </div>
+      ) : null}
+      {enabled ? (
+        <div className="totp-setup">
+          <p className="muted" style={{ fontSize: 12 }}>
+            {t("ops.runtime.totpDisableHint")}
+          </p>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="123456"
+            disabled={busy}
+            style={{ width: 160 }}
+          />
+          <Button
+            variant="danger"
+            disabled={busy || code.length !== 6}
+            onClick={() => void run(() => service.totpDisable(code), refresh)}
+          >
+            {t("ops.runtime.totpDisable")}
+          </Button>
+        </div>
+      ) : null}
+      {error ? <div className="inline-error">{error}</div> : null}
+    </Panel>
   );
 }
 
@@ -1795,6 +2520,45 @@ export function RuntimeSettingsPanel() {
           </label>
           <label className="field">
             <SettingLabel
+              label={t("ops.runtime.proxyURL")}
+              hint={t("ops.runtime.proxyURLHint")}
+            />
+            <input
+              type="url"
+              placeholder="http://127.0.0.1:7897"
+              disabled={busy}
+              value={draft.proxy_url ?? ""}
+              onChange={(e) => patch("proxy_url", e.target.value)}
+            />
+          </label>
+      <label className="field">
+        <SettingLabel
+          label={t("ops.runtime.discoveryCron")}
+          hint={t("ops.runtime.discoveryCronHint")}
+        />
+        <input
+          type="text"
+          placeholder="0 3 * * *"
+          disabled={busy}
+          value={draft.discovery_cron ?? ""}
+          onChange={(e) => patch("discovery_cron", e.target.value)}
+        />
+      </label>
+      <label className="field">
+        <SettingLabel
+          label={t("ops.maintenance.cron")}
+          hint={t("ops.maintenance.cronHint")}
+        />
+        <input
+          type="text"
+          placeholder="0 4 * * *"
+          disabled={busy}
+          value={draft.db_gc_cron ?? ""}
+          onChange={(e) => patch("db_gc_cron", e.target.value)}
+        />
+      </label>
+          <label className="field">
+            <SettingLabel
               label={t("ops.runtime.webhookThrottle")}
               hint={t("ops.runtime.webhookThrottleHint")}
             />
@@ -1875,7 +2639,7 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
-        <Panel className="runtime-card runtime-card-server" id="runtime-server">
+      <Panel className="runtime-card runtime-card-server" id="runtime-server">
           <div className="panel-header">
             <strong>{t("ops.runtime.section.server")}</strong>
           </div>
@@ -1914,17 +2678,26 @@ export function RuntimeSettingsPanel() {
               {data.plugins_dir}
             </strong>
           </div>
-          <div className="runtime-setting-row">
-            <span className="runtime-setting-label">
-              {t("ops.runtime.metricsToken")}
-            </span>
-            <strong className="runtime-setting-value mono">
-              {data.metrics_token_masked
-                ? data.metrics_token_masked
-                : t("ops.runtime.metricsTokenNone")}
-            </strong>
-          </div>
-        </Panel>
+		  <div className="runtime-setting-row">
+			<span className="runtime-setting-label">
+			  {t("ops.runtime.metricsToken")}
+			</span>
+			<strong className="runtime-setting-value mono">
+			  {data.metrics_token_masked
+				? data.metrics_token_masked
+				: t("ops.runtime.metricsTokenNone")}
+			</strong>
+		  </div>
+      </Panel>
+        </div>
+
+      <div className="runtime-tools-grid">
+        <TOTPPanel />
+        <AlertRulesPanel />
+        <ErrorRulesPanel />
+        <PromptGuardPanel />
+        <MaintenancePanel />
+        <FactoryResetPanel />
       </div>
 
       <div className="runtime-settings-actions">
@@ -1949,5 +2722,225 @@ export function RuntimeSettingsPanel() {
         </Button>
       </div>
     </div>
+  );
+}
+
+// Error passthrough rules: status/keyword → passthrough / rewrite /
+// ignore_monitor. Read live on every request, so edits apply instantly.
+function ErrorRulesPanel() {
+  const { client } = useSession();
+  const service = api(client!);
+  const { t } = useI18n();
+  const query = useQuery({
+    queryKey: ["error-rules"],
+    queryFn: ({ signal }) => service.errorRules(signal),
+  });
+  const [draft, setDraft] = useState<Partial<ErrorPassRule> | null>(null);
+  const save = useAdminMutation({
+    mutationFn: (value: ErrorPassRule) =>
+      value.id
+        ? service.updateErrorRule(value.id, value)
+        : service.createErrorRule(value),
+    invalidateKeys: [["error-rules"]],
+  });
+  const remove = useAdminMutation({
+    mutationFn: (id: number) => service.deleteErrorRule(id),
+    invalidateKeys: [["error-rules"]],
+  });
+  const items = query.data?.items ?? [];
+  return (
+    <Panel
+      className="runtime-card runtime-tool-error-rules"
+      id="runtime-error-rules"
+    >
+      <div className="panel-header">
+        <strong>{t("ops.errorRules.title")}</strong>
+        <button
+          type="button"
+          className="icon-button"
+          title={t("ops.errorRules.add")}
+          onClick={() =>
+            setDraft({
+              name: "",
+              status_code: 0,
+              keyword: "",
+              model_glob: "",
+              channel_id: 0,
+              action: "passthrough",
+              rewrite_to: 0,
+              enabled: true,
+            })
+          }
+        >
+          +
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        {t("ops.errorRules.hint")}
+      </p>
+      {items.length === 0 ? (
+        <p className="is-quiet" style={{ fontSize: 12 }}>
+          {t("ops.errorRules.empty")}
+        </p>
+      ) : (
+        <div className="error-rules-list">
+          {items.map((rule) => (
+            <div key={rule.id} className="error-rule-row">
+              <span className={"error-rule-badge is-" + rule.action}>
+                {rule.action}
+              </span>
+              <span className="error-rule-name">{rule.name}</span>
+              <code className="error-rule-cond">
+                {rule.status_code || "any"} · {rule.keyword || "*"}
+              </code>
+              {rule.model_glob ? (
+                <code className="error-rule-cond">{rule.model_glob}</code>
+              ) : null}
+              {!rule.enabled ? (
+                <span className="error-rule-off">{t("common.disabled")}</span>
+              ) : null}
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                className="error-rule-edit"
+                onClick={() => setDraft({ ...rule })}
+              >
+                {t("common.edit")}
+              </button>
+			  <button
+				type="button"
+				className="error-rule-del"
+				onClick={() => remove.mutate(rule.id!)}
+			  >
+                {t("common.delete")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {draft ? (
+		  <ErrorRuleEditor
+			value={draft}
+			pending={save.isPending}
+			error={save.error as Error | null}
+			onClose={() => setDraft(null)}
+          onSave={(value) => {
+            save.mutate(value as ErrorPassRule);
+            setDraft(null);
+          }}
+        />
+      ) : null}
+    </Panel>
+  );
+}
+
+function ErrorRuleEditor({
+  value,
+  pending,
+  error,
+  onClose,
+  onSave,
+}: {
+  value: Partial<ErrorPassRule>;
+  pending: boolean;
+  error?: Error | null;
+  onClose: () => void;
+  onSave: (value: Partial<ErrorPassRule>) => void;
+}) {
+  const { t } = useI18n();
+  const [form, setForm] = useState<Partial<ErrorPassRule>>(value);
+  const patch = (p: Partial<ErrorPassRule>) =>
+    setForm((current) => ({ ...current, ...p }));
+  return (
+	<Dialog
+		title={form.id ? t("ops.errorRules.edit") : t("ops.errorRules.add")}
+		onClose={onClose}
+	>
+      <div className="meta-form">
+        <Field label={t("ops.errorRules.name")}>
+          <input
+            value={form.name ?? ""}
+            onChange={(e) => patch({ name: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("ops.errorRules.status")}>
+          <input
+            type="number"
+            min={0}
+            max={599}
+            value={form.status_code ?? 0}
+            onChange={(e) => patch({ status_code: Number(e.target.value) || 0 })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("ops.errorRules.keyword")}>
+          <input
+            value={form.keyword ?? ""}
+            placeholder="rate limit, insufficient_quota…"
+            onChange={(e) => patch({ keyword: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("ops.errorRules.modelGlob")}>
+          <input
+            value={form.model_glob ?? ""}
+            placeholder="gpt-*"
+            onChange={(e) => patch({ model_glob: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("ops.errorRules.action")}>
+		  <select
+			value={form.action ?? "passthrough"}
+			onChange={(e) =>
+			  patch({
+				action: e.target.value as "passthrough" | "rewrite" | "ignore_monitor",
+			  })
+			}
+			disabled={pending}
+		  >
+            <option value="passthrough">
+              {t("ops.errorRules.actionPassthrough")}
+            </option>
+            <option value="rewrite">{t("ops.errorRules.actionRewrite")}</option>
+            <option value="ignore_monitor">
+              {t("ops.errorRules.actionIgnore")}
+            </option>
+          </select>
+        </Field>
+        {form.action === "rewrite" ? (
+          <Field label={t("ops.errorRules.rewriteTo")}>
+            <input
+              type="number"
+              min={100}
+              max={599}
+              value={form.rewrite_to ?? 0}
+              onChange={(e) => patch({ rewrite_to: Number(e.target.value) || 0 })}
+              disabled={pending}
+            />
+          </Field>
+        ) : null}
+        <label className="check" style={{ marginTop: 4 }}>
+          <input
+            type="checkbox"
+            checked={form.enabled ?? true}
+            onChange={(e) => patch({ enabled: e.target.checked })}
+            disabled={pending}
+          />
+          <span>{t("common.enabled")}</span>
+        </label>
+      </div>
+      {error ? <div className="inline-error">{error.message}</div> : null}
+      <div className="dialog-actions">
+        <span style={{ flex: 1 }} />
+        <Button variant="secondary" disabled={pending} onClick={onClose}>
+          {t("common.cancel")}
+        </Button>
+        <Button disabled={pending} onClick={() => onSave(form)}>
+          {pending ? t("common.working") : t("common.save")}
+        </Button>
+      </div>
+    </Dialog>
   );
 }

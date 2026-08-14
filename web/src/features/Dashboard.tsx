@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   Activity,
+  ArrowLeft,
   ArrowRight,
   Boxes,
   Check,
@@ -18,7 +19,6 @@ import {
   ScrollText,
   TrendingUp,
   Wallet,
-  X,
   Zap,
 } from "lucide-react";
 import { api } from "../api/client";
@@ -164,6 +164,7 @@ function ResultDistribution({
   );
 }
 
+
 export function Dashboard() {
   const { client } = useSession();
   const s = api(client!);
@@ -184,11 +185,6 @@ export function Dashboard() {
     queryFn: ({ signal }) => s.channelOverviews(signal),
     refetchInterval: 30_000,
   });
-  const balanceHistory = useQuery({
-    queryKey: ["balance-history", 14],
-    queryFn: ({ signal }) => s.balanceHistory(14, signal),
-    refetchInterval: 10 * 60 * 1000,
-  });
   const logs = useQuery({
     queryKey: ["proxy-logs", { limit: 5 }],
     queryFn: ({ signal }) => s.proxyLogs({ limit: 5 }, signal),
@@ -196,7 +192,7 @@ export function Dashboard() {
   });
 
   const [windowHours, setWindowHours] = useState<24 | 48>(24);
-  const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
+  const [selectedHour, setSelectedHour] = useState<number | null>(null);
   const now = Date.now();
   const recent = useMemo(() => {
     const cutoff = now - HOUR_24;
@@ -214,9 +210,16 @@ export function Dashboard() {
     return { total: all.length, enabled, healthy };
   }, [channels.data]);
 
-  /** Windowed hourly buckets (oldest → newest) for the SVG chart. */
+  /** Wall-clock hourly buckets (oldest → newest) for the overview chart. */
   const hourly = useMemo(() => {
     const n = windowHours;
+    const currentHour = new Date(now);
+    currentHour.setMinutes(0, 0, 0);
+    const firstStart = currentHour.getTime() - (n - 1) * 3600_000;
+    const starts = Array.from(
+      { length: n },
+      (_, i) => firstStart + i * 3600_000,
+    );
     const buckets = Array.from({ length: n }, () => ({
       req: 0,
       tok: 0,
@@ -224,21 +227,18 @@ export function Dashboard() {
       cacheWrite: 0,
     }));
     for (const row of usage.data ?? []) {
-      const h = Math.floor(
-        (now - new Date(row.created_at).getTime()) / 3600_000,
+      const index = Math.floor(
+        (new Date(row.created_at).getTime() - firstStart) / 3600_000,
       );
-      if (h >= 0 && h < n) {
-        const bucket = buckets[n - 1 - h];
-        if (bucket) {
-          bucket.req += 1;
-          bucket.tok += row.total_tokens ?? 0;
-          bucket.cacheRead += row.cache_read_tokens ?? 0;
-          bucket.cacheWrite += row.cache_creation_tokens ?? 0;
-        }
-      }
+      const bucket = buckets[index];
+      if (!bucket) continue;
+      bucket.req += 1;
+      bucket.tok += row.total_tokens ?? 0;
+      bucket.cacheRead += row.cache_read_tokens ?? 0;
+      bucket.cacheWrite += row.cache_creation_tokens ?? 0;
     }
-    const labels = buckets.map((_, i) => {
-      const d = new Date(now - (n - 1 - i) * 3600_000);
+    const labels = starts.map((start) => {
+      const d = new Date(start);
       const hh = `${String(d.getHours()).padStart(2, "0")}:00`;
       return n > 24 ? `${d.getMonth() + 1}/${d.getDate()} ${hh}` : hh;
     });
@@ -248,8 +248,48 @@ export function Dashboard() {
       cacheReads: buckets.map((b) => b.cacheRead),
       cacheWrites: buckets.map((b) => b.cacheWrite),
       labels,
+      starts,
     };
   }, [usage.data, now, windowHours]);
+
+  /** Ten-minute buckets inside the selected hour. */
+  const detail = useMemo(() => {
+    if (selectedHour == null) return null;
+    const start = hourly.starts[selectedHour];
+    if (start == null) return null;
+    const interval = 10 * 60_000;
+    const buckets = Array.from({ length: 6 }, () => ({
+      req: 0,
+      tok: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    }));
+    for (const row of usage.data ?? []) {
+      const index = Math.floor(
+        (new Date(row.created_at).getTime() - start) / interval,
+      );
+      const bucket = buckets[index];
+      if (!bucket) continue;
+      bucket.req += 1;
+      bucket.tok += row.total_tokens ?? 0;
+      bucket.cacheRead += row.cache_read_tokens ?? 0;
+      bucket.cacheWrite += row.cache_creation_tokens ?? 0;
+    }
+    const labels = buckets.map((_, i) => {
+      const d = new Date(start + i * interval);
+      return `${String(d.getHours()).padStart(2, "0")}:${String(
+        d.getMinutes(),
+      ).padStart(2, "0")}`;
+    });
+    return {
+      requests: buckets.map((b) => b.req),
+      tokens: buckets.map((b) => b.tok),
+      cacheReads: buckets.map((b) => b.cacheRead),
+      cacheWrites: buckets.map((b) => b.cacheWrite),
+      labels,
+      start,
+    };
+  }, [hourly.starts, selectedHour, usage.data]);
 
   /** Requests in the previous 24h window, for the trend badge. */
   const prev24 = useMemo(() => {
@@ -284,16 +324,23 @@ export function Dashboard() {
           ? "warning"
           : "danger";
 
-  // Status-code buckets over the visible chart window.
+  // Status-code buckets over the visible chart window or selected hour.
   const windowRows = useMemo(() => {
     const cutoff = now - windowHours * 3600_000;
     return (usage.data ?? []).filter(
       (row) => new Date(row.created_at).getTime() >= cutoff,
     );
   }, [usage.data, now, windowHours]);
+  const chartRows = useMemo(() => {
+    if (detail == null) return windowRows;
+    return (usage.data ?? []).filter((row) => {
+      const ms = new Date(row.created_at).getTime();
+      return ms >= detail.start && ms < detail.start + 3600_000;
+    });
+  }, [detail, usage.data, windowRows]);
   const breakdown = useMemo(() => {
     const buckets = { ok: 0, clientError: 0, serverError: 0, other: 0 };
-    for (const row of windowRows) {
+    for (const row of chartRows) {
       const s = row.status;
       if (s >= 200 && s < 300) buckets.ok += 1;
       else if (s >= 400 && s < 500) buckets.clientError += 1;
@@ -301,9 +348,12 @@ export function Dashboard() {
       else buckets.other += 1;
     }
     return buckets;
-  }, [windowRows]);
+  }, [chartRows]);
   const successRate =
-    recentRequests > 0 ? breakdown.ok / recentRequests : null;
+    recentRequests > 0
+      ? recent.filter((row) => row.status >= 200 && row.status < 300).length /
+        recentRequests
+      : null;
   const successTone =
     successRate === null
       ? "primary"
@@ -313,79 +363,7 @@ export function Dashboard() {
           ? "warning"
           : "danger";
 
-  // Balance trend line chart: one polyline per channel over the 14d window.
-function BalanceChart({ data }: { data: { series: Array<{ channelId: number; name: string; points: Array<{ date: string; balance: number }> }>; maxB: number } }) {
-  const W = 640;
-  const H = 150;
-  const padL = 8;
-  const padR = 8;
-  const padT = 8;
-  const padB = 18;
-  const colors = ["#2f6fed", "#e06a60", "#2f9e6e", "#b07fd6", "#d9a441", "#4aa3c2"];
-  return (
-    <div className="balance-chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={data.series.map((s) => s.name).join(", ")}>
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line
-            key={f}
-            x1={padL}
-            x2={W - padR}
-            y1={padT + (H - padT - padB) * f}
-            y2={padT + (H - padT - padB) * f}
-            className="balance-chart-grid"
-          />
-        ))}
-        {data.series.map((series, si) => {
-          const n = series.points.length;
-          const pts = series.points
-            .map((p, i) => {
-              const x = padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
-              const y = padT + (H - padT - padB) * (1 - p.balance / data.maxB);
-              return `${x.toFixed(1)},${y.toFixed(1)}`;
-            })
-            .join(" ");
-          return (
-            <g key={series.channelId}>
-              <polyline
-                points={pts}
-                fill="none"
-                stroke={colors[si % colors.length]}
-                strokeWidth={1.6}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-              {series.points.map((p, i) => {
-                const x = padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
-                const y = padT + (H - padT - padB) * (1 - p.balance / data.maxB);
-                return <circle key={i} cx={x} cy={y} r={2.2} fill={colors[si % colors.length]} />;
-              })}
-            </g>
-          );
-        })}
-        {data.series[0]?.points.map((p, i) => {
-          const first = data.series[0]!;
-          const n = first.points.length;
-          const x = padL + (n <= 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
-          return (
-            <text key={i} x={x} y={H - 5} textAnchor="middle" className="balance-chart-x">
-              {p.date}
-            </text>
-          );
-        })}
-      </svg>
-      <ul className="balance-chart-legend">
-        {data.series.map((s, si) => (
-          <li key={s.channelId}>
-            <i style={{ background: colors[si % colors.length] }} />
-            <span title={s.name}>{s.name}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-// Model usage ranking over the visible 24h window.
+  // Model usage ranking over the visible 24h window.
   const topModels = useMemo(() => {
     const map = new Map<string, { requests: number; tokens: number }>();
     for (const row of recent) {
@@ -403,83 +381,6 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
       .map(([model, stats]) => ({ model, ...stats }));
   }, [recent]);
   const maxModelRequests = Math.max(1, ...topModels.map((m) => m.requests));
-
-  // Balance trend: daily snapshots per channel (14d window), rendered as lines.
-  const balanceChart = useMemo(() => {
-    const points = balanceHistory.data?.items ?? [];
-    if (points.length === 0) return null;
-    const byChannel = new Map<
-      number,
-      Array<{ date: string; balance: number }>
-    >();
-    for (const p of points) {
-      const list = byChannel.get(p.channel_id) ?? [];
-      const d = new Date(p.probed_at);
-      const date = `${d.getMonth() + 1}/${d.getDate()}`;
-      if (list.length === 0 || list[list.length - 1]!.date !== date) {
-        list.push({ date, balance: p.balance });
-      } else {
-        list[list.length - 1]!.balance = p.balance; // latest probe of the day
-      }
-      byChannel.set(p.channel_id, list);
-    }
-    const series = [...byChannel.entries()]
-      .filter(([, pts]) => pts.length >= 1)
-      .slice(0, 6)
-      .map(([id, pts]) => ({
-        channelId: id,
-        name: points.find((p) => p.channel_id === id)?.channel_name || `#${id}`,
-        points: pts,
-      }));
-    if (series.length === 0) return null;
-    const maxB = Math.max(1, ...points.map((p) => p.balance));
-    return { series, maxB };
-  }, [balanceHistory.data]);
-
-  // Drill-down detail for the selected chart bucket (aggregated by model).
-  const bucketDetail = useMemo(() => {
-    if (selectedBucket == null) return null;
-    const n = windowHours;
-    const startMs = now - (n - selectedBucket) * 3600_000;
-    const endMs = startMs + 3600_000;
-    const rows = (usage.data ?? []).filter((row) => {
-      const ms = new Date(row.created_at).getTime();
-      return ms >= startMs && ms < endMs;
-    });
-    const byModel = new Map<string, { requests: number; tokens: number }>();
-    let tok = 0;
-    let cacheRead = 0;
-    let ok = 0;
-    let fail = 0;
-    for (const row of rows) {
-      const entry = byModel.get(row.model) ?? { requests: 0, tokens: 0 };
-      entry.requests += 1;
-      entry.tokens += row.total_tokens ?? 0;
-      byModel.set(row.model, entry);
-      tok += row.total_tokens ?? 0;
-      cacheRead += row.cache_read_tokens ?? 0;
-      if (row.status >= 200 && row.status < 300) ok += 1;
-      else fail += 1;
-    }
-    const start = new Date(startMs);
-    const label = `${start.getMonth() + 1}/${start.getDate()} ${String(
-      start.getHours(),
-    ).padStart(2, "0")}:00`;
-    const models = [...byModel.entries()]
-      .sort((a, b) => b[1].tokens - a[1].tokens)
-      .slice(0, 6)
-      .map(([model, stats]) => ({ model, ...stats }));
-    return {
-      label,
-      requests: rows.length,
-      tok,
-      cacheRead,
-      ok,
-      fail,
-      models,
-      maxReq: Math.max(1, ...models.map((m) => m.requests)),
-    };
-  }, [selectedBucket, windowHours, usage.data, now]);
 
   const recentLogs = (logs.data ?? []).slice(0, 5);
 
@@ -610,11 +511,39 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
         />
 
         <Panel className="dashboard-panel dashboard-chart-panel">
-          <div className="panel-header">
-            <Activity size={15} />
-            <strong>{t("dashboard.hourlyTraffic")}</strong>
+          <div className="panel-header dashboard-chart-header">
+            <div className="dashboard-chart-title">
+              {detail ? (
+                <button
+                  type="button"
+                  className="chart-back-button"
+                  onClick={() => setSelectedHour(null)}
+                  aria-label={t("dashboard.chartBack")}
+                >
+                  <ArrowLeft size={14} />
+                </button>
+              ) : (
+                <Activity size={15} />
+              )}
+              <strong>
+                {detail
+                  ? t("dashboard.hourlyDetail", {
+                      label: hourly.labels[selectedHour ?? 0] ?? "",
+                    })
+                  : t("dashboard.hourlyTraffic")}
+              </strong>
+              {detail ? (
+                <span className="chart-detail-pill">
+                  {t("dashboard.chartDetailGranularity")}
+                </span>
+              ) : null}
+            </div>
             <span className="panel-muted">
-              {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
+              {detail
+                ? t("dashboard.chartDetailSummary", {
+                    n: detail.requests.reduce((sum, value) => sum + value, 0),
+                  })
+                : t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
             </span>
             <div
               className="chart-window-tabs"
@@ -630,7 +559,7 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
                   className={windowHours === w.hours ? "is-active" : ""}
                   onClick={() => {
                     setWindowHours(w.hours);
-                    setSelectedBucket(null);
+                    setSelectedHour(null);
                   }}
                 >
                   {t(w.labelKey)}
@@ -639,12 +568,14 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
             </div>
           </div>
           <HourlyTrafficChart
-            requests={hourly.requests}
-            tokens={hourly.tokens}
-            labels={hourly.labels}
-            labelStep={windowHours > 24 ? 8 : 4}
-            selected={selectedBucket}
-            onSelect={setSelectedBucket}
+            key={detail ? `detail-${selectedHour}` : "overview"}
+            requests={detail?.requests ?? hourly.requests}
+            tokens={detail?.tokens ?? hourly.tokens}
+            labels={detail?.labels ?? hourly.labels}
+            height={detail ? 218 : 168}
+            labelStep={detail ? 1 : windowHours > 24 ? 8 : 4}
+            zoomed={detail != null}
+            onSelect={detail ? undefined : setSelectedHour}
           />
           <ResultDistribution
             ok={breakdown.ok}
@@ -652,70 +583,9 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
             serverError={breakdown.serverError}
             other={breakdown.other}
           />
-          {bucketDetail ? (
-            <div className="bucket-detail">
-              <div className="bucket-detail-head">
-                <strong>{bucketDetail.label}</strong>
-                <span className="bucket-detail-stats">
-                  {t("dashboard.bucketStats", {
-                    req: bucketDetail.requests,
-                    tok: formatTokens(bucketDetail.tok),
-                    cache: formatTokens(bucketDetail.cacheRead),
-                  })}
-                </span>
-                <Button
-                  variant="quiet"
-                  icon={<X size={14} />}
-                  onClick={() => setSelectedBucket(null)}
-                >
-                  {t("common.close")}
-                </Button>
-              </div>
-              {bucketDetail.models.length === 0 ? (
-                <p className="dashboard-empty">{t("dashboard.bucketEmpty")}</p>
-              ) : (
-                <ul className="model-rank">
-                  {bucketDetail.models.map((m) => (
-                    <li key={m.model}>
-                      <Link
-                        className="model-rank-name"
-                        to={`/models?model=${encodeURIComponent(m.model)}`}
-                        title={m.model}
-                      >
-                        {m.model}
-                      </Link>
-                      <span className="model-rank-track">
-                        <span
-                          className="model-rank-fill"
-                          style={{
-                            width: `${(m.requests / bucketDetail.maxReq) * 100}%`,
-                          }}
-                        />
-                      </span>
-                      <span className="model-rank-meta">
-                        <strong>{m.requests}</strong>
-                        <small>{t("dashboard.colRequests")}</small>
-                        <i>·</i>
-                        <strong>{formatTokens(m.tokens)}</strong>
-                        <small>{t("dashboard.colTokens")}</small>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="bucket-detail-meta">
-                <span className="badge badge-ok">
-                  {t("dashboard.resultOk")} {bucketDetail.ok}
-                </span>
-                <span className="badge badge-danger">
-                  {t("dashboard.resultServerError")} {bucketDetail.fail}
-                </span>
-              </div>
-            </div>
-          ) : null}
         </Panel>
 
-        <div className="dashboard-grid">
+        <div className="dashboard-grid dashboard-overview-grid">
           <Panel className="dashboard-panel dashboard-health">
             <div className="panel-header">
               <Boxes size={15} />
@@ -727,8 +597,8 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
                 })}
               </span>
             </div>
-            <ul className="dashboard-list">
-              {(channels.data ?? []).slice(0, 8).map((c) => {
+          <ul className="dashboard-list">
+            {(channels.data ?? []).map((c) => {
                 const health = channelHealthState(c);
                 const tone =
                   health === "healthy"
@@ -771,94 +641,7 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
             </ul>
           </Panel>
 
-          <Panel className="dashboard-panel dashboard-activity">
-            <div className="panel-header">
-              <Cpu size={15} />
-              <strong>{t("dashboard.activity24h")}</strong>
-              <span className="panel-muted">
-                {t("dashboard.recentRequests")}
-              </span>
-            </div>
-            {recent.length === 0 ? (
-              <p className="dashboard-empty">{t("dashboard.noActivity")}</p>
-            ) : (
-              <ul className="dashboard-list">
-                {recent.slice(0, 10).map((row: UsageRecord) => (
-                  <li key={row.id}>
-                    <span className="dashboard-model">{row.model}</span>
-                    <span className="dashboard-meta">
-                      <span className="mono-value">
-                        {formatTokens(row.total_tokens ?? 0)}
-                      </span>
-                      <span className="badge badge-neutral">{row.status}</span>
-                    </span>
-                    <span className="dashboard-time">
-                      {relativeTime(row.created_at, t)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-        </div>
-
-        <div className="dashboard-grid">
-          <Panel className="dashboard-panel">
-            <div className="panel-header">
-              <TrendingUp size={15} />
-              <strong>{t("dashboard.topModels")}</strong>
-              <span className="panel-muted">
-                {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
-              </span>
-            </div>
-            {topModels.length === 0 ? (
-              <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
-            ) : (
-              <ul className="model-rank">
-                {topModels.map((m) => (
-                  <li key={m.model}>
-                    <Link
-                      className="model-rank-name"
-                      to={`/models?model=${encodeURIComponent(m.model)}`}
-                      title={m.model}
-                    >
-                      {m.model}
-                    </Link>
-                    <span className="model-rank-track">
-                      <span
-                        className="model-rank-fill"
-                        style={{
-                          width: `${(m.requests / maxModelRequests) * 100}%`,
-                        }}
-                      />
-                    </span>
-                    <span className="model-rank-meta">
-                      <strong>{m.requests}</strong>
-                      <small>{t("dashboard.colRequests")}</small>
-                      <i>·</i>
-                      <strong>{formatTokens(m.tokens)}</strong>
-                      <small>{t("dashboard.colTokens")}</small>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
-          {balanceChart ? (
-            <Panel className="dashboard-panel">
-              <div className="panel-header">
-                <Wallet size={15} />
-                <strong>{t("dashboard.balanceTrend")}</strong>
-                <span className="panel-muted">
-                  {t("dashboard.balanceTrendHint")}
-                </span>
-              </div>
-              <BalanceChart data={balanceChart} />
-            </Panel>
-          ) : null}
-
-          <Panel className="dashboard-panel">
+          <Panel className="dashboard-panel dashboard-recent-logs">
             <div className="panel-header">
               <ScrollText size={15} />
               <strong>{t("dashboard.recentLogs")}</strong>
@@ -866,35 +649,112 @@ function BalanceChart({ data }: { data: { series: Array<{ channelId: number; nam
                 {t("dashboard.cost", { n: recentCost.toFixed(6) })}
               </span>
             </div>
-          {recentLogs.length === 0 ? (
-            <p className="dashboard-empty">{t("dashboard.noLogs")}</p>
-          ) : (
-            <ul className="dashboard-list">
-              {recentLogs.map((log: ProxyLog) => {
-                const tone = statusTone(log.status);
-                return (
-                  <li key={log.id}>
-                    <Link
-                      className="dashboard-model"
-                      to={`/models?model=${encodeURIComponent(log.model)}`}
-                    >
-                      {log.model}
-                      {log.route_id ? ` #${log.route_id}` : ""}
-                    </Link>
-                    <span className="dashboard-meta">
-                      <span className={`badge badge-${tone}`}>
-                        {log.status}
+            {recentLogs.length === 0 ? (
+              <p className="dashboard-empty">{t("dashboard.noLogs")}</p>
+            ) : (
+              <ul className="dashboard-list">
+                {recentLogs.map((log: ProxyLog) => {
+                  const tone = statusTone(log.status);
+                  return (
+                    <li key={log.id}>
+                      <Link
+                        className="dashboard-model"
+                        to={`/models?model=${encodeURIComponent(log.model)}`}
+                      >
+                        {log.model}
+                        {log.route_id ? ` #${log.route_id}` : ""}
+                      </Link>
+                      <span className="dashboard-meta">
+                        <span className={`badge badge-${tone}`}>
+                          {log.status}
+                        </span>
+                        <span className="mono-value">{log.latency_ms}ms</span>
                       </span>
-                      <span className="mono-value">{log.latency_ms}ms</span>
-                    </span>
-                    <span className="dashboard-time">
-                      {relativeTime(log.created_at, t)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                      <span className="dashboard-time">
+                        {relativeTime(log.created_at, t)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
+        </div>
+
+        <div className="dashboard-grid dashboard-usage-grid">
+          <Panel className="dashboard-panel dashboard-usage-activity">
+            <div className="panel-header">
+              <TrendingUp size={15} />
+              <strong>{t("dashboard.topModels")}</strong>
+              <span className="panel-muted">
+                {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
+              </span>
+            </div>
+            <div className="dashboard-usage-activity-body">
+              <section className="dashboard-subpanel">
+                {topModels.length === 0 ? (
+                  <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
+                ) : (
+                  <ul className="model-rank">
+                    {topModels.map((m) => (
+                      <li key={m.model}>
+                        <Link
+                          className="model-rank-name"
+                          to={`/models?model=${encodeURIComponent(m.model)}`}
+                          title={m.model}
+                        >
+                          {m.model}
+                        </Link>
+                        <span className="model-rank-track">
+                          <span
+                            className="model-rank-fill"
+                            style={{
+                              width: `${(m.requests / maxModelRequests) * 100}%`,
+                            }}
+                          />
+                        </span>
+                        <span className="model-rank-meta">
+                          <strong>{m.requests}</strong>
+                          <small>{t("dashboard.colRequests")}</small>
+                          <i>·</i>
+                          <strong>{formatTokens(m.tokens)}</strong>
+                          <small>{t("dashboard.colTokens")}</small>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+              <section className="dashboard-subpanel dashboard-activity-subpanel">
+                <div className="dashboard-subpanel-head">
+                  <Cpu size={14} />
+                  <strong>{t("dashboard.activity24h")}</strong>
+                  <span className="panel-muted">
+                    {t("dashboard.recentRequests")}
+                  </span>
+                </div>
+                {recent.length === 0 ? (
+                  <p className="dashboard-empty">{t("dashboard.noActivity")}</p>
+                ) : (
+                  <ul className="dashboard-list">
+                    {recent.slice(0, 10).map((row: UsageRecord) => (
+                      <li key={row.id}>
+                        <span className="dashboard-model">{row.model}</span>
+                        <span className="dashboard-meta">
+                          <span className="mono-value">
+                            {formatTokens(row.total_tokens ?? 0)}
+                          </span>
+                          <span className="badge badge-neutral">{row.status}</span>
+                        </span>
+                        <span className="dashboard-time">
+                          {relativeTime(row.created_at, t)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </div>
           </Panel>
         </div>
       </div>

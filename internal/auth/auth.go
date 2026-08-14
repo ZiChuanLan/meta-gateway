@@ -3,13 +3,16 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -206,7 +209,16 @@ func HasScope(granted []string, required string) bool {
 // AdminMiddleware returns an HTTP middleware that requires a valid admin Bearer token.
 // tokens may contain multiple rotation candidates; comparison is length-safe and
 // always walks the full candidate set to reduce timing leakage.
+// A signed session token (see SignSessionToken) is accepted in place of a raw
+// token when verifySession is non-nil.
 func AdminMiddleware(tokens ...string) func(http.Handler) http.Handler {
+	return AdminMiddlewareWithSession(tokens, nil)
+}
+
+// AdminMiddlewareWithSession is AdminMiddleware with optional session-token
+// verification: Bearer values starting with SessionPrefix are validated by
+// verifySession instead of the raw candidate list.
+func AdminMiddlewareWithSession(tokens []string, verifySession func(string) bool) func(http.Handler) http.Handler {
 	candidates := make([]string, 0, len(tokens))
 	for _, token := range tokens {
 		token = strings.TrimSpace(token)
@@ -217,13 +229,66 @@ func AdminMiddleware(tokens ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, err := extractBearer(r)
-			if err != nil || !secureCompareAny(token, candidates) {
+			if err != nil {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			if !ValidateAdminToken(token, candidates, verifySession) {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// ValidateAdminToken checks a bearer token against the raw candidate list,
+// falling back to session verification for signed session tokens. Exported so
+// endpoints outside the admin middleware chain (e.g. the sidecar plugin proxy,
+// which must accept ?t= for iframe embedding) reuse the same policy.
+func ValidateAdminToken(token string, candidates []string, verifySession func(string) bool) bool {
+	if strings.HasPrefix(token, SessionPrefix) && verifySession != nil && verifySession(token) {
+		return true
+	}
+	return secureCompareAny(token, candidates)
+}
+
+// SessionPrefix marks signed admin session tokens (login after TOTP).
+const SessionPrefix = "mg-sess."
+
+// SignSessionToken issues a short-lived signed admin session token for a raw
+// admin token holder who completed the TOTP step. The token is
+// "mg-sess.<exp_unix>.<base64url(hmac)>"; expiry is embedded in the payload.
+func SignSessionToken(masterKey []byte, ttl time.Duration) (string, error) {
+	exp := time.Now().Add(ttl).Unix()
+	payload := fmt.Sprintf("%d", exp)
+	mac := hmac.New(sha256.New, masterKey)
+	mac.Write([]byte("admin-session:" + payload))
+	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return SessionPrefix + payload + "." + sig, nil
+}
+
+// VerifySessionToken validates a signed admin session token and checks expiry.
+func VerifySessionToken(masterKey []byte, token string) bool {
+	if !strings.HasPrefix(token, SessionPrefix) {
+		return false
+	}
+	rest := strings.TrimPrefix(token, SessionPrefix)
+	payload, sig, ok := strings.Cut(rest, ".")
+	if !ok || payload == "" || sig == "" {
+		return false
+	}
+	expected := hmac.New(sha256.New, masterKey)
+	expected.Write([]byte("admin-session:" + payload))
+	sigBytes, err := base64.RawURLEncoding.DecodeString(sig)
+	if err != nil || !hmac.Equal(expected.Sum(nil), sigBytes) {
+		return false
+	}
+	exp, err := strconv.ParseInt(payload, 10, 64)
+	if err != nil || exp < time.Now().Unix() {
+		return false
+	}
+	return true
 }
 
 // DownstreamAuth authenticates /v1/* requests against downstream_keys.
@@ -318,6 +383,12 @@ func NewToken() (hash, raw string, err error) {
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
+}
+
+// ValidAdminToken reports whether the presented token matches any candidate
+// (exported for the login exchange, which runs outside the middleware).
+func ValidAdminToken(presented string, candidates []string) bool {
+	return secureCompareAny(strings.TrimSpace(presented), candidates)
 }
 
 func extractBearer(r *http.Request) (string, error) {

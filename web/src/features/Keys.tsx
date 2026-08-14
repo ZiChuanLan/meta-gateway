@@ -1,5 +1,5 @@
-import { Copy, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Copy, KeyRound, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -28,6 +28,105 @@ import {
   StatusBadge,
   formatDate,
 } from "../components/ui";
+
+// Redemption code manager: mint quota vouchers, copy them, void unused ones.
+function RedemptionDialog({ onClose }: { onClose: () => void }) {
+  const { client } = useSession();
+  const service = api(client!);
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const [count, setCount] = useState(1);
+  const [quota, setQuota] = useState(1000000);
+  const [minted, setMinted] = useState<Array<{ id: number; code: string }>>([]);
+  const query = useQuery({
+    queryKey: ["redemption-codes"],
+    queryFn: ({ signal }) => service.listRedemptionCodes(signal),
+  });
+  const mint = () =>
+    service
+      .createRedemptionCodes({ count, quota_tokens: quota })
+      .then((res) => {
+        setMinted(res.items);
+        queryClient.invalidateQueries({ queryKey: ["redemption-codes"] });
+      });
+  const voidCode = (id: number) =>
+    service.deleteRedemptionCode(id).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["redemption-codes"] });
+    });
+  const items = query.data?.items ?? [];
+  return (
+    <Dialog title={t("keys.redemptionTitle")} onClose={onClose}>
+      <div className="redemption-mint">
+        <Field label={t("keys.redemptionCount")}>
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={count}
+            onChange={(e) => setCount(Number(e.target.value) || 1)}
+          />
+        </Field>
+        <Field label={t("keys.redemptionQuota")}>
+          <input
+            type="number"
+            min={1}
+            value={quota}
+            onChange={(e) => setQuota(Number(e.target.value) || 0)}
+          />
+        </Field>
+        <Button variant="primary" onClick={() => void mint()}>
+          {t("keys.redemptionMint")}
+        </Button>
+      </div>
+      {minted.length ? (
+        <div className="redemption-minted">
+          {minted.map((m) => (
+            <div key={m.id} className="redemption-code-row">
+              <code>{m.code}</code>
+              <button
+                type="button"
+                className="redemption-copy"
+                onClick={() => {
+                  void navigator.clipboard.writeText(m.code);
+                }}
+              >
+                {t("keys.redemptionCopy")}
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="redemption-list">
+        <strong>{t("keys.redemptionList")}</strong>
+        {items.length === 0 ? (
+          <p className="is-quiet">{t("keys.redemptionEmpty")}</p>
+        ) : (
+          items.slice(0, 50).map((c) => (
+            <div key={c.id} className="redemption-list-row">
+              <code className={c.redeemed_by_key_id ? "is-used" : ""}>
+                {c.code}
+              </code>
+              <span>{formatTokens(c.quota_tokens)}</span>
+              {c.redeemed_by_key_id ? (
+                <span className="is-quiet">
+                  {t("keys.redemptionUsed")} · #{c.redeemed_by_key_id}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="redemption-void"
+                  onClick={() => void voidCode(c.id)}
+                >
+                  {t("keys.redemptionVoid")}
+                </button>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </Dialog>
+  );
+}
 
 function formatTokens(value?: number) {
   if (value == null || Number.isNaN(value)) return "0";
@@ -73,8 +172,9 @@ export function Keys() {
     queryKey: ["usage-summary"],
     queryFn: ({ signal }) => service.usageSummary(undefined, signal),
   });
-  const [add, setAdd] = useState(false);
-  const [edit, setEdit] = useState<DownstreamKey | null>(null);
+	const [add, setAdd] = useState(false);
+	const [edit, setEdit] = useState<DownstreamKey | null>(null);
+	const [redemption, setRedemption] = useState(false);
   const [created, setCreated] = useState<CreatedDownstreamKey | null>(null);
   const [remove, setRemove] = useState<number | null>(null);
   const openedCreateFromQuery = useRef(false);
@@ -153,11 +253,20 @@ export function Keys() {
       kicker={t("keys.kicker")}
       title={t("keys.title")}
       description={t("keys.description")}
-      actions={
-        <Button icon={<Plus size={16} />} onClick={openCreate}>
-          {t("keys.create")}
-        </Button>
-      }
+	  actions={
+		<>
+		  <Button icon={<Plus size={16} />} onClick={openCreate}>
+			{t("keys.create")}
+		  </Button>
+		  <Button
+			variant="secondary"
+			icon={<Ticket size={15} />}
+			onClick={() => setRedemption(true)}
+		  >
+			{t("keys.redemption")}
+		  </Button>
+		</>
+	  }
     >
       <div className="ops-canvas">
         <StatGrid
@@ -280,7 +389,8 @@ export function Keys() {
         </Panel>
       </div>
 
-      {add && (
+	{redemption && <RedemptionDialog onClose={() => setRedemption(false)} />}
+	{add && (
         <KeyDialog
           mode="create"
           pending={create.isPending}
@@ -290,7 +400,7 @@ export function Keys() {
           allModels={allModels}
         />
       )}
-      {edit && (
+	{edit && (
         <KeyDialog
           mode="edit"
           initial={edit}
@@ -357,6 +467,7 @@ type KeyFormValues = {
   quota_total_tokens?: number;
   price_prompt_per_1k?: number;
   price_completion_per_1k?: number;
+  price_cache_per_1k?: number;
   model_allowlist?: string;
   model_denylist?: string;
   expires_at?: string;
@@ -405,13 +516,20 @@ function KeyDialog({
         : "",
     ),
   );
-  const [priceCompletion, setPriceCompletion] = useState(
-    String(
-      initial?.price_completion_per_1k && initial.price_completion_per_1k > 0
-        ? initial.price_completion_per_1k
-        : "",
-    ),
-  );
+const [priceCompletion, setPriceCompletion] = useState(
+	String(
+		initial?.price_completion_per_1k && initial.price_completion_per_1k > 0
+			? initial.price_completion_per_1k
+			: "",
+	),
+);
+const [priceCache, setPriceCache] = useState(
+	String(
+		initial?.price_cache_per_1k && initial.price_cache_per_1k > 0
+			? initial.price_cache_per_1k
+			: "",
+	),
+);
   const splitModels = (raw?: string) =>
     (raw ?? "")
       .split(",")
@@ -464,7 +582,8 @@ function KeyDialog({
                     : undefined,
                 quota_total_tokens: parseOptionalNumber(quotaTotal),
                 price_prompt_per_1k: parseOptionalNumber(pricePrompt),
-                price_completion_per_1k: parseOptionalNumber(priceCompletion),
+	price_completion_per_1k: parseOptionalNumber(priceCompletion),
+	price_cache_per_1k: parseOptionalNumber(priceCache),
                 model_allowlist: allowlist.join(","),
                 model_denylist: denylist.join(","),
                 expires_at: expiresAt.trim() || undefined,
@@ -513,16 +632,26 @@ function KeyDialog({
             placeholder="0"
           />
         </Field>
-        <Field label={t("keys.priceCompletion")}>
-          <input
-            type="number"
-            min={0}
-            step="0.0001"
-            value={priceCompletion}
-            onChange={(e) => setPriceCompletion(e.target.value)}
-            placeholder="0"
-          />
-        </Field>
+		<Field label={t("keys.priceCompletion")}>
+			<input
+				type="number"
+				min={0}
+				step="0.0001"
+				value={priceCompletion}
+				onChange={(e) => setPriceCompletion(e.target.value)}
+				placeholder="0"
+			/>
+		</Field>
+		<Field label={t("keys.priceCache")} hint={t("keys.priceCacheHint")}>
+			<input
+				type="number"
+				min={0}
+				step="0.0001"
+				value={priceCache}
+				onChange={(e) => setPriceCache(e.target.value)}
+				placeholder="0"
+			/>
+		</Field>
       </div>
       <Field
         label={t("keys.modelAllowlist")}

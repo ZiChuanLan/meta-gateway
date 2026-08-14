@@ -11,6 +11,8 @@ web/coverage/
 /server
 .pi-subagents/
 .tools/
+.pi-glla/
+.playwright-mcp/
 *.exe
 
 # Accidental root lockfile (frontend lock lives under web/)

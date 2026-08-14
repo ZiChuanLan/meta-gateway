@@ -34,6 +34,7 @@ export function HourlyTrafficChart({
 	selected = null,
 	onSelect,
 	labelStep = 4,
+	zoomed = false,
 }: {
 	/** One value per hour, oldest → newest, aligned to local wall-clock hours. */
 	requests: number[];
@@ -48,6 +49,8 @@ export function HourlyTrafficChart({
 	onSelect?: (index: number) => void;
 	/** Label one tick every N buckets (4 for 24h, 8 for 48h). */
 	labelStep?: number;
+	/** Render the drill-down view with a zoom transition. */
+	zoomed?: boolean;
 }) {
 	const [hot, setHot] = useState<number | null>(null);
 	const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -115,7 +118,7 @@ export function HourlyTrafficChart({
 	};
 
 	return (
-		<div className="chart-block">
+		<div className={`chart-block${zoomed ? " is-zoomed" : ""}`}>
 			{hasData ? (
 				<div className="chart-legend">
 					<span className="chart-legend-item">
@@ -130,7 +133,7 @@ export function HourlyTrafficChart({
 			) : null}
 			<div
 				ref={wrapRef}
-				className="chart-wrap"
+				className={`chart-wrap${zoomed ? " is-zoomed" : ""}`}
 				style={{ height }}
 				onMouseLeave={() => setHot(null)}
 				onTouchStart={(e) => {

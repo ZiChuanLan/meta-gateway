@@ -21,6 +21,7 @@ import (
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/outbound"
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
@@ -31,6 +32,15 @@ import (
 var (
 	ErrCredential       = errors.New("proxy: upstream credential unavailable")
 	ErrPreferredChannel = errors.New("proxy: preferred channel not eligible")
+	// ErrModelBlacklisted marks a request whose only remaining candidate
+	// reported this model as not found; the relay surfaces it as 503.
+	ErrModelBlacklisted = errors.New("proxy: model blacklisted on channel")
+	// ErrPayloadFiltered marks a request rejected by a channel payload rule's
+	// filter action; the relay surfaces it as 403 with the rule reason.
+	ErrPayloadFiltered = errors.New("proxy: request filtered by payload rule")
+	// ErrGuardRejected marks a request refused by a sensitive-prompt guard
+	// rule; the relay surfaces it as 400 with the policy message.
+	ErrGuardRejected = errors.New("proxy: request rejected by prompt guard")
 )
 
 type Selector interface {
@@ -41,6 +51,15 @@ type Selector interface {
 	SetConcurrencyAware(enabled bool, limit int, provider routing.ConcurrencyProvider)
 }
 
+// CredentialRefresher re-establishes an expired session/access-token
+// credential (the check-in machinery). The proxy calls it once per request
+// when an upstream answers 401 and the channel's credential kind supports
+// refreshing, then replays the request with the refreshed credential.
+type CredentialRefresher interface {
+	// RefreshForRelay performs one refresh pass; ok reports whether the
+	// credential was re-established (checkin StatusSuccess).
+	RefreshForRelay(ctx context.Context, credentialID int64) (ok bool, err error)
+}
 type Relay interface {
 	ChatCompletionsContext(ctx context.Context, upstreamURL, apiKey string, body []byte, stream bool) *relay.Result
 	ForwardContext(ctx context.Context, method, upstreamURL, apiKey string, body []byte) *relay.Result
@@ -95,6 +114,11 @@ type Service struct {
 	concurrencyLimit atomic.Int64
 	// notifier delivers operational webhooks (auto-disable/recovery).
 	notifier *webhook.Notifier
+	// credentialRefresher re-establishes expired session credentials on 401
+	// (see CredentialRefresher). nil disables the refresh-retry path.
+	credentialRefresher CredentialRefresher
+	// gate is the hard per-channel concurrency limiter (FIFO wait queue).
+	gate *ChannelGate
 	// nonStreamTimeout caps a non-streaming upstream attempt (request + body
 	// read); 0 uses the package default nonStreamRequestTimeout. Streaming
 	// requests are exempt. Injectable for tests.
@@ -128,6 +152,10 @@ type Request struct {
 	// or "anthropic" (native /v1/messages clients). Non-anthropic channels
 	// translate the request/response when "anthropic" is set.
 	DownstreamProtocol string
+	// Headers carries the client request headers (canonical keys) so payload
+	// rules can match on header conditions. Nil when the relay did not supply
+	// them (admin try / internal callers) — header rules simply won't fire.
+	Headers map[string]string
 	// PreferChannelID pins upstream selection (admin try). Zero means normal routing.
 	PreferChannelID int64
 	// DownstreamKeyID is the authenticated client key, used for usage metering.
@@ -141,6 +169,9 @@ type Request struct {
 	// ReasoningEffort is the client-requested OpenAI-style reasoning effort
 	// (low / medium / high / max / xhigh) for observability logging.
 	ReasoningEffort string
+	// MappedReasoningEffort records a capability downgrade ("max→high") applied
+	// for the serving channel. Empty = unchanged.
+	MappedReasoningEffort string
 	// PromptTokens/CompletionTokens/TotalTokens optional post-response accounting.
 	PromptTokens     int
 	CompletionTokens int
@@ -173,6 +204,7 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 	service.keyPoolRotation.Store(true)
 	service.keyFailThreshold.Store(5)
 	service.cooldownNs.Store(int64(cooldown))
+	service.gate = NewChannelGate()
 	return service
 }
 
@@ -219,6 +251,12 @@ func (s *Service) SetStableFirstPromote(n int) {
 func (s *Service) SetWebhookNotifier(notifier *webhook.Notifier) {
 	s.notifier = notifier
 }
+// SetCredentialRefresher wires the 401 session-refresh hook (check-in
+// service). Optional: without it, 401s follow the normal failover path.
+func (s *Service) SetCredentialRefresher(refresher CredentialRefresher) {
+	s.credentialRefresher = refresher
+}
+
 func (s *Service) SetConcurrencyAware(enabled bool, limit int) {
 	s.concurrencyLimit.Store(int64(limit))
 	s.concurrencyAware.Store(enabled && limit > 0)
@@ -451,7 +489,54 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 	var retryOverride *int
 	var channelRetryOverride *int
 	for attempt := 0; attempt <= maxAttempts; attempt++ {
+		// refreshed tracks whether a 401 triggered a credential refresh for
+		// this request; a successful replay is logged as refresh_retry.
+		refreshed := false
+		// monitorSkipped is set when an ignore_monitor error-passthrough rule
+		// fired; the breaker/cooldown bookkeeping is skipped for that attempt.
+		monitorSkipped := false
+		// Sensitive prompt guards run before candidate selection: a reject
+		// refuses the request outright, an exclude removes the listed
+		// channels from this request's candidates, and a mask rewrites the
+		// body once (all candidates see the masked body).
+		if guardRules, gErr := s.db.PromptGuard.ListEnabled(); gErr == nil && len(guardRules) > 0 && req.OpenAIPath == "chat/completions" {
+			guarded, hit, err := ApplyPromptGuards(req.Body, guardRules)
+			if err != nil {
+				log.Printf("proxy: prompt guard eval model=%s: %v", req.Model, err)
+			} else if hit != nil {
+				switch hit.Action {
+				case "reject":
+					result := &relay.Result{
+						StatusCode: http.StatusBadRequest,
+						Err:        fmt.Errorf("%w: %s", ErrGuardRejected, hit.Message),
+					}
+					log.Printf("proxy: prompt guard %q rejected request (request_id=%s)", hit.Rule, req.RequestID)
+					return result, nil
+				case "exclude":
+					for _, id := range hit.Exclude {
+						excluded[id] = struct{}{}
+					}
+					log.Printf("proxy: prompt guard %q excludes channels %v for request (request_id=%s)", hit.Rule, hit.Exclude, req.RequestID)
+				default: // mask
+					req.Body = guarded
+					log.Printf("proxy: prompt guard %q masked request body (request_id=%s)", hit.Rule, req.RequestID)
+				}
+			}
+		}
 		decision, err := s.selector.SelectSticky(ctx, req.Model, excluded, sessionKey)
+		// Persist a decision snapshot for audit: the full explanation
+		// (candidates, scores, reasons, sticky/stable-first state) survives
+		// even when the request later fails or the UI is long gone. Errors
+		// carry whatever partial explanation the selector produced.
+		if payload, marshalErr := json.Marshal(decision.Explanation); marshalErr == nil && len(payload) > 0 {
+			selectedID := int64(0)
+			if decision.Selected.Channel.ID > 0 {
+				selectedID = decision.Selected.Channel.ID
+			}
+			if snapErr := s.db.InsertDecisionSnapshot(req.RequestID, req.Model, decision.RouteID, selectedID, payload, s.now()); snapErr != nil {
+				log.Printf("proxy: decision snapshot request_id=%s: %v", req.RequestID, snapErr)
+			}
+		}
 		if err != nil {
 			if last != nil {
 				return last, lastMeta
@@ -476,6 +561,23 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				return &relay.Result{Err: ErrPreferredChannel}, nil
 			}
 			candidate = pinned
+		}
+		// Model-not-found blacklist: skip a channel that reported this model as
+		// unknown (permanent condition) before spending an attempt on it.
+		if blocked, err := s.db.IsModelBlocked(candidate.Channel.ID, req.Model); err == nil && blocked {
+			excluded[candidate.Channel.ID] = struct{}{}
+			if last != nil && last.Body != nil {
+				_ = last.Body.Close()
+			}
+			last = preserve(&relay.Result{StatusCode: http.StatusServiceUnavailable, Err: fmt.Errorf("%w: model %s on channel %d", ErrModelBlacklisted, req.Model, candidate.Channel.ID)})
+			lastMeta = &AttemptMeta{
+				ChannelID:   candidate.Channel.ID,
+				ChannelName: candidate.Channel.Name,
+				MemberID:    candidate.Member.ID,
+				Priority:    candidate.Member.Priority,
+				Weight:      candidate.Member.Weight,
+			}
+			continue
 		}
 		// Circuit breaker: an open channel × model is skipped entirely (weight
 		// 0) until its probe window allows a single probe request through.
@@ -514,6 +616,29 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			Priority:    candidate.Member.Priority,
 			Weight:      candidate.Member.Weight,
 		}
+		gateHeld := false
+		var gateGen uint64
+		releaseGate := func() {
+			if !gateHeld {
+				return
+			}
+			s.gate.Release(candidate.Channel.ID, gateGen)
+			gateHeld = false
+		}
+		defer releaseGate()
+		// Hard per-channel concurrency ceiling: the slot is acquired ONCE per
+		// channel attempt — outside the key/retry loops so a retryable failure
+		// can never deadlock against the goroutine's own slot — and held until
+		// the channel attempt ends (or, on success, handed to the response
+		// body so concurrent streams are genuinely capped).
+		if maxConc := candidate.Channel.MaxConcurrent; maxConc > 0 {
+			acquiredGen, gateErr := s.gate.Acquire(ctx, candidate.Channel.ID, maxConc)
+			if gateErr != nil {
+				return &relay.Result{Err: gateErr}, meta
+			}
+			gateGen = acquiredGen
+			gateHeld = true
+		}
 		probeReserved := false
 		probeEnded := false
 		endProbe := func() {
@@ -535,6 +660,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				})
 				lastMeta = meta
 				releaseAttempt()
+				releaseGate()
 				continue
 			}
 			probeReserved = true
@@ -544,24 +670,28 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		var retryable bool
 		adapter := s.resolveForward(candidate.Channel)
 
-		// Downstream Anthropic clients (/v1/messages): compose the upstream
-		// adapter with the Anthropic pivot segment unless the channel is
-		// Anthropic-native (verbatim passthrough via the adapter's "messages"
-		// path). Composition keeps the OpenAI pivot between client protocol and
-		// upstream platform — no N×M conversion matrix.
+		// Downstream Anthropic clients (/v1/messages): prefer the registered
+		// N×M translation for (anthropic → upstream family); when the pair is
+		// not registered, fall back to composing the upstream adapter with the
+		// Anthropic pivot segment (keeps the OpenAI pivot between protocols).
 		downstreamAnthropic := strings.EqualFold(req.DownstreamProtocol, "anthropic")
+		var registryTranslation *adapters.Translation
 		if downstreamAnthropic && req.OpenAIPath == "messages" && adapter.Name() != "anthropic" {
-			composed := adapters.ComposeDownstream(adapter, "anthropic")
-			if c, ok := composed.(*adapters.ComposeForwardAdapter); ok {
-				prompt := strings.TrimSpace(candidate.Channel.SystemPrompt)
-				c.OnOpenAI = func(openaiBody []byte) ([]byte, error) {
-					if prompt != "" {
-						return injectSystemPrompt(openaiBody, prompt), nil
+			if tr, ok := s.registry.Translations.Lookup("anthropic", adapters.CanonicalFamily(adapter.Name())); ok && tr.Body != nil {
+				registryTranslation = &tr
+			} else {
+				composed := adapters.ComposeDownstream(adapter, "anthropic")
+				if c, ok := composed.(*adapters.ComposeForwardAdapter); ok {
+					prompt := strings.TrimSpace(candidate.Channel.SystemPrompt)
+					c.OnOpenAI = func(openaiBody []byte) ([]byte, error) {
+						if prompt != "" {
+							return injectSystemPrompt(openaiBody, prompt), nil
+						}
+						return openaiBody, nil
 					}
-					return openaiBody, nil
 				}
+				adapter = composed
 			}
-			adapter = composed
 		}
 
 		// Channel-scoped model aliases: when the matched route carries a
@@ -578,10 +708,46 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// Channel-level system prompt injection (OpenAI-format chat bodies
 			// only; translated requests are injected inside the composed
 			// adapter at the pivot step).
-			if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && effectivePath == "chat/completions" {
-				requestSource = injectSystemPrompt(requestSource, prompt)
-			}
+		if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && effectivePath == "chat/completions" {
+			requestSource = injectSystemPrompt(requestSource, prompt)
 		}
+	}
+	// Channel capability-aware reasoning effort downgrade: when the channel
+	// declares a max_reasoning_effort and the client asked for more, rewrite
+	// the body so the request succeeds instead of burning a failover round
+	// (e.g. gateways that reject reasoning_effort=max). The original value is
+	// kept in the log; the mapping is recorded as "max→high".
+	mappedReasoning := ""
+	if maxEffort := strings.TrimSpace(candidate.Channel.MaxReasoningEffort); maxEffort != "" {
+		if downgraded, note := downgradeReasoningEffort(requestSource, maxEffort); downgraded != nil {
+			requestSource = downgraded
+			mappedReasoning = note
+		}
+	}
+	if mappedReasoning != "" {
+		req.MappedReasoningEffort = mappedReasoning
+	}
+
+	// Channel-level payload rules (body rewrite chain): model/protocol/
+	// header/payload conditions → set/delete/filter actions. A filter
+	// short-circuits with a synthesized 403 so the channel is skipped like
+	// any other local rejection (it is not an upstream health signal).
+	if rulesJSON := strings.TrimSpace(candidate.Channel.PayloadRules); rulesJSON != "" {
+		out, filter, err := ApplyPayloadRules(requestSource, rulesJSON, req.Model, req.DownstreamProtocol, req.Headers)
+		if err != nil {
+			log.Printf("proxy: payload rules channel=%d model=%s: %v", candidate.Channel.ID, req.Model, err)
+		} else if filter != nil {
+			result = &relay.Result{
+				StatusCode: http.StatusForbidden,
+				Err:        fmt.Errorf("%w: %s (rule %q)", ErrPayloadFiltered, filter.Reason, filter.Rule),
+			}
+			category = "payload_filter"
+			s.recordAttempt(req, candidate, attempt+1, result, category, "")
+			return result, meta
+		} else {
+			requestSource = out
+		}
+	}
 
 		upstreamPath, requestBody, translateErr := adapter.TransformRequest(effectivePath, requestSource)
 		if translateErr != nil {
@@ -595,6 +761,29 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 	category = adapterErrorCategory(translateErr)
 		s.recordAttempt(req, candidate, attempt+1, result, category, "")
 		return result, meta
+		}
+		// Registered N×M translation path: the (anthropic → upstream family)
+		// pair exists in the matrix, so translate directly instead of going
+		// through the composed adapter. The translation returns the upstream
+		// body; the response/stream conversion happens via the pair's
+		// Response/Stream modes inside the relay conversion block below.
+		if registryTranslation != nil {
+			toPath, out, tr, ok, trErr := s.registry.Translations.Translate("anthropic", adapters.CanonicalFamily(adapter.Name()), effectivePath, requestSource)
+			if trErr != nil || !ok || tr.Body == nil {
+				result = &relay.Result{
+					StatusCode: http.StatusBadRequest,
+					Err:        fmt.Errorf("proxy: anthropic translation: %w", trErr),
+				}
+				s.recordAttempt(req, candidate, attempt+1, result, "translate", "")
+				return result, meta
+			}
+			// Channel-level system prompt injection happens on the translated
+			// OpenAI-format body (same point as the composed adapter's pivot).
+			if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && toPath == "chat/completions" {
+				out = injectSystemPrompt(out, prompt)
+			}
+			upstreamPath = toPath
+			requestBody = out
 		}
 		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, upstreamPath, adapter)
 		if err != nil {
@@ -625,6 +814,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			lastMeta = meta
 			endProbe()
 			releaseAttempt()
+			releaseGate()
 			continue
 		}
 
@@ -664,10 +854,52 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				fwdCtx, cancel = context.WithTimeout(ctx, timeout)
 				defer cancel()
 			}
+			// Per-channel outbound proxy: an override on the channel routes this
+			// request through it (the transport's proxy hook reads the context).
+			if proxyURL := strings.TrimSpace(candidate.Channel.ProxyURL); proxyURL != "" {
+				fwdCtx = outbound.WithChannelProxy(fwdCtx, proxyURL)
+			}
+			// (gate slot is held at the channel-attempt level, above the retry
+			// loops — see the Acquire/releaseGate pair near the meta setup)
 			result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, upstreamURL, headers, requestBody)
 			// Convert upstream 2xx bodies back to the OpenAI contract.
 			if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
-				if req.Stream {
+				// N×M matrix path: the (anthropic → family) pair's Response/Stream
+				// modes convert upstream output back to the Anthropic contract.
+				if registryTranslation != nil {
+					if req.Stream && registryTranslation.Stream != nil {
+						wrapped, wrapErr := registryTranslation.Stream(effectivePath, result.Body)
+						if wrapErr != nil {
+							_ = result.Body.Close()
+							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
+						} else {
+							result.Body = wrapped
+							if result.Header == nil {
+								result.Header = make(http.Header)
+							}
+							result.Header.Set("Content-Type", "text/event-stream")
+						}
+					} else if !req.Stream && registryTranslation.Response != nil {
+						raw, readErr := io.ReadAll(io.LimitReader(result.Body, 8<<20))
+						_ = result.Body.Close()
+						if readErr != nil {
+							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
+						} else if converted, convErr := registryTranslation.Response(effectivePath, raw); convErr != nil {
+							result = &relay.Result{
+								StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
+								Header:     result.Header,
+								LatencyMs:  result.LatencyMs,
+								Err:        fmt.Errorf("proxy: anthropic response: %w", convErr),
+							}
+						} else {
+							result.Body = io.NopCloser(bytes.NewReader(converted))
+							if result.Header == nil {
+								result.Header = make(http.Header)
+							}
+							result.Header.Set("Content-Type", "application/json")
+						}
+					}
+				} else if req.Stream {
 					// Reshape native/upstream SSE into the downstream contract (the
 					// composed adapter pivots through OpenAI SSE internally).
 					wrapped, wrapErr := adapter.WrapStream(effectivePath, result.Body)
@@ -706,7 +938,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			streamInterrupted := false
 			if req.Stream && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
-				first, peekErr := peekFirstChunk(result.Body)
+				first, peekErr := peekFirstChunkWithTimeout(result.Body, streamFirstByteTimeout)
 				if peekErr != nil {
 					// Upstream answered 200 and then died before emitting any
 					// data. The client has not received a byte yet, so this is a
@@ -743,8 +975,28 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					}
 				}
 			}
-			category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
+		category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
 			localAdapterFailure := isAdapterError(result.Err)
+			// 401 refresh-retry: an expired session/access-token credential is
+			// re-established through the check-in machinery exactly once per
+			// request, then the request is replayed from the first key in the
+			// refreshed pool. A successful replay is logged as refresh_retry.
+			if !refreshed && !localAdapterFailure && result.Err == nil && result.StatusCode == http.StatusUnauthorized && s.credentialRefresher != nil {
+				if s.refreshCredentialAndReplay(ctx, &candidate, &apiKeys) {
+					refreshed = true
+					category = "refresh_retry"
+					// Replay in place with the refreshed credential: swap the
+					// current key for the pool's first key and re-enter the
+					// keyAttempt loop without consuming a retry budget.
+					if len(apiKeys) > 0 {
+						apiKey = apiKeys[0]
+					}
+					if keyAttempt > 0 {
+						keyAttempt--
+					}
+					continue
+				}
+			}
 			if streamInterrupted && !localAdapterFailure {
 				category = "stream_interrupted"
 				retryable = true
@@ -818,6 +1070,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		// Only the last key attempt for this channel is logged at the attempt counter
 		// used for cross-channel retry; intermediate key fails stay on the same attempt.
+		// A successful post-refresh replay keeps the refresh_retry attribution.
+		if refreshed && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
+			category = "refresh_retry"
+		}
 		if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
 			s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
 		}
@@ -869,31 +1125,81 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if stickyStore != nil && sessionKey != "" && req.PreferChannelID == 0 {
 				stickyStore.Bind(sessionKey, candidate.Channel.ID, s.now())
 			}
+			// Hand the gate slot to the response body: the hard ceiling now
+			// covers the full stream lifetime (released when the handler closes
+			// the body), not just the header phase. The relay handler always
+			// closes the body it copies, so non-stream bodies release too.
+			if gateHeld && result.Body != nil {
+				body := result.Body
+				// Direct release (not the guarded releaseGate): the guard is
+				// for the defer/early-exit paths; ownership has moved to the
+				// body wrapper, which fires exactly once via sync.Once.
+				result.Body = &gateBoundBody{ReadCloser: body, release: func() { s.gate.Release(candidate.Channel.ID, gateGen) }}
+				gateHeld = false
+			}
 			return result, meta
 		}
 		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
 			return result, meta
 		}
+		// Configurable error passthrough rules (error_passthrough_rules)
+		// override the default 4xx behavior for ALL 4xx responses — including
+		// retryable ones (429 rate limits are the classic case). Rules are
+		// read live on every request so edits apply instantly.
+		//   passthrough     → return the upstream error, no failover/cooldown
+		//   rewrite         → passthrough with a rewritten status code
+		//   ignore_monitor  → keep failover, skip breaker/cooldown/counters
+		if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {		errorText := modelNotFoundText(result)
+		rule, mErr := s.db.ErrorRule.MatchErrorRule(result.StatusCode, errorText, req.Model, candidate.Channel.ID)
+		if mErr == nil && rule != nil {
+				switch rule.Action {
+				case store.ErrorRulePassthrough, store.ErrorRuleRewrite:
+					if rule.Action == store.ErrorRuleRewrite && rule.RewriteTo >= 100 && rule.RewriteTo <= 599 {
+						result.StatusCode = rule.RewriteTo
+					}
+					category = "error_rule_" + rule.Action
+					s.recordAttempt(req, candidate, attempt+1, result, category, "")
+					log.Printf("proxy: error rule %q passthrough status=%d model=%s channel=%d (request_id=%s)", rule.Name, result.StatusCode, req.Model, candidate.Channel.ID, req.RequestID)
+					return result, meta
+				case store.ErrorRuleIgnoreMonitor:
+					monitorSkipped = true
+					log.Printf("proxy: error rule %q ignore-monitor status=%d model=%s channel=%d (request_id=%s)", rule.Name, result.StatusCode, req.Model, candidate.Channel.ID, req.RequestID)
+				}
+			}
+		}
 		if retryable {
 			// Channel-level breaker: all keys on this channel failed after
 			// their re-sends — one failure per request, not per attempt.
-			if s.breaker != nil && !isAdapterError(result.Err) {
-				s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
+			// ignore_monitor rules skip this bookkeeping entirely.
+			if !monitorSkipped {
+				if s.breaker != nil && !isAdapterError(result.Err) {
+					s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
+				}
+				penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
+				s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
 			}
-			penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
-			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
 			if req.PreferChannelID > 0 {
 				return result, meta
 			}
-		} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
-			// 4xx client error: fail over to the next channel — a different
-			// upstream may accept the same request (channel capabilities are
-			// heterogeneous: one gateway may reject reasoning_effort=max while
-			// another accepts it). Cool the member down so this channel is
-			// skipped for a while, but do NOT count toward the channel's
-			// consecutive-failure tally or auto-disable: the request itself may
-			// be at fault, and counting would let a bad client request take
-			// down every channel via repeated 4xx failover.
+	} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
+		// 4xx client error: fail over to the next channel — a different
+		// upstream may accept the same request (channel capabilities are
+		// heterogeneous: one gateway may reject reasoning_effort=max while
+		// another accepts it). Cool the member down so this channel is
+		// skipped for a while, but do NOT count toward the channel's
+		// consecutive-failure tally or auto-disable: the request itself may
+		// be at fault, and counting would let a bad client request take
+		// down every channel via repeated 4xx failover.
+		if !monitorSkipped {
+			// A model_not_found / unknown-model response is permanent for this
+			// channel × model: blacklist the combination so routing skips it
+			// outright instead of failing over on every request.
+			if isModelNotFoundError(result.StatusCode, modelNotFoundText(result)) {
+				if err := s.db.BlockModel(candidate.Channel.ID, req.Model, category); err != nil {
+					log.Printf("proxy: block model channel=%d model=%s: %v", candidate.Channel.ID, req.Model, err)
+				}
+				log.Printf("proxy: model %s not found on channel %d — blacklisted (request_id=%s)", req.Model, candidate.Channel.ID, req.RequestID)
+			}
 			if s.breaker != nil && !isAdapterError(result.Err) {
 				s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
 			}
@@ -901,22 +1207,26 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
 			}
 			s.observeError(candidate.Channel.ID, req.Model)
-			if req.PreferChannelID > 0 {
-				return result, meta
-			}
-		} else {
+		}
+		if req.PreferChannelID > 0 {
+			return result, meta
+		}
+		goto nextCandidate
+	} else {
 			// Local adapter/configuration errors and non-4xx client errors are
 			// returned directly: the same adapter logic would fail identically
 			// on every channel, so failover cannot help.
 			return result, meta
 		}
 
+	nextCandidate:
 		excluded[candidate.Channel.ID] = struct{}{}
 		if last != nil && last.Body != nil {
 			_ = last.Body.Close()
 		}
 		last = preserve(result)
 		lastMeta = meta
+		releaseGate()
 		if result.Body != nil {
 			_ = result.Body.Close()
 		}
@@ -925,6 +1235,39 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		return last, lastMeta
 	}
 	return &relay.Result{Err: routing.ErrNoEligible}, lastMeta
+}
+
+// refreshCredentialAndReplay re-establishes the channel's session-style
+// credential (kind session/access_token) after an upstream 401, then
+// re-resolves the key pool so the replay uses the refreshed secret. Reports
+// whether the refresh succeeded AND the pool was replaced.
+func (s *Service) refreshCredentialAndReplay(ctx context.Context, candidate *domain.RoutingCandidate, apiKeys *[]string) bool {
+	if candidate == nil || candidate.Channel.CredentialID == nil || *candidate.Channel.CredentialID <= 0 {
+		return false
+	}
+	cred, err := s.db.Credential.GetByID(*candidate.Channel.CredentialID)
+	if err != nil || cred == nil {
+		return false
+	}
+	kind := strings.ToLower(strings.TrimSpace(cred.Kind))
+	if kind != "session" && kind != "access_token" {
+		return false
+	}
+	ok, refreshErr := s.credentialRefresher.RefreshForRelay(ctx, cred.ID)
+	if refreshErr != nil {
+		log.Printf("proxy: 401 refresh credential=%d channel=%d: %v", cred.ID, candidate.Channel.ID, refreshErr)
+		return false
+	}
+	if !ok {
+		return false
+	}
+	freshKeys, err := s.resolveAPIKeyPool(candidate.Channel, "")
+	if err != nil || len(freshKeys) == 0 {
+		return false
+	}
+	*apiKeys = freshKeys
+	log.Printf("proxy: 401 refreshed credential=%d channel=%d, replaying (request_id=%s)", cred.ID, candidate.Channel.ID, "")
+	return true
 }
 
 func pickPreferred(decision routing.Decision, channelID int64) (domain.RoutingCandidate, bool) {
@@ -966,7 +1309,10 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]str
 		if credential.Status != domain.StatusEnabled || len(credential.SecretEnc) == 0 {
 			return
 		}
-		if !strings.EqualFold(credential.Kind, "api_key") {
+		// Bearer-style kinds only: api_key plus session/access_token (the
+		// latter can 401 → refresh-retry through the check-in machinery).
+		kind := strings.ToLower(strings.TrimSpace(credential.Kind))
+		if kind != "api_key" && kind != "session" && kind != "access_token" {
 			return
 		}
 		if !modelAllowedByKey(model, credential.ModelsCSV) {
@@ -1156,15 +1502,65 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
 	return rewritten
 }
 
-func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string) {
-	status := result.StatusCode
+// reasoningEffortLevels is the ordered set of OpenAI-style reasoning effort
+// values understood by the gateway. A client-requested effort beyond a
+// channel's declared max is downgraded to the max at forward time.
+var reasoningEffortLevels = []string{
+	"none", "minimal", "low", "medium", "high", "xhigh", "max",
+}
+
+// downgradeReasoningEffort rewrites a request body's reasoning_effort when it
+// exceeds the channel's declared maximum. Returns the rewritten body and a
+// "from→to" note, or (nil, "") when no downgrade applies (missing field,
+// unknown values, or already at/below the max).
+func downgradeReasoningEffort(body []byte, maxEffort string) ([]byte, string) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, ""
+	}
+	raw, ok := payload["reasoning_effort"]
+	if !ok {
+		return nil, ""
+	}
+	var effort string
+	if err := json.Unmarshal(raw, &effort); err != nil {
+		return nil, ""
+	}
+	effort = strings.ToLower(strings.TrimSpace(effort))
+	maxEffort = strings.ToLower(strings.TrimSpace(maxEffort))
+	if effort == "" || maxEffort == "" || effort == maxEffort {
+		return nil, ""
+	}
+	effortIndex, maxIndex := -1, -1
+	for i, level := range reasoningEffortLevels {
+		if level == effort {
+			effortIndex = i
+		}
+		if level == maxEffort {
+			maxIndex = i
+		}
+	}
+	// Unknown values pass through untouched (never guess); already-at/below max
+	// needs no rewrite.
+	if effortIndex < 0 || maxIndex < 0 || effortIndex <= maxIndex {
+		return nil, ""
+	}
+	payload["reasoning_effort"] = json.RawMessage(fmt.Sprintf("%q", maxEffort))
+	rewritten, err := json.Marshal(payload)
+	if err != nil {
+		return nil, ""
+	}
+	return rewritten, effort + "→" + maxEffort
+}
+
+func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string) {	status := result.StatusCode
 	if status == 0 && result.Err != nil {
 		status = http.StatusBadGateway
 	} else if status == 0 {
 		status = http.StatusOK
 	}
 	errorBrief := ""
-	if result.Err != nil || isRetryableStatus(result.StatusCode) {
+	if result.Err != nil || isRetryableStatus(result.StatusCode) || category == "refresh_retry" {
 		errorBrief = category
 	}
 	_, err := s.db.ProxyLog.Insert(&domain.ProxyLog{
@@ -1183,7 +1579,8 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		Stream:           req.Stream,
 		Path:             req.OpenAIPath,
 		SessionKey:       req.SessionKey,
-		ReasoningEffort:  req.ReasoningEffort,
+	ReasoningEffort:       req.ReasoningEffort,
+	MappedReasoningEffort: req.MappedReasoningEffort,
 		KeyFingerprint:   keyFP,
 		UpstreamRequestID: upstreamRequestID(result),
 	})
@@ -1447,6 +1844,69 @@ func classifyForChannel(result *relay.Result, cfg domain.RetryConfig) (string, b
 	return category, false
 }
 
+// modelNotFoundText returns the error text used for model-not-found
+// detection: the OpenAI-style error.code (e.g. model_not_found) joined with
+// the message, so both structured codes and free-text messages match.
+func modelNotFoundText(result *relay.Result) string {
+	if result == nil || result.Body == nil {
+		return ""
+	}
+	raw, err := io.ReadAll(io.LimitReader(result.Body, 64<<10))
+	_ = result.Body.Close()
+	result.Body = io.NopCloser(bytes.NewReader(raw))
+	if err != nil {
+		return ""
+	}
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Code    string `json:"code"`
+			Type    string `json:"type"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return string(raw)
+	}
+	if payload.Error.Code != "" {
+		return payload.Error.Code + " " + payload.Error.Message
+	}
+	if payload.Error.Message != "" {
+		return payload.Error.Message
+	}
+	return payload.Message
+}
+
+// isModelNotFoundError reports whether the upstream said this model does not
+// exist (OpenAI code/type identifiers plus common message shapes). Mirror of
+// the identifiers used by CLIProxyAPI's isModelNotFoundIdentifier: codes like
+// model_not_found / unknown_model / model_does_not_exist and messages like
+// "no such model X" / "unknown model X".
+func isModelNotFoundError(status int, text string) bool {
+	if status < 400 || status > 499 {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	normalized := strings.NewReplacer("-", "_", " ", "_").Replace(lower)
+	for _, marker := range []string{
+		"model_not_found", "model_not_found_error", "unknown_model",
+		"model_does_not_exist", "model_not_exist",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	for _, prefix := range []string{"no such model", "unknown model"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // upstreamErrorText extracts the upstream error message from a non-2xx relay
 // result body (OpenAI-style {error:{message}}), for error-pattern matching.
 // The body is restored after reading so the client still receives it.
@@ -1558,6 +2018,13 @@ func preserve(result *relay.Result) *relay.Result {
 	return &relay.Result{StatusCode: result.StatusCode, Header: result.Header.Clone(), LatencyMs: result.LatencyMs, Body: io.NopCloser(bytes.NewReader(body))}
 }
 
+// streamFirstByteTimeout bounds how long a 200 stream may stay silent before
+// its first byte. An upstream that answers 200 and then hangs (half-open
+// connection) would otherwise pin the client forever with no data — this
+// converts that into a retryable first-byte failure so the request can fail
+// over to the next channel.
+const streamFirstByteTimeout = 30 * time.Second
+
 // maxStreamFirstChunkBytes bounds how much of a stream prefix we buffer before
 // committing the response to the client.
 const maxStreamFirstChunkBytes = 256 * 1024
@@ -1587,6 +2054,30 @@ func peekFirstChunk(body io.Reader) ([]byte, error) {
 			}
 			return nil, readErr
 		}
+	}
+}
+
+// peekFirstChunkWithTimeout bounds peekFirstChunk: a silent 200 stream that
+// never emits a byte is closed and reported as a first-byte timeout so the
+// candidate loop can fail over (the client has not received anything yet).
+func peekFirstChunkWithTimeout(body io.ReadCloser, timeout time.Duration) ([]byte, error) {
+	type chunk struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan chunk, 1)
+	go func() {
+		data, err := peekFirstChunk(body)
+		ch <- chunk{data, err}
+	}()
+	select {
+	case res := <-ch:
+		return res.data, res.err
+	case <-time.After(timeout):
+		// Closing the body unblocks the pending Read (http guarantees this),
+		// which releases the goroutine; the result is discarded.
+		_ = body.Close()
+		return nil, fmt.Errorf("first byte timeout after %s", timeout)
 	}
 }
 

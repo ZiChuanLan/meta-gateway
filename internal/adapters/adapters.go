@@ -17,6 +17,10 @@ type Registry struct {
 	checkinAdapters map[string]CheckinAdapter
 	accountAdapters map[string]AccountAdapter
 	forwardAdapters []ForwardAdapter
+	// Translations is the N×M protocol translation matrix (from → to pairs
+	// with stream/non-stream/count-token modes and the model-rewrite fallback
+	// for unregistered pairs).
+	Translations *TranslationRegistry
 }
 
 func NewRegistry(client *http.Client) *Registry {
@@ -102,6 +106,7 @@ func NewRegistry(client *http.Client) *Registry {
 			GeminiForwardAdapter{},
 			OpenAIPassthroughAdapter{},
 		},
+		Translations: NewTranslationRegistry(),
 	}
 }
 
@@ -202,7 +207,20 @@ func (r *Registry) ResolveForward(typeHint, platform string) ForwardAdapter {
 	return OpenAIPassthroughAdapter{}
 }
 
-// CanonicalType maps free-form site/channel type labels to a stable family id.
+// CanonicalFamily maps an adapter name to a protocol family id used in the
+// translation matrix ("openai-compatible" → "openai", "claude" →
+// "anthropic", "google-gemini" → "gemini"). Unknown names stay verbatim.
+func CanonicalFamily(name string) string {
+	switch CanonicalType(name) {
+	case "openai", "openai-compatible", "new-api", "one-api":
+		return "openai"
+	case "anthropic", "claude":
+		return "anthropic"
+	case "gemini", "google-gemini":
+		return "gemini"
+	}
+	return CanonicalType(name)
+}
 func CanonicalType(value string) string {
 	value = canonical(value)
 	value = strings.ReplaceAll(value, "_", "-")

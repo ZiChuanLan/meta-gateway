@@ -48,8 +48,12 @@ async function flushAsyncWork() {
 }
 
 function stubAdminFetch() {
-	return vi.fn(async (input: RequestInfo | URL) => {
+	return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 		const path = String(input).split("?")[0];
+		const method = init?.method ?? "GET";
+		if (method === "POST" && path === "/admin/session") {
+			return jsonResponse({ session_token: "mg-sess.test" });
+		}
 		if (path === "/readyz") return new Response(null, { status: 200 });
 		if (path === "/admin/plugins/status") {
 			return jsonResponse([
@@ -130,7 +134,7 @@ describe("channel-first shell", () => {
 		});
 
 		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBe(
-			"transition-token",
+			"mg-sess.test",
 		);
 		expect(
 			document.querySelector(".gateway-transition.is-revealing"),
@@ -228,7 +232,7 @@ describe("channel-first shell", () => {
 		await flushAsyncWork();
 
 		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBe(
-			"reduced-token",
+			"mg-sess.test",
 		);
 		expect(
 			screen.getByRole("heading", { name: "Overview" }),

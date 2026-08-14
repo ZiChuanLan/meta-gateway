@@ -29,6 +29,9 @@ type RuntimeSettingsRow struct {
 	RoutingConcurrencyEnabled    int
 	RoutingConcurrencyLimit      int
 	WebhookURL                   string
+	ProxyURL                     string
+	DiscoveryCron                string
+	DBGCCron                     string
 	WebhookThrottleSeconds       int
 	StableFirstEnabled           int
 	StableFirstDenominator       int
@@ -82,6 +85,9 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       routing_error_aware,
 		       routing_concurrency_enabled, routing_concurrency_limit,
 		       webhook_url, webhook_throttle_seconds,
+		       proxy_url,
+		       discovery_cron,
+		       db_gc_cron,
 		       stable_first_enabled, stable_first_denominator, stable_first_promote_requests,
 		       recovery_probe_enabled, recovery_probe_interval_seconds,
 		       progressive_cooldown_enabled, cooldown_level2_seconds, cooldown_level3_seconds,
@@ -101,6 +107,9 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		adminRate, adminBurst, auditDays, auditRows                                        sql.NullInt64
 		autoDisableThreshold, latencyAware, errorAware, concurrencyAware, concurrencyLimit sql.NullInt64
 		webhookURL                                                                         sql.NullString
+		proxyURL                                                                           sql.NullString
+		discoveryCron                                                                      sql.NullString
+		dbGCCron                                                                           sql.NullString
 		webhookThrottle                                                                    sql.NullInt64
 		sfEnabled, sfDenominator, sfPromote                                                sql.NullInt64
 		recovery, recoveryInterval                                                         sql.NullInt64
@@ -120,7 +129,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&auditDays, &auditRows,
 		&autoDisableThreshold, &latencyAware, &errorAware,
 		&concurrencyAware, &concurrencyLimit,
-		&webhookURL, &webhookThrottle,
+		&webhookURL, &webhookThrottle, &proxyURL, &discoveryCron, &dbGCCron,
 		&sfEnabled, &sfDenominator, &sfPromote,
 		&recovery, &recoveryInterval,
 		&progressive, &level2, &level3, &level4, &breakerCount,
@@ -198,6 +207,15 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	}
 	if webhookURL.Valid {
 		out.WebhookURL = strings.TrimSpace(webhookURL.String)
+	}
+	if proxyURL.Valid {
+		out.ProxyURL = strings.TrimSpace(proxyURL.String)
+	}
+	if discoveryCron.Valid {
+		out.DiscoveryCron = strings.TrimSpace(discoveryCron.String)
+	}
+	if dbGCCron.Valid {
+		out.DBGCCron = strings.TrimSpace(dbGCCron.String)
 	}
 	if webhookThrottle.Valid {
 		out.WebhookThrottleSeconds = int(webhookThrottle.Int64)
@@ -363,6 +381,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			routing_error_aware,
 			routing_concurrency_enabled, routing_concurrency_limit,
 			webhook_url, webhook_throttle_seconds,
+			proxy_url,
+			discovery_cron,
 			stable_first_enabled, stable_first_denominator, stable_first_promote_requests,
 			recovery_probe_enabled, recovery_probe_interval_seconds,
 			progressive_cooldown_enabled, cooldown_level2_seconds, cooldown_level3_seconds,
@@ -375,7 +395,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			channel_retry_times,
 			key_pool_rotation,
 			updated_at
-		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(id) DO UPDATE SET
 			has_override = excluded.has_override,
 			retry_times = excluded.retry_times,
@@ -396,6 +416,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			routing_concurrency_limit = excluded.routing_concurrency_limit,
 			webhook_url = excluded.webhook_url,
 			webhook_throttle_seconds = excluded.webhook_throttle_seconds,
+			proxy_url = excluded.proxy_url,
+			discovery_cron = excluded.discovery_cron,
 			stable_first_enabled = excluded.stable_first_enabled,
 			stable_first_denominator = excluded.stable_first_denominator,
 			stable_first_promote_requests = excluded.stable_first_promote_requests,
@@ -441,6 +463,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.RoutingConcurrencyLimit,
 		settings.WebhookURL,
 		settings.WebhookThrottleSeconds,
+		settings.ProxyURL,
+		settings.DiscoveryCron,
 		settings.StableFirstEnabled,
 		settings.StableFirstDenominator,
 		settings.StableFirstPromoteRequests,

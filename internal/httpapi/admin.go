@@ -3,20 +3,25 @@ package httpapi
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/adapters"
+	"github.com/lan/meta-gateway/internal/alerts"
+	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/sitedetect"
 	"github.com/lan/meta-gateway/internal/store"
@@ -34,6 +39,11 @@ type AdminHandler struct {
 	// modelsCache is invalidated on route/channel writes so /v1/models never
 	// serves stale ids after admin changes.
 	modelsCache *modelsCache
+	// gcService drives scheduled + manual database maintenance (may be nil).
+	gcService *maintenance.GCService
+	// validateProxyURL validates a per-channel proxy URL against the outbound
+	// SSRF policy (nil skips validation — admin handlers without a policy).
+	validateProxyURL func(raw string) error
 }
 
 func NewAdminHandler(db *store.DB, enc *crypto.Encrypter, selector *routing.Selector, sticky *routing.StickyStore, outboundClient *http.Client, modelsCache *modelsCache) *AdminHandler {
@@ -45,6 +55,17 @@ func NewAdminHandler(db *store.DB, enc *crypto.Encrypter, selector *routing.Sele
 		httpClient:  outboundClient,
 		modelsCache: modelsCache,
 	}
+}
+
+// SetProxyValidator wires the outbound-policy proxy URL validator (nil
+// disables per-channel proxy validation).
+func (h *AdminHandler) SetProxyValidator(fn func(raw string) error) {
+	h.validateProxyURL = fn
+}
+
+// SetGCService wires the database-maintenance service (may be nil).
+func (h *AdminHandler) SetGCService(s *maintenance.GCService) {
+	h.gcService = s
 }
 
 // SetSticky hot-swaps the sticky-session store backing the admin read-only
@@ -73,9 +94,12 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Delete("/credentials/{id}", h.deleteCredential)
 
 // Channels
-r.Get("/channels", h.listChannels)
+	r.Get("/channels", h.listChannels)
+	r.Get("/search", h.globalSearch)
 r.Get("/channels/overview", h.listChannelOverviews)
-r.Post("/channels", h.createChannel)
+	r.Post("/channels", h.createChannel)
+	r.Post("/channels/{id}/duplicate", h.duplicateChannel)
+	r.Post("/reset", h.factoryReset)
 r.Get("/channels/{id}", h.getChannel)
 r.Put("/channels/{id}", h.updateChannel)
 r.Delete("/channels/{id}", h.deleteChannel)
@@ -122,6 +146,557 @@ r.Post("/channels/{id}/ping", h.pingChannel)
 	// Proxy logs
 	r.Get("/proxy-logs", h.listProxyLogs)
 	r.Get("/proxy-logs/latency-histogram", h.latencyHistogram)
+	// Routing decision audit trail.
+	r.Get("/decision-snapshot", h.decisionSnapshot)
+	// Model-not-found blacklist.
+	r.Get("/model-blocks", h.listModelBlocks)
+	r.Delete("/model-blocks", h.deleteModelBlock)
+	// Redemption codes (quota top-up vouchers for downstream keys).
+	r.Post("/redemption-codes", h.createRedemptionCodes)
+	r.Get("/redemption-codes", h.listRedemptionCodes)
+	r.Delete("/redemption-codes/{id}", h.deleteRedemptionCode)
+	// Model metadata library (per-model capability annotations).
+	r.Get("/model-metadata", h.listModelMetadata)
+	r.Put("/model-metadata/{name}", h.upsertModelMetadata)
+	r.Delete("/model-metadata/{name}", h.deleteModelMetadata)
+	// Channel health history + availability summaries.
+	r.Get("/health-history", h.listHealthHistory)
+	r.Get("/health-history/summary", h.healthHistorySummary)
+	// Alert rules (metric → webhook).
+	r.Get("/alert-rules", h.listAlertRules)
+	r.Post("/alert-rules", h.createAlertRule)
+	r.Put("/alert-rules/{id}", h.updateAlertRule)
+	r.Delete("/alert-rules/{id}", h.deleteAlertRule)
+	// Sensitive prompt guard rules (regex → mask/reject/exclude).
+	r.Get("/prompt-guards", h.listPromptGuards)
+	r.Post("/prompt-guards", h.createPromptGuard)
+	r.Put("/prompt-guards/{id}", h.updatePromptGuard)
+	r.Delete("/prompt-guards/{id}", h.deletePromptGuard)
+	// Database maintenance (orphan GC + VACUUM).
+	r.Post("/db/gc", h.runDBGC)
+	r.Get("/db/gc", h.lastDBGC)
+	// Error passthrough rules (status/keyword → passthrough/rewrite/ignore).
+	r.Get("/error-rules", h.listErrorRules)
+	r.Post("/error-rules", h.createErrorRule)
+	r.Put("/error-rules/{id}", h.updateErrorRule)
+	r.Delete("/error-rules/{id}", h.deleteErrorRule)
+}
+
+// listErrorRules returns all error passthrough rules.
+func (h *AdminHandler) listErrorRules(w http.ResponseWriter, r *http.Request) {
+	items, err := h.db.ErrorRule.List()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if items == nil {
+		items = []store.ErrorPassRule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// listHealthHistory returns recent probe points; ?channel_id=&hours= filter.
+func (h *AdminHandler) listHealthHistory(w http.ResponseWriter, r *http.Request) {
+	channelID := int64(0)
+	if parsed, err := strconv.ParseInt(r.URL.Query().Get("channel_id"), 10, 64); err == nil && parsed > 0 {
+		channelID = parsed
+	}
+	points, err := h.db.HealthHistory.Recent(channelID, 200)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if points == nil {
+		points = []store.HealthPoint{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": points})
+}
+
+// healthHistorySummary returns per-channel availability over ?hours= (default 24).
+func (h *AdminHandler) healthHistorySummary(w http.ResponseWriter, r *http.Request) {
+	hours := 24
+	if parsed, err := strconv.Atoi(r.URL.Query().Get("hours")); err == nil && parsed > 0 && parsed <= 24*90 {
+		hours = parsed
+	}
+	summaries, err := h.db.HealthHistory.Summaries(time.Now().Add(-time.Duration(hours) * time.Hour))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if summaries == nil {
+		summaries = []store.ChannelHealthSummary{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": summaries})
+}
+
+// listAlertRules returns all rules plus the metric catalog for the UI.
+func (h *AdminHandler) listAlertRules(w http.ResponseWriter, r *http.Request) {
+	items, err := h.db.AlertRule.List()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if items == nil {
+		items = []store.AlertRule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":   items,
+		"metrics": alerts.MetricDescriptions,
+	})
+}
+
+func (h *AdminHandler) decodeAlertRule(w http.ResponseWriter, r *http.Request) (*store.AlertRule, bool) {
+	var rule store.AlertRule
+	if err := decodeJSON(w, r, &rule, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return nil, false
+	}
+	if err := alerts.ValidateRule(&rule); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	return &rule, true
+}
+
+func (h *AdminHandler) createAlertRule(w http.ResponseWriter, r *http.Request) {
+	rule, ok := h.decodeAlertRule(w, r)
+	if !ok {
+		return
+	}
+	if err := h.db.AlertRule.Upsert(rule); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rule)
+}
+
+func (h *AdminHandler) updateAlertRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	rule, ok := h.decodeAlertRule(w, r)
+	if !ok {
+		return
+	}
+	rule.ID = id
+	if err := h.db.AlertRule.Upsert(rule); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rule)
+}
+
+func (h *AdminHandler) deleteAlertRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.db.AlertRule.Delete(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// listPromptGuards returns all guard rules.
+func (h *AdminHandler) listPromptGuards(w http.ResponseWriter, r *http.Request) {
+	items, err := h.db.PromptGuard.List()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if items == nil {
+		items = []store.PromptGuardRule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AdminHandler) decodePromptGuard(w http.ResponseWriter, r *http.Request) (*store.PromptGuardRule, bool) {
+	var rule store.PromptGuardRule
+	if err := decodeJSON(w, r, &rule, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return nil, false
+	}
+	rule.Name = strings.TrimSpace(rule.Name)
+	rule.Pattern = strings.TrimSpace(rule.Pattern)
+	if rule.Name == "" || rule.Pattern == "" {
+		writeError(w, http.StatusBadRequest, "name and pattern are required")
+		return nil, false
+	}
+	if _, err := regexp.Compile(rule.Pattern); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid regex: "+err.Error())
+		return nil, false
+	}
+	switch rule.Action {
+	case "mask", "reject", "exclude":
+	default:
+		writeError(w, http.StatusBadRequest, "action must be mask, reject or exclude")
+		return nil, false
+	}
+	if rule.Action == "exclude" && strings.TrimSpace(rule.ExcludeChannels) == "" {
+		writeError(w, http.StatusBadRequest, "exclude_channels required for exclude action")
+		return nil, false
+	}
+	return &rule, true
+}
+
+func (h *AdminHandler) createPromptGuard(w http.ResponseWriter, r *http.Request) {
+	rule, ok := h.decodePromptGuard(w, r)
+	if !ok {
+		return
+	}
+	if err := h.db.PromptGuard.Upsert(rule); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rule)
+}
+
+func (h *AdminHandler) updatePromptGuard(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	rule, ok := h.decodePromptGuard(w, r)
+	if !ok {
+		return
+	}
+	rule.ID = id
+	if err := h.db.PromptGuard.Upsert(rule); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rule)
+}
+
+func (h *AdminHandler) deletePromptGuard(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.db.PromptGuard.Delete(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// runDBGC executes a maintenance pass synchronously and returns the counts.
+func (h *AdminHandler) runDBGC(w http.ResponseWriter, r *http.Request) {
+	if h.gcService == nil {
+		writeError(w, http.StatusServiceUnavailable, "maintenance not available")
+		return
+	}
+	res, err := h.gcService.RunOnce()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// lastDBGC returns the most recent pass result (null when none ran yet).
+func (h *AdminHandler) lastDBGC(w http.ResponseWriter, r *http.Request) {
+	if h.gcService == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"result": nil})
+		return
+	}
+	res, at := h.gcService.Last()
+	writeJSON(w, http.StatusOK, map[string]any{"result": res, "ran_at": at})
+}
+
+// validateErrorRule normalizes and checks one rule payload; returns the
+// normalized rule or a 400 error response.
+func (h *AdminHandler) validateErrorRule(w http.ResponseWriter, r *store.ErrorPassRule) bool {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return false
+	}
+	if r.StatusCode < 0 || r.StatusCode > 599 {
+		writeError(w, http.StatusBadRequest, "status_code must be 0-599")
+		return false
+	}
+	switch r.Action {
+	case store.ErrorRulePassthrough, store.ErrorRuleRewrite, store.ErrorRuleIgnoreMonitor:
+	default:
+		writeError(w, http.StatusBadRequest, "action must be passthrough, rewrite or ignore_monitor")
+		return false
+	}
+	if r.Action == store.ErrorRuleRewrite && (r.RewriteTo < 100 || r.RewriteTo > 599) {
+		writeError(w, http.StatusBadRequest, "rewrite_to must be 100-599")
+		return false
+	}
+	if r.ChannelID < 0 {
+		writeError(w, http.StatusBadRequest, "channel_id must be >= 0")
+		return false
+	}
+	return true
+}
+
+// createErrorRule inserts a new rule.
+func (h *AdminHandler) createErrorRule(w http.ResponseWriter, r *http.Request) {
+	var rule store.ErrorPassRule
+	if err := decodeJSON(w, r, &rule, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if !h.validateErrorRule(w, &rule) {
+		return
+	}
+	id, err := h.db.ErrorRule.Create(&rule)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	rule.ID = id
+	writeJSON(w, http.StatusOK, rule)
+}
+
+// updateErrorRule replaces one rule (hot reload: next request reads it live).
+func (h *AdminHandler) updateErrorRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var rule store.ErrorPassRule
+	if err := decodeJSON(w, r, &rule, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if !h.validateErrorRule(w, &rule) {
+		return
+	}
+	rule.ID = id
+	if err := h.db.ErrorRule.Update(&rule); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, rule)
+}
+
+// deleteErrorRule removes one rule.
+func (h *AdminHandler) deleteErrorRule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.db.ErrorRule.Delete(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// listModelMetadata returns the full model metadata library.
+func (h *AdminHandler) listModelMetadata(w http.ResponseWriter, r *http.Request) {
+	items, err := h.db.ModelMetadata.List()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if items == nil {
+		items = []domain.ModelMetadata{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// upsertModelMetadata creates or updates one model's capability annotation.
+func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Request) {
+	name, err := url.PathUnescape(chi.URLParam(r, "name"))
+	if err != nil || strings.TrimSpace(name) == "" {
+		writeError(w, http.StatusBadRequest, "model name required")
+		return
+	}
+	name = strings.TrimSpace(name)
+	var req struct {
+		ContextWindow    *int64  `json:"context_window"`
+		InputModalities  *string `json:"input_modalities"`
+		OutputModalities *string `json:"output_modalities"`
+		SupportsThinking *int    `json:"supports_thinking"`
+		Vendor           *string `json:"vendor"`
+		Notes            *string `json:"notes"`
+	}
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	existing, err := h.db.ModelMetadata.Get(name)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	meta := domain.ModelMetadata{ModelName: name}
+	if existing != nil {
+		meta = *existing
+	}
+	if req.ContextWindow != nil {
+		if *req.ContextWindow < 0 {
+			writeError(w, http.StatusBadRequest, "context_window must be >= 0")
+			return
+		}
+		meta.ContextWindow = *req.ContextWindow
+	}
+	if req.InputModalities != nil {
+		meta.InputModalities = *req.InputModalities
+	}
+	if req.OutputModalities != nil {
+		meta.OutputModalities = *req.OutputModalities
+	}
+	if req.SupportsThinking != nil {
+		if *req.SupportsThinking < -1 || *req.SupportsThinking > 1 {
+			writeError(w, http.StatusBadRequest, "supports_thinking must be -1, 0 or 1")
+			return
+		}
+		meta.SupportsThinking = *req.SupportsThinking
+	}
+	if req.Vendor != nil {
+		meta.Vendor = *req.Vendor
+	}
+	if req.Notes != nil {
+		meta.Notes = *req.Notes
+	}
+	if err := h.db.ModelMetadata.Upsert(&meta); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, meta)
+}
+
+// deleteModelMetadata removes one model's annotation (missing is not an error).
+func (h *AdminHandler) deleteModelMetadata(w http.ResponseWriter, r *http.Request) {
+	name, err := url.PathUnescape(chi.URLParam(r, "name"))
+	if err != nil || strings.TrimSpace(name) == "" {
+		writeError(w, http.StatusBadRequest, "model name required")
+		return
+	}
+	name = strings.TrimSpace(name)
+	if err := h.db.ModelMetadata.Delete(name); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// createRedemptionCodes mints one-time quota vouchers.
+func (h *AdminHandler) createRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Count       int    `json:"count"`
+		QuotaTokens int64  `json:"quota_tokens"`
+		ExpiresAt   string `json:"expires_at"`
+	}
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Count <= 0 || req.Count > 100 {
+		writeError(w, http.StatusBadRequest, "count must be 1-100")
+		return
+	}
+	if req.QuotaTokens <= 0 {
+		writeError(w, http.StatusBadRequest, "quota_tokens must be positive")
+		return
+	}
+	var expiresAt *time.Time
+	if req.ExpiresAt != "" {
+		t, err := time.Parse(time.RFC3339, req.ExpiresAt)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "expires_at must be RFC3339")
+			return
+		}
+		expiresAt = &t
+	}
+	codes, err := h.db.CreateRedemptionCodes(req.Count, req.QuotaTokens, 0, expiresAt)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": codes})
+}
+
+// listRedemptionCodes lists vouchers; ?unredeemed=1 filters used ones out.
+func (h *AdminHandler) listRedemptionCodes(w http.ResponseWriter, r *http.Request) {
+	onlyUnredeemed := r.URL.Query().Get("unredeemed") == "1"
+	codes, err := h.db.ListRedemptionCodes(onlyUnredeemed)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if codes == nil {
+		codes = []store.RedemptionCode{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": codes})
+}
+
+// deleteRedemptionCode voids an unredeemed voucher.
+func (h *AdminHandler) deleteRedemptionCode(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if err := h.db.DeleteRedemptionCode(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// listModelBlocks returns all channel × model not-found blacklist entries.
+func (h *AdminHandler) listModelBlocks(w http.ResponseWriter, r *http.Request) {
+	blocks, err := h.db.ListModelBlocks()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "model blocks")
+		return
+	}
+	if blocks == nil {
+		blocks = []store.ModelBlock{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": blocks})
+}
+
+// deleteModelBlock clears one blacklist entry (?channel_id=&model=).
+func (h *AdminHandler) deleteModelBlock(w http.ResponseWriter, r *http.Request) {
+	channelID := int64(0)
+	if parsed, err := strconv.ParseInt(r.URL.Query().Get("channel_id"), 10, 64); err == nil {
+		channelID = parsed
+	}
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	if channelID <= 0 || model == "" {
+		writeError(w, http.StatusBadRequest, "channel_id and model are required")
+		return
+	}
+	if err := h.db.UnblockModel(channelID, model); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// decisionSnapshot serves the routing audit trail for one request id.
+func (h *AdminHandler) decisionSnapshot(w http.ResponseWriter, r *http.Request) {
+	requestID := strings.TrimSpace(r.URL.Query().Get("request_id"))
+	if requestID == "" {
+		writeError(w, http.StatusBadRequest, "request_id is required")
+		return
+	}
+	snap, err := h.db.LatestDecisionSnapshot(requestID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "decision snapshot")
+		return
+	}
+	if snap == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no snapshot"})
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
 }
 
 func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
@@ -654,6 +1229,96 @@ func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
+// duplicateChannel clones an existing channel: every field is copied verbatim
+// (base_url, credential binding, retry config, payload rules, proxy, headers,
+// tags…) with only the name suffixed " (copy)". The clone starts enabled so it
+// is immediately usable/editable.
+// globalSearch runs the grouped admin search (channels/routes/keys/logs).
+func (h *AdminHandler) globalSearch(w http.ResponseWriter, r *http.Request) {
+	term := strings.TrimSpace(r.URL.Query().Get("q"))
+	if term == "" {
+		writeJSON(w, http.StatusOK, &store.SearchHits{})
+		return
+	}
+	hits, err := h.db.Search(term, 10)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if hits.Channels == nil {
+		hits.Channels = []store.SearchChannelHit{}
+	}
+	if hits.Routes == nil {
+		hits.Routes = []store.SearchRouteHit{}
+	}
+	if hits.Credentials == nil {
+		hits.Credentials = []store.SearchCredHit{}
+	}
+	if hits.Logs == nil {
+		hits.Logs = []store.SearchLogHit{}
+	}
+	writeJSON(w, http.StatusOK, hits)
+}
+
+// factoryReset wipes all business data (channels, keys, routes, logs,
+// histories, rules) while preserving configuration (sites, runtime settings,
+// TOTP, backups). The body must carry confirm="RESET" to fire.
+func (h *AdminHandler) factoryReset(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Confirm string `json:"confirm"`
+	}
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Confirm != "RESET" {
+		writeError(w, http.StatusBadRequest, "confirmation text required")
+		return
+	}
+	deleted, err := h.db.FactoryReset()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.modelsCache.Invalidate()
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
+}
+
+func (h *AdminHandler) duplicateChannel(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	source, err := h.db.Channel.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if source == nil {
+		writeError(w, http.StatusNotFound, "channel not found")
+		return
+	}
+	clone := *source
+	clone.ID = 0
+	clone.Name = source.Name + " (copy)"
+	clone.Status = domain.StatusEnabled
+	clone.CreatedAt = time.Time{}
+	clone.UpdatedAt = time.Time{}
+	if err := h.validateChannel(&clone); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	newID, err := h.db.Channel.Create(&clone)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.modelsCache.Invalidate()
+	created, _ := h.db.Channel.GetByID(newID)
+	writeJSON(w, http.StatusCreated, created)
+}
+
 func (h *AdminHandler) getChannel(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -701,6 +1366,7 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 	if baseURL == "" {
 		checkedAt := time.Now()
 		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, "invalid_base_url")
+		_ = h.db.HealthHistory.Append(ch.ID, false, 0, "invalid_base_url", checkedAt)
 		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": "invalid_base_url", "checked_at": checkedAt})
 		return
 	}
@@ -711,6 +1377,7 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		checkedAt := time.Now()
 		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, "invalid_url")
+		_ = h.db.HealthHistory.Append(ch.ID, false, 0, "invalid_url", checkedAt)
 		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": "invalid_url", "checked_at": checkedAt})
 		return
 	}
@@ -720,6 +1387,7 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 		category := classifyPingError(err)
 		checkedAt := time.Now()
 		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, category)
+		_ = h.db.HealthHistory.Append(ch.ID, false, 0, category, checkedAt)
 		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": category, "latency_ms": latencyMs, "checked_at": checkedAt})
 		return
 	}
@@ -728,6 +1396,7 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	checkedAt := time.Now()
 	_ = h.db.Channel.RecordPingSuccess(ch.ID, checkedAt, latencyMs)
+	_ = h.db.HealthHistory.Append(ch.ID, true, latencyMs, "", checkedAt)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"channel_id": ch.ID, "reachable": true, "connectivity_state": domain.ConnectivityStateReachable, "latency_ms": latencyMs, "status_code": resp.StatusCode, "checked_at": checkedAt,
 	})
@@ -793,6 +1462,44 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if hint := strings.TrimSpace(patch.TypeHint); hint != "" {
 		ch.TypeHint = hint
+	}
+	// Max reasoning effort: empty string clears it (passthrough).
+	if patch.MaxReasoningEffort != existing.MaxReasoningEffort {
+		ch.MaxReasoningEffort = strings.ToLower(strings.TrimSpace(patch.MaxReasoningEffort))
+	}
+	// Payload rules: JSON array of rewrite rules; empty string clears them.
+	if patch.PayloadRules != existing.PayloadRules {
+		if trimmed := strings.TrimSpace(patch.PayloadRules); trimmed != "" && trimmed != "[]" {
+			var probe []proxy.PayloadRule
+			if err := json.Unmarshal([]byte(trimmed), &probe); err != nil {
+				writeError(w, http.StatusBadRequest, "payload_rules must be a valid JSON array")
+				return
+			}
+			ch.PayloadRules = trimmed
+		} else {
+			ch.PayloadRules = ""
+		}
+	}
+	// Hard concurrency ceiling: non-negative; 0 = unlimited.
+	if patch.MaxConcurrent < 0 {
+		writeError(w, http.StatusBadRequest, "max_concurrent must be >= 0")
+		return
+	}
+	ch.MaxConcurrent = patch.MaxConcurrent
+	// Per-channel proxy: http/https URL validated against the outbound
+	// policy (SSRF); empty clears it (inherits the global proxy).
+	if patch.ProxyURL != existing.ProxyURL {
+		if trimmed := strings.TrimSpace(patch.ProxyURL); trimmed != "" {
+			if h.validateProxyURL != nil {
+				if err := h.validateProxyURL(trimmed); err != nil {
+					writeError(w, http.StatusBadRequest, "proxy_url: "+err.Error())
+					return
+				}
+			}
+			ch.ProxyURL = trimmed
+		} else {
+			ch.ProxyURL = ""
+		}
 	}
 	if patch.ModelsCSV != "" {
 		ch.ModelsCSV = patch.ModelsCSV
@@ -1159,13 +1866,14 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 		Scopes               string  `json:"scopes,omitempty"`
 		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
 		QuotaUsedTokens      int64   `json:"quota_used_tokens"`
-		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
-		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
-		ModelDenylist        string  `json:"model_denylist,omitempty"`
-		ExpiresAt            string  `json:"expires_at,omitempty"`
-		AllowedIPs           string  `json:"allowed_ips,omitempty"`
-		EstimatedCost        float64 `json:"estimated_cost"`
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	PriceCachePer1k      float64 `json:"price_cache_per_1k"`
+	ModelAllowlist       string  `json:"model_allowlist,omitempty"`
+	ModelDenylist        string  `json:"model_denylist,omitempty"`
+	ExpiresAt            string  `json:"expires_at,omitempty"`
+	AllowedIPs           string  `json:"allowed_ips,omitempty"`
+	EstimatedCost        float64 `json:"estimated_cost"`
 		CreatedAt            string  `json:"created_at"`
 	}
 	result := make([]safeKey, 0, len(keys))
@@ -1195,6 +1903,7 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 			QuotaUsedTokens:      k.QuotaUsedTokens,
 			PricePromptPer1k:     k.PricePromptPer1k,
 			PriceCompletionPer1k: k.PriceCompletionPer1k,
+			PriceCachePer1k:      k.PriceCachePer1k,
 			ModelAllowlist:       k.ModelAllowlist,
 			ModelDenylist:        k.ModelDenylist,
 			ExpiresAt:            k.ExpiresAt,
@@ -1216,6 +1925,7 @@ type createKeyResponse struct {
 	QuotaUsedTokens      int64   `json:"quota_used_tokens"`
 	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
 	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	PriceCachePer1k      float64 `json:"price_cache_per_1k"`
 	ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 	ModelDenylist        string  `json:"model_denylist,omitempty"`
 	ExpiresAt            string  `json:"expires_at,omitempty"`
@@ -1228,12 +1938,13 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Name string `json:"name"`
 		// Token is optional. When empty, the server generates an mg-… secret.
 		// When set, the provided secret is stored as a hash only (raw never re-readable).
-		Token                string  `json:"token,omitempty"`
-		Scopes               string  `json:"scopes,omitempty"`
-		QuotaTotalTokens     int64   `json:"quota_total_tokens"`
-		PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-		PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
-		GroupName            string  `json:"group_name,omitempty"`
+	Token                string  `json:"token,omitempty"`
+	Scopes               string  `json:"scopes,omitempty"`
+	QuotaTotalTokens     int64   `json:"quota_total_tokens"`
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	PriceCachePer1k      float64 `json:"price_cache_per_1k"`
+	GroupName            string  `json:"group_name,omitempty"`
 		ModelAllowlist       string  `json:"model_allowlist,omitempty"`
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
 		ExpiresAt            string  `json:"expires_at,omitempty"`
@@ -1294,9 +2005,10 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Enabled:              true,
 		Scopes:               req.Scopes,
 		QuotaTotalTokens:     req.QuotaTotalTokens,
-		PricePromptPer1k:     req.PricePromptPer1k,
-		PriceCompletionPer1k: req.PriceCompletionPer1k,
-		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
+	PricePromptPer1k:     req.PricePromptPer1k,
+	PriceCompletionPer1k: req.PriceCompletionPer1k,
+	PriceCachePer1k:      req.PriceCachePer1k,
+	ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 		ExpiresAt:            strings.TrimSpace(req.ExpiresAt),
 		AllowedIPs:           strings.TrimSpace(req.AllowedIPs),
@@ -1321,9 +2033,10 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Scopes:               req.Scopes,
 		QuotaTotalTokens:     req.QuotaTotalTokens,
 		QuotaUsedTokens:      0,
-		PricePromptPer1k:     req.PricePromptPer1k,
-		PriceCompletionPer1k: req.PriceCompletionPer1k,
-		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
+	PricePromptPer1k:     req.PricePromptPer1k,
+	PriceCompletionPer1k: req.PriceCompletionPer1k,
+	PriceCachePer1k:      req.PriceCachePer1k,
+	ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 		CreatedAt:            createdAt,
 	})
@@ -1349,9 +2062,10 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		Enabled              *bool    `json:"enabled"`
 		Scopes               *string  `json:"scopes"`
 		QuotaTotalTokens     *int64   `json:"quota_total_tokens"`
-		PricePromptPer1k     *float64 `json:"price_prompt_per_1k"`
-		PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
-		GroupName            *string  `json:"group_name"`
+	PricePromptPer1k     *float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k *float64 `json:"price_completion_per_1k"`
+	PriceCachePer1k      *float64 `json:"price_cache_per_1k"`
+	GroupName            *string  `json:"group_name"`
 		ModelAllowlist       *string  `json:"model_allowlist"`
 		ModelDenylist        *string  `json:"model_denylist"`
 		ExpiresAt            *string  `json:"expires_at"`
@@ -1402,6 +2116,13 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		}
 		existing.PriceCompletionPer1k = *req.PriceCompletionPer1k
 	}
+	if req.PriceCachePer1k != nil {
+		if *req.PriceCachePer1k < 0 {
+			writeError(w, http.StatusBadRequest, "price_cache_per_1k must be >= 0")
+			return
+		}
+		existing.PriceCachePer1k = *req.PriceCachePer1k
+	}
 	if req.ModelAllowlist != nil {
 		existing.ModelAllowlist = strings.TrimSpace(*req.ModelAllowlist)
 	}
@@ -1435,8 +2156,9 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		"scopes":                  existing.Scopes,
 		"quota_total_tokens":      existing.QuotaTotalTokens,
 		"quota_used_tokens":       existing.QuotaUsedTokens,
-		"price_prompt_per_1k":     existing.PricePromptPer1k,
-		"price_completion_per_1k": existing.PriceCompletionPer1k,
+	"price_prompt_per_1k":     existing.PricePromptPer1k,
+	"price_completion_per_1k": existing.PriceCompletionPer1k,
+	"price_cache_per_1k":      existing.PriceCachePer1k,
 		"created_at":              existing.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }

@@ -130,6 +130,9 @@ type Config struct {
 	BackupDir                  string
 	PluginsDir                 string
 	PluginCatalogURL           string
+	// PluginMarketURLs appends extra plugin market registry URLs
+	// (comma-separated; the built-in official registry is always included).
+	PluginMarketURLs []string
 	// ExchangeAllowSecretExport gates include_secrets on export (default true for compat).
 	ExchangeAllowSecretExport bool
 	// HealthSweepEnabled enables the periodic channel health sweep (jittered
@@ -480,8 +483,9 @@ func Load() (*Config, error) {
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
 		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
-		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
-		PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
+	PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
+	PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
+	PluginMarketURLs:           envList("PLUGIN_MARKET_URLS"),
 		ExchangeAllowSecretExport:  exchangeAllowSecretExport,
 		HealthSweepEnabled:         healthSweepEnabled,
 		HealthSweepIntervalSeconds: healthSweepInterval,
@@ -569,6 +573,17 @@ func envStr(key, def string) string {
 		return value
 	}
 	return def
+}
+
+// envList splits a comma-separated environment variable into trimmed entries.
+func envList(key string) []string {
+	var out []string
+	for _, part := range strings.Split(os.Getenv(key), ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // envIntSeconds parses an integer environment variable as seconds.

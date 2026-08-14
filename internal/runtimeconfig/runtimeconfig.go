@@ -24,8 +24,14 @@ type Editable struct {
 	RetryTimes                  int    `json:"retry_times"`
 	CrossChannelFailoverEnabled bool   `json:"cross_channel_failover_enabled"`
 	CooldownSeconds             int    `json:"cooldown_seconds"`
-	CheckinEnabled              bool   `json:"checkin_enabled"`
-	CheckinCron                 string `json:"checkin_cron"`
+	CheckinEnabled bool   `json:"checkin_enabled"`
+	CheckinCron    string `json:"checkin_cron"`
+	// DiscoveryCron is the scheduled model-list refresh expression (five-field
+	// cron; empty = disabled). Same format as checkin_cron.
+	DiscoveryCron string `json:"discovery_cron"`
+	// DBGCCron is the scheduled database maintenance expression (orphan GC +
+	// VACUUM; empty = disabled).
+	DBGCCron string `json:"db_gc_cron"`
 	RelayRatePerMinute          int    `json:"relay_rate_per_minute"`
 	RelayRateBurst              int    `json:"relay_rate_burst"`
 	AdminRatePerMinute          int    `json:"admin_rate_per_minute"`
@@ -44,6 +50,9 @@ type Editable struct {
 	RoutingConcurrencyLimit int `json:"routing_concurrency_limit"`
 	// WebhookURL is the operational notification endpoint ("" disables).
 	WebhookURL string `json:"webhook_url"`
+	// ProxyURL is the global outbound HTTP(S) proxy; "" = direct. Channels
+	// with their own proxy_url override it.
+	ProxyURL string `json:"proxy_url"`
 	// WebhookThrottleSeconds coalesces repeated events within the window.
 	WebhookThrottleSeconds int `json:"webhook_throttle_seconds"`
 	// StableFirstEnabled gates the 1/N grayscale pool.
@@ -137,6 +146,15 @@ type Appliers struct {
 	// (with the given TTL), nil disables it. The applier must rewire selector,
 	// proxy, and admin handler so the switch is live without a restart.
 	SetSticky func(store *routing.StickyStore, ttl time.Duration)
+	// SetGlobalProxy hot-applies the global outbound proxy ("" = direct). The
+	// callback validates the URL against the outbound SSRF policy.
+	SetGlobalProxy func(raw string) error
+	// SetDiscoveryCron hot-applies the scheduled model-refresh expression
+	// ("" = disabled).
+	SetDiscoveryCron func(expression string) error
+	// SetDBGCCron hot-applies the database-maintenance expression
+	// ("" = disabled).
+	SetDBGCCron func(expression string) error
 	// SetRecoveryProbe hot-applies the passive-recovery probe configuration.
 	SetRecoveryProbe func(enabled bool, interval time.Duration)
 	// SetStableFirst hot-applies the grayscale pool (selector + promotion).
@@ -314,6 +332,9 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		RoutingConcurrencyEnabled:        boolInt(next.RoutingConcurrencyEnabled),
 		RoutingConcurrencyLimit:          next.RoutingConcurrencyLimit,
 		WebhookURL:                       next.WebhookURL,
+		ProxyURL:                         next.ProxyURL,
+		DiscoveryCron:                    next.DiscoveryCron,
+		DBGCCron:                         next.DBGCCron,
 		WebhookThrottleSeconds:           next.WebhookThrottleSeconds,
 		StableFirstEnabled:               boolInt(next.StableFirstEnabled),
 		StableFirstDenominator:           next.StableFirstDenominator,
@@ -399,6 +420,21 @@ func (c *Controller) applyWithError(values Editable) error {
 	if c.appliers.Proxy != nil {
 		c.appliers.Proxy.SetRetryPolicy(values.RetryTimes, time.Duration(values.CooldownSeconds)*time.Second)
 		c.appliers.Proxy.SetCrossChannelFailoverEnabled(values.CrossChannelFailoverEnabled)
+	}
+	if c.appliers.SetGlobalProxy != nil {
+		if err := c.appliers.SetGlobalProxy(values.ProxyURL); err != nil {
+			return fmt.Errorf("proxy_url is invalid: %w", err)
+		}
+	}
+	if c.appliers.SetDiscoveryCron != nil {
+		if err := c.appliers.SetDiscoveryCron(values.DiscoveryCron); err != nil {
+			return fmt.Errorf("discovery_cron is invalid: %w", err)
+		}
+	}
+	if c.appliers.SetDBGCCron != nil {
+		if err := c.appliers.SetDBGCCron(values.DBGCCron); err != nil {
+			return fmt.Errorf("db_gc_cron is invalid: %w", err)
+		}
 	}
 	if c.appliers.RelayLimiter != nil {
 		c.appliers.RelayLimiter.SetLimits(values.RelayRatePerMinute, values.RelayRateBurst)
@@ -532,6 +568,9 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		RoutingConcurrencyEnabled:        row.RoutingConcurrencyEnabled == 1,
 		RoutingConcurrencyLimit:          row.RoutingConcurrencyLimit,
 		WebhookURL:                       row.WebhookURL,
+		ProxyURL:                         row.ProxyURL,
+		DiscoveryCron:                    row.DiscoveryCron,
+		DBGCCron:                         row.DBGCCron,
 		WebhookThrottleSeconds:           row.WebhookThrottleSeconds,
 		StableFirstEnabled:               row.StableFirstEnabled == 1,
 		StableFirstDenominator:           row.StableFirstDenominator,
@@ -780,6 +819,17 @@ func Validate(values Editable) error {
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	if _, err := parser.Parse(cronExpr); err != nil {
 		return fmt.Errorf("checkin_cron is invalid")
+	}
+	// Discovery cron: empty = disabled, otherwise must be a valid expression.
+	if values.DiscoveryCron != "" {
+		if _, err := parser.Parse(values.DiscoveryCron); err != nil {
+			return fmt.Errorf("discovery_cron is invalid")
+		}
+	}
+	if values.DBGCCron != "" {
+		if _, err := parser.Parse(values.DBGCCron); err != nil {
+			return fmt.Errorf("db_gc_cron is invalid")
+		}
 	}
 	return nil
 }

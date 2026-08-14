@@ -30,6 +30,10 @@ func scanChannel(scanner interface {
 		&r.Weight,
 		&r.Status,
 		&r.TypeHint,
+		&r.MaxReasoningEffort,
+		&r.PayloadRules,
+		&r.MaxConcurrent,
+		&r.ProxyURL,
 		&r.HeaderOverride,
 		&r.SystemPrompt,
 		&r.RetryConfig,
@@ -47,7 +51,7 @@ func scanChannel(scanner interface {
 }
 
 func (s *ChannelStore) List() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, proxy_url, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("channel list: %w", err)
 	}
@@ -208,7 +212,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 
 // ListEnabled returns all enabled channels.
 func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, proxy_url, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list enabled: %w", err)
 	}
@@ -228,7 +232,7 @@ func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
 // ListAutoDisabled returns channels currently parked by the auto-disable
 // circuit (recovery-probe candidates).
 func (s *ChannelStore) ListAutoDisabled() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status = ? ORDER BY id`, domain.StatusAutoDisabled)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, proxy_url, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status = ? ORDER BY id`, domain.StatusAutoDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list auto disabled: %w", err)
 	}
@@ -249,7 +253,7 @@ func (s *ChannelStore) ListAutoDisabled() ([]domain.Channel, error) {
 // channels plus auto-disabled ones (passive recovery candidates). Manually
 // disabled channels are never probed — manual intent wins.
 func (s *ChannelStore) ListProbeable() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status IN (?, ?) ORDER BY priority, id`, domain.StatusEnabled, domain.StatusAutoDisabled)
+	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, proxy_url, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE status IN (?, ?) ORDER BY priority, id`, domain.StatusEnabled, domain.StatusAutoDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list probeable: %w", err)
 	}
@@ -267,7 +271,7 @@ func (s *ChannelStore) ListProbeable() ([]domain.Channel, error) {
 }
 
 func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
-	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, proxy_url, header_override, system_prompt, retry_config, tags, consecutive_failures, stable_first, stable_first_requests, created_at, updated_at FROM channels WHERE id = ?`, id)
 	var r domain.Channel
 	if err := scanChannel(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -279,8 +283,8 @@ func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
 }
 
 func (s *ChannelStore) Create(c *domain.Channel) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, header_override, system_prompt, retry_config, tags, stable_first) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, normalizeTags(c.Tags), boolInt(c.StableFirst))
+	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, proxy_url, header_override, system_prompt, retry_config, tags, stable_first) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.ProxyURL, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, normalizeTags(c.Tags), boolInt(c.StableFirst))
 	if err != nil {
 		return 0, fmt.Errorf("channel create: %w", err)
 	}
@@ -293,8 +297,8 @@ func (s *ChannelStore) Update(c *domain.Channel) error {
 		return fmt.Errorf("channel update begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, header_override=?, system_prompt=?, retry_config=?, tags=?, stable_first=?, updated_at=datetime('now') WHERE id=?`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, normalizeTags(c.Tags), boolInt(c.StableFirst), c.ID); err != nil {
+	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, max_reasoning_effort=?, payload_rules=?, max_concurrent=?, proxy_url=?, header_override=?, system_prompt=?, retry_config=?, tags=?, stable_first=?, updated_at=datetime('now') WHERE id=?`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.ProxyURL, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, normalizeTags(c.Tags), boolInt(c.StableFirst), c.ID); err != nil {
 		return fmt.Errorf("channel update: %w", err)
 	}
 	if _, err = tx.Exec(`UPDATE route_members SET priority=?, weight=?, updated_at=datetime('now')

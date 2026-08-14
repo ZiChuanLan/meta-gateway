@@ -24,6 +24,12 @@ type DB struct {
 	BackupRecord    *BackupRecordStore
 	Plugin          *PluginStore
 	WebDAVSettings  *WebDAVSettingsStore
+	AdminTOTP       *AdminTOTPStore
+	ModelMetadata   *ModelMetadataStore
+	ErrorRule       *ErrorPassRuleStore
+	HealthHistory   *HealthHistoryStore
+	AlertRule       *AlertRuleStore
+	PromptGuard     *PromptGuardStore
 	RuntimeSettings *RuntimeSettingsStore
 	Usage           *UsageStore
 	ModelRatio      *ModelRatioStore
@@ -82,6 +88,12 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 		BackupRecord:    &BackupRecordStore{db: sqldb},
 		Plugin:          &PluginStore{db: sqldb},
 		WebDAVSettings:  &WebDAVSettingsStore{db: sqldb},
+		AdminTOTP:       &AdminTOTPStore{db: sqldb},
+		ModelMetadata:   &ModelMetadataStore{db: sqldb},
+		ErrorRule:       &ErrorPassRuleStore{db: sqldb},
+		HealthHistory:   &HealthHistoryStore{db: sqldb},
+		AlertRule:       &AlertRuleStore{db: sqldb},
+		PromptGuard:     &PromptGuardStore{db: sqldb},
 		RuntimeSettings: &RuntimeSettingsStore{db: sqldb},
 		Usage:           &UsageStore{db: sqldb},
 		ModelRatio:      newModelRatioStore(sqldb),

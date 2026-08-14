@@ -73,6 +73,19 @@ func (s *PluginStore) Delete(id string) error {
 	return err
 }
 
+// UpdateMeta replaces the persisted manifest JSON for a plugin record.
+func (s *PluginStore) UpdateMeta(id, metaJSON string) error {
+	_, err := s.db.Exec(`UPDATE plugins SET meta_json = ? WHERE id = ?`, metaJSON, id)
+	return err
+}
+
+// Checkpoint forces the WAL into the main database file so a container
+// restart immediately after a plugin write cannot lose the change.
+func (s *PluginStore) Checkpoint() error {
+	_, err := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+	return err
+}
+
 func (s *PluginStore) EnabledIDs() (map[string]bool, error) {
 	rows, err := s.db.Query(`SELECT id FROM plugins WHERE enabled = 1 AND status = 'installed'`)
 	if err != nil {

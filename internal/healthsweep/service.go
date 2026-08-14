@@ -298,10 +298,12 @@ func (s *Service) probeOnce(channelID int64) {
 		}
 		if s.db.Channel != nil {
 			_ = s.db.Channel.RecordProbeSuccessWithVerdict(channelID, checkedAt, verdict)
+			_ = s.db.HealthHistory.Append(channelID, true, latency, verdict, checkedAt)
 		}
 	} else {
 		if s.db.Channel != nil {
 			_ = s.db.Channel.RecordProbeFailure(channelID, checkedAt, probeCategory(err))
+			_ = s.db.HealthHistory.Append(channelID, false, 0, probeCategory(err), checkedAt)
 		}
 	}
 	health = ChannelHealth{

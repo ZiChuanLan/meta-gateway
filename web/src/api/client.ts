@@ -18,6 +18,13 @@ import type {
 	AccountProbeResult,
 	ChannelPingResult,
 	FinanceItem,
+	ModelMetadata,
+	ErrorPassRule,
+	DBGCResult,
+	AlertRule,
+	PromptGuardRule,
+	HealthPoint,
+	HealthSummaryItem,
 	ModelPrice,
 	ProbeResult,
 	ProxyLog,
@@ -32,6 +39,7 @@ import type {
 	RefreshSummary,
 	Route,
 	RouteExplanation,
+	SearchHits,
 	RouteMember,
 	RouteOverview,
 	RunResult,
@@ -58,6 +66,11 @@ export class ApiClient {
 		private readonly token: string,
 		private readonly onUnauthorized?: () => void,
 	) {}
+
+	/** Raw bearer token, needed for iframe plugin embedding (?t=). */
+	getToken(): string {
+		return this.token;
+	}
 
 	async request<T>(path: string, init: RequestInit = {}): Promise<T> {
 		const headers = new Headers(init.headers);
@@ -167,6 +180,20 @@ export const api = (client: ApiClient) => ({
 	updateChannel: (id: number, body: Partial<Channel>) =>
 		client.put<Channel>(`/admin/channels/${id}`, body),
 	deleteChannel: (id: number) => client.delete(`/admin/channels/${id}`),
+	duplicateChannel: (id: number) =>
+		client.post<Channel>(`/admin/channels/${id}/duplicate`, {}),
+	factoryReset: (confirm: string) =>
+		client.post<{ deleted: Record<string, number> }>("/admin/reset", {
+			confirm,
+		}),
+	lastDBGC: (signal?: AbortSignal) =>
+		client.get<{ result: DBGCResult | null; ran_at?: string }>(
+			"/admin/db/gc",
+			signal,
+		),
+	runDBGC: () => client.post<DBGCResult>("/admin/db/gc", {}),
+	globalSearch: (q: string, signal?: AbortSignal) =>
+		client.get<SearchHits>(`/admin/search?q=${encodeURIComponent(q)}`, signal),
 	routes: (signal?: AbortSignal) =>
 		client.getList<Route>("/admin/routes", signal),
 	routeOverviews: (signal?: AbortSignal) =>
@@ -331,6 +358,119 @@ export const api = (client: ApiClient) => ({
 				probed_at: string;
 			}>;
 		}>(`/admin/balance-history?days=${days}`, signal),
+	modelBlocks: (signal?: AbortSignal) =>
+		client.get<{
+			items: Array<{
+				id: number;
+				channel_id: number;
+				model: string;
+				reason: string;
+				created_at: string;
+			}>;
+		}>("/admin/model-blocks", signal),
+	unblockModel: (channelId: number, model: string) =>
+		client.delete(
+			`/admin/model-blocks?channel_id=${channelId}&model=${encodeURIComponent(model)}`,
+		),
+	createRedemptionCodes: (body: { count: number; quota_tokens: number; expires_at?: string }) =>
+		client.post<{ items: Array<{ id: number; code: string; quota_tokens: number }> }>(
+			"/admin/redemption-codes",
+			body,
+		),
+	listRedemptionCodes: (signal?: AbortSignal) =>
+		client.get<{
+			items: Array<{
+				id: number;
+				code: string;
+				quota_tokens: number;
+				created_at: string;
+				expires_at?: string;
+				redeemed_by_key_id: number;
+				redeemed_at?: string;
+			}>;
+		}>("/admin/redemption-codes", signal),
+	deleteRedemptionCode: (id: number) =>
+		client.delete(`/admin/redemption-codes/${id}`),
+	totpStatus: (signal?: AbortSignal) =>
+		client.get<{ enabled: boolean }>("/admin/totp/status", signal),
+	totpSetup: () =>
+		client.post<{ secret: string; otpauth_uri: string }>(
+			"/admin/totp/setup",
+			{},
+		),
+	totpEnable: (code: string) =>
+		client.post<{ enabled: boolean }>("/admin/totp/enable", { code }),
+	totpDisable: (code: string) =>
+		client.post<{ enabled: boolean }>("/admin/totp/disable", { code }),
+	modelMetadata: (signal?: AbortSignal) =>
+		client.get<{ items: ModelMetadata[] }>("/admin/model-metadata", signal),
+	upsertModelMetadata: (name: string, body: Partial<ModelMetadata>) =>
+		client.put<ModelMetadata>(
+			`/admin/model-metadata/${encodeURIComponent(name)}`,
+			body,
+		),
+	deleteModelMetadata: (name: string) =>
+		client.delete(`/admin/model-metadata/${encodeURIComponent(name)}`),
+	errorRules: (signal?: AbortSignal) =>
+		client.get<{ items: ErrorPassRule[] }>("/admin/error-rules", signal),
+	createErrorRule: (body: Partial<ErrorPassRule>) =>
+		client.post<ErrorPassRule>("/admin/error-rules", body),
+	updateErrorRule: (id: number, body: Partial<ErrorPassRule>) =>
+		client.put<ErrorPassRule>(`/admin/error-rules/${id}`, body),
+	deleteErrorRule: (id: number) => client.delete(`/admin/error-rules/${id}`),
+	alertRules: (signal?: AbortSignal) =>
+		client.get<{ items: AlertRule[]; metrics: Record<string, string> }>(
+			"/admin/alert-rules",
+			signal,
+		),
+	createAlertRule: (body: Partial<AlertRule>) =>
+		client.post<AlertRule>("/admin/alert-rules", body),
+	updateAlertRule: (id: number, body: Partial<AlertRule>) =>
+		client.put<AlertRule>(`/admin/alert-rules/${id}`, body),
+	deleteAlertRule: (id: number) => client.delete(`/admin/alert-rules/${id}`),
+	promptGuards: (signal?: AbortSignal) =>
+		client.get<{ items: PromptGuardRule[] }>("/admin/prompt-guards", signal),
+	createPromptGuard: (body: Partial<PromptGuardRule>) =>
+		client.post<PromptGuardRule>("/admin/prompt-guards", body),
+	updatePromptGuard: (id: number, body: Partial<PromptGuardRule>) =>
+		client.put<PromptGuardRule>(`/admin/prompt-guards/${id}`, body),
+	deletePromptGuard: (id: number) => client.delete(`/admin/prompt-guards/${id}`),
+	healthHistory: (channelId: number, signal?: AbortSignal) =>
+		client.get<{ items: HealthPoint[] }>(
+			`/admin/health-history?channel_id=${channelId}`,
+			signal,
+		),
+	healthSummary: (hours = 24, signal?: AbortSignal) =>
+		client.get<{ items: HealthSummaryItem[] }>(
+			`/admin/health-history/summary?hours=${hours}`,
+			signal,
+		),
+	decisionSnapshot: (requestId: string, signal?: AbortSignal) =>
+		client.get<{
+			id: number;
+			request_id: string;
+			model: string;
+			route_id: number;
+			selected_channel_id: number;
+			payload: {
+				model?: string;
+				route_id?: number;
+				routing_mode?: string;
+				selected_priority?: number | null;
+				session_key?: string;
+				sticky_channel_id?: number | null;
+				sticky_hit?: boolean;
+				sticky_reason?: string;
+				stable_first_hit?: boolean;
+				candidates?: Array<{
+					eligible: boolean;
+					reasons?: string[];
+					score?: number;
+					candidate?: { channel?: { id?: number; name?: string } };
+				}>;
+			};
+			created_at: string;
+		}>(`/admin/decision-snapshot?request_id=${encodeURIComponent(requestId)}`, signal),
 	syncKeys: (
 		id: number,
 		body?: {
@@ -402,21 +542,27 @@ export const api = (client: ApiClient) => ({
 		client.post<WebDAVSyncResult>("/admin/webdav/sync", { mode }),
 	pluginsCatalog: (signal?: AbortSignal) =>
 		client.getList<PluginCatalogEntry>("/admin/plugins/catalog", signal),
+	pluginsMarket: (signal?: AbortSignal) =>
+		client.get<{
+			sources: Array<{ id: string; name: string; url: string }>;
+			plugins: Array<{
+				id: string;
+				name: string;
+				description?: string;
+				author?: string;
+				version?: string;
+				logo?: string;
+				homepage?: string;
+				license?: string;
+				tags?: string[];
+				url: string;
+				source: { id: string; name: string; url: string };
+			}>;
+		}>("/admin/plugins/market", signal),
+	installMarketPlugin: (id: string) =>
+		client.post<PluginRecord>(`/admin/plugins/market/${encodeURIComponent(id)}/install`, {}),
 	pluginsStatus: (signal?: AbortSignal) =>
 		client.getList<ModuleStatus>("/admin/plugins/status", signal),
-	cpaStatus: (
-		baseUrl: string,
-		signal?: AbortSignal,
-	) =>
-		client.get<{
-			running: boolean;
-			latency_ms: number;
-			base_url: string;
-			error?: string;
-		}>(
-			`/admin/cpa/status?base_url=${encodeURIComponent(baseUrl)}`,
-			signal,
-		),
 	plugins: (signal?: AbortSignal) =>
 		client.getList<PluginRecord>("/admin/plugins", signal),
 	activatePlugin: (id: string) =>
@@ -437,4 +583,43 @@ export const api = (client: ApiClient) => ({
 		),
 	uninstallPlugin: (id: string) =>
 		client.delete(`/admin/plugins/${encodeURIComponent(id)}`),
+	updatePlugin: (
+		id: string,
+		body: {
+			url: string;
+			apiKey?: string;
+			name?: string;
+			pagePath?: string;
+			healthPath?: string;
+			apiPrefix?: string;
+		},
+	) =>
+		client.put<PluginRecord>(`/admin/plugins/${encodeURIComponent(id)}`, {
+			url: body.url,
+			...(body.apiKey !== undefined ? { api_key: body.apiKey } : {}),
+			...(body.name ? { name: body.name } : {}),
+			...(body.pagePath ? { page_path: body.pagePath } : {}),
+			...(body.healthPath ? { health_path: body.healthPath } : {}),
+			...(body.apiPrefix ? { api_prefix: body.apiPrefix } : {}),
+		}),
+	registerPlugin: (
+		url: string,
+		apiKey?: string,
+		manual?: {
+			id?: string;
+			name?: string;
+			pagePath?: string;
+			healthPath?: string;
+			apiPrefix?: string;
+		},
+	) =>
+		client.post<PluginRecord>("/admin/plugins/register", {
+			url,
+			...(apiKey ? { api_key: apiKey } : {}),
+			...(manual?.id ? { id: manual.id } : {}),
+			...(manual?.name ? { name: manual.name } : {}),
+			...(manual?.pagePath ? { page_path: manual.pagePath } : {}),
+			...(manual?.healthPath ? { health_path: manual.healthPath } : {}),
+			...(manual?.apiPrefix ? { api_prefix: manual.apiPrefix } : {}),
+		}),
 });

@@ -111,16 +111,16 @@ export function ChannelModelsPanel({
   });
 
   const bulkToggle = useAdminMutation({
-    mutationFn: async (input: { members: RouteMember[]; enabled: boolean }) => {
+    mutationFn: async (input: {
+      updates: { member: RouteMember; enabled: boolean }[];
+    }) => {
       await Promise.all(
-        input.members
-          .filter((member) => member.enabled !== input.enabled)
-          .map((member) =>
-            service.updateMember(member.id, {
-              ...member,
-              enabled: input.enabled,
-            }),
-          ),
+        input.updates.map(({ member, enabled }) =>
+          service.updateMember(member.id, {
+            ...member,
+            enabled,
+          }),
+        ),
       );
     },
     invalidateKeys: [...INVALIDATE],
@@ -372,18 +372,36 @@ export function ChannelModelsPanel({
     );
   };
 
+  const enterBulkMode = () => {
+    // Entering batch mode is intentionally non-destructive: start with every
+    // checkbox clear and let the operator choose the target models.
+    setSelectedIds(new Set());
+    setBulkMode(true);
+  };
+
   const exitBulkMode = () => {
     setBulkMode(false);
     setSelectedIds(new Set());
   };
 
+
   const runBulk = (enabled: boolean) => {
-    const members = selectable
-      .filter((item) => selectedIds.has(item.key))
-      .map((item) => memberFor(item.name))
-      .filter((member): member is RouteMember => member != null);
-    if (members.length === 0) return;
-    bulkToggle.mutate({ members, enabled });
+    // Enable-selected acts as a whitelist: checked rows are enabled and every
+    // other selectable row is disabled in the same pass, so the saved state
+    // matches exactly what the operator checked. Disable-selected only touches
+    // the checked rows.
+    const updates = selectable
+      .map((item) => {
+        const member = memberFor(item.name);
+        if (!member) return null;
+        const next = enabled ? selectedIds.has(item.key) : member.enabled;
+        return member.enabled === next ? null : { member, enabled: next };
+      })
+      .filter(
+        (u): u is { member: RouteMember; enabled: boolean } => u != null,
+      );
+    if (updates.length === 0) return;
+    bulkToggle.mutate({ updates });
   };
 
   const selectedCount = selectable.filter((item) =>
@@ -470,7 +488,7 @@ export function ChannelModelsPanel({
             <Button
               variant="secondary"
               className="channel-alias-save"
-              onClick={() => setBulkMode(true)}
+               onClick={enterBulkMode}
             >
               {t("channels.modelsBulkSelect")}
             </Button>

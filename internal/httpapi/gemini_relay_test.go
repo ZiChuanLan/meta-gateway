@@ -101,6 +101,65 @@ func setupRelay(t *testing.T, baseURL, typeHint string) (string, string, int64) 
 	return server.URL, key.Token, channel.ID
 }
 
+// setupRelayPair is setupRelay with a second channel on the same route:
+// requests first try channel A then fail over to channel B. Both channels
+// use the shared site/credential from baseURL A's site; channel B points at
+// baseURLB directly.
+func setupRelayPair(t *testing.T, baseURLA, baseURLB string) (string, string, int64) {
+	t.Helper()
+	dataDir := t.TempDir()
+	db, err := store.Open(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, err := crypto.New("gemini-test-master-key-at-least-32-characters!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, RetryTimes: 2}
+	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	t.Cleanup(server.Close)
+
+	var site struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/sites", map[string]any{
+		"name": "relay-site", "base_url": baseURLA, "platform": "openai-compatible", "status": "enabled",
+	}), &site)
+
+	var cred struct{ ID int64 }
+	json.Unmarshal(post(t, fmt.Sprintf("%s/admin/sites/%d/credentials", server.URL, site.ID), map[string]any{
+		"kind": "api_key", "secret": "test-key-abcdef", "status": "enabled",
+	}), &cred)
+
+	var channelA struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/channels", map[string]any{
+		"site_id": site.ID, "credential_id": cred.ID, "name": "pair-a",
+		"base_url": baseURLA, "type_hint": "openai-compatible", "status": "enabled",
+	}), &channelA)
+	var channelB struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/channels", map[string]any{
+		"site_id": site.ID, "credential_id": cred.ID, "name": "pair-b",
+		"base_url": baseURLB, "type_hint": "openai-compatible", "status": "enabled",
+	}), &channelB)
+
+	var route struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/routes", map[string]any{
+		"model_pattern": "gemini-2.5-flash", "enabled": true, "retry_times": 2,
+	}), &route)
+	post(t, fmt.Sprintf("%s/admin/routes/%d/members", server.URL, route.ID), map[string]any{
+		"channel_id": channelA.ID, "priority": 2, "weight": 100, "enabled": true,
+	})
+	post(t, fmt.Sprintf("%s/admin/routes/%d/members", server.URL, route.ID), map[string]any{
+		"channel_id": channelB.ID, "priority": 1, "weight": 100, "enabled": true,
+	})
+
+	var key struct{ Token string }
+	json.Unmarshal(post(t, server.URL+"/admin/downstream-keys", map[string]any{
+		"name": "test-key", "scopes": "relay",
+	}), &key)
+	return server.URL, key.Token, channelA.ID
+}
+
 func post(t *testing.T, url string, payload any) []byte {
 	t.Helper()
 	encoded, _ := json.Marshal(payload)

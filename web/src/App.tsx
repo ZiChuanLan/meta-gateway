@@ -10,7 +10,7 @@ import {
 	Moon,
 	Network,
 	Package,
-	Plug,
+	Puzzle,
 	ScrollText,
 	Settings,
 	Sun,
@@ -38,16 +38,17 @@ import {
 	Loading,
 	StatusBadge,
 } from "./components/ui";
+import { GlobalSearch } from "./components/GlobalSearch";
 import { Channels } from "./features/Channels";
 import { Dashboard } from "./features/Dashboard";
 import { ChannelModels } from "./features/ChannelModels";
 import { Checkins } from "./features/Checkins";
 import { ExchangePage } from "./features/ExchangePage";
-import { CpaPanel } from "./features/CpaPanel";
 import { Keys } from "./features/Keys";
 import { Logs } from "./features/Logs";
 import { Maintain } from "./features/Maintain";
 import { Models } from "./features/Models";
+import { PluginHost } from "./features/PluginHost";
 import { Store } from "./features/Store";
 
 type TransitionPhase = "idle" | "fading" | "sealing" | "revealing";
@@ -162,14 +163,41 @@ function Connect({
 	const [remember, setRemember] = useState(true);
 	const [error, setError] = useState("");
 	const [pending, setPending] = useState(false);
+	const [needTOTP, setNeedTOTP] = useState(false);
+	const [totpCode, setTotpCode] = useState("");
 	async function submit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!token.trim()) return;
 		setPending(true);
 		setError("");
 		try {
-			const sites = await api(new ApiClient(token.trim())).sites();
-			onAuthorized(token, remember, sites);
+			// Unified login exchange: raw token (+ TOTP code when enabled) is
+			// swapped for a short-lived signed session token server-side.
+			const res = await fetch("/admin/session", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					token: token.trim(),
+					totp_code: needTOTP ? totpCode.trim() : "",
+				}),
+			});
+			const body = await res.json().catch(() => ({}));
+			if (res.status === 401 && body.error === "totp_required") {
+				setNeedTOTP(true);
+				setError(t("app.connect.totpRequired"));
+				return;
+			}
+			if (!res.ok || !body.session_token) {
+				setError(
+					typeof body.error === "string" && body.error
+						? body.error
+						: t("app.connect.failed"),
+				);
+				return;
+			}
+			const sessionToken = body.session_token as string;
+			const sites = await api(new ApiClient(sessionToken)).sites();
+			onAuthorized(sessionToken, remember, sites);
 		} catch (err) {
 			if (err instanceof ApiError) {
 				setError(
@@ -402,6 +430,22 @@ function Connect({
 							required
 						/>
 					</Field>
+					{needTOTP ? (
+						<Field label={t("app.connect.totp")}>
+							<input
+								type="text"
+								inputMode="numeric"
+								pattern="[0-9]{6}"
+								maxLength={6}
+								value={totpCode}
+								onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+								autoComplete="one-time-code"
+								placeholder="123456"
+								disabled={pending || transitioning}
+								required
+							/>
+						</Field>
+					) : null}
 					<label className="check">
 						<input
 							type="checkbox"
@@ -531,7 +575,7 @@ function AuthenticatedShell({
 	onUnauthorized: () => void;
 }) {
 	const { t } = useI18n();
-	const { checkinEnabled, exchangeEnabled, cpaEnabled } = useModules();
+	const { checkinEnabled, exchangeEnabled, addons } = useModules();
 	const [open, setOpen] = useState(false);
 	const [theme, setTheme] = useState<"light" | "dark">(() => {
 		const stored = window.localStorage.getItem("meta-gateway.theme");
@@ -562,9 +606,17 @@ function AuthenticatedShell({
 		...(exchangeEnabled
 			? [{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight }]
 			: []),
-		...(cpaEnabled
-			? [{ to: "/cpa", label: t("app.nav.cpa"), icon: Plug }]
-			: []),
+		// Installed sidecar plugins get their own sidebar entry (like the
+		// built-in add-ons), opening their embedded page in the shell.
+		...(addons
+			.filter(
+				(m) =>
+					m.source === "sidecar" &&
+					m.installed &&
+					m.enabled &&
+					!!m.open_path,
+			)
+			.map((m) => ({ to: m.open_path!, label: m.name, icon: Puzzle }))),
 		{ to: "/store", label: t("app.nav.store"), icon: Package },
 	];
 	const settingsNav = {
@@ -595,6 +647,7 @@ function AuthenticatedShell({
 						<X />
 					</IconButton>
 				</div>
+				<GlobalSearch />
 				<nav className="sidebar-nav">
 					{primaryNav.map(({ to, label, icon: Icon }) => (
 						<NavLink key={to} to={to} end={to === "/"}>
@@ -658,11 +711,11 @@ function AuthenticatedShell({
 					<Route path="keys" element={<Keys />} />
 					<Route path="logs" element={<Logs />} />
 					<Route path="checkins" element={<Checkins />} />
-					<Route path="exchange" element={<ExchangePage />} />
-					<Route path="cpa" element={<CpaPanel />} />
-					<Route path="maintain" element={<Maintain />} />
+	<Route path="exchange" element={<ExchangePage />} />
+	<Route path="maintain" element={<Maintain />} />
 					<Route path="settings" element={<Maintain />} />
 					<Route path="store" element={<Store />} />
+	<Route path="plugins/:id" element={<PluginHost />} />
 					{/* Legacy paths map into the channel-first product. */}
 					<Route path="sites/*" element={<Navigate to="/" replace />} />
 					<Route path="routing" element={<Navigate to="/models" replace />} />

@@ -57,6 +57,9 @@ services:
       CHECKIN_CRON: "${CHECKIN_CRON:-0 8 * * *}"
       CHECKIN_TZ: "${CHECKIN_TZ:-}"
       PLUGINS_DIR: "${PLUGINS_DIR:-/data/plugins}"
+      # Additional plugin market registry URLs (comma-separated). The built-in
+      # official registry (see docs/PLUGINS.md) is always included.
+      PLUGIN_MARKET_URLS: "${PLUGIN_MARKET_URLS:-}"
       WEBDAV_SYNC_ENABLED: "${WEBDAV_SYNC_ENABLED:-false}"
       WEBDAV_URL: "${WEBDAV_URL:-}"
       WEBDAV_USERNAME: "${WEBDAV_USERNAME:-}"

@@ -18,6 +18,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
   FinanceItem,
+  ModelMetadata,
   Route,
   RouteMember,
   RoutingCandidate,
@@ -124,12 +125,26 @@ function ModelCatalog({
     queryFn: ({ signal }) => service.missingModels(signal),
     refetchInterval: 60_000,
   });
+  // Model metadata library (capability annotations shown as badges).
+  const metadata = useQuery({
+    queryKey: ["model-metadata"],
+    queryFn: ({ signal }) => service.modelMetadata(signal),
+    refetchInterval: 60_000,
+  });
+  const metaByModel = useMemo(() => {
+    const map = new Map<string, ModelMetadata>();
+    for (const item of metadata.data?.items ?? []) {
+      map.set(item.model_name, item);
+    }
+    return map;
+  }, [metadata.data]);
 
   const [selected, setSelected] = useState<number | null>(null);
   const [query, setQuery] = useState(initialModel);
   const [channelFilter, setChannelFilter] = useState(channelIdFromUrl ?? 0);
   const [showAdvanced, setShowAdvanced] = useState(true);
   const [edit, setEdit] = useState<Partial<Route> | null>(null);
+  const [editMeta, setEditMeta] = useState<ModelMetadata | null>(null);
   const [remove, setRemove] = useState<Route | null>(null);
   const [member, setMember] = useState<Partial<RouteMember> | null>(null);
   const [removeMember, setRemoveMember] = useState<RouteMember | null>(null);
@@ -190,10 +205,10 @@ function ModelCatalog({
   const selectedOverview =
     overviews.data?.find((item) => item.route.id === selected) ?? null;
   const selectedRoute = selectedOverview?.route ?? null;
-  const selectedMembers = selectedOverview?.members ?? [];
+  const selectedMembers = useMemo(() => selectedOverview?.members ?? [], [selectedOverview?.members]);
   const selectedModel = selectedRoute?.model_pattern ?? "";
   // Price-aware member ordering (cheapest first) when the toggle is on.
-  const financeItems = finance.data?.items ?? [];
+  const financeItems = useMemo(() => finance.data?.items ?? [], [finance.data?.items]);
   const orderedMembers = useMemo(
     () =>
       priceSort
@@ -373,6 +388,16 @@ const enableChannel = useAdminMutation({
     setSelected(routeId);
   };
 
+	  const delMeta = useAdminMutation({
+	mutationFn: (name: string) => service.deleteModelMetadata(name),
+	invalidateKeys: [["model-metadata"]],
+	  });
+	  const saveMeta = useAdminMutation({
+	mutationFn: (value: ModelMetadata) =>
+	  service.upsertModelMetadata(value.model_name, value),
+	invalidateKeys: [["model-metadata"]],
+	  });
+
   const modelActions = (
     route: Route,
     options?: { closeContext?: boolean },
@@ -423,17 +448,36 @@ const enableChannel = useAdminMutation({
           setShowAdvanced(true);
         },
       },
-      {
-        key: "edit",
-        label: t("common.edit"),
-        icon: <Pencil size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          save.reset();
-          setEdit(route);
-        },
-      },
+	  {
+		key: "meta",
+		label: t("modelsPage.editMetadata"),
+		icon: <Shield size={14} />,
+		onSelect: () => {
+		  close();
+		  setEditMeta(
+			metaByModel.get(route.model_pattern) ?? {
+			  model_name: route.model_pattern,
+			  context_window: 0,
+			  input_modalities: "",
+			  output_modalities: "",
+			  supports_thinking: -1,
+			  vendor: "",
+			  notes: "",
+			},
+		  );
+		},
+	  },
+	  {
+		key: "edit",
+		label: t("common.edit"),
+		icon: <Pencil size={14} />,
+		disabled: busy,
+		onSelect: () => {
+		  close();
+		  save.reset();
+		  setEdit(route);
+		},
+	  },
       {
         key: "delete",
         label: t("common.delete"),
@@ -699,11 +743,45 @@ const enableChannel = useAdminMutation({
                             });
                           }}
                         >
-                          <td>
-                            <strong className="mono">
-                              {item.route.model_pattern}
-                            </strong>
-                          </td>
+							<td>
+								<strong className="mono">
+									{item.route.model_pattern}
+								</strong>
+								{(() => {
+									const meta = metaByModel.get(
+										item.route.model_pattern,
+									);
+									if (!meta) return null;
+									return (
+										<span className="model-meta-badges">
+											{meta.context_window > 0 ? (
+												<span
+													className="model-meta-badge"
+													title={t("modelsPage.metaCtx")}
+												>
+													{formatTokens(meta.context_window)}
+												</span>
+											) : null}
+											{meta.supports_thinking > 0 ? (
+												<span
+													className="model-meta-badge is-thinking"
+													title={t("modelsPage.metaThinking")}
+												>
+													{t("modelsPage.metaThinkingShort")}
+												</span>
+											) : null}
+											{meta.vendor ? (
+												<span
+														className="model-meta-badge"
+														title={t("modelsPage.metaVendor")}
+													>
+													{meta.vendor}
+												</span>
+											) : null}
+										</span>
+									);
+								})()}
+							</td>
                           <td>
                             {head ? (
                               <span title={head.channel.name}>
@@ -1081,52 +1159,63 @@ const enableChannel = useAdminMutation({
                                   </>
                                 );
                               })()}
-                              {entry.manual_override ? (
-                                <>
-                                  {" "}
-                                  <span title={t("routing.protectedHint")}>
-                                    <Shield
-                                      size={12}
-                                      style={{ verticalAlign: "middle" }}
-                                    />{" "}
-                                  </span>
-                                  {t("routing.protectedLabel")}
-                                </>
-                              ) : null}
-                              {memberFinance(entry, selectedModel, financeItems)
-                                ? (() => {
-                                    const info = memberFinance(
-                                      entry,
-                                      selectedModel,
-                                      financeItems,
-                                    )!;
-                                    return (
-                                      <>
-                                        {" · "}
-                                        <span
-                                          className="member-finance"
-                                          title={
-                                            info.overdrawn
-                                              ? t("routing.financeOverdrawnHint")
-                                              : t("routing.financeHint")
-                                          }
-                                        >
-                                          {info.overdrawn
-                                            ? t("routing.financeOverdrawn")
-                                            : t("routing.financeCalls", {
-                                                calls: info.calls,
-                                              })}
-                                          {info.fixed ? t("routing.financeUnitCalls") : t("routing.financeUnitM")}
-                                        </span>
-                                        {cheapestMemberId === entry.id ? (
-                                          <span className="member-cheapest">
-                                            {t("routing.cheapest")}
-                                          </span>
-                                        ) : null}
-                                      </>
-                                    );
-                                  })()
-                                : null}
+									{entry.manual_override ? (
+										<>
+											{" "}
+											<span
+												className="member-protected"
+												title={t("routing.protectedHint")}
+											>
+												<Shield size={12} /> {t("routing.protectedLabel")}
+											</span>
+										</>
+									) : null}
+									{memberFinance(entry, selectedModel, financeItems)
+										? (() => {
+												const info = memberFinance(
+													entry,
+													selectedModel,
+													financeItems,
+												)!;
+												return (
+													<>
+														{" · "}
+														<span
+															className="member-finance"
+															title={
+																info.overdrawn
+																	? t("routing.financeOverdrawnHint")
+																	: t("routing.financeHint")
+															}
+														>
+															{info.overdrawn
+																	? t("routing.financeOverdrawn")
+																	: t("routing.financeCalls", {
+																			calls: info.calls,
+																		})}
+																{info.fixed
+																	? t("routing.financeUnitCalls")
+																	: t("routing.financeUnitM")}
+															</span>
+															{cheapestMemberId === entry.id ? (
+																<span className="member-cheapest">
+																	{t("routing.cheapest")}
+																</span>
+															) : null}
+														</>
+													);
+												})()
+											: (
+												<>
+													{" · "}
+													<span
+														className="member-finance is-na"
+														title={t("routing.financeMissingHint")}
+													>
+														{t("routing.financeMissing")}
+													</span>
+												</>
+											)}
                               {entry.fail_count > 0
                                 ? ` · ${t(
                                     activeCooldown
@@ -1265,25 +1354,39 @@ const enableChannel = useAdminMutation({
         </div>
       </div>
 
-      {edit ? (
-        <RouteDialog
-          value={edit}
-          members={editingMembers}
-          pending={save.isPending}
-          error={save.error}
-          onClose={() => setEdit(null)}
-          onSave={(value) => {
-            const { pin_priority, ...routeValue } = value;
-            save.mutate(routeValue);
-            if (pin_priority !== undefined && editingMembers.length) {
-              pinAllMembers.mutate({
-                pinned: pin_priority,
-                members: editingMembers,
-              });
-            }
-          }}
-        />
-      ) : null}
+	  {edit ? (
+		<RouteDialog
+		  value={edit}
+		  members={editingMembers}
+		  pending={save.isPending}
+		  error={save.error}
+		  onClose={() => setEdit(null)}
+		  onSave={(value) => {
+			const { pin_priority, ...routeValue } = value;
+			save.mutate(routeValue);
+			if (pin_priority !== undefined && editingMembers.length) {
+			  pinAllMembers.mutate({
+				pinned: pin_priority,
+				members: editingMembers,
+			  });
+			}
+		  }}
+		/>
+	  ) : null}
+	  {editMeta ? (
+		<ModelMetadataDialog
+		  value={editMeta}
+		  pending={saveMeta.isPending}
+		  error={saveMeta.error}
+		  onClose={() => setEditMeta(null)}
+		  onSave={(value) => saveMeta.mutate(value)}
+		  onDelete={
+			metaByModel.has(editMeta.model_name)
+			  ? () => delMeta.mutate(editMeta.model_name)
+			  : undefined
+		  }
+		/>
+	  ) : null}
       {member && selected ? (
         <MemberDialog
           value={member}
@@ -1334,6 +1437,130 @@ const enableChannel = useAdminMutation({
         </Dialog>
       ) : null}
     </div>
+  );
+}
+
+// Compact token-count rendering for metadata badges (128000 → 128K).
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1000) return `${Math.round(value / 1000)}K`;
+  return String(value);
+}
+
+// Capability annotation editor for one canonical model name (context window,
+// modalities, thinking support, vendor, notes).
+function ModelMetadataDialog({
+  value,
+  pending,
+  error,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  value: ModelMetadata;
+  pending: boolean;
+  error?: unknown;
+  onClose: () => void;
+  onSave: (value: ModelMetadata) => void;
+  onDelete?: () => void;
+}) {
+  const { t } = useI18n();
+  const [form, setForm] = useState<ModelMetadata>(value);
+  const patch = (partial: Partial<ModelMetadata>) =>
+    setForm((current) => ({ ...current, ...partial }));
+  const thinkingOptions = [
+    { value: -1, label: t("modelsPage.metaThinkingUnknown") },
+    { value: 1, label: t("modelsPage.metaThinkingYes") },
+    { value: 0, label: t("modelsPage.metaThinkingNo") },
+  ];
+  return (
+    <Dialog
+      title={t("modelsPage.metaTitle", { name: value.model_name })}
+      onClose={onClose}
+    >
+      <div className="meta-form">
+        <Field label={t("modelsPage.metaCtx")}>
+          <input
+            type="number"
+            min={0}
+            step={1000}
+            value={form.context_window}
+            onChange={(e) =>
+              patch({ context_window: Math.max(0, Number(e.target.value) || 0) })
+            }
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("modelsPage.metaInput")}>
+          <input
+            value={form.input_modalities}
+            placeholder="text,image,audio"
+            onChange={(e) => patch({ input_modalities: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("modelsPage.metaOutput")}>
+          <input
+            value={form.output_modalities}
+            placeholder="text,audio"
+            onChange={(e) => patch({ output_modalities: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("modelsPage.metaThinking")}>
+          <select
+            value={form.supports_thinking}
+            onChange={(e) =>
+              patch({ supports_thinking: Number(e.target.value) })
+            }
+            disabled={pending}
+          >
+            {thinkingOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label={t("modelsPage.metaVendor")}>
+          <input
+            value={form.vendor}
+            placeholder="DeepSeek, Google, OpenAI…"
+            onChange={(e) => patch({ vendor: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("modelsPage.metaNotes")}>
+          <input
+            value={form.notes}
+            onChange={(e) => patch({ notes: e.target.value })}
+            disabled={pending}
+          />
+        </Field>
+      </div>
+	  {error ? <div className="inline-error">{String(error)}</div> : null}
+      <div className="dialog-actions">
+        {onDelete ? (
+          <Button
+            variant="danger"
+            disabled={pending}
+            onClick={() => {
+              onDelete();
+              onClose();
+            }}
+          >
+            {t("common.delete")}
+          </Button>
+        ) : null}
+        <span style={{ flex: 1 }} />
+        <Button variant="secondary" disabled={pending} onClick={onClose}>
+          {t("common.cancel")}
+        </Button>
+        <Button disabled={pending} onClick={() => onSave(form)}>
+          {pending ? t("common.working") : t("common.save")}
+        </Button>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1687,9 +1914,9 @@ function memberFinance(
     value >= 1000 ? `${Math.round(value / 1000)}k` : String(value);
   return {
     priceUsd: formatUsd(priceUsd),
-    calls: fixed
-      ? formatCount(rawCalls)
-      : `${formatCount(rawCalls)}M`,
+    // Pure count — the render layer appends the unit (" 次" for fixed,
+    // "M" for per-1M-token) exactly once.
+    calls: formatCount(rawCalls),
     fixed,
     overdrawn: balanceUsd < 0,
   };

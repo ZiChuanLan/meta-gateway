@@ -35,6 +35,13 @@ func TestValidateBoundsAndCron(t *testing.T) {
 	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "not a cron"}); err == nil {
 		t.Fatal("expected cron error")
 	}
+	// Discovery cron: empty = disabled (valid); malformed = rejected.
+	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "0 8 * * *", DiscoveryCron: "0 3 * * *", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300}); err != nil {
+		t.Fatalf("valid discovery cron rejected: %v", err)
+	}
+	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "0 8 * * *", DiscoveryCron: "nope", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300}); err == nil {
+		t.Fatal("expected discovery cron error")
+	}
 }
 
 func TestValidateProgressiveCooldownBreakerFloor(t *testing.T) {
@@ -93,6 +100,54 @@ func TestBootstrapUsesEnvironmentWithoutOverride(t *testing.T) {
 	snap := controller.Snapshot()
 	if snap.Source != "environment" || snap.Editable.RetryTimes != 3 || snap.HasOverride {
 		t.Fatalf("snapshot=%+v", snap)
+	}
+}
+
+func TestBootstrapRestoresProxyURLOverride(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cfg := &config.Config{
+		HTTPAddr:                    ":4100",
+		DataDir:                     "./data",
+		RetryTimes:                  3,
+		Cooldown:                    15 * time.Second,
+		CheckinEnabled:              false,
+		CheckinCron:                 "0 9 * * *",
+		RelayRatePerMinute:          10,
+		RelayRateBurst:              2,
+		AdminRatePerMinute:          5,
+		AdminRateBurst:              1,
+		AuditRetentionDays:          30,
+		AuditRetentionRows:          1000,
+		StableFirstDenominator:     25,
+		StableFirstPromoteRequests: 100,
+		RoutingConcurrencyLimit:    10,
+		WebhookThrottleSeconds:     60,
+	}
+	// Persist an override row with a proxy URL, then simulate a restart: a
+	// fresh controller must restore it from the store.
+	controller := New(cfg, db.RuntimeSettings, Appliers{})
+	if err := controller.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	editable := controller.Snapshot().Editable
+	editable.ProxyURL = "http://127.0.0.1:7897"
+	if _, err := controller.Update(editable); err != nil {
+		t.Fatal(err)
+	}
+	restarted := New(cfg, db.RuntimeSettings, Appliers{})
+	if err := restarted.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	snap := restarted.Snapshot()
+	if snap.Editable.ProxyURL != "http://127.0.0.1:7897" {
+		t.Fatalf("proxy_url lost across restart: %q", snap.Editable.ProxyURL)
+	}
+	if snap.Source != "admin_override" {
+		t.Fatalf("source = %s", snap.Source)
 	}
 }
 

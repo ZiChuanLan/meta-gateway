@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "cpa-console",
+      "name": "CPA 管理",
+      "description": "CLIProxyAPI OAuth 订阅账号池管理面板：上传凭证、OAuth 登录、配额管理、日志。",
+      "author": "meta-gateway",
+      "version": "1.0.0",
+      "tags": ["oauth", "账号池", "管理"],
+      "url": "http://192.129.128.178:8317",
+      "page_path": "management.html",
+      "health_path": "healthz",
+      "api_prefix": "/v0/management",
+      "channel_path": "/v1"
+    }
+  ]
+}
