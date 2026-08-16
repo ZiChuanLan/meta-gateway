@@ -1608,7 +1608,25 @@ func validRoutingMode(mode string) bool {
 		mode == domain.RoutingModeAuto ||
 		mode == domain.RoutingModeLatency ||
 		mode == domain.RoutingModeWeighted ||
-		mode == domain.RoutingModeAdaptive
+		mode == domain.RoutingModeAdaptive ||
+		mode == domain.RoutingModeSingle
+}
+
+// validateSinglePin keeps routing_mode=single consistent: the pin must belong
+// to the route being saved. A single route without a pin evaluates as auto
+// (fall-back), but a pin pointing at another route's member is a client bug.
+func (h *AdminHandler) validateSinglePin(route *domain.Route) error {
+	if route.RoutingMode != domain.RoutingModeSingle || route.SingleMemberID == nil {
+		return nil
+	}
+	member, err := h.db.RouteMember.GetByID(*route.SingleMemberID)
+	if err != nil {
+		return err
+	}
+	if member == nil || member.RouteID != route.ID {
+		return errors.New("single_member_id must be a member of this route")
+	}
+	return nil
 }
 
 // validateRouteRetryOverrides keeps the model-level policy within the same
@@ -1663,6 +1681,8 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Pins are only meaningful on an existing route (members exist first), so
+	// creating a route in single mode without a pin is accepted as auto-fall-back.
 	id, err := h.db.Route.Create(&rt)
 	if err != nil {
 		writeStoreError(w, err)
@@ -1712,6 +1732,10 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateRouteRetryOverrides(&rt); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.validateSinglePin(&rt); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

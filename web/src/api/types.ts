@@ -2,6 +2,7 @@ export type Status = 'enabled' | 'disabled' | 'auto_disabled'
 
 export type ChannelHealthState = 'disabled' | 'unhealthy' | 'degraded' | 'healthy' | 'unknown'
 export type ChannelConnectivityState = 'unknown' | 'reachable' | 'unreachable'
+export type ChannelAccountState = 'unknown' | 'ok' | 'invalid' | 'banned' | 'rate_limited' | 'failed'
 
 export interface Site { id: number; name: string; base_url: string; platform: string; status: Status; created_at: string; updated_at: string }
 export interface Credential { id: number; site_id: number; kind: string; has_secret: boolean; meta_json?: string; status: Status; checkin_enabled: boolean; models_csv?: string; created_at?: string }
@@ -33,11 +34,15 @@ export interface ChannelOverview {
 	last_ping_ok?: boolean
 	last_ping_error?: string
 	last_ping_ms?: number
+	last_account_probe_at?: string
+	last_account_probe_ok?: boolean
+	last_account_probe_error?: string
 	health_state?: ChannelHealthState
 	health_reason?: string
 	connectivity_state?: ChannelConnectivityState
+	account_state?: ChannelAccountState
 }
-export interface Route { id: number; model_pattern: string; enabled: boolean; routing_mode: string; mapping_json?: string; notes?: string; retry_times?: number | null; channel_retry_times?: number | null; created_at: string; updated_at: string }
+export interface Route { id: number; model_pattern: string; enabled: boolean; routing_mode: string; mapping_json?: string; notes?: string; single_member_id?: number | null; retry_times?: number | null; channel_retry_times?: number | null; created_at: string; updated_at: string }
 export interface RouteMember { id: number; route_id: number; channel_id: number; priority: number; weight: number; enabled: boolean; auto: boolean; manual_override: boolean; fail_count: number; cooldown_until?: string; last_error?: string; created_at: string; updated_at: string }
 export interface DownstreamKey {
   id: number
@@ -54,6 +59,7 @@ export interface DownstreamKey {
   expires_at?: string
   allowed_ips?: string
   estimated_cost?: number
+  has_token?: boolean
   created_at: string
 }
 export interface CreatedDownstreamKey extends DownstreamKey { token: string }

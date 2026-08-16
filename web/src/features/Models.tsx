@@ -1,14 +1,17 @@
 import {
   ExternalLink,
+  ChevronDown,
   GripVertical,
   Info,
   Pencil,
   Plus,
   Power,
   RotateCcw,
+  Route as RouteIcon,
   Search,
   Shield,
   Sparkles,
+  Target,
   Trash2,
   X,
 } from "lucide-react";
@@ -150,6 +153,10 @@ function ModelCatalog({
   const [removeMember, setRemoveMember] = useState<RouteMember | null>(null);
   const [tryOpen, setTryOpen] = useState(false);
   const [priceSort, setPriceSort] = useState(false);
+  const [bulkSelect, setBulkSelect] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(
+    () => new Set(),
+  );
   const [missingDismissed, setMissingDismissed] = useState(
     () => sessionStorage.getItem("models.missingDismissed") === "1",
   );
@@ -207,6 +214,12 @@ function ModelCatalog({
   const selectedRoute = selectedOverview?.route ?? null;
   const selectedMembers = useMemo(() => selectedOverview?.members ?? [], [selectedOverview?.members]);
   const selectedModel = selectedRoute?.model_pattern ?? "";
+
+  useEffect(() => {
+    setSelectedMemberIds(new Set());
+    setBulkSelect(false);
+  }, [selected]);
+
   // Price-aware member ordering (cheapest first) when the toggle is on.
   const financeItems = useMemo(() => finance.data?.items ?? [], [finance.data?.items]);
   const orderedMembers = useMemo(
@@ -248,6 +261,14 @@ function ModelCatalog({
   const retryPolicyIsOverridden = selectedRoute?.retry_times != null;
   const channelRetryPolicyIsOverridden =
     selectedRoute?.channel_retry_times != null;
+  /** The member pinned by routing_mode=single, when that mode is active. */
+  const singleModePinned =
+    selectedRoute?.routing_mode === "single"
+      ? (selectedMembers.find(
+          (candidate) => candidate.member.id === selectedRoute.single_member_id,
+        ) ?? null)
+      : null;
+  const singleModeActive = selectedRoute?.routing_mode === "single";
   const explain = useQuery({
     queryKey: ["explain", selected],
     queryFn: ({ signal }) =>
@@ -269,6 +290,7 @@ function ModelCatalog({
         ? service.updateRoute(value.id, value)
         : service.createRoute(value),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    toastOnError: false,
     onSuccess: (route) => {
       setSelected(route.id);
       setEdit(null);
@@ -277,6 +299,7 @@ function ModelCatalog({
   const del = useAdminMutation({
     mutationFn: service.deleteRoute,
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    toastOnError: false,
     onSuccess: () => {
       setSelected(null);
       setRemove(null);
@@ -288,11 +311,13 @@ function ModelCatalog({
         ? service.updateMember(value.id, value)
         : service.createMember(selected!, value),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    toastOnError: false,
     onSuccess: () => setMember(null),
   });
 const delMember = useAdminMutation({
 	mutationFn: (memberId: number) => service.deleteMember(memberId),
 	invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+	toastOnError: false,
 	onSuccess: () => setRemoveMember(null),
 });
 const enableChannel = useAdminMutation({
@@ -312,8 +337,22 @@ const enableChannel = useAdminMutation({
     pendingIdOf: (route) => route.id,
   });
   const saveRoutingMode = useAdminMutation({
-    mutationFn: ({ route, mode }: { route: Route; mode: string }) =>
-      service.updateRoute(route.id, { ...route, routing_mode: mode }),
+    mutationFn: ({
+      route,
+      mode,
+      singleMemberId,
+    }: {
+      route: Route;
+      mode: string;
+      singleMemberId?: number | null;
+    }) =>
+      service.updateRoute(route.id, {
+        ...route,
+        routing_mode: mode,
+        ...(singleMemberId !== undefined
+          ? { single_member_id: singleMemberId }
+          : {}),
+      }),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     pendingIdOf: ({ route }) => route.id,
   });
@@ -323,6 +362,59 @@ const enableChannel = useAdminMutation({
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     pendingIdOf: (entry) => entry.id,
   });
+  /**
+   * "Use only this channel": switch the route into routing_mode=single with
+   * this member pinned. Non-destructive — every member keeps its enabled
+   * flag, cross-channel retry reads as 0 at evaluation time, and restoring is
+   * just switching the mode back (server-side, survives reloads).
+   */
+  const pinMember = useAdminMutation({
+    mutationFn: (input: { route: Route; memberId: number | null }) =>
+      service.updateRoute(input.route.id, {
+        ...input.route,
+        routing_mode:
+          input.memberId != null ? "single" : "auto",
+        single_member_id: input.memberId,
+      }),
+    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+  });
+  /** Bulk enable/disable the members selected in bulk mode. */
+  const bulkToggleMembers = useAdminMutation({
+    mutationFn: async (input: { enabled: boolean }) => {
+      const updates = (orderedMembers ?? [])
+        .filter((candidate) => selectedMemberIds.has(candidate.member.id))
+        .filter((candidate) => candidate.member.enabled !== input.enabled)
+        .map((candidate) =>
+          service.updateMember(candidate.member.id, {
+            ...candidate.member,
+            enabled: input.enabled,
+          }),
+        );
+      await Promise.all(updates);
+    },
+    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    onSuccess: () => {
+      setSelectedMemberIds(new Set());
+      setBulkSelect(false);
+    },
+  });
+  const toggleMemberSelect = (memberId: number) => {
+    setSelectedMemberIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(memberId)) {
+        next.delete(memberId);
+      } else {
+        next.add(memberId);
+      }
+      return next;
+    });
+  };
+  const selectAllMembers = () => {
+    setSelectedMemberIds(
+      new Set((orderedMembers ?? []).map((c) => c.member.id)),
+    );
+  };
+  const clearMemberSelection = () => setSelectedMemberIds(new Set());
   const clearHealth = useAdminMutation({
     mutationFn: (memberId: number) => service.clearMemberHealth(memberId),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
@@ -391,11 +483,13 @@ const enableChannel = useAdminMutation({
 	  const delMeta = useAdminMutation({
 	mutationFn: (name: string) => service.deleteModelMetadata(name),
 	invalidateKeys: [["model-metadata"]],
+	toastOnError: false,
 	  });
 	  const saveMeta = useAdminMutation({
 	mutationFn: (value: ModelMetadata) =>
 	  service.upsertModelMetadata(value.model_name, value),
 	invalidateKeys: [["model-metadata"]],
+	toastOnError: false,
 	  });
 
   const modelActions = (
@@ -442,6 +536,7 @@ const enableChannel = useAdminMutation({
       {
         key: "routing",
         label: t("modelsPage.showRouting"),
+        icon: <RouteIcon size={14} />,
         onSelect: () => {
           close();
           selectRow(route.id);
@@ -883,7 +978,7 @@ const enableChannel = useAdminMutation({
                 />
               </div>
 
-              <div className="detail-primary-bar">
+						<div className="detail-primary-bar">
                 <Button
                   icon={<Sparkles size={14} />}
                   onClick={() => setTryOpen(true)}
@@ -900,6 +995,22 @@ const enableChannel = useAdminMutation({
                     disabled={saveRoutingMode.pendingId === selectedRoute.id}
                     onChange={(event) => {
                       const next = event.target.value;
+                      if (next === "single") {
+                        // Manual single selection pins the top member; the
+                        // per-member menu pins a specific channel.
+                        const top =
+                          selectedMembers.find((c) => c.member.enabled) ??
+                          selectedMembers[0];
+                        saveRoutingMode.mutate({
+                          route: selectedRoute,
+                          mode: next,
+                          singleMemberId:
+                            selectedRoute.single_member_id ??
+                            top?.member.id ??
+                            null,
+                        });
+                        return;
+                      }
                       saveRoutingMode.mutate({
                         route: selectedRoute,
                         mode: next,
@@ -914,19 +1025,19 @@ const enableChannel = useAdminMutation({
                     <option value="weighted">
                       {t("routing.mode.weighted")}
                     </option>
+                    <option value="single">{t("routing.mode.single")}</option>
                   </select>
                 </div>
                 <ActionMenu
                   compact
                   label={t("common.moreActions")}
                   disabled={toggleRoute.pendingId === selectedRoute.id}
-                  items={modelActions(selectedRoute)}
-                />
-                <p className="detail-actions-hint">
-                  {t("modelsPage.scopeHint")}
-                </p>
-              </div>
-              <div className="routing-policy-summary">
+									items={modelActions(selectedRoute)}
+								/>
+								<InfoTip label={t("modelsPage.scopeHint")} />
+							</div>
+								<div className="routing-policy-card">
+								<div className="routing-policy-summary">
                 <span className="routing-policy-title">
                   {t("routing.effectivePolicy")}
                 </span>
@@ -951,8 +1062,8 @@ const enableChannel = useAdminMutation({
                     {t("routing.policyLoading")}
                   </span>
                 )}
-              </div>
-              <div className="routing-retry-summary">
+								</div>
+								<div className="routing-retry-summary">
                 <span className="routing-policy-title">
                   {t("routing.retryPolicy")}
                 </span>
@@ -985,14 +1096,54 @@ const enableChannel = useAdminMutation({
                       : t("routing.signal.off")
                     : "?"}
                 </span>
-              </div>
+								</div>
+								</div>
 
-              <button
-                type="button"
-                className="advanced-toggle"
+								{singleModeActive && selectedRoute ? (
+									<div className="single-mode-banner">
+										<Target size={15} />
+										<div className="single-mode-banner-body">
+											<strong>
+												{t("routing.singleModeBanner", {
+													name: singleModePinned
+														? singleModePinned.channel.name
+														: t("routing.singleModeMissingName"),
+												})}
+											</strong>
+											<small>
+												{singleModePinned
+													? t("routing.singleModeHint")
+													: t("routing.singleModeMissing")}
+												{singleModePinned && !singleModePinned.member.enabled
+													? ` ${t("routing.singleModeDisabledWarning")}`
+													: ""}
+											</small>
+										</div>
+										<Button
+											variant="secondary"
+											disabled={pinMember.isPending}
+											onClick={() =>
+												pinMember.mutate({
+													route: selectedRoute,
+													memberId: null,
+												})
+											}
+										>
+											{t("routing.singleModeRestore")}
+										</Button>
+									</div>
+								) : null}
+
+									<button
+										type="button"
+										className="advanced-toggle"
                 onClick={() => setShowAdvanced((value) => !value)}
               >
-                {showAdvanced
+									<ChevronDown
+										size={14}
+										className={showAdvanced ? "chevron-flip is-open" : "chevron-flip"}
+									/>
+									{showAdvanced
                   ? t("modelsPage.hideRouting")
                   : t("modelsPage.showRouting")}
               </button>
@@ -1018,6 +1169,15 @@ const enableChannel = useAdminMutation({
                     >
                   {t("routing.addMember")}
                 </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setBulkSelect((value) => !value);
+                    setSelectedMemberIds(new Set());
+                  }}
+                >
+                  {t("routing.bulkSelect")}
+                </Button>
                 <label className="price-sort-toggle" title={t("routing.priceSortHint")}>
                   <input
                     type="checkbox"
@@ -1027,6 +1187,41 @@ const enableChannel = useAdminMutation({
                   <span>{t("routing.priceSort")}</span>
                 </label>
               </div>
+                  {bulkSelect && selectedMembers.length > 0 ? (
+                    <div className="routing-bulk-bar">
+                      <span className="routing-bulk-count">
+                        {t("routing.bulkSelected", {
+                          count: selectedMemberIds.size,
+                        })}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        disabled={selectedMemberIds.size === 0}
+                        onClick={() => bulkToggleMembers.mutate({ enabled: true })}
+                      >
+                        {t("routing.bulkEnable")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={selectedMemberIds.size === 0}
+                        onClick={() => bulkToggleMembers.mutate({ enabled: false })}
+                      >
+                        {t("routing.bulkDisable")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={selectAllMembers}
+                      >
+                        {t("routing.bulkSelectAll")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={clearMemberSelection}
+                      >
+                        {t("routing.bulkClear")}
+                      </Button>
+                    </div>
+                  ) : null}
                   {selectedMembers.length > 1 ? (
                     <div className="routing-reorder-hint">
                       <span>
@@ -1085,9 +1280,9 @@ const enableChannel = useAdminMutation({
                       };
                       return (
                         <div
-                          className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}`}
+                          className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
                           key={entry.id}
-                              draggable={!reorderMembers.isPending && !priceSort}
+                          draggable={!reorderMembers.isPending && !priceSort && !bulkSelect}
                           onDragStart={(event) => {
                             setDragMemberId(entry.id);
                             event.dataTransfer.effectAllowed = "move";
@@ -1123,6 +1318,18 @@ const enableChannel = useAdminMutation({
                           }}
                           onDragEnd={() => setDragMemberId(null)}
                         >
+                          {bulkSelect ? (
+                            <label
+                              className="member-bulk-check"
+                              title={t("routing.bulkToggleSelect")}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedMemberIds.has(entry.id)}
+                                onChange={() => toggleMemberSelect(entry.id)}
+                              />
+                            </label>
+                          ) : null}
                           <button
                             type="button"
                             className="member-drag-handle"
@@ -1236,6 +1443,18 @@ const enableChannel = useAdminMutation({
                             </small>
                           </div>
                           <div className="member-controls">
+                            {singleModeActive &&
+                            selectedRoute?.single_member_id === entry.id ? (
+                              <span
+                                className="member-pin-chip"
+                                title={t("routing.singleModeBanner", {
+                                  name: candidate.channel.name,
+                                })}
+                              >
+                                <Target size={11} />
+                                {t("routing.pinChip")}
+                              </span>
+                            ) : null}
                             <span className="member-row-state">
                               <StatusBadge value={state} />
                             </span>
@@ -1301,7 +1520,7 @@ const enableChannel = useAdminMutation({
                             <ActionMenu
                               compact
                               label={t("common.moreActions")}
-                              disabled={busy}
+                              disabled={busy || bulkSelect}
                               items={[
                                 {
                                   key: "toggle",
@@ -1310,6 +1529,40 @@ const enableChannel = useAdminMutation({
                                     : t("common.enableAction"),
                                   onSelect: () => toggleMember.mutate(entry),
                                 },
+                                ...(orderedMembers.length > 1
+                                  ? [
+                                      {
+                                        key: "solo",
+                                        icon: <Target size={14} />,
+                                        label:
+                                          selectedRoute?.routing_mode ===
+                                            "single" &&
+                                          selectedRoute.single_member_id ===
+                                            entry.id
+                                            ? t("routing.unsoloMember")
+                                            : t("routing.soloMember"),
+                                        disabled: pinMember.isPending,
+                                        onSelect: () => {
+                                          if (
+                                            selectedRoute?.routing_mode ===
+                                              "single" &&
+                                            selectedRoute.single_member_id ===
+                                              entry.id
+                                          ) {
+                                            pinMember.mutate({
+                                              route: selectedRoute,
+                                              memberId: null,
+                                            });
+                                          } else if (selectedRoute) {
+                                            pinMember.mutate({
+                                              route: selectedRoute,
+                                              memberId: entry.id,
+                                            });
+                                          }
+                                        },
+                                      },
+                                    ]
+                                  : []),
                                 ...(canResetMemberHealth
                                   ? [
                                       {
@@ -1552,7 +1805,7 @@ function ModelMetadataDialog({
             {t("common.delete")}
           </Button>
         ) : null}
-        <span style={{ flex: 1 }} />
+        <span className="flex-spacer" />
         <Button variant="secondary" disabled={pending} onClick={onClose}>
           {t("common.cancel")}
         </Button>

@@ -632,3 +632,79 @@ func TestConcurrencyGuardDisabledIsNoop(t *testing.T) {
 		t.Fatalf("guard disabled still penalized channel 1: %d/40", firstWins)
 	}
 }
+
+func TestSingleModePinsMemberAndZeroesRetry(t *testing.T) {
+	pin := int64(2)
+	route := &domain.Route{
+		ID:             1,
+		RoutingMode:    domain.RoutingModeSingle,
+		SingleMemberID: &pin,
+		RetryTimes:     intPtr(3),
+	}
+	candidates := []domain.RoutingCandidate{
+		candidate(1, 20, 100),
+		candidate(2, 10, 100),
+		candidate(3, 10, 100),
+	}
+	selector := NewWithDependencies(fakeRepo{route: route, candidates: candidates}, fakeClock{time.Now()}, &fakeRandom{values: []int{0}})
+
+	decision, err := selector.Select(context.Background(), "model", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The pin outranks priority tiers: member 2 wins even though member 1
+	// sits in a higher tier.
+	if decision.Selected.Channel.ID != 2 {
+		t.Fatalf("got channel %d, want pinned channel 2", decision.Selected.Channel.ID)
+	}
+	if decision.RetryTimesOverride == nil || *decision.RetryTimesOverride != 0 {
+		t.Fatalf("single mode must force retry override 0, got %v", decision.RetryTimesOverride)
+	}
+	for _, evaluation := range decision.Candidates {
+		if evaluation.Candidate.Member.ID == 2 {
+			continue
+		}
+		if evaluation.Eligible {
+			t.Fatalf("member %d should be ineligible under single mode", evaluation.Candidate.Member.ID)
+		}
+		found := false
+		for _, reason := range evaluation.Reasons {
+			if reason == ReasonSingleMode {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("member %d missing single_mode reason: %v", evaluation.Candidate.Member.ID, evaluation.Reasons)
+		}
+	}
+}
+
+func TestSingleModeMissingPinFallsBackToAuto(t *testing.T) {
+	pin := int64(99)
+	route := &domain.Route{
+		ID:             1,
+		RoutingMode:    domain.RoutingModeSingle,
+		SingleMemberID: &pin,
+		RetryTimes:     intPtr(2),
+	}
+	candidates := []domain.RoutingCandidate{
+		candidate(1, 20, 100),
+		candidate(2, 10, 100),
+	}
+	selector := NewWithDependencies(fakeRepo{route: route, candidates: candidates}, fakeClock{time.Now()}, &fakeRandom{values: []int{0}})
+
+	decision, err := selector.Select(context.Background(), "model", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Dangling pin behaves as auto: the top tier picks normally and the
+	// stored retry override stays untouched.
+	if decision.Selected.Channel.ID != 1 {
+		t.Fatalf("got channel %d, want tier winner 1", decision.Selected.Channel.ID)
+	}
+	if decision.RetryTimesOverride == nil || *decision.RetryTimesOverride != 2 {
+		t.Fatalf("dangling pin must keep stored retry override, got %v", decision.RetryTimesOverride)
+	}
+}
+
+func intPtr(v int) *int { return &v }

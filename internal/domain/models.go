@@ -282,6 +282,9 @@ const (
 	RoutingModeLatency  = "latency"
 	RoutingModeWeighted = "weighted"
 	RoutingModeAdaptive = "adaptive"
+	// RoutingModeSingle pins the route to one member (SingleMemberID): every
+	// other member is skipped and cross-channel retry rounds count as 0.
+	RoutingModeSingle = "single"
 )
 
 // NormalizeRoutingMode maps an empty or unknown-format mode to RoutingModeAuto.
@@ -300,6 +303,9 @@ type Route struct {
 	RoutingMode  string `json:"routing_mode"`
 	MappingJSON  string `json:"mapping_json,omitempty"`
 	Notes        string `json:"notes,omitempty"`
+	// SingleMemberID is the route_members.id pinned by RoutingModeSingle.
+	// nil = not pinned (mode single without a live pin behaves as auto).
+	SingleMemberID *int64 `json:"single_member_id,omitempty"`
 	// RetryTimes overrides the global retry rounds (RETRY_TIMES) for this
 	// model. nil = follow the global setting; 0 = no cross-channel retry.
 	RetryTimes *int `json:"retry_times,omitempty"`

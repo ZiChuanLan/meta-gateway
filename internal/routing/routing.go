@@ -28,6 +28,9 @@ const (
 	ReasonExcluded         Reason = "already_attempted"
 	ReasonInvalidWeight    Reason = "invalid_weight"
 	ReasonCircuitOpen      Reason = "circuit_open"
+	// ReasonSingleMode marks members skipped because the route is pinned to
+	// another member via routing_mode=single.
+	ReasonSingleMode Reason = "single_mode_other_member"
 )
 
 type Evaluation struct {
@@ -301,6 +304,19 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 	}
 	mappingJSON := route.MappingJSON
 	now := s.clock.Now().UTC()
+	// Single mode: routing_mode=single pins the route to one member. When the
+	// pinned member no longer exists (deleted), the pin is inert and the route
+	// behaves as auto so traffic is never stranded.
+	mode := domain.NormalizeRoutingMode(route.RoutingMode)
+	var singlePin *int64
+	if mode == domain.RoutingModeSingle && route.SingleMemberID != nil {
+		for _, candidate := range candidates {
+			if candidate.Member.ID == *route.SingleMemberID {
+				singlePin = route.SingleMemberID
+				break
+			}
+		}
+	}
 	evaluations := make([]Evaluation, 0, len(candidates))
 	for _, candidate := range candidates {
 		reasons := make([]Reason, 0, 2)
@@ -322,6 +338,9 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		}
 		if candidate.Member.Weight < 0 {
 			reasons = append(reasons, ReasonInvalidWeight)
+		}
+		if singlePin != nil && candidate.Member.ID != *singlePin {
+			reasons = append(reasons, ReasonSingleMode)
 		}
 		if s.circuitWeight != nil {
 			circuitWeight = s.circuitWeight(candidate.Channel.ID, model)
@@ -349,14 +368,21 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		}
 		return left.ID < right.ID
 	})
+	// With exactly one usable channel there is nothing to fail over to:
+	// cross-channel retry rounds count as 0 regardless of the stored override.
+	retryTimesOverride := route.RetryTimes
+	if singlePin != nil {
+		zero := 0
+		retryTimesOverride = &zero
+	}
 	return Explanation{
 		Model:                     model,
 		RouteID:                   route.ID,
 		RouteMappingJSON:          mappingJSON,
-		RoutingMode:               domain.NormalizeRoutingMode(route.RoutingMode),
+		RoutingMode:               mode,
 		EvaluatedAt:               now,
 		Candidates:                evaluations,
-		RetryTimesOverride:        route.RetryTimes,
+		RetryTimesOverride:        retryTimesOverride,
 		ChannelRetryTimesOverride: route.ChannelRetryTimes,
 	}, nil
 }

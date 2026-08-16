@@ -164,6 +164,11 @@ export const api = (client: ApiClient) => ({
 		body: { kind?: string; secret?: string; meta_json?: string; status?: string; models_csv?: string },
 	) => client.put<Credential>(`/admin/credentials/${id}`, body),
 	deleteCredential: (id: number) => client.delete(`/admin/credentials/${id}`),
+	revealCredential: (siteId: number, id: number) =>
+		client.post<{ secret: string }>(
+			`/admin/sites/${siteId}/credentials/${id}/reveal`,
+			{},
+		),
 	setCheckin: (id: number, enabled: boolean) =>
 		client.put<{ credential_id: number; checkin_enabled: boolean }>(
 			`/admin/credentials/${id}/checkin`,
@@ -246,6 +251,13 @@ export const api = (client: ApiClient) => ({
 		},
 	) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
 	deleteKey: (id: number) => client.delete(`/admin/downstream-keys/${id}`),
+	revealKey: (id: number) =>
+		client.post<{ token: string }>(`/admin/downstream-keys/${id}/reveal`, {}),
+	rotateKey: (id: number) =>
+		client.post<{ id: number; token: string }>(
+			`/admin/downstream-keys/${id}/rotate`,
+			{},
+		),
 	usageSummary: (downstreamKeyId?: number, signal?: AbortSignal) => {
 		const query = new URLSearchParams()
 		if (downstreamKeyId != null) query.set("downstream_key_id", String(downstreamKeyId))

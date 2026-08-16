@@ -75,11 +75,16 @@ func scanRoute(scanner interface {
 }, r *domain.Route) error {
 	var enabled int
 	var retryTimes, channelRetryTimes sql.NullInt64
-	if err := scanner.Scan(&r.ID, &r.ModelPattern, &enabled, &r.RoutingMode, &r.MappingJSON, &r.Notes, &retryTimes, &channelRetryTimes, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	var singleMemberID sql.NullInt64
+	if err := scanner.Scan(&r.ID, &r.ModelPattern, &enabled, &r.RoutingMode, &r.MappingJSON, &r.Notes, &singleMemberID, &retryTimes, &channelRetryTimes, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		return err
 	}
 	r.Enabled = enabled != 0
 	r.RoutingMode = domain.NormalizeRoutingMode(r.RoutingMode)
+	if singleMemberID.Valid {
+		v := singleMemberID.Int64
+		r.SingleMemberID = &v
+	}
 	if retryTimes.Valid {
 		v := int(retryTimes.Int64)
 		r.RetryTimes = &v
@@ -92,7 +97,7 @@ func scanRoute(scanner interface {
 }
 
 func (s *RouteStore) List() ([]domain.Route, error) {
-	rows, err := s.db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, created_at, updated_at FROM routes ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("route list: %w", err)
 	}
@@ -128,7 +133,7 @@ func (s *RouteStore) ListEnabledPatterns() ([]string, error) {
 }
 
 func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
-	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE id = ?`, id)
 	var r domain.Route
 	if err := scanRoute(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -141,7 +146,7 @@ func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
 
 // GetByModel returns the best enabled route for the given model (exact, then wildcard).
 func (s *RouteStore) GetByModel(model string) (*domain.Route, error) {
-	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
+	row := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
 	var exact domain.Route
 	if err := scanRoute(row, &exact); err == nil {
 		return &exact, nil
@@ -156,8 +161,8 @@ func (s *RouteStore) Create(r *domain.Route) (int64, error) {
 	if r.Enabled {
 		enabled = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times) VALUES (?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))`,
-		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes))
+	res, err := s.db.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt64Ptr(r.SingleMemberID), nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes))
 	if err != nil {
 		return 0, fmt.Errorf("route create: %w", err)
 	}
@@ -169,8 +174,8 @@ func (s *RouteStore) Update(r *domain.Route) error {
 	if r.Enabled {
 		enabled = 1
 	}
-	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, routing_mode=?, mapping_json=?, notes=?, retry_times=NULLIF(?, ''), channel_retry_times=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
-		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), r.ID)
+	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, routing_mode=?, mapping_json=?, notes=?, single_member_id=?, retry_times=NULLIF(?, ''), channel_retry_times=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt64Ptr(r.SingleMemberID), nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), r.ID)
 	if err != nil {
 		return fmt.Errorf("route update: %w", err)
 	}
@@ -325,7 +330,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(routeID int64) ([]domain.Routin
 // RoutingCandidates loads member and channel facts for the best matching enabled route.
 // Exact model_pattern wins; otherwise the longest wildcard (* or ?) match is used.
 func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []domain.RoutingCandidate, error) {
-	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
+	routeRow := s.db.QueryRow(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
 	var route domain.Route
 	if err := scanRoute(routeRow, &route); err != nil {
 		if err == sql.ErrNoRows {
@@ -617,6 +622,11 @@ func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
 }
 
 func (s *RouteMemberStore) Delete(id int64) error {
+	// Deleting a pinned single-mode member exits that mode: the pin would be
+	// dangling otherwise. auto is the safe fallback (full candidate pool).
+	if _, err := s.db.Exec(`UPDATE routes SET routing_mode='auto', single_member_id=NULL, updated_at=datetime('now') WHERE single_member_id = ?`, id); err != nil {
+		return fmt.Errorf("route member delete unpin: %w", err)
+	}
 	_, err := s.db.Exec(`DELETE FROM route_members WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("route member delete: %w", err)
@@ -649,9 +659,17 @@ func nullableInt(v *int) any {
 	return *v
 }
 
+// nullableInt64Ptr converts a *int64 id to a SQL parameter; nil stays NULL.
+func nullableInt64Ptr(v *int64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
 // findBestWildcardRoute selects the most specific enabled wildcard route for model.
 func findBestWildcardRoute(db *sql.DB, model string) (*domain.Route, error) {
-	rows, err := db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE enabled = 1 AND (instr(model_pattern, '*') > 0 OR instr(model_pattern, '?') > 0)`)
+	rows, err := db.Query(`SELECT id, model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, created_at, updated_at FROM routes WHERE enabled = 1 AND (instr(model_pattern, '*') > 0 OR instr(model_pattern, '?') > 0)`)
 	if err != nil {
 		return nil, fmt.Errorf("route wildcard list: %w", err)
 	}
