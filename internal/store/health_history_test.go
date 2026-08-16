@@ -13,16 +13,21 @@ func TestHealthHistoryLifecycle(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now().UTC()
-	// 3 successes + 1 failure on channel 1, 1 success on channel 2.
+	// 3 successes + 1 failure on channel 1, 1 success on channel 2. Kinds mix
+	// ping/probe to verify the kind dimension is stored and returned.
 	for i := 0; i < 3; i++ {
-		if err := db.HealthHistory.Append(1, true, 120, "", now.Add(-time.Duration(i)*time.Minute)); err != nil {
+		kind := "probe"
+		if i == 1 {
+			kind = "ping"
+		}
+		if err := db.HealthHistory.Append(1, kind, true, 120, "", now.Add(-time.Duration(i)*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := db.HealthHistory.Append(1, false, 0, "timeout", now.Add(-time.Hour)); err != nil {
+	if err := db.HealthHistory.Append(1, "probe", false, 0, "timeout", now.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.HealthHistory.Append(2, true, 90, "", now); err != nil {
+	if err := db.HealthHistory.Append(2, "account", true, 90, "", now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,6 +40,9 @@ func TestHealthHistoryLifecycle(t *testing.T) {
 	}
 	if recent[0].OK != false || recent[0].Verdict != "timeout" || recent[3].OK != true {
 		t.Fatalf("recent order/content wrong: %+v", recent)
+	}
+	if recent[3].Kind != "probe" {
+		t.Fatalf("recent kind wrong: %+v", recent[3])
 	}
 
 	// Summary over 24h: channel 1 = 3/4, channel 2 = 1/1.

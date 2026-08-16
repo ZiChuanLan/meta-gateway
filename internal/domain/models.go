@@ -35,6 +35,39 @@ const (
 	ConnectivityStateUnreachable = "unreachable"
 )
 
+// Account is the credential-layer dimension: access_token/session identity
+// probes. It is deliberately separate from HealthState (business probe) and
+// ConnectivityState (network ping) so one failing layer never masks another.
+const (
+	AccountStateUnknown     = "unknown"
+	AccountStateOK          = "ok"
+	AccountStateInvalid     = "invalid" // 401: token expired/revoked
+	AccountStateBanned      = "banned"  // 403: account suspended upstream
+	AccountStateRateLimited = "rate_limited"
+	AccountStateFailed      = "failed" // any other probe failure
+)
+
+// Probe failure categories shared across every probe source. Keeping them in
+// one place prevents each package from inventing its own spellings; stored
+// verbatim into last_probe_error / last_account_probe_error / health verdicts.
+const (
+	CategoryUpstreamUnauthorized = "upstream_unauthorized"   // api_key 401/403
+	CategoryUserTokenNotForModels = "user_token_not_for_models" // access_token cannot call /v1/models
+	CategoryCredentialUnavailable = "credential_unavailable"
+	CategoryInvalidBaseURL        = "invalid_base_url"
+	CategoryAccountBanned         = "account_banned" // 403 on account probe
+	CategoryRateLimited           = "rate_limited"   // 429
+	CategoryUpstreamFailure       = "upstream_failure"
+	CategoryProbeSlow             = "probe_slow" // non-error verdict: latency above threshold
+)
+
+// Probe history kinds (channel_health_history.kind).
+const (
+	ProbeKindPing    = "ping"
+	ProbeKindProbe   = "probe"
+	ProbeKindAccount = "account"
+)
+
 // ---------------------------------------------------------------------------
 // Site
 // ---------------------------------------------------------------------------
@@ -234,11 +267,19 @@ type ChannelOverview struct {
 	LastPingOK    bool       `json:"last_ping_ok"`
 	LastPingError string     `json:"last_ping_error,omitempty"`
 	LastPingMs    int        `json:"last_ping_ms"`
+	// LastAccountProbe* record the most recent access_token/session identity
+	// probe. Kept in their own columns so an account failure never overwrites
+	// the business probe verdict (last_probe_*).
+	LastAccountProbeAt    *time.Time `json:"last_account_probe_at,omitempty"`
+	LastAccountProbeOK    bool       `json:"last_account_probe_ok"`
+	LastAccountProbeError string     `json:"last_account_probe_error,omitempty"`
 	// HealthState is the derived five-state health machine (Metapi-inspired):
 	// disabled / unhealthy / degraded / healthy / unknown.
 	HealthState       string `json:"health_state,omitempty"`
 	HealthReason      string `json:"health_reason,omitempty"`
 	ConnectivityState string `json:"connectivity_state"`
+	// AccountState is the derived credential-layer verdict (account probe).
+	AccountState string `json:"account_state,omitempty"`
 }
 
 // DiscoveredModel is one model observed during a successful channel refresh.

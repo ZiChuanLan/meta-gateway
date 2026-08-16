@@ -135,8 +135,10 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		return nil, err
 	}
 	if len(credentials) == 0 {
-		_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "credential_unavailable")
-		return nil, unavailableError("credential_unavailable")
+		checkedAt := s.now()
+		_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryCredentialUnavailable)
+		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryCredentialUnavailable, checkedAt)
+		return nil, unavailableError(domain.CategoryCredentialUnavailable)
 	}
 	baseURL := channel.BaseURL
 	if baseURL == "" {
@@ -148,8 +150,10 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
 			return nil, fatal
 		}
-		_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "invalid_base_url")
-		return nil, unavailableError("invalid_base_url")
+		checkedAt := s.now()
+		_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryInvalidBaseURL)
+		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryInvalidBaseURL, checkedAt)
+		return nil, unavailableError(domain.CategoryInvalidBaseURL)
 	}
 	if lastErr != nil && isTransientListError(lastErr) {
 		// Cloudflare-protected public sites often drop a single request
@@ -166,15 +170,17 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 			if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
 				return nil, fatal
 			}
-			_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), "invalid_base_url")
-			return nil, unavailableError("invalid_base_url")
+			checkedAt := s.now()
+			_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryInvalidBaseURL)
+			_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryInvalidBaseURL, checkedAt)
+			return nil, unavailableError(domain.CategoryInvalidBaseURL)
 		}
 	}
 	if lastErr != nil {
 		if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
 			return nil, lastErr
 		}
-		category := "upstream_failure"
+		category := domain.CategoryUpstreamFailure
 		var adapterErr *adapters.Error
 		if errors.As(lastErr, &adapterErr) {
 			category = string(adapterErr.Kind)
@@ -186,13 +192,15 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 					kind = strings.ToLower(strings.TrimSpace(lastCredential.Kind))
 				}
 				if kind == "access_token" || kind == "session" {
-					category = "user_token_not_for_models"
+					category = domain.CategoryUserTokenNotForModels
 				} else {
-					category = "upstream_unauthorized"
+					category = domain.CategoryUpstreamUnauthorized
 				}
 			}
 		}
-		_ = s.db.Channel.RecordProbeFailure(channel.ID, s.now(), category)
+		checkedAt := s.now()
+		_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, category)
+		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, category, checkedAt)
 		return nil, &Error{Kind: ErrorUpstream, Category: category}
 	}
 	checkedAt := s.now()
@@ -203,6 +211,7 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		s.notifier.Notify(context.Background(), webhook.ChannelRecovered, channel.ID, channel.Name, "probe ok")
 	}
 	_ = s.db.Channel.RecordProbeSuccess(channel.ID, checkedAt)
+	_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, true, latency, "", checkedAt)
 	return &ProbeResult{
 		ChannelID: channel.ID,
 		Adapter:   adapter.Name(),
@@ -222,7 +231,7 @@ func (s *Service) probeModels(ctx context.Context, adapter adapters.ModelAdapter
 		lastCredential = &credential
 		plaintext, decryptErr := s.enc.Decrypt(string(credential.SecretEnc))
 		if decryptErr != nil || len(plaintext) == 0 {
-			lastErr = unavailableError("credential_unavailable")
+			lastErr = unavailableError(domain.CategoryCredentialUnavailable)
 			continue
 		}
 		listed, listErr := adapter.ListModels(ctx, baseURL, string(plaintext))

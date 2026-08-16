@@ -667,8 +667,11 @@ func TestProbeRetriesTransientTransportFailure(t *testing.T) {
 	if overviewErr != nil {
 		t.Fatal(overviewErr)
 	}
-	if len(overviews) != 1 || !overviews[0].LastProbeOK {
-		t.Fatalf("last_probe_ok should be true after retry: %+v", overviews)
+	if len(overviews) != 1 || !overviews[0].LastAccountProbeOK {
+		t.Fatalf("account probe ok should be true after retry: %+v", overviews)
+	}
+	if overviews[0].AccountState != "ok" {
+		t.Fatalf("account state should be ok after retry: %+v", overviews[0])
 	}
 }
 

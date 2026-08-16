@@ -161,14 +161,16 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	}
 	if err != nil {
 		probeErr := mapAdapterError(err)
-		_ = s.db.Channel.RecordProbeFailure(channelID, s.now(), probeCategory(probeErr))
+		checkedAt := s.now()
+		_ = s.db.Channel.RecordAccountProbeFailure(channelID, checkedAt, probeCategory(probeErr))
+		_ = s.db.HealthHistory.Append(channelID, domain.ProbeKindAccount, false, 0, probeCategory(probeErr), checkedAt)
 		// Verdict-driven state machine: 429 parks the channel until the rate
 		// window passes (Retry-After when the upstream provides one); 401/403
 		// mark the credential dead. Alerts are per-verdict and throttled.
 		var typed *Error
 		if errors.As(probeErr, &typed) {
 			switch typed.Category {
-			case "rate_limited":
+			case domain.CategoryRateLimited:
 				until := s.now().Add(defaultRateLimitPause)
 				if retryAfter := retryAfterFrom(err); retryAfter > 0 && retryAfter < maxRateLimitPause {
 					until = s.now().Add(retryAfter)
@@ -177,11 +179,11 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 				if s.notifier != nil {
 					s.notifier.SendAlert(ctx, webhook.AlertWarning, "连接触发限流", fmt.Sprintf("连接 #%d (%s) 被上游限流，暂停至 %s。", channelID, resolved.channel.Name, until.Format(time.RFC3339)))
 				}
-			case "account_banned":
+			case domain.CategoryAccountBanned:
 				if s.notifier != nil {
 					s.notifier.SendAlert(ctx, webhook.AlertError, "账号疑似封禁", fmt.Sprintf("连接 #%d (%s) 返回 403，账号可能已被上游封禁。", channelID, resolved.channel.Name))
 				}
-			case "upstream_unauthorized":
+			case domain.CategoryUpstreamUnauthorized:
 				if s.notifier != nil {
 					s.notifier.SendAlert(ctx, webhook.AlertError, "访问令牌失效", fmt.Sprintf("连接 #%d (%s) 的访问令牌已失效，请重新生成后更新凭据。", channelID, resolved.channel.Name))
 				}
@@ -197,7 +199,8 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	if latency < 0 {
 		latency = 0
 	}
-	_ = s.db.Channel.RecordProbeSuccess(channelID, checkedAt)
+	_ = s.db.Channel.RecordAccountProbeSuccess(channelID, checkedAt)
+	_ = s.db.HealthHistory.Append(channelID, domain.ProbeKindAccount, true, latency, "", checkedAt)
 	// A successful probe lifts any previous rate-limit pause.
 	_ = s.db.Channel.ClearRateLimit(channelID)
 	return &ProbeResult{
@@ -1194,7 +1197,7 @@ func (s *Service) resolveUserTarget(channelID int64) (*resolvedTarget, error) {
 	plaintext, decErr := s.enc.Decrypt(string(credential.SecretEnc))
 	if decErr != nil || len(plaintext) == 0 {
 		zero(plaintext)
-		return nil, unavailable("credential_unavailable")
+		return nil, unavailable(domain.CategoryCredentialUnavailable)
 	}
 	baseURL := channel.BaseURL
 	if baseURL == "" {
@@ -1297,13 +1300,14 @@ func retryAfterFrom(err error) time.Duration {
 	return adapterErr.RetryAfter
 }
 
-// probeCategory extracts the redacted failure category used for last_probe_error.
+// probeCategory extracts the redacted failure category used for
+// last_account_probe_error.
 func probeCategory(err error) string {
 	var probeErr *Error
 	if errors.As(err, &probeErr) && probeErr.Category != "" {
 		return probeErr.Category
 	}
-	return "upstream_failure"
+	return domain.CategoryUpstreamFailure
 }
 
 // isTransientProbeError reports whether an adapter error is worth one retry:
@@ -1325,27 +1329,27 @@ func mapAdapterError(err error) error {
 	if errors.As(err, &adapterErr) {
 		switch adapterErr.Kind {
 		case adapters.ErrorInvalidURL:
-			return unavailable("invalid_base_url")
+			return unavailable(domain.CategoryInvalidBaseURL)
 		case adapters.ErrorStatus:
 			if adapterErr.Status == 401 {
-				return &Error{Kind: ErrorUpstream, Category: "upstream_unauthorized"}
+				return &Error{Kind: ErrorUpstream, Category: domain.CategoryUpstreamUnauthorized}
 			}
 			if adapterErr.Status == 403 {
-				return &Error{Kind: ErrorUpstream, Category: "account_banned"}
+				return &Error{Kind: ErrorUpstream, Category: domain.CategoryAccountBanned}
 			}
 			if adapterErr.Status == 429 {
-				return &Error{Kind: ErrorUpstream, Category: "rate_limited"}
+				return &Error{Kind: ErrorUpstream, Category: domain.CategoryRateLimited}
 			}
 			return &Error{Kind: ErrorUpstream, Category: "upstream_status"}
 		case adapters.ErrorTransport:
-			return &Error{Kind: ErrorUpstream, Category: "upstream_failure"}
+			return &Error{Kind: ErrorUpstream, Category: domain.CategoryUpstreamFailure}
 		case adapters.ErrorPayload:
 			return &Error{Kind: ErrorUpstream, Category: "invalid_payload"}
 		case adapters.ErrorTooLarge:
 			return &Error{Kind: ErrorUpstream, Category: "response_too_large"}
 		}
 	}
-	return &Error{Kind: ErrorUpstream, Category: "upstream_failure"}
+	return &Error{Kind: ErrorUpstream, Category: domain.CategoryUpstreamFailure}
 }
 
 func platformUserID(raw string) (int64, error) {

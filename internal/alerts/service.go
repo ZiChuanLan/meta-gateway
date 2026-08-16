@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/webhook"
 )
@@ -212,7 +213,7 @@ func (s *Service) computeChannelError() float64 {
 		if err := rows.Scan(&verdict); err != nil {
 			continue
 		}
-		if verdict != "probe_slow" {
+		if verdict != domain.CategoryProbeSlow {
 			return 1
 		}
 	}

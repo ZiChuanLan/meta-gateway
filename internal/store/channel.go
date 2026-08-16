@@ -133,6 +133,9 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		COALESCE(c.last_ping_ok, 0),
 		COALESCE(c.last_ping_error, ''),
 		COALESCE(c.last_ping_ms, 0),
+		c.last_account_probe_at,
+		COALESCE(c.last_account_probe_ok, 0),
+		COALESCE(c.last_account_probe_error, ''),
 		COALESCE(site.platform, '')
 		FROM channels c
 		LEFT JOIN sites site ON site.id = c.site_id
@@ -147,7 +150,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 	var result []domain.ChannelOverview
 	for rows.Next() {
 		var overview domain.ChannelOverview
-		var checkinEnabled, hasUserCredential, hasPlatformUserID, hasAPIKey, siteUsable, credentialUsable, lastProbeOK, stableFirst, lastPingOK int
+		var checkinEnabled, hasUserCredential, hasPlatformUserID, hasAPIKey, siteUsable, credentialUsable, lastProbeOK, stableFirst, lastPingOK, lastAccountProbeOK int
 		if err := rows.Scan(
 			&overview.Channel.ID,
 			&overview.Channel.SiteID,
@@ -189,6 +192,9 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			&lastPingOK,
 			&overview.LastPingError,
 			&overview.LastPingMs,
+			scanNullTime(&overview.LastAccountProbeAt),
+			&lastAccountProbeOK,
+			&overview.LastAccountProbeError,
 			&overview.SitePlatform,
 		); err != nil {
 			return nil, fmt.Errorf("channel overview scan: %w", err)
@@ -198,6 +204,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		overview.HasPlatformUserID = hasPlatformUserID != 0
 		overview.LastProbeOK = lastProbeOK != 0
 		overview.LastPingOK = lastPingOK != 0
+		overview.LastAccountProbeOK = lastAccountProbeOK != 0
 		overview.HasAPIKey = hasAPIKey != 0
 		overview.SiteUsable = siteUsable != 0
 		overview.CredentialUsable = credentialUsable != 0
@@ -205,6 +212,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		overview.HealthState = DeriveHealthState(overview)
 		overview.HealthReason = DeriveHealthReason(overview)
 		overview.ConnectivityState = DeriveConnectivityState(overview)
+		overview.AccountState = DeriveAccountState(overview)
 		result = append(result, overview)
 	}
 	return result, rows.Err()
@@ -435,7 +443,7 @@ func DeriveHealthState(overview domain.ChannelOverview) string {
 		}
 		return domain.HealthStateUnhealthy
 	}
-	if overview.LastProbeError == "probe_slow" || overview.FailureCount > 0 || overview.CoolingMemberCount > 0 {
+	if overview.LastProbeError == domain.CategoryProbeSlow || overview.FailureCount > 0 || overview.CoolingMemberCount > 0 {
 		return domain.HealthStateDegraded
 	}
 	return domain.HealthStateHealthy
@@ -456,19 +464,19 @@ func DeriveHealthReason(overview domain.ChannelOverview) string {
 			return "not_checked"
 		}
 		switch overview.LastProbeError {
-		case "upstream_unauthorized", "account_banned":
+		case domain.CategoryUpstreamUnauthorized, domain.CategoryAccountBanned:
 			return "authentication_failed"
-		case "user_token_not_for_models":
+		case domain.CategoryUserTokenNotForModels:
 			return "credential_scope"
-		case "credential_unavailable":
+		case domain.CategoryCredentialUnavailable:
 			return "credential_unavailable"
-		case "invalid_base_url":
+		case domain.CategoryInvalidBaseURL:
 			return "invalid_base_url"
 		default:
 			return "probe_failed"
 		}
 	}
-	if overview.LastProbeError == "probe_slow" {
+	if overview.LastProbeError == domain.CategoryProbeSlow {
 		return "probe_slow"
 	}
 	if overview.CoolingMemberCount > 0 {
@@ -491,6 +499,28 @@ func DeriveConnectivityState(overview domain.ChannelOverview) string {
 		return domain.ConnectivityStateReachable
 	}
 	return domain.ConnectivityStateUnreachable
+}
+
+// DeriveAccountState computes the credential-layer verdict from the latest
+// account (access_token/session) probe. Independent of health/connectivity so
+// a dead token is visible even while the network and model probe pass.
+func DeriveAccountState(overview domain.ChannelOverview) string {
+	if overview.LastAccountProbeAt == nil {
+		return domain.AccountStateUnknown
+	}
+	if overview.LastAccountProbeOK {
+		return domain.AccountStateOK
+	}
+	switch overview.LastAccountProbeError {
+	case domain.CategoryUpstreamUnauthorized:
+		return domain.AccountStateInvalid
+	case domain.CategoryAccountBanned:
+		return domain.AccountStateBanned
+	case domain.CategoryRateLimited:
+		return domain.AccountStateRateLimited
+	default:
+		return domain.AccountStateFailed
+	}
 }
 
 func (s *ChannelStore) RecordProbeSuccess(channelID int64, at time.Time) error {
@@ -533,7 +563,7 @@ func (s *ChannelStore) ClearRateLimit(channelID int64) error {
 // RecordProbeFailure stores a redacted discovery/probe failure category for UI health.
 func (s *ChannelStore) RecordProbeFailure(channelID int64, at time.Time, category string) error {
 	if category == "" {
-		category = "upstream_failure"
+		category = domain.CategoryUpstreamFailure
 	}
 	_, err := s.db.Exec(`UPDATE channels SET last_probe_at=?, last_probe_ok=0, last_probe_error=?, updated_at=datetime('now') WHERE id=?`,
 		at.UTC().Format(time.RFC3339Nano), category, channelID)
@@ -553,10 +583,37 @@ func (s *ChannelStore) RecordPingSuccess(channelID int64, at time.Time, latencyM
 	return nil
 }
 
+// RecordAccountProbeSuccess records a successful access_token/session identity
+// probe. It writes dedicated columns so the business probe verdict
+// (last_probe_*) stays untouched.
+func (s *ChannelStore) RecordAccountProbeSuccess(channelID int64, at time.Time) error {
+	_, err := s.db.Exec(`UPDATE channels SET last_account_probe_at=?, last_account_probe_ok=1, last_account_probe_error='', updated_at=datetime('now') WHERE id=?`,
+		at.UTC().Format(time.RFC3339Nano), channelID)
+	if err != nil {
+		return fmt.Errorf("channel account probe success: %w", err)
+	}
+	return nil
+}
+
+// RecordAccountProbeFailure records a failed access_token/session identity
+// probe with a redacted category (e.g. upstream_unauthorized, account_banned,
+// rate_limited).
+func (s *ChannelStore) RecordAccountProbeFailure(channelID int64, at time.Time, category string) error {
+	if category == "" {
+		category = domain.CategoryUpstreamFailure
+	}
+	_, err := s.db.Exec(`UPDATE channels SET last_account_probe_at=?, last_account_probe_ok=0, last_account_probe_error=?, updated_at=datetime('now') WHERE id=?`,
+		at.UTC().Format(time.RFC3339Nano), category, channelID)
+	if err != nil {
+		return fmt.Errorf("channel account probe failure: %w", err)
+	}
+	return nil
+}
+
 // RecordPingFailure stores a failed connectivity ping with a redacted category.
 func (s *ChannelStore) RecordPingFailure(channelID int64, at time.Time, category string) error {
 	if category == "" {
-		category = "unreachable"
+		category = domain.ConnectivityStateUnreachable
 	}
 	_, err := s.db.Exec(`UPDATE channels SET last_ping_at=?, last_ping_ok=0, last_ping_error=?, last_ping_ms=0, updated_at=datetime('now') WHERE id=?`,
 		at.UTC().Format(time.RFC3339Nano), category, channelID)

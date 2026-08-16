@@ -40,6 +40,17 @@ export const CHANNEL_READINESS_STATES = [
 
 export type ChannelReadiness = (typeof CHANNEL_READINESS_STATES)[number];
 
+export const CHANNEL_ACCOUNT_STATES = [
+  "unknown",
+  "ok",
+  "invalid",
+  "banned",
+  "rate_limited",
+  "failed",
+] as const;
+
+export type ChannelAccountState = (typeof CHANNEL_ACCOUNT_STATES)[number];
+
 type LiveConnectivity = { reachable: boolean } | null | undefined;
 
 function isHealthState(value: string | undefined): value is ChannelHealthState {
@@ -55,6 +66,14 @@ function isConnectivityState(
   return Boolean(
     value &&
       (CHANNEL_CONNECTIVITY_STATES as readonly string[]).includes(value),
+  );
+}
+
+function isAccountState(
+  value: string | undefined,
+): value is ChannelAccountState {
+  return Boolean(
+    value && (CHANNEL_ACCOUNT_STATES as readonly string[]).includes(value),
   );
 }
 
@@ -77,6 +96,29 @@ export function channelHealthState(
   }
   if (overview.last_probe_ok === true) return "healthy";
   return "unknown";
+}
+
+/**
+ * Returns the credential-layer verdict (access_token/session probes). The
+ * backend derives account_state from last_account_probe_*; the fallback only
+ * covers older gateways without the field.
+ */
+export function channelAccountState(
+  overview: ChannelOverview,
+): ChannelAccountState {
+  if (isAccountState(overview.account_state)) return overview.account_state;
+  if (!overview.last_account_probe_at) return "unknown";
+  if (overview.last_account_probe_ok === true) return "ok";
+  switch (overview.last_account_probe_error) {
+    case "upstream_unauthorized":
+      return "invalid";
+    case "account_banned":
+      return "banned";
+    case "rate_limited":
+      return "rate_limited";
+    default:
+      return "failed";
+  }
 }
 
 /**

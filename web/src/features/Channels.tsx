@@ -73,6 +73,7 @@ import {
 import { useSession } from "../session";
 import { useModules } from "../hooks/useModules";
 import {
+  channelAccountState,
   channelConnectivityState,
   channelHealthState,
   channelNeedsAttention,
@@ -82,6 +83,7 @@ import {
 
 export {
   channelHealthState,
+  channelAccountState,
   channelConnectivityState,
   channelNeedsAttention,
   channelReadiness,
@@ -188,8 +190,8 @@ export function capabilityFlags(overview: ChannelOverview) {
     /** An access token is stored, was checked, and that check failed — the token itself is the problem. */
     tokenProblem:
       hasUser &&
-      Boolean(overview.last_probe_at) &&
-      overview.last_probe_ok === false,
+      Boolean(overview.last_account_probe_at) &&
+      overview.last_account_probe_ok === false,
     modelsReady,
     needsKeyForRelay: !hasAPIKey,
   };
@@ -290,33 +292,9 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
     });
   };
 
-  // Entering the Connections page records a network-layer Ping for every
-  // enabled connection. This deliberately does not run the authenticated
-  // model probe; model/auth verification remains an explicit action.
-  const autoPinged = useRef(false);
-  const pingAll = useAdminMutation({
-    mutationFn: async (ids: number[]) => {
-      // Small serial batches: 8 probes per wave, all failures swallowed so a
-      // flaky site does not toast on page entry.
-      for (let index = 0; index < ids.length; index += 8) {
-        await Promise.allSettled(
-          ids.slice(index, index + 8).map((id) => service.pingChannel(id)),
-        );
-      }
-    },
-    invalidateKeys: [...INVALIDATE],
-  });
-  useEffect(() => {
-    if (autoPinged.current) return;
-    const ids = (overviews.data ?? [])
-      .filter((row) => row.channel.status === "enabled")
-      .map((row) => row.channel.id);
-    if (!ids.length) return;
-    autoPinged.current = true;
-    pingAll.mutate(ids);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overviews.data]);
-
+  // Health probing is driven by the backend health sweep (default on) and by
+  // the explicit per-channel actions below; entering this page does not fire
+  // network pings for every enabled connection anymore.
   const createConnection = useAdminMutation({
     mutationFn: async (
       input: CreateConnectionInput,
@@ -362,6 +340,7 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
       };
     },
     invalidateKeys: [...INVALIDATE],
+    toastOnError: false,
     onSuccess: (result) => {
       setAddOpen(false);
       setParams({ id: String(result.channel.id) }, { replace: true });
@@ -404,6 +383,10 @@ const ping = useAdminMutation({
     mutationFn: (id: number) => service.probeAccount(id),
     pendingIdOf: (id) => id,
     invalidateKeys: [...INVALIDATE],
+    // Errors stay silent by default: this hook also fires as a side effect of
+    // "fetch models" / connection creation, where a second error toast on top
+    // of the primary action's toast reads as a duplicate prompt.
+    toastOnError: false,
   });
   const checkAllTokens = useAdminMutation({
     mutationFn: () => service.probeAllAccounts(),
@@ -428,6 +411,7 @@ const ping = useAdminMutation({
       }),
     invalidateKeys: [...INVALIDATE, ["credentials"]],
     pendingIdOf: (input) => input.id,
+    toastOnError: false,
   });
   const toggle = useAdminMutation({
     mutationFn: async (overview: ChannelOverview) => {
@@ -564,6 +548,7 @@ const ping = useAdminMutation({
       });
     },
     invalidateKeys: [...INVALIDATE, ["credentials"]],
+    toastOnError: false,
     onSuccess: () => setEdit(null),
   });
 
@@ -621,6 +606,7 @@ const ping = useAdminMutation({
     mutationFn: (id: number) => service.deleteChannel(id),
     invalidateKeys: [...INVALIDATE],
     pendingIdOf: (id) => id,
+    toastOnError: false,
     onSuccess: (_data, id) => {
       setRemove(null);
       if (selectedId === id) {
@@ -796,7 +782,9 @@ const ping = useAdminMutation({
           close();
           selectRow(ch.id);
           accountProbe.reset();
-          accountProbe.mutate(ch.id);
+          accountProbe.mutate(ch.id, {
+            onError: (err) => toast.pushError(err),
+          });
         },
       });
     }
@@ -1565,9 +1553,6 @@ const ping = useAdminMutation({
         <Drawer
           title={t("channels.modelsSection")}
           width={780}
-          side="left"
-          rightOffset={520}
-          plain
           onClose={() => setModelsChannel(null)}
           footer={
             <Button variant="secondary" onClick={() => setModelsChannel(null)}>
@@ -1692,6 +1677,34 @@ function ChannelHealthBadge({ overview }: { overview: ChannelOverview }) {
 }
 
 /**
+ * Credential-layer badge (access_token/session probes). Distinct from the
+ * business health badge: an expired access token is not a model-probe
+ * failure, and vice versa. Rendered only when the account state needs an
+ * operator action (invalid / banned / rate-limited / failed).
+ */
+function ChannelAccountBadge({ overview }: { overview: ChannelOverview }) {
+  const { t } = useI18n();
+  const state = channelAccountState(overview);
+  const tone =
+    state === "invalid" || state === "banned"
+      ? "unhealthy"
+      : state === "rate_limited" || state === "failed"
+        ? "warn"
+        : state === "ok"
+          ? "healthy"
+          : "neutral";
+  return (
+    <span
+      className={`badge badge-${tone}`}
+      title={t(`channels.accountState.${state}`)}
+      data-testid="channel-account-badge"
+    >
+      {t(`channels.accountState.${state}`)}
+    </span>
+  );
+}
+
+/**
  * Health + readiness as one badge. When a connection merely lacks an API key
  * the two stacked badges read as noise on every row, so they merge into a
  * single "state · needs key" badge; the tooltip keeps the health reason.
@@ -1750,7 +1763,6 @@ function ChannelConnectivityBadge({
       : state === "unreachable" && error
         ? status(error)
         : "";
-  const checkedAt = live?.checked_at ?? overview.last_ping_at;
   const stateLabel =
     state === "reachable"
       ? t("channels.reachable")
@@ -1762,8 +1774,7 @@ function ChannelConnectivityBadge({
   const suffix = detail && detail !== stateLabel ? ` · ${detail}` : "";
   return (
     <span
-      className={`health-chip is-${state}`}
-      title={checkedAt ? formatDate(checkedAt) : undefined}
+      className={`badge badge-${state}`}
       data-testid="channel-connectivity-badge"
     >
       {stateLabel}
@@ -1984,12 +1995,29 @@ function ChannelDetail({
           <span className="label">{t("channels.healthState")}</span>
           <span className="detail-health-value">
             <ChannelHealthBadge overview={overview} />
-            <small>{channelHealthReasonLabel(overview, t)}</small>
           </span>
         </div>
+        {channelAccountState(overview) !== "ok" &&
+        channelAccountState(overview) !== "unknown" ? (
+          <div>
+            <span className="label">{t("channels.accountState")}</span>
+            <span className="detail-health-value">
+              <ChannelAccountBadge overview={overview} />
+            </span>
+          </div>
+        ) : null}
         <div>
           <span className="label">{t("channels.reachability")}</span>
-          <ChannelConnectivityBadge overview={overview} live={pingResult} />
+          <span className="detail-health-value">
+            <ChannelConnectivityBadge overview={overview} live={pingResult} />
+            {pingResult?.checked_at ?? overview.last_ping_at ? (
+              <small>
+                {formatDate(
+                  pingResult?.checked_at ?? overview.last_ping_at ?? "",
+                )}
+              </small>
+            ) : null}
+          </span>
         </div>
       {probeError || overview.last_error ? (
         <div className="detail-meta-error">
@@ -2629,7 +2657,7 @@ const [showAdvanced, setShowAdvanced] = useState(false);
         </div>
 
         <section
-          className="credential-key-panel"
+          className="credential-key-panel connection-subpanel"
           aria-label={t("channels.apiKeysTitle")}
         >
           <div className="credential-key-panel-head">
@@ -2647,6 +2675,7 @@ const [showAdvanced, setShowAdvanced] = useState(false);
             </div>
             <Button
               variant="secondary"
+              className="connection-manage-button"
               disabled={pending}
               onClick={onManageKeys}
             >
@@ -2682,8 +2711,14 @@ const [showAdvanced, setShowAdvanced] = useState(false);
                           : ""}
                       </small>
                     </div>
-                    <StatusBadge
-                      value={item.status === "enabled" ? "enabled" : "disabled"}
+                    <span
+                      className={`credential-key-summary-check${item.status === "enabled" ? " is-checked" : ""}`}
+                      role="img"
+                      aria-label={
+                        item.status === "enabled"
+                          ? t("common.enabled")
+                          : t("common.disabled")
+                      }
                     />
                   </li>
                 );
@@ -2698,16 +2733,16 @@ const [showAdvanced, setShowAdvanced] = useState(false);
         </section>
 
          <section
-           className="detail-section channel-model-summary-section"
-           aria-label={t("channels.modelsSection")}
+           className="detail-section channel-model-summary-section connection-subpanel"
+            aria-label={t("channels.modelsSection")}
          >
           <div className="detail-section-head">
             <h3>{t("channels.modelsSection")}</h3>
             <span className="detail-section-count">{editModels.length}</span>
             <button
               type="button"
-              className="detail-section-expand"
-              onClick={onManageModels}
+               className="detail-section-expand connection-manage-button connection-manage-button-models"
+               onClick={onManageModels}
             >
               <ExternalLink size={12} />
               {t("channels.modelsManage")}
@@ -2741,16 +2776,18 @@ const [showAdvanced, setShowAdvanced] = useState(false);
           )}
         </section>
 
-        <button
-          type="button"
-          className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
-          onClick={() => setShowAdvanced((v) => !v)}
-        >
-          <ChevronDown size={13} />
-          {showAdvanced
-            ? t("channels.hideAdvanced")
-            : t("channels.showAdvanced")}
-        </button>
+        <div className="advanced-section-divider">
+          <button
+            type="button"
+            className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
+            onClick={() => setShowAdvanced((v) => !v)}
+          >
+            <ChevronDown size={13} />
+            {showAdvanced
+              ? t("channels.hideAdvanced")
+              : t("channels.showAdvanced")}
+          </button>
+        </div>
         {showAdvanced ? (
           <div className="advanced-fields">
             <div className="form-grid">
@@ -2902,7 +2939,7 @@ const [showAdvanced, setShowAdvanced] = useState(false);
                   style={{ minHeight: 72, fontFamily: "var(--font-mono)" }}
                 />
               </Field>
-              <label className="check" style={{ marginTop: "0.75rem" }}>
+              <label className="check" style={{ marginTop: 12 }}>
                 <input
                   type="checkbox"
                   checked={stableFirst}

@@ -14,10 +14,13 @@ type HealthPoint struct {
 	LatencyMs int    `json:"latency_ms"`
 	Verdict   string `json:"verdict"`
 	ProbedAt  string `json:"probed_at"`
+	// Kind is the probe layer: ping (network) / probe (business) / account.
+	Kind string `json:"kind,omitempty"`
 }
 
 // ChannelHealthSummary is the per-channel availability aggregate over a
-// window (last 24h by default).
+// window (last 24h by default). All probe kinds are aggregated together so
+// the availability curve and the health badge share one data source.
 type ChannelHealthSummary struct {
 	ChannelID    int64   `json:"channel_id"`
 	Total        int     `json:"total"`
@@ -30,11 +33,12 @@ type HealthHistoryStore struct {
 	db *sql.DB
 }
 
-// Append records one probe outcome.
-func (s *HealthHistoryStore) Append(channelID int64, ok bool, latencyMs int, verdict string, at time.Time) error {
+// Append records one probe outcome. Kind is one of the domain.ProbeKind*
+// values and identifies the probe layer that produced the record.
+func (s *HealthHistoryStore) Append(channelID int64, kind string, ok bool, latencyMs int, verdict string, at time.Time) error {
 	_, err := s.db.Exec(
-		`INSERT INTO channel_health_history (channel_id, ok, latency_ms, verdict, probed_at) VALUES (?, ?, ?, ?, ?)`,
-		channelID, boolInt(ok), latencyMs, verdict, at.UTC().Format(time.RFC3339Nano),
+		`INSERT INTO channel_health_history (channel_id, kind, ok, latency_ms, verdict, probed_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		channelID, kind, boolInt(ok), latencyMs, verdict, at.UTC().Format(time.RFC3339Nano),
 	)
 	if err != nil {
 		return fmt.Errorf("health history append: %w", err)
@@ -49,7 +53,7 @@ func (s *HealthHistoryStore) Recent(channelID int64, limit int) ([]HealthPoint, 
 		limit = 100
 	}
 	rows, err := s.db.Query(
-		`SELECT id, channel_id, ok, latency_ms, verdict, probed_at FROM channel_health_history WHERE (? = 0 OR channel_id = ?) ORDER BY id DESC LIMIT ?`,
+		`SELECT id, channel_id, ok, latency_ms, verdict, probed_at, kind FROM channel_health_history WHERE (? = 0 OR channel_id = ?) ORDER BY id DESC LIMIT ?`,
 		channelID, channelID, limit,
 	)
 	if err != nil {
@@ -60,7 +64,7 @@ func (s *HealthHistoryStore) Recent(channelID int64, limit int) ([]HealthPoint, 
 	for rows.Next() {
 		var p HealthPoint
 		var ok int
-		if err := rows.Scan(&p.ID, &p.ChannelID, &ok, &p.LatencyMs, &p.Verdict, &p.ProbedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.ChannelID, &ok, &p.LatencyMs, &p.Verdict, &p.ProbedAt, &p.Kind); err != nil {
 			return nil, fmt.Errorf("health history scan: %w", err)
 		}
 		p.OK = ok == 1

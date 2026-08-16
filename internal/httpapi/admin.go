@@ -1402,9 +1402,9 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if baseURL == "" {
 		checkedAt := time.Now()
-		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, "invalid_base_url")
-		_ = h.db.HealthHistory.Append(ch.ID, false, 0, "invalid_base_url", checkedAt)
-		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": "invalid_base_url", "checked_at": checkedAt})
+		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, domain.CategoryInvalidBaseURL)
+		_ = h.db.HealthHistory.Append(ch.ID, domain.ProbeKindPing, false, 0, domain.CategoryInvalidBaseURL, checkedAt)
+		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": domain.CategoryInvalidBaseURL, "checked_at": checkedAt})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -1414,7 +1414,7 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		checkedAt := time.Now()
 		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, "invalid_url")
-		_ = h.db.HealthHistory.Append(ch.ID, false, 0, "invalid_url", checkedAt)
+		_ = h.db.HealthHistory.Append(ch.ID, domain.ProbeKindPing, false, 0, "invalid_url", checkedAt)
 		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": "invalid_url", "checked_at": checkedAt})
 		return
 	}
@@ -1424,7 +1424,7 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 		category := classifyPingError(err)
 		checkedAt := time.Now()
 		_ = h.db.Channel.RecordPingFailure(ch.ID, checkedAt, category)
-		_ = h.db.HealthHistory.Append(ch.ID, false, 0, category, checkedAt)
+		_ = h.db.HealthHistory.Append(ch.ID, domain.ProbeKindPing, false, 0, category, checkedAt)
 		writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "reachable": false, "connectivity_state": domain.ConnectivityStateUnreachable, "error": category, "latency_ms": latencyMs, "checked_at": checkedAt})
 		return
 	}
@@ -1433,7 +1433,7 @@ func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	checkedAt := time.Now()
 	_ = h.db.Channel.RecordPingSuccess(ch.ID, checkedAt, latencyMs)
-	_ = h.db.HealthHistory.Append(ch.ID, true, latencyMs, "", checkedAt)
+	_ = h.db.HealthHistory.Append(ch.ID, domain.ProbeKindPing, true, latencyMs, "", checkedAt)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"channel_id": ch.ID, "reachable": true, "connectivity_state": domain.ConnectivityStateReachable, "latency_ms": latencyMs, "status_code": resp.StatusCode, "checked_at": checkedAt,
 	})

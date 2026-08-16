@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lan/meta-gateway/internal/discovery"
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/webhook"
 )
@@ -294,16 +295,20 @@ func (s *Service) probeOnce(channelID int64) {
 		verdict := ""
 		if latency > cfg.DegradedThresholdMs {
 			state = StateDegraded
-			verdict = "probe_slow"
+			verdict = domain.CategoryProbeSlow
 		}
 		if s.db.Channel != nil {
 			_ = s.db.Channel.RecordProbeSuccessWithVerdict(channelID, checkedAt, verdict)
-			_ = s.db.HealthHistory.Append(channelID, true, latency, verdict, checkedAt)
+			_ = s.db.HealthHistory.Append(channelID, domain.ProbeKindProbe, true, latency, verdict, checkedAt)
+			// A successful business probe proves network reachability; refresh
+			// the connectivity verdict with the same latency so the ping badge
+			// stays current without a separate network probe.
+			_ = s.db.Channel.RecordPingSuccess(channelID, checkedAt, latency)
 		}
 	} else {
 		if s.db.Channel != nil {
 			_ = s.db.Channel.RecordProbeFailure(channelID, checkedAt, probeCategory(err))
-			_ = s.db.HealthHistory.Append(channelID, false, 0, probeCategory(err), checkedAt)
+			_ = s.db.HealthHistory.Append(channelID, domain.ProbeKindProbe, false, 0, probeCategory(err), checkedAt)
 		}
 	}
 	health = ChannelHealth{

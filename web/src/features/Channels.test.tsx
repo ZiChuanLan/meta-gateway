@@ -344,26 +344,37 @@ describe("capabilityFlags", () => {
 		};
 		// Never probed → no verdict.
 		expect(capabilityFlags({ ...base }).tokenProblem).toBe(false);
-		// Probe passed → token fine.
-		expect(capabilityFlags({ ...base, last_probe_ok: true }).tokenProblem).toBe(
-			false,
-		);
-		// Probe failed → token is the problem.
+		// Account probe passed → token fine.
 		expect(
-			capabilityFlags({ ...base, last_probe_at: "2026-08-02T00:00:00Z", last_probe_ok: false })
-				.tokenProblem,
+			capabilityFlags({ ...base, last_account_probe_ok: true }).tokenProblem,
+		).toBe(false);
+		// Account probe failed → token is the problem.
+		expect(
+			capabilityFlags({
+				...base,
+				last_account_probe_at: "2026-08-02T00:00:00Z",
+				last_account_probe_ok: false,
+			}).tokenProblem,
 		).toBe(true);
-		// last_probe_ok=false without a probe timestamp is "never checked", not "failed".
-		expect(capabilityFlags({ ...base, last_probe_ok: false }).tokenProblem).toBe(
-			false,
-		);
-		// No token stored → nothing to flag, even with a failed probe.
+		// Account probe failure without a timestamp is "never checked", not "failed".
+		expect(
+			capabilityFlags({ ...base, last_account_probe_ok: false }).tokenProblem,
+		).toBe(false);
+		// A failed business probe (api_key chain) is not a token problem.
+		expect(
+			capabilityFlags({
+				...base,
+				last_probe_at: "2026-08-02T00:00:00Z",
+				last_probe_ok: false,
+			}).tokenProblem,
+		).toBe(false);
+		// No token stored → nothing to flag, even with a failed account probe.
 		expect(
 			capabilityFlags({
 				...base,
 				has_user_credential: false,
-				last_probe_at: "2026-08-02T00:00:00Z",
-				last_probe_ok: false,
+				last_account_probe_at: "2026-08-02T00:00:00Z",
+				last_account_probe_ok: false,
 			}).tokenProblem,
 		).toBe(false);
 	});

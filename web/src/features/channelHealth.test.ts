@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelOverview } from "../api/types";
 import {
+  channelAccountState,
   channelConnectivityState,
   channelHealthState,
   channelNeedsAttention,
@@ -105,5 +106,44 @@ describe("channel health dimensions", () => {
     expect(channelReadiness(value)).toBe("degraded");
     expect(channelNeedsAttention(value)).toBe(true);
     expect(channelConnectivityState(value)).toBe("reachable");
+  });
+
+  it("derives the account state from the backend verdict and legacy fields", () => {
+    expect(channelAccountState(overview())).toBe("unknown");
+    expect(
+      channelAccountState(
+        overview({ account_state: "ok", last_account_probe_ok: true }),
+      ),
+    ).toBe("ok");
+    expect(
+      channelAccountState(
+        overview({
+          account_state: "invalid",
+          last_account_probe_error: "upstream_unauthorized",
+        }),
+      ),
+    ).toBe("invalid");
+    // Legacy fallback: no account_state, but probe fields exist.
+    expect(
+      channelAccountState(
+        overview({
+          last_account_probe_at: "2026-08-09T00:00:00Z",
+          last_account_probe_ok: false,
+          last_account_probe_error: "account_banned",
+        }),
+      ),
+    ).toBe("banned");
+  });
+
+  it("keeps account failure out of business health and readiness", () => {
+    const value = overview({
+      health_state: "healthy",
+      last_probe_ok: true,
+      account_state: "invalid",
+      last_account_probe_ok: false,
+    });
+    expect(channelHealthState(value)).toBe("healthy");
+    expect(channelReadiness(value)).toBe("ready");
+    expect(channelAccountState(value)).toBe("invalid");
   });
 });
