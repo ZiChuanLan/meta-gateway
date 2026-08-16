@@ -29,6 +29,14 @@ func (f *fakeProber) Probe(_ context.Context, channelID int64) (*discovery.Probe
 	return &discovery.ProbeResult{ChannelID: channelID, LatencyMs: f.lat[channelID], CheckedAt: time.Now()}, nil
 }
 
+// callCount is the lock-guarded read for fake.calls; the sweep loops probe
+// on their own goroutines, so the test must not read the field directly.
+func (f *fakeProber) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
 func openSweepTestDB(t *testing.T) *store.DB {
 	t.Helper()
 	db, err := store.Open(t.TempDir())
@@ -154,10 +162,10 @@ func TestSetConfigHotSwapsSweep(t *testing.T) {
 	// Disable again — loops must drain and stop probing.
 	svc.SetConfig(DefaultConfig())
 	time.Sleep(2 * time.Second)
-	before := fake.calls
+	before := fake.callCount()
 	time.Sleep(2 * time.Second)
-	if fake.calls != before {
-		t.Fatalf("sweep kept probing after SetConfig(disable): calls %d -> %d", before, fake.calls)
+	if fake.callCount() != before {
+		t.Fatalf("sweep kept probing after SetConfig(disable): calls %d -> %d", before, fake.callCount())
 	}
 }
 
