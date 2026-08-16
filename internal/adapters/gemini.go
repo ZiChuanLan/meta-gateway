@@ -26,7 +26,7 @@ func GeminiGenerateContentPath(model string) string {
 	return "models/" + url.PathEscape(model) + ":generateContent"
 }
 
-func GeminiStreamGenerateContentPath(model string) string {
+func geminiStreamGenerateContentPath(model string) string {
 	return "models/" + url.PathEscape(model) + ":streamGenerateContent?alt=sse"
 }
 
@@ -222,7 +222,7 @@ func chatToGemini(body []byte) (string, []byte, error) {
 	}
 	path := GeminiGenerateContentPath(model)
 	if payload.Stream {
-		path = GeminiStreamGenerateContentPath(model)
+		path = geminiStreamGenerateContentPath(model)
 	}
 	return path, converted, nil
 }

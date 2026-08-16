@@ -12,7 +12,6 @@ import type {
 	DownstreamKey,
 	ExchangeEnvelope,
 	ImportResult,
-	PluginCatalogEntry,
 	ModuleStatus,
 	PluginRecord,
 	AccountProbeResult,
@@ -25,7 +24,6 @@ import type {
 	PromptGuardRule,
 	HealthPoint,
 	HealthSummaryItem,
-	ModelPrice,
 	ProbeResult,
 	ProxyLog,
 	SyncKeysResult,
@@ -152,7 +150,6 @@ export const api = (client: ApiClient) => ({
 		),
 	updateSite: (id: number, body: Partial<Site>) =>
 		client.put<Site>(`/admin/sites/${id}`, body),
-	deleteSite: (id: number) => client.delete(`/admin/sites/${id}`),
 	credentials: (siteId: number, signal?: AbortSignal) =>
 		client.getList<Credential>(`/admin/sites/${siteId}/credentials`, signal),
 	createCredential: (
@@ -199,8 +196,6 @@ export const api = (client: ApiClient) => ({
 	runDBGC: () => client.post<DBGCResult>("/admin/db/gc", {}),
 	globalSearch: (q: string, signal?: AbortSignal) =>
 		client.get<SearchHits>(`/admin/search?q=${encodeURIComponent(q)}`, signal),
-	routes: (signal?: AbortSignal) =>
-		client.getList<Route>("/admin/routes", signal),
 	routeOverviews: (signal?: AbortSignal) =>
 		client.getList<RouteOverview>("/admin/routes/overview", signal),
 	createRoute: (body: Partial<Route>) =>
@@ -208,8 +203,6 @@ export const api = (client: ApiClient) => ({
 	updateRoute: (id: number, body: Partial<Route>) =>
 		client.put<Route>(`/admin/routes/${id}`, body),
 	deleteRoute: (id: number) => client.delete(`/admin/routes/${id}`),
-	members: (routeId: number, signal?: AbortSignal) =>
-		client.getList<RouteMember>(`/admin/routes/${routeId}/members`, signal),
 	createMember: (routeId: number, body: Partial<RouteMember>) =>
 		client.post<RouteMember>(`/admin/routes/${routeId}/members`, body),
 	updateMember: (id: number, body: Partial<RouteMember>) =>
@@ -360,16 +353,6 @@ export const api = (client: ApiClient) => ({
 			"/admin/channels/account/finance",
 			signal,
 		),
-	balanceHistory: (days: number, signal?: AbortSignal) =>
-		client.get<{
-			items: Array<{
-				id: number;
-				channel_id: number;
-				channel_name: string;
-				balance: number;
-				probed_at: string;
-			}>;
-		}>(`/admin/balance-history?days=${days}`, signal),
 	modelBlocks: (signal?: AbortSignal) =>
 		client.get<{
 			items: Array<{
@@ -505,11 +488,6 @@ export const api = (client: ApiClient) => ({
 			`/admin/channels/${id}/account/token-groups`,
 			signal,
 		),
-	pricing: (id: number, signal?: AbortSignal) =>
-		client.get<{ prices: ModelPrice[] }>(
-			`/admin/channels/${id}/account/pricing`,
-			signal,
-		),
 	refreshChannel: (id: number) =>
 		client.post<RefreshResult>(`/admin/discovery/channels/${id}/refresh`),
 	refreshAll: () => client.post<RefreshSummary>("/admin/discovery/refresh"),
@@ -552,8 +530,6 @@ export const api = (client: ApiClient) => ({
 	webdavTest: () => client.post<WebDAVSyncResult>("/admin/webdav/test"),
 	webdavSync: (mode: WebDAVSyncMode = "incremental") =>
 		client.post<WebDAVSyncResult>("/admin/webdav/sync", { mode }),
-	pluginsCatalog: (signal?: AbortSignal) =>
-		client.getList<PluginCatalogEntry>("/admin/plugins/catalog", signal),
 	pluginsMarket: (signal?: AbortSignal) =>
 		client.get<{
 			sources: Array<{ id: string; name: string; url: string }>;
@@ -580,14 +556,6 @@ export const api = (client: ApiClient) => ({
 	activatePlugin: (id: string) =>
 		client.post<PluginRecord>(
 			`/admin/plugins/${encodeURIComponent(id)}/activate`,
-		),
-	installPlugin: (id: string) =>
-		client.post<PluginRecord>(
-			`/admin/plugins/${encodeURIComponent(id)}/install`,
-		),
-	enablePlugin: (id: string) =>
-		client.post<PluginRecord>(
-			`/admin/plugins/${encodeURIComponent(id)}/enable`,
 		),
 	disablePlugin: (id: string) =>
 		client.post<PluginRecord>(

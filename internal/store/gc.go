@@ -78,7 +78,6 @@ func (db *DB) GC() (*GCResult, error) {
 	res.PageSize = db.pageSize()
 	res.FreelistPages = db.freelistPages()
 	if res.FreelistPages >= vacuumFreeListPages {
-		before := res.FreelistPages * res.PageSize
 		if _, err := db.Exec(`VACUUM`); err != nil {
 			return nil, fmt.Errorf("gc vacuum: %w", err)
 		}
@@ -89,7 +88,6 @@ func (db *DB) GC() (*GCResult, error) {
 			res.VacuumFreedBytes = 0
 		}
 		res.FreelistPages = after
-		_ = before
 	}
 	return res, nil
 }

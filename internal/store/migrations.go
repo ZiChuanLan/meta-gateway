@@ -13,6 +13,12 @@ var migrationFS embed.FS
 
 // Migrate applies all embedded SQL migrations in order.
 // Files are sorted by name; naming convention: 001_name.sql, 002_name.sql, etc.
+//
+// History is tracked by FILENAME, never rename or edit an applied migration:
+// renaming would re-apply it on existing databases. Numbering quirks to know:
+// 026/027/028 each exist twice (the pairs sort safely by suffix) and 060 was
+// retired by 067_drop_key_model_probes.sql, so the highest number is not the
+// migration count.
 func Migrate(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))`); err != nil {
 		return fmt.Errorf("store: create migration history: %w", err)

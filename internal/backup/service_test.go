@@ -3,6 +3,7 @@ package backup
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -36,7 +37,8 @@ func TestOnlineBackupAndOfflineRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create backup: %v", err)
 	}
-	if record.Status != "success" || record.SizeBytes <= 0 || len(record.Checksum) != 64 || !SafeName(record.Name) {
+	safeName := regexp.MustCompile(`^meta-gateway-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}\.db$`)
+	if record.Status != "success" || record.SizeBytes <= 0 || len(record.Checksum) != 64 || !safeName.MatchString(record.Name) {
 		t.Fatalf("record=%+v", record)
 	}
 	if _, err := db.Route.Create(&domain.Route{ModelPattern: "after-backup", Enabled: true}); err != nil {

@@ -104,7 +104,3 @@ func (s *GCService) run() {
 		res.BalanceHistory, res.DecisionSnaps, res.HealthHistory,
 		res.ModelBlocks, res.Redemptions, res.ErrorRules, res.Vacuumed, res.VacuumFreedBytes)
 }
-
-func trimSpace(v string) string {
-	return strings.TrimSpace(v)
-}

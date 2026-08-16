@@ -127,13 +127,6 @@ export interface ModelMetadata {
   updated_at?: string;
 }
 
-export interface SidecarSpec {
-  url: string;
-  page_path?: string;
-  health_path?: string;
-  api_key?: string;
-}
-
 export interface ErrorPassRule {
   id?: number;
   name: string;
@@ -417,19 +410,6 @@ export interface ImportResult {
   }>
 }
 export interface ExchangeEnvelope { format: string; version: number; exported_at: string; importable: boolean; items: Array<Record<string, unknown>>; skipped?: Array<{ channel_id: number; name: string; reason: string }> }
-
-export interface PluginCatalogEntry {
-  id: string
-  name: string
-  version: string
-  description?: string
-  kind?: "core" | "addon" | string
-  unlocks?: string[]
-  capabilities?: string[]
-  source?: string
-  checksum?: string
-  sidecar?: SidecarSpec
-}
 
 export interface PluginRecord {
   id: string

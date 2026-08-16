@@ -51,7 +51,7 @@ const (
 // one place prevents each package from inventing its own spellings; stored
 // verbatim into last_probe_error / last_account_probe_error / health verdicts.
 const (
-	CategoryUpstreamUnauthorized = "upstream_unauthorized"   // api_key 401/403
+	CategoryUpstreamUnauthorized  = "upstream_unauthorized"     // api_key 401/403
 	CategoryUserTokenNotForModels = "user_token_not_for_models" // access_token cannot call /v1/models
 	CategoryCredentialUnavailable = "credential_unavailable"
 	CategoryInvalidBaseURL        = "invalid_base_url"
@@ -390,9 +390,9 @@ type DownstreamKey struct {
 	// can re-view/copy a key after creation. Empty for keys created before
 	// plaintext storage existed. Never serialized in JSON.
 	TokenEnc []byte `json:"-"`
-	Name      string `json:"name"`
-	Enabled   bool   `json:"enabled"`
-	Scopes    string `json:"scopes,omitempty"`
+	Name     string `json:"name"`
+	Enabled  bool   `json:"enabled"`
+	Scopes   string `json:"scopes,omitempty"`
 	// QuotaTotalTokens is 0 for unlimited. When >0, relay is blocked once used >= total.
 	QuotaTotalTokens int64 `json:"quota_total_tokens"`
 	// QuotaUsedTokens is the cumulative total tokens charged to this key.

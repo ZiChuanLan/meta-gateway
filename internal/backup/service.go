@@ -247,5 +247,3 @@ func copyExclusive(source, destination string) error {
 	}
 	return closeErr
 }
-
-func SafeName(name string) bool { return safeName.MatchString(name) }

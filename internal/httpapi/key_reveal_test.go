@@ -33,14 +33,14 @@ func revealTestServer(t *testing.T) (*httptest.Server, *store.DB, *crypto.Encryp
 		t.Fatalf("crypto: %v", err)
 	}
 	cfg := &config.Config{
-		HTTPAddr:                   ":0",
-		DataDir:                    dir,
-		AdminToken:                 "admin-secret",
-		AdminTokens:                []string{"admin-secret"},
-		MasterKey:                  "reveal-test-master-key-32b!!",
-		OutboundAllowCIDRs:         []string{"127.0.0.0/8", "::1/128"},
-		OutboundConnectTimeout:     2 * time.Second,
-		OutboundTLSHandshakeTimeout: 2 * time.Second,
+		HTTPAddr:                      ":0",
+		DataDir:                       dir,
+		AdminToken:                    "admin-secret",
+		AdminTokens:                   []string{"admin-secret"},
+		MasterKey:                     "reveal-test-master-key-32b!!",
+		OutboundAllowCIDRs:            []string{"127.0.0.0/8", "::1/128"},
+		OutboundConnectTimeout:        2 * time.Second,
+		OutboundTLSHandshakeTimeout:   2 * time.Second,
 		OutboundResponseHeaderTimeout: 2 * time.Second,
 	}
 	handler := httpapi.New(cfg, db, enc)
