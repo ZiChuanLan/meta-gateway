@@ -2,7 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AuditPanel, DiscoveryPanel } from "./OpsPanels";
+import { AuditPanel, DiscoveryPanel } from "./ops";
 import { api } from "../api/client";
 import type { ProxyLog } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
@@ -24,6 +24,7 @@ import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { formatCost, logCostUsd } from "../lib/format";
+import { positiveId } from "../lib/positiveId"
 
 // Routing decision audit view: fetched on demand when a log row expands.
 function DecisionSnapshotView({ requestId }: { requestId: string }) {
@@ -580,10 +581,4 @@ export function Logs() {
       </div>
     </Page>
   );
-}
-
-function positiveId(value: string | null) {
-  if (!value) return undefined;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }

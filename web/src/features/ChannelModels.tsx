@@ -17,6 +17,7 @@ import { Button, ErrorState, Page, Panel, StatusBadge } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
+import { positiveId } from "../lib/positiveId"
 
 const INVALIDATE = [
   ["channel-overviews"],
@@ -27,11 +28,6 @@ const INVALIDATE = [
   ["members"],
   ["models"],
 ] as const;
-
-function positiveId(value: string | undefined) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
 
 /**
  * Per-channel model management UI: enable/disable + outward aliases.

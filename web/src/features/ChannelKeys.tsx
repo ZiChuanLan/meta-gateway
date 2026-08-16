@@ -1,10 +1,11 @@
-import { ChevronDown, ChevronUp, Copy, Eye, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
 import type { Channel, Credential } from "../api/types";
 import { ModelPicker } from "../components/ModelPicker";
-import { Button, ConfirmDialog, Dialog, ErrorState, Field, InfoTip } from "../components/ui";
+import { SecretRevealDialog } from "../components/SecretRevealDialog";
+import { Button, ConfirmDialog, Field, InfoTip } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { Drawer } from "../components/Drawer";
 import { useI18n } from "../i18n";
@@ -305,43 +306,19 @@ export function ChannelKeysDrawer({
         </Field>
       </section>
       {revealing && (
-        <Dialog
+        <SecretRevealDialog
           title={t("channels.apiKeyRevealTitle")}
+          warning={t("channels.apiKeyRevealWarning")}
+          secret={revealedSecret}
+          pending={reveal.isPending}
+          error={reveal.error}
+          onRetry={() => reveal.mutate({ siteId: channel.site_id!, id: revealing.id })}
+          closeLabel={t("common.close")}
+          copyLabel={t("keys.copyToken")}
           onClose={() => {
             if (!reveal.isPending) setRevealing(null);
           }}
-          actions={
-            <Button
-              onClick={() => setRevealing(null)}
-              disabled={reveal.isPending}
-            >
-              {t("common.close")}
-            </Button>
-          }
-        >
-          <p className="warning">{t("channels.apiKeyRevealWarning")}</p>
-          {reveal.isPending ? (
-            <p className="exchange-panel-note">{t("common.loading")}</p>
-          ) : reveal.error ? (
-            <ErrorState
-              error={reveal.error}
-              retry={() => reveal.mutate({ siteId: channel.site_id!, id: revealing.id })}
-            />
-          ) : revealedSecret ? (
-            <div className="secret-output">
-              <code>{revealedSecret}</code>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={t("keys.copyToken")}
-                title={t("keys.copyToken")}
-                onClick={() => navigator.clipboard.writeText(revealedSecret)}
-              >
-                <Copy size={14} />
-              </button>
-            </div>
-          ) : null}
-        </Dialog>
+        />
       )}
       {confirmingDelete ? (
         <ConfirmDialog

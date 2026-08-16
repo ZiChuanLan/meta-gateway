@@ -9,6 +9,7 @@ import { ListShell } from "../components/ListShell";
 import { ModelPicker } from "../components/ModelPicker";
 import { ScopePicker } from "../components/ScopePicker";
 import { PaginationBar } from "../components/PaginationBar";
+import { SecretRevealDialog } from "../components/SecretRevealDialog";
 import { EntityState } from "../components/EntityState";
 import { StatGrid } from "../components/StatGrid";
 import { useAdminMutation } from "../hooks/useAdminMutation";
@@ -106,7 +107,7 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
               <code className={c.redeemed_by_key_id ? "is-used" : ""}>
                 {c.code}
               </code>
-              <span>{formatTokens(c.quota_tokens)}</span>
+              <span>{formatNumber(c.quota_tokens)}</span>
               {c.redeemed_by_key_id ? (
                 <span className="is-quiet">
                   {t("keys.redemptionUsed")} · #{c.redeemed_by_key_id}
@@ -128,15 +129,15 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function formatTokens(value?: number) {
+function formatNumber(value?: number) {
   if (value == null || Number.isNaN(value)) return "0";
   return new Intl.NumberFormat().format(value);
 }
 
 function formatQuota(used?: number, total?: number) {
-  const usedLabel = formatTokens(used ?? 0);
+  const usedLabel = formatNumber(used ?? 0);
   if (!total || total <= 0) return `${usedLabel} / ∞`;
-  return `${usedLabel} / ${formatTokens(total)}`;
+  return `${usedLabel} / ${formatNumber(total)}`;
 }
 
 function formatCost(value?: number) {
@@ -318,13 +319,13 @@ function formatCost(value?: number) {
               label: t("keys.stat.usedTokens"),
               value: query.isPending
                 ? "—"
-                : formatTokens(usage.data?.total_tokens ?? totalUsed),
+                : formatNumber(usage.data?.total_tokens ?? totalUsed),
             },
             {
               label: t("keys.stat.requests"),
               value: usage.isPending
                 ? "—"
-                : formatTokens(usage.data?.request_count ?? 0),
+                : formatNumber(usage.data?.request_count ?? 0),
             },
           ]}
         />
@@ -521,30 +522,17 @@ function formatCost(value?: number) {
         />
       )}
       {viewing && (
-        <Dialog
+        <SecretRevealDialog
           title={t("keys.viewTitle", { name: viewing.name })}
+          warning={t("keys.viewWarning")}
+          secret={viewedToken}
+          pending={reveal.isPending}
+          error={reveal.error}
+          onRetry={() => reveal.mutate(viewing.id)}
+          closeLabel={t("common.close")}
+          copyLabel={t("keys.copyToken")}
           onClose={() => setViewing(null)}
-          actions={
-            <Button onClick={() => setViewing(null)}>{t("common.close")}</Button>
-          }
-        >
-          <p className="warning">{t("keys.viewWarning")}</p>
-          {reveal.isPending ? (
-            <p className="exchange-panel-note">{t("common.loading")}</p>
-          ) : reveal.error ? (
-            <ErrorState error={reveal.error} retry={() => reveal.mutate(viewing.id)} />
-          ) : viewedToken ? (
-            <div className="secret-output">
-              <code>{viewedToken}</code>
-              <IconButton
-                label={t("keys.copyToken")}
-                onClick={() => navigator.clipboard.writeText(viewedToken)}
-              >
-                <Copy size={14} />
-              </IconButton>
-            </div>
-          ) : null}
-        </Dialog>
+        />
       )}
       {rotating != null && (
         <ConfirmDialog
@@ -560,24 +548,14 @@ function formatCost(value?: number) {
         />
       )}
       {rotatedToken && (
-        <Dialog
+        <SecretRevealDialog
           title={t("keys.rotatedTitle")}
+          warning={t("keys.rotatedWarning")}
+          secret={rotatedToken.token}
+          closeLabel={t("keys.stored")}
+          copyLabel={t("keys.copyToken")}
           onClose={() => setRotatedToken(null)}
-          actions={
-            <Button onClick={() => setRotatedToken(null)}>{t("keys.stored")}</Button>
-          }
-        >
-          <p className="warning">{t("keys.rotatedWarning")}</p>
-          <div className="secret-output">
-            <code>{rotatedToken.token}</code>
-            <IconButton
-              label={t("keys.copyToken")}
-              onClick={() => navigator.clipboard.writeText(rotatedToken.token)}
-            >
-              <Copy size={14} />
-            </IconButton>
-          </div>
-        </Dialog>
+        />
       )}
     </Page>
   );

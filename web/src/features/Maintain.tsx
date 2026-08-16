@@ -2,7 +2,7 @@ import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useMemo } from "react";
 import { useI18n } from "../i18n";
 import { Page, Tabs } from "../components/ui";
-import { BackupsPanel, RuntimeSettingsPanel } from "./OpsPanels";
+import { BackupsPanel, RuntimeSettingsPanel } from "./ops";
 
 type SystemTab = "runtime" | "backups";
 
