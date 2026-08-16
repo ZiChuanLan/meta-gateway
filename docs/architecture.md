@@ -47,26 +47,60 @@ Operations
 
 | Package | Responsibility |
 | --- | --- |
-| `cmd/server` | Entry point, configuration, and server startup |
-| `internal/config` | Environment parsing |
-| `internal/domain` | Persisted entities and routing candidate facts |
-| `internal/store` | SQLite migrations, CRUD, routing facts, and health state |
-| `internal/routing` | Pure candidate evaluation, explain output, and weighted selection |
-| `internal/proxy` | Retry orchestration, credentials, cooldown updates, and attempt logs |
-| `internal/relay` | Context-bound upstream HTTP transport |
-| `internal/adapters` | Stateless platform registry, model listing, and check-in capabilities |
-| `internal/discovery` | Credential-aware refresh orchestration and redacted results |
-| `internal/checkin` | Credential-scoped check-in orchestration and cron lifecycle |
-| `internal/exchange` | Versioned formats, normalization, identity, import/export orchestration |
-| `internal/httpapi` | Admin and `/v1` HTTP adapters |
-| `internal/auth` | Admin and downstream-key authentication |
-| `internal/crypto` | AES-GCM credential encryption and purpose-separated exchange HMAC identity |
-| `internal/outbound` | Connect-time SSRF policy and shared HTTP clients |
-| `internal/ratelimit` | Process-local token buckets for Admin and downstream keys |
-| `internal/observability` | Readiness state and Prometheus text metrics |
-| `internal/backup` | Confined online backup and offline restore workflow |
-| `internal/webui` | Embedded Web Admin assets, cache policy, and bounded SPA fallback |
-| `web` | React/TypeScript Web Admin source and browser-side Admin API client |
+| `cmd/server` | Production entry point: config → crypto → store → services → HTTP wiring |
+| `cmd/e2e-mock`, `cmd/e2e-runner` | Black-box e2e fake upstream and client (docker-compose.e2e) |
+| **HTTP layer** | |
+| `internal/httpapi` | Router/composition root plus all handlers. Admin surface is split per resource (`admin_sites/connections/credentials/channels/routes/keys/usage/rules/ops.go`, shared `admin_validation.go`); relay endpoints live in `relay.go` |
+| `internal/auth` | Admin + session tokens, downstream-key bearer auth, scopes, model filters, expiry/IP checks |
+| `internal/ratelimit` | Process-local token buckets for Admin, downstream keys, groups, models |
+| **Relay core** | |
+| `internal/proxy` | The forward engine, split by responsibility: `proxy_forward.go` (candidate loop `ForwardWithMeta`), `proxy_keypool.go` (API-key pools, per-key breakers), `proxy_classify.go` (retryability, error categories), `proxy_health.go` (member/channel/key bookkeeping, usage recording), `proxy_rewrite.go` (model rename, reasoning downgrade, system prompt, header overrides), `proxy_streams.go` (first-chunk peek, silent-SSE detection), plus `circuit_breaker.go`, `channel_gate.go`, `payload_rules.go`, `prompt_guard.go` |
+| `internal/routing` | Pure candidate evaluation (priority tiers, weighted/latency/adaptive, single-channel pin, sticky sessions), explain output |
+| `internal/relay` | Thin context-bound upstream HTTP transport |
+| `internal/adapters` | Stateless platform integrations: forward adapters + N×M translation registry, model-list, check-in, account adapters |
+| **Upstream account lifecycle** | |
+| `internal/account` | Account probe/finance/key sync against upstream platforms |
+| `internal/checkin` | Credential-scoped check-in orchestration + cron scheduler with catch-up |
+| `internal/discovery` | Model-list refresh, reconcile into routes/members, passive recovery |
+| `internal/healthsweep` | Jittered periodic channel health probes (operational/degraded/error) |
+| **Persistence** | |
+| `internal/store` | SQLite: 72 tracked filename-keyed migrations, repo-per-entity stores, hot-path caches (downstream keys, groups), usage recording, GC |
+| `internal/domain` | Shared entity structs and status/category constants |
+| **Ops & integrations** | |
+| `internal/alerts` | Configurable alert-rule evaluation (60s tick) |
+| `internal/financesweep` | Proactive balance/token sweeps + daily summary through the notifier |
+| `internal/plugins` | Plugin catalog, market, sidecars, module enable gates |
+| `internal/runtimeconfig` | Persisted admin overrides applied live to running services |
+| `internal/webdavsync` | Encrypted WebDAV backup pull sync + scheduler |
+| `internal/exchange` | Versioned AAH/New API import/export incl. secret round-trip |
+| `internal/backup` | Online SQLite backup + offline restore |
+| `internal/maintenance` | Cron-driven orphan GC/VACUUM + daily BalanceSweeper (balance snapshot, retention prunes) |
+| **Foundations** | |
+| `internal/config` | Environment parsing/validation |
+| `internal/crypto` | Master-key AES-GCM, fingerprints |
+| `internal/outbound` | SSRF policy + shared HTTP client + per-channel proxy hooks |
+| `internal/webhook` | Multi-channel notifier (webhook/bark/serverchan/telegram/SMTP) |
+| `internal/usage` | Token usage parsing from OpenAI/Anthropic bodies |
+| `internal/sitedetect` | AAH-style site platform detection |
+| `internal/totp` | TOTP secret/verify for admin 2FA |
+| `internal/observability` | Readiness state, Prometheus text metrics |
+| `internal/webui` | Embedded console assets (`//go:embed dist`, built from `web/`) |
+
+`httpapi` is the composition root and imports everything; nothing imports it
+back. Services own their background loops and register stoppers with the
+`httpapi` lifecycle registry.
+
+## Web Admin (`web/src`)
+
+| Path | Responsibility |
+| --- | --- |
+| `App.tsx` | Login flow + authenticated shell (sidebar, global search, routing) |
+| `api/client.ts`, `api/types.ts` | Typed Admin API client (~110 endpoints) mirroring `internal/httpapi` |
+| `i18n/` | `en.ts` + `zh.ts` dictionaries behind a parity test, provider in `index.tsx` |
+| `features/` | One folder per page; `ops/` (per-panel files), `channels/`, `models/` hold dialogs, badges and pure helpers split out of the page components |
+| `components/` | Design system (`ui.tsx`, `Drawer`, `ActionMenu`, `SecretRevealDialog`, charts, pickers) |
+| `hooks/`, `lib/` | `useAdminMutation` (invalidation + pending state), pagination, pure formatting |
+| `styles.css` | Single stylesheet, four breakpoint tiers (600/860/1100/1240) |
 
 ## Routing
 
@@ -272,9 +306,9 @@ headers, and stream reshaping, so no N×M conversion matrix is needed:
 | Anthropic (`/v1/messages`) | OpenAI / Gemini | `ComposeForwardAdapter{AnthropicDownstreamSegment, upstream}` |
 
 `proxy` composes automatically when `DownstreamProtocol=anthropic` meets a
-non-Anthropic channel; the previous inline translation branches in `proxy.go`
-were replaced by this composition (behavior unchanged). An `OnOpenAI` hook on
-the composed adapter runs between the pivot step and the upstream transform
-(system-prompt injection on translated requests). Adding a new client
+non-Anthropic channel; the previous inline translation branches in the proxy
+package were replaced by this composition (behavior unchanged). An `OnOpenAI`
+hook on the composed adapter runs between the pivot step and the upstream
+transform (system-prompt injection on translated requests). Adding a new client
 protocol = one `SegmentConverter`; adding a new upstream platform stays one
 `ForwardAdapter`.

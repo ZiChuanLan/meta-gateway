@@ -139,3 +139,28 @@ docker compose -f docker-compose.yml -f docker-compose.e2e.yml \
 The CI workflow also restarts the gateway and runs `e2e-runner verify` against
 the persisted volume. The E2E mock hostname is the only private destination
 exception; a separate loopback target must remain blocked.
+
+## Repository Conventions
+
+Keep the history sliceable — each commit should describe one theme:
+
+- **Commit granularity.** One feature / fix / refactor per commit. When a
+  change spans backend + frontend + docs, land them in the same commit only
+  when the pieces are meaningless apart; otherwise split by layer and
+  cross-reference in the messages.
+- **Embedded console dist.** `internal/webui/dist` is tracked because the Go
+  binary embeds it. Rebuild it (`cd web && npm run build`) and commit the
+  churn as its own final `build: refresh embedded web dist` commit — never
+  mixed into source commits.
+- **Migrations.** `internal/store/*.sql` are tracked **by filename** in
+  `schema_migrations`. Never rename or edit an applied migration; add the
+  next number. (History quirk: 026/027/028 each exist twice and 060 was
+  retired by 067 — see the comment in `migrations.go`.) After adding one,
+  update the count in `store_test.go`.
+- **Line endings.** `.gitattributes` enforces `text=auto eol=lf`; the repo
+  normalizes on commit, so Windows checkouts stay quiet.
+- **Verification gate.** Before pushing: `gofmt -l`, `go vet ./...`,
+  `go test ./...` and, for web changes, `npm run typecheck && npx eslint . &&
+  npx vitest run && npm run build` in `web/`.
+- **i18n.** `web/src/i18n/parity.test.ts` fails when `en.ts` and `zh.ts`
+  drift; add both translations in the same change.
