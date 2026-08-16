@@ -127,7 +127,14 @@ export function formatErrorMessage(error: unknown, t: Translate): string {
 	const statusSuffix = formatted.status
 		? t("err.classSuffix", { class: formatted.status })
 		: "";
-	const parts = [`${formatted.title}${statusSuffix}`, formatted.cause];
+	const parts = [`${formatted.title}${statusSuffix}`];
+	if (
+		formatted.cause &&
+		formatted.cause.trim().toLocaleLowerCase() !==
+			formatted.title.trim().toLocaleLowerCase()
+	) {
+		parts.push(formatted.cause);
+	}
 	if (formatted.fix) parts.push(formatted.fix);
 	return parts.join(" — ");
 }

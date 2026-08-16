@@ -222,7 +222,7 @@ function ProxyLogsPanel() {
         className="toolbar"
         style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}
       >
-        <label className="check" style={{ margin: 0 }}>
+        <label className="check marginless">
           <input
             type="checkbox"
             checked={failedOnly}
@@ -232,7 +232,7 @@ function ProxyLogsPanel() {
           />
           <span>{t("logsPage.failedOnly")}</span>
         </label>
-        <label className="check" style={{ margin: 0 }}>
+        <label className="check marginless">
           <input
             type="checkbox"
             checked={slowOnly}

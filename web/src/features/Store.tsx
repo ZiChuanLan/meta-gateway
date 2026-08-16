@@ -114,6 +114,7 @@ export function Store() {
 					apiPrefix: addPrefix.trim(),
 				}),
 		invalidateKeys: STORE_INVALIDATE,
+		toastOnError: false,
 		onSuccess: () => {
 			setAddUrl("");
 			setAddKey("");
@@ -226,15 +227,14 @@ export function Store() {
 							</Button>
 						</div>
 						<button
+						type="button"
+							aria-expanded={advancedOpen}
 							className="plugin-add-toggle"
 							onClick={() => setAdvancedOpen((v) => !v)}
 						>
 							<ChevronDown
 								size={14}
-								style={{
-									transform: advancedOpen ? "rotate(180deg)" : undefined,
-									transition: "transform 120ms ease",
-								}}
+								className={advancedOpen ? "chevron-flip is-open" : "chevron-flip"}
 							/>
 							{t("plugins.advanced")}
 						</button>
@@ -282,11 +282,7 @@ export function Store() {
 							</div>
 							</div>
 						) : null}
-						{addError ? (
-							<p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-								{addError}
-							</p>
-						) : null}
+						{addError ? <div className="inline-error">{addError}</div> : null}
 					</section>
 
 						<section className="store-section">
@@ -319,7 +315,7 @@ export function Store() {
 							{market.isLoading ? (
 								<p className="detail-empty">{t("common.loading")}</p>
 							) : market.isError ? (
-								<p className="detail-empty" style={{ color: "var(--danger)" }}>
+								<p className="detail-empty is-danger">
 									{t("store.marketFailed")}
 								</p>
 							) : (market.data?.plugins ?? []).length === 0 ? (
@@ -567,6 +563,7 @@ function EditPluginDialog({
 				apiPrefix: prefix.trim(),
 			}),
 		invalidateKeys: STORE_INVALIDATE,
+		toastOnError: false,
 		onSuccess: onClose,
 		onError: (err: unknown) => {
 			setError(err instanceof Error ? err.message : t("plugins.editFailed"));
@@ -704,6 +701,7 @@ function CreateChannelDialog({
 					: undefined,
 			}),
 		invalidateKeys: [["channel-overviews"], ["channels"]],
+		toastOnError: false,
 		onSuccess: onClose,
 		onError: (err: unknown) => {
 			setError(err instanceof Error ? err.message : t("plugins.channelFailed"));
@@ -833,7 +831,7 @@ function MarketCard({
 						<Package size={16} />
 					</div>
 				)}
-				<div style={{ flex: 1, minWidth: 0 }}>
+				<div className="flex-spacer">
 					<strong>{plugin.name}</strong>
 					<small className="mono">
 						{plugin.id}
@@ -856,7 +854,7 @@ function MarketCard({
 			) : null}
 			<div className="market-card-actions">
 				{plugin.author ? (
-					<span className="muted" style={{ fontSize: 11 }}>
+					<span className="muted market-card-author">
 						{plugin.author}
 					</span>
 				) : null}
@@ -897,7 +895,7 @@ function ModuleCard({
 				<div className="module-card-icon">
 					<Package size={18} />
 				</div>
-				<div style={{ flex: 1, minWidth: 0 }}>
+				<div className="flex-spacer">
 					<strong>{row.name}</strong>
 					<small className="mono">
 						{row.id} · {row.version}

@@ -448,7 +448,7 @@ export function Dashboard() {
           </section>
         )}
         <StatGrid
-          columns={4}
+          columns={7}
           items={[
             {
               label: t("dashboard.totalRequests"),

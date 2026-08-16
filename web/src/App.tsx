@@ -593,6 +593,19 @@ function AuthenticatedShell({
 		return () => window.cancelAnimationFrame(frame);
 	}, [location.pathname]);
 	useEffect(() => setOpen(false), [location.pathname]);
+	useEffect(() => {
+		if (!open) return;
+		const previousOverflow = document.body.style.overflow;
+		const closeOnEscape = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setOpen(false);
+		};
+		document.body.style.overflow = "hidden";
+		window.addEventListener("keydown", closeOnEscape);
+		return () => {
+			document.body.style.overflow = previousOverflow;
+			window.removeEventListener("keydown", closeOnEscape);
+		};
+	}, [open]);
 	// Daily loop: Connections → Models → Tokens → Logs → Check-in → Store
 	const primaryNav = [
 		{ to: "/", label: t("app.nav.overview"), icon: Activity },
@@ -627,14 +640,19 @@ function AuthenticatedShell({
 	return (
 		<div className="app-shell">
 			<header className="mobile-header">
-				<IconButton label={t("app.nav.open")} onClick={() => setOpen(true)}>
+				<IconButton
+					label={t("app.nav.open")}
+					aria-expanded={open}
+					aria-controls="app-sidebar"
+					onClick={() => setOpen(true)}
+				>
 					<Menu />
 				</IconButton>
 				<strong>{t("app.brand")}</strong>
 				<LanguageSwitcher className="mobile-lang" />
 				<StatusBadge value={ready ? "ready" : "unavailable"} />
 			</header>
-			<aside className={open ? "sidebar open" : "sidebar"}>
+			<aside id="app-sidebar" className={open ? "sidebar open" : "sidebar"}>
 				<div className="sidebar-brand">
 					<div className="brand-mark" aria-hidden="true">
 						<Network size={18} />

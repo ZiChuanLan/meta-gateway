@@ -47,15 +47,20 @@ function TrendBadge({ trend }: { trend: number }) {
 
 export function StatGrid({
 	items,
-	columns = 3,
+	columns,
 }: {
 	items: StatItem[];
 	columns?: number;
 }) {
+	const columnCount = Math.max(
+		1,
+		Math.min(columns ?? Math.min(items.length, 4), Math.max(items.length, 1)),
+	);
 	return (
 		<div
 			className="stat-grid"
-			style={{ "--stat-cols": columns } as React.CSSProperties}
+			data-count={items.length}
+			style={{ "--stat-cols": columnCount } as React.CSSProperties}
 		>
 			{items.map((item) => (
 				<button

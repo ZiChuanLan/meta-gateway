@@ -2,6 +2,7 @@ import {
 	createContext,
 	useCallback,
 	useContext,
+	useEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -40,6 +41,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 	const { t } = useI18n();
 	const [items, setItems] = useState<ToastItem[]>([]);
 	const timers = useRef<Map<string, number>>(new Map());
+	// Mirror of `items` for synchronous duplicate checks inside event handlers.
+	const itemsRef = useRef<ToastItem[]>([]);
+	useEffect(() => {
+		itemsRef.current = items;
+	}, [items]);
 
 	const dismiss = useCallback((id: string) => {
 		const timer = timers.current.get(id);
@@ -54,11 +60,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 		(input: { tone?: ToastTone; message: string; durationMs?: number }) => {
 			const message = input.message.trim();
 			if (!message) return;
-			const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+			const tone = input.tone ?? "info";
 			const durationMs = input.durationMs ?? DEFAULT_DURATION_MS;
+			// Collapse duplicates: when an identical toast is still visible,
+			// refresh its timer instead of stacking another copy.
+			const existing = itemsRef.current.find(
+				(item) => item.tone === tone && item.message === message,
+			);
+			if (existing) {
+				const timer = timers.current.get(existing.id);
+				if (timer !== undefined) window.clearTimeout(timer);
+				if (durationMs > 0) {
+					timers.current.set(
+						existing.id,
+						window.setTimeout(() => dismiss(existing.id), durationMs),
+					);
+				}
+				return;
+			}
+			const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 			const item: ToastItem = {
 				id,
-				tone: input.tone ?? "info",
+				tone,
 				message,
 				durationMs,
 			};

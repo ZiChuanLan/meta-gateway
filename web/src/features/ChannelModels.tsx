@@ -95,6 +95,15 @@ export function ChannelModelsPanel({
     });
 
   const memberFor = (realModel: string): RouteMember | undefined => {
+    // When an alias is active the channel's binding lives on the alias
+    // route (the original-name member was retired when the alias was
+    // saved), so the toggle must control that member.
+    const aliasOverview = aliasRouteFor(realModel);
+    if (aliasOverview) {
+      return aliasOverview.members.find(
+        (candidate) => candidate.member.channel_id === channelId,
+      )?.member;
+    }
     const route = (routeOverviews.data ?? []).find(
       (overview) => overview.route.model_pattern === realModel,
     );
@@ -198,7 +207,23 @@ export function ChannelModelsPanel({
             const originalRoute = (routeOverviews.data ?? []).find(
               (entry) => entry.route.model_pattern === real,
             );
-            if (!originalRoute) {
+            if (originalRoute) {
+              // The original route still exists (other channels keep it):
+              // re-attach this channel's member that the alias save dropped.
+              const member = (originalRoute.members ?? []).find(
+                (candidate) => candidate.member.channel_id === channelId,
+              );
+              if (!member) {
+                await service.createMember(originalRoute.route.id, {
+                  channel_id: channelId,
+                  priority: 0,
+                  weight: 100,
+                  enabled: true,
+                  auto: true,
+                  manual_override: true,
+                });
+              }
+            } else {
               const created = await service.createRoute({
                 model_pattern: real,
                 enabled: true,

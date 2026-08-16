@@ -1,13 +1,15 @@
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
+import { registerOverlay } from "./overlayStack";
 import { IconButton } from "./ui";
 
 /**
- * Right-side slide-in panel used for editing entities (channels, etc.).
- * Keeps the master-detail context visible while the edit form is open —
- * closer to new-api's side editors than a centered modal.
+ * Slide-in panel used for editing entities and nested management surfaces.
+ * A right-side drawer is the default; callers can opt into a left-side,
+ * offset drawer when they need to keep an editor visible beside it. Escape
+ * only closes the top-most mounted drawer.
  */
 export function Drawer({
 	title,
@@ -28,25 +30,58 @@ export function Drawer({
 	rightOffset?: number;
 	/** Transparent backdrop: keep an already-open drawer behind interactive. */
 	plain?: boolean;
-	/** Which edge the drawer slides in from. Left drawers stack beside a
-	 *  right-hand editor without covering it (model manager, key manager). */
+	/** Which edge the drawer slides in from. Left drawers can stack beside
+	 * a right-hand editor without covering it. */
 	side?: "left" | "right";
 }) {
 	const { t } = useI18n();
+	const drawerRef = useRef<HTMLElement | null>(null);
+	const onCloseRef = useRef(onClose);
+	onCloseRef.current = onClose;
 
 	useEffect(() => {
-		const close = (event: KeyboardEvent) => {
-			if (event.key === "Escape") onClose();
+		const node = drawerRef.current;
+		// Same focus contract as Dialog: move focus in on open, trap Tab
+		// inside, restore focus on close.
+		const previous =
+			document.activeElement instanceof HTMLElement
+				? document.activeElement
+				: null;
+		const focusables = () =>
+			Array.from(
+				node?.querySelectorAll<HTMLElement>(
+					'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+				) ?? [],
+			);
+		const first = focusables()[0];
+		(first ?? node)?.focus();
+		const onKeydown = (e: KeyboardEvent) => {
+			if (e.key !== "Tab" || !node) return;
+			const items = focusables();
+			if (items.length === 0) return;
+			const firstItem = items[0];
+			const lastItem = items[items.length - 1];
+			const active = document.activeElement;
+			if (e.shiftKey && (active === firstItem || active === node)) {
+				e.preventDefault();
+				lastItem?.focus();
+			} else if (!e.shiftKey && active === lastItem) {
+				e.preventDefault();
+				firstItem?.focus();
+			}
 		};
-		window.addEventListener("keydown", close);
+		const unregister = registerOverlay(() => onCloseRef.current());
 		// Lock body scroll while the drawer is open.
-		const previous = document.body.style.overflow;
+		const previousOverflow = document.body.style.overflow;
 		document.body.style.overflow = "hidden";
+		window.addEventListener("keydown", onKeydown);
 		return () => {
-			window.removeEventListener("keydown", close);
-			document.body.style.overflow = previous;
+			unregister();
+			window.removeEventListener("keydown", onKeydown);
+			document.body.style.overflow = previousOverflow;
+			previous?.focus();
 		};
-	}, [onClose]);
+	}, []);
 
 	return createPortal(
 		<div
@@ -58,6 +93,8 @@ export function Drawer({
 			}
 		>
 			<aside
+				ref={drawerRef}
+				tabIndex={-1}
 				className={`drawer${side === "left" ? " is-left" : ""}`}
 				style={
 					side === "left" && rightOffset != null

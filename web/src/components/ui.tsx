@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import { formatErrorObject } from "../formatError";
+import { registerOverlay } from "./overlayStack";
 
 export function Button({
   children,
@@ -149,10 +150,6 @@ export function Dialog({
     const first = focusables()[0];
     (first ?? node)?.focus();
     const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onCloseRef.current();
-        return;
-      }
       if (e.key !== "Tab" || !node) return;
       const items = focusables();
       if (items.length === 0) return;
@@ -167,8 +164,10 @@ export function Dialog({
         firstItem?.focus();
       }
     };
+    const unregister = registerOverlay(() => onCloseRef.current());
     window.addEventListener("keydown", onKeydown);
     return () => {
+      unregister();
       window.removeEventListener("keydown", onKeydown);
       previous?.focus();
     };
@@ -455,12 +454,17 @@ export function ErrorState({
 }) {
   const { t } = useI18n();
   const formatted = formatErrorObject(error, t);
+  const cause =
+    formatted.cause.trim().toLocaleLowerCase() ===
+    formatted.title.trim().toLocaleLowerCase()
+      ? ""
+      : formatted.cause;
   return (
     <div className="state state-error">
       <AlertTriangle size={18} />
       <div className="error-state-body">
         <strong>{formatted.title}</strong>
-        {formatted.cause ? <span>{formatted.cause}</span> : null}
+        {cause ? <span>{cause}</span> : null}
         {formatted.fix ? (
           <span className="error-state-fix">{formatted.fix}</span>
         ) : null}
@@ -484,8 +488,8 @@ export function DataTable({
   empty?: boolean;
 }) {
   if (empty) return <Empty />;
-  return (
-    <div className="table-wrap">
+	return (
+		<div className="table-wrap" data-columns={headers.length}>
       <table>
         <thead>
           <tr>

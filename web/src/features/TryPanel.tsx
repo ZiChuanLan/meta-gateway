@@ -132,10 +132,20 @@ export function TryPanel({
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} />
       </Field>
       {error ? <ErrorState error={error} /> : null}
-      {meta ? (
+      {!error && meta ? (
         <div className="result-strip result-strip-info">{meta}</div>
       ) : null}
-      {result ? <pre className="try-result">{result}</pre> : null}
+      {result ? (
+        error ? (
+          <details className="try-result-details">
+            <summary>{t("try.responseDetails")}</summary>
+            {meta ? <p>{meta}</p> : null}
+            <pre className="try-result">{result}</pre>
+          </details>
+        ) : (
+          <pre className="try-result">{result}</pre>
+        )
+      ) : null}
       <div className="detail-actions" style={{ marginTop: 12 }}>
         {onClose ? (
           <Button variant="secondary" onClick={onClose}>

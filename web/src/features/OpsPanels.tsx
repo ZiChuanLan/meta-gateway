@@ -382,7 +382,6 @@ export function CheckinsPanel() {
       >
         <label
           className="check"
-          style={{ display: "flex", gap: 8, alignItems: "center" }}
         >
           <input
             type="checkbox"
@@ -909,7 +908,7 @@ function AlertRulesPanel() {
               {!rule.enabled ? (
                 <span className="error-rule-off">{t("common.disabled")}</span>
               ) : null}
-              <span style={{ flex: 1 }} />
+              <span className="flex-spacer" />
               <button
                 type="button"
                 className="error-rule-edit"
@@ -1067,7 +1066,7 @@ function AlertRuleEditor({
       </div>
       {error ? <div className="inline-error">{error.message}</div> : null}
       <div className="dialog-actions">
-        <span style={{ flex: 1 }} />
+        <span className="flex-spacer" />
         <Button variant="secondary" disabled={pending} onClick={onClose}>
           {t("common.cancel")}
         </Button>
@@ -1150,7 +1149,7 @@ function PromptGuardPanel() {
               {!rule.enabled ? (
                 <span className="error-rule-off">{t("common.disabled")}</span>
               ) : null}
-              <span style={{ flex: 1 }} />
+              <span className="flex-spacer" />
               <button
                 type="button"
                 className="error-rule-edit"
@@ -1269,7 +1268,7 @@ function PromptGuardEditor({
       </div>
       {error ? <div className="inline-error">{error.message}</div> : null}
       <div className="dialog-actions">
-        <span style={{ flex: 1 }} />
+        <span className="flex-spacer" />
         <Button variant="secondary" disabled={pending} onClick={onClose}>
           {t("common.cancel")}
         </Button>
@@ -1376,7 +1375,7 @@ function MaintenancePanel() {
     >
       <div className="panel-header">
         <strong>{t("ops.maintenance.title")}</strong>
-        <span style={{ flex: 1 }} />
+        <span className="flex-spacer" />
         <Button
           variant="secondary"
           disabled={run.isPending}
@@ -1740,7 +1739,7 @@ export function RuntimeSettingsPanel() {
           </div>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}
+            style={{ marginBottom: 10 }}
           >
             <input
               type="checkbox"
@@ -1757,7 +1756,7 @@ export function RuntimeSettingsPanel() {
           </label>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}
+            style={{ marginBottom: 10 }}
           >
             <input
               type="checkbox"
@@ -1818,7 +1817,6 @@ export function RuntimeSettingsPanel() {
           </div>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center" }}
           >
             <input
               type="checkbox"
@@ -2038,7 +2036,6 @@ export function RuntimeSettingsPanel() {
           </p>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center" }}
           >
             <input
               type="checkbox"
@@ -2156,7 +2153,7 @@ export function RuntimeSettingsPanel() {
           </div>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}
+            style={{ marginBottom: 10 }}
           >
             <input
               type="checkbox"
@@ -2202,7 +2199,6 @@ export function RuntimeSettingsPanel() {
           </div>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center" }}
           >
             <input
               type="checkbox"
@@ -2369,7 +2365,6 @@ export function RuntimeSettingsPanel() {
           </div>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center" }}
           >
             <input
               type="checkbox"
@@ -2450,7 +2445,6 @@ export function RuntimeSettingsPanel() {
           </div>
           <label
             className="check"
-            style={{ display: "flex", gap: 8, alignItems: "center" }}
           >
             <input
               type="checkbox"
@@ -2799,7 +2793,7 @@ function ErrorRulesPanel() {
               {!rule.enabled ? (
                 <span className="error-rule-off">{t("common.disabled")}</span>
               ) : null}
-              <span style={{ flex: 1 }} />
+              <span className="flex-spacer" />
               <button
                 type="button"
                 className="error-rule-edit"
@@ -2933,7 +2927,7 @@ function ErrorRuleEditor({
       </div>
       {error ? <div className="inline-error">{error.message}</div> : null}
       <div className="dialog-actions">
-        <span style={{ flex: 1 }} />
+        <span className="flex-spacer" />
         <Button variant="secondary" disabled={pending} onClick={onClose}>
           {t("common.cancel")}
         </Button>
