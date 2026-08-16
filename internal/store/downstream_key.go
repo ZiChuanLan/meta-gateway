@@ -61,6 +61,9 @@ func (s *DownstreamKeyStore) cachePut(key *domain.DownstreamKey) {
 		return
 	}
 	cloned := cloneKey(key)
+	// Never keep the encrypted plaintext token in the hot-path cache; it is
+	// only fetched on demand by the admin reveal endpoint.
+	cloned.TokenEnc = nil
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.byID[cloned.ID] = cloned
@@ -73,9 +76,11 @@ func scanDownstreamKey(scanner interface {
 	Scan(dest ...any) error
 }, r *domain.DownstreamKey) error {
 	var enabled int
+	var tokenEnc string
 	if err := scanner.Scan(
 		&r.ID,
 		&r.TokenHash,
+		&tokenEnc,
 		&r.Name,
 		&enabled,
 		&r.Scopes,
@@ -93,10 +98,11 @@ func scanDownstreamKey(scanner interface {
 		return err
 	}
 	r.Enabled = enabled != 0
+	r.TokenEnc = []byte(tokenEnc)
 	return nil
 }
 
-const downstreamKeySelect = `SELECT id, token_hash, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, created_at FROM downstream_keys`
+const downstreamKeySelect = `SELECT id, token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, created_at FROM downstream_keys`
 
 func (s *DownstreamKeyStore) List() ([]domain.DownstreamKey, error) {
 	rows, err := s.db.Query(downstreamKeySelect + ` ORDER BY id`)
@@ -162,8 +168,8 @@ func (s *DownstreamKeyStore) GetByHash(hash string) (*domain.DownstreamKey, erro
 
 func (s *DownstreamKeyStore) Create(k *domain.DownstreamKey) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO downstream_keys (token_hash, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		k.TokenHash, k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName),
+		`INSERT INTO downstream_keys (token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		k.TokenHash, string(k.TokenEnc), k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("downstream key create: %w", err)
@@ -201,6 +207,28 @@ func (s *DownstreamKeyStore) Update(k *domain.DownstreamKey) error {
 // external quota changes (e.g. a redemption top-up).
 func (s *DownstreamKeyStore) Invalidate(id int64) {
 	s.invalidate(id)
+}
+
+// GetTokenEnc returns the MASTER_KEY-encrypted plaintext token for a key
+// (empty string when the key predates plaintext storage). Admin-only; never
+// cached.
+func (s *DownstreamKeyStore) GetTokenEnc(id int64) (string, error) {
+	var enc string
+	if err := s.db.QueryRow(`SELECT COALESCE(token_enc, '') FROM downstream_keys WHERE id = ?`, id).Scan(&enc); err != nil {
+		return "", fmt.Errorf("downstream key token enc: %w", err)
+	}
+	return enc, nil
+}
+
+// RotateToken atomically replaces the token hash and its encrypted plaintext,
+// invalidating the old token immediately.
+func (s *DownstreamKeyStore) RotateToken(id int64, hash string, tokenEnc string) error {
+	_, err := s.db.Exec(`UPDATE downstream_keys SET token_hash = ?, token_enc = ? WHERE id = ?`, hash, tokenEnc, id)
+	if err != nil {
+		return fmt.Errorf("downstream key rotate token: %w", err)
+	}
+	s.invalidate(id)
+	return nil
 }
 
 // ResetUsage zeroes the key's used quota in the database and drops the cached

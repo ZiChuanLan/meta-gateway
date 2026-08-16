@@ -92,6 +92,8 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Post("/sites/{siteId}/credentials", h.createCredential)
 	r.Put("/credentials/{id}", h.updateCredential)
 	r.Delete("/credentials/{id}", h.deleteCredential)
+	// POST so the admin audit trail records plaintext secret reveals.
+	r.Post("/sites/{siteId}/credentials/{id}/reveal", h.revealCredentialSecret)
 
 	// Channels
 	r.Get("/channels", h.listChannels)
@@ -126,6 +128,10 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Post("/downstream-keys", h.createDownstreamKey)
 	r.Put("/downstream-keys/{id}", h.updateDownstreamKey)
 	r.Delete("/downstream-keys/{id}", h.deleteDownstreamKey)
+	// POST verbs so the admin audit trail records plaintext reveals and token
+	// rotations (GET requests are not audited).
+	r.Post("/downstream-keys/{id}/reveal", h.revealDownstreamKeyToken)
+	r.Post("/downstream-keys/{id}/rotate", h.rotateDownstreamKeyToken)
 
 	// Usage / simple billing
 	r.Get("/usage/summary", h.usageSummary)
@@ -1178,6 +1184,37 @@ func (h *AdminHandler) deleteCredential(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// revealCredentialSecret decrypts and returns a stored credential secret
+// (api_key / session token). POST so the admin audit trail records reveals.
+// The response is marked no-store and never cached.
+func (h *AdminHandler) revealCredentialSecret(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	cred, err := h.db.Credential.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if cred == nil {
+		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+	if len(cred.SecretEnc) == 0 {
+		writeError(w, http.StatusNotFound, "secret_plaintext_unavailable")
+		return
+	}
+	plain, decryptErr := h.enc.Decrypt(string(cred.SecretEnc))
+	if decryptErr != nil {
+		writeError(w, http.StatusInternalServerError, "secret_decrypt_failed")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"secret": string(plain)})
+}
+
 // ---------------------------------------------------------------------------
 // Channels
 // ---------------------------------------------------------------------------
@@ -1899,6 +1936,7 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 		AllowedIPs           string  `json:"allowed_ips,omitempty"`
 		EstimatedCost        float64 `json:"estimated_cost"`
 		CreatedAt            string  `json:"created_at"`
+		HasToken             bool    `json:"has_token"`
 	}
 	result := make([]safeKey, 0, len(keys))
 	for _, k := range keys {
@@ -1918,6 +1956,9 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 				estimated = (float64(k.QuotaUsedTokens) / 1000.0) * unit
 			}
 		}
+		// Re-viewable plaintext is available only for keys created after
+		// plaintext storage landed (token_enc set).
+		hasToken := len(k.TokenEnc) > 0
 		result = append(result, safeKey{
 			ID:                   k.ID,
 			Name:                 k.Name,
@@ -1934,6 +1975,7 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 			AllowedIPs:           k.AllowedIPs,
 			EstimatedCost:        estimated,
 			CreatedAt:            k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			HasToken:             hasToken,
 		})
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -2023,8 +2065,16 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "prices must be >= 0")
 		return
 	}
+	// Keep the encrypted plaintext token so operators can re-view/copy it
+	// later (like New-API). Encrypt failure is non-fatal: the key still works,
+	// it just cannot be re-viewed (users can rotate it instead).
+	tokenEnc := ""
+	if encToken, encErr := h.enc.Encrypt([]byte(raw)); encErr == nil {
+		tokenEnc = encToken
+	}
 	key := &domain.DownstreamKey{
 		TokenHash:            hash,
+		TokenEnc:             []byte(tokenEnc),
 		Name:                 req.Name,
 		Enabled:              true,
 		Scopes:               req.Scopes,
@@ -2285,6 +2335,69 @@ func (h *AdminHandler) deleteDownstreamKey(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// revealDownstreamKeyToken returns the stored plaintext token for a key.
+// Keys created before plaintext storage landed (token_enc empty) return 404
+// so the operator can rotate instead. Admin audit records every reveal.
+func (h *AdminHandler) revealDownstreamKeyToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	enc, err := h.db.DownstreamKey.GetTokenEnc(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if enc == "" {
+		writeError(w, http.StatusNotFound, "token_plaintext_unavailable")
+		return
+	}
+	plain, decryptErr := h.enc.Decrypt(enc)
+	if decryptErr != nil {
+		writeError(w, http.StatusInternalServerError, "token_decrypt_failed")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"token": string(plain)})
+}
+
+// rotateDownstreamKeyToken replaces a key's token with a freshly generated
+// one; the old token stops working immediately. The new plaintext is returned
+// once and also stored encrypted so it can be re-viewed later.
+func (h *AdminHandler) rotateDownstreamKeyToken(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	existing, err := h.db.DownstreamKey.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "downstream key not found")
+		return
+	}
+	hash, raw, genErr := auth.NewToken()
+	if genErr != nil {
+		writeError(w, http.StatusInternalServerError, "token generation failed")
+		return
+	}
+	tokenEnc, encErr := h.enc.Encrypt([]byte(raw))
+	if encErr != nil {
+		writeError(w, http.StatusInternalServerError, "encryption failed")
+		return
+	}
+	if err := h.db.DownstreamKey.RotateToken(id, hash, tokenEnc); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"id": strconv.FormatInt(id, 10), "token": raw})
 }
 
 func validateCustomDownstreamToken(token string) error {

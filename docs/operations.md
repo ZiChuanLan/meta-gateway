@@ -29,8 +29,9 @@ Connect with `ADMIN_TOKEN`, not `METRICS_TOKEN`. The token is sent only in the
 `Authorization: Bearer` header. It remains in memory unless the operator opts
 into tab-scoped `sessionStorage`; it is not stored in cookies, `localStorage`,
 URLs, application configuration, or logs. A `401` response invalidates the UI
-session. Credential secrets use password inputs, newly created downstream
-tokens exist only in their one-time result dialog, and secret-bearing exports
+session. Credential secrets use password inputs, downstream token plaintexts
+are stored MASTER_KEY-encrypted and re-viewable only through explicit reveal
+calls (every reveal/rotate is audit-logged), and secret-bearing exports
 are downloaded without a browser preview.
 
 For a source build, generate the embedded distribution before compiling Go:

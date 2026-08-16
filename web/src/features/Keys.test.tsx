@@ -5,6 +5,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
@@ -257,5 +258,58 @@ describe("Keys page", () => {
 		expect(
 			screen.getByRole("button", { name: "I have stored it" }),
 		).toBeInTheDocument();
+	});
+
+	it("re-views a stored plaintext token and rotates it", async () => {
+		const fetchMock = vi.fn(
+			async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = String(input);
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (path.endsWith("/admin/downstream-keys") && method === "GET") {
+					return jsonResponse([
+						{
+							id: 5,
+							name: "stored",
+							enabled: true,
+							scopes: "relay",
+							quota_used_tokens: 0,
+							quota_total_tokens: 0,
+							estimated_cost: 0,
+							has_token: true,
+							created_at: "2026-07-17T00:00:00Z",
+						},
+					]);
+				}
+				if (path.endsWith("/admin/downstream-keys/5/reveal")) {
+					return jsonResponse({ token: "mg-stored-plaintext" });
+				}
+				if (path.endsWith("/admin/downstream-keys/5/rotate")) {
+					return jsonResponse({ id: 5, token: "mg-rotated-new" });
+				}
+				return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+			},
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		renderKeys();
+
+		// Row shows the stored key; reveal returns the plaintext.
+		expect(await screen.findByText("stored")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "View token" }));
+		expect(await screen.findByText("mg-stored-plaintext")).toBeInTheDocument();
+		const viewDialog = screen.getByRole("dialog", { name: /Token · stored/ });
+		fireEvent.click(
+			within(viewDialog).getAllByRole("button", { name: "Close" })[0]!,
+		);
+
+		// Rotate confirms, then shows the fresh token.
+		fireEvent.click(screen.getAllByRole("button", { name: "Rotate token" })[0]!);
+		expect(
+			await screen.findByText(/A new token will be generated/i),
+		).toBeInTheDocument();
+		const rotateDialog = screen.getByRole("dialog", { name: "Rotate token" });
+		fireEvent.click(
+			within(rotateDialog).getByRole("button", { name: "Rotate token" }),
+		);
+		expect(await screen.findByText("mg-rotated-new")).toBeInTheDocument();
 	});
 });

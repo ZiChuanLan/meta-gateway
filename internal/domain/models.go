@@ -345,6 +345,10 @@ type RouteMember struct {
 type DownstreamKey struct {
 	ID        int64  `json:"id"`
 	TokenHash string `json:"-"` // never serialized
+	// TokenEnc is the MASTER_KEY-encrypted plaintext token, kept so operators
+	// can re-view/copy a key after creation. Empty for keys created before
+	// plaintext storage existed. Never serialized in JSON.
+	TokenEnc []byte `json:"-"`
 	Name      string `json:"name"`
 	Enabled   bool   `json:"enabled"`
 	Scopes    string `json:"scopes,omitempty"`

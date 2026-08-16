@@ -1,4 +1,4 @@
-import { Copy, KeyRound, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
+import { Copy, Eye, KeyRound, Pencil, Plus, RefreshCw, Ticket, Trash2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -144,7 +144,7 @@ function formatCost(value?: number) {
   return value.toFixed(4);
 }
 
-export function Keys() {
+	export function Keys() {
   const { client } = useSession();
   const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -177,6 +177,17 @@ export function Keys() {
 	const [redemption, setRedemption] = useState(false);
   const [created, setCreated] = useState<CreatedDownstreamKey | null>(null);
   const [remove, setRemove] = useState<number | null>(null);
+  // Re-view a stored plaintext token (created after plaintext storage).
+  const [viewing, setViewing] = useState<{ id: number; name: string } | null>(null);
+  const [viewedToken, setViewedToken] = useState<string | null>(null);
+  // Rotate: replace the token, old one dies instantly.
+  const [rotating, setRotating] = useState<number | null>(null);
+  const [rotatedToken, setRotatedToken] = useState<{
+    id: number;
+    name: string;
+    token: string;
+  } | null>(null);
+  const [rotateError, setRotateError] = useState<unknown>(null);
   const openedCreateFromQuery = useRef(false);
 
   useEffect(() => {
@@ -201,6 +212,7 @@ export function Keys() {
       model_denylist?: string;
     }) => service.createKey(v),
     invalidateKeys: [["keys"], ["usage-summary"]],
+    toastOnError: false,
     onSuccess: (result) => {
       setCreated(result);
       setAdd(false);
@@ -222,13 +234,36 @@ export function Keys() {
       };
     }) => service.updateKey(v.id, v.body),
     invalidateKeys: [["keys"], ["usage-summary"]],
+    toastOnError: false,
     onSuccess: () => setEdit(null),
   });
-  const del = useAdminMutation({
+	const del = useAdminMutation({
     mutationFn: (id: number) => service.deleteKey(id),
     invalidateKeys: [["keys"], ["usage-summary"]],
     pendingIdOf: (id) => id,
+    toastOnError: false,
     onSuccess: () => setRemove(null),
+  });
+  const reveal = useAdminMutation({
+    mutationFn: (id: number) => service.revealKey(id),
+    pendingIdOf: (id) => id,
+    toastOnError: false,
+    onSuccess: (result) => setViewedToken(result.token),
+  });
+  const rotate = useAdminMutation({
+    mutationFn: (v: { id: number; name: string }) => service.rotateKey(v.id),
+    invalidateKeys: [["keys"]],
+    toastOnError: false,
+    onSuccess: (result, variables) => {
+      setRotatedToken({
+        id: result.id,
+        name: variables.name,
+        token: result.token,
+      });
+      setRotating(null);
+      setRotateError(null);
+    },
+    onError: (err) => setRotateError(err),
   });
 
   const rows = useMemo(() => query.data ?? [], [query.data]);
@@ -364,21 +399,50 @@ export function Keys() {
                     </td>
                     <td>{formatDate(k.created_at)}</td>
                     <td className="actions">
+                      {(k.has_token || k.id === rotatedToken?.id) && (
+                        <IconButton
+                          className="is-bare"
+                          label={t("keys.view")}
+                          disabled={reveal.pendingId === k.id}
+                          onClick={() => {
+                            reveal.reset();
+                            setViewedToken(null);
+                            setViewing({ id: k.id, name: k.name });
+                            reveal.mutate(k.id);
+                          }}
+                        >
+                          <Eye size={14} />
+                        </IconButton>
+                      )}
                       <IconButton
+                        className="is-bare"
+                        label={t("keys.rotate")}
+                        disabled={rotating === k.id || rotate.isPending}
+                        onClick={() => {
+                          rotate.reset();
+                          setRotateError(null);
+                          setRotating(k.id);
+                        }}
+                      >
+                        <RefreshCw size={14} />
+                      </IconButton>
+                      <IconButton
+                        className="is-bare"
                         label={t("keys.edit")}
                         onClick={() => {
                           update.reset();
                           setEdit(k);
                         }}
                       >
-                        <Pencil />
+                        <Pencil size={14} />
                       </IconButton>
                       <IconButton
+                        className="is-bare"
                         label={t("keys.delete")}
                         disabled={del.pendingId === k.id}
                         onClick={() => setRemove(k.id)}
                       >
-                        <Trash2 />
+                        <Trash2 size={14} />
                       </IconButton>
                     </td>
                   </tr>
@@ -440,7 +504,7 @@ export function Keys() {
               label={t("keys.copyToken")}
               onClick={() => navigator.clipboard.writeText(created.token)}
             >
-              <Copy />
+              <Copy size={14} />
             </IconButton>
           </div>
         </Dialog>
@@ -455,6 +519,65 @@ export function Keys() {
           onClose={() => setRemove(null)}
           onConfirm={() => del.mutate(remove)}
         />
+      )}
+      {viewing && (
+        <Dialog
+          title={t("keys.viewTitle", { name: viewing.name })}
+          onClose={() => setViewing(null)}
+          actions={
+            <Button onClick={() => setViewing(null)}>{t("common.close")}</Button>
+          }
+        >
+          <p className="warning">{t("keys.viewWarning")}</p>
+          {reveal.isPending ? (
+            <p className="exchange-panel-note">{t("common.loading")}</p>
+          ) : reveal.error ? (
+            <ErrorState error={reveal.error} retry={() => reveal.mutate(viewing.id)} />
+          ) : viewedToken ? (
+            <div className="secret-output">
+              <code>{viewedToken}</code>
+              <IconButton
+                label={t("keys.copyToken")}
+                onClick={() => navigator.clipboard.writeText(viewedToken)}
+              >
+                <Copy size={14} />
+              </IconButton>
+            </div>
+          ) : null}
+        </Dialog>
+      )}
+      {rotating != null && (
+        <ConfirmDialog
+          title={t("keys.rotateTitle")}
+          message={t("keys.rotateConfirmMsg")}
+          confirmLabel={t("keys.rotateConfirm")}
+          pending={rotate.isPending}
+          error={rotateError}
+          onClose={() => {
+            if (!rotate.isPending) setRotating(null);
+          }}
+          onConfirm={() => rotate.mutate({ id: rotating, name: rows.find((k) => k.id === rotating)?.name ?? "" })}
+        />
+      )}
+      {rotatedToken && (
+        <Dialog
+          title={t("keys.rotatedTitle")}
+          onClose={() => setRotatedToken(null)}
+          actions={
+            <Button onClick={() => setRotatedToken(null)}>{t("keys.stored")}</Button>
+          }
+        >
+          <p className="warning">{t("keys.rotatedWarning")}</p>
+          <div className="secret-output">
+            <code>{rotatedToken.token}</code>
+            <IconButton
+              label={t("keys.copyToken")}
+              onClick={() => navigator.clipboard.writeText(rotatedToken.token)}
+            >
+              <Copy size={14} />
+            </IconButton>
+          </div>
+        </Dialog>
       )}
     </Page>
   );
@@ -698,12 +821,7 @@ const [priceCache, setPriceCache] = useState(
       {mode === "edit" ? (
         <label
           className="check"
-          style={{
-            marginTop: "0.75rem",
-            display: "flex",
-            gap: "0.5rem",
-            alignItems: "center",
-          }}
+          style={{ marginTop: 12 }}
         >
           <input
             type="checkbox"
@@ -717,12 +835,7 @@ const [priceCache, setPriceCache] = useState(
         <>
           <label
             className="check"
-            style={{
-              marginTop: "0.75rem",
-              display: "flex",
-              gap: "0.5rem",
-              alignItems: "center",
-            }}
+            style={{ marginTop: 12 }}
           >
             <input
               type="checkbox"

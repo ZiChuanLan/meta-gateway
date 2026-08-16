@@ -139,6 +139,7 @@ GET /healthz → 200 {"status":"ok"}
 | POST | /console/connections | One-shot create: site + credential + channel with rollback |
 | GET | /console/sites/{siteId}/credentials | List credentials for site |
 | POST | /console/sites/{siteId}/credentials | Create credential (encrypts secret) |
+| POST | /console/sites/{siteId}/credentials/{id}/reveal | Decrypt and view a stored credential secret (audit-logged) |
 | DELETE | /console/credentials/{id} | Delete credential |
 | GET | /console/channels | List channels |
 | GET | /console/channels/overview | Channel overviews with health/readiness |
@@ -163,9 +164,11 @@ GET /healthz → 200 {"status":"ok"}
 | POST | /console/route-members/{id}/clear-health | Clear member failure/cooldown state |
 | DELETE | /console/route-members/{id} | Delete route member |
 | GET | /console/downstream-keys | List downstream keys |
-| POST | /console/downstream-keys | Create downstream key |
+| POST | /console/downstream-keys | Create downstream key (plaintext stored encrypted) |
 | PUT | /console/downstream-keys/{id} | Update downstream key |
 | DELETE | /console/downstream-keys/{id} | Delete downstream key |
+| POST | /console/downstream-keys/{id}/reveal | Re-view the stored plaintext token (audit-logged) |
+| POST | /console/downstream-keys/{id}/rotate | Issue a new token, old one dies instantly (audit-logged) |
 | GET | /console/usage/summary | Usage summary (requests/tokens/cost) |
 | GET | /console/usage?limit=… | Usage records |
 | GET/PUT | /console/ratios | Model cost ratios (1.0 = no markup) |
