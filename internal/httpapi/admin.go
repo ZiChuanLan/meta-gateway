@@ -277,9 +277,8 @@ func (h *AdminHandler) createAlertRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) updateAlertRule(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	rule, ok := h.decodeAlertRule(w, r)
@@ -295,9 +294,8 @@ func (h *AdminHandler) updateAlertRule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) deleteAlertRule(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.AlertRule.Delete(id); err != nil {
@@ -362,9 +360,8 @@ func (h *AdminHandler) createPromptGuard(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminHandler) updatePromptGuard(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	rule, ok := h.decodePromptGuard(w, r)
@@ -380,9 +377,8 @@ func (h *AdminHandler) updatePromptGuard(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminHandler) deletePromptGuard(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.PromptGuard.Delete(id); err != nil {
@@ -466,9 +462,8 @@ func (h *AdminHandler) createErrorRule(w http.ResponseWriter, r *http.Request) {
 
 // updateErrorRule replaces one rule (hot reload: next request reads it live).
 func (h *AdminHandler) updateErrorRule(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	var rule store.ErrorPassRule
@@ -489,9 +484,8 @@ func (h *AdminHandler) updateErrorRule(w http.ResponseWriter, r *http.Request) {
 
 // deleteErrorRule removes one rule.
 func (h *AdminHandler) deleteErrorRule(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.ErrorRule.Delete(id); err != nil {
@@ -643,9 +637,8 @@ func (h *AdminHandler) listRedemptionCodes(w http.ResponseWriter, r *http.Reques
 
 // deleteRedemptionCode voids an unredeemed voucher.
 func (h *AdminHandler) deleteRedemptionCode(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.DeleteRedemptionCode(id); err != nil {
@@ -800,9 +793,8 @@ func (h *AdminHandler) createSite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) getSite(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	site, err := h.db.Site.GetByID(id)
@@ -818,9 +810,8 @@ func (h *AdminHandler) getSite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) updateSite(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	var site domain.Site
@@ -838,9 +829,8 @@ func (h *AdminHandler) updateSite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) deleteSite(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.Site.Delete(id); err != nil {
@@ -1005,9 +995,8 @@ func hostLabel(raw string) string {
 // ---------------------------------------------------------------------------
 
 func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
-	siteID, err := strconv.ParseInt(chi.URLParam(r, "siteId"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid siteId")
+	siteID, ok := pathID(w, r, "siteId")
+	if !ok {
 		return
 	}
 	creds, err := h.db.Credential.ListBySite(siteID)
@@ -1052,9 +1041,8 @@ type createCredentialRequest struct {
 }
 
 func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) {
-	siteID, err := strconv.ParseInt(chi.URLParam(r, "siteId"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid siteId")
+	siteID, ok := pathID(w, r, "siteId")
+	if !ok {
 		return
 	}
 	var req createCredentialRequest
@@ -1074,6 +1062,10 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 	if req.Status == "" {
 		req.Status = domain.StatusEnabled
 	}
+	if !validCredentialStatus(req.Status) {
+		writeError(w, http.StatusBadRequest, "status must be enabled or disabled")
+		return
+	}
 	cred := &domain.Credential{
 		SiteID:    siteID,
 		Kind:      req.Kind,
@@ -1087,7 +1079,15 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		writeStoreError(w, err)
 		return
 	}
-	created, _ := h.db.Credential.GetByID(id)
+	created, err := h.db.Credential.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if created == nil {
+		writeError(w, http.StatusInternalServerError, "credential vanished after create")
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":              created.ID,
 		"site_id":         created.SiteID,
@@ -1111,9 +1111,8 @@ type updateCredentialRequest struct {
 }
 
 func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	existing, err := h.db.Credential.GetByID(id)
@@ -1134,6 +1133,10 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		existing.Kind = req.Kind
 	}
 	if req.Status != "" {
+		if !validCredentialStatus(req.Status) {
+			writeError(w, http.StatusBadRequest, "status must be enabled or disabled")
+			return
+		}
 		existing.Status = req.Status
 	}
 	if req.MetaJSON != "" {
@@ -1156,7 +1159,15 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		writeStoreError(w, err)
 		return
 	}
-	updated, _ := h.db.Credential.GetByID(id)
+	updated, err := h.db.Credential.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if updated == nil {
+		writeError(w, http.StatusInternalServerError, "credential vanished after update")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"id":              updated.ID,
 		"site_id":         updated.SiteID,
@@ -1172,9 +1183,8 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AdminHandler) deleteCredential(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.Credential.Delete(id); err != nil {
@@ -1188,9 +1198,8 @@ func (h *AdminHandler) deleteCredential(w http.ResponseWriter, r *http.Request) 
 // (api_key / session token). POST so the admin audit trail records reveals.
 // The response is marked no-store and never cached.
 func (h *AdminHandler) revealCredentialSecret(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	cred, err := h.db.Credential.GetByID(id)
@@ -1322,9 +1331,8 @@ func (h *AdminHandler) factoryReset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) duplicateChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	source, err := h.db.Channel.GetByID(id)
@@ -1357,9 +1365,8 @@ func (h *AdminHandler) duplicateChannel(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AdminHandler) getChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	ch, err := h.db.Channel.GetByID(id)
@@ -1379,9 +1386,8 @@ func (h *AdminHandler) getChannel(w http.ResponseWriter, r *http.Request) {
 // only connection-level failures (DNS, dial, TLS, timeout) are unreachable.
 // The result is persisted for the overview UI (separate from model/auth probe).
 func (h *AdminHandler) pingChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	ch, err := h.db.Channel.GetByID(id)
@@ -1460,9 +1466,8 @@ func classifyPingError(err error) string {
 }
 
 func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	existing, err := h.db.Channel.GetByID(id)
@@ -1474,7 +1479,14 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "channel not found")
 		return
 	}
-	var patch domain.Channel
+	// The embedded Channel keeps the flat decode; the shadowing pointers make
+	// priority/weight true patch fields — omitting them preserves the stored
+	// values instead of zeroing them.
+	var patch struct {
+		domain.Channel
+		Priority *int `json:"priority"`
+		Weight   *int `json:"weight"`
+	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
@@ -1492,8 +1504,16 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if group := strings.TrimSpace(patch.GroupName); group != "" {
 		ch.GroupName = group
 	}
-	ch.Priority = patch.Priority
-	ch.Weight = patch.Weight
+	if patch.Priority != nil {
+		ch.Priority = *patch.Priority
+	}
+	if patch.Weight != nil {
+		if *patch.Weight < 0 {
+			writeError(w, http.StatusBadRequest, "weight must be >= 0")
+			return
+		}
+		ch.Weight = *patch.Weight
+	}
 	if patch.Status == domain.StatusEnabled || patch.Status == domain.StatusDisabled {
 		ch.Status = patch.Status
 	}
@@ -1592,9 +1612,8 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) deleteChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.Channel.Delete(id); err != nil {
@@ -1639,6 +1658,25 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+
+// pathID parses a positive integer path parameter (e.g. /channels/{id}) and
+// writes a 400 for unparsable or non-positive values, so no handler funnels
+// id=0 or negative ids into the store. Returns ok=false after writing.
+func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid "+name)
+		return 0, false
+	}
+	return id, true
+}
+
+// validCredentialStatus accepts every status the rest of the system can write
+// (auto_disabled rows exist even though only channels usually get it), so a
+// client echoing a stored value back never 400s.
+func validCredentialStatus(status string) bool {
+	return status == domain.StatusEnabled || status == domain.StatusDisabled || status == domain.StatusAutoDisabled
+}
 
 func validRoutingMode(mode string) bool {
 	return mode == "" ||
@@ -1731,9 +1769,8 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) getRoute(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	rt, err := h.db.Route.GetByID(id)
@@ -1749,9 +1786,8 @@ func (h *AdminHandler) getRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	var rt domain.Route
@@ -1786,9 +1822,8 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) deleteRoute(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.Route.Delete(id); err != nil {
@@ -1804,9 +1839,8 @@ func (h *AdminHandler) deleteRoute(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func (h *AdminHandler) listRouteMembers(w http.ResponseWriter, r *http.Request) {
-	routeID, err := strconv.ParseInt(chi.URLParam(r, "routeId"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid routeId")
+	routeID, ok := pathID(w, r, "routeId")
+	if !ok {
 		return
 	}
 	members, err := h.db.RouteMember.ListByRoute(routeID)
@@ -1818,9 +1852,8 @@ func (h *AdminHandler) listRouteMembers(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AdminHandler) createRouteMember(w http.ResponseWriter, r *http.Request) {
-	routeID, err := strconv.ParseInt(chi.URLParam(r, "routeId"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid routeId")
+	routeID, ok := pathID(w, r, "routeId")
+	if !ok {
 		return
 	}
 	var rm domain.RouteMember
@@ -1843,9 +1876,8 @@ func (h *AdminHandler) createRouteMember(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	var rm domain.RouteMember
@@ -1879,9 +1911,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 }
 
 func (h *AdminHandler) clearRouteMemberHealth(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.RouteMember.ClearHealth(id); err != nil {
@@ -1897,9 +1928,8 @@ func (h *AdminHandler) clearRouteMemberHealth(w http.ResponseWriter, r *http.Req
 }
 
 func (h *AdminHandler) deleteRouteMember(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.RouteMember.Delete(id); err != nil {
@@ -2061,7 +2091,7 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "quota_total_tokens must be >= 0")
 		return
 	}
-	if req.PricePromptPer1k < 0 || req.PriceCompletionPer1k < 0 {
+	if req.PricePromptPer1k < 0 || req.PriceCompletionPer1k < 0 || req.PriceCachePer1k < 0 {
 		writeError(w, http.StatusBadRequest, "prices must be >= 0")
 		return
 	}
@@ -2112,14 +2142,15 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		PriceCachePer1k:      req.PriceCachePer1k,
 		ModelAllowlist:       strings.TrimSpace(req.ModelAllowlist),
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
+		ExpiresAt:            strings.TrimSpace(req.ExpiresAt),
+		AllowedIPs:           strings.TrimSpace(req.AllowedIPs),
 		CreatedAt:            createdAt,
 	})
 }
 
 func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	existing, err := h.db.DownstreamKey.GetByID(id)
@@ -2212,16 +2243,19 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 	if req.GroupName != nil {
 		existing.GroupName = strings.TrimSpace(*req.GroupName)
 	}
-	if err := h.db.DownstreamKey.Update(existing); err != nil {
-		writeStoreError(w, err)
-		return
-	}
+	// Reset the usage counter before persisting field changes: a reset failure
+	// then leaves the row untouched (retry is idempotent), instead of applying
+	// the field update but failing half the request.
 	if req.ResetUsed {
 		if err := h.db.DownstreamKey.ResetUsage(id); err != nil {
 			writeStoreError(w, err)
 			return
 		}
 		existing.QuotaUsedTokens = 0
+	}
+	if err := h.db.DownstreamKey.Update(existing); err != nil {
+		writeStoreError(w, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":                      existing.ID,
@@ -2325,9 +2359,8 @@ func (h *AdminHandler) listUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) deleteDownstreamKey(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	if err := h.db.DownstreamKey.Delete(id); err != nil {
@@ -2341,9 +2374,8 @@ func (h *AdminHandler) deleteDownstreamKey(w http.ResponseWriter, r *http.Reques
 // Keys created before plaintext storage landed (token_enc empty) return 404
 // so the operator can rotate instead. Admin audit records every reveal.
 func (h *AdminHandler) revealDownstreamKeyToken(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	enc, err := h.db.DownstreamKey.GetTokenEnc(id)
@@ -2368,9 +2400,8 @@ func (h *AdminHandler) revealDownstreamKeyToken(w http.ResponseWriter, r *http.R
 // one; the old token stops working immediately. The new plaintext is returned
 // once and also stored encrypted so it can be re-viewed later.
 func (h *AdminHandler) rotateDownstreamKeyToken(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	existing, err := h.db.DownstreamKey.GetByID(id)

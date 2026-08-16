@@ -28,7 +28,7 @@ func (h *CheckinHandler) Register(r chi.Router) {
 }
 
 func (h *CheckinHandler) runCredential(w http.ResponseWriter, r *http.Request) {
-	id, ok := positivePathID(w, r, "id", "invalid credential id")
+	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -93,7 +93,7 @@ func (h *CheckinHandler) listLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *CheckinHandler) setCredentialEnabled(w http.ResponseWriter, r *http.Request) {
-	id, ok := positivePathID(w, r, "id", "invalid credential id")
+	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
@@ -113,15 +113,6 @@ func (h *CheckinHandler) setCredentialEnabled(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"credential_id": id, "checkin_enabled": *request.Enabled})
-}
-
-func positivePathID(w http.ResponseWriter, r *http.Request, name, message string) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, message)
-		return 0, false
-	}
-	return id, true
 }
 
 func optionalPositiveQueryID(w http.ResponseWriter, raw, name string) (*int64, bool) {

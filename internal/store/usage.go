@@ -198,7 +198,6 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 		if _, err := tx.Exec(`UPDATE key_groups SET quota_used_tokens = quota_used_tokens + ?, updated_at = datetime('now') WHERE name = ?`, record.TotalTokens, groupName); err != nil {
 			return fmt.Errorf("usage record group quota: %w", err)
 		}
-		db.Group.invalidateCache(groupName)
 	}
 
 	if strings.TrimSpace(record.RequestID) != "" {
@@ -224,9 +223,10 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("usage record commit: %w", err)
 	}
-	// Keep the downstream-key cache in sync with the committed increment so
-	// quota checks see the new used count without a reload.
+	// Keep the downstream-key and group caches in sync with the committed
+	// increment so quota checks see the new used count without a reload.
 	db.DownstreamKey.bumpCachedUsage(keyID, record.TotalTokens)
+	db.Group.bumpCachedUsage(record.GroupName, record.TotalTokens)
 	return nil
 }
 

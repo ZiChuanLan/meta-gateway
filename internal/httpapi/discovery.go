@@ -41,9 +41,8 @@ func (h *DiscoveryHandler) missingModels(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *DiscoveryHandler) probeChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid channel id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	result, err := h.service.Probe(r.Context(), id)
@@ -55,9 +54,8 @@ func (h *DiscoveryHandler) probeChannel(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *DiscoveryHandler) refreshChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid channel id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	result, err := h.service.Refresh(r.Context(), id)

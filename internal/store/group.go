@@ -23,7 +23,8 @@ func newGroupStore(db *sql.DB) *GroupStore {
 }
 
 // Get returns a group by name; nil when absent. "default" always resolves to
-// an unlimited group even before any row exists.
+// an unlimited group even before any row exists. The returned group is a copy:
+// callers can never mutate the cached object through a shared pointer.
 func (s *GroupStore) Get(name string) (*domain.KeyGroup, error) {
 	name = normalizeGroupName(name)
 	if name == "" {
@@ -33,7 +34,8 @@ func (s *GroupStore) Get(name string) (*domain.KeyGroup, error) {
 	cached, ok := s.cache[name]
 	s.mu.RUnlock()
 	if ok {
-		return cached, nil
+		clone := *cached
+		return &clone, nil
 	}
 	row := s.db.QueryRow(`SELECT name, quota_total_tokens, quota_used_tokens, rate_per_minute, rate_burst, created_at, updated_at FROM key_groups WHERE name = ?`, name)
 	var g domain.KeyGroup
@@ -108,20 +110,21 @@ func (s *GroupStore) Delete(name string) error {
 	return nil
 }
 
-// AddUsage increments a group's used quota and invalidates the cache; the next
-// read reloads the fresh count.
-func (s *GroupStore) AddUsage(name string, totalTokens int64) error {
+// bumpCachedUsage applies an already-committed usage increment to the cached
+// entry in place, mirroring DownstreamKeyStore: the database stays
+// authoritative while the hot path keeps hitting the cache instead of
+// reloading the group row after every relay request. Absent cache entries
+// are left alone; the next read loads the committed count.
+func (s *GroupStore) bumpCachedUsage(name string, totalTokens int) {
 	name = normalizeGroupName(name)
 	if name == "" || totalTokens <= 0 {
-		return nil
-	}
-	if _, err := s.db.Exec(`UPDATE key_groups SET quota_used_tokens = quota_used_tokens + ?, updated_at = datetime('now') WHERE name = ?`, totalTokens, name); err != nil {
-		return fmt.Errorf("group add usage: %w", err)
+		return
 	}
 	s.mu.Lock()
-	delete(s.cache, name)
-	s.mu.Unlock()
-	return nil
+	defer s.mu.Unlock()
+	if cached, ok := s.cache[name]; ok {
+		cached.QuotaUsedTokens += int64(totalTokens)
+	}
 }
 
 func (s *GroupStore) cachePut(g *domain.KeyGroup) {

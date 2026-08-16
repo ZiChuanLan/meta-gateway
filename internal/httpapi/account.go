@@ -66,9 +66,8 @@ func (h *AccountHandler) probeAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AccountHandler) probeAccount(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid channel id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	result, err := h.service.Probe(r.Context(), id)
@@ -80,9 +79,8 @@ func (h *AccountHandler) probeAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AccountHandler) syncKeys(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid channel id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	var request account.SyncKeysRequest
@@ -106,9 +104,8 @@ func (h *AccountHandler) syncKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AccountHandler) createKey(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid channel id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	var request account.CreateKeyRequest
@@ -132,9 +129,8 @@ func (h *AccountHandler) createKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AccountHandler) pricing(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid channel id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	prices, err := h.service.GetPricing(r.Context(), id)
@@ -149,9 +145,8 @@ func (h *AccountHandler) pricing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AccountHandler) tokenGroups(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		writeError(w, http.StatusBadRequest, "invalid channel id")
+	id, ok := pathID(w, r, "id")
+	if !ok {
 		return
 	}
 	groups, err := h.service.ListTokenGroups(r.Context(), id)

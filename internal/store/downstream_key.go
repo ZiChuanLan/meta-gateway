@@ -34,7 +34,8 @@ func newDownstreamKeyStore(db *sql.DB) *DownstreamKeyStore {
 
 // cloneKey returns a deep copy so callers can never mutate the cached object
 // (or observe in-flight admin edits) through a shared pointer. All fields are
-// value types (string/int64), so a struct copy is sufficient.
+// value types (string/int64), so a struct copy is sufficient; TokenEnc is
+// nilled separately by cachePut and never shared from the cache.
 func cloneKey(key *domain.DownstreamKey) *domain.DownstreamKey {
 	if key == nil {
 		return nil
@@ -88,6 +89,7 @@ func scanDownstreamKey(scanner interface {
 		&r.QuotaUsedTokens,
 		&r.PricePromptPer1k,
 		&r.PriceCompletionPer1k,
+		&r.PriceCachePer1k,
 		&r.ModelAllowlist,
 		&r.ModelDenylist,
 		&r.ExpiresAt,
@@ -102,7 +104,7 @@ func scanDownstreamKey(scanner interface {
 	return nil
 }
 
-const downstreamKeySelect = `SELECT id, token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, created_at FROM downstream_keys`
+const downstreamKeySelect = `SELECT id, token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, created_at FROM downstream_keys`
 
 func (s *DownstreamKeyStore) List() ([]domain.DownstreamKey, error) {
 	rows, err := s.db.Query(downstreamKeySelect + ` ORDER BY id`)
@@ -168,8 +170,8 @@ func (s *DownstreamKeyStore) GetByHash(hash string) (*domain.DownstreamKey, erro
 
 func (s *DownstreamKeyStore) Create(k *domain.DownstreamKey) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO downstream_keys (token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		k.TokenHash, string(k.TokenEnc), k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName),
+		`INSERT INTO downstream_keys (token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		k.TokenHash, string(k.TokenEnc), k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.PriceCachePer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("downstream key create: %w", err)
