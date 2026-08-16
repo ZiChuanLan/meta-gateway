@@ -15,7 +15,6 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/account"
 	"github.com/lan/meta-gateway/internal/adapters"
-	"github.com/lan/meta-gateway/internal/alert"
 	"github.com/lan/meta-gateway/internal/alerts"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/backup"
@@ -24,6 +23,7 @@ import (
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/discovery"
 	"github.com/lan/meta-gateway/internal/exchange"
+	"github.com/lan/meta-gateway/internal/financesweep"
 	"github.com/lan/meta-gateway/internal/healthsweep"
 	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/observability"
@@ -209,7 +209,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			webhookNotifier.SetAlertConfig(alertCfg)
 		}
 	}
-	dailySummary := alert.NewDailySummary(db, webhookNotifier, cfg.AlertDailySummaryInterval, alertCfg.DailySummaryEnabled)
+	dailySummary := financesweep.NewDailySummary(db, webhookNotifier, cfg.AlertDailySummaryInterval, alertCfg.DailySummaryEnabled)
 	dailySummary.Start()
 	RegisterStopper(dailySummary.Stop)
 	selector.SetStableFirst(cfg.StableFirstEnabled, cfg.StableFirstDenominator)
@@ -263,7 +263,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	checkinService.SetNotifier(webhookNotifier)
 	// Proactive sweep: refresh finance (balance-low) + probe tokens (expired)
 	// on a timer so alerts fire without an operator opening the admin pages.
-	alertSweep := alert.NewSweep(accountService, webhookNotifier, cfg.AlertSweepInterval)
+	alertSweep := financesweep.NewSweep(accountService, webhookNotifier, cfg.AlertSweepInterval)
 	alertSweep.Start()
 	RegisterStopper(alertSweep.Stop)
 	// Configurable alert rules (metric/operator/threshold/window/sustained):
@@ -272,50 +272,11 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	alertRulesCtx, alertRulesCancel := context.WithCancel(context.Background())
 	go alertRules.Run(alertRulesCtx)
 	RegisterStopper(alertRulesCancel)
-	// Daily balance-history snapshot: records each channel's balance once a day
-	// (plus a first snapshot shortly after boot when the table is empty) so the
-	// dashboard trend chart has data without waiting 24h. Retention-prunes
-	// snapshots older than 90 days on the same cadence.
-	const balanceRetentionDays = 90
-	balanceStop := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		run := func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
-			if n, err := accountService.RecordBalanceHistory(ctx); err != nil {
-				logger.Warn("balance history snapshot failed", "error", err)
-			} else if n > 0 {
-				logger.Info("balance history snapshot", "channels", n)
-			}
-			if _, err := accountService.PruneBalanceHistory(ctx, balanceRetentionDays); err != nil {
-				logger.Warn("balance history prune failed", "error", err)
-			}
-			if _, err := db.PruneDecisionSnapshots(7); err != nil {
-				logger.Warn("decision snapshot prune failed", "error", err)
-			}
-			// Channel health history retention: configurable (default 90 days).
-			if _, err := db.HealthHistory.Prune(time.Now().AddDate(0, 0, -cfg.HealthHistoryRetentionDays)); err != nil {
-				logger.Warn("health history prune failed", "error", err)
-			}
-		}
-		// First run shortly after boot if there is no data yet, then daily.
-		time.Sleep(30 * time.Second)
-		points, err := accountService.BalanceHistory(context.Background(), 2)
-		if err == nil && len(points) == 0 {
-			run()
-		}
-		for {
-			select {
-			case <-ticker.C:
-				run()
-			case <-balanceStop:
-				return
-			}
-		}
-	}()
-	RegisterStopper(func() { close(balanceStop) })
+	// Daily balance-history snapshot + retention prunes (balance, decision
+	// snapshots, health history): see maintenance.BalanceSweeper.
+	balanceSweeper := maintenance.NewBalanceSweeper(accountService, db, cfg.HealthHistoryRetentionDays, logger)
+	balanceSweeper.Start()
+	RegisterStopper(balanceSweeper.Stop)
 	if exchangeService != nil {
 		exchangeService.SetKeySyncer(account.ExchangeKeySyncer{Service: accountService})
 	}

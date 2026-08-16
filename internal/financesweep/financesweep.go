@@ -1,7 +1,7 @@
-// Package alert wires operational alerts (balance low / token expired /
+// Package financesweep wires operational alerts (balance low / token expired /
 // checkin failed / request failures) and the scheduled daily summary into the
 // multi-channel notifier.
-package alert
+package financesweep
 
 import (
 	"context"
