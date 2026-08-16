@@ -295,8 +295,8 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			if _, err := db.PruneDecisionSnapshots(7); err != nil {
 				logger.Warn("decision snapshot prune failed", "error", err)
 			}
-			// Channel health history retention: 90 days by default.
-			if _, err := db.HealthHistory.Prune(time.Now().AddDate(0, 0, -90)); err != nil {
+			// Channel health history retention: configurable (default 90 days).
+			if _, err := db.HealthHistory.Prune(time.Now().AddDate(0, 0, -cfg.HealthHistoryRetentionDays)); err != nil {
 				logger.Warn("health history prune failed", "error", err)
 			}
 		}

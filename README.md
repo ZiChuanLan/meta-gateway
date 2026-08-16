@@ -93,7 +93,7 @@ curl http://127.0.0.1:4100/healthz
 | `ROUTING_LATENCY_AWARE` / `ROUTING_ERROR_AWARE` / `ROUTING_CONCURRENCY_AWARE` | `true` | Routing signal toggles (latency, error history, concurrency load) |
 | `ROUTING_CONCURRENCY_LIMIT` | `64` | Per-model in-flight ceiling for the concurrency signal |
 | `STABLE_FIRST_ENABLED` / `STABLE_FIRST_DENOMINATOR` / `STABLE_FIRST_PROMOTE_REQUESTS` | `false` / `25` / `100` | Gray-release routing: a `stable_first` channel takes ~1/N of traffic until it accumulates enough successful requests, then is promoted |
-| `HEALTH_SWEEP_ENABLED` / `HEALTH_SWEEP_INTERVAL_SECONDS` | `false` / `300` | Proactive health sweep (latency sampling) over channels |
+| `HEALTH_SWEEP_ENABLED` / `HEALTH_SWEEP_INTERVAL_SECONDS` | `true` / `300` | Proactive health sweep (latency sampling) over channels; successful probes also refresh the connectivity verdict |
 | `ALERT_CONFIG_JSON` | empty | Alert matrix JSON (bark / serverchan / telegram / SMTP + cooldown) |
 | `ALERT_SWEEP_INTERVAL_SECONDS` / `ALERT_DAILY_SUMMARY_INTERVAL_SECONDS` | `0` / `0` | Alert evaluation and daily summary cadence (0 = off) |
 | `CHECKIN_TZ` | empty | Timezone for `CHECKIN_CRON` (containers default to UTC; set e.g. `Asia/Shanghai`) |

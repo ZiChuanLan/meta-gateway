@@ -127,6 +127,8 @@ type Config struct {
 	ReadinessTimeout           time.Duration
 	AuditRetentionDays         int
 	AuditRetentionRows         int
+	// HealthHistoryRetentionDays bounds channel_health_history rows (default 90).
+	HealthHistoryRetentionDays int
 	BackupDir                  string
 	PluginsDir                 string
 	PluginCatalogURL           string
@@ -379,6 +381,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	healthHistoryDays, err := envInt("HEALTH_HISTORY_RETENTION_DAYS", 90, 1, 36500)
+	if err != nil {
+		return nil, err
+	}
 	metricsToken := envStr("METRICS_TOKEN", "")
 	if metricsToken == "" && len(trustedScrapers) == 0 {
 		return nil, fmt.Errorf("config: METRICS_TOKEN or TRUSTED_SCRAPER_CIDRS is required")
@@ -393,7 +399,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	healthSweepEnabled, err := envBool("HEALTH_SWEEP_ENABLED", false)
+	healthSweepEnabled, err := envBool("HEALTH_SWEEP_ENABLED", true)
 	if err != nil {
 		return nil, err
 	}
@@ -482,7 +488,7 @@ func Load() (*Config, error) {
 		ServerReadHeaderTimeout: readHeaderTimeout, ServerReadTimeout: readTimeout,
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
-		AuditRetentionRows: auditRows, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
+		AuditRetentionRows: auditRows, HealthHistoryRetentionDays: healthHistoryDays, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
 		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
 		PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
 		PluginMarketURLs:           envList("PLUGIN_MARKET_URLS"),

@@ -91,7 +91,7 @@ curl http://127.0.0.1:4100/healthz
 | `CHECKIN_ENABLED` | `false` | 启动定时凭证签到 |
 | `CHECKIN_CRON` | `0 8 * * *` | 标准五段式签到调度 |
 | `CHECKIN_TZ` | 空 | `CHECKIN_CRON` 的时区（容器默认 UTC；可设为 `Asia/Shanghai`） |
-| `HEALTH_SWEEP_ENABLED` / `HEALTH_SWEEP_INTERVAL_SECONDS` | `false` / `300` | 主动健康巡检（延迟采样） |
+| `HEALTH_SWEEP_ENABLED` / `HEALTH_SWEEP_INTERVAL_SECONDS` | `true` / `300` | 主动健康巡检（延迟采样）；探测成功会同步刷新连通性判定 |
 | `ALERT_CONFIG_JSON` | 空 | 告警矩阵 JSON（bark / serverchan / telegram / SMTP + 冷却） |
 | `ALERT_SWEEP_INTERVAL_SECONDS` / `ALERT_DAILY_SUMMARY_INTERVAL_SECONDS` | `0` / `0` | 告警评估与每日汇总频率（0 = 关闭） |
 | `RELAY_MODEL_RATE_PER_MINUTE` / `RELAY_MODEL_RATE_BURST` | `0` / `0` | 可选按模型转发限流（0 关闭） |
