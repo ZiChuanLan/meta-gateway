@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -59,7 +60,15 @@ func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.modelsCache.Invalidate()
-	created, _ := h.db.Channel.GetByID(id)
+	created, err := h.db.Channel.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if created == nil {
+		writeError(w, http.StatusInternalServerError, "channel vanished after create")
+		return
+	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -93,7 +102,15 @@ func (h *AdminHandler) duplicateChannel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.modelsCache.Invalidate()
-	created, _ := h.db.Channel.GetByID(newID)
+	created, err := h.db.Channel.GetByID(newID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if created == nil {
+		writeError(w, http.StatusInternalServerError, "channel vanished after duplicate")
+		return
+	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -212,13 +229,28 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "channel not found")
 		return
 	}
-	// The embedded Channel keeps the flat decode; the shadowing pointers make
-	// priority/weight true patch fields — omitting them preserves the stored
-	// values instead of zeroing them.
+	// Every field is a pointer so omission preserves the stored value while an
+	// explicit zero/empty value can still clear fields that support it.
 	var patch struct {
-		domain.Channel
-		Priority *int `json:"priority"`
-		Weight   *int `json:"weight"`
+		SiteID             *int64  `json:"site_id"`
+		CredentialID       *int64  `json:"credential_id"`
+		Name               *string `json:"name"`
+		BaseURL            *string `json:"base_url"`
+		ModelsCSV          *string `json:"models_csv"`
+		GroupName          *string `json:"group_name"`
+		Priority           *int    `json:"priority"`
+		Weight             *int    `json:"weight"`
+		Status             *string `json:"status"`
+		TypeHint           *string `json:"type_hint"`
+		MaxReasoningEffort *string `json:"max_reasoning_effort"`
+		PayloadRules       *string `json:"payload_rules"`
+		MaxConcurrent      *int    `json:"max_concurrent"`
+		ProxyURL           *string `json:"proxy_url"`
+		HeaderOverride     *string `json:"header_override"`
+		SystemPrompt       *string `json:"system_prompt"`
+		RetryConfig        *string `json:"retry_config"`
+		Tags               *string `json:"tags"`
+		StableFirst        *bool   `json:"stable_first"`
 	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -227,15 +259,22 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	// Merge onto the stored row so clients that omit site_id (or send 0) cannot
 	// break credential ownership validation when rebinding API keys.
 	ch := *existing
-	if name := strings.TrimSpace(patch.Name); name != "" {
+	if patch.Name != nil {
+		name := strings.TrimSpace(*patch.Name)
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "name must not be empty")
+			return
+		}
 		ch.Name = name
 	}
-	// BaseURL may intentionally be cleared to inherit site URL.
-	if patch.BaseURL != existing.BaseURL {
-		ch.BaseURL = strings.TrimSpace(patch.BaseURL)
+	// BaseURL and the other string fields may intentionally be cleared to
+	// inherit defaults, so nil means "preserve" while an explicit empty value
+	// means "clear".
+	if patch.BaseURL != nil {
+		ch.BaseURL = strings.TrimSpace(*patch.BaseURL)
 	}
-	if group := strings.TrimSpace(patch.GroupName); group != "" {
-		ch.GroupName = group
+	if patch.GroupName != nil {
+		ch.GroupName = strings.TrimSpace(*patch.GroupName)
 	}
 	if patch.Priority != nil {
 		ch.Priority = *patch.Priority
@@ -247,19 +286,23 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		}
 		ch.Weight = *patch.Weight
 	}
-	if patch.Status == domain.StatusEnabled || patch.Status == domain.StatusDisabled {
-		ch.Status = patch.Status
+	if patch.Status != nil {
+		if *patch.Status != domain.StatusEnabled && *patch.Status != domain.StatusDisabled {
+			writeError(w, http.StatusBadRequest, "status must be enabled or disabled")
+			return
+		}
+		ch.Status = *patch.Status
 	}
-	if hint := strings.TrimSpace(patch.TypeHint); hint != "" {
-		ch.TypeHint = hint
+	if patch.TypeHint != nil {
+		ch.TypeHint = strings.TrimSpace(*patch.TypeHint)
 	}
 	// Max reasoning effort: empty string clears it (passthrough).
-	if patch.MaxReasoningEffort != existing.MaxReasoningEffort {
-		ch.MaxReasoningEffort = strings.ToLower(strings.TrimSpace(patch.MaxReasoningEffort))
+	if patch.MaxReasoningEffort != nil {
+		ch.MaxReasoningEffort = strings.ToLower(strings.TrimSpace(*patch.MaxReasoningEffort))
 	}
 	// Payload rules: JSON array of rewrite rules; empty string clears them.
-	if patch.PayloadRules != existing.PayloadRules {
-		if trimmed := strings.TrimSpace(patch.PayloadRules); trimmed != "" && trimmed != "[]" {
+	if patch.PayloadRules != nil {
+		if trimmed := strings.TrimSpace(*patch.PayloadRules); trimmed != "" && trimmed != "[]" {
 			var probe []proxy.PayloadRule
 			if err := json.Unmarshal([]byte(trimmed), &probe); err != nil {
 				writeError(w, http.StatusBadRequest, "payload_rules must be a valid JSON array")
@@ -270,16 +313,19 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 			ch.PayloadRules = ""
 		}
 	}
-	// Hard concurrency ceiling: non-negative; 0 = unlimited.
-	if patch.MaxConcurrent < 0 {
-		writeError(w, http.StatusBadRequest, "max_concurrent must be >= 0")
-		return
+	// Hard concurrency ceiling: non-negative; 0 = unlimited. A missing field
+	// preserves the existing ceiling; an explicit zero clears it.
+	if patch.MaxConcurrent != nil {
+		if *patch.MaxConcurrent < 0 {
+			writeError(w, http.StatusBadRequest, "max_concurrent must be >= 0")
+			return
+		}
+		ch.MaxConcurrent = *patch.MaxConcurrent
 	}
-	ch.MaxConcurrent = patch.MaxConcurrent
 	// Per-channel proxy: http/https URL validated against the outbound
 	// policy (SSRF); empty clears it (inherits the global proxy).
-	if patch.ProxyURL != existing.ProxyURL {
-		if trimmed := strings.TrimSpace(patch.ProxyURL); trimmed != "" {
+	if patch.ProxyURL != nil {
+		if trimmed := strings.TrimSpace(*patch.ProxyURL); trimmed != "" {
 			if h.validateProxyURL != nil {
 				if err := h.validateProxyURL(trimmed); err != nil {
 					writeError(w, http.StatusBadRequest, "proxy_url: "+err.Error())
@@ -291,34 +337,36 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 			ch.ProxyURL = ""
 		}
 	}
-	if patch.ModelsCSV != "" {
-		ch.ModelsCSV = patch.ModelsCSV
+	if patch.ModelsCSV != nil {
+		ch.ModelsCSV = strings.TrimSpace(*patch.ModelsCSV)
 	}
 	// Header overrides and system prompt: empty string clears the stored value.
-	if patch.HeaderOverride != existing.HeaderOverride {
-		ch.HeaderOverride = strings.TrimSpace(patch.HeaderOverride)
+	if patch.HeaderOverride != nil {
+		ch.HeaderOverride = strings.TrimSpace(*patch.HeaderOverride)
 	}
-	if patch.SystemPrompt != existing.SystemPrompt {
-		ch.SystemPrompt = strings.TrimSpace(patch.SystemPrompt)
+	if patch.SystemPrompt != nil {
+		ch.SystemPrompt = strings.TrimSpace(*patch.SystemPrompt)
 	}
 	// Retry config: empty string clears it (global defaults only).
-	if patch.RetryConfig != existing.RetryConfig {
-		ch.RetryConfig = strings.TrimSpace(patch.RetryConfig)
+	if patch.RetryConfig != nil {
+		ch.RetryConfig = strings.TrimSpace(*patch.RetryConfig)
 	}
 	// Tags: empty string clears the tag list.
-	if patch.Tags != existing.Tags {
-		ch.Tags = strings.TrimSpace(patch.Tags)
+	if patch.Tags != nil {
+		ch.Tags = strings.TrimSpace(*patch.Tags)
 	}
-	// StableFirst: grayscale flag follows the patch when explicitly toggled.
-	if patch.StableFirst != existing.StableFirst {
-		ch.StableFirst = patch.StableFirst
+	// StableFirst: a missing field preserves the current grayscale state.
+	if patch.StableFirst != nil {
+		ch.StableFirst = *patch.StableFirst
 	}
 	// Only accept a new site_id when it is a positive id; never wipe ownership.
 	if patch.SiteID != nil && *patch.SiteID > 0 {
-		ch.SiteID = patch.SiteID
+		v := *patch.SiteID
+		ch.SiteID = &v
 	}
 	if patch.CredentialID != nil && *patch.CredentialID > 0 {
-		ch.CredentialID = patch.CredentialID
+		v := *patch.CredentialID
+		ch.CredentialID = &v
 	}
 	ch.ID = id
 	if err := h.validateChannel(&ch); err != nil {
@@ -340,7 +388,15 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.modelsCache.Invalidate()
-	updated, _ := h.db.Channel.GetByID(id)
+	updated, err := h.db.Channel.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if updated == nil {
+		writeError(w, http.StatusInternalServerError, "channel vanished after update")
+		return
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -360,16 +416,45 @@ func (h *AdminHandler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	ch.Name = strings.TrimSpace(ch.Name)
 	ch.BaseURL = strings.TrimSpace(ch.BaseURL)
+	ch.ModelsCSV = strings.TrimSpace(ch.ModelsCSV)
 	ch.GroupName = strings.TrimSpace(ch.GroupName)
 	ch.TypeHint = strings.TrimSpace(ch.TypeHint)
+	ch.MaxReasoningEffort = strings.ToLower(strings.TrimSpace(ch.MaxReasoningEffort))
+	ch.PayloadRules = strings.TrimSpace(ch.PayloadRules)
+	ch.ProxyURL = strings.TrimSpace(ch.ProxyURL)
+	ch.HeaderOverride = strings.TrimSpace(ch.HeaderOverride)
+	ch.SystemPrompt = strings.TrimSpace(ch.SystemPrompt)
+	ch.RetryConfig = strings.TrimSpace(ch.RetryConfig)
+	ch.Tags = strings.TrimSpace(ch.Tags)
 	if ch.Name == "" {
 		return errors.New("name is required")
 	}
 	if ch.Weight < 0 {
 		return errors.New("weight must be non-negative")
 	}
+	if ch.MaxConcurrent < 0 {
+		return errors.New("max_concurrent must be non-negative")
+	}
 	if ch.Status != domain.StatusEnabled && ch.Status != domain.StatusDisabled {
 		return errors.New("invalid channel status")
+	}
+	if ch.PayloadRules == "[]" {
+		ch.PayloadRules = ""
+	} else if ch.PayloadRules != "" {
+		var rules []proxy.PayloadRule
+		if err := json.Unmarshal([]byte(ch.PayloadRules), &rules); err != nil || rules == nil {
+			return errors.New("payload_rules must be a valid JSON array")
+		}
+	}
+	if ch.ProxyURL != "" && h.validateProxyURL != nil {
+		if err := h.validateProxyURL(ch.ProxyURL); err != nil {
+			return fmt.Errorf("proxy_url: %w", err)
+		}
+	}
+	if ch.HeaderOverride != "" {
+		if err := proxy.ValidateHeaderOverrides(ch.HeaderOverride); err != nil {
+			return fmt.Errorf("header_override: %w", err)
+		}
 	}
 	if ch.SiteID == nil || *ch.SiteID <= 0 {
 		return errors.New("site_id is required")
@@ -422,10 +507,19 @@ func (h *AdminHandler) patchChannelsByTag(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "weight out of range")
 		return
 	}
+	if patch.HeaderOverride != nil {
+		if err := proxy.ValidateHeaderOverrides(*patch.HeaderOverride); err != nil {
+			writeError(w, http.StatusBadRequest, "header_override: "+err.Error())
+			return
+		}
+	}
 	affected, err := h.db.Channel.UpdateByTag(tag, patch)
 	if err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	if affected > 0 {
+		h.modelsCache.Invalidate()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tag": tag, "affected": affected})
 }

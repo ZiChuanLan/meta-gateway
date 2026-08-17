@@ -3,6 +3,9 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
+	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -59,13 +62,24 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 	if maxOpenConns > 16 {
 		maxOpenConns = 16
 	}
-	dsn := fmt.Sprintf("file:%s/meta-gateway.db?cache=shared&_journal_mode=WAL&_busy_timeout=5000&_pragma=foreign_keys(1)", dataDir)
+	dsn, err := sqliteDSN(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("store: database path: %w", err)
+	}
 	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open: %w", err)
 	}
 	sqldb.SetMaxOpenConns(maxOpenConns)
 
+	// sql.Open is lazy. Keep the handle closed on every initialization failure;
+	// otherwise a failed migration can leak a pool and its file descriptors.
+	initialized := false
+	defer func() {
+		if !initialized {
+			_ = sqldb.Close()
+		}
+	}()
 	if err := sqldb.Ping(); err != nil {
 		return nil, fmt.Errorf("store: ping: %w", err)
 	}
@@ -73,10 +87,13 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 		return nil, fmt.Errorf("store: migrate: %w", err)
 	}
 
+	siteStore := newSiteStore(sqldb)
+	credentialStore := newCredentialStore(sqldb)
+	siteStore.onDelete = credentialStore.ClearCache
 	db := &DB{
 		DB:              sqldb,
-		Site:            newSiteStore(sqldb),
-		Credential:      newCredentialStore(sqldb),
+		Site:            siteStore,
+		Credential:      credentialStore,
 		Channel:         &ChannelStore{db: sqldb},
 		DiscoveredModel: &DiscoveredModelStore{db: sqldb},
 		Route:           &RouteStore{db: sqldb},
@@ -102,7 +119,33 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 	// Exchange needs the full DB handle to clear the site/credential caches
 	// after direct-SQL imports.
 	db.Exchange = &ExchangeStore{db: db}
+	initialized = true
 	return db, nil
+}
+
+// sqliteDSN builds a URI understood by modernc.org/sqlite. The driver uses
+// repeated _pragma query parameters; the legacy _journal_mode/_busy_timeout
+// names are silently ignored. URI construction also matters on Windows (and
+// for paths containing spaces, '#', or '?').
+func sqliteDSN(dataDir string) (string, error) {
+	path, err := filepath.Abs(filepath.Join(dataDir, "meta-gateway.db"))
+	if err != nil {
+		return "", err
+	}
+	path = filepath.ToSlash(path)
+	// A Windows volume path needs a leading slash for a canonical file URI:
+	// file:///C:/... . On Unix filepath.Abs already supplies one.
+	if filepath.VolumeName(path) != "" && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	u := &url.URL{Scheme: "file", Path: path}
+	q := u.Query()
+	q.Set("cache", "shared")
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "foreign_keys(1)")
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 // Close closes the underlying SQLite connection.

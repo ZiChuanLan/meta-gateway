@@ -22,6 +22,7 @@ import (
 type queuedRelay struct {
 	results []*relay.Result
 	calls   []string
+	bodies  [][]byte
 }
 
 type fixedClock struct{ now time.Time }
@@ -41,7 +42,8 @@ func (r *queuedRelay) ChatCompletionsContext(_ context.Context, upstreamURL, _ s
 	return result
 }
 
-func (r *queuedRelay) ForwardWithHeaders(_ context.Context, _, upstreamURL string, _ http.Header, _ []byte) *relay.Result {
+func (r *queuedRelay) ForwardWithHeaders(_ context.Context, _, upstreamURL string, _ http.Header, body []byte) *relay.Result {
+	r.bodies = append(r.bodies, append([]byte(nil), body...))
 	return r.ChatCompletionsContext(context.Background(), upstreamURL, "", nil, false)
 }
 
@@ -93,6 +95,65 @@ func setupProxy(t *testing.T, upstream Relay) (*Service, *store.DB, int64, int64
 	service := New(selector, upstream, db, enc, 2, time.Minute)
 	service.now = func() time.Time { return now }
 	return service, db, highMember, lowMember
+}
+
+func TestScopedPromptMaskSurvivesModelAliasRewrite(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusOK, `{"ok":true}`)}}
+	service, db, highMemberID, _ := setupProxy(t, upstream)
+	member, err := db.RouteMember.GetByID(highMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := db.Route.GetByID(member.RouteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route.MappingJSON = `{"real":"upstream-model"}`
+	if err := db.Route.Update(route); err != nil {
+		t.Fatal(err)
+	}
+	rule := &store.PromptGuardRule{
+		Name:         "channel secret",
+		Pattern:      `sk-[A-Za-z0-9]{16,}`,
+		Action:       "mask",
+		Replacement:  "[REDACTED]",
+		ChannelScope: member.ChannelID,
+		Enabled:      true,
+	}
+	if err := db.PromptGuard.Upsert(rule); err != nil {
+		t.Fatal(err)
+	}
+
+	result := service.ChatCompletions(context.Background(), Request{
+		RequestID: "req-scoped-mask-alias",
+		Model:     "model",
+		Body:      []byte(`{"model":"model","messages":[{"role":"user","content":"sk-ABCDEFGHIJKLMNOP1234"}]}`),
+	})
+	if result.Err != nil || result.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	defer result.Body.Close()
+	if len(upstream.bodies) != 1 {
+		t.Fatalf("upstream calls = %d, want 1", len(upstream.bodies))
+	}
+	forwarded := string(upstream.bodies[0])
+	if strings.Contains(forwarded, "sk-ABCDEFGHIJKLMNOP1234") {
+		t.Fatalf("scoped prompt secret leaked after alias rewrite: %s", forwarded)
+	}
+	if !strings.Contains(forwarded, `"model":"upstream-model"`) || !strings.Contains(forwarded, "[REDACTED]") {
+		t.Fatalf("forwarded body missed alias or mask: %s", forwarded)
+	}
+}
+
+func TestOversizedTransformedResponseIsBoundedAndNotRetried(t *testing.T) {
+	_, err := readResponseBody(strings.NewReader("123456"), 5)
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("oversized response error=%v, want ErrResponseTooLarge", err)
+	}
+	category, retryable := classifyForChannel(&relay.Result{Err: err}, domain.RetryConfig{})
+	if category != "response_too_large" || retryable {
+		t.Fatalf("classification=(%q,%v), want response_too_large/non-retryable", category, retryable)
+	}
 }
 
 func TestAdapterLocalFailureDoesNotHealKeyState(t *testing.T) {
@@ -414,7 +475,20 @@ func TestCrossChannelFailoverCanBeDisabled(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{
 		response(http.StatusBadRequest, `{"error":"bad request"}`),
 	}}
-	service, _, _, _ := setupProxy(t, upstream)
+	service, db, highMemberID, _ := setupProxy(t, upstream)
+	member, err := db.RouteMember.GetByID(highMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := db.Route.GetByID(member.RouteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retries := 3
+	route.RetryTimes = &retries
+	if err := db.Route.Update(route); err != nil {
+		t.Fatal(err)
+	}
 	service.SetCrossChannelFailoverEnabled(false)
 	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-no-failover", Model: "model", Body: []byte(`{}`)})
 	defer result.Body.Close()

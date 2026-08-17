@@ -53,3 +53,48 @@ func (s *BackupRecordStore) List(limit int) ([]BackupRecord, error) {
 	}
 	return result, rows.Err()
 }
+
+// DeleteByName removes a history row after its corresponding file has been
+// pruned from disk. Missing rows are treated as success so filesystem cleanup
+// can be safely retried.
+func (s *BackupRecordStore) DeleteByName(name string) error {
+	_, err := s.db.Exec(`DELETE FROM backup_records WHERE name = ?`, name)
+	return err
+}
+
+// ListSuccessful returns successful snapshots newest first. The backup service
+// combines this durable order with actual file existence when choosing what
+// to retain, so same-second random filename suffixes cannot reorder history.
+func (s *BackupRecordStore) ListSuccessful() ([]BackupRecord, error) {
+	rows, err := s.db.Query(`SELECT id, name, status, size_bytes, checksum, duration_ms, category, created_at
+		FROM backup_records WHERE status = 'success' ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]BackupRecord, 0)
+	for rows.Next() {
+		var record BackupRecord
+		if err := rows.Scan(&record.ID, &record.Name, &record.Status, &record.SizeBytes,
+			&record.Checksum, &record.DurationMs, &record.Category, scanTime(&record.CreatedAt)); err != nil {
+			return nil, err
+		}
+		result = append(result, record)
+	}
+	return result, rows.Err()
+}
+
+// PruneNonSuccessful keeps the newest keep failure/history rows. Successful
+// rows are managed together with their files by backup.Service.Cleanup.
+func (s *BackupRecordStore) PruneNonSuccessful(keep int) (int64, error) {
+	if keep < 0 {
+		keep = 0
+	}
+	result, err := s.db.Exec(`DELETE FROM backup_records
+		WHERE status <> 'success' AND id NOT IN
+		(SELECT id FROM backup_records WHERE status <> 'success' ORDER BY id DESC LIMIT ?)`, keep)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

@@ -8,6 +8,7 @@ package sitedetect
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -219,9 +220,13 @@ func fetch(ctx context.Context, client *http.Client, url string) ([]byte, int, e
 	defer func() {
 		_ = resp.Body.Close()
 	}()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	const maxDetectResponseBytes = 256 << 10
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxDetectResponseBytes+1))
 	if err != nil {
 		return nil, resp.StatusCode, err
+	}
+	if len(body) > maxDetectResponseBytes {
+		return nil, resp.StatusCode, fmt.Errorf("site detect response too large")
 	}
 	return body, resp.StatusCode, nil
 }

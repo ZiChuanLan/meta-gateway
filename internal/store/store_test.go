@@ -147,13 +147,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 72 {
-		t.Fatalf("got %d applied migrations, want 72", count)
+	if count != 73 {
+		t.Fatalf("got %d applied migrations, want 73", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 72 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 73 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -644,6 +644,55 @@ func TestRuntimeSettingsProxyURLRoundTrip(t *testing.T) {
 	got, _ = db.RuntimeSettings.Get()
 	if got.ProxyURL != "" {
 		t.Fatalf("proxy_url clear = %q", got.ProxyURL)
+	}
+}
+
+func TestRuntimeSettingsMaintenanceCronsRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	row := &store.RuntimeSettingsRow{
+		HasOverride:   true,
+		DiscoveryCron: "5 3 * * *",
+		DBGCCron:      "10 4 * * 0",
+	}
+	if err := db.RuntimeSettings.Save(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DiscoveryCron != row.DiscoveryCron || got.DBGCCron != row.DBGCCron {
+		t.Fatalf("maintenance cron round trip mismatch: discovery=%q gc=%q", got.DiscoveryCron, got.DBGCCron)
+	}
+}
+
+func TestWebDAVSettingsPreserveOverrideState(t *testing.T) {
+	db := openTestDB(t)
+	bootstrap := &store.WebDAVSettings{
+		HasOverride: false,
+		CronExpr:    "0 */6 * * *",
+	}
+	if err := db.WebDAVSettings.Save(bootstrap); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.WebDAVSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HasOverride {
+		t.Fatal("bootstrap row was incorrectly marked as an admin override")
+	}
+	bootstrap.HasOverride = true
+	bootstrap.Enabled = false
+	if err := db.WebDAVSettings.Save(bootstrap); err != nil {
+		t.Fatal(err)
+	}
+	got, err = db.WebDAVSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasOverride || got.Enabled {
+		t.Fatalf("explicit disabled override did not round trip: %+v", got)
 	}
 }
 

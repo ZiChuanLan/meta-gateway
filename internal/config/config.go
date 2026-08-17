@@ -129,9 +129,14 @@ type Config struct {
 	AuditRetentionRows         int
 	// HealthHistoryRetentionDays bounds channel_health_history rows (default 90).
 	HealthHistoryRetentionDays int
-	BackupDir                  string
-	PluginsDir                 string
-	PluginCatalogURL           string
+	// BalanceHistoryRetentionDays and DecisionSnapshotRetentionDays control
+	// the other daily maintenance pruners. Zero disables each pruner.
+	BalanceHistoryRetentionDays   int
+	DecisionSnapshotRetentionDays int
+	BackupRetentionCount          int
+	BackupDir                     string
+	PluginsDir                    string
+	PluginCatalogURL              string
 	// PluginMarketURLs appends extra plugin market registry URLs
 	// (comma-separated; the built-in official registry is always included).
 	PluginMarketURLs []string
@@ -228,6 +233,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	relayRate, err := envInt("RELAY_RATE_PER_MINUTE", 600, 0, 1000000)
+	if err != nil {
+		return nil, err
+	}
 	relayModelRate, modelRateErr := envInt("RELAY_MODEL_RATE_PER_MINUTE", 0, 0, 1000000)
 	if modelRateErr != nil {
 		return nil, modelRateErr
@@ -294,7 +302,9 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	breakerFailCount, err := envInt("BREAKER_FAIL_COUNT", 5, 2, 100)
+	// Zero explicitly disables member parking; keep this consistent with the
+	// runtime-settings validator and RouteMemberStore policy.
+	breakerFailCount, err := envInt("BREAKER_FAIL_COUNT", 5, 0, 100)
 	if err != nil {
 		return nil, err
 	}
@@ -323,9 +333,6 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	stableFirstPromote, err := envInt("STABLE_FIRST_PROMOTE_REQUESTS", 100, 1, 100000)
-	if err != nil {
-		return nil, err
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +388,19 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	healthHistoryDays, err := envInt("HEALTH_HISTORY_RETENTION_DAYS", 90, 1, 36500)
+	healthHistoryDays, err := envInt("HEALTH_HISTORY_RETENTION_DAYS", 90, 0, 36500)
+	if err != nil {
+		return nil, err
+	}
+	balanceHistoryDays, err := envInt("BALANCE_HISTORY_RETENTION_DAYS", 90, 0, 36500)
+	if err != nil {
+		return nil, err
+	}
+	decisionSnapshotDays, err := envInt("DECISION_SNAPSHOT_RETENTION_DAYS", 7, 0, 36500)
+	if err != nil {
+		return nil, err
+	}
+	backupRetentionCount, err := envInt("BACKUP_RETENTION_COUNT", 30, 0, 100000)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +507,10 @@ func Load() (*Config, error) {
 		ServerReadHeaderTimeout: readHeaderTimeout, ServerReadTimeout: readTimeout,
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
-		AuditRetentionRows: auditRows, HealthHistoryRetentionDays: healthHistoryDays, BackupDir: envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
+		AuditRetentionRows: auditRows, HealthHistoryRetentionDays: healthHistoryDays,
+		BalanceHistoryRetentionDays: balanceHistoryDays, DecisionSnapshotRetentionDays: decisionSnapshotDays,
+		BackupRetentionCount:       backupRetentionCount,
+		BackupDir:                  envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
 		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
 		PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
 		PluginMarketURLs:           envList("PLUGIN_MARKET_URLS"),

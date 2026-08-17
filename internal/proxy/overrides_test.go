@@ -60,6 +60,12 @@ func TestMergeHeaderOverrides(t *testing.T) {
 	if err := mergeHeaderOverrides(headers, `{broken`); err == nil {
 		t.Fatal("invalid JSON must error")
 	}
+	if err := ValidateHeaderOverrides(`{"Bad Header":"x"}`); err == nil {
+		t.Fatal("invalid header name must error")
+	}
+	if err := ValidateHeaderOverrides("{\"X-Test\":\"ok\\r\\nInjected: true\"}"); err == nil {
+		t.Fatal("header value containing CRLF must error")
+	}
 	// Empty string is a no-op.
 	if err := mergeHeaderOverrides(headers, "  "); err != nil {
 		t.Fatalf("empty: %v", err)

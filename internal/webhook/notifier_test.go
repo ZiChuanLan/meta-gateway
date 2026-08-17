@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 // TestSendAlertDeliversToWebhookAndCoalesces verifies the multi-channel alert
@@ -84,8 +83,6 @@ func (c *atomicCounter) add(d int64) {
 }
 
 func (c *atomicCounter) value() int64 { return c.n }
-
-var _ = time.Now // keep time import for future cooldown assertions
 
 // TestSendAlertFailedDeliveryDoesNotArmCooldown verifies a transient delivery
 // failure does not swallow subsequent identical alerts inside the window.

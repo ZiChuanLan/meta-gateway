@@ -4,7 +4,7 @@ import { useI18n } from "../../i18n"
 import { channelAccountState, channelConnectivityState, channelHealthState, channelReadiness } from "../channelHealth"
 import {  } from "./helpers"
 
-export function channelHealthReasonLabel(
+function channelHealthReasonLabel(
   overview: ChannelOverview,
   t: (key: string, vars?: Record<string, string | number>) => string,
 ) {
@@ -112,7 +112,7 @@ function ChannelStatusBadges({ overview }: { overview: ChannelOverview }) {
   );
 }
 
-export function ChannelReadinessBadge({ overview }: { overview: ChannelOverview }) {
+function ChannelReadinessBadge({ overview }: { overview: ChannelOverview }) {
   const readiness = channelReadiness(overview);
   if (
     readiness !== "auto_disabled" &&

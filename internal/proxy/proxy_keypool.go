@@ -222,8 +222,8 @@ func (s *Service) cascadeChannelIfAllKeysDisabled(channel domain.Channel) {
 		return
 	}
 	log.Printf("proxy: auto-disabled channel %d: all api keys disabled", channel.ID)
-	if s.notifier != nil {
-		go s.notifier.Notify(context.Background(), webhook.ChannelDisabled, channel.ID, channel.Name, "all api keys disabled")
-		s.notifier.SendAlert(context.Background(), webhook.AlertWarning, "请求失败告警", fmt.Sprintf("渠道 #%d (%s) 所有 API Key 均被禁用，渠道已级联禁用。", channel.ID, channel.Name))
+	if notifier := s.notifier.Load(); notifier != nil {
+		go notifier.Notify(context.Background(), webhook.ChannelDisabled, channel.ID, channel.Name, "all api keys disabled")
+		notifier.SendAlert(context.Background(), webhook.AlertWarning, "请求失败告警", fmt.Sprintf("渠道 #%d (%s) 所有 API Key 均被禁用，渠道已级联禁用。", channel.ID, channel.Name))
 	}
 }

@@ -23,16 +23,21 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
 	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil || mapping.Real == "" {
 		return body
 	}
-	var payload map[string]any
+	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(body, &payload); err != nil {
 		// Not JSON (multipart etc.): leave untouched.
 		return body
 	}
-	current, ok := payload["model"].(string)
-	if !ok || current != requestedModel {
+	var current string
+	rawModel, ok := payload["model"]
+	if !ok || json.Unmarshal(rawModel, &current) != nil || current != requestedModel {
 		return body
 	}
-	payload["model"] = mapping.Real
+	real, err := json.Marshal(mapping.Real)
+	if err != nil {
+		return body
+	}
+	payload["model"] = real
 	rewritten, err := json.Marshal(payload)
 	if err != nil {
 		return body
@@ -139,25 +144,74 @@ var forbiddenOverrideHeaders = map[string]struct{}{
 }
 
 // mergeHeaderOverrides applies a channel's header_override JSON onto headers.
-// Values replace existing ones; hop-by-hop and auth-critical names are ignored.
+// Values replace existing ones; hop-by-hop transport names are ignored.
 func mergeHeaderOverrides(headers http.Header, raw string) error {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	var overrides map[string]string
-	if err := json.Unmarshal([]byte(raw), &overrides); err != nil {
-		return fmt.Errorf("invalid header_override JSON: %w", err)
+	overrides, err := parseHeaderOverrides(raw)
+	if err != nil {
+		return err
 	}
 	for name, value := range overrides {
 		key := http.CanonicalHeaderKey(strings.TrimSpace(name))
-		if key == "" {
-			continue
-		}
 		if _, blocked := forbiddenOverrideHeaders[strings.ToLower(key)]; blocked {
 			continue
 		}
 		headers.Set(key, value)
 	}
 	return nil
+}
+
+// ValidateHeaderOverrides validates the persisted channel header map using
+// the same rules as the forwarding path.
+func ValidateHeaderOverrides(raw string) error {
+	_, err := parseHeaderOverrides(raw)
+	return err
+}
+
+func parseHeaderOverrides(raw string) (map[string]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var overrides map[string]string
+	if err := json.Unmarshal([]byte(raw), &overrides); err != nil {
+		return nil, fmt.Errorf("invalid header_override JSON: %w", err)
+	}
+	if overrides == nil {
+		return nil, fmt.Errorf("header_override must be a JSON object")
+	}
+	for name, value := range overrides {
+		if !validHeaderName(strings.TrimSpace(name)) {
+			return nil, fmt.Errorf("invalid header_override name %q", name)
+		}
+		if !validHeaderValue(value) {
+			return nil, fmt.Errorf("invalid header_override value for %q", name)
+		}
+	}
+	return overrides, nil
+}
+
+func validHeaderName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for index := 0; index < len(name); index++ {
+		char := name[index]
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || strings.ContainsRune("!#$%&'*+-.^_`|~", rune(char)) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validHeaderValue(value string) bool {
+	for index := 0; index < len(value); index++ {
+		char := value[index]
+		if char == '\t' || char >= 0x20 && char != 0x7f {
+			continue
+		}
+		return false
+	}
+	return true
 }

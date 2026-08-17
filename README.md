@@ -74,6 +74,7 @@ curl http://127.0.0.1:4100/healthz
 | `EXCHANGE_ALLOW_SECRET_EXPORT` | `true` | Allow `include_secrets` on exchange export |
 | `METRICS_TOKEN` | _(required*)_ | Independent Bearer token for `/metrics` |
 | `BACKUP_DIR` | `<DATA_DIR>/backups` | Confined online backup directory |
+| `BACKUP_RETENTION_COUNT` | `30` | Maximum verified backup snapshots retained on disk (0 disables pruning) |
 | `OUTBOUND_ALLOW_HOSTS` | empty | Exact trusted private upstream host exceptions |
 | `OUTBOUND_ALLOW_CIDRS` | empty | Trusted private upstream network exceptions |
 | `OUTBOUND_MAX_IDLE_CONNS` | `512` | Total outbound idle connection ceiling |
@@ -84,6 +85,8 @@ curl http://127.0.0.1:4100/healthz
 | `RELAY_RATE_PER_MINUTE` / `RELAY_RATE_BURST` | `600` / `100` | Per-key relay limiter; rate `0` disables it |
 | `ADMIN_RATE_PER_MINUTE` / `ADMIN_RATE_BURST` | `300` / `50` | Global Admin limiter; rate `0` disables it |
 | `AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_ROWS` | `90` / `100000` | Audit ceilings; `0` disables that dimension |
+| `HEALTH_HISTORY_RETENTION_DAYS` | `90` | Channel health-history retention; `0` disables pruning |
+| `BALANCE_HISTORY_RETENTION_DAYS` / `DECISION_SNAPSHOT_RETENTION_DAYS` | `90` / `7` | Balance and routing-decision history retention; `0` disables each pruner |
 | `RETRY_TIMES` | `2` | Retry rounds: how many additional channels are attempted after the first upstream attempt (each round = one more channel) |
 | `CHANNEL_RETRY_TIMES` | `1` | Same-key re-sends: how many times a retryable failure is re-sent on the same upstream key before moving to the next key/channel (0-5; network errors fail fast after these) |
 | `KEY_POOL_ROTATION` | `true` | Rotate through the site's API keys when one fails; off = only the channel's bound key is used |

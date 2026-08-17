@@ -58,6 +58,24 @@ func TestAuditEventCleanupAppliesAgeThenCount(t *testing.T) {
 	}
 }
 
+func TestAuditEventCleanupNormalizesSQLiteDatetimeFormat(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	if _, err := db.Exec(`INSERT INTO audit_events
+		(actor_kind, action, outcome, status_code, created_at)
+		VALUES ('system', 'old', 'success', 200, '2026-07-12 11:59:59')`); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := db.AuditEvent.Cleanup(now, 1, 0)
+	if err != nil || removed != 1 {
+		t.Fatalf("removed=%d err=%v", removed, err)
+	}
+}
+
 func TestP7MigrationCreatesOperationalTables(t *testing.T) {
 	db, err := Open(t.TempDir())
 	if err != nil {

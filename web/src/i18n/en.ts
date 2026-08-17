@@ -688,6 +688,7 @@ export const en: Dict = {
   "common.firstByte": "TTFB",
   "common.clientFamily": "Client",
   "keys.title": "Tokens",
+  "keys.searchPlaceholder": "Search tokens",
   "keys.description":
     "Issue downstream tokens for /v1 clients. Plaintext is stored encrypted and can be re-viewed or rotated anytime.",
   "logsPage.kicker": "Observability",

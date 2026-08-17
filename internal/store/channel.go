@@ -688,12 +688,22 @@ func (s *ChannelStore) UpdateByTag(tag string, fields domain.ChannelPatch) (int6
 		return 0, nil
 	}
 	sets = append(sets, "updated_at = datetime('now')")
+	// Escape LIKE metacharacters so a literal tag such as "prod_%" cannot
+	// update unrelated channels. The comma anchors still prevent substring
+	// matches ("prod" must not match "production").
 	query := `UPDATE channels SET ` + strings.Join(sets, ", ") +
-		` WHERE (',' || tags || ',') LIKE ?`
-	args = append(args, "%,"+tag+",%")
+		` WHERE (',' || tags || ',') LIKE ? ESCAPE '!'`
+	args = append(args, "%,"+escapeLikeLiteral(tag)+",%")
 	res, err := s.db.Exec(query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("channel bulk update: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+func escapeLikeLiteral(value string) string {
+	value = strings.ReplaceAll(value, "!", "!!")
+	value = strings.ReplaceAll(value, "%", "!%")
+	value = strings.ReplaceAll(value, "_", "!_")
+	return value
 }

@@ -96,6 +96,40 @@ func (p *Policy) ValidateURL(raw string) error {
 	return nil
 }
 
+// ValidateDestination validates a URL that will be resolved by an explicit
+// HTTP(S) proxy.  In direct mode DialContext resolves and pins the destination
+// IP itself.  A proxy, however, receives the hostname and performs its own
+// DNS lookup, so the gateway must validate the final target before handing the
+// request to http.Transport.  Explicitly allowlisted hostnames retain their
+// configured semantics and are permitted even when they resolve to private
+// addresses; all other hostnames must resolve exclusively to allowed
+// addresses, since a proxy could choose any answer returned by DNS.
+func (p *Policy) ValidateDestination(ctx context.Context, u *url.URL) error {
+	if u == nil || p == nil || p.ValidateURL(u.String()) != nil {
+		return ErrBlocked
+	}
+	host := normalizeHost(u.Hostname())
+	if p.hostAllowed(host) {
+		return nil
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if p.addressAllowed(addr.Unmap()) {
+			return nil
+		}
+		return ErrBlocked
+	}
+	addresses, err := p.resolve(ctx, host)
+	if err != nil || len(addresses) == 0 {
+		return ErrBlocked
+	}
+	for _, addr := range addresses {
+		if !p.addressAllowed(addr.Unmap()) {
+			return ErrBlocked
+		}
+	}
+	return nil
+}
+
 func (p *Policy) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || host == "" || port == "" {
@@ -200,9 +234,9 @@ type ClientOptions struct {
 	MaxIdleConnsPerHost int
 	// Proxy resolves the outbound proxy for a request (per-request channel
 	// override first, then the global proxy, then direct). nil = direct only
-	// (the historical P7 behavior). The returned URL must already be policy-
-	// validated; the transport dials the proxy through DialContext so the
-	// SSRF policy still applies to the proxy host itself.
+	// (the historical P7 behavior). The transport validates both the returned
+	// proxy URL and the final request destination before handing the request to
+	// the proxy; the proxy socket is dialed through DialContext as well.
 	Proxy func(*http.Request) (*url.URL, error)
 }
 
@@ -238,9 +272,9 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 		// Environment proxies are intentionally disabled (P7 contract): proxy-
 		// side DNS resolution would bypass DialContext's address validation and
 		// re-open the SSRF surface. An explicit configured proxy (opts.Proxy) is
-		// still honored — it is policy-validated and dialed through
-		// DialContext, so the validation stays intact.
-		Proxy:                 opts.Proxy,
+		// still honored: validatingTransport checks its URL and the final target,
+		// while the proxy socket itself is dialed through DialContext.
+		Proxy:                 wrapProxyHook(opts.Proxy),
 		DialContext:           policy.DialContext,
 		ForceAttemptHTTP2:     true,
 		TLSHandshakeTimeout:   tlsTimeout,
@@ -250,7 +284,7 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 	}
-	client := &http.Client{Transport: validatingTransport{policy: policy, next: transport}}
+	client := &http.Client{Transport: validatingTransport{policy: policy, next: transport, proxy: transport.Proxy}}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
 			return errors.New("outbound redirect limit exceeded")
@@ -271,13 +305,57 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 type validatingTransport struct {
 	policy *Policy
 	next   http.RoundTripper
+	proxy  func(*http.Request) (*url.URL, error)
 }
 
 func (t validatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req == nil || req.URL == nil || t.policy.ValidateURL(req.URL.String()) != nil {
 		return nil, ErrBlocked
 	}
+	proxyHook := t.proxy
+	if transport, ok := t.next.(*http.Transport); ok {
+		// SetClientProxy may replace the hook after client construction, so read
+		// the live transport field instead of relying only on the snapshot.
+		proxyHook = transport.Proxy
+	}
+	if proxyHook != nil {
+		proxyURL, err := proxyHook(req)
+		if err != nil {
+			return nil, err
+		}
+		if proxyURL != nil {
+			if err := t.policy.ValidateDestination(req.Context(), req.URL); err != nil {
+				return nil, err
+			}
+			if err := t.policy.ValidateDestination(req.Context(), proxyURL); err != nil {
+				return nil, err
+			}
+			// The wrapped transport.Proxy hook recognizes this context value and
+			// returns the already-validated URL without invoking user code again.
+			copyURL := *proxyURL
+			ctx := context.WithValue(req.Context(), proxyURLContextKey{}, &copyURL)
+			req = req.Clone(ctx)
+		}
+	}
 	return t.next.RoundTrip(req)
+}
+
+// proxyURLContextKey carries the proxy URL selected during validation into
+// http.Transport, avoiding a second call to a dynamic per-request hook.
+type proxyURLContextKey struct{}
+
+func wrapProxyHook(hook func(*http.Request) (*url.URL, error)) func(*http.Request) (*url.URL, error) {
+	if hook == nil {
+		return nil
+	}
+	return func(req *http.Request) (*url.URL, error) {
+		if req != nil {
+			if proxyURL, ok := req.Context().Value(proxyURLContextKey{}).(*url.URL); ok {
+				return proxyURL, nil
+			}
+		}
+		return hook(req)
+	}
 }
 
 func sameOrigin(a, b *url.URL) bool {

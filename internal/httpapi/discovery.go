@@ -11,12 +11,17 @@ import (
 )
 
 type DiscoveryHandler struct {
-	db      *store.DB
-	service *discovery.Service
+	db          *store.DB
+	service     *discovery.Service
+	modelsCache *modelsCache
 }
 
 func NewDiscoveryHandler(db *store.DB, service *discovery.Service) *DiscoveryHandler {
 	return &DiscoveryHandler{db: db, service: service}
+}
+
+func (h *DiscoveryHandler) SetModelsCache(cache *modelsCache) {
+	h.modelsCache = cache
 }
 
 func (h *DiscoveryHandler) Register(r chi.Router) {
@@ -50,6 +55,7 @@ func (h *DiscoveryHandler) probeChannel(w http.ResponseWriter, r *http.Request) 
 		writeDiscoveryError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -63,6 +69,7 @@ func (h *DiscoveryHandler) refreshChannel(w http.ResponseWriter, r *http.Request
 		writeDiscoveryError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -72,6 +79,7 @@ func (h *DiscoveryHandler) refreshAll(w http.ResponseWriter, r *http.Request) {
 		writeDiscoveryError(w, err)
 		return
 	}
+	h.modelsCache.Invalidate()
 	writeJSON(w, http.StatusOK, result)
 }
 

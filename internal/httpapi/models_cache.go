@@ -11,11 +11,13 @@ import (
 // changes on admin writes, so a short TTL plus explicit invalidation removes
 // the per-request DB queries without ever serving stale models for long.
 type modelsCache struct {
-	mu       sync.Mutex
-	raw      []string
-	cachedAt time.Time
-	ttl      time.Duration
-	now      func() time.Time
+	mu         sync.Mutex
+	refreshMu  sync.Mutex
+	raw        []string
+	cachedAt   time.Time
+	ttl        time.Duration
+	now        func() time.Time
+	generation uint64
 }
 
 func newModelsCache(ttl time.Duration) *modelsCache {
@@ -32,17 +34,46 @@ func (c *modelsCache) Get() ([]string, bool) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.raw == nil || c.now().Sub(c.cachedAt) > c.ttl {
+	age := c.now().Sub(c.cachedAt)
+	if c.raw == nil || age < 0 || age >= c.ttl {
 		return nil, false
 	}
-	return c.raw, true
+	return append([]string(nil), c.raw...), true
 }
 
-// Put stores a freshly computed model id list (trimmed and de-duplicated).
-func (c *modelsCache) Put(raw []string) {
+// GetOrCompute serializes cold-cache refreshes and rechecks the cache after
+// waiting, so concurrent /v1/models requests share one database scan.
+func (c *modelsCache) GetOrCompute(compute func() []string) []string {
 	if c == nil {
-		return
+		if compute == nil {
+			return nil
+		}
+		return compute()
 	}
+	if raw, ok := c.Get(); ok {
+		return raw
+	}
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	if raw, ok := c.Get(); ok {
+		return raw
+	}
+	if compute == nil {
+		return nil
+	}
+	generation := c.currentGeneration()
+	raw := compute()
+	c.putIfGeneration(raw, generation)
+	return append([]string(nil), raw...)
+}
+
+func (c *modelsCache) currentGeneration() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.generation
+}
+
+func (c *modelsCache) putIfGeneration(raw []string, generation uint64) {
 	seen := make(map[string]struct{}, len(raw))
 	ids := make([]string, 0, len(raw))
 	for _, id := range raw {
@@ -56,9 +87,12 @@ func (c *modelsCache) Put(raw []string) {
 		ids = append(ids, id)
 	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.generation != generation {
+		return
+	}
 	c.raw = ids
 	c.cachedAt = c.now()
-	c.mu.Unlock()
 }
 
 // Invalidate drops the cached list so the next request recomputes it
@@ -70,5 +104,6 @@ func (c *modelsCache) Invalidate() {
 	c.mu.Lock()
 	c.raw = nil
 	c.cachedAt = time.Time{}
+	c.generation++
 	c.mu.Unlock()
 }

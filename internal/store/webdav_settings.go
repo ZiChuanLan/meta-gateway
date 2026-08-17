@@ -9,6 +9,10 @@ import (
 // WebDAVSettings is the durable Admin WebDAV pull configuration.
 // Password fields hold ciphertext (or empty).
 type WebDAVSettings struct {
+	// HasOverride distinguishes an explicit Admin choice (including disabled)
+	// from the untouched bootstrap row, allowing the operator to override a
+	// fully configured WEBDAV_* environment without deleting secrets.
+	HasOverride       bool
 	Enabled           bool
 	URL               string
 	Username          string
@@ -25,12 +29,13 @@ type WebDAVSettingsStore struct {
 
 func (s *WebDAVSettingsStore) Get() (*WebDAVSettings, error) {
 	row := s.db.QueryRow(`
-		SELECT enabled, url, username, password_enc, backup_password_enc, cron_expr, updated_at
+		SELECT has_override, enabled, url, username, password_enc, backup_password_enc, cron_expr, updated_at
 		FROM webdav_settings WHERE id = 1`)
-	var enabled int
+	var hasOverride, enabled int
 	var settings WebDAVSettings
 	var updated string
 	if err := row.Scan(
+		&hasOverride,
 		&enabled,
 		&settings.URL,
 		&settings.Username,
@@ -44,6 +49,7 @@ func (s *WebDAVSettingsStore) Get() (*WebDAVSettings, error) {
 		}
 		return nil, err
 	}
+	settings.HasOverride = hasOverride != 0
 	settings.Enabled = enabled != 0
 	if parsed, err := time.Parse("2006-01-02 15:04:05", updated); err == nil {
 		settings.UpdatedAt = parsed.UTC()
@@ -62,14 +68,19 @@ func (s *WebDAVSettingsStore) Save(settings *WebDAVSettings) error {
 	if cron == "" {
 		cron = "0 */6 * * *"
 	}
+	hasOverride := 0
+	if settings.HasOverride {
+		hasOverride = 1
+	}
 	enabled := 0
 	if settings.Enabled {
 		enabled = 1
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO webdav_settings (id, enabled, url, username, password_enc, backup_password_enc, cron_expr, updated_at)
-		VALUES (1, ?, ?, ?, ?, ?, ?, datetime('now'))
+		INSERT INTO webdav_settings (id, has_override, enabled, url, username, password_enc, backup_password_enc, cron_expr, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(id) DO UPDATE SET
+			has_override = excluded.has_override,
 			enabled = excluded.enabled,
 			url = excluded.url,
 			username = excluded.username,
@@ -77,6 +88,7 @@ func (s *WebDAVSettingsStore) Save(settings *WebDAVSettings) error {
 			backup_password_enc = excluded.backup_password_enc,
 			cron_expr = excluded.cron_expr,
 			updated_at = datetime('now')`,
+		hasOverride,
 		enabled,
 		strings.TrimSpace(settings.URL),
 		settings.Username,

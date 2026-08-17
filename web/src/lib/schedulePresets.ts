@@ -29,7 +29,7 @@ export const SCHEDULE_PRESETS: SchedulePreset[] = [
 ];
 
 /** Default cron used when none configured and scheduling is on. */
-export const DEFAULT_SCHEDULE_CRON = "0 8 * * *";
+const DEFAULT_SCHEDULE_CRON = "0 8 * * *";
 
 export function scheduleFromSettings(input: {
 	enabled: boolean;

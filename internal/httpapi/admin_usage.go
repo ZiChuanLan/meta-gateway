@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/domain"
@@ -16,7 +17,16 @@ func (h *AdminHandler) usageSummary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	summary, err := h.db.Usage.Summary(keyID)
+	var since *time.Time
+	if raw := strings.TrimSpace(query.Get("since")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "since must be RFC3339")
+			return
+		}
+		since = &parsed
+	}
+	summary, err := h.db.Usage.SummarySince(keyID, since)
 	if err != nil {
 		writeStoreError(w, err)
 		return

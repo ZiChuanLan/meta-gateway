@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
@@ -522,8 +521,7 @@ func normalizeType(value string) string {
 	case "neo-api", "neoapi":
 		return "neo-api"
 	default:
-		// Keep original brand id (anyrouter, axonhub, …) for operator visibility.
-		_ = adapters.CanonicalType(value)
+		// Keep original brand id (anyrouter, axonhub, ...) for operator visibility.
 		return value
 	}
 }

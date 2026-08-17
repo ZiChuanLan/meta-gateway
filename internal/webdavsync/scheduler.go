@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/robfig/cron/v3"
@@ -27,6 +28,8 @@ type Scheduler struct {
 	lifecycleMu sync.Mutex
 	started     bool
 	stopped     bool
+	entryID     cron.EntryID
+	expression  string
 }
 
 func NewScheduler(runner ScheduledRunner, expression string, logger *log.Logger) (*Scheduler, error) {
@@ -42,13 +45,53 @@ func NewScheduler(runner ScheduledRunner, expression string, logger *log.Logger)
 		ctx:    ctx,
 		cancel: cancel,
 	}
-	if _, err := scheduler.cron.AddFunc(expression, func() {
-		scheduler.run(scheduler.ctx)
-	}); err != nil {
+	if err := scheduler.SetSchedule(expression, expression != ""); err != nil {
 		cancel()
 		return nil, err
 	}
 	return scheduler, nil
+}
+
+// SetSchedule replaces the cron entry atomically. An empty expression or a
+// false enabled flag disarms the scheduler but keeps the scheduler object
+// alive, so a later Admin update can enable it without a process restart.
+// Invalid expressions leave the previous entry untouched.
+func (s *Scheduler) SetSchedule(expression string, enabled bool) error {
+	expression = strings.TrimSpace(expression)
+	if !enabled {
+		expression = ""
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.stopped {
+		return ErrSchedulerStopped
+	}
+	if expression == s.expression {
+		return nil
+	}
+	var nextID cron.EntryID
+	if expression != "" {
+		id, err := s.cron.AddFunc(expression, func() {
+			s.run(s.ctx)
+		})
+		if err != nil {
+			return err
+		}
+		nextID = id
+	}
+	if s.entryID != 0 {
+		s.cron.Remove(s.entryID)
+	}
+	s.entryID = nextID
+	s.expression = expression
+	return nil
+}
+
+// Armed reports whether a cron entry is currently installed.
+func (s *Scheduler) Armed() bool {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return !s.stopped && s.entryID != 0
 }
 
 func (s *Scheduler) Start() error {
@@ -66,6 +109,9 @@ func (s *Scheduler) Start() error {
 }
 
 func (s *Scheduler) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()

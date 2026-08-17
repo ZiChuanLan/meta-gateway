@@ -57,36 +57,24 @@ describe("Channels two-phase create", () => {
 	});
 
 	it("saves the connection before verify and retries without re-creating", async () => {
-		const createSite = vi.fn(async () =>
+		const createConnection = vi.fn(async () =>
 			jsonResponse({
-				id: 1,
-				name: "api.example.com",
-				base_url: "https://api.example.com",
-				platform: "openai-compatible",
-				status: "enabled",
-			}),
-		);
-		const createCredential = vi.fn(async () =>
-			jsonResponse({
-				id: 11,
-				site_id: 1,
-				kind: "api_key",
-				status: "enabled",
-				has_secret: true,
-			}),
-		);
-		const createChannel = vi.fn(async () =>
-			jsonResponse({
-				id: 21,
-				name: "api.example.com",
-				site_id: 1,
+				channel: {
+					id: 21,
+					name: "api.example.com",
+					site_id: 1,
+					credential_id: 11,
+					base_url: "",
+					models_csv: "",
+					group_name: "default",
+					priority: 0,
+					weight: 100,
+					status: "enabled",
+					type_hint: "openai-compatible",
+					created_at: "",
+					updated_at: "",
+				},
 				credential_id: 11,
-				base_url: "",
-				group_name: "default",
-				priority: 0,
-				weight: 100,
-				status: "enabled",
-				type_hint: "openai-compatible",
 			}),
 		);
 		let refreshAttempts = 0;
@@ -115,22 +103,10 @@ describe("Channels two-phase create", () => {
 				if (path === "/admin/sites" && method === "GET") {
 					return jsonResponse([]);
 				}
-				if (path === "/admin/sites" && method === "POST") {
-					const body = JSON.parse(String(init?.body ?? "{}"));
-					overviews.length = 0;
-					const response = await createSite();
-					const site = await response.clone().json();
-					// Keep list empty until channel exists; channel create fills overview.
-					void site;
-					void body;
-					return response;
-				}
-				if (path === "/admin/sites/1/credentials" && method === "POST") {
-					return createCredential();
-				}
-				if (path === "/admin/channels" && method === "POST") {
-					const response = await createChannel();
-					const channel = await response.clone().json();
+				if (path === "/admin/connections" && method === "POST") {
+					const response = await createConnection();
+					const payload = await response.clone().json();
+					const channel = payload.channel;
 					overviews.push({
 						channel,
 						credential_kind: "api_key",
@@ -181,7 +157,7 @@ describe("Channels two-phase create", () => {
 		fireEvent.change(secretInput, { target: { value: "sk-test" } });
 		fireEvent.click(screen.getByRole("button", { name: "Save & verify" }));
 
-		await waitFor(() => expect(createChannel).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(createConnection).toHaveBeenCalledTimes(1));
 		await waitFor(() => expect(refreshChannel).toHaveBeenCalledTimes(1));
 		expect(
 			await screen.findByText(/was saved, but model sync failed/i),
@@ -194,9 +170,7 @@ describe("Channels two-phase create", () => {
 				screen.getByText(/saved and fetched 1 models/i),
 			).toBeInTheDocument(),
 		);
-		expect(createSite).toHaveBeenCalledTimes(1);
-		expect(createCredential).toHaveBeenCalledTimes(1);
-		expect(createChannel).toHaveBeenCalledTimes(1);
+		expect(createConnection).toHaveBeenCalledTimes(1);
 	});
 });
 

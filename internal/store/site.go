@@ -15,9 +15,16 @@ import (
 // in-process cache invalidated by every write path.
 type SiteStore struct {
 	db *sql.DB
+	// onDelete is wired by DB so cascaded credentials cannot remain in the
+	// credential hot-path cache after a site is removed.
+	onDelete func()
 
 	mu   sync.RWMutex
 	byID map[int64]*domain.Site
+	// generation changes after every durable write/cache clear. A cache miss
+	// may only publish the row it read while this value is unchanged; otherwise
+	// an older query could repopulate a value that a concurrent write removed.
+	generation uint64
 }
 
 func newSiteStore(db *sql.DB) *SiteStore {
@@ -29,22 +36,26 @@ func newSiteStore(db *sql.DB) *SiteStore {
 func (s *SiteStore) ClearCache() {
 	s.mu.Lock()
 	s.byID = make(map[int64]*domain.Site)
+	s.generation++
 	s.mu.Unlock()
 }
 
-func (s *SiteStore) cachePut(site *domain.Site) {
+func (s *SiteStore) cachePutIfGeneration(site *domain.Site, generation uint64) {
 	if site == nil || site.ID <= 0 {
 		return
 	}
 	cloned := *site
 	s.mu.Lock()
-	s.byID[cloned.ID] = &cloned
+	if s.generation == generation {
+		s.byID[cloned.ID] = &cloned
+	}
 	s.mu.Unlock()
 }
 
 func (s *SiteStore) invalidate(id int64) {
 	s.mu.Lock()
 	delete(s.byID, id)
+	s.generation++
 	s.mu.Unlock()
 }
 
@@ -67,9 +78,11 @@ func (s *SiteStore) List() ([]domain.Site, error) {
 }
 
 func (s *SiteStore) GetByID(id int64) (*domain.Site, error) {
+	var generation uint64
 	if id > 0 {
 		s.mu.RLock()
 		cached, ok := s.byID[id]
+		generation = s.generation
 		s.mu.RUnlock()
 		if ok {
 			cloned := *cached
@@ -84,7 +97,7 @@ func (s *SiteStore) GetByID(id int64) (*domain.Site, error) {
 		}
 		return nil, fmt.Errorf("site get: %w", err)
 	}
-	s.cachePut(&r)
+	s.cachePutIfGeneration(&r, generation)
 	return &r, nil
 }
 
@@ -97,7 +110,8 @@ func (s *SiteStore) Create(site *domain.Site) (int64, error) {
 	id, err := res.LastInsertId()
 	if err == nil {
 		site.ID = id
-		s.cachePut(site)
+		s.invalidate(id)
+		_, _ = s.GetByID(id)
 	}
 	return id, err
 }
@@ -124,7 +138,7 @@ func (s *SiteStore) Update(site *domain.Site) error {
 		return fmt.Errorf("site update commit: %w", err)
 	}
 	s.invalidate(site.ID)
-	s.cachePut(site)
+	_, _ = s.GetByID(site.ID)
 	return nil
 }
 
@@ -146,5 +160,8 @@ func (s *SiteStore) Delete(id int64) error {
 		return fmt.Errorf("site delete commit: %w", err)
 	}
 	s.invalidate(id)
+	if s.onDelete != nil {
+		s.onDelete()
+	}
 	return nil
 }

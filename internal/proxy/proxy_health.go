@@ -40,16 +40,16 @@ func (s *Service) recordChannelFailure(channelID int64) {
 	if count >= threshold {
 		if err := s.db.Channel.AutoDisable(channelID); err != nil {
 			log.Printf("proxy: auto disable channel_id=%d: %v", channelID, err)
-		} else if s.notifier != nil {
+		} else if notifier := s.notifier.Load(); notifier != nil {
 			name := ""
 			if ch, err := s.db.Channel.GetByID(channelID); err == nil && ch != nil {
 				name = ch.Name
 			}
-			s.notifier.Notify(context.Background(), webhook.ChannelDisabled, channelID, name,
+			notifier.Notify(context.Background(), webhook.ChannelDisabled, channelID, name,
 				fmt.Sprintf("%d consecutive failures", count))
 			// Request-failure alert through the full matrix (bark/serverchan/
 			// telegram/smtp too, not just the legacy webhook URL).
-			s.notifier.SendAlert(context.Background(), webhook.AlertWarning, "请求失败告警",
+			notifier.SendAlert(context.Background(), webhook.AlertWarning, "请求失败告警",
 				fmt.Sprintf("渠道 #%d (%s) 连续 %d 次失败，已自动禁用。", channelID, name, count))
 		}
 	}

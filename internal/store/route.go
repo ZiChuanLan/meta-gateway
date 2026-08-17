@@ -354,6 +354,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
+			AND cred.site_id = c.site_id
 			AND lower(cred.kind) IN ('api_key','session','access_token')
 		) OR EXISTS (
 			SELECT 1 FROM credentials pool_cred
@@ -712,22 +713,30 @@ func matchModelPattern(pattern, model string) bool {
 }
 
 func matchModelPatternRunes(pattern, model []rune) bool {
-	if len(pattern) == 0 {
-		return len(model) == 0
-	}
-	if pattern[0] == '*' {
-		for consumed := 0; consumed <= len(model); consumed++ {
-			if matchModelPatternRunes(pattern[1:], model[consumed:]) {
-				return true
+	// Dynamic programming keeps wildcard matching O(pattern*model). The old
+	// recursive '*' branch explored every split and could become exponential
+	// for attacker-controlled patterns such as *a*a*a*.
+	matched := make([]bool, len(model)+1)
+	matched[0] = true
+	for _, token := range pattern {
+		next := make([]bool, len(model)+1)
+		if token == '*' {
+			// '*' may consume zero characters (the old state) or extend a
+			// previously matched prefix by one character.
+			for index := 0; index <= len(model); index++ {
+				next[index] = matched[index]
+				if index > 0 && next[index-1] {
+					next[index] = true
+				}
+			}
+		} else {
+			for index := 1; index <= len(model); index++ {
+				if matched[index-1] && (token == '?' || token == model[index-1]) {
+					next[index] = true
+				}
 			}
 		}
-		return false
+		matched = next
 	}
-	if len(model) == 0 {
-		return false
-	}
-	if pattern[0] == '?' || pattern[0] == model[0] {
-		return matchModelPatternRunes(pattern[1:], model[1:])
-	}
-	return false
+	return matched[len(model)]
 }

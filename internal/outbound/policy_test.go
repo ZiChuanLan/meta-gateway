@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -246,5 +247,137 @@ func TestDialSkipsPrivateAnswersInMixedSet(t *testing.T) {
 	_, _ = policy.DialContext(t.Context(), "tcp", "mixed.example:443")
 	if len(dialer.addresses) != 1 || dialer.addresses[0] != "93.184.216.34:443" {
 		t.Fatalf("dialed %#v, want only public IP 93.184.216.34:443", dialer.addresses)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestValidatingTransportChecksFinalTargetWhenUsingProxy(t *testing.T) {
+	policy, err := NewPolicy(Options{Resolver: resolverMap{
+		"private.example": {netip.MustParseAddr("10.0.0.8")},
+		"proxy.example":   {netip.MustParseAddr("93.184.216.34")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyURL, _ := url.Parse("http://proxy.example:8080")
+	called := false
+	transport := validatingTransport{
+		policy: policy,
+		proxy:  func(*http.Request) (*url.URL, error) { return proxyURL, nil },
+		next: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			called = true
+			return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
+		}),
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://private.example/v1/models", nil)
+	_, err = transport.RoundTrip(req)
+	if !errors.Is(err, ErrBlocked) {
+		t.Fatalf("proxy target error = %v, want ErrBlocked", err)
+	}
+	if called {
+		t.Fatal("next transport called for blocked final target")
+	}
+}
+
+func TestClientBlocksPrivateFinalTargetThroughRuntimeProxy(t *testing.T) {
+	proxyHits := 0
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		proxyHits++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer proxyServer.Close()
+
+	policy, err := NewPolicy(Options{
+		// The configured proxy itself is explicitly allowed; the final private
+		// target is not.
+		AllowCIDRs: []string{"127.0.0.0/8", "::1/128"},
+		Resolver: resolverMap{
+			"private.example": {netip.MustParseAddr("10.0.0.8")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(policy, ClientOptions{})
+	proxyURL, _ := url.Parse(proxyServer.URL)
+	hookCalls := 0
+	if !SetClientProxy(client, func(*http.Request) (*url.URL, error) {
+		hookCalls++
+		return proxyURL, nil
+	}) {
+		t.Fatal("runtime proxy hook was not installed")
+	}
+
+	_, err = client.Get("http://private.example/v1/models")
+	if !errors.Is(err, ErrBlocked) {
+		t.Fatalf("runtime proxy target error = %v, want ErrBlocked", err)
+	}
+	if hookCalls != 1 {
+		t.Fatalf("proxy hook calls = %d, want 1", hookCalls)
+	}
+	if proxyHits != 0 {
+		t.Fatalf("blocked request reached proxy %d times", proxyHits)
+	}
+}
+
+func TestValidatingTransportChecksProxyDestination(t *testing.T) {
+	policy, err := NewPolicy(Options{Resolver: resolverMap{
+		"public.example": {netip.MustParseAddr("93.184.216.34")},
+		"private-proxy":  {netip.MustParseAddr("127.0.0.1")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyURL, _ := url.Parse("http://private-proxy:8080")
+	called := false
+	transport := validatingTransport{
+		policy: policy,
+		proxy:  func(*http.Request) (*url.URL, error) { return proxyURL, nil },
+		next: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			called = true
+			return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
+		}),
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://public.example/v1/models", nil)
+	_, err = transport.RoundTrip(req)
+	if !errors.Is(err, ErrBlocked) {
+		t.Fatalf("proxy destination error = %v, want ErrBlocked", err)
+	}
+	if called {
+		t.Fatal("next transport called for blocked proxy destination")
+	}
+}
+
+func TestValidatingTransportHonorsExplicitHostAllowlistThroughProxy(t *testing.T) {
+	policy, err := NewPolicy(Options{
+		AllowHosts: []string{"private.example", "proxy.example"},
+		Resolver: resolverMap{
+			"private.example": {netip.MustParseAddr("10.0.0.8")},
+			"proxy.example":   {netip.MustParseAddr("127.0.0.1")},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyURL, _ := url.Parse("http://proxy.example:8080")
+	called := false
+	transport := validatingTransport{
+		policy: policy,
+		proxy:  func(*http.Request) (*url.URL, error) { return proxyURL, nil },
+		next: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			called = true
+			return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}, nil
+		}),
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://private.example/v1/models", nil)
+	response, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("allowlisted proxy target rejected: %v", err)
+	}
+	if response == nil || response.StatusCode != http.StatusNoContent || !called {
+		t.Fatal("allowlisted target did not reach next transport")
 	}
 }

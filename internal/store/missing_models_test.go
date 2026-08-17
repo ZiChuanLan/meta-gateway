@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/domain"
-	"github.com/lan/meta-gateway/internal/store"
 )
 
 func TestMissingModels(t *testing.T) {
@@ -103,5 +102,3 @@ func TestMissingModelsEmptyWhenCovered(t *testing.T) {
 }
 
 func credIDPtr(id int64) *int64 { return &id }
-
-var _ = store.MissingModel{}

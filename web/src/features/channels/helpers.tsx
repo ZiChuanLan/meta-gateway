@@ -1,4 +1,4 @@
-import type { Channel, ChannelOverview } from "../../api/types"
+import type { ChannelOverview } from "../../api/types"
 import { type SelectOption } from "../../components/SearchableSelect"
 import { CONNECTION_TYPE_OPTIONS } from "../../connectionTypes"
 import { channelReadiness } from "../channelHealth"
@@ -29,21 +29,6 @@ export type CreateConnectionInput = {
   secret: string;
   type_hint: string;
 };
-
-export type CreateConnectionResult = {
-  channel: Channel;
-  reusedSite: boolean;
-  /** True when the supplied secret looks like a New API access token (not sk-). */
-  looksLikeAccessToken: boolean;
-};
-
-export function hostLabel(url: string) {
-  try {
-    return new URL(url).host || url;
-  } catch {
-    return url;
-  }
-}
 
 export function normalizeBase(url: string) {
   return url.trim().replace(/\/+$/, "");

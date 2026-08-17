@@ -18,8 +18,8 @@ import (
 // only its leading text matters for retry classification.
 const preserveErrorReadLimit = 64 * 1024
 
-// preserveErrorReadLimitUpper is the cap for non-error (2xx) bodies, matching
-// the historical relay bound.
+// preserveBodyReadLimit is the cap for non-error bodies that must be replayed,
+// matching the historical relay bound.
 const preserveBodyReadLimit = 10 * 1024 * 1024
 
 func preserve(result *relay.Result) *relay.Result {
@@ -47,6 +47,11 @@ func preserve(result *relay.Result) *relay.Result {
 // over to the next channel.
 const streamFirstByteTimeout = 30 * time.Second
 
+// streamIdleTimeout bounds the gap between bytes after a stream has started.
+// Keepalive frames reset this naturally; a permanently stalled upstream does
+// not hold a channel slot forever.
+const streamIdleTimeout = 2 * time.Minute
+
 // maxStreamFirstChunkBytes bounds how much of a stream prefix we buffer before
 // committing the response to the client.
 const maxStreamFirstChunkBytes = 256 * 1024
@@ -66,7 +71,7 @@ func peekFirstChunk(body io.Reader) ([]byte, error) {
 		readN, readErr := body.Read(buffer)
 		if readN > 0 {
 			buffered.Write(buffer[:readN])
-			if buffered.Len() >= maxStreamFirstChunkBytes || bytes.Contains(buffered.Bytes(), []byte("\n\n")) {
+			if buffered.Len() >= maxStreamFirstChunkBytes || hasSSEFrameBoundary(buffered.Bytes()) {
 				return buffered.Bytes(), nil
 			}
 		}
@@ -77,6 +82,10 @@ func peekFirstChunk(body io.Reader) ([]byte, error) {
 			return nil, readErr
 		}
 	}
+}
+
+func hasSSEFrameBoundary(data []byte) bool {
+	return bytes.Contains(data, []byte("\n\n")) || bytes.Contains(data, []byte("\r\n\r\n"))
 }
 
 // peekFirstChunkWithTimeout bounds peekFirstChunk: a silent 200 stream that
@@ -129,8 +138,11 @@ func isSilentSSEStart(prefix []byte) bool {
 		var frame struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
-					Role    string `json:"role"`
+					Content          json.RawMessage   `json:"content"`
+					Role             string            `json:"role"`
+					ToolCalls        []json.RawMessage `json:"tool_calls"`
+					FunctionCall     json.RawMessage   `json:"function_call"`
+					ReasoningContent json.RawMessage   `json:"reasoning_content"`
 				} `json:"delta"`
 			} `json:"choices"`
 		}
@@ -148,11 +160,17 @@ func isSilentSSEStart(prefix []byte) bool {
 			continue // usage-only frame; not content, but also not fatal yet
 		}
 		for _, choice := range frame.Choices {
-			if choice.Delta.Content != "" || choice.Delta.Role != "" {
+			if jsonValuePresent(choice.Delta.Content) || choice.Delta.Role != "" || len(choice.Delta.ToolCalls) > 0 ||
+				jsonValuePresent(choice.Delta.FunctionCall) || jsonValuePresent(choice.Delta.ReasoningContent) {
 				return false // real content or a proper role header frame
 			}
 		}
 	}
 	// Silent only when we saw data frames and none carried content/role.
 	return seenAnyData
+}
+
+func jsonValuePresent(raw json.RawMessage) bool {
+	raw = bytes.TrimSpace(raw)
+	return len(raw) > 0 && !bytes.Equal(raw, []byte("null")) && !bytes.Equal(raw, []byte(`""`)) && !bytes.Equal(raw, []byte("[]")) && !bytes.Equal(raw, []byte("{}"))
 }

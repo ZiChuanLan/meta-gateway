@@ -3,6 +3,7 @@ import type {
   BackupRecord,
   Channel,
 	ChannelOverview,
+	ConnectionCreateResponse,
 	CheckinLog,
 	CreatedDownstreamKey,
 	Credential,
@@ -175,6 +176,15 @@ export const api = (client: ApiClient) => ({
 		client.post<RunResult>(`/admin/checkin/credentials/${id}/run`),
 	channels: (signal?: AbortSignal) =>
 		client.getList<Channel>("/admin/channels", signal),
+	createConnection: (body: {
+		name?: string
+		base_url: string
+		secret: string
+		type_hint?: string
+		platform?: string
+		status?: string
+		models_csv?: string
+	}) => client.post<ConnectionCreateResponse>("/admin/connections", body),
 	channelOverviews: (signal?: AbortSignal) =>
 		client.getList<ChannelOverview>("/admin/channels/overview", signal),
 	createChannel: (body: Partial<Channel>) =>
@@ -226,8 +236,11 @@ export const api = (client: ApiClient) => ({
 		quota_total_tokens?: number
 		price_prompt_per_1k?: number
 		price_completion_per_1k?: number
+		price_cache_per_1k?: number
 		model_allowlist?: string
 		model_denylist?: string
+		expires_at?: string
+		allowed_ips?: string
 	}) => client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
 	updateKey: (
 		id: number,
@@ -236,11 +249,14 @@ export const api = (client: ApiClient) => ({
 			enabled?: boolean
 			scopes?: string
 			quota_total_tokens?: number
-			price_prompt_per_1k?: number
-			price_completion_per_1k?: number
-			model_allowlist?: string
-			model_denylist?: string
-			reset_used?: boolean
+		price_prompt_per_1k?: number
+		price_completion_per_1k?: number
+		price_cache_per_1k?: number
+		model_allowlist?: string
+		model_denylist?: string
+		expires_at?: string
+		allowed_ips?: string
+		reset_used?: boolean
 		},
 	) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
 	deleteKey: (id: number) => client.delete(`/admin/downstream-keys/${id}`),
@@ -251,9 +267,14 @@ export const api = (client: ApiClient) => ({
 			`/admin/downstream-keys/${id}/rotate`,
 			{},
 		),
-	usageSummary: (downstreamKeyId?: number, signal?: AbortSignal) => {
+	usageSummary: (
+		downstreamKeyId?: number,
+		signal?: AbortSignal,
+		since?: string,
+	) => {
 		const query = new URLSearchParams()
 		if (downstreamKeyId != null) query.set("downstream_key_id", String(downstreamKeyId))
+		if (since) query.set("since", since)
 		const suffix = query.size ? `?${query.toString()}` : ""
 		return client.get<UsageSummary>(`/admin/usage/summary${suffix}`, signal)
 	},

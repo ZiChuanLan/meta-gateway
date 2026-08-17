@@ -74,20 +74,22 @@ type StatusView struct {
 
 // Service downloads AAH WebDAV backups and imports them read-only.
 type Service struct {
-	env      Config
-	cfg      Config
-	cfgMu    sync.RWMutex
-	client   *Client
-	importer Importer
-	settings SettingsStore
-	enc      *crypto.Encrypter
-	now      func() time.Time
+	env        Config
+	cfg        Config
+	cfgMu      sync.RWMutex
+	client     *Client
+	importer   Importer
+	settings   SettingsStore
+	enc        *crypto.Encrypter
+	now        func() time.Time
+	settingsMu sync.Mutex
 
-	runMu     sync.Mutex
-	running   bool
-	statusMu  sync.RWMutex
-	last      *SyncResult
-	scheduler bool
+	runMu            sync.Mutex
+	running          bool
+	statusMu         sync.RWMutex
+	last             *SyncResult
+	schedulerState   bool
+	schedulerControl *Scheduler
 }
 
 // NewService wires a read-only WebDAV pull service (env-only, tests).
@@ -106,8 +108,8 @@ func NewServiceWithSettings(env Config, client *Client, importer Importer, setti
 	if env.CronExpr == "" {
 		env.CronExpr = "0 */6 * * *"
 	}
-	if client.MaxBytes <= 0 {
-		client.MaxBytes = env.MaxBytes
+	if client.maxBytes() <= 0 {
+		client.setMaxBytes(env.MaxBytes)
 	}
 	service := &Service{
 		env:      env,
@@ -127,8 +129,42 @@ func (s *Service) SetSchedulerArmed(armed bool) {
 		return
 	}
 	s.statusMu.Lock()
-	s.scheduler = armed
+	s.schedulerState = armed
 	s.statusMu.Unlock()
+}
+
+// AttachScheduler connects durable settings to a long-lived scheduler. The
+// scheduler remains alive while disarmed so a later Admin update is applied
+// without restarting the process.
+func (s *Service) AttachScheduler(scheduler *Scheduler) error {
+	if s == nil {
+		return nil
+	}
+	s.statusMu.Lock()
+	s.schedulerControl = scheduler
+	s.statusMu.Unlock()
+	return s.applyScheduler()
+}
+
+func (s *Service) applyScheduler() error {
+	s.statusMu.RLock()
+	scheduler := s.schedulerControl
+	s.statusMu.RUnlock()
+	if scheduler == nil {
+		s.SetSchedulerArmed(false)
+		return nil
+	}
+	cfg := s.runtimeConfig()
+	armed := cfg.Enabled && configured(cfg)
+	if err := scheduler.SetSchedule(cfg.CronExpr, armed); err != nil {
+		s.SetSchedulerArmed(scheduler.Armed())
+		return err
+	}
+	if err := scheduler.Start(); err != nil {
+		return err
+	}
+	s.SetSchedulerArmed(scheduler.Armed())
+	return nil
 }
 
 func (s *Service) Configured() bool {

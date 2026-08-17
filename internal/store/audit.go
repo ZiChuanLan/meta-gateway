@@ -70,7 +70,10 @@ func (s *AuditEventStore) Cleanup(now time.Time, retentionDays, maxRows int) (in
 	var total int64
 	if retentionDays > 0 {
 		cutoff := now.UTC().AddDate(0, 0, -retentionDays).Format(time.RFC3339Nano)
-		result, err := tx.Exec(`DELETE FROM audit_events WHERE created_at < ?`, cutoff)
+		// SQLite's datetime('now') uses a space separator while Go's RFC3339
+		// uses 'T'. A raw TEXT comparison therefore gives the wrong result for
+		// rows from the normal insert path. julianday normalizes both forms.
+		result, err := tx.Exec(`DELETE FROM audit_events WHERE julianday(created_at) < julianday(?)`, cutoff)
 		if err != nil {
 			return total, err
 		}

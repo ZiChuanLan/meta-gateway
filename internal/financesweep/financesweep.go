@@ -21,13 +21,17 @@ import (
 // token (token-expired alerts) so those alerts fire without an operator
 // visiting the admin pages.
 type Sweep struct {
-	account  FinanceProber
-	notifier *webhook.Notifier
-	mu       sync.RWMutex
-	interval time.Duration
-	stopCh   chan struct{}
-	stopOnce sync.Once
-	updateCh chan struct{}
+	account     FinanceProber
+	notifier    *webhook.Notifier
+	mu          sync.RWMutex
+	interval    time.Duration
+	updateCh    chan struct{}
+	lifecycleMu sync.Mutex
+	started     bool
+	stopped     bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	done        chan struct{}
 }
 
 // FinanceProber is the subset of the account service the sweep needs.
@@ -38,13 +42,23 @@ type FinanceProber interface {
 
 // NewSweep creates the background sweep. interval <= 0 disables it.
 func NewSweep(account FinanceProber, notifier *webhook.Notifier, interval time.Duration) *Sweep {
-	return &Sweep{account: account, notifier: notifier, interval: interval, stopCh: make(chan struct{}), updateCh: make(chan struct{}, 1)}
+	return &Sweep{account: account, notifier: notifier, interval: interval, updateCh: make(chan struct{}, 1), done: make(chan struct{})}
 }
 
 // Start launches the sweep loop. The goroutine always runs so a later
 // SetInterval can start an initially disabled sweep without a restart.
 func (s *Sweep) Start() {
+	s.lifecycleMu.Lock()
+	if s.started || s.stopped {
+		s.lifecycleMu.Unlock()
+		return
+	}
+	s.started = true
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	ctx := s.ctx
+	s.lifecycleMu.Unlock()
 	go func() {
+		defer close(s.done)
 		ticker := s.newTicker()
 		defer func() {
 			if ticker != nil {
@@ -59,8 +73,8 @@ func (s *Sweep) Start() {
 				}
 				ticker = s.newTicker()
 			case <-s.tick(ticker):
-				s.runOnce()
-			case <-s.stopCh:
+				s.runOnce(ctx)
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -80,7 +94,19 @@ func (s *Sweep) SetInterval(interval time.Duration) {
 
 // Stop halts the sweep loop. Idempotent: a second call is a no-op.
 func (s *Sweep) Stop() {
-	s.stopOnce.Do(func() { close(s.stopCh) })
+	s.lifecycleMu.Lock()
+	if !s.started {
+		s.stopped = true
+		s.lifecycleMu.Unlock()
+		return
+	}
+	if !s.stopped {
+		s.stopped = true
+		s.cancel()
+	}
+	done := s.done
+	s.lifecycleMu.Unlock()
+	<-done
 }
 
 // newTicker returns nil when the current interval is disabled.
@@ -101,14 +127,14 @@ func (s *Sweep) tick(ticker *time.Ticker) <-chan time.Time {
 	return ticker.C
 }
 
-func (s *Sweep) runOnce() {
+func (s *Sweep) runOnce(parent context.Context) {
 	s.mu.RLock()
 	account := s.account
 	s.mu.RUnlock()
 	if account == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(parent, 3*time.Minute)
 	defer cancel()
 	// FinanceOverview refreshes the cache and fires balance-low alerts on
 	// channels below one unit.
@@ -125,14 +151,18 @@ func (s *Sweep) runOnce() {
 // DailySummary is the scheduled digest (Metapi dailySummaryService-inspired):
 // aggregates channel health, failures and low balances once a day.
 type DailySummary struct {
-	db       *store.DB
-	notifier *webhook.Notifier
-	mu       sync.RWMutex
-	interval time.Duration
-	stopCh   chan struct{}
-	stopOnce sync.Once
-	updateCh chan struct{}
-	now      func() time.Time
+	db          *store.DB
+	notifier    *webhook.Notifier
+	mu          sync.RWMutex
+	interval    time.Duration
+	updateCh    chan struct{}
+	now         func() time.Time
+	lifecycleMu sync.Mutex
+	started     bool
+	stopped     bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	done        chan struct{}
 }
 
 // NewDailySummary creates the daily digest runner. interval <= 0 or
@@ -145,9 +175,9 @@ func NewDailySummary(db *store.DB, notifier *webhook.Notifier, interval time.Dur
 		db:       db,
 		notifier: notifier,
 		interval: interval,
-		stopCh:   make(chan struct{}),
 		updateCh: make(chan struct{}, 1),
 		now:      time.Now,
+		done:     make(chan struct{}),
 	}
 }
 
@@ -155,14 +185,24 @@ func NewDailySummary(db *store.DB, notifier *webhook.Notifier, interval time.Dur
 // The goroutine always runs so a later SetInterval can start an initially
 // disabled digest without a restart.
 func (s *DailySummary) Start() {
+	s.lifecycleMu.Lock()
+	if s.started || s.stopped {
+		s.lifecycleMu.Unlock()
+		return
+	}
+	s.started = true
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	ctx := s.ctx
+	s.lifecycleMu.Unlock()
 	go func() {
+		defer close(s.done)
 		// Preserve the original semantics: an initially disabled digest does
 		// not run once at startup (a later SetInterval restart only ticks).
 		s.mu.RLock()
 		initialEnabled := s.interval > 0
 		s.mu.RUnlock()
 		if initialEnabled {
-			s.runOnce()
+			s.runOnce(ctx)
 		}
 		ticker := s.newTicker()
 		defer func() {
@@ -178,8 +218,8 @@ func (s *DailySummary) Start() {
 				}
 				ticker = s.newTicker()
 			case <-s.tick(ticker):
-				s.runOnce()
-			case <-s.stopCh:
+				s.runOnce(ctx)
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -199,7 +239,19 @@ func (s *DailySummary) SetInterval(interval time.Duration) {
 
 // Stop halts the digest loop. Idempotent: a second call is a no-op.
 func (s *DailySummary) Stop() {
-	s.stopOnce.Do(func() { close(s.stopCh) })
+	s.lifecycleMu.Lock()
+	if !s.started {
+		s.stopped = true
+		s.lifecycleMu.Unlock()
+		return
+	}
+	if !s.stopped {
+		s.stopped = true
+		s.cancel()
+	}
+	done := s.done
+	s.lifecycleMu.Unlock()
+	<-done
 }
 
 // newTicker returns nil when the current interval is disabled.
@@ -220,11 +272,17 @@ func (s *DailySummary) tick(ticker *time.Ticker) <-chan time.Time {
 	return ticker.C
 }
 
-func (s *DailySummary) runOnce() {
+func (s *DailySummary) runOnce(ctx context.Context) {
 	s.mu.RLock()
 	db := s.db
 	s.mu.RUnlock()
 	if db == nil {
+		return
+	}
+	s.mu.RLock()
+	notifier := s.notifier
+	s.mu.RUnlock()
+	if notifier == nil {
 		return
 	}
 	overviews, err := db.Channel.ListOverviews(s.now())
@@ -242,9 +300,6 @@ func (s *DailySummary) runOnce() {
 			healthy++
 		case "degraded":
 			degraded++
-			if o.FailureCount > 0 {
-				unhealthy++ // reported separately below
-			}
 		case "unhealthy":
 			unhealthy++
 		case "disabled":
@@ -259,5 +314,5 @@ func (s *DailySummary) runOnce() {
 	lines = append(lines, fmt.Sprintf("健康: %d · 降级: %d · 不健康: %d · 已禁用: %d · 自动禁用: %d", healthy, degraded, unhealthy, disabled, autoDisabled))
 	lines = append(lines, fmt.Sprintf("累计失败成员: %d", failures))
 	lines = append(lines, "低余额: 见各连接详情页")
-	s.notifier.SendAlert(context.Background(), webhook.AlertInfo, "每日摘要", strings.Join(lines, "\n"))
+	notifier.SendAlert(ctx, webhook.AlertInfo, "每日摘要", strings.Join(lines, "\n"))
 }

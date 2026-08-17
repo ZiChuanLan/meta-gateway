@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/adapters"
@@ -122,10 +124,11 @@ type Service struct {
 	registry *adapters.Registry
 	now      func() time.Time
 	// notifier delivers operational alerts (token expired / balance low).
-	notifier *webhook.Notifier
+	notifier atomic.Pointer[webhook.Notifier]
 
-	financeMu    sync.Mutex
-	financeCache *financeCache
+	financeMu        sync.Mutex
+	financeRefreshMu sync.Mutex
+	financeCache     *financeCache
 }
 
 func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Service {
@@ -135,7 +138,7 @@ func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Serv
 // SetNotifier attaches the operational alert notifier (token expired / low
 // balance events).
 func (s *Service) SetNotifier(n *webhook.Notifier) {
-	s.notifier = n
+	s.notifier.Store(n)
 }
 
 func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, error) {
@@ -176,16 +179,16 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 					until = s.now().Add(retryAfter)
 				}
 				_ = s.db.Channel.RecordRateLimited(channelID, until)
-				if s.notifier != nil {
-					s.notifier.SendAlert(ctx, webhook.AlertWarning, "连接触发限流", fmt.Sprintf("连接 #%d (%s) 被上游限流，暂停至 %s。", channelID, resolved.channel.Name, until.Format(time.RFC3339)))
+				if notifier := s.notifier.Load(); notifier != nil {
+					notifier.SendAlert(ctx, webhook.AlertWarning, "连接触发限流", fmt.Sprintf("连接 #%d (%s) 被上游限流，暂停至 %s。", channelID, resolved.channel.Name, until.Format(time.RFC3339)))
 				}
 			case domain.CategoryAccountBanned:
-				if s.notifier != nil {
-					s.notifier.SendAlert(ctx, webhook.AlertError, "账号疑似封禁", fmt.Sprintf("连接 #%d (%s) 返回 403，账号可能已被上游封禁。", channelID, resolved.channel.Name))
+				if notifier := s.notifier.Load(); notifier != nil {
+					notifier.SendAlert(ctx, webhook.AlertError, "账号疑似封禁", fmt.Sprintf("连接 #%d (%s) 返回 403，账号可能已被上游封禁。", channelID, resolved.channel.Name))
 				}
 			case domain.CategoryUpstreamUnauthorized:
-				if s.notifier != nil {
-					s.notifier.SendAlert(ctx, webhook.AlertError, "访问令牌失效", fmt.Sprintf("连接 #%d (%s) 的访问令牌已失效，请重新生成后更新凭据。", channelID, resolved.channel.Name))
+				if notifier := s.notifier.Load(); notifier != nil {
+					notifier.SendAlert(ctx, webhook.AlertError, "访问令牌失效", fmt.Sprintf("连接 #%d (%s) 的访问令牌已失效，请重新生成后更新凭据。", channelID, resolved.channel.Name))
 				}
 			}
 		}
@@ -508,10 +511,22 @@ type financeCache struct {
 // that has a user credential, cached for a short TTL so the models page does
 // not hammer upstreams on every visit. It runs on a detached context so a
 // client disconnect does not abort every in-flight upstream probe.
-func (s *Service) FinanceOverview(ctx context.Context) ([]FinanceItem, error) {
+func (s *Service) FinanceOverview(_ context.Context) ([]FinanceItem, error) {
 	s.financeMu.Lock()
-	if s.financeCache != nil && time.Since(s.financeCache.at) < financeCacheTTL {
-		items := s.financeCache.items
+	if s.financeCacheFreshLocked() {
+		items := cloneFinanceItems(s.financeCache.items)
+		s.financeMu.Unlock()
+		return items, nil
+	}
+	s.financeMu.Unlock()
+	// Serialize cache misses so several dashboard clients arriving together do
+	// not launch duplicate upstream finance probes. Re-check after waiting in
+	// case another caller filled the cache while we were blocked.
+	s.financeRefreshMu.Lock()
+	defer s.financeRefreshMu.Unlock()
+	s.financeMu.Lock()
+	if s.financeCacheFreshLocked() {
+		items := cloneFinanceItems(s.financeCache.items)
 		s.financeMu.Unlock()
 		return items, nil
 	}
@@ -541,7 +556,7 @@ func (s *Service) FinanceOverview(ctx context.Context) ([]FinanceItem, error) {
 		s.financeMu.Lock()
 		s.financeCache = &financeCache{items: items, at: s.now()}
 		s.financeMu.Unlock()
-		return items, nil
+		return cloneFinanceItems(items), nil
 	}
 
 	sem := make(chan struct{}, 4)
@@ -569,11 +584,40 @@ func (s *Service) FinanceOverview(ctx context.Context) ([]FinanceItem, error) {
 		}()
 	}
 	wg.Wait()
+	sort.Slice(items, func(i, j int) bool { return items[i].ChannelID < items[j].ChannelID })
 
 	s.financeMu.Lock()
 	s.financeCache = &financeCache{items: items, at: s.now()}
 	s.financeMu.Unlock()
-	return items, nil
+	return cloneFinanceItems(items), nil
+}
+
+// financeCacheFreshLocked uses the service clock consistently with cache
+// writes. A clock rollback invalidates the entry instead of extending it for
+// an unbounded period. The caller must hold financeMu.
+func (s *Service) financeCacheFreshLocked() bool {
+	if s.financeCache == nil {
+		return false
+	}
+	age := s.now().Sub(s.financeCache.at)
+	return age >= 0 && age < financeCacheTTL
+}
+
+func cloneFinanceItems(items []FinanceItem) []FinanceItem {
+	if items == nil {
+		return nil
+	}
+	out := make([]FinanceItem, len(items))
+	for i, item := range items {
+		out[i] = item
+		if item.Prices != nil {
+			out[i].Prices = make(map[string]adapters.ModelPrice, len(item.Prices))
+			for model, price := range item.Prices {
+				out[i].Prices[model] = price
+			}
+		}
+	}
+	return out
 }
 
 // RecordBalanceHistory snapshots every channel's current balance into
@@ -600,7 +644,8 @@ func (s *Service) RecordBalanceHistory(ctx context.Context) (int, error) {
 	return written, nil
 }
 
-// BalanceHistory returns snapshots from the last N days, newest first.
+// BalanceHistory returns snapshots from the last N days in chronological order
+// (oldest first) for trend rendering.
 func (s *Service) BalanceHistory(ctx context.Context, days int) ([]store.BalanceHistoryPoint, error) {
 	return s.db.ListBalanceHistory(days)
 }
@@ -638,8 +683,10 @@ func (s *Service) financeForChannel(ctx context.Context, resolved *resolvedTarge
 		balance = &zero
 	}
 	// Low-balance alert: remaining quota below one unit (site currency).
-	if balance != nil && *balance < quotaPerUnit && s.notifier != nil {
-		s.notifier.SendAlert(context.Background(), webhook.AlertWarning, "余额不足", fmt.Sprintf("连接 #%d (%s) 余额仅剩 %d 额度（低于 1 单位），请及时充值。", resolved.channel.ID, resolved.channel.Name, *balance))
+	if balance != nil && *balance < quotaPerUnit {
+		if notifier := s.notifier.Load(); notifier != nil {
+			notifier.SendAlert(context.Background(), webhook.AlertWarning, "余额不足", fmt.Sprintf("连接 #%d (%s) 余额仅剩 %d 额度（低于 1 单位），请及时充值。", resolved.channel.ID, resolved.channel.Name, *balance))
+		}
 	}
 	priceMap := make(map[string]adapters.ModelPrice, len(prices))
 	for _, p := range prices {

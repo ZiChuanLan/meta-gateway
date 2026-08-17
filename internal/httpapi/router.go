@@ -44,6 +44,7 @@ type Dependencies struct {
 	Registry          *adapters.Registry
 	CheckinService    *checkin.Service
 	CheckinScheduler  *checkin.Scheduler
+	DiscoveryService  *discovery.Service
 	ExchangeService   *exchange.Service
 	PluginService     *plugins.Service
 	OutboundClient    *http.Client
@@ -80,17 +81,20 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	if err != nil {
 		panic("httpapi: invalid trusted proxy policy")
 	}
+	// Build the policy independently of the injected client so admin proxy
+	// validation remains available even in tests/embedders that provide their
+	// own HTTP client.
+	outboundPolicy, err := outbound.NewPolicy(outbound.Options{
+		AllowHosts:  cfg.OutboundAllowHosts,
+		AllowCIDRs:  cfg.OutboundAllowCIDRs,
+		DialTimeout: cfg.OutboundConnectTimeout,
+	})
+	if err != nil {
+		panic("httpapi: invalid outbound policy")
+	}
 	outboundClient := dependencies.OutboundClient
 	if outboundClient == nil {
-		policy, err := outbound.NewPolicy(outbound.Options{
-			AllowHosts:  cfg.OutboundAllowHosts,
-			AllowCIDRs:  cfg.OutboundAllowCIDRs,
-			DialTimeout: cfg.OutboundConnectTimeout,
-		})
-		if err != nil {
-			panic("httpapi: invalid outbound policy")
-		}
-		outboundClient = outbound.NewClient(policy, outbound.ClientOptions{
+		outboundClient = outbound.NewClient(outboundPolicy, outbound.ClientOptions{
 			ResponseHeaderTimeout: cfg.OutboundResponseHeaderTimeout,
 			TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
 		})
@@ -103,7 +107,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	if checkinService == nil {
 		checkinService = checkin.New(db, enc, registry)
 	}
-	discoveryService := discovery.New(db, enc, registry)
+	discoveryService := dependencies.DiscoveryService
+	if discoveryService == nil {
+		discoveryService = discovery.New(db, enc, registry)
+	}
 	// Scheduled model-list refresh: a five-field cron expression from the
 	// runtime settings drives discovery.RefreshAll on schedule ("" = off).
 	discoveryScheduler := discovery.NewScheduler(discoveryService, "", nil, nil)
@@ -166,12 +173,16 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	adminGroup.Use(auditAdmin(logger, db.AuditEvent))
 	// Session-token verification uses the master-key-derived HMAC key (with a
 	// fallback to the raw key material when the encrypter is unavailable).
-	sessionKey := enc.KeyMaterial()
+	sessionKey := auth.SessionSigningKey(enc.KeyMaterial(), cfg.AdminTokenList())
 	sessionHandler := &sessionHandler{
 		db:          db,
 		adminTokens: cfg.AdminTokenList(),
 		sessionKey:  sessionKey,
 		enc:         enc,
+		// Keep the public TOTP exchange independently bounded from the admin
+		// limiter, which does not cover this route.
+		globalLoginLimiter: ratelimit.New(30, 5),
+		loginLimiter:       ratelimit.New(30, 5),
 	}
 	sessionHandler.RegisterPublic(r)
 	adminGroup.Use(auth.AdminMiddlewareWithSession(cfg.AdminTokenList(), func(token string) bool {
@@ -226,15 +237,18 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	globalProxy := outbound.NewGlobalProxy()
 	if outboundClient != nil {
 		outbound.SetClientProxy(outboundClient, func(req *http.Request) (*url.URL, error) {
-			return globalProxy.ForRequest(req, nil)
+			// Keep the same SSRF policy even when an embedder injects a plain
+			// *http.Client instead of the gateway's validating transport.
+			return globalProxy.ForRequest(req, outboundPolicy)
 		})
 	}
 	adminHandler.SetProxyValidator(func(raw string) error {
-		return globalProxy.Set(raw, nil)
+		return globalProxy.Validate(raw, outboundPolicy)
 	})
 	adminHandler.Register(adminGroup)
 	sessionHandler.RegisterAdmin(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)
+	discoveryHandler.SetModelsCache(modelsCache)
 	discoveryHandler.Register(adminGroup)
 	// Periodic channel health sweep (runtime-configurable): jittered probes
 	// grade each enabled channel operational/degraded/error and alert on
@@ -274,7 +288,11 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	RegisterStopper(alertRulesCancel)
 	// Daily balance-history snapshot + retention prunes (balance, decision
 	// snapshots, health history): see maintenance.BalanceSweeper.
-	balanceSweeper := maintenance.NewBalanceSweeper(accountService, db, cfg.HealthHistoryRetentionDays, logger)
+	balanceSweeper := maintenance.NewBalanceSweeperWithRetention(accountService, db, maintenance.RetentionConfig{
+		BalanceHistoryDays:   cfg.BalanceHistoryRetentionDays,
+		DecisionSnapshotDays: cfg.DecisionSnapshotRetentionDays,
+		HealthHistoryDays:    cfg.HealthHistoryRetentionDays,
+	}, logger)
 	balanceSweeper.Start()
 	RegisterStopper(balanceSweeper.Stop)
 	if exchangeService != nil {
@@ -337,7 +355,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	auditHandler.Register(adminGroup)
 	backupService := dependencies.BackupService
 	if backupService == nil {
-		backupService = backup.New(db, cfg.BackupDir)
+		backupService = backup.NewWithRetention(db, cfg.BackupDir, cfg.BackupRetentionCount)
 	}
 	// Core: audit + online backups are always available (not store-gated).
 	NewBackupHandler(backupService).Register(adminGroup)
@@ -350,7 +368,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			RelayLimiter: relayLimiter,
 			AdminLimiter: adminLimiter,
 			SetGlobalProxy: func(raw string) error {
-				return globalProxy.Set(raw, nil)
+				return globalProxy.Set(raw, outboundPolicy)
 			},
 			SetDiscoveryCron: func(expression string) error {
 				return discoveryScheduler.SetSchedule(expression, true)
@@ -405,9 +423,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 				proxyService.SetKeyPoolRotation(enabled)
 			},
 		})
-		if err := runtimeController.Bootstrap(); err != nil {
-			logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
-		}
+	}
+	// Bootstrap every controller, including one supplied by an embedder. The
+	// injected path previously skipped durable overrides entirely and exposed
+	// the environment snapshot until the first Admin update.
+	if err := runtimeController.Bootstrap(); err != nil {
+		logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
 	}
 	// Passive-recovery loop: probes auto-disabled channels on a schedule and
 	// restores them when the upstream answers (config hot-reloadable).

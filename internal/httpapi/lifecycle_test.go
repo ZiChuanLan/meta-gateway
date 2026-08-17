@@ -34,6 +34,23 @@ func TestStopBackgroundBoundedByContext(t *testing.T) {
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("calls=%d want 1", got)
 	}
+	close(blocker)
+}
+
+func TestStopBackgroundSignalsLaterStoppersWhenEarlierBlocks(t *testing.T) {
+	var calls atomic.Int32
+	blocker := make(chan struct{})
+	RegisterStopper(func() { calls.Add(1) })
+	// Reverse-order shutdown starts this blocker first; the fast stopper must
+	// still be launched before the bounded wait returns.
+	RegisterStopper(func() { <-blocker })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	StopBackground(ctx)
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("later stopper calls=%d want 1", got)
+	}
+	close(blocker)
 }
 
 func TestSecurityHeaders(t *testing.T) {

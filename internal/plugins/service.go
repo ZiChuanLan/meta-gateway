@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -20,8 +21,9 @@ import (
 )
 
 const (
-	StatusInstalled = "installed"
-	StatusAvailable = "available"
+	StatusInstalled       = "installed"
+	StatusAvailable       = "available"
+	maxPluginCatalogBytes = 1 << 20
 )
 
 var (
@@ -174,6 +176,10 @@ type Service struct {
 
 	mu      sync.RWMutex
 	enabled map[string]bool
+	// prefixForwarders is rebuilt with enabled state and persisted manifests.
+	// Root-path proxy requests read this snapshot without fetching a remote
+	// catalog or querying SQLite on every unmatched request.
+	prefixForwarders []PrefixForwarder
 	// onChange listeners fire after enablement map reloads (Enable/Disable/Uninstall/Activate).
 	onChange []func(id string, enabled bool)
 	// catalogURL optionally loads additional official entries at Catalog() time.
@@ -276,9 +282,7 @@ func (s *Service) EnsureOfficialModulesInstalled() error {
 	if err != nil {
 		return err
 	}
-	have := make(map[string]struct{}, len(installed))
 	for _, rec := range installed {
-		have[rec.ID] = struct{}{}
 		// Legacy: operations was briefly a store-gated module; core audit/backups
 		// are always on now. Drop the leftover row so the store stays clean.
 		if rec.ID == "operations" {
@@ -301,7 +305,7 @@ func (s *Service) EnsureOfficialModulesInstalled() error {
 	if err != nil {
 		return err
 	}
-	have = make(map[string]struct{}, len(installed))
+	have := make(map[string]struct{}, len(installed))
 	for _, rec := range installed {
 		have[rec.ID] = struct{}{}
 	}
@@ -487,9 +491,12 @@ func (s *Service) fetchRemoteCatalog() ([]CatalogEntry, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("plugins: catalog status %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPluginCatalogBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > maxPluginCatalogBytes {
+		return nil, fmt.Errorf("plugins: catalog response too large")
 	}
 	var payload struct {
 		Plugins []CatalogEntry `json:"plugins"`
@@ -537,7 +544,11 @@ func (s *Service) RegisterSidecar(baseURL, apiKey string, manual *SidecarManifes
 		return nil, fmt.Errorf("plugin_url_required")
 	}
 	parsed, err := url.Parse(baseURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" {
+		return nil, fmt.Errorf("plugin_url_invalid")
+	}
+	if err := validateSidecarPath(parsed.Path); err != nil {
 		return nil, fmt.Errorf("plugin_url_invalid")
 	}
 	manifest, err := s.fetchSidecarManifest(baseURL)
@@ -571,6 +582,15 @@ func (s *Service) RegisterSidecar(baseURL, apiKey string, manual *SidecarManifes
 	}
 	if spec.HealthPath == "" {
 		spec.HealthPath = "healthz"
+	}
+	if err := validateSidecarPath(spec.PagePath); err != nil {
+		return nil, err
+	}
+	if err := validateSidecarPath(spec.HealthPath); err != nil {
+		return nil, err
+	}
+	if err := validateSidecarPath(spec.ChannelPath); err != nil {
+		return nil, err
 	}
 	// API prefix routes must not shadow gateway surfaces.
 	if spec.APIPrefix != "" {
@@ -619,7 +639,11 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 		return nil, fmt.Errorf("plugin_url_required")
 	}
 	parsed, err := url.Parse(strings.TrimSpace(spec.URL))
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.RawPath != "" {
+		return nil, fmt.Errorf("plugin_url_invalid")
+	}
+	if err := validateSidecarPath(parsed.Path); err != nil {
 		return nil, fmt.Errorf("plugin_url_invalid")
 	}
 	entry, err := s.catalogEntry(id)
@@ -647,6 +671,15 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 	if spec.HealthPath == "" {
 		spec.HealthPath = "healthz"
 	}
+	if err := validateSidecarPath(spec.PagePath); err != nil {
+		return nil, err
+	}
+	if err := validateSidecarPath(spec.HealthPath); err != nil {
+		return nil, err
+	}
+	if err := validateSidecarPath(spec.ChannelPath); err != nil {
+		return nil, err
+	}
 	if spec.APIPrefix != "" {
 		if err := validateAPIPrefix(spec.APIPrefix); err != nil {
 			return nil, err
@@ -657,11 +690,13 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 	if err := s.healthCheck(spec); err != nil {
 		return nil, fmt.Errorf("plugin_health_check_failed: %w", err)
 	}
+	updatedName := entry.Name
 	s.mu.Lock()
 	for i := range s.remoteCatalog {
 		if s.remoteCatalog[i].ID == id {
 			if strings.TrimSpace(name) != "" {
-				s.remoteCatalog[i].Name = strings.TrimSpace(name)
+				updatedName = strings.TrimSpace(name)
+				s.remoteCatalog[i].Name = updatedName
 			}
 			s.remoteCatalog[i].Sidecar = spec
 			break
@@ -672,7 +707,7 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 	manifest := Manifest{
 		ID:           id,
 		Version:      entry.Version,
-		Name:         entry.Name,
+		Name:         updatedName,
 		Description:  entry.Description,
 		Capabilities: entry.Capabilities,
 		Admin: map[string]string{
@@ -687,6 +722,9 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 		return nil, err
 	}
 	if err := s.store.UpdateMeta(id, string(body)); err != nil {
+		return nil, err
+	}
+	if err := s.reloadEnabled(); err != nil {
 		return nil, err
 	}
 	_ = s.store.Checkpoint()
@@ -750,6 +788,9 @@ func validateAPIPrefix(p string) error {
 	if !strings.HasPrefix(p, "/") {
 		return fmt.Errorf("plugin_api_prefix_invalid")
 	}
+	if err := validateSidecarPath(p); err != nil {
+		return fmt.Errorf("plugin_api_prefix_invalid")
+	}
 	first := strings.TrimPrefix(p, "/")
 	seg := first
 	if i := strings.IndexByte(seg, '/'); i >= 0 {
@@ -758,6 +799,30 @@ func validateAPIPrefix(p string) error {
 	switch seg {
 	case "admin", "console", "v1", "readyz", "healthz", "metrics", "cpa":
 		return fmt.Errorf("plugin_api_prefix_conflict")
+	}
+	return nil
+}
+
+// validateSidecarPath accepts a URL path without a query or fragment and
+// rejects traversal/normalization changes before it reaches a reverse proxy.
+// Callers may pass either a leading-slash path or a relative health/page path.
+func validateSidecarPath(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "/" {
+		return nil
+	}
+	if strings.ContainsAny(raw, "?#%\\") || strings.Contains(raw, "//") || strings.IndexByte(raw, 0) >= 0 {
+		return fmt.Errorf("plugin_path_invalid")
+	}
+	trimmed := strings.Trim(raw, "/")
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == ".." || segment == "." || segment == "" {
+			return fmt.Errorf("plugin_path_invalid")
+		}
+	}
+	normalized := "/" + trimmed
+	if path.Clean(normalized) != normalized {
+		return fmt.Errorf("plugin_path_invalid")
 	}
 	return nil
 }
@@ -773,25 +838,16 @@ type PrefixForwarder struct {
 // sidecar plugins (deduplicated, first plugin wins). It includes plugins
 // recovered from the store, so a restart does not lose declared prefixes.
 func (s *Service) PrefixForwarders() []PrefixForwarder {
-	entries := s.Catalog()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	seen := map[string]bool{}
-	var out []PrefixForwarder
-	for _, entry := range entries {
-		if entry.Sidecar == nil || entry.Sidecar.APIPrefix == "" {
-			continue
+	out := make([]PrefixForwarder, 0, len(s.prefixForwarders))
+	for _, forwarder := range s.prefixForwarders {
+		copyForwarder := forwarder
+		if forwarder.Spec != nil {
+			copySpec := *forwarder.Spec
+			copyForwarder.Spec = &copySpec
 		}
-		if !s.enabled[entry.ID] {
-			continue
-		}
-		p := normalizeAPIPrefix(entry.Sidecar.APIPrefix)
-		if p == "" || seen[p] {
-			continue
-		}
-		seen[p] = true
-		spec := entry.Sidecar
-		out = append(out, PrefixForwarder{Prefix: p, Spec: spec})
+		out = append(out, copyForwarder)
 	}
 	return out
 }
@@ -810,9 +866,12 @@ func (s *Service) fetchSidecarManifest(url string) (*SidecarManifest, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("plugin_manifest_status_%d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPluginCatalogBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("plugin_manifest_read")
+	}
+	if len(body) > maxPluginCatalogBytes {
+		return nil, fmt.Errorf("plugin_manifest_too_large")
 	}
 	var manifest SidecarManifest
 	if err := json.Unmarshal(body, &manifest); err != nil {
@@ -1051,12 +1110,40 @@ func (s *Service) Uninstall(id string) error {
 }
 
 func (s *Service) reloadEnabled() error {
-	ids, err := s.store.EnabledIDs()
+	records, err := s.store.List()
 	if err != nil {
 		return err
 	}
+	ids := make(map[string]bool, len(records))
+	seenPrefixes := make(map[string]struct{})
+	forwarders := make([]PrefixForwarder, 0)
+	for _, record := range records {
+		if !record.Enabled || record.Status != StatusInstalled {
+			continue
+		}
+		ids[record.ID] = true
+		if record.MetaJSON == "" {
+			continue
+		}
+		var manifest Manifest
+		if err := json.Unmarshal([]byte(record.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil {
+			continue
+		}
+		prefix := normalizeAPIPrefix(manifest.Sidecar.APIPrefix)
+		if prefix == "" || validateAPIPrefix(prefix) != nil {
+			continue
+		}
+		if _, duplicate := seenPrefixes[prefix]; duplicate {
+			continue
+		}
+		seenPrefixes[prefix] = struct{}{}
+		spec := *manifest.Sidecar
+		spec.APIPrefix = prefix
+		forwarders = append(forwarders, PrefixForwarder{Prefix: prefix, Spec: &spec})
+	}
 	s.mu.Lock()
 	s.enabled = ids
+	s.prefixForwarders = forwarders
 	s.mu.Unlock()
 	return nil
 }

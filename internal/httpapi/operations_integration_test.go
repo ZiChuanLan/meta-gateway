@@ -97,6 +97,10 @@ func TestAdminBodyLimitAndTrailingJSON(t *testing.T) {
 	if bytes.Contains(bytes.ToLower(body), []byte("request body too large")) {
 		t.Fatalf("leaked decoder detail: %s", body)
 	}
+	// Runtime settings must use the same contextual admin body limit; this
+	// endpoint previously decoded r.Body directly and could bypass it.
+	runtimeBody := []byte(`{"retry_times":1,"padding":"` + strings.Repeat("x", 128) + `"}`)
+	assertStatus(t, http.MethodPut, server.URL+"/admin/runtime-settings", "admin", runtimeBody, http.StatusBadRequest)
 }
 
 func assertStatus(t *testing.T, method, url, token string, body []byte, status int) []byte {

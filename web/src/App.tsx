@@ -24,7 +24,7 @@ import {
 	Routes,
 	useLocation,
 } from "react-router-dom";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ApiClient, ApiError, api } from "./api/client";
 import type { Site } from "./api/types";
 import { LanguageSwitcher, useI18n } from "./i18n";
@@ -39,17 +39,38 @@ import {
 	StatusBadge,
 } from "./components/ui";
 import { GlobalSearch } from "./components/GlobalSearch";
-import { Channels } from "./features/Channels";
 import { Dashboard } from "./features/Dashboard";
-import { ChannelModels } from "./features/ChannelModels";
-import { Checkins } from "./features/Checkins";
-import { ExchangePage } from "./features/ExchangePage";
-import { Keys } from "./features/Keys";
-import { Logs } from "./features/Logs";
-import { Maintain } from "./features/Maintain";
-import { Models } from "./features/Models";
-import { PluginHost } from "./features/PluginHost";
-import { Store } from "./features/Store";
+
+const Channels = lazy(() =>
+	import("./features/Channels").then((module) => ({ default: module.Channels })),
+);
+const ChannelModels = lazy(() =>
+	import("./features/ChannelModels").then((module) => ({ default: module.ChannelModels })),
+);
+const Checkins = lazy(() =>
+	import("./features/Checkins").then((module) => ({ default: module.Checkins })),
+);
+const ExchangePage = lazy(() =>
+	import("./features/ExchangePage").then((module) => ({ default: module.ExchangePage })),
+);
+const Keys = lazy(() =>
+	import("./features/Keys").then((module) => ({ default: module.Keys })),
+);
+const Logs = lazy(() =>
+	import("./features/Logs").then((module) => ({ default: module.Logs })),
+);
+const Maintain = lazy(() =>
+	import("./features/Maintain").then((module) => ({ default: module.Maintain })),
+);
+const Models = lazy(() =>
+	import("./features/Models").then((module) => ({ default: module.Models })),
+);
+const PluginHost = lazy(() =>
+	import("./features/PluginHost").then((module) => ({ default: module.PluginHost })),
+);
+const Store = lazy(() =>
+	import("./features/Store").then((module) => ({ default: module.Store })),
+);
 
 type TransitionPhase = "idle" | "fading" | "sealing" | "revealing";
 
@@ -721,6 +742,7 @@ function AuthenticatedShell({
 				/>
 			)}
 			<div className={`content${routeAnim ? " route-enter" : ""}`}>
+				<Suspense fallback={<Loading />}>
 				<Routes>
 					<Route index element={<Dashboard />} />
 					<Route path="channels" element={<Channels />} />
@@ -745,6 +767,7 @@ function AuthenticatedShell({
 					<Route path="dashboard" element={<Navigate to="/" replace />} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
+				</Suspense>
 			</div>
 		</div>
 	);

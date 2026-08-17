@@ -14,7 +14,7 @@ function RollingNumber({ value }: { value: number }) {
 	return <>{display}</>;
 }
 
-export type StatTone = "primary" | "info" | "success" | "warning" | "danger";
+type StatTone = "primary" | "info" | "success" | "warning" | "danger";
 
 export type StatItem = {
 	label: string;

@@ -170,51 +170,75 @@ func (m *market) List(ctx context.Context) ([]MarketEntry, error) {
 
 func (m *market) fetch(ctx context.Context, src MarketSource) ([]MarketEntry, error) {
 	m.mu.Lock()
-	if cached, ok := m.cache[src.URL]; ok && time.Since(cached.fetched) < marketCacheTTL {
+	cached, hasCached := m.cache[src.URL]
+	age := time.Since(cached.fetched)
+	if hasCached && age >= 0 && age < marketCacheTTL {
 		m.mu.Unlock()
-		return cached.plugins, nil
+		return cloneMarketEntries(cached.plugins), nil
 	}
+	stale := cloneMarketEntries(cached.plugins)
 	m.mu.Unlock()
+	fallback := func(err error) ([]MarketEntry, error) {
+		if hasCached {
+			return stale, nil
+		}
+		return nil, err
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
 	if err != nil {
-		return nil, err
+		return fallback(err)
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("market fetch %s: %w", src.URL, err)
+		return fallback(fmt.Errorf("market fetch %s: %w", src.URL, err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("market fetch %s: status %d", src.URL, resp.StatusCode)
+		return fallback(fmt.Errorf("market fetch %s: status %d", src.URL, resp.StatusCode))
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, marketMaxBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, marketMaxBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("market read %s: %w", src.URL, err)
+		return fallback(fmt.Errorf("market read %s: %w", src.URL, err))
+	}
+	if len(body) > marketMaxBytes {
+		return fallback(fmt.Errorf("market read %s: response too large", src.URL))
 	}
 	var registry struct {
 		SchemaVersion int            `json:"schema_version"`
 		Plugins       []MarketPlugin `json:"plugins"`
 	}
 	if err := json.Unmarshal(body, &registry); err != nil {
-		return nil, fmt.Errorf("market parse %s: %w", src.URL, err)
+		return fallback(fmt.Errorf("market parse %s: %w", src.URL, err))
 	}
 	if registry.SchemaVersion != marketSchemaVersion {
-		return nil, fmt.Errorf("market %s: unsupported schema_version %d", src.URL, registry.SchemaVersion)
+		return fallback(fmt.Errorf("market %s: unsupported schema_version %d", src.URL, registry.SchemaVersion))
 	}
 	entries := make([]MarketEntry, 0, len(registry.Plugins))
 	for i := range registry.Plugins {
 		p := &registry.Plugins[i]
 		if err := validateMarketPlugin(p); err != nil {
-			return nil, fmt.Errorf("market %s: plugins[%d] %s: %w", src.URL, i, p.ID, err)
+			return fallback(fmt.Errorf("market %s: plugins[%d] %s: %w", src.URL, i, p.ID, err))
 		}
 		entries = append(entries, MarketEntry{MarketPlugin: *p, Source: src})
 	}
 	m.mu.Lock()
-	m.cache[src.URL] = marketCacheEntry{plugins: entries, fetched: time.Now()}
+	m.cache[src.URL] = marketCacheEntry{plugins: cloneMarketEntries(entries), fetched: time.Now()}
 	m.mu.Unlock()
 	return entries, nil
+}
+
+func cloneMarketEntries(entries []MarketEntry) []MarketEntry {
+	if entries == nil {
+		return nil
+	}
+	cloned := make([]MarketEntry, len(entries))
+	copy(cloned, entries)
+	for i := range cloned {
+		cloned[i].Tags = append([]string(nil), entries[i].Tags...)
+	}
+	return cloned
 }
 
 func validateMarketPlugin(p *MarketPlugin) error {

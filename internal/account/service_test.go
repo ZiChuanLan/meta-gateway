@@ -16,6 +16,39 @@ import (
 	"github.com/lan/meta-gateway/internal/store"
 )
 
+func TestFinanceCacheUsesServiceClockAndReturnsCopies(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	svc := &Service{
+		now: func() time.Time { return now },
+		financeCache: &financeCache{
+			at: now.Add(-time.Minute),
+			items: []FinanceItem{{
+				ChannelID: 1,
+				Prices:    map[string]adapters.ModelPrice{"model": {Model: "model", PriceUSD: 1}},
+			}},
+		},
+	}
+	svc.financeMu.Lock()
+	fresh := svc.financeCacheFreshLocked()
+	svc.financeMu.Unlock()
+	if !fresh {
+		t.Fatal("fresh cache reported stale")
+	}
+	now = now.Add(-time.Hour)
+	svc.financeMu.Lock()
+	fresh = svc.financeCacheFreshLocked()
+	svc.financeMu.Unlock()
+	if fresh {
+		t.Fatal("cache must expire after a clock rollback")
+	}
+
+	copyItems := cloneFinanceItems(svc.financeCache.items)
+	copyItems[0].Prices["model"] = adapters.ModelPrice{Model: "changed"}
+	if got := svc.financeCache.items[0].Prices["model"].Model; got != "model" {
+		t.Fatalf("cached price mutated through caller copy: %q", got)
+	}
+}
+
 // TestPricingNormalizesAAHFormula covers the All API Hub normalization in
 // financeForChannel: group_ratio multiplier, direct USD override, per-call.
 func TestPricingNormalizesAAHFormula(t *testing.T) {

@@ -388,6 +388,23 @@ func TestUsageCostPersistedAndSummarized(t *testing.T) {
 	if summary.Cost < 0.039 || summary.Cost > 0.041 {
 		t.Fatalf("summary cost=%v want 0.04", summary.Cost)
 	}
+	rows, err := db.Usage.List(store.UsageFilter{DownstreamKeyID: &keyID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Cost < 0.039 || rows[0].Cost > 0.041 {
+		t.Fatalf("listed usage cost=%v, want 0.04", rows)
+	}
+	past := time.Now().Add(-time.Hour)
+	recent, err := db.Usage.SummarySince(&keyID, &past)
+	if err != nil || recent.RequestCount != 1 {
+		t.Fatalf("recent summary=%+v err=%v", recent, err)
+	}
+	future := time.Now().Add(time.Hour)
+	recent, err = db.Usage.SummarySince(&keyID, &future)
+	if err != nil || recent.RequestCount != 0 || recent.Cost != 0 {
+		t.Fatalf("future summary=%+v err=%v", recent, err)
+	}
 	// Unset model → ratio 1.0.
 	if ratio, err := db.ModelRatio.GetRatio("unknown-model"); err != nil || ratio != 1.0 {
 		t.Fatalf("default ratio=%v err=%v", ratio, err)
@@ -555,5 +572,25 @@ func TestChannelTagsBulkUpdate(t *testing.T) {
 	affected, err = db.Channel.UpdateByTag("prod", domain.ChannelPatch{})
 	if err != nil || affected != 0 {
 		t.Fatalf("empty patch: affected=%d err=%v", affected, err)
+	}
+
+	// LIKE metacharacters in a tag are literals, not wildcards.
+	percentWeight := 700
+	literalID, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credID, Name: "literal-tag", Status: domain.StatusEnabled, Tags: "prod_%"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	neighborID, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credID, Name: "wildcard-neighbor", Status: domain.StatusEnabled, Tags: "prod_x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	affected, err = db.Channel.UpdateByTag("prod_%", domain.ChannelPatch{Weight: &percentWeight})
+	if err != nil || affected != 1 {
+		t.Fatalf("literal wildcard tag: affected=%d err=%v", affected, err)
+	}
+	literal, _ := db.Channel.GetByID(literalID)
+	neighbor, _ := db.Channel.GetByID(neighborID)
+	if literal == nil || literal.Weight != percentWeight || neighbor == nil || neighbor.Weight == percentWeight {
+		t.Fatalf("wildcard tag matching escaped incorrectly: literal=%+v neighbor=%+v", literal, neighbor)
 	}
 }

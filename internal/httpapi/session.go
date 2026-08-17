@@ -2,10 +2,13 @@ package httpapi
 
 import (
 	"encoding/json"
+	"hash/fnv"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/auth"
+	"github.com/lan/meta-gateway/internal/ratelimit"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/totp"
 )
@@ -20,6 +23,11 @@ type sessionHandler struct {
 	adminTokens []string
 	sessionKey  []byte // HMAC key for session tokens (master-key derived)
 	enc         encryptor
+	// Keep the deployment-wide and per-IP buckets in separate limiter maps.
+	// High-cardinality IP churn can evict per-IP buckets without ever resetting
+	// the global brute-force budget.
+	globalLoginLimiter *ratelimit.Limiter
+	loginLimiter       *ratelimit.Limiter
 }
 
 type encryptor interface {
@@ -60,6 +68,30 @@ func (h *sessionHandler) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
+	if h.loginLimiter != nil || h.globalLoginLimiter != nil {
+		ip := ClientIP(r).String()
+		allowedGlobal, waitGlobal := true, time.Duration(0)
+		if h.globalLoginLimiter != nil {
+			allowedGlobal, waitGlobal = h.globalLoginLimiter.Allow(0)
+		}
+		allowedIP, waitIP := true, time.Duration(0)
+		if h.loginLimiter != nil {
+			allowedIP, waitIP = h.loginLimiter.Allow(hashLoginKey("ip:" + ip))
+		}
+		if !allowedGlobal || !allowedIP {
+			wait := waitIP
+			if waitGlobal > wait {
+				wait = waitGlobal
+			}
+			seconds := int(wait.Seconds())
+			if seconds < 1 {
+				seconds = 1
+			}
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+			writeError(w, http.StatusTooManyRequests, "login rate limit exceeded")
+			return
+		}
+	}
 	if !auth.ValidAdminToken(req.Token, h.adminTokens) {
 		writeError(w, http.StatusUnauthorized, "invalid admin token")
 		return
@@ -82,6 +114,12 @@ func (h *sessionHandler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"session_token": sessionToken})
+}
+
+func hashLoginKey(value string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(value))
+	return int64(h.Sum64() & 0x7fffffffffffffff)
 }
 
 // status reports whether TOTP is enabled (never leaks the secret).

@@ -66,7 +66,7 @@ func setupRelay(t *testing.T, baseURL, typeHint string) (string, string, int64) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}}
+	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, CrossChannelFailoverEnabled: true}
 	server := httptest.NewServer(httpapi.New(cfg, db, enc))
 	t.Cleanup(server.Close)
 
@@ -117,7 +117,7 @@ func setupRelayPair(t *testing.T, baseURLA, baseURLB string) (string, string, in
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, RetryTimes: 2}
+	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, RetryTimes: 2, CrossChannelFailoverEnabled: true}
 	server := httptest.NewServer(httpapi.New(cfg, db, enc))
 	t.Cleanup(server.Close)
 

@@ -47,7 +47,7 @@ export function translate(
   });
 }
 
-export function statusLabel(locale: Locale, value: string | boolean): string {
+function statusLabel(locale: Locale, value: string | boolean): string {
   if (typeof value === "boolean")
     return translate(locale, value ? "status.true" : "status.false");
   const normalized = String(value).toLowerCase();

@@ -1,12 +1,21 @@
-export type Status = 'enabled' | 'disabled' | 'auto_disabled'
+type Status = 'enabled' | 'disabled' | 'auto_disabled'
 
-export type ChannelHealthState = 'disabled' | 'unhealthy' | 'degraded' | 'healthy' | 'unknown'
-export type ChannelConnectivityState = 'unknown' | 'reachable' | 'unreachable'
-export type ChannelAccountState = 'unknown' | 'ok' | 'invalid' | 'banned' | 'rate_limited' | 'failed'
+type ChannelHealthState = 'disabled' | 'unhealthy' | 'degraded' | 'healthy' | 'unknown'
+type ChannelConnectivityState = 'unknown' | 'reachable' | 'unreachable'
+type ChannelAccountState = 'unknown' | 'ok' | 'invalid' | 'banned' | 'rate_limited' | 'failed'
 
 export interface Site { id: number; name: string; base_url: string; platform: string; status: Status; created_at: string; updated_at: string }
 export interface Credential { id: number; site_id: number; kind: string; has_secret: boolean; meta_json?: string; status: Status; checkin_enabled: boolean; models_csv?: string; created_at?: string }
 export interface Channel { id: number; site_id?: number; credential_id?: number; name: string; base_url: string; models_csv: string; group_name: string; priority: number; weight: number; status: Status; type_hint?: string; max_reasoning_effort?: string; payload_rules?: string; max_concurrent?: number; proxy_url?: string; header_override?: string; system_prompt?: string; retry_config?: string; stable_first?: boolean; stable_first_requests?: number; created_at: string; updated_at: string }
+export interface ConnectionCreateResponse {
+  channel: Channel
+  site?: Site
+  credential_id: number
+  reused_site?: boolean
+  has_secret?: boolean
+  platform?: string
+  detection_matched?: boolean
+}
 export interface ChannelOverview {
   channel: Channel
   credential_kind?: string
@@ -68,7 +77,10 @@ export interface UsageSummary {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
-  estimated_cost: number
+  /** Persisted billing amount for the selected window (or all time). */
+  cost: number
+  /** Legacy field returned by older gateways. */
+  estimated_cost?: number
 }
 export interface UsageRecord {
   id: number
@@ -84,6 +96,8 @@ export interface UsageRecord {
   cache_read_tokens?: number
   cache_creation_tokens?: number
   status: number
+  /** Persisted billing amount; older gateways may omit it. */
+  cost?: number
   created_at: string
 }
 export interface ProxyLog {
@@ -289,11 +303,11 @@ export interface RuntimeSettings {
 
 export interface RoutingCandidate { member: RouteMember; channel: Channel; credential_usable: boolean }
 export interface RouteOverview { route: Route; members: RoutingCandidate[] }
-export interface RouteEvaluation { candidate: RoutingCandidate; eligible: boolean; reasons: string[]; score?: number }
+interface RouteEvaluation { candidate: RoutingCandidate; eligible: boolean; reasons: string[]; score?: number }
 export interface RouteExplanation { model: string; route_id: number; routing_mode?: string; evaluated_at: string; selected_priority?: number; candidates: RouteEvaluation[]; session_key?: string; sticky_channel_id?: number; sticky_hit?: boolean; sticky_reason?: string; retry_times_override?: number; channel_retry_times_override?: number }
 
-export interface StickyStats { bound_sessions: number; hits: number; binds: number; escapes: number }
-export interface StickyEntry { key: string; channel_id: number; expires_at: string }
+interface StickyStats { bound_sessions: number; hits: number; binds: number; escapes: number }
+interface StickyEntry { key: string; channel_id: number; expires_at: string }
 export interface StickySnapshot {
   enabled: boolean
   stats: StickyStats
@@ -313,7 +327,7 @@ export interface AccountProbeResult {
   latency_ms: number
   checked_at: string
 }
-export interface ModelPrice {
+interface ModelPrice {
   model: string
   currency?: string
   price_usd?: number

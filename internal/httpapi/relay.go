@@ -9,6 +9,8 @@ import (
 	"hash/fnv"
 	"io"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -133,11 +135,7 @@ func (h *RelayHandler) getModels(w http.ResponseWriter, r *http.Request) {
 
 	// Serve from the shared cache when warm; only recompute from the DB on a
 	// cold/expired entry (admin writes invalidate via h.modelsCache).
-	raw, ok := h.modelsCache.Get()
-	if !ok {
-		raw = h.computeRawModels()
-		h.modelsCache.Put(raw)
-	}
+	raw := h.modelsCache.GetOrCompute(h.computeRawModels)
 	for _, id := range raw {
 		add(id)
 	}
@@ -228,7 +226,8 @@ func (h *RelayHandler) redeemCode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+	defer r.Body.Close()
+	if err := decodeJSON(w, r, &req, 1<<20, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
@@ -312,10 +311,30 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	stream := false
 	reasoningEffort := ""
 	if isMultipart {
-		modelName = extractMultipartModel(body, contentType)
-		// Fallback: some clients still put model only in query.
-		if modelName == "" {
-			modelName = strings.TrimSpace(r.URL.Query().Get("model"))
+		modelName, err = extractMultipartModel(body, contentType)
+		if err != nil {
+			switch {
+			case errors.Is(err, errMultipartModelMissing):
+				// A few OpenAI-compatible clients put the selector in the query
+				// string for multipart uploads. Keep that compatibility path only
+				// when no scalar form field was present; malformed/duplicate fields
+				// must never be rescued by a query value.
+				modelName = strings.TrimSpace(r.URL.Query().Get("model"))
+				if modelName == "" {
+					writeError(w, http.StatusBadRequest, "model is required")
+					return
+				}
+				err = nil
+			case errors.Is(err, errMultipartModelDuplicate):
+				writeError(w, http.StatusBadRequest, "model must appear exactly once")
+				return
+			case errors.Is(err, errMultipartModelTooLarge):
+				writeError(w, http.StatusBadRequest, "model is too large")
+				return
+			default:
+				writeError(w, http.StatusBadRequest, "invalid multipart body")
+				return
+			}
 		}
 	} else {
 		var request struct {
@@ -332,8 +351,13 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		stream = request.Stream
 		reasoningEffort = request.ReasoningEffort
 	}
-	if strings.TrimSpace(modelName) == "" {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	if len([]byte(modelName)) > 256 {
+		writeError(w, http.StatusBadRequest, "model is too long")
 		return
 	}
 	if filter := auth.DownstreamModelFilter(r); filter != nil && !filter.Allows(modelName) {
@@ -364,7 +388,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
 	forceSSE := stream
 	writeUpstreamResult(
-		w, requestID, result, forceSSE,
+		w, r.Context(), requestID, result, forceSSE,
 		func(tokens usage.Tokens, status int, firstByteMs int) {
 			channelID := int64(0)
 			if meta != nil {
@@ -381,44 +405,64 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	)
 }
 
-// extractMultipartModel does a best-effort scan for name="model" in multipart bodies
-// without fully re-parsing the form (body must be forwarded intact).
-func extractMultipartModel(body []byte, contentType string) string {
-	// Look for Content-Disposition: form-data; name="model" then the next non-empty line after headers.
-	marker := []byte(`name="model"`)
-	idx := bytes.Index(body, marker)
-	if idx < 0 {
-		marker = []byte(`name=model`)
-		idx = bytes.Index(body, marker)
+var (
+	errMultipartModelMissing   = errors.New("multipart: model field missing")
+	errMultipartModelDuplicate = errors.New("multipart: model field repeated")
+	errMultipartModelTooLarge  = errors.New("multipart: model field too large")
+	errMultipartInvalid        = errors.New("multipart: invalid body")
+)
+
+const maxMultipartModelBytes = 4 << 10
+
+// extractMultipartModel parses the multipart structure instead of searching
+// raw bytes.  A model-looking string inside an uploaded file is therefore
+// never confused with the actual form field.  The caller keeps forwarding the
+// original body bytes, so parsing cannot alter the upstream request.
+func extractMultipartModel(body []byte, contentType string) (string, error) {
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
+		return "", errMultipartInvalid
 	}
-	if idx < 0 {
-		return ""
+	boundary := params["boundary"]
+	if boundary == "" {
+		return "", errMultipartInvalid
 	}
-	rest := body[idx:]
-	// Skip to end of header block (blank line).
-	sep := bytes.Index(rest, []byte("\r\n\r\n"))
-	headerEndLen := 4
-	if sep < 0 {
-		sep = bytes.Index(rest, []byte("\n\n"))
-		headerEndLen = 2
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	modelCount := 0
+	model := ""
+	for {
+		part, nextErr := reader.NextPart()
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			return "", errMultipartInvalid
+		}
+		if part.FormName() != "model" {
+			continue
+		}
+		modelCount++
+		if modelCount > 1 {
+			return "", errMultipartModelDuplicate
+		}
+		// A file part named model is not a scalar model selector. Reject it
+		// instead of interpreting arbitrary file bytes as an allowlisted model.
+		if part.FileName() != "" {
+			return "", errMultipartInvalid
+		}
+		value, readErr := io.ReadAll(io.LimitReader(part, maxMultipartModelBytes+1))
+		if readErr != nil {
+			return "", errMultipartInvalid
+		}
+		if len(value) > maxMultipartModelBytes {
+			return "", errMultipartModelTooLarge
+		}
+		model = strings.TrimSpace(string(value))
 	}
-	if sep < 0 {
-		return ""
+	if modelCount == 0 || model == "" {
+		return "", errMultipartModelMissing
 	}
-	valueStart := sep + headerEndLen
-	if valueStart >= len(rest) {
-		return ""
-	}
-	value := rest[valueStart:]
-	// Value ends at next boundary line starting with --
-	end := bytes.Index(value, []byte("\r\n--"))
-	if end < 0 {
-		end = bytes.Index(value, []byte("\n--"))
-	}
-	if end >= 0 {
-		value = value[:end]
-	}
-	return strings.TrimSpace(string(value))
+	return model, nil
 }
 
 func (h *RelayHandler) ensureQuota(w http.ResponseWriter, r *http.Request) bool {
@@ -482,8 +526,13 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		}
 		modelName = request.Model
 	}
-	if strings.TrimSpace(modelName) == "" {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	if len([]byte(modelName)) > 256 {
+		writeError(w, http.StatusBadRequest, "model is too long")
 		return
 	}
 	if filter := auth.DownstreamModelFilter(r); filter != nil && !filter.Allows(modelName) {
@@ -519,7 +568,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	writeUpstreamResult(
-		w, requestID, result, stream,
+		w, r.Context(), requestID, result, stream,
 		func(tokens usage.Tokens, status int, firstByteMs int) {
 			channelID := int64(0)
 			if meta != nil {
@@ -597,8 +646,15 @@ func (h *RelayHandler) streamErrorCallback(r *http.Request, meta *proxy.AttemptM
 	}
 }
 
-func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int, int), onStreamError func()) {
+func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int, int), onStreamError func()) {
+	if result == nil {
+		writeError(w, http.StatusBadGateway, "upstream response missing")
+		return
+	}
 	if result.Err != nil {
+		if result.Body != nil {
+			_ = result.Body.Close()
+		}
 		switch {
 		case errors.Is(result.Err, routing.ErrRouteNotFound), errors.Is(result.Err, routing.ErrNoEligible):
 			writeError(w, http.StatusNotFound, "no eligible channel for this model")
@@ -614,16 +670,37 @@ func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.
 			writeError(w, http.StatusForbidden, strings.TrimPrefix(result.Err.Error(), "proxy: "))
 		case errors.Is(result.Err, proxy.ErrGuardRejected):
 			writeError(w, http.StatusBadRequest, strings.TrimPrefix(result.Err.Error(), "proxy: "))
-		case errors.Is(result.Err, context.Canceled), errors.Is(result.Err, context.DeadlineExceeded):
-			return
+		case errors.Is(result.Err, proxy.ErrModelTooLong):
+			writeError(w, http.StatusBadRequest, "model is too long")
+		case errors.Is(result.Err, context.Canceled):
+			if requestCtx != nil && requestCtx.Err() != nil {
+				return
+			}
+			writeError(w, http.StatusBadGateway, "upstream request canceled")
+		case errors.Is(result.Err, context.DeadlineExceeded):
+			if requestCtx != nil && requestCtx.Err() != nil {
+				return
+			}
+			writeError(w, http.StatusGatewayTimeout, "upstream request timed out")
 		default:
 			writeError(w, http.StatusBadGateway, "upstream request failed")
 		}
 		return
 	}
+	if result.Body == nil {
+		writeError(w, http.StatusBadGateway, "upstream response body missing")
+		return
+	}
+	status := result.StatusCode
+	// A custom relay/adapter must not be able to panic the HTTP handler by
+	// returning an unset or out-of-range status code. Standard net/http
+	// responses are 100..999; anything else is an upstream gateway failure.
+	if status < 100 || status > 999 {
+		status = http.StatusBadGateway
+	}
 	defer result.Body.Close()
 	copyResponseHeaders(w.Header(), result.Header, stream)
-	w.WriteHeader(result.StatusCode)
+	w.WriteHeader(status)
 	tee := usage.NewTee(io.NopCloser(result.Body), stream)
 	bytesWritten, copyErr := copyUpstreamBody(w, tee, stream)
 	if copyErr != nil {
@@ -646,7 +723,7 @@ func writeUpstreamResult(w http.ResponseWriter, requestID string, result *relay.
 				TotalTokens:      int(bytesWritten / streamEstimateBytesPerToken),
 			}
 		}
-		onUsage(tokens, result.StatusCode, result.FirstByteMs)
+		onUsage(tokens, status, result.FirstByteMs)
 	}
 }
 

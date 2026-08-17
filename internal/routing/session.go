@@ -7,9 +7,16 @@ import (
 	"strings"
 )
 
-// maxSessionHeaderLength bounds the explicit session header value so a single
-// header cannot grow the sticky map with unbounded keys.
-const maxSessionHeaderLength = 256
+const maxSessionKeyLength = 256
+
+func normalizeSessionKey(key string) string {
+	key = strings.TrimSpace(key)
+	if len(key) <= maxSessionKeyLength {
+		return key
+	}
+	digest := sha256.Sum256([]byte(key))
+	return "h:" + hex.EncodeToString(digest[:])
+}
 
 // SessionKeyFromRequest derives a sticky-session key for a relay request.
 // An explicit session header wins when present; otherwise a content digest of
@@ -19,10 +26,7 @@ const maxSessionHeaderLength = 256
 func SessionKeyFromRequest(body []byte, headerValue string) string {
 	headerValue = strings.TrimSpace(headerValue)
 	if headerValue != "" {
-		if len(headerValue) > maxSessionHeaderLength {
-			headerValue = headerValue[:maxSessionHeaderLength]
-		}
-		return headerValue
+		return normalizeSessionKey(headerValue)
 	}
 	return SessionKeyFromBody(body)
 }
@@ -55,19 +59,19 @@ func SessionKeyFromBody(body []byte) string {
 	// 1. Explicit cache/identity keys (agents that manage prompt caching
 	// across turns — e.g. Claude Code — pin the same channel for the cache).
 	if key := strings.TrimSpace(payload.PromptCacheKey); key != "" {
-		return "c:" + key
+		return normalizeSessionKey("c:" + key)
 	}
 	if key := strings.TrimSpace(payload.SessionID); key != "" {
-		return "x:" + key
+		return normalizeSessionKey("x:" + key)
 	}
 	// 2. Conversation id: metadata.user_id is the standard conversation
 	// carrier (Anthropic/Claude Code); conversation_id is the OpenAI-side
 	// alias.
 	if key := strings.TrimSpace(payload.Metadata.UserID); key != "" {
-		return "u:" + key
+		return normalizeSessionKey("u:" + key)
 	}
 	if key := strings.TrimSpace(payload.ConversationID); key != "" {
-		return "n:" + key
+		return normalizeSessionKey("n:" + key)
 	}
 	// 3. First user message content hash: stable across turns (the first user
 	// message does not change as the conversation grows), so stateless

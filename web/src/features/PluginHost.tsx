@@ -33,6 +33,7 @@ export function PluginHost() {
 						title={t("plugins.title")}
 						src={src}
 						onError={() => setError(true)}
+						referrerPolicy="no-referrer"
 						className="plugin-host-frame"
 					/>
 				)}
@@ -40,5 +41,3 @@ export function PluginHost() {
 		</main>
 	);
 }
-
-export default PluginHost;

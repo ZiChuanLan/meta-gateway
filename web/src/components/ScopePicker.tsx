@@ -11,7 +11,7 @@ import { useI18n } from "../i18n";
  * Well-known downstream scopes, matching internal/auth.knownScopes.
  * "relay" is a superset: it grants every /v1 relay endpoint.
  */
-export const SCOPE_IDS = [
+const SCOPE_IDS = [
 	"relay",
 	"models",
 	"chat",
@@ -23,8 +23,6 @@ export const SCOPE_IDS = [
 	"audio",
 	"moderations",
 ] as const;
-
-export type ScopeId = (typeof SCOPE_IDS)[number];
 
 /**
  * Dropdown multi-select for downstream key scopes. The trigger shows the

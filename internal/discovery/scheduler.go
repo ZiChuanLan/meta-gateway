@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -26,11 +27,13 @@ type Scheduler struct {
 	mu      sync.Mutex
 	cron    *cron.Cron
 	runner  Runner
+	logger  *log.Logger
 	ctx     context.Context
 	cancel  context.CancelFunc
 	started bool
 	stopped bool
 	entryID cron.EntryID
+	running atomic.Bool
 }
 
 // NewScheduler builds a discovery scheduler for the given five-field cron
@@ -46,6 +49,7 @@ func NewScheduler(runner Runner, expression string, logger *log.Logger, location
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Scheduler{
 		runner: runner,
+		logger: logger,
 		ctx:    ctx,
 		cancel: cancel,
 		cron:   cron.New(cron.WithParser(cron.NewParser(cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow)), cron.WithLocation(location)),
@@ -79,10 +83,14 @@ func (s *Scheduler) applyExpression(expression string) error {
 		return nil
 	}
 	entryID, err := s.cron.AddFunc(expression, func() {
+		if s.runner == nil || !s.running.CompareAndSwap(false, true) {
+			return
+		}
+		defer s.running.Store(false)
 		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
 		defer cancel()
-		if _, err := s.runner.RefreshAll(ctx); err != nil {
-			log.Printf("discovery: scheduled refresh failed: %v", err)
+		if _, err := s.runner.RefreshAll(ctx); err != nil && s.logger != nil {
+			s.logger.Printf("discovery: scheduled refresh failed: %v", err)
 		}
 	})
 	if err != nil {
@@ -98,11 +106,16 @@ func (s *Scheduler) applyExpression(expression string) error {
 // Stop halts the scheduler permanently.
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.stopped {
+		s.mu.Unlock()
 		return
 	}
 	s.stopped = true
-	s.cron.Stop()
 	s.cancel()
+	cronEngine := s.cron
+	s.mu.Unlock()
+	// cron.Stop waits for callbacks already in flight. The callback context is
+	// cancelled above, so cooperative RefreshAll implementations can unwind
+	// before the database is closed.
+	<-cronEngine.Stop().Done()
 }

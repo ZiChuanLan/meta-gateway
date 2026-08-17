@@ -25,6 +25,23 @@ func TestSetScheduleInvalidRejected(t *testing.T) {
 	s.Stop()
 }
 
+func TestGCDelayedPassIsCancelledOnStop(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := New(db, "")
+	s.initialDelay = time.Hour
+	if err := s.SetSchedule("0 4 * * *"); err != nil {
+		t.Fatal(err)
+	}
+	s.Stop()
+	if last, _ := s.Last(); last != nil {
+		t.Fatal("delayed GC ran after Stop")
+	}
+}
+
 // TestRunOnceAndLast verifies the manual pass runs synchronously and records
 // the result for the status endpoint.
 func TestRunOnceAndLast(t *testing.T) {

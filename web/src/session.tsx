@@ -16,16 +16,24 @@ function initialToken() {
   try { return sessionStorage.getItem(SESSION_KEY) } catch { return null }
 }
 
+function storeToken(token: string | null) {
+  try {
+    if (token) sessionStorage.setItem(SESSION_KEY, token)
+    else sessionStorage.removeItem(SESSION_KEY)
+  } catch {
+    // Storage can be unavailable in hardened/private browser contexts.
+  }
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(initialToken)
   const connect = useCallback((next: string, remember: boolean) => {
     const trimmed = next.trim()
-    if (remember) sessionStorage.setItem(SESSION_KEY, trimmed)
-    else sessionStorage.removeItem(SESSION_KEY)
+    storeToken(remember ? trimmed : null)
     setToken(trimmed)
   }, [])
   const disconnect = useCallback(() => {
-    sessionStorage.removeItem(SESSION_KEY)
+    storeToken(null)
     setToken(null)
   }, [])
   const value = useMemo(() => ({ token, client: token ? new ApiClient(token, disconnect) : null, connect, disconnect }), [token, connect, disconnect])

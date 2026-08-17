@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -14,14 +15,18 @@ import (
 // reads are served from an in-process cache (by id and by token hash). The
 // cache never shares mutable state with callers: reads return deep copies and
 // writes replace (never mutate in place) cached objects, so concurrent relay
-// reads and admin writes cannot race. Usage/quota writes only invalidate the
-// cache and let the next read reload from the database.
+// reads and admin writes cannot race. Usage writes synchronize an absolute
+// committed quota value; administrative writes invalidate the entry.
 type DownstreamKeyStore struct {
 	db *sql.DB
 
-	mu     sync.RWMutex
-	byID   map[int64]*domain.DownstreamKey
-	byHash map[string]*domain.DownstreamKey
+	mu         sync.RWMutex
+	byID       map[int64]*domain.DownstreamKey
+	byHash     map[string]*domain.DownstreamKey
+	generation uint64
+	// mutationEpoch changes on non-monotonic/admin writes. Usage callbacks
+	// captured before a reset/delete/update must not repopulate newer state.
+	mutationEpoch uint64
 }
 
 func newDownstreamKeyStore(db *sql.DB) *DownstreamKeyStore {
@@ -32,10 +37,21 @@ func newDownstreamKeyStore(db *sql.DB) *DownstreamKeyStore {
 	}
 }
 
+// ClearCache drops both authentication indexes. It is used after bulk SQL
+// operations such as FactoryReset where individual invalidation is not enough.
+func (s *DownstreamKeyStore) ClearCache() {
+	s.mu.Lock()
+	s.byID = make(map[int64]*domain.DownstreamKey)
+	s.byHash = make(map[string]*domain.DownstreamKey)
+	s.generation++
+	s.mutationEpoch++
+	s.mu.Unlock()
+}
+
 // cloneKey returns a deep copy so callers can never mutate the cached object
 // (or observe in-flight admin edits) through a shared pointer. All fields are
 // value types (string/int64), so a struct copy is sufficient; TokenEnc is
-// nilled separately by cachePut and never shared from the cache.
+// nilled separately by cachePutIfGeneration and never shared from the cache.
 func cloneKey(key *domain.DownstreamKey) *domain.DownstreamKey {
 	if key == nil {
 		return nil
@@ -48,6 +64,8 @@ func cloneKey(key *domain.DownstreamKey) *domain.DownstreamKey {
 func (s *DownstreamKeyStore) invalidate(id int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.generation++
+	s.mutationEpoch++
 	if old, ok := s.byID[id]; ok {
 		if old.TokenHash != "" {
 			delete(s.byHash, old.TokenHash)
@@ -56,8 +74,9 @@ func (s *DownstreamKeyStore) invalidate(id int64) {
 	}
 }
 
-// cachePut stores a clone of the key in both indexes. Callers must hold no lock.
-func (s *DownstreamKeyStore) cachePut(key *domain.DownstreamKey) {
+// cachePutIfGeneration stores a clone of the key in both indexes when the
+// miss query was not overtaken by a write. Callers must hold no lock.
+func (s *DownstreamKeyStore) cachePutIfGeneration(key *domain.DownstreamKey, generation uint64) {
 	if key == nil || key.ID <= 0 {
 		return
 	}
@@ -67,6 +86,9 @@ func (s *DownstreamKeyStore) cachePut(key *domain.DownstreamKey) {
 	cloned.TokenEnc = nil
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.generation != generation {
+		return
+	}
 	s.byID[cloned.ID] = cloned
 	if cloned.TokenHash != "" {
 		s.byHash[cloned.TokenHash] = cloned
@@ -125,9 +147,11 @@ func (s *DownstreamKeyStore) List() ([]domain.DownstreamKey, error) {
 }
 
 func (s *DownstreamKeyStore) GetByID(id int64) (*domain.DownstreamKey, error) {
+	var generation uint64
 	if id > 0 {
 		s.mu.RLock()
 		cached, ok := s.byID[id]
+		generation = s.generation
 		s.mu.RUnlock()
 		if ok {
 			return cloneKey(cached), nil
@@ -141,16 +165,18 @@ func (s *DownstreamKeyStore) GetByID(id int64) (*domain.DownstreamKey, error) {
 		}
 		return nil, fmt.Errorf("downstream key get: %w", err)
 	}
-	s.cachePut(&r)
+	s.cachePutIfGeneration(&r, generation)
 	return &r, nil
 }
 
 // GetByHash retrieves a downstream key by its hashed token value, using the
 // in-process cache on the hot path. The returned key is a copy.
 func (s *DownstreamKeyStore) GetByHash(hash string) (*domain.DownstreamKey, error) {
+	var generation uint64
 	if hash != "" {
 		s.mu.RLock()
 		cached, ok := s.byHash[hash]
+		generation = s.generation
 		s.mu.RUnlock()
 		if ok {
 			return cloneKey(cached), nil
@@ -164,7 +190,7 @@ func (s *DownstreamKeyStore) GetByHash(hash string) (*domain.DownstreamKey, erro
 		}
 		return nil, fmt.Errorf("downstream key by hash: %w", err)
 	}
-	s.cachePut(&r)
+	s.cachePutIfGeneration(&r, generation)
 	return &r, nil
 }
 
@@ -179,7 +205,8 @@ func (s *DownstreamKeyStore) Create(k *domain.DownstreamKey) (int64, error) {
 	id, err := res.LastInsertId()
 	if err == nil {
 		k.ID = id
-		s.cachePut(k)
+		s.invalidate(id)
+		_, _ = s.GetByID(id)
 	}
 	return id, err
 }
@@ -244,33 +271,47 @@ func (s *DownstreamKeyStore) ResetUsage(id int64) error {
 	return nil
 }
 
-// bumpCachedUsage applies an already-persisted usage increment to the cached
-// entry in place (the caller owns the write, e.g. inside the RecordRelayUsage
-// transaction), so the next auth read still hits the cache instead of
-// reloading from SQLite. The database remains authoritative; the cache is
-// only an accelerator.
-func (s *DownstreamKeyStore) bumpCachedUsage(id int64, totalTokens int) {
-	if id <= 0 || totalTokens <= 0 {
+func (s *DownstreamKeyStore) mutationEpochSnapshot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mutationEpoch
+}
+
+// setCachedUsageIfEpoch applies the absolute value returned by the committed
+// SQL update. Absolute/max assignment avoids double-counting when a cache miss
+// reloads the new database value before this callback runs; the epoch blocks
+// callbacks that predate a reset or administrative mutation.
+func (s *DownstreamKeyStore) setCachedUsageIfEpoch(id, used int64, epoch uint64) {
+	if id <= 0 || used < 0 {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cached, ok := s.byID[id]; ok {
-		cached.QuotaUsedTokens += int64(totalTokens)
+	if s.mutationEpoch != epoch {
+		return
+	}
+	s.generation++
+	if cached, ok := s.byID[id]; ok && used > cached.QuotaUsedTokens {
+		cached.QuotaUsedTokens = used
 	}
 }
 
-// AddUsage increments quota_used_tokens for a key and applies the same
-// increment to the cached entry in place; the next read still hits the cache.
+// AddUsage increments quota_used_tokens for a key and synchronizes the
+// committed absolute value into the cache; the next read still hits the cache.
 func (s *DownstreamKeyStore) AddUsage(id int64, totalTokens int) error {
 	if id <= 0 || totalTokens <= 0 {
 		return nil
 	}
-	_, err := s.db.Exec(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ?`, totalTokens, id)
+	epoch := s.mutationEpochSnapshot()
+	var used int64
+	err := s.db.QueryRow(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ? RETURNING quota_used_tokens`, totalTokens, id).Scan(&used)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("downstream key add usage: %w", err)
 	}
-	s.bumpCachedUsage(id, totalTokens)
+	s.setCachedUsageIfEpoch(id, used, epoch)
 	return nil
 }
 

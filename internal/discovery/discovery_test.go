@@ -71,6 +71,33 @@ func TestProbeChecksConnectivityWithoutChangingDiscoveryState(t *testing.T) {
 	}
 }
 
+func TestProbeWithoutPersistenceLeavesHealthStateUntouched(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[{"id":"model-a"}]}`)
+	}))
+	defer upstream.Close()
+	db, service, channelID := setupService(t, upstream.URL, "openai-compatible")
+
+	result, err := service.Probe(discovery.WithoutProbePersistence(t.Context()), channelID)
+	if err != nil || result == nil {
+		t.Fatalf("read-only probe result=%+v err=%v", result, err)
+	}
+	overviews, err := db.Channel.ListOverviews(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overviews) != 1 || overviews[0].LastProbeAt != nil {
+		t.Fatalf("read-only probe persisted channel health: %+v", overviews)
+	}
+	points, err := db.HealthHistory.Recent(channelID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 0 {
+		t.Fatalf("read-only probe persisted %d history rows", len(points))
+	}
+}
+
 func TestProbeRetriesTransientTransportFailure(t *testing.T) {
 	var calls int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

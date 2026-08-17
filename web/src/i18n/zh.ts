@@ -807,6 +807,7 @@ export const zh: Dict = {
   "exchange.webdavSaved": "已保存。",
 
   "keys.title": "令牌",
+  "keys.searchPlaceholder": "搜索令牌",
   "keys.empty": "还没有下游令牌。请创建令牌，以便客户端通过本网关调用 /v1。",
   "keys.description": "为 /v1 客户端签发下游令牌。令牌明文加密存储，可随时重新查看或旋转。",
   "keys.create": "创建令牌",

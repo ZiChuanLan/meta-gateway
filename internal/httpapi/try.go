@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -46,6 +47,10 @@ func (h *TryHandler) tryChat(w http.ResponseWriter, r *http.Request) {
 	prompt := strings.TrimSpace(request.Prompt)
 	if model == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	if len([]byte(model)) > 256 {
+		writeError(w, http.StatusBadRequest, "model is too long")
 		return
 	}
 	if prompt == "" {
@@ -94,6 +99,9 @@ func (h *TryHandler) tryChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if result.Err != nil {
+		if result.Body != nil {
+			_ = result.Body.Close()
+		}
 		if errors.Is(result.Err, routing.ErrRouteNotFound) {
 			writeError(w, http.StatusNotFound, "route_not_found")
 			return
@@ -110,18 +118,42 @@ func (h *TryHandler) tryChat(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnprocessableEntity, "credential_unavailable")
 			return
 		}
+		if errors.Is(result.Err, proxy.ErrModelTooLong) {
+			writeError(w, http.StatusBadRequest, "model is too long")
+			return
+		}
+		if errors.Is(result.Err, proxy.ErrGuardRejected) {
+			writeError(w, http.StatusBadRequest, "request rejected by prompt policy")
+			return
+		}
+		if errors.Is(result.Err, proxy.ErrPayloadFiltered) {
+			writeError(w, http.StatusForbidden, "request filtered by policy")
+			return
+		}
 		if errors.Is(result.Err, r.Context().Err()) {
-			writeError(w, http.StatusRequestTimeout, "canceled")
+			return
+		}
+		if errors.Is(result.Err, context.DeadlineExceeded) {
+			writeError(w, http.StatusGatewayTimeout, "upstream request timed out")
 			return
 		}
 		writeError(w, http.StatusBadGateway, "upstream_failure")
 		return
 	}
+	if result.Body == nil {
+		writeError(w, http.StatusBadGateway, "upstream response missing")
+		return
+	}
 	defer result.Body.Close()
 
-	upstreamBody, err := io.ReadAll(io.LimitReader(result.Body, 2<<20))
+	const maxTryResponseBytes = 2 << 20
+	upstreamBody, err := io.ReadAll(io.LimitReader(result.Body, maxTryResponseBytes+1))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "upstream_read_failed")
+		return
+	}
+	if len(upstreamBody) > maxTryResponseBytes {
+		writeError(w, http.StatusBadGateway, "upstream_response_too_large")
 		return
 	}
 

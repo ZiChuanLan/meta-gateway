@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/store"
@@ -20,6 +21,22 @@ func openPluginTestDB(t *testing.T) *store.DB {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return db
+}
+
+func TestValidateSidecarPath(t *testing.T) {
+	for _, value := range []string{"", "/", "healthz", "/app/", "assets/app.js", "/v0/management"} {
+		if err := validateSidecarPath(value); err != nil {
+			t.Errorf("valid path %q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{"..", "../admin", "/app/../admin", "/app/./x", "/app//x", `\admin`, "/app?token=x", "/app#x", "/app%2f.."} {
+		if err := validateSidecarPath(value); err == nil {
+			t.Errorf("unsafe path %q accepted", value)
+		}
+	}
+	if err := validateAPIPrefix("/feature/../admin"); err == nil {
+		t.Fatal("traversing API prefix accepted")
+	}
 }
 
 func TestActivateEnableDisableUninstall(t *testing.T) {
@@ -323,10 +340,26 @@ func TestRegisterSidecarRejectsBadURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	for _, bad := range []string{"", "ftp://x", "http://", "not a url"} {
+	for _, bad := range []string{"", "ftp://x", "http://", "not a url", "http://example.test/base/../admin", "http://example.test/base%2fchild"} {
 		if _, err := svc.RegisterSidecar(bad, "", nil); err == nil {
 			t.Fatalf("expected error for %q", bad)
 		}
+	}
+}
+
+func TestFetchSidecarManifestRejectsOversizedValidPrefix(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		prefix := `{"id":"oversized","version":"1.0.0","name":"Oversized"}`
+		_, _ = w.Write([]byte(prefix + strings.Repeat(" ", maxPluginCatalogBytes-len(prefix)+1)))
+	}))
+	t.Cleanup(srv.Close)
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.fetchSidecarManifest(srv.URL); err == nil || !strings.Contains(err.Error(), "too_large") {
+		t.Fatalf("oversized manifest err=%v", err)
 	}
 }
 
@@ -348,7 +381,10 @@ func TestRegisterSidecarManualManifestFallback(t *testing.T) {
 	}
 
 	// With manual identity → registers, page_path honored.
-	manual := &SidecarManifest{ID: "cpa-console", Version: "1.0.0", Name: "CPA Console", PagePath: "/management.html", HealthPath: "healthz"}
+	manual := &SidecarManifest{
+		ID: "cpa-console", Version: "1.0.0", Name: "CPA Console",
+		PagePath: "/management.html", HealthPath: "healthz", APIPrefix: "/v0/management",
+	}
 	rec, err := svc.RegisterSidecar(srv.URL, "", manual)
 	if err != nil {
 		t.Fatalf("RegisterSidecar manual: %v", err)
@@ -365,5 +401,20 @@ func TestRegisterSidecarManualManifestFallback(t *testing.T) {
 	}
 	if spec.HealthPath != "healthz" {
 		t.Fatalf("health path = %q, want healthz", spec.HealthPath)
+	}
+	forwarders := svc.PrefixForwarders()
+	if len(forwarders) != 1 || forwarders[0].Prefix != "/v0/management" || forwarders[0].Spec == nil {
+		t.Fatalf("prefix forwarders = %+v", forwarders)
+	}
+
+	// The forwarding snapshot is rebuilt from persisted manifests at startup;
+	// serving a root API path must not depend on fetching the remote catalog.
+	restarted, err := NewService(filepath.Join(t.TempDir(), "plugins-restarted"), db.Plugin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forwarders = restarted.PrefixForwarders()
+	if len(forwarders) != 1 || forwarders[0].Prefix != "/v0/management" {
+		t.Fatalf("restarted prefix forwarders = %+v", forwarders)
 	}
 }

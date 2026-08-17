@@ -9,12 +9,13 @@ import (
 )
 
 type createConnectionRequest struct {
-	Name     string `json:"name"`
-	BaseURL  string `json:"base_url"`
-	Secret   string `json:"secret"`
-	TypeHint string `json:"type_hint"`
-	Platform string `json:"platform"`
-	Status   string `json:"status"`
+	Name      string `json:"name"`
+	BaseURL   string `json:"base_url"`
+	Secret    string `json:"secret"`
+	TypeHint  string `json:"type_hint"`
+	Platform  string `json:"platform"`
+	Status    string `json:"status"`
+	ModelsCSV string `json:"models_csv"`
 }
 
 // normalizeBaseURL canonicalizes a provider base URL for site reuse matching
@@ -24,6 +25,8 @@ func normalizeBaseURL(raw string) string {
 }
 
 func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) {
+	h.connectionMu.Lock()
+	defer h.connectionMu.Unlock()
 	var req createConnectionRequest
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -109,6 +112,7 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		Weight:       100,
 		Status:       status,
 		TypeHint:     strings.TrimSpace(req.TypeHint),
+		ModelsCSV:    strings.TrimSpace(req.ModelsCSV),
 	})
 	if err != nil {
 		_ = h.db.Credential.Delete(credID)
@@ -118,8 +122,20 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 	}
 	h.modelsCache.Invalidate()
 
-	channel, _ := h.db.Channel.GetByID(channelID)
-	site, _ := h.db.Site.GetByID(siteID)
+	channel, err := h.db.Channel.GetByID(channelID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	site, err := h.db.Site.GetByID(siteID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if channel == nil || site == nil {
+		writeError(w, http.StatusInternalServerError, "connection vanished after create")
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"channel":           channel,
 		"site":              site,

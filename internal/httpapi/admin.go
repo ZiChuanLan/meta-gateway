@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/crypto"
@@ -19,7 +21,7 @@ type AdminHandler struct {
 	db     *store.DB
 	enc    *crypto.Encrypter
 	router *routing.Selector
-	sticky *routing.StickyStore
+	sticky atomic.Pointer[routing.StickyStore]
 	// httpClient is used for outbound site-detection probes; it is the shared
 	// SSRF-policy client so admin input can never reach private/loopback space.
 	httpClient *http.Client
@@ -31,17 +33,22 @@ type AdminHandler struct {
 	// validateProxyURL validates a per-channel proxy URL against the outbound
 	// SSRF policy (nil skips validation — admin handlers without a policy).
 	validateProxyURL func(raw string) error
+	// connectionMu serializes the site-reuse/create/rollback sequence. Without
+	// it, two simultaneous creates for a new base URL could let one failed
+	// rollback delete the other request's newly attached credentials/channels.
+	connectionMu sync.Mutex
 }
 
 func NewAdminHandler(db *store.DB, enc *crypto.Encrypter, selector *routing.Selector, sticky *routing.StickyStore, outboundClient *http.Client, modelsCache *modelsCache) *AdminHandler {
-	return &AdminHandler{
+	h := &AdminHandler{
 		db:          db,
 		enc:         enc,
 		router:      selector,
-		sticky:      sticky,
 		httpClient:  outboundClient,
 		modelsCache: modelsCache,
 	}
+	h.sticky.Store(sticky)
+	return h
 }
 
 // SetProxyValidator wires the outbound-policy proxy URL validator (nil
@@ -58,7 +65,7 @@ func (h *AdminHandler) SetGCService(s *maintenance.GCService) {
 // SetSticky hot-swaps the sticky-session store backing the admin read-only
 // stats endpoint (nil = disabled). Used by the runtime-settings hot reload.
 func (h *AdminHandler) SetSticky(store *routing.StickyStore) {
-	h.sticky = store
+	h.sticky.Store(store)
 }
 
 func (h *AdminHandler) Register(r chi.Router) {

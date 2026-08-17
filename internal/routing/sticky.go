@@ -21,6 +21,8 @@ type StickyStore struct {
 	escapes atomic.Int64
 }
 
+const maxStickyEntries = 10000
+
 type stickyEntry struct {
 	ChannelID int64
 	ExpiresAt time.Time
@@ -83,6 +85,22 @@ func (s *StickyStore) Bind(key string, channelID int64, now time.Time) {
 		return
 	}
 	s.mu.Lock()
+	s.pruneLocked(now)
+	if _, exists := s.entries[key]; !exists && len(s.entries) >= maxStickyEntries {
+		// Evict the least recently extended binding. Bind refreshes expiry, so
+		// the earliest expiry is the least useful entry to retain.
+		var oldestKey string
+		var oldest time.Time
+		for candidate, entry := range s.entries {
+			if oldestKey == "" || entry.ExpiresAt.Before(oldest) {
+				oldestKey = candidate
+				oldest = entry.ExpiresAt
+			}
+		}
+		if oldestKey != "" {
+			delete(s.entries, oldestKey)
+		}
+	}
 	s.entries[key] = stickyEntry{ChannelID: channelID, ExpiresAt: now.Add(s.ttl)}
 	s.mu.Unlock()
 	s.binds.Add(1)

@@ -34,11 +34,14 @@ func TestUsageBumpsCacheInPlace(t *testing.T) {
 		t.Fatal("cache should be warm after Create")
 	}
 
-	// bumpCachedUsage (the RecordRelayUsage path): entry survives, value moves.
-	db.DownstreamKey.bumpCachedUsage(id, 40)
+	// Usage writes apply the absolute committed value while keeping the entry
+	// warm for the next authentication request.
+	if err := db.DownstreamKey.AddUsage(id, 40); err != nil {
+		t.Fatal(err)
+	}
 	cached, ok := db.DownstreamKey.byHash["hash-cache-bump"]
 	if !ok {
-		t.Fatal("cache entry must survive bumpCachedUsage")
+		t.Fatal("cache entry must survive usage synchronization")
 	}
 	if cached.QuotaUsedTokens != 40 {
 		t.Fatalf("cached used=%d want 40", cached.QuotaUsedTokens)
@@ -78,6 +81,49 @@ func TestUsageBumpsCacheInPlace(t *testing.T) {
 	}
 	if _, ok := db.DownstreamKey.byHash["hash-cache-bump"]; ok {
 		t.Fatal("ResetUsage must invalidate the cache entry")
+	}
+}
+
+func TestUsageCacheSyncIsAbsoluteOrderedAndResetSafe(t *testing.T) {
+	db, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	key := &domain.DownstreamKey{TokenHash: "hash-absolute-sync", Name: "metered", Enabled: true, Scopes: "relay"}
+	id, err := db.DownstreamKey.Create(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch := db.DownstreamKey.mutationEpochSnapshot()
+
+	// A concurrent cache miss may already have loaded the committed value. The
+	// callback must assign/max it, never add it a second time.
+	db.DownstreamKey.mu.Lock()
+	db.DownstreamKey.byID[id].QuotaUsedTokens = 10
+	db.DownstreamKey.mu.Unlock()
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 10, epoch)
+	if got := db.DownstreamKey.byID[id].QuotaUsedTokens; got != 10 {
+		t.Fatalf("duplicate callback double-counted usage: %d", got)
+	}
+
+	// Commit callbacks can be scheduled out of order; a lower absolute value
+	// must not overwrite a newer one.
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 30, epoch)
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 20, epoch)
+	if got := db.DownstreamKey.byID[id].QuotaUsedTokens; got != 30 {
+		t.Fatalf("out-of-order callback regressed usage: %d", got)
+	}
+
+	if err := db.DownstreamKey.ResetUsage(id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DownstreamKey.GetByHash(key.TokenHash); err != nil {
+		t.Fatal(err)
+	}
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 40, epoch)
+	if got := db.DownstreamKey.byID[id].QuotaUsedTokens; got != 0 {
+		t.Fatalf("callback from before reset restored old usage: %d", got)
 	}
 }
 

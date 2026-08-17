@@ -297,7 +297,8 @@ func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
 // optional, so a disabled instance is represented as an ordinary successful
 // response instead of a noisy 404 from the model page's status query.
 func (h *AdminHandler) stickyStats(w http.ResponseWriter, _ *http.Request) {
-	if h.sticky == nil {
+	sticky := h.sticky.Load()
+	if sticky == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"enabled":     false,
 			"stats":       routing.StickyStats{},
@@ -308,9 +309,9 @@ func (h *AdminHandler) stickyStats(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":     true,
-		"stats":       h.sticky.Stats(),
-		"entries":     h.sticky.Snapshot(100),
-		"ttl_seconds": int(h.sticky.TTL() / time.Second),
+		"stats":       sticky.Stats(),
+		"entries":     sticky.Snapshot(100),
+		"ttl_seconds": int(sticky.TTL() / time.Second),
 	})
 }
 

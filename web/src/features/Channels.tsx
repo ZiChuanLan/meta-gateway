@@ -28,7 +28,7 @@ import { CreateKeyDialog } from "./channels/CreateKeyDialog"
 import { EditChannelDialog } from "./channels/EditChannelDialog"
 import { ChannelDetail } from "./channels/ChannelDetail"
 import { ChannelStatusBadges } from "./channels/badges"
-import { capabilityFlags, hostLabel, isMissingAPIKey, needsVerify, normalizeBase, SECRET_MASK, type ConnectionHealthFilter, type CreateConnectionInput, type CreateConnectionResult } from "./channels/helpers"
+import { capabilityFlags, isMissingAPIKey, needsVerify, normalizeBase, SECRET_MASK, type ConnectionHealthFilter, type CreateConnectionInput } from "./channels/helpers"
 import { positiveId } from "../lib/positiveId"
 export { channelReadiness } from "./channelHealth"
 
@@ -49,6 +49,7 @@ export function Channels() {
   const toast = useToast();
   const service = api(client!);
   const [params, setParams] = useSearchParams();
+  const searchParam = params.get("search") ?? "";
   const navigate = useNavigate();
   const overviews = useQuery({
     queryKey: ["channel-overviews"],
@@ -77,7 +78,7 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
     top: number;
     left: number;
   } | null>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(searchParam);
   const [healthFilter, setHealthFilter] =
     useState<ConnectionHealthFilter>("all");
   const [stageMessage, setStageMessage] = useState<{
@@ -87,6 +88,7 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
     models?: number;
   } | null>(null);
   const selectedId = positiveId(params.get("id"));
+  useEffect(() => setQuery(searchParam), [searchParam]);
   // Load site credentials for the channel being edited, selected, or opened via ⋯/context menu.
   const credentialSiteId =
     edit?.site_id ??
@@ -141,49 +143,14 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
   // the explicit per-channel actions below; entering this page does not fire
   // network pings for every enabled connection anymore.
   const createConnection = useAdminMutation({
-    mutationFn: async (
-      input: CreateConnectionInput,
-    ): Promise<CreateConnectionResult> => {
-      const base = normalizeBase(input.base_url);
-      const name = input.name.trim() || hostLabel(base);
-      const existing = (sites.data ?? []).find(
-        (site) => normalizeBase(site.base_url) === base,
-      );
-      let site: Site;
-      let reusedSite = false;
-      if (existing) {
-        site = existing;
-        reusedSite = true;
-      } else {
-        site = await service.createSite({
-          name,
-          base_url: base,
-          platform: input.type_hint || "openai-compatible",
-          status: "enabled",
-        });
-      }
-      const credential = await service.createCredential(site.id, {
-        kind: "api_key",
-        secret: input.secret,
-        status: "enabled",
-      });
-      const channel = await service.createChannel({
-        name,
-        site_id: site.id,
-        credential_id: credential.id,
-        base_url: "",
-        group_name: "default",
-        priority: 0,
-        weight: 100,
-        status: "enabled",
+    mutationFn: (input: CreateConnectionInput) =>
+      service.createConnection({
+        name: input.name.trim(),
+        base_url: normalizeBase(input.base_url),
+        secret: input.secret.trim(),
         type_hint: input.type_hint || "openai-compatible",
-      });
-      return {
-        channel,
-        reusedSite,
-        looksLikeAccessToken: !/^sk-/i.test(input.secret.trim()),
-      };
-    },
+        status: "enabled",
+      }),
     invalidateKeys: [...INVALIDATE],
     toastOnError: false,
     onSuccess: (result) => {
@@ -198,12 +165,6 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
       });
       if (shouldVerify) {
         runVerifyRef.current(result.channel.id, result.channel.name);
-      }
-      // Auto-check the access token right after creation so the UI can
-      // tell a good credential from a dead/blocked one immediately.
-      if (result.looksLikeAccessToken) {
-        accountProbe.reset();
-        accountProbe.mutate(result.channel.id);
       }
     },
     onError: () => {
@@ -836,7 +797,15 @@ const ping = useAdminMutation({
             <Search size={14} aria-hidden="true" />
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setQuery(value);
+                const next = new URLSearchParams(params);
+                if (value) next.set("search", value);
+                else next.delete("search");
+                next.delete("id");
+                setParams(next, { replace: true });
+              }}
               placeholder={t("channels.searchPlaceholder")}
               aria-label={t("channels.searchPlaceholder")}
             />

@@ -664,43 +664,27 @@ function CreateChannelDialog({
 	onClose: () => void;
 }) {
 	const { t } = useI18n();
-	const [siteId, setSiteId] = useState("");
-	const [credentialId, setCredentialId] = useState("");
 	const [name, setName] = useState(`${row.name} 渠道`);
 	const [models, setModels] = useState("");
-	const [apiKey, setApiKey] = useState("");
+	const [apiKey, setApiKey] = useState(defaults?.api_key ?? "");
 	const [error, setError] = useState("");
 	const baseUrl = `${defaults?.url ?? ""}${defaults?.channel_path ?? ""}`;
 
-	const { data: sites } = useQuery({
-		queryKey: ["sites"],
-		queryFn: ({ signal }) => service.sites(signal),
-		staleTime: 30_000,
-	});
-	const { data: credentials } = useQuery({
-		queryKey: ["credentials", siteId],
-		queryFn: ({ signal }) =>
-			siteId ? service.credentials(Number(siteId), signal) : Promise.resolve([]),
-		enabled: !!siteId,
-		staleTime: 30_000,
-	});
-	useEffect(() => {
-		setCredentialId("");
-	}, [siteId]);
-
 	const create = useAdminMutation({
 		mutationFn: () =>
-			service.createChannel({
+			service.createConnection({
 				name: name.trim(),
 				base_url: baseUrl,
-				site_id: Number(siteId),
-				credential_id: Number(credentialId),
+				secret: apiKey.trim(),
+				type_hint: "openai-compatible",
 				models_csv: models.trim(),
-				header_override: apiKey.trim()
-					? `Authorization: Bearer ${apiKey.trim()}`
-					: undefined,
 			}),
-		invalidateKeys: [["channel-overviews"], ["channels"]],
+		invalidateKeys: [
+			["channel-overviews"],
+			["channels"],
+			["sites"],
+			["credentials"],
+		],
 		toastOnError: false,
 		onSuccess: onClose,
 		onError: (err: unknown) => {
@@ -718,7 +702,12 @@ function CreateChannelDialog({
 						{t("common.cancel")}
 					</Button>
 					<Button
-						disabled={create.isPending || !siteId || !credentialId}
+						disabled={
+							create.isPending ||
+							!name.trim() ||
+							!baseUrl.trim() ||
+							!apiKey.trim()
+						}
 						onClick={() => create.mutate(undefined)}
 					>
 						{create.isPending ? t("common.working") : t("plugins.channelCreate")}
@@ -742,37 +731,6 @@ function CreateChannelDialog({
 					<span>{t("plugins.channelBase")}</span>
 					<input className="mono" value={baseUrl} readOnly spellCheck={false} />
 				</label>
-				<div className="form-row">
-					<label className="field">
-						<span>{t("plugins.channelSite")}</span>
-						<select
-							value={siteId}
-							onChange={(e) => setSiteId(e.target.value)}
-						>
-							<option value="">—</option>
-							{(sites ?? []).map((s) => (
-								<option key={s.id} value={s.id}>
-									{s.name}
-								</option>
-							))}
-						</select>
-					</label>
-					<label className="field">
-						<span>{t("plugins.channelCredential")}</span>
-						<select
-							value={credentialId}
-							onChange={(e) => setCredentialId(e.target.value)}
-							disabled={!siteId}
-						>
-							<option value="">—</option>
-							{(credentials ?? []).map((c) => (
-								<option key={c.id} value={c.id}>
-									{c.kind} #{c.id}
-								</option>
-							))}
-						</select>
-					</label>
-				</div>
 				<label className="field">
 					<span>{t("plugins.channelModels")}</span>
 					<input
@@ -784,9 +742,11 @@ function CreateChannelDialog({
 					/>
 				</label>
 				<label className="field">
-					<span>{t("plugins.keyPlaceholder")}</span>
+					<span>{t("common.secret")}</span>
 					<input
 						type="password"
+						autoComplete="new-password"
+						required
 						value={apiKey}
 						onChange={(e) => setApiKey(e.target.value)}
 					/>

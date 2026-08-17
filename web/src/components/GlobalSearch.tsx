@@ -137,7 +137,11 @@ export function GlobalSearch() {
                 key={"l" + l.id}
                 className="search-hit"
                 onClick={() =>
-                  go(`/logs?upstream_request_id=${encodeURIComponent(l.request_id)}`)
+                  go(
+                    `/logs?upstream_request_id=${encodeURIComponent(
+                      l.upstream_request_id || l.request_id,
+                    )}`,
+                  )
                 }
               >
                 <span className="search-hit-name mono">{l.model || l.request_id}</span>

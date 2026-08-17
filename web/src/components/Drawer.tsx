@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import { registerOverlay } from "./overlayStack";
@@ -35,6 +35,7 @@ export function Drawer({
 	side?: "left" | "right";
 }) {
 	const { t } = useI18n();
+	const titleId = useId();
 	const drawerRef = useRef<HTMLElement | null>(null);
 	const onCloseRef = useRef(onClose);
 	onCloseRef.current = onClose;
@@ -107,10 +108,10 @@ export function Drawer({
 				}
 				role="dialog"
 				aria-modal="true"
-				aria-labelledby="drawer-title"
+				aria-labelledby={titleId}
 			>
 				<header>
-					<h2 id="drawer-title">{title}</h2>
+					<h2 id={titleId}>{title}</h2>
 					<IconButton label={t("common.close")} onClick={onClose}>
 						<X size={18} />
 					</IconButton>

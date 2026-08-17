@@ -24,6 +24,8 @@ type Limiter struct {
 	maxIdle         time.Duration
 }
 
+const maxBuckets = 10000
+
 func New(requestsPerMinute, burst int) *Limiter {
 	return &Limiter{
 		perSec:          float64(requestsPerMinute) / 60,
@@ -54,15 +56,28 @@ func (l *Limiter) SetLimits(requestsPerMinute, burst int) {
 
 // Allow consumes one token and returns the wait duration when denied.
 func (l *Limiter) Allow(key int64) (bool, time.Duration) {
-	if l == nil || l.perSec <= 0 || l.burst <= 0 {
+	if l == nil {
 		return true, 0
 	}
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.perSec <= 0 || l.burst <= 0 {
+		return true, 0
+	}
 	l.cleanupIfDue(now)
 	b := l.buckets[key]
 	if b == nil {
+		if len(l.buckets) >= maxBuckets {
+			// Keys may contain attacker-controlled dimensions (for example model
+			// names). Evict one existing bucket before admitting a new one so the
+			// limiter itself cannot become an unbounded map. Map eviction is
+			// intentionally O(1); token buckets are soft protection, not a cache.
+			for candidate := range l.buckets {
+				delete(l.buckets, candidate)
+				break
+			}
+		}
 		b = &bucket{tokens: l.burst, updated: now}
 		l.buckets[key] = b
 	}

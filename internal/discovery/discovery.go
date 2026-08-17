@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/adapters"
@@ -33,6 +34,26 @@ type Error struct {
 }
 
 func (e *Error) Error() string { return fmt.Sprintf("discovery failed: %s", e.Category) }
+
+// probePersistenceDisabledKey marks a probe used by a higher-level monitor
+// that owns the health-history write. The normal Probe API keeps its durable
+// side effects for callers such as the Admin refresh endpoint.
+type probePersistenceDisabledKey struct{}
+
+// WithoutProbePersistence runs Probe in read/probe mode. It is intended for
+// healthsweep, which grades the result and persists the richer verdict once;
+// avoiding the default Probe writes prevents duplicate channel/history rows.
+func WithoutProbePersistence(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, probePersistenceDisabledKey{}, true)
+}
+
+func probePersistenceEnabled(ctx context.Context) bool {
+	disabled, _ := ctx.Value(probePersistenceDisabledKey{}).(bool)
+	return !disabled
+}
 
 type RefreshResult struct {
 	ChannelID      int64     `json:"channel_id"`
@@ -78,7 +99,7 @@ type Service struct {
 	recoveryEnabled  bool
 	recoveryInterval time.Duration
 	// notifier delivers operational webhooks (auto-disable/recovery).
-	notifier *webhook.Notifier
+	notifier atomic.Pointer[webhook.Notifier]
 }
 
 // SetRecoveryConfig hot-applies the passive-recovery probe configuration.
@@ -102,10 +123,14 @@ func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Serv
 
 // SetWebhookNotifier installs the operational webhook notifier (nil disables).
 func (s *Service) SetWebhookNotifier(notifier *webhook.Notifier) {
-	s.notifier = notifier
+	s.notifier.Store(notifier)
 }
 
 func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	persist := probePersistenceEnabled(ctx)
 	channel, err := s.db.Channel.GetByID(channelID)
 	if err != nil {
 		return nil, internalError("channel_lookup")
@@ -135,9 +160,11 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		return nil, err
 	}
 	if len(credentials) == 0 {
-		checkedAt := s.now()
-		_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryCredentialUnavailable)
-		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryCredentialUnavailable, checkedAt)
+		if persist {
+			checkedAt := s.now()
+			_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryCredentialUnavailable)
+			_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryCredentialUnavailable, checkedAt)
+		}
 		return nil, unavailableError(domain.CategoryCredentialUnavailable)
 	}
 	baseURL := channel.BaseURL
@@ -150,9 +177,11 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
 			return nil, fatal
 		}
-		checkedAt := s.now()
-		_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryInvalidBaseURL)
-		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryInvalidBaseURL, checkedAt)
+		if persist {
+			checkedAt := s.now()
+			_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryInvalidBaseURL)
+			_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryInvalidBaseURL, checkedAt)
+		}
 		return nil, unavailableError(domain.CategoryInvalidBaseURL)
 	}
 	if lastErr != nil && isTransientListError(lastErr) {
@@ -170,9 +199,11 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 			if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
 				return nil, fatal
 			}
-			checkedAt := s.now()
-			_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryInvalidBaseURL)
-			_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryInvalidBaseURL, checkedAt)
+			if persist {
+				checkedAt := s.now()
+				_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, domain.CategoryInvalidBaseURL)
+				_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, domain.CategoryInvalidBaseURL, checkedAt)
+			}
 			return nil, unavailableError(domain.CategoryInvalidBaseURL)
 		}
 	}
@@ -198,20 +229,26 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 				}
 			}
 		}
-		checkedAt := s.now()
-		_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, category)
-		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, category, checkedAt)
+		if persist {
+			checkedAt := s.now()
+			_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, category)
+			_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, false, 0, category, checkedAt)
+		}
 		return nil, &Error{Kind: ErrorUpstream, Category: category}
 	}
 	checkedAt := s.now()
 	latency := int(checkedAt.Sub(started).Milliseconds())
 	// A healthy probe restores an auto-disabled channel and reports recovery.
-	recovered, _ := s.db.Channel.RecoverAutoDisabled(channel.ID)
-	if recovered && s.notifier != nil {
-		s.notifier.Notify(context.Background(), webhook.ChannelRecovered, channel.ID, channel.Name, "probe ok")
+	if persist {
+		recovered, _ := s.db.Channel.RecoverAutoDisabled(channel.ID)
+		if recovered {
+			if notifier := s.notifier.Load(); notifier != nil {
+				notifier.Notify(context.Background(), webhook.ChannelRecovered, channel.ID, channel.Name, "probe ok")
+			}
+		}
+		_ = s.db.Channel.RecordProbeSuccess(channel.ID, checkedAt)
+		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, true, latency, "", checkedAt)
 	}
-	_ = s.db.Channel.RecordProbeSuccess(channel.ID, checkedAt)
-	_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, true, latency, "", checkedAt)
 	return &ProbeResult{
 		ChannelID: channel.ID,
 		Adapter:   adapter.Name(),

@@ -6,10 +6,28 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/exchange"
 )
+
+func TestClientMaxBytesConcurrentUpdate(t *testing.T) {
+	client := &Client{MaxBytes: 1}
+	var wg sync.WaitGroup
+	for i := int64(1); i <= 100; i++ {
+		value := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			client.setMaxBytes(value)
+			if client.maxBytes() <= 0 {
+				t.Error("max bytes must remain positive")
+			}
+		}()
+	}
+	wg.Wait()
+}
 
 type fakeImporter struct {
 	last     []byte

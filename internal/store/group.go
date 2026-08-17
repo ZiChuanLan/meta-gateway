@@ -14,12 +14,23 @@ import (
 type GroupStore struct {
 	db *sql.DB
 
-	mu    sync.RWMutex
-	cache map[string]*domain.KeyGroup
+	mu            sync.RWMutex
+	cache         map[string]*domain.KeyGroup
+	generation    uint64
+	mutationEpoch uint64
 }
 
 func newGroupStore(db *sql.DB) *GroupStore {
 	return &GroupStore{db: db, cache: make(map[string]*domain.KeyGroup)}
+}
+
+// ClearCache drops all cached groups after a bulk SQL operation.
+func (s *GroupStore) ClearCache() {
+	s.mu.Lock()
+	s.cache = make(map[string]*domain.KeyGroup)
+	s.generation++
+	s.mutationEpoch++
+	s.mu.Unlock()
 }
 
 // Get returns a group by name; nil when absent. "default" always resolves to
@@ -32,6 +43,7 @@ func (s *GroupStore) Get(name string) (*domain.KeyGroup, error) {
 	}
 	s.mu.RLock()
 	cached, ok := s.cache[name]
+	generation := s.generation
 	s.mu.RUnlock()
 	if ok {
 		clone := *cached
@@ -43,12 +55,12 @@ func (s *GroupStore) Get(name string) (*domain.KeyGroup, error) {
 		if err == sql.ErrNoRows {
 			// Absent group = unlimited, no rate limit.
 			def := &domain.KeyGroup{Name: name}
-			s.cachePut(def)
+			s.cachePutIfGeneration(def, generation)
 			return def, nil
 		}
 		return nil, fmt.Errorf("group get: %w", err)
 	}
-	s.cachePut(&g)
+	s.cachePutIfGeneration(&g, generation)
 	return &g, nil
 }
 
@@ -89,6 +101,8 @@ func (s *GroupStore) Upsert(name string, quotaTotal int64, ratePerMinute, rateBu
 		return fmt.Errorf("group upsert: %w", err)
 	}
 	s.mu.Lock()
+	s.generation++
+	s.mutationEpoch++
 	delete(s.cache, name)
 	s.mu.Unlock()
 	return nil
@@ -105,42 +119,44 @@ func (s *GroupStore) Delete(name string) error {
 		return fmt.Errorf("group delete: %w", err)
 	}
 	s.mu.Lock()
+	s.generation++
+	s.mutationEpoch++
 	delete(s.cache, name)
 	s.mu.Unlock()
 	return nil
 }
 
-// bumpCachedUsage applies an already-committed usage increment to the cached
-// entry in place, mirroring DownstreamKeyStore: the database stays
-// authoritative while the hot path keeps hitting the cache instead of
-// reloading the group row after every relay request. Absent cache entries
-// are left alone; the next read loads the committed count.
-func (s *GroupStore) bumpCachedUsage(name string, totalTokens int) {
+func (s *GroupStore) mutationEpochSnapshot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mutationEpoch
+}
+
+func (s *GroupStore) setCachedUsageIfEpoch(name string, used int64, epoch uint64) {
 	name = normalizeGroupName(name)
-	if name == "" || totalTokens <= 0 {
+	if name == "" || used < 0 {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cached, ok := s.cache[name]; ok {
-		cached.QuotaUsedTokens += int64(totalTokens)
+	if s.mutationEpoch != epoch {
+		return
+	}
+	s.generation++
+	if cached, ok := s.cache[name]; ok && used > cached.QuotaUsedTokens {
+		cached.QuotaUsedTokens = used
 	}
 }
 
-func (s *GroupStore) cachePut(g *domain.KeyGroup) {
+func (s *GroupStore) cachePutIfGeneration(g *domain.KeyGroup, generation uint64) {
 	if g == nil || g.Name == "" {
 		return
 	}
 	clone := *g
 	s.mu.Lock()
-	s.cache[clone.Name] = &clone
-	s.mu.Unlock()
-}
-
-// invalidateCache drops a cached group (called after transactional writes).
-func (s *GroupStore) invalidateCache(name string) {
-	s.mu.Lock()
-	delete(s.cache, name)
+	if s.generation == generation {
+		s.cache[clone.Name] = &clone
+	}
 	s.mu.Unlock()
 }
 

@@ -178,6 +178,7 @@ type Appliers struct {
 // Controller loads, validates, persists, and applies runtime settings.
 type Controller struct {
 	mu       sync.RWMutex
+	updateMu sync.Mutex
 	env      Editable
 	cfg      *config.Config
 	store    *store.RuntimeSettingsStore
@@ -310,6 +311,8 @@ func maskToken(token string) string {
 
 // Update validates, persists, and hot-applies Admin overrides.
 func (c *Controller) Update(next Editable) (Snapshot, error) {
+	c.updateMu.Lock()
+	defer c.updateMu.Unlock()
 	if err := Validate(next); err != nil {
 		return Snapshot{}, err
 	}
@@ -362,12 +365,23 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		ChannelRetryTimes:                next.ChannelRetryTimes,
 		KeyPoolRotation:                  boolInt(next.KeyPoolRotation),
 	}
-	// Apply first so invalid scheduler cron fails before DB write? Prefer validate cron in Validate.
-	if err := c.applyWithError(next); err != nil {
+	previousRow, err := c.store.Get()
+	if err != nil {
 		return Snapshot{}, err
 	}
+	previous := c.Snapshot()
+	// Persist first, then apply. If a runtime applier rejects the change, put
+	// the old durable row and in-memory state back so a failed request cannot
+	// leave the process and database disagreeing.
 	if err := c.store.Save(row); err != nil {
-		// Best-effort: settings already applied in memory; surface persistence error.
+		return Snapshot{}, err
+	}
+	if err := c.applyWithError(next); err != nil {
+		rollbackErr := c.store.Save(previousRow)
+		applyRollbackErr := c.applyWithError(previous.Editable)
+		if rollbackErr != nil || applyRollbackErr != nil {
+			return Snapshot{}, fmt.Errorf("runtime settings apply failed: %w (rollback save=%v apply=%v)", err, rollbackErr, applyRollbackErr)
+		}
 		return Snapshot{}, err
 	}
 	now := time.Now().UTC()
@@ -381,11 +395,23 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 
 // ClearOverride removes Admin override and re-applies env bootstrap.
 func (c *Controller) ClearOverride() (Snapshot, error) {
+	c.updateMu.Lock()
+	defer c.updateMu.Unlock()
+	previousRow, err := c.store.Get()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	previous := c.Snapshot()
 	row := &store.RuntimeSettingsRow{HasOverride: false}
 	if err := c.store.Save(row); err != nil {
 		return Snapshot{}, err
 	}
 	if err := c.applyWithError(c.env); err != nil {
+		rollbackErr := c.store.Save(previousRow)
+		applyRollbackErr := c.applyWithError(previous.Editable)
+		if rollbackErr != nil || applyRollbackErr != nil {
+			return Snapshot{}, fmt.Errorf("runtime override clear failed: %w (rollback save=%v apply=%v)", err, rollbackErr, applyRollbackErr)
+		}
 		return Snapshot{}, err
 	}
 	c.mu.Lock()
@@ -783,6 +809,9 @@ func Validate(values Editable) error {
 		}
 		if values.HealthSweepJitterSeconds < 0 || values.HealthSweepJitterSeconds > 3600 {
 			return fmt.Errorf("health_sweep_jitter_seconds must be between 0 and 3600")
+		}
+		if values.HealthSweepJitterSeconds > values.HealthSweepIntervalSeconds {
+			return fmt.Errorf("health_sweep_jitter_seconds must not exceed health_sweep_interval_seconds")
 		}
 		if values.HealthSweepDegradedMs < 100 || values.HealthSweepDegradedMs > 60000 {
 			return fmt.Errorf("health_sweep_degraded_ms must be between 100 and 60000")

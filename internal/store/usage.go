@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
@@ -81,7 +82,7 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 	args = append(args, limit)
 	query := `SELECT id, request_id, downstream_key_id, channel_id, model, path, stream,
 	prompt_tokens, completion_tokens, total_tokens,
-	cache_read_tokens, cache_creation_tokens, status, created_at
+	cache_read_tokens, cache_creation_tokens, status, cost, created_at
 	FROM usage_records WHERE ` + strings.Join(where, " AND ") + `
 	ORDER BY id DESC LIMIT ?`
 	rows, err := s.db.Query(query, args...)
@@ -107,6 +108,7 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 			&record.CacheReadTokens,
 			&record.CacheCreationTokens,
 			&record.Status,
+			&record.Cost,
 			scanTime(&record.CreatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("usage scan: %w", err)
@@ -119,16 +121,29 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 
 // Summary aggregates usage optionally filtered by downstream key.
 func (s *UsageStore) Summary(downstreamKeyID *int64) (domain.UsageSummary, error) {
+	return s.SummarySince(downstreamKeyID, nil)
+}
+
+// SummarySince aggregates usage from the optional inclusive UTC timestamp.
+func (s *UsageStore) SummarySince(downstreamKeyID *int64, since *time.Time) (domain.UsageSummary, error) {
 	query := `SELECT COUNT(*),
 		COALESCE(SUM(prompt_tokens),0),
 		COALESCE(SUM(completion_tokens),0),
 		COALESCE(SUM(total_tokens),0),
 		COALESCE(SUM(cost),0)
 		FROM usage_records`
+	where := []string{}
 	args := []any{}
 	if downstreamKeyID != nil {
-		query += ` WHERE downstream_key_id = ?`
+		where = append(where, "downstream_key_id = ?")
 		args = append(args, *downstreamKeyID)
+	}
+	if since != nil {
+		where = append(where, "created_at >= ?")
+		args = append(args, since.UTC().Format("2006-01-02 15:04:05"))
+	}
+	if len(where) > 0 {
+		query += ` WHERE ` + strings.Join(where, " AND ")
 	}
 	var summary domain.UsageSummary
 	if err := s.db.QueryRow(query, args...).Scan(
@@ -153,6 +168,9 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 	if record == nil || record.TotalTokens <= 0 {
 		return nil
 	}
+	keyEpoch := db.DownstreamKey.mutationEpochSnapshot()
+	groupName := normalizeGroupName(record.GroupName)
+	groupEpoch := db.Group.mutationEpochSnapshot()
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("usage record begin: %w", err)
@@ -186,18 +204,26 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 		return fmt.Errorf("usage record insert: %w", err)
 	}
 
+	var keyUsage int64
+	keyUsageUpdated := false
 	if keyID > 0 {
-		if _, err := tx.Exec(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ?`, record.TotalTokens, keyID); err != nil {
+		err := tx.QueryRow(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ? RETURNING quota_used_tokens`, record.TotalTokens, keyID).Scan(&keyUsage)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("usage record key quota: %w", err)
 		}
+		keyUsageUpdated = err == nil
 	}
 
 	// Accrue the tenant group quota in the same transaction (no-op when the
 	// group row does not exist — absent groups are unlimited).
-	if groupName := normalizeGroupName(record.GroupName); groupName != "" {
-		if _, err := tx.Exec(`UPDATE key_groups SET quota_used_tokens = quota_used_tokens + ?, updated_at = datetime('now') WHERE name = ?`, record.TotalTokens, groupName); err != nil {
+	var groupUsage int64
+	groupUsageUpdated := false
+	if groupName != "" {
+		err := tx.QueryRow(`UPDATE key_groups SET quota_used_tokens = quota_used_tokens + ?, updated_at = datetime('now') WHERE name = ? RETURNING quota_used_tokens`, record.TotalTokens, groupName).Scan(&groupUsage)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("usage record group quota: %w", err)
 		}
+		groupUsageUpdated = err == nil
 	}
 
 	if strings.TrimSpace(record.RequestID) != "" {
@@ -223,10 +249,14 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("usage record commit: %w", err)
 	}
-	// Keep the downstream-key and group caches in sync with the committed
-	// increment so quota checks see the new used count without a reload.
-	db.DownstreamKey.bumpCachedUsage(keyID, record.TotalTokens)
-	db.Group.bumpCachedUsage(record.GroupName, record.TotalTokens)
+	// Keep hot caches in sync with the absolute committed values. The epoch
+	// check prevents an older callback from undoing a concurrent reset/update.
+	if keyUsageUpdated {
+		db.DownstreamKey.setCachedUsageIfEpoch(keyID, keyUsage, keyEpoch)
+	}
+	if groupUsageUpdated {
+		db.Group.setCachedUsageIfEpoch(groupName, groupUsage, groupEpoch)
+	}
 	return nil
 }
 
@@ -236,12 +266,21 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 type ModelRatioStore struct {
 	db *sql.DB
 
-	mu    sync.RWMutex
-	cache map[string]float64
+	mu         sync.RWMutex
+	cache      map[string]float64
+	generation uint64
 }
 
 func newModelRatioStore(db *sql.DB) *ModelRatioStore {
 	return &ModelRatioStore{db: db, cache: make(map[string]float64)}
+}
+
+// ClearCache drops all cached model ratios after a bulk SQL operation.
+func (s *ModelRatioStore) ClearCache() {
+	s.mu.Lock()
+	s.cache = make(map[string]float64)
+	s.generation++
+	s.mu.Unlock()
 }
 
 // GetRatio returns the markup for a model (1.0 when unset).
@@ -252,6 +291,7 @@ func (s *ModelRatioStore) GetRatio(model string) (float64, error) {
 	}
 	s.mu.RLock()
 	ratio, ok := s.cache[model]
+	generation := s.generation
 	s.mu.RUnlock()
 	if ok {
 		return ratio, nil
@@ -260,17 +300,21 @@ func (s *ModelRatioStore) GetRatio(model string) (float64, error) {
 	err := s.db.QueryRow(`SELECT ratio FROM model_ratios WHERE model = ?`, model).Scan(&stored)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			s.mu.Lock()
-			s.cache[model] = 1.0
-			s.mu.Unlock()
+			s.cachePutIfGeneration(model, 1.0, generation)
 			return 1.0, nil
 		}
 		return 1.0, fmt.Errorf("model ratio get: %w", err)
 	}
-	s.mu.Lock()
-	s.cache[model] = stored
-	s.mu.Unlock()
+	s.cachePutIfGeneration(model, stored, generation)
 	return stored, nil
+}
+
+func (s *ModelRatioStore) cachePutIfGeneration(model string, ratio float64, generation uint64) {
+	s.mu.Lock()
+	if s.generation == generation {
+		s.cache[model] = ratio
+	}
+	s.mu.Unlock()
 }
 
 // SetRatio upserts a model's markup and refreshes the cache. Deleting a ratio
@@ -285,6 +329,7 @@ func (s *ModelRatioStore) SetRatio(model string, ratio float64) error {
 			return fmt.Errorf("model ratio delete: %w", err)
 		}
 		s.mu.Lock()
+		s.generation++
 		delete(s.cache, model)
 		s.mu.Unlock()
 		return nil
@@ -297,6 +342,7 @@ func (s *ModelRatioStore) SetRatio(model string, ratio float64) error {
 		return fmt.Errorf("model ratio set: %w", err)
 	}
 	s.mu.Lock()
+	s.generation++
 	s.cache[model] = ratio
 	s.mu.Unlock()
 	return nil

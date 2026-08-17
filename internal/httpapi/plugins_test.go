@@ -127,6 +127,93 @@ func TestRegisterSidecarEndpointKeyInjected(t *testing.T) {
 	}
 }
 
+func TestProxySidecarRejectsUnknownAuthorization(t *testing.T) {
+	handler, _ := sidecarPluginHandler(t)
+	base := fakeSidecarHandler(t, "keyed-auth-plugin", true)
+	body := fmt.Sprintf(`{"url":%q,"api_key":"sekrit"}`, base.URL)
+	register := httptest.NewRequest(http.MethodPost, "/admin/plugins/register", strings.NewReader(body))
+	registerRR := httptest.NewRecorder()
+	handler.ServeHTTP(registerRR, register)
+	if registerRR.Code != http.StatusCreated {
+		t.Fatalf("register = %d body=%s", registerRR.Code, registerRR.Body.String())
+	}
+
+	// An arbitrary bearer must not be treated as a plugin credential.  If the
+	// old pass-through path ran, the injected X-Plugin-Key would make the fake
+	// sidecar return 200.
+	req := httptest.NewRequest(http.MethodGet, "/admin/plugins/keyed-auth-plugin/proxy/api/echo", nil)
+	req.Header.Set("Authorization", "Bearer attacker-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown authorization = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestProxySidecarAcceptsRegisteredPluginAuthorization(t *testing.T) {
+	handler, _ := sidecarPluginHandler(t)
+	base := fakeSidecarHandler(t, "plugin-auth-plugin", true)
+	body := fmt.Sprintf(`{"url":%q,"api_key":"sekrit"}`, base.URL)
+	register := httptest.NewRequest(http.MethodPost, "/admin/plugins/register", strings.NewReader(body))
+	registerRR := httptest.NewRecorder()
+	handler.ServeHTTP(registerRR, register)
+	if registerRR.Code != http.StatusCreated {
+		t.Fatalf("register = %d body=%s", registerRR.Code, registerRR.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/plugins/plugin-auth-plugin/proxy/api/echo", nil)
+	req.Header.Set("Authorization", "bEaReR sekrit")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"key":"sekrit"`) {
+		t.Fatalf("registered plugin authorization = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestProxySidecarDoesNotMixInvalidHeaderWithQueryAdminToken(t *testing.T) {
+	handler, _ := sidecarPluginHandler(t)
+	base := fakeSidecarHandler(t, "mixed-auth-plugin", true)
+	body := fmt.Sprintf(`{"url":%q,"api_key":"sekrit"}`, base.URL)
+	register := httptest.NewRequest(http.MethodPost, "/admin/plugins/register", strings.NewReader(body))
+	registerRR := httptest.NewRecorder()
+	handler.ServeHTTP(registerRR, register)
+	if registerRR.Code != http.StatusCreated {
+		t.Fatalf("register = %d body=%s", registerRR.Code, registerRR.Body.String())
+	}
+
+	// A stale/forged Authorization header must not be rescued by a valid ?t=;
+	// callers must choose one explicit authentication mode.
+	req := httptest.NewRequest(http.MethodGet, "/admin/plugins/mixed-auth-plugin/proxy/api/echo?t=admin-test", nil)
+	req.Header.Set("Authorization", "Bearer attacker-token")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("mixed credentials = %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestProxySidecarRejectsDuplicateQueryTokens(t *testing.T) {
+	handler, _ := sidecarPluginHandler(t)
+	base := fakeSidecarHandler(t, "duplicate-query-plugin", false)
+	body := fmt.Sprintf(`{"url":%q}`, base.URL)
+	register := httptest.NewRequest(http.MethodPost, "/admin/plugins/register", strings.NewReader(body))
+	registerRR := httptest.NewRecorder()
+	handler.ServeHTTP(registerRR, register)
+	if registerRR.Code != http.StatusCreated {
+		t.Fatalf("register = %d body=%s", registerRR.Code, registerRR.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/plugins/duplicate-query-plugin/proxy/?t=admin-test&t=admin-test", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("duplicate query token = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache-control=%q, want no-store", got)
+	}
+}
+
 func TestProxySidecarRequiresEnabledPlugin(t *testing.T) {
 	handler, _ := sidecarPluginHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/admin/plugins/nope/proxy/", nil)
@@ -147,4 +234,17 @@ func TestProxySidecarRejectsBadURL(t *testing.T) {
 		t.Fatal("expected registration failure against dead port")
 	}
 	_ = handler
+}
+
+func TestValidPluginProxyPathRejectsTraversal(t *testing.T) {
+	for _, value := range []string{"", "/", "/app", "/app/", "v0/management"} {
+		if !validPluginProxyPath(value) {
+			t.Errorf("valid proxy path %q rejected", value)
+		}
+	}
+	for _, value := range []string{"../admin", "/app/../admin", "/app/./x", "/app//x", `\\admin`, "/app%2f..", "/app?token=x", "/app#fragment"} {
+		if validPluginProxyPath(value) {
+			t.Errorf("unsafe proxy path %q accepted", value)
+		}
+	}
 }

@@ -8,79 +8,65 @@ import (
 	"time"
 )
 
-// TestChannelGateQueuesFIFO: with limit 1, three acquirers must all be served
-// (none dropped) and never run concurrently — the semaphore serializes them.
-// Go's channel runtime wakes blocked senders in FIFO order; the test asserts
-// the observable contract (no drops, strict serialization) which is what
-// callers depend on, rather than scheduler-level wake order.
 func TestChannelGateQueuesFIFO(t *testing.T) {
 	g := NewChannelGate()
-	ctx := context.Background()
-	gen, err := g.Acquire(ctx, 7, 1)
+	first, err := g.Acquire(context.Background(), 7, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
 	var maxInFlight atomic.Int64
-	var cur atomic.Int64
+	var current atomic.Int64
 	var served atomic.Int64
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			gen2, err := g.Acquire(ctx, 7, 1)
-			if err != nil {
+			gen, acquireErr := g.Acquire(context.Background(), 7, 1)
+			if acquireErr != nil {
 				return
 			}
-			c := cur.Add(1)
+			value := current.Add(1)
 			for {
-				m := maxInFlight.Load()
-				if c <= m || maxInFlight.CompareAndSwap(m, c) {
+				maximum := maxInFlight.Load()
+				if value <= maximum || maxInFlight.CompareAndSwap(maximum, value) {
 					break
 				}
 			}
 			served.Add(1)
-			cur.Add(-1)
-			g.Release(7, gen2)
+			current.Add(-1)
+			g.Release(7, gen)
 		}()
 	}
-	// Let all three block, then release the holder.
 	time.Sleep(100 * time.Millisecond)
-	g.Release(7, gen)
+	g.Release(7, first)
 	wg.Wait()
 	if served.Load() != 3 {
-		t.Fatalf("served = %d, want 3 (no drops)", served.Load())
+		t.Fatalf("served = %d, want 3", served.Load())
 	}
 	if maxInFlight.Load() > 1 {
-		t.Fatalf("max in-flight = %d, want 1 (strict serialization)", maxInFlight.Load())
+		t.Fatalf("max in-flight = %d, want 1", maxInFlight.Load())
 	}
-	if g.InFlight(7) != 0 {
-		t.Fatalf("in-flight = %d after all released", g.InFlight(7))
+	if got := g.InFlight(7); got != 0 {
+		t.Fatalf("in-flight after release = %d, want 0", got)
 	}
 }
 
-// TestChannelGateUnlimitedAndZero: limit 0 is a no-op pass-through.
-func TestChannelGateUnlimitedAndZero(t *testing.T) {
+func TestChannelGateUnlimitedIsTracked(t *testing.T) {
 	g := NewChannelGate()
 	gen, err := g.Acquire(context.Background(), 1, 0)
-	if err != nil || gen != 0 {
-		t.Fatalf("limit 0 must pass through (gen=%d err=%v)", gen, err)
+	if err != nil || gen == 0 {
+		t.Fatalf("unlimited acquire failed (gen=%d err=%v)", gen, err)
 	}
-	// Release of a zero generation is a no-op (no panic).
-	g.Release(1, 0)
-	// Limit 1 acquired twice by the same goroutine would deadlock — instead
-	// verify a second channel is independent.
-	gen1, _ := g.Acquire(context.Background(), 10, 1)
-	gen2, _ := g.Acquire(context.Background(), 11, 1)
-	if gen1 == 0 || gen2 == 0 {
-		t.Fatal("separate channels must acquire independently")
+	if got := g.InFlight(1); got != 1 {
+		t.Fatalf("in-flight = %d, want 1", got)
 	}
-	g.Release(10, gen1)
-	g.Release(11, gen2)
+	g.Release(1, gen)
+	if got := g.InFlight(1); got != 0 {
+		t.Fatalf("in-flight after release = %d, want 0", got)
+	}
 }
 
-// TestChannelGateContextCancel: a blocked acquirer aborts when ctx is done and
-// the slot stays available.
 func TestChannelGateContextCancel(t *testing.T) {
 	g := NewChannelGate()
 	gen, _ := g.Acquire(context.Background(), 5, 1)
@@ -88,54 +74,76 @@ func TestChannelGateContextCancel(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	if _, err := g.Acquire(ctx, 5, 1); err == nil {
-		t.Fatal("blocked acquire must fail on ctx timeout")
+		t.Fatal("blocked acquire must fail on context timeout")
 	}
 	if time.Since(start) < 60*time.Millisecond {
-		t.Fatal("acquire returned before ctx deadline")
+		t.Fatal("acquire returned before context deadline")
 	}
 	g.Release(5, gen)
-	// Slot still usable afterwards.
-	gen2, err := g.Acquire(context.Background(), 5, 1)
+	next, err := g.Acquire(context.Background(), 5, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.Release(5, gen2)
+	g.Release(5, next)
 }
 
-// TestChannelGateLimitChange: raising the limit lets more requests through
-// immediately; stale generations from the old gate are dropped safely.
-func TestChannelGateLimitChange(t *testing.T) {
+func TestChannelGateLimitIncreaseWakesExistingWaiter(t *testing.T) {
 	g := NewChannelGate()
-	var inFlight atomic.Int64
-	var wg sync.WaitGroup
-	releaseAll := make(chan struct{})
-	// First wave: limit 1, 4 concurrent acquires → 3 queue.
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			gen, err := g.Acquire(context.Background(), 3, 1)
-			if err != nil {
-				return
-			}
-			inFlight.Add(1)
-			<-releaseAll
-			g.Release(3, gen)
-			inFlight.Add(-1)
-		}()
-	}
-	time.Sleep(100 * time.Millisecond)
-	if got := g.InFlight(3); got != 1 {
-		t.Fatalf("in-flight = %d, want 1", got)
-	}
-	// Raise the limit to 4: the gate is recreated; the new wave passes
-	// through, and old waiters on the old gate remain blocked (their tokens
-	// were never granted). Release the first wave.
-	close(releaseAll)
-	wg.Wait()
-	// After the old holders released, everything settles at 0.
+	first, _ := g.Acquire(context.Background(), 3, 1)
+	waiterDone := make(chan uint64, 1)
+	go func() {
+		gen, err := g.Acquire(context.Background(), 3, 1)
+		if err != nil {
+			waiterDone <- 0
+			return
+		}
+		waiterDone <- gen
+	}()
 	time.Sleep(50 * time.Millisecond)
-	if got := g.InFlight(3); got != 0 {
-		t.Fatalf("in-flight after wave = %d, want 0", got)
+	third, err := g.Acquire(context.Background(), 3, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second uint64
+	select {
+	case second = <-waiterDone:
+	case <-time.After(time.Second):
+		t.Fatal("old waiter was not woken after raising limit")
+	}
+	if second == 0 {
+		t.Fatal("old waiter failed to acquire")
+	}
+	if got := g.InFlight(3); got != 3 {
+		t.Fatalf("in-flight after live raise = %d, want 3", got)
+	}
+	g.Release(3, first)
+	g.Release(3, second)
+	g.Release(3, third)
+}
+
+func TestChannelGateLimitDecreaseWaitsForExistingHolders(t *testing.T) {
+	g := NewChannelGate()
+	first, _ := g.Acquire(context.Background(), 8, 2)
+	second, _ := g.Acquire(context.Background(), 8, 2)
+	acquired := make(chan uint64, 1)
+	go func() {
+		gen, err := g.Acquire(context.Background(), 8, 1)
+		if err == nil {
+			acquired <- gen
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	g.Release(8, first)
+	select {
+	case <-acquired:
+		t.Fatal("decreased limit granted while an old holder remained")
+	case <-time.After(50 * time.Millisecond):
+	}
+	g.Release(8, second)
+	select {
+	case gen := <-acquired:
+		g.Release(8, gen)
+	case <-time.After(time.Second):
+		t.Fatal("waiter was not granted after old holders drained")
 	}
 }

@@ -161,6 +161,14 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "prices must be >= 0")
 		return
 	}
+	if err := auth.ValidateKeyExpiry(req.ExpiresAt); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := auth.ValidateKeyAllowedIPs(req.AllowedIPs); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Keep the encrypted plaintext token so operators can re-view/copy it
 	// later (like New-API). Encrypt failure is non-fatal: the key still works,
 	// it just cannot be re-viewed (users can rotate it instead).
@@ -301,9 +309,17 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		existing.ModelDenylist = strings.TrimSpace(*req.ModelDenylist)
 	}
 	if req.ExpiresAt != nil {
+		if err := auth.ValidateKeyExpiry(*req.ExpiresAt); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		existing.ExpiresAt = strings.TrimSpace(*req.ExpiresAt)
 	}
 	if req.AllowedIPs != nil {
+		if err := auth.ValidateKeyAllowedIPs(*req.AllowedIPs); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		existing.AllowedIPs = strings.TrimSpace(*req.AllowedIPs)
 	}
 	if req.GroupName != nil {
@@ -333,6 +349,10 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		"price_prompt_per_1k":     existing.PricePromptPer1k,
 		"price_completion_per_1k": existing.PriceCompletionPer1k,
 		"price_cache_per_1k":      existing.PriceCachePer1k,
+		"model_allowlist":         existing.ModelAllowlist,
+		"model_denylist":          existing.ModelDenylist,
+		"expires_at":              existing.ExpiresAt,
+		"allowed_ips":             existing.AllowedIPs,
 		"created_at":              existing.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }

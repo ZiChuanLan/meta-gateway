@@ -33,25 +33,44 @@ func RegisterStopper(stop func()) {
 // fast stoppers (plain channel closes) still get a short grace window to
 // finish; only genuinely stuck stoppers abort the drain.
 func StopBackground(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	lifecycleMu.Lock()
 	stops := lifecycleStop
 	lifecycleStop = nil
 	lifecycleMu.Unlock()
+	if len(stops) == 0 {
+		return
+	}
+	// Start every stopper before waiting. A single stuck component must not
+	// prevent later components (which may own the database or HTTP server) from
+	// receiving their shutdown signal.
+	done := make(chan struct{})
+	var wg sync.WaitGroup
 	for i := len(stops) - 1; i >= 0; i-- {
-		done := make(chan struct{})
-		go func(stop func()) {
-			defer close(done)
-			stop()
-		}(stops[i])
+		stop := stops[i]
+		wg.Add(1)
+		go func(callback func()) {
+			defer wg.Done()
+			callback()
+		}(stop)
+	}
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return
+	case <-ctx.Done():
+		// Give fast stoppers a short grace period even when the parent shutdown
+		// context is already cancelled, while still bounding a broken stopper.
+		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop()
 		select {
 		case <-done:
-		case <-ctx.Done():
-			// Grace window: immediate stoppers finish even on a cancelled ctx.
-			select {
-			case <-done:
-			case <-time.After(100 * time.Millisecond):
-				return
-			}
+		case <-timer.C:
 		}
 	}
 }

@@ -21,6 +21,22 @@ import { formatTokens } from "../lib/format"
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog"
 import { RouteDialog } from "./models/RouteDialog"
 import { MemberDialog } from "./models/MemberDialog"
+
+function readMissingDismissed() {
+  try {
+    return sessionStorage.getItem("models.missingDismissed") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storeMissingDismissed() {
+  try {
+    sessionStorage.setItem("models.missingDismissed", "1");
+  } catch {
+    // Storage may be disabled; dismiss for this render only.
+  }
+}
 import { CooldownHint } from "./models/CooldownHint"
 import { primaryMember, sortMembers, sortMembersByPrice, isActiveCooldown, candidateState, memberFinance, memberPriceUsd, getEffectiveRoutingPolicy } from "./models/routingPolicy"
 
@@ -132,7 +148,7 @@ function ModelCatalog({
     () => new Set(),
   );
   const [missingDismissed, setMissingDismissed] = useState(
-    () => sessionStorage.getItem("models.missingDismissed") === "1",
+    readMissingDismissed,
   );
   const [contextMenu, setContextMenu] = useState<{
     routeId: number;
@@ -677,7 +693,7 @@ const enableChannel = useAdminMutation({
             aria-label={t("common.dismiss")}
             title={t("common.dismiss")}
             onClick={() => {
-              sessionStorage.setItem("models.missingDismissed", "1");
+              storeMissingDismissed();
               setMissingDismissed(true);
             }}
           >

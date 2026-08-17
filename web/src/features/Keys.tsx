@@ -1,5 +1,5 @@
-import { Copy, Eye, KeyRound, Pencil, Plus, RefreshCw, Ticket, Trash2 } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Copy, Eye, KeyRound, Pencil, Plus, RefreshCw, Search, Ticket, Trash2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -35,7 +35,6 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
   const { client } = useSession();
   const service = api(client!);
   const { t } = useI18n();
-  const queryClient = useQueryClient();
   const [count, setCount] = useState(1);
   const [quota, setQuota] = useState(1000000);
   const [minted, setMinted] = useState<Array<{ id: number; code: string }>>([]);
@@ -43,17 +42,19 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
     queryKey: ["redemption-codes"],
     queryFn: ({ signal }) => service.listRedemptionCodes(signal),
   });
-  const mint = () =>
-    service
-      .createRedemptionCodes({ count, quota_tokens: quota })
-      .then((res) => {
-        setMinted(res.items);
-        queryClient.invalidateQueries({ queryKey: ["redemption-codes"] });
-      });
-  const voidCode = (id: number) =>
-    service.deleteRedemptionCode(id).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["redemption-codes"] });
-    });
+  const mint = useAdminMutation({
+    mutationFn: () =>
+      service.createRedemptionCodes({ count, quota_tokens: quota }),
+    invalidateKeys: [["redemption-codes"]],
+    toastOnError: false,
+    onSuccess: (result) => setMinted(result.items),
+  });
+  const voidCode = useAdminMutation({
+    mutationFn: (id: number) => service.deleteRedemptionCode(id),
+    pendingIdOf: (id) => id,
+    invalidateKeys: [["redemption-codes"]],
+    toastOnError: false,
+  });
   const items = query.data?.items ?? [];
   return (
     <Dialog title={t("keys.redemptionTitle")} onClose={onClose}>
@@ -75,8 +76,12 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
             onChange={(e) => setQuota(Number(e.target.value) || 0)}
           />
         </Field>
-        <Button variant="primary" onClick={() => void mint()}>
-          {t("keys.redemptionMint")}
+        <Button
+          variant="primary"
+          disabled={mint.isPending || count < 1 || quota < 1}
+          onClick={() => mint.mutate(undefined)}
+        >
+          {mint.isPending ? t("common.working") : t("keys.redemptionMint")}
         </Button>
       </div>
       {minted.length ? (
@@ -116,15 +121,20 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
                 <button
                   type="button"
                   className="redemption-void"
-                  onClick={() => void voidCode(c.id)}
+                  disabled={voidCode.pendingId === c.id}
+                  onClick={() => voidCode.mutate(c.id)}
                 >
-                  {t("keys.redemptionVoid")}
+                  {voidCode.pendingId === c.id
+                    ? t("common.working")
+                    : t("keys.redemptionVoid")}
                 </button>
               )}
             </div>
           ))
         )}
       </div>
+      {mint.error ? <ErrorState error={mint.error} /> : null}
+      {voidCode.error ? <ErrorState error={voidCode.error} /> : null}
     </Dialog>
   );
 }
@@ -209,8 +219,11 @@ function formatCost(value?: number) {
       quota_total_tokens?: number;
       price_prompt_per_1k?: number;
       price_completion_per_1k?: number;
+	  price_cache_per_1k?: number;
       model_allowlist?: string;
       model_denylist?: string;
+	  expires_at?: string;
+	  allowed_ips?: string;
     }) => service.createKey(v),
     invalidateKeys: [["keys"], ["usage-summary"]],
     toastOnError: false,
@@ -229,8 +242,11 @@ function formatCost(value?: number) {
         quota_total_tokens?: number;
         price_prompt_per_1k?: number;
         price_completion_per_1k?: number;
+		price_cache_per_1k?: number;
         model_allowlist?: string;
         model_denylist?: string;
+		expires_at?: string;
+		allowed_ips?: string;
         reset_used?: boolean;
       };
     }) => service.updateKey(v.id, v.body),
@@ -267,7 +283,16 @@ function formatCost(value?: number) {
     onError: (err) => setRotateError(err),
   });
 
-  const rows = useMemo(() => query.data ?? [], [query.data]);
+  const searchTerm = searchParams.get("search")?.trim().toLowerCase() ?? "";
+  const rows = useMemo(() => {
+    const list = query.data ?? [];
+    if (!searchTerm) return list;
+    return list.filter(
+      (key) =>
+        key.name.toLowerCase().includes(searchTerm) ||
+        String(key.id).includes(searchTerm),
+    );
+  }, [query.data, searchTerm]);
   const pagination = useClientPagination(rows, 12);
   const pageRows = pagination.pageItems;
   const enabledCount = useMemo(
@@ -291,6 +316,21 @@ function formatCost(value?: number) {
       description={t("keys.description")}
 	  actions={
 		<>
+		  <label className="directory-search">
+			<Search size={14} aria-hidden="true" />
+			<input
+			  value={searchParams.get("search") ?? ""}
+			  onChange={(event) => {
+				const next = new URLSearchParams(searchParams);
+				const value = event.target.value;
+				if (value) next.set("search", value);
+				else next.delete("search");
+				setSearchParams(next, { replace: true });
+			  }}
+			  placeholder={t("keys.searchPlaceholder")}
+			  aria-label={t("keys.searchPlaceholder")}
+			/>
+		  </label>
 		  <Button icon={<Plus size={16} />} onClick={openCreate}>
 			{t("keys.create")}
 		  </Button>
@@ -481,8 +521,11 @@ function formatCost(value?: number) {
                 quota_total_tokens: v.quota_total_tokens,
                 price_prompt_per_1k: v.price_prompt_per_1k,
                 price_completion_per_1k: v.price_completion_per_1k,
+				price_cache_per_1k: v.price_cache_per_1k,
                 model_allowlist: v.model_allowlist,
                 model_denylist: v.model_denylist,
+				expires_at: v.expires_at ?? "",
+				allowed_ips: v.allowed_ips ?? "",
                 reset_used: v.reset_used,
               },
             })

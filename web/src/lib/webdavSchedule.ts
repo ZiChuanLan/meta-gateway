@@ -4,11 +4,9 @@
  * existing imports while check-in reuses the same preset machinery.
  */
 export {
-	SCHEDULE_PRESETS as WEBDAV_SCHEDULE_PRESETS,
 	scheduleFromSettings,
 	settingsFromSchedule,
 } from "./schedulePresets";
 export type {
-	SchedulePreset as WebDAVSchedulePreset,
 	SchedulePresetId as WebDAVSchedulePresetId,
 } from "./schedulePresets";

@@ -63,12 +63,20 @@ func isAdapterError(err error) bool {
 		errors.Is(err, adapters.ErrContentBlocked)
 }
 
+// isLocalFailure identifies errors produced by gateway-side validation or
+// response shaping. They must not poison upstream key/channel health metrics.
+func isLocalFailure(err error) bool {
+	return isAdapterError(err) || errors.Is(err, ErrResponseTooLarge)
+}
+
 func classifyForChannel(result *relay.Result, cfg domain.RetryConfig) (string, bool) {
 	if result.Err != nil {
 		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) {
 			return "cancelled", false
 		}
 		switch {
+		case errors.Is(result.Err, ErrResponseTooLarge):
+			return "response_too_large", false
 		case errors.Is(result.Err, adapters.ErrInvalidURL):
 			return "invalid_url", false
 		case errors.Is(result.Err, adapters.ErrUnsupportedPath):

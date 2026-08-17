@@ -99,6 +99,37 @@ func TestProbeCategoryRedacts(t *testing.T) {
 	}
 }
 
+func TestSanitizeConfigClampsJitterToInterval(t *testing.T) {
+	cfg := sanitizeConfig(Config{IntervalSeconds: 5, JitterSeconds: 30})
+	if cfg.JitterSeconds != 5 {
+		t.Fatalf("jitter=%d, want 5", cfg.JitterSeconds)
+	}
+	cfg = sanitizeConfig(Config{IntervalSeconds: 5, JitterSeconds: -1})
+	if cfg.JitterSeconds != 0 {
+		t.Fatalf("negative jitter=%d, want 0", cfg.JitterSeconds)
+	}
+}
+
+func TestStatusIsSortedByChannelID(t *testing.T) {
+	svc := New(nil, nil, nil, DefaultConfig())
+	svc.status[9] = ChannelHealth{ChannelID: 9}
+	svc.status[2] = ChannelHealth{ChannelID: 2}
+	svc.status[5] = ChannelHealth{ChannelID: 5}
+	status := svc.Status()
+	if len(status) != 3 || status[0].ChannelID != 2 || status[1].ChannelID != 5 || status[2].ChannelID != 9 {
+		t.Fatalf("status order=%+v", status)
+	}
+}
+
+func TestProbeOnceHandlesMissingProber(t *testing.T) {
+	svc := New(nil, nil, nil, DefaultConfig())
+	svc.probeOnce(42)
+	status := svc.Status()
+	if len(status) != 1 || status[0].State != StateError || status[0].Error == "" {
+		t.Fatalf("missing prober status=%+v", status)
+	}
+}
+
 func TestProbeConcurrencyGateHonorsHotLimit(t *testing.T) {
 	svc := New(nil, nil, nil, Config{Concurrency: 1})
 	ctx, cancel := context.WithCancel(context.Background())

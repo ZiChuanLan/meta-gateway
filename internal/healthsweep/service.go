@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log"
 	"math/rand/v2"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -84,9 +85,11 @@ type Service struct {
 	probeActive int
 	probeWake   chan struct{}
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	lifecycleMu sync.Mutex
+	ctx         context.Context
+	cancel      context.CancelFunc
+	stopping    bool
+	wg          sync.WaitGroup
 
 	mu     sync.RWMutex
 	status map[int64]ChannelHealth
@@ -102,8 +105,10 @@ func (s *Service) SetConfig(cfg Config) {
 	enabled := s.cfg.Enabled
 	s.cfgMu.Unlock()
 	s.wakeProbeWaiters()
-	if enabled && s.cancel != nil {
-		s.spawnForEnabled()
+	if enabled {
+		if ctx, ok := s.runningContext(); ok {
+			s.spawnForEnabled(ctx)
+		}
 	}
 }
 
@@ -119,8 +124,11 @@ func sanitizeConfig(cfg Config) Config {
 	if cfg.IntervalSeconds <= 0 {
 		cfg.IntervalSeconds = 300
 	}
-	if cfg.JitterSeconds < 0 || cfg.JitterSeconds > cfg.IntervalSeconds {
-		cfg.JitterSeconds = 30
+	if cfg.JitterSeconds < 0 {
+		cfg.JitterSeconds = 0
+	}
+	if cfg.JitterSeconds > cfg.IntervalSeconds {
+		cfg.JitterSeconds = cfg.IntervalSeconds
 	}
 	if cfg.DegradedThresholdMs <= 0 {
 		cfg.DegradedThresholdMs = 2000
@@ -148,22 +156,44 @@ func New(db *store.DB, probe prober, notifier *webhook.Notifier, cfg Config) *Se
 
 // Start launches one jittered probe loop per enabled channel. Idempotent.
 func (s *Service) Start() {
-	if s.cancel != nil {
+	s.lifecycleMu.Lock()
+	if s.cancel != nil || s.stopping {
+		s.lifecycleMu.Unlock()
 		return // already running
 	}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
+	ctx := s.ctx
 	s.wg.Add(1)
-	go s.supervisor()
+	s.lifecycleMu.Unlock()
+	go s.supervisor(ctx)
 }
 
 // Stop cancels the loops and waits for in-flight probes to finish.
 func (s *Service) Stop() {
+	s.lifecycleMu.Lock()
 	if s.cancel == nil {
+		s.lifecycleMu.Unlock()
 		return
 	}
-	s.cancel()
+	s.stopping = true
+	cancel := s.cancel
+	s.lifecycleMu.Unlock()
+	cancel()
 	s.wg.Wait()
+	s.lifecycleMu.Lock()
 	s.cancel = nil
+	s.ctx = nil
+	s.stopping = false
+	s.lifecycleMu.Unlock()
+}
+
+func (s *Service) runningContext() (context.Context, bool) {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.cancel == nil || s.stopping || s.ctx == nil {
+		return nil, false
+	}
+	return s.ctx, true
 }
 
 // Status returns the latest verdict for every known channel.
@@ -174,6 +204,7 @@ func (s *Service) Status() []ChannelHealth {
 	for _, h := range s.status {
 		out = append(out, h)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ChannelID < out[j].ChannelID })
 	return out
 }
 
@@ -181,17 +212,17 @@ func (s *Service) Status() []ChannelHealth {
 // picked up without a restart, and (re)spawns per-channel loops. The tick is
 // fixed at 15s (independent of the sweep interval) so both channel-set changes
 // and a runtime enable/disable toggle take effect quickly.
-func (s *Service) supervisor() {
+func (s *Service) supervisor(ctx context.Context) {
 	defer s.wg.Done()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
-	s.spawnForEnabled()
+	s.spawnForEnabled(ctx)
 	for {
 		select {
-		case <-s.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.spawnForEnabled()
+			s.spawnForEnabled(ctx)
 		}
 	}
 }
@@ -199,9 +230,20 @@ func (s *Service) supervisor() {
 // spawnForEnabled starts loops for enabled channels that have none. Loops
 // self-terminate when the channel disappears from the enabled set or the sweep
 // is switched off; the supervisor re-creates them on the next reload.
-func (s *Service) spawnForEnabled() {
+func (s *Service) spawnForEnabled(ctx context.Context) {
+	// Coordinate WaitGroup additions with Stop. Once stopping begins no new
+	// channel loop may be added while Stop is waiting for the existing set.
+	s.lifecycleMu.Lock()
+	if s.cancel == nil || s.stopping {
+		s.lifecycleMu.Unlock()
+		return
+	}
+	s.lifecycleMu.Unlock()
 	if !s.loadCfg().Enabled {
 		// Sweep disabled: do not spawn; live loops drain on their next round.
+		return
+	}
+	if s.db == nil || s.db.Channel == nil {
 		return
 	}
 	channels, err := s.db.Channel.ListEnabled()
@@ -212,11 +254,20 @@ func (s *Service) spawnForEnabled() {
 	active := make(map[int64]bool, len(channels))
 	for _, ch := range channels {
 		active[ch.ID] = true
-		if s.loopRunning(ch.ID) {
+		if !s.reserveLoop(ch.ID) {
 			continue
 		}
+		s.lifecycleMu.Lock()
+		if s.cancel == nil || s.stopping {
+			s.lifecycleMu.Unlock()
+			s.mu.Lock()
+			delete(s.status, ch.ID)
+			s.mu.Unlock()
+			break
+		}
 		s.wg.Add(1)
-		go s.channelLoop(ch.ID)
+		s.lifecycleMu.Unlock()
+		go s.channelLoop(ctx, ch.ID)
 	}
 	s.mu.Lock()
 	for id := range s.status {
@@ -227,20 +278,23 @@ func (s *Service) spawnForEnabled() {
 	s.mu.Unlock()
 }
 
-// loopRunning reports whether a probe loop is alive for the channel.
-func (s *Service) loopRunning(channelID int64) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	_, ok := s.status[channelID]
-	// The status map doubles as the liveness registry: loops insert their
-	// entry before first probe, remove it on exit.
-	return ok
+// reserveLoop atomically marks a channel as live before the goroutine is
+// launched. SetConfig and the supervisor can call spawnForEnabled concurrently;
+// reserving under the status lock prevents both callers from starting a loop.
+func (s *Service) reserveLoop(channelID int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.status[channelID]; exists {
+		return false
+	}
+	s.status[channelID] = ChannelHealth{ChannelID: channelID, State: StateUnknown}
+	return true
 }
 
 // channelLoop probes one channel forever, with jitter between rounds. It
 // re-reads the sweep config at every round so interval/jitter changes are
 // picked up live, and exits when the sweep is disabled at runtime.
-func (s *Service) channelLoop(channelID int64) {
+func (s *Service) channelLoop(ctx context.Context, channelID int64) {
 	defer s.wg.Done()
 	// Register liveness (entry with unknown state) so the supervisor does not
 	// spawn a duplicate loop.
@@ -261,22 +315,32 @@ func (s *Service) channelLoop(channelID int64) {
 			time.Duration(rand.IntN(cfg.JitterSeconds+1))*time.Second
 		timer := time.NewTimer(delay)
 		select {
-		case <-s.ctx.Done():
+		case <-ctx.Done():
 			timer.Stop()
 			return
 		case <-timer.C:
-			s.probeOnce(channelID)
+			s.probeOnceContext(ctx, channelID)
 		}
 	}
 }
 
-// probeOnce runs one bounded probe and records/grade/alert on transitions.
+// probeOnce keeps the synchronous test/maintenance hook using the service's
+// current lifecycle context when one exists.
 func (s *Service) probeOnce(channelID int64) {
-	cfg := s.loadCfg()
-	parent := s.ctx
+	parent, ok := s.runningContext()
+	if !ok {
+		parent = context.Background()
+	}
+	s.probeOnceContext(parent, channelID)
+}
+
+// probeOnceContext runs one bounded probe and records/grades/alerts on
+// transitions.
+func (s *Service) probeOnceContext(parent context.Context, channelID int64) {
 	if parent == nil {
 		parent = context.Background()
 	}
+	cfg := s.loadCfg()
 	if !s.acquireProbeSlot(parent, cfg.Concurrency) {
 		return
 	}
@@ -285,7 +349,16 @@ func (s *Service) probeOnce(channelID int64) {
 	ctx, cancel := context.WithTimeout(parent, time.Duration(cfg.TimeoutSeconds)*time.Second)
 	defer cancel()
 
-	result, err := s.probe.Probe(ctx, channelID)
+	var result *discovery.ProbeResult
+	var err error
+	if s.probe == nil {
+		err = errors.New("health probe unavailable")
+	} else {
+		result, err = s.probe.Probe(discovery.WithoutProbePersistence(ctx), channelID)
+		if err == nil && result == nil {
+			err = errors.New("health probe returned no result")
+		}
+	}
 	var health ChannelHealth
 	state := StateError
 	latency, checkedAt := 0, time.Now()
@@ -297,17 +370,21 @@ func (s *Service) probeOnce(channelID int64) {
 			state = StateDegraded
 			verdict = domain.CategoryProbeSlow
 		}
-		if s.db.Channel != nil {
+		if s.db != nil && s.db.Channel != nil {
 			_ = s.db.Channel.RecordProbeSuccessWithVerdict(channelID, checkedAt, verdict)
-			_ = s.db.HealthHistory.Append(channelID, domain.ProbeKindProbe, true, latency, verdict, checkedAt)
 			// A successful business probe proves network reachability; refresh
 			// the connectivity verdict with the same latency so the ping badge
 			// stays current without a separate network probe.
 			_ = s.db.Channel.RecordPingSuccess(channelID, checkedAt, latency)
 		}
+		if s.db != nil && s.db.HealthHistory != nil {
+			_ = s.db.HealthHistory.Append(channelID, domain.ProbeKindProbe, true, latency, verdict, checkedAt)
+		}
 	} else {
-		if s.db.Channel != nil {
+		if s.db != nil && s.db.Channel != nil {
 			_ = s.db.Channel.RecordProbeFailure(channelID, checkedAt, probeCategory(err))
+		}
+		if s.db != nil && s.db.HealthHistory != nil {
 			_ = s.db.HealthHistory.Append(channelID, domain.ProbeKindProbe, false, 0, probeCategory(err), checkedAt)
 		}
 	}

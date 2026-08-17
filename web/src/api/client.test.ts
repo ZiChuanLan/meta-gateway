@@ -90,3 +90,41 @@ describe("api.proxyLogs filters", () => {
 		expect(String(fetchMock.mock.calls[0]![0])).toBe("/admin/proxy-logs");
 	});
 });
+
+describe("api connection and usage contracts", () => {
+	it("creates a connection through the transactional endpoint", async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(JSON.stringify({}), { status: 201 }));
+		const { api } = await import("./client");
+		await api(new ApiClient("token")).createConnection({
+			name: "demo",
+			base_url: "https://api.example.com",
+			secret: "sk-secret",
+			models_csv: "gpt-test",
+		});
+		const [path, init] = fetchMock.mock.calls[0]!;
+		expect(path).toBe("/admin/connections");
+		expect(JSON.parse(String(init?.body))).toMatchObject({
+			base_url: "https://api.example.com",
+			secret: "sk-secret",
+			models_csv: "gpt-test",
+		});
+		expect(String(init?.body)).not.toContain("header_override");
+	});
+
+	it("passes an RFC3339 lower bound to usage summaries", async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+		const { api } = await import("./client");
+		await api(new ApiClient("token")).usageSummary(
+			undefined,
+			undefined,
+			"2026-08-16T00:00:00Z",
+		);
+		expect(String(fetchMock.mock.calls[0]![0])).toBe(
+			"/admin/usage/summary?since=2026-08-16T00%3A00%3A00Z",
+		);
+	});
+});

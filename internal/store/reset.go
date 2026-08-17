@@ -59,6 +59,15 @@ func (db *DB) FactoryReset() (map[string]int64, error) {
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("factory reset commit: %w", err)
 	}
+	// The reset bypasses repository write paths, so invalidate every process
+	// cache only after the transaction is durable. Clearing the site cache too
+	// is intentional: sites survive the reset, but callers must observe the
+	// post-reset database state rather than an object retained before it.
+	db.Site.ClearCache()
+	db.Credential.ClearCache()
+	db.DownstreamKey.ClearCache()
+	db.Group.ClearCache()
+	db.ModelRatio.ClearCache()
 	return deleted, nil
 }
 

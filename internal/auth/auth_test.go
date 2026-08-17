@@ -55,6 +55,20 @@ func TestAdminMiddlewareAcceptsAnyRotationToken(t *testing.T) {
 	}
 }
 
+func TestBearerRejectsAmbiguousAuthorizationHeaders(t *testing.T) {
+	handler := AdminMiddleware("token-one")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Add("Authorization", "Bearer token-one")
+	req.Header.Add("Authorization", "Bearer token-one")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("duplicate authorization headers status=%d, want 401", rec.Code)
+	}
+}
+
 func TestSecureCompareAnyLengthSafe(t *testing.T) {
 	if secureCompareAny("abc", []string{"abcd"}) {
 		t.Fatal("different lengths must not match")
@@ -179,5 +193,20 @@ func TestCheckKeyAllowedIPs(t *testing.T) {
 	}
 	if err := checkKeyAllowedIPs("1.2.3.4", "not-an-ip"); err == nil {
 		t.Fatal("invalid client IP must fail")
+	}
+}
+
+func TestValidateDownstreamKeyConstraints(t *testing.T) {
+	if err := ValidateKeyExpiry("2030-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKeyExpiry("not-a-time"); err == nil {
+		t.Fatal("invalid expiry accepted")
+	}
+	if err := ValidateKeyAllowedIPs("1.2.3.4, 10.0.0.0/8"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKeyAllowedIPs("1.2.3.4,not-an-ip"); err == nil {
+		t.Fatal("invalid allowed IP accepted")
 	}
 }

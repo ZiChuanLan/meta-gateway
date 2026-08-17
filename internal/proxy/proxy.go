@@ -30,6 +30,11 @@ var (
 	// ErrGuardRejected marks a request refused by a sensitive-prompt guard
 	// rule; the relay surfaces it as 400 with the policy message.
 	ErrGuardRejected = errors.New("proxy: request rejected by prompt guard")
+	ErrModelTooLong  = errors.New("proxy: model name too long")
+	// ErrResponseTooLarge marks an upstream body that exceeds the bounded
+	// transformation buffer. It is a local, non-retryable failure: replaying a
+	// charged generation would be worse than returning a gateway error.
+	ErrResponseTooLarge = errors.New("proxy: upstream response too large")
 )
 
 type Selector interface {
@@ -103,7 +108,7 @@ type Service struct {
 	concurrencyAware atomic.Bool
 	concurrencyLimit atomic.Int64
 	// notifier delivers operational webhooks (auto-disable/recovery).
-	notifier *webhook.Notifier
+	notifier atomic.Pointer[webhook.Notifier]
 	// credentialRefresher re-establishes expired session credentials on 401
 	// (see CredentialRefresher). nil disables the refresh-retry path.
 	credentialRefresher CredentialRefresher
@@ -239,7 +244,7 @@ func (s *Service) SetStableFirstPromote(n int) {
 
 // SetWebhookNotifier installs the operational webhook notifier (nil disables).
 func (s *Service) SetWebhookNotifier(notifier *webhook.Notifier) {
-	s.notifier = notifier
+	s.notifier.Store(notifier)
 }
 
 // SetCredentialRefresher wires the 401 session-refresh hook (check-in

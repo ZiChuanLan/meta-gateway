@@ -87,3 +87,112 @@ func TestRestoreRejectsUnsafeOrCorruptBackup(t *testing.T) {
 		t.Fatal("accepted corrupt backup")
 	}
 }
+
+func TestBackupRetentionPrunesFilesAndHistory(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	service := NewWithRetention(db, backupDir, 2)
+	for i := 0; i < 3; i++ {
+		if _, err := service.Create(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := 0
+	for _, entry := range entries {
+		if safeName.MatchString(entry.Name()) {
+			files++
+		}
+	}
+	if files != 2 {
+		t.Fatalf("retained files=%d, want 2", files)
+	}
+	records, err := service.List(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("retained records=%d, want 2", len(records))
+	}
+}
+
+func TestBackupRetentionDoesNotEvictRestorableRecordsForNewerFailures(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service := NewWithRetention(db, filepath.Join(t.TempDir(), "backups"), 2)
+	for i := 0; i < 2; i++ {
+		if _, err := service.Create(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failed := &store.BackupRecord{Name: "failed-newer-attempt.db", Status: "failed", Category: "snapshot"}
+	if err := db.BackupRecord.Insert(failed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	records, err := service.List(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("retained records=%d, want 2", len(records))
+	}
+	for _, record := range records {
+		if record.Status != "success" {
+			t.Fatalf("newer failure evicted a restorable backup record: %+v", records)
+		}
+		if _, err := os.Stat(filepath.Join(service.dir, record.Name)); err != nil {
+			t.Fatalf("retained record has no backup file: %s: %v", record.Name, err)
+		}
+	}
+}
+
+func TestRestoreMovesActiveWALAlongsideRollback(t *testing.T) {
+	sourceDir := t.TempDir()
+	dataDir := t.TempDir()
+	db, err := store.Open(sourceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := New(db, filepath.Join(t.TempDir(), "backups"))
+	record, err := service.Create(t.Context())
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(dataDir, "meta-gateway.db")
+	if err := copyExclusive(filepath.Join(service.dir, record.Name), active); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(active+"-wal", []byte("sidecar"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rollback, err := Restore(dataDir, service.dir, record.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rollback == "" {
+		t.Fatal("expected rollback path")
+	}
+	if _, err := os.Stat(rollback + "-wal"); err != nil {
+		t.Fatalf("rollback WAL sidecar not preserved: %v", err)
+	}
+	if _, err := os.Stat(active + "-wal"); !os.IsNotExist(err) {
+		t.Fatalf("active WAL sidecar should not remain, err=%v", err)
+	}
+}

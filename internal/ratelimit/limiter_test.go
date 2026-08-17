@@ -52,3 +52,19 @@ func TestLimiterAutomaticallyCleansIdleKeys(t *testing.T) {
 		t.Fatal("current key was not retained")
 	}
 }
+
+func TestLimiterBoundsBucketMap(t *testing.T) {
+	now := time.Unix(100, 0)
+	limiter := New(60, 1)
+	limiter.now = func() time.Time { return now }
+	limiter.nextCleanup = now.Add(time.Hour)
+	for i := 0; i < maxBuckets; i++ {
+		limiter.buckets[int64(i)] = &bucket{tokens: 1, updated: now, lastSeen: now}
+	}
+	if ok, _ := limiter.Allow(maxBuckets + 1); !ok {
+		t.Fatal("new bucket should be admitted")
+	}
+	if len(limiter.buckets) != maxBuckets {
+		t.Fatalf("bucket count=%d, want %d", len(limiter.buckets), maxBuckets)
+	}
+}

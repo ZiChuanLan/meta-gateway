@@ -175,6 +175,16 @@ export function Dashboard() {
     queryFn: ({ signal }) => s.usageSummary(undefined, signal),
     refetchInterval: 30_000,
   });
+  const recentSummary = useQuery({
+    queryKey: ["usage-summary", "24h"],
+    queryFn: ({ signal }) =>
+      s.usageSummary(
+        undefined,
+        signal,
+        new Date(Date.now() - HOUR_24).toISOString(),
+      ),
+    refetchInterval: 30_000,
+  });
   const usage = useQuery({
     queryKey: ["usage-latest"],
     queryFn: ({ signal }) => s.usageRecords({ limit: 500 }, signal),
@@ -306,7 +316,10 @@ export function Dashboard() {
     0,
   );
   const recentRequests = recent.length;
-  const recentCost = summary.data?.estimated_cost ?? 0;
+  const recentCost =
+    recentSummary.data?.cost ??
+    recentSummary.data?.estimated_cost ??
+    recent.reduce((sum, row) => sum + (row.cost ?? 0), 0);
   const cacheRead24h = recent.reduce(
     (sum, row) => sum + (row.cache_read_tokens ?? 0),
     0,
@@ -485,7 +498,7 @@ export function Dashboard() {
             },
             {
               label: t("dashboard.cost24h"),
-              value: summary.isPending ? "—" : formatCost(recentCost),
+              value: recentSummary.isPending ? "—" : formatCost(recentCost),
               hint: t("dashboard.cost24hHint"),
               icon: <Wallet size={14} />,
               tone: "warning",

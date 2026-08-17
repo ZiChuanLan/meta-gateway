@@ -105,7 +105,7 @@ function ProxyLogsPanel() {
   const [params, setParams] = useSearchParams();
 	const channelId = positiveId(params.get("channel_id"));
 	const modelParam = params.get("model")?.trim() || "";
-	const failedOnly = params.get("status") !== "all";
+	const failedOnly = params.get("status") === "failed";
 	const upstreamIdParam = params.get("upstream_request_id")?.trim() || "";
 	const [modelDraft, setModelDraft] = useState(modelParam);
 	const [upstreamIdDraft, setUpstreamIdDraft] = useState(upstreamIdParam);
@@ -134,7 +134,7 @@ function ProxyLogsPanel() {
     queryKey: ["proxy-logs", filters],
     queryFn: ({ signal }) => service.proxyLogs(filters, signal),
   });
-  // AAH-style latency histogram: load once on mount + on refresh.
+  // AAH-style latency histogram: load once on mount and with manual refresh.
   const loadHistogram = () => {
     service
       .proxyLogLatencyHistogram(1000)
@@ -228,7 +228,7 @@ function ProxyLogsPanel() {
             type="checkbox"
             checked={failedOnly}
             onChange={(e) =>
-              setFilter({ status: e.target.checked ? null : "all" })
+              setFilter({ status: e.target.checked ? "failed" : null })
             }
           />
           <span>{t("logsPage.failedOnly")}</span>
@@ -246,6 +246,7 @@ function ProxyLogsPanel() {
           icon={<RefreshCw size={16} />}
           onClick={() => {
             void logs.refetch();
+            loadHistogram();
           }}
         >
           {t("common.refresh")}

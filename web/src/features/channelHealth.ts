@@ -7,7 +7,7 @@ import type { ChannelOverview } from "../api/types";
  * members are unhealthy. Conversely, a health verdict must never be used to
  * claim that the host is unreachable; that is the connectivity dimension.
  */
-export const CHANNEL_HEALTH_STATES = [
+const CHANNEL_HEALTH_STATES = [
   "disabled",
   "unhealthy",
   "degraded",
@@ -15,32 +15,29 @@ export const CHANNEL_HEALTH_STATES = [
   "unknown",
 ] as const;
 
-export type ChannelHealthState = (typeof CHANNEL_HEALTH_STATES)[number];
+type ChannelHealthState = (typeof CHANNEL_HEALTH_STATES)[number];
 
-export const CHANNEL_CONNECTIVITY_STATES = [
+const CHANNEL_CONNECTIVITY_STATES = [
   "unknown",
   "reachable",
   "unreachable",
 ] as const;
 
-export type ChannelConnectivityState =
+type ChannelConnectivityState =
   (typeof CHANNEL_CONNECTIVITY_STATES)[number];
 
-export const CHANNEL_READINESS_STATES = [
-  "disabled",
-  "auto_disabled",
-  "blocked",
-  "missing_key",
-  "token_invalid",
-  "unhealthy",
-  "degraded",
-  "ready",
-  "unverified",
-] as const;
+export type ChannelReadiness =
+  | "disabled"
+  | "auto_disabled"
+  | "blocked"
+  | "missing_key"
+  | "token_invalid"
+  | "unhealthy"
+  | "degraded"
+  | "ready"
+  | "unverified";
 
-export type ChannelReadiness = (typeof CHANNEL_READINESS_STATES)[number];
-
-export const CHANNEL_ACCOUNT_STATES = [
+const CHANNEL_ACCOUNT_STATES = [
   "unknown",
   "ok",
   "invalid",
@@ -49,7 +46,7 @@ export const CHANNEL_ACCOUNT_STATES = [
   "failed",
 ] as const;
 
-export type ChannelAccountState = (typeof CHANNEL_ACCOUNT_STATES)[number];
+type ChannelAccountState = (typeof CHANNEL_ACCOUNT_STATES)[number];
 
 type LiveConnectivity = { reachable: boolean } | null | undefined;
 

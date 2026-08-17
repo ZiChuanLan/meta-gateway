@@ -2,15 +2,25 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	pathpkg "path"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/plugins"
+)
+
+type sidecarAuthMode uint8
+
+const (
+	sidecarAuthUnauthorized sidecarAuthMode = iota
+	sidecarAuthAdmin
+	sidecarAuthPlugin
 )
 
 type PluginHandler struct {
@@ -19,14 +29,10 @@ type PluginHandler struct {
 	// SetTokenVerifier for the public proxy route, which accepts the token
 	// via ?t= because iframes cannot send Authorization headers.
 	verifyAdmin func(string) bool
-	// public is the router prefix routes are mounted on; prefixRoutes tracks
-	// what has already been registered (chi rejects duplicate patterns).
-	public       chi.Router
-	prefixRoutes map[string]bool
 }
 
 func NewPluginHandler(service *plugins.Service) *PluginHandler {
-	return &PluginHandler{service: service, prefixRoutes: map[string]bool{}}
+	return &PluginHandler{service: service}
 }
 
 // SetTokenVerifier wires the admin token validator used by the public
@@ -75,6 +81,7 @@ func (h *PluginHandler) marketInstall(w http.ResponseWriter, r *http.Request) {
 		case strings.Contains(err.Error(), "plugin_market_unavailable"),
 			strings.Contains(err.Error(), "plugin_manifest_"),
 			strings.Contains(err.Error(), "plugin_health_check_failed"),
+			strings.Contains(err.Error(), "plugin_path_invalid"),
 			strings.Contains(err.Error(), "plugin_api_prefix_"):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
@@ -82,7 +89,6 @@ func (h *PluginHandler) marketInstall(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	h.ensurePrefixRoutes()
 	writeJSON(w, http.StatusCreated, rec)
 }
 
@@ -96,8 +102,10 @@ func (h *PluginHandler) RegisterPublic(r chi.Router) {
 	// Root-level API prefixes declared by sidecar plugins (e.g. CPAMC calls
 	// /v0/management/*). Registering them here lets plugin frontends work
 	// with their default API base — no manual address configuration.
-	h.public = r
-	h.ensurePrefixRoutes()
+	// Register one immutable fallback route. Adding/removing chi routes while
+	// requests are being served mutates its radix tree and races with readers;
+	// the dispatcher below resolves the current prefix list per request.
+	r.Handle("/*", http.HandlerFunc(h.forwardAPIPrefix))
 }
 
 func (h *PluginHandler) catalog(w http.ResponseWriter, _ *http.Request) {
@@ -212,6 +220,7 @@ func (h *PluginHandler) registerSidecar(w http.ResponseWriter, r *http.Request) 
 			strings.Contains(err.Error(), "plugin_url_invalid"),
 			strings.Contains(err.Error(), "plugin_manifest_"),
 			strings.Contains(err.Error(), "plugin_health_check_failed"),
+			strings.Contains(err.Error(), "plugin_path_invalid"),
 			strings.Contains(err.Error(), "plugin_api_prefix_"):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
@@ -219,7 +228,6 @@ func (h *PluginHandler) registerSidecar(w http.ResponseWriter, r *http.Request) 
 		}
 		return
 	}
-	h.ensurePrefixRoutes()
 	writeJSON(w, http.StatusCreated, rec)
 }
 
@@ -259,6 +267,7 @@ func (h *PluginHandler) updateSidecar(w http.ResponseWriter, r *http.Request) {
 			strings.Contains(err.Error(), "plugin_url_invalid"),
 			strings.Contains(err.Error(), "plugin_health_check_failed"),
 			strings.Contains(err.Error(), "plugin_not_sidecar"),
+			strings.Contains(err.Error(), "plugin_path_invalid"),
 			strings.Contains(err.Error(), "plugin_api_prefix_"):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
@@ -266,7 +275,6 @@ func (h *PluginHandler) updateSidecar(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	h.ensurePrefixRoutes()
 	writeJSON(w, http.StatusOK, rec)
 }
 
@@ -276,15 +284,15 @@ func (h *PluginHandler) updateSidecar(w http.ResponseWriter, r *http.Request) {
 // Authorization header or the ?t= query parameter (for iframe embedding);
 // every proxied request carries X-Plugin-Key when the plugin has an API key.
 //
-// Authorization handling: a valid admin token is stripped before forwarding.
-// A non-admin Authorization header (e.g. CPAMC sends its own management key
-// as `Authorization: Bearer <key>`) is passed through untouched so the
-// plugin can authenticate — the plugin's key is its own security boundary.
+// Authorization handling is deliberately split into two explicit modes:
+// a valid admin token is stripped before forwarding, while a plugin token is
+// accepted only when it exactly matches the registered API key.  The old
+// behaviour treated every non-empty Authorization value as a plugin token;
+// that made a garbage header sufficient to reach a sidecar with the gateway's
+// injected X-Plugin-Key.
 func (h *PluginHandler) proxySidecar(w http.ResponseWriter, r *http.Request) {
+	setPluginSecurityHeaders(w)
 	id := chi.URLParam(r, "id")
-	// Plugins recovered lazily from the store may declare an API prefix that
-	// was not mounted at boot — mount it on first proxy use (idempotent).
-	h.ensurePrefixRoutes()
 	if !h.service.IsEnabled(id) {
 		writeError(w, http.StatusNotFound, "plugin_not_enabled")
 		return
@@ -294,33 +302,28 @@ func (h *PluginHandler) proxySidecar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "plugin_not_sidecar")
 		return
 	}
-	// Verify the admin token: Authorization header, or ?t= for iframes.
-	token := ""
-	if bearer := r.Header.Get("Authorization"); strings.HasPrefix(bearer, "Bearer ") {
-		token = strings.TrimPrefix(bearer, "Bearer ")
-	}
-	if token == "" {
-		token = r.URL.Query().Get("t")
-	}
-	authorized := h.verifyAdmin != nil && h.verifyAdmin(token)
-	passThrough := r.Header.Get("Authorization") != "" && !authorized
-	if !authorized && !passThrough {
+	authMode, pluginToken := h.sidecarAuth(r, spec.APIKey)
+	if authMode == sidecarAuthUnauthorized {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 	target, err := url.Parse(spec.URL)
-	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawPath != "" || !validPluginProxyPath(target.Path) {
 		writeError(w, http.StatusBadGateway, "plugin_url_invalid")
 		return
 	}
-	path := chi.URLParam(r, "*")
-	if path == "" || path == "/" {
-		path = spec.PagePath
+	requestPath := chi.URLParam(r, "*")
+	if requestPath == "" || requestPath == "/" {
+		requestPath = spec.PagePath
 	}
-	if path == "" {
-		path = "/"
+	if !validPluginProxyPath(requestPath) {
+		writeError(w, http.StatusBadRequest, "plugin_path_invalid")
+		return
 	}
-	target.Path = strings.TrimRight(target.Path, "/") + "/" + strings.TrimLeft(path, "/")
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	target.Path = strings.TrimRight(target.Path, "/") + "/" + strings.TrimLeft(requestPath, "/")
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	// NewSingleHostReverseProxy only rewrites scheme/host; the path must be
 	// set explicitly or the plugin receives /admin/plugins/{id}/proxy/… and
@@ -332,32 +335,22 @@ func (h *PluginHandler) proxySidecar(w http.ResponseWriter, r *http.Request) {
 		if spec.APIKey != "" {
 			req.Header.Set("X-Plugin-Key", spec.APIKey)
 		}
-		if !passThrough {
+		if authMode == sidecarAuthAdmin {
 			req.Header.Del("Authorization")
+		} else if authMode == sidecarAuthPlugin {
+			// Normalize the accepted plugin credential so surrounding whitespace
+			// cannot be interpreted differently by the sidecar.
+			req.Header.Set("Authorization", "Bearer "+pluginToken)
 		}
 		q := req.URL.Query()
 		q.Del("t")
 		req.URL.RawQuery = q.Encode()
 	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		setPluginSecurityHeaderValues(resp.Header)
+		return nil
+	}
 	proxy.ServeHTTP(w, r)
-}
-
-// ensurePrefixRoutes mounts root-level API prefixes declared by sidecar
-// plugins that are not registered yet. chi rejects duplicate patterns, so
-// already-mounted prefixes are tracked and skipped. Routes for uninstalled
-// plugins stay mounted but return plugin_not_enabled (same as the proxy).
-func (h *PluginHandler) ensurePrefixRoutes() {
-	if h.public == nil {
-		return
-	}
-	for _, fw := range h.service.PrefixForwarders() {
-		if h.prefixRoutes[fw.Prefix] {
-			continue
-		}
-		pattern := fw.Prefix + "/*"
-		h.public.Handle(pattern, http.HandlerFunc(h.forwardAPIPrefix))
-		h.prefixRoutes[fw.Prefix] = true
-	}
 }
 
 // forwardAPIPrefix reverse-proxies a root-level API prefix (declared via
@@ -365,6 +358,7 @@ func (h *PluginHandler) ensurePrefixRoutes() {
 // → {plugin}/v0/management/*. Authentication is the same as proxySidecar:
 // Authorization header or ?t= query.
 func (h *PluginHandler) forwardAPIPrefix(w http.ResponseWriter, r *http.Request) {
+	setPluginSecurityHeaders(w)
 	// Look up the plugin owning this prefix (first match wins).
 	var owner *plugins.PrefixForwarder
 	for _, fw := range h.service.PrefixForwarders() {
@@ -377,24 +371,18 @@ func (h *PluginHandler) forwardAPIPrefix(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "plugin_not_enabled")
 		return
 	}
-	// Verify the admin token (header or ?t= for iframes). A non-admin
-	// Authorization header is passed through (plugin's own key, e.g. CPAMC).
-	token := ""
-	if bearer := r.Header.Get("Authorization"); strings.HasPrefix(bearer, "Bearer ") {
-		token = strings.TrimPrefix(bearer, "Bearer ")
-	}
-	if token == "" {
-		token = r.URL.Query().Get("t")
-	}
-	authorized := h.verifyAdmin != nil && h.verifyAdmin(token)
-	passThrough := r.Header.Get("Authorization") != "" && !authorized
-	if !authorized && !passThrough {
+	authMode, pluginToken := h.sidecarAuth(r, owner.Spec.APIKey)
+	if authMode == sidecarAuthUnauthorized {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 	target, err := url.Parse(owner.Spec.URL)
-	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawPath != "" || !validPluginProxyPath(target.Path) {
 		writeError(w, http.StatusBadGateway, "plugin_url_invalid")
+		return
+	}
+	if !validPluginProxyPath(r.URL.Path) {
+		writeError(w, http.StatusBadRequest, "plugin_path_invalid")
 		return
 	}
 	// Preserve the full prefix path: /v0/management/login → {url}/v0/management/login.
@@ -408,14 +396,108 @@ func (h *PluginHandler) forwardAPIPrefix(w http.ResponseWriter, r *http.Request)
 		if owner.Spec.APIKey != "" {
 			req.Header.Set("X-Plugin-Key", owner.Spec.APIKey)
 		}
-		if !passThrough {
+		if authMode == sidecarAuthAdmin {
 			req.Header.Del("Authorization")
+		} else if authMode == sidecarAuthPlugin {
+			req.Header.Set("Authorization", "Bearer "+pluginToken)
 		}
 		q := req.URL.Query()
 		q.Del("t")
 		req.URL.RawQuery = q.Encode()
 	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		setPluginSecurityHeaderValues(resp.Header)
+		return nil
+	}
 	proxy.ServeHTTP(w, r)
+}
+
+// sidecarAuth authenticates a public sidecar request and returns the forwarding
+// mode.  A query token is accepted only as an admin token for iframe bootstrap;
+// plugin API credentials must arrive in an Authorization header and match the
+// key explicitly registered for that sidecar.  This prevents arbitrary bearer
+// values from becoming an authentication bypass.
+func (h *PluginHandler) sidecarAuth(r *http.Request, pluginKey string) (sidecarAuthMode, string) {
+	if r == nil {
+		return sidecarAuthUnauthorized, ""
+	}
+	authValues := r.Header.Values("Authorization")
+	queryValues, hasQueryToken := r.URL.Query()["t"]
+	if len(queryValues) > 1 || (hasQueryToken && len(authValues) > 0) {
+		// Keep header and query authentication as mutually exclusive modes;
+		// duplicate query values otherwise make it unclear which credential was
+		// actually verified and are easy to introduce through URL concatenation.
+		return sidecarAuthUnauthorized, ""
+	}
+	if len(authValues) > 1 {
+		return sidecarAuthUnauthorized, ""
+	}
+	if len(authValues) == 1 {
+		header := strings.TrimSpace(authValues[0])
+		parts := strings.SplitN(header, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			return sidecarAuthUnauthorized, ""
+		}
+		token := strings.TrimSpace(parts[1])
+		if token == "" {
+			return sidecarAuthUnauthorized, ""
+		}
+		if h.verifyAdmin != nil && h.verifyAdmin(token) {
+			return sidecarAuthAdmin, ""
+		}
+		if pluginKey != "" && equalSecret(token, pluginKey) {
+			return sidecarAuthPlugin, token
+		}
+		return sidecarAuthUnauthorized, ""
+	}
+	// The query form exists solely for iframe navigation. Never treat it as a
+	// plugin credential, since query strings are routinely copied and logged.
+	queryToken := ""
+	if len(queryValues) == 1 {
+		queryToken = strings.TrimSpace(queryValues[0])
+	}
+	if queryToken != "" && h.verifyAdmin != nil && h.verifyAdmin(queryToken) {
+		return sidecarAuthAdmin, ""
+	}
+	return sidecarAuthUnauthorized, ""
+}
+
+func setPluginSecurityHeaders(w http.ResponseWriter) {
+	setPluginSecurityHeaderValues(w.Header())
+}
+
+func setPluginSecurityHeaderValues(header http.Header) {
+	header.Set("Cache-Control", "no-store")
+	header.Set("Pragma", "no-cache")
+	header.Set("Referrer-Policy", "no-referrer")
+}
+
+// validPluginProxyPath accepts a normalized URL path and rejects traversal or
+// encoded separators before it is joined with a sidecar base path. The
+// gateway deliberately does not decode or normalize incoming paths here:
+// either representation must already be canonical.
+func validPluginProxyPath(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "/" {
+		return true
+	}
+	if strings.ContainsAny(raw, "?#%\\") || strings.Contains(raw, "//") || strings.IndexByte(raw, 0) >= 0 {
+		return false
+	}
+	trimmed := strings.Trim(raw, "/")
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return pathpkg.Clean("/"+trimmed) == "/"+trimmed
+}
+
+func equalSecret(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func writePluginError(w http.ResponseWriter, err error) {

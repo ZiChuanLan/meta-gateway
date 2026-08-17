@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,13 @@ type downstreamKeyIDContextKey struct{}
 type downstreamScopesContextKey struct{}
 type downstreamModelFilterContextKey struct{}
 type downstreamKeyContextKey struct{}
+type clientIPContextKey struct{}
+
+// WithClientIP carries the address resolved by the trusted-proxy middleware
+// into the auth package without coupling auth to the HTTP API package.
+func WithClientIP(ctx context.Context, ip string) context.Context {
+	return context.WithValue(ctx, clientIPContextKey{}, strings.TrimSpace(ip))
+}
 
 // DownstreamKey returns the authenticated downstream key attached by
 // DownstreamAuth. Nil when unauthenticated or not attached.
@@ -256,12 +264,40 @@ func ValidateAdminToken(token string, candidates []string, verifySession func(st
 // SessionPrefix marks signed admin session tokens (login after TOTP).
 const SessionPrefix = "mg-sess."
 
+// SessionSigningKey derives the session signing key from the master key and
+// the current admin-token set. Rotating ADMIN_TOKEN therefore invalidates
+// sessions issued under the previous token set.
+func SessionSigningKey(masterKey []byte, adminTokens []string) []byte {
+	tokens := make([]string, 0, len(adminTokens))
+	for _, token := range adminTokens {
+		if token = strings.TrimSpace(token); token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	sort.Strings(tokens)
+	mac := hmac.New(sha256.New, masterKey)
+	mac.Write([]byte("admin-session-key:"))
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		mac.Write([]byte(strconv.Itoa(len(token))))
+		mac.Write([]byte(":" + token))
+	}
+	return mac.Sum(nil)
+}
+
 // SignSessionToken issues a short-lived signed admin session token for a raw
-// admin token holder who completed the TOTP step. The token is
-// "mg-sess.<exp_unix>.<base64url(hmac)>"; expiry is embedded in the payload.
+// admin token holder who completed the TOTP step. A random nonce prevents two
+// logins in the same second from producing the same token.
 func SignSessionToken(masterKey []byte, ttl time.Duration) (string, error) {
 	exp := time.Now().Add(ttl).Unix()
-	payload := fmt.Sprintf("%d", exp)
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return "", fmt.Errorf("auth: session nonce: %w", err)
+	}
+	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+	payload := fmt.Sprintf("%d.%s", exp, nonce)
 	mac := hmac.New(sha256.New, masterKey)
 	mac.Write([]byte("admin-session:" + payload))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
@@ -274,9 +310,17 @@ func VerifySessionToken(masterKey []byte, token string) bool {
 		return false
 	}
 	rest := strings.TrimPrefix(token, SessionPrefix)
-	payload, sig, ok := strings.Cut(rest, ".")
-	if !ok || payload == "" || sig == "" {
+	parts := strings.Split(rest, ".")
+	if len(parts) != 2 && len(parts) != 3 {
 		return false
+	}
+	payload := parts[0]
+	sig := parts[len(parts)-1]
+	if payload == "" || sig == "" || (len(parts) == 3 && parts[1] == "") {
+		return false
+	}
+	if len(parts) == 3 {
+		payload += "." + parts[1]
 	}
 	expected := hmac.New(sha256.New, masterKey)
 	expected.Write([]byte("admin-session:" + payload))
@@ -284,7 +328,7 @@ func VerifySessionToken(masterKey []byte, token string) bool {
 	if err != nil || !hmac.Equal(expected.Sum(nil), sigBytes) {
 		return false
 	}
-	exp, err := strconv.ParseInt(payload, 10, 64)
+	exp, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || exp < time.Now().Unix() {
 		return false
 	}
@@ -392,15 +436,19 @@ func ValidAdminToken(presented string, candidates []string) bool {
 }
 
 func extractBearer(r *http.Request) (string, error) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
+	if r == nil {
 		return "", fmt.Errorf("missing Authorization header")
 	}
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 {
+		return "", fmt.Errorf("missing Authorization header")
+	}
+	authHeader := strings.TrimSpace(values[0])
 	parts := strings.SplitN(authHeader, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
 		return "", fmt.Errorf("invalid Authorization header format")
 	}
-	return parts[1], nil
+	return strings.TrimSpace(parts[1]), nil
 }
 
 // secureCompareAny compares presented against every candidate without early exit
@@ -412,6 +460,7 @@ func secureCompareAny(presented string, candidates []string) bool {
 	matched := 0
 	presentedBytes := []byte(presented)
 	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
 		candidateBytes := []byte(candidate)
 		if len(presentedBytes) != len(candidateBytes) {
 			// Keep work roughly constant: compare against presented itself when lengths differ.
@@ -429,13 +478,49 @@ func checkKeyExpiry(expiresAt string) error {
 	if expiresAt == "" {
 		return nil
 	}
-	expires, err := time.Parse(time.RFC3339, expiresAt)
-	if err != nil {
+	if err := ValidateKeyExpiry(expiresAt); err != nil {
 		// Unparseable expiry: treat as expired so a corrupt row cannot bypass.
 		return fmt.Errorf("auth: key expired")
 	}
+	expires, _ := time.Parse(time.RFC3339, expiresAt)
 	if time.Now().After(expires) {
 		return fmt.Errorf("auth: key expired")
+	}
+	return nil
+}
+
+// ValidateKeyExpiry validates an admin-supplied downstream-key expiry without
+// applying the current-time check used by authentication.
+func ValidateKeyExpiry(expiresAt string) error {
+	expiresAt = strings.TrimSpace(expiresAt)
+	if expiresAt == "" {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, expiresAt); err != nil {
+		return fmt.Errorf("expires_at must be RFC3339")
+	}
+	return nil
+}
+
+// ValidateKeyAllowedIPs validates every entry in an admin-supplied key
+// allowlist. Authentication intentionally fails closed for malformed entries;
+// rejecting them at save time makes configuration errors visible immediately.
+func ValidateKeyAllowedIPs(allowedIPs string) error {
+	for _, entry := range strings.FieldsFunc(strings.TrimSpace(allowedIPs), func(r rune) bool {
+		return r == '\n' || r == ',' || r == ';'
+	}) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "/") {
+			if _, _, err := net.ParseCIDR(entry); err == nil {
+				continue
+			}
+		} else if net.ParseIP(entry) != nil {
+			continue
+		}
+		return fmt.Errorf("allowed_ips contains invalid address %q", entry)
 	}
 	return nil
 }
@@ -472,6 +557,9 @@ func checkKeyAllowedIPs(allowedIps, clientIP string) error {
 // clientIP extracts the request source IP (remote address, no forwarded
 // headers — forwarded handling is governed by TRUSTED_PROXY_CIDRS upstream).
 func clientIP(r *http.Request) string {
+	if value, ok := r.Context().Value(clientIPContextKey{}).(string); ok && value != "" {
+		return value
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return strings.TrimSpace(r.RemoteAddr)

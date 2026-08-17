@@ -21,6 +21,7 @@ type CredentialStore struct {
 	byID map[int64]*domain.Credential
 	// bySiteKeys caches the enabled api_key pool per site (nil value = cached empty).
 	bySiteKeys map[int64][]domain.Credential
+	generation uint64
 }
 
 func newCredentialStore(db *sql.DB) *CredentialStore {
@@ -37,6 +38,7 @@ func (s *CredentialStore) ClearCache() {
 	s.mu.Lock()
 	s.byID = make(map[int64]*domain.Credential)
 	s.bySiteKeys = make(map[int64][]domain.Credential)
+	s.generation++
 	s.mu.Unlock()
 }
 
@@ -54,6 +56,7 @@ func cloneCredential(credential *domain.Credential) *domain.Credential {
 func (s *CredentialStore) invalidate(id int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.generation++
 	if old, ok := s.byID[id]; ok {
 		delete(s.bySiteKeys, old.SiteID)
 		delete(s.byID, id)
@@ -66,13 +69,15 @@ func (s *CredentialStore) invalidate(id int64) {
 	}
 }
 
-func (s *CredentialStore) cachePut(credential *domain.Credential) {
+func (s *CredentialStore) cachePutIfGeneration(credential *domain.Credential, generation uint64) {
 	if credential == nil || credential.ID <= 0 {
 		return
 	}
 	cloned := cloneCredential(credential)
 	s.mu.Lock()
-	s.byID[cloned.ID] = cloned
+	if s.generation == generation {
+		s.byID[cloned.ID] = cloned
+	}
 	s.mu.Unlock()
 }
 
@@ -102,6 +107,7 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Credential, error) {
 	s.mu.RLock()
 	cached, ok := s.bySiteKeys[siteID]
+	generation := s.generation
 	s.mu.RUnlock()
 	if ok {
 		return cloneCredentialSlice(cached), nil
@@ -136,10 +142,16 @@ func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Crede
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("credential api key pool rows: %w", err)
 	}
-	s.mu.Lock()
-	s.bySiteKeys[siteID] = cloneCredentialSlice(result)
-	s.mu.Unlock()
+	s.cacheSiteKeysIfGeneration(siteID, result, generation)
 	return result, nil
+}
+
+func (s *CredentialStore) cacheSiteKeysIfGeneration(siteID int64, credentials []domain.Credential, generation uint64) {
+	s.mu.Lock()
+	if s.generation == generation {
+		s.bySiteKeys[siteID] = cloneCredentialSlice(credentials)
+	}
+	s.mu.Unlock()
 }
 
 // cloneCredentialSlice deep-copies a credential slice for cache storage.
@@ -157,9 +169,11 @@ func cloneCredentialSlice(in []domain.Credential) []domain.Credential {
 }
 
 func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
+	var generation uint64
 	if id > 0 {
 		s.mu.RLock()
 		cached, ok := s.byID[id]
+		generation = s.generation
 		s.mu.RUnlock()
 		if ok {
 			return cloneCredential(cached), nil
@@ -175,7 +189,7 @@ func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 		return nil, fmt.Errorf("credential get: %w", err)
 	}
 	r.SecretEnc = []byte(secret)
-	s.cachePut(&r)
+	s.cachePutIfGeneration(&r, generation)
 	return &r, nil
 }
 
@@ -188,10 +202,8 @@ func (s *CredentialStore) Create(c *domain.Credential) (int64, error) {
 	id, err := res.LastInsertId()
 	if err == nil {
 		c.ID = id
-		s.cachePut(c)
-		s.mu.Lock()
-		delete(s.bySiteKeys, c.SiteID)
-		s.mu.Unlock()
+		s.invalidate(id)
+		_, _ = s.GetByID(id)
 	}
 	return id, err
 }
@@ -238,7 +250,7 @@ func (s *CredentialStore) Update(c *domain.Credential) error {
 		return fmt.Errorf("credential update: %w", err)
 	}
 	s.invalidate(c.ID)
-	s.cachePut(c)
+	_, _ = s.GetByID(c.ID)
 	return nil
 }
 

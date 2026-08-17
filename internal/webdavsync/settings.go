@@ -71,9 +71,14 @@ func (s *Service) UpdateSettings(update SettingsUpdate) (*SettingsView, error) {
 	if s == nil || s.settings == nil || s.enc == nil {
 		return nil, Error{Category: CategoryInternal, Message: "settings unavailable"}
 	}
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
 	current, err := s.settings.Get()
 	if err != nil {
 		return nil, Error{Category: CategoryInternal, Message: "load settings failed"}
+	}
+	if current == nil {
+		current = &store.WebDAVSettings{}
 	}
 	url := strings.TrimSpace(update.URL)
 	username := update.Username
@@ -116,6 +121,7 @@ func (s *Service) UpdateSettings(update SettingsUpdate) (*SettingsView, error) {
 	}
 
 	next := &store.WebDAVSettings{
+		HasOverride:       true,
 		Enabled:           update.Enabled,
 		URL:               url,
 		Username:          username,
@@ -128,6 +134,15 @@ func (s *Service) UpdateSettings(update SettingsUpdate) (*SettingsView, error) {
 	}
 	// Refresh in-memory runtime config for immediate test/sync.
 	s.reloadRuntimeFromDB()
+	if err := s.applyScheduler(); err != nil {
+		// Keep durable settings, the in-memory config, and the active schedule in
+		// one state. Scheduler shutdown/races can still reject an otherwise valid
+		// expression after the row was saved, so restore the previous row.
+		_ = s.settings.Save(current)
+		s.reloadRuntimeFromDB()
+		_ = s.applyScheduler()
+		return nil, Error{Category: CategoryInternal, Message: "apply scheduler settings failed"}
+	}
 	return s.SettingsView()
 }
 
@@ -140,7 +155,7 @@ func configured(cfg Config) bool {
 func (s *Service) schedulerArmed() bool {
 	s.statusMu.RLock()
 	defer s.statusMu.RUnlock()
-	return s.scheduler
+	return s.schedulerState
 }
 
 func (s *Service) resolvedConfig() (Config, string, time.Time, error) {
@@ -151,7 +166,7 @@ func (s *Service) resolvedConfig() (Config, string, time.Time, error) {
 			return Config{}, "", time.Time{}, err
 		}
 		// Prefer database when any field is present (operator has saved UI settings).
-		if rowHasOperatorInput(row) {
+		if row.HasOverride || rowHasOperatorInput(row) {
 			cfg := Config{
 				Enabled:  row.Enabled,
 				URL:      row.URL,
@@ -216,6 +231,6 @@ func (s *Service) reloadRuntimeFromDB() {
 	s.cfg = cfg
 	s.cfgMu.Unlock()
 	if s.client != nil && cfg.MaxBytes > 0 {
-		s.client.MaxBytes = cfg.MaxBytes
+		s.client.setMaxBytes(cfg.MaxBytes)
 	}
 }

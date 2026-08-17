@@ -131,6 +131,7 @@ export function Dialog({
   danger?: boolean;
 }) {
   const { t } = useI18n();
+  const titleId = useId();
   const dialogRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -186,12 +187,12 @@ export function Dialog({
         className="dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="dialog-title"
+        aria-labelledby={titleId}
       >
         <header>
           <div className={danger ? "danger-title" : ""}>
             {danger && <AlertTriangle size={18} />}
-            <h2 id="dialog-title">{title}</h2>
+            <h2 id={titleId}>{title}</h2>
           </div>
           <IconButton label={t("common.close")} onClick={onClose}>
             <X size={18} />
@@ -513,14 +514,42 @@ export function Tabs({
   active: string;
   onChange: (value: string) => void;
 }) {
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const moveFocus = (index: number) => {
+    if (items.length === 0) return;
+    const next = (index + items.length) % items.length;
+    const item = items[next];
+    if (!item) return;
+    onChange(item.value);
+    tabRefs.current[next]?.focus();
+  };
   return (
     <div className="tabs" role="tablist">
-      {items.map((item) => (
+      {items.map((item, index) => (
         <button
+          ref={(node) => {
+            tabRefs.current[index] = node;
+          }}
           role="tab"
           aria-selected={active === item.value}
+          tabIndex={active === item.value ? 0 : -1}
           key={item.value}
           onClick={() => onChange(item.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              moveFocus(index + 1);
+            } else if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              moveFocus(index - 1);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              moveFocus(0);
+            } else if (event.key === "End") {
+              event.preventDefault();
+              moveFocus(items.length - 1);
+            }
+          }}
         >
           {item.icon}
           {item.label}

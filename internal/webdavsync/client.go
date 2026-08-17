@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/outbound"
@@ -15,6 +16,7 @@ import (
 type Client struct {
 	HTTP     *http.Client
 	MaxBytes int64
+	mu       sync.RWMutex
 }
 
 const downloadTimeout = 120 * time.Second
@@ -23,7 +25,7 @@ func (c *Client) Download(ctx context.Context, targetURL, username, password str
 	if c == nil || c.HTTP == nil {
 		return nil, Error{Category: CategoryInternal, Message: "http client required"}
 	}
-	maxBytes := c.MaxBytes
+	maxBytes := c.maxBytes()
 	if maxBytes <= 0 {
 		maxBytes = 10 << 20
 	}
@@ -73,4 +75,22 @@ func (c *Client) Download(ctx context.Context, targetURL, username, password str
 		return nil, Error{Category: CategoryTooLarge, Message: "webdav backup exceeds size limit"}
 	}
 	return body, nil
+}
+
+func (c *Client) maxBytes() int64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.MaxBytes
+}
+
+func (c *Client) setMaxBytes(maxBytes int64) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.MaxBytes = maxBytes
+	c.mu.Unlock()
 }

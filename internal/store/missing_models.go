@@ -3,8 +3,6 @@ package store
 import (
 	"fmt"
 	"strings"
-
-	"github.com/lan/meta-gateway/internal/domain"
 )
 
 // MissingModel is a model a channel exposes (via its models_csv or the
@@ -77,5 +75,3 @@ func splitCSV(raw string) []string {
 	}
 	return out
 }
-
-var _ = domain.Route{} // keep import if unused by future edits

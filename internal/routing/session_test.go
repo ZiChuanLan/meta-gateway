@@ -9,14 +9,18 @@ func TestSessionKeyFromRequestHeaderWins(t *testing.T) {
 	}
 }
 
-func TestSessionKeyFromRequestHeaderBounded(t *testing.T) {
+func TestSessionKeyFromRequestHeaderHashesLongValues(t *testing.T) {
 	long := ""
 	for i := 0; i < 300; i++ {
 		long += "x"
 	}
 	key := SessionKeyFromRequest(nil, long)
-	if len(key) != maxSessionHeaderLength {
-		t.Fatalf("header must be bounded to %d chars, got %d", maxSessionHeaderLength, len(key))
+	if len(key) != 66 || key[:2] != "h:" {
+		t.Fatalf("long header must use a bounded hash key, got %q", key)
+	}
+	other := long[:299] + "y"
+	if otherKey := SessionKeyFromRequest(nil, other); otherKey == key {
+		t.Fatal("distinct long headers must not collide by prefix truncation")
 	}
 }
 

@@ -183,6 +183,9 @@ func (s *Scheduler) Expression() string {
 }
 
 func (s *Scheduler) Stop(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
@@ -263,6 +266,15 @@ func (s *Scheduler) today() string {
 }
 
 func (s *Scheduler) run(ctx context.Context) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if s.runner == nil {
+		if s.logger != nil {
+			s.logger.Printf("scheduled check-in skipped: runner unavailable")
+		}
+		return false
+	}
 	s.runMu.Lock()
 	if s.running {
 		s.runMu.Unlock()
@@ -283,6 +295,12 @@ func (s *Scheduler) run(ctx context.Context) bool {
 		// catches up the remaining credentials.
 		if s.logger != nil && !errors.Is(err, context.Canceled) {
 			s.logger.Printf("scheduled check-in failed")
+		}
+		return true
+	}
+	if summary == nil {
+		if s.logger != nil {
+			s.logger.Printf("scheduled check-in returned no summary")
 		}
 		return true
 	}

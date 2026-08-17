@@ -3,8 +3,6 @@ package store_test
 import (
 	"testing"
 	"time"
-
-	"github.com/lan/meta-gateway/internal/store"
 )
 
 func TestDecisionSnapshotInsertListPrune(t *testing.T) {
@@ -56,5 +54,3 @@ func TestDecisionSnapshotInsertListPrune(t *testing.T) {
 		t.Fatalf("prune old: n=%d err=%v", n, err)
 	}
 }
-
-var _ = store.DecisionSnapshot{}

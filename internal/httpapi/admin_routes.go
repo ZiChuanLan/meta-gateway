@@ -50,7 +50,15 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.modelsCache.Invalidate()
-	created, _ := h.db.Route.GetByID(id)
+	created, err := h.db.Route.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if created == nil {
+		writeError(w, http.StatusInternalServerError, "route vanished after create")
+		return
+	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -103,7 +111,15 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.modelsCache.Invalidate()
-	updated, _ := h.db.Route.GetByID(id)
+	updated, err := h.db.Route.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if updated == nil {
+		writeError(w, http.StatusInternalServerError, "route vanished after update")
+		return
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -157,7 +173,15 @@ func (h *AdminHandler) createRouteMember(w http.ResponseWriter, r *http.Request)
 		writeStoreError(w, err)
 		return
 	}
-	created, _ := h.db.RouteMember.GetByID(id)
+	created, err := h.db.RouteMember.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if created == nil {
+		writeError(w, http.StatusInternalServerError, "route member vanished after create")
+		return
+	}
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -180,7 +204,15 @@ func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request)
 		writeStoreError(w, err)
 		return
 	}
-	updated, _ := h.db.RouteMember.GetByID(id)
+	updated, err := h.db.RouteMember.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if updated == nil {
+		writeError(w, http.StatusInternalServerError, "route member vanished after update")
+		return
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 

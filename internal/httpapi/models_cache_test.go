@@ -1,34 +1,78 @@
 package httpapi
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestModelsCacheTTLAndInvalidation(t *testing.T) {
-	now := time.Now()
-	c := newModelsCache(time.Second)
-	c.now = func() time.Time { return now }
-
-	if _, ok := c.Get(); ok {
-		t.Fatal("cold cache must miss")
-	}
-	c.Put([]string{"gpt-4", " claude-3 ", "gpt-4", ""})
-	raw, ok := c.Get()
-	if !ok || len(raw) != 2 || raw[0] != "gpt-4" || raw[1] != "claude-3" {
-		t.Fatalf("cached raw=%v ok=%v (want dedup+trim of 2 ids)", raw, ok)
+func TestModelsCacheGetOrComputeSingleFlightAndCopies(t *testing.T) {
+	cache := newModelsCache(time.Minute)
+	var calls atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	compute := func() []string {
+		calls.Add(1)
+		close(entered)
+		<-release
+		return []string{"gpt-test"}
 	}
 
-	// TTL expiry forces a recompute.
-	now = now.Add(2 * time.Second)
-	if _, ok := c.Get(); ok {
-		t.Fatal("expired cache must miss")
+	const workers = 8
+	results := make(chan []string, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- cache.GetOrCompute(compute)
+		}()
 	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("compute was not called")
+	}
+	close(release)
+	wg.Wait()
+	close(results)
+	for result := range results {
+		if len(result) != 1 || result[0] != "gpt-test" {
+			t.Fatalf("result=%v", result)
+		}
+		result[0] = "mutated"
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("compute calls=%d, want 1", got)
+	}
+	if result, ok := cache.Get(); !ok || len(result) != 1 || result[0] != "gpt-test" {
+		t.Fatalf("cached result=%v ok=%v", result, ok)
+	}
+}
 
-	// Explicit invalidation (admin writes) also drops the entry.
-	c.Put([]string{"gpt-4"})
-	c.Invalidate()
-	if _, ok := c.Get(); ok {
-		t.Fatal("invalidated cache must miss")
+func TestModelsCacheInvalidationWinsAgainstInFlightRefresh(t *testing.T) {
+	cache := newModelsCache(time.Minute)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan []string, 1)
+	go func() {
+		done <- cache.GetOrCompute(func() []string {
+			close(entered)
+			<-release
+			return []string{"stale-model"}
+		})
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not start")
+	}
+	cache.Invalidate()
+	close(release)
+	<-done
+	if result, ok := cache.Get(); ok {
+		t.Fatalf("in-flight stale refresh repopulated cache: %v", result)
 	}
 }

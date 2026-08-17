@@ -1,9 +1,9 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/checkin"
@@ -39,7 +39,8 @@ func (h *RuntimeSettingsHandler) putRuntimeSettings(w http.ResponseWriter, r *ht
 		return
 	}
 	var body runtimeconfig.Editable
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	defer r.Body.Close()
+	if err := decodeJSON(w, r, &body, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -51,7 +52,7 @@ func (h *RuntimeSettingsHandler) putRuntimeSettings(w http.ResponseWriter, r *ht
 		}
 		// Validation errors are client-facing.
 		msg := err.Error()
-		if msg != "" && (containsAny(msg, "must be", "out of range", "invalid")) {
+		if msg != "" && (strings.Contains(msg, "must be") || strings.Contains(msg, "out of range") || strings.Contains(msg, "invalid")) {
 			writeError(w, http.StatusBadRequest, msg)
 			return
 		}
@@ -72,17 +73,4 @@ func (h *RuntimeSettingsHandler) resetRuntimeSettings(w http.ResponseWriter, _ *
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
-}
-
-func containsAny(s string, parts ...string) bool {
-	for _, part := range parts {
-		if len(part) > 0 && (len(s) >= len(part)) {
-			for i := 0; i+len(part) <= len(s); i++ {
-				if s[i:i+len(part)] == part {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

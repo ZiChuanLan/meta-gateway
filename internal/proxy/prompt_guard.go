@@ -21,6 +21,16 @@ type GuardHit struct {
 	Masked  bool    `json:"masked,omitempty"`
 }
 
+func promptGuardRulesForChannel(rules []store.PromptGuardRule, channelID int64) []store.PromptGuardRule {
+	filtered := make([]store.PromptGuardRule, 0, len(rules))
+	for _, rule := range rules {
+		if rule.ChannelScope == channelID {
+			filtered = append(filtered, rule)
+		}
+	}
+	return filtered
+}
+
 // ApplyPromptGuards walks every string value in a JSON body and applies the
 // enabled guard rules. Returns the (possibly rewritten) body, a hit when any
 // rule matched, or an error for an invalid rule pattern (rules are validated
@@ -38,7 +48,11 @@ func ApplyPromptGuards(body []byte, rules []store.PromptGuardRule) ([]byte, *Gua
 		// request, guards apply to structured chat bodies only.
 		return body, nil, nil
 	}
-	masked, hit, err := walkGuardValues(doc, rules, 0)
+	compiled, err := compileGuardRules(rules)
+	if err != nil {
+		return body, nil, err
+	}
+	masked, hit, err := walkGuardValuesCompiled(doc, compiled, 0)
 	if err != nil {
 		return body, nil, err
 	}
@@ -55,9 +69,29 @@ func ApplyPromptGuards(body []byte, rules []store.PromptGuardRule) ([]byte, *Gua
 	return out, hit, nil
 }
 
-// walkGuardValues recursively visits string values. depth guards against
-// pathological nesting (an attacker-controlled body must not blow the stack).
-func walkGuardValues(node any, rules []store.PromptGuardRule, depth int) (any, *GuardHit, error) {
+type compiledGuardRule struct {
+	rule store.PromptGuardRule
+	re   *regexp.Regexp
+}
+
+func compileGuardRules(rules []store.PromptGuardRule) ([]compiledGuardRule, error) {
+	compiled := make([]compiledGuardRule, 0, len(rules))
+	for _, rule := range rules {
+		if !rule.Enabled || strings.TrimSpace(rule.Pattern) == "" {
+			continue
+		}
+		re, err := regexp.Compile(rule.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("prompt guard rule %q: %w", rule.Name, err)
+		}
+		compiled = append(compiled, compiledGuardRule{rule: rule, re: re})
+	}
+	return compiled, nil
+}
+
+// walkGuardValuesCompiled recursively visits string values. depth guards
+// against pathological nesting (an attacker-controlled body must not blow the stack).
+func walkGuardValuesCompiled(node any, rules []compiledGuardRule, depth int) (any, *GuardHit, error) {
 	if depth > 64 {
 		return node, nil, nil
 	}
@@ -65,7 +99,7 @@ func walkGuardValues(node any, rules []store.PromptGuardRule, depth int) (any, *
 	case map[string]any:
 		var maskHit *GuardHit
 		for key, value := range n {
-			updated, hit, err := walkGuardValues(value, rules, depth+1)
+			updated, hit, err := walkGuardValuesCompiled(value, rules, depth+1)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -83,7 +117,7 @@ func walkGuardValues(node any, rules []store.PromptGuardRule, depth int) (any, *
 	case []any:
 		var maskHit *GuardHit
 		for index, value := range n {
-			updated, hit, err := walkGuardValues(value, rules, depth+1)
+			updated, hit, err := walkGuardValuesCompiled(value, rules, depth+1)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -100,15 +134,9 @@ func walkGuardValues(node any, rules []store.PromptGuardRule, depth int) (any, *
 		return n, maskHit, nil
 	case string:
 		var maskHit *GuardHit
-		for _, rule := range rules {
-			if !rule.Enabled || strings.TrimSpace(rule.Pattern) == "" {
-				continue
-			}
-			re, err := regexp.Compile(rule.Pattern)
-			if err != nil {
-				return nil, nil, fmt.Errorf("prompt guard rule %q: %w", rule.Name, err)
-			}
-			if !re.MatchString(n) {
+		for _, compiled := range rules {
+			rule := compiled.rule
+			if !compiled.re.MatchString(n) {
 				continue
 			}
 			hit := &GuardHit{Rule: rule.Name, Action: rule.Action, Pattern: rule.Pattern}
@@ -129,7 +157,7 @@ func walkGuardValues(node any, rules []store.PromptGuardRule, depth int) (any, *
 				if replacement == "" {
 					replacement = "[REDACTED]"
 				}
-				n = re.ReplaceAllString(n, replacement)
+				n = compiled.re.ReplaceAllString(n, replacement)
 				hit.Masked = true
 				if maskHit == nil {
 					maskHit = hit

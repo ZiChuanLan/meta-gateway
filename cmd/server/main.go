@@ -156,11 +156,12 @@ func main() {
 		Registry:         registry,
 		CheckinService:   checkinService,
 		CheckinScheduler: scheduler,
+		DiscoveryService: discoveryService,
 		ExchangeService:  exchangeService,
 		PluginService:    pluginService,
 		OutboundClient:   outboundClient,
 		Logger:           logger, Metrics: metrics, State: state,
-		BackupService: backup.New(db, cfg.BackupDir),
+		BackupService: backup.NewWithRetention(db, cfg.BackupDir, cfg.BackupRetentionCount),
 		WebDAVService: webdavService,
 		SetAuditRetention: func(days, rows int) {
 			auditDays.Store(int64(days))
@@ -190,27 +191,22 @@ func main() {
 
 	var webdavScheduler *webdavsync.Scheduler
 	webdavStatus := webdavService.Status()
-	if webdavStatus.Enabled {
-		if !webdavStatus.Configured {
-			logger.Info("webdav scheduler idle: URL/username/password incomplete")
-		} else {
-			cronExpr := webdavStatus.CronExpr
-			if cronExpr == "" {
-				cronExpr = cfg.WebDAVCron
-			}
-			var schedErr error
-			webdavScheduler, schedErr = webdavsync.NewScheduler(webdavService, cronExpr, slog.NewLogLogger(logger.Handler(), slog.LevelInfo))
-			if schedErr != nil {
-				logger.Error("webdav scheduler configuration failed", "category", "configuration")
-				os.Exit(1)
-			}
-			if err := webdavScheduler.Start(); err != nil {
-				logger.Error("webdav scheduler start failed", "category", "scheduler")
-				os.Exit(1)
-			}
-			webdavService.SetSchedulerArmed(true)
-			logger.Info("webdav read-only sync scheduler enabled", "source", webdavStatus.Source)
-		}
+	var schedErr error
+	// Keep one scheduler object alive even when currently disabled or
+	// incomplete. Admin settings can then arm/disarm it immediately.
+	webdavScheduler, schedErr = webdavsync.NewScheduler(webdavService, "", slog.NewLogLogger(logger.Handler(), slog.LevelInfo))
+	if schedErr != nil {
+		logger.Error("webdav scheduler configuration failed", "category", "configuration")
+		os.Exit(1)
+	}
+	if err := webdavService.AttachScheduler(webdavScheduler); err != nil {
+		logger.Error("webdav scheduler settings failed", "category", "configuration")
+		os.Exit(1)
+	}
+	if webdavStatus.Enabled && webdavStatus.Configured {
+		logger.Info("webdav read-only sync scheduler enabled", "source", webdavStatus.Source)
+	} else {
+		logger.Info("webdav scheduler idle: disabled or URL/username/password incomplete")
 	}
 
 	// Determine addr with host:port format.
@@ -241,12 +237,14 @@ func main() {
 		serverErrors <- srv.ListenAndServe()
 	}()
 
+	serverFailed := false
 	select {
 	case <-ctx.Done():
 		logger.Info("meta gateway shutting down")
 	case err := <-serverErrors:
 		if err != nil && err != http.ErrServerClosed {
-			logger.Error("http server failed", "category", "server")
+			logger.Error("http server failed", "category", "server", "error", err)
+			serverFailed = true
 		}
 		stop()
 	}
@@ -271,6 +269,11 @@ func main() {
 	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("http server shutdown failed", "category", "server")
+	}
+	if serverFailed {
+		// A bind/listen failure must be visible to the supervisor; returning
+		// normally would produce a misleading zero exit status.
+		os.Exit(1)
 	}
 }
 

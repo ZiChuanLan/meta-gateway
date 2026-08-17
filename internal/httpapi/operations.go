@@ -155,12 +155,18 @@ func metricsAuthorized(token string, trusted []netip.Prefix, r *http.Request) bo
 			return true
 		}
 	}
-	const prefix = "Bearer "
-	header := r.Header.Get("Authorization")
-	if len(header) <= len(prefix) || !strings.EqualFold(header[:len(prefix)], prefix) {
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 {
 		return false
 	}
-	presented := header[len(prefix):]
+	parts := strings.SplitN(strings.TrimSpace(values[0]), " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return false
+	}
+	presented := strings.TrimSpace(parts[1])
+	if presented == "" {
+		return false
+	}
 	return token != "" && len(presented) == len(token) && subtle.ConstantTimeCompare([]byte(presented), []byte(token)) == 1
 }
 

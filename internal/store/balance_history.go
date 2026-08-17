@@ -1,7 +1,6 @@
 package store
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 )
@@ -27,7 +26,9 @@ func (s *DB) InsertBalanceHistory(channelID int64, channelName string, balance i
 	return nil
 }
 
-// ListBalanceHistory returns all snapshots within the last N days, newest first.
+// ListBalanceHistory returns all snapshots within the last N days in
+// chronological order (oldest first), which is the natural order for trend
+// charts.
 func (s *DB) ListBalanceHistory(days int) ([]BalanceHistoryPoint, error) {
 	if days <= 0 || days > 365 {
 		days = 30
@@ -69,5 +70,3 @@ func (s *DB) PruneBalanceHistory(retentionDays int) (int, error) {
 	n, _ := res.RowsAffected()
 	return int(n), nil
 }
-
-var _ = sql.ErrNoRows // keep sql import if unused by future edits

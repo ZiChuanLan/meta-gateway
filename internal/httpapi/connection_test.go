@@ -61,10 +61,11 @@ func TestConnectionCreateHappyPath(t *testing.T) {
 	base, _, _ := setupServer(t, "http://127.0.0.1:1")
 
 	status, conn := postConnection(t, base, "admin-secret", map[string]any{
-		"name":      "demo",
-		"base_url":  "https://api.example.com",
-		"secret":    "sk-live",
-		"type_hint": "openai-compatible",
+		"name":       "demo",
+		"base_url":   "https://api.example.com",
+		"secret":     "sk-live",
+		"type_hint":  "openai-compatible",
+		"models_csv": "gpt-4o,gpt-4o-mini",
 	})
 	if status != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", status)
@@ -86,6 +87,9 @@ func TestConnectionCreateHappyPath(t *testing.T) {
 	}
 	if conn.Platform == "" {
 		t.Fatal("expected platform to be populated")
+	}
+	if conn.Channel.ModelsCSV != "gpt-4o,gpt-4o-mini" {
+		t.Fatalf("models_csv = %q", conn.Channel.ModelsCSV)
 	}
 }
 

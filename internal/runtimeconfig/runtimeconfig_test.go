@@ -1,6 +1,7 @@
 package runtimeconfig
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -148,6 +149,59 @@ func TestBootstrapRestoresProxyURLOverride(t *testing.T) {
 	}
 	if snap.Source != "admin_override" {
 		t.Fatalf("source = %s", snap.Source)
+	}
+}
+
+func TestUpdateRollsBackDurableAndRuntimeStateWhenApplyFails(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cfg := &config.Config{
+		HTTPAddr:                    ":4100",
+		DataDir:                     "./data",
+		RetryTimes:                  2,
+		CrossChannelFailoverEnabled: true,
+		Cooldown:                    30 * time.Second,
+		CheckinCron:                 "0 8 * * *",
+		StableFirstDenominator:      25,
+		StableFirstPromoteRequests:  100,
+		RoutingConcurrencyLimit:     64,
+		WebhookThrottleSeconds:      300,
+	}
+	var applied []string
+	controller := New(cfg, db.RuntimeSettings, Appliers{
+		SetGlobalProxy: func(raw string) error {
+			applied = append(applied, raw)
+			if raw == "http://reject.example" {
+				return errors.New("rejected proxy")
+			}
+			return nil
+		},
+	})
+	if err := controller.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	next := controller.Snapshot().Editable
+	next.RetryTimes = 5
+	next.ProxyURL = "http://reject.example"
+	if _, err := controller.Update(next); err == nil {
+		t.Fatal("expected runtime applier failure")
+	}
+	snapshot := controller.Snapshot()
+	if snapshot.Source != "environment" || snapshot.HasOverride || snapshot.Editable.RetryTimes != 2 || snapshot.Editable.ProxyURL != "" {
+		t.Fatalf("runtime state was not rolled back: %+v", snapshot)
+	}
+	persisted, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.HasOverride {
+		t.Fatalf("durable override was not rolled back: %+v", persisted)
+	}
+	if len(applied) != 3 || applied[0] != "" || applied[1] != "http://reject.example" || applied[2] != "" {
+		t.Fatalf("unexpected apply/rollback sequence: %#v", applied)
 	}
 }
 

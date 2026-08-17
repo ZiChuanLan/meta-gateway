@@ -28,13 +28,13 @@ func SetClientProxy(client *http.Client, hook func(*http.Request) (*url.URL, err
 	transport, ok := client.Transport.(validatingTransport)
 	if !ok {
 		if plain, ok := client.Transport.(*http.Transport); ok {
-			plain.Proxy = hook
+			plain.Proxy = wrapProxyHook(hook)
 			return true
 		}
 		return false
 	}
 	if inner, ok := transport.next.(*http.Transport); ok {
-		inner.Proxy = hook
+		inner.Proxy = wrapProxyHook(hook)
 		return true
 	}
 	return false
@@ -72,23 +72,23 @@ func (g *GlobalProxy) Set(raw string, policy *Policy) error {
 		g.value.Store((*url.URL)(nil))
 		return nil
 	}
-	u, err := url.Parse(raw)
+	u, err := parseAndValidate(raw, policy)
 	if err != nil {
 		return err
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return errProxyScheme
-	}
-	if u.Host == "" {
-		return errProxyHost
-	}
-	if policy != nil {
-		if err := policy.ValidateURL(raw); err != nil {
-			return err
-		}
-	}
 	g.value.Store(u)
 	return nil
+}
+
+// Validate checks a candidate without changing the current global proxy.
+// Admin channel validation must use this pure operation; otherwise editing a
+// channel would unexpectedly alter the process-wide fallback proxy.
+func (g *GlobalProxy) Validate(raw string, policy *Policy) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	_, err := parseAndValidate(strings.TrimSpace(raw), policy)
+	return err
 }
 
 // ForRequest resolves the effective proxy for one request: a per-request

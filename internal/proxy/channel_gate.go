@@ -6,16 +6,9 @@ import (
 	"sync"
 )
 
-// ChannelGate is the hard per-channel concurrency limiter: a bounded semaphore
-// per channel. Requests beyond the channel's MaxConcurrent limit block on a
-// FIFO wait queue instead of being dropped or failed over (the upstream's
-// own concurrency ceiling is respected, and a client burst never trips rate
-// limiters upstream).
-//
-// FIFO guarantee: the semaphore is a buffered channel of capacity = limit, so
-// blocked acquirers are woken in arrival order (Go channels wake waiting
-// senders FIFO). No locks are held while waiting, so concurrent acquires on
-// different channels never contend.
+// ChannelGate is the hard per-channel concurrency limiter. A channel keeps a
+// stable gate for its entire lifetime so changing the configured limit never
+// abandons holders or waiters from the previous limit.
 type ChannelGate struct {
 	mu    sync.Mutex
 	gates map[int64]*gate
@@ -23,9 +16,16 @@ type ChannelGate struct {
 }
 
 type gate struct {
-	gen   uint64
-	limit int
-	slots chan struct{}
+	mu       sync.Mutex
+	gen      uint64
+	limit    int
+	inFlight int
+	waiters  []*gateWaiter
+}
+
+type gateWaiter struct {
+	ready   chan struct{}
+	granted bool
 }
 
 // NewChannelGate creates an empty gate registry.
@@ -33,73 +33,121 @@ func NewChannelGate() *ChannelGate {
 	return &ChannelGate{gates: make(map[int64]*gate)}
 }
 
-// Acquire blocks until a slot for the channel is free, the limit is 0
-// (unlimited → immediate), or ctx is done. The returned generation must be
-// passed to Release so a stale token from before a limit change is dropped
-// instead of unblocking the wrong gate.
-func (g *ChannelGate) Acquire(ctx context.Context, channelID int64, limit int) (uint64, error) {
-	if limit <= 0 {
-		return 0, nil
-	}
+func (g *ChannelGate) channel(channelID int64) *gate {
 	g.mu.Lock()
-	gt, ok := g.gates[channelID]
-	if !ok || gt.limit != limit {
-		// First touch or a limit change: (re)create the gate. In-flight
-		// tokens on the old gate are abandoned; their releases become no-ops
-		// through the generation check. This keeps the window tiny and the
-		// code lock-free while waiting.
-		g.gen++
-		gt = &gate{gen: g.gen, limit: limit, slots: make(chan struct{}, limit)}
-		g.gates[channelID] = gt
+	defer g.mu.Unlock()
+	if gt := g.gates[channelID]; gt != nil {
+		return gt
 	}
-	g.mu.Unlock()
+	g.gen++
+	gt := &gate{gen: g.gen}
+	g.gates[channelID] = gt
+	return gt
+}
+
+// Acquire blocks until a slot for the channel is free or ctx is done. A limit
+// <= 0 is unlimited, but the request is still counted so enabling a limit at
+// runtime accounts for requests that were already in flight.
+func (g *ChannelGate) Acquire(ctx context.Context, channelID int64, limit int) (uint64, error) {
+	gt := g.channel(channelID)
+	waiter := &gateWaiter{ready: make(chan struct{})}
+
+	gt.mu.Lock()
+	if gt.limit != limit {
+		gt.limit = limit
+		gt.dispatchLocked()
+	}
+	if len(gt.waiters) == 0 && gt.hasCapacityLocked() {
+		gt.inFlight++
+		gen := gt.gen
+		gt.mu.Unlock()
+		return gen, nil
+	}
+	gt.waiters = append(gt.waiters, waiter)
+	gt.dispatchLocked()
+	gt.mu.Unlock()
+
 	select {
-	case gt.slots <- struct{}{}:
+	case <-waiter.ready:
 		return gt.gen, nil
 	case <-ctx.Done():
+		gt.mu.Lock()
+		if waiter.granted {
+			gt.mu.Unlock()
+			return gt.gen, nil
+		}
+		for i, queued := range gt.waiters {
+			if queued == waiter {
+				gt.waiters = append(gt.waiters[:i], gt.waiters[i+1:]...)
+				break
+			}
+		}
+		gt.mu.Unlock()
 		return 0, ctx.Err()
 	}
 }
 
-// Release returns a slot to the channel's gate. Releases from a previous
-// generation (the gate was recreated after a limit change) are no-ops.
+func (gt *gate) hasCapacityLocked() bool {
+	return gt.limit <= 0 || gt.inFlight < gt.limit
+}
+
+func (gt *gate) dispatchLocked() {
+	for len(gt.waiters) > 0 && gt.hasCapacityLocked() {
+		waiter := gt.waiters[0]
+		gt.waiters = gt.waiters[1:]
+		gt.inFlight++
+		waiter.granted = true
+		close(waiter.ready)
+	}
+}
+
+// Release returns a slot to the channel's stable gate.
 func (g *ChannelGate) Release(channelID int64, gen uint64) {
 	if gen == 0 {
 		return
 	}
 	g.mu.Lock()
-	gt, ok := g.gates[channelID]
+	gt := g.gates[channelID]
 	g.mu.Unlock()
-	if !ok || gt.gen != gen {
+	if gt == nil || gt.gen != gen {
 		return
 	}
-	<-gt.slots
+	gt.mu.Lock()
+	if gt.inFlight > 0 {
+		gt.inFlight--
+	}
+	gt.dispatchLocked()
+	gt.mu.Unlock()
 }
 
-// InFlight reports the number of currently held slots for a channel (used by
-// tests and the concurrency-aware routing score provider).
+// InFlight reports the number of currently held slots for a channel.
 func (g *ChannelGate) InFlight(channelID int64) int {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	gt, ok := g.gates[channelID]
-	if !ok {
+	gt := g.gates[channelID]
+	g.mu.Unlock()
+	if gt == nil {
 		return 0
 	}
-	return len(gt.slots)
+	gt.mu.Lock()
+	defer gt.mu.Unlock()
+	return gt.inFlight
 }
 
 // gateBoundBody releases the channel gate slot when the response body is
-// closed, so the hard concurrency ceiling covers the full stream lifetime
-// (not just the header phase). The release fires exactly once; closing the
-// body repeatedly stays idempotent.
+// closed. Closing the body repeatedly remains idempotent.
 type gateBoundBody struct {
 	io.ReadCloser
-	once    sync.Once
-	release func()
+	once     sync.Once
+	release  func()
+	closeErr error
 }
 
 func (b *gateBoundBody) Close() error {
-	err := b.ReadCloser.Close()
-	b.once.Do(b.release)
-	return err
+	b.once.Do(func() {
+		b.closeErr = b.ReadCloser.Close()
+		if b.release != nil {
+			b.release()
+		}
+	})
+	return b.closeErr
 }

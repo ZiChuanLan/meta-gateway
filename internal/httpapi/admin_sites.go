@@ -91,7 +91,15 @@ func (h *AdminHandler) updateSite(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	updated, _ := h.db.Site.GetByID(id)
+	updated, err := h.db.Site.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if updated == nil {
+		writeError(w, http.StatusInternalServerError, "site vanished after update")
+		return
+	}
 	writeJSON(w, http.StatusOK, updated)
 }
 

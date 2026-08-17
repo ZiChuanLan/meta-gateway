@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+
+	"github.com/lan/meta-gateway/internal/auth"
 )
 
 type clientIPKey struct{}
@@ -39,6 +41,7 @@ func (c *clientIPResolver) Middleware(next http.Handler) http.Handler {
 			}
 		}
 		ctx := context.WithValue(r.Context(), clientIPKey{}, ip)
+		ctx = auth.WithClientIP(ctx, ip.String())
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -82,5 +84,57 @@ func TestMarketDedupAndInstallSpec(t *testing.T) {
 func TestMarketRejectsSensitiveQuery(t *testing.T) {
 	if _, err := parseMarketSource("https://example.com/registry.json?token=abc"); err == nil {
 		t.Fatal("expected sensitive query rejection")
+	}
+}
+
+func TestMarketUsesIsolatedStaleCacheOnRefreshFailure(t *testing.T) {
+	var fail atomic.Bool
+	registry := `{"schema_version":1,"plugins":[{"id":"demo","name":"Demo","tags":["stable"],"url":"http://127.0.0.1:9100"}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if fail.Load() {
+			http.Error(w, "temporary outage", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(registry))
+	}))
+	t.Cleanup(srv.Close)
+
+	source := marketSourceOf(srv.URL)
+	m := newMarket(srv.Client(), nil)
+	m.sources = []MarketSource{source}
+	first, err := m.List(context.Background())
+	if err != nil || len(first) != 1 {
+		t.Fatalf("initial market list=%+v err=%v", first, err)
+	}
+	first[0].Tags[0] = "mutated"
+	m.mu.Lock()
+	entry := m.cache[source.URL]
+	entry.fetched = time.Now().Add(-marketCacheTTL - time.Second)
+	m.cache[source.URL] = entry
+	m.mu.Unlock()
+	fail.Store(true)
+
+	second, err := m.List(context.Background())
+	if err != nil || len(second) != 1 {
+		t.Fatalf("stale fallback=%+v err=%v", second, err)
+	}
+	if got := second[0].Tags[0]; got != "stable" {
+		t.Fatalf("caller mutation poisoned cached tags: %q", got)
+	}
+}
+
+func TestMarketRejectsResponseOverLimitEvenWithValidJSONPrefix(t *testing.T) {
+	registry := `{"schema_version":1,"plugins":[]}`
+	oversized := registry + strings.Repeat(" ", marketMaxBytes-len(registry)+1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(oversized))
+	}))
+	t.Cleanup(srv.Close)
+
+	source := marketSourceOf(srv.URL)
+	m := newMarket(srv.Client(), nil)
+	entries, err := m.fetch(context.Background(), source)
+	if err == nil || len(entries) != 0 {
+		t.Fatalf("oversized registry accepted: entries=%+v err=%v", entries, err)
 	}
 }
