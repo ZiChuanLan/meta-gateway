@@ -1,6 +1,9 @@
 services:
   meta-gateway:
     build: .
+    # Published image on Docker Hub; `docker compose pull` upgrades to it
+    # while `docker compose build` still builds locally.
+    image: zichuanlan/meta-gateway:latest
     init: true
     ports:
       - "4100:4100"
