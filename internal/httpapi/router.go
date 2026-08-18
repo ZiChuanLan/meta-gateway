@@ -201,14 +201,18 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	proxyService.SetAdapterRegistry(registry)
 	proxyService.SetCredentialRefresher(checkinService)
-	selector.SetCircuitAware(proxyService.CircuitWeight)
 	proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)
 	proxyService.SetKeyPoolRotation(cfg.KeyPoolRotation)
 	proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
-	proxyService.SetKeyFailThreshold(cfg.KeyFailThreshold)
+	if cfg.FaultProtectionConfigured {
+		proxyService.SetFaultProtection(cfg.FaultProtectionEnabled)
+	} else {
+		// Minimal embedded/test Config literals predate the switch; preserve
+		// the historical protected behavior for them.
+		proxyService.SetFaultProtection(true)
+	}
 	proxyService.SetStableFirstPromote(cfg.StableFirstPromoteRequests)
 	proxyService.SetSticky(stickyStore)
-	proxyService.SetBreakerFailCount(cfg.ModelBreakerFailCount)
 	// Operational webhook notifier: auto-disable/recovery events, throttled.
 	webhookNotifier := webhook.New(cfg.WebhookURL, time.Duration(cfg.WebhookThrottleSeconds)*time.Second)
 	proxyService.SetWebhookNotifier(webhookNotifier)
@@ -382,9 +386,6 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			},
 			SetAudit:     auditHandler.SetRetention,
 			SetAuditLoop: dependencies.SetAuditRetention,
-			SetProgressiveCooldown: func(enabled bool, base time.Duration, levels [3]time.Duration, breakerCount int) {
-				db.RouteMember.SetProgressiveCooldown(enabled, base, levels, breakerCount)
-			},
 			// Sticky hot-swap: rewire selector + proxy + admin handler so an
 			// admin toggle takes effect without a restart.
 			SetSticky: func(store *routing.StickyStore, ttl time.Duration) {

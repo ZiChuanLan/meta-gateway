@@ -393,6 +393,8 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 			channelID := int64(0)
 			if meta != nil {
 				channelID = meta.ChannelID
+				proxyReq.RouteID = meta.RouteID
+				proxyReq.GrayAttempt = meta.GrayAttempt
 			}
 			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
 			if h.db != nil && h.db.ProxyLog != nil && requestID != "" {
@@ -573,6 +575,8 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 			channelID := int64(0)
 			if meta != nil {
 				channelID = meta.ChannelID
+				proxyReq.RouteID = meta.RouteID
+				proxyReq.GrayAttempt = meta.GrayAttempt
 			}
 			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
 			if h.db != nil && h.db.ProxyLog != nil && requestID != "" {

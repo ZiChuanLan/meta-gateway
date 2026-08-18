@@ -18,6 +18,9 @@ import (
 // consecutive counter) and auto-disables the channel once the channel-level
 // consecutive failures reach the configured threshold.
 func (s *Service) recordMemberFailure(memberID, channelID int64, model string, cooldown time.Duration, category string) {
+	if !s.faultProtectionEnabled.Load() {
+		return
+	}
 	if err := s.db.RouteMember.RecordFailure(memberID, s.now(), cooldown, category); err != nil {
 		log.Printf("proxy: record failure member_id=%d: %v", memberID, err)
 	}
@@ -108,11 +111,32 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 	// toward graduation; the store clears the mark when the threshold is met
 	// with no consecutive failures.
 	if status >= 200 && status < 300 {
-		if threshold := int(s.grayPromoteRequests.Load()); threshold > 0 && s.db != nil && s.db.Channel != nil {
-			if promoted, err := s.db.Channel.RecordGraySuccess(channelID, threshold); err != nil {
-				log.Printf("proxy: gray success channel_id=%d: %v", channelID, err)
-			} else if promoted {
-				log.Printf("proxy: channel %d promoted from stable-first grayscale", channelID)
+		modelGrayHandled := false
+		if req.RouteID > 0 && s.db != nil && s.db.Route != nil {
+			if route, err := s.db.Route.GetByID(req.RouteID); err != nil {
+				log.Printf("proxy: model gray lookup route=%d: %v", req.RouteID, err)
+			} else if route != nil && route.StableFirst != nil {
+				modelGrayHandled = true
+				if *route.StableFirst && req.GrayAttempt {
+					threshold := int(s.grayPromoteRequests.Load())
+					if route.StableFirstPromoteRequests != nil {
+						threshold = *route.StableFirstPromoteRequests
+					}
+					if promoted, err := s.db.Route.RecordGraySuccess(req.RouteID, threshold); err != nil {
+						log.Printf("proxy: model gray success route=%d: %v", req.RouteID, err)
+					} else if promoted {
+						log.Printf("proxy: model route %d promoted from stable-first grayscale", req.RouteID)
+					}
+				}
+			}
+		}
+		if !modelGrayHandled {
+			if threshold := int(s.grayPromoteRequests.Load()); threshold > 0 && s.db != nil && s.db.Channel != nil {
+				if promoted, err := s.db.Channel.RecordGraySuccess(channelID, threshold); err != nil {
+					log.Printf("proxy: gray success channel_id=%d: %v", channelID, err)
+				} else if promoted {
+					log.Printf("proxy: channel %d promoted from stable-first grayscale", channelID)
+				}
 			}
 		}
 	}
@@ -186,6 +210,9 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 // wire, so the current request cannot be retried, but cooling the member down
 // makes the next request fail over to a healthier channel.
 func (s *Service) RecordStreamFailure(memberID int64) {
+	if !s.faultProtectionEnabled.Load() {
+		return
+	}
 	cooldown := time.Duration(s.cooldownNs.Load())
 	if err := s.db.RouteMember.RecordFailure(memberID, s.now(), cooldown, "stream_interrupted"); err != nil {
 		log.Printf("proxy: record stream failure member_id=%d: %v", memberID, err)

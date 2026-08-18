@@ -1,19 +1,34 @@
-import { useQuery } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
-import { api } from "../../api/client"
-import type { RuntimeEditableSettings } from "../../api/types"
-import { useAdminMutation } from "../../hooks/useAdminMutation"
-import { useI18n } from "../../i18n"
-import { useSession } from "../../session"
-import { Button, ErrorState, Loading, Panel, InfoTip, StatusBadge, formatDate } from "../../components/ui"
-import { AlertRulesPanel } from "./AlertRulesPanel"
-import { ErrorRulesPanel } from "./ErrorRulesPanel"
-import { PromptGuardPanel } from "./PromptGuardPanel"
-import { MaintenancePanel } from "./MaintenancePanel"
-import { FactoryResetPanel } from "./FactoryResetPanel"
-import { TOTPPanel } from "./TOTPPanel"
-import { CheckinTimePicker } from "./CheckinTimePicker"
+import { useQuery } from "@tanstack/react-query";
+import {
+  Children,
+  useEffect,
+  useId,
+  useState,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from "react";
+import { Link } from "react-router-dom";
+import { api } from "../../api/client";
+import type { RuntimeEditableSettings } from "../../api/types";
+import { useAdminMutation } from "../../hooks/useAdminMutation";
+import { useI18n } from "../../i18n";
+import { useSession } from "../../session";
+import {
+  Button,
+  ErrorState,
+  Loading,
+  Panel,
+  InfoTip,
+  StatusBadge,
+  formatDate,
+} from "../../components/ui";
+import { AlertRulesPanel } from "./AlertRulesPanel";
+import { ErrorRulesPanel } from "./ErrorRulesPanel";
+import { PromptGuardPanel } from "./PromptGuardPanel";
+import { MaintenancePanel } from "./MaintenancePanel";
+import { FactoryResetPanel } from "./FactoryResetPanel";
+import { TOTPPanel } from "./TOTPPanel";
+import { CheckinTimePicker } from "./CheckinTimePicker";
 
 function numberOr(value: string, fallback: number) {
   const parsed = Number(value);
@@ -24,13 +39,14 @@ function numberOr(value: string, fallback: number) {
 const RUNTIME_SECTION_ANCHORS = [
   ["relay", "ops.runtime.section.relay"],
   ["cooldown", "ops.runtime.section.cooldown"],
-  ["health", "ops.runtime.section.health"],
+  ["health", "ops.runtime.section.healthSweep"],
   ["sticky", "ops.runtime.section.sticky"],
   ["checkin", "ops.runtime.section.checkin"],
   ["limits", "ops.runtime.section.limits"],
   ["audit", "ops.runtime.section.audit"],
   ["routing", "ops.runtime.section.routing"],
   ["stableFirst", "ops.runtime.section.stableFirst"],
+  ["maintenance", "ops.runtime.section.maintenance"],
   ["alerts", "ops.runtime.section.alerts"],
   ["server", "ops.runtime.section.server"],
 ] as const;
@@ -41,6 +57,91 @@ function SettingLabel({ label, hint }: { label: string; hint: string }) {
       <span>{label}</span>
       <InfoTip label={hint} />
     </span>
+  );
+}
+
+function numberValidationError(
+  value: number,
+  min: number | undefined,
+  max: number | undefined,
+  customError: string | undefined,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  if (!Number.isFinite(value)) return t("ops.runtime.validation.number");
+  if (!Number.isInteger(value)) return t("ops.runtime.validation.integer");
+  if (min !== undefined && value < min) {
+    return max !== undefined
+      ? t("ops.runtime.validation.between", { min, max })
+      : t("ops.runtime.validation.min", { min });
+  }
+  if (max !== undefined && value > max) {
+    return min !== undefined
+      ? t("ops.runtime.validation.between", { min, max })
+      : t("ops.runtime.validation.max", { max });
+  }
+  return customError;
+}
+
+type ValidatedNumberInputProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "max" | "min" | "value"
+> & {
+  min?: number;
+  max?: number;
+  value: number;
+  customError?: string;
+};
+
+function ValidatedNumberInput({
+  min,
+  max,
+  customError,
+  disabled,
+  value,
+  ...props
+}: ValidatedNumberInputProps) {
+  const { t } = useI18n();
+  const errorId = useId();
+  const numericValue = Number(value);
+  const error =
+    disabled || !Number.isFinite(numericValue)
+      ? undefined
+      : numberValidationError(numericValue, min, max, customError, t);
+
+  return (
+    <span className={`setting-input-wrap${error ? " is-invalid" : ""}`}>
+      <input
+        {...props}
+        type="number"
+        min={min}
+        max={max}
+        step={1}
+        disabled={disabled}
+        value={value}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+      />
+      {error ? (
+        <span id={errorId} className="setting-validation" role="alert">
+          {error}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** Render the row-major cards as two independent vertical columns. */
+function RuntimeSettingsColumns({ children }: { children: ReactNode }) {
+  const cards = Children.toArray(children);
+  return (
+    <div className="runtime-settings-grid">
+      <div className="runtime-settings-column">
+        {cards.filter((_, index) => index % 2 === 0)}
+      </div>
+      <div className="runtime-settings-column">
+        {cards.filter((_, index) => index % 2 === 1)}
+      </div>
+    </div>
   );
 }
 
@@ -105,7 +206,8 @@ export function RuntimeSettingsPanel() {
         </div>
         <div className="runtime-settings-context-meta">
           <span className="runtime-source-pill">
-            {t("ops.runtime.source")}: {t(
+            {t("ops.runtime.source")}:{" "}
+            {t(
               data.source === "admin_override"
                 ? "ops.runtime.sourceAdmin"
                 : "ops.runtime.sourceEnvironment",
@@ -129,7 +231,10 @@ export function RuntimeSettingsPanel() {
         </div>
       ) : null}
 
-      <nav className="runtime-section-nav" aria-label={t("ops.runtime.sectionNav")}>
+      <nav
+        className="runtime-section-nav"
+        aria-label={t("ops.runtime.sectionNav")}
+      >
         {RUNTIME_SECTION_ANCHORS.map(([key, i18nKey]) => (
           <button
             key={key}
@@ -144,15 +249,12 @@ export function RuntimeSettingsPanel() {
           </button>
         ))}
       </nav>
-      <div className="runtime-settings-grid">
+      <RuntimeSettingsColumns>
         <Panel className="runtime-card runtime-card-relay" id="runtime-relay">
           <div className="panel-header">
             <strong>{t("ops.runtime.section.relay")}</strong>
           </div>
-          <label
-            className="check"
-            style={{ marginBottom: 10 }}
-          >
+          <label className="check" style={{ marginBottom: 10 }}>
             <input
               type="checkbox"
               disabled={busy}
@@ -166,17 +268,12 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.crossChannelFailoverHint")} />
             </span>
           </label>
-          <label
-            className="check"
-            style={{ marginBottom: 10 }}
-          >
+          <label className="check" style={{ marginBottom: 10 }}>
             <input
               type="checkbox"
               disabled={busy}
               checked={draft.key_pool_rotation}
-              onChange={(e) =>
-                patch("key_pool_rotation", e.target.checked)
-              }
+              onChange={(e) => patch("key_pool_rotation", e.target.checked)}
             />
             <span className="setting-check-label">
               <span>{t("ops.runtime.keyPoolRotation")}</span>
@@ -188,17 +285,13 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.retryTimes")}
               hint={t("ops.runtime.retryTimesHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
               max={100}
               disabled={busy || !draft.cross_channel_failover_enabled}
               value={draft.retry_times}
               onChange={(e) =>
-                patch(
-                  "retry_times",
-                  numberOr(e.target.value, draft.retry_times),
-                )
+                patch("retry_times", numberOr(e.target.value, draft.retry_times))
               }
             />
           </label>
@@ -207,8 +300,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.channelRetryTimes")}
               hint={t("ops.runtime.channelRetryTimesHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
               max={5}
               disabled={busy}
@@ -223,24 +315,25 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
-        <Panel className="runtime-card runtime-card-cooldown" id="runtime-cooldown">
+        <Panel
+          className="runtime-card runtime-card-cooldown"
+          id="runtime-cooldown"
+        >
           <div className="panel-header">
             <strong>{t("ops.runtime.section.cooldown")}</strong>
           </div>
-          <label
-            className="check"
-          >
+          <label className="check">
             <input
               type="checkbox"
               disabled={busy}
-              checked={draft.progressive_cooldown_enabled}
+              checked={draft.fault_protection_enabled}
               onChange={(e) =>
-                patch("progressive_cooldown_enabled", e.target.checked)
+                patch("fault_protection_enabled", e.target.checked)
               }
             />
             <span className="setting-check-label">
-              <span>{t("ops.runtime.progressiveCooldown")}</span>
-              <InfoTip label={t("ops.runtime.progressiveCooldownHint")} />
+              <span>{t("ops.runtime.faultProtection")}</span>
+              <InfoTip label={t("ops.runtime.faultProtectionHint")} />
             </span>
           </label>
           <label className="field">
@@ -248,11 +341,10 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.cooldown")}
               hint={t("ops.runtime.cooldownHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
               max={86400}
-              disabled={busy}
+              disabled={busy || !draft.fault_protection_enabled}
               value={draft.cooldown_seconds}
               onChange={(e) =>
                 patch(
@@ -264,154 +356,52 @@ export function RuntimeSettingsPanel() {
           </label>
           <label className="field">
             <SettingLabel
-              label={t("ops.runtime.cooldownLevel2")}
-              hint={t("ops.runtime.cooldownLevel2Hint")}
-            />
-            <input
-              type="number"
-              min={0}
-              disabled={busy || !draft.progressive_cooldown_enabled}
-              value={draft.cooldown_level2_seconds}
-              onChange={(e) =>
-                patch(
-                  "cooldown_level2_seconds",
-                  numberOr(e.target.value, draft.cooldown_level2_seconds),
-                )
-              }
-            />
-          </label>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.cooldownLevel3")}
-              hint={t("ops.runtime.cooldownLevel3Hint")}
-            />
-            <input
-              type="number"
-              min={0}
-              disabled={busy || !draft.progressive_cooldown_enabled}
-              value={draft.cooldown_level3_seconds}
-              onChange={(e) =>
-                patch(
-                  "cooldown_level3_seconds",
-                  numberOr(e.target.value, draft.cooldown_level3_seconds),
-                )
-              }
-            />
-          </label>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.cooldownLevel4")}
-              hint={t("ops.runtime.cooldownLevel4Hint")}
-            />
-            <input
-              type="number"
-              min={0}
-              disabled={busy || !draft.progressive_cooldown_enabled}
-              value={draft.cooldown_level4_seconds}
-              onChange={(e) =>
-                patch(
-                  "cooldown_level4_seconds",
-                  numberOr(e.target.value, draft.cooldown_level4_seconds),
-                )
-              }
-            />
-          </label>
-          <p className="panel-muted" style={{ marginTop: 14, marginBottom: 6 }}>
-            {t("ops.runtime.section.breaker")}
-          </p>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.breakerCount")}
-              hint={t("ops.runtime.breakerCountHint")}
-            />
-            <input
-              type="number"
-              min={draft.progressive_cooldown_enabled ? 5 : 0}
-              disabled={busy}
-              value={draft.breaker_fail_count}
-              onChange={(e) =>
-                patch(
-                  "breaker_fail_count",
-                  numberOr(e.target.value, draft.breaker_fail_count),
-                )
-              }
-            />
-          </label>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.modelBreaker")}
-              hint={t("ops.runtime.modelBreakerHint")}
-            />
-            <input
-              type="number"
-              min={0}
-              disabled={busy}
-              value={draft.model_breaker_fail_count}
-              onChange={(e) =>
-                patch(
-                  "model_breaker_fail_count",
-                  numberOr(e.target.value, draft.model_breaker_fail_count),
-                )
-              }
-            />
-          </label>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.keyFailThreshold")}
-              hint={t("ops.runtime.keyFailThresholdHint")}
-            />
-            <input
-              type="number"
-              min={0}
-              disabled={busy}
-              value={draft.key_fail_threshold}
-              onChange={(e) =>
-                patch(
-                  "key_fail_threshold",
-                  numberOr(e.target.value, draft.key_fail_threshold),
-                )
-              }
-            />
-          </label>
-        </Panel>
-
-        <Panel className="runtime-card runtime-card-health" id="runtime-health">
-          <div className="panel-header">
-            <strong>{t("ops.runtime.section.health")}</strong>
-          </div>
-          <label className="field">
-            <SettingLabel
               label={t("ops.runtime.autoDisable")}
               hint={t("ops.runtime.autoDisableHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
-              disabled={busy}
+              max={1000}
+              disabled={busy || !draft.fault_protection_enabled}
               value={draft.channel_auto_disable_threshold}
-              onChange={(e) =>
-                patch(
-                  "channel_auto_disable_threshold",
-                  numberOr(
-                    e.target.value,
-                    draft.channel_auto_disable_threshold,
-                  ),
-                )
-              }
-            />
+            onChange={(e) =>
+              patch(
+                "channel_auto_disable_threshold",
+                numberOr(
+                  e.target.value,
+                  draft.channel_auto_disable_threshold,
+                ),
+              )
+            } />
           </label>
-          <label
-            className="check"
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              marginTop: 10,
-            }}
-          >
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.recoveryInterval")}
+              hint={t("ops.runtime.recoveryIntervalHint")}
+            />
+            <ValidatedNumberInput
+              min={10}
+              max={86400}
+              disabled={
+                busy ||
+                !draft.fault_protection_enabled ||
+                !draft.recovery_probe_enabled
+              }
+              value={draft.recovery_probe_interval_seconds}
+            onChange={(e) =>
+              patch(
+                "recovery_probe_interval_seconds",
+                numberOr(
+                  e.target.value,
+                  draft.recovery_probe_interval_seconds,
+                ),
+              )
+            } />
+          </label>
+          <label className="check">
             <input
               type="checkbox"
-              disabled={busy}
+              disabled={busy || !draft.fault_protection_enabled}
               checked={draft.recovery_probe_enabled}
               onChange={(e) =>
                 patch("recovery_probe_enabled", e.target.checked)
@@ -422,40 +412,18 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.recoveryProbeHint")} />
             </span>
           </label>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.recoveryInterval")}
-              hint={t("ops.runtime.recoveryIntervalHint")}
-            />
-            <input
-              type="number"
-              min={10}
-              disabled={busy || !draft.recovery_probe_enabled}
-              value={draft.recovery_probe_interval_seconds}
-              onChange={(e) =>
-                patch(
-                  "recovery_probe_interval_seconds",
-                  numberOr(
-                    e.target.value,
-                    draft.recovery_probe_interval_seconds,
-                  ),
-                )
-              }
-            />
-          </label>
-          <p className="panel-muted" style={{ marginTop: 14, marginBottom: 6 }}>
-            {t("ops.runtime.section.healthSweep")}
-          </p>
-          <label
-            className="check"
-          >
+        </Panel>
+
+        <Panel className="runtime-card runtime-card-health" id="runtime-health">
+          <div className="panel-header">
+            <strong>{t("ops.runtime.section.healthSweep")}</strong>
+          </div>
+          <label className="check">
             <input
               type="checkbox"
               disabled={busy}
               checked={draft.health_sweep_enabled}
-              onChange={(e) =>
-                patch("health_sweep_enabled", e.target.checked)
-              }
+              onChange={(e) => patch("health_sweep_enabled", e.target.checked)}
             />
             <span className="setting-check-label">
               <span>{t("ops.runtime.healthSweep")}</span>
@@ -467,8 +435,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.healthSweepInterval")}
               hint={t("ops.runtime.healthSweepIntervalHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={10}
               max={86400}
               disabled={busy || !draft.health_sweep_enabled}
@@ -486,11 +453,20 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.healthSweepJitter")}
               hint={t("ops.runtime.healthSweepJitterHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
               max={3600}
               disabled={busy || !draft.health_sweep_enabled}
+              customError={
+                draft.health_sweep_interval_seconds >= 10 &&
+                draft.health_sweep_interval_seconds <= 86400 &&
+                draft.health_sweep_jitter_seconds >
+                  draft.health_sweep_interval_seconds
+                  ? t("ops.runtime.validation.jitterExceedsInterval", {
+                      interval: draft.health_sweep_interval_seconds,
+                    })
+                  : undefined
+              }
               value={draft.health_sweep_jitter_seconds}
               onChange={(e) =>
                 patch(
@@ -505,8 +481,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.healthSweepDegraded")}
               hint={t("ops.runtime.healthSweepDegradedHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={100}
               max={60000}
               disabled={busy || !draft.health_sweep_enabled}
@@ -524,8 +499,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.healthSweepConcurrency")}
               hint={t("ops.runtime.healthSweepConcurrencyHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={1}
               max={64}
               disabled={busy || !draft.health_sweep_enabled}
@@ -543,8 +517,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.healthSweepTimeout")}
               hint={t("ops.runtime.healthSweepTimeoutHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={1}
               max={120}
               disabled={busy || !draft.health_sweep_enabled}
@@ -563,10 +536,7 @@ export function RuntimeSettingsPanel() {
           <div className="panel-header">
             <strong>{t("ops.runtime.section.sticky")}</strong>
           </div>
-          <label
-            className="check"
-            style={{ marginBottom: 10 }}
-          >
+          <label className="check" style={{ marginBottom: 10 }}>
             <input
               type="checkbox"
               disabled={busy}
@@ -583,8 +553,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.stickyTTL")}
               hint={t("ops.runtime.stickyTTLHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={1}
               max={1440}
               disabled={busy || !draft.sticky_enabled}
@@ -599,7 +568,10 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
-        <Panel className="runtime-card runtime-card-checkin" id="runtime-checkin">
+        <Panel
+          className="runtime-card runtime-card-checkin"
+          id="runtime-checkin"
+        >
           <div className="panel-header">
             <div>
               <strong>{t("ops.runtime.section.checkin")}</strong>
@@ -609,9 +581,7 @@ export function RuntimeSettingsPanel() {
               {t("ops.runtime.openCheckin")}
             </Link>
           </div>
-          <label
-            className="check"
-          >
+          <label className="check">
             <input
               type="checkbox"
               disabled={busy}
@@ -651,9 +621,9 @@ export function RuntimeSettingsPanel() {
                   label={t("ops.runtime.ratePerMinute")}
                   hint={t("ops.runtime.relayRateHint")}
                 />
-                <input
-                  type="number"
+                <ValidatedNumberInput
                   min={0}
+                  max={1000000}
                   disabled={busy}
                   value={draft.relay_rate_per_minute}
                   onChange={(e) =>
@@ -669,9 +639,9 @@ export function RuntimeSettingsPanel() {
                   label={t("ops.runtime.rateBurst")}
                   hint={t("ops.runtime.relayRateHint")}
                 />
-                <input
-                  type="number"
+                <ValidatedNumberInput
                   min={0}
+                  max={1000000}
                   disabled={busy}
                   value={draft.relay_rate_burst}
                   onChange={(e) =>
@@ -695,9 +665,9 @@ export function RuntimeSettingsPanel() {
                   label={t("ops.runtime.ratePerMinute")}
                   hint={t("ops.runtime.adminRateHint")}
                 />
-                <input
-                  type="number"
+                <ValidatedNumberInput
                   min={0}
+                  max={1000000}
                   disabled={busy}
                   value={draft.admin_rate_per_minute}
                   onChange={(e) =>
@@ -713,9 +683,9 @@ export function RuntimeSettingsPanel() {
                   label={t("ops.runtime.rateBurst")}
                   hint={t("ops.runtime.adminRateHint")}
                 />
-                <input
-                  type="number"
+                <ValidatedNumberInput
                   min={0}
+                  max={1000000}
                   disabled={busy}
                   value={draft.admin_rate_burst}
                   onChange={(e) =>
@@ -739,9 +709,9 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.auditDays")}
               hint={t("ops.runtime.auditDaysHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
+              max={36500}
               disabled={busy}
               value={draft.audit_retention_days}
               onChange={(e) =>
@@ -757,9 +727,9 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.auditRows")}
               hint={t("ops.runtime.auditRowsHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
+              max={10000000}
               disabled={busy}
               value={draft.audit_retention_rows}
               onChange={(e) =>
@@ -771,13 +741,14 @@ export function RuntimeSettingsPanel() {
             />
           </label>
         </Panel>
-        <Panel className="runtime-card runtime-card-routing" id="runtime-routing">
+        <Panel
+          className="runtime-card runtime-card-routing"
+          id="runtime-routing"
+        >
           <div className="panel-header">
             <strong>{t("ops.runtime.section.routing")}</strong>
           </div>
-          <label
-            className="check"
-          >
+          <label className="check">
             <input
               type="checkbox"
               disabled={busy}
@@ -836,9 +807,9 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.concurrencyLimit")}
               hint={t("ops.runtime.concurrencyLimitHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={1}
+              max={100000}
               disabled={busy}
               value={draft.routing_concurrency_limit}
               onChange={(e) =>
@@ -851,13 +822,14 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
-        <Panel className="runtime-card runtime-card-stable-first" id="runtime-stable-first">
+        <Panel
+          className="runtime-card runtime-card-stable-first"
+          id="runtime-stable-first"
+        >
           <div className="panel-header">
             <strong>{t("ops.runtime.section.stableFirst")}</strong>
           </div>
-          <label
-            className="check"
-          >
+          <label className="check">
             <input
               type="checkbox"
               disabled={busy}
@@ -874,9 +846,9 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.stableFirstDenominator")}
               hint={t("ops.runtime.stableFirstDenominatorHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={2}
+              max={1000}
               disabled={busy}
               value={draft.stable_first_denominator}
               onChange={(e) =>
@@ -892,9 +864,9 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.stableFirstPromote")}
               hint={t("ops.runtime.stableFirstPromoteHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={1}
+              max={100000}
               disabled={busy}
               value={draft.stable_first_promote_requests}
               onChange={(e) =>
@@ -926,51 +898,12 @@ export function RuntimeSettingsPanel() {
           </label>
           <label className="field">
             <SettingLabel
-              label={t("ops.runtime.proxyURL")}
-              hint={t("ops.runtime.proxyURLHint")}
-            />
-            <input
-              type="url"
-              placeholder="http://127.0.0.1:7897"
-              disabled={busy}
-              value={draft.proxy_url ?? ""}
-              onChange={(e) => patch("proxy_url", e.target.value)}
-            />
-          </label>
-      <label className="field">
-        <SettingLabel
-          label={t("ops.runtime.discoveryCron")}
-          hint={t("ops.runtime.discoveryCronHint")}
-        />
-        <input
-          type="text"
-          placeholder="0 3 * * *"
-          disabled={busy}
-          value={draft.discovery_cron ?? ""}
-          onChange={(e) => patch("discovery_cron", e.target.value)}
-        />
-      </label>
-      <label className="field">
-        <SettingLabel
-          label={t("ops.maintenance.cron")}
-          hint={t("ops.maintenance.cronHint")}
-        />
-        <input
-          type="text"
-          placeholder="0 4 * * *"
-          disabled={busy}
-          value={draft.db_gc_cron ?? ""}
-          onChange={(e) => patch("db_gc_cron", e.target.value)}
-        />
-      </label>
-          <label className="field">
-            <SettingLabel
               label={t("ops.runtime.webhookThrottle")}
               hint={t("ops.runtime.webhookThrottleHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={1}
+              max={86400}
               disabled={busy}
               value={draft.webhook_throttle_seconds}
               onChange={(e) =>
@@ -1007,8 +940,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.alertSweepInterval")}
               hint={t("ops.runtime.alertSweepIntervalHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
               max={86400}
               disabled={busy}
@@ -1026,8 +958,7 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.alertDailyInterval")}
               hint={t("ops.runtime.alertDailyIntervalHint")}
             />
-            <input
-              type="number"
+            <ValidatedNumberInput
               min={0}
               max={86400}
               disabled={busy}
@@ -1045,7 +976,55 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
-      <Panel className="runtime-card runtime-card-server" id="runtime-server">
+        <Panel
+          className="runtime-card runtime-card-maintenance"
+          id="runtime-maintenance"
+        >
+          <div className="panel-header">
+            <strong>{t("ops.runtime.section.maintenance")}</strong>
+          </div>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.proxyURL")}
+              hint={t("ops.runtime.proxyURLHint")}
+            />
+            <input
+              type="url"
+              placeholder="http://127.0.0.1:7897"
+              disabled={busy}
+              value={draft.proxy_url ?? ""}
+              onChange={(e) => patch("proxy_url", e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.discoveryCron")}
+              hint={t("ops.runtime.discoveryCronHint")}
+            />
+            <input
+              type="text"
+              placeholder="0 3 * * *"
+              disabled={busy}
+              value={draft.discovery_cron ?? ""}
+              onChange={(e) => patch("discovery_cron", e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.maintenance.cron")}
+              hint={t("ops.maintenance.cronHint")}
+            />
+            <input
+              type="text"
+              placeholder="0 4 * * *"
+              disabled={busy}
+              value={draft.db_gc_cron ?? ""}
+              onChange={(e) => patch("db_gc_cron", e.target.value)}
+            />
+          </label>
+        </Panel>
+
+        <Panel className="runtime-card runtime-card-server" id="runtime-server">
           <div className="panel-header">
             <strong>{t("ops.runtime.section.server")}</strong>
           </div>
@@ -1084,18 +1063,18 @@ export function RuntimeSettingsPanel() {
               {data.plugins_dir}
             </strong>
           </div>
-		  <div className="runtime-setting-row">
-			<span className="runtime-setting-label">
-			  {t("ops.runtime.metricsToken")}
-			</span>
-			<strong className="runtime-setting-value mono">
-			  {data.metrics_token_masked
-				? data.metrics_token_masked
-				: t("ops.runtime.metricsTokenNone")}
-			</strong>
-		  </div>
-      </Panel>
-        </div>
+          <div className="runtime-setting-row">
+            <span className="runtime-setting-label">
+              {t("ops.runtime.metricsToken")}
+            </span>
+            <strong className="runtime-setting-value mono">
+              {data.metrics_token_masked
+                ? data.metrics_token_masked
+                : t("ops.runtime.metricsTokenNone")}
+            </strong>
+          </div>
+        </Panel>
+      </RuntimeSettingsColumns>
 
       <div className="runtime-tools-grid">
         <TOTPPanel />

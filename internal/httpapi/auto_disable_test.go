@@ -31,7 +31,7 @@ func TestChannelAutoDisable(t *testing.T) {
 	db, _ := store.Open(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("auto-disable-test-master-key-32-char!!")
-	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, ChannelAutoDisableThreshold: 2, Cooldown: time.Second}
+	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, ChannelAutoDisableThreshold: 2, Cooldown: time.Second, FaultProtectionEnabled: true}
 	server := httptest.NewServer(httpapi.New(cfg, db, enc))
 	defer server.Close()
 

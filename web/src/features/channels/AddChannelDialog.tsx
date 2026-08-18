@@ -1,13 +1,19 @@
-import { Cable, ChevronDown } from "lucide-react"
-import { useState } from "react"
-import { api } from "../../api/client"
-import { SearchableSelect } from "../../components/SearchableSelect"
-import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui"
-import { useI18n } from "../../i18n"
-import { PROVIDER_BASE_URLS } from "../../connectionTypes"
-import { useSession } from "../../session"
-import { TYPE_OPTIONS } from "./helpers"
-import { TYPE_GROUPS, type CreateConnectionInput } from "./helpers"
+import { Cable, ChevronDown } from "lucide-react";
+import { useState } from "react";
+import { api } from "../../api/client";
+import { SearchableSelect } from "../../components/SearchableSelect";
+import {
+  Button,
+  Dialog,
+  ErrorState,
+  Field,
+  InfoTip,
+} from "../../components/ui";
+import { useI18n } from "../../i18n";
+import { PROVIDER_BASE_URLS } from "../../connectionTypes";
+import { useSession } from "../../session";
+import { TYPE_OPTIONS } from "./helpers";
+import { TYPE_GROUPS, type CreateConnectionInput } from "./helpers";
 
 export function AddChannelDialog({
   pending,
@@ -27,6 +33,7 @@ export function AddChannelDialog({
   const [baseUrl, setBaseUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [typeHint, setTypeHint] = useState("openai-compatible");
+  const [groupName, setGroupName] = useState("default");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const canSubmit = Boolean(baseUrl.trim() && secret.trim());
 
@@ -49,6 +56,7 @@ export function AddChannelDialog({
                   base_url: baseUrl,
                   secret,
                   type_hint: typeHint,
+                  group_name: groupName,
                 },
                 { verify: true },
               )
@@ -59,9 +67,9 @@ export function AddChannelDialog({
         </>
       }
     >
-			<div className="ops-panel-context">
-				<span>{t("channels.addHint")}</span>
-			</div>
+      <div className="ops-panel-context">
+        <span>{t("channels.addHint")}</span>
+      </div>
       <div className="form-grid form-grid-single">
         <Field label={t("common.type")}>
           <SearchableSelect
@@ -113,13 +121,23 @@ export function AddChannelDialog({
               service
                 .detectSiteType(url)
                 .then((detected) => {
-                  if (detected.family && TYPE_OPTIONS.some((o) => o.value === detected.family)) {
+                  if (
+                    detected.family &&
+                    TYPE_OPTIONS.some((o) => o.value === detected.family)
+                  ) {
                     setTypeHint(detected.family);
                   }
                 })
                 .catch(() => undefined);
             }}
             placeholder="https://api.example.com"
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("channels.group")} hint={t("channels.groupHint")}>
+          <input
+            value={groupName}
+            onChange={(event) => setGroupName(event.target.value)}
             disabled={pending}
           />
         </Field>
@@ -154,6 +172,7 @@ export function AddChannelDialog({
                   base_url: baseUrl,
                   secret,
                   type_hint: typeHint,
+                  group_name: groupName,
                 },
                 { verify: false },
               )
@@ -161,7 +180,7 @@ export function AddChannelDialog({
           >
             {t("channels.saveOnly")}
           </Button>
-									<InfoTip label={t("channels.saveOnlyHint")} />
+          <InfoTip label={t("channels.saveOnlyHint")} />
         </div>
       ) : null}
 

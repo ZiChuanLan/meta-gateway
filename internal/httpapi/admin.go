@@ -137,8 +137,6 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Get("/groups", h.listGroups)
 	r.Put("/groups/{name}", h.upsertGroup)
 	r.Delete("/groups/{name}", h.deleteGroup)
-	// Bulk channel operations by tag
-	r.Patch("/channels/tag/{tag}", h.patchChannelsByTag)
 
 	// Sticky session routing (available when enabled at boot)
 	r.Get("/sticky", h.stickyStats)

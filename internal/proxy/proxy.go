@@ -73,22 +73,10 @@ type Service struct {
 	cooldownNs                  atomic.Int64
 	now                         func() time.Time
 	registry                    *adapters.Registry
-	// breaker is the model-level circuit breaker (channel × model).
-	breaker *ModelCircuitBreaker
-	// keyErrCounts tracks per channel × api-key × status-code consecutive
-	// failures (AxonHub-style triple-key counting); a key that hits the
-	// auto-disable threshold is temporarily excluded from the pool.
-	keyErrMu     sync.Mutex
-	keyErrCounts map[int64]map[string]map[int]int
-	// disabledKeys scopes the exclusion per channel (a key is only lifted by a
-	// success on the same channel that disabled it).
-	disabledKeys map[disabledKey]time.Time
 	// autoDisableThreshold: consecutive member failures before a channel is
 	// auto-disabled (0 = feature off).
-	autoDisableThreshold atomic.Int64
-	// keyFailThreshold: consecutive failures (per channel × key × status)
-	// before an upstream API key is excluded from the pool (0 = feature off).
-	keyFailThreshold atomic.Int64
+	autoDisableThreshold   atomic.Int64
+	faultProtectionEnabled atomic.Bool
 	// latencyAware enables latency-weighted channel picking.
 	latencyAware atomic.Bool
 	latencyMu    sync.Mutex
@@ -128,13 +116,6 @@ type channelModel struct {
 	model     string
 }
 
-// disabledKey identifies a per-channel key exclusion (channelID + fingerprint)
-// so one channel's auto-disable is never lifted by another channel's success.
-type disabledKey struct {
-	channelID int64
-	fp        string
-}
-
 type Request struct {
 	RequestID string
 	Model     string
@@ -161,6 +142,11 @@ type Request struct {
 	// (e.g. X-Meta-Session-Id). When empty, the gateway derives a content
 	// digest session key from the request body.
 	SessionKey string
+	// RouteID is filled after selection so usage accounting can update a
+	// model-level stable-first route without changing the public relay API.
+	RouteID int64
+	// GrayAttempt indicates that the selected candidate came from the gray pool.
+	GrayAttempt bool
 	// ReasoningEffort is the client-requested OpenAI-style reasoning effort
 	// (low / medium / high / max / xhigh) for observability logging.
 	ReasoningEffort string
@@ -175,6 +161,8 @@ type Request struct {
 
 // AttemptMeta describes which upstream was used for an admin try / last attempt.
 type AttemptMeta struct {
+	RouteID     int64  `json:"route_id,omitempty"`
+	GrayAttempt bool   `json:"gray_attempt,omitempty"`
 	ChannelID   int64  `json:"channel_id"`
 	ChannelName string `json:"channel_name"`
 	MemberID    int64  `json:"member_id"`
@@ -190,14 +178,11 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 		cooldown = 0
 	}
 	service := &Service{selector: selector, relay: upstream, db: db, enc: enc, now: time.Now}
-	service.breaker = NewModelCircuitBreaker(0)
-	service.keyErrCounts = make(map[int64]map[string]map[int]int)
-	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.retryTimes.Store(int64(retryTimes))
 	service.channelRetryTimes.Store(1)
 	service.crossChannelFailoverEnabled.Store(true)
 	service.keyPoolRotation.Store(true)
-	service.keyFailThreshold.Store(5)
+	service.faultProtectionEnabled.Store(true)
 	service.cooldownNs.Store(int64(cooldown))
 	service.gate = NewChannelGate()
 	return service
@@ -209,30 +194,10 @@ func (s *Service) SetAutoDisableThreshold(n int) {
 	s.autoDisableThreshold.Store(int64(n))
 }
 
-// SetBreakerFailCount hot-applies the model circuit breaker's open threshold
-// (MODEL_BREAKER_FAIL_COUNT / runtime settings). 0 disables the memory
-// breaker; negative values reset to the default. Nil breaker (tests) is a
-// no-op.
-func (s *Service) SetBreakerFailCount(n int) {
-	if s.breaker != nil {
-		s.breaker.SetOpenThreshold(n)
-	}
-}
-
-// CircuitWeight exposes the live channel×model breaker multiplier to the
-// routing selector and Admin explanation endpoint. It is intentionally
-// read-only; recovery still happens only through a successful probe/relay.
-func (s *Service) CircuitWeight(channelID int64, model string) float64 {
-	if s == nil || s.breaker == nil {
-		return 1
-	}
-	return s.breaker.EffectiveWeight(channelID, model, 1)
-}
-
-// SetKeyFailThreshold hot-applies the per-key failure threshold (0 disables
-// key auto-exclusion).
-func (s *Service) SetKeyFailThreshold(n int) {
-	s.keyFailThreshold.Store(int64(n))
+// SetFaultProtection controls fixed cooldown and channel auto-disable. Retry,
+// cross-channel failover, and health reporting continue when it is disabled.
+func (s *Service) SetFaultProtection(enabled bool) {
+	s.faultProtectionEnabled.Store(enabled)
 }
 
 // SetStableFirstPromote configures the grayscale promotion threshold: after

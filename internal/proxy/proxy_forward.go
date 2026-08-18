@@ -228,6 +228,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			channelRetryOverride = decision.ChannelRetryTimesOverride
 		}
 		candidate := decision.Selected
+		req.RouteID = decision.RouteID
 		if req.PreferChannelID > 0 {
 			pinned, ok := pickPreferred(decision, req.PreferChannelID)
 			if !ok {
@@ -235,6 +236,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			candidate = pinned
 		}
+		modelGrayPool := decision.StableFirstOverride != nil && *decision.StableFirstOverride
+		req.GrayAttempt = candidate.Channel.StableFirst && (decision.StableFirstHit || modelGrayPool)
 		// Channel-scoped rules are evaluated only once the candidate is known;
 		// applying them before selection would incorrectly affect every channel.
 		requestBody := req.Body
@@ -271,23 +274,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			continue
 		}
-		// Circuit breaker: an open channel × model is skipped entirely (weight
-		// 0) until its probe window allows a single probe request through.
-		if s.breaker != nil && s.breaker.EffectiveWeight(candidate.Channel.ID, req.Model, 1) <= 0 {
-			excluded[candidate.Channel.ID] = struct{}{}
-			if last != nil && last.Body != nil {
-				_ = last.Body.Close()
-			}
-			last = preserve(&relay.Result{StatusCode: http.StatusServiceUnavailable, Err: fmt.Errorf("proxy: circuit open for %s on channel %d", req.Model, candidate.Channel.ID)})
-			lastMeta = &AttemptMeta{
-				ChannelID:   candidate.Channel.ID,
-				ChannelName: candidate.Channel.Name,
-				MemberID:    candidate.Member.ID,
-				Priority:    candidate.Member.Priority,
-				Weight:      candidate.Member.Weight,
-			}
-			continue
-		}
 		// Burst guard: reserve one in-flight slot for the whole attempt sequence
 		// on this channel (all keys + retries), so the selector sees real
 		// occupancy while the request is in flight.
@@ -302,6 +288,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		defer releaseAttempt()
 		meta := &AttemptMeta{
+			RouteID:     decision.RouteID,
+			GrayAttempt: req.GrayAttempt,
 			ChannelID:   candidate.Channel.ID,
 			ChannelName: candidate.Channel.Name,
 			MemberID:    candidate.Member.ID,
@@ -330,32 +318,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		gateGen = acquiredGen
 		gateHeld = true
-		probeReserved := false
-		probeEnded := false
-		endProbe := func() {
-			if probeReserved && !probeEnded {
-				s.breaker.EndProbe(candidate.Channel.ID, req.Model)
-				probeEnded = true
-			}
-		}
-		defer endProbe()
-		// EffectiveWeight returns a half-open weight when an open breaker is
-		// due for recovery. Reserve the single probe slot before doing any
-		// request setup so concurrent requests cannot all pass as probes.
-		if s.breaker != nil && s.breaker.IsOpen(candidate.Channel.ID, req.Model) {
-			if !s.breaker.TryBeginProbe(candidate.Channel.ID, req.Model) {
-				excluded[candidate.Channel.ID] = struct{}{}
-				last = preserve(&relay.Result{
-					StatusCode: http.StatusServiceUnavailable,
-					Err:        fmt.Errorf("proxy: circuit probe busy for %s on channel %d", req.Model, candidate.Channel.ID),
-				})
-				lastMeta = meta
-				releaseAttempt()
-				releaseGate()
-				continue
-			}
-			probeReserved = true
-		}
 		var result *relay.Result
 		var category string
 		var retryable bool
@@ -494,16 +456,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			result = &relay.Result{Err: ErrCredential}
 			category = "no_credential"
 			retryable = true
-			if s.breaker != nil {
-				s.breaker.RecordError(candidate.Channel.ID, req.Model, false)
-			}
 			s.recordAttempt(req, candidate, attempt+1, result, category, "")
 			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
 
 			excluded[candidate.Channel.ID] = struct{}{}
 			last = preserve(result)
 			lastMeta = meta
-			endProbe()
 			releaseAttempt()
 			releaseGate()
 			continue
@@ -540,10 +498,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				}
 				// Time the upstream round trip for first-byte latency on streams.
 				forwardStarted := s.now()
-				// Circuit-breaker probe: an open breaker whose window is due lets
-				// exactly one request through as a probe; its outcome drives the
-				// recovery backoff.
-				wasProbe := probeReserved
 				// Non-streaming requests get an overall cap: an upstream that answers
 				// headers and then stalls mid-body would otherwise pin this goroutine
 				// until the client disconnects. Streaming requests are exempt — long
@@ -718,24 +672,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					category = "stream_interrupted"
 					retryable = true
 				}
-				// Circuit breaker bookkeeping: a success resets the breaker right away.
-				// Failures are NOT counted per attempt here — the same-key re-send
-				// loop would otherwise advance the breaker by (retries+1) for a
-				// single request. They are counted exactly once per request after
-				// the re-sends are exhausted (transport branch / channel tail).
-				if s.breaker != nil && !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
-					s.breaker.RecordSuccess(candidate.Channel.ID, req.Model)
-				}
-				// Per-key auto-disable (AxonHub): a key that fails N times with the
-				// same status code is excluded from the pool. A successful re-send
-				// clears the key's counters immediately; the failure path is
-				// counted once per key after that key's re-sends are exhausted
-				// (transport branch / key-loop tail below), so a single request
-				// does not advance the counter once per attempt. Adapter-local
-				// errors do not implicate the key.
-				if !localAdapterFailure && result.Err == nil && result.StatusCode < 400 {
-					s.recordKeySuccess(candidate.Channel.ID, apiKey)
-				}
 				// The channel consecutive-failure counter is incremented exactly once
 				// per failed attempt (inside recordMemberFailure below); counting here
 				// too would over-count a multi-key pool (3 keys + member = 4) and
@@ -751,33 +687,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
 					break
 				}
-				// Network errors fail fast: re-send the same key up to
-				// channelRetryTimes, then cool the channel and return instead of
-				// fanning out across every channel (a dead network link usually
-				// affects all channels equally). The failure counters advance
-				// exactly once here — after the re-sends are exhausted.
-				if category == "transport" && keyAttempt >= keyRetries {
-					if result.Body != nil {
-						_ = result.Body.Close()
-					}
-					if s.breaker != nil && !localAdapterFailure {
-						s.breaker.RecordError(candidate.Channel.ID, req.Model, wasProbe)
-					}
-					if !localAdapterFailure {
-						if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
-							log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
-							// All keys down → cascade to the channel-level disable.
-							s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
-						}
-					}
-					penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
-					s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
-					s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
-					return result, meta
-				}
-				// Business retryables (5xx/429): re-send the same key up to
-				// channelRetryTimes, then try the next key in the pool before
-				// failing over to another channel.
+				// Retryable transport/business failures are re-sent on the same key
+				// up to channelRetryTimes. Once exhausted, the key pool and then the
+				// configured cross-channel retry rounds continue normally.
 				if keyAttempt >= keyRetries {
 					break
 				}
@@ -794,17 +706,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
 				s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
 			}
-			// Per-key failure accounting: this key's re-sends are exhausted (or the
-			// error is not retryable) — count the key's failure exactly once per
-			// request. Client-cancelled requests are not upstream failures.
-			if !isLocalFailure(result.Err) && (result.Err != nil || result.StatusCode >= 400) &&
-				!errors.Is(result.Err, context.Canceled) && !errors.Is(result.Err, context.DeadlineExceeded) && ctx.Err() == nil {
-				if s.recordKeyFailure(candidate.Channel.ID, apiKey, result.StatusCode) {
-					log.Printf("proxy: auto-disabled api key %s on channel %d after repeated status %d (downstream_key_id=%d request_id=%s)", keyFingerprint(apiKey), candidate.Channel.ID, result.StatusCode, req.DownstreamKeyID, req.RequestID)
-					// All keys down → cascade to the channel-level disable.
-					s.cascadeChannelIfAllKeysDisabled(candidate.Channel)
-				}
-			}
 			if result.Err == nil && !retryable {
 				break
 			}
@@ -817,7 +718,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		// Keep the soft in-flight count for every key and retry on this channel;
 		// release only after the complete channel attempt has been exhausted.
-		endProbe()
 		releaseAttempt()
 		if result == nil {
 			return &relay.Result{Err: ErrCredential}, meta
@@ -888,13 +788,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 		}
 		if retryable {
-			// Channel-level breaker: all keys on this channel failed after
-			// their re-sends — one failure per request, not per attempt.
-			// ignore_monitor rules skip this bookkeeping entirely.
-			if !monitorSkipped {
-				if s.breaker != nil && !isLocalFailure(result.Err) {
-					s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
-				}
+			// Pure transport jitter is not penalized: no cooldown, no channel
+			// failure count. ignore_monitor rules skip bookkeeping entirely.
+			if !monitorSkipped && category != "transport" {
 				penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
 				s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
 			}
@@ -920,11 +816,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					}
 					log.Printf("proxy: model %s not found on channel %d — blacklisted (request_id=%s)", req.Model, candidate.Channel.ID, req.RequestID)
 				}
-				if s.breaker != nil && !isLocalFailure(result.Err) {
-					s.breaker.RecordError(candidate.Channel.ID, req.Model, probeReserved)
-				}
-				if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
-					log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
+				if s.faultProtectionEnabled.Load() {
+					if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+						log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
+					}
 				}
 				s.observeError(candidate.Channel.ID, req.Model)
 			}

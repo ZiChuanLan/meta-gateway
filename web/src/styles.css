@@ -5244,35 +5244,23 @@ td.actions {
 .runtime-settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-areas:
-    "relay sticky"
-    "cooldown health"
-    "checkin limits"
-    "audit routing"
-    "stable server"
-    "alerts alerts";
-  gap: 18px;
-  align-items: stretch;
+  gap: 14px;
+  align-items: start;
 }
-.runtime-settings-grid > .runtime-card {
+.runtime-settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.runtime-settings-column > .runtime-card {
   display: flex;
   flex-direction: column;
   min-width: 0;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
   align-self: stretch;
 }
-.runtime-card-relay { grid-area: relay; }
-.runtime-card-cooldown { grid-area: cooldown; }
-.runtime-card-health { grid-area: health; }
-.runtime-card-sticky { grid-area: sticky; }
-.runtime-card-checkin { grid-area: checkin; }
-.runtime-card-limits { grid-area: limits; }
-.runtime-card-audit { grid-area: audit; }
-.runtime-card-routing { grid-area: routing; }
-.runtime-card-stable-first { grid-area: stable; }
-.runtime-card-alerts { grid-area: alerts; }
-.runtime-card-server { grid-area: server; }
 .runtime-setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
@@ -5299,7 +5287,7 @@ td.actions {
     grid-template-columns: 1fr;
     grid-template-areas: none;
   }
-  .runtime-settings-grid > .runtime-card {
+  .runtime-settings-column > .runtime-card {
     grid-area: auto;
   }
 }
@@ -5351,6 +5339,34 @@ td.actions {
   height: 17px;
   flex-basis: 17px;
 }
+.setting-input-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.setting-input-wrap > input {
+  flex: 0 1 160px;
+  width: 100%;
+  max-width: 160px;
+}
+
+.setting-input-wrap.is-invalid > input {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.setting-validation {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding-top: 9px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .runtime-inline-fields input {
   width: 100%;
   min-width: 0;
@@ -5397,6 +5413,18 @@ td.actions {
 }
 .runtime-settings-grid .runtime-card input[type="number"] {
   max-width: 160px;
+}
+
+.runtime-inline-fields .setting-input-wrap {
+  display: block;
+}
+
+.runtime-inline-fields .setting-input-wrap > input {
+  max-width: 100%;
+}
+
+.runtime-inline-fields .setting-validation {
+  padding-top: 5px;
 }
 .checkin-time-picker {
   display: inline-flex;
@@ -6375,6 +6403,23 @@ td.actions {
   font-size: 12px;
   padding: 8px 14px;
 }
+.model-group-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.model-group-picker select {
+  width: 100%;
+}
+
+.model-group-picker .field-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .model-picker {
   display: flex;
   flex-direction: column;
@@ -7827,15 +7872,15 @@ label.check input[type="checkbox"] {
 .runtime-settings {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .runtime-settings .runtime-card {
   position: relative;
-  padding: 20px;
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(28, 26, 23, 0.05);
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 96%, var(--accent-soft));
+  box-shadow: 0 1px 2px rgba(28, 26, 23, 0.04);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -7855,15 +7900,15 @@ label.check input[type="checkbox"] {
 
 .runtime-settings .runtime-card > .panel-header {
   min-height: 0;
-  padding-bottom: 12px;
-  margin-bottom: 16px;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
 
 .runtime-settings .runtime-card > .field,
 .runtime-settings .runtime-card > .check {
   margin-top: 0 !important;
-  margin-bottom: 14px !important;
+  margin-bottom: 10px !important;
 }
 
 .runtime-settings .runtime-card > .field:last-child,
@@ -7872,7 +7917,7 @@ label.check input[type="checkbox"] {
 }
 
 .runtime-settings .runtime-card > .panel-muted {
-  margin: 16px 0 8px !important;
+  margin: 12px 0 6px !important;
   line-height: 1.4;
 }
 
@@ -7895,7 +7940,7 @@ label.check input[type="checkbox"] {
 .runtime-tools-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
   margin-top: 0;
   align-items: stretch;
 }
@@ -8369,14 +8414,13 @@ tbody td .mono {
   justify-content: flex-end;
 }
 
-/* Do not stretch a short settings card to the height of its neighbour. */
+/* Keep each settings column independent so short cards stay close together. */
 .runtime-settings-grid {
   align-items: start;
-  grid-auto-rows: max-content;
 }
 
-.runtime-settings-grid > .runtime-card {
-  align-self: start !important;
+.runtime-settings-column > .runtime-card {
+  align-self: stretch;
   height: auto;
   min-height: 0;
 }

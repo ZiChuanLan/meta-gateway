@@ -78,10 +78,7 @@ curl http://127.0.0.1:4100/healthz
 | `KEY_POOL_ROTATION` | `true` | 某个密钥失败时轮换站点内的其他 API 密钥；关闭 = 仅使用渠道绑定的密钥 |
 | `CROSS_CHANNEL_FAILOVER_ENABLED` | `true` | 失败的请求是否可以切换到其他渠道；关闭时只尝试第一个选中的渠道 |
 | `COOLDOWN_SECONDS` | `30` | 可重试成员失败后的固定冷却时间 |
-| `PROGRESSIVE_COOLDOWN_ENABLED` | `true` | 连续失败后逐级升级成员冷却（`COOLDOWN_LEVEL2/3/4_SECONDS`），而非固定暂停 |
-| `BREAKER_FAIL_COUNT` | `5` | 连续失败多少次后停用路由成员（0 关闭；渐进模式下限 5） |
-| `MODEL_BREAKER_FAIL_COUNT` | `5` | 连续失败多少次后打开内存中的渠道×模型断路器（0 关闭） |
-| `KEY_FAIL_THRESHOLD` | `5` | 每密钥连续失败多少次后排除该密钥 30 分钟（0 关闭） |
+| `FAULT_PROTECTION_ENABLED` | `true` | 故障保护总开关：控制固定冷却与渠道自动禁用；关闭后仍保留重试和故障转移 |
 | `CHANNEL_AUTO_DISABLE_THRESHOLD` | `5` | 连续转发失败多少次后自动停用渠道（0 关闭） |
 | `RECOVERY_PROBE_ENABLED` / `RECOVERY_PROBE_INTERVAL_SECONDS` | `true` / `600` | 对自动停用渠道进行恢复探测 |
 | `ROUTING_LATENCY_AWARE` / `ROUTING_ERROR_AWARE` / `ROUTING_CONCURRENCY_AWARE` | `true` | 路由信号开关（延迟、错误历史、并发负载） |

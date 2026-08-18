@@ -155,9 +155,6 @@ type Channel struct {
 	// RetryConfig is a JSON-encoded RetryConfig (per-channel retryable status
 	// codes and error-text patterns). Empty string = global defaults only.
 	RetryConfig string `json:"retry_config,omitempty"`
-	// Tags is a comma-separated free-form tag list for bulk operations
-	// (priority/weight/status updates by tag).
-	Tags string `json:"tags,omitempty"`
 	// StableFirst marks the channel as a grayscale candidate: it receives a
 	// small 1/N fraction of traffic until it earns promotion.
 	StableFirst bool `json:"stable_first,omitempty"`
@@ -174,19 +171,6 @@ type Channel struct {
 type RetryableErrorPattern struct {
 	Pattern string `json:"pattern"`
 	Regex   bool   `json:"regex,omitempty"`
-}
-
-// ChannelPatch is a partial channel update applied to every channel with a
-// given tag (bulk operations). Nil fields are left untouched.
-type ChannelPatch struct {
-	Priority       *int    `json:"priority"`
-	Weight         *int    `json:"weight"`
-	Status         *string `json:"status"`
-	ModelsCSV      *string `json:"models_csv"`
-	GroupName      *string `json:"group_name"`
-	RetryConfig    *string `json:"retry_config"`
-	SystemPrompt   *string `json:"system_prompt"`
-	HeaderOverride *string `json:"header_override"`
 }
 
 // RetryConfig is the per-channel retry policy (mirrors AxonHub retry.go).
@@ -352,9 +336,26 @@ type Route struct {
 	RetryTimes *int `json:"retry_times,omitempty"`
 	// ChannelRetryTimes overrides the global same-key re-send count
 	// (CHANNEL_RETRY_TIMES) for this model. nil = follow the global setting.
-	ChannelRetryTimes *int      `json:"channel_retry_times,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ChannelRetryTimes *int `json:"channel_retry_times,omitempty"`
+	// Model-level relay overrides. A nil pointer means inherit the selected
+	// channel's default; a non-nil value, including empty/zero/false, is an
+	// explicit model override.
+	MaxReasoningEffort         *string `json:"max_reasoning_effort,omitempty"`
+	MaxConcurrent              *int    `json:"max_concurrent,omitempty"`
+	ProxyURL                   *string `json:"proxy_url,omitempty"`
+	HeaderOverride             *string `json:"header_override,omitempty"`
+	SystemPrompt               *string `json:"system_prompt,omitempty"`
+	RetryConfig                *string `json:"retry_config,omitempty"`
+	PayloadRules               *string `json:"payload_rules,omitempty"`
+	StableFirst                *bool   `json:"stable_first,omitempty"`
+	StableFirstDenominator     *int    `json:"stable_first_denominator,omitempty"`
+	StableFirstPromoteRequests *int    `json:"stable_first_promote_requests,omitempty"`
+	StableFirstRequests        int     `json:"stable_first_requests,omitempty"`
+	// ModelGroup is a manual label; an empty value lets the UI use automatic
+	// vendor-family detection from the model name.
+	ModelGroup string    `json:"model_group,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------

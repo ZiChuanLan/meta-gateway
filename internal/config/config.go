@@ -85,23 +85,11 @@ type Config struct {
 	RecoveryProbeEnabled bool
 	// RecoveryProbeIntervalSeconds is the recovery-loop cadence.
 	RecoveryProbeIntervalSeconds int
-	// ProgressiveCooldownEnabled enables tiered cooldown with per-success decay.
-	ProgressiveCooldownEnabled bool
-	// CooldownLevel2Seconds/3/4 are the tiered cooldown penalties for the
-	// second/third/fourth consecutive failures.
-	CooldownLevel2Seconds int
-	CooldownLevel3Seconds int
-	CooldownLevel4Seconds int
-	// BreakerFailCount is the consecutive-failure threshold that parks a member
-	// (route_members.enabled=0). 0 disables member parking (cooldown only).
-	BreakerFailCount int
-	// ModelBreakerFailCount is the consecutive-failure threshold for the
-	// in-memory channel×model circuit breaker (weight 0 until probe recovers).
-	// 0 disables the memory breaker.
-	ModelBreakerFailCount int
-	// KeyFailThreshold is the per channel×key×status consecutive-failure count
-	// that temporarily excludes an upstream API key from the pool. 0 disables.
-	KeyFailThreshold int
+	// FaultProtectionEnabled gates fixed cooldown and channel auto-disable.
+	FaultProtectionEnabled bool
+	// FaultProtectionConfigured distinguishes a loaded config from a minimal
+	// test/embedder literal, whose zero value should preserve legacy protection.
+	FaultProtectionConfigured bool
 	// StickyEnabled enables sticky-session routing (same conversation prefers
 	// the previously successful channel).
 	StickyEnabled bool
@@ -286,33 +274,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	progressiveCooldown, err := envBool("PROGRESSIVE_COOLDOWN_ENABLED", true)
-	if err != nil {
-		return nil, err
-	}
-	cooldownLevel2, err := envInt("COOLDOWN_LEVEL2_SECONDS", 600, 0, 86400*7)
-	if err != nil {
-		return nil, err
-	}
-	cooldownLevel3, err := envInt("COOLDOWN_LEVEL3_SECONDS", 3600, 0, 86400*7)
-	if err != nil {
-		return nil, err
-	}
-	cooldownLevel4, err := envInt("COOLDOWN_LEVEL4_SECONDS", 86400, 0, 86400*30)
-	if err != nil {
-		return nil, err
-	}
-	// Zero explicitly disables member parking; keep this consistent with the
-	// runtime-settings validator and RouteMemberStore policy.
-	breakerFailCount, err := envInt("BREAKER_FAIL_COUNT", 5, 0, 100)
-	if err != nil {
-		return nil, err
-	}
-	modelBreakerFailCount, err := envInt("MODEL_BREAKER_FAIL_COUNT", 5, 0, 100)
-	if err != nil {
-		return nil, err
-	}
-	keyFailThreshold, err := envInt("KEY_FAIL_THRESHOLD", 5, 0, 100)
+	faultProtection, err := envBool("FAULT_PROTECTION_ENABLED", true)
 	if err != nil {
 		return nil, err
 	}
@@ -489,13 +451,8 @@ func Load() (*Config, error) {
 		AlertSweepInterval:           alertSweepInterval,
 		RecoveryProbeEnabled:         recoveryProbe,
 		RecoveryProbeIntervalSeconds: recoveryProbeInterval,
-		ProgressiveCooldownEnabled:   progressiveCooldown,
-		CooldownLevel2Seconds:        cooldownLevel2,
-		CooldownLevel3Seconds:        cooldownLevel3,
-		CooldownLevel4Seconds:        cooldownLevel4,
-		BreakerFailCount:             breakerFailCount,
-		ModelBreakerFailCount:        modelBreakerFailCount,
-		KeyFailThreshold:             keyFailThreshold,
+		FaultProtectionEnabled:       faultProtection,
+		FaultProtectionConfigured:    true,
 		StickyEnabled:                stickyEnabled,
 		StickyTTL:                    time.Duration(stickyTTLMinutes) * time.Minute,
 		StableFirstEnabled:           stableFirstEnabled,

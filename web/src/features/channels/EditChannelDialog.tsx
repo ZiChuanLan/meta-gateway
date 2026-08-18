@@ -1,16 +1,21 @@
-import { ChevronDown, ExternalLink } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
-import { useState } from "react"
-import { api } from "../../api/client"
-import type { Channel, RouteOverview, Site } from "../../api/types"
-import { parseCredentialMeta } from "../credentialMeta"
-import { Drawer } from "../../components/Drawer"
-import { SearchableSelect } from "../../components/SearchableSelect"
-import { Button, ErrorState, Field } from "../../components/ui"
-import { useI18n } from "../../i18n"
-import { UA_PRESETS, isValidUserAgent, setUAInHeaderOverride, uaFromHeaderOverride } from "../../lib/uaPresets"
-import { useSession } from "../../session"
-import { SECRET_MASK, TYPE_GROUPS, TYPE_OPTIONS } from "./helpers"
+import { ChevronDown, ExternalLink } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { api } from "../../api/client";
+import type { Channel, RouteOverview, Site } from "../../api/types";
+import { parseCredentialMeta } from "../credentialMeta";
+import { Drawer } from "../../components/Drawer";
+import { SearchableSelect } from "../../components/SearchableSelect";
+import { Button, ErrorState, Field } from "../../components/ui";
+import { useI18n } from "../../i18n";
+import {
+  UA_PRESETS,
+  isValidUserAgent,
+  setUAInHeaderOverride,
+  uaFromHeaderOverride,
+} from "../../lib/uaPresets";
+import { useSession } from "../../session";
+import { SECRET_MASK, TYPE_GROUPS, TYPE_OPTIONS } from "./helpers";
 
 export function EditChannelDialog({
   value,
@@ -71,6 +76,7 @@ export function EditChannelDialog({
     name: string;
     base_url: string;
     type_hint: string;
+    group_name?: string;
     max_reasoning_effort?: string;
     payload_rules?: string;
     proxy_url?: string;
@@ -87,20 +93,21 @@ export function EditChannelDialog({
   onManageModels?: () => void;
   onManageKeys?: () => void;
 }) {
-	const { t } = useI18n();
-	const inheritedBase = !value.base_url.trim();
-	const initialBase = value.base_url || site?.base_url || "";
-	const [name, setName] = useState(value.name);
-const [baseUrl, setBaseUrl] = useState(initialBase);
-const [typeHint, setTypeHint] = useState(
-		value.type_hint || site?.platform || "openai-compatible",
-	);
-	const [maxReasoningEffort, setMaxReasoningEffort] = useState(
-		value.max_reasoning_effort ?? "",
-	);
-	const [payloadRules, setPayloadRules] = useState(value.payload_rules ?? "");
-	const [proxyUrl, setProxyUrl] = useState(value.proxy_url ?? "");
-	const [maxConcurrent, setMaxConcurrent] = useState(value.max_concurrent ?? 0);
+  const { t } = useI18n();
+  const inheritedBase = !value.base_url.trim();
+  const initialBase = value.base_url || site?.base_url || "";
+  const [name, setName] = useState(value.name);
+  const [baseUrl, setBaseUrl] = useState(initialBase);
+  const [typeHint, setTypeHint] = useState(
+    value.type_hint || site?.platform || "openai-compatible",
+  );
+  const [groupName, setGroupName] = useState(value.group_name || "default");
+  const [maxReasoningEffort, setMaxReasoningEffort] = useState(
+    value.max_reasoning_effort ?? "",
+  );
+  const [payloadRules, setPayloadRules] = useState(value.payload_rules ?? "");
+  const [proxyUrl, setProxyUrl] = useState(value.proxy_url ?? "");
+  const [maxConcurrent, setMaxConcurrent] = useState(value.max_concurrent ?? 0);
   const [priority, setPriority] = useState(value.priority);
   const [weight, setWeight] = useState(value.weight);
   const [headerOverride, setHeaderOverride] = useState(
@@ -116,10 +123,10 @@ const [typeHint, setTypeHint] = useState(
   const [systemPrompt, setSystemPrompt] = useState(value.system_prompt ?? "");
   const [retryConfig, setRetryConfig] = useState(value.retry_config ?? "");
   const [stableFirst, setStableFirst] = useState(value.stable_first ?? false);
-const [userToken, setUserToken] = useState(
-  userCredential?.has_secret ? SECRET_MASK : "",
-);
-const [showAdvanced, setShowAdvanced] = useState(false);
+  const [userToken, setUserToken] = useState(
+    userCredential?.has_secret ? SECRET_MASK : "",
+  );
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const canSubmit = Boolean(name.trim() && baseUrl.trim());
   const apiKeys = credentials.filter((item) => item.kind === "api_key");
   const service = api(useSession().client!);
@@ -166,6 +173,7 @@ const [showAdvanced, setShowAdvanced] = useState(false);
                 name,
                 base_url: baseUrl,
                 type_hint: typeHint,
+                group_name: groupName,
                 max_reasoning_effort: maxReasoningEffort,
                 payload_rules: payloadRules,
                 proxy_url: proxyUrl,
@@ -187,9 +195,9 @@ const [showAdvanced, setShowAdvanced] = useState(false);
       }
     >
       <>
-			<div className="ops-panel-context">
-				<span>{t("channels.editHintDual")}</span>
-			</div>
+        <div className="ops-panel-context">
+          <span>{t("channels.editHintDual")}</span>
+        </div>
         <div className="form-grid form-grid-single">
           <Field label={t("common.name")}>
             <input
@@ -207,6 +215,13 @@ const [showAdvanced, setShowAdvanced] = useState(false);
               disabled={pending}
               allowCustom
               placeholder={t("common.type")}
+            />
+          </Field>
+          <Field label={t("channels.group")} hint={t("channels.groupHint")}>
+            <input
+              value={groupName}
+              onChange={(event) => setGroupName(event.target.value)}
+              disabled={pending}
             />
           </Field>
           <Field
@@ -325,17 +340,17 @@ const [showAdvanced, setShowAdvanced] = useState(false);
           ) : null}
         </section>
 
-         <section
-           className="detail-section channel-model-summary-section connection-subpanel"
-            aria-label={t("channels.modelsSection")}
-         >
+        <section
+          className="detail-section channel-model-summary-section connection-subpanel"
+          aria-label={t("channels.modelsSection")}
+        >
           <div className="detail-section-head">
             <h3>{t("channels.modelsSection")}</h3>
             <span className="detail-section-count">{editModels.length}</span>
             <button
               type="button"
-               className="detail-section-expand connection-manage-button connection-manage-button-models"
-               onClick={onManageModels}
+              className="detail-section-expand connection-manage-button connection-manage-button-models"
+              onClick={onManageModels}
             >
               <ExternalLink size={12} />
               {t("channels.modelsManage")}
@@ -412,14 +427,22 @@ const [showAdvanced, setShowAdvanced] = useState(false);
                   onChange={(e) => setMaxReasoningEffort(e.target.value)}
                   disabled={pending}
                 >
-                  <option value="">{t("channels.maxReasoningEffortNone")}</option>
-                  {["none", "minimal", "low", "medium", "high", "xhigh", "max"].map(
-                    (level) => (
-                      <option key={level} value={level}>
-                        {level}
-                      </option>
-                    ),
-                  )}
+                  <option value="">
+                    {t("channels.maxReasoningEffortNone")}
+                  </option>
+                  {[
+                    "none",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max",
+                  ].map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field

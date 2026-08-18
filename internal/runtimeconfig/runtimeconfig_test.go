@@ -45,35 +45,6 @@ func TestValidateBoundsAndCron(t *testing.T) {
 	}
 }
 
-func TestValidateProgressiveCooldownBreakerFloor(t *testing.T) {
-	base := Editable{
-		RetryTimes: 1, CooldownSeconds: 1, CheckinCron: "0 8 * * *",
-		StableFirstDenominator: 25, StableFirstPromoteRequests: 100,
-		RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300,
-		ProgressiveCooldownEnabled: true, BreakerFailCount: 5,
-	}
-	if err := Validate(base); err != nil {
-		t.Fatalf("progressive + breaker 5 should pass: %v", err)
-	}
-	bad := base
-	bad.BreakerFailCount = 3
-	if err := Validate(bad); err == nil {
-		t.Fatal("progressive + breaker 3 must be rejected (kills level-3/4 tiers)")
-	}
-	// Non-progressive mode keeps the old 2..100 range.
-	legacy := base
-	legacy.ProgressiveCooldownEnabled = false
-	legacy.BreakerFailCount = 3
-	if err := Validate(legacy); err != nil {
-		t.Fatalf("legacy + breaker 3 should pass: %v", err)
-	}
-	invalidChannelRetry := base
-	invalidChannelRetry.ChannelRetryTimes = 6
-	if err := Validate(invalidChannelRetry); err == nil {
-		t.Fatal("channel retry bounds must be enforced even when health sweep is disabled")
-	}
-}
-
 func TestBootstrapUsesEnvironmentWithoutOverride(t *testing.T) {
 	db, err := store.Open(t.TempDir())
 	if err != nil {
@@ -251,8 +222,6 @@ func TestUpdateAndClearOverride(t *testing.T) {
 		StableFirstPromoteRequests:  100,
 		RoutingConcurrencyLimit:     64,
 		WebhookThrottleSeconds:      300,
-		ModelBreakerFailCount:       7,
-		KeyFailThreshold:            8,
 		StickyEnabled:               true,
 		StickyTTLMinutes:            60,
 		HealthSweepEnabled:          true,
@@ -278,8 +247,7 @@ func TestUpdateAndClearOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if persisted.ModelBreakerFailCount != 7 || persisted.KeyFailThreshold != 8 ||
-		persisted.StickyEnabled != 1 || persisted.StickyTTLMinutes != 60 ||
+	if persisted.StickyEnabled != 1 || persisted.StickyTTLMinutes != 60 ||
 		persisted.HealthSweepEnabled != 1 || persisted.HealthSweepIntervalSeconds != 120 ||
 		persisted.HealthSweepJitterSeconds != 5 || persisted.HealthSweepDegradedMs != 1000 ||
 		persisted.HealthSweepConcurrency != 2 || persisted.HealthSweepTimeoutSeconds != 10 ||

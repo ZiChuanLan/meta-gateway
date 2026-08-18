@@ -1,4 +1,4 @@
-import type { Dict } from "./types"
+import type { Dict } from "./types";
 
 export const en: Dict = {
   "lang.en": "English",
@@ -209,7 +209,8 @@ export const en: Dict = {
   "dashboard.window48h": "48h",
   "dashboard.chartWindow": "Chart window",
   "dashboard.cacheRead": "Cache reads (24h)",
-  "dashboard.cacheReadHint": "Prompt tokens served from cache in the last 24 hours.",
+  "dashboard.cacheReadHint":
+    "Prompt tokens served from cache in the last 24 hours.",
   "dashboard.bucketStats": "{req} requests · {tok} tokens · {cache} cache",
   "dashboard.bucketEmpty": "No traffic in this period.",
   "dashboard.quickstart.title": "Quick start",
@@ -259,9 +260,10 @@ export const en: Dict = {
     "Use ADMIN_TOKEN to open the multi-channel relay console.",
   "app.connect.token": "Admin token",
   "app.connect.remember": "Remember for this browser tab",
-	"app.connect.submit": "Connect",
-	"app.connect.totpRequired": "Two-factor code required — enter your authenticator code.",
-	"app.connect.totp": "Authenticator code",
+  "app.connect.submit": "Connect",
+  "app.connect.totpRequired":
+    "Two-factor code required — enter your authenticator code.",
+  "app.connect.totp": "Authenticator code",
   "app.connect.connecting": "Connecting...",
   "app.connect.failed": "Connection failed",
   "app.connect.hint":
@@ -380,13 +382,17 @@ export const en: Dict = {
   "channels.uaInvalid": "User-Agent must not contain control characters.",
   "channels.maxReasoningEffort": "Max reasoning effort",
   "channels.maxReasoningEffortNone": "Passthrough (unrestricted)",
-  "channels.maxReasoningEffortHint": "Highest reasoning_effort this upstream accepts. Requests asking for more are downgraded at forward time instead of failing over (e.g. gateways rejecting max).",
+  "channels.maxReasoningEffortHint":
+    "Highest reasoning_effort this upstream accepts. Requests asking for more are downgraded at forward time instead of failing over (e.g. gateways rejecting max).",
   "channels.payloadRules": "Payload rules (body rewrite)",
-"channels.maxConcurrent": "Max concurrent",
-"channels.maxConcurrentHint": "Hard per-channel concurrency ceiling; requests beyond it queue FIFO. 0 = unlimited.",
-  "channels.payloadRulesHint": "JSON array of rules: match (model glob, protocol, header substring, payload JSON-path conditions) + actions (set / delete / filter). Non-matching requests pass through untouched. Paths use dots and indexes: messages.0.content, messages.#.image_url (any element).",
+  "channels.maxConcurrent": "Max concurrent",
+  "channels.maxConcurrentHint":
+    "Hard per-channel concurrency ceiling; requests beyond it queue FIFO. 0 = unlimited.",
+  "channels.payloadRulesHint":
+    "JSON array of rules: match (model glob, protocol, header substring, payload JSON-path conditions) + actions (set / delete / filter). Non-matching requests pass through untouched. Paths use dots and indexes: messages.0.content, messages.#.image_url (any element).",
   "channels.proxyUrl": "Proxy URL",
-  "channels.proxyUrlHint": "HTTP(S) proxy for this channel's upstream requests. Empty = inherit the global proxy (settings page).",
+  "channels.proxyUrlHint":
+    "HTTP(S) proxy for this channel's upstream requests. Empty = inherit the global proxy (settings page).",
   "channels.modelBlocks": "Model not found (auto-blocked)",
   "channels.modelBlockClear": "Clear",
   "channels.headerOverrideHint":
@@ -396,8 +402,10 @@ export const en: Dict = {
     "Injected as a system message ahead of user messages for chat requests on this channel.",
   "channels.systemPromptPlaceholder": "e.g. You are a helpful relay gateway…",
   "channels.retryConfig": "Retry config",
-  "channels.retryConfigHint": "JSON: status_codes + error_patterns (substring or regex). Extra retryable cases on top of the defaults (429 + 5xx).",
-  "channels.retryConfigPlaceholder": "{\"status_codes\":[403,529],\"error_patterns\":[{\"pattern\":\"Console API\"}]}",
+  "channels.retryConfigHint":
+    "JSON: status_codes + error_patterns (substring or regex). Extra retryable cases on top of the defaults (429 + 5xx).",
+  "channels.retryConfigPlaceholder":
+    '{"status_codes":[403,529],"error_patterns":[{"pattern":"Console API"}]}',
   "channels.stableFirst": "Stable-first grayscale (1/N traffic until promoted)",
   "channels.stableFirstHint":
     "New upstream gets a small share of traffic; it is automatically promoted after enough successful requests.",
@@ -405,15 +413,16 @@ export const en: Dict = {
   "channels.apiKeysTitle": "API keys",
   "channels.apiKeysHint":
     "Enabled keys on this site form a failover pool for model sync and relay.",
-"channels.apiKeysEmpty":
-"No keys yet. Sync from upstream or paste one below.",
-"channels.apiKeysManage": "Manage keys…",
-"channels.apiKeysSummary": "{n} of {total} keys enabled",
-"channels.apiKeysMore": "+{n} more…",
+  "channels.apiKeysEmpty":
+    "No keys yet. Sync from upstream or paste one below.",
+  "channels.apiKeysManage": "Manage keys…",
+  "channels.apiKeysSummary": "{n} of {total} keys enabled",
+  "channels.apiKeysMore": "+{n} more…",
   "channels.apiKeyGroupDefault": "default",
   "channels.apiKeyUnnamed": "Key #{id}",
   "channels.keyModelsPlaceholder": "models: gpt-4*,claude-3-5* (empty = all)",
-  "channels.keyModelsHint": "Per-key model allowlist: comma-separated, * suffix wildcards. Empty = this key serves every model on the channel. Saved on blur/Enter.",
+  "channels.keyModelsHint":
+    "Per-key model allowlist: comma-separated, * suffix wildcards. Empty = this key serves every model on the channel. Saved on blur/Enter.",
   "channels.keyModelsSelected": "{n} models selected",
   "channels.keyModelsAll": "All models",
   "channels.keyModelsToggle": "Expand model allowlist",
@@ -470,16 +479,24 @@ export const en: Dict = {
   "channels.healthState.unknown": "Unknown",
   "channels.connectivityUnknown": "Not checked",
   "channels.healthReason.manualDisabled": "Manually disabled",
-  "channels.healthReason.autoDisabled": "Auto-disabled after repeated relay failures",
+  "channels.healthReason.autoDisabled":
+    "Auto-disabled after repeated relay failures",
   "channels.healthReason.notChecked": "No business probe has completed yet",
-  "channels.healthReason.authenticationFailed": "The upstream rejected the credential",
-  "channels.healthReason.credentialScope": "The stored credential cannot access model APIs",
-  "channels.healthReason.credentialUnavailable": "No usable credential was available",
+  "channels.healthReason.authenticationFailed":
+    "The upstream rejected the credential",
+  "channels.healthReason.credentialScope":
+    "The stored credential cannot access model APIs",
+  "channels.healthReason.credentialUnavailable":
+    "No usable credential was available",
   "channels.healthReason.invalidBaseUrl": "The channel Base URL is invalid",
-  "channels.healthReason.probeFailed": "The latest model or account probe failed",
-  "channels.healthReason.probeSlow": "Probe latency exceeded the configured threshold",
-  "channels.healthReason.routeCooling": "{count} route member(s) are cooling down",
-  "channels.healthReason.routeFailures": "{count} route member(s) have failure records",
+  "channels.healthReason.probeFailed":
+    "The latest model or account probe failed",
+  "channels.healthReason.probeSlow":
+    "Probe latency exceeded the configured threshold",
+  "channels.healthReason.routeCooling":
+    "{count} route member(s) are cooling down",
+  "channels.healthReason.routeFailures":
+    "{count} route member(s) have failure records",
   "channels.healthReason.probeOk": "The latest business probe succeeded",
   "channels.healthReason.unknown": "Business health has no detailed reason",
   "channels.accountState": "Account",
@@ -490,7 +507,8 @@ export const en: Dict = {
   "channels.accountState.failed": "Account probe failed",
   "channels.accountState.unknown": "Not checked",
   "channels.balance": "Balance",
-  "channels.balanceHint": "Converted to site currency via the site's quota_per_unit.",
+  "channels.balanceHint":
+    "Converted to site currency via the site's quota_per_unit.",
   "channels.balanceTotal": "of {total}",
   "channels.pricingTitle": "Model pricing",
   "channels.pricingCalls": "≈{calls}",
@@ -502,7 +520,8 @@ export const en: Dict = {
   "channels.healthTitle": "Health (24h)",
   "channels.healthNoData": "no probes yet",
   "channels.healthProbes": "{ok}/{total} probes ok",
-  "channels.modelsMore": "{count} more models not shown",  "channels.syncKeysResult":
+  "channels.modelsMore": "{count} more models not shown",
+  "channels.syncKeysResult":
     "API keys: created {created}, reused {reused}, masked {masked}, removed {deleted}.",
   "channels.syncKeysGroups":
     "Connections by group: created {created}, updated {updated}.",
@@ -527,6 +546,13 @@ export const en: Dict = {
     "User token: account and check-in. API key: model sync and relay failover.",
   "channels.defaultRouting": "Connection defaults",
   "channels.defaultPriorityWeight": "Priority {priority} · weight {weight}",
+  "channels.filterType": "Filter by type",
+  "channels.filterGroup": "Filter by group",
+  "channels.allTypes": "All types",
+  "channels.allGroups": "All groups",
+  "channels.group": "Channel group",
+  "channels.groupHint":
+    "A custom operational group such as paid, free, or internal.",
   "exchange.missingApiKey": "Missing API key",
   "exchange.relayReady": "Models synced",
   "exchange.keySyncOK": "Keys synced",
@@ -562,7 +588,8 @@ export const en: Dict = {
   "modelsPage.metaThinkingNo": "Not supported",
   "modelsPage.metaVendor": "Vendor",
   "modelsPage.metaNotes": "Notes",
-  "modelsPage.missingModels": "{count} channel-exposed models are not covered by any route",
+  "modelsPage.missingModels":
+    "{count} channel-exposed models are not covered by any route",
   "modelsPage.missingModelsFocus": "Show first",
   "modelsPage.detailKicker": "Model",
   "modelsPage.emptyKicker": "No models yet",
@@ -609,6 +636,22 @@ export const en: Dict = {
     "Synced models appear automatically. Add a route only for a model name that is not discovered upstream.",
   "modelsPage.rowActionsHint":
     "Use the row action menu to test, enable, inspect logs, or edit this model.",
+  "modelsPage.groupFilter": "Model family",
+  "modelsPage.allGroups": "All model families",
+  "modelsPage.editOverrides": "Edit model settings",
+  "modelsPage.showOverrides": "Show model-level settings",
+  "modelsPage.hideOverrides": "Hide model-level settings",
+  "modelsPage.overrideEnabled": "Override channel default",
+  "modelsPage.overrideHint":
+    "Leave empty to inherit the selected channel's default.",
+  "modelsPage.inherit": "Inherit",
+  "modelsPage.modelGroup": "Manual model group",
+  "modelsPage.modelGroupHint":
+    "Empty uses automatic family detection from the model name.",
+  "modelsPage.modelGroupAuto": "Auto-detect",
+  "modelsPage.grayEnabled": "Model gray pool",
+  "modelsPage.grayDenominator": "Gray ratio denominator (1/N)",
+  "modelsPage.grayPromote": "Auto-promote successes",
 
   "keys.kicker": "Client access",
   "keys.emptyKicker": "Client tokens",
@@ -617,6 +660,12 @@ export const en: Dict = {
   "keys.createHint":
     "Clients use this token to call /v1. It is shown only once.",
   "keys.namePlaceholder": "e.g. laptop, prod-app",
+  "keys.group": "Tenant group",
+  "keys.groupHint":
+    'The tenant group used for quotas and rate limits. Empty defaults to "default".',
+  "keys.groupPlaceholder": "Select tenant group…",
+  "keys.modelGroupHint": "Choose a model group configured on the Models page to add all of its models to this allowlist.",
+  "keys.modelGroupPlaceholder": "Add models by group…",
   "keys.useCustomToken": "Set my own secret",
   "keys.customToken": "Secret",
   "keys.customTokenHint":
@@ -626,7 +675,7 @@ export const en: Dict = {
     "Default: gateway generates a random mg-… token. You can set your own secret above if you prefer.",
   "keys.modelAllowlist": "Model allowlist",
   "keys.modelAllowlistHint":
-    "When set, this token may only use the selected models. Leave empty for no restriction.",
+    "This token may use only models in the allowlist. Leave empty for no restriction; use a model group to add models in bulk.",
   "keys.modelDenylist": "Model denylist",
   "keys.expiresAt": "Expires at",
   "keys.expiresAtHint":
@@ -668,20 +717,21 @@ export const en: Dict = {
   "keys.pricePrompt": "Prompt $/1k",
   "keys.priceCompletion": "Completion $/1k",
   "keys.priceCache": "Cache-read $/1k",
-  "keys.priceCacheHint": "Unit price for cache-read tokens. 0 = billed at the prompt price (default).",
+  "keys.priceCacheHint":
+    "Unit price for cache-read tokens. 0 = billed at the prompt price (default).",
   "keys.priceHint":
     "Optional display prices for estimated cost (any currency units).",
-	"keys.resetUsed": "Reset used tokens to 0",
-	"keys.redemption": "Redemption codes",
-	"keys.redemptionTitle": "Redemption codes",
-	"keys.redemptionCount": "Count",
-	"keys.redemptionQuota": "Tokens per code",
-	"keys.redemptionMint": "Mint",
-	"keys.redemptionCopy": "Copy",
-	"keys.redemptionList": "Issued codes",
-	"keys.redemptionEmpty": "No codes yet.",
-	"keys.redemptionUsed": "Used",
-	"keys.redemptionVoid": "Void",
+  "keys.resetUsed": "Reset used tokens to 0",
+  "keys.redemption": "Redemption codes",
+  "keys.redemptionTitle": "Redemption codes",
+  "keys.redemptionCount": "Count",
+  "keys.redemptionQuota": "Tokens per code",
+  "keys.redemptionMint": "Mint",
+  "keys.redemptionCopy": "Copy",
+  "keys.redemptionList": "Issued codes",
+  "keys.redemptionEmpty": "No codes yet.",
+  "keys.redemptionUsed": "Used",
+  "keys.redemptionVoid": "Void",
   "common.tokens": "Tokens",
   "common.cacheTokens": "Cache R/W",
   "common.cost": "Cost",
@@ -938,53 +988,60 @@ export const en: Dict = {
   "store.description":
     "Optional extensions that add capabilities. Core relay, audit, and backups are always available.",
   "store.orphans": "Unknown leftovers",
-	"store.activate": "Activate",
-	"store.deactivate": "Deactivate",
-	"store.uninstall": "Remove",
-	"store.noDescription": "No description provided.",
-	"plugins.kicker": "Plugins",
-	"plugins.title": "Plugin",
-	"plugins.loadFailed": "The plugin page could not be loaded. Check that the sidecar service is running.",
-	"plugins.back": "Back to store",
-	"plugins.add": "Add plugin",
-	"plugins.addHint": "Point at a sidecar plugin service (any HTTP server). meta-gateway fetches its /plugin.json manifest, health-checks it, and installs it.",
-	"plugins.addBtn": "Add",
-	"plugins.keyPlaceholder": "API key (optional)",
-	"plugins.advanced": "Service has no /plugin.json? Fill it in manually",
-	"plugins.advancedHint": "Services without a manifest (e.g. CLIProxyAPI's built-in CPAMC) need an ID and name. The health check still runs, so a dead service is never installed.",
-	"plugins.idPlaceholder": "Plugin ID (required)",
-	"plugins.namePlaceholder": "Name (required)",
-	"plugins.pagePlaceholder": "Page path (optional, default /)",
-	"plugins.healthPlaceholder": "Health path (optional, default healthz)",
-	"plugins.addFailed": "Failed to add plugin",
-	"plugins.edit": "Edit",
-	"plugins.editTitle": "Edit plugin",
-	"plugins.editHint": "Changing connection settings re-runs the health check; if the service is unreachable the old config is kept.",
-	"plugins.saveBtn": "Save",
-	"plugins.editFailed": "Failed to save changes",
-	"plugins.urlLabel": "Service URL",
-	"plugins.pageLabel": "Page path",
-	"plugins.healthLabel": "Health path",
-	"plugins.prefixLabel": "API prefix",
-	"plugins.prefixPlaceholder": "API 前缀（可选，如 /v0/management）",
-	"plugins.createChannel": "Create channel",
-	"plugins.channelTitle": "Create channel from plugin",
-	"plugins.channelHint": "The channel points at the plugin's OpenAI-compatible API. It participates in routing, cooldown and logs like any other upstream.",
-	"plugins.channelName": "Channel name",
-	"plugins.channelBase": "Base URL",
-	"plugins.channelSite": "Site",
-	"plugins.channelCredential": "Credential",
-	"plugins.channelModels": "Models (comma separated)",
-	"plugins.channelCreate": "Create",
-	"plugins.channelFailed": "Failed to create channel",
-	"store.orphanHint": "This record is not in the official catalog. You can only remove it.",
-	"store.installed": "Installed",
-	"store.install": "Install",
-	"store.section.market": "Plugin market",
-	"store.section.marketHint": "Installable plugins from registry sources.",
-	"store.marketFailed": "Market unavailable — check the registry sources and gateway logs.",
-	"store.marketEmpty": "No plugins listed in the market sources.",
-	"common.refresh": "Refresh",
+  "store.activate": "Activate",
+  "store.deactivate": "Deactivate",
+  "store.uninstall": "Remove",
+  "store.noDescription": "No description provided.",
+  "plugins.kicker": "Plugins",
+  "plugins.title": "Plugin",
+  "plugins.loadFailed":
+    "The plugin page could not be loaded. Check that the sidecar service is running.",
+  "plugins.back": "Back to store",
+  "plugins.add": "Add plugin",
+  "plugins.addHint":
+    "Point at a sidecar plugin service (any HTTP server). meta-gateway fetches its /plugin.json manifest, health-checks it, and installs it.",
+  "plugins.addBtn": "Add",
+  "plugins.keyPlaceholder": "API key (optional)",
+  "plugins.advanced": "Service has no /plugin.json? Fill it in manually",
+  "plugins.advancedHint":
+    "Services without a manifest (e.g. CLIProxyAPI's built-in CPAMC) need an ID and name. The health check still runs, so a dead service is never installed.",
+  "plugins.idPlaceholder": "Plugin ID (required)",
+  "plugins.namePlaceholder": "Name (required)",
+  "plugins.pagePlaceholder": "Page path (optional, default /)",
+  "plugins.healthPlaceholder": "Health path (optional, default healthz)",
+  "plugins.addFailed": "Failed to add plugin",
+  "plugins.edit": "Edit",
+  "plugins.editTitle": "Edit plugin",
+  "plugins.editHint":
+    "Changing connection settings re-runs the health check; if the service is unreachable the old config is kept.",
+  "plugins.saveBtn": "Save",
+  "plugins.editFailed": "Failed to save changes",
+  "plugins.urlLabel": "Service URL",
+  "plugins.pageLabel": "Page path",
+  "plugins.healthLabel": "Health path",
+  "plugins.prefixLabel": "API prefix",
+  "plugins.prefixPlaceholder": "API 前缀（可选，如 /v0/management）",
+  "plugins.createChannel": "Create channel",
+  "plugins.channelTitle": "Create channel from plugin",
+  "plugins.channelHint":
+    "The channel points at the plugin's OpenAI-compatible API. It participates in routing, cooldown and logs like any other upstream.",
+  "plugins.channelName": "Channel name",
+  "plugins.channelBase": "Base URL",
+  "plugins.channelSite": "Site",
+  "plugins.channelCredential": "Credential",
+  "plugins.channelModels": "Models (comma separated)",
+  "plugins.channelCreate": "Create",
+  "plugins.channelFailed": "Failed to create channel",
+  "store.orphanHint":
+    "This record is not in the official catalog. You can only remove it.",
+  "store.installed": "Installed",
+  "store.install": "Install",
+  "store.section.market": "Plugin market",
+  "store.section.marketHint": "Installable plugins from registry sources.",
+  "store.marketFailed":
+    "Market unavailable — check the registry sources and gateway logs.",
+  "store.marketEmpty": "No plugins listed in the market sources.",
+  "common.refresh": "Refresh",
 
   "routing.addRoute": "Add model route",
   "routing.editRoute": "Edit model route",
@@ -992,16 +1049,19 @@ export const en: Dict = {
   "routing.deleteRouteMsg": "Delete route {name} and all channel memberships?",
   "routing.addMember": "Add channel",
   "routing.priceSort": "Cheapest first",
-  "routing.priceSortHint": "Order members by per-1M-token USD price (unpriced members sink to the bottom). Reordering buttons are disabled while active.",
+  "routing.priceSortHint":
+    "Order members by per-1M-token USD price (unpriced members sink to the bottom). Reordering buttons are disabled while active.",
   "routing.cheapest": "cheapest",
   "routing.editMember": "Edit channel membership",
   "routing.deleteMember": "Remove channel",
   "routing.deleteMemberMsg": "Remove channel #{id} from this model route?",
   "routing.noMembers": "No channels on this model yet.",
   "routing.soloMember": "Use only this channel",
-  "routing.soloMemberHint": "Pin the route to this channel (single mode). Other channels keep their enabled state; cross-channel retry counts as 0. Restore anytime.",
+  "routing.soloMemberHint":
+    "Pin the route to this channel (single mode). Other channels keep their enabled state; cross-channel retry counts as 0. Restore anytime.",
   "routing.unsoloMember": "Restore routing",
-  "routing.unsoloMemberHint": "Switch back to auto routing; other channels' enabled states were never changed.",
+  "routing.unsoloMemberHint":
+    "Switch back to auto routing; other channels' enabled states were never changed.",
   "routing.singleModeBanner": "Single-channel mode: {name}",
   "routing.singleModeHint":
     "Only this channel receives traffic; cross-channel retry is 0. Other channels keep their enabled state.",
@@ -1021,18 +1081,22 @@ export const en: Dict = {
   "routing.bulkToggleSelect": "Select this channel",
   "routing.clearHealth": "Clear cooldown",
   "routing.recoverMember": "Recover member",
-  "routing.recoverMemberHint": "Clear the member's failure state and return it to the eligible pool.",
+  "routing.recoverMemberHint":
+    "Clear the member's failure state and return it to the eligible pool.",
   "routing.cooldownHint": "cooldown {left} left",
   "routing.exactModel": "Exact model",
   "routing.routeEnabled": "Route enabled",
   "routing.retryOverrideTitle": "Retry overrides",
   "routing.retryRounds": "Retry rounds",
-  "routing.retryRoundsHint": "How many failover rounds for this model. Leave empty to follow the global RETRY_TIMES setting.",
+  "routing.retryRoundsHint":
+    "How many failover rounds for this model. Leave empty to follow the global RETRY_TIMES setting.",
   "routing.channelRetry": "Same-key re-sends",
-  "routing.channelRetryHint": "Same-key re-send count for this model. Leave empty to follow the global CHANNEL_RETRY_TIMES setting.",
+  "routing.channelRetryHint":
+    "Same-key re-send count for this model. Leave empty to follow the global CHANNEL_RETRY_TIMES setting.",
   "routing.retryFollowGlobal": "follow global",
   "routing.reenableChannel": "Re-enable channel",
-  "routing.reenableChannelHint": "The channel was auto-disabled by the consecutive-failure guard. Re-enable it to restore routing.",
+  "routing.reenableChannelHint":
+    "The channel was auto-disabled by the consecutive-failure guard. Re-enable it to restore routing.",
   "routing.memberDialogIntro":
     "These fields control which upstream is tried first when several channels serve the same model.",
   "routing.priorityLabel": "Priority (order)",
@@ -1054,9 +1118,10 @@ export const en: Dict = {
   "routing.financeOverdrawnHint":
     "This channel's balance is negative (overdrawn upstream); it cannot afford any calls until topped up.",
   "routing.financeHint":
-"Fixed-price models show how many requests the balance affords; token-billed models show how many 1M-token units it affords.",
+    "Fixed-price models show how many requests the balance affords; token-billed models show how many 1M-token units it affords.",
   "routing.financeMissing": "no price",
-  "routing.financeMissingHint": "No price data — the upstream did not return pricing for this model (or the account has no balance data).",
+  "routing.financeMissingHint":
+    "No price data — the upstream did not return pricing for this model (or the account has no balance data).",
   "routing.independentLabel": "Independent priority/weight for this model",
   "routing.independentHint":
     "On = every member of this model keeps its own priority/weight. Changes on the Connections page or a model re-sync won't overwrite them. Off = each member follows its connection's own default priority/weight; those defaults may differ. New members follow the connection by default.",
@@ -1224,12 +1289,13 @@ export const en: Dict = {
   "ops.runtime.section.audit": "Audit retention",
   "ops.runtime.section.routing": "Routing",
   "ops.runtime.section.stableFirst": "Stable-first pool",
-  "ops.runtime.section.health": "Disable & recovery",
+  "ops.runtime.section.maintenance": "Maintenance",
   "ops.runtime.section.alerts": "Alerts",
-  "ops.runtime.section.cooldown": "Cooldown & circuit breaker",
+  "ops.runtime.section.cooldown": "Fault protection",
+  "ops.runtime.faultProtection": "Enable fault protection",
+  "ops.runtime.faultProtectionHint":
+    "When enabled, retryable 429/5xx failures use fixed cooldown and can auto-disable a channel. Network jitter is not penalized. When disabled, retries and failover still work.",
   "ops.runtime.section.healthSweep": "Channel health sweep",
-  "ops.runtime.section.disableRecovery": "Disable & recovery",
-  "ops.runtime.section.breaker": "Circuit breakers & key eviction",
   "ops.runtime.autoDisable": "Auto-disable threshold",
   "ops.runtime.autoDisableHint":
     "Consecutive failed relay attempts before a channel is auto-disabled. 0 = off.",
@@ -1256,14 +1322,18 @@ export const en: Dict = {
     "Max requests a single channel handles at once; excess traffic is spread to other channels.",
   "ops.runtime.webhookURL": "Operational webhook URL",
   "ops.runtime.proxyURL": "Global outbound proxy",
-  "ops.runtime.proxyURLHint": "HTTP(S) proxy for all upstream requests (channels with their own proxy_url override it). Empty = direct. Example: http://127.0.0.1:7897",
+  "ops.runtime.proxyURLHint":
+    "HTTP(S) proxy for all upstream requests (channels with their own proxy_url override it). Empty = direct. Example: http://127.0.0.1:7897",
   "ops.runtime.discoveryCron": "Scheduled model refresh",
-  "ops.runtime.discoveryCronHint": "Five-field cron (e.g. 0 3 * * * = daily 03:00) to re-scan channel model lists automatically; empty = disabled.",
+  "ops.runtime.discoveryCronHint":
+    "Five-field cron (e.g. 0 3 * * * = daily 03:00) to re-scan channel model lists automatically; empty = disabled.",
   "ops.maintenance.title": "Database maintenance",
   "ops.maintenance.run": "Run now",
-  "ops.maintenance.hint": "Deletes orphaned rows (channels/routes/keys already deleted) and VACUUMs when the freelist is large.",
+  "ops.maintenance.hint":
+    "Deletes orphaned rows (channels/routes/keys already deleted) and VACUUMs when the freelist is large.",
   "ops.maintenance.cron": "Maintenance schedule",
-  "ops.maintenance.cronHint": "Five-field cron for the daily maintenance pass (default 0 4 * * *); empty = disabled.",
+  "ops.maintenance.cronHint":
+    "Five-field cron for the daily maintenance pass (default 0 4 * * *); empty = disabled.",
   "ops.maintenance.result": "Cleaned {total} orphan rows · {vacuumed}",
   "ops.maintenance.vacuumed": "VACUUM freed {bytes}",
   "ops.maintenance.noVacuum": "no VACUUM needed",
@@ -1286,7 +1356,15 @@ export const en: Dict = {
   "ops.runtime.healthSweepHint":
     "Periodically probe every enabled channel and grade it operational / degraded / error, alerting on state transitions. Catches dead or slow channels before traffic suffers.",
   "ops.runtime.healthSweepInterval": "Probe interval (s)",
-  "ops.runtime.healthSweepIntervalHint": "How often each enabled channel is probed.",
+  "ops.runtime.healthSweepIntervalHint":
+    "How often each enabled channel is probed, from 10 to 86400 seconds; disable health sweep when probing is not needed.",
+  "ops.runtime.validation.number": "Enter a valid number.",
+  "ops.runtime.validation.integer": "Enter a whole number.",
+  "ops.runtime.validation.min": "Must be at least {min}.",
+  "ops.runtime.validation.max": "Must be at most {max}.",
+  "ops.runtime.validation.between": "Enter a value from {min} to {max}.",
+  "ops.runtime.validation.jitterExceedsInterval":
+    "Cannot exceed the probe interval ({interval} seconds).",
   "ops.runtime.healthSweepJitter": "Jitter (s)",
   "ops.runtime.healthSweepJitterHint":
     "Random delay added to each probe round (0-3600) so channels do not probe in lockstep (anti thundering-herd).",
@@ -1305,27 +1383,6 @@ export const en: Dict = {
   "ops.runtime.recoveryInterval": "Recovery interval (s)",
   "ops.runtime.recoveryIntervalHint":
     "Probe auto-disabled channels every N seconds and restore them when the upstream recovers.",
-  "ops.runtime.progressiveCooldown": "Progressive cooldown",
-  "ops.runtime.progressiveCooldownHint":
-    "Tiered penalties instead of exponential doubling: fail 1 uses the base, fail 2 → tier 2, fail 3 → tier 3, fail 4+ → tier 4 (10m/1h/24h by default); each success steps one tier down instead of clearing everything.",
-  "ops.runtime.cooldownLevel2": "Level 2 cooldown (s, fail #2)",
-  "ops.runtime.cooldownLevel2Hint":
-    "Applied after 2 consecutive failures (the 1st failure uses the base above).",
-  "ops.runtime.cooldownLevel3": "Level 3 cooldown (s, fail #3)",
-  "ops.runtime.cooldownLevel3Hint":
-    "Applied after 3 consecutive failures (the 1st failure uses the base above).",
-  "ops.runtime.cooldownLevel4": "Level 4 cooldown (s, fail #4)",
-  "ops.runtime.cooldownLevel4Hint":
-    "Applied after 4+ consecutive failures (final tier).",
-  "ops.runtime.breakerCount": "Member fail count",
-  "ops.runtime.breakerCountHint":
-    "Consecutive failures before the route member is disabled outright (re-enable from the model list). 0 disables member parking (cooldown only). With progressive cooldown enabled the minimum is 5 so the level-3/4 tiers stay reachable.",
-  "ops.runtime.modelBreaker": "Model breaker fail count",
-  "ops.runtime.modelBreakerHint":
-    "Consecutive failures before the in-memory channel×model circuit breaker cuts the channel's weight to 0 (probe recovers it automatically). 0 disables the memory breaker.",
-  "ops.runtime.keyFailThreshold": "Key fail threshold",
-  "ops.runtime.keyFailThresholdHint":
-    "Consecutive failures (per upstream API key × status code) before the key is excluded from the pool for 30 minutes. 0 disables key auto-exclusion.",
   "ops.runtime.section.sticky": "Sticky sessions",
   "ops.runtime.stickyEnabled": "Enable sticky sessions",
   "ops.runtime.stickyEnabledHint":
@@ -1346,10 +1403,10 @@ export const en: Dict = {
     "How many failover rounds are attempted after a failure: each round tries one more channel (0 = first channel only). Within each round the same key is re-sent channel-retry-times times before moving on. Env: RETRY_TIMES.",
   "ops.runtime.channelRetryTimes": "Same-key re-sends",
   "ops.runtime.channelRetryTimesHint":
-    "How many times a failed request is re-sent on the same upstream key before moving to the next key/channel (0 = no re-send). Absorbs transient network blips; network errors fail fast after these re-sends instead of fanning out to every channel.",
-  "ops.runtime.cooldown": "Cooldown base",
+    "How many times a retryable request is re-sent on the same upstream key before moving to the next key and then the next channel (0 = no re-send). Network jitter is retried without cooldown or failure penalties.",
+  "ops.runtime.cooldown": "Fixed cooldown",
   "ops.runtime.cooldownHint":
-    "First-tier penalty applied after the 1st consecutive failure. With progressive cooldown on, failures 2/3/4+ use the tier values below; with it off, the base doubles per failure (capped at 24h). Env: COOLDOWN_SECONDS.",
+    "Fixed pause after a retryable upstream status such as 429/5xx. Transport jitter is not cooled or counted. Env: COOLDOWN_SECONDS.",
   "ops.runtime.checkinEnabled": "Scheduler",
   "ops.runtime.checkinEnabledHint":
     "Global cron runner. Per-credential schedule is still toggled on Connections. Env: CHECKIN_ENABLED.",
@@ -1378,14 +1435,18 @@ export const en: Dict = {
   "ops.runtime.metricsTokenNone": "not configured",
   "ops.errorRules.title": "Error passthrough rules",
   "ops.factoryReset.title": "Factory reset",
-  "ops.factoryReset.hint": "Wipe all business data (channels, keys, routes, models, logs, quotas, histories, rules). Sites, runtime settings, TOTP and backups are kept.",
+  "ops.factoryReset.hint":
+    "Wipe all business data (channels, keys, routes, models, logs, quotas, histories, rules). Sites, runtime settings, TOTP and backups are kept.",
   "ops.factoryReset.start": "Start factory reset…",
   "ops.factoryReset.typeConfirm": "Type RESET to confirm",
   "ops.factoryReset.confirm": "Wipe everything",
-  "ops.factoryReset.done": "Factory reset complete — the gateway is back to a clean slate.",
+  "ops.factoryReset.done":
+    "Factory reset complete — the gateway is back to a clean slate.",
   "ops.alertRules.title": "Alert rules",
-  "ops.alertRules.hint": "Metric rules evaluated every 60s; alerts go through the configured webhook/bark/serverchan/telegram/smtp channels.",
-  "ops.alertRules.empty": "No rules yet. Add one to get notified when a metric crosses its threshold.",
+  "ops.alertRules.hint":
+    "Metric rules evaluated every 60s; alerts go through the configured webhook/bark/serverchan/telegram/smtp channels.",
+  "ops.alertRules.empty":
+    "No rules yet. Add one to get notified when a metric crosses its threshold.",
   "ops.alertRules.add": "Add rule",
   "ops.alertRules.edit": "Edit rule",
   "ops.alertRules.name": "Name",
@@ -1396,7 +1457,8 @@ export const en: Dict = {
   "ops.alertRules.sustained": "Sustained (s)",
   "ops.alertRules.cooldown": "Cooldown (s)",
   "ops.guard.title": "Sensitive prompt guards",
-  "ops.guard.hint": "Regex rules applied to every string value in chat bodies: mask replaces matches, reject refuses the request (400), exclude skips the listed channels for matched requests.",
+  "ops.guard.hint":
+    "Regex rules applied to every string value in chat bodies: mask replaces matches, reject refuses the request (400), exclude skips the listed channels for matched requests.",
   "ops.guard.empty": "No guard rules yet.",
   "ops.guard.add": "Add rule",
   "ops.guard.edit": "Edit rule",
@@ -1408,8 +1470,10 @@ export const en: Dict = {
   "ops.guard.actionExclude": "Exclude channels",
   "ops.guard.replacement": "Replacement text",
   "ops.guard.excludeChannels": "Channel ids (comma-separated)",
-  "ops.errorRules.hint": "Match upstream 4xx errors (status + error-body keyword) and override failover: passthrough returns the error directly, rewrite changes its status code, ignore_monitor keeps failover but skips breaker/cooldown/counters. Rules apply to the very next request.",
-  "ops.errorRules.empty": "No rules — all 4xx errors fail over to the next channel.",
+  "ops.errorRules.hint":
+    "Match upstream 4xx errors (status + error-body keyword) and override failover: passthrough returns the error directly, rewrite changes its status code, ignore_monitor keeps failover but skips breaker/cooldown/counters. Rules apply to the very next request.",
+  "ops.errorRules.empty":
+    "No rules — all 4xx errors fail over to the next channel.",
   "ops.errorRules.add": "Add rule",
   "ops.errorRules.edit": "Edit rule",
   "ops.errorRules.name": "Name",
@@ -1421,14 +1485,15 @@ export const en: Dict = {
   "ops.errorRules.actionRewrite": "Rewrite status code",
   "ops.errorRules.actionIgnore": "Ignore monitor (keep failover)",
   "ops.errorRules.rewriteTo": "Rewrite to status",
-	"ops.runtime.totpTitle": "Two-factor auth (TOTP)",
-	"ops.runtime.totpDisabled": "not enabled",
-	"ops.runtime.totpSetup": "Set up authenticator",
-	"ops.runtime.totpSetupHint": "Scan the URI with Google Authenticator (or add the secret manually), then enter a code to enable.",
-	"ops.runtime.totpOpenApp": "Open otpauth link",
-	"ops.runtime.totpEnable": "Enable 2FA",
-	"ops.runtime.totpDisableHint": "Enter a current code to turn 2FA off.",
-	"ops.runtime.totpDisable": "Disable 2FA",
+  "ops.runtime.totpTitle": "Two-factor auth (TOTP)",
+  "ops.runtime.totpDisabled": "not enabled",
+  "ops.runtime.totpSetup": "Set up authenticator",
+  "ops.runtime.totpSetupHint":
+    "Scan the URI with Google Authenticator (or add the secret manually), then enter a code to enable.",
+  "ops.runtime.totpOpenApp": "Open otpauth link",
+  "ops.runtime.totpEnable": "Enable 2FA",
+  "ops.runtime.totpDisableHint": "Enter a current code to turn 2FA off.",
+  "ops.runtime.totpDisable": "Disable 2FA",
 
   "exchange.title": "Exchange",
   "exchange.description":
@@ -1459,4 +1524,4 @@ export const en: Dict = {
   "exchange.downloadSensitive": "Download sensitive export",
 
   "api.unreachable": "Unable to reach Meta Gateway",
-}
+};

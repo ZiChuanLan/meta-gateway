@@ -1,36 +1,63 @@
-import { ExternalLink, KeyRound, Pencil, Play, Plus, Power, RefreshCw, Copy, Search, CalendarCheck, Trash2, UserCheck } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
-import { useEffect, useMemo, useRef, useState } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
-import { api } from "../api/client"
-import type { Channel, ChannelOverview, Site } from "../api/types"
-import { ChannelModelsPanel } from "./ChannelModels"
-import { ChannelKeysDrawer } from "./ChannelKeys"
-import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu"
-import { Drawer } from "../components/Drawer"
-import { EmptyHero } from "../components/EmptyHero"
-import { ListShell } from "../components/ListShell"
-import { PaginationBar } from "../components/PaginationBar"
-import { EntityState } from "../components/EntityState"
-import { ResultStrip } from "../components/ResultStrip"
-import { StatGrid } from "../components/StatGrid"
-import { Button, ConfirmDialog, DataTable, Page, Panel } from "../components/ui"
-import { useAdminMutation } from "../hooks/useAdminMutation"
-import { useClientPagination } from "../hooks/useClientPagination"
-import { useI18n } from "../i18n"
-import { useToast } from "../toast"
-import { formatErrorMessage } from "../formatError"
-import { useSession } from "../session"
-import { useModules } from "../hooks/useModules"
-import { channelNeedsAttention, isChannelReady } from "./channelHealth"
-import { AddChannelDialog } from "./channels/AddChannelDialog"
-import { CreateKeyDialog } from "./channels/CreateKeyDialog"
-import { EditChannelDialog } from "./channels/EditChannelDialog"
-import { ChannelDetail } from "./channels/ChannelDetail"
-import { ChannelStatusBadges } from "./channels/badges"
-import { capabilityFlags, isMissingAPIKey, needsVerify, normalizeBase, SECRET_MASK, type ConnectionHealthFilter, type CreateConnectionInput } from "./channels/helpers"
-import { positiveId } from "../lib/positiveId"
-export { channelReadiness } from "./channelHealth"
+import {
+  ExternalLink,
+  KeyRound,
+  Pencil,
+  Play,
+  Plus,
+  Power,
+  RefreshCw,
+  Copy,
+  Search,
+  CalendarCheck,
+  Trash2,
+  UserCheck,
+} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { api } from "../api/client";
+import type { Channel, ChannelOverview, Site } from "../api/types";
+import { ChannelModelsPanel } from "./ChannelModels";
+import { ChannelKeysDrawer } from "./ChannelKeys";
+import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
+import { Drawer } from "../components/Drawer";
+import { EmptyHero } from "../components/EmptyHero";
+import { ListShell } from "../components/ListShell";
+import { PaginationBar } from "../components/PaginationBar";
+import { EntityState } from "../components/EntityState";
+import { ResultStrip } from "../components/ResultStrip";
+import { StatGrid } from "../components/StatGrid";
+import {
+  Button,
+  ConfirmDialog,
+  DataTable,
+  Page,
+  Panel,
+} from "../components/ui";
+import { useAdminMutation } from "../hooks/useAdminMutation";
+import { useClientPagination } from "../hooks/useClientPagination";
+import { useI18n } from "../i18n";
+import { useToast } from "../toast";
+import { formatErrorMessage } from "../formatError";
+import { useSession } from "../session";
+import { useModules } from "../hooks/useModules";
+import { channelNeedsAttention, isChannelReady } from "./channelHealth";
+import { AddChannelDialog } from "./channels/AddChannelDialog";
+import { CreateKeyDialog } from "./channels/CreateKeyDialog";
+import { EditChannelDialog } from "./channels/EditChannelDialog";
+import { ChannelDetail } from "./channels/ChannelDetail";
+import { ChannelStatusBadges } from "./channels/badges";
+import {
+  capabilityFlags,
+  isMissingAPIKey,
+  needsVerify,
+  normalizeBase,
+  SECRET_MASK,
+  type ConnectionHealthFilter,
+  type CreateConnectionInput,
+} from "./channels/helpers";
+import { positiveId } from "../lib/positiveId";
+export { channelReadiness } from "./channelHealth";
 
 const INVALIDATE = [
   ["channel-overviews"],
@@ -41,6 +68,26 @@ const INVALIDATE = [
   ["route-overviews"],
   ["discovered-models"],
 ] as const;
+
+// Tab-scoped persistence. The sidebar navigates to bare /channels (no query
+// string), so URL-only filters are lost on page switches; these helpers keep
+// the current tab's search and filters across navigation.
+function readChannelTab<T>(key: string, fallback: T): T {
+  try {
+    const raw = sessionStorage.getItem(`channels.${key}`);
+    return raw != null ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeChannelTab<T>(key: string, value: T) {
+  try {
+    sessionStorage.setItem(`channels.${key}`, JSON.stringify(value));
+  } catch {
+    // Storage unavailable; state stays in memory for this render.
+  }
+}
 
 export function Channels() {
   const { client } = useSession();
@@ -65,9 +112,9 @@ export function Channels() {
   });
   const [addOpen, setAddOpen] = useState(false);
   const [remove, setRemove] = useState<Channel | null>(null);
-const [edit, setEdit] = useState<Channel | null>(null);
-const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
-const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
+  const [edit, setEdit] = useState<Channel | null>(null);
+  const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
+  const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
   const [createKeyChannel, setCreateKeyChannel] = useState<Channel | null>(
     null,
   );
@@ -78,9 +125,26 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
     top: number;
     left: number;
   } | null>(null);
-  const [query, setQuery] = useState(searchParam);
-  const [healthFilter, setHealthFilter] =
-    useState<ConnectionHealthFilter>("all");
+  const [query, setQuery] = useState(
+    () => searchParam || readChannelTab("query", ""),
+  );
+  const healthParam = params.get("health") as ConnectionHealthFilter | null;
+  const [healthFilter, setHealthFilter] = useState<ConnectionHealthFilter>(
+    () =>
+      healthParam === "ready" ||
+      healthParam === "missing_key" ||
+      healthParam === "attention"
+        ? healthParam
+        : readChannelTab<ConnectionHealthFilter>("health", "all"),
+  );
+  const [typeFilter, setTypeFilter] = useState(() => {
+    const v = params.get("type");
+    return v && v !== "all" ? v : readChannelTab("type", "all");
+  });
+  const [groupFilter, setGroupFilter] = useState(() => {
+    const v = params.get("group");
+    return v && v !== "all" ? v : readChannelTab("group", "all");
+  });
   const [stageMessage, setStageMessage] = useState<{
     kind: "created" | "created_and_verified" | "verify_failed";
     name: string;
@@ -88,7 +152,30 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
     models?: number;
   } | null>(null);
   const selectedId = positiveId(params.get("id"));
-  useEffect(() => setQuery(searchParam), [searchParam]);
+  // URL wins over tab state; only overwrite when the URL actually carries a value
+  // so a bare-path navigation never clears the tab-restored state.
+  useEffect(() => {
+    if (searchParam) setQuery(searchParam);
+  }, [searchParam]);
+  useEffect(() => {
+    const next = params.get("health") as ConnectionHealthFilter | null;
+    if (next === "ready" || next === "missing_key" || next === "attention") {
+      setHealthFilter(next);
+    }
+  }, [params]);
+  useEffect(() => {
+    const next = params.get("type");
+    if (next && next !== "all") setTypeFilter(next);
+  }, [params]);
+  useEffect(() => {
+    const next = params.get("group");
+    if (next && next !== "all") setGroupFilter(next);
+  }, [params]);
+
+  useEffect(() => writeChannelTab("query", query), [query]);
+  useEffect(() => writeChannelTab("health", healthFilter), [healthFilter]);
+  useEffect(() => writeChannelTab("type", typeFilter), [typeFilter]);
+  useEffect(() => writeChannelTab("group", groupFilter), [groupFilter]);
   // Load site credentials for the channel being edited, selected, or opened via ⋯/context menu.
   const credentialSiteId =
     edit?.site_id ??
@@ -149,13 +236,16 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
         base_url: normalizeBase(input.base_url),
         secret: input.secret.trim(),
         type_hint: input.type_hint || "openai-compatible",
+        group_name: input.group_name?.trim() || "default",
         status: "enabled",
       }),
     invalidateKeys: [...INVALIDATE],
     toastOnError: false,
     onSuccess: (result) => {
       setAddOpen(false);
-      setParams({ id: String(result.channel.id) }, { replace: true });
+      const nextParams = new URLSearchParams(params);
+      nextParams.set("id", String(result.channel.id));
+      setParams(nextParams, { replace: true });
       const shouldVerify = verifyAfterCreate.current;
       verifyAfterCreate.current = false;
       setStageMessage({
@@ -176,17 +266,17 @@ const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
     invalidateKeys: [...INVALIDATE],
   });
 
-const probe = useAdminMutation({
-	mutationFn: (id: number) => service.probeChannel(id),
-	invalidateKeys: [...INVALIDATE],
-	pendingIdOf: (id) => id,
-});
+  const probe = useAdminMutation({
+    mutationFn: (id: number) => service.probeChannel(id),
+    invalidateKeys: [...INVALIDATE],
+    pendingIdOf: (id) => id,
+  });
 
-const ping = useAdminMutation({
-	mutationFn: (id: number) => service.pingChannel(id),
-	invalidateKeys: [...INVALIDATE],
-	pendingIdOf: (id) => id,
-});
+  const ping = useAdminMutation({
+    mutationFn: (id: number) => service.pingChannel(id),
+    invalidateKeys: [...INVALIDATE],
+    pendingIdOf: (id) => id,
+  });
   const accountProbe = useAdminMutation({
     mutationFn: (id: number) => service.probeAccount(id),
     pendingIdOf: (id) => id,
@@ -252,10 +342,11 @@ const ping = useAdminMutation({
       name: string;
       base_url: string;
       type_hint: string;
+      group_name?: string;
       max_reasoning_effort?: string;
-  payload_rules?: string;
-  proxy_url?: string;
-  max_concurrent?: number;
+      payload_rules?: string;
+      proxy_url?: string;
+      max_concurrent?: number;
       priority: number;
       weight: number;
       header_override?: string;
@@ -341,6 +432,7 @@ const ping = useAdminMutation({
         name,
         base_url: channelBase,
         type_hint: typeHint,
+        group_name: input.group_name ?? input.channel.group_name ?? "default",
         priority: input.priority,
         weight: input.weight,
         max_reasoning_effort: input.max_reasoning_effort ?? "",
@@ -360,32 +452,32 @@ const ping = useAdminMutation({
     onSuccess: () => setEdit(null),
   });
 
-	const setCredentialStatus = useAdminMutation({
-		mutationFn: async (input: {
-			id: number;
-			status: "enabled" | "disabled";
-		}) => {
-			const list = credentials.data ?? [];
-			const current = list.find((item) => item.id === input.id);
-			return service.updateCredential(input.id, {
-				kind: current?.kind || "api_key",
-				status: input.status,
-			});
-		},
-		invalidateKeys: [...INVALIDATE, ["credentials"]],
-	});
+  const setCredentialStatus = useAdminMutation({
+    mutationFn: async (input: {
+      id: number;
+      status: "enabled" | "disabled";
+    }) => {
+      const list = credentials.data ?? [];
+      const current = list.find((item) => item.id === input.id);
+      return service.updateCredential(input.id, {
+        kind: current?.kind || "api_key",
+        status: input.status,
+      });
+    },
+    invalidateKeys: [...INVALIDATE, ["credentials"]],
+  });
 
-	const updateKeyModels = useAdminMutation({
-		mutationFn: async (input: { id: number; modelsCsv: string }) => {
-			const list = credentials.data ?? [];
-			const current = list.find((item) => item.id === input.id);
-			return service.updateCredential(input.id, {
-				kind: current?.kind || "api_key",
-				models_csv: input.modelsCsv,
-			});
-		},
-		invalidateKeys: [...INVALIDATE, ["credentials"]],
-	});
+  const updateKeyModels = useAdminMutation({
+    mutationFn: async (input: { id: number; modelsCsv: string }) => {
+      const list = credentials.data ?? [];
+      const current = list.find((item) => item.id === input.id);
+      return service.updateCredential(input.id, {
+        kind: current?.kind || "api_key",
+        models_csv: input.modelsCsv,
+      });
+    },
+    invalidateKeys: [...INVALIDATE, ["credentials"]],
+  });
 
   const addApiKeyCredential = useAdminMutation({
     mutationFn: async (input: { siteId: number; secret: string }) => {
@@ -444,10 +536,23 @@ const ping = useAdminMutation({
     return map;
   }, [sites.data]);
 
+  const filterOptions = useMemo(() => {
+    const list = overviews.data ?? [];
+    const types = [
+      ...new Set(list.map((item) => item.channel.type_hint).filter(Boolean)),
+    ].sort();
+    const groups = [
+      ...new Set(list.map((item) => item.channel.group_name).filter(Boolean)),
+    ].sort();
+    return { types, groups };
+  }, [overviews.data]);
   const rows = useMemo(() => {
     const list = overviews.data ?? [];
     const term = query.trim().toLowerCase();
     return list.filter((overview) => {
+      const ch = overview.channel;
+      if (typeFilter !== "all" && ch.type_hint !== typeFilter) return false;
+      if (groupFilter !== "all" && ch.group_name !== groupFilter) return false;
       if (healthFilter === "ready" && !isChannelReady(overview)) {
         return false;
       }
@@ -458,7 +563,6 @@ const ping = useAdminMutation({
         return false;
       }
       if (!term) return true;
-      const ch = overview.channel;
       const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
       const base = (ch.base_url || site?.base_url || "").toLowerCase();
       return (
@@ -467,10 +571,27 @@ const ping = useAdminMutation({
         String(ch.id).includes(term)
       );
     });
-  }, [overviews.data, query, siteById, healthFilter]);
+  }, [overviews.data, query, siteById, healthFilter, typeFilter, groupFilter]);
 
-  const pagination = useClientPagination(rows);
+  const pagination = useClientPagination(rows, 20, "channels");
   const pageRows = pagination.pageItems;
+
+  // Restore the previously selected channel from tab state when the URL has
+  // no id (bare sidebar navigation drops the query string).
+  useEffect(() => {
+    if (selectedId) return;
+    if (!rows.length) return;
+    const saved = readChannelTab<number | null>("selected", null);
+    if (!saved || !rows.some((r) => r.channel.id === saved)) return;
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("id", String(saved));
+        return next;
+      },
+      { replace: true },
+    );
+  }, [rows, selectedId, setParams]);
 
   useEffect(() => {
     if (!rows.length) return;
@@ -491,9 +612,7 @@ const ping = useAdminMutation({
     (overviews.data ?? []).find((r) => r.channel.id === selectedId) ??
     null;
 
-  const readyCount = (overviews.data ?? []).filter(
-    isChannelReady,
-  ).length;
+  const readyCount = (overviews.data ?? []).filter(isChannelReady).length;
   const missingKeyCount = (overviews.data ?? []).filter((o) =>
     isMissingAPIKey(o),
   ).length;
@@ -501,11 +620,21 @@ const ping = useAdminMutation({
     return channelNeedsAttention(o);
   }).length;
 
+  const updateFilterParam = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    if (!value || value === "all") next.delete(key);
+    else next.set(key, value);
+    next.delete("id");
+    setParams(next, { replace: true });
+  };
   const toggleHealthFilter = (next: ConnectionHealthFilter) => {
-    setHealthFilter((current) => (current === next ? "all" : next));
+    const value = healthFilter === next ? "all" : next;
+    setHealthFilter(value);
+    updateFilterParam("health", value);
   };
 
   const selectRow = (id: number) => {
+    writeChannelTab("selected", id);
     const next = new URLSearchParams(params);
     next.set("id", String(id));
     setParams(next, { replace: true });
@@ -810,6 +939,38 @@ const ping = useAdminMutation({
               aria-label={t("channels.searchPlaceholder")}
             />
           </label>
+          <select
+            aria-label={t("channels.filterType")}
+            value={typeFilter}
+            onChange={(event) => {
+              const v = event.target.value;
+              setTypeFilter(v);
+              updateFilterParam("type", v);
+            }}
+          >
+            <option value="all">{t("channels.allTypes")}</option>
+            {filterOptions.types.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={t("channels.filterGroup")}
+            value={groupFilter}
+            onChange={(event) => {
+              const v = event.target.value;
+              setGroupFilter(v);
+              updateFilterParam("group", v);
+            }}
+          >
+            <option value="all">{t("channels.allGroups")}</option>
+            {filterOptions.groups.map((group) => (
+              <option key={group} value={group}>
+                {group}
+              </option>
+            ))}
+          </select>
           <Button
             variant="secondary"
             icon={
@@ -1102,6 +1263,11 @@ const ping = useAdminMutation({
                       >
                         <td>
                           <strong>{ch.name}</strong>
+                          {ch.group_name ? (
+                            <span className="capability-chip is-group">
+                              {ch.group_name}
+                            </span>
+                          ) : null}
                           {displayBase ? (
                             <a
                               className="mono truncate base-url-link"
@@ -1398,8 +1564,7 @@ const ping = useAdminMutation({
             (item) => item.kind === "api_key",
           )}
           pending={
-            setCredentialStatus.isPending ||
-            deleteApiKeyCredential.isPending
+            setCredentialStatus.isPending || deleteApiKeyCredential.isPending
           }
           addApiKeyPending={addApiKeyCredential.isPending}
           syncKeysPending={syncKeys.isPending}
@@ -1438,4 +1603,4 @@ const ping = useAdminMutation({
     </Page>
   );
 }
-export { capabilityFlags } from "./channels/helpers"
+export { capabilityFlags } from "./channels/helpers";

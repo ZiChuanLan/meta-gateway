@@ -67,21 +67,8 @@ type Editable struct {
 	RecoveryProbeEnabled bool `json:"recovery_probe_enabled"`
 	// RecoveryProbeIntervalSeconds is how often the recovery loop runs.
 	RecoveryProbeIntervalSeconds int `json:"recovery_probe_interval_seconds"`
-	// ProgressiveCooldownEnabled enables tiered cooldown with per-success decay
-	// (fail 2→level2, fail 3→level3, fail 4→level4; success steps down one tier).
-	ProgressiveCooldownEnabled bool `json:"progressive_cooldown_enabled"`
-	CooldownLevel2Seconds      int  `json:"cooldown_level2_seconds"`
-	CooldownLevel3Seconds      int  `json:"cooldown_level3_seconds"`
-	CooldownLevel4Seconds      int  `json:"cooldown_level4_seconds"`
-	// BreakerFailCount is the consecutive-failure threshold that parks a member
-	// (route_members.enabled=0). 0 disables member parking (cooldown only).
-	BreakerFailCount int `json:"breaker_fail_count"`
-	// ModelBreakerFailCount is the in-memory channel×model circuit breaker
-	// threshold. 0 disables the memory breaker.
-	ModelBreakerFailCount int `json:"model_breaker_fail_count"`
-	// KeyFailThreshold is the per channel×key×status consecutive-failure count
-	// before an upstream API key is excluded from the pool. 0 disables.
-	KeyFailThreshold int `json:"key_fail_threshold"`
+	// FaultProtectionEnabled gates fixed cooldown and channel auto-disable.
+	FaultProtectionEnabled bool `json:"fault_protection_enabled"`
 	// StickyEnabled enables sticky-session routing (same conversation prefers
 	// the previously successful channel). StickyTTLMinutes is the binding TTL.
 	StickyEnabled    bool `json:"sticky_enabled"`
@@ -139,9 +126,6 @@ type Appliers struct {
 	CheckinAllowed func() bool
 	SetAudit       func(days, rows int)
 	SetAuditLoop   func(days, rows int)
-	// SetProgressiveCooldown hot-applies the tiered cooldown policy (nil store
-	// or applier disables the feature entirely).
-	SetProgressiveCooldown func(enabled bool, base time.Duration, levels [3]time.Duration, breakerCount int)
 	// SetSticky hot-applies sticky-session routing: a non-nil store enables it
 	// (with the given TTL), nil disables it. The applier must rewire selector,
 	// proxy, and admin handler so the switch is live without a restart.
@@ -213,13 +197,7 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		StableFirstPromoteRequests:       cfg.StableFirstPromoteRequests,
 		RecoveryProbeEnabled:             cfg.RecoveryProbeEnabled,
 		RecoveryProbeIntervalSeconds:     cfg.RecoveryProbeIntervalSeconds,
-		ProgressiveCooldownEnabled:       cfg.ProgressiveCooldownEnabled,
-		CooldownLevel2Seconds:            cfg.CooldownLevel2Seconds,
-		CooldownLevel3Seconds:            cfg.CooldownLevel3Seconds,
-		CooldownLevel4Seconds:            cfg.CooldownLevel4Seconds,
-		BreakerFailCount:                 cfg.BreakerFailCount,
-		ModelBreakerFailCount:            cfg.ModelBreakerFailCount,
-		KeyFailThreshold:                 cfg.KeyFailThreshold,
+		FaultProtectionEnabled:           cfg.FaultProtectionEnabled || !cfg.FaultProtectionConfigured,
 		StickyEnabled:                    cfg.StickyEnabled,
 		StickyTTLMinutes:                 int(cfg.StickyTTL / time.Minute),
 		AlertConfigJSON:                  cfg.AlertConfigJSON,
@@ -344,13 +322,7 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		StableFirstPromoteRequests:       next.StableFirstPromoteRequests,
 		RecoveryProbeEnabled:             boolInt(next.RecoveryProbeEnabled),
 		RecoveryProbeIntervalSeconds:     next.RecoveryProbeIntervalSeconds,
-		ProgressiveCooldownEnabled:       boolInt(next.ProgressiveCooldownEnabled),
-		CooldownLevel2Seconds:            next.CooldownLevel2Seconds,
-		CooldownLevel3Seconds:            next.CooldownLevel3Seconds,
-		CooldownLevel4Seconds:            next.CooldownLevel4Seconds,
-		BreakerFailCount:                 next.BreakerFailCount,
-		ModelBreakerFailCount:            next.ModelBreakerFailCount,
-		KeyFailThreshold:                 next.KeyFailThreshold,
+		FaultProtectionEnabled:           boolInt(next.FaultProtectionEnabled),
 		StickyEnabled:                    boolInt(next.StickyEnabled),
 		StickyTTLMinutes:                 next.StickyTTLMinutes,
 		AlertConfigJSON:                  next.AlertConfigJSON,
@@ -486,27 +458,12 @@ func (c *Controller) applyWithError(values Editable) error {
 	// Channel auto-disable threshold + latency-aware routing hot reload.
 	if c.appliers.Proxy != nil {
 		c.appliers.Proxy.SetAutoDisableThreshold(values.ChannelAutoDisableThreshold)
+		c.appliers.Proxy.SetFaultProtection(values.FaultProtectionEnabled)
 		c.appliers.Proxy.SetLatencyAware(values.RoutingLatencyAware)
-		// In-memory channel×model circuit breaker (MODEL_BREAKER_FAIL_COUNT).
-		c.appliers.Proxy.SetBreakerFailCount(values.ModelBreakerFailCount)
-		// Per-key auto-exclusion threshold (KEY_FAIL_THRESHOLD; 0 = off).
-		c.appliers.Proxy.SetKeyFailThreshold(values.KeyFailThreshold)
 	}
 	if c.appliers.Selector != nil && c.appliers.Proxy != nil {
 		c.appliers.Selector.SetLatencyAware(values.RoutingLatencyAware, c.appliers.Proxy.ChannelLatency)
 		c.appliers.Selector.SetErrorAware(values.RoutingErrorAware, c.appliers.Proxy.ChannelErrorRate)
-	}
-	if c.appliers.SetProgressiveCooldown != nil {
-		c.appliers.SetProgressiveCooldown(
-			values.ProgressiveCooldownEnabled,
-			time.Duration(values.CooldownSeconds)*time.Second,
-			[3]time.Duration{
-				time.Duration(values.CooldownLevel2Seconds) * time.Second,
-				time.Duration(values.CooldownLevel3Seconds) * time.Second,
-				time.Duration(values.CooldownLevel4Seconds) * time.Second,
-			},
-			values.BreakerFailCount,
-		)
 	}
 	// Sticky-session routing hot swap: enabled → build a store with the TTL and
 	// rewire selector/proxy/admin; disabled → nil store (off).
@@ -519,7 +476,7 @@ func (c *Controller) applyWithError(values Editable) error {
 	}
 	// Passive-recovery probe configuration hot reload.
 	if c.appliers.SetRecoveryProbe != nil {
-		c.appliers.SetRecoveryProbe(values.RecoveryProbeEnabled, time.Duration(values.RecoveryProbeIntervalSeconds)*time.Second)
+		c.appliers.SetRecoveryProbe(values.FaultProtectionEnabled && values.RecoveryProbeEnabled, time.Duration(values.RecoveryProbeIntervalSeconds)*time.Second)
 	}
 	// Stable-first grayscale pool hot reload.
 	if c.appliers.SetStableFirst != nil {
@@ -601,13 +558,7 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		StableFirstEnabled:               row.StableFirstEnabled == 1,
 		StableFirstDenominator:           row.StableFirstDenominator,
 		StableFirstPromoteRequests:       row.StableFirstPromoteRequests,
-		ProgressiveCooldownEnabled:       row.ProgressiveCooldownEnabled == 1,
-		CooldownLevel2Seconds:            row.CooldownLevel2Seconds,
-		CooldownLevel3Seconds:            row.CooldownLevel3Seconds,
-		CooldownLevel4Seconds:            row.CooldownLevel4Seconds,
-		BreakerFailCount:                 row.BreakerFailCount,
-		ModelBreakerFailCount:            row.ModelBreakerFailCount,
-		KeyFailThreshold:                 row.KeyFailThreshold,
+		FaultProtectionEnabled:           row.FaultProtectionEnabled == 1,
 		StickyEnabled:                    row.StickyEnabled == 1,
 		StickyTTLMinutes:                 row.StickyTTLMinutes,
 		AlertConfigJSON:                  row.AlertConfigJSON,
@@ -661,32 +612,14 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	if editable.StableFirstPromoteRequests < 0 {
 		editable.StableFirstPromoteRequests = c.env.StableFirstPromoteRequests
 	}
+	if editable.FaultProtectionEnabled == false && row.FaultProtectionEnabled == -1 {
+		editable.FaultProtectionEnabled = c.env.FaultProtectionEnabled
+	}
 	if editable.RecoveryProbeEnabled == false && row.RecoveryProbeEnabled == -1 {
 		editable.RecoveryProbeEnabled = c.env.RecoveryProbeEnabled
 	}
 	if editable.RecoveryProbeIntervalSeconds < 0 {
 		editable.RecoveryProbeIntervalSeconds = c.env.RecoveryProbeIntervalSeconds
-	}
-	if editable.ProgressiveCooldownEnabled == false && row.ProgressiveCooldownEnabled == -1 {
-		editable.ProgressiveCooldownEnabled = c.env.ProgressiveCooldownEnabled
-	}
-	if editable.CooldownLevel2Seconds < 0 {
-		editable.CooldownLevel2Seconds = c.env.CooldownLevel2Seconds
-	}
-	if editable.CooldownLevel3Seconds < 0 {
-		editable.CooldownLevel3Seconds = c.env.CooldownLevel3Seconds
-	}
-	if editable.CooldownLevel4Seconds < 0 {
-		editable.CooldownLevel4Seconds = c.env.CooldownLevel4Seconds
-	}
-	if editable.BreakerFailCount < 0 {
-		editable.BreakerFailCount = c.env.BreakerFailCount
-	}
-	if editable.ModelBreakerFailCount < 0 {
-		editable.ModelBreakerFailCount = c.env.ModelBreakerFailCount
-	}
-	if editable.KeyFailThreshold < 0 {
-		editable.KeyFailThreshold = c.env.KeyFailThreshold
 	}
 	if editable.StickyEnabled == false && row.StickyEnabled == -1 {
 		editable.StickyEnabled = c.env.StickyEnabled
@@ -756,36 +689,11 @@ func Validate(values Editable) error {
 	if values.ChannelAutoDisableThreshold < 0 || values.ChannelAutoDisableThreshold > 1000 {
 		return fmt.Errorf("channel_auto_disable_threshold out of range")
 	}
-	if values.CooldownLevel2Seconds < 0 || values.CooldownLevel2Seconds > 86400*7 {
-		return fmt.Errorf("cooldown_level2_seconds out of range")
-	}
-	if values.CooldownLevel3Seconds < 0 || values.CooldownLevel3Seconds > 86400*7 {
-		return fmt.Errorf("cooldown_level3_seconds out of range")
-	}
-	if values.CooldownLevel4Seconds < 0 || values.CooldownLevel4Seconds > 86400*30 {
-		return fmt.Errorf("cooldown_level4_seconds out of range")
-	}
-	if values.BreakerFailCount != 0 && (values.BreakerFailCount < 2 || values.BreakerFailCount > 100) {
-		return fmt.Errorf("breaker_fail_count must be between 2 and 100 (0 disables member parking)")
-	}
-	if values.ModelBreakerFailCount != 0 && (values.ModelBreakerFailCount < 2 || values.ModelBreakerFailCount > 100) {
-		return fmt.Errorf("model_breaker_fail_count must be between 2 and 100 (0 disables)")
-	}
-	if values.KeyFailThreshold != 0 && (values.KeyFailThreshold < 2 || values.KeyFailThreshold > 100) {
-		return fmt.Errorf("key_fail_threshold must be between 2 and 100 (0 disables)")
-	}
 	if values.StickyEnabled && (values.StickyTTLMinutes < 1 || values.StickyTTLMinutes > 1440) {
 		return fmt.Errorf("sticky_ttl_minutes must be between 1 and 1440")
 	}
 	if values.RecoveryProbeIntervalSeconds < 0 || values.RecoveryProbeIntervalSeconds > 86400 {
 		return fmt.Errorf("recovery_probe_interval_seconds must be between 0 and 86400")
-	}
-	// When progressive cooldown is on, the breaker threshold must leave the
-	// tier table reachable: tieredBackoff maps fail 2/3/4 to levels[0/1/2], so a
-	// threshold below 5 would disable the member before the 1h/24h tiers ever
-	// apply (e.g. the old default of 3 killed the level-3/4 cooldowns).
-	if values.ProgressiveCooldownEnabled && values.BreakerFailCount != 0 && values.BreakerFailCount < 5 {
-		return fmt.Errorf("breaker_fail_count must be at least 5 when progressive cooldown is enabled")
 	}
 	// Alert matrix JSON must parse as webhook.AlertConfig ("" = disable all).
 	if strings.TrimSpace(values.AlertConfigJSON) != "" {

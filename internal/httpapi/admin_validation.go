@@ -1,13 +1,16 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/proxy"
 )
 
 // pathID parses a positive integer path parameter (e.g. /channels/{id}) and
@@ -67,6 +70,41 @@ func validateRouteRetryOverrides(route *domain.Route) error {
 	}
 	if route.ChannelRetryTimes != nil && (*route.ChannelRetryTimes < 0 || *route.ChannelRetryTimes > 5) {
 		return errors.New("channel_retry_times must be between 0 and 5")
+	}
+	if route.MaxConcurrent != nil && *route.MaxConcurrent < 0 {
+		return errors.New("max_concurrent must be non-negative")
+	}
+	if route.StableFirstDenominator != nil && (*route.StableFirstDenominator < 2 || *route.StableFirstDenominator > 1000) {
+		return errors.New("stable_first_denominator must be between 2 and 1000")
+	}
+	if route.StableFirstPromoteRequests != nil && (*route.StableFirstPromoteRequests < 1 || *route.StableFirstPromoteRequests > 100000) {
+		return errors.New("stable_first_promote_requests must be between 1 and 100000")
+	}
+	return nil
+}
+
+func validateRouteModelOverrides(h *AdminHandler, route *domain.Route) error {
+	if err := validateRouteRetryOverrides(route); err != nil {
+		return err
+	}
+	if route == nil {
+		return errors.New("route is required")
+	}
+	if route.ProxyURL != nil && strings.TrimSpace(*route.ProxyURL) != "" && h.validateProxyURL != nil {
+		if err := h.validateProxyURL(strings.TrimSpace(*route.ProxyURL)); err != nil {
+			return fmt.Errorf("proxy_url: %w", err)
+		}
+	}
+	if route.HeaderOverride != nil && strings.TrimSpace(*route.HeaderOverride) != "" {
+		if err := proxy.ValidateHeaderOverrides(*route.HeaderOverride); err != nil {
+			return fmt.Errorf("header_override: %w", err)
+		}
+	}
+	if route.PayloadRules != nil && strings.TrimSpace(*route.PayloadRules) != "" && strings.TrimSpace(*route.PayloadRules) != "[]" {
+		var rules []proxy.PayloadRule
+		if err := json.Unmarshal([]byte(*route.PayloadRules), &rules); err != nil || rules == nil {
+			return errors.New("payload_rules must be a valid JSON array")
+		}
 	}
 	return nil
 }

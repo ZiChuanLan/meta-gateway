@@ -69,8 +69,10 @@ type Explanation struct {
 	// RetryTimesOverride / ChannelRetryTimesOverride carry the route-level
 	// retry policy (nil = follow the global runtime setting). The proxy reads
 	// them from the selection decision.
-	RetryTimesOverride        *int `json:"retry_times_override,omitempty"`
-	ChannelRetryTimesOverride *int `json:"channel_retry_times_override,omitempty"`
+	RetryTimesOverride             *int  `json:"retry_times_override,omitempty"`
+	ChannelRetryTimesOverride      *int  `json:"channel_retry_times_override,omitempty"`
+	StableFirstOverride            *bool `json:"stable_first_override,omitempty"`
+	StableFirstDenominatorOverride *int  `json:"stable_first_denominator_override,omitempty"`
 }
 
 type Decision struct {
@@ -122,12 +124,6 @@ type LatencyProvider func(channelID int64, model string) (float64, bool)
 // weight).
 type ErrorProvider func(channelID int64, model string) (float64, bool)
 
-// CircuitWeightProvider returns the live model-circuit multiplier for a
-// channel. A non-positive value means the channel is currently open and must
-// not be selected; a value between zero and one represents a half-open probe
-// share.
-type CircuitWeightProvider func(channelID int64, model string) float64
-
 // ConcurrencyProvider returns the number of in-flight relay attempts currently
 // occupying a channel (0 when none). It is the input to the burst guard that
 // keeps a sudden spike from overwhelming the healthiest channel.
@@ -147,7 +143,6 @@ type selectorSettings struct {
 	latency                LatencyProvider
 	errorAware             bool
 	errorRate              ErrorProvider
-	circuitWeight          CircuitWeightProvider
 	concurrencyAware       bool
 	concurrencyLimit       int
 	inflight               ConcurrencyProvider
@@ -208,12 +203,6 @@ func (s *Selector) SetErrorAware(enabled bool, provider ErrorProvider) {
 		cfg.errorAware = enabled
 		cfg.errorRate = provider
 	})
-}
-
-// SetCircuitAware wires the proxy's per-channel×model circuit state into
-// selection and route explanations. A nil provider disables this extra gate.
-func (s *Selector) SetCircuitAware(provider CircuitWeightProvider) {
-	s.updateSettings(func(cfg *selectorSettings) { cfg.circuitWeight = provider })
 }
 
 // SetConcurrencyAware turns the in-flight burst guard on/off. limit is the
@@ -303,9 +292,17 @@ func (s *Selector) SelectSticky(ctx context.Context, model string, excluded map[
 	}
 	cfg := s.loadSettings()
 	if !selectedSet {
-		if cfg.stableFirstEnabled && cfg.stableFirstDenominator > 1 {
-			selected = s.pickWithGray(eligible, explanation.RoutingMode)
-			explanation.StableFirstDenominator = cfg.stableFirstDenominator
+		grayEnabled := cfg.stableFirstEnabled
+		grayDenominator := cfg.stableFirstDenominator
+		if explanation.StableFirstOverride != nil {
+			grayEnabled = *explanation.StableFirstOverride
+		}
+		if explanation.StableFirstDenominatorOverride != nil && *explanation.StableFirstDenominatorOverride > 1 {
+			grayDenominator = *explanation.StableFirstDenominatorOverride
+		}
+		if grayEnabled && grayDenominator > 1 {
+			selected = s.pickWithGray(eligible, explanation.RoutingMode, grayDenominator)
+			explanation.StableFirstDenominator = grayDenominator
 			explanation.StableFirstHit = selected.Channel.StableFirst
 		} else {
 			selected = s.pick(eligible, explanation.RoutingMode)
@@ -350,7 +347,6 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 	evaluations := make([]Evaluation, 0, len(candidates))
 	for _, candidate := range candidates {
 		reasons := make([]Reason, 0, 2)
-		circuitWeight := 1.0
 		if !candidate.Member.Enabled {
 			reasons = append(reasons, ReasonMemberDisabled)
 		}
@@ -372,18 +368,7 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		if singlePin != nil && candidate.Member.ID != *singlePin {
 			reasons = append(reasons, ReasonSingleMode)
 		}
-		if cfg := s.loadSettings(); cfg.circuitWeight != nil {
-			circuitWeight = cfg.circuitWeight(candidate.Channel.ID, model)
-			if circuitWeight <= 0 {
-				reasons = append(reasons, ReasonCircuitOpen)
-			}
-		}
 		score := s.scoreFor(candidate, route.RoutingMode)
-		if circuitWeight <= 0 {
-			score = 0
-		} else if circuitWeight < 1 {
-			score *= circuitWeight
-		}
 		evaluations = append(evaluations, Evaluation{
 			Candidate: candidate,
 			Eligible:  len(reasons) == 0,
@@ -406,14 +391,16 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		retryTimesOverride = &zero
 	}
 	return Explanation{
-		Model:                     model,
-		RouteID:                   route.ID,
-		RouteMappingJSON:          mappingJSON,
-		RoutingMode:               mode,
-		EvaluatedAt:               now,
-		Candidates:                evaluations,
-		RetryTimesOverride:        retryTimesOverride,
-		ChannelRetryTimesOverride: route.ChannelRetryTimes,
+		Model:                          model,
+		RouteID:                        route.ID,
+		RouteMappingJSON:               mappingJSON,
+		RoutingMode:                    mode,
+		EvaluatedAt:                    now,
+		Candidates:                     evaluations,
+		RetryTimesOverride:             retryTimesOverride,
+		ChannelRetryTimesOverride:      route.ChannelRetryTimes,
+		StableFirstOverride:            route.StableFirst,
+		StableFirstDenominatorOverride: route.StableFirstDenominator,
 	}, nil
 }
 
@@ -457,8 +444,7 @@ func (s *Selector) evaluateWithSession(ctx context.Context, model string, exclud
 // If every eligible candidate is grayscale (e.g. a brand-new fleet being
 // validated), the draw is bypassed and a normal pick happens so traffic is
 // never dropped. The pick inside each pool still honors latency/error/weight.
-func (s *Selector) pickWithGray(candidates []domain.RoutingCandidate, mode string) domain.RoutingCandidate {
-	denominator := s.loadSettings().stableFirstDenominator
+func (s *Selector) pickWithGray(candidates []domain.RoutingCandidate, mode string, denominator int) domain.RoutingCandidate {
 	var gray, stable []domain.RoutingCandidate
 	for _, candidate := range candidates {
 		if candidate.Channel.StableFirst {

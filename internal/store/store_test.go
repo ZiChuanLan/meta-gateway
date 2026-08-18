@@ -147,13 +147,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 73 {
-		t.Fatalf("got %d applied migrations, want 73", count)
+	if count != 75 {
+		t.Fatalf("got %d applied migrations, want 75", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 73 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 75 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -807,6 +807,76 @@ func TestRouteRetryOverridesRoundTrip(t *testing.T) {
 	}
 }
 
+func TestModelRouteOverridesRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	maxConcurrent, denominator, promote := 3, 5, 7
+	maxEffort := "medium"
+	proxyURL := "http://127.0.0.1:7897"
+	stable := true
+	id, err := db.Route.Create(&domain.Route{
+		ModelPattern:               "model-override",
+		Enabled:                    true,
+		MaxReasoningEffort:         &maxEffort,
+		MaxConcurrent:              &maxConcurrent,
+		ProxyURL:                   &proxyURL,
+		StableFirst:                &stable,
+		StableFirstDenominator:     &denominator,
+		StableFirstPromoteRequests: &promote,
+		ModelGroup:                 "GPT",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Route.GetByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MaxReasoningEffort == nil || *got.MaxReasoningEffort != maxEffort || got.MaxConcurrent == nil || *got.MaxConcurrent != maxConcurrent || got.ProxyURL == nil || *got.ProxyURL != proxyURL || got.StableFirst == nil || !*got.StableFirst || got.StableFirstDenominator == nil || *got.StableFirstDenominator != denominator || got.StableFirstPromoteRequests == nil || *got.StableFirstPromoteRequests != promote || got.ModelGroup != "GPT" {
+		t.Fatalf("model route overrides lost: %+v", got)
+	}
+	got.MaxConcurrent = nil
+	got.ProxyURL = nil
+	got.StableFirst = nil
+	if err := db.Route.Update(got); err != nil {
+		t.Fatal(err)
+	}
+	cleared, _ := db.Route.GetByID(id)
+	if cleared.MaxConcurrent != nil || cleared.ProxyURL != nil || cleared.StableFirst != nil {
+		t.Fatalf("model override clear failed: %+v", cleared)
+	}
+}
+
+func TestModelRouteOverridesApplyToRoutingCandidates(t *testing.T) {
+	db := openTestDB(t)
+	siteID, err := db.Site.Create(&domain.Site{Name: "override-site", BaseURL: "https://override.example", Platform: "openai-compatible", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credID, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte("enc"), Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelID, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credID, Name: "override-channel", BaseURL: "https://override.example", Status: domain.StatusEnabled, MaxConcurrent: 8, MaxReasoningEffort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxConcurrent, maxEffort := 2, "low"
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "override-live", Enabled: true, MaxConcurrent: &maxConcurrent, MaxReasoningEffort: &maxEffort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 100}); err != nil {
+		t.Fatal(err)
+	}
+	_, candidates, err := db.RouteMember.RoutingCandidates("override-live")
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("candidates=%+v err=%v", candidates, err)
+	}
+	if candidates[0].Channel.MaxConcurrent != 2 || candidates[0].Channel.MaxReasoningEffort != "low" {
+		t.Fatalf("model override not applied: %+v", candidates[0].Channel)
+	}
+}
+
 func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	db := openTestDB(t)
 	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "cooldown-model", Enabled: true})
@@ -834,12 +904,13 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = now.Add(2 * time.Minute)
+	want = now.Add(time.Minute)
+	// Fixed cooldown: consecutive failures increase the counter but never
+	// extend the penalty or disable the member. Isolation of a persistently
+	// failing channel is the channel-level auto-disable + recovery probe's job.
 	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 2 {
-		t.Fatalf("escalated cooldown: %+v", member)
+		t.Fatalf("second failure must keep the fixed cooldown: %+v", member)
 	}
-	// The third consecutive failure within the active backoff trips the circuit
-	// breaker: the member is disabled outright instead of growing the cooldown.
 	if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
 		t.Fatal(err)
 	}
@@ -847,17 +918,17 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if member.Enabled || member.CooldownUntil != nil || member.FailCount != 3 || member.LastError != "transport" {
-		t.Fatalf("expected circuit breaker disable: %+v", member)
+	if !member.Enabled || member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 3 {
+		t.Fatalf("third failure must keep the member enabled with fixed cooldown: %+v", member)
 	}
-	// The disabled member is excluded from routing until an admin clears its
-	// automatic health state.
+	// A member inside an active cooldown is excluded from routing until the
+	// penalty expires.
 	route, candidates, err := db.RouteMember.RoutingCandidates("cooldown-model")
 	if err != nil || route == nil || len(candidates) != 1 {
 		t.Fatalf("candidates=%+v err=%v", candidates, err)
 	}
-	if candidates[0].Member.Enabled {
-		t.Fatalf("disabled member still eligible: %+v", candidates[0])
+	if candidates[0].Member.CooldownUntil == nil {
+		t.Fatalf("cooling member must carry a cooldown: %+v", candidates[0])
 	}
 	if err := db.RouteMember.ClearHealth(memberID); err != nil {
 		t.Fatal(err)
@@ -868,33 +939,6 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	}
 	if !member.Enabled || member.CooldownUntil != nil || member.FailCount != 0 || member.LastError != "" {
 		t.Fatalf("cleared health: %+v", member)
-	}
-}
-
-func TestRouteMemberBackoffCapsAtMax(t *testing.T) {
-	db := openTestDB(t)
-	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "cap-model", Enabled: true})
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "channel", Status: domain.StatusEnabled})
-	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
-	// A base cool-down of 20h doubles to 40h on the second consecutive failure,
-	// which must be capped at maxCooldownBackoff (24h) rather than overflowing.
-	if err := db.RouteMember.RecordFailure(memberID, now, 20*time.Hour, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.RouteMember.RecordFailure(memberID, now, 20*time.Hour, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	member, err := db.RouteMember.GetByID(memberID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := now.Add(24 * time.Hour)
-	if member.CooldownUntil == nil || !member.CooldownUntil.Equal(want) || member.FailCount != 2 {
-		t.Fatalf("backoff not capped: %+v want until %v", member, want)
 	}
 }
 
@@ -1230,172 +1274,6 @@ func TestCacheTokenAccounting(t *testing.T) {
 	}
 	if usage[0].CacheReadTokens != 40 || usage[0].CacheCreationTokens != 20 {
 		t.Fatalf("usage cache tokens: %+v", usage[0])
-	}
-}
-
-// TestProgressiveCooldownTiers verifies tiered backoff: fail 2 → levels[0],
-// fail 3 → levels[1], fail 4 → levels[2], and the configurable breaker
-// threshold parks the member once reached.
-func TestProgressiveCooldownTiers(t *testing.T) {
-	db := openTestDB(t)
-	db.RouteMember.SetProgressiveCooldown(true, 30*time.Second,
-		[3]time.Duration{10 * time.Minute, time.Hour, 24 * time.Hour}, 5)
-
-	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "tiered", Enabled: true})
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "tiered-ch", Status: domain.StatusEnabled})
-	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
-	base := 30 * time.Second
-
-	cooldownFor := func() time.Duration {
-		t.Helper()
-		member, err := db.RouteMember.GetByID(memberID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if member.CooldownUntil == nil {
-			t.Fatalf("no cooldown set, fail_count=%d", member.FailCount)
-		}
-		return member.CooldownUntil.Sub(now)
-	}
-
-	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	if got := cooldownFor(); got != base {
-		t.Fatalf("fail 1 cooldown = %v, want %v", got, base)
-	}
-	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	if got := cooldownFor(); got != 10*time.Minute {
-		t.Fatalf("fail 2 cooldown = %v, want 10m", got)
-	}
-	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	if got := cooldownFor(); got != time.Hour {
-		t.Fatalf("fail 3 cooldown = %v, want 1h", got)
-	}
-	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	if got := cooldownFor(); got != 24*time.Hour {
-		t.Fatalf("fail 4 cooldown = %v, want 24h", got)
-	}
-
-	// Fifth consecutive failure trips the breaker (threshold 5): disabled.
-	if err := db.RouteMember.RecordFailure(memberID, now, base, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	member, err := db.RouteMember.GetByID(memberID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if member.Enabled || member.CooldownUntil != nil {
-		t.Fatalf("breaker did not park member: %+v", member)
-	}
-}
-
-// TestProgressiveCooldownSuccessDecay verifies one-tier-per-success recovery:
-// a member with a 24h penalty steps down to 1h after one success, then 10m,
-// then base, then fully clear — never skipping tiers.
-func TestProgressiveCooldownSuccessDecay(t *testing.T) {
-	db := openTestDB(t)
-	db.RouteMember.SetProgressiveCooldown(true, 30*time.Second,
-		[3]time.Duration{10 * time.Minute, time.Hour, 24 * time.Hour}, 5)
-
-	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "decay", Enabled: true})
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "decay-ch", Status: domain.StatusEnabled})
-	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
-
-	// Reach fail_count 4 (24h tier).
-	for i := 0; i < 4; i++ {
-		if err := db.RouteMember.RecordFailure(memberID, now, 30*time.Second, "transport"); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	cooldownFor := func() time.Duration {
-		t.Helper()
-		member, err := db.RouteMember.GetByID(memberID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if member.CooldownUntil == nil {
-			t.Fatalf("no cooldown, fail_count=%d", member.FailCount)
-		}
-		return member.CooldownUntil.Sub(now)
-	}
-
-	// Success 1: 24h → 1h.
-	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
-		t.Fatal(err)
-	}
-	if got := cooldownFor(); got != time.Hour {
-		t.Fatalf("after 1 success cooldown = %v, want 1h", got)
-	}
-	// Success 2: 1h → 10m.
-	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
-		t.Fatal(err)
-	}
-	if got := cooldownFor(); got != 10*time.Minute {
-		t.Fatalf("after 2 successes cooldown = %v, want 10m", got)
-	}
-	// Success 3: 10m → base (30s).
-	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
-		t.Fatal(err)
-	}
-	if got := cooldownFor(); got != 30*time.Second {
-		t.Fatalf("after 3 successes cooldown = %v, want 30s", got)
-	}
-	// Success 4: fully clear.
-	if err := db.RouteMember.RecordSuccess(memberID, now); err != nil {
-		t.Fatal(err)
-	}
-	member, err := db.RouteMember.GetByID(memberID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if member.FailCount != 0 || member.CooldownUntil != nil {
-		t.Fatalf("not fully recovered: %+v", member)
-	}
-}
-
-// TestProgressiveCooldownDisabledRestoresExponentialBackoff verifies that
-// disabling progressive mode restores the legacy 2^n behavior exactly.
-func TestProgressiveCooldownDisabledRestoresExponentialBackoff(t *testing.T) {
-	db := openTestDB(t)
-	db.RouteMember.SetProgressiveCooldown(true, 30*time.Second, [3]time.Duration{10 * time.Minute, time.Hour, 24 * time.Hour}, 5)
-	db.RouteMember.SetProgressiveCooldown(false, 0, [3]time.Duration{}, 0)
-
-	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "legacy", Enabled: true})
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "legacy-ch", Status: domain.StatusEnabled})
-	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
-	if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.RouteMember.RecordFailure(memberID, now, time.Minute, "transport"); err != nil {
-		t.Fatal(err)
-	}
-	member, err := db.RouteMember.GetByID(memberID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Legacy exponential: 1m → 2m.
-	if member.FailCount != 2 || member.CooldownUntil == nil || !member.CooldownUntil.Equal(now.Add(2*time.Minute)) {
-		t.Fatalf("legacy backoff broken: %+v", member)
 	}
 }
 

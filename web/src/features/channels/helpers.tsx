@@ -1,7 +1,7 @@
-import type { ChannelOverview } from "../../api/types"
-import { type SelectOption } from "../../components/SearchableSelect"
-import { CONNECTION_TYPE_OPTIONS } from "../../connectionTypes"
-import { channelReadiness } from "../channelHealth"
+import type { ChannelOverview } from "../../api/types";
+import { type SelectOption } from "../../components/SearchableSelect";
+import { CONNECTION_TYPE_OPTIONS } from "../../connectionTypes";
+import { channelReadiness } from "../channelHealth";
 
 export const TYPE_OPTIONS: SelectOption[] = [
   ...CONNECTION_TYPE_OPTIONS.map((option) => ({
@@ -17,7 +17,8 @@ export const TYPE_GROUPS = ["core", "relay", "other"];
 export /** Value shown in secret inputs when a credential is stored; keeping it means "don't change". */
 const SECRET_MASK = "••••••••••";
 
-export type ConnectionHealthFilter = "all" | "ready" | "attention" | "missing_key";
+export type ConnectionHealthFilter =
+  "all" | "ready" | "attention" | "missing_key";
 
 export function isMissingAPIKey(overview: ChannelOverview) {
   return !overview.has_api_key;
@@ -28,6 +29,7 @@ export type CreateConnectionInput = {
   base_url: string;
   secret: string;
   type_hint: string;
+  group_name?: string;
 };
 
 export function normalizeBase(url: string) {
@@ -35,7 +37,9 @@ export function normalizeBase(url: string) {
 }
 
 export function needsVerify(overview: ChannelOverview) {
-  return channelReadiness(overview) === "unverified" || overview.model_count === 0;
+  return (
+    channelReadiness(overview) === "unverified" || overview.model_count === 0
+  );
 }
 
 export function capabilityFlags(overview: ChannelOverview) {

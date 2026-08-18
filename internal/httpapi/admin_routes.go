@@ -38,7 +38,7 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid routing_mode")
 		return
 	}
-	if err := validateRouteRetryOverrides(&rt); err != nil {
+	if err := validateRouteModelOverrides(h, &rt); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -98,7 +98,7 @@ func (h *AdminHandler) updateRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid routing_mode")
 		return
 	}
-	if err := validateRouteRetryOverrides(&rt); err != nil {
+	if err := validateRouteModelOverrides(h, &rt); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

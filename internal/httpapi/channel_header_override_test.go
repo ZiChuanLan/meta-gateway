@@ -70,7 +70,6 @@ func TestChannelPartialUpdatePreservesOmittedFields(t *testing.T) {
 		"max_concurrent":       3,
 		"system_prompt":        "keep this prompt",
 		"retry_config":         `{"status_codes":[429]}`,
-		"tags":                 "alpha,beta",
 		"stable_first":         true,
 	})
 	if status != http.StatusOK {
@@ -94,7 +93,7 @@ func TestChannelPartialUpdatePreservesOmittedFields(t *testing.T) {
 		updated.Status != "enabled" || updated.TypeHint != "openai-compatible" ||
 		updated.MaxReasoningEffort != "medium" || updated.PayloadRules != payloadRules ||
 		updated.MaxConcurrent != 3 || updated.SystemPrompt != "keep this prompt" ||
-		updated.RetryConfig != `{"status_codes":[429]}` || updated.Tags != "alpha,beta" ||
+		updated.RetryConfig != `{"status_codes":[429]}` ||
 		!updated.StableFirst {
 		t.Fatalf("partial update overwrote omitted fields: %+v", updated)
 	}

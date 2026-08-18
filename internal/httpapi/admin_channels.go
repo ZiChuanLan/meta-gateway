@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/proxy"
@@ -49,6 +48,9 @@ func (h *AdminHandler) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if ch.Status == "" {
 		ch.Status = domain.StatusEnabled
+	}
+	if strings.TrimSpace(ch.GroupName) == "" {
+		ch.GroupName = "default"
 	}
 	if err := h.validateChannel(&ch); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -249,7 +251,6 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		HeaderOverride     *string `json:"header_override"`
 		SystemPrompt       *string `json:"system_prompt"`
 		RetryConfig        *string `json:"retry_config"`
-		Tags               *string `json:"tags"`
 		StableFirst        *bool   `json:"stable_first"`
 	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
@@ -351,10 +352,6 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if patch.RetryConfig != nil {
 		ch.RetryConfig = strings.TrimSpace(*patch.RetryConfig)
 	}
-	// Tags: empty string clears the tag list.
-	if patch.Tags != nil {
-		ch.Tags = strings.TrimSpace(*patch.Tags)
-	}
 	// StableFirst: a missing field preserves the current grayscale state.
 	if patch.StableFirst != nil {
 		ch.StableFirst = *patch.StableFirst
@@ -425,7 +422,6 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	ch.HeaderOverride = strings.TrimSpace(ch.HeaderOverride)
 	ch.SystemPrompt = strings.TrimSpace(ch.SystemPrompt)
 	ch.RetryConfig = strings.TrimSpace(ch.RetryConfig)
-	ch.Tags = strings.TrimSpace(ch.Tags)
 	if ch.Name == "" {
 		return errors.New("name is required")
 	}
@@ -476,50 +472,3 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
-
-// patchChannelsByTag applies a partial update to every channel carrying the
-// tag (bulk priority/weight/status/mapping operations).
-func (h *AdminHandler) patchChannelsByTag(w http.ResponseWriter, r *http.Request) {
-	tag := strings.TrimSpace(chi.URLParam(r, "tag"))
-	if tag == "" {
-		writeError(w, http.StatusBadRequest, "tag is required")
-		return
-	}
-	var patch domain.ChannelPatch
-	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	// Validate enum-ish fields early so a typo does not silently no-op.
-	if patch.Status != nil {
-		switch *patch.Status {
-		case domain.StatusEnabled, domain.StatusDisabled, domain.StatusAutoDisabled:
-		default:
-			writeError(w, http.StatusBadRequest, "invalid status")
-			return
-		}
-	}
-	if patch.Priority != nil && (*patch.Priority < 0 || *patch.Priority > 1000) {
-		writeError(w, http.StatusBadRequest, "priority out of range")
-		return
-	}
-	if patch.Weight != nil && (*patch.Weight < 0 || *patch.Weight > 10000) {
-		writeError(w, http.StatusBadRequest, "weight out of range")
-		return
-	}
-	if patch.HeaderOverride != nil {
-		if err := proxy.ValidateHeaderOverrides(*patch.HeaderOverride); err != nil {
-			writeError(w, http.StatusBadRequest, "header_override: "+err.Error())
-			return
-		}
-	}
-	affected, err := h.db.Channel.UpdateByTag(tag, patch)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	if affected > 0 {
-		h.modelsCache.Invalidate()
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"tag": tag, "affected": affected})
-}

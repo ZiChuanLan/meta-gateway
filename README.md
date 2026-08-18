@@ -90,7 +90,6 @@ curl http://127.0.0.1:4100/healthz
 | `RETRY_TIMES` | `2` | Retry rounds: how many additional channels are attempted after the first upstream attempt (each round = one more channel) |
 | `CHANNEL_RETRY_TIMES` | `1` | Same-key re-sends: how many times a retryable failure is re-sent on the same upstream key before moving to the next key/channel (0-5; network errors fail fast after these) |
 | `KEY_POOL_ROTATION` | `true` | Rotate through the site's API keys when one fails; off = only the channel's bound key is used |
-| `PROGRESSIVE_COOLDOWN_ENABLED` | `true` | Escalate member cooldown after repeated failures (`COOLDOWN_LEVEL2/3/4_SECONDS`) instead of a fixed pause |
 | `CHANNEL_AUTO_DISABLE_THRESHOLD` | `5` | Consecutive relay failures before a channel is auto-disabled (0 disables) |
 | `RECOVERY_PROBE_ENABLED` / `RECOVERY_PROBE_INTERVAL_SECONDS` | `true` / `600` | Re-probe auto-disabled channels for recovery |
 | `ROUTING_LATENCY_AWARE` / `ROUTING_ERROR_AWARE` / `ROUTING_CONCURRENCY_AWARE` | `true` | Routing signal toggles (latency, error history, concurrency load) |
@@ -104,9 +103,7 @@ curl http://127.0.0.1:4100/healthz
 | `PLUGIN_CATALOG_URL` | empty | Extra plugin market registry URLs (comma-separated) |
 | `CROSS_CHANNEL_FAILOVER_ENABLED` | `true` | Whether failed requests may move to another channel; disabled means only the first selected channel is tried |
 | `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
-| `BREAKER_FAIL_COUNT` | `5` | Consecutive failures before a route member is parked (0 disables; progressive mode floor 5) |
-| `MODEL_BREAKER_FAIL_COUNT` | `5` | Consecutive failures before the in-memory channel×model breaker opens (0 disables) |
-| `KEY_FAIL_THRESHOLD` | `5` | Per-key consecutive failures before the key is excluded for 30m (0 disables) |
+| `FAULT_PROTECTION_ENABLED` | `true` | Master switch for fixed cooldown and channel auto-disable; retries and failover remain active when off |
 | `STICKY_ENABLED` / `STICKY_TTL_MINUTES` | `false` / `30` | Sticky-session routing toggle + binding TTL (hot-swappable) |
 | `CHECKIN_ENABLED` | `false` | Start scheduled credential check-in |
 | `CHECKIN_CRON` | `0 8 * * *` | Standard five-field check-in schedule |

@@ -55,18 +55,6 @@ func TestLoadCrossChannelFailoverDefaultAndOverride(t *testing.T) {
 	}
 }
 
-func TestLoadAllowsDisablingMemberBreaker(t *testing.T) {
-	t.Setenv("METRICS_TOKEN", "metrics-test-token")
-	t.Setenv("BREAKER_FAIL_COUNT", "0")
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("BREAKER_FAIL_COUNT=0: %v", err)
-	}
-	if cfg.BreakerFailCount != 0 {
-		t.Fatalf("BreakerFailCount=%d, want 0", cfg.BreakerFailCount)
-	}
-}
-
 func TestLoadRejectsInvalidCheckinTimezone(t *testing.T) {
 	t.Setenv("METRICS_TOKEN", "metrics-test-token")
 	t.Setenv("CHECKIN_TZ", "Not/AZone")

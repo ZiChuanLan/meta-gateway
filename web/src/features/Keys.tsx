@@ -1,4 +1,14 @@
-import { Copy, Eye, KeyRound, Pencil, Plus, RefreshCw, Search, Ticket, Trash2 } from "lucide-react";
+import {
+  Copy,
+  Eye,
+  KeyRound,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Ticket,
+  Trash2,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -8,6 +18,7 @@ import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { ModelPicker } from "../components/ModelPicker";
 import { ScopePicker } from "../components/ScopePicker";
+import { modelGroup, modelPatternMatches } from "./models/modelGroups";
 import { PaginationBar } from "../components/PaginationBar";
 import { SecretRevealDialog } from "../components/SecretRevealDialog";
 import { EntityState } from "../components/EntityState";
@@ -155,7 +166,7 @@ function formatCost(value?: number) {
   return value.toFixed(4);
 }
 
-	export function Keys() {
+export function Keys() {
   const { client } = useSession();
   const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -183,13 +194,65 @@ function formatCost(value?: number) {
     queryKey: ["usage-summary"],
     queryFn: ({ signal }) => service.usageSummary(undefined, signal),
   });
-	const [add, setAdd] = useState(false);
-	const [edit, setEdit] = useState<DownstreamKey | null>(null);
-	const [redemption, setRedemption] = useState(false);
+  const modelRoutes = useQuery({
+    queryKey: ["route-overviews"],
+    queryFn: ({ signal }) => service.routeOverviews(signal),
+  });
+  const metadata = useQuery({
+    queryKey: ["model-metadata"],
+    queryFn: ({ signal }) => service.modelMetadata(signal),
+  });
+  const metaByModel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of metadata.data?.items ?? []) {
+      map.set(item.model_name, item.vendor);
+    }
+    return map;
+  }, [metadata.data]);
+  const modelGroupOptions = useMemo(() => {
+    const groups = new Set<string>();
+    for (const overview of modelRoutes.data ?? []) {
+      groups.add(
+        modelGroup(
+          overview.route.model_pattern,
+          overview.route.model_group,
+          metaByModel.get(overview.route.model_pattern),
+        ),
+      );
+    }
+    return [...groups].sort((a, b) => a.localeCompare(b));
+  }, [metaByModel, modelRoutes.data]);
+  const modelsByGroup = useMemo(() => {
+    const grouped = new Map<string, Set<string>>();
+    for (const overview of modelRoutes.data ?? []) {
+      const group = modelGroup(
+        overview.route.model_pattern,
+        overview.route.model_group,
+        metaByModel.get(overview.route.model_pattern),
+      );
+      const models = grouped.get(group) ?? new Set<string>();
+      const pattern = overview.route.model_pattern.trim();
+      if (pattern && !/[?*]/.test(pattern)) {
+        models.add(pattern);
+      }
+      for (const model of allModels) {
+        if (modelPatternMatches(pattern, model)) {
+          models.add(model);
+        }
+      }
+      grouped.set(group, models);
+    }
+    return grouped;
+  }, [allModels, metaByModel, modelRoutes.data]);
+  const [add, setAdd] = useState(false);
+  const [edit, setEdit] = useState<DownstreamKey | null>(null);
+  const [redemption, setRedemption] = useState(false);
   const [created, setCreated] = useState<CreatedDownstreamKey | null>(null);
   const [remove, setRemove] = useState<number | null>(null);
   // Re-view a stored plaintext token (created after plaintext storage).
-  const [viewing, setViewing] = useState<{ id: number; name: string } | null>(null);
+  const [viewing, setViewing] = useState<{ id: number; name: string } | null>(
+    null,
+  );
   const [viewedToken, setViewedToken] = useState<string | null>(null);
   // Rotate: replace the token, old one dies instantly.
   const [rotating, setRotating] = useState<number | null>(null);
@@ -219,11 +282,11 @@ function formatCost(value?: number) {
       quota_total_tokens?: number;
       price_prompt_per_1k?: number;
       price_completion_per_1k?: number;
-	  price_cache_per_1k?: number;
+      price_cache_per_1k?: number;
       model_allowlist?: string;
       model_denylist?: string;
-	  expires_at?: string;
-	  allowed_ips?: string;
+      expires_at?: string;
+      allowed_ips?: string;
     }) => service.createKey(v),
     invalidateKeys: [["keys"], ["usage-summary"]],
     toastOnError: false,
@@ -242,11 +305,11 @@ function formatCost(value?: number) {
         quota_total_tokens?: number;
         price_prompt_per_1k?: number;
         price_completion_per_1k?: number;
-		price_cache_per_1k?: number;
+        price_cache_per_1k?: number;
         model_allowlist?: string;
         model_denylist?: string;
-		expires_at?: string;
-		allowed_ips?: string;
+        expires_at?: string;
+        allowed_ips?: string;
         reset_used?: boolean;
       };
     }) => service.updateKey(v.id, v.body),
@@ -254,7 +317,7 @@ function formatCost(value?: number) {
     toastOnError: false,
     onSuccess: () => setEdit(null),
   });
-	const del = useAdminMutation({
+  const del = useAdminMutation({
     mutationFn: (id: number) => service.deleteKey(id),
     invalidateKeys: [["keys"], ["usage-summary"]],
     pendingIdOf: (id) => id,
@@ -314,35 +377,35 @@ function formatCost(value?: number) {
       kicker={t("keys.kicker")}
       title={t("keys.title")}
       description={t("keys.description")}
-	  actions={
-		<>
-		  <label className="directory-search">
-			<Search size={14} aria-hidden="true" />
-			<input
-			  value={searchParams.get("search") ?? ""}
-			  onChange={(event) => {
-				const next = new URLSearchParams(searchParams);
-				const value = event.target.value;
-				if (value) next.set("search", value);
-				else next.delete("search");
-				setSearchParams(next, { replace: true });
-			  }}
-			  placeholder={t("keys.searchPlaceholder")}
-			  aria-label={t("keys.searchPlaceholder")}
-			/>
-		  </label>
-		  <Button icon={<Plus size={16} />} onClick={openCreate}>
-			{t("keys.create")}
-		  </Button>
-		  <Button
-			variant="secondary"
-			icon={<Ticket size={15} />}
-			onClick={() => setRedemption(true)}
-		  >
-			{t("keys.redemption")}
-		  </Button>
-		</>
-	  }
+      actions={
+        <>
+          <label className="directory-search">
+            <Search size={14} aria-hidden="true" />
+            <input
+              value={searchParams.get("search") ?? ""}
+              onChange={(event) => {
+                const next = new URLSearchParams(searchParams);
+                const value = event.target.value;
+                if (value) next.set("search", value);
+                else next.delete("search");
+                setSearchParams(next, { replace: true });
+              }}
+              placeholder={t("keys.searchPlaceholder")}
+              aria-label={t("keys.searchPlaceholder")}
+            />
+          </label>
+          <Button icon={<Plus size={16} />} onClick={openCreate}>
+            {t("keys.create")}
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<Ticket size={15} />}
+            onClick={() => setRedemption(true)}
+          >
+            {t("keys.redemption")}
+          </Button>
+        </>
+      }
     >
       <div className="ops-canvas">
         <StatGrid
@@ -494,8 +557,8 @@ function formatCost(value?: number) {
         </Panel>
       </div>
 
-	{redemption && <RedemptionDialog onClose={() => setRedemption(false)} />}
-	{add && (
+      {redemption && <RedemptionDialog onClose={() => setRedemption(false)} />}
+      {add && (
         <KeyDialog
           mode="create"
           pending={create.isPending}
@@ -503,9 +566,11 @@ function formatCost(value?: number) {
           onClose={() => setAdd(false)}
           onSave={(v) => create.mutate(v)}
           allModels={allModels}
+          modelGroupOptions={modelGroupOptions}
+          modelsByGroup={modelsByGroup}
         />
       )}
-	{edit && (
+      {edit && (
         <KeyDialog
           mode="edit"
           initial={edit}
@@ -521,16 +586,18 @@ function formatCost(value?: number) {
                 quota_total_tokens: v.quota_total_tokens,
                 price_prompt_per_1k: v.price_prompt_per_1k,
                 price_completion_per_1k: v.price_completion_per_1k,
-				price_cache_per_1k: v.price_cache_per_1k,
+                price_cache_per_1k: v.price_cache_per_1k,
                 model_allowlist: v.model_allowlist,
                 model_denylist: v.model_denylist,
-				expires_at: v.expires_at ?? "",
-				allowed_ips: v.allowed_ips ?? "",
+                expires_at: v.expires_at ?? "",
+                allowed_ips: v.allowed_ips ?? "",
                 reset_used: v.reset_used,
               },
             })
           }
           allModels={allModels}
+          modelGroupOptions={modelGroupOptions}
+          modelsByGroup={modelsByGroup}
         />
       )}
       {created && (
@@ -587,7 +654,12 @@ function formatCost(value?: number) {
           onClose={() => {
             if (!rotate.isPending) setRotating(null);
           }}
-          onConfirm={() => rotate.mutate({ id: rotating, name: rows.find((k) => k.id === rotating)?.name ?? "" })}
+          onConfirm={() =>
+            rotate.mutate({
+              id: rotating,
+              name: rows.find((k) => k.id === rotating)?.name ?? "",
+            })
+          }
         />
       )}
       {rotatedToken && (
@@ -627,6 +699,8 @@ function KeyDialog({
   onClose,
   onSave,
   allModels,
+  modelGroupOptions,
+  modelsByGroup,
 }: {
   mode: "create" | "edit";
   initial?: DownstreamKey;
@@ -635,9 +709,12 @@ function KeyDialog({
   onClose: () => void;
   onSave: (v: KeyFormValues) => void;
   allModels: string[];
+  modelGroupOptions: string[];
+  modelsByGroup: Map<string, Set<string>>;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(initial?.name ?? "");
+  const [modelGroupSelection, setModelGroupSelection] = useState("");
   const [customToken, setCustomToken] = useState("");
   const [useCustomToken, setUseCustomToken] = useState(false);
   const [scopes, setScopes] = useState<string[]>(() =>
@@ -660,20 +737,20 @@ function KeyDialog({
         : "",
     ),
   );
-const [priceCompletion, setPriceCompletion] = useState(
-	String(
-		initial?.price_completion_per_1k && initial.price_completion_per_1k > 0
-			? initial.price_completion_per_1k
-			: "",
-	),
-);
-const [priceCache, setPriceCache] = useState(
-	String(
-		initial?.price_cache_per_1k && initial.price_cache_per_1k > 0
-			? initial.price_cache_per_1k
-			: "",
-	),
-);
+  const [priceCompletion, setPriceCompletion] = useState(
+    String(
+      initial?.price_completion_per_1k && initial.price_completion_per_1k > 0
+        ? initial.price_completion_per_1k
+        : "",
+    ),
+  );
+  const [priceCache, setPriceCache] = useState(
+    String(
+      initial?.price_cache_per_1k && initial.price_cache_per_1k > 0
+        ? initial.price_cache_per_1k
+        : "",
+    ),
+  );
   const splitModels = (raw?: string) =>
     (raw ?? "")
       .split(",")
@@ -688,6 +765,15 @@ const [priceCache, setPriceCache] = useState(
   const [expiresAt, setExpiresAt] = useState(initial?.expires_at ?? "");
   const [allowedIPs, setAllowedIPs] = useState(initial?.allowed_ips ?? "");
   const [resetUsed, setResetUsed] = useState(false);
+  const addModelGroup = (group: string) => {
+    setModelGroupSelection(group);
+    if (!group) return;
+    const additions = [...(modelsByGroup.get(group) ?? [])];
+    setAllowlist((current) => [
+      ...current,
+      ...additions.filter((model) => !current.includes(model)),
+    ]);
+  };
   const trimmedCustom = customToken.trim();
   const customTooShort =
     useCustomToken && trimmedCustom.length > 0 && trimmedCustom.length < 16;
@@ -726,8 +812,8 @@ const [priceCache, setPriceCache] = useState(
                     : undefined,
                 quota_total_tokens: parseOptionalNumber(quotaTotal),
                 price_prompt_per_1k: parseOptionalNumber(pricePrompt),
-	price_completion_per_1k: parseOptionalNumber(priceCompletion),
-	price_cache_per_1k: parseOptionalNumber(priceCache),
+                price_completion_per_1k: parseOptionalNumber(priceCompletion),
+                price_cache_per_1k: parseOptionalNumber(priceCache),
                 model_allowlist: allowlist.join(","),
                 model_denylist: denylist.join(","),
                 expires_at: expiresAt.trim() || undefined,
@@ -741,9 +827,11 @@ const [priceCache, setPriceCache] = useState(
         </>
       }
     >
-			<div className="ops-panel-context">
-				<span>{mode === "create" ? t("keys.createHint") : t("keys.editHint")}</span>
-			</div>
+      <div className="ops-panel-context">
+        <span>
+          {mode === "create" ? t("keys.createHint") : t("keys.editHint")}
+        </span>
+      </div>
       <Field label={t("common.name")}>
         <input
           autoFocus
@@ -776,31 +864,46 @@ const [priceCache, setPriceCache] = useState(
             placeholder="0"
           />
         </Field>
-		<Field label={t("keys.priceCompletion")}>
-			<input
-				type="number"
-				min={0}
-				step="0.0001"
-				value={priceCompletion}
-				onChange={(e) => setPriceCompletion(e.target.value)}
-				placeholder="0"
-			/>
-		</Field>
-		<Field label={t("keys.priceCache")} hint={t("keys.priceCacheHint")}>
-			<input
-				type="number"
-				min={0}
-				step="0.0001"
-				value={priceCache}
-				onChange={(e) => setPriceCache(e.target.value)}
-				placeholder="0"
-			/>
-		</Field>
+        <Field label={t("keys.priceCompletion")}>
+          <input
+            type="number"
+            min={0}
+            step="0.0001"
+            value={priceCompletion}
+            onChange={(e) => setPriceCompletion(e.target.value)}
+            placeholder="0"
+          />
+        </Field>
+        <Field label={t("keys.priceCache")} hint={t("keys.priceCacheHint")}>
+          <input
+            type="number"
+            min={0}
+            step="0.0001"
+            value={priceCache}
+            onChange={(e) => setPriceCache(e.target.value)}
+            placeholder="0"
+          />
+        </Field>
       </div>
       <Field
         label={t("keys.modelAllowlist")}
         hint={t("keys.modelAllowlistHint")}
       >
+        <div className="model-group-picker">
+          <select
+            value={modelGroupSelection}
+            onChange={(event) => addModelGroup(event.target.value)}
+            disabled={pending}
+          >
+            <option value="">{t("keys.modelGroupPlaceholder")}</option>
+            {modelGroupOptions.map((group) => (
+              <option key={group} value={group}>
+                {group} ({modelsByGroup.get(group)?.size ?? 0})
+              </option>
+            ))}
+          </select>
+          <span className="field-hint">{t("keys.modelGroupHint")}</span>
+        </div>
         <ModelPicker
           allModels={allModels}
           selected={allowlist}
@@ -840,10 +943,7 @@ const [priceCache, setPriceCache] = useState(
         </Field>
       </div>
       {mode === "edit" ? (
-        <label
-          className="check"
-          style={{ marginTop: 12 }}
-        >
+        <label className="check" style={{ marginTop: 12 }}>
           <input
             type="checkbox"
             checked={resetUsed}
@@ -854,10 +954,7 @@ const [priceCache, setPriceCache] = useState(
         </label>
       ) : (
         <>
-          <label
-            className="check"
-            style={{ marginTop: 12 }}
-          >
+          <label className="check" style={{ marginTop: 12 }}>
             <input
               type="checkbox"
               checked={useCustomToken}

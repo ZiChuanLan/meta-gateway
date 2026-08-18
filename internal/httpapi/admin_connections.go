@@ -16,6 +16,7 @@ type createConnectionRequest struct {
 	Platform  string `json:"platform"`
 	Status    string `json:"status"`
 	ModelsCSV string `json:"models_csv"`
+	GroupName string `json:"group_name"`
 }
 
 // normalizeBaseURL canonicalizes a provider base URL for site reuse matching
@@ -103,11 +104,15 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		writeStoreError(w, err)
 		return
 	}
+	groupName := strings.TrimSpace(req.GroupName)
+	if groupName == "" {
+		groupName = "default"
+	}
 	channelID, err := h.db.Channel.Create(&domain.Channel{
 		SiteID:       &siteID,
 		CredentialID: &credID,
 		Name:         name,
-		GroupName:    "default",
+		GroupName:    groupName,
 		Priority:     0,
 		Weight:       100,
 		Status:       status,

@@ -38,13 +38,7 @@ type RuntimeSettingsRow struct {
 	StableFirstPromoteRequests   int
 	RecoveryProbeEnabled         int
 	RecoveryProbeIntervalSeconds int
-	ProgressiveCooldownEnabled   int
-	CooldownLevel2Seconds        int
-	CooldownLevel3Seconds        int
-	CooldownLevel4Seconds        int
-	BreakerFailCount             int
-	ModelBreakerFailCount        int
-	KeyFailThreshold             int
+	FaultProtectionEnabled       int
 	StickyEnabled                int
 	StickyTTLMinutes             int
 	// AlertConfigJSON is the multi-channel alert matrix (webhook/bark/
@@ -89,11 +83,8 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       discovery_cron,
 		       db_gc_cron,
 		       stable_first_enabled, stable_first_denominator, stable_first_promote_requests,
-		       recovery_probe_enabled, recovery_probe_interval_seconds,
-		       progressive_cooldown_enabled, cooldown_level2_seconds, cooldown_level3_seconds,
-		       cooldown_level4_seconds, breaker_fail_count,
-		       model_breaker_fail_count, key_fail_threshold,
-		       sticky_enabled, sticky_ttl_minutes,
+	       recovery_probe_enabled, recovery_probe_interval_seconds, fault_protection_enabled,
+	       sticky_enabled, sticky_ttl_minutes,
 		       alert_config_json, alert_sweep_interval_seconds, alert_daily_summary_interval_seconds,
 		       health_sweep_enabled, health_sweep_interval_seconds, health_sweep_jitter_seconds,
 		       health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
@@ -112,10 +103,8 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		dbGCCron                                                                           sql.NullString
 		webhookThrottle                                                                    sql.NullInt64
 		sfEnabled, sfDenominator, sfPromote                                                sql.NullInt64
-		recovery, recoveryInterval                                                         sql.NullInt64
-		progressive, level2, level3, level4                                                sql.NullInt64
-		breakerCount                                                                       sql.NullInt64
-		modelBreaker, keyThreshold, stickyEnabled, stickyTTL                               sql.NullInt64
+		recovery, recoveryInterval, faultProtection                                        sql.NullInt64
+		stickyEnabled, stickyTTL                                                           sql.NullInt64
 		alertConfigJSON                                                                    sql.NullString
 		alertSweep, alertDaily                                                             sql.NullInt64
 		hsEnabled, hsInterval, hsJitter, hsDegraded, hsConcurrency, hsTimeout              sql.NullInt64
@@ -131,9 +120,8 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&concurrencyAware, &concurrencyLimit,
 		&webhookURL, &webhookThrottle, &proxyURL, &discoveryCron, &dbGCCron,
 		&sfEnabled, &sfDenominator, &sfPromote,
-		&recovery, &recoveryInterval,
-		&progressive, &level2, &level3, &level4, &breakerCount,
-		&modelBreaker, &keyThreshold, &stickyEnabled, &stickyTTL,
+		&recovery, &recoveryInterval, &faultProtection,
+		&stickyEnabled, &stickyTTL,
 		&alertConfigJSON, &alertSweep, &alertDaily,
 		&hsEnabled, &hsInterval, &hsJitter, &hsDegraded, &hsConcurrency, &hsTimeout,
 		&channelRetry, &keyPoolRotation, &updated,
@@ -247,40 +235,10 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	} else {
 		out.RecoveryProbeIntervalSeconds = -1
 	}
-	if progressive.Valid {
-		out.ProgressiveCooldownEnabled = int(progressive.Int64)
+	if faultProtection.Valid {
+		out.FaultProtectionEnabled = int(faultProtection.Int64)
 	} else {
-		out.ProgressiveCooldownEnabled = -1
-	}
-	if level2.Valid {
-		out.CooldownLevel2Seconds = int(level2.Int64)
-	} else {
-		out.CooldownLevel2Seconds = -1
-	}
-	if level3.Valid {
-		out.CooldownLevel3Seconds = int(level3.Int64)
-	} else {
-		out.CooldownLevel3Seconds = -1
-	}
-	if level4.Valid {
-		out.CooldownLevel4Seconds = int(level4.Int64)
-	} else {
-		out.CooldownLevel4Seconds = -1
-	}
-	if breakerCount.Valid {
-		out.BreakerFailCount = int(breakerCount.Int64)
-	} else {
-		out.BreakerFailCount = -1
-	}
-	if modelBreaker.Valid {
-		out.ModelBreakerFailCount = int(modelBreaker.Int64)
-	} else {
-		out.ModelBreakerFailCount = -1
-	}
-	if keyThreshold.Valid {
-		out.KeyFailThreshold = int(keyThreshold.Int64)
-	} else {
-		out.KeyFailThreshold = -1
+		out.FaultProtectionEnabled = -1
 	}
 	if stickyEnabled.Valid {
 		out.StickyEnabled = int(stickyEnabled.Int64)
@@ -384,10 +342,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			proxy_url,
 			discovery_cron, db_gc_cron,
 			stable_first_enabled, stable_first_denominator, stable_first_promote_requests,
-			recovery_probe_enabled, recovery_probe_interval_seconds,
-			progressive_cooldown_enabled, cooldown_level2_seconds, cooldown_level3_seconds,
-			cooldown_level4_seconds, breaker_fail_count,
-			model_breaker_fail_count, key_fail_threshold,
+			recovery_probe_enabled, recovery_probe_interval_seconds, fault_protection_enabled,
 			sticky_enabled, sticky_ttl_minutes,
 			alert_config_json, alert_sweep_interval_seconds, alert_daily_summary_interval_seconds,
 			health_sweep_enabled, health_sweep_interval_seconds, health_sweep_jitter_seconds,
@@ -406,10 +361,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?,
 			?, ?,
 			?, ?, ?,
-			?, ?,
 			?, ?, ?,
-			?, ?,
-			?, ?,
 			?, ?,
 			?, ?, ?,
 			?, ?, ?,
@@ -446,13 +398,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			stable_first_promote_requests = excluded.stable_first_promote_requests,
 			recovery_probe_enabled = excluded.recovery_probe_enabled,
 			recovery_probe_interval_seconds = excluded.recovery_probe_interval_seconds,
-			progressive_cooldown_enabled = excluded.progressive_cooldown_enabled,
-			cooldown_level2_seconds = excluded.cooldown_level2_seconds,
-			cooldown_level3_seconds = excluded.cooldown_level3_seconds,
-			cooldown_level4_seconds = excluded.cooldown_level4_seconds,
-			breaker_fail_count = excluded.breaker_fail_count,
-			model_breaker_fail_count = excluded.model_breaker_fail_count,
-			key_fail_threshold = excluded.key_fail_threshold,
+			fault_protection_enabled = excluded.fault_protection_enabled,
 			sticky_enabled = excluded.sticky_enabled,
 			sticky_ttl_minutes = excluded.sticky_ttl_minutes,
 			alert_config_json = excluded.alert_config_json,
@@ -494,13 +440,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.StableFirstPromoteRequests,
 		settings.RecoveryProbeEnabled,
 		settings.RecoveryProbeIntervalSeconds,
-		settings.ProgressiveCooldownEnabled,
-		settings.CooldownLevel2Seconds,
-		settings.CooldownLevel3Seconds,
-		settings.CooldownLevel4Seconds,
-		settings.BreakerFailCount,
-		settings.ModelBreakerFailCount,
-		settings.KeyFailThreshold,
+		settings.FaultProtectionEnabled,
 		settings.StickyEnabled,
 		settings.StickyTTLMinutes,
 		settings.AlertConfigJSON,

@@ -1,26 +1,57 @@
-import { ExternalLink, ChevronDown, GripVertical, Info, Pencil, Plus, Power, RotateCcw, Route as RouteIcon, Search, Shield, Sparkles, Target, Trash2, X } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
-import { useEffect, useMemo, useState } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router-dom"
-import { api } from "../api/client"
-import type { ModelMetadata, Route, RouteMember, RoutingCandidate } from "../api/types"
-import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu"
-import { EmptyHero } from "../components/EmptyHero"
-import { ListShell } from "../components/ListShell"
-import { PaginationBar } from "../components/PaginationBar"
-import { EntityState } from "../components/EntityState"
-import { StatGrid } from "../components/StatGrid"
-import { Button, ConfirmDialog, Dialog, Empty, Page, Panel, InfoTip, StatusBadge } from "../components/ui"
-import { useAdminMutation } from "../hooks/useAdminMutation"
-import { useClientPagination } from "../hooks/useClientPagination"
-import { useI18n } from "../i18n"
-import { useSession } from "../session"
-import { TryPanel } from "./TryPanel"
-import { positiveId } from "../lib/positiveId"
-import { formatTokens } from "../lib/format"
-import { ModelMetadataDialog } from "./models/ModelMetadataDialog"
-import { RouteDialog } from "./models/RouteDialog"
-import { MemberDialog } from "./models/MemberDialog"
+import {
+  ExternalLink,
+  ChevronDown,
+  GripVertical,
+  Info,
+  Pencil,
+  Plus,
+  Power,
+  RotateCcw,
+  Route as RouteIcon,
+  Search,
+  Shield,
+  Sparkles,
+  Target,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { api } from "../api/client";
+import type {
+  ModelMetadata,
+  Route,
+  RouteMember,
+  RoutingCandidate,
+} from "../api/types";
+import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
+import { EmptyHero } from "../components/EmptyHero";
+import { ListShell } from "../components/ListShell";
+import { PaginationBar } from "../components/PaginationBar";
+import { EntityState } from "../components/EntityState";
+import { StatGrid } from "../components/StatGrid";
+import {
+  Button,
+  ConfirmDialog,
+  Dialog,
+  Empty,
+  Page,
+  Panel,
+  InfoTip,
+  StatusBadge,
+} from "../components/ui";
+import { useAdminMutation } from "../hooks/useAdminMutation";
+import { useClientPagination } from "../hooks/useClientPagination";
+import { useI18n } from "../i18n";
+import { useSession } from "../session";
+import { TryPanel } from "./TryPanel";
+import { positiveId } from "../lib/positiveId";
+import { formatTokens } from "../lib/format";
+import { modelGroup } from "./models/modelGroups";
+import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
+import { RouteDialog } from "./models/RouteDialog";
+import { MemberDialog } from "./models/MemberDialog";
 
 function readMissingDismissed() {
   try {
@@ -37,8 +68,37 @@ function storeMissingDismissed() {
     // Storage may be disabled; dismiss for this render only.
   }
 }
-import { CooldownHint } from "./models/CooldownHint"
-import { primaryMember, sortMembers, sortMembersByPrice, isActiveCooldown, candidateState, memberFinance, memberPriceUsd, getEffectiveRoutingPolicy } from "./models/routingPolicy"
+
+// Tab-scoped persistence for the models workspace. The sidebar navigates to
+// bare /models (no query params), so URL-only state is lost on page switches;
+// these helpers keep the current tab's search/selection across navigation.
+function readTabState<T>(key: string, fallback: T): T {
+  try {
+    const raw = sessionStorage.getItem(`models.${key}`);
+    return raw != null ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeTabState<T>(key: string, value: T) {
+  try {
+    sessionStorage.setItem(`models.${key}`, JSON.stringify(value));
+  } catch {
+    // Storage unavailable; state stays in memory for this render.
+  }
+}
+import { CooldownHint } from "./models/CooldownHint";
+import {
+  primaryMember,
+  sortMembers,
+  sortMembersByPrice,
+  isActiveCooldown,
+  candidateState,
+  memberFinance,
+  memberPriceUsd,
+  getEffectiveRoutingPolicy,
+} from "./models/routingPolicy";
 
 const ROUTING_INVALIDATE_KEYS = [
   ["routes"],
@@ -59,6 +119,7 @@ export function Models() {
   const [params] = useSearchParams();
   const modelParam = params.get("model")?.trim() ?? "";
   const channelId = positiveId(params.get("channel_id"));
+  const groupParam = params.get("group")?.trim() ?? "";
 
   return (
     <Page
@@ -66,7 +127,11 @@ export function Models() {
       title={t("modelsPage.title")}
       description={t("modelsPage.description")}
     >
-      <ModelCatalog initialModel={modelParam} channelId={channelId} />
+      <ModelCatalog
+        initialModel={modelParam}
+        channelId={channelId}
+        initialGroup={groupParam}
+      />
     </Page>
   );
 }
@@ -74,15 +139,17 @@ export function Models() {
 function ModelCatalog({
   initialModel,
   channelId: channelIdFromUrl,
+  initialGroup,
 }: {
   initialModel: string;
   channelId?: number;
+  initialGroup: string;
 }) {
   const { client } = useSession();
   const { t } = useI18n();
   const service = api(client!);
   const navigate = useNavigate();
-  const [, setSearchParams] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
 
   const overviews = useQuery({
     queryKey: ["route-overviews"],
@@ -132,9 +199,20 @@ function ModelCatalog({
     return map;
   }, [metadata.data]);
 
-  const [selected, setSelected] = useState<number | null>(null);
-  const [query, setQuery] = useState(initialModel);
-  const [channelFilter, setChannelFilter] = useState(channelIdFromUrl ?? 0);
+  // URL wins over tab-scoped state on first mount; tab state survives the
+  // bare-path sidebar navigation that drops the query string.
+  const [selected, setSelected] = useState<number | null>(() =>
+    readTabState<number | null>("selected", null),
+  );
+  const [query, setQuery] = useState(
+    () => initialModel || readTabState("query", ""),
+  );
+  const [channelFilter, setChannelFilter] = useState(
+    () => channelIdFromUrl ?? readTabState("channel", 0),
+  );
+  const [groupFilter, setGroupFilter] = useState(
+    () => initialGroup || readTabState("group", ""),
+  );
   const [showAdvanced, setShowAdvanced] = useState(true);
   const [edit, setEdit] = useState<Partial<Route> | null>(null);
   const [editMeta, setEditMeta] = useState<ModelMetadata | null>(null);
@@ -147,9 +225,8 @@ function ModelCatalog({
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(
     () => new Set(),
   );
-  const [missingDismissed, setMissingDismissed] = useState(
-    readMissingDismissed,
-  );
+  const [missingDismissed, setMissingDismissed] =
+    useState(readMissingDismissed);
   const [contextMenu, setContextMenu] = useState<{
     routeId: number;
     top: number;
@@ -160,9 +237,39 @@ function ModelCatalog({
     if (channelIdFromUrl) setChannelFilter(channelIdFromUrl);
   }, [channelIdFromUrl]);
 
+  useEffect(() => writeTabState("query", query), [query]);
+  useEffect(() => writeTabState("channel", channelFilter), [channelFilter]);
+  useEffect(() => writeTabState("group", groupFilter), [groupFilter]);
+  useEffect(() => writeTabState("selected", selected), [selected]);
+
+  const modelGroups = useMemo(() => {
+    const groups = new Set<string>();
+    for (const item of overviews.data ?? []) {
+      const meta = metaByModel.get(item.route.model_pattern);
+      groups.add(
+        modelGroup(
+          item.route.model_pattern,
+          item.route.model_group,
+          meta?.vendor,
+        ),
+      );
+    }
+    return [...groups].sort();
+  }, [metaByModel, overviews.data]);
+
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
     return (overviews.data ?? []).filter((item) => {
+      const meta = metaByModel.get(item.route.model_pattern);
+      if (
+        groupFilter &&
+        modelGroup(
+          item.route.model_pattern,
+          item.route.model_group,
+          meta?.vendor,
+        ) !== groupFilter
+      )
+        return false;
       const members = item.members ?? [];
       if (channelFilter > 0) {
         if (!members.some((m) => m.channel.id === channelFilter)) {
@@ -173,11 +280,25 @@ function ModelCatalog({
       if (item.route.model_pattern.toLowerCase().includes(term)) return true;
       return members.some((m) => m.channel.name.toLowerCase().includes(term));
     });
-  }, [channelFilter, overviews.data, query]);
+  }, [channelFilter, groupFilter, metaByModel, overviews.data, query]);
 
-  const pagination = useClientPagination(rows);
+  const pagination = useClientPagination(rows, 20, "models");
   const pageRows = pagination.pageItems;
 
+  // URL → selection: restore the selected route when the URL changes (direct
+  // links, back/forward, page refresh). Depends only on params/rows so a user
+  // click (which changes only `selected`) can never be overwritten by the
+  // stale URL captured before the click renders.
+  useEffect(() => {
+    const routeParam = positiveId(params.get("route"));
+    if (routeParam && rows.some((item) => item.route.id === routeParam)) {
+      setSelected(routeParam);
+    }
+  }, [params, rows]);
+
+  // Selection fallback: when no valid selection exists (empty filter results,
+  // deleted route, first visit), pick the first visible row. Does not read the
+  // URL, so it can never fight the user's click with a stale route param.
   useEffect(() => {
     if (!rows.length) {
       if (selected !== null) setSelected(null);
@@ -187,6 +308,17 @@ function ModelCatalog({
     const first = rows[0];
     if (first) setSelected(first.route.id);
   }, [rows, selected]);
+
+  // Selection → URL: keep the URL in sync so switching pages restores the
+  // selection. Writes only when the URL differs; once written, the restore
+  // effect above reads the same value and bails out.
+  useEffect(() => {
+    if (!selected) return;
+    const next = new URLSearchParams(params);
+    if (next.get("route") === String(selected)) return;
+    next.set("route", String(selected));
+    setSearchParams(next, { replace: true });
+  }, [params, selected, setSearchParams]);
 
   useEffect(() => {
     if (!initialModel || !overviews.data?.length) return;
@@ -202,7 +334,10 @@ function ModelCatalog({
   const selectedOverview =
     overviews.data?.find((item) => item.route.id === selected) ?? null;
   const selectedRoute = selectedOverview?.route ?? null;
-  const selectedMembers = useMemo(() => selectedOverview?.members ?? [], [selectedOverview?.members]);
+  const selectedMembers = useMemo(
+    () => selectedOverview?.members ?? [],
+    [selectedOverview?.members],
+  );
   const selectedModel = selectedRoute?.model_pattern ?? "";
 
   useEffect(() => {
@@ -211,7 +346,10 @@ function ModelCatalog({
   }, [selected]);
 
   // Price-aware member ordering (cheapest first) when the toggle is on.
-  const financeItems = useMemo(() => finance.data?.items ?? [], [finance.data?.items]);
+  const financeItems = useMemo(
+    () => finance.data?.items ?? [],
+    [finance.data?.items],
+  );
   const orderedMembers = useMemo(
     () =>
       priceSort
@@ -305,23 +443,23 @@ function ModelCatalog({
     onSuccess: () => setMember(null),
   });
 
-const delMember = useAdminMutation({
-	mutationFn: (memberId: number) => service.deleteMember(memberId),
-	invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
-	toastOnError: false,
-	onSuccess: () => setRemoveMember(null),
-});
+  const delMember = useAdminMutation({
+    mutationFn: (memberId: number) => service.deleteMember(memberId),
+    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    toastOnError: false,
+    onSuccess: () => setRemoveMember(null),
+  });
 
-const enableChannel = useAdminMutation({
-	mutationFn: async (channelId: number) => {
-		const list = channels.data ?? [];
-		const ch = list.find((item) => item.id === channelId);
-		if (!ch) throw new Error("channel not found");
-		return service.updateChannel(channelId, { ...ch, status: "enabled" });
-	},
-	invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
-	pendingIdOf: (channelId) => channelId,
-});
+  const enableChannel = useAdminMutation({
+    mutationFn: async (channelId: number) => {
+      const list = channels.data ?? [];
+      const ch = list.find((item) => item.id === channelId);
+      if (!ch) throw new Error("channel not found");
+      return service.updateChannel(channelId, { ...ch, status: "enabled" });
+    },
+    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    pendingIdOf: (channelId) => channelId,
+  });
   const toggleRoute = useAdminMutation({
     mutationFn: (route: Route) =>
       service.updateRoute(route.id, { ...route, enabled: !route.enabled }),
@@ -364,8 +502,7 @@ const enableChannel = useAdminMutation({
     mutationFn: (input: { route: Route; memberId: number | null }) =>
       service.updateRoute(input.route.id, {
         ...input.route,
-        routing_mode:
-          input.memberId != null ? "single" : "auto",
+        routing_mode: input.memberId != null ? "single" : "auto",
         single_member_id: input.memberId,
       }),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
@@ -470,19 +607,22 @@ const enableChannel = useAdminMutation({
 
   const selectRow = (routeId: number) => {
     setSelected(routeId);
+    const next = new URLSearchParams(params);
+    next.set("route", String(routeId));
+    setSearchParams(next, { replace: true });
   };
 
-	  const delMeta = useAdminMutation({
-	mutationFn: (name: string) => service.deleteModelMetadata(name),
-	invalidateKeys: [["model-metadata"]],
-	toastOnError: false,
-	  });
-	  const saveMeta = useAdminMutation({
-	mutationFn: (value: ModelMetadata) =>
-	  service.upsertModelMetadata(value.model_name, value),
-	invalidateKeys: [["model-metadata"]],
-	toastOnError: false,
-	  });
+  const delMeta = useAdminMutation({
+    mutationFn: (name: string) => service.deleteModelMetadata(name),
+    invalidateKeys: [["model-metadata"]],
+    toastOnError: false,
+  });
+  const saveMeta = useAdminMutation({
+    mutationFn: (value: ModelMetadata) =>
+      service.upsertModelMetadata(value.model_name, value),
+    invalidateKeys: [["model-metadata"]],
+    toastOnError: false,
+  });
 
   const modelActions = (
     route: Route,
@@ -502,6 +642,17 @@ const enableChannel = useAdminMutation({
           close();
           selectRow(route.id);
           setTryOpen(true);
+        },
+      },
+      {
+        key: "overrides",
+        label: t("modelsPage.editOverrides"),
+        icon: <Pencil size={14} />,
+        disabled: busy,
+        onSelect: () => {
+          close();
+          save.reset();
+          setEdit(route);
         },
       },
       {
@@ -535,36 +686,36 @@ const enableChannel = useAdminMutation({
           setShowAdvanced(true);
         },
       },
-	  {
-		key: "meta",
-		label: t("modelsPage.editMetadata"),
-		icon: <Shield size={14} />,
-		onSelect: () => {
-		  close();
-		  setEditMeta(
-			metaByModel.get(route.model_pattern) ?? {
-			  model_name: route.model_pattern,
-			  context_window: 0,
-			  input_modalities: "",
-			  output_modalities: "",
-			  supports_thinking: -1,
-			  vendor: "",
-			  notes: "",
-			},
-		  );
-		},
-	  },
-	  {
-		key: "edit",
-		label: t("common.edit"),
-		icon: <Pencil size={14} />,
-		disabled: busy,
-		onSelect: () => {
-		  close();
-		  save.reset();
-		  setEdit(route);
-		},
-	  },
+      {
+        key: "meta",
+        label: t("modelsPage.editMetadata"),
+        icon: <Shield size={14} />,
+        onSelect: () => {
+          close();
+          setEditMeta(
+            metaByModel.get(route.model_pattern) ?? {
+              model_name: route.model_pattern,
+              context_window: 0,
+              input_modalities: "",
+              output_modalities: "",
+              supports_thinking: -1,
+              vendor: "",
+              notes: "",
+            },
+          );
+        },
+      },
+      {
+        key: "edit",
+        label: t("common.edit"),
+        icon: <Pencil size={14} />,
+        disabled: busy,
+        onSelect: () => {
+          close();
+          save.reset();
+          setEdit(route);
+        },
+      },
       {
         key: "delete",
         label: t("common.delete"),
@@ -724,20 +875,50 @@ const enableChannel = useAdminMutation({
               <Search size={14} aria-hidden="true" />
               <input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => {
+                  const nextQuery = event.target.value;
+                  setQuery(nextQuery);
+                  const next = new URLSearchParams(params);
+                  if (nextQuery) next.set("model", nextQuery);
+                  else next.delete("model");
+                  next.delete("route");
+                  setSearchParams(next, { replace: true });
+                }}
                 placeholder={t("routing.searchPlaceholder")}
                 aria-label={t("routing.searchPlaceholder")}
               />
             </label>
+            <select
+              aria-label={t("modelsPage.groupFilter")}
+              value={groupFilter}
+              onChange={(event) => {
+                const nextGroup = event.target.value;
+                setGroupFilter(nextGroup);
+                const next = new URLSearchParams(params);
+                if (nextGroup) next.set("group", nextGroup);
+                else next.delete("group");
+                next.delete("route");
+                setSearchParams(next, { replace: true });
+              }}
+            >
+              <option value="">{t("modelsPage.allGroups")}</option>
+              {modelGroups.map((group) => (
+                <option key={group} value={group}>
+                  {group}
+                </option>
+              ))}
+            </select>
             <select
               aria-label={t("ops.filterChannel")}
               value={channelFilter}
               onChange={(event) => {
                 const next = Number(event.target.value) || 0;
                 setChannelFilter(next);
-                setSearchParams(next > 0 ? { channel_id: String(next) } : {}, {
-                  replace: true,
-                });
+                const nextParams = new URLSearchParams(params);
+                if (next > 0) nextParams.set("channel_id", String(next));
+                else nextParams.delete("channel_id");
+                nextParams.delete("route");
+                setSearchParams(nextParams, { replace: true });
               }}
             >
               <option value={0}>{t("ops.allChannels")}</option>
@@ -808,6 +989,12 @@ const enableChannel = useAdminMutation({
                   <tbody>
                     {pageRows.map((item) => {
                       const active = item.route.id === selected;
+                      const meta = metaByModel.get(item.route.model_pattern);
+                      const group = modelGroup(
+                        item.route.model_pattern,
+                        item.route.model_group,
+                        meta?.vendor,
+                      );
                       const head = primaryMember(item.members);
                       const ready = item.members.filter(
                         (entry) => candidateState(entry) === "ready",
@@ -830,45 +1017,45 @@ const enableChannel = useAdminMutation({
                             });
                           }}
                         >
-							<td>
-								<strong className="mono">
-									{item.route.model_pattern}
-								</strong>
-								{(() => {
-									const meta = metaByModel.get(
-										item.route.model_pattern,
-									);
-									if (!meta) return null;
-									return (
-										<span className="model-meta-badges">
-											{meta.context_window > 0 ? (
-												<span
-													className="model-meta-badge"
-													title={t("modelsPage.metaCtx")}
-												>
-													{formatTokens(meta.context_window)}
-												</span>
-											) : null}
-											{meta.supports_thinking > 0 ? (
-												<span
-													className="model-meta-badge is-thinking"
-													title={t("modelsPage.metaThinking")}
-												>
-													{t("modelsPage.metaThinkingShort")}
-												</span>
-											) : null}
-											{meta.vendor ? (
-												<span
-														className="model-meta-badge"
-														title={t("modelsPage.metaVendor")}
-													>
-													{meta.vendor}
-												</span>
-											) : null}
-										</span>
-									);
-								})()}
-							</td>
+                          <td>
+                            <strong className="mono">
+                              {item.route.model_pattern}
+                            </strong>
+                            <span className="model-meta-badge is-group">
+                              {group}
+                            </span>
+                            {(() => {
+                              if (!meta) return null;
+                              return (
+                                <span className="model-meta-badges">
+                                  {meta.context_window > 0 ? (
+                                    <span
+                                      className="model-meta-badge"
+                                      title={t("modelsPage.metaCtx")}
+                                    >
+                                      {formatTokens(meta.context_window)}
+                                    </span>
+                                  ) : null}
+                                  {meta.supports_thinking > 0 ? (
+                                    <span
+                                      className="model-meta-badge is-thinking"
+                                      title={t("modelsPage.metaThinking")}
+                                    >
+                                      {t("modelsPage.metaThinkingShort")}
+                                    </span>
+                                  ) : null}
+                                  {meta.vendor ? (
+                                    <span
+                                      className="model-meta-badge"
+                                      title={t("modelsPage.metaVendor")}
+                                    >
+                                      {meta.vendor}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              );
+                            })()}
+                          </td>
                           <td>
                             {head ? (
                               <span title={head.channel.name}>
@@ -970,7 +1157,7 @@ const enableChannel = useAdminMutation({
                 />
               </div>
 
-						<div className="detail-primary-bar">
+              <div className="detail-primary-bar">
                 <Button
                   icon={<Sparkles size={14} />}
                   onClick={() => setTryOpen(true)}
@@ -1024,118 +1211,129 @@ const enableChannel = useAdminMutation({
                   compact
                   label={t("common.moreActions")}
                   disabled={toggleRoute.pendingId === selectedRoute.id}
-									items={modelActions(selectedRoute)}
-								/>
-								<InfoTip label={t("modelsPage.scopeHint")} />
-							</div>
-								<div className="routing-policy-card">
-								<div className="routing-policy-summary">
-                <span className="routing-policy-title">
-                  {t("routing.effectivePolicy")}
-                </span>
-                {effectivePolicy ? (
-                  <>
-                    <span
-                      className={`routing-signal${effectivePolicy.latency ? " is-on" : " is-off"}`}
-                    >
-                      {t("routing.signal.latency")}: {effectivePolicy.latency ? t("routing.signal.on") : t("routing.signal.off")}
-                    </span>
-                    <span
-                      className={`routing-signal${effectivePolicy.error ? " is-on" : " is-off"}`}
-                    >
-                      {t("routing.signal.error")}: {effectivePolicy.error ? t("routing.signal.on") : t("routing.signal.off")}
-                    </span>
-                    <span className="routing-policy-source">
-                      {t(effectivePolicy.source)}
-                    </span>
-                  </>
-                ) : (
-                  <span className="routing-policy-source">
-                    {t("routing.policyLoading")}
+                  items={modelActions(selectedRoute)}
+                />
+                <InfoTip label={t("modelsPage.scopeHint")} />
+              </div>
+              <div className="routing-policy-card">
+                <div className="routing-policy-summary">
+                  <span className="routing-policy-title">
+                    {t("routing.effectivePolicy")}
                   </span>
-                )}
-								</div>
-								<div className="routing-retry-summary">
-                <span className="routing-policy-title">
-                  {t("routing.retryPolicy")}
-                </span>
-                <span className="routing-policy-value">
-                  {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
-                  <small>
-                    {t(
-                      retryPolicyIsOverridden
-                        ? "routing.policySource.model"
-                        : "routing.policySource.global",
-                    )}
-                  </small>
-                </span>
-                <span className="routing-policy-value">
-                  {t("routing.channelRetry")}: {effectiveChannelRetries ?? "?"}
-                  <small>
-                    {t(
-                      channelRetryPolicyIsOverridden
-                        ? "routing.policySource.model"
-                        : "routing.policySource.global",
-                    )}
-                  </small>
-                </span>
-                <span
-                  className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
-                >
-                  {t("routing.failover")}: {runtimeSettings.data
-                    ? runtimeSettings.data.editable.cross_channel_failover_enabled
-                      ? t("routing.signal.on")
-                      : t("routing.signal.off")
-                    : "?"}
-                </span>
-								</div>
-								</div>
+                  {effectivePolicy ? (
+                    <>
+                      <span
+                        className={`routing-signal${effectivePolicy.latency ? " is-on" : " is-off"}`}
+                      >
+                        {t("routing.signal.latency")}:{" "}
+                        {effectivePolicy.latency
+                          ? t("routing.signal.on")
+                          : t("routing.signal.off")}
+                      </span>
+                      <span
+                        className={`routing-signal${effectivePolicy.error ? " is-on" : " is-off"}`}
+                      >
+                        {t("routing.signal.error")}:{" "}
+                        {effectivePolicy.error
+                          ? t("routing.signal.on")
+                          : t("routing.signal.off")}
+                      </span>
+                      <span className="routing-policy-source">
+                        {t(effectivePolicy.source)}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="routing-policy-source">
+                      {t("routing.policyLoading")}
+                    </span>
+                  )}
+                </div>
+                <div className="routing-retry-summary">
+                  <span className="routing-policy-title">
+                    {t("routing.retryPolicy")}
+                  </span>
+                  <span className="routing-policy-value">
+                    {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
+                    <small>
+                      {t(
+                        retryPolicyIsOverridden
+                          ? "routing.policySource.model"
+                          : "routing.policySource.global",
+                      )}
+                    </small>
+                  </span>
+                  <span className="routing-policy-value">
+                    {t("routing.channelRetry")}:{" "}
+                    {effectiveChannelRetries ?? "?"}
+                    <small>
+                      {t(
+                        channelRetryPolicyIsOverridden
+                          ? "routing.policySource.model"
+                          : "routing.policySource.global",
+                      )}
+                    </small>
+                  </span>
+                  <span
+                    className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
+                  >
+                    {t("routing.failover")}:{" "}
+                    {runtimeSettings.data
+                      ? runtimeSettings.data.editable
+                          .cross_channel_failover_enabled
+                        ? t("routing.signal.on")
+                        : t("routing.signal.off")
+                      : "?"}
+                  </span>
+                </div>
+              </div>
 
-								{singleModeActive && selectedRoute ? (
-									<div className="single-mode-banner">
-										<Target size={15} />
-										<div className="single-mode-banner-body">
-											<strong>
-												{t("routing.singleModeBanner", {
-													name: singleModePinned
-														? singleModePinned.channel.name
-														: t("routing.singleModeMissingName"),
-												})}
-											</strong>
-											<small>
-												{singleModePinned
-													? t("routing.singleModeHint")
-													: t("routing.singleModeMissing")}
-												{singleModePinned && !singleModePinned.member.enabled
-													? ` ${t("routing.singleModeDisabledWarning")}`
-													: ""}
-											</small>
-										</div>
-										<Button
-											variant="secondary"
-											disabled={pinMember.isPending}
-											onClick={() =>
-												pinMember.mutate({
-													route: selectedRoute,
-													memberId: null,
-												})
-											}
-										>
-											{t("routing.singleModeRestore")}
-										</Button>
-									</div>
-								) : null}
+              {singleModeActive && selectedRoute ? (
+                <div className="single-mode-banner">
+                  <Target size={15} />
+                  <div className="single-mode-banner-body">
+                    <strong>
+                      {t("routing.singleModeBanner", {
+                        name: singleModePinned
+                          ? singleModePinned.channel.name
+                          : t("routing.singleModeMissingName"),
+                      })}
+                    </strong>
+                    <small>
+                      {singleModePinned
+                        ? t("routing.singleModeHint")
+                        : t("routing.singleModeMissing")}
+                      {singleModePinned && !singleModePinned.member.enabled
+                        ? ` ${t("routing.singleModeDisabledWarning")}`
+                        : ""}
+                    </small>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    disabled={pinMember.isPending}
+                    onClick={() =>
+                      pinMember.mutate({
+                        route: selectedRoute,
+                        memberId: null,
+                      })
+                    }
+                  >
+                    {t("routing.singleModeRestore")}
+                  </Button>
+                </div>
+              ) : null}
 
-									<button
-										type="button"
-										className="advanced-toggle"
+              <button
+                type="button"
+                className="advanced-toggle"
                 onClick={() => setShowAdvanced((value) => !value)}
               >
-									<ChevronDown
-										size={14}
-										className={showAdvanced ? "chevron-flip is-open" : "chevron-flip"}
-									/>
-									{showAdvanced
+                <ChevronDown
+                  size={14}
+                  className={
+                    showAdvanced ? "chevron-flip is-open" : "chevron-flip"
+                  }
+                />
+                {showAdvanced
                   ? t("modelsPage.hideRouting")
                   : t("modelsPage.showRouting")}
               </button>
@@ -1159,26 +1357,29 @@ const enableChannel = useAdminMutation({
                         });
                       }}
                     >
-                  {t("routing.addMember")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setBulkSelect((value) => !value);
-                    setSelectedMemberIds(new Set());
-                  }}
-                >
-                  {t("routing.bulkSelect")}
-                </Button>
-                <label className="price-sort-toggle" title={t("routing.priceSortHint")}>
-                  <input
-                    type="checkbox"
-                    checked={priceSort}
-                    onChange={(e) => setPriceSort(e.target.checked)}
-                  />
-                  <span>{t("routing.priceSort")}</span>
-                </label>
-              </div>
+                      {t("routing.addMember")}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setBulkSelect((value) => !value);
+                        setSelectedMemberIds(new Set());
+                      }}
+                    >
+                      {t("routing.bulkSelect")}
+                    </Button>
+                    <label
+                      className="price-sort-toggle"
+                      title={t("routing.priceSortHint")}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={priceSort}
+                        onChange={(e) => setPriceSort(e.target.checked)}
+                      />
+                      <span>{t("routing.priceSort")}</span>
+                    </label>
+                  </div>
                   {bulkSelect && selectedMembers.length > 0 ? (
                     <div className="routing-bulk-bar">
                       <span className="routing-bulk-count">
@@ -1189,21 +1390,22 @@ const enableChannel = useAdminMutation({
                       <Button
                         variant="secondary"
                         disabled={selectedMemberIds.size === 0}
-                        onClick={() => bulkToggleMembers.mutate({ enabled: true })}
+                        onClick={() =>
+                          bulkToggleMembers.mutate({ enabled: true })
+                        }
                       >
                         {t("routing.bulkEnable")}
                       </Button>
                       <Button
                         variant="secondary"
                         disabled={selectedMemberIds.size === 0}
-                        onClick={() => bulkToggleMembers.mutate({ enabled: false })}
+                        onClick={() =>
+                          bulkToggleMembers.mutate({ enabled: false })
+                        }
                       >
                         {t("routing.bulkDisable")}
                       </Button>
-                      <Button
-                        variant="secondary"
-                        onClick={selectAllMembers}
-                      >
+                      <Button variant="secondary" onClick={selectAllMembers}>
                         {t("routing.bulkSelectAll")}
                       </Button>
                       <Button
@@ -1274,7 +1476,11 @@ const enableChannel = useAdminMutation({
                         <div
                           className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
                           key={entry.id}
-                          draggable={!reorderMembers.isPending && !priceSort && !bulkSelect}
+                          draggable={
+                            !reorderMembers.isPending &&
+                            !priceSort &&
+                            !bulkSelect
+                          }
                           onDragStart={(event) => {
                             setDragMemberId(entry.id);
                             event.dataTransfer.effectAllowed = "move";
@@ -1358,63 +1564,68 @@ const enableChannel = useAdminMutation({
                                   </>
                                 );
                               })()}
-									{entry.manual_override ? (
-										<>
-											{" "}
-											<span
-												className="member-protected"
-												title={t("routing.protectedHint")}
-											>
-												<Shield size={12} /> {t("routing.protectedLabel")}
-											</span>
-										</>
-									) : null}
-									{memberFinance(entry, selectedModel, financeItems)
-										? (() => {
-												const info = memberFinance(
-													entry,
-													selectedModel,
-													financeItems,
-												)!;
-												return (
-													<>
-														{" · "}
-														<span
-															className="member-finance"
-															title={
-																info.overdrawn
-																	? t("routing.financeOverdrawnHint")
-																	: t("routing.financeHint")
-															}
-														>
-															{info.overdrawn
-																	? t("routing.financeOverdrawn")
-																	: t("routing.financeCalls", {
-																			calls: info.calls,
-																		})}
-																{info.fixed
-																	? t("routing.financeUnitCalls")
-																	: t("routing.financeUnitM")}
-															</span>
-															{cheapestMemberId === entry.id ? (
-																<span className="member-cheapest">
-																	{t("routing.cheapest")}
-																</span>
-															) : null}
-														</>
-													);
-												})()
-											: (
-												<>
-													{" · "}
-													<span
-														className="member-finance is-na"
-														title={t("routing.financeMissingHint")}
-													>
-														{t("routing.financeMissing")}
-													</span>
-												</>
-											)}
+                              {entry.manual_override ? (
+                                <>
+                                  {" "}
+                                  <span
+                                    className="member-protected"
+                                    title={t("routing.protectedHint")}
+                                  >
+                                    <Shield size={12} />{" "}
+                                    {t("routing.protectedLabel")}
+                                  </span>
+                                </>
+                              ) : null}
+                              {memberFinance(
+                                entry,
+                                selectedModel,
+                                financeItems,
+                              ) ? (
+                                (() => {
+                                  const info = memberFinance(
+                                    entry,
+                                    selectedModel,
+                                    financeItems,
+                                  )!;
+                                  return (
+                                    <>
+                                      {" · "}
+                                      <span
+                                        className="member-finance"
+                                        title={
+                                          info.overdrawn
+                                            ? t("routing.financeOverdrawnHint")
+                                            : t("routing.financeHint")
+                                        }
+                                      >
+                                        {info.overdrawn
+                                          ? t("routing.financeOverdrawn")
+                                          : t("routing.financeCalls", {
+                                              calls: info.calls,
+                                            })}
+                                        {info.fixed
+                                          ? t("routing.financeUnitCalls")
+                                          : t("routing.financeUnitM")}
+                                      </span>
+                                      {cheapestMemberId === entry.id ? (
+                                        <span className="member-cheapest">
+                                          {t("routing.cheapest")}
+                                        </span>
+                                      ) : null}
+                                    </>
+                                  );
+                                })()
+                              ) : (
+                                <>
+                                  {" · "}
+                                  <span
+                                    className="member-finance is-na"
+                                    title={t("routing.financeMissingHint")}
+                                  >
+                                    {t("routing.financeMissing")}
+                                  </span>
+                                </>
+                              )}
                               {entry.fail_count > 0
                                 ? ` · ${t(
                                     activeCooldown
@@ -1503,7 +1714,9 @@ const enableChannel = useAdminMutation({
                               aria-label={t("routing.moveDown")}
                               title={t("routing.moveDown")}
                               disabled={
-                                busy || rowIndex >= ordered.length - 1 || priceSort
+                                busy ||
+                                rowIndex >= ordered.length - 1 ||
+                                priceSort
                               }
                               onClick={() => moveBy(1)}
                             >
@@ -1516,6 +1729,7 @@ const enableChannel = useAdminMutation({
                               items={[
                                 {
                                   key: "toggle",
+                                  icon: <Power size={14} />,
                                   label: entry.enabled
                                     ? t("common.disableAction")
                                     : t("common.enableAction"),
@@ -1599,39 +1813,39 @@ const enableChannel = useAdminMutation({
         </div>
       </div>
 
-	  {edit ? (
-		<RouteDialog
-		  value={edit}
-		  members={editingMembers}
-		  pending={save.isPending}
-		  error={save.error}
-		  onClose={() => setEdit(null)}
-		  onSave={(value) => {
-			const { pin_priority, ...routeValue } = value;
-			save.mutate(routeValue);
-			if (pin_priority !== undefined && editingMembers.length) {
-			  pinAllMembers.mutate({
-				pinned: pin_priority,
-				members: editingMembers,
-			  });
-			}
-		  }}
-		/>
-	  ) : null}
-	  {editMeta ? (
-		<ModelMetadataDialog
-		  value={editMeta}
-		  pending={saveMeta.isPending}
-		  error={saveMeta.error}
-		  onClose={() => setEditMeta(null)}
-		  onSave={(value) => saveMeta.mutate(value)}
-		  onDelete={
-			metaByModel.has(editMeta.model_name)
-			  ? () => delMeta.mutate(editMeta.model_name)
-			  : undefined
-		  }
-		/>
-	  ) : null}
+      {edit ? (
+        <RouteDialog
+          value={edit}
+          members={editingMembers}
+          pending={save.isPending}
+          error={save.error}
+          onClose={() => setEdit(null)}
+          onSave={(value) => {
+            const { pin_priority, ...routeValue } = value;
+            save.mutate(routeValue);
+            if (pin_priority !== undefined && editingMembers.length) {
+              pinAllMembers.mutate({
+                pinned: pin_priority,
+                members: editingMembers,
+              });
+            }
+          }}
+        />
+      ) : null}
+      {editMeta ? (
+        <ModelMetadataDialog
+          value={editMeta}
+          pending={saveMeta.isPending}
+          error={saveMeta.error}
+          onClose={() => setEditMeta(null)}
+          onSave={(value) => saveMeta.mutate(value)}
+          onDelete={
+            metaByModel.has(editMeta.model_name)
+              ? () => delMeta.mutate(editMeta.model_name)
+              : undefined
+          }
+        />
+      ) : null}
       {member && selected ? (
         <MemberDialog
           value={member}

@@ -156,45 +156,6 @@ func TestOversizedTransformedResponseIsBoundedAndNotRetried(t *testing.T) {
 	}
 }
 
-func TestAdapterLocalFailureDoesNotHealKeyState(t *testing.T) {
-	upstream := &queuedRelay{results: []*relay.Result{
-		response(http.StatusOK, `{"promptFeedback":{"blockReason":"SAFETY"}}`),
-	}}
-	service, db, highMember, _ := setupProxy(t, upstream)
-	member, err := db.RouteMember.GetByID(highMember)
-	if err != nil {
-		t.Fatal(err)
-	}
-	channel, err := db.Channel.GetByID(member.ChannelID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service.SetAutoDisableThreshold(2)
-	service.SetKeyFailThreshold(2)
-	service.recordKeyFailure(channel.ID, "secret", 500)
-	channel.TypeHint = "gemini"
-	channel.BaseURL = "https://gemini.example"
-	if err := db.Channel.Update(channel); err != nil {
-		t.Fatal(err)
-	}
-	service.SetAdapterRegistry(adapters.NewRegistry(nil))
-	result := service.ChatCompletions(context.Background(), Request{
-		RequestID: "req-local-adapter-error",
-		Model:     "model",
-		Body:      []byte(`{"model":"model","messages":[{"role":"user","content":"hi"}]}`),
-	})
-	if !errors.Is(result.Err, adapters.ErrContentBlocked) {
-		t.Fatalf("error=%v, want ErrContentBlocked", result.Err)
-	}
-	// A second real key failure should cross the threshold. If the local
-	// adapter error incorrectly called recordKeySuccess, the counter would
-	// have been cleared and this assertion would fail.
-	service.recordKeyFailure(channel.ID, "secret", 500)
-	if !service.keyDisabled(channel.ID, "secret") {
-		t.Fatal("local adapter error must not heal key state")
-	}
-}
-
 func TestInvalidBaseURLIsLocalFailureWithoutHealthMutation(t *testing.T) {
 	upstream := &queuedRelay{}
 	service, db, highMember, _ := setupProxy(t, upstream)
@@ -575,8 +536,6 @@ func TestResolveAPIKeyPoolModelAllowlist(t *testing.T) {
 	channel, _ := db.Channel.GetByID(channelID)
 
 	service := &Service{db: db, enc: enc}
-	service.keyErrCounts = make(map[int64]map[string]map[int]int)
-	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.SetKeyPoolRotation(true)
 
 	// gpt-4o: matches key A (wildcard) and key B (empty = all).
@@ -612,8 +571,6 @@ func TestKeyPoolRotationOffUsesBoundKeyOnly(t *testing.T) {
 	channel, _ := db.Channel.GetByID(channelID)
 
 	service := &Service{db: db, enc: enc}
-	service.keyErrCounts = make(map[int64]map[string]map[int]int)
-	service.disabledKeys = make(map[disabledKey]time.Time)
 	service.SetKeyPoolRotation(false)
 
 	// Rotation off: only the bound key is returned, never the pool sibling.
@@ -654,13 +611,16 @@ func TestSameKeyResendCountsAreConfigurable(t *testing.T) {
 }
 
 func TestTransportErrorFailsFastAfterSameKeyResend(t *testing.T) {
-	// A network error (dial refused) is re-sent once on the same key, then the
-	// request fails fast instead of fanning out to every channel.
+	// A network error (dial refused) is re-sent on the same key, then the
+	// request fails over to the next channel instead of returning early.
+	// Transport jitter is not penalized: no cooldown, no failure count.
 	upstream := &queuedRelay{results: []*relay.Result{
 		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
 		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
+		{Err: fmt.Errorf("dial tcp 10.0.0.2:443: connect: connection refused")},
+		{Err: fmt.Errorf("dial tcp 10.0.0.2:443: connect: connection refused")},
 	}}
-	service, db, highMember, _ := setupProxy(t, upstream)
+	service, db, highMember, lowMember := setupProxy(t, upstream)
 
 	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-net", Model: "model", Body: []byte(`{}`)})
 	if result.Body != nil {
@@ -669,19 +629,18 @@ func TestTransportErrorFailsFastAfterSameKeyResend(t *testing.T) {
 	if result.Err == nil {
 		t.Fatalf("expected transport error, got %+v", result)
 	}
-	// Exactly 2 sends on the SAME channel, then fail fast — no failover to low.
-	if len(upstream.calls) != 2 {
-		t.Fatalf("expected 2 same-key sends, got %#v", upstream.calls)
+	// 2 same-key sends on high, then failover to low (2 sends), both exhausted.
+	if len(upstream.calls) != 4 {
+		t.Fatalf("expected 4 sends across two channels, got %#v", upstream.calls)
 	}
-	for _, call := range upstream.calls {
-		if !strings.Contains(call, "high.example") {
-			t.Fatalf("transport error must not fail over: %#v", upstream.calls)
-		}
-	}
-	// The channel is cooled down so the next request skips it.
+	// Transport jitter must NOT cool the members or count channel failures.
 	high, _ := db.RouteMember.GetByID(highMember)
-	if high.FailCount != 1 || high.CooldownUntil == nil {
-		t.Fatalf("failed channel must be cooled down: %+v", high)
+	low, _ := db.RouteMember.GetByID(lowMember)
+	if high.FailCount != 0 || high.CooldownUntil != nil {
+		t.Fatalf("transport error must not cool high: %+v", high)
+	}
+	if low.FailCount != 0 || low.CooldownUntil != nil {
+		t.Fatalf("transport error must not cool low: %+v", low)
 	}
 }
 
