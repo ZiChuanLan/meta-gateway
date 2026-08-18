@@ -17,40 +17,6 @@ export function sortMembers(members: RoutingCandidate[]) {
   });
 }
 
-export /** Raw per-1M-token USD price for a member on a model, or null when unpriced. */
-function memberPriceUsd(
-  member: RouteMember,
-  model: string,
-  items: FinanceItem[],
-): number | null {
-  if (!member || !model || !items.length) return null;
-  const item = items.find((entry) => entry.channel_id === member.channel_id);
-  if (!item || item.quota_per_unit <= 0) return null;
-  const price = item.prices?.[model];
-  if (!price || !price.price_usd || price.price_usd <= 0) return null;
-  return price.price_usd;
-}
-
-export /** Price-aware ordering: cheapest first, unpriced members sink to the bottom. */
-function sortMembersByPrice(
-  members: RoutingCandidate[],
-  model: string,
-  items: FinanceItem[],
-) {
-  return [...members].sort((left, right) => {
-    const lp = memberPriceUsd(left.member, model, items);
-    const rp = memberPriceUsd(right.member, model, items);
-    if (lp != null && rp != null) {
-      if (lp !== rp) return lp - rp;
-    } else if (lp != null) {
-      return -1;
-    } else if (rp != null) {
-      return 1;
-    }
-    return sortMembers([left, right])[0] === left ? -1 : 1;
-  });
-}
-
 export function isActiveCooldown(member: Pick<RouteMember, "cooldown_until">) {
   if (!member.cooldown_until) return false;
   const until = new Date(member.cooldown_until).getTime();

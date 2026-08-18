@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { FinanceItem, RouteMember, RoutingCandidate } from "../../api/types";
+import type { RouteMember, RoutingCandidate } from "../../api/types";
 import {
 	candidateState,
 	getEffectiveRoutingPolicy,
 	isActiveCooldown,
-	memberPriceUsd,
 	primaryMember,
 	sortMembers,
-	sortMembersByPrice,
 } from "./routingPolicy";
 
 function member(overrides: Partial<RouteMember> & { id: number }): RouteMember {
@@ -64,26 +62,6 @@ describe("sortMembers / primaryMember", () => {
 		expect(sortMembers([a, b, c, d]).map((x) => x.member.id)).toEqual([2, 3, 4, 1]);
 		expect(primaryMember([a, b])?.member.id).toBe(2);
 		expect(primaryMember([])).toBeNull();
-	});
-});
-
-describe("memberPriceUsd / sortMembersByPrice", () => {
-	const items: FinanceItem[] = [
-		{ channel_id: 1, balance: 0, quota_per_unit: 2, prices: { "gpt-x": { model: "gpt-x", price_usd: 0.5 } } },
-		{ channel_id: 2, balance: 0, quota_per_unit: 2, prices: { "gpt-x": { model: "gpt-x", price_usd: 2 } } },
-	];
-
-	it("computes per-1M price from the finance table", () => {
-		expect(memberPriceUsd(member({ id: 1, channel_id: 1 }), "gpt-x", items)).toBe(0.5);
-		expect(memberPriceUsd(member({ id: 9, channel_id: 9 }), "gpt-x", items)).toBeNull();
-		expect(memberPriceUsd(member({ id: 1, channel_id: 1 }), "unknown-model", items)).toBeNull();
-	});
-
-	it("sorts cheapest first, unpriced sink to the bottom", () => {
-		const pricey = candidate(2, {});
-		const cheap = candidate(1, {});
-		const unpriced = candidate(7, {});
-		expect(sortMembersByPrice([pricey, unpriced, cheap], "gpt-x", items).map((x) => x.member.id)).toEqual([1, 2, 7]);
 	});
 });
 

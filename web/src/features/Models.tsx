@@ -92,11 +92,9 @@ import { CooldownHint } from "./models/CooldownHint";
 import {
   primaryMember,
   sortMembers,
-  sortMembersByPrice,
   isActiveCooldown,
   candidateState,
   memberFinance,
-  memberPriceUsd,
   getEffectiveRoutingPolicy,
 } from "./models/routingPolicy";
 
@@ -220,7 +218,6 @@ function ModelCatalog({
   const [member, setMember] = useState<Partial<RouteMember> | null>(null);
   const [removeMember, setRemoveMember] = useState<RouteMember | null>(null);
   const [tryOpen, setTryOpen] = useState(false);
-  const [priceSort, setPriceSort] = useState(false);
   const [bulkSelect, setBulkSelect] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(
     () => new Set(),
@@ -351,30 +348,9 @@ function ModelCatalog({
     [finance.data?.items],
   );
   const orderedMembers = useMemo(
-    () =>
-      priceSort
-        ? sortMembersByPrice(selectedMembers, selectedModel, financeItems)
-        : sortMembers(selectedMembers),
-    [priceSort, selectedMembers, selectedModel, financeItems],
+    () => sortMembers(selectedMembers),
+    [selectedMembers],
   );
-  // Cheapest priced member (for the "cheapest" badge); null when none priced.
-  const cheapestMemberId = useMemo(() => {
-    if (!selectedModel || !financeItems.length) return null;
-    let bestId: number | null = null;
-    let bestPrice = Number.POSITIVE_INFINITY;
-    for (const candidate of selectedMembers) {
-      const price = memberPriceUsd(
-        candidate.member,
-        selectedModel,
-        financeItems,
-      );
-      if (price != null && price < bestPrice) {
-        bestPrice = price;
-        bestId = candidate.member.id;
-      }
-    }
-    return bestId;
-  }, [selectedMembers, selectedModel, financeItems]);
   const primary = primaryMember(selectedMembers);
   const selectedRoutingMode = selectedRoute?.routing_mode || "auto";
   const effectivePolicy = getEffectiveRoutingPolicy(
@@ -1368,17 +1344,6 @@ function ModelCatalog({
                     >
                       {t("routing.bulkSelect")}
                     </Button>
-                    <label
-                      className="price-sort-toggle"
-                      title={t("routing.priceSortHint")}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={priceSort}
-                        onChange={(e) => setPriceSort(e.target.checked)}
-                      />
-                      <span>{t("routing.priceSort")}</span>
-                    </label>
                   </div>
                   {bulkSelect && selectedMembers.length > 0 ? (
                     <div className="routing-bulk-bar">
@@ -1477,7 +1442,6 @@ function ModelCatalog({
                           key={entry.id}
                           draggable={
                             !reorderMembers.isPending &&
-                            !priceSort &&
                             !bulkSelect
                           }
                           onDragStart={(event) => {
@@ -1602,16 +1566,11 @@ function ModelCatalog({
                                           : t("routing.financeCalls", {
                                               calls: info.calls,
                                             })}
-                                        {info.fixed
-                                          ? t("routing.financeUnitCalls")
-                                          : t("routing.financeUnitM")}
-                                      </span>
-                                      {cheapestMemberId === entry.id ? (
-                                        <span className="member-cheapest">
-                                          {t("routing.cheapest")}
-                                        </span>
-                                      ) : null}
-                                    </>
+										{info.fixed
+										  ? t("routing.financeUnitCalls")
+										  : t("routing.financeUnitM")}
+									  </span>
+									</>
                                   );
                                 })()
                               ) : (
@@ -1714,8 +1673,7 @@ function ModelCatalog({
                               title={t("routing.moveDown")}
                               disabled={
                                 busy ||
-                                rowIndex >= ordered.length - 1 ||
-                                priceSort
+                                rowIndex >= ordered.length - 1
                               }
                               onClick={() => moveBy(1)}
                             >
