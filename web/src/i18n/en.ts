@@ -88,7 +88,8 @@ export const en: Dict = {
   "err.unknown.fix": "Retry, or check the gateway logs for details.",
   "err.classSuffix": " ({class})",
 
-  "common.working": "Working...",
+"common.working": "Working…",
+"common.maskedPlaceholder": "•••••••••• (keep stored value)",
   "common.select": "Select",
   "common.actions": "Actions",
   "common.status": "Status",
@@ -441,9 +442,16 @@ export const en: Dict = {
 
   "channels.editBaseUrlInherited":
     "This connection uses the site base URL. Saving updates the site URL for this upstream.",
-  "channels.checkinEnable": "Enable scheduled check-in",
-  "channels.checkinDisable": "Disable scheduled check-in",
-  "channels.checkinRun": "Check in now",
+"channels.checkinEnable": "Enable scheduled check-in",
+"channels.checkinDisable": "Disable scheduled check-in",
+"channels.checkinRun": "Check in now",
+"channels.checkinSection": "Check-in",
+"channels.checkinLogs": "Logs",
+"channels.checkinModuleOff": "The Check-in add-on is not enabled. Turn it on in the Store to schedule daily check-ins.",
+"channels.checkinUnsupported": "This site family does not expose a check-in API.",
+"channels.checkinNeedsUserCredential": "Fill in an Access Token or Cookie above to enable daily check-in for this connection.",
+"channels.checkinScheduledHint": "This credential checks in daily on the schedule set in the Check-in page.",
+"channels.checkinOffHint": "Scheduled check-in is off for this credential.",
 
   "channels.checkAccount": "Check access token",
   "channels.ping": "Check connectivity",
@@ -535,10 +543,17 @@ export const en: Dict = {
   "channels.badge.needsUserId": "Needs user id",
   "channels.badge.tokenProblem": "Access token invalid",
   "channels.editHintDual":
-    "User token for check-in; API keys for model sync and relay.",
+    "Access Token and Cookie are account credentials; API keys are for model sync and relay.",
   "channels.userTokenPresentHint":
     "User token is stored (shown masked). Type a new value to rotate it, or clear the field to remove it.",
-  "channels.userTokenEmptyPlaceholder": "Paste access_token for check-in",
+  "channels.userTokenEmptyPlaceholder":
+    "Paste access_token for account/check-in",
+  "channels.userCookie": "User Cookie",
+  "channels.userCookieHint":
+    "Optional session Cookie for account GET endpoints when Access Token is unavailable.",
+  "channels.userCookiePresentHint":
+    "A Cookie is stored (shown masked). Type a new value to rotate it, or clear it to remove it.",
+  "channels.userCookiePlaceholder": "Paste Cookie header value",
   "channels.badge.missingKey": "Needs API key",
   "channels.badge.hasKey": "API key",
   "channels.badge.models": "Models",
@@ -664,7 +679,8 @@ export const en: Dict = {
   "keys.groupHint":
     'The tenant group used for quotas and rate limits. Empty defaults to "default".',
   "keys.groupPlaceholder": "Select tenant group…",
-  "keys.modelGroupHint": "Choose a model group configured on the Models page to add all of its models to this allowlist.",
+  "keys.modelGroupHint":
+    "Choose a model group configured on the Models page to add all of its models to this allowlist.",
   "keys.modelGroupPlaceholder": "Add models by group…",
   "keys.useCustomToken": "Set my own secret",
   "keys.customToken": "Secret",
@@ -1011,6 +1027,16 @@ export const en: Dict = {
   "plugins.healthPlaceholder": "Health path (optional, default healthz)",
   "plugins.addFailed": "Failed to add plugin",
   "plugins.edit": "Edit",
+"plugins.config": "Configure",
+"plugins.configTitle": "Plugin configuration",
+"plugins.configHint":
+"Values are stored by the gateway and injected into every proxied request as the X-Plugin-Config header (base64 JSON). Secret fields are masked: keep the mask to keep the stored value, type a new one to replace it, leave empty to clear.",
+"plugins.configSecretHint": "Masked = keep the stored value. Empty = clear, new value = replace.",
+"plugins.configEnabled": "Enabled",
+"plugins.configJsonLabel": "Raw JSON",
+"plugins.configJsonHint": "The plugin declares no fields; edit the JSON object directly.",
+"plugins.configInvalidJson": "Config must be a JSON object",
+"plugins.configSaveFailed": "Failed to save plugin config",
   "plugins.editTitle": "Edit plugin",
   "plugins.editHint":
     "Changing connection settings re-runs the health check; if the service is unreachable the old config is kept.",
@@ -1036,6 +1062,11 @@ export const en: Dict = {
     "This record is not in the official catalog. You can only remove it.",
   "store.installed": "Installed",
   "store.install": "Install",
+  "store.update": "Update",
+  "store.installKind.legacy": "direct",
+  "store.installKind.sidecar": "direct",
+  "store.installKind.direct": "package",
+  "store.installKind.github-release": "GitHub release",
   "store.section.market": "Plugin market",
   "store.section.marketHint": "Installable plugins from registry sources.",
   "store.marketFailed":
@@ -1125,8 +1156,8 @@ export const en: Dict = {
   "routing.independentLabel": "Independent priority/weight for this model",
   "routing.independentHint":
     "On = every member of this model keeps its own priority/weight. Changes on the Connections page or a model re-sync won't overwrite them. Off = each member follows its connection's own default priority/weight; those defaults may differ. New members follow the connection by default.",
-  "routing.reorderHint":
-    "Dragging rows writes priority and makes this model's members independent, so the Connections page won't overwrite them. Weight still applies among equal priorities.",
+"routing.reorderHint":
+"Dragging rows writes priority and makes this model's members independent. Weight still applies among equal priorities.",
   "routing.moveUp": "Move up",
   "routing.moveDown": "Move down",
   "routing.orderLabel": "Order",
@@ -1185,6 +1216,28 @@ export const en: Dict = {
   "ops.checkin.scheduleCron": "Cron expression",
   "ops.checkin.scheduleSave": "Save schedule",
   "ops.checkin.scheduleSaved": "Check-in schedule saved.",
+"ops.external.title": "External check-in sites",
+"ops.external.titleHint": "Generic cookie-authenticated daily check-in for platforms outside the New-API family (e.g. 薄荷公益站). Runs on the same schedule and appears in the same logs.",
+"ops.external.hint": "Add a site, paste its login Cookie, and the scheduler checks it in every day.",
+"ops.external.empty": "No external check-in sites yet.",
+"ops.external.add": "Add site",
+"ops.external.addTitle": "New external check-in site",
+"ops.external.editTitle": "Edit external check-in site",
+"ops.external.name": "Name",
+"ops.external.baseUrl": "Site URL",
+"ops.external.baseUrlHint": "Site root, e.g. https://up.x666.me",
+"ops.external.path": "Check-in path",
+"ops.external.method": "Method",
+"ops.external.cookie": "Cookie",
+"ops.external.cookieHint": "Login cookie, e.g. auth_token=…. Stored encrypted.",
+"ops.external.cookieKeepHint": "Leave empty to keep the stored cookie; fill to replace it.",
+"ops.external.enableSchedule": "Enable scheduled check-in",
+"ops.external.scheduled": "Scheduled",
+"ops.external.run": "Check in now",
+"ops.external.runDone": "Check-in run finished.",
+"ops.external.deleteTitle": "Remove external check-in site?",
+"ops.external.deleteConfirm": "\"{name}\" and its cookie will be removed; its check-in history is deleted by cascade.",
+"ops.external.noCookie": "no cookie set",
   "ops.schedule.preset.off": "Off",
   "ops.schedule.preset.hourly": "Every hour",
   "ops.schedule.preset.every3h": "Every 3 hours",

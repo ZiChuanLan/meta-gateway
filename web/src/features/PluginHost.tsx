@@ -35,6 +35,7 @@ export function PluginHost() {
 						onError={() => setError(true)}
 						referrerPolicy="no-referrer"
 						className="plugin-host-frame"
+						sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
 					/>
 				)}
 			</div>

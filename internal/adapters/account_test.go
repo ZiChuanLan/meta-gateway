@@ -7,6 +7,56 @@ import (
 	"testing"
 )
 
+// TestAuthAutoAccountFallback covers the documented auto-mode cookie
+// fallback: a GET the upstream rejects with 401 while holding a valid cookie
+// is retried once with the Cookie credential.
+func TestAuthAutoAccountFallback(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("Authorization") != "" {
+			http.Error(w, `{"success":false}`, http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("Cookie") != "session=cookie-value" {
+			http.Error(w, `{"success":false}`, http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":9,"username":"auto-user"}}`))
+	}))
+	defer server.Close()
+	adapter := NewNewAPIAccountAdapter("new-api", server.Client(), true)
+	self, err := adapter.ProbeSelf(context.Background(), AccountInput{
+		BaseURL: server.URL, Secret: "user-token", Cookie: "session=cookie-value", AuthMode: AuthAuto,
+	})
+	if err != nil {
+		t.Fatalf("auto fallback: %v", err)
+	}
+	if self.Username != "auto-user" || calls != 2 {
+		t.Fatalf("self=%+v calls=%d", self, calls)
+	}
+}
+
+func TestNewAPIAccountAdapterCookieAuth(t *testing.T) {
+	var gotAuth, gotCookie string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotCookie = r.Header.Get("Cookie")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"id":42,"username":"cookie-user"}}`))
+	}))
+	defer server.Close()
+	adapter := NewNewAPIAccountAdapter("new-api", server.Client(), true)
+	_, err := adapter.ProbeSelf(context.Background(), AccountInput{
+		BaseURL: server.URL, Secret: "must-not-be-bearer", Cookie: "session=cookie-value", AuthMode: AuthCookie,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "" || gotCookie != "session=cookie-value" {
+		t.Fatalf("auth=%q cookie=%q", gotAuth, gotCookie)
+	}
+}
+
 func TestNewAPIAccountProbeSelfAndListKeys(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer user-token" {

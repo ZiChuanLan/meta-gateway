@@ -45,6 +45,40 @@ meta-gateway 的扩展商店基于 **sidecar 插件协议**：插件是一个**�
 | `page_path` | 否 | 内嵌页面路径，默认 `/` |
 | `health_path` | 否 | 健康检查路径，默认 `/healthz` |
 | `api_prefix` | 否 | 根路径 API 前缀（如 `/v0/management`）。声明后 meta-gateway 在根路径挂载转发：`{prefix}/*` → `{url}{prefix}/*`，用于前端固定调用绝对 API 路径的插件（如 CLIProxyAPI 的 CPAMC 调用 `/v0/management/*`），无需在插件内手动配置连接地址 |
+| `capabilities` | 否 | 能力列表（如 `["admin_page"]`） |
+| `permissions` | 否 | 权限声明，格式 `资源:动作`（如 `["upstream:read", "admin_api:checkin"]`），≤128 字符/条、≤64 条，注册时校验 |
+| `config_fields` | 否 | 配置项声明（见下），注册时校验（key 唯一、类型合法、select 必须有 options） |
+
+### config_fields 配置声明
+
+插件通过 `config_fields` 声明宿主渲染与保存的配置项。管理员保存后，配置以 **base64 JSON** 通过 `X-Plugin-Config` 请求头注入到每一个反向代理请求（页面与 `api_prefix` 转发都携带）；未设置配置时该头不出现。
+
+```json
+"config_fields": [
+  { "key": "api_key", "type": "secret", "label": "Upstream API Key", "required": true },
+  { "key": "region", "type": "select", "label": "Region", "options": ["cn", "us", "eu"], "default": "cn" },
+  { "key": "timeout", "type": "number", "label": "Timeout (s)", "default": 30 },
+  { "key": "notify", "type": "bool", "label": "Notify on failure", "default": true }
+]
+```
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `key` | 必填 | 小写字母开头，`a-z0-9._-`，≤64 字符，清单内唯一 |
+| `type` | 否 | `string`（默认）/ `text` / `number` / `bool` / `select` / `secret`。`secret` 在管理 UI 读取时会被掩盖，值本身仍保存 |
+| `label`/`description` | 否 | 管理 UI 展示文本 |
+| `required` | 否 | 必填标记 |
+| `default` | 否 | 默认值；`number` 必须是数字、`bool` 必须是布尔 |
+| `options` | 否 | `select` 的可选项（`select` 必填） |
+
+配置管理 API（仅限已安装 sidecar 插件）：
+
+```
+GET /admin/plugins/{id}/config      # 读取：{id, config, fields, has_config}，no-store
+PUT /admin/plugins/{id}/config      # 保存：{"config": "{\"region\":\"cn\"}"}（≤4 KiB 的 JSON 对象）
+```
+
+> **插件侧读取**：请求头 `X-Plugin-Config` 的值是配置 JSON 的 base64 编码，解码即得完整配置对象。配置仅在网关内存与 `plugin_configs` 表中保存，不进入日志/遥测；`secret` 类型字段前端读取时会掩盖显示。
 
 > **Authorization 透传**：插件内嵌页面的加载走 `?t=` 管理员令牌校验（iframe 无法带请求头）；插件自身的 API 请求若携带 `Authorization: Bearer <插件密钥>`，该头会**透传**到插件（由插件自行校验密钥），而管理员令牌会被剥离且 `?t=` 不会转发——插件密钥是插件 API 自己的安全边界。
 
@@ -192,3 +226,88 @@ PLUGIN_MARKET_URLS=https://example.com/my-plugins/registry.json,https://example.
 2. 把默认源 URL 改成你的仓库（`internal/plugins/market.go` 的 `DefaultMarketURL`），或通过 `PLUGIN_MARKET_URLS` 追加
 3. 每个插件条目指向你的 sidecar 服务地址；社区插件可直接引用
 4. 仓库内附 `registry.json` 模板：`tools/market-registry/registry.json`
+### 可分发插件包（packaged plugin）
+
+上面的 `url` 条目是**直连已有服务**（sidecar 已运行，网关只做注册/反代）。要成为可分发、可下载、可校验的社区商店，用 `install` 块声明安装包：
+
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "1.2.0",
+  "install": {
+    "type": "direct",
+    "artifacts": [
+      {
+        "goos": "windows",
+        "goarch": "amd64",
+        "url": "https://github.com/you/repo/releases/download/v1.2.0/my-plugin_1.2.0_windows_amd64.zip",
+        "sha256": "<zip 的 SHA-256>",
+        "size": 123456
+      }
+    ]
+  }
+}
+```
+
+| 安装类型 | 说明 |
+| --- | --- |
+| `direct` | `artifacts` 明确列出各平台包地址；安装时按运行网关的 `GOOS/GOARCH` 选择，`sha256` 必填（长度必须为 64 个十六进制字符） |
+| `github-release` | 提供 `repository`（`https://github.com/{owner}/{repo}`）。网关调 GitHub API 取 `latest`（或指定版本）release，按 `{id}_{version}_{goos}_{goarch}.zip` 命名规则下载，从 release 的 `checksums.txt` 资产里取对应校验和 |
+
+`github-release` 条目示例：
+
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "repository": "https://github.com/you/repo",
+  "install": {
+    "type": "github-release",
+    "artifact_pattern": "{id}_{version}_{goos}_{goarch}.zip",
+    "checksum_asset": "checksums.txt"
+  }
+}
+```
+
+#### 插件包格式
+
+安装包是一个 **zip 归档**，顶层必须包含：
+
+1. **`plugin.json`** — sidecar 清单（与直连插件相同身份字段），另加：
+   - `entrypoint`（必填）：可执行文件相对路径（如 `plugin.exe`/`plugin`），网关直接 `exec`，不经过 shell
+   - `run_args`（可选）：启动参数数组，支持 `{id}` `{plugin_dir}` `{addr}` `{port}` `{key}` 占位符
+2. **可执行文件** — 任意语言实现的 HTTP sidecar，启动后监听网关分配的端口
+
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "1.2.0",
+  "entrypoint": "plugin.exe",
+  "run_args": ["--listen", "{addr}"],
+  "page_path": "/",
+  "health_path": "healthz",
+  "api_prefix": "/v0/my-plugin"
+}
+```
+
+运行时环境变量（网关注入）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `META_GATEWAY_PLUGIN_ID` | 插件 ID |
+| `META_GATEWAY_PLUGIN_DIR` | 插件数据目录（可写，存放持久化文件） |
+| `META_GATEWAY_PLUGIN_ADDR` | 监听地址 `127.0.0.1:{port}` |
+| `META_GATEWAY_PLUGIN_PORT` | 监听端口 |
+| `META_GATEWAY_PLUGIN_KEY` | 网关生成的随机 API Key（反代时会以 `X-Plugin-Key` 携带） |
+
+#### 安装流程与安全
+
+1. 下载当前平台 artifact（限 128 MiB）→ 校验 `sha256`（声明大小不匹配也拒绝）
+2. 解包到 `plugins/{id}.staging/`：拒绝绝对路径、`..`、`\`、symlink；单文件 ≤64 MiB、文件数 ≤512
+3. 校验包内 `plugin.json`：`id` 必须等于注册条目 ID、`entrypoint` 必须在包内且是常规文件
+4. 替换旧版本目录 → 写入 DB → 启动进程 → 轮询 `health_path`（10s 超时）通过才完成；任一环节失败自动回滚旧目录/旧记录
+5. 升级 = 再次调用 `POST /admin/plugins/market/{id}/install?source=...`（旧进程先停，避免 Windows 文件锁）
+
+安装的托管插件记录来源为 `market:{sourceId}`，Store 的已启用列表可删除；来源标识与「有更新」由 Store 页面根据 registry 版本对比展示。

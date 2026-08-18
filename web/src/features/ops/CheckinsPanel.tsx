@@ -68,7 +68,7 @@ function siteDisplayName(
   };
 }
 
-export function CheckinsPanel() {
+export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
   const { client } = useSession();
   const { t } = useI18n();
   const toast = useToast();
@@ -258,9 +258,11 @@ export function CheckinsPanel() {
             {saveSchedule.isPending
               ? t("common.working")
               : t("ops.checkin.scheduleSave")}
-          </Button>
-        </div>
+			</Button>
+		</div>
       </Panel>
+
+      {children}
 
       <Panel
         actions={
@@ -283,12 +285,8 @@ export function CheckinsPanel() {
               {run.isPending ? t("ops.running") : t("ops.runEnabled")}
             </Button>
           </>
-        }
+		}
       >
-        <div className="ops-panel-context">
-          <span>{t("ops.checkinHint")}</span>
-          <InfoTip label={t("ops.checkinHint")} />
-        </div>
         {run.error && <ErrorState error={run.error} />}
         {run.data && (
           <div className="result-strip">

@@ -22,7 +22,9 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 		ID             int64  `json:"id"`
 		SiteID         int64  `json:"site_id"`
 		Kind           string `json:"kind"`
+		AuthMode       string `json:"auth_mode,omitempty"`
 		HasSecret      bool   `json:"has_secret"`
+		HasCookie      bool   `json:"has_cookie"`
 		MetaJSON       string `json:"meta_json,omitempty"`
 		Status         string `json:"status"`
 		CheckinEnabled bool   `json:"checkin_enabled"`
@@ -34,7 +36,9 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 			ID:             c.ID,
 			SiteID:         c.SiteID,
 			Kind:           c.Kind,
+			AuthMode:       normalizeCredentialAuthMode(c.AuthMode),
 			HasSecret:      len(c.SecretEnc) > 0,
+			HasCookie:      len(c.CookieEnc) > 0,
 			MetaJSON:       c.MetaJSON,
 			Status:         c.Status,
 			CheckinEnabled: c.CheckinEnabled,
@@ -46,7 +50,9 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 
 type createCredentialRequest struct {
 	Kind     string `json:"kind"`
-	Secret   string `json:"secret"`
+	AuthMode string `json:"auth_mode,omitempty"`
+	Secret   string `json:"secret,omitempty"`
+	Cookie   string `json:"cookie,omitempty"`
 	MetaJSON string `json:"meta_json,omitempty"`
 	Status   string `json:"status,omitempty"`
 	// ModelsCSV is the per-key model allowlist (comma-separated; empty = all).
@@ -63,11 +69,27 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if req.Secret == "" {
-		writeError(w, http.StatusBadRequest, "secret is required")
+	authMode := normalizeCredentialAuthMode(req.AuthMode)
+	if req.Secret == "" && req.Cookie == "" {
+		writeError(w, http.StatusBadRequest, "secret or cookie is required")
 		return
 	}
-	encSecret, err := h.enc.Encrypt([]byte(req.Secret))
+	var encSecret, encCookie string
+	var err error
+	if req.Secret != "" {
+		encSecret, err = h.enc.Encrypt([]byte(req.Secret))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "encryption failed")
+			return
+		}
+	}
+	if req.Cookie != "" {
+		encCookie, err = h.enc.Encrypt([]byte(req.Cookie))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "encryption failed")
+			return
+		}
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "encryption failed")
 		return
@@ -82,7 +104,9 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 	cred := &domain.Credential{
 		SiteID:    siteID,
 		Kind:      req.Kind,
+		AuthMode:  authMode,
 		SecretEnc: []byte(encSecret),
+		CookieEnc: []byte(encCookie),
 		MetaJSON:  req.MetaJSON,
 		Status:    req.Status,
 		ModelsCSV: req.ModelsCSV,
@@ -105,7 +129,9 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		"id":              created.ID,
 		"site_id":         created.SiteID,
 		"kind":            created.Kind,
-		"has_secret":      true,
+		"auth_mode":       normalizeCredentialAuthMode(created.AuthMode),
+		"has_secret":      len(created.SecretEnc) > 0,
+		"has_cookie":      len(created.CookieEnc) > 0,
 		"meta_json":       created.MetaJSON,
 		"status":          created.Status,
 		"checkin_enabled": created.CheckinEnabled,
@@ -115,10 +141,14 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 }
 
 type updateCredentialRequest struct {
-	Kind     string `json:"kind,omitempty"`
-	Secret   string `json:"secret,omitempty"` // empty keeps existing secret
-	MetaJSON string `json:"meta_json,omitempty"`
-	Status   string `json:"status,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	AuthMode    string `json:"auth_mode,omitempty"`
+	Secret      string `json:"secret,omitempty"` // empty keeps existing secret
+	Cookie      string `json:"cookie,omitempty"` // empty keeps existing cookie
+	ClearSecret bool   `json:"clear_secret,omitempty"`
+	ClearCookie bool   `json:"clear_cookie,omitempty"`
+	MetaJSON    string `json:"meta_json,omitempty"`
+	Status      string `json:"status,omitempty"`
 	// ModelsCSV is the per-key model allowlist; nil keeps the existing value.
 	ModelsCSV *string `json:"models_csv,omitempty"`
 }
@@ -145,6 +175,9 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 	if req.Kind != "" {
 		existing.Kind = req.Kind
 	}
+	if req.AuthMode != "" {
+		existing.AuthMode = normalizeCredentialAuthMode(req.AuthMode)
+	}
 	if req.Status != "" {
 		if !validCredentialStatus(req.Status) {
 			writeError(w, http.StatusBadRequest, "status must be enabled or disabled")
@@ -158,6 +191,10 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 	if req.ModelsCSV != nil {
 		existing.ModelsCSV = strings.TrimSpace(*req.ModelsCSV)
 	}
+	if req.ClearSecret {
+		existing.SecretEnc = nil
+		existing.ImportFingerprint = ""
+	}
 	if strings.TrimSpace(req.Secret) != "" {
 		encSecret, err := h.enc.Encrypt([]byte(req.Secret))
 		if err != nil {
@@ -167,6 +204,17 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		existing.SecretEnc = []byte(encSecret)
 		// Replacing secret invalidates any import fingerprint identity.
 		existing.ImportFingerprint = ""
+	}
+	if req.ClearCookie {
+		existing.CookieEnc = nil
+	}
+	if strings.TrimSpace(req.Cookie) != "" {
+		encCookie, err := h.enc.Encrypt([]byte(req.Cookie))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "encryption failed")
+			return
+		}
+		existing.CookieEnc = []byte(encCookie)
 	}
 	if err := h.db.Credential.Update(existing); err != nil {
 		writeStoreError(w, err)
@@ -185,7 +233,9 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		"id":              updated.ID,
 		"site_id":         updated.SiteID,
 		"kind":            updated.Kind,
+		"auth_mode":       normalizeCredentialAuthMode(updated.AuthMode),
 		"has_secret":      len(updated.SecretEnc) > 0,
+		"has_cookie":      len(updated.CookieEnc) > 0,
 		"meta_json":       updated.MetaJSON,
 		"status":          updated.Status,
 		"checkin_enabled": updated.CheckinEnabled,
@@ -193,6 +243,17 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		"created_at":      updated.CreatedAt,
 		"updated_at":      updated.UpdatedAt,
 	})
+}
+
+func normalizeCredentialAuthMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "cookie":
+		return "cookie"
+	case "auto":
+		return "auto"
+	default:
+		return "access_token"
+	}
 }
 
 func (h *AdminHandler) deleteCredential(w http.ResponseWriter, r *http.Request) {

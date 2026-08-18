@@ -1416,16 +1416,15 @@ function ModelCatalog({
                       </Button>
                     </div>
                   ) : null}
-                  {selectedMembers.length > 1 ? (
-                    <div className="routing-reorder-hint">
-                      <span>
-                        {reorderMembers.isPending
-                          ? t("routing.savingOrder")
-                          : t("routing.reorderHint")}
-                      </span>
-                      <InfoTip label={t("routing.reorderHint")} />
-                    </div>
-                  ) : null}
+				  {selectedMembers.length > 1 ? (
+				    <div className="routing-reorder-hint">
+				      <span>
+				        {reorderMembers.isPending
+				          ? t("routing.savingOrder")
+				          : t("routing.reorderHint")}
+				      </span>
+				    </div>
+				  ) : null}
                   {!selectedMembers.length ? (
                     <Empty>{t("routing.noMembers")}</Empty>
                   ) : (

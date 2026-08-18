@@ -325,7 +325,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		if pluginService != nil {
 			module.Use(requirePluginEnabled(pluginService, "checkin"))
 		}
-		NewCheckinHandler(db, checkinService).Register(module)
+		NewCheckinHandler(db, checkinService, enc).Register(module)
 	})
 	adminGroup.Group(func(module chi.Router) {
 		if pluginService != nil {

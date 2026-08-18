@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httputil"
@@ -54,6 +55,8 @@ func (h *PluginHandler) Register(r chi.Router) {
 	r.Post("/plugins/{id}/enable", h.enable)
 	r.Post("/plugins/{id}/disable", h.disable)
 	r.Delete("/plugins/{id}", h.uninstall)
+	r.Get("/plugins/{id}/config", h.getPluginConfig)
+	r.Put("/plugins/{id}/config", h.putPluginConfig)
 }
 
 // marketList returns the plugin market: all installable entries from every
@@ -68,12 +71,16 @@ func (h *PluginHandler) marketList(w http.ResponseWriter, r *http.Request) {
 }
 
 // marketInstall installs a market entry as a sidecar plugin (register +
-// health check + enable).
+// health check + enable). Optional ?source= and ?version= query parameters
+// select the registry source (required when two registries publish the same
+// plugin ID) and a specific release/artifact version.
 func (h *PluginHandler) marketInstall(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	sourceID := r.URL.Query().Get("source")
+	version := r.URL.Query().Get("version")
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	rec, err := h.service.InstallMarket(ctx, id)
+	rec, err := h.service.InstallMarketFrom(ctx, id, sourceID, version)
 	if err != nil {
 		switch {
 		case errors.Is(err, plugins.ErrNotFound):
@@ -176,7 +183,74 @@ func (h *PluginHandler) uninstall(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// pluginConfigHeader encodes a plugin's persisted config as the base64 value
+// carried in X-Plugin-Config on every proxied request. Empty when the plugin
+// has no meaningful config, so sidecars can treat the header's absence as
+// "defaults".
+func (h *PluginHandler) pluginConfigHeader(id string) string {
+	raw := h.service.PluginConfig(id)
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "{}" {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString([]byte(raw))
+}
+
+func (h *PluginHandler) getPluginConfig(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if spec, err := h.service.SidecarFor(id); err != nil || spec == nil {
+		writeError(w, http.StatusNotFound, "plugin_not_sidecar")
+		return
+	}
+	raw := h.service.PluginConfig(id)
+	if raw == "" {
+		raw = "{}"
+	}
+	fields := h.service.ConfigFieldsFor(id)
+	if masked, err := plugins.MaskPluginConfigJSON(raw, fields); err == nil {
+		raw = masked
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":         id,
+		"config":     raw,
+		"fields":     fields,
+		"has_config": h.service.PluginConfig(id) != "",
+	})
+}
+
+func (h *PluginHandler) putPluginConfig(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if spec, err := h.service.SidecarFor(id); err != nil || spec == nil {
+		writeError(w, http.StatusNotFound, "plugin_not_sidecar")
+		return
+	}
+	var body struct {
+		Config string `json:"config"`
+	}
+	if err := decodeJSON(w, r, &body, plugins.MaxPluginConfigBytes+64, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := h.service.SetPluginConfig(id, strings.TrimSpace(body.Config)); err != nil {
+		switch {
+		case strings.Contains(err.Error(), "plugin_config_too_large"):
+			writeError(w, http.StatusBadRequest, "plugin_config_too_large")
+		case strings.Contains(err.Error(), "plugin_config_invalid"):
+			writeError(w, http.StatusBadRequest, "plugin_config_invalid")
+		case errors.Is(err, plugins.ErrNotInstalled):
+			writeError(w, http.StatusNotFound, "plugin_not_installed")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to save plugin config")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":         id,
+		"has_config": true,
+	})
 }
 
 // registerSidecar registers a third-party sidecar plugin: fetches its
@@ -307,6 +381,7 @@ func (h *PluginHandler) proxySidecar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
+	configHeader := h.pluginConfigHeader(id)
 	target, err := url.Parse(spec.URL)
 	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawPath != "" || !validPluginProxyPath(target.Path) {
 		writeError(w, http.StatusBadGateway, "plugin_url_invalid")
@@ -334,6 +409,9 @@ func (h *PluginHandler) proxySidecar(w http.ResponseWriter, r *http.Request) {
 		req.URL.Path = target.Path
 		if spec.APIKey != "" {
 			req.Header.Set("X-Plugin-Key", spec.APIKey)
+		}
+		if configHeader != "" {
+			req.Header.Set(plugins.XPluginConfigHeader, configHeader)
 		}
 		if authMode == sidecarAuthAdmin {
 			req.Header.Del("Authorization")
@@ -376,6 +454,7 @@ func (h *PluginHandler) forwardAPIPrefix(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
+	configHeader := h.pluginConfigHeader(owner.ID)
 	target, err := url.Parse(owner.Spec.URL)
 	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawPath != "" || !validPluginProxyPath(target.Path) {
 		writeError(w, http.StatusBadGateway, "plugin_url_invalid")
@@ -395,6 +474,9 @@ func (h *PluginHandler) forwardAPIPrefix(w http.ResponseWriter, r *http.Request)
 		req.URL.Path = target.Path
 		if owner.Spec.APIKey != "" {
 			req.Header.Set("X-Plugin-Key", owner.Spec.APIKey)
+		}
+		if configHeader != "" {
+			req.Header.Set(plugins.XPluginConfigHeader, configHeader)
 		}
 		if authMode == sidecarAuthAdmin {
 			req.Header.Del("Authorization")

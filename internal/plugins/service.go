@@ -24,14 +24,27 @@ const (
 	StatusInstalled       = "installed"
 	StatusAvailable       = "available"
 	maxPluginCatalogBytes = 1 << 20
+	// MaxPluginConfigBytes bounds a plugin's persisted config JSON so the
+	// object stays comfortably inside a single X-Plugin-Config header.
+	MaxPluginConfigBytes = 4 << 10 // 4 KiB
 )
 
+// XPluginConfigHeader is injected into every proxied sidecar request carrying
+// the plugin's persisted config as a base64 JSON header. Plugins read it to
+// configure themselves without re-declaring their own settings store.
+const XPluginConfigHeader = "X-Plugin-Config"
+
+// SecretMask is the value admin UIs submit for a secret config field to mean
+// "keep the stored value". An empty string clears the stored secret.
+const SecretMask = "••••••••••"
+
 var (
-	ErrNotFound      = errors.New("plugin_not_found")
-	ErrNotInstalled  = errors.New("plugin_not_installed")
-	ErrAlreadyExists = errors.New("plugin_already_installed")
-	ErrInvalidID     = errors.New("plugin_invalid_id")
-	ErrCoreImmutable = errors.New("plugin_core_immutable")
+	ErrNotFound           = errors.New("plugin_not_found")
+	ErrNotInstalled       = errors.New("plugin_not_installed")
+	ErrAlreadyExists      = errors.New("plugin_already_installed")
+	ErrInvalidID          = errors.New("plugin_invalid_id")
+	ErrCoreImmutable      = errors.New("plugin_core_immutable")
+	ErrMarketSourceNeeded = errors.New("plugin_market_source_required")
 )
 
 // Module kinds: core is always-on platform capability; addon is optional store-managed.
@@ -100,24 +113,55 @@ var CoreFeatureCards = []CatalogEntry{
 	},
 }
 
+// ConfigFieldType enumerates the supported sidecar configuration input types.
+type ConfigFieldType string
+
+const (
+	ConfigString ConfigFieldType = "string"
+	ConfigText   ConfigFieldType = "text"
+	ConfigNumber ConfigFieldType = "number"
+	ConfigBool   ConfigFieldType = "bool"
+	ConfigSelect ConfigFieldType = "select"
+	// ConfigSecret values are masked on read and never echoed back.
+	ConfigSecret ConfigFieldType = "secret"
+)
+
+// ConfigField declares one configuration input a sidecar plugin accepts.
+// The gateway stores the plugin's config object verbatim and injects it into
+// proxied requests as a base64 JSON header; it does not validate semantics.
+type ConfigField struct {
+	Key         string          `json:"key"`
+	Type        ConfigFieldType `json:"type,omitempty"` // defaults to string
+	Label       string          `json:"label,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Required    bool            `json:"required,omitempty"`
+	Secret      bool            `json:"secret,omitempty"` // implied by Type=secret
+	Default     any             `json:"default,omitempty"`
+	Options     []string        `json:"options,omitempty"` // for select
+}
+
 // CatalogEntry is one store-listed module. Embedded official entries, remote
 // catalog entries, and registered sidecar plugins all surface through this.
 type CatalogEntry struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Description  string   `json:"description,omitempty"`
-	Kind         string   `json:"kind,omitempty"` // core | addon
-	Unlocks      []string `json:"unlocks,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Source       string   `json:"source,omitempty"`
-	Checksum     string   `json:"checksum,omitempty"`
+	ID           string        `json:"id"`
+	Name         string        `json:"name"`
+	Version      string        `json:"version"`
+	Description  string        `json:"description,omitempty"`
+	Kind         string        `json:"kind,omitempty"` // core | addon
+	Unlocks      []string      `json:"unlocks,omitempty"`
+	Capabilities []string      `json:"capabilities,omitempty"`
+	Permissions  []string      `json:"permissions,omitempty"`
+	ConfigFields []ConfigField `json:"config_fields,omitempty"`
+	Source       string        `json:"source,omitempty"`
+	Checksum     string        `json:"checksum,omitempty"`
 	// Sidecar is set for third-party plugins: an external HTTP service that
 	// meta-gateway embeds (iframe) and reverse-proxies. Nil for built-ins.
 	Sidecar *SidecarSpec `json:"sidecar,omitempty"`
 }
 
 // SidecarSpec describes a third-party sidecar plugin service.
+// Config values are stored separately by the host.
+
 type SidecarSpec struct {
 	// URL is the plugin service base URL (http/https), e.g. http://127.0.0.1:9100.
 	URL string `json:"url"`
@@ -138,24 +182,41 @@ type SidecarSpec struct {
 	// APIKey is the shared secret meta-gateway sends as X-Plugin-Key on every
 	// proxied request; the plugin validates it. Empty disables the header.
 	APIKey string `json:"api_key,omitempty"`
+	// Market source metadata is persisted so a packaged plugin can be matched
+	// back to its registry after a restart.
+	MarketSourceID  string `json:"market_source_id,omitempty"`
+	MarketSourceURL string `json:"market_source_url,omitempty"`
+	InstallType     string `json:"install_type,omitempty"`
+	ArtifactSHA256  string `json:"artifact_sha256,omitempty"`
+	// Managed means the gateway owns the sidecar process and starts it from
+	// Entrypoint on boot/enable. Manually registered services remain unmanaged.
+	Managed bool `json:"managed,omitempty"`
+	// Entrypoint is relative to the installed plugin directory for managed
+	// packages. RunArgs are passed without invoking a shell.
+	Entrypoint string   `json:"entrypoint,omitempty"`
+	RunArgs    []string `json:"run_args,omitempty"`
 }
 
 // ModuleStatus is the admin-facing combined view of catalog + install state.
 type ModuleStatus struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Description  string   `json:"description,omitempty"`
-	Kind         string   `json:"kind"`
-	Unlocks      []string `json:"unlocks,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Source       string   `json:"source,omitempty"`
-	Installed    bool     `json:"installed"`
-	Enabled      bool     `json:"enabled"`
+	ID           string        `json:"id"`
+	Name         string        `json:"name"`
+	Version      string        `json:"version"`
+	Description  string        `json:"description,omitempty"`
+	Kind         string        `json:"kind"`
+	Unlocks      []string      `json:"unlocks,omitempty"`
+	Capabilities []string      `json:"capabilities,omitempty"`
+	Permissions  []string      `json:"permissions,omitempty"`
+	ConfigFields []ConfigField `json:"config_fields,omitempty"`
+	Source       string        `json:"source,omitempty"`
+	Installed    bool          `json:"installed"`
+	Enabled      bool          `json:"enabled"`
 	// CanToggle is false for core cards and orphans that cannot be activated.
 	CanToggle bool `json:"can_toggle"`
 	// OpenPath is a frontend route hint when the add-on is enabled.
 	OpenPath string `json:"open_path,omitempty"`
+	// HasConfig reports whether a persisted config object exists for this plugin.
+	HasConfig bool `json:"has_config,omitempty"`
 }
 
 type Manifest struct {
@@ -166,6 +227,7 @@ type Manifest struct {
 	Capabilities []string          `json:"capabilities"`
 	Admin        map[string]string `json:"admin,omitempty"`
 	Permissions  []string          `json:"permissions,omitempty"`
+	ConfigFields []ConfigField     `json:"config_fields,omitempty"`
 	// Sidecar carries the embedded sidecar spec for third-party plugins.
 	Sidecar *SidecarSpec `json:"sidecar,omitempty"`
 }
@@ -180,6 +242,8 @@ type Service struct {
 	// Root-path proxy requests read this snapshot without fetching a remote
 	// catalog or querying SQLite on every unmatched request.
 	prefixForwarders []PrefixForwarder
+	// configs caches persisted plugin config JSON keyed by plugin id.
+	configs map[string]string
 	// onChange listeners fire after enablement map reloads (Enable/Disable/Uninstall/Activate).
 	onChange []func(id string, enabled bool)
 	// catalogURL optionally loads additional official entries at Catalog() time.
@@ -191,6 +255,10 @@ type Service struct {
 	// the CPA add-on), so this client intentionally bypasses the outbound
 	// SSRF policy that guards relay traffic.
 	sidecarClient *http.Client
+	// processMu protects managed sidecar processes independently from the
+	// catalog/config mutex, so proxy requests never wait on process I/O.
+	processMu sync.Mutex
+	processes map[string]*managedProcess
 	// market fetches, validates and caches remote plugin registries.
 	market *market
 	// remoteCatalog caches the last successful remote fetch for install lookups.
@@ -213,9 +281,11 @@ func NewServiceWithOptions(dir string, pluginStore *store.PluginStore, catalogUR
 		dir:           dir,
 		store:         pluginStore,
 		enabled:       make(map[string]bool),
+		configs:       make(map[string]string),
 		catalogURL:    strings.TrimSpace(catalogURL),
 		httpClient:    client,
 		sidecarClient: &http.Client{Timeout: 10 * time.Second},
+		processes:     make(map[string]*managedProcess),
 	}
 	if err := s.reloadEnabled(); err != nil {
 		return nil, err
@@ -246,20 +316,38 @@ func (s *Service) MarketPlugins(ctx context.Context) []MarketEntry {
 	return entries
 }
 
-// InstallMarket registers a market entry as a sidecar plugin: fetches its
-// manifest (or uses the entry's manual fields), health-checks the service,
-// then installs + enables — same path as a manual store registration.
+// InstallMarket installs a market entry. Legacy sidecar entries register an
+// already-running URL; packaged entries are downloaded, verified, extracted,
+// and started through the same sidecar protocol.
 func (s *Service) InstallMarket(ctx context.Context, id string) (*store.PluginRecord, error) {
-	entries, err := s.market.List(ctx)
+	return s.InstallMarketFrom(ctx, id, "", "")
+}
+
+// InstallMarketFrom selects a registry source and optional version explicitly.
+// An explicit source is required when two configured registries publish the
+// same plugin ID, preventing an accidental source switch during updates.
+func (s *Service) InstallMarketFrom(ctx context.Context, id, sourceID, version string) (*store.PluginRecord, error) {
+	entries, err := s.market.listAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("plugin_market_unavailable")
 	}
-	for _, e := range entries {
-		if e.ID == id {
-			return s.RegisterSidecar(e.URL, "", e.InstallSpec())
+	matches := make([]MarketEntry, 0, 1)
+	for _, entry := range entries {
+		if entry.ID == id && (strings.TrimSpace(sourceID) == "" || entry.Source.ID == strings.TrimSpace(sourceID)) {
+			matches = append(matches, entry)
 		}
 	}
-	return nil, ErrNotFound
+	if len(matches) == 0 {
+		return nil, ErrNotFound
+	}
+	if len(matches) > 1 {
+		return nil, ErrMarketSourceNeeded
+	}
+	entry := matches[0]
+	if entry.InstallType() == marketInstallSidecar {
+		return s.RegisterSidecar(entry.URL, "", entry.InstallSpec())
+	}
+	return s.installPackagedMarket(ctx, entry, version)
 }
 
 // SetOnChange appends a listener for enablement changes (e.g. check-in scheduler).
@@ -376,14 +464,14 @@ func (s *Service) mergeInstalledSidecars(out []CatalogEntry) []CatalogEntry {
 		seen[entry.ID] = struct{}{}
 	}
 	for _, rec := range installed {
-		if rec.Source != "sidecar" || rec.MetaJSON == "" {
+		if (rec.Source != "sidecar" && !strings.HasPrefix(rec.Source, "market:")) || rec.MetaJSON == "" {
 			continue
 		}
 		if _, exists := seen[rec.ID]; exists {
 			continue
 		}
 		var manifest Manifest
-		if err := json.Unmarshal([]byte(rec.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil || manifest.Sidecar.URL == "" {
+		if err := json.Unmarshal([]byte(rec.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil {
 			continue
 		}
 		out = append(out, CatalogEntry{
@@ -393,7 +481,8 @@ func (s *Service) mergeInstalledSidecars(out []CatalogEntry) []CatalogEntry {
 			Description:  manifest.Description,
 			Kind:         KindAddon,
 			Capabilities: manifest.Capabilities,
-			Source:       "sidecar",
+			ConfigFields: manifest.ConfigFields,
+			Source:       rec.Source,
 			Checksum:     rec.Checksum,
 			Sidecar:      manifest.Sidecar,
 		})
@@ -441,11 +530,13 @@ func (s *Service) Status() ([]ModuleStatus, error) {
 			Kind:         kind,
 			Unlocks:      append([]string{}, entry.Unlocks...),
 			Capabilities: append([]string{}, entry.Capabilities...),
+			ConfigFields: append([]ConfigField{}, entry.ConfigFields...),
 			Source:       entry.Source,
 			Installed:    ok && rec.Status == StatusInstalled,
 			Enabled:      ok && rec.Enabled,
 			CanToggle:    kind == KindAddon,
 			OpenPath:     openPathFor(entry.ID, entry.Sidecar != nil),
+			HasConfig:    s.PluginConfig(entry.ID) != "",
 		}
 		out = append(out, st)
 		delete(byID, entry.ID)
@@ -531,6 +622,111 @@ func (s *Service) EnabledSnapshot() map[string]bool {
 	return out
 }
 
+// PluginConfig returns the persisted config JSON for a plugin ("" when
+// unset or the plugin is not installed). Config is safe to return to the
+// sidecar via X-Plugin-Config on every proxied request.
+func (s *Service) PluginConfig(id string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.configs[id]
+}
+
+// SetPluginConfig persists the plugin's runtime config JSON. The value must
+// be a non-empty JSON object and is bounded by MaxPluginConfigBytes. Secret
+// fields (declared via config_fields type=secret) submitted with SecretMask
+// keep their previously stored value; an empty value clears the secret.
+func (s *Service) SetPluginConfig(id string, raw string) error {
+	if err := validatePluginID(id); err != nil {
+		return err
+	}
+	if _, err := s.requireInstalled(id); err != nil {
+		return err
+	}
+	if len(raw) > MaxPluginConfigBytes {
+		return fmt.Errorf("plugin_config_too_large")
+	}
+	// Must be a valid non-empty JSON object.
+	var object map[string]any
+	if err := json.Unmarshal([]byte(raw), &object); err != nil || object == nil {
+		return fmt.Errorf("plugin_config_invalid")
+	}
+	if fields := s.ConfigFieldsFor(id); len(fields) > 0 {
+		current := map[string]any{}
+		if prev := s.PluginConfig(id); prev != "" {
+			_ = json.Unmarshal([]byte(prev), &current)
+		}
+		for i := range fields {
+			if fields[i].Type != ConfigSecret {
+				continue
+			}
+			value, ok := object[fields[i].Key]
+			if !ok {
+				continue
+			}
+			if text, isString := value.(string); isString && text == SecretMask {
+				if old, exists := current[fields[i].Key]; exists {
+					object[fields[i].Key] = old
+				} else {
+					delete(object, fields[i].Key)
+				}
+			}
+		}
+		normalized, err := json.Marshal(object)
+		if err != nil {
+			return fmt.Errorf("plugin_config_invalid")
+		}
+		raw = string(normalized)
+	}
+	if err := s.store.SetConfig(id, raw); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.configs[id] = raw
+	s.mu.Unlock()
+	return nil
+}
+
+// MaskPluginConfigJSON returns config with every non-empty secret field
+// replaced by SecretMask so admin responses never carry stored secrets.
+func MaskPluginConfigJSON(raw string, fields []ConfigField) (string, error) {
+	var object map[string]any
+	if err := json.Unmarshal([]byte(raw), &object); err != nil {
+		return raw, nil
+	}
+	masked := false
+	for i := range fields {
+		if fields[i].Type != ConfigSecret {
+			continue
+		}
+		value, ok := object[fields[i].Key]
+		if !ok || value == nil {
+			continue
+		}
+		if text, isString := value.(string); isString && text != "" {
+			object[fields[i].Key] = SecretMask
+			masked = true
+		}
+	}
+	if !masked {
+		return raw, nil
+	}
+	body, err := json.Marshal(object)
+	if err != nil {
+		return raw, nil
+	}
+	return string(body), nil
+}
+
+// ConfigFieldsFor returns the ConfigFields declared by a plugin's catalog
+// entry (nil if the plugin declares none or does not exist).
+func (s *Service) ConfigFieldsFor(id string) []ConfigField {
+	entry, err := s.catalogEntry(id)
+	if err != nil {
+		return nil
+	}
+	return entry.ConfigFields
+}
+
 // RegisterSidecar fetches a plugin manifest from an external sidecar service,
 // validates it, health-checks the service, and installs + enables the plugin.
 // The manifest is persisted (MetaJSON) so the plugin survives restarts.
@@ -568,6 +764,12 @@ func (s *Service) RegisterSidecar(baseURL, apiKey string, manual *SidecarManifes
 	}
 	if strings.TrimSpace(manifest.Name) == "" {
 		return nil, fmt.Errorf("plugin_manifest_missing_name")
+	}
+	if err := validateConfigFields(manifest.ConfigFields); err != nil {
+		return nil, fmt.Errorf("plugin_manifest_invalid_config: %w", err)
+	}
+	if err := validatePermissions(manifest.Permissions); err != nil {
+		return nil, fmt.Errorf("plugin_manifest_invalid_permissions: %w", err)
 	}
 	spec := &SidecarSpec{
 		URL:         baseURL,
@@ -608,6 +810,7 @@ func (s *Service) RegisterSidecar(baseURL, apiKey string, manual *SidecarManifes
 		Description:  manifest.Description,
 		Kind:         KindAddon,
 		Capabilities: manifest.Capabilities,
+		ConfigFields: manifest.ConfigFields,
 		Source:       "sidecar",
 		Sidecar:      spec,
 	}
@@ -710,6 +913,7 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 		Name:         updatedName,
 		Description:  entry.Description,
 		Capabilities: entry.Capabilities,
+		ConfigFields: entry.ConfigFields,
 		Admin: map[string]string{
 			"route":     "/" + id,
 			"nav_label": entry.Name,
@@ -734,15 +938,19 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 // SidecarManifest is the JSON a third-party plugin serves at /plugin.json.
 // It embeds the plugin's identity plus optional page/health paths.
 type SidecarManifest struct {
-	ID           string   `json:"id"`
-	Version      string   `json:"version"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	PagePath     string   `json:"page_path,omitempty"`
-	HealthPath   string   `json:"health_path,omitempty"`
-	APIPrefix    string   `json:"api_prefix,omitempty"`
-	ChannelPath  string   `json:"channel_path,omitempty"`
+	ID           string        `json:"id"`
+	Version      string        `json:"version"`
+	Name         string        `json:"name"`
+	Description  string        `json:"description,omitempty"`
+	Capabilities []string      `json:"capabilities,omitempty"`
+	Permissions  []string      `json:"permissions,omitempty"`
+	ConfigFields []ConfigField `json:"config_fields,omitempty"`
+	PagePath     string        `json:"page_path,omitempty"`
+	HealthPath   string        `json:"health_path,omitempty"`
+	APIPrefix    string        `json:"api_prefix,omitempty"`
+	ChannelPath  string        `json:"channel_path,omitempty"`
+	Entrypoint   string        `json:"entrypoint,omitempty"`
+	RunArgs      []string      `json:"run_args,omitempty"`
 }
 
 // SidecarPagePath returns the plugin's embeddable page path (default "/").
@@ -830,6 +1038,7 @@ func validateSidecarPath(raw string) error {
 // PrefixForwarder pairs a root-level API prefix with the sidecar spec that
 // serves it.
 type PrefixForwarder struct {
+	ID     string
 	Prefix string
 	Spec   *SidecarSpec
 }
@@ -965,6 +1174,7 @@ func (s *Service) Install(id string) (*store.PluginRecord, error) {
 		Name:         entry.Name,
 		Description:  entry.Description,
 		Capabilities: entry.Capabilities,
+		ConfigFields: entry.ConfigFields,
 		Admin: map[string]string{
 			"route":     "/" + entry.ID,
 			"nav_label": entry.Name,
@@ -1036,14 +1246,37 @@ func (s *Service) Enable(id string) (*store.PluginRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.readManifest(id); err != nil {
+	manifest, err := s.readManifest(id)
+	if err != nil {
 		return nil, err
+	}
+	if manifest.Sidecar != nil && manifest.Sidecar.Managed {
+		if err := s.startManagedPlugin(context.Background(), id, manifest.Sidecar); err != nil {
+			return nil, err
+		}
+		if err := s.persistManagedSpec(id, manifest.Sidecar); err != nil {
+			_ = s.stopManagedPlugin(context.Background(), id)
+			return nil, err
+		}
+		// Starting a managed process assigns a runtime port and may generate a
+		// key. Reload the record so the DB update below preserves those values.
+		rec, err = s.store.Get(id)
+		if err != nil || rec == nil {
+			_ = s.stopManagedPlugin(context.Background(), id)
+			if err != nil {
+				return nil, err
+			}
+			return nil, ErrNotInstalled
+		}
 	}
 	now := time.Now().UTC()
 	rec.Enabled = true
 	rec.EnabledAt = &now
 	rec.Status = StatusInstalled
 	if err := s.store.Upsert(rec); err != nil {
+		if manifest.Sidecar != nil && manifest.Sidecar.Managed {
+			_ = s.stopManagedPlugin(context.Background(), id)
+		}
 		return nil, err
 	}
 	if err := s.reloadEnabled(); err != nil {
@@ -1062,6 +1295,9 @@ func (s *Service) Disable(id string) (*store.PluginRecord, error) {
 	}
 	rec, err := s.requireInstalled(id)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.stopManagedPlugin(context.Background(), id); err != nil {
 		return nil, err
 	}
 	rec.Enabled = false
@@ -1093,8 +1329,15 @@ func (s *Service) Uninstall(id string) error {
 	if rec == nil {
 		return ErrNotInstalled
 	}
+	if err := s.stopManagedPlugin(context.Background(), id); err != nil {
+		return err
+	}
 	// Drop DB state first so enable gates clear even if filesystem cleanup fails.
 	if err := s.store.Delete(id); err != nil {
+		return err
+	}
+	// Remove any persisted plugin configuration.
+	if err := s.store.DeleteConfig(id); err != nil {
 		return err
 	}
 	if err := s.reloadEnabled(); err != nil {
@@ -1113,6 +1356,14 @@ func (s *Service) reloadEnabled() error {
 	records, err := s.store.List()
 	if err != nil {
 		return err
+	}
+	// Refresh the config cache from the store on every reload so config
+	// survives restarts and stays in sync with the persisted state.
+	configs := make(map[string]string, len(records))
+	for _, record := range records {
+		if raw, err := s.store.GetConfig(record.ID); err == nil && raw != "" {
+			configs[record.ID] = raw
+		}
 	}
 	ids := make(map[string]bool, len(records))
 	seenPrefixes := make(map[string]struct{})
@@ -1139,10 +1390,11 @@ func (s *Service) reloadEnabled() error {
 		seenPrefixes[prefix] = struct{}{}
 		spec := *manifest.Sidecar
 		spec.APIPrefix = prefix
-		forwarders = append(forwarders, PrefixForwarder{Prefix: prefix, Spec: &spec})
+		forwarders = append(forwarders, PrefixForwarder{ID: record.ID, Prefix: prefix, Spec: &spec})
 	}
 	s.mu.Lock()
 	s.enabled = ids
+	s.configs = configs
 	s.prefixForwarders = forwarders
 	s.mu.Unlock()
 	return nil
@@ -1178,18 +1430,29 @@ func (s *Service) readManifest(id string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := os.ReadFile(filepath.Join(pluginDir, "plugin.json"))
-	if err != nil {
-		return nil, fmt.Errorf("plugins: read manifest: %w", err)
+	paths := []string{
+		filepath.Join(pluginDir, ".meta-gateway.json"),
+		filepath.Join(pluginDir, "plugin.json"),
 	}
-	var manifest Manifest
-	if err := json.Unmarshal(body, &manifest); err != nil {
-		return nil, fmt.Errorf("plugins: parse manifest: %w", err)
+	var lastErr error
+	for _, manifestPath := range paths {
+		body, err := os.ReadFile(manifestPath)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var manifest Manifest
+		if err := json.Unmarshal(body, &manifest); err != nil {
+			lastErr = err
+			continue
+		}
+		if manifest.ID != id {
+			lastErr = fmt.Errorf("manifest id mismatch")
+			continue
+		}
+		return &manifest, nil
 	}
-	if manifest.ID != id {
-		return nil, fmt.Errorf("plugins: manifest id mismatch")
-	}
-	return &manifest, nil
+	return nil, fmt.Errorf("plugins: read manifest: %w", lastErr)
 }
 
 func (s *Service) safePluginDir(id string) (string, error) {
@@ -1242,11 +1505,12 @@ func (s *Service) catalogEntry(id string) (*CatalogEntry, error) {
 	// so enable/disable/proxy keep working after a restart without the
 	// original registration request.
 	rec, err := s.store.Get(id)
-	if err != nil || rec == nil || rec.Source != "sidecar" || rec.MetaJSON == "" {
+	if err != nil || rec == nil || rec.MetaJSON == "" ||
+		(rec.Source != "sidecar" && !strings.HasPrefix(rec.Source, "market:")) {
 		return nil, ErrNotFound
 	}
 	var manifest Manifest
-	if err := json.Unmarshal([]byte(rec.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil || manifest.Sidecar.URL == "" {
+	if err := json.Unmarshal([]byte(rec.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil {
 		return nil, ErrNotFound
 	}
 	entry := CatalogEntry{
@@ -1256,7 +1520,9 @@ func (s *Service) catalogEntry(id string) (*CatalogEntry, error) {
 		Description:  manifest.Description,
 		Kind:         KindAddon,
 		Capabilities: manifest.Capabilities,
-		Source:       "sidecar",
+		Permissions:  manifest.Permissions,
+		ConfigFields: manifest.ConfigFields,
+		Source:       rec.Source,
 		Checksum:     rec.Checksum,
 		Sidecar:      manifest.Sidecar,
 	}
@@ -1273,10 +1539,93 @@ func validatePluginID(id string) error {
 		return ErrInvalidID
 	}
 	for _, r := range id {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
 			continue
 		}
 		return ErrInvalidID
+	}
+	return nil
+}
+
+// validateConfigFields checks a manifest-declared configuration schema: keys
+// are identifiers, unique, of a known type, and select fields carry options.
+func validateConfigFields(fields []ConfigField) error {
+	if len(fields) > 64 {
+		return fmt.Errorf("too many config fields")
+	}
+	seen := make(map[string]struct{}, len(fields))
+	for i, field := range fields {
+		if !validConfigFieldKey(field.Key) {
+			return fmt.Errorf("config_fields[%d]: invalid key %q", i, field.Key)
+		}
+		if _, ok := seen[field.Key]; ok {
+			return fmt.Errorf("config_fields[%d]: duplicate key %q", i, field.Key)
+		}
+		seen[field.Key] = struct{}{}
+		fieldType := field.Type
+		if fieldType == "" {
+			fieldType = ConfigString
+		}
+		switch fieldType {
+		case ConfigString, ConfigText, ConfigNumber, ConfigBool, ConfigSelect, ConfigSecret:
+		default:
+			return fmt.Errorf("config_fields[%d]: unsupported type %q", i, fieldType)
+		}
+		if fieldType == ConfigSelect && len(field.Options) == 0 {
+			return fmt.Errorf("config_fields[%d]: select requires options", i)
+		}
+		if field.Default != nil {
+			switch fieldType {
+			case ConfigNumber:
+				if _, ok := field.Default.(float64); !ok {
+					return fmt.Errorf("config_fields[%d]: default must be a number", i)
+				}
+			case ConfigBool:
+				if _, ok := field.Default.(bool); !ok {
+					return fmt.Errorf("config_fields[%d]: default must be a boolean", i)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validConfigFieldKey(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" || len(key) > 64 || (key[0] >= '0' && key[0] <= '9') {
+		return false
+	}
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// validatePermissions constrains manifest permission names to the declared
+// "resource:action" shape the gateway may gate later.
+func validatePermissions(permissions []string) error {
+	if len(permissions) > 64 {
+		return fmt.Errorf("too many permissions")
+	}
+	seen := make(map[string]struct{}, len(permissions))
+	for i, permission := range permissions {
+		permission = strings.TrimSpace(permission)
+		if permission == "" || len(permission) > 128 || (permission[0] >= '0' && permission[0] <= '9') {
+			return fmt.Errorf("permissions[%d]: invalid name %q", i, permission)
+		}
+		if _, ok := seen[permission]; ok {
+			return fmt.Errorf("permissions[%d]: duplicate %q", i, permission)
+		}
+		seen[permission] = struct{}{}
+		for _, r := range permission {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == ':' || r == '.' || r == '_' || r == '-' {
+				continue
+			}
+			return fmt.Errorf("permissions[%d]: invalid name %q", i, permission)
+		}
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -42,14 +43,15 @@ func (s *CredentialStore) ClearCache() {
 	s.mu.Unlock()
 }
 
-// cloneCredential returns a deep copy (SecretEnc buffer included) so callers
-// can never mutate the cached object through a shared pointer.
+// cloneCredential returns a deep copy (SecretEnc/CookieEnc buffers included) so
+// callers can never mutate the cached object through a shared pointer.
 func cloneCredential(credential *domain.Credential) *domain.Credential {
 	if credential == nil {
 		return nil
 	}
 	copy := *credential
 	copy.SecretEnc = append([]byte(nil), credential.SecretEnc...)
+	copy.CookieEnc = append([]byte(nil), credential.CookieEnc...)
 	return &copy
 }
 
@@ -82,7 +84,7 @@ func (s *CredentialStore) cachePutIfGeneration(credential *domain.Credential, ge
 }
 
 func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE site_id = ? ORDER BY id`, siteID)
+	rows, err := s.db.Query(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE site_id = ? ORDER BY id`, siteID)
 	if err != nil {
 		return nil, fmt.Errorf("credential list: %w", err)
 	}
@@ -91,11 +93,12 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 	var result []domain.Credential
 	for rows.Next() {
 		var r domain.Credential
-		var secret string
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		var secret, cookie string
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("credential scan: %w", err)
 		}
 		r.SecretEnc = []byte(secret)
+		r.CookieEnc = []byte(cookie)
 		result = append(result, r)
 	}
 	return result, rows.Err()
@@ -113,7 +116,7 @@ func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Crede
 		return cloneCredentialSlice(cached), nil
 	}
 	rows, err := s.db.Query(`
-		SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled,
+		SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled,
 		       COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at
 		FROM credentials
 		WHERE site_id = ?
@@ -129,14 +132,15 @@ func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Crede
 	var result []domain.Credential
 	for rows.Next() {
 		var row domain.Credential
-		var secret string
+		var secret, cookie string
 		if err := rows.Scan(
-			&row.ID, &row.SiteID, &row.Kind, &secret, &row.MetaJSON, &row.Status,
+			&row.ID, &row.SiteID, &row.Kind, &row.AuthMode, &secret, &cookie, &row.MetaJSON, &row.Status,
 			&row.CheckinEnabled, &row.ImportFingerprint, &row.ModelsCSV, scanTime(&row.CreatedAt), scanTime(&row.UpdatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("credential api key pool scan: %w", err)
 		}
 		row.SecretEnc = []byte(secret)
+		row.CookieEnc = []byte(cookie)
 		result = append(result, row)
 	}
 	if err := rows.Err(); err != nil {
@@ -161,9 +165,7 @@ func cloneCredentialSlice(in []domain.Credential) []domain.Credential {
 	}
 	out := make([]domain.Credential, len(in))
 	for i := range in {
-		c := in[i]
-		c.SecretEnc = append([]byte(nil), in[i].SecretEnc...)
-		out[i] = c
+		out[i] = *cloneCredential(&in[i])
 	}
 	return out
 }
@@ -179,29 +181,31 @@ func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 			return cloneCredential(cached), nil
 		}
 	}
-	row := s.db.QueryRow(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
 	var r domain.Credential
-	var secret string
-	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	var secret, cookie string
+	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("credential get: %w", err)
 	}
 	r.SecretEnc = []byte(secret)
+	r.CookieEnc = []byte(cookie)
 	s.cachePutIfGeneration(&r, generation)
 	return &r, nil
 }
 
 func (s *CredentialStore) Create(c *domain.Credential) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO credentials (site_id, kind, secret_enc, meta_json, status, checkin_enabled, import_fingerprint, models_csv) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?)`,
-		c.SiteID, c.Kind, string(c.SecretEnc), c.MetaJSON, c.Status, c.CheckinEnabled, c.ImportFingerprint, c.ModelsCSV)
+	res, err := s.db.Exec(`INSERT INTO credentials (site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, import_fingerprint, models_csv) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?)`,
+		c.SiteID, c.Kind, normalizeAuthMode(c.AuthMode), string(c.SecretEnc), string(c.CookieEnc), c.MetaJSON, c.Status, c.CheckinEnabled, c.ImportFingerprint, c.ModelsCSV)
 	if err != nil {
 		return 0, fmt.Errorf("credential create: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err == nil {
 		c.ID = id
+		c.AuthMode = normalizeAuthMode(c.AuthMode)
 		s.invalidate(id)
 		_, _ = s.GetByID(id)
 	}
@@ -225,7 +229,7 @@ func (s *CredentialStore) SetCheckinEnabled(id int64, enabled bool) error {
 }
 
 func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, kind, secret_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE checkin_enabled = 1 AND status = 'enabled' AND lower(kind) IN ('session', 'access_token') ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE checkin_enabled = 1 AND status = 'enabled' AND lower(kind) IN ('session', 'access_token') AND (secret_enc <> '' OR cookie_enc <> '') ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("credential checkin list: %w", err)
 	}
@@ -233,25 +237,36 @@ func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
 	var result []domain.Credential
 	for rows.Next() {
 		var r domain.Credential
-		var secret string
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &secret, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		var secret, cookie string
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("credential checkin scan: %w", err)
 		}
 		r.SecretEnc = []byte(secret)
+		r.CookieEnc = []byte(cookie)
 		result = append(result, r)
 	}
 	return result, rows.Err()
 }
 
 func (s *CredentialStore) Update(c *domain.Credential) error {
-	_, err := s.db.Exec(`UPDATE credentials SET kind=?, secret_enc=?, meta_json=?, status=?, models_csv=?, import_fingerprint=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
-		c.Kind, string(c.SecretEnc), c.MetaJSON, c.Status, c.ModelsCSV, c.ImportFingerprint, c.ID)
+	_, err := s.db.Exec(`UPDATE credentials SET kind=?, auth_mode=?, secret_enc=?, cookie_enc=?, meta_json=?, status=?, models_csv=?, import_fingerprint=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
+		c.Kind, normalizeAuthMode(c.AuthMode), string(c.SecretEnc), string(c.CookieEnc), c.MetaJSON, c.Status, c.ModelsCSV, c.ImportFingerprint, c.ID)
 	if err != nil {
 		return fmt.Errorf("credential update: %w", err)
 	}
+	c.AuthMode = normalizeAuthMode(c.AuthMode)
 	s.invalidate(c.ID)
 	_, _ = s.GetByID(c.ID)
 	return nil
+}
+
+func normalizeAuthMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "cookie", "auto":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "access_token"
+	}
 }
 
 func (s *CredentialStore) Delete(id int64) error {

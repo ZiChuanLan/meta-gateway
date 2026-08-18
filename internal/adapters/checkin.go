@@ -24,7 +24,13 @@ const (
 type CheckinInput struct {
 	BaseURL        string
 	Secret         string
+	Cookie         string
+	AuthMode       AuthMode
 	PlatformUserID int64
+	// CheckinPath/Method override the endpoint for generic external sites
+	// (e.g. 薄荷公益站 POST /api/checkin/spin). Empty = default New-API path.
+	CheckinPath   string
+	CheckinMethod string
 }
 
 type CheckinResult struct {
@@ -91,7 +97,13 @@ func (a *JSONCheckinAdapter) Checkin(ctx context.Context, input CheckinInput) (C
 	if err != nil {
 		return CheckinResult{}, &CheckinError{Kind: ErrorInvalidURL}
 	}
-	req.Header.Set("Authorization", "Bearer "+input.Secret)
+	if normalizeAuthMode(input.AuthMode) == AuthCookie {
+		if strings.TrimSpace(input.Cookie) != "" {
+			req.Header.Set("Cookie", input.Cookie)
+		}
+	} else {
+		req.Header.Set("Authorization", "Bearer "+input.Secret)
+	}
 	req.Header.Set("Accept", "application/json")
 	if a.userHeader {
 		ApplyCompatUserIDHeaders(req.Header, input.PlatformUserID)

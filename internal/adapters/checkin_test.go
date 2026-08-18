@@ -11,6 +11,25 @@ import (
 	"testing"
 )
 
+func TestJSONCheckinAdapterCookieAuth(t *testing.T) {
+	var gotAuth, gotCookie string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotCookie = r.Header.Get("Cookie")
+		_, _ = io.WriteString(w, `{"success":true}`)
+	}))
+	defer server.Close()
+	_, err := NewJSONCheckinAdapter("new-api", server.Client(), true).Checkin(context.Background(), CheckinInput{
+		BaseURL: server.URL, Secret: "must-not-be-bearer", Cookie: "auth_token=cookie-value", AuthMode: AuthCookie,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "" || gotCookie != "auth_token=cookie-value" {
+		t.Fatalf("auth=%q cookie=%q", gotAuth, gotCookie)
+	}
+}
+
 func TestJSONCheckinAdapter(t *testing.T) {
 	var gotAuth string
 	gotUsers := map[string]string{}

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -62,11 +63,56 @@ func fakeSidecarHandler(t *testing.T, id string, requireKey bool) *httptest.Serv
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"plugin":%q,"key":%q}`, id, r.Header.Get("X-Plugin-Key"))
+		fmt.Fprintf(w, `{"plugin":%q,"key":%q,"config":%q}`, id, r.Header.Get("X-Plugin-Key"), r.Header.Get("X-Plugin-Config"))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// TestProxySidecarInjectsConfig verifies the persisted plugin config reaches
+// the sidecar as base64 X-Plugin-Config on proxied requests, and that an
+// empty/absent config produces no header.
+func TestProxySidecarInjectsConfig(t *testing.T) {
+	handler, _ := sidecarPluginHandler(t)
+	base := fakeSidecarHandler(t, "config-plugin", false)
+	body := fmt.Sprintf(`{"url":%q}`, base.URL)
+	register := httptest.NewRequest(http.MethodPost, "/admin/plugins/register", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, register)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("register = %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// No config set: header must be absent.
+	req := httptest.NewRequest(http.MethodGet, "/admin/plugins/config-plugin/proxy/api/echo?t=admin-test", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("proxy = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `"config":"`) && !strings.Contains(rr.Body.String(), `"config":""`) {
+		t.Fatalf("expected empty config header, got %s", rr.Body.String())
+	}
+
+	// Save a config and verify it is forwarded base64-encoded.
+	configBody := `{"config":"{\"apiKey\":\"abc123\",\"region\":\"cn\"}"}`
+	save := httptest.NewRequest(http.MethodPut, "/admin/plugins/config-plugin/config", strings.NewReader(configBody))
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, save)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save config = %d body=%s", rr.Code, rr.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/admin/plugins/config-plugin/proxy/api/echo?t=admin-test", nil)
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("proxy = %d body=%s", rr.Code, rr.Body.String())
+	}
+	want := base64.StdEncoding.EncodeToString([]byte(`{"apiKey":"abc123","region":"cn"}`))
+	if !strings.Contains(rr.Body.String(), `"config":"`+want+`"`) {
+		t.Fatalf("config header = %s, want base64 %s", rr.Body.String(), want)
+	}
 }
 
 func TestRegisterSidecarEndpoint(t *testing.T) {

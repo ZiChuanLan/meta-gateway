@@ -2,22 +2,30 @@ package httpapi
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/checkin"
+	"github.com/lan/meta-gateway/internal/crypto"
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
 )
+
+const externalCheckinPlatform = "external-checkin"
 
 type CheckinHandler struct {
 	db      *store.DB
 	service *checkin.Service
+	enc     *crypto.Encrypter
 }
 
-func NewCheckinHandler(db *store.DB, service *checkin.Service) *CheckinHandler {
-	return &CheckinHandler{db: db, service: service}
+func NewCheckinHandler(db *store.DB, service *checkin.Service, enc *crypto.Encrypter) *CheckinHandler {
+	return &CheckinHandler{db: db, service: service, enc: enc}
 }
 
 func (h *CheckinHandler) Register(r chi.Router) {
@@ -25,6 +33,331 @@ func (h *CheckinHandler) Register(r chi.Router) {
 	r.Post("/checkin/run", h.runAll)
 	r.Get("/checkin/logs", h.listLogs)
 	r.Put("/credentials/{id}/checkin", h.setCredentialEnabled)
+	// Generic external check-in sites (non-New-API, cookie-authenticated).
+	r.Get("/checkin/external", h.listExternal)
+	r.Post("/checkin/external", h.createExternal)
+	r.Put("/checkin/external/{id}", h.updateExternal)
+	r.Delete("/checkin/external/{id}", h.deleteExternal)
+}
+
+// externalCheckinMeta is the non-sensitive endpoint config stored in
+// credential meta_json (the cookie itself lives in cookie_enc).
+type externalCheckinMeta struct {
+	CheckinPath   string `json:"checkin_path,omitempty"`
+	CheckinMethod string `json:"checkin_method,omitempty"`
+}
+
+// externalCheckinView is the admin-safe list/update shape (never the cookie).
+type externalCheckinView struct {
+	SiteID         int64  `json:"site_id"`
+	CredentialID   int64  `json:"credential_id"`
+	Name           string `json:"name"`
+	BaseURL        string `json:"base_url"`
+	CheckinPath    string `json:"checkin_path,omitempty"`
+	CheckinMethod  string `json:"checkin_method,omitempty"`
+	CheckinEnabled bool   `json:"checkin_enabled"`
+	HasCookie      bool   `json:"has_cookie"`
+}
+
+func (h *CheckinHandler) listExternal(w http.ResponseWriter, r *http.Request) {
+	sites, err := h.db.Site.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list external check-in sites")
+		return
+	}
+	out := make([]externalCheckinView, 0)
+	for _, site := range sites {
+		if site.Platform != externalCheckinPlatform {
+			continue
+		}
+		view := externalCheckinView{
+			SiteID:  site.ID,
+			Name:    site.Name,
+			BaseURL: site.BaseURL,
+		}
+		credentials, err := h.db.Credential.ListBySite(site.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list check-in credentials")
+			return
+		}
+		for _, c := range credentials {
+			kind := strings.ToLower(strings.TrimSpace(c.Kind))
+			if kind != "session" && kind != "access_token" {
+				continue
+			}
+			view.CredentialID = c.ID
+			view.CheckinEnabled = c.CheckinEnabled
+			view.HasCookie = len(c.CookieEnc) > 0
+			var meta externalCheckinMeta
+			if json.Unmarshal([]byte(c.MetaJSON), &meta) == nil {
+				view.CheckinPath = meta.CheckinPath
+				view.CheckinMethod = meta.CheckinMethod
+			}
+			break
+		}
+		out = append(out, view)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *CheckinHandler) createExternal(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name          string `json:"name"`
+		BaseURL       string `json:"base_url"`
+		CheckinPath   string `json:"checkin_path"`
+		CheckinMethod string `json:"checkin_method"`
+		Cookie        string `json:"cookie"`
+		Enabled       *bool  `json:"enabled"`
+	}
+	if err := decodeJSON(w, r, &req, 64<<10, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	baseURL := normalizeBaseURL(req.BaseURL)
+	if baseURL == "" {
+		writeError(w, http.StatusBadRequest, "base_url is required")
+		return
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		writeError(w, http.StatusBadRequest, "invalid base_url")
+		return
+	}
+	method := strings.ToUpper(strings.TrimSpace(req.CheckinMethod))
+	if method != "" && method != http.MethodPost && method != http.MethodGet {
+		writeError(w, http.StatusBadRequest, "checkin_method must be POST or GET")
+		return
+	}
+	cookie := strings.TrimSpace(req.Cookie)
+	if cookie == "" {
+		writeError(w, http.StatusBadRequest, "cookie is required")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = hostLabel(baseURL)
+	}
+	meta, err := json.Marshal(externalCheckinMeta{
+		CheckinPath:   strings.TrimSpace(req.CheckinPath),
+		CheckinMethod: method,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to encode metadata")
+		return
+	}
+	// Reuse an existing external site with the same base URL.
+	siteID, err := h.externalSiteID(baseURL)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to look up site")
+		return
+	}
+	createdSite := false
+	if siteID == 0 {
+		siteID, err = h.db.Site.Create(&domain.Site{
+			Name: name, BaseURL: baseURL, Platform: externalCheckinPlatform, Status: domain.StatusEnabled,
+		})
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		createdSite = true
+	}
+	encCookie, err := h.enc.Encrypt([]byte(cookie))
+	if err != nil {
+		if createdSite {
+			_ = h.db.Site.Delete(siteID)
+		}
+		writeError(w, http.StatusInternalServerError, "encryption failed")
+		return
+	}
+	enabled := false
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	credID, err := h.db.Credential.Create(&domain.Credential{
+		SiteID:         siteID,
+		Kind:           "session",
+		AuthMode:       "cookie",
+		CookieEnc:      []byte(encCookie),
+		MetaJSON:       string(meta),
+		Status:         domain.StatusEnabled,
+		CheckinEnabled: enabled,
+	})
+	if err != nil {
+		if createdSite {
+			_ = h.db.Site.Delete(siteID)
+		}
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, externalCheckinView{
+		SiteID:         siteID,
+		CredentialID:   credID,
+		Name:           name,
+		BaseURL:        baseURL,
+		CheckinPath:    strings.TrimSpace(req.CheckinPath),
+		CheckinMethod:  method,
+		CheckinEnabled: enabled,
+		HasCookie:      true,
+	})
+}
+
+func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var req struct {
+		Name          string `json:"name"`
+		BaseURL       string `json:"base_url"`
+		CheckinPath   string `json:"checkin_path"`
+		CheckinMethod string `json:"checkin_method"`
+		Cookie        string `json:"cookie"`
+		ClearCookie   bool   `json:"clear_cookie"`
+		Enabled       *bool  `json:"enabled"`
+	}
+	if err := decodeJSON(w, r, &req, 64<<10, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	site, err := h.db.Site.GetByID(id)
+	if err != nil || site == nil || site.Platform != externalCheckinPlatform {
+		writeError(w, http.StatusNotFound, "external check-in site not found")
+		return
+	}
+	baseURL := normalizeBaseURL(req.BaseURL)
+	if baseURL != "" {
+		parsed, parseErr := url.Parse(baseURL)
+		if parseErr != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+			writeError(w, http.StatusBadRequest, "invalid base_url")
+			return
+		}
+	}
+	method := strings.ToUpper(strings.TrimSpace(req.CheckinMethod))
+	if method != "" && method != http.MethodPost && method != http.MethodGet {
+		writeError(w, http.StatusBadRequest, "checkin_method must be POST or GET")
+		return
+	}
+	updated := *site
+	if name := strings.TrimSpace(req.Name); name != "" {
+		updated.Name = name
+	}
+	if baseURL != "" {
+		updated.BaseURL = baseURL
+	}
+	if err := h.db.Site.Update(&updated); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+
+	credentials, err := h.db.Credential.ListBySite(site.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list check-in credentials")
+		return
+	}
+	var credential *domain.Credential
+	for i := range credentials {
+		kind := strings.ToLower(strings.TrimSpace(credentials[i].Kind))
+		if kind == "session" || kind == "access_token" {
+			credential = &credentials[i]
+			break
+		}
+	}
+	if credential == nil {
+		writeError(w, http.StatusNotFound, "check-in credential not found")
+		return
+	}
+	changed := false
+	if req.ClearCookie {
+		credential.CookieEnc = nil
+		changed = true
+	} else if cookie := strings.TrimSpace(req.Cookie); cookie != "" {
+		encCookie, encErr := h.enc.Encrypt([]byte(cookie))
+		if encErr != nil {
+			writeError(w, http.StatusInternalServerError, "encryption failed")
+			return
+		}
+		credential.CookieEnc = []byte(encCookie)
+		changed = true
+	}
+	path := strings.TrimSpace(req.CheckinPath)
+	if method != "" || path != "" {
+		var meta externalCheckinMeta
+		if json.Unmarshal([]byte(credential.MetaJSON), &meta) != nil {
+			meta = externalCheckinMeta{}
+		}
+		if path != "" {
+			meta.CheckinPath = path
+		}
+		if method != "" {
+			meta.CheckinMethod = method
+		}
+		body, marshalErr := json.Marshal(meta)
+		if marshalErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to encode metadata")
+			return
+		}
+		credential.MetaJSON = string(body)
+		changed = true
+	}
+	if changed {
+		if err := h.db.Credential.Update(credential); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+	}
+	if req.Enabled != nil {
+		if err := h.db.Credential.SetCheckinEnabled(credential.ID, *req.Enabled); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update check-in configuration")
+			return
+		}
+	}
+	var meta externalCheckinMeta
+	_ = json.Unmarshal([]byte(credential.MetaJSON), &meta)
+	enabled := credential.CheckinEnabled
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	writeJSON(w, http.StatusOK, externalCheckinView{
+		SiteID:         site.ID,
+		CredentialID:   credential.ID,
+		Name:           updated.Name,
+		BaseURL:        updated.BaseURL,
+		CheckinPath:    meta.CheckinPath,
+		CheckinMethod:  meta.CheckinMethod,
+		CheckinEnabled: enabled,
+		HasCookie:      len(credential.CookieEnc) > 0,
+	})
+}
+
+func (h *CheckinHandler) deleteExternal(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	site, err := h.db.Site.GetByID(id)
+	if err != nil || site == nil || site.Platform != externalCheckinPlatform {
+		writeError(w, http.StatusNotFound, "external check-in site not found")
+		return
+	}
+	if err := h.db.Site.Delete(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *CheckinHandler) externalSiteID(baseURL string) (int64, error) {
+	sites, err := h.db.Site.List()
+	if err != nil {
+		return 0, err
+	}
+	for _, site := range sites {
+		if site.Platform == externalCheckinPlatform && normalizeBaseURL(site.BaseURL) == baseURL {
+			return site.ID, nil
+		}
+	}
+	return 0, nil
 }
 
 func (h *CheckinHandler) runCredential(w http.ResponseWriter, r *http.Request) {

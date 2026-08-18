@@ -147,7 +147,7 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 	if err != nil {
 		return nil, err
 	}
-	defer zeroString(&resolved.input.Secret)
+	defer zeroAccountInput(&resolved.input)
 	self, err := resolved.adapter.ProbeSelf(ctx, resolved.input)
 	if err != nil && isTransientProbeError(err) {
 		// Cloudflare-protected public sites frequently hiccup on a single
@@ -480,7 +480,7 @@ func (s *Service) GetPricing(ctx context.Context, channelID int64) ([]adapters.M
 	if err != nil {
 		return nil, err
 	}
-	defer zeroString(&resolved.input.Secret)
+	defer zeroAccountInput(&resolved.input)
 	prices, err := resolved.adapter.Pricing(ctx, resolved.input)
 	if err != nil {
 		return nil, mapAdapterError(err)
@@ -656,7 +656,7 @@ func (s *Service) PruneBalanceHistory(ctx context.Context, retentionDays int) (i
 }
 
 func (s *Service) financeForChannel(ctx context.Context, resolved *resolvedTarget) *FinanceItem {
-	defer zeroString(&resolved.input.Secret)
+	defer zeroAccountInput(&resolved.input)
 	// Bound each upstream call so a slow public site cannot stall the sweep.
 	callCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
@@ -760,7 +760,7 @@ func (s *Service) ListTokenGroups(ctx context.Context, channelID int64) ([]strin
 	if err != nil {
 		return nil, err
 	}
-	defer zeroString(&resolved.input.Secret)
+	defer zeroAccountInput(&resolved.input)
 
 	// Many New-API forks require New-Api-User (and siblings) for /api/token.
 	if resolved.input.PlatformUserID <= 0 {
@@ -822,7 +822,7 @@ func (s *Service) CreateKey(ctx context.Context, channelID int64, request Create
 	if err != nil {
 		return nil, err
 	}
-	defer zeroString(&resolved.input.Secret)
+	defer zeroAccountInput(&resolved.input)
 
 	// Many New-API forks require New-Api-User (and siblings) for /api/token.
 	// Resolve user id from /api/user/self when meta is empty.
@@ -1242,15 +1242,25 @@ func (s *Service) resolveUserTarget(channelID int64) (*resolvedTarget, error) {
 		return nil, unavailable("invalid_metadata")
 	}
 	plaintext, decErr := s.enc.Decrypt(string(credential.SecretEnc))
-	if decErr != nil || len(plaintext) == 0 {
+	if decErr != nil {
 		zero(plaintext)
+		plaintext = nil
+	}
+	cookiePlain, cookieErr := s.enc.Decrypt(string(credential.CookieEnc))
+	if cookieErr != nil {
+		zero(cookiePlain)
+		cookiePlain = nil
+	}
+	if len(plaintext) == 0 && len(cookiePlain) == 0 {
+		zero(plaintext)
+		zero(cookiePlain)
 		return nil, unavailable(domain.CategoryCredentialUnavailable)
 	}
 	baseURL := channel.BaseURL
 	if baseURL == "" {
 		baseURL = site.BaseURL
 	}
-	return &resolvedTarget{
+	result := &resolvedTarget{
 		channel:    channel,
 		site:       site,
 		credential: credential,
@@ -1258,9 +1268,14 @@ func (s *Service) resolveUserTarget(channelID int64) (*resolvedTarget, error) {
 		input: adapters.AccountInput{
 			BaseURL:        baseURL,
 			Secret:         string(plaintext),
+			Cookie:         string(cookiePlain),
+			AuthMode:       accountAuthMode(credential.AuthMode, len(plaintext) > 0, len(cookiePlain) > 0),
 			PlatformUserID: platformUserID,
 		},
-	}, nil
+	}
+	zero(plaintext)
+	zero(cookiePlain)
+	return result, nil
 }
 
 func (s *Service) pickUserCredential(siteID int64, preferredID *int64) (*domain.Credential, error) {
@@ -1270,7 +1285,7 @@ func (s *Service) pickUserCredential(siteID int64, preferredID *int64) (*domain.
 			return nil, internalError("credential_lookup")
 		}
 		if cred != nil && cred.SiteID == siteID && isUserKind(cred.Kind) &&
-			cred.Status == domain.StatusEnabled && len(cred.SecretEnc) > 0 {
+			cred.Status == domain.StatusEnabled && hasAccountAuthMaterial(cred) {
 			return cred, nil
 		}
 	}
@@ -1280,7 +1295,7 @@ func (s *Service) pickUserCredential(siteID int64, preferredID *int64) (*domain.
 	}
 	for index := range list {
 		cred := list[index]
-		if isUserKind(cred.Kind) && cred.Status == domain.StatusEnabled && len(cred.SecretEnc) > 0 {
+		if isUserKind(cred.Kind) && cred.Status == domain.StatusEnabled && hasAccountAuthMaterial(&cred) {
 			return &cred, nil
 		}
 	}
@@ -1430,6 +1445,39 @@ func isUserKind(kind string) bool {
 	}
 }
 
+func hasAccountAuthMaterial(credential *domain.Credential) bool {
+	return credential != nil && (len(credential.SecretEnc) > 0 || len(credential.CookieEnc) > 0)
+}
+
+func accountAuthMode(mode string, hasSecret, hasCookie bool) adapters.AuthMode {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "cookie":
+		if hasCookie {
+			return adapters.AuthCookie
+		}
+	case "auto":
+		// Keep the auto intent so the adapter can fall back to Cookie on
+		// idempotent GET requests when the upstream rejects the token.
+		if hasSecret && hasCookie {
+			return adapters.AuthAuto
+		}
+		if hasSecret {
+			return adapters.AuthAccessToken
+		}
+		if hasCookie {
+			return adapters.AuthCookie
+		}
+	case "access_token":
+		if hasSecret {
+			return adapters.AuthAccessToken
+		}
+	}
+	if hasSecret {
+		return adapters.AuthAccessToken
+	}
+	return adapters.AuthCookie
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -1471,4 +1519,12 @@ func zeroString(value *string) {
 	b := []byte(*value)
 	zero(b)
 	*value = ""
+}
+
+func zeroAccountInput(input *adapters.AccountInput) {
+	if input == nil {
+		return
+	}
+	zeroString(&input.Secret)
+	zeroString(&input.Cookie)
 }

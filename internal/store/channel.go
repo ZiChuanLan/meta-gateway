@@ -76,7 +76,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			SELECT 1 FROM credentials user_checkin
 			WHERE user_checkin.site_id = c.site_id
 			  AND user_checkin.status = 'enabled'
-			  AND user_checkin.secret_enc <> ''
+			  AND (user_checkin.secret_enc <> '' OR user_checkin.cookie_enc <> '')
 			  AND lower(user_checkin.kind) IN ('access_token', 'session')
 			  AND user_checkin.checkin_enabled = 1
 		) THEN 1 ELSE 0 END,
@@ -84,14 +84,14 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			SELECT 1 FROM credentials user_cred
 			WHERE user_cred.site_id = c.site_id
 			  AND user_cred.status = 'enabled'
-			  AND user_cred.secret_enc <> ''
+			  AND (user_cred.secret_enc <> '' OR user_cred.cookie_enc <> '')
 			  AND lower(user_cred.kind) IN ('access_token', 'session')
 		) THEN 1 ELSE 0 END,
 		CASE WHEN EXISTS (
 			SELECT 1 FROM credentials user_id_cred
 			WHERE user_id_cred.site_id = c.site_id
 			  AND user_id_cred.status = 'enabled'
-			  AND user_id_cred.secret_enc <> ''
+			  AND (user_id_cred.secret_enc <> '' OR user_id_cred.cookie_enc <> '')
 			  AND lower(user_id_cred.kind) IN ('access_token', 'session')
 			  AND json_valid(user_id_cred.meta_json)
 			  AND CAST(json_extract(user_id_cred.meta_json, '$.platform_user_id') AS INTEGER) > 0

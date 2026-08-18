@@ -23,6 +23,44 @@ func openTestDB(t *testing.T) *store.DB {
 	return db
 }
 
+// Auto auth mode must survive the store's normalization (it used to be
+// rewritten to access_token, breaking the documented cookie fallback).
+func TestCredentialStorePreservesAuthAuto(t *testing.T) {
+	db := openTestDB(t)
+	siteID, err := db.Site.Create(&domain.Site{
+		Name: "auto-site", BaseURL: "https://auto.example", Platform: "new-api", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := db.Credential.Create(&domain.Credential{
+		SiteID: siteID, Kind: "session", AuthMode: "auto",
+		SecretEnc: []byte("sec"), CookieEnc: []byte("ck"), Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := db.Credential.GetByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.AuthMode != "auto" {
+		t.Fatalf("auth mode after create = %q, want auto", loaded.AuthMode)
+	}
+	updated := *loaded
+	updated.AuthMode = "auto"
+	if err := db.Credential.Update(&updated); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = db.Credential.GetByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.AuthMode != "auto" {
+		t.Fatalf("auth mode after update = %q, want auto", loaded.AuthMode)
+	}
+}
+
 func TestSiteChannelRouteCRUD(t *testing.T) {
 	db := openTestDB(t)
 
@@ -147,13 +185,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 75 {
-		t.Fatalf("got %d applied migrations, want 75", count)
+	if count != 77 {
+		t.Fatalf("got %d applied migrations, want 77", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 75 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 77 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -556,6 +594,30 @@ func TestP0P2DatabaseUpgradesWithoutDataLoss(t *testing.T) {
 	sites, err := db.Site.List()
 	if err != nil || len(sites) != 1 || sites[0].Name != "legacy" {
 		t.Fatalf("legacy data after upgrade: sites=%+v err=%v", sites, err)
+	}
+}
+
+func TestCredentialAuthModeAndCookieAreStoredSeparately(t *testing.T) {
+	db := openTestDB(t)
+	siteID, err := db.Site.Create(&domain.Site{Name: "cookie", BaseURL: "https://cookie.example", Platform: "new-api", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "access_token", AuthMode: "cookie", SecretEnc: []byte("token-cipher"), CookieEnc: []byte("cookie-cipher"), Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Credential.GetByID(id)
+	if err != nil || got == nil || got.AuthMode != "cookie" || string(got.SecretEnc) != "token-cipher" || string(got.CookieEnc) != "cookie-cipher" {
+		t.Fatalf("credential=%+v err=%v", got, err)
+	}
+	got.CookieEnc = []byte("rotated-cookie")
+	if err := db.Credential.Update(got); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := db.Credential.GetByID(id)
+	if updated == nil || string(updated.CookieEnc) != "rotated-cookie" || string(updated.SecretEnc) != "token-cipher" {
+		t.Fatalf("updated credential=%+v", updated)
 	}
 }
 

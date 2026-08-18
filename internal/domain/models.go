@@ -89,10 +89,14 @@ type Site struct {
 
 // Credential holds encrypted secrets for a site.
 type Credential struct {
-	ID                int64  `json:"id"`
-	SiteID            int64  `json:"site_id"`
-	Kind              string `json:"kind"` // api_key | session | access_token | password
-	SecretEnc         []byte `json:"-"`    // never serialized in JSON
+	ID     int64  `json:"id"`
+	SiteID int64  `json:"site_id"`
+	Kind   string `json:"kind"` // api_key | session | access_token | password
+	// AuthMode selects how account-facing requests authenticate. Empty/legacy
+	// rows are treated as access_token for backward compatibility.
+	AuthMode          string `json:"auth_mode,omitempty"` // access_token | cookie | auto
+	SecretEnc         []byte `json:"-"`                   // never serialized in JSON
+	CookieEnc         []byte `json:"-"`                   // never serialized in JSON
 	MetaJSON          string `json:"meta_json,omitempty"`
 	Status            string `json:"status"`
 	CheckinEnabled    bool   `json:"checkin_enabled"`

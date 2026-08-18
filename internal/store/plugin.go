@@ -79,6 +79,32 @@ func (s *PluginStore) UpdateMeta(id, metaJSON string) error {
 	return err
 }
 
+// GetConfig returns host-owned runtime configuration for an installed plugin.
+func (s *PluginStore) GetConfig(id string) (string, error) {
+	var configJSON string
+	err := s.db.QueryRow(`SELECT config_json FROM plugin_configs WHERE plugin_id = ?`, id).Scan(&configJSON)
+	if err == sql.ErrNoRows {
+		return "{}", nil
+	}
+	return configJSON, err
+}
+
+// SetConfig atomically replaces host-owned runtime configuration.
+func (s *PluginStore) SetConfig(id, configJSON string) error {
+	_, err := s.db.Exec(`INSERT INTO plugin_configs (plugin_id, config_json, updated_at)
+		VALUES (?, ?, datetime('now'))
+		ON CONFLICT(plugin_id) DO UPDATE SET
+			config_json = excluded.config_json,
+			updated_at = datetime('now')`, id, configJSON)
+	return err
+}
+
+// DeleteConfig removes host-owned runtime configuration for a plugin.
+func (s *PluginStore) DeleteConfig(id string) error {
+	_, err := s.db.Exec(`DELETE FROM plugin_configs WHERE plugin_id = ?`, id)
+	return err
+}
+
 // Checkpoint forces the WAL into the main database file so a container
 // restart immediately after a plugin write cannot lose the change.
 func (s *PluginStore) Checkpoint() error {

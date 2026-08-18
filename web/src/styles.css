@@ -2103,6 +2103,9 @@ td.actions {
   display: inline-flex;
   align-items: center;
   cursor: pointer;
+  width: 28px;
+  justify-content: center;
+  flex: 0 0 28px;
 }
 .routing-bulk-bar {
   display: flex;
@@ -5466,6 +5469,59 @@ td.actions {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.external-checkin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.external-checkin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: background 160ms ease;
+}
+.external-checkin-row:hover {
+  background: var(--surface-hover);
+}
+.external-checkin-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.external-checkin-main strong {
+  font-weight: 650;
+}
+.external-checkin-main small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.external-checkin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.external-checkin-actions .check {
+  margin: 0;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .external-checkin-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .external-checkin-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
 .endpoint-strip {
   display: flex;
   align-items: center;
@@ -8349,10 +8405,21 @@ tbody td .mono {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  align-items: stretch;
+  min-height: calc(100vh - 40px);
 }
 
 .store-col-main {
   order: -1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Keep the enabled add-ons surface as tall as the store column below so the
+   whole page reads as balanced panels. */
+.store-col-main .store-section:first-child {
+  flex: 1;
 }
 
 .store-col-side {
@@ -8722,9 +8789,12 @@ tbody td .mono {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .member-row:has(.member-bulk-check) {
-    grid-template-columns: auto auto minmax(0, 1fr);
-  }
+.member-row:has(.member-bulk-check) {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.member-row:has(.member-bulk-check) .member-drag-handle {
+  display: none;
+}
 
   .member-controls {
     grid-column: 1 / -1;

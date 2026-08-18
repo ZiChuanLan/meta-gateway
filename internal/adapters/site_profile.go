@@ -13,12 +13,16 @@ const (
 	FamilySub2API     SiteBackendFamily = "sub2api"
 	FamilyAIHubMix    SiteBackendFamily = "aihubmix"
 	FamilySharedChat  SiteBackendFamily = "sharedchat"
+	FamilyExternal    SiteBackendFamily = "external-checkin"
 	FamilyUnsupported SiteBackendFamily = "unsupported"
 )
 
 // SiteProfile describes the account/check-in capabilities of a site family.
 type SiteProfile struct {
 	Family SiteBackendFamily
+	// CheckinAdapter identifies the request/response shape used by the
+	// check-in endpoint. Empty means the default New-API JSON adapter.
+	CheckinAdapter string
 	// Checkin: whether the site exposes a New-API-style /api/user/checkin.
 	Checkin bool
 	// ForceToken: access-token auth is required (cookie auth unsupported).
@@ -93,6 +97,9 @@ var siteProfiles = map[string]SiteProfile{
 	"axonhub":         {Family: FamilyUnsupported},
 	"claude-code-hub": {Family: FamilyUnsupported},
 	"unknown":         {Family: FamilyNewAPI, Checkin: true},
+	// Generic external check-in sites (non-New-API): cookie-authenticated
+	// daily check-in with a configurable path, scheduled by the same runner.
+	"external-checkin": {Family: FamilyExternal, Checkin: true},
 }
 
 // SiteProfileFor returns the capability profile for a site/channel family.
@@ -118,5 +125,10 @@ func CheckinSupported(typeHint, platform string) bool {
 // AccountSupported reports whether the site family has a server-side account
 // adapter (token creation / sync / probe).
 func AccountSupported(typeHint, platform string) bool {
-	return SiteProfileFor(typeHint, platform).Family != FamilyUnsupported
+	switch SiteProfileFor(typeHint, platform).Family {
+	case FamilyUnsupported, FamilyExternal:
+		return false
+	default:
+		return true
+	}
 }

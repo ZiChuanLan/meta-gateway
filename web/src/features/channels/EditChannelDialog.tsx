@@ -1,12 +1,14 @@
 import { ChevronDown, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { api } from "../../api/client";
 import type { Channel, RouteOverview, Site } from "../../api/types";
 import { parseCredentialMeta } from "../credentialMeta";
 import { Drawer } from "../../components/Drawer";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import { Button, ErrorState, Field } from "../../components/ui";
+import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import {
   UA_PRESETS,
@@ -24,6 +26,8 @@ export function EditChannelDialog({
   credentials,
   credential,
   userCredential,
+  checkinSupported,
+  checkinModuleOn,
   pending,
   error,
   onClose,
@@ -37,7 +41,9 @@ export function EditChannelDialog({
   credentials: Array<{
     id: number;
     kind: string;
+    auth_mode?: string;
     has_secret: boolean;
+    has_cookie?: boolean;
     status: string;
     checkin_enabled: boolean;
     meta_json?: string;
@@ -46,16 +52,22 @@ export function EditChannelDialog({
   credential?: {
     id: number;
     kind: string;
+    auth_mode?: string;
     has_secret: boolean;
+    has_cookie?: boolean;
     checkin_enabled: boolean;
   };
-  userCredential?: {
-    id: number;
-    kind: string;
-    has_secret: boolean;
-    checkin_enabled: boolean;
-  };
-  pending: boolean;
+	userCredential?: {
+		id: number;
+		kind: string;
+		auth_mode?: string;
+		has_secret: boolean;
+		has_cookie?: boolean;
+		checkin_enabled: boolean;
+	};
+	checkinSupported?: boolean;
+	checkinModuleOn?: boolean;
+	pending: boolean;
   error: unknown;
   onClose: () => void;
   onSave: (value: {
@@ -64,7 +76,9 @@ export function EditChannelDialog({
     userCredential?: {
       id: number;
       kind: string;
+      auth_mode?: string;
       has_secret: boolean;
+      has_cookie?: boolean;
       checkin_enabled: boolean;
     };
     relayCredential?: {
@@ -88,6 +102,7 @@ export function EditChannelDialog({
     retry_config?: string;
     stable_first?: boolean;
     userToken: string;
+    userCookie: string;
     apiKey: string;
   }) => void;
   onManageModels?: () => void;
@@ -126,7 +141,19 @@ export function EditChannelDialog({
   const [userToken, setUserToken] = useState(
     userCredential?.has_secret ? SECRET_MASK : "",
   );
-  const [showAdvanced, setShowAdvanced] = useState(false);
+	const [userCookie, setUserCookie] = useState(
+		userCredential?.has_cookie ? SECRET_MASK : "",
+	);
+	const [checkinOn, setCheckinOn] = useState(
+		userCredential?.checkin_enabled ?? false,
+	);
+	// Keep the in-dialog switch in sync when the overview credential loads.
+	useEffect(() => {
+		if (userCredential?.id != null) {
+			setCheckinOn(userCredential.checkin_enabled);
+		}
+	}, [userCredential?.id, userCredential?.checkin_enabled]);
+	const [showAdvanced, setShowAdvanced] = useState(false);
   const canSubmit = Boolean(name.trim() && baseUrl.trim());
   const apiKeys = credentials.filter((item) => item.kind === "api_key");
   const service = api(useSession().client!);
@@ -134,7 +161,16 @@ export function EditChannelDialog({
     queryKey: ["discovered-models", value.id],
     queryFn: ({ signal }) => service.discoveredModels(value.id, signal),
   });
-  const editModels = discovered.data ?? [];
+	const editModels = discovered.data ?? [];
+	const toggleCheckin = useAdminMutation({
+		mutationFn: (next: boolean) => {
+			if (!userCredential?.id) {
+				throw new Error(t("channels.checkinNeedsUserCredential"));
+			}
+			return service.setCheckin(userCredential.id, next);
+		},
+		invalidateKeys: [["credentials"], ["channel-overviews"]],
+	});
   const aliasOf = (realModel: string) =>
     routeOverviews?.find((overview) => {
       if (!overview.route.mapping_json) return false;
@@ -185,6 +221,7 @@ export function EditChannelDialog({
                 retry_config: retryConfig,
                 stable_first: stableFirst,
                 userToken,
+                userCookie,
                 apiKey: "",
               })
             }
@@ -262,12 +299,84 @@ export function EditChannelDialog({
               disabled={pending}
             />
           </Field>
-        </div>
+								<Field
+									label={t("channels.userCookie")}
+									hint={
+										userCredential?.has_cookie
+											? t("channels.userCookiePresentHint")
+											: t("channels.userCookieHint")
+									}
+								>
+									<input
+										type="password"
+										autoComplete="new-password"
+										value={userCookie}
+										onChange={(e) => setUserCookie(e.target.value)}
+										placeholder={
+											userCredential?.has_cookie
+												? t("channels.editSecretPlaceholder")
+												: t("channels.userCookiePlaceholder")
+										}
+										disabled={pending}
+									/>
+								</Field>
+							</div>
 
-        <section
-          className="credential-key-panel connection-subpanel"
-          aria-label={t("channels.apiKeysTitle")}
-        >
+							<section
+								className="detail-section connection-subpanel"
+								aria-label={t("channels.checkinSection")}
+							>
+								<div className="detail-section-head">
+									<h3>{t("channels.checkinSection")}</h3>
+									<Link className="detail-section-expand" to="/checkins">
+										{t("channels.checkinLogs")}
+									</Link>
+								</div>
+								{!checkinModuleOn ? (
+									<p className="detail-section-empty is-quiet">
+										{t("channels.checkinModuleOff")}
+									</p>
+								) : !checkinSupported ? (
+									<p className="detail-section-empty is-quiet">
+										{t("channels.checkinUnsupported")}
+									</p>
+								) : !userCredential?.id ? (
+									<p className="detail-section-empty is-quiet">
+										{t("channels.checkinNeedsUserCredential")}
+									</p>
+								) : (
+									<>
+										<label className="check" style={{ marginTop: 10 }}>
+											<input
+													type="checkbox"
+													checked={checkinOn}
+													disabled={
+														pending || toggleCheckin.isPending
+													}
+													onChange={(e) => {
+														const next = e.target.checked;
+														setCheckinOn(next);
+														toggleCheckin.mutate(next);
+													}}
+												/>
+												<span>{t("channels.checkinEnable")}</span>
+											</label>
+											<p className="detail-section-empty is-quiet">
+												{checkinOn
+													? t("channels.checkinScheduledHint")
+													: t("channels.checkinOffHint")}
+											</p>
+										</>
+									)}
+								{toggleCheckin.isError ? (
+									<ErrorState error={toggleCheckin.error} />
+								) : null}
+							</section>
+
+							<section
+								className="credential-key-panel connection-subpanel"
+								aria-label={t("channels.apiKeysTitle")}
+							>
           <div className="credential-key-panel-head">
             <div>
               <strong>{t("channels.apiKeysTitle")}</strong>

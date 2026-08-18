@@ -19,7 +19,9 @@ export interface Credential {
   id: number;
   site_id: number;
   kind: string;
+  auth_mode?: "access_token" | "cookie" | "auto" | string;
   has_secret: boolean;
+  has_cookie?: boolean;
   meta_json?: string;
   status: Status;
   checkin_enabled: boolean;
@@ -641,6 +643,40 @@ export interface ModuleStatus {
   enabled: boolean;
   can_toggle: boolean;
   open_path?: string;
+  config_fields?: PluginConfigField[];
+  has_config?: boolean;
+}
+
+/** One manifest-declared plugin configuration input. */
+export interface PluginConfigField {
+  key: string;
+  type?: "string" | "text" | "number" | "bool" | "select" | "secret" | string;
+  label?: string;
+  description?: string;
+  required?: boolean;
+  secret?: boolean;
+  default?: unknown;
+  options?: string[];
+}
+
+/** GET /admin/plugins/{id}/config response. */
+export interface PluginConfigResponse {
+  id: string;
+  config: string;
+  fields: PluginConfigField[];
+  has_config: boolean;
+}
+
+/** One generic external check-in site (non-New-API, cookie-authenticated). */
+export interface ExternalCheckin {
+  site_id: number;
+  credential_id: number;
+  name: string;
+  base_url: string;
+  checkin_path?: string;
+  checkin_method?: string;
+  checkin_enabled: boolean;
+  has_cookie: boolean;
 }
 
 export type WebDAVSyncMode = "incremental" | "replace";

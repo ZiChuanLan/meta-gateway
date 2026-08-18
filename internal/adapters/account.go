@@ -18,8 +18,12 @@ const maxAccountResponseBytes = 2 << 20
 
 // AccountInput is the shared auth payload for New API-family user endpoints.
 type AccountInput struct {
-	BaseURL        string
-	Secret         string
+	BaseURL string
+	// Secret is the historical access_token/session secret.
+	Secret string
+	// Cookie is an optional Cookie header value used when AuthMode is cookie.
+	Cookie         string
+	AuthMode       AuthMode
 	PlatformUserID int64
 	UserHeader     bool
 	// NoUserHeader suppresses the compat user-id headers even when the
@@ -597,7 +601,13 @@ func (a *NewAPIAccountAdapter) CreateAPIKey(ctx context.Context, input AccountIn
 	if err != nil {
 		return UpstreamAPIKey{}, &Error{Kind: ErrorInvalidURL}
 	}
-	req.Header.Set("Authorization", "Bearer "+input.Secret)
+	if normalizeAuthMode(input.AuthMode) == AuthCookie {
+		if strings.TrimSpace(input.Cookie) != "" {
+			req.Header.Set("Cookie", input.Cookie)
+		}
+	} else {
+		req.Header.Set("Authorization", "Bearer "+input.Secret)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	if !input.NoUserHeader && (a.userHeader || input.UserHeader) {
@@ -703,11 +713,37 @@ func parseRevealedKey(body []byte) string {
 }
 
 func (a *NewAPIAccountAdapter) doJSON(ctx context.Context, method, endpoint string, input AccountInput) ([]byte, int, time.Duration, error) {
+	body, status, retryAfter, err := a.doJSONOnce(ctx, method, endpoint, input)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	// AuthAuto documented fallback: on idempotent GET requests the upstream
+	// rejects with 401/403, retry once carrying the cookie credential.
+	if normalizeAuthMode(input.AuthMode) == AuthAuto && method == http.MethodGet &&
+		(status == http.StatusUnauthorized || status == http.StatusForbidden) &&
+		strings.TrimSpace(input.Cookie) != "" {
+		alt := input
+		alt.AuthMode = AuthCookie
+		body2, status2, retryAfter2, err2 := a.doJSONOnce(ctx, method, endpoint, alt)
+		if err2 == nil && status2 >= 200 && status2 < 300 {
+			return body2, status2, retryAfter2, nil
+		}
+	}
+	return body, status, retryAfter, nil
+}
+
+func (a *NewAPIAccountAdapter) doJSONOnce(ctx context.Context, method, endpoint string, input AccountInput) ([]byte, int, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
 	if err != nil {
 		return nil, 0, 0, &Error{Kind: ErrorInvalidURL}
 	}
-	req.Header.Set("Authorization", "Bearer "+input.Secret)
+	if normalizeAuthMode(input.AuthMode) == AuthCookie {
+		if strings.TrimSpace(input.Cookie) != "" {
+			req.Header.Set("Cookie", input.Cookie)
+		}
+	} else {
+		req.Header.Set("Authorization", "Bearer "+input.Secret)
+	}
 	req.Header.Set("Accept", "application/json")
 	if !input.NoUserHeader && (a.userHeader || input.UserHeader) {
 		ApplyCompatUserIDHeaders(req.Header, input.PlatformUserID)

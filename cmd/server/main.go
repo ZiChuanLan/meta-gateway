@@ -113,6 +113,11 @@ func main() {
 		logger.Error("plugin bootstrap failed", "category", "plugins")
 		os.Exit(1)
 	}
+	if err := pluginService.StartManaged(context.Background()); err != nil {
+		// A broken optional plugin must not prevent the gateway from serving its
+		// core API. The Store exposes the plugin log and allows disabling it.
+		logger.Error("managed plugin startup failed", "category", "plugins", "error", err)
+	}
 	metrics := observability.NewRegistry()
 	state := observability.NewState()
 	discoveryService := discovery.New(db, enc, registry)
@@ -269,6 +274,9 @@ func main() {
 	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("http server shutdown failed", "category", "server")
+	}
+	if err := pluginService.StopManaged(shutdownCtx); err != nil {
+		logger.Error("managed plugin shutdown failed", "category", "plugins", "error", err)
 	}
 	if serverFailed {
 		// A bind/listen failure must be visible to the supervisor; returning

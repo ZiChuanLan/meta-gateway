@@ -182,6 +182,15 @@ discovery and routing. New API and One API session/access-token credentials use
 `POST /api/user/checkin`; New API can also receive a positive
 `platform_user_id` from credential metadata as `New-Api-User`.
 
+Generic external check-in sites (platform `external-checkin`, e.g. 薄荷公益站
+https://up.x666.me) are cookie-authenticated and not New-API-family: the
+adapter POSTs (or GETs) a configurable `checkin_path` (default
+`/api/checkin/spin`, stored in credential `meta_json`) with Origin/Referer
+derived from the site URL, and treats HTTP 2xx as success unless the JSON
+body says `success:false` (with the usual already-signed-in markers). They
+run under the exact same scheduler, eligibility gates, audit log and alerts as
+New-API credentials.
+
 Manual single-target execution ignores only the per-credential scheduling flag.
 All other eligibility rules still apply. Batch execution selects
 `checkin_enabled` credentials in ID order and persists one redacted audit row

@@ -12,8 +12,10 @@ import type {
   DiscoveredModel,
   DownstreamKey,
   ExchangeEnvelope,
+  ExternalCheckin,
   ImportResult,
   ModuleStatus,
+  PluginConfigResponse,
   PluginRecord,
   AccountProbeResult,
   ChannelPingResult,
@@ -163,7 +165,9 @@ export const api = (client: ApiClient) => ({
     siteId: number,
     body: {
       kind: string;
-      secret: string;
+      auth_mode?: "access_token" | "cookie" | "auto" | string;
+      secret?: string;
+      cookie?: string;
       meta_json?: string;
       status: string;
       models_csv?: string;
@@ -173,7 +177,11 @@ export const api = (client: ApiClient) => ({
     id: number,
     body: {
       kind?: string;
+      auth_mode?: "access_token" | "cookie" | "auto" | string;
       secret?: string;
+      cookie?: string;
+      clear_secret?: boolean;
+      clear_cookie?: boolean;
       meta_json?: string;
       status?: string;
       models_csv?: string;
@@ -192,6 +200,30 @@ export const api = (client: ApiClient) => ({
     ),
   runCredential: (id: number) =>
     client.post<RunResult>(`/admin/checkin/credentials/${id}/run`),
+  externalCheckins: (signal?: AbortSignal) =>
+    client.getList<ExternalCheckin>("/admin/checkin/external", signal),
+  createExternalCheckin: (body: {
+    name?: string;
+    base_url: string;
+    checkin_path?: string;
+    checkin_method?: string;
+    cookie: string;
+    enabled?: boolean;
+  }) => client.post<ExternalCheckin>("/admin/checkin/external", body),
+  updateExternalCheckin: (
+    siteId: number,
+    body: {
+      name?: string;
+      base_url?: string;
+      checkin_path?: string;
+      checkin_method?: string;
+      cookie?: string;
+      clear_cookie?: boolean;
+      enabled?: boolean;
+    },
+  ) => client.put<ExternalCheckin>(`/admin/checkin/external/${siteId}`, body),
+  deleteExternalCheckin: (siteId: number) =>
+    client.delete(`/admin/checkin/external/${siteId}`),
   channels: (signal?: AbortSignal) =>
     client.getList<Channel>("/admin/channels", signal),
   createConnection: (body: {
@@ -275,7 +307,7 @@ export const api = (client: ApiClient) => ({
       model_denylist?: string;
       expires_at?: string;
       allowed_ips?: string;
-       reset_used?: boolean;
+      reset_used?: boolean;
     },
   ) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
   deleteKey: (id: number) => client.delete(`/admin/downstream-keys/${id}`),
@@ -601,14 +633,21 @@ export const api = (client: ApiClient) => ({
         license?: string;
         tags?: string[];
         url: string;
+        install?: { type?: string; artifact_pattern?: string };
+        repository?: string;
         source: { id: string; name: string; url: string };
       }>;
     }>("/admin/plugins/market", signal),
-  installMarketPlugin: (id: string) =>
-    client.post<PluginRecord>(
-      `/admin/plugins/market/${encodeURIComponent(id)}/install`,
+  installMarketPlugin: (id: string, options?: { source?: string; version?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.source) params.set("source", options.source);
+    if (options?.version) params.set("version", options.version);
+    const qs = params.toString();
+    return client.post<PluginRecord>(
+      `/admin/plugins/market/${encodeURIComponent(id)}/install${qs ? `?${qs}` : ""}`,
       {},
-    ),
+    );
+  },
   pluginsStatus: (signal?: AbortSignal) =>
     client.getList<ModuleStatus>("/admin/plugins/status", signal),
   plugins: (signal?: AbortSignal) =>
@@ -623,6 +662,16 @@ export const api = (client: ApiClient) => ({
     ),
   uninstallPlugin: (id: string) =>
     client.delete(`/admin/plugins/${encodeURIComponent(id)}`),
+  pluginConfig: (id: string, signal?: AbortSignal) =>
+    client.get<PluginConfigResponse>(
+      `/admin/plugins/${encodeURIComponent(id)}/config`,
+      signal,
+    ),
+  savePluginConfig: (id: string, config: string) =>
+    client.put<{ id: string; has_config: boolean }>(
+      `/admin/plugins/${encodeURIComponent(id)}/config`,
+      { config },
+    ),
   updatePlugin: (
     id: string,
     body: {

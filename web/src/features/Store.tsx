@@ -9,13 +9,14 @@ import {
 	Power,
 	PowerOff,
 	RefreshCw,
+	Settings2,
 	Trash2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { ModuleStatus, PluginRecord } from "../api/types";
+import type { ModuleStatus, PluginConfigField, PluginRecord } from "../api/types";
 import { EntityState } from "../components/EntityState";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import {
@@ -26,7 +27,7 @@ import {
 } from "../hooks/useModules";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import { Button, Dialog, Page, StatusBadge } from "../components/ui";
+import { Button, Dialog, ErrorState, Loading, Page, StatusBadge } from "../components/ui";
 
 // Only invalidate always-safe keys here. Gated add-on queries (checkin-logs,
 // webdav-*) are owned by their panels with enabled: moduleOn — invalidating them
@@ -51,6 +52,7 @@ interface MarketPlugin {
 	license?: string;
 	tags?: string[];
 	url: string;
+	install?: { type?: string };
 	source: { id: string; name: string; url: string };
 }
 
@@ -145,9 +147,10 @@ export function Store() {
 		staleTime: 60_000,
 	});
 	const installMarket = useAdminMutation({
-		mutationFn: (id: string) => service.installMarketPlugin(id),
+		mutationFn: (args: { id: string; source?: string }) =>
+			service.installMarketPlugin(args.id, { source: args.source }),
 		invalidateKeys: STORE_INVALIDATE,
-		pendingIdOf: (id) => id,
+		pendingIdOf: (args) => args.id,
 	});
 
 	// Plugin records (with meta_json) for channel-path lookups and the edit
@@ -160,6 +163,7 @@ export function Store() {
 	const sidecarOfId = (id: string) =>
 		sidecarOf(pluginRecords?.find((rec) => rec.id === id));
 	const [channelFor, setChannelFor] = useState<ModuleStatus | null>(null);
+	const [configFor, setConfigFor] = useState<ModuleStatus | null>(null);
 
 	const enabledAddons = useMemo(
 		() => modules.addons.filter((item) => item.enabled && item.installed),
@@ -324,11 +328,11 @@ export function Store() {
 								<div className="market-grid">
 									{(market.data?.plugins ?? []).map((p) => (
 										<MarketCard
-											key={p.id}
+											key={`${p.source.id}:${p.id}`}
 											plugin={p}
-											installed={modules.addons.some((m) => m.id === p.id)}
+											installedVersion={enabledAddons.find((m) => m.id === p.id)?.version}
 											busy={installMarket.pendingId === p.id}
-											onInstall={() => installMarket.mutate(p.id)}
+											onInstall={() => installMarket.mutate({ id: p.id, source: p.source.id })}
 											t={t}
 										/>
 									))}
@@ -371,11 +375,11 @@ export function Store() {
 												: undefined
 											}
 										onDisable={() => disable.mutate(row.id)}
-										onUninstall={
-											row.source === "sidecar"
-												? () => uninstall.mutate(row.id)
-												: undefined
-											}
+									onUninstall={
+										row.source === "sidecar" || row.source?.startsWith("market:")
+											? () => uninstall.mutate(row.id)
+											: undefined
+										}
 										t={t}
 									/>
 									))}
@@ -421,6 +425,13 @@ export function Store() {
 					onClose={() => setChannelFor(null)}
 				/>
 			) : null}
+			{configFor ? (
+				<PluginConfigDialog
+					row={configFor}
+					service={service}
+					onClose={() => setConfigFor(null)}
+				/>
+			) : null}
 		</Page>
 	);
 }
@@ -430,6 +441,7 @@ function PluginRow({
 	busy,
 	onEdit,
 	onChannel,
+	onConfig,
 	onDisable,
 	onUninstall,
 	t,
@@ -438,6 +450,7 @@ function PluginRow({
 	busy: boolean;
 	onEdit?: () => void;
 	onChannel?: () => void;
+	onConfig?: () => void;
 	onDisable?: () => void;
 	onUninstall?: () => void;
 	t: (key: string, vars?: Record<string, string | number>) => string;
@@ -489,6 +502,16 @@ function PluginRow({
 						{t("plugins.createChannel")}
 					</Button>
 				) : null}
+				{onConfig ? (
+					<Button
+						variant="secondary"
+						icon={<Settings2 size={14} />}
+						disabled={busy}
+						onClick={onConfig}
+					>
+						{t("plugins.config")}
+					</Button>
+				) : null}
 				{onDisable ? (
 					<Button
 						variant="secondary"
@@ -512,6 +535,203 @@ function PluginRow({
 			</div>
 			<StatusBadge value={badge} />
 		</div>
+	);
+}
+
+function PluginConfigDialog({
+	row,
+	service,
+	onClose,
+}: {
+	row: ModuleStatus;
+	service: ReturnType<typeof api>;
+	onClose: () => void;
+}) {
+	const { t } = useI18n();
+	type FieldValue = string | number | boolean;
+	const [values, setValues] = useState<Record<string, FieldValue> | null>(null);
+	const [raw, setRaw] = useState("");
+	const [error, setError] = useState("");
+	const info = useQuery({
+		queryKey: ["plugin-config", row.id],
+		queryFn: ({ signal }) => service.pluginConfig(row.id, signal),
+	});
+	const fields = info.data?.fields ?? [];
+	useEffect(() => {
+		if (!info.data || values !== null) return;
+		let stored: Record<string, unknown> = {};
+		try {
+			stored = JSON.parse(info.data.config || "{}") as Record<
+				string,
+				unknown
+			>;
+		} catch {
+			stored = {};
+		}
+		const parsed: Record<string, FieldValue> = {};
+		for (const f of fields) {
+			const value = stored[f.key];
+			if (f.type === "number") {
+				parsed[f.key] =
+					typeof value === "number" ? value : ((f.default as number) ?? 0);
+			} else if (f.type === "bool") {
+				parsed[f.key] =
+					typeof value === "boolean" ? value : Boolean(f.default ?? false);
+			} else if (f.type === "select") {
+				parsed[f.key] =
+					typeof value === "string"
+						? value
+						: ((f.default as string) ?? f.options?.[0] ?? "");
+			} else {
+				parsed[f.key] =
+					typeof value === "string" ? value : ((f.default as string) ?? "");
+			}
+		}
+		setValues(parsed);
+		if (fields.length === 0) setRaw(info.data.config || "{}");
+	}, [info.data, values, fields]);
+
+	const save = useAdminMutation({
+		mutationFn: () => {
+			if (fields.length > 0) {
+				return service.savePluginConfig(row.id, JSON.stringify(values ?? {}));
+			}
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(raw);
+			} catch {
+				throw new Error(t("plugins.configInvalidJson"));
+			}
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+				throw new Error(t("plugins.configInvalidJson"));
+			}
+			return service.savePluginConfig(row.id, raw);
+		},
+		invalidateKeys: [...STORE_INVALIDATE, ["plugin-config", row.id]],
+		toastOnError: false,
+		onSuccess: onClose,
+		onError: (err: unknown) => {
+			setError(err instanceof Error ? err.message : String(err));
+		},
+	});
+
+	const set = (key: string, value: FieldValue) =>
+		setValues((current) => ({ ...(current ?? {}), [key]: value }));
+	const inputFor = (f: PluginConfigField) => {
+		const value = values?.[f.key];
+		switch (f.type) {
+			case "text":
+				return (
+					<textarea
+						rows={4}
+						className="mono"
+						value={String(value ?? "")}
+						onChange={(e) => set(f.key, e.target.value)}
+					/>
+				);
+			case "number":
+				return (
+					<input
+						type="number"
+						value={String(value ?? 0)}
+						onChange={(e) =>
+							set(f.key, e.target.value === "" ? 0 : Number(e.target.value))
+						}
+					/>
+				);
+			case "bool":
+				return (
+					<label className="check">
+						<input
+							type="checkbox"
+							checked={Boolean(value)}
+							onChange={(e) => set(f.key, e.target.checked)}
+						/>
+						<span>{t("plugins.configEnabled")}</span>
+					</label>
+				);
+			case "select":
+				return (
+					<select
+						value={String(value ?? "")}
+						onChange={(e) => set(f.key, e.target.value)}
+					>
+						{(f.options ?? []).map((option) => (
+							<option key={option} value={option}>
+								{option}
+							</option>
+						))}
+					</select>
+				);
+			default:
+				return (
+					<input
+						type={f.type === "secret" ? "password" : "text"}
+						className="mono"
+						value={String(value ?? "")}
+						onChange={(e) => set(f.key, e.target.value)}
+					/>
+				);
+		}
+	};
+
+	return (
+		<Dialog
+			title={`${t("plugins.configTitle")} — ${row.name}`}
+			onClose={onClose}
+			actions={
+				<>
+					<Button variant="secondary" onClick={onClose}>
+						{t("common.cancel")}
+					</Button>
+					<Button
+						disabled={save.isPending || !info.data}
+						onClick={() => save.mutate(undefined)}
+					>
+						{save.isPending ? t("common.working") : t("plugins.saveBtn")}
+					</Button>
+				</>
+			}
+		>
+			<p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+				{t("plugins.configHint")}
+			</p>
+			{info.isPending ? (
+				<Loading />
+			) : info.isError ? (
+				<ErrorState error={info.error} />
+			) : fields.length > 0 ? (
+				<div className="form-stack">
+					{fields.map((f) => (
+						<label className="field" key={f.key}>
+							<span>
+								{f.label || f.key}
+								{f.required ? " *" : ""}
+							</span>
+							{inputFor(f)}
+							{f.description ? (
+								<small className="muted">{f.description}</small>
+							) : null}
+							{f.type === "secret" ? (
+								<small className="muted">{t("plugins.configSecretHint")}</small>
+							) : null}
+						</label>
+					))}
+				</div>
+			) : (
+				<label className="field">
+					<span>{t("plugins.configJsonLabel")}</span>
+					<textarea
+						className="mono"
+						rows={8}
+						value={raw}
+						onChange={(e) => setRaw(e.target.value)}
+					/>
+					<small className="muted">{t("plugins.configJsonHint")}</small>
+				</label>
+			)}
+			{error ? <ErrorState error={error} /> : null}
+		</Dialog>
 	);
 }
 
@@ -763,17 +983,26 @@ function CreateChannelDialog({
 
 function MarketCard({
 	plugin,
-	installed,
+	installedVersion,
 	busy,
 	onInstall,
 	t,
 }: {
 	plugin: MarketPlugin;
-	installed: boolean;
+	installedVersion?: string;
 	busy: boolean;
 	onInstall: () => void;
 	t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
+	const installed = installedVersion !== undefined;
+	const updateAvailable =
+		installed &&
+		plugin.version !== undefined &&
+		plugin.version !== "" &&
+		plugin.version !== installedVersion;
+	const kindKey = `store.installKind.${plugin.install?.type ?? "legacy"}`;
+	const kindLabel = t(kindKey);
+	const kind = kindLabel && kindLabel !== kindKey ? kindLabel : "";
 	return (
 		<div className="market-card">
 			<div className="market-card-head">
@@ -813,19 +1042,24 @@ function MarketCard({
 				</div>
 			) : null}
 			<div className="market-card-actions">
-				{plugin.author ? (
-					<span className="muted market-card-author">
-						{plugin.author}
-					</span>
-				) : null}
+				<span className="muted market-card-author">
+					{plugin.author ? `${plugin.author} · ` : ""}
+					{plugin.source.name}
+					{kind ? ` · ${kind}` : ""}
+				</span>
 				{installed ? (
-					<span className="module-core-tag">{t("store.installed")}</span>
+					updateAvailable ? (
+						<Button icon={<RefreshCw size={14} />} disabled={busy} onClick={onInstall}>
+							{busy ? t("common.working") : t("store.update")}
+						</Button>
+					) : (
+						<span className="module-core-tag">
+							{t("store.installed")}
+							{installedVersion ? ` · v${installedVersion}` : ""}
+						</span>
+					)
 				) : (
-					<Button
-						icon={<Download size={14} />}
-						disabled={busy}
-						onClick={onInstall}
-					>
+					<Button icon={<Download size={14} />} disabled={busy} onClick={onInstall}>
 						{busy ? t("common.working") : t("store.install")}
 					</Button>
 				)}

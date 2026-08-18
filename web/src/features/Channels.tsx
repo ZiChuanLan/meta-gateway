@@ -330,13 +330,17 @@ export function Channels() {
       userCredential?: {
         id: number;
         kind: string;
+        auth_mode?: string;
         has_secret: boolean;
+        has_cookie?: boolean;
         checkin_enabled: boolean;
       };
       relayCredential?: {
         id: number;
         kind: string;
+        auth_mode?: string;
         has_secret: boolean;
+        has_cookie?: boolean;
         checkin_enabled: boolean;
       };
       name: string;
@@ -354,6 +358,7 @@ export function Channels() {
       retry_config?: string;
       stable_first?: boolean;
       userToken: string;
+      userCookie: string;
       apiKey: string;
     }) => {
       const name = input.name.trim() || input.channel.name;
@@ -374,6 +379,17 @@ export function Channels() {
       // The mask means "keep the stored value"; an empty field means "remove the credential".
       const userTokenKept = userTokenRaw === SECRET_MASK;
       const userToken = userTokenKept ? "" : userTokenRaw;
+      const userCookieRaw = input.userCookie.trim();
+      const userCookieKept = userCookieRaw === SECRET_MASK;
+      const userCookie = userCookieKept ? "" : userCookieRaw;
+      const userAuthMode = userCookieKept
+        ? input.userCredential?.auth_mode ||
+          (userToken ? "access_token" : "cookie")
+        : userCookie
+          ? userToken
+            ? "auto"
+            : "cookie"
+          : "access_token";
       const apiKey = input.apiKey.trim();
       const userCred = input.userCredential;
       const relayCred = input.relayCredential;
@@ -386,18 +402,59 @@ export function Channels() {
           await service.updateCredential(userCred.id, {
             kind,
             secret: userToken,
+            ...(userCookieKept
+              ? {}
+              : userCookie
+                ? { cookie: userCookie }
+                : { clear_cookie: true }),
+            auth_mode: userAuthMode,
             status: "enabled",
           });
         } else {
           await service.createCredential(input.site.id, {
             kind: "access_token",
             secret: userToken,
+            ...(userCookie ? { cookie: userCookie } : {}),
+            auth_mode: userAuthMode,
             status: "enabled",
           });
         }
-      } else if (userCred?.id && input.site && !userTokenKept) {
-        // Field was explicitly cleared → remove the access-token credential.
+      } else if (
+        userCred?.id &&
+        input.site &&
+        !userTokenKept &&
+        !userCookieKept &&
+        !userToken &&
+        !userCookie
+      ) {
+        // Both auth materials were explicitly cleared → remove the user credential.
         await service.deleteCredential(userCred.id);
+      } else if (
+        userCred?.id &&
+        input.site &&
+        (!userCookieKept || !userTokenKept)
+      ) {
+        await service.updateCredential(userCred.id, {
+          auth_mode: userAuthMode,
+          ...(userCookieKept
+            ? {}
+            : userCookie
+              ? { cookie: userCookie }
+              : { clear_cookie: true }),
+          ...(userTokenKept
+            ? {}
+            : userToken
+              ? { secret: userToken }
+              : { clear_secret: true }),
+          status: "enabled",
+        });
+      } else if (!userCred?.id && input.site && userCookie) {
+        await service.createCredential(input.site.id, {
+          kind: "access_token",
+          cookie: userCookie,
+          auth_mode: "cookie",
+          status: "enabled",
+        });
       }
       if (apiKey && input.site) {
         if (relayCred?.id && relayCred.kind === "api_key") {
@@ -1446,13 +1503,23 @@ export function Channels() {
               ) ?? null;
             return overview ? relayCredentialFor(overview) : undefined;
           })()}
-          userCredential={(() => {
-            const overview =
-              (overviews.data ?? []).find(
-                (row) => row.channel.id === edit.id,
-              ) ?? null;
-            return overview ? userCredentialFor(overview) : undefined;
-          })()}
+							userCredential={(() => {
+								const overview =
+									(overviews.data ?? []).find(
+										(row) => row.channel.id === edit.id,
+									) ?? null;
+								return overview ? userCredentialFor(overview) : undefined;
+							})()}
+							checkinSupported={
+								(() => {
+									const overview =
+										(overviews.data ?? []).find(
+											(row) => row.channel.id === edit.id,
+										) ?? null;
+									return overview?.checkin_supported ?? false;
+								})()
+							}
+							checkinModuleOn={checkinEnabled}
           pending={
             saveEdit.isPending ||
             setCredentialStatus.isPending ||

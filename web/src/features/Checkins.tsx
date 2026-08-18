@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useI18n } from "../i18n";
 import { Page, Panel } from "../components/ui";
 import { CheckinsPanel } from "./ops";
+import { ExternalCheckinsPanel } from "./ops/ExternalCheckinsPanel";
 import { useModules } from "../hooks/useModules";
 
 /**
@@ -27,7 +28,11 @@ export function Checkins() {
 						</Link>
 					</Panel>
 				) : (
-					<CheckinsPanel />
+					<>
+						<CheckinsPanel>
+							<ExternalCheckinsPanel />
+						</CheckinsPanel>
+					</>
 				)}
 			</div>
 		</Page>

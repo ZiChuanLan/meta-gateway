@@ -31,6 +31,7 @@ func NewRegistry(client *http.Client) *Registry {
 	gemini := NewGeminiModelAdapter("gemini", client)
 	newAPICheckin := NewJSONCheckinAdapter("new-api", client, true)
 	oneAPICheckin := NewJSONCheckinAdapter("one-api", client, false)
+	externalCheckin := NewExternalCheckinAdapter("external-checkin", client)
 	newAPIAccount := NewNewAPIAccountAdapter("new-api", client, true)
 	oneAPIAccount := NewNewAPIAccountAdapter("one-api", client, false)
 
@@ -59,6 +60,8 @@ func NewRegistry(client *http.Client) *Registry {
 		"newapi":  newAPICheckin,
 		"one-api": oneAPICheckin,
 		"oneapi":  oneAPICheckin,
+		// Generic external check-in sites (薄荷公益站 etc.): cookie auth + configurable path.
+		"external-checkin": externalCheckin,
 		// Many New-API forks share the same check-in / account family.
 		"anyrouter":   newAPICheckin,
 		"done-hub":    newAPICheckin,
@@ -87,6 +90,11 @@ func NewRegistry(client *http.Client) *Registry {
 		"oneapi":  oneAPIAccount,
 	}
 	for brand := range checkinMap {
+		if brand == "external-checkin" {
+			// Generic external sites have no New-API account surface; the
+			// account adapter must never be advertised or resolved for them.
+			continue
+		}
 		if brand == "one-api" || brand == "oneapi" {
 			accountMap[brand] = oneAPIAccount
 			continue
@@ -171,6 +179,23 @@ func (r *Registry) ResolveCheckin(platform string) (CheckinAdapter, bool) {
 	// Fall back to brand map with original key.
 	adapter, ok := r.checkinAdapters[canonical(platform)]
 	return adapter, ok
+}
+
+// RegisterCheckin adds or replaces a check-in adapter for a platform/profile.
+// It is intentionally small so the future provider/plugin layer can register
+// adapters without changing the scheduler or persistence code.
+func (r *Registry) RegisterCheckin(platform string, adapter CheckinAdapter) {
+	if r == nil || adapter == nil {
+		return
+	}
+	if r.checkinAdapters == nil {
+		r.checkinAdapters = make(map[string]CheckinAdapter)
+	}
+	key := canonical(platform)
+	if key == "" {
+		return
+	}
+	r.checkinAdapters[key] = adapter
 }
 
 // Resolve gives channel type_hint precedence over the site's platform.

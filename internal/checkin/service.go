@@ -124,9 +124,12 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 	if kind != "session" && kind != "access_token" {
 		return s.persist(started, site.ID, credential.ID, source, StatusSkipped, "unsupported_credential_kind", "credential kind does not support check-in", "")
 	}
-	// Site-family gate (All API Hub profile table): families such as
+	// Site-family gate (All API Hub profile table): known families such as
 	// sub2api / aihubmix / sharedchat do not expose the New-API check-in API.
-	if !adapters.CheckinSupported("", site.Platform) {
+	// Unknown/custom platforms may opt into the same scheduler by registering
+	// an adapter under their canonical platform name.
+	profile := adapters.SiteProfileFor("", site.Platform)
+	if !profile.Checkin {
 		return s.persist(started, site.ID, credential.ID, source, StatusSkipped, "checkin_not_supported", "this site family does not support check-in", "")
 	}
 	adapter, ok := s.registry.ResolveCheckin(site.Platform)
@@ -145,18 +148,23 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 	plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
 	if err != nil {
 		zero(plaintext)
-		// Common after MASTER_KEY rotation or corrupt secret_enc — do not hit upstream.
-		return s.persist(started, site.ID, credential.ID, source, StatusFailed, "credential_decrypt_failed", "credential secret cannot be decrypted (re-enter the token after MASTER_KEY changes)", "")
+		plaintext = nil
 	}
-	if len(plaintext) == 0 {
-		return s.persist(started, site.ID, credential.ID, source, StatusFailed, "credential_empty", "credential secret is empty", "")
+	cookiePlain, cookieErr := s.enc.Decrypt(string(credential.CookieEnc))
+	if cookieErr != nil {
+		zero(cookiePlain)
+		cookiePlain = nil
+	}
+	if len(plaintext) == 0 && len(cookiePlain) == 0 {
+		return s.persist(started, site.ID, credential.ID, source, StatusFailed, "credential_decrypt_failed", "credential secrets cannot be decrypted (re-enter the token or cookie after MASTER_KEY changes)", "")
 	}
 	// New-API family check-in usually needs a numeric user id header. Resolve via
 	// /api/user/self when meta is missing so operators are not blocked after import.
 	if platformUserID <= 0 && adapter.RequiresPlatformUserID() {
-		resolvedID, resolveErr := s.resolvePlatformUserID(ctx, site, string(plaintext))
+		resolvedID, resolveErr := s.resolvePlatformUserID(ctx, site, string(plaintext), string(cookiePlain), credential.AuthMode)
 		if resolveErr != nil {
 			zero(plaintext)
+			zero(cookiePlain)
 			status, category, message := normalizeAdapterError(resolveErr)
 			if category == "" || category == "invalid_payload" {
 				category = "user_id_unavailable"
@@ -171,6 +179,7 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 		}
 		if resolvedID <= 0 {
 			zero(plaintext)
+			zero(cookiePlain)
 			return s.persist(started, site.ID, credential.ID, source, StatusFailed, "user_id_unavailable", "platform user id is required for check-in", "")
 		}
 		platformUserID = resolvedID
@@ -179,9 +188,14 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 	adapterResult, adapterErr := adapter.Checkin(ctx, adapters.CheckinInput{
 		BaseURL:        site.BaseURL,
 		Secret:         string(plaintext),
+		Cookie:         string(cookiePlain),
+		AuthMode:       checkinAuthMode(credential.AuthMode, len(plaintext) > 0, len(cookiePlain) > 0),
 		PlatformUserID: platformUserID,
+		CheckinPath:    checkinPathOverride(credential.MetaJSON),
+		CheckinMethod:  checkinMethodOverride(credential.MetaJSON),
 	})
 	zero(plaintext)
+	zero(cookiePlain)
 	if adapterErr != nil {
 		status, category, message := normalizeAdapterError(adapterErr)
 		result, persistErr := s.persist(started, site.ID, credential.ID, source, status, category, message, "")
@@ -331,14 +345,16 @@ func (s *Service) release(credentialID int64) {
 	s.runningMu.Unlock()
 }
 
-func (s *Service) resolvePlatformUserID(ctx context.Context, site *domain.Site, secret string) (int64, error) {
+func (s *Service) resolvePlatformUserID(ctx context.Context, site *domain.Site, secret, cookie, mode string) (int64, error) {
 	accountAdapter, ok := s.registry.ResolveAccount(site.Platform)
 	if !ok {
 		return 0, nil
 	}
 	self, err := accountAdapter.ProbeSelf(ctx, adapters.AccountInput{
-		BaseURL: site.BaseURL,
-		Secret:  secret,
+		BaseURL:  site.BaseURL,
+		Secret:   secret,
+		Cookie:   cookie,
+		AuthMode: checkinAuthMode(mode, secret != "", cookie != ""),
 	})
 	if err != nil {
 		return 0, err
@@ -472,6 +488,57 @@ func normalizeAdapterError(err error) (status, category, message string) {
 		return StatusFailed, string(modelErr.Kind), "could not resolve platform user id"
 	}
 	return StatusFailed, "upstream_failure", "upstream check-in failed (unknown error type)"
+}
+
+func checkinAuthMode(mode string, hasSecret, hasCookie bool) adapters.AuthMode {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "cookie":
+		if hasCookie {
+			return adapters.AuthCookie
+		}
+	case "auto":
+		// auto is advisory at check-in time: the check-in request itself is a
+		// state-changing POST (not idempotent), so no automatic cookie retry;
+		// pick the strongest present credential, preferring the token.
+		if hasSecret {
+			return adapters.AuthAccessToken
+		}
+		if hasCookie {
+			return adapters.AuthCookie
+		}
+	case "access_token":
+		if hasSecret {
+			return adapters.AuthAccessToken
+		}
+	}
+	if hasSecret {
+		return adapters.AuthAccessToken
+	}
+	return adapters.AuthCookie
+}
+
+// checkinPathOverride / checkinMethodOverride read the optional endpoint
+// overrides external check-in sites declare in credential meta
+// ({"checkin_path": "/api/checkin/spin", "checkin_method": "POST"}). Only
+// the external adapter consumes them; New-API adapters ignore the fields.
+func checkinPathOverride(metaJSON string) string {
+	var meta struct {
+		CheckinPath string `json:"checkin_path"`
+	}
+	if err := json.Unmarshal([]byte(metaJSON), &meta); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.CheckinPath)
+}
+
+func checkinMethodOverride(metaJSON string) string {
+	var meta struct {
+		CheckinMethod string `json:"checkin_method"`
+	}
+	if err := json.Unmarshal([]byte(metaJSON), &meta); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(meta.CheckinMethod)
 }
 
 func zero(value []byte) {

@@ -218,10 +218,21 @@ func TestMultiOnChange(t *testing.T) {
 // /healthz, and an echo endpoint that requires X-Plugin-Key.
 func fakeSidecar(t *testing.T, id, name string, requireKey bool) string {
 	t.Helper()
+	return fakeSidecarManifest(t, id, name, requireKey, "")
+}
+
+// fakeSidecarWithConfig is fakeSidecar with a config_fields declaration.
+func fakeSidecarWithConfig(t *testing.T, id, name string, requireKey bool) string {
+	t.Helper()
+	return fakeSidecarManifest(t, id, name, requireKey, `,"config_fields":[{"key":"api_url","type":"string"},{"key":"api_key","type":"secret"}]`)
+}
+
+func fakeSidecarManifest(t *testing.T, id, name string, requireKey bool, extra string) string {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/plugin.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"id":%q,"version":"1.0.0","name":%q,"description":"test plugin","page_path":"/app","health_path":"healthz"}`, id, name)
+		fmt.Fprintf(w, `{"id":%q,"version":"1.0.0","name":%q,"description":"test plugin","page_path":"/app","health_path":"healthz"%s}`, id, name, extra)
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if requireKey && r.Header.Get("X-Plugin-Key") != "sekrit" {
@@ -331,6 +342,129 @@ func TestSidecarSurvivesRestart(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("sidecar missing from catalog after restart")
+	}
+}
+
+func TestPluginConfigPersistsAndCleansUp(t *testing.T) {
+	db := openPluginTestDB(t)
+	dir := filepath.Join(t.TempDir(), "plugins")
+	svc, err := NewService(dir, db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	base := fakeSidecar(t, "config-sidecar", "Config Sidecar", false)
+	if _, err := svc.RegisterSidecar(base, "", nil); err != nil {
+		t.Fatalf("RegisterSidecar: %v", err)
+	}
+	// Reject invalid JSON and non-object values.
+	if err := svc.SetPluginConfig("config-sidecar", `[1,2]`); err == nil {
+		t.Fatal("expected non-object config rejected")
+	}
+	if err := svc.SetPluginConfig("config-sidecar", `not-json`); err == nil {
+		t.Fatal("expected invalid JSON rejected")
+	}
+	if err := svc.SetPluginConfig("missing-sidecar", `{"a":1}`); err == nil {
+		t.Fatal("expected uninstalled plugin rejected")
+	}
+	// Persist and read back.
+	if err := svc.SetPluginConfig("config-sidecar", `{"region":"cn","apiKey":"abc"}`); err != nil {
+		t.Fatalf("SetPluginConfig: %v", err)
+	}
+	if got := svc.PluginConfig("config-sidecar"); got != `{"region":"cn","apiKey":"abc"}` {
+		t.Fatalf("PluginConfig = %q", got)
+	}
+	// Restart: config is recovered from the store.
+	svc2, err := NewService(dir, db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService(2): %v", err)
+	}
+	if got := svc2.PluginConfig("config-sidecar"); got != `{"region":"cn","apiKey":"abc"}` {
+		t.Fatalf("PluginConfig after restart = %q", got)
+	}
+	// Uninstall drops the persisted config.
+	if err := svc2.Uninstall("config-sidecar"); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if got := svc2.PluginConfig("config-sidecar"); got != "" {
+		t.Fatalf("PluginConfig after uninstall = %q, want empty", got)
+	}
+}
+
+func TestValidateConfigFieldsAndPermissions(t *testing.T) {
+	good := []ConfigField{
+		{Key: "api_key", Type: ConfigSecret, Label: "Key", Required: true},
+		{Key: "region", Type: ConfigSelect, Options: []string{"cn", "us"}},
+		{Key: "timeout", Type: ConfigNumber, Default: float64(30)},
+	}
+	if err := validateConfigFields(good); err != nil {
+		t.Fatalf("valid fields rejected: %v", err)
+	}
+	for i, bad := range [][]ConfigField{
+		{{Key: ""}},
+		{{Key: "1abc"}},
+		{{Key: "abc"}, {Key: "abc"}},
+		{{Key: "abc", Type: "unknown"}},
+		{{Key: "abc", Type: ConfigSelect}},
+		{{Key: "abc", Type: ConfigNumber, Default: "30"}},
+		{{Key: "abc", Type: ConfigBool, Default: "true"}},
+	} {
+		if err := validateConfigFields(bad); err == nil {
+			t.Errorf("bad fields case %d accepted", i)
+		}
+	}
+	if err := validatePermissions([]string{"upstream:read", "admin_api:checkin"}); err != nil {
+		t.Fatalf("valid permissions rejected: %v", err)
+	}
+	for i, bad := range [][]string{
+		{""},
+		{"Upstream:read"},
+		{"upstream read"},
+		{"upstream:read", "upstream:read"},
+	} {
+		if err := validatePermissions(bad); err == nil {
+			t.Errorf("bad permissions case %d accepted", i)
+		}
+	}
+}
+
+func TestPluginSecretConfigMasking(t *testing.T) {
+	db := openPluginTestDB(t)
+	dir := filepath.Join(t.TempDir(), "plugins")
+	svc, err := NewService(dir, db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	base := fakeSidecarWithConfig(t, "secret-config-sidecar", "Secret Config Sidecar", false)
+	if _, err := svc.RegisterSidecar(base, "", nil); err != nil {
+		t.Fatalf("RegisterSidecar: %v", err)
+	}
+
+	// Store a real secret value.
+	if err := svc.SetPluginConfig("secret-config-sidecar", `{"api_url":"https://x","api_key":"super-secret"}`); err != nil {
+		t.Fatalf("SetPluginConfig: %v", err)
+	}
+	// Masked read must never include the plaintext secret.
+	fields := svc.ConfigFieldsFor("secret-config-sidecar")
+	masked, err := MaskPluginConfigJSON(svc.PluginConfig("secret-config-sidecar"), fields)
+	if err != nil {
+		t.Fatalf("MaskPluginConfigJSON: %v", err)
+	}
+	if strings.Contains(masked, "super-secret") || !strings.Contains(masked, "\""+SecretMask+"\"") {
+		t.Fatalf("masked config = %s", masked)
+	}
+	// Submitting the mask keeps the stored value; a plain value replaces it.
+	if err := svc.SetPluginConfig("secret-config-sidecar", `{"api_url":"https://y","api_key":"••••••••••"}`); err != nil {
+		t.Fatalf("SetPluginConfig masked: %v", err)
+	}
+	if got := svc.PluginConfig("secret-config-sidecar"); !strings.Contains(got, "super-secret") || !strings.Contains(got, "https://y") {
+		t.Fatalf("masked keep = %s", got)
+	}
+	// An empty value clears the secret.
+	if err := svc.SetPluginConfig("secret-config-sidecar", `{"api_url":"https://y","api_key":""}`); err != nil {
+		t.Fatalf("SetPluginConfig clear: %v", err)
+	}
+	if got := svc.PluginConfig("secret-config-sidecar"); strings.Contains(got, "super-secret") {
+		t.Fatalf("secret not cleared: %s", got)
 	}
 }
 
