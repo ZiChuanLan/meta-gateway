@@ -85,7 +85,12 @@ func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput
 		return CheckinResult{}, &CheckinError{Kind: ErrorInvalidURL}
 	}
 	req.Header.Set("Cookie", input.Cookie)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	if method == http.MethodPost {
+		// Matches the native Bohe fetch('/api/checkin/spin') request. Some
+		// middleware validates JSON content type even when the body is empty.
+		req.Header.Set("Content-Type", "application/json")
+	}
 	// Browser-like Origin/Referer so server-side CSRF / hotlink checks pass.
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Referer", origin+"/")
@@ -106,14 +111,6 @@ func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput
 		return CheckinResult{}, &CheckinError{Kind: ErrorTransport}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return CheckinResult{}, &CheckinError{
-			Kind:    ErrorStatus,
-			Status:  resp.StatusCode,
-			Message: explainCheckinHTTPStatus(resp.StatusCode),
-		}
-	}
-
 	limited := io.LimitReader(resp.Body, maxCheckinResponseBytes+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
@@ -128,6 +125,28 @@ func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput
 		Data    struct {
 			Reward any `json:"reward"`
 		} `json:"data"`
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Keep the upstream's short JSON message when available. This is the
+		// only actionable explanation for 400/401/403 responses; never return
+		// the body wholesale because some sites echo request material.
+		message := ""
+		if json.Unmarshal(body, &payload) == nil {
+			if alreadyCheckedIn(payload.Message) {
+				return CheckinResult{Outcome: CheckinSuccess, Category: "already_checked_in", Message: "already checked in"}, nil
+			}
+			message = redactCheckinDetail(strings.TrimSpace(payload.Message))
+		}
+		if message == "" {
+			message = explainCheckinHTTPStatus(resp.StatusCode)
+		} else {
+			message = explainCheckinHTTPStatus(resp.StatusCode) + " — " + message
+		}
+		return CheckinResult{}, &CheckinError{
+			Kind:    ErrorStatus,
+			Status:  resp.StatusCode,
+			Message: message,
+		}
 	}
 	// External sites are more varied: a 2xx without a machine-readable body is
 	// still a successful check-in from the gateway's point of view.

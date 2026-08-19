@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,9 @@ func TestExternalCheckinAdapter(t *testing.T) {
 		if got := r.Header.Get("Referer"); got != srv.URL+"/" {
 			t.Errorf("referer = %q, want %q", got, srv.URL+"/")
 		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("content-type = %q, want application/json", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"success":true,"message":"签到成功","data":{"reward":"100 积分"}}`))
 	})
@@ -37,7 +41,13 @@ func TestExternalCheckinAdapter(t *testing.T) {
 	})
 	mux.HandleFunc("/api/checkin/fail", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"success":false,"message":"会话过期"}`))
+	})
+	mux.HandleFunc("/api/checkin/already400", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"success":false,"message":"今日已签到"}`))
 	})
 	srv = httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -81,14 +91,27 @@ func TestExternalCheckinAdapter(t *testing.T) {
 		t.Fatalf("plain = %+v err=%v", result, err)
 	}
 
-	// success:false with a failure message.
+	// Non-2xx keeps the upstream's safe message so the operator sees the real
+	// reason instead of a generic HTTP 400.
 	if _, err := adapter.Checkin(context.Background(), CheckinInput{
 		BaseURL:       srv.URL,
 		Cookie:        "auth_token=abc123",
 		CheckinPath:   "/api/checkin/fail",
 		CheckinMethod: http.MethodGet,
-	}); err == nil {
-		t.Fatal("expected failure for success:false")
+	}); err == nil || !strings.Contains(err.Error(), "会话过期") {
+		t.Fatalf("expected HTTP error with upstream message, got %v", err)
+	}
+
+	// Some sites return HTTP 400 for an already-completed daily check-in; that
+	// remains a successful idempotent outcome.
+	result, err = adapter.Checkin(context.Background(), CheckinInput{
+		BaseURL:       srv.URL,
+		Cookie:        "auth_token=abc123",
+		CheckinPath:   "/api/checkin/already400",
+		CheckinMethod: http.MethodGet,
+	})
+	if err != nil || result.Category != "already_checked_in" {
+		t.Fatalf("already400 result=%+v err=%v", result, err)
 	}
 
 	// 401 with a wrong cookie surfaces as a status error.
