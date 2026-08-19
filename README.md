@@ -382,7 +382,12 @@ curl http://127.0.0.1:4100/readyz
 本项目基于 [MIT License](LICENSE) 开源。
 
 ## 🙏 致谢
+- [LINUX DO](https://linux.do)
+- [New API](https://github.com/QuantumNous/new-api) / [One API](https://github.com/songquanpeng/one-api) 
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 
+- [metapi](https://github.com/cita-777/metapi) 
+- AxonHUB
+- All API Hub
+- Sub2API
+- CC-SWITCH
 
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — 插件市场设计参考
-- [metapi](https://github.com/cita-777/metapi) — README 结构参考
-- [New API](https://github.com/QuantumNous/new-api) / [One API](https://github.com/songquanpeng/one-api) — 上游兼容生态
