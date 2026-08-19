@@ -1,341 +1,393 @@
-# Meta Gateway
+<div align="center">
 
-A production-oriented OpenAI-compatible relay gateway with multi-channel
-routing, retries, encrypted credentials, discovery, check-in, exchange,
-auditing, metrics, and online SQLite backups.
+<h1>Meta Gateway</h1>
 
-Beyond the core relay path it ships with: alert rules (metric → webhook),
-sensitive prompt-guard rules, error passthrough/rewrite rules, a plugin
-market, admin TOTP two-factor, redemption codes for downstream quota,
-per-model metadata and not-found blacklists, routing decision snapshots,
-health history with availability summaries, and scheduled database
-maintenance (orphan GC + VACUUM).
+**多通道 AI 中继网关 — 智能路由 · 自动故障转移 · 插件生态**
 
-Simple usage metering records prompt/completion tokens from upstream `usage` fields, enforces optional per-token quotas, and shows estimated cost in Admin → Tokens.
+<p>
+把分散在各处的 AI API 聚合为<strong>一个统一入口</strong>，
+<br>
+自动发现模型、智能路由、按优先级/权重分流，上游故障自动切换。
+</p>
 
-The embedded Web Admin is available at `http://127.0.0.1:4100/console/`
-after the gateway starts.
+<p>
+<a href="https://github.com/ZiChuanLan/meta-gateway/releases">
+  <img alt="GitHub Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?label=Release&logo=github&style=flat">
+</a>
+<a href="https://github.com/ZiChuanLan/meta-gateway/stargazers">
+  <img alt="GitHub Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=flat&logo=github&label=Stars">
+</a>
+<a href="https://hub.docker.com/r/zichuanlan/meta-gateway">
+  <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=flat&logo=docker&label=Docker%20Pulls">
+</a>
+<a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat">
+</a>
+<img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&style=flat">
+<img alt="SQLite" src="https://img.shields.io/badge/SQLite-embedded-003B57?logo=sqlite&style=flat">
+</p>
 
-The Admin **Store** (`/console/#/store` or sidebar **Store**) manages optional **add-ons** (Exchange import/export + WebDAV, Check-in). Core surfaces — connections, models, tokens, logs, runtime, discovery, **audit**, and **backups** — are always available and are not store-gated.
+<p>
+  <a href="#-快速开始"><strong>快速开始</strong></a> ·
+  <a href="#-功能特性">功能特性</a> ·
+  <a href="#-界面预览">界面预览</a> ·
+  <a href="#-部署指南">部署指南</a> ·
+  <a href="#-配置说明">配置</a> ·
+  <a href="#-架构设计">架构</a> ·
+  <a href="#-常见问题">FAQ</a>
+</p>
 
-## Quick Start
+</div>
 
-### Prerequisites
+---
 
-- Go 1.26.4+ (or Docker)
-- Node.js 24+ for source builds
-- SQLite (embedded, no external dependency)
+## 🌟 简介
 
-### Using Go
+现在 AI 生态里有越来越多基于 New API / One API 系列的聚合中转站。要管理多个站点的余额、模型列表和 API 密钥，往往既分散又费时。
+
+**Meta Gateway** 作为这些中转站之上的**元聚合层（Meta-Aggregation Layer）**，把多个站点统一到**一个入口**——下游所有工具（Cursor、Claude Code、Codex、Open WebUI 等）即可无感接入全部模型。
+
+| 痛点 | Meta Gateway 怎么解决 |
+| --- | --- |
+| 🔑 每个站点一个 Key，下游工具配置一堆 | **统一代理入口**，一个 Key 访问全部模型 |
+| 💸 不知道哪个站点用某个模型最便宜 | **智能路由** 自动按优先级/权重选最优通道 |
+| 🔄 某个站点挂了，手动切换好麻烦 | **自动故障转移**，一个通道失败自动冷却并切到下一个 |
+| 📊 余额分散在各处，不知道还剩多少 | **集中看板** 一目了然，余额不足自动告警 |
+| ✅ 每天得去各站签到领额度 | **自动签到** 定时执行，支持外站 Cookie 签到 |
+| 🤷 不知道哪个站有什么模型 | **自动模型发现**，上游新增模型零配置出现在你的模型列表里 |
+| 🧩 想加功能但不想改核心代码 | **插件市场** 社区贡献扩展，一键安装 |
+
+当前支持的上游范围包括：
+
+- **聚合面板**：New API、One API、OneHub、DoneHub、Veloera、AnyRouter、Sub2API 等
+- **通用兼容接口**：OpenAI / Anthropic / Gemini compatible endpoints
+- **官方预设**：DeepSeek、智谱 GLM、月之暗面 Moonshot、MiniMax 等
+- **OAuth 连接**：Codex、Claude、Gemini CLI
+
+---
+
+## 📸 界面预览
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/login.png" alt="登录页" style="width:100%;height:auto;"/>
+      <div><b>登录页</b> — ADMIN_TOKEN 认证，令牌仅存于内存</div>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/dashboard.png" alt="总览" style="width:100%;height:auto;"/>
+      <div><b>总览</b> — 流量统计、渠道健康、最近日志</div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/connections.png" alt="连接" style="width:100%;height:auto;"/>
+      <div><b>上游连接</b> — 多站点管理、健康状态、模型同步</div>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/models.png" alt="模型" style="width:100%;height:auto;"/>
+      <div><b>模型路由</b> — 路由策略、成员优先级、试调面板</div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/store.png" alt="商店" style="width:100%;height:auto;"/>
+      <div><b>插件商店</b> — 扩展安装、配置、启用/停用</div>
+    </td>
+    <td align="center">
+    </td>
+  </tr>
+</table>
+
+---
+
+## 🚀 快速开始
+
+### 方式一：Docker Compose（推荐）
 
 ```bash
-# Clone and build
+mkdir meta-gateway && cd meta-gateway
+
+cat > docker-compose.yml << 'EOF'
+services:
+  meta-gateway:
+    image: zichuanlan/meta-gateway:latest
+    ports:
+      - "4100:4100"
+    volumes:
+      - ./data:/data
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      MASTER_KEY: ${MASTER_KEY:?MASTER_KEY is required}
+      METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN is required}
+    restart: unless-stopped
+EOF
+
+# 设置密钥并启动
+export ADMIN_TOKEN=your-admin-token
+export MASTER_KEY=your-32-char-master-key-for-encryption!!
+export METRICS_TOKEN=your-metrics-token
+docker compose up -d
+```
+
+启动后访问 `http://localhost:4100/console/`，用 `ADMIN_TOKEN` 登录即可。
+
+<details>
+<summary><strong>一行 Docker 命令</strong></summary>
+
+```bash
+docker run -d --name meta-gateway \
+  -p 4100:4100 \
+  -e ADMIN_TOKEN=your-admin-token \
+  -e MASTER_KEY=your-32-char-master-key-for-encryption!! \
+  -e METRICS_TOKEN=your-metrics-token \
+  -v ./data:/data \
+  --restart unless-stopped \
+  zichuanlan/meta-gateway:latest
+```
+
+</details>
+
+> [!IMPORTANT]
+> 请务必修改 `ADMIN_TOKEN`、`MASTER_KEY` 和 `METRICS_TOKEN`，不要使用默认值。数据存储在 `./data` 目录，升级不会丢失。
+
+### 方式二：源码构建
+
+```bash
+# 前置条件
+# Go 1.26+ / Node.js 24+（仅构建前端）/ SQLite（内嵌，无需安装）
+
+git clone https://github.com/ZiChuanLan/meta-gateway.git
 cd meta-gateway
-cp .env.example .env
-# Set ADMIN_TOKEN, MASTER_KEY, and METRICS_TOKEN to independent random values
 
-cd web
-npm ci
-npm run build
-cd ..
+# 构建前端
+cd web && npm ci && npm run build && cd ..
+
+# 构建后端
 go build -o bin/meta-gateway ./cmd/server
-ADMIN_TOKEN=my-admin-token MASTER_KEY=my-32-char-master-key-for-aes! ./bin/meta-gateway
+
+# 启动
+ADMIN_TOKEN=my-token MASTER_KEY=my-32-char-key-for-encryption! ./bin/meta-gateway
 ```
 
-Open `http://127.0.0.1:4100/console/` and connect with `ADMIN_TOKEN`. The
-browser sends it only as an Admin Bearer token and retains it in memory or,
-when requested, `sessionStorage`; it is never placed in cookies, URLs, or
-`localStorage`.
-
-### Using Docker Compose
+### 验证
 
 ```bash
-cp .env.example .env
-# Replace all required secret placeholders in .env.
-docker compose up -d --build
-```
-
-### Verify
-
-```bash
-curl http://127.0.0.1:4100/healthz
+curl http://127.0.0.1:4100/readyz
 # → {"status":"ok"}
 ```
 
-## Configuration
+---
 
-| Env Variable | Default | Description |
+## ✨ 功能特性
+
+### 核心中继
+
+- **OpenAI 兼容 API**：`/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/images/*`
+- **Anthropic 原生**：`/v1/messages`（自动翻译 OpenAI ↔ Anthropic 格式）
+- **Gemini 原生**：`/v1/chat/completions` → `generateContent` 自动翻译
+- **SSE 流式传输**：全协议支持 Server-Sent Events
+- **多下游 Key**：支持 Key 级别的作用域（`relay`/`chat`/`models`/`embeddings` 等）
+
+### 智能路由
+
+- **优先级 + 权重**：高优先级先匹配，同级内按权重分流
+- **自动故障转移**：上游 5xx/超时自动重试下一个通道
+- **冷却机制**：连续失败的通道自动冷却，冷却到期自动恢复探测
+- **跨通道重试**：同 Key 重发 → 换 Key → 换通道，逐级升级
+- **灰度发布**：`stable_first` 通道先接 1/N 流量，验证后自动提升
+
+### 多通道管理
+
+- **多站点聚合**：一个管理面板管理所有上游站点
+- **自动模型发现**：一键同步上游模型列表，自动创建路由
+- **凭证加密存储**：AES 加密，密钥不入库、不入日志、不入 API 响应
+- **优先级/权重排序**：拖拽调整通道优先级，支持批量操作
+
+### 运维能力
+
+- **签到调度**：New API / One API 系站点自动签到，外站 Cookie 签到
+- **资产交换**：导入/导出连接配置，WebDAV 云备份
+- **审计日志**：所有管理操作留痕，支持保留策略
+- **在线备份**：SQLite 热备份 + 校验，一键恢复
+- **告警规则**：指标 → Webhook 告警（Bark/ServerChan/Telegram/SMTP）
+- **运行时热配置**：重试次数、限流、审计保留等参数在线调整无需重启
+
+### 插件生态
+
+- **插件市场**：官方 + 社区插件，一键安装
+- **托管进程**：网关下载并拉起插件进程，自动健康检查
+- **配置管理**：`config_fields` 声明式配置，secret 掩码保护
+- **官方扩展**：Exchange（资产交换）、Check-in（签到调度）
+
+---
+
+## ⚙️ 配置说明
+
+### 必填环境变量
+
+| 变量 | 说明 |
+| --- | --- |
+| `ADMIN_TOKEN` | 管理后台登录令牌（Bearer Token） |
+| `MASTER_KEY` | 数据加密密钥（≥32 字符，用于加密凭证） |
+| `METRICS_TOKEN` | `/metrics` 端点访问令牌 |
+
+### 可选环境变量
+
+| 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `HTTP_ADDR` | `:4100` | Listen address |
-| `DATA_DIR` | `./data` | SQLite storage directory |
-| `ADMIN_TOKEN` | _(required)_ | Bearer token for admin endpoints |
-| `ADMIN_TOKENS` | empty | Extra comma-separated admin tokens for rotation |
-| `MASTER_KEY` | _(required)_ | Encryption key for secrets at rest (32+ chars) |
-| `EXCHANGE_ALLOW_SECRET_EXPORT` | `true` | Allow `include_secrets` on exchange export |
-| `METRICS_TOKEN` | _(required*)_ | Independent Bearer token for `/metrics` |
-| `BACKUP_DIR` | `<DATA_DIR>/backups` | Confined online backup directory |
-| `BACKUP_RETENTION_COUNT` | `30` | Maximum verified backup snapshots retained on disk (0 disables pruning) |
-| `OUTBOUND_ALLOW_HOSTS` | empty | Exact trusted private upstream host exceptions |
-| `OUTBOUND_ALLOW_CIDRS` | empty | Trusted private upstream network exceptions |
-| `OUTBOUND_MAX_IDLE_CONNS` | `512` | Total outbound idle connection ceiling |
-| `OUTBOUND_MAX_IDLE_CONNS_PER_HOST` | `64` | Per-upstream-host idle connection ceiling (Go default is 2) |
-| `SQLITE_MAX_OPEN_CONNS` | `4` | SQLite connection-pool ceiling (WAL allows concurrent readers; `1` fully serializes) |
-| `TRUSTED_PROXY_CIDRS` | empty | Peers allowed to supply forwarded client addresses |
-| `TRUSTED_SCRAPER_CIDRS` | empty | Networks allowed to scrape without a metrics token |
-| `RELAY_RATE_PER_MINUTE` / `RELAY_RATE_BURST` | `600` / `100` | Per-key relay limiter; rate `0` disables it |
-| `ADMIN_RATE_PER_MINUTE` / `ADMIN_RATE_BURST` | `300` / `50` | Global Admin limiter; rate `0` disables it |
-| `AUDIT_RETENTION_DAYS` / `AUDIT_RETENTION_ROWS` | `90` / `100000` | Audit ceilings; `0` disables that dimension |
-| `HEALTH_HISTORY_RETENTION_DAYS` | `90` | Channel health-history retention; `0` disables pruning |
-| `BALANCE_HISTORY_RETENTION_DAYS` / `DECISION_SNAPSHOT_RETENTION_DAYS` | `90` / `7` | Balance and routing-decision history retention; `0` disables each pruner |
-| `RETRY_TIMES` | `2` | Retry rounds: how many additional channels are attempted after the first upstream attempt (each round = one more channel) |
-| `CHANNEL_RETRY_TIMES` | `1` | Same-key re-sends: how many times a retryable failure is re-sent on the same upstream key before moving to the next key/channel (0-5; network errors fail fast after these) |
-| `KEY_POOL_ROTATION` | `true` | Rotate through the site's API keys when one fails; off = only the channel's bound key is used |
-| `CHANNEL_AUTO_DISABLE_THRESHOLD` | `5` | Consecutive relay failures before a channel is auto-disabled (0 disables) |
-| `RECOVERY_PROBE_ENABLED` / `RECOVERY_PROBE_INTERVAL_SECONDS` | `true` / `600` | Re-probe auto-disabled channels for recovery |
-| `ROUTING_LATENCY_AWARE` / `ROUTING_ERROR_AWARE` / `ROUTING_CONCURRENCY_AWARE` | `true` | Routing signal toggles (latency, error history, concurrency load) |
-| `ROUTING_CONCURRENCY_LIMIT` | `64` | Per-model in-flight ceiling for the concurrency signal |
-| `STABLE_FIRST_ENABLED` / `STABLE_FIRST_DENOMINATOR` / `STABLE_FIRST_PROMOTE_REQUESTS` | `false` / `25` / `100` | Gray-release routing: a `stable_first` channel takes ~1/N of traffic until it accumulates enough successful requests, then is promoted |
-| `HEALTH_SWEEP_ENABLED` / `HEALTH_SWEEP_INTERVAL_SECONDS` | `true` / `300` | Proactive health sweep (latency sampling) over channels; successful probes also refresh the connectivity verdict |
-| `ALERT_CONFIG_JSON` | empty | Alert matrix JSON (bark / serverchan / telegram / SMTP + cooldown) |
-| `ALERT_SWEEP_INTERVAL_SECONDS` / `ALERT_DAILY_SUMMARY_INTERVAL_SECONDS` | `0` / `0` | Alert evaluation and daily summary cadence (0 = off) |
-| `CHECKIN_TZ` | empty | Timezone for `CHECKIN_CRON` (containers default to UTC; set e.g. `Asia/Shanghai`) |
-| `RELAY_MODEL_RATE_PER_MINUTE` / `RELAY_MODEL_RATE_BURST` | `0` / `0` | Optional per-model relay limiter (0 disables) |
-| `PLUGIN_CATALOG_URL` | empty | Extra plugin market registry URLs (comma-separated) |
-| `CROSS_CHANNEL_FAILOVER_ENABLED` | `true` | Whether failed requests may move to another channel; disabled means only the first selected channel is tried |
-| `COOLDOWN_SECONDS` | `30` | Fixed cooldown after a retryable member failure |
-| `FAULT_PROTECTION_ENABLED` | `true` | Master switch for fixed cooldown and channel auto-disable; retries and failover remain active when off |
-| `STICKY_ENABLED` / `STICKY_TTL_MINUTES` | `false` / `30` | Sticky-session routing toggle + binding TTL (hot-swappable) |
-| `CHECKIN_ENABLED` | `false` | Start scheduled credential check-in |
-| `CHECKIN_CRON` | `0 8 * * *` | Standard five-field check-in schedule |
-| `PLUGINS_DIR` | `<DATA_DIR>/plugins` | Official module package directory |
-| `WEBDAV_SYNC_ENABLED` | `false` | Enable read-only WebDAV backup pull |
-| `WEBDAV_URL` / `WEBDAV_USERNAME` / `WEBDAV_PASSWORD` | empty | WebDAV bootstrap credentials |
-| `WEBDAV_BACKUP_PASSWORD` | empty | Decrypt password for encrypted AAH envelopes |
-| `WEBDAV_CRON` | `0 */6 * * *` | WebDAV pull schedule |
-| `WEBDAV_MAX_BYTES` | `10485760` | Max WebDAV download size |
+| `HTTP_ADDR` | `:4100` | 监听地址 |
+| `DATA_DIR` | `./data` | 数据存储目录 |
+| `EXCHANGE_ALLOW_SECRET_EXPORT` | `true` | 允许导出含密钥的资产 |
+| `BACKUP_RETENTION_COUNT` | `30` | 备份保留数量（0 禁用） |
+| `RETRY_TIMES` | `2` | 重试轮次（每个轮次多尝试一个通道） |
+| `CHANNEL_RETRY_TIMES` | `1` | 同通道重发次数 |
+| `CHANNEL_AUTO_DISABLE_THRESHOLD` | `5` | 连续失败后自动禁用阈值（0 禁用） |
+| `ROUTING_LATENCY_AWARE` | `true` | 延迟感知路由 |
+| `ROUTING_ERROR_AWARE` | `true` | 错误率感知路由 |
+| `CROSS_CHANNEL_FAILOVER_ENABLED` | `true` | 跨通道故障转移 |
+| `CHECKIN_ENABLED` | `false` | 启用签到调度 |
+| `CHECKIN_TZ` | (系统) | 签到时区（如 `Asia/Shanghai`） |
+| `PLUGIN_MARKET_URLS` | (内置) | 额外插件市场源（逗号分隔） |
 
-`METRICS_TOKEN` may be empty only when `TRUSTED_SCRAPER_CIDRS` is configured.
-See `.env.example` for all timeouts and body/header limits. Invalid security
-settings fail startup.
+完整配置列表见 [docs/operations.md](docs/operations.md)。
 
-## API Overview
+---
 
-### Health
+## 🏗️ 架构设计
 
 ```
-GET /healthz → 200 {"status":"ok"}
+┌─────────────────────────────────────────────────────────┐
+│                    下游客户端                             │
+│         Cursor / Claude Code / Open WebUI / ...         │
+└───────────────────────┬─────────────────────────────────┘
+                        │ Bearer Token
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│                  Meta Gateway                            │
+│                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
+│  │ 令牌验证  │→│ 模型路由  │→│ 重试/故障 │              │
+│  │          │  │ 优先级   │  │ 转移      │              │
+│  └──────────┘  │ 权重     │  └────┬─────┘              │
+│                └──────────┘       │                      │
+│                                   ▼                      │
+│  ┌──────────────────────────────────────────┐           │
+│  │            出站策略（SSRF 防护）           │           │
+│  │  DNS 校验 · 重定向校验 · 代理路由          │           │
+│  └──────────────────────────────────────────┘           │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+   ┌─────────┐    ┌─────────┐    ┌─────────┐
+   │ 站点 A   │    │ 站点 B   │    │ 站点 C   │
+   │ New API  │    │ One API  │    │ 原生 API │
+   └─────────┘    └─────────┘    └─────────┘
 ```
 
-### Admin (requires `Authorization: Bearer <ADMIN_TOKEN>`)
+详细架构文档见 [docs/architecture.md](docs/architecture.md)。
 
-| Method | Path | Description |
+---
+
+## 📖 API 概览
+
+### 公开端点（需要下游 Key）
+
+| 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /console/sites | List sites |
-| POST | /console/sites | Create site |
-| GET | /console/sites/{id} | Get site |
-| PUT | /console/sites/{id} | Update site |
-| DELETE | /console/sites/{id} | Delete site |
-| GET | /console/site-type?url=… | Detect upstream platform (AAH chain) |
-| POST | /console/connections | One-shot create: site + credential + channel with rollback |
-| GET | /console/sites/{siteId}/credentials | List credentials for site |
-| POST | /console/sites/{siteId}/credentials | Create credential (encrypts secret) |
-| POST | /console/sites/{siteId}/credentials/{id}/reveal | Decrypt and view a stored credential secret (audit-logged) |
-| DELETE | /console/credentials/{id} | Delete credential |
-| GET | /console/channels | List channels |
-| GET | /console/channels/overview | Channel overviews with health/readiness |
-| GET | /console/search?q=… | Global search across assets |
-| POST | /console/channels | Create channel |
-| POST | /console/channels/{id}/duplicate | Duplicate a channel |
-| POST | /console/channels/{id}/ping | Connectivity ping |
-| GET | /console/channels/{id} | Get channel |
-| PUT | /console/channels/{id} | Update channel |
-| DELETE | /console/channels/{id} | Delete channel |
-| POST | /console/reset | Factory reset (wipes business data) |
-| GET | /console/routes | List routes |
-| GET | /console/routes/overview | Route overviews with members |
-| GET | /console/routes/explain?model={model} | Explain candidate eligibility and priority |
-| POST | /console/routes | Create route |
-| GET | /console/routes/{id} | Get route |
-| PUT | /console/routes/{id} | Update route |
-| DELETE | /console/routes/{id} | Delete route |
-| GET | /console/routes/{routeId}/members | List route members |
-| POST | /console/routes/{routeId}/members | Create route member |
-| PUT | /console/route-members/{id} | Update route member |
-| POST | /console/route-members/{id}/clear-health | Clear member failure/cooldown state |
-| DELETE | /console/route-members/{id} | Delete route member |
-| GET | /console/downstream-keys | List downstream keys |
-| POST | /console/downstream-keys | Create downstream key (plaintext stored encrypted) |
-| PUT | /console/downstream-keys/{id} | Update downstream key |
-| DELETE | /console/downstream-keys/{id} | Delete downstream key |
-| POST | /console/downstream-keys/{id}/reveal | Re-view the stored plaintext token (audit-logged) |
-| POST | /console/downstream-keys/{id}/rotate | Issue a new token, old one dies instantly (audit-logged) |
-| GET | /console/usage/summary | Usage summary (requests/tokens/cost) |
-| GET | /console/usage?limit=… | Usage records |
-| GET/PUT | /console/ratios | Model cost ratios (1.0 = no markup) |
-| GET/PUT/DELETE | /console/groups | Tenant groups (quotas / rate limits) |
-| PATCH | /console/channels/tag/{tag} | Bulk channel operations by tag |
-| GET | /console/sticky | Sticky-session routing stats |
-| GET | /console/proxy-logs | List proxy logs |
-| GET | /console/proxy-logs/latency-histogram | Latency distribution |
-| GET | /console/decision-snapshot | Routing decision audit trail |
-| GET/DELETE | /console/model-blocks | Model not-found blacklist |
-| POST/GET/DELETE | /console/redemption-codes | Quota top-up vouchers |
-| GET/PUT/DELETE | /console/model-metadata | Per-model capability annotations |
-| GET | /console/health-history?channel_id=&hours= | Recent probe points |
-| GET | /console/health-history/summary?hours= | Per-channel availability summaries |
-| GET/POST/PUT/DELETE | /console/alert-rules | Alert rules (metric → webhook) |
-| GET/POST/PUT/DELETE | /console/prompt-guards | Sensitive prompt guard rules |
-| GET/POST/PUT/DELETE | /console/error-rules | Error passthrough/rewrite rules |
-| POST/GET | /console/db/gc | Run / inspect database maintenance |
-| GET/POST | /console/totp/status, /console/totp/setup, /console/totp/enable, /console/totp/disable | Admin TOTP two-factor |
-| POST | /console/discovery/channels/{id}/refresh | Refresh one channel's models and automatic routes |
-| POST | /console/discovery/refresh | Refresh all enabled channels with itemized results |
-| GET | /console/discovery/models?channel_id={id} | List durable discovered-model snapshots |
-| POST | /console/discovery/channels/{id}/probe | Probe models without persisting |
-| POST | /console/channels/{id}/account/probe | Probe upstream account |
-| POST | /console/channels/{id}/account/sync-keys | Sync sk- keys from upstream account |
-| POST | /console/try/chat | Admin console chat probe |
-| GET/POST | /console/plugins/* | Module catalog, install, enable, disable |
-| GET/PUT | /console/webdav/* | Read-only WebDAV sync status and settings |
-| GET/PUT/POST | /console/runtime-settings | Hot runtime overrides (retry, rates, check-in, audit) |
-| PUT | /console/credentials/{id}/checkin | Enable or disable scheduled check-in |
-| POST | /console/checkin/credentials/{id}/run | Run one credential check-in manually |
-| POST | /console/checkin/run | Run all check-in-enabled credentials |
-| GET | /console/checkin/logs | List and filter redacted check-in logs |
-| POST | /console/exchange/export | Export all or selected channels; secrets require explicit opt-in |
-| POST | /console/exchange/import | Atomically import canonical, New API, or AAH V2 channel assets |
-| GET | /console/audit-events | List append-only redacted audit events |
-| POST | /console/audit-events/cleanup | Apply configured retention now |
-| GET | /console/backups | List generated backup inventory |
-| POST | /console/backups | Create and verify an online SQLite backup |
+| GET | `/v1/models` | 可用模型列表 |
+| POST | `/v1/chat/completions` | 聊天补全（支持 SSE） |
+| POST | `/v1/completions` | 文本补全 |
+| POST | `/v1/embeddings` | 向量嵌入 |
+| POST | `/v1/responses` | OpenAI Responses API |
+| POST | `/v1/messages` | Anthropic Messages API |
+| POST | `/v1/images/generations` | 图片生成 |
+| GET | `/v1/dashboard/billing/credit_summary` | 额度/余额查询 |
+| POST | `/v1/redemption/redeem` | 兑换额度码 |
 
-### Public (requires `Authorization: Bearer <DownstreamKey>`)
+### 管理端点（需要 ADMIN_TOKEN）
 
-| Method | Path | Description |
+| 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /v1/models | Available models from routes |
-| POST | /v1/chat/completions | Chat completions (supports SSE) |
-| POST | /v1/completions | Text completions (OpenAI-compatible) |
-| POST | /v1/embeddings | Embeddings |
-| POST | /v1/responses | OpenAI Responses API (pass-through) |
-| POST | /v1/messages | Anthropic Messages API (native clients) |
-| POST | /v1/messages/count_tokens | Anthropic token counting |
-| POST | /v1/images/generations, /v1/images/edits | Image generation (pass-through) |
-| GET | /v1/dashboard/billing/credit_summary | Quota / credit summary for the key |
-| POST | /v1/redemption/redeem | Redeem a quota top-up code |
+| GET | `/admin/sites` | 上游站点列表 |
+| POST | `/admin/sites` | 创建站点 |
+| GET | `/admin/channels` | 通道列表 |
+| POST | `/admin/channels` | 创建通道 |
+| GET | `/admin/models` | 模型路由列表 |
+| POST | `/admin/routes` | 创建模型路由 |
+| GET | `/admin/downstream-keys` | 下游 Key 列表 |
+| POST | `/admin/downstream-keys` | 创建下游 Key |
+| GET | `/admin/plugins/status` | 插件状态 |
+| GET | `/admin/checkin/logs` | 签到日志 |
+| POST | `/admin/exchange/export` | 导出资产 |
+| POST | `/admin/exchange/import` | 导入资产 |
+| POST | `/admin/backups` | 创建备份 |
 
-Downstream key `scopes` are enforced: `relay` allows the full public surface;
-otherwise use `models`, `chat`, `completions`, `embeddings`, `responses`,
-and/or `messages`. Routes match
-exact model names first, then the longest `*` / `?` wildcard pattern.
+完整 API 列表见 [docs/operations.md](docs/operations.md)。
 
-Connection type **Anthropic (Claude Official)** uses Anthropic auth headers and
-`/v1/messages` on the wire. OpenAI chat clients still call `/v1/chat/completions`;
-the gateway translates request and response for both non-stream and SSE traffic.
+---
 
-Connection type **Google Gemini (Official)** talks to
-`generativelanguage.googleapis.com` (`x-goog-api-key`). OpenAI
-`/v1/chat/completions` is translated to `generateContent` (non-stream and SSE),
-and `/v1/embeddings` to `batchEmbedContents`. Model discovery lists Gemini models
-via `GET /v1beta/models`.
+## 🛡️ 安全边界
 
-Official modules (`exchange`, `checkin`, `operations`) are auto-installed on first
-boot. Disable a module to hide its Admin API group; check-in scheduling also
-requires the `checkin` module to be enabled.
+- **凭证加密**：所有密钥使用 AES 加密存储，解密仅在请求构造时发生，日志/API 响应中永远不出现明文
+- **出站策略**：所有出站请求走统一 SSRF 防护——DNS 校验、重定向重校验、跨域凭证移除、环回/内网地址默认拒绝
+- **令牌隔离**：ADMIN_TOKEN 仅存于浏览器内存/Tab SessionStorage，不进 Cookie、不进 URL
+- **审计留痕**：所有管理操作记录审计事件，支持保留策略
+- **插件沙箱**：插件进程继承白名单环境变量，网关密钥（ADMIN_TOKEN/MASTER_KEY）不泄露给插件
 
-## Example: Create a Channel and Call /v1
+---
 
-```bash
-# 1. Create a downstream key
-curl -s -X POST http://127.0.0.1:4100/console/downstream-keys \
-  -H "Authorization: Bearer my-admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"my-app"}' | jq .
-# → {"id":1,"name":"my-app","token":"mg-abc123...","enabled":true,...}
+## 🔧 常见问题
 
-# 2. Create a site
-curl -s -X POST http://127.0.0.1:4100/console/sites \
-  -H "Authorization: Bearer my-admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"OpenAI","base_url":"https://api.openai.com","platform":"openai"}' | jq .
+<details>
+<summary><strong>Q: 支持哪些上游平台？</strong></summary>
 
-# 3. Create a credential (secret is encrypted at rest)
-curl -s -X POST http://127.0.0.1:4100/console/sites/1/credentials \
-  -H "Authorization: Bearer my-admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"kind":"api_key","secret":"sk-your-real-key"}' | jq .
+支持所有兼容 OpenAI / Anthropic / Gemini 接口的平台，包括但不限于：New API、One API、OneHub、DoneHub、Veloera、AnyRouter、Sub2API、DeepSeek、智谱 GLM、月之暗面 Moonshot 等。连接时选择对应的平台类型即可。
+</details>
 
-# 4. Create a channel
-curl -s -X POST http://127.0.0.1:4100/console/channels \
-  -H "Authorization: Bearer my-admin-token" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"GPT-4","site_id":1,"credential_id":1,"base_url":"https://api.openai.com","models_csv":"gpt-4,gpt-4-turbo","status":"enabled"}' | jq .
+<details>
+<summary><strong>Q: 如何添加一个新的上游站点？</strong></summary>
 
-# 5. Discover models and create exact automatic routes
-curl -s -X POST http://127.0.0.1:4100/console/discovery/channels/1/refresh \
-  -H "Authorization: Bearer my-admin-token" \
-  | jq .
+管理后台 → 连接 → 添加连接 → 填写站点地址和 API Key → 同步模型 → 完成。路由会自动按优先级分配。
+</details>
 
-# 6. Call v1/chat/completions
-curl -s -X POST http://127.0.0.1:4100/v1/chat/completions \
-  -H "Authorization: Bearer mg-abc123..." \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello!"}]}'
-```
+<details>
+<summary><strong>Q: 支持 Claude 官方 API 吗？</strong></summary>
 
-## Architecture
+支持。连接类型选择 "Anthropic (Claude Official)"，填入 API Key，网关会自动处理 Anthropic 认证头和 `/v1/messages` 路径翻译。下游客户端调用标准 `/v1/chat/completions` 即可。
+</details>
 
-See [docs/architecture.md](docs/architecture.md) for the full architecture overview.
-See [docs/operations.md](docs/operations.md) for deployment, outbound security,
-metrics, audit retention, backup, and restore procedures.
+<details>
+<summary><strong>Q: 如何配置自动故障转移？</strong></summary>
 
-The Web Admin covers day-to-day asset, routing, discovery, check-in, audit,
-backup, and exchange operations. Metrics collection and offline restore remain
-CLI/operations workflows rather than browser actions.
+默认已启用。只需为同一个模型配置多个通道（不同优先级），当高优先级通道失败时会自动尝试低优先级通道。可通过 `RETRY_TIMES` 调整重试轮次，`CHANNEL_AUTO_DISABLE_THRESHOLD` 调整自动禁用阈值。
+</details>
 
-Routing evaluates higher numeric priority first and uses weight only within the
-selected priority tier. If all eligible weights in a tier are zero, selection
-is uniform. Retryable transport failures and transient upstream responses move
-to another eligible channel; ordinary client-error responses do not retry.
+<details>
+<summary><strong>Q: Docker 镜像支持哪些架构？</strong></summary>
 
-Model discovery supports OpenAI-compatible, New API, Anthropic (official
-`GET /v1/models`), and Gemini (official `GET /v1beta/models`) platforms.
-Set the site `platform` or channel `type_hint` to `openai-compatible`, `openai`,
-`new-api`, `anthropic`, or `gemini`, then trigger a refresh manually.
+支持 `linux/amd64` 和 `linux/arm64`。
+</details>
 
-Credential check-in supports `session` and `access_token` credentials for New
-API and One API sites. Scheduling is disabled by default; enable individual
-credentials through the Admin API and then set `CHECKIN_ENABLED=true`. New API
-credentials may set `meta_json` to `{"platform_user_id": 42}` when the upstream
-requires the `New-Api-User` header.
+<details>
+<summary><strong>Q: 如何备份和恢复？</strong></summary>
 
-Channel exchange uses a strict versioned canonical format and supports
-documented New API and All API Hub V2 compatibility inputs. Secret-bearing
-exports contain plaintext API keys and return `Cache-Control: no-store`; use
-metadata-only export unless portability is required. See
-[docs/aah-exchange-format.md](docs/aah-exchange-format.md) for the complete
-format, defaults, idempotency, and security contract.
+管理后台 → 设置 → 备份，点击"创建备份"即可。恢复时停止服务后运行 `meta-gateway restore --from <备份文件>`。备份包含加密凭证，恢复时需使用相同的 `MASTER_KEY`。
+</details>
 
-## Security Boundary
+---
 
-All adapter, discovery, check-in, exchange, and relay requests use one outbound
-policy. Only HTTP(S) URLs without userinfo are accepted. DNS answers are checked
-at connect time, redirects are revalidated, cross-origin credentials are
-removed, and loopback/private/link-local/special addresses are denied by
-default. Environment proxy variables are intentionally ignored.
+## 🤝 参与贡献
 
-Allow a trusted self-hosted upstream by its exact hostname and, when needed,
-the narrowest possible CIDR. Host exceptions do not include subdomains.
+欢迎提交 Issue 和 Pull Request！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## Backup And Restore
+## 📄 开源协议
 
-Create backups with `POST /console/backups`; callers cannot provide a filesystem
-path. Restore only while the service is stopped:
+本项目基于 [MIT License](LICENSE) 开源。
 
-```bash
-DATA_DIR=/data BACKUP_DIR=/data/backups \
-  meta-gateway restore --from meta-gateway-YYYYMMDDTHHMMSSZ-xxxxxxxxxxxx.db
-```
+## 🙏 致谢
 
-The restored service must use the original `MASTER_KEY`. Backups contain
-encrypted credentials, never the key itself.
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) — 插件市场设计参考
+- [metapi](https://github.com/cita-777/metapi) — README 结构参考
+- [New API](https://github.com/QuantumNous/new-api) / [One API](https://github.com/songquanpeng/one-api) — 上游兼容生态
