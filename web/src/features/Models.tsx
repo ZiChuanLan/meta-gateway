@@ -1490,15 +1490,16 @@ function ModelCatalog({
                                 onChange={() => toggleMemberSelect(entry.id)}
                               />
                             </label>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="member-drag-handle"
-                            aria-label={t("routing.orderLabel")}
-                            title={t("routing.reorderHint")}
-                          >
-                            <GripVertical size={16} />
-                          </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="member-drag-handle"
+                              aria-label={t("routing.orderLabel")}
+                              title={t("routing.reorderHint")}
+                            >
+                              <GripVertical size={16} />
+                            </button>
+                          )}
                           <div className="member-row-main">
                             <strong>{candidate.channel.name}</strong>
                             <small>

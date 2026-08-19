@@ -8769,13 +8769,6 @@ tbody td .mono {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-.member-row:has(.member-bulk-check) {
-  grid-template-columns: auto minmax(0, 1fr);
-}
-.member-row:has(.member-bulk-check) .member-drag-handle {
-  display: none;
-}
-
   .member-controls {
     grid-column: 1 / -1;
     justify-content: flex-start;

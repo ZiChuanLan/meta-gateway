@@ -1,0 +1,1 @@
+import{j as t,R as x,E as f,_ as j}from"./index-CDM_qimr.js";function E({isLoading:r,isError:s,error:e,isEmpty:i,empty:a,retry:n,children:o}){return r?t.jsx(x,{}):s?t.jsx(f,{error:e,retry:n}):i?t.jsx(j,{children:a}):t.jsx("div",{className:"entity-state-fill",children:o})}export{E};
