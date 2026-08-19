@@ -177,7 +177,7 @@ go build -o demo-plugin .
 
 ## 插件市场（registry 协议）
 
-插件市场是一个**远程 registry.json 文档**，列出一批可安装的 sidecar 插件。默认内置官方源（`lan/meta-gateway-plugins` 仓库的 `registry.json`），可通过 `PLUGIN_MARKET_URLS`（逗号分隔）追加自定义源：
+插件市场是一个**远程 registry.json 文档**，列出一批可安装的 sidecar 插件。默认内置官方源（`ZiChuanLan/meta-gateway-plugins` 仓库的 `registry.json`），可通过 `PLUGIN_MARKET_URLS`（逗号分隔）追加自定义源：
 
 ```
 PLUGIN_MARKET_URLS=https://example.com/my-plugins/registry.json,https://example.com/more/registry.json

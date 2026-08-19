@@ -22,7 +22,7 @@ import (
 // DefaultMarketURL is the built-in official market registry. Point it at your
 // own registry by setting PLUGIN_MARKET_URLS (comma-separated, appended after
 // this one). See docs/PLUGINS.md for the registry.json schema.
-const DefaultMarketURL = "https://raw.githubusercontent.com/lan/meta-gateway-plugins/main/registry.json"
+const DefaultMarketURL = "https://raw.githubusercontent.com/ZiChuanLan/meta-gateway-plugins/main/registry.json"
 
 const (
 	marketSchemaVersion = 2
