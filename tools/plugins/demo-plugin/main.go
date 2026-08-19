@@ -27,11 +27,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync/atomic"
 	"time"
 )
 
-const expectedKey = "demo-secret"
+const defaultKey = "demo-secret"
 
 var hits atomic.Int64
 
@@ -48,9 +49,21 @@ type manifest struct {
 func main() {
 	addr := flag.String("addr", ":9100", "listen address")
 	noKey := flag.Bool("no-key", false, "do not require X-Plugin-Key")
+	keyFlag := flag.String("key", "", "expected X-Plugin-Key (default: $META_GATEWAY_PLUGIN_KEY, then demo-secret)")
 	flag.Parse()
 
-	requireKey := !*noKey
+	// Resolve the expected key with host-first precedence: the gateway hands
+	// managed plugins a random key via run_args {key} or the
+	// META_GATEWAY_PLUGIN_KEY environment variable; plain sidecar runs keep
+	// the historical demo-secret default.
+	expectedKey := *keyFlag
+	if expectedKey == "" {
+		expectedKey = os.Getenv("META_GATEWAY_PLUGIN_KEY")
+	}
+	if expectedKey == "" {
+		expectedKey = defaultKey
+	}
+	requireKey := !*noKey && expectedKey != ""
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/plugin.json", func(w http.ResponseWriter, r *http.Request) {
