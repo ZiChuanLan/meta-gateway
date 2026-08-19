@@ -290,14 +290,14 @@ func NewServiceWithOptions(dir string, pluginStore *store.PluginStore, catalogUR
 	if err := s.reloadEnabled(); err != nil {
 		return nil, err
 	}
-	s.market = newMarket(s.sidecarClient, nil)
+	s.market = newMarket(s.httpClient, nil)
 	return s, nil
 }
 
 // SetMarketURLs appends extra registry URLs to the plugin market (called
 // with the PLUGIN_MARKET_URLS env value at startup).
 func (s *Service) SetMarketURLs(extra []string) {
-	s.market = newMarket(s.sidecarClient, extra)
+	s.market = newMarket(s.httpClient, extra)
 }
 
 // MarketSources lists the configured registry sources.
