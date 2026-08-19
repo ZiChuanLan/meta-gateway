@@ -487,7 +487,6 @@ function Connect({
 					</Button>
 				</form>
 				<div className="connect-footer">
-					<small>{t("app.connect.hint")}</small>
 					<span>NO COOKIE · NO URL TOKEN · TAB SESSION ONLY</span>
 				</div>
 			</section>
