@@ -131,6 +131,8 @@ export function ChannelModelsPanel({
     invalidateKeys: [...INVALIDATE],
   });
 
+  const toast = useToast();
+
   const saveAlias = useAdminMutation({
     mutationFn: async (input: { realModel: string; alias: string }) => {
       const alias = input.alias.trim();
@@ -145,19 +147,68 @@ export function ChannelModelsPanel({
           mapping_json: mapping,
         });
       } else {
-        aliasRoute = await service.createRoute({
-          model_pattern: alias,
-          enabled: true,
-          mapping_json: mapping,
-        });
-        await service.createMember(aliasRoute.id, {
-          channel_id: channelId,
-          priority: 0,
-          weight: 100,
-          enabled: true,
-          auto: true,
-          manual_override: true,
-        });
+        // The alias name may already be taken by another route (custom model
+        // name or another real model's alias). Route names are globally
+        // unique, so reuse the existing route instead of hitting the
+        // UNIQUE constraint: attach this channel as a member and, when the
+        // route is not already an alias for a different real model, adopt it.
+        const sameName = (routeOverviews.data ?? []).find(
+          (overview) => overview.route.model_pattern === alias,
+        );
+        if (sameName) {
+          let conflict = false;
+          if (sameName.route.mapping_json) {
+            try {
+              const parsed = JSON.parse(sameName.route.mapping_json) as {
+                real?: string;
+              };
+              if (parsed.real && parsed.real !== input.realModel) {
+                conflict = true;
+              }
+            } catch {
+              conflict = true;
+            }
+          }
+          if (conflict) {
+            toast.push({
+              tone: "error",
+              message: t("channels.aliasConflict", { alias }),
+            });
+            return;
+          }
+          const existingMember = (sameName.members ?? []).find(
+            (candidate) => candidate.member.channel_id === channelId,
+          )?.member;
+          aliasRoute = await service.updateRoute(sameName.route.id, {
+            ...sameName.route,
+            model_pattern: alias,
+            mapping_json: mapping,
+          });
+          if (!existingMember) {
+            await service.createMember(aliasRoute.id, {
+              channel_id: channelId,
+              priority: 0,
+              weight: 100,
+              enabled: true,
+              auto: true,
+              manual_override: true,
+            });
+          }
+        } else {
+          aliasRoute = await service.createRoute({
+            model_pattern: alias,
+            enabled: true,
+            mapping_json: mapping,
+          });
+          await service.createMember(aliasRoute.id, {
+            channel_id: channelId,
+            priority: 0,
+            weight: 100,
+            enabled: true,
+            auto: true,
+            manual_override: true,
+          });
+        }
       }
       // Retire the original model name for this channel: drop its member
       // on the original route; delete the route if it became empty.
@@ -264,8 +315,6 @@ export function ChannelModelsPanel({
     }
     return out;
   }, [models, routeOverviews.data, channelId]);
-
-  const toast = useToast();
 
   const addCustom = useAdminMutation({
     mutationFn: async (name: string) => {

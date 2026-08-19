@@ -289,6 +289,7 @@ export const zh: Dict = {
   "channels.modelsManageHint": "启用/禁用模型，并为该渠道的模型设置对外别名。",
   "channels.backToChannels": "返回连接",
   "channels.aliasStat": "已设别名",
+  "channels.aliasConflict": "别名 {alias} 已被另一个模型占用",
   "channels.modelsSelectAll": "全选",
   "channels.modelsSelectedCount": "已选 {n} 项",
   "channels.modelsEnableSelected": "启用选中",

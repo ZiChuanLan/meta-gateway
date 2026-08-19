@@ -308,6 +308,7 @@ export const en: Dict = {
     "Enable/disable models and assign outward alias names for this channel.",
   "channels.backToChannels": "Back to connections",
   "channels.aliasStat": "Aliased",
+  "channels.aliasConflict": "Alias {alias} is already used by another model",
   "channels.modelsSelectAll": "Select all",
   "channels.modelsSelectedCount": "{n} selected",
   "channels.modelsEnableSelected": "Enable selected",
