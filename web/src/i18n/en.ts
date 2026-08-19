@@ -1224,6 +1224,10 @@ export const en: Dict = {
 "ops.external.baseUrlHint": "Site root, e.g. https://up.x666.me",
 "ops.external.path": "Check-in path",
 "ops.external.method": "Method",
+"ops.external.headers": "Extra request headers (JSON)",
+"ops.external.headersHint":
+"Optional headers sent with every check-in request, e.g. {\"new-api-user\":\"68760\"} for New-API forks. Host / Cookie cannot be overridden.",
+"ops.external.headersInvalidJson": "Headers must be a JSON object of string values",
 "ops.external.cookie": "Cookie",
 "ops.external.cookieHint": "Login cookie, e.g. auth_token=…. Stored encrypted.",
 "ops.external.cookieKeepHint": "Leave empty to keep the stored cookie; fill to replace it.",

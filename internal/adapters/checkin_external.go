@@ -32,6 +32,17 @@ func NewExternalCheckinAdapter(name string, client *http.Client) *ExternalChecki
 
 func (a *ExternalCheckinAdapter) Name() string { return a.name }
 
+// checksumHeaderAllowed rejects headers that would break the request framing
+// or credential transport when applied from user config.
+func checksumHeaderAllowed(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "host", "cookie", "content-length", "connection", "transfer-encoding",
+		"upgrade", "proxy-connection", "te", "trailer", "expect":
+		return false
+	}
+	return true
+}
+
 func (a *ExternalCheckinAdapter) RequiresPlatformUserID() bool { return false }
 
 // DefaultExternalCheckinPath is used when the credential meta does not declare
@@ -78,6 +89,14 @@ func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput
 	// Browser-like Origin/Referer so server-side CSRF / hotlink checks pass.
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Referer", origin+"/")
+	// Site-specific headers (e.g. New-API forks want new-api-user). Host /
+	// Cookie / hop-by-hop headers are never overridable.
+	for key, value := range input.Headers {
+		if key == "" || !checksumHeaderAllowed(key) {
+			continue
+		}
+		req.Header.Set(key, value)
+	}
 
 	resp, err := a.client.Do(req)
 	if err != nil {

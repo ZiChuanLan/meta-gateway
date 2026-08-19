@@ -43,20 +43,48 @@ func (h *CheckinHandler) Register(r chi.Router) {
 // externalCheckinMeta is the non-sensitive endpoint config stored in
 // credential meta_json (the cookie itself lives in cookie_enc).
 type externalCheckinMeta struct {
-	CheckinPath   string `json:"checkin_path,omitempty"`
-	CheckinMethod string `json:"checkin_method,omitempty"`
+	CheckinPath   string            `json:"checkin_path,omitempty"`
+	CheckinMethod string            `json:"checkin_method,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
 }
 
 // externalCheckinView is the admin-safe list/update shape (never the cookie).
 type externalCheckinView struct {
-	SiteID         int64  `json:"site_id"`
-	CredentialID   int64  `json:"credential_id"`
-	Name           string `json:"name"`
-	BaseURL        string `json:"base_url"`
-	CheckinPath    string `json:"checkin_path,omitempty"`
-	CheckinMethod  string `json:"checkin_method,omitempty"`
-	CheckinEnabled bool   `json:"checkin_enabled"`
-	HasCookie      bool   `json:"has_cookie"`
+	SiteID         int64             `json:"site_id"`
+	CredentialID   int64             `json:"credential_id"`
+	Name           string            `json:"name"`
+	BaseURL        string            `json:"base_url"`
+	CheckinPath    string            `json:"checkin_path,omitempty"`
+	CheckinMethod  string            `json:"checkin_method,omitempty"`
+	Headers        map[string]string `json:"headers,omitempty"`
+	CheckinEnabled bool              `json:"checkin_enabled"`
+	HasCookie      bool              `json:"has_cookie"`
+}
+
+// normalizeExternalHeaders validates and canonicalizes user-supplied request
+// headers: keys must be valid token/id/。- names, values small and free of CR/LF.
+func normalizeExternalHeaders(raw map[string]string) (map[string]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(raw))
+	for key, value := range raw {
+		key = strings.TrimSpace(key)
+		if key == "" || len(key) > 128 {
+			return nil, errors.New("invalid header name")
+		}
+		for _, r := range key {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+				continue
+			}
+			return nil, errors.New("invalid header name")
+		}
+		if strings.ContainsAny(value, "\r\n") || len(value) > 512 {
+			return nil, errors.New("invalid header value")
+		}
+		out[key] = value
+	}
+	return out, nil
 }
 
 func (h *CheckinHandler) listExternal(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +120,7 @@ func (h *CheckinHandler) listExternal(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal([]byte(c.MetaJSON), &meta) == nil {
 				view.CheckinPath = meta.CheckinPath
 				view.CheckinMethod = meta.CheckinMethod
+				view.Headers = meta.Headers
 			}
 			break
 		}
@@ -102,12 +131,13 @@ func (h *CheckinHandler) listExternal(w http.ResponseWriter, r *http.Request) {
 
 func (h *CheckinHandler) createExternal(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name          string `json:"name"`
-		BaseURL       string `json:"base_url"`
-		CheckinPath   string `json:"checkin_path"`
-		CheckinMethod string `json:"checkin_method"`
-		Cookie        string `json:"cookie"`
-		Enabled       *bool  `json:"enabled"`
+		Name          string            `json:"name"`
+		BaseURL       string            `json:"base_url"`
+		CheckinPath   string            `json:"checkin_path"`
+		CheckinMethod string            `json:"checkin_method"`
+		Headers       map[string]string `json:"headers"`
+		Cookie        string            `json:"cookie"`
+		Enabled       *bool             `json:"enabled"`
 	}
 	if err := decodeJSON(w, r, &req, 64<<10, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -137,9 +167,15 @@ func (h *CheckinHandler) createExternal(w http.ResponseWriter, r *http.Request) 
 	if name == "" {
 		name = hostLabel(baseURL)
 	}
+	headers, err := normalizeExternalHeaders(req.Headers)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid headers: "+err.Error())
+		return
+	}
 	meta, err := json.Marshal(externalCheckinMeta{
 		CheckinPath:   strings.TrimSpace(req.CheckinPath),
 		CheckinMethod: method,
+		Headers:       headers,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode metadata")
@@ -197,6 +233,7 @@ func (h *CheckinHandler) createExternal(w http.ResponseWriter, r *http.Request) 
 		BaseURL:        baseURL,
 		CheckinPath:    strings.TrimSpace(req.CheckinPath),
 		CheckinMethod:  method,
+		Headers:        headers,
 		CheckinEnabled: enabled,
 		HasCookie:      true,
 	})
@@ -208,13 +245,14 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		Name          string `json:"name"`
-		BaseURL       string `json:"base_url"`
-		CheckinPath   string `json:"checkin_path"`
-		CheckinMethod string `json:"checkin_method"`
-		Cookie        string `json:"cookie"`
-		ClearCookie   bool   `json:"clear_cookie"`
-		Enabled       *bool  `json:"enabled"`
+		Name          string            `json:"name"`
+		BaseURL       string            `json:"base_url"`
+		CheckinPath   string            `json:"checkin_path"`
+		CheckinMethod string            `json:"checkin_method"`
+		Headers       map[string]string `json:"headers"`
+		Cookie        string            `json:"cookie"`
+		ClearCookie   bool              `json:"clear_cookie"`
+		Enabled       *bool             `json:"enabled"`
 	}
 	if err := decodeJSON(w, r, &req, 64<<10, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -281,7 +319,12 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		changed = true
 	}
 	path := strings.TrimSpace(req.CheckinPath)
-	if method != "" || path != "" {
+	headers, headerErr := normalizeExternalHeaders(req.Headers)
+	if headerErr != nil {
+		writeError(w, http.StatusBadRequest, "invalid headers: "+headerErr.Error())
+		return
+	}
+	if method != "" || path != "" || headers != nil {
 		var meta externalCheckinMeta
 		if json.Unmarshal([]byte(credential.MetaJSON), &meta) != nil {
 			meta = externalCheckinMeta{}
@@ -291,6 +334,9 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		}
 		if method != "" {
 			meta.CheckinMethod = method
+		}
+		if headers != nil {
+			meta.Headers = headers
 		}
 		body, marshalErr := json.Marshal(meta)
 		if marshalErr != nil {
@@ -325,6 +371,7 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		BaseURL:        updated.BaseURL,
 		CheckinPath:    meta.CheckinPath,
 		CheckinMethod:  meta.CheckinMethod,
+		Headers:        meta.Headers,
 		CheckinEnabled: enabled,
 		HasCookie:      len(credential.CookieEnc) > 0,
 	})

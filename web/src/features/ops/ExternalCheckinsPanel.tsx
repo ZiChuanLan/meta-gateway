@@ -195,6 +195,11 @@ function ExternalCheckinDialog({
     existing?.checkin_path ?? "/api/checkin/spin",
   );
   const [method, setMethod] = useState(existing?.checkin_method ?? "POST");
+  const [headersText, setHeadersText] = useState(
+    existing?.headers && Object.keys(existing.headers).length
+      ? JSON.stringify(existing.headers, null, 2)
+      : "",
+  );
   const [cookie, setCookie] = useState("");
   const [enabled, setEnabled] = useState(existing?.checkin_enabled ?? true);
   const [error, setError] = useState("");
@@ -203,11 +208,20 @@ function ExternalCheckinDialog({
   );
   const save = useAdminMutation({
     mutationFn: () => {
+      let parsedHeaders: Record<string, string> | undefined;
+      if (headersText.trim()) {
+        try {
+          parsedHeaders = JSON.parse(headersText) as Record<string, string>;
+        } catch {
+          throw new Error(t("ops.external.headersInvalidJson"));
+        }
+      }
       const base = {
         name: name.trim() || undefined,
         base_url: baseUrl.trim(),
         checkin_path: checkinPath.trim(),
         checkin_method: method,
+        headers: parsedHeaders,
         enabled,
       };
       if (existing) {
@@ -294,6 +308,19 @@ function ExternalCheckinDialog({
             </select>
           </Field>
         </div>
+        <Field
+          label={t("ops.external.headers")}
+          hint={t("ops.external.headersHint")}
+        >
+          <textarea
+            className="mono"
+            rows={3}
+            value={headersText}
+            onChange={(e) => setHeadersText(e.target.value)}
+            placeholder='{"new-api-user": "68760"}'
+            disabled={save.isPending}
+          />
+        </Field>
         <Field
           label={t("ops.external.cookie")}
           hint={

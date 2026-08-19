@@ -675,6 +675,7 @@ export interface ExternalCheckin {
   base_url: string;
   checkin_path?: string;
   checkin_method?: string;
+  headers?: Record<string, string>;
   checkin_enabled: boolean;
   has_cookie: boolean;
 }

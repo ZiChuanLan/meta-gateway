@@ -193,6 +193,7 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 		PlatformUserID: platformUserID,
 		CheckinPath:    checkinPathOverride(credential.MetaJSON),
 		CheckinMethod:  checkinMethodOverride(credential.MetaJSON),
+		Headers:        checkinHeadersOverride(credential.MetaJSON),
 	})
 	zero(plaintext)
 	zero(cookiePlain)
@@ -539,6 +540,21 @@ func checkinMethodOverride(metaJSON string) string {
 		return ""
 	}
 	return strings.TrimSpace(meta.CheckinMethod)
+}
+
+// checkinHeadersOverride reads the optional extra request headers external
+// check-in sites declare in credential meta ({"headers": {"new-api-user":"…"}}).
+func checkinHeadersOverride(metaJSON string) map[string]string {
+	var meta struct {
+		Headers map[string]string `json:"headers"`
+	}
+	if err := json.Unmarshal([]byte(metaJSON), &meta); err != nil {
+		return nil
+	}
+	if len(meta.Headers) == 0 {
+		return nil
+	}
+	return meta.Headers
 }
 
 func zero(value []byte) {

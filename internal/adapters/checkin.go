@@ -31,6 +31,10 @@ type CheckinInput struct {
 	// (e.g. 薄荷公益站 POST /api/checkin/spin). Empty = default New-API path.
 	CheckinPath   string
 	CheckinMethod string
+	// Headers are extra request headers for external sites that need more
+	// than a cookie (e.g. New-API forks require new-api-user). Host / Cookie /
+	// hop-by-hop headers are ignored; Origin/Referer stay derived from the URL.
+	Headers map[string]string
 }
 
 type CheckinResult struct {

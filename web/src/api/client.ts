@@ -207,6 +207,7 @@ export const api = (client: ApiClient) => ({
     base_url: string;
     checkin_path?: string;
     checkin_method?: string;
+    headers?: Record<string, string>;
     cookie: string;
     enabled?: boolean;
   }) => client.post<ExternalCheckin>("/admin/checkin/external", body),
@@ -217,6 +218,7 @@ export const api = (client: ApiClient) => ({
       base_url?: string;
       checkin_path?: string;
       checkin_method?: string;
+      headers?: Record<string, string>;
       cookie?: string;
       clear_cookie?: boolean;
       enabled?: boolean;

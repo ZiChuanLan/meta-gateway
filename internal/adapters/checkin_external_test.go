@@ -109,3 +109,37 @@ func TestExternalCheckinAdapter(t *testing.T) {
 		t.Fatalf("default path = %s", DefaultExternalCheckinPath)
 	}
 }
+
+// TestExternalCheckinAdapterCustomHeaders verifies extra headers (e.g.
+// new-api-user for New-API forks signing in via /api/user/sign_in) reach the
+// upstream, while Host/Cookie cannot be overridden.
+func TestExternalCheckinAdapterCustomHeaders(t *testing.T) {
+	var gotUser, gotCookie string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUser = r.Header.Get("New-Api-User")
+		gotCookie = r.Header.Get("Cookie")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"reward":"5 积分"}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	adapter := NewExternalCheckinAdapter("external-checkin", srv.Client())
+	_, err := adapter.Checkin(context.Background(), CheckinInput{
+		BaseURL: srv.URL,
+		Cookie:  "session=abc",
+		Headers: map[string]string{
+			"New-Api-User": "68760",
+			"X-Host":       "evil",
+			"Host":         "evil",
+			"Cookie":       "evil",
+		},
+	})
+	if err != nil {
+		t.Fatalf("checkin with headers: %v", err)
+	}
+	if gotUser != "68760" {
+		t.Fatalf("new-api-user = %q, want 68760", gotUser)
+	}
+	if gotCookie != "session=abc" {
+		t.Fatalf("cookie = %q, want untouched session=abc", gotCookie)
+	}
+}
