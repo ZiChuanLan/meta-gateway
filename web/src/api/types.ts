@@ -130,6 +130,7 @@ export interface RouteMember {
   enabled: boolean;
   auto: boolean;
   manual_override: boolean;
+  mapping_json?: string;
   fail_count: number;
   cooldown_until?: string;
   last_error?: string;

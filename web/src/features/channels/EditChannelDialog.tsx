@@ -173,20 +173,27 @@ export function EditChannelDialog({
 	});
   const aliasOf = (realModel: string) =>
     routeOverviews?.find((overview) => {
-      if (!overview.route.mapping_json) return false;
-      try {
-        const parsed = JSON.parse(overview.route.mapping_json) as {
-          real?: string;
-        };
-        return (
-          parsed.real === realModel &&
-          (overview.members ?? []).some(
-            (member) => member.member.channel_id === value.id,
-          )
-        );
-      } catch {
-        return false;
-      }
+      const mappingReal = (raw: string | undefined): string => {
+        if (!raw) return "";
+        try {
+          const parsed = JSON.parse(raw) as { real?: string };
+          return parsed.real ?? "";
+        } catch {
+          return "";
+        }
+      };
+      const onChannel = (overview.members ?? []).some(
+        (member) => member.member.channel_id === value.id,
+      );
+      return (
+        onChannel &&
+        ((overview.members ?? []).some(
+          (member) =>
+            member.member.channel_id === value.id &&
+            mappingReal(member.member.mapping_json) === realModel,
+        ) ||
+          mappingReal(overview.route.mapping_json) === realModel)
+      );
     });
 
   return (

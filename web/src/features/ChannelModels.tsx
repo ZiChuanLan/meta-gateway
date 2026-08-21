@@ -7,7 +7,6 @@ import { useToast } from "../toast";
 import type {
   Channel,
   DiscoveredModel,
-  Route,
   RouteMember,
   RouteOverview,
 } from "../api/types";
@@ -72,33 +71,54 @@ export function ChannelModelsPanel({
   const [bulkMode, setBulkMode] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  const aliasRouteFor = (realModel: string): RouteOverview | undefined =>
-    (routeOverviews.data ?? []).find((overview) => {
-      if (!overview.route.mapping_json) return false;
-      try {
-        const parsed = JSON.parse(overview.route.mapping_json) as {
-          real?: string;
-        };
-        return (
-          parsed.real === realModel &&
-          (overview.members ?? []).some(
-            (member) => member.member.channel_id === channelId,
-          )
+  // mappingReal parses a {"real":"…"} mapping value; empty when absent.
+  const mappingReal = (raw: string | undefined): string => {
+    if (!raw) return "";
+    try {
+      const parsed = JSON.parse(raw) as { real?: string };
+      return parsed.real ?? "";
+    } catch {
+      return "";
+    }
+  };
+
+  // aliasFor returns the alias binding for a real model on this channel:
+  // the (route, member) pair whose member carries {"real": realModel}. New
+  // aliases store the mapping on the member (shared aliases: several models/
+  // channels may reuse one route name and rewrite to their own real model);
+  // legacy aliases stored it on the route, so that form is read as a fallback.
+  const aliasFor = (
+    realModel: string,
+  ): { overview: RouteOverview; member: RouteMember } | undefined => {
+    for (const overview of routeOverviews.data ?? []) {
+      const mapped = (overview.members ?? []).find(
+        (candidate) =>
+          candidate.member.channel_id === channelId &&
+          mappingReal(candidate.member.mapping_json) === realModel,
+      );
+      if (mapped) return { overview, member: mapped.member };
+      if (
+        mappingReal(overview.route.mapping_json) === realModel &&
+        (overview.members ?? []).some(
+          (candidate) => candidate.member.channel_id === channelId,
+        )
+      ) {
+        const legacy = (overview.members ?? []).find(
+          (candidate) => candidate.member.channel_id === channelId,
         );
-      } catch {
-        return false;
+        if (legacy) return { overview, member: legacy.member };
       }
-    });
+    }
+    return undefined;
+  };
 
   const memberFor = (realModel: string): RouteMember | undefined => {
     // When an alias is active the channel's binding lives on the alias
     // route (the original-name member was retired when the alias was
     // saved), so the toggle must control that member.
-    const aliasOverview = aliasRouteFor(realModel);
-    if (aliasOverview) {
-      return aliasOverview.members.find(
-        (candidate) => candidate.member.channel_id === channelId,
-      )?.member;
+    const alias = aliasFor(realModel);
+    if (alias) {
+      return alias.member;
     }
     const route = (routeOverviews.data ?? []).find(
       (overview) => overview.route.model_pattern === realModel,
@@ -138,84 +158,81 @@ export function ChannelModelsPanel({
       const alias = input.alias.trim();
       if (!alias || channelId == null) return;
       const mapping = JSON.stringify({ real: input.realModel });
-      const existing = aliasRouteFor(input.realModel);
-      let aliasRoute: Route;
-      if (existing) {
-        aliasRoute = await service.updateRoute(existing.route.id, {
-          ...existing.route,
-          model_pattern: alias,
-          mapping_json: mapping,
-        });
-      } else {
-        // The alias name may already be taken by another route (custom model
-        // name or another real model's alias). Route names are globally
-        // unique, so reuse the existing route instead of hitting the
-        // UNIQUE constraint: attach this channel as a member and, when the
-        // route is not already an alias for a different real model, adopt it.
-        const sameName = (routeOverviews.data ?? []).find(
-          (overview) => overview.route.model_pattern === alias,
+      const existing = aliasFor(input.realModel);
+      // No existing alias and the alias equals the real name: nothing to do.
+      if (alias === input.realModel && !existing) return;
+      let aliasRouteId: number;
+
+      // The alias name changed: drop this channel's mapped member from the
+      // old route. The alias route may be shared by other channels/models, so
+      // only this member is removed (the route itself is deleted only when it
+      // has no members left).
+      if (existing && existing.overview.route.model_pattern !== alias) {
+        const remaining = (existing.overview.members ?? []).filter(
+          (candidate) => candidate.member.id !== existing.member.id,
         );
-        if (sameName) {
-          let conflict = false;
-          if (sameName.route.mapping_json) {
-            try {
-              const parsed = JSON.parse(sameName.route.mapping_json) as {
-                real?: string;
-              };
-              if (parsed.real && parsed.real !== input.realModel) {
-                conflict = true;
-              }
-            } catch {
-              conflict = true;
-            }
-          }
-          if (conflict) {
-            toast.push({
-              tone: "error",
-              message: t("channels.aliasConflict", { alias }),
-            });
-            return;
-          }
-          const existingMember = (sameName.members ?? []).find(
-            (candidate) => candidate.member.channel_id === channelId,
-          )?.member;
-          aliasRoute = await service.updateRoute(sameName.route.id, {
-            ...sameName.route,
-            model_pattern: alias,
-            mapping_json: mapping,
-          });
-          if (!existingMember) {
-            await service.createMember(aliasRoute.id, {
-              channel_id: channelId,
-              priority: 0,
-              weight: 100,
-              enabled: true,
-              auto: true,
-              manual_override: true,
+        await service.deleteMember(existing.member.id);
+        if (remaining.length === 0) {
+          await service.deleteRoute(existing.overview.route.id);
+        }
+      }
+
+      // Upsert this channel's alias member on the target route. The mapping
+      // lives on the member, so several real models/channels may share one
+      // alias name while the proxy rewrites to each member's own real model.
+      const upsertMember = async (routeId: number) => {
+        const overview = (routeOverviews.data ?? []).find(
+          (entry) => entry.route.id === routeId,
+        );
+        const mine = (overview?.members ?? []).find(
+          (candidate) =>
+            candidate.member.channel_id === channelId &&
+            mappingReal(candidate.member.mapping_json) === input.realModel,
+        );
+        if (mine) {
+          if (mine.member.mapping_json !== mapping) {
+            await service.updateMember(mine.member.id, {
+              ...mine.member,
+              mapping_json: mapping,
             });
           }
         } else {
-          aliasRoute = await service.createRoute({
-            model_pattern: alias,
-            enabled: true,
-            mapping_json: mapping,
-          });
-          await service.createMember(aliasRoute.id, {
+          await service.createMember(routeId, {
             channel_id: channelId,
             priority: 0,
             weight: 100,
             enabled: true,
             auto: true,
             manual_override: true,
+            mapping_json: mapping,
           });
         }
+      };
+
+      const target = (routeOverviews.data ?? []).find(
+        (entry) => entry.route.model_pattern === alias,
+      );
+      if (target) {
+        // Reuse the existing route (custom model name, or another real
+        // model's alias): attach this channel as an additional member instead
+        // of hitting the global UNIQUE(model_pattern) constraint.
+        aliasRouteId = target.route.id;
+        await upsertMember(aliasRouteId);
+      } else {
+        const created = await service.createRoute({
+          model_pattern: alias,
+          enabled: true,
+        });
+        aliasRouteId = created.id;
+        await upsertMember(aliasRouteId);
       }
+
       // Retire the original model name for this channel: drop its member
       // on the original route; delete the route if it became empty.
       const original = (routeOverviews.data ?? []).find(
         (overview) =>
           overview.route.model_pattern === input.realModel &&
-          overview.route.id !== aliasRoute.id,
+          overview.route.id !== aliasRouteId,
       );
       if (original) {
         const originalMember = original.members?.find(
@@ -236,58 +253,55 @@ export function ChannelModelsPanel({
   });
 
   const removeAlias = useAdminMutation({
-    mutationFn: async (routeId: number) => {
-      await service.deleteRoute(routeId);
-      // Re-create the original route binding so the model stays reachable
-      // under its real name again (the original member was dropped when
-      // the alias was saved).
-      const overview = (routeOverviews.data ?? []).find(
-        (entry) => entry.route.id === routeId,
+    mutationFn: async (realModel: string) => {
+      const alias = aliasFor(realModel);
+      if (!alias || channelId == null) return;
+      const { overview, member } = alias;
+      // Remove only this channel's mapped member; the alias route stays when
+      // other channels/models still share the alias name, and disappears once
+      // it has no members left.
+      const remaining = (overview.members ?? []).filter(
+        (candidate) => candidate.member.id !== member.id,
       );
-      if (overview && channelId != null) {
-        try {
-          const parsed = JSON.parse(overview.route.mapping_json ?? "") as {
-            real?: string;
-          };
-          const real = parsed.real;
-          if (real) {
-            const originalRoute = (routeOverviews.data ?? []).find(
-              (entry) => entry.route.model_pattern === real,
-            );
-            if (originalRoute) {
-              // The original route still exists (other channels keep it):
-              // re-attach this channel's member that the alias save dropped.
-              const member = (originalRoute.members ?? []).find(
-                (candidate) => candidate.member.channel_id === channelId,
-              );
-              if (!member) {
-                await service.createMember(originalRoute.route.id, {
-                  channel_id: channelId,
-                  priority: 0,
-                  weight: 100,
-                  enabled: true,
-                  auto: true,
-                  manual_override: true,
-                });
-              }
-            } else {
-              const created = await service.createRoute({
-                model_pattern: real,
-                enabled: true,
-              });
-              await service.createMember(created.id, {
-                channel_id: channelId,
-                priority: 0,
-                weight: 100,
-                enabled: true,
-                auto: true,
-                manual_override: true,
-              });
-            }
-          }
-        } catch {
-          // Non-mapping route: nothing to restore.
+      await service.deleteMember(member.id);
+      if (remaining.length === 0) {
+        await service.deleteRoute(overview.route.id);
+      }
+      // Restore the real-name binding so the model stays reachable under its
+      // real name again (the original member was dropped when the alias was
+      // saved).
+      const originalRoute = (routeOverviews.data ?? []).find(
+        (entry) =>
+          entry.route.model_pattern === realModel &&
+          entry.route.id !== overview.route.id,
+      );
+      if (originalRoute) {
+        const existingMember = (originalRoute.members ?? []).find(
+          (candidate) => candidate.member.channel_id === channelId,
+        );
+        if (!existingMember) {
+          await service.createMember(originalRoute.route.id, {
+            channel_id: channelId,
+            priority: 0,
+            weight: 100,
+            enabled: true,
+            auto: true,
+            manual_override: true,
+          });
         }
+      } else {
+        const created = await service.createRoute({
+          model_pattern: realModel,
+          enabled: true,
+        });
+        await service.createMember(created.id, {
+          channel_id: channelId,
+          priority: 0,
+          weight: 100,
+          enabled: true,
+          auto: true,
+          manual_override: true,
+        });
       }
     },
     invalidateKeys: [...INVALIDATE],
@@ -295,17 +309,17 @@ export function ChannelModelsPanel({
 
   // Custom models: routes with a member on this channel that are not in the
   // discovered list (manually added names, or upstream models the channel
-  // does not advertise).
+  // does not advertise). Members that carry an alias mapping are excluded
+  // (they are the alias bindings rendered on the real-model rows).
   const customModels = useMemo(() => {
     const discoveredNames = new Set(models.map((m) => m.model_name));
     const out: { name: string; routeId: number; member: RouteMember }[] = [];
     for (const overview of routeOverviews.data ?? []) {
       if (overview.route.mapping_json) continue;
       if (discoveredNames.has(overview.route.model_pattern)) continue;
-      const candidate = (overview.members ?? []).find(
-        (c) => c.member.channel_id === channelId,
-      );
-      if (candidate) {
+      for (const candidate of overview.members ?? []) {
+        if (candidate.member.channel_id !== channelId) continue;
+        if (candidate.member.mapping_json) continue;
         out.push({
           name: overview.route.model_pattern,
           routeId: overview.route.id,
@@ -405,7 +419,7 @@ export function ChannelModelsPanel({
     return base.filter(
       (item) =>
         item.name.toLowerCase().includes(needle) ||
-        (aliasRouteFor(item.name)?.route.model_pattern ?? "")
+        (aliasFor(item.name)?.overview.route.model_pattern ?? "")
           .toLowerCase()
           .includes(needle),
     );
@@ -464,7 +478,12 @@ export function ChannelModelsPanel({
       .map((item) => {
         const member = memberFor(item.name);
         if (!member) return null;
-        const next = enabled ? selectedIds.has(item.key) : member.enabled;
+        const isSelected = selectedIds.has(item.key);
+        const next = enabled
+          ? isSelected
+          : isSelected
+            ? false
+            : member.enabled;
         return member.enabled === next ? null : { member, enabled: next };
       })
       .filter(
@@ -482,7 +501,7 @@ export function ChannelModelsPanel({
     models.filter((model) => memberFor(model.model_name)?.enabled ?? true)
       .length + customModels.filter((custom) => custom.member.enabled).length;
   const aliasedCount = models.filter((model) =>
-    Boolean(aliasRouteFor(model.model_name)),
+    Boolean(aliasFor(model.model_name)),
   ).length;
 
   return (
@@ -630,8 +649,8 @@ export function ChannelModelsPanel({
                 : undefined;
               const member = memberFor(item.name);
               const enabled = member ? member.enabled : true;
-              const aliasOverview = aliasRouteFor(item.name);
-              const alias = aliasOverview?.route.model_pattern ?? "";
+              const aliasInfo = aliasFor(item.name);
+              const alias = aliasInfo?.overview.route.model_pattern ?? "";
               const inputValue = discoveredModel
                 ? (aliasInputs[discoveredModel.id] ?? alias)
                 : alias;
@@ -682,16 +701,14 @@ export function ChannelModelsPanel({
                             }))
                           }
                         />
-                        {aliasOverview && inputValue === alias ? (
+                        {aliasInfo && inputValue === alias ? (
                           <button
                             type="button"
                             className="icon-button"
                             aria-label={t("channels.aliasRemove")}
                             title={t("channels.aliasRemove")}
                             disabled={removeAlias.isPending}
-                            onClick={() =>
-                              removeAlias.mutate(aliasOverview.route.id)
-                            }
+                            onClick={() => removeAlias.mutate(item.name)}
                           >
                             <Trash2 size={13} />
                           </button>

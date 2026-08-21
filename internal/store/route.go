@@ -230,6 +230,7 @@ func scanRouteMember(scanner interface {
 		&enabled,
 		&auto,
 		&manual,
+		&r.MappingJSON,
 		&r.FailCount,
 		scanNullTime(&r.CooldownUntil),
 		&r.LastError,
@@ -248,7 +249,7 @@ func (s *RouteMemberStore) ListByRoute(routeID int64) ([]domain.RouteMember, err
 	if err := s.RecoverExpired(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
+	rows, err := s.db.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
 	if err != nil {
 		return nil, fmt.Errorf("route member list: %w", err)
 	}
@@ -288,8 +289,8 @@ func (s *RouteMemberStore) ListRouteOverviews() ([]domain.RouteOverview, error) 
 func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.RoutingCandidate, error) {
 	routeID := route.ID
 	rows, err := s.db.Query(`SELECT
-		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
-		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
+			rm.mapping_json, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
@@ -319,7 +320,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual,
-			&candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
+			&candidate.Member.MappingJSON, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
@@ -404,7 +405,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 	}
 	rows, err := s.db.Query(`SELECT
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
-		rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+		rm.mapping_json, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
@@ -437,7 +438,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual,
-			&candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
+			&candidate.Member.MappingJSON, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
@@ -547,7 +548,7 @@ func (s *RouteMemberStore) RecoverExpired() error {
 }
 
 func (s *RouteMemberStore) GetByID(id int64) (*domain.RouteMember, error) {
-	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE id = ?`, id)
 	var r domain.RouteMember
 	if err := scanRouteMember(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -560,8 +561,8 @@ func (s *RouteMemberStore) GetByID(id int64) (*domain.RouteMember, error) {
 
 func (s *RouteMemberStore) Create(r *domain.RouteMember) (int64, error) {
 	enabled, auto, manual := boolInt(r.Enabled), boolInt(r.Auto), boolInt(r.ManualOverride)
-	res, err := s.db.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual)
+	res, err := s.db.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON)
 	if err != nil {
 		return 0, fmt.Errorf("route member create: %w", err)
 	}
@@ -574,8 +575,8 @@ func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
 	if r.CooldownUntil != nil {
 		cooldownUntil = r.CooldownUntil.UTC().Format(time.RFC3339Nano)
 	}
-	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
-		r.Priority, r.Weight, enabled, auto, manual, r.FailCount, cooldownUntil, r.LastError, r.ID)
+	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, mapping_json=?, fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
+		r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, r.FailCount, cooldownUntil, r.LastError, r.ID)
 	if err != nil {
 		return fmt.Errorf("route member update: %w", err)
 	}

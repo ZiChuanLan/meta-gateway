@@ -145,6 +145,97 @@ func TestScopedPromptMaskSurvivesModelAliasRewrite(t *testing.T) {
 	}
 }
 
+func TestMemberLevelAliasRewriteWinsOverRouteMapping(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusOK, `{"ok":true}`)}}
+	service, db, highMemberID, _ := setupProxy(t, upstream)
+	member, err := db.RouteMember.GetByID(highMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Member-level mapping (shared aliases): the selected channel rewrites to
+	// its own real model even though the route itself carries no mapping.
+	member.MappingJSON = `{"real":"per-channel-model"}`
+	if err := db.RouteMember.Update(member); err != nil {
+		t.Fatal(err)
+	}
+
+	result := service.ChatCompletions(context.Background(), Request{
+		RequestID: "req-member-alias",
+		Model:     "model",
+		Body:      []byte(`{"model":"model","messages":[{"role":"user","content":"hi"}]}`),
+	})
+	if result.Err != nil || result.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	defer result.Body.Close()
+	if len(upstream.bodies) != 1 {
+		t.Fatalf("upstream calls = %d, want 1", len(upstream.bodies))
+	}
+	forwarded := string(upstream.bodies[0])
+	if !strings.Contains(forwarded, `"model":"per-channel-model"`) {
+		t.Fatalf("forwarded body missed member-level alias rewrite: %s", forwarded)
+	}
+}
+
+// TestSharedAliasRewritesPerChannel is the shared-alias scenario end to end:
+// two channels on one route, each member mapping the alias to its own real
+// model, and the proxy rewriting per selected channel.
+func TestSharedAliasRewritesPerChannel(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusOK, `{"ok":true}`),
+		response(http.StatusOK, `{"ok":true}`),
+	}}
+	service, db, highMemberID, lowMemberID := setupProxy(t, upstream)
+	high, err := db.RouteMember.GetByID(highMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	low, err := db.RouteMember.GetByID(lowMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	high.MappingJSON = `{"real":"high-model"}`
+	low.MappingJSON = `{"real":"low-model"}`
+	if err := db.RouteMember.Update(high); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RouteMember.Update(low); err != nil {
+		t.Fatal(err)
+	}
+
+	send := func(id string) {
+		t.Helper()
+		result := service.ChatCompletions(context.Background(), Request{
+			RequestID: id,
+			Model:     "model",
+			Body:      []byte(`{"model":"model","messages":[{"role":"user","content":"hi"}]}`),
+		})
+		if result.Err != nil || result.StatusCode != http.StatusOK {
+			t.Fatalf("unexpected result: %+v", result)
+		}
+		defer result.Body.Close()
+	}
+
+	// High-priority channel is selected: rewrites to its own real model.
+	send("req-shared-high")
+	// Disable it: the low channel now serves the same alias with its mapping.
+	high.Enabled = false
+	if err := db.RouteMember.Update(high); err != nil {
+		t.Fatal(err)
+	}
+	send("req-shared-low")
+
+	if len(upstream.bodies) != 2 {
+		t.Fatalf("upstream calls = %d, want 2", len(upstream.bodies))
+	}
+	if got := string(upstream.bodies[0]); !strings.Contains(got, `"model":"high-model"`) {
+		t.Fatalf("high-channel rewrite failed: %s", got)
+	}
+	if got := string(upstream.bodies[1]); !strings.Contains(got, `"model":"low-model"`) {
+		t.Fatalf("low-channel rewrite failed: %s", got)
+	}
+}
+
 func TestOversizedTransformedResponseIsBoundedAndNotRetried(t *testing.T) {
 	_, err := readResponseBody(strings.NewReader("123456"), 5)
 	if !errors.Is(err, ErrResponseTooLarge) {

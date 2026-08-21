@@ -376,6 +376,10 @@ type RouteMember struct {
 	Enabled        bool       `json:"enabled"`
 	Auto           bool       `json:"auto"`
 	ManualOverride bool       `json:"manual_override"`
+	// MappingJSON holds a per-member alias redirect ({"real":"…"}) so several
+	// channels can share one route/alias name while each rewrites to its own
+	// upstream model. Empty = follow the route-level mapping_json (legacy).
+	MappingJSON string     `json:"mapping_json,omitempty"`
 	FailCount      int        `json:"fail_count"`
 	CooldownUntil  *time.Time `json:"cooldown_until,omitempty"`
 	LastError      string     `json:"last_error,omitempty"`

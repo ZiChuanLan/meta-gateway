@@ -1148,6 +1148,9 @@ export const en: Dict = {
   "routing.financeHint":
     "Fixed-price models show how many requests the balance affords; token-billed models show how many 1M-token units it affords.",
   "routing.financeMissing": "no price",
+  "routing.memberOrigin": "origin {model}",
+  "routing.memberOriginHint":
+    "This member rewrites the route name to this upstream model (shared aliases show one channel on several rows, each rewriting to its own origin).",
   "routing.financeMissingHint":
     "No price data — the upstream did not return pricing for this model (or the account has no balance data).",
   "routing.independentLabel": "Independent priority/weight for this model",

@@ -1,4 +1,9 @@
-import type { FinanceItem, RouteMember, RoutingCandidate } from "../../api/types"
+import type {
+  FinanceItem,
+  Route,
+  RouteMember,
+  RoutingCandidate,
+} from "../../api/types";
 
 export function primaryMember(members: RoutingCandidate[]) {
   if (!members.length) return null;
@@ -15,6 +20,20 @@ export function sortMembers(members: RoutingCandidate[]) {
     }
     return left.channel.name.localeCompare(right.channel.name);
   });
+}
+
+// originModelOf resolves the upstream real model a member rewrites to when it
+// (or its route, the legacy alias form) carries a {"real":"…"} mapping. Empty
+// means the member forwards the route name unchanged.
+export function originModelOf(member: RouteMember, route?: Route): string {
+  const raw = member.mapping_json || route?.mapping_json || "";
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw) as { real?: string };
+    return parsed.real ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export function isActiveCooldown(member: Pick<RouteMember, "cooldown_until">) {

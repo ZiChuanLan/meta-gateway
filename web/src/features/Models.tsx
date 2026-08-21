@@ -96,6 +96,7 @@ import {
   candidateState,
   memberFinance,
   getEffectiveRoutingPolicy,
+  originModelOf,
 } from "./models/routingPolicy";
 
 const ROUTING_INVALIDATE_KEYS = [
@@ -1501,7 +1502,22 @@ function ModelCatalog({
                             </button>
                           )}
                           <div className="member-row-main">
-                            <strong>{candidate.channel.name}</strong>
+                            <strong>
+                              {candidate.channel.name}
+                              {originModelOf(entry, selectedRoute) ? (
+                                <span
+                                  className="member-origin-badge"
+                                  title={t("routing.memberOriginHint")}
+                                >
+                                  {t("routing.memberOrigin", {
+                                    model: originModelOf(
+                                      entry,
+                                      selectedRoute,
+                                    ),
+                                  })}
+                                </span>
+                              ) : null}
+                            </strong>
                             <small>
                               #{rowIndex + 1}
                               {" · "}

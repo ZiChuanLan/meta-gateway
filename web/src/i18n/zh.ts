@@ -1046,6 +1046,9 @@ export const zh: Dict = {
   "routing.financeHint":
     "固定价模型显示余额可承担的调用次数；按量计费模型显示可承担的百万 token 数。",
   "routing.financeMissing": "无价格",
+  "routing.memberOrigin": "原模型 {model}",
+  "routing.memberOriginHint":
+    "该成员把这个路由名改写为该上游模型（共享别名时同一连接会出现多行，各自回写不同的原模型）。",
   "routing.financeMissingHint":
     "无价格数据——上游未提供该模型定价（或账户无余额数据）。",
   "routing.independentLabel": "此模型使用独立优先级/权重",

@@ -347,11 +347,18 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 		}
 
-		// Channel-scoped model aliases: when the matched route carries a
-		// mapping_json of {"real":"…"}, clients requested the alias and we
-		// must rewrite the body back to the upstream's real model name.
+		// Channel-scoped model aliases: when the matched route or the selected
+		// channel's member carries a mapping_json of {"real":"…"}, clients
+		// requested the alias and we must rewrite the body back to the
+		// upstream's real model name. Member-level mapping wins (shared aliases
+		// rewrite per channel); route-level mapping is the legacy/fallback
+		// form for aliases created before per-member mappings existed.
+		mappingJSON := strings.TrimSpace(decision.RouteMappingJSON)
+		if memberMapping := strings.TrimSpace(candidate.Member.MappingJSON); memberMapping != "" {
+			mappingJSON = memberMapping
+		}
 		mappedBody := requestBody
-		if mappingJSON := strings.TrimSpace(decision.RouteMappingJSON); mappingJSON != "" {
+		if mappingJSON != "" {
 			mappedBody = rewriteModelName(requestBody, req.Model, mappingJSON)
 		}
 
