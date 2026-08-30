@@ -130,6 +130,7 @@ describe("channel-first shell", () => {
 		document.querySelector(".gateway-transition.is-sealing"),
 	).toBeInTheDocument();
 		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBeNull();
+		expect(localStorage.getItem("meta-gateway.admin-token")).toBeNull();
 		expect(
 			screen.getByRole("button", { name: "Connecting..." }),
 		).toBeDisabled();
@@ -139,7 +140,8 @@ describe("channel-first shell", () => {
 			await Promise.resolve();
 		});
 
-		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBe(
+		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBeNull();
+		expect(localStorage.getItem("meta-gateway.admin-token")).toBe(
 			"mg-sess.test",
 		);
 		expect(
@@ -176,10 +178,11 @@ describe("channel-first shell", () => {
 			document.querySelector(".gateway-transition"),
 		).not.toBeInTheDocument();
 		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBeNull();
+		expect(localStorage.getItem("meta-gateway.admin-token")).toBeNull();
 	});
 
 	it("lands legacy routes on the channel workspace", async () => {
-		sessionStorage.setItem("meta-gateway.admin-token", "redirect-token");
+		localStorage.setItem("meta-gateway.admin-token", "redirect-token");
 		vi.stubGlobal("fetch", stubAdminFetch());
 
 		renderApp(["/assets"]);
@@ -190,7 +193,7 @@ describe("channel-first shell", () => {
 	});
 
 	it("opens models, logs, and maintain from the product nav", async () => {
-		sessionStorage.setItem("meta-gateway.admin-token", "nav-token");
+		localStorage.setItem("meta-gateway.admin-token", "nav-token");
 		vi.stubGlobal("fetch", stubAdminFetch());
 
 		renderApp(["/models"]);
@@ -241,7 +244,7 @@ describe("channel-first shell", () => {
 		await Promise.resolve();
 	});
 
-	expect(sessionStorage.getItem("meta-gateway.admin-token")).toBe(
+	expect(localStorage.getItem("meta-gateway.admin-token")).toBe(
 		"mg-sess.test",
 	);
 		expect(

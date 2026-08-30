@@ -7,21 +7,31 @@ import { SessionProvider, useSession } from './session'
 const wrapper = ({ children }: { children: ReactNode }) => <SessionProvider>{children}</SessionProvider>
 
 describe('admin session', () => {
-  beforeEach(() => sessionStorage.clear())
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
 
   it('keeps an unremembered token out of storage', () => {
     const { result } = renderHook(() => useSession(), { wrapper })
     act(() => result.current.connect(' transient-token ', false))
     expect(result.current.token).toBe('transient-token')
+    expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)
   })
-  it('persists only for the current tab and clears on disconnect', () => {
+  it('persists a remembered token to localStorage and clears on disconnect', () => {
     const { result } = renderHook(() => useSession(), { wrapper })
     act(() => result.current.connect('tab-token', true))
-    expect(sessionStorage.getItem('meta-gateway.admin-token')).toBe('tab-token')
-    expect(localStorage.length).toBe(0)
+    expect(localStorage.getItem('meta-gateway.admin-token')).toBe('tab-token')
+    expect(sessionStorage.length).toBe(0)
     act(() => result.current.disconnect())
     expect(result.current.token).toBeNull()
+    expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)
+  })
+  it('restores a remembered token from localStorage', () => {
+    localStorage.setItem('meta-gateway.admin-token', 'kept-token')
+    const { result } = renderHook(() => useSession(), { wrapper })
+    expect(result.current.token).toBe('kept-token')
   })
 })

@@ -79,7 +79,7 @@ describe("Keys page", () => {
 		localStorage.clear();
 		sessionStorage.clear();
 		localStorage.setItem("meta-gateway.locale", "en");
-		sessionStorage.setItem("meta-gateway.admin-token", "test-token");
+		localStorage.setItem("meta-gateway.admin-token", "test-token");
 	});
 
 	afterEach(() => {

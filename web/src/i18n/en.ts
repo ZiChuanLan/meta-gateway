@@ -266,7 +266,7 @@ export const en: Dict = {
   "app.connect.subtitle":
     "Use ADMIN_TOKEN to open the multi-channel relay console.",
   "app.connect.token": "Admin token",
-  "app.connect.remember": "Remember for this browser tab",
+  "app.connect.remember": "Remember me",
   "app.connect.submit": "Connect",
   "app.connect.totpRequired":
     "Two-factor code required — enter your authenticator code.",
@@ -274,7 +274,7 @@ export const en: Dict = {
   "app.connect.connecting": "Connecting...",
   "app.connect.failed": "Connection failed",
   "app.connect.hint":
-    "Token stays in memory, or this tab session only. Never put it in the URL.",
+    "When checked, the token is kept in the browser and you stay signed in. Never put it in the URL.",
   "app.connect.background": "Custom login background",
   "app.connect.bgPlaceholder": "Image URL, press Enter",
   "app.connect.bgApply": "Apply",

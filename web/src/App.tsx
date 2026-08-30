@@ -595,7 +595,7 @@ function Connect({
 						</Button>
 					</form>
 					<div className="connect-footer">
-						<span>NO COOKIE · NO URL TOKEN · TAB SESSION ONLY</span>
+						<span>NO COOKIE · NO URL TOKEN · OPT-IN LOCAL STORAGE</span>
 					</div>
 				</section>
 			</div>

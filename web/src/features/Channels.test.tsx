@@ -48,7 +48,7 @@ describe("Channels two-phase create", () => {
 		localStorage.clear();
 		sessionStorage.clear();
 		localStorage.setItem("meta-gateway.locale", "en");
-		sessionStorage.setItem("meta-gateway.admin-token", "test-token");
+		localStorage.setItem("meta-gateway.admin-token", "test-token");
 	});
 
 	afterEach(() => {
@@ -431,7 +431,7 @@ describe("Channels create-key double-submit guard", () => {
 		localStorage.clear();
 		sessionStorage.clear();
 		localStorage.setItem("meta-gateway.locale", "en");
-		sessionStorage.setItem("meta-gateway.admin-token", "test-token");
+		localStorage.setItem("meta-gateway.admin-token", "test-token");
 	});
 
 	afterEach(() => {
