@@ -8,3 +8,12 @@ data
 *.db-wal
 web/node_modules
 web/coverage
+
+# Host binaries, logs, tool artifacts (keep the build context lean)
+*.exe
+*.log
+.workbuddy
+web/.impeccable
+web/.gitignore
+web/shots
+scripts

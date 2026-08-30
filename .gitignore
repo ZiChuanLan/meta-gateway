@@ -20,6 +20,12 @@ web/coverage/
 # Accidental root lockfile (frontend lock lives under web/)
 /package-lock.json
 
+# Tool artifacts (design-skill sessions, external tools)
+.workbuddy/
+web/.impeccable/
+web/.gitignore
+web/shots/
+
 # Debug logs and ad-hoc analysis scripts
 *.log
 scripts/
