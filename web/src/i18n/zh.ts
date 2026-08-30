@@ -32,7 +32,7 @@ export const zh: Dict = {
     "云备份是加密的。请填写「备份解锁密码」（不是网盘登录密码），保存后再同步。",
   "error.webdavInvalidBackup": "网盘备份不是受支持的导入格式",
   "error.webdavInvalidBackupCause":
-    "下载成功了，但网盘里的这个文件不是 Meta Gateway 交换包，也不是 All API Hub 2.x–4.x 的备份。",
+    "下载成功了，但网盘里的这个文件不是 Meta Gateway 交换包，也认不出是 All API Hub 的备份。",
   "error.webdavInvalidBackupFix":
     "确认网盘文件夹里放的是 AAH 自动备份，或 Meta Gateway 导出的交换包，然后再同步。",
   "error.upstream_unauthorized":
@@ -896,7 +896,7 @@ export const zh: Dict = {
   "exchange.formatBadge.compat": "兼容",
   "exchange.formatCanonical": "Meta Gateway 交换包",
   "exchange.formatNewApi": "New API 通道",
-  "exchange.formatAah": "All API Hub V2 备份",
+  "exchange.formatAah": "All API Hub 备份",
   "exchange.selectedCount": "已选 {n} 个",
   "exchange.searchChannels": "搜索通道…",
   "exchange.clearSelection": "清空",
@@ -917,13 +917,22 @@ export const zh: Dict = {
   "exchange.exportSkipped": "已跳过 {n} 个通道（无凭证或地址无效）。",
   "exchange.webdavTitle": "云备份同步",
   "exchange.webdavHint":
-    "连接你在 All API Hub 里用的同一个网盘文件夹。我们只下载导入，不会上传。",
+    "连接网盘文件夹，下方两个部分相互独立：AAH 备份导入从网盘拉取备份合并到本机；WebDAV 原生同步把本机配置加密备份到网盘。",
+  "exchange.webdavImportTitle": "AAH 备份导入",
+  "exchange.webdavImportHint":
+    "从网盘拉取 Meta Gateway 交换包或 All API Hub 备份并合并到本机，不改动网盘上的文件。",
+  "exchange.webdavImportNow": "立即导入",
+  "exchange.webdavBackupTitle": "WebDAV 原生同步",
+  "exchange.webdavBackupHint":
+    "把全部通道导出为 Meta Gateway 交换包，上传到网盘 meta-gateway-backup/ 文件夹；填写备份解锁密码后自动加密。",
+  "exchange.webdavBackupNow": "立即同步",
+  "exchange.webdavTestConnection": "测试连接",
+  "exchange.webdavCardNotConfigured": "未配置",
   "exchange.webdavTest": "测试",
-  "exchange.webdavSync": "立即同步",
   "exchange.webdavSave": "保存",
   "exchange.webdavNotConfigured":
     "WebDAV 尚未配置。填写地址和账号后可执行同步。",
-  "exchange.webdavLastResult": "上次同步",
+  "exchange.webdavLastResult": "上次结果",
   "exchange.webdavEncrypted": "加密备份",
   "exchange.webdavUrl": "网盘文件夹地址",
   "exchange.webdavUrlHint":
@@ -935,11 +944,11 @@ export const zh: Dict = {
   "exchange.webdavBackupPasswordHint":
     "这和网盘登录密码不是同一个。备份文件加密时必填（AAH 开了加密）。留空表示保留已保存的值。",
   "exchange.webdavBackupPasswordPlaceholder": "若提示需要解锁密码，请填这里",
-  "exchange.webdavSchedule": "自动同步",
+  "exchange.webdavSchedule": "自动执行",
   "exchange.webdavScheduleHint":
-    "后台多久拉取一次最新备份。定时任务始终使用增量同步。",
-  "exchange.webdavMode": "同步方式",
-  "exchange.webdavModeHint": "选择手动同步时如何应用下载到的备份。",
+    "这个方向多久自动执行一次。定时任务始终使用增量合并。",
+  "exchange.webdavMode": "导入方式",
+  "exchange.webdavModeHint": "手动导入时如何应用下载到的备份。",
   "exchange.webdavMode.incremental": "增量合并",
   "exchange.webdavMode.incrementalHint":
     "新增备份中的连接，并更新匹配项；保留仅存在于本地的连接。",
@@ -950,7 +959,7 @@ export const zh: Dict = {
   "exchange.webdavReplaceConfirmBody":
     "这会先删除当前全部连接、凭证、已发现模型和模型路由，再导入云端备份。下游令牌、系统设置、代理/审计/用量日志和 WebDAV 配置会保留；与被删凭证绑定的签到日志会级联删除。",
   "exchange.webdavReplaceConfirmAction": "覆盖并同步",
-  "exchange.webdavSchedule.off": "关闭 — 只在我点同步时",
+  "exchange.webdavSchedule.off": "关闭定时（手动同步仍可用）",
   "exchange.webdavSchedule.hourly": "每小时",
   "exchange.webdavSchedule.every3h": "每 3 小时",
   "exchange.webdavSchedule.every6h": "每 6 小时",

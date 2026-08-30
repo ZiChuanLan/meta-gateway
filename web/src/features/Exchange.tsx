@@ -13,6 +13,7 @@ import { api } from "../api/client";
 import type {
 	ImportResult,
 	WebDAVSettings,
+	WebDAVSyncDirection,
 	WebDAVSyncMode,
 	WebDAVSyncResult,
 } from "../api/types";
@@ -157,7 +158,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const [parseError, setParseError] = useState<string | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const [importResult, setImportResult] = useState<ImportResult | null>(null);
-	const [webdavResult, setWebdavResult] = useState<WebDAVSyncResult | null>(null);
+	const [webdavDownloadResult, setWebdavDownloadResult] = useState<WebDAVSyncResult | null>(null);
+	const [webdavUploadResult, setWebdavUploadResult] = useState<WebDAVSyncResult | null>(null);
 	const [webdavSyncMode, setWebdavSyncMode] = useState<WebDAVSyncMode>("incremental");
 	const [confirmReplaceSync, setConfirmReplaceSync] = useState(false);
 	const [webdavForm, setWebdavForm] = useState({
@@ -165,9 +167,26 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 		username: "",
 		password: "",
 		backup_password: "",
-		schedule: "off" as WebDAVSchedulePresetId,
-		cron: "0 */6 * * *",
+		upload_url: "",
+		upload_username: "",
+		upload_password: "",
+		upload_backup_password: "",
+		clear_password: false,
+		clear_backup_password: false,
+		clear_upload_password: false,
+		clear_upload_backup_password: false,
+		download: false,
+		upload: false,
+		download_schedule: "off" as WebDAVSchedulePresetId,
+		download_cron: "0 */6 * * *",
+		upload_schedule: "off" as WebDAVSchedulePresetId,
+		upload_cron: "0 */6 * * *",
 	});
+	type WebDAVSecretKey =
+		| "password"
+		| "backup_password"
+		| "upload_password"
+		| "upload_backup_password";
 	const [webdavFormHydrated, setWebdavFormHydrated] = useState(false);
 	const input = useRef<HTMLInputElement>(null);
 	const toast = useToast();
@@ -259,23 +278,61 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 		},
 	});
 
-	useEffect(() => {
-		if (!webdavSettings.data || webdavFormHydrated) return;
-		const settings = webdavSettings.data;
-		const schedule = scheduleFromSettings({
-			enabled: settings.enabled,
-			cron: settings.cron || "0 */6 * * *",
-		});
+	const applyWebdavSettings = (settings: WebDAVSettings) => {
+		const downloadSchedule = scheduleFromSettings(settings.download_cron || "");
+		const uploadSchedule = scheduleFromSettings(settings.upload_cron || "");
 		setWebdavForm({
 			url: settings.url ?? "",
 			username: settings.username ?? "",
 			password: "",
 			backup_password: "",
-			schedule: schedule.preset,
-			cron: schedule.cron,
+			upload_url: settings.upload_url ?? "",
+			upload_username: settings.upload_username ?? "",
+			upload_password: "",
+			upload_backup_password: "",
+			clear_password: false,
+			clear_backup_password: false,
+			clear_upload_password: false,
+			clear_upload_backup_password: false,
+			download: settings.enabled ?? false,
+			upload: settings.upload_enabled ?? false,
+			download_schedule: downloadSchedule.preset,
+			download_cron: downloadSchedule.cron,
+			upload_schedule: uploadSchedule.preset,
+			upload_cron: uploadSchedule.cron,
 		});
+	};
+
+	useEffect(() => {
+		if (!webdavSettings.data || webdavFormHydrated) return;
+		applyWebdavSettings(webdavSettings.data);
 		setWebdavFormHydrated(true);
 	}, [webdavSettings.data, webdavFormHydrated]);
+
+	const webdavSettingsPayload = () => ({
+		enabled: webdavForm.download,
+		upload_enabled: webdavForm.upload,
+		url: webdavForm.url.trim(),
+		username: webdavForm.username,
+		password: webdavForm.password,
+		backup_password: webdavForm.backup_password,
+		upload_url: webdavForm.upload_url.trim(),
+		upload_username: webdavForm.upload_username,
+		upload_password: webdavForm.upload_password,
+		upload_backup_password: webdavForm.upload_backup_password,
+		clear_password: webdavForm.clear_password,
+		clear_backup_password: webdavForm.clear_backup_password,
+		clear_upload_password: webdavForm.clear_upload_password,
+		clear_upload_backup_password: webdavForm.clear_upload_backup_password,
+		download_cron: settingsFromSchedule({
+			preset: webdavForm.download_schedule,
+			cron: webdavForm.download_cron,
+		}).cron,
+		upload_cron: settingsFromSchedule({
+			preset: webdavForm.upload_schedule,
+			cron: webdavForm.upload_cron,
+		}).cron,
+	});
 
 	const invalidateAfterWebdavImport = () => {
 		void qc.invalidateQueries({ queryKey: ["sites"] });
@@ -290,34 +347,9 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	};
 
 	const webdavSave = useMutation({
-		mutationFn: () => {
-			const schedule = settingsFromSchedule({
-				preset: webdavForm.schedule,
-				cron: webdavForm.cron,
-			});
-			return s.updateWebdavSettings({
-				enabled: schedule.enabled,
-				url: webdavForm.url.trim(),
-				username: webdavForm.username,
-				password: webdavForm.password,
-				backup_password: webdavForm.backup_password,
-				cron: schedule.cron,
-			});
-		},
+		mutationFn: () => s.updateWebdavSettings(webdavSettingsPayload()),
 		onSuccess: (settings: WebDAVSettings) => {
-			const schedule = scheduleFromSettings({
-				enabled: settings.enabled,
-				cron: settings.cron || "0 */6 * * *",
-			});
-			setWebdavForm((prev) => ({
-				...prev,
-				url: settings.url ?? "",
-				username: settings.username ?? "",
-				password: "",
-				backup_password: "",
-				schedule: schedule.preset,
-				cron: schedule.cron,
-			}));
+			applyWebdavSettings(settings);
 			void qc.invalidateQueries({ queryKey: ["webdav-status"] });
 			void qc.invalidateQueries({ queryKey: ["webdav-settings"] });
 			toast.push({ tone: "success", message: t("exchange.webdavSaved") });
@@ -325,31 +357,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	});
 
 	const persistWebdavForm = async () => {
-		const schedule = settingsFromSchedule({
-			preset: webdavForm.schedule,
-			cron: webdavForm.cron,
-		});
-		const settings = await s.updateWebdavSettings({
-			enabled: schedule.enabled,
-			url: webdavForm.url.trim(),
-			username: webdavForm.username,
-			password: webdavForm.password,
-			backup_password: webdavForm.backup_password,
-			cron: schedule.cron,
-		});
-		const nextSchedule = scheduleFromSettings({
-			enabled: settings.enabled,
-			cron: settings.cron || "0 */6 * * *",
-		});
-		setWebdavForm((prev) => ({
-			...prev,
-			url: settings.url ?? "",
-			username: settings.username ?? "",
-			password: "",
-			backup_password: "",
-			schedule: nextSchedule.preset,
-			cron: nextSchedule.cron,
-		}));
+		const settings = await s.updateWebdavSettings(webdavSettingsPayload());
+		applyWebdavSettings(settings);
 		void qc.invalidateQueries({ queryKey: ["webdav-status"] });
 		void qc.invalidateQueries({ queryKey: ["webdav-settings"] });
 		return settings;
@@ -357,29 +366,173 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 
 	const webdavTest = useMutation({
 		// Always persist form first so typed passwords are not ignored.
-		mutationFn: async () => {
+		mutationFn: async ({ direction }: { direction: WebDAVSyncDirection }) => {
 			await persistWebdavForm();
-			return s.webdavTest();
+			return s.webdavTest(direction);
 		},
-		onSuccess: (result) => {
-			setWebdavResult(result);
+		onSuccess: (result, variables) => {
+			if (variables.direction === "download") {
+				setWebdavDownloadResult(result);
+			} else {
+				setWebdavUploadResult(result);
+			}
 			void qc.invalidateQueries({ queryKey: ["webdav-status"] });
 		},
 	});
 
 	const webdavSync = useMutation({
-		mutationFn: async (mode: WebDAVSyncMode) => {
+		mutationFn: async ({
+			direction,
+			mode,
+		}: {
+			direction: WebDAVSyncDirection;
+			mode: WebDAVSyncMode;
+		}) => {
 			await persistWebdavForm();
-			return s.webdavSync(mode);
+			return s.webdavSync(direction, mode);
 		},
-		onSuccess: (result) => {
-			setWebdavResult(result);
-			if (result.import) {
-				setImportResult(result.import);
+		onSuccess: (result, variables) => {
+			if (variables.direction === "download") {
+				setWebdavDownloadResult(result);
+				if (result.import) {
+					setImportResult(result.import);
+				}
+				invalidateAfterWebdavImport();
+			} else {
+				setWebdavUploadResult(result);
+				void qc.invalidateQueries({ queryKey: ["webdav-status"] });
 			}
-			invalidateAfterWebdavImport();
 		},
 	});
+
+	const updateWebdavSchedule = (
+		direction: "download" | "upload",
+		preset: WebDAVSchedulePresetId,
+	) => {
+		setWebdavForm((prev) => {
+			if (direction === "download") {
+				const mapped = settingsFromSchedule({ preset, cron: prev.download_cron });
+				return { ...prev, download_schedule: preset, download_cron: mapped.cron };
+			}
+			const mapped = settingsFromSchedule({ preset, cron: prev.upload_cron });
+			return { ...prev, upload_schedule: preset, upload_cron: mapped.cron };
+		});
+	};
+
+	const webdavScheduleField = (direction: "download" | "upload") => {
+		const schedule =
+			direction === "download" ? webdavForm.download_schedule : webdavForm.upload_schedule;
+		const cron = direction === "download" ? webdavForm.download_cron : webdavForm.upload_cron;
+		return (
+			<>
+				<Field label={t("exchange.webdavSchedule")} hint={t("exchange.webdavScheduleHint")}>
+					<select
+						value={schedule}
+						onChange={(event) =>
+							updateWebdavSchedule(direction, event.target.value as WebDAVSchedulePresetId)
+						}
+					>
+						{(
+							[
+								"off",
+								"hourly",
+								"every3h",
+								"every6h",
+								"every12h",
+								"daily",
+								"custom",
+							] as WebDAVSchedulePresetId[]
+						).map((id) => (
+							<option key={id} value={id}>
+								{t(`exchange.webdavSchedule.${id}`)}
+							</option>
+						))}
+					</select>
+				</Field>
+				{schedule === "custom" ? (
+					<Field
+						label={t("exchange.webdavCron")}
+						hint={t("exchange.webdavCronHint")}
+					>
+						<input
+							value={cron}
+							onChange={(event) =>
+								setWebdavForm((prev) =>
+									direction === "download"
+										? { ...prev, download_cron: event.target.value }
+										: { ...prev, upload_cron: event.target.value },
+								)
+							}
+							placeholder="0 */6 * * *"
+							className="mono"
+						/>
+					</Field>
+				) : null}
+			</>
+		);
+	};
+
+	// secretField renders one direction's secret input in plain text; typing
+	// replaces the stored secret, and clearing the field after editing removes it.
+	const secretField = (
+		key: WebDAVSecretKey,
+		label: string,
+		hint: string | undefined,
+		hasStored: boolean,
+		placeholder?: string,
+	) => {
+		const clearKey = `clear_${key}` as const;
+		return (
+			<Field label={label} hint={hint}>
+				<input
+					type="text"
+					value={webdavForm[key]}
+					onChange={(event) => {
+						const value = event.target.value;
+						setWebdavForm((prev) => ({
+							...prev,
+							[key]: value,
+							[clearKey]: value === "",
+						}));
+					}}
+					placeholder={hasStored && !webdavForm[key] ? "••••••••" : placeholder}
+					autoComplete="off"
+				/>
+			</Field>
+		);
+	};
+
+	const webdavResultFor = (
+		direction: "download" | "upload",
+	): WebDAVSyncResult | null => {
+		const fresh = direction === "download" ? webdavDownloadResult : webdavUploadResult;
+		if (fresh) return fresh;
+		const status = webdavStatus.data;
+		if (!status) return null;
+		return direction === "download"
+			? (status.last_download ?? null)
+			: (status.last_upload ?? null);
+	};
+
+	const webdavResultBlock = (direction: "download" | "upload") => {
+		const result = webdavResultFor(direction);
+		if (!result) return null;
+		return (
+			<div className="exchange-preview">
+				<div className="exchange-preview-head">
+					<strong>{t("exchange.webdavLastResult")}</strong>
+					<StatusBadge
+						value={result.status === "success" ? "ready" : "unavailable"}
+					/>
+				</div>
+				<p className="exchange-panel-note">
+					{result.message || result.category || result.status}
+					{result.encrypted ? ` · ${t("exchange.webdavEncrypted")}` : ""}
+					{result.latency_ms != null ? ` · ${result.latency_ms} ms` : ""}
+				</p>
+			</div>
+		);
+	};
 
 
 	async function choose(file?: File | null) {
@@ -459,165 +612,252 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 					<p>{t("exchange.webdavHint")}</p>
 				</div>
 
-				<div className="webdav-form">
-					<Field label={t("exchange.webdavUrl")} hint={t("exchange.webdavUrlHint")}>
-						<input
-							value={webdavForm.url}
-							onChange={(event) =>
-								setWebdavForm((prev) => ({ ...prev, url: event.target.value }))
-							}
-							placeholder="https://dav.jianguoyun.com/dav/…"
-							autoComplete="off"
-						/>
-					</Field>
-					<div className="form-grid">
-						<Field label={t("exchange.webdavUsername")}>
-							<input
-								value={webdavForm.username}
-								onChange={(event) =>
-									setWebdavForm((prev) => ({
-										...prev,
-										username: event.target.value,
-									}))
-								}
-								autoComplete="username"
-							/>
-						</Field>
+				<div className="webdav-directions">
+					<div
+						className={
+							webdavForm.download
+								? "webdav-direction-card is-active"
+								: "webdav-direction-card"
+						}
+					>
+						<div className="webdav-direction-head">
+							<label className="webdav-direction-toggle">
+								<input
+									type="checkbox"
+									checked={webdavForm.download}
+									onChange={(event) =>
+										setWebdavForm((prev) => ({
+											...prev,
+											download: event.target.checked,
+										}))
+									}
+								/>
+								<strong>{t("exchange.webdavImportTitle")}</strong>
+							</label>
+							<InfoTip label={t("exchange.webdavImportHint")} />
+						</div>
+						<div className="webdav-connection">
+							<Field label={t("exchange.webdavUrl")} hint={t("exchange.webdavUrlHint")}>
+								<input
+									value={webdavForm.url}
+									onChange={(event) =>
+										setWebdavForm((prev) => ({ ...prev, url: event.target.value }))
+									}
+									placeholder="https://dav.jianguoyun.com/dav/…"
+									autoComplete="off"
+								/>
+							</Field>
+							<div className="form-grid">
+								<Field label={t("exchange.webdavUsername")}>
+									<input
+										value={webdavForm.username}
+										onChange={(event) =>
+											setWebdavForm((prev) => ({
+												...prev,
+												username: event.target.value,
+											}))
+										}
+										autoComplete="username"
+									/>
+								</Field>
+								{secretField(
+									"password",
+									t("exchange.webdavPassword"),
+									webdavSettings.data?.has_password
+										? t("exchange.webdavPasswordKeep")
+										: undefined,
+									webdavSettings.data?.has_password ?? false,
+								)}
+							</div>
+							{secretField(
+								"backup_password",
+								t("exchange.webdavBackupPassword"),
+								t("exchange.webdavBackupPasswordHint"),
+								webdavSettings.data?.has_backup_password ?? false,
+								t("exchange.webdavBackupPasswordPlaceholder"),
+							)}
+						</div>
+						{webdavScheduleField("download")}
 						<Field
-							label={t("exchange.webdavPassword")}
-							hint={
-								webdavSettings.data?.has_password
-									? t("exchange.webdavPasswordKeep")
-									: undefined
-							}
+							label={t("exchange.webdavMode")}
+							hint={t("exchange.webdavModeHint")}
 						>
-							<input
-								type="password"
-								value={webdavForm.password}
-								onChange={(event) =>
-									setWebdavForm((prev) => ({
-										...prev,
-										password: event.target.value,
-									}))
-								}
-								placeholder={
-									webdavSettings.data?.has_password ? "••••••••" : undefined
-								}
-								autoComplete="new-password"
-							/>
+							<div className="webdav-mode-grid" role="radiogroup" aria-label={t("exchange.webdavMode")}>
+								<label className={webdavSyncMode === "incremental" ? "webdav-mode-card is-selected" : "webdav-mode-card"}>
+									<input
+										type="radio"
+										name="webdav-sync-mode"
+										value="incremental"
+										checked={webdavSyncMode === "incremental"}
+										onChange={() => setWebdavSyncMode("incremental")}
+									/>
+									<span>
+										<strong>{t("exchange.webdavMode.incremental")}</strong>
+										<InfoTip label={t("exchange.webdavMode.incrementalHint")} />
+									</span>
+								</label>
+								<label className={webdavSyncMode === "replace" ? "webdav-mode-card is-danger is-selected" : "webdav-mode-card is-danger"}>
+									<input
+										type="radio"
+										name="webdav-sync-mode"
+										value="replace"
+										checked={webdavSyncMode === "replace"}
+										onChange={() => setWebdavSyncMode("replace")}
+									/>
+									<span>
+										<strong>{t("exchange.webdavMode.replace")}</strong>
+										<InfoTip label={t("exchange.webdavMode.replaceHint")} />
+									</span>
+								</label>
+							</div>
 						</Field>
+						<div className="webdav-direction-actions">
+							<Button
+								variant="secondary"
+								disabled={
+									webdavSave.isPending ||
+									webdavTest.isPending ||
+									webdavSync.isPending
+								}
+								onClick={() => webdavTest.mutate({ direction: "download" })}
+							>
+								{webdavTest.isPending
+									? t("common.loading")
+									: t("exchange.webdavTestConnection")}
+							</Button>
+							<Button
+								variant={webdavSyncMode === "replace" ? "danger" : "secondary"}
+								disabled={
+									webdavSave.isPending ||
+									webdavTest.isPending ||
+									webdavSync.isPending
+								}
+								onClick={() => {
+									if (webdavSyncMode === "replace") {
+										setConfirmReplaceSync(true);
+										return;
+									}
+									webdavSync.mutate({ direction: "download", mode: "incremental" });
+								}}
+							>
+								{webdavSync.isPending ? t("common.loading") : t("exchange.webdavImportNow")}
+							</Button>
+							{webdavSettings.data?.download_configured ? (
+								<span className="webdav-ready-pill">{t("exchange.webdavReady")}</span>
+							) : (
+								<span className="exchange-empty">
+									{t("exchange.webdavCardNotConfigured")}
+								</span>
+							)}
+						</div>
+						{webdavResultBlock("download")}
 					</div>
 
-					<Field label={t("exchange.webdavSchedule")} hint={t("exchange.webdavScheduleHint")}>
-						<select
-							value={webdavForm.schedule}
-							onChange={(event) => {
-								const next = event.target.value as WebDAVSchedulePresetId;
-								setWebdavForm((prev) => {
-									const mapped = settingsFromSchedule({
-										preset: next,
-										cron: prev.cron,
-									});
-									return {
-										...prev,
-										schedule: next,
-										cron: mapped.cron,
-									};
-								});
-							}}
-						>
-							{(
-								[
-									"off",
-									"hourly",
-									"every3h",
-									"every6h",
-									"every12h",
-									"daily",
-									"custom",
-								] as WebDAVSchedulePresetId[]
-							).map((id) => (
-								<option key={id} value={id}>
-									{t(`exchange.webdavSchedule.${id}`)}
-								</option>
-							))}
-						</select>
-					</Field>
-
-					<Field
-						label={t("exchange.webdavMode")}
-						hint={t("exchange.webdavModeHint")}
+					<div
+						className={
+							webdavForm.upload
+								? "webdav-direction-card is-active"
+								: "webdav-direction-card"
+						}
 					>
-						<div className="webdav-mode-grid" role="radiogroup" aria-label={t("exchange.webdavMode")}>
-							<label className={webdavSyncMode === "incremental" ? "webdav-mode-card is-selected" : "webdav-mode-card"}>
+						<div className="webdav-direction-head">
+							<label className="webdav-direction-toggle">
 								<input
-									type="radio"
-									name="webdav-sync-mode"
-									value="incremental"
-									checked={webdavSyncMode === "incremental"}
-									onChange={() => setWebdavSyncMode("incremental")}
+									type="checkbox"
+									checked={webdavForm.upload}
+									onChange={(event) =>
+										setWebdavForm((prev) => ({
+											...prev,
+											upload: event.target.checked,
+										}))
+									}
 								/>
-								<span>
-									<strong>{t("exchange.webdavMode.incremental")}</strong>
-									<InfoTip label={t("exchange.webdavMode.incrementalHint")} />
-								</span>
+								<strong>{t("exchange.webdavBackupTitle")}</strong>
 							</label>
-							<label className={webdavSyncMode === "replace" ? "webdav-mode-card is-danger is-selected" : "webdav-mode-card is-danger"}>
-								<input
-									type="radio"
-									name="webdav-sync-mode"
-									value="replace"
-									checked={webdavSyncMode === "replace"}
-									onChange={() => setWebdavSyncMode("replace")}
-								/>
-								<span>
-									<strong>{t("exchange.webdavMode.replace")}</strong>
-									<InfoTip label={t("exchange.webdavMode.replaceHint")} />
-								</span>
-							</label>
+							<InfoTip label={t("exchange.webdavBackupHint")} />
 						</div>
-					</Field>
-
-					<Field
-						label={t("exchange.webdavBackupPassword")}
-						hint={t("exchange.webdavBackupPasswordHint")}
-					>
-						<input
-							type="password"
-							value={webdavForm.backup_password}
-							onChange={(event) =>
-								setWebdavForm((prev) => ({
-									...prev,
-									backup_password: event.target.value,
-								}))
-							}
-							placeholder={
-								webdavSettings.data?.has_backup_password
-									? "••••••••"
-									: t("exchange.webdavBackupPasswordPlaceholder")
-							}
-							autoComplete="new-password"
-						/>
-					</Field>
-
-					{webdavForm.schedule === "custom" ? (
-						<Field
-							label={t("exchange.webdavCron")}
-							hint={t("exchange.webdavCronHint")}
-						>
-							<input
-								value={webdavForm.cron}
-								onChange={(event) =>
-									setWebdavForm((prev) => ({
-										...prev,
-										cron: event.target.value,
-									}))
+						<div className="webdav-connection">
+							<Field label={t("exchange.webdavUrl")} hint={t("exchange.webdavUrlHint")}>
+								<input
+									value={webdavForm.upload_url}
+									onChange={(event) =>
+										setWebdavForm((prev) => ({
+											...prev,
+											upload_url: event.target.value,
+										}))
+									}
+									placeholder="https://dav.jianguoyun.com/dav/…"
+									autoComplete="off"
+								/>
+							</Field>
+							<div className="form-grid">
+								<Field label={t("exchange.webdavUsername")}>
+									<input
+										value={webdavForm.upload_username}
+										onChange={(event) =>
+											setWebdavForm((prev) => ({
+												...prev,
+												upload_username: event.target.value,
+											}))
+										}
+										autoComplete="username"
+									/>
+								</Field>
+								{secretField(
+									"upload_password",
+									t("exchange.webdavPassword"),
+									webdavSettings.data?.has_upload_password
+										? t("exchange.webdavPasswordKeep")
+										: undefined,
+									webdavSettings.data?.has_upload_password ?? false,
+								)}
+							</div>
+							{secretField(
+								"upload_backup_password",
+								t("exchange.webdavBackupPassword"),
+								t("exchange.webdavBackupPasswordHint"),
+								webdavSettings.data?.has_upload_backup_password ?? false,
+								t("exchange.webdavBackupPasswordPlaceholder"),
+							)}
+						</div>
+						{webdavScheduleField("upload")}
+						<div className="webdav-direction-actions">
+							<Button
+								variant="secondary"
+								disabled={
+									webdavSave.isPending ||
+									webdavTest.isPending ||
+									webdavSync.isPending
 								}
-								placeholder="0 */6 * * *"
-								className="mono"
-							/>
-						</Field>
-					) : null}
+								onClick={() => webdavTest.mutate({ direction: "upload" })}
+							>
+								{webdavTest.isPending
+									? t("common.loading")
+									: t("exchange.webdavTestConnection")}
+							</Button>
+							<Button
+								variant="secondary"
+								disabled={
+									webdavSave.isPending ||
+									webdavTest.isPending ||
+									webdavSync.isPending
+								}
+								onClick={() =>
+									webdavSync.mutate({ direction: "upload", mode: "incremental" })
+								}
+							>
+								{webdavSync.isPending ? t("common.loading") : t("exchange.webdavBackupNow")}
+							</Button>
+							{webdavSettings.data?.upload_configured ? (
+								<span className="webdav-ready-pill">{t("exchange.webdavReady")}</span>
+							) : (
+								<span className="exchange-empty">
+									{t("exchange.webdavCardNotConfigured")}
+								</span>
+							)}
+						</div>
+						{webdavResultBlock("upload")}
+					</div>
 				</div>
 
 				<div className="webdav-actions">
@@ -627,41 +867,6 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 					>
 						{webdavSave.isPending ? t("common.loading") : t("exchange.webdavSave")}
 					</Button>
-					<Button
-						variant="secondary"
-						disabled={
-							webdavSave.isPending ||
-							webdavTest.isPending ||
-							webdavSync.isPending
-						}
-						onClick={() => webdavTest.mutate()}
-					>
-						{webdavTest.isPending ? t("common.loading") : t("exchange.webdavTest")}
-					</Button>
-					<Button
-						variant={webdavSyncMode === "replace" ? "danger" : "secondary"}
-						disabled={
-							webdavSave.isPending ||
-							webdavTest.isPending ||
-							webdavSync.isPending
-						}
-						onClick={() => {
-							if (webdavSyncMode === "replace") {
-								setConfirmReplaceSync(true);
-								return;
-							}
-							webdavSync.mutate("incremental");
-						}}
-					>
-						{webdavSync.isPending ? t("common.loading") : t("exchange.webdavSync")}
-					</Button>
-					{webdavStatus.data?.configured ? (
-						<span className="webdav-ready-pill">{t("exchange.webdavReady")}</span>
-					) : (
-						<span className="exchange-empty">
-							{t("exchange.webdavNotConfigured")}
-						</span>
-					)}
 				</div>
 
 				{confirmReplaceSync ? (
@@ -679,7 +884,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 									disabled={webdavSync.isPending}
 									onClick={() => {
 										setConfirmReplaceSync(false);
-										webdavSync.mutate("replace");
+										webdavSync.mutate({ direction: "download", mode: "replace" });
 									}}
 								>
 									{t("exchange.webdavReplaceConfirmAction")}
@@ -696,36 +901,6 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 						error={webdavSave.error ?? webdavTest.error ?? webdavSync.error}
 					/>
 				)}
-				{webdavResult ? (
-					<div className="exchange-preview" style={{ marginTop: 12 }}>
-						<div className="exchange-preview-head">
-							<strong>{t("exchange.webdavLastResult")}</strong>
-							<StatusBadge
-								value={
-									webdavResult.status === "success" ? "ready" : "unavailable"
-								}
-							/>
-						</div>
-						<p className="exchange-panel-note">
-							{webdavResult.message ||
-								webdavResult.category ||
-								webdavResult.status}
-							{webdavResult.encrypted
-								? ` · ${t("exchange.webdavEncrypted")}`
-								: ""}
-							{webdavResult.latency_ms != null
-								? ` · ${webdavResult.latency_ms} ms`
-								: ""}
-						</p>
-					</div>
-				) : webdavStatus.data?.last ? (
-					<p className="exchange-panel-note">
-						{t("exchange.webdavLastResult")}: {webdavStatus.data.last.status}
-						{webdavStatus.data.last.message
-							? ` — ${webdavStatus.data.last.message}`
-							: ""}
-					</p>
-				) : null}
 			</section>
 
 			<div className="exchange-grid">

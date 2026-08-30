@@ -6220,16 +6220,77 @@ td.actions {
 .webdav-panel {
   padding: 18px 18px 16px;
 }
-.webdav-form {
+.webdav-connection {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-top: 14px;
 }
 .webdav-mode-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+.webdav-directions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.webdav-direction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  transition:
+    border-color 280ms ease,
+    box-shadow 280ms ease;
+}
+.webdav-direction-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 8px 24px rgba(0, 0, 0, 0.08);
+}
+.webdav-direction-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.webdav-direction-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.webdav-direction-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+.webdav-direction-toggle strong {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.webdav-direction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.webdav-direction-actions .webdav-ready-pill,
+.webdav-direction-actions .exchange-empty {
+  margin-left: auto;
+}
+@media (max-width: 900px) {
+  .webdav-directions {
+    grid-template-columns: 1fr;
+  }
 }
 .webdav-mode-card {
   display: flex;

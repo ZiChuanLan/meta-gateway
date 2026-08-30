@@ -360,6 +360,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		}
 		webdavService = webdavsync.NewServiceWithSettings(webdavsync.Config{
 			Enabled:        cfg.WebDAVSyncEnabled,
+			UploadEnabled:  cfg.WebDAVUploadEnabled,
 			URL:            cfg.WebDAVURL,
 			Username:       cfg.WebDAVUsername,
 			Password:       cfg.WebDAVPassword,
@@ -367,6 +368,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			CronExpr:       cfg.WebDAVCron,
 			MaxBytes:       maxBytes,
 		}, &webdavsync.Client{HTTP: outboundClient, MaxBytes: maxBytes}, exchangeService, db.WebDAVSettings, enc)
+		webdavService.SetExporter(exchangeService)
 	}
 	adminGroup.Group(func(module chi.Router) {
 		if pluginService != nil {

@@ -78,7 +78,11 @@ func (h *WebDAVHandler) test(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, webdavsync.CategoryConfigIncomplete)
 		return
 	}
-	result, err := h.service.TestConnection(r.Context())
+	direction, handled := readWebDAVDirection(w, r)
+	if handled {
+		return
+	}
+	result, err := h.service.TestConnection(r.Context(), direction)
 	if err != nil {
 		writeWebDAVError(w, err, result)
 		return
@@ -92,16 +96,19 @@ func (h *WebDAVHandler) sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode := webdavsync.SyncModeIncremental
+	direction := webdavsync.DirectionDownload
 	// Always attempt to parse the JSON body for backward compatibility.
-	// Empty bodies (including chunked with no content) default to incremental.
+	// Empty bodies (including chunked with no content) default to the download
+	// direction in incremental mode.
 	if r.Body != nil {
 		var body struct {
-			Mode string `json:"mode"`
+			Mode      string `json:"mode"`
+			Direction string `json:"direction"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&body); errors.Is(err, io.EOF) {
-			// No body provided — stay with default incremental mode.
+			// No body provided — stay with the defaults.
 		} else if err != nil {
 			writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
 			return
@@ -114,18 +121,49 @@ func (h *WebDAVHandler) sync(w http.ResponseWriter, r *http.Request) {
 			if m := strings.TrimSpace(body.Mode); m != "" {
 				mode = strings.ToLower(m)
 			}
+			direction = strings.ToLower(strings.TrimSpace(body.Direction))
 		}
 	}
 	if mode != webdavsync.SyncModeIncremental && mode != webdavsync.SyncModeReplace {
 		writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
 		return
 	}
-	result, err := h.service.Sync(r.Context(), webdavsync.SourceManual, mode)
+	if direction != webdavsync.DirectionDownload && direction != webdavsync.DirectionUpload {
+		writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
+		return
+	}
+	result, err := h.service.Sync(r.Context(), webdavsync.SourceManual, mode, direction)
 	if err != nil {
 		writeWebDAVError(w, err, result)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// readWebDAVDirection parses the optional {direction} body used by the test
+// endpoint. A missing or empty body defaults to the download direction; a
+// malformed payload writes a 400 and reports handled.
+func readWebDAVDirection(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if r.Body == nil {
+		return "", false
+	}
+	var body struct {
+		Direction string `json:"direction"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); errors.Is(err, io.EOF) {
+		return "", false
+	} else if err != nil {
+		writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
+		return "", true
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, webdavsync.CategoryValidation)
+		return "", true
+	}
+	return strings.ToLower(strings.TrimSpace(body.Direction)), false
 }
 
 func writeWebDAVError(w http.ResponseWriter, err error, result *webdavsync.SyncResult) {

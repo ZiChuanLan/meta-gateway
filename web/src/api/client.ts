@@ -32,6 +32,7 @@ import type {
   SyncKeysResult,
   CreateUpstreamKeyResult,
   WebDAVStatus,
+  WebDAVSyncDirection,
   WebDAVSyncMode,
   WebDAVSyncResult,
   WebDAVSettings,
@@ -696,9 +697,12 @@ export const api = (client: ApiClient) => ({
     client.get<WebDAVSettings>("/admin/webdav/settings", signal),
   updateWebdavSettings: (body: WebDAVSettingsUpdate) =>
     client.put<WebDAVSettings>("/admin/webdav/settings", body),
-  webdavTest: () => client.post<WebDAVSyncResult>("/admin/webdav/test"),
-  webdavSync: (mode: WebDAVSyncMode = "incremental") =>
-    client.post<WebDAVSyncResult>("/admin/webdav/sync", { mode }),
+  webdavTest: (direction: WebDAVSyncDirection = "download") =>
+    client.post<WebDAVSyncResult>("/admin/webdav/test", { direction }),
+  webdavSync: (
+    direction: WebDAVSyncDirection = "download",
+    mode: WebDAVSyncMode = "incremental",
+  ) => client.post<WebDAVSyncResult>("/admin/webdav/sync", { direction, mode }),
   pluginsMarket: (signal?: AbortSignal) =>
     client.get<{
       sources: Array<{ id: string; name: string; url: string }>;

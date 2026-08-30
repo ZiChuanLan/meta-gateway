@@ -32,7 +32,7 @@ export const en: Dict = {
     "This cloud backup is encrypted. Enter the backup unlock password (not the WebDAV login password), save, then sync again.",
   "error.webdavInvalidBackup": "Cloud backup is not a supported import format",
   "error.webdavInvalidBackupCause":
-    "The download succeeded, but the file in your cloud folder is neither a Meta Gateway exchange package nor an All API Hub 2.x–4.x backup.",
+    "The download succeeded, but the file in your cloud folder is neither a Meta Gateway exchange package nor a recognizable All API Hub backup.",
   "error.webdavInvalidBackupFix":
     "Make sure the folder contains the AAH automatic backup (or a Meta Gateway export), then sync again.",
   "error.upstream_unauthorized":
@@ -988,7 +988,7 @@ export const en: Dict = {
   "exchange.formatBadge.compat": "Compat",
   "exchange.formatCanonical": "Meta Gateway exchange",
   "exchange.formatNewApi": "New API channels",
-  "exchange.formatAah": "All API Hub V2 backup",
+  "exchange.formatAah": "All API Hub backup",
   "exchange.selectedCount": "{n} selected",
   "exchange.searchChannels": "Search channels…",
   "exchange.clearSelection": "Clear",
@@ -1010,13 +1010,22 @@ export const en: Dict = {
     "{n} channels were skipped (no credential or invalid base URL).",
   "exchange.webdavTitle": "Cloud backup sync",
   "exchange.webdavHint":
-    "Connect the same WebDAV folder used by All API Hub. We only download and import — nothing is uploaded.",
+    "Connect a WebDAV folder. The two sections below are independent: AAH backup import pulls remote backups into this gateway; native WebDAV sync pushes an encrypted backup of this gateway to the drive.",
+  "exchange.webdavImportTitle": "AAH backup import",
+  "exchange.webdavImportHint":
+    "Pull the Meta Gateway exchange package or an All API Hub backup from the drive and merge it into this gateway; files on the drive are never modified.",
+  "exchange.webdavImportNow": "Import now",
+  "exchange.webdavBackupTitle": "Native WebDAV sync",
+  "exchange.webdavBackupHint":
+    "Export all channels as a Meta Gateway exchange package and upload it to the meta-gateway-backup/ folder; encrypted automatically when a backup unlock password is set.",
+  "exchange.webdavBackupNow": "Sync now",
+  "exchange.webdavTestConnection": "Test connection",
+  "exchange.webdavCardNotConfigured": "Not configured",
   "exchange.webdavTest": "Test",
-  "exchange.webdavSync": "Sync now",
   "exchange.webdavSave": "Save",
   "exchange.webdavNotConfigured":
     "Add your cloud folder details below to get started.",
-  "exchange.webdavLastResult": "Last sync",
+  "exchange.webdavLastResult": "Last result",
   "exchange.webdavEncrypted": "encrypted backup",
   "exchange.webdavUrl": "Cloud folder link",
   "exchange.webdavUrlHint":
@@ -1029,12 +1038,12 @@ export const en: Dict = {
     "Different from the cloud login password. Required when the backup file is encrypted (AAH encryption). Leave blank to keep a saved value.",
   "exchange.webdavBackupPasswordPlaceholder":
     "If sync says unlock password required, fill this",
-  "exchange.webdavSchedule": "Auto-sync",
+  "exchange.webdavSchedule": "Automatic",
   "exchange.webdavScheduleHint":
-    "How often to pull the latest backup in the background. Scheduled runs always use incremental mode.",
-  "exchange.webdavMode": "Sync method",
+    "How often this direction runs on its own. Scheduled runs always use incremental merge.",
+  "exchange.webdavMode": "Import method",
   "exchange.webdavModeHint":
-    "Choose how a manual sync applies the downloaded backup.",
+    "Choose how a manual import applies the downloaded backup.",
   "exchange.webdavMode.incremental": "Incremental merge",
   "exchange.webdavMode.incrementalHint":
     "Add new connections and update matches. Keep local-only connections.",
@@ -1045,7 +1054,7 @@ export const en: Dict = {
   "exchange.webdavReplaceConfirmBody":
     "This deletes all current connections, credentials, discovered models, and model routes before importing the cloud backup. Downstream tokens, settings, proxy/audit/usage logs, and WebDAV credentials are kept; check-in logs tied to deleted credentials are removed by cascade.",
   "exchange.webdavReplaceConfirmAction": "Replace and sync",
-  "exchange.webdavSchedule.off": "Off — only when I click Sync",
+  "exchange.webdavSchedule.off": "Off (manual sync still available)",
   "exchange.webdavSchedule.hourly": "Every hour",
   "exchange.webdavSchedule.every3h": "Every 3 hours",
   "exchange.webdavSchedule.every6h": "Every 6 hours",

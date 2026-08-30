@@ -827,8 +827,20 @@ export interface ExternalCheckin {
 
 export type WebDAVSyncMode = "incremental" | "replace";
 
+export interface WebDAVUploadResult {
+  status: string;
+  target_url?: string;
+  bytes?: number;
+  encrypted?: boolean;
+  category?: string;
+  message?: string;
+}
+
+export type WebDAVSyncDirection = "download" | "upload";
+
 export interface WebDAVSyncResult {
   status: string;
+  direction?: WebDAVSyncDirection;
   source: string;
   fetched_at: string;
   target_url?: string;
@@ -838,44 +850,80 @@ export interface WebDAVSyncResult {
   message?: string;
   latency_ms?: number;
   import?: ImportResult;
+  upload?: WebDAVUploadResult;
 }
 
 export interface WebDAVStatus {
   configured: boolean;
+  download_configured?: boolean;
+  upload_configured?: boolean;
   scheduler_armed: boolean;
+  download_scheduler_armed?: boolean;
+  upload_scheduler_armed?: boolean;
   target_url?: string;
+  upload_target_url?: string;
   last?: WebDAVSyncResult;
+  last_download?: WebDAVSyncResult;
+  last_upload?: WebDAVSyncResult;
   in_progress: boolean;
   source?: string;
   enabled?: boolean;
+  upload_enabled?: boolean;
   url?: string;
   username?: string;
   has_password?: boolean;
   has_backup_password?: boolean;
+  upload_url?: string;
+  upload_username?: string;
+  has_upload_password?: boolean;
+  has_upload_backup_password?: boolean;
   cron?: string;
+  download_cron?: string;
+  upload_cron?: string;
 }
 
 export interface WebDAVSettings {
   enabled: boolean;
+  upload_enabled: boolean;
   url: string;
   username: string;
   has_password: boolean;
   has_backup_password: boolean;
+  upload_url: string;
+  upload_username: string;
+  has_upload_password: boolean;
+  has_upload_backup_password: boolean;
   cron: string;
+  download_cron: string;
+  upload_cron: string;
+  download_scheduler_armed: boolean;
+  upload_scheduler_armed: boolean;
+  download_configured: boolean;
+  upload_configured: boolean;
   configured: boolean;
   scheduler_armed: boolean;
   source: string;
   target_url?: string;
+  upload_target_url?: string;
   updated_at?: string;
 }
 
 export interface WebDAVSettingsUpdate {
   enabled: boolean;
+  upload_enabled: boolean;
   url: string;
   username: string;
   password?: string;
   backup_password?: string;
-  cron: string;
+  upload_url: string;
+  upload_username: string;
+  upload_password?: string;
+  upload_backup_password?: string;
+  cron?: string;
+  download_cron?: string;
+  upload_cron?: string;
   clear_password?: boolean;
   clear_backup_password?: boolean;
+  clear_upload_password?: boolean;
+  clear_upload_backup_password?: boolean;
 }

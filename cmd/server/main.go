@@ -127,14 +127,20 @@ func main() {
 		webdavMaxBytes = 10 << 20
 	}
 	webdavService := webdavsync.NewServiceWithSettings(webdavsync.Config{
-		Enabled:        cfg.WebDAVSyncEnabled,
-		URL:            cfg.WebDAVURL,
-		Username:       cfg.WebDAVUsername,
-		Password:       cfg.WebDAVPassword,
-		BackupPassword: cfg.WebDAVBackupPassword,
-		CronExpr:       cfg.WebDAVCron,
-		MaxBytes:       webdavMaxBytes,
+		Enabled:              cfg.WebDAVSyncEnabled,
+		UploadEnabled:        cfg.WebDAVUploadEnabled,
+		URL:                  cfg.WebDAVURL,
+		Username:             cfg.WebDAVUsername,
+		Password:             cfg.WebDAVPassword,
+		BackupPassword:       cfg.WebDAVBackupPassword,
+		UploadURL:            cfg.WebDAVUploadURL,
+		UploadUsername:       cfg.WebDAVUploadUsername,
+		UploadPassword:       cfg.WebDAVUploadPassword,
+		UploadBackupPassword: cfg.WebDAVUploadBackupPassword,
+		CronExpr:             cfg.WebDAVCron,
+		MaxBytes:             webdavMaxBytes,
 	}, &webdavsync.Client{HTTP: outboundClient, MaxBytes: webdavMaxBytes}, exchangeService, db.WebDAVSettings, enc)
+	webdavService.SetExporter(exchangeService)
 	// Always construct the check-in scheduler so Admin runtime settings can hot-enable it.
 	// Initial Start() still respects env + module gate; later toggles use SetSchedule.
 	checkinLocation := cfg.CheckinLocation()
@@ -194,24 +200,31 @@ func main() {
 		logger.Info("check-in scheduler constructed but not started (CHECKIN_ENABLED=false); Settings can enable without restart")
 	}
 
-	var webdavScheduler *webdavsync.Scheduler
-	webdavStatus := webdavService.Status()
-	var schedErr error
-	// Keep one scheduler object alive even when currently disabled or
-	// incomplete. Admin settings can then arm/disarm it immediately.
-	webdavScheduler, schedErr = webdavsync.NewScheduler(webdavService, "", slog.NewLogLogger(logger.Handler(), slog.LevelInfo))
+	webdavLogger := slog.NewLogLogger(logger.Handler(), slog.LevelInfo)
+	// Keep both per-direction scheduler objects alive even when currently
+	// disabled or incomplete. Admin settings can then arm/disarm them without
+	// a process restart.
+	webdavDownloadScheduler, schedErr := webdavsync.NewScheduler(webdavsync.DownloadRunner(webdavService), "", webdavLogger)
 	if schedErr != nil {
-		logger.Error("webdav scheduler configuration failed", "category", "configuration")
+		logger.Error("webdav download scheduler configuration failed", "category", "configuration")
 		os.Exit(1)
 	}
-	if err := webdavService.AttachScheduler(webdavScheduler); err != nil {
+	webdavUploadScheduler, schedErr := webdavsync.NewScheduler(webdavsync.UploadRunner(webdavService), "", webdavLogger)
+	if schedErr != nil {
+		logger.Error("webdav upload scheduler configuration failed", "category", "configuration")
+		os.Exit(1)
+	}
+	if err := webdavService.AttachSchedulers(webdavDownloadScheduler, webdavUploadScheduler); err != nil {
 		logger.Error("webdav scheduler settings failed", "category", "configuration")
 		os.Exit(1)
 	}
-	if webdavStatus.Enabled && webdavStatus.Configured {
-		logger.Info("webdav read-only sync scheduler enabled", "source", webdavStatus.Source)
+	// Read status after attach so the armed flags reflect the live schedulers.
+	webdavStatus := webdavService.Status()
+	if webdavStatus.DownloadSchedulerArmed || webdavStatus.UploadSchedulerArmed {
+		logger.Info("webdav sync schedulers enabled", "source", webdavStatus.Source,
+			"download_armed", webdavStatus.DownloadSchedulerArmed, "upload_armed", webdavStatus.UploadSchedulerArmed)
 	} else {
-		logger.Info("webdav scheduler idle: disabled or URL/username/password incomplete")
+		logger.Info("webdav schedulers idle: both directions disabled or URL/username/password incomplete")
 	}
 
 	// Determine addr with host:port format.
@@ -267,9 +280,14 @@ func main() {
 			logger.Error("check-in scheduler shutdown failed", "category", "scheduler")
 		}
 	}
-	if webdavScheduler != nil {
-		if err := webdavScheduler.Stop(shutdownCtx); err != nil {
-			logger.Error("webdav scheduler shutdown failed", "category", "scheduler")
+	if webdavDownloadScheduler != nil {
+		if err := webdavDownloadScheduler.Stop(shutdownCtx); err != nil {
+			logger.Error("webdav download scheduler shutdown failed", "category", "scheduler")
+		}
+	}
+	if webdavUploadScheduler != nil {
+		if err := webdavUploadScheduler.Stop(shutdownCtx); err != nil {
+			logger.Error("webdav upload scheduler shutdown failed", "category", "scheduler")
 		}
 	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {

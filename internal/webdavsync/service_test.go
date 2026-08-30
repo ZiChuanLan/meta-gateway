@@ -69,10 +69,11 @@ func TestServiceSyncPlainBackup(t *testing.T) {
 		URL:      server.URL + "/webdav/",
 		Username: "dav",
 		Password: "secret",
+		Enabled:  true,
 		MaxBytes: 1 << 20,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1 << 20}, importer)
 
-	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental)
+	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental, DirectionDownload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +97,10 @@ func TestServiceSyncReplacePassesReplaceMode(t *testing.T) {
 
 	importer := &fakeImporter{}
 	service := NewService(Config{
-		URL: server.URL + "/file.json", Username: "u", Password: "p",
+		URL: server.URL + "/file.json", Username: "u", Password: "p", Enabled: true,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1 << 20}, importer)
 
-	result, err := service.Sync(context.Background(), SourceManual, SyncModeReplace)
+	result, err := service.Sync(context.Background(), SourceManual, SyncModeReplace, DirectionDownload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func TestServiceScheduledSyncDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != StatusSkipped || result.Message != "scheduled sync disabled" {
+	if result.Status != StatusSkipped || result.Message != "scheduled webdav import disabled" {
 		t.Fatalf("result=%+v", result)
 	}
 	if importer.last != nil {
@@ -155,9 +156,9 @@ func TestServiceRejectsUnknownSyncMode(t *testing.T) {
 	}))
 	defer server.Close()
 	service := NewService(Config{
-		URL: server.URL + "/file.json", Username: "u", Password: "p",
+		URL: server.URL + "/file.json", Username: "u", Password: "p", Enabled: true,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1024}, &fakeImporter{})
-	result, err := service.Sync(context.Background(), SourceManual, "unknown")
+	result, err := service.Sync(context.Background(), SourceManual, "unknown", DirectionDownload)
 	if err == nil || result.Category != CategoryValidation {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -181,9 +182,10 @@ func TestServiceSyncEncryptedBackup(t *testing.T) {
 		Username:       "u",
 		Password:       "p",
 		BackupPassword: "enc-pass",
+		Enabled:        true,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1 << 20}, importer)
 
-	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental)
+	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental, DirectionDownload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,9 +203,9 @@ func TestServiceAuthFailure(t *testing.T) {
 	}))
 	defer server.Close()
 	service := NewService(Config{
-		URL: server.URL + "/f.json", Username: "u", Password: "p",
+		URL: server.URL + "/f.json", Username: "u", Password: "p", Enabled: true,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1024}, &fakeImporter{})
-	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental)
+	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental, DirectionDownload)
 	if err == nil || result.Category != CategoryAuthFailed {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -216,9 +218,9 @@ func TestServiceTestConnectionSkipsImport(t *testing.T) {
 	defer server.Close()
 	importer := &fakeImporter{}
 	service := NewService(Config{
-		URL: server.URL + "/f.json", Username: "u", Password: "p",
+		URL: server.URL + "/f.json", Username: "u", Password: "p", Enabled: true,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1024}, importer)
-	result, err := service.TestConnection(context.Background())
+	result, err := service.TestConnection(context.Background(), DirectionDownload)
 	if err != nil || result.Status != StatusSuccess {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -229,7 +231,7 @@ func TestServiceTestConnectionSkipsImport(t *testing.T) {
 
 func TestServiceConfigIncomplete(t *testing.T) {
 	service := NewService(Config{}, &Client{HTTP: http.DefaultClient}, &fakeImporter{})
-	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental)
+	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental, DirectionDownload)
 	if err == nil || result.Category != CategoryConfigIncomplete {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -254,10 +256,11 @@ func TestServiceSyncEncryptedUsesLoginPasswordFallback(t *testing.T) {
 		URL:      server.URL + "/file.json",
 		Username: "u",
 		Password: password,
+		Enabled:  true,
 		// BackupPassword intentionally empty — should fall back to Password.
 	}, &Client{HTTP: server.Client(), MaxBytes: 1 << 20}, importer)
 
-	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental)
+	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental, DirectionDownload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,9 +281,9 @@ func TestServiceSyncEncryptedMissingUnlockPassword(t *testing.T) {
 	}))
 	defer server.Close()
 	service := NewService(Config{
-		URL: server.URL + "/f.json", Username: "u", Password: "webdav-only",
+		URL: server.URL + "/f.json", Username: "u", Password: "webdav-only", Enabled: true,
 	}, &Client{HTTP: server.Client(), MaxBytes: 1 << 20}, &fakeImporter{})
-	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental)
+	result, err := service.Sync(context.Background(), SourceManual, SyncModeIncremental, DirectionDownload)
 	if err == nil || result.Category != CategoryDecryptFailed {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
