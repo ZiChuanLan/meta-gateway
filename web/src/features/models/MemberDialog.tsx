@@ -7,6 +7,7 @@ import { memberRealName, serializeMemberMapping } from "../../lib/alias"
 export function MemberDialog({
   value,
   channels,
+  groups,
   pending,
   error,
   onClose,
@@ -14,6 +15,7 @@ export function MemberDialog({
 }: {
   value: Partial<RouteMember>;
   channels: Array<{ id: number; name: string }>;
+  groups: string[];
   pending: boolean;
   error: unknown;
   onClose: () => void;
@@ -101,6 +103,23 @@ export function MemberDialog({
           <InfoTip label={t("routing.weightHint")} />
         </Field>
       </div>
+      <Field label={t("routing.memberGroupLabel")}>
+        <select
+          value={form.group_name || "default"}
+          onChange={(event) =>
+            setForm({ ...form, group_name: event.target.value || "default" })
+          }
+        >
+          {[...new Set(["default", ...groups])].map((group) => (
+            <option key={group} value={group}>
+              {group === "default"
+                ? t("routing.groupDefault")
+                : group}
+            </option>
+          ))}
+        </select>
+        <InfoTip label={t("routing.memberGroupHint")} />
+      </Field>
       <Field label={t("routing.memberRealName")}>
         <input
           value={realName}

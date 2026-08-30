@@ -80,7 +80,7 @@ func TestRouteMemberMappingJSONRoundTrip(t *testing.T) {
 	}
 
 	// The routing candidate path (used by the proxy) must carry the mapping too.
-	route2, candidates, err := db.RouteMember.RoutingCandidates("shared-alias")
+	route2, candidates, err := db.RouteMember.RoutingCandidates("shared-alias", "")
 	if err != nil {
 		t.Fatal(err)
 	}

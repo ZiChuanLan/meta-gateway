@@ -151,6 +151,9 @@ type Request struct {
 	// (e.g. X-Meta-Session-Id). When empty, the gateway derives a content
 	// digest session key from the request body.
 	SessionKey string
+	// RouteGroup narrows candidate selection to one route group (from the
+	// downstream key). Empty = every route's 'default' group.
+	RouteGroup string
 	// RouteID is filled after selection so usage accounting can update a
 	// model-level stable-first route without changing the public relay API.
 	RouteID int64

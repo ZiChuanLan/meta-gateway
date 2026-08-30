@@ -47,9 +47,12 @@ const (
 //     so retries exhaust [A]→[B]→[次] before moving to the next channel. When
 //     the channel has no eligible members left, selection falls back to the
 //     normal weighted/sticky behavior across the remaining fleet.
+//   - RouteGroup narrows the pool to one route group (see RoutingCandidates);
+//     empty means the route's 'default' group.
 type SelectionConstraint struct {
 	ExcludedMembers map[int64]struct{}
 	PreferChannel   int64
+	RouteGroup      string
 }
 
 type Evaluation struct {
@@ -104,7 +107,7 @@ type Decision struct {
 }
 
 type Repository interface {
-	RoutingCandidates(model string) (*domain.Route, []domain.RoutingCandidate, error)
+	RoutingCandidates(model, group string) (*domain.Route, []domain.RoutingCandidate, error)
 }
 
 type Clock interface {
@@ -390,7 +393,11 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 	if err := ctx.Err(); err != nil {
 		return Explanation{}, err
 	}
-	route, candidates, err := s.repo.RoutingCandidates(model)
+	var group string
+	if constraint != nil {
+		group = constraint.RouteGroup
+	}
+	route, candidates, err := s.repo.RoutingCandidates(model, group)
 	if err != nil {
 		return Explanation{}, err
 	}

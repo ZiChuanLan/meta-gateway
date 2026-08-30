@@ -795,6 +795,10 @@ export const en: Dict = {
     "Choose a model group configured on the Models page to add all of its models to this allowlist.",
   "keys.modelGroupPlaceholder": "Add models by group…",
   "keys.useCustomToken": "Set my own secret",
+  "keys.routeGroup": "Route group",
+  "keys.routeGroupHint":
+    "Bind a group so requests from this Key only pick channels within that group per model; empty = each model uses its default group.",
+  "keys.routeGroupPlaceholder": "Empty = per-model default group",
   "keys.customToken": "Secret",
   "keys.customTokenHint":
     "At least 16 characters. Stored as a hash only — leave blank and uncheck to let the server generate mg-…",
@@ -1207,6 +1211,20 @@ export const en: Dict = {
   "routing.deleteMember": "Remove channel",
   "routing.deleteMemberMsg": "Remove channel #{id} from this model route?",
   "routing.noMembers": "No channels on this model yet.",
+  "routing.groupDefault": "default",
+  "routing.groupNew": "New group",
+  "routing.groupNewPlaceholder": "Group name, Enter to create",
+  "routing.groupRename": "Rename",
+  "routing.groupRenamePlaceholder": "New name, Enter to save",
+  "routing.groupDelete": "Delete group",
+  "routing.groupDeleteConfirm":
+    "Delete group {name} and all of its {count} channel member(s)? This cannot be undone.",
+  "routing.groupEmpty": "Group {name} has no channel members yet.",
+  "routing.groupTabsHint":
+    "A channel may join multiple groups with its own priority in each. Keys bound to a group only pick channels within that group per model, falling back to default when the model has no such group.",
+  "routing.memberGroupLabel": "Group",
+  "routing.memberGroupHint":
+    "The group this member belongs to. Keys bound to a group only select channels within that group.",
   "routing.soloMember": "Use only this channel",
   "routing.soloMemberHint":
     "Pin the route to this channel (single mode). Other channels keep their enabled state; cross-channel retry counts as 0. Restore anytime.",

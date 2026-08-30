@@ -389,6 +389,10 @@ type Route struct {
 // RouteMember
 // ---------------------------------------------------------------------------
 
+// DefaultRouteGroup is the built-in route member group every legacy member
+// belongs to. Keys without a route_group_name always use it.
+const DefaultRouteGroup = "default"
+
 // RouteMember binds a channel to a route with priority/weight.
 type RouteMember struct {
 	ID             int64 `json:"id"`
@@ -407,6 +411,10 @@ type RouteMember struct {
 	// channels can share one route/alias name while each rewrites to its own
 	// upstream model. Empty = follow the route-level mapping_json (legacy).
 	MappingJSON   string     `json:"mapping_json,omitempty"`
+	// GroupName scopes the member to a route group; each group has its own
+	// priority ordering. 'default' is the built-in group every legacy member
+	// belongs to.
+	GroupName     string     `json:"group_name,omitempty"`
 	FailCount     int        `json:"fail_count"`
 	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
 	LastError     string     `json:"last_error,omitempty"`
@@ -450,8 +458,12 @@ type DownstreamKey struct {
 	AllowedIPs string `json:"allowed_ips,omitempty"`
 	// GroupName is the multi-tenant group this key belongs to ("default" when
 	// unset). Group quotas/rate limits apply on top of the key's own limits.
-	GroupName string    `json:"group_name"`
-	CreatedAt time.Time `json:"created_at"`
+	GroupName string `json:"group_name"`
+	// RouteGroupName picks a route group for every model this key relays.
+	// Empty = each route's 'default' group. When a route has no group of this
+	// name, its 'default' group (then all members) is used.
+	RouteGroupName string    `json:"route_group_name,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // KeyGroup is a multi-tenant token group with its own quota and rate limits.

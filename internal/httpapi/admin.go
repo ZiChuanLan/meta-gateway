@@ -116,6 +116,9 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Put("/route-members/{id}", h.updateRouteMember)
 	r.Post("/route-members/{id}/clear-health", h.clearRouteMemberHealth)
 	r.Delete("/route-members/{id}", h.deleteRouteMember)
+	// Route member groups
+	r.Post("/routes/{routeId}/groups/rename", h.renameRouteMemberGroup)
+	r.Delete("/routes/{routeId}/groups/{name}", h.deleteRouteMemberGroup)
 
 	// Model-name unification assistant
 	r.Post("/models/unify/preview", h.unifyPreview)

@@ -38,6 +38,15 @@ type RelayProxy interface {
 	RecordStreamFailure(memberID int64)
 }
 
+// downstreamRouteGroup returns the authenticated key's route group binding
+// ("" = every route's default group).
+func downstreamRouteGroup(r *http.Request) string {
+	if key := auth.DownstreamKey(r); key != nil {
+		return key.RouteGroupName
+	}
+	return ""
+}
+
 // RelayHandler serves public /v1/* endpoints.
 type RelayHandler struct {
 	db    *store.DB
@@ -390,6 +399,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		SessionKey:      r.Header.Get("X-Meta-Session-Id"),
 		ReasoningEffort: reasoningEffort,
 		Headers:         clientHeaders(r.Header),
+		RouteGroup:      downstreamRouteGroup(r),
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
@@ -574,6 +584,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		SessionKey:         r.Header.Get("X-Meta-Session-Id"),
 		ReasoningEffort:    reasoningEffort,
 		Headers:            clientHeaders(r.Header),
+		RouteGroup:         downstreamRouteGroup(r),
 	}
 	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
 	writeUpstreamResult(

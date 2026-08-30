@@ -658,6 +658,10 @@ export const zh: Dict = {
   "logsPage.decisionSkipped": "跳过",
   "common.clientFamily": "客户端",
   "keys.useCustomToken": "自己设置令牌",
+  "keys.routeGroup": "路由分组",
+  "keys.routeGroupHint":
+    "绑定分组后，该 Key 的请求在每个模型只在该模型对应分组内选择渠道；留空则使用各模型的 default 分组。",
+  "keys.routeGroupPlaceholder": "留空 = 每个模型用 default 分组",
   "keys.customToken": "令牌内容",
   "keys.customTokenHint":
     "至少 16 位。只存哈希，无法回看。不勾选则由网关生成 mg-… 随机令牌。",
@@ -1100,6 +1104,20 @@ export const zh: Dict = {
   "routing.deleteMember": "移除通道",
   "routing.deleteMemberMsg": "从该模型路由移除通道 #{id}？",
   "routing.noMembers": "该模型还没有通道。",
+  "routing.groupDefault": "默认",
+  "routing.groupNew": "新建分组",
+  "routing.groupNewPlaceholder": "分组名，回车创建",
+  "routing.groupRename": "重命名",
+  "routing.groupRenamePlaceholder": "新分组名，回车保存",
+  "routing.groupDelete": "删除分组",
+  "routing.groupDeleteConfirm":
+    "删除分组 {name} 及其全部 {count} 个通道成员？此操作不可撤销。",
+  "routing.groupEmpty": "分组 {name} 还没有通道成员。",
+  "routing.groupTabsHint":
+    "同一渠道可加入多个分组、各有优先级；API Key 绑定分组名后，请求只在该模型对应分组内选渠道，未定义时回退 default。",
+  "routing.memberGroupLabel": "所属分组",
+  "routing.memberGroupHint":
+    "该成员归属的分组。API Key 绑定分组名后，只在本分组内选择渠道。",
   "routing.soloMember": "只用此渠道",
   "routing.soloMemberHint":
     "将路由固定到此渠道（单渠道模式）。其他渠道的启用状态不变，跨渠道重试按 0 处理，可随时恢复。",

@@ -305,6 +305,7 @@ func scanRouteMember(scanner interface {
 		&manual,
 		&autoDisabled,
 		&r.MappingJSON,
+		&r.GroupName,
 		&r.FailCount,
 		scanNullTime(&r.CooldownUntil),
 		&r.LastError,
@@ -334,7 +335,7 @@ func (s *RouteMemberStore) ListByRouteTx(tx *sql.Tx, routeID int64) ([]domain.Ro
 }
 
 func listRouteMembers(ex sqlExecutor, routeID int64) ([]domain.RouteMember, error) {
-	rows, err := ex.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
+	rows, err := ex.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
 	if err != nil {
 		return nil, fmt.Errorf("route member list: %w", err)
 	}
@@ -375,7 +376,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 	routeID := route.ID
 	rows, err := s.db.Query(`SELECT
 			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
-			rm.mapping_json, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+			rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
@@ -405,7 +406,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
-			&candidate.Member.MappingJSON, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
+			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
@@ -472,7 +473,10 @@ func applyRouteModelOverrides(channel *domain.Channel, route domain.Route) {
 
 // RoutingCandidates loads member and channel facts for the best matching enabled route.
 // Exact model_pattern wins; otherwise the longest wildcard (* or ?) match is used.
-func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []domain.RoutingCandidate, error) {
+// group narrows the pool to one route group: when non-empty and the route has
+// members in that group they win, otherwise the 'default' group is used, and
+// when that is empty too the full member list applies (legacy behavior).
+func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route, []domain.RoutingCandidate, error) {
 	routeRow := s.db.QueryRow(`SELECT `+routeSelectColumns+` FROM routes WHERE model_pattern = ? AND enabled = 1`, model)
 	var route domain.Route
 	if err := scanRoute(routeRow, &route); err != nil {
@@ -491,7 +495,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 	}
 	rows, err := s.db.Query(`SELECT
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
-		rm.mapping_json, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+		rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
@@ -524,7 +528,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
-			&candidate.Member.MappingJSON, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
+			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
@@ -551,10 +555,39 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		applyRouteModelOverrides(&candidate.Channel, route)
 		result = append(result, candidate)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	result = filterCandidatesByGroup(result, group)
 	if result == nil {
 		result = []domain.RoutingCandidate{}
 	}
-	return &route, result, rows.Err()
+	return &route, result, nil
+}
+
+// filterCandidatesByGroup narrows a route's candidate pool to one group:
+// the requested group when the route defines it, else 'default', else the
+// whole pool (legacy routes keep working unchanged).
+func filterCandidatesByGroup(candidates []domain.RoutingCandidate, group string) []domain.RoutingCandidate {
+	if group == "" {
+		return candidates
+	}
+	membersOf := func(name string) []domain.RoutingCandidate {
+		var out []domain.RoutingCandidate
+		for _, candidate := range candidates {
+			if candidate.Member.GroupName == name {
+				out = append(out, candidate)
+			}
+		}
+		return out
+	}
+	if filtered := membersOf(group); len(filtered) > 0 {
+		return filtered
+	}
+	if filtered := membersOf(domain.DefaultRouteGroup); len(filtered) > 0 {
+		return filtered
+	}
+	return candidates
 }
 
 func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.Duration, category string) error {
@@ -635,7 +668,7 @@ func (s *RouteMemberStore) RecoverExpired() error {
 }
 
 func (s *RouteMemberStore) GetByID(id int64) (*domain.RouteMember, error) {
-	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE id = ?`, id)
 	var r domain.RouteMember
 	if err := scanRouteMember(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -657,12 +690,47 @@ func (s *RouteMemberStore) CreateTx(tx *sql.Tx, r *domain.RouteMember) (int64, e
 
 func createRouteMember(ex sqlExecutor, r *domain.RouteMember) (int64, error) {
 	enabled, auto, manual := boolInt(r.Enabled), boolInt(r.Auto), boolInt(r.ManualOverride)
-	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON)
+	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName))
 	if err != nil {
 		return 0, fmt.Errorf("route member create: %w", err)
 	}
 	return res.LastInsertId()
+}
+
+// NormalizeMemberGroup trims a route member group name; empty becomes the
+// built-in 'default' group.
+func NormalizeMemberGroup(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return domain.DefaultRouteGroup
+	}
+	return name
+}
+
+// RenameMemberGroup moves every member of one group to another name.
+func (s *RouteMemberStore) RenameMemberGroup(routeID int64, from, to string) (int, error) {
+	from = NormalizeMemberGroup(from)
+	to = NormalizeMemberGroup(to)
+	if from == to {
+		return 0, nil
+	}
+	res, err := s.db.Exec(`UPDATE route_members SET group_name = ?, updated_at = datetime('now') WHERE route_id = ? AND group_name = ?`, to, routeID, from)
+	if err != nil {
+		return 0, fmt.Errorf("route member group rename: %w", err)
+	}
+	changed, err := res.RowsAffected()
+	return int(changed), err
+}
+
+// DeleteMemberGroup removes every member of one group of a route.
+func (s *RouteMemberStore) DeleteMemberGroup(routeID int64, name string) (int, error) {
+	res, err := s.db.Exec(`DELETE FROM route_members WHERE route_id = ? AND group_name = ?`, routeID, NormalizeMemberGroup(name))
+	if err != nil {
+		return 0, fmt.Errorf("route member group delete: %w", err)
+	}
+	changed, err := res.RowsAffected()
+	return int(changed), err
 }
 
 func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
@@ -671,8 +739,8 @@ func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
 	if r.CooldownUntil != nil {
 		cooldownUntil = r.CooldownUntil.UTC().Format(time.RFC3339Nano)
 	}
-	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, mapping_json=?, fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
-		r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, r.FailCount, cooldownUntil, r.LastError, r.ID)
+	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, mapping_json=?, group_name=?, fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
+		r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.FailCount, cooldownUntil, r.LastError, r.ID)
 	if err != nil {
 		return fmt.Errorf("route member update: %w", err)
 	}

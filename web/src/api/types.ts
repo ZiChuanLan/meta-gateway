@@ -132,6 +132,7 @@ export interface RouteMember {
   auto: boolean;
   manual_override: boolean;
   mapping_json?: string;
+  group_name?: string;
   fail_count: number;
   cooldown_until?: string;
   last_error?: string;
@@ -153,6 +154,7 @@ export interface DownstreamKey {
   expires_at?: string;
   allowed_ips?: string;
   group_name?: string;
+  route_group_name?: string;
   estimated_cost?: number;
   has_token?: boolean;
   created_at: string;

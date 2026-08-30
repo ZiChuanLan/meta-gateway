@@ -185,13 +185,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 84 {
-		t.Fatalf("got %d applied migrations, want 84", count)
+	if count != 85 {
+		t.Fatalf("got %d applied migrations, want 85", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 84 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 85 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -682,6 +682,92 @@ func TestRoutingUniqueConstraints(t *testing.T) {
 	if _, err := db.RouteMember.Create(member); err == nil {
 		t.Fatal("expected duplicate member to fail")
 	}
+	// The same channel may join the same route again under another group with
+	// its own priority, but not twice within one group.
+	member.GroupName = "B"
+	if _, err := db.RouteMember.Create(member); err != nil {
+		t.Fatalf("same channel in another group should be allowed: %v", err)
+	}
+	if _, err := db.RouteMember.Create(member); err == nil {
+		t.Fatal("expected duplicate member within group B to fail")
+	}
+}
+
+func TestRoutingCandidatesGroupFilterAndFallback(t *testing.T) {
+	db := openTestDB(t)
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "group-model", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newChannel := func(name string) int64 {
+		id, err := db.Channel.Create(&domain.Channel{Name: name, Status: domain.StatusEnabled})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	defA, defB, groupA, groupB := newChannel("def-a"), newChannel("def-b"), newChannel("A-ch"), newChannel("B-ch")
+	createMember := func(channelID int64, group string, priority int) {
+		if _, err := db.RouteMember.Create(&domain.RouteMember{
+			RouteID: routeID, ChannelID: channelID, GroupName: group,
+			Priority: priority, Enabled: true, Weight: 1,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	createMember(defA, "default", 2)
+	createMember(defB, "default", 1)
+	createMember(groupA, "A", 1)
+	createMember(groupB, "B", 1)
+
+	channelNames := func(candidates []domain.RoutingCandidate) []string {
+		var out []string
+		for _, c := range candidates {
+			out = append(out, c.Channel.Name)
+		}
+		return out
+	}
+
+	// No group: everything (legacy behavior).
+	_, candidates, err := db.RouteMember.RoutingCandidates("group-model", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := channelNames(candidates); len(got) != 4 {
+		t.Fatalf("no-group candidates = %v, want all 4", got)
+	}
+	// Requested group wins.
+	_, candidates, err = db.RouteMember.RoutingCandidates("group-model", "A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := channelNames(candidates); len(got) != 1 || got[0] != "A-ch" {
+		t.Fatalf("group A candidates = %v, want [A-ch]", got)
+	}
+	// Unknown group falls back to 'default'.
+	_, candidates, err = db.RouteMember.RoutingCandidates("group-model", "nope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := channelNames(candidates); len(got) != 2 {
+		t.Fatalf("fallback candidates = %v, want the default group's 2", got)
+	}
+	// Rename moves members; deleting a group removes them.
+	if moved, err := db.RouteMember.RenameMemberGroup(routeID, "A", "A2"); err != nil || moved != 1 {
+		t.Fatalf("rename moved=%d err=%v", moved, err)
+	}
+	_, candidates, _ = db.RouteMember.RoutingCandidates("group-model", "A2")
+	if got := channelNames(candidates); len(got) != 1 || got[0] != "A-ch" {
+		t.Fatalf("renamed group A2 candidates = %v", got)
+	}
+	if removed, err := db.RouteMember.DeleteMemberGroup(routeID, "B"); err != nil || removed != 1 {
+		t.Fatalf("delete removed=%d err=%v", removed, err)
+	}
+	// A deleted group behaves like an unknown one: request falls back to default.
+	_, candidates, _ = db.RouteMember.RoutingCandidates("group-model", "B")
+	if got := channelNames(candidates); len(got) != 2 {
+		t.Fatalf("deleted group B candidates = %v, want default fallback's 2", got)
+	}
 }
 
 func TestRuntimeSettingsProxyURLRoundTrip(t *testing.T) {
@@ -993,7 +1079,7 @@ func TestModelRouteOverridesApplyToRoutingCandidates(t *testing.T) {
 	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Enabled: true, Weight: 100}); err != nil {
 		t.Fatal(err)
 	}
-	_, candidates, err := db.RouteMember.RoutingCandidates("override-live")
+	_, candidates, err := db.RouteMember.RoutingCandidates("override-live", "")
 	if err != nil || len(candidates) != 1 {
 		t.Fatalf("candidates=%+v err=%v", candidates, err)
 	}
@@ -1048,7 +1134,7 @@ func TestRouteMemberCooldownRoundTrip(t *testing.T) {
 	}
 	// A member inside an active cooldown is excluded from routing until the
 	// penalty expires.
-	route, candidates, err := db.RouteMember.RoutingCandidates("cooldown-model")
+	route, candidates, err := db.RouteMember.RoutingCandidates("cooldown-model", "")
 	if err != nil || route == nil || len(candidates) != 1 {
 		t.Fatalf("candidates=%+v err=%v", candidates, err)
 	}

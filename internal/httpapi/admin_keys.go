@@ -30,6 +30,7 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
 		ExpiresAt            string  `json:"expires_at,omitempty"`
 		AllowedIPs           string  `json:"allowed_ips,omitempty"`
+		RouteGroupName       string  `json:"route_group_name,omitempty"`
 		EstimatedCost        float64 `json:"estimated_cost"`
 		CreatedAt            string  `json:"created_at"`
 		HasToken             bool    `json:"has_token"`
@@ -69,6 +70,7 @@ func (h *AdminHandler) listDownstreamKeys(w http.ResponseWriter, r *http.Request
 			ModelDenylist:        k.ModelDenylist,
 			ExpiresAt:            k.ExpiresAt,
 			AllowedIPs:           k.AllowedIPs,
+			RouteGroupName:       k.RouteGroupName,
 			EstimatedCost:        estimated,
 			CreatedAt:            k.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			HasToken:             hasToken,
@@ -92,6 +94,7 @@ type createKeyResponse struct {
 	ModelDenylist        string  `json:"model_denylist,omitempty"`
 	ExpiresAt            string  `json:"expires_at,omitempty"`
 	AllowedIPs           string  `json:"allowed_ips,omitempty"`
+	RouteGroupName       string  `json:"route_group_name,omitempty"`
 	CreatedAt            string  `json:"created_at"`
 }
 
@@ -111,6 +114,7 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		ModelDenylist        string  `json:"model_denylist,omitempty"`
 		ExpiresAt            string  `json:"expires_at,omitempty"`
 		AllowedIPs           string  `json:"allowed_ips,omitempty"`
+		RouteGroupName       string  `json:"route_group_name,omitempty"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -191,6 +195,7 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		ExpiresAt:            strings.TrimSpace(req.ExpiresAt),
 		AllowedIPs:           strings.TrimSpace(req.AllowedIPs),
 		GroupName:            strings.TrimSpace(req.GroupName),
+		RouteGroupName:       strings.TrimSpace(req.RouteGroupName),
 	}
 	id, err := h.db.DownstreamKey.Create(key)
 	if err != nil {
@@ -218,6 +223,7 @@ func (h *AdminHandler) createDownstreamKey(w http.ResponseWriter, r *http.Reques
 		ModelDenylist:        strings.TrimSpace(req.ModelDenylist),
 		ExpiresAt:            strings.TrimSpace(req.ExpiresAt),
 		AllowedIPs:           strings.TrimSpace(req.AllowedIPs),
+		RouteGroupName:       strings.TrimSpace(req.RouteGroupName),
 		CreatedAt:            createdAt,
 	})
 }
@@ -249,6 +255,7 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		ModelDenylist        *string  `json:"model_denylist"`
 		ExpiresAt            *string  `json:"expires_at"`
 		AllowedIPs           *string  `json:"allowed_ips"`
+		RouteGroupName       *string  `json:"route_group_name"`
 		ResetUsed            bool     `json:"reset_used"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
@@ -325,6 +332,9 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 	if req.GroupName != nil {
 		existing.GroupName = strings.TrimSpace(*req.GroupName)
 	}
+	if req.RouteGroupName != nil {
+		existing.RouteGroupName = strings.TrimSpace(*req.RouteGroupName)
+	}
 	// Reset the usage counter before persisting field changes: a reset failure
 	// then leaves the row untouched (retry is idempotent), instead of applying
 	// the field update but failing half the request.
@@ -353,6 +363,7 @@ func (h *AdminHandler) updateDownstreamKey(w http.ResponseWriter, r *http.Reques
 		"model_denylist":          existing.ModelDenylist,
 		"expires_at":              existing.ExpiresAt,
 		"allowed_ips":             existing.AllowedIPs,
+		"route_group_name":        existing.RouteGroupName,
 		"created_at":              existing.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }

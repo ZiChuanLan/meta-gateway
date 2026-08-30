@@ -284,6 +284,15 @@ export const api = (client: ApiClient) => ({
   clearMemberHealth: (id: number) =>
     client.post<RouteMember>(`/admin/route-members/${id}/clear-health`),
   deleteMember: (id: number) => client.delete(`/admin/route-members/${id}`),
+  renameMemberGroup: (routeId: number, from: string, to: string) =>
+    client.post<{ renamed: number }>(
+      `/admin/routes/${routeId}/groups/rename`,
+      { from, to },
+    ),
+  deleteMemberGroup: (routeId: number, name: string) =>
+    client.delete(
+      `/admin/routes/${routeId}/groups/${encodeURIComponent(name)}`,
+    ),
   explain: (model: string, signal?: AbortSignal) =>
     client.get<RouteExplanation>(
       `/admin/routes/explain?model=${encodeURIComponent(model)}`,

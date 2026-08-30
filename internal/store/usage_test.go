@@ -484,7 +484,7 @@ func TestRateLimitPauseExcludesChannelFromRouting(t *testing.T) {
 	_, _ = db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: chID, Priority: 10, Weight: 100, Enabled: true})
 
 	// Baseline: candidate is eligible.
-	_, candidates, err := db.RouteMember.RoutingCandidates("rl-model")
+	_, candidates, err := db.RouteMember.RoutingCandidates("rl-model", "")
 	if err != nil || len(candidates) != 1 {
 		t.Fatalf("baseline candidates=%d err=%v", len(candidates), err)
 	}
@@ -494,7 +494,7 @@ func TestRateLimitPauseExcludesChannelFromRouting(t *testing.T) {
 	if err := db.Channel.RecordRateLimited(chID, until); err != nil {
 		t.Fatal(err)
 	}
-	_, candidates, err = db.RouteMember.RoutingCandidates("rl-model")
+	_, candidates, err = db.RouteMember.RoutingCandidates("rl-model", "")
 	if err != nil || len(candidates) != 0 {
 		t.Fatalf("parked channel must be excluded: candidates=%d err=%v", len(candidates), err)
 	}
@@ -504,7 +504,7 @@ func TestRateLimitPauseExcludesChannelFromRouting(t *testing.T) {
 	if err := db.Channel.RecordRateLimited(chID, past); err != nil {
 		t.Fatal(err)
 	}
-	_, candidates, err = db.RouteMember.RoutingCandidates("rl-model")
+	_, candidates, err = db.RouteMember.RoutingCandidates("rl-model", "")
 	if err != nil || len(candidates) != 1 {
 		t.Fatalf("expired pause must restore the channel: candidates=%d err=%v", len(candidates), err)
 	}
@@ -514,7 +514,7 @@ func TestRateLimitPauseExcludesChannelFromRouting(t *testing.T) {
 	if err := db.Channel.ClearRateLimit(chID); err != nil {
 		t.Fatal(err)
 	}
-	_, candidates, err = db.RouteMember.RoutingCandidates("rl-model")
+	_, candidates, err = db.RouteMember.RoutingCandidates("rl-model", "")
 	if err != nil || len(candidates) != 1 {
 		t.Fatalf("cleared pause must restore the channel: candidates=%d err=%v", len(candidates), err)
 	}

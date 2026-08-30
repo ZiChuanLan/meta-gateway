@@ -708,6 +708,7 @@ type KeyFormValues = {
   model_denylist?: string;
   expires_at?: string;
   allowed_ips?: string;
+  route_group_name?: string;
   reset_used?: boolean;
 };
 
@@ -784,6 +785,9 @@ function KeyDialog({
   );
   const [expiresAt, setExpiresAt] = useState(initial?.expires_at ?? "");
   const [allowedIPs, setAllowedIPs] = useState(initial?.allowed_ips ?? "");
+  const [routeGroup, setRouteGroup] = useState(
+    initial?.route_group_name ?? "",
+  );
   const [resetUsed, setResetUsed] = useState(false);
   // Progressive disclosure: billing, model scoping and advanced controls are
   // folded sections so the common path (name + scopes) stays two steps.
@@ -806,7 +810,8 @@ function KeyDialog({
     }
     if (
       (initial?.expires_at ?? "").trim() ||
-      (initial?.allowed_ips ?? "").trim()
+      (initial?.allowed_ips ?? "").trim() ||
+      (initial?.route_group_name ?? "").trim()
     ) {
       setOpenAdvanced(true);
     }
@@ -864,6 +869,7 @@ function KeyDialog({
                 model_denylist: denylist.join(","),
                 expires_at: expiresAt.trim() || undefined,
                 allowed_ips: allowedIPs.trim() || undefined,
+                route_group_name: routeGroup.trim() || undefined,
                 reset_used: mode === "edit" ? resetUsed : undefined,
               })
             }
@@ -1015,6 +1021,15 @@ function KeyDialog({
         </button>
         {openAdvanced ? (
           <div className="key-dialog-fold-body">
+            <Field label={t("keys.routeGroup")} hint={t("keys.routeGroupHint")}>
+              <input
+                value={routeGroup}
+                disabled={pending}
+                onChange={(e) => setRouteGroup(e.target.value)}
+                placeholder={t("keys.routeGroupPlaceholder")}
+                maxLength={64}
+              />
+            </Field>
             <div className="split" style={{ gap: "0.75rem" }}>
               <Field label={t("keys.expiresAt")} hint={t("keys.expiresAtHint")}>
                 <input

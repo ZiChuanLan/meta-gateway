@@ -139,7 +139,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 	// round's selector call and mutated as attempts fail.
 	excludedChannels := make(map[int64]struct{})
 	excludedMembers := make(map[int64]struct{})
-	constraint := &routing.SelectionConstraint{ExcludedMembers: excludedMembers}
+	constraint := &routing.SelectionConstraint{ExcludedMembers: excludedMembers, RouteGroup: req.RouteGroup}
 	// Resolve the sticky session key: an explicit client header wins;
 	// otherwise derive a content digest from the request body (stateless
 	// clients get affinity through their conversation content).

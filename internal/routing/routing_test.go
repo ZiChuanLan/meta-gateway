@@ -13,9 +13,14 @@ import (
 type fakeRepo struct {
 	route      *domain.Route
 	candidates []domain.RoutingCandidate
+	// group returns candidates for a requested route group ("" = all).
+	group func(string) []domain.RoutingCandidate
 }
 
-func (r fakeRepo) RoutingCandidates(string) (*domain.Route, []domain.RoutingCandidate, error) {
+func (r fakeRepo) RoutingCandidates(model, group string) (*domain.Route, []domain.RoutingCandidate, error) {
+	if r.group != nil {
+		return r.route, r.group(group), nil
+	}
 	return r.route, r.candidates, nil
 }
 
@@ -85,6 +90,38 @@ func TestSelectWeightedAndAllZeroFallback(t *testing.T) {
 			}
 			if decision.Selected.Channel.ID != tt.want {
 				t.Fatalf("got channel %d, want %d", decision.Selected.Channel.ID, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectPassesRouteGroupToRepo(t *testing.T) {
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		constraint *SelectionConstraint
+		want    string
+	}{
+		{"explicit group", &SelectionConstraint{RouteGroup: "A"}, "A"},
+		{"no constraint", nil, ""},
+		{"empty group", &SelectionConstraint{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotGroup string
+			repo := fakeRepo{
+				route: &domain.Route{ID: 1},
+				group: func(group string) []domain.RoutingCandidate {
+					gotGroup = group
+					return []domain.RoutingCandidate{candidate(1, 10, 100)}
+				},
+			}
+			selector := NewWithDependencies(repo, fakeClock{now}, &fakeRandom{values: []int{0}})
+			if _, err := selector.Select(context.Background(), "gpt-test", nil, tt.constraint); err != nil {
+				t.Fatal(err)
+			}
+			if gotGroup != tt.want {
+				t.Fatalf("repo received group %q, want %q", gotGroup, tt.want)
 			}
 		})
 	}

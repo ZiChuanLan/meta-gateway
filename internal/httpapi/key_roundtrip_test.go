@@ -102,6 +102,68 @@ func TestCreateKeyResponseEchoesExpiryAndIPs(t *testing.T) {
 	}
 }
 
+// routeGroupOf reads route_group_name from a key JSON entry; the field is
+// omitempty on the wire, so an absent key means "".
+func routeGroupOf(entry map[string]any) string {
+	if v, ok := entry["route_group_name"]; ok {
+		return v.(string)
+	}
+	return ""
+}
+
+func TestDownstreamKeyRouteGroupRoundTrip(t *testing.T) {
+	srv, _, _ := revealTestServer(t)
+	base := srv.URL
+
+	status, created, _ := adminCall(t, base, http.MethodPost, "/admin/downstream-keys", map[string]any{
+		"name":             "grouped",
+		"route_group_name": "B",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("create status = %d", status)
+	}
+	if got, _ := created["route_group_name"].(string); got != "B" {
+		t.Fatalf("create response route_group_name = %v, want B", created["route_group_name"])
+	}
+	id, _ := created["id"].(float64)
+
+	// The list endpoint must read the stored value.
+	if entry := keyByID(t, base, id); routeGroupOf(entry) != "B" {
+		t.Fatalf("listed route_group_name = %v, want B", entry["route_group_name"])
+	}
+
+	// A partial update that omits the group must not zero it.
+	status, _, _ = adminCall(t, base, http.MethodPut, fmt.Sprintf("/admin/downstream-keys/%d", int64(id)), map[string]any{
+		"name": "renamed",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("partial update status = %d", status)
+	}
+	if entry := keyByID(t, base, id); routeGroupOf(entry) != "B" {
+		t.Fatalf("route_group_name after partial update = %v, want B (must survive)", entry["route_group_name"])
+	}
+
+	// Explicit updates still apply, and clearing persists.
+	status, _, _ = adminCall(t, base, http.MethodPut, fmt.Sprintf("/admin/downstream-keys/%d", int64(id)), map[string]any{
+		"route_group_name": "C",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("group update status = %d", status)
+	}
+	if entry := keyByID(t, base, id); routeGroupOf(entry) != "C" {
+		t.Fatalf("route_group_name after explicit update = %v, want C", entry["route_group_name"])
+	}
+	status, _, _ = adminCall(t, base, http.MethodPut, fmt.Sprintf("/admin/downstream-keys/%d", int64(id)), map[string]any{
+		"route_group_name": "",
+	})
+	if status != http.StatusOK {
+		t.Fatalf("clear status = %d", status)
+	}
+	if entry := keyByID(t, base, id); routeGroupOf(entry) != "" {
+		t.Fatalf("route_group_name after clear = %v, want empty (default routing)", entry["route_group_name"])
+	}
+}
+
 func TestCreateDownstreamKeyRejectsNegativeCachePrice(t *testing.T) {
 	srv, _, _ := revealTestServer(t)
 
