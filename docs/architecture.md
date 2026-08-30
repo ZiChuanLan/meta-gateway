@@ -111,11 +111,17 @@ compatibility/default metadata.
 
 1. Load the enabled exact route and all member/channel/credential facts.
 2. If no exact route, load the best wildcard route and its members.
-3. Exclude disabled members/channels, unavailable credentials, members in
+3. Narrow members to the downstream key's bound group: a key may carry a
+   `route_group_name`; members are filtered to `route_members.group_name`
+   when the route defines that group, falling back to the `default` group
+   when it does not (keys without a binding use `default`). The same
+   channel may belong to several groups of one route — membership is
+   unique per `(route_id, channel_id, group_name)`.
+4. Exclude disabled members/channels, unavailable credentials, members in
    cooldown, and channels already attempted by the request.
-4. Choose the highest numeric priority tier with eligible members.
-5. Select by positive weight inside the tier.
-6. If every weight in the tier is zero, select uniformly.
+5. Choose the highest numeric priority tier with eligible members.
+6. Select by positive weight inside the tier.
+7. If every weight in the tier is zero, select uniformly.
 
 `GET /console/routes/explain?model=<model>` uses the same evaluator and returns
 stable reason codes without changing state.

@@ -2,13 +2,11 @@
 
 <h1>Meta Gateway</h1>
 
-**多通道 AI 中继网关 — 智能路由 · 故障转移 · 便携切换**
+**多通道 AI 中继网关 — 多站聚合 · 智能路由 · 故障转移**
 
-<p>
-把分散在各处的 AI API 聚合为<strong>一个统一入口</strong>，
-<br>
-自动发现模型、智能路由、按优先级/权重分流，上游故障自动切换。
-</p>
+把分散在各处的 AI API 聚合成一个入口。下游工具（Cursor、Claude Code、Open WebUI…）
+只配一个地址、一个令牌，就能用上所有站点的模型；
+哪个站点挂了，流量自动绕开。
 
 <p>
 
@@ -23,86 +21,94 @@
 </p>
 
 <p>
-  <a href="#-快速开始"><strong>快速开始</strong></a> ·
-  <a href="#-功能特性">功能特性</a> ·
-  <a href="#-界面预览">界面预览</a> ·
-  <a href="#-部署指南">部署指南</a> ·
-  <a href="#-配置说明">配置</a> ·
-  <a href="#-架构设计">架构</a> ·
-  <a href="#-常见问题">FAQ</a>
+  <a href="#快速开始"><strong>快速开始</strong></a> ·
+  <a href="#接入下游">接入下游</a> ·
+  <a href="#功能特性">功能特性</a> ·
+  <a href="#界面预览">界面预览</a> ·
+  <a href="#配置说明">配置</a> ·
+  <a href="#架构设计">架构</a> ·
+  <a href="#常见问题">FAQ</a>
 </p>
 
 </div>
 
 ---
 
-## 🌟 简介
+## 简介
 
-现在 AI 生态里有越来越多基于 New API / One API 系列的聚合中转站。要管理多个站点的余额、模型列表和 API 密钥，往往既分散又费时。
+现在的 AI 中转站大多基于 New API / One API：手里有三五个站，每个站有自己的余额、模型列表和 API Key。工具越接越多，配置越来越乱——想换一个站，所有客户端都得跟着改。
 
-**Meta Gateway** 作为这些中转站之上的**元聚合层（Meta-Aggregation Layer）**，把多个站点统一到**一个入口**——下游所有工具（Cursor、Claude Code、Codex、Open WebUI 等）即可无感接入全部模型。
+Meta Gateway 架在这些站点之上：所有站点挂到同一个网关后面，下游只看到一个地址、一个令牌。模型自动汇总，请求按优先级分流，单个站点故障时自动绕开。
 
-| 痛点 | Meta Gateway 怎么解决 |
+| 你可能遇到 | Meta Gateway 的做法 |
 | --- | --- |
-| 🔑 每个站点一个 Key，下游工具配置一堆 | **统一代理入口**，一个 Key 访问全部模型 |
-| 💸 不知道哪个站点用某个模型最便宜 | **智能路由** 自动按优先级/权重选最优通道 |
-| 🔄 某个站点挂了，手动切换好麻烦 | **自动故障转移**，一个通道失败自动冷却并切到下一个 |
-| 📊 希望同模型下切换渠道 | **便捷直观** 可以直接固定单通道 |
-| ✅ 每天得去各站签到领额度 | **自动签到** 定时执行，支持外站 Cookie 签到 |
-| 🤷 不知道哪个站有什么模型 | **自动模型发现**，上游新增模型零配置出现在你的模型列表里 |
-| 🧩 想加功能但不想改核心代码 | **插件市场** 社区贡献扩展，一键安装 |
+| 每个站点一个 Key，下游工具要配一堆 | 统一代理入口，一个下游令牌访问全部模型 |
+| 不清楚哪个站点调某个模型更稳 | 按优先级与权重自动选通道，可按时延和错误率动态调整 |
+| 站点挂了要手动换 Key | 通道失败自动冷却并切换下一个，恢复后自动回归 |
+| 同一个模型想固定走某个渠道 | 模型页锁定单通道，或按场景建路由分组 |
+| 每天要去各站签到领额度 | 定时自动签到，支持外站 Cookie |
+| 不知道哪个站有什么模型 | 自动模型发现，上游新增模型零配置出现 |
+| 想加功能又不想改核心代码 | 插件市场(待续)一键安装社区扩展 |
 
-当前支持的上游范围包括：
+支持的上游：
 
 - **聚合面板**：New API、One API、OneHub、DoneHub、Veloera、AnyRouter、Sub2API 等
 - **通用兼容接口**：OpenAI / Anthropic / Gemini compatible endpoints
 - **官方预设**：DeepSeek、智谱 GLM、月之暗面 Moonshot、MiniMax 等
-- **OAuth 连接**：Codex、Claude、Gemini CLI
+
+> 在线体验：[https://mg.015201314.xyz](https://mg.015201314.xyz)
+密码 ：`123456`
 
 ---
-## 在线体验
 
-| 项目 | 地址  |
-| --- | --- |
-| 演示站点 | [https://mg.015201314.xyz](https://mg.015201314.xyz) |
-| 访问密码 | `123456` |
----
-## 📸 界面预览
+## 界面预览
 
 <table>
   <tr>
     <td align="center">
       <img src="docs/screenshots/login.png" alt="登录页" style="width:100%;height:auto;"/>
-      <div><b>登录页</b> — ADMIN_TOKEN 认证，令牌仅存于内存</div>
+      <div><b>登录页</b> — ADMIN_TOKEN 认证，令牌仅存于浏览器内存</div>
     </td>
     <td align="center">
       <img src="docs/screenshots/dashboard.png" alt="总览" style="width:100%;height:auto;"/>
-      <div><b>总览</b> — 流量统计、渠道健康、最近日志</div>
+      <div><b>总览</b> — 流量统计、渠道健康、最近请求</div>
     </td>
   </tr>
   <tr>
     <td align="center">
       <img src="docs/screenshots/connections.png" alt="连接" style="width:100%;height:auto;"/>
-      <div><b>上游连接</b> — 多站点管理、健康状态、模型同步</div>
+      <div><b>上游连接</b> — 多站点管理、模型同步模式、健康状态</div>
     </td>
     <td align="center">
       <img src="docs/screenshots/models.png" alt="模型" style="width:100%;height:auto;"/>
-      <div><b>模型路由</b> — 路由策略、成员优先级、试调面板</div>
+      <div><b>模型路由</b> — 成员分组、优先级、统一名称、模型探测</div>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="docs/screenshots/store.png" alt="商店" style="width:100%;height:auto;"/>
-      <div><b>插件商店</b> — 扩展安装、配置、启用/停用</div>
+      <img src="docs/screenshots/keys.png" alt="令牌" style="width:100%;height:auto;"/>
+      <div><b>令牌管理</b> — 下游令牌、配额计费、路由分组绑定</div>
     </td>
     <td align="center">
+      <img src="docs/screenshots/store.png" alt="商店" style="width:100%;height:auto;"/>
+      <div><b>插件商店</b> — 市场浏览、一键安装与托管运行</div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/checkin.png" alt="签到" style="width:100%;height:auto;"/>
+      <div><b>签到调度</b> — 多站点定时签到、执行日志</div>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/exchange.png" alt="交换" style="width:100%;height:auto;"/>
+      <div><b>资产交换</b> — 连接配置导入导出、WebDAV 备份</div>
     </td>
   </tr>
 </table>
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 方式一：Docker Compose（推荐）
 
@@ -131,7 +137,7 @@ export METRICS_TOKEN=your-metrics-token
 docker compose up -d
 ```
 
-启动后访问 `http://localhost:4100/console/`，用 `ADMIN_TOKEN` 登录即可。
+启动后访问 `http://localhost:4100/console/`，用 `ADMIN_TOKEN` 登录。
 
 <details>
 <summary><strong>一行 Docker 命令</strong></summary>
@@ -180,50 +186,87 @@ curl http://127.0.0.1:4100/readyz
 
 ---
 
-## ✨ 功能特性
+## 接入下游
 
-### 核心中继
+1. 管理后台 → 令牌 → 创建令牌（可设额度、计费单价、路由分组）
+2. 客户端的 API 地址指向网关，令牌填刚创建的下游令牌：
 
-- **OpenAI 兼容 API**：`/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/images/*`
-- **Anthropic 原生**：`/v1/messages`（自动翻译 OpenAI ↔ Anthropic 格式）
-- **Gemini 原生**：`/v1/chat/completions` → `generateContent` 自动翻译
-- **SSE 流式传输**：全协议支持 Server-Sent Events
-- **多下游 Key**：支持 Key 级别的作用域（`relay`/`chat`/`models`/`embeddings` 等）
+```bash
+curl http://localhost:4100/v1/chat/completions \
+  -H "Authorization: Bearer <你的下游令牌>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-v4-flash",
+    "messages": [{ "role": "user", "content": "你好" }]
+  }'
+```
 
-### 智能路由
+OpenAI SDK（Python / JS / Go 同理）：
 
-- **优先级 + 权重**：高优先级先匹配，同级内按权重分流
-- **自动故障转移**：上游 5xx/超时自动重试下一个通道
-- **冷却机制**：连续失败的通道自动冷却，冷却到期自动恢复探测
-- **跨通道重试**：同 Key 重发 → 换 Key → 换通道，逐级升级
-- **灰度发布**：`stable_first` 通道先接 1/N 流量，验证后自动提升
+```python
+from openai import OpenAI
 
-### 多通道管理
+client = OpenAI(
+    base_url="http://localhost:4100/v1",
+    api_key="<你的下游令牌>",
+)
 
-- **多站点聚合**：一个管理面板管理所有上游站点
-- **自动模型发现**：一键同步上游模型列表，自动创建路由
-- **凭证加密存储**：AES 加密，密钥不入库、不入日志、不入 API 响应
-- **优先级/权重排序**：拖拽调整通道优先级，支持批量操作
+resp = client.chat.completions.create(
+    model="deepseek-v4-flash",
+    messages=[{"role": "user", "content": "你好"}],
+)
+print(resp.choices[0].message.content)
+```
 
-### 运维能力
+Cursor、Cherry Studio、Open WebUI 等客户端：Base URL 填 `http://<网关地址>:4100/v1`，API Key 填下游令牌，协议选 OpenAI 兼容。走 Anthropic 协议的客户端（如 Claude Code）同样把地址指向 `/v1`、选 Anthropic 协议即可——网关会在 OpenAI / Anthropic / Gemini 三种协议之间自动互译。
 
-- **签到调度**：New API / One API 系站点自动签到，外站 Cookie 签到
-- **资产交换**：导入/导出连接配置，WebDAV 云备份
-- **审计日志**：所有管理操作留痕，支持保留策略
-- **在线备份**：SQLite 热备份 + 校验，一键恢复
-- **告警规则**：指标 → Webhook 告警（Bark/ServerChan/Telegram/SMTP）
-- **运行时热配置**：重试次数、限流、审计保留等参数在线调整无需重启
-
-### 插件生态
-
-- **插件市场**：官方 + 社区插件，一键安装
-- **托管进程**：网关下载并拉起插件进程，自动健康检查
-- **配置管理**：`config_fields` 声明式配置，secret 掩码保护
-- **官方扩展**：Exchange（资产交换）、Check-in（签到调度）
+可用模型列表：`GET /v1/models`。
 
 ---
 
-## ⚙️ 配置说明
+## 功能特性
+
+### 中继与协议
+
+- OpenAI 兼容接口：`/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/responses`、`/v1/images/*`
+- Anthropic `/v1/messages`、Gemini 原生协议，与 OpenAI 格式自动互译——客户端用哪种协议都能调任意上游
+- SSE 流式传输全链路支持
+- 下游令牌按作用域限权（`relay` / `chat` / `models` / `embeddings` 等）
+
+### 路由与容错
+
+- 优先级分层、同层按权重分流；可开启时延与错误率感知
+- 失败自动重试：同通道换 Key → 跨通道转移，重试上限由 `RETRY_TIMES` 控制
+- 失败通道进入冷却，到期自动恢复探测；连续失败可自动禁用
+- 路由分组：同一模型可建多个成员分组（比如「日常」和「跑批」各一套优先级），分组内独立排序；新建分组可一键复制 default 的全部成员
+- 令牌绑定分组：给下游令牌指定分组名，它发出的请求只在该分组内选通道、只在分组内转移，不影响主链路
+- 灰度发布：`stable_first` 通道先承接小流量，验证后自动转正
+
+### 多站点管理
+
+- 多站点统一管理面板，凭证 AES 加密存储
+- 自动模型发现：一键同步上游模型并生成路由；渠道可设 auto / manual 同步模式，auto 渠道的新模型自动上线
+- 模型名称统一：跨渠道识别同一模型的不同命名，一键归一，操作可整体撤销
+- 模型探测：对渠道 + 模型发起真实调用，验证「列表里有」不等于「真的能用」
+- 模型级优先级可覆盖渠道全局排序，支持拖拽与批量操作
+
+### 运维
+
+- 签到调度：New API / One API 系站点定时签到，外站 Cookie 签到
+- 资产交换：连接配置导入导出，WebDAV 云备份
+- 审计日志、SQLite 在线备份与校验恢复
+- 告警规则：指标 → Webhook（Bark / ServerChan / Telegram / SMTP）
+- 运行时热配置：重试次数、限流、审计保留等在线调整，无需重启
+
+### 插件
+
+- 插件市场一键安装，网关托管插件进程并自动健康检查
+- `config_fields` 声明式配置，secret 自动掩码
+- 官方扩展（Exchange、Check-in）目前为内置功能，插件化适配中
+
+---
+
+## 配置说明
 
 ### 必填环境变量
 
@@ -251,11 +294,11 @@ curl http://127.0.0.1:4100/readyz
 | `CHECKIN_TZ` | (系统) | 签到时区（如 `Asia/Shanghai`） |
 | `PLUGIN_MARKET_URLS` | (内置) | 额外插件市场源（逗号分隔） |
 
-完整配置列表见 [docs/operations.md](docs/operations.md)。
+部署、备份、审计等运维细节见 [docs/operations.md](docs/operations.md)。
 
 ---
 
-## 🏗️ 架构设计
+## 架构设计
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -287,11 +330,11 @@ curl http://127.0.0.1:4100/readyz
    └─────────┘    └─────────┘    └─────────┘
 ```
 
-详细架构文档见 [docs/architecture.md](docs/architecture.md)。
+模型选择、分组回退、重试与冷却的完整规则见 [docs/architecture.md](docs/architecture.md)。
 
 ---
 
-## 📖 API 概览
+## API 概览
 
 ### 公开端点（需要下游 Key）
 
@@ -315,8 +358,10 @@ curl http://127.0.0.1:4100/readyz
 | POST | `/admin/sites` | 创建站点 |
 | GET | `/admin/channels` | 通道列表 |
 | POST | `/admin/channels` | 创建通道 |
-| GET | `/admin/models` | 模型路由列表 |
+| GET | `/admin/routes` | 模型路由列表 |
 | POST | `/admin/routes` | 创建模型路由 |
+| GET | `/admin/route-groups` | 全系统成员分组名列表 |
+| POST | `/admin/routes/{id}/groups/copy` | 复制成员分组（如从 default 播种新分组） |
 | GET | `/admin/downstream-keys` | 下游 Key 列表 |
 | POST | `/admin/downstream-keys` | 创建下游 Key |
 | GET | `/admin/plugins/status` | 插件状态 |
@@ -325,13 +370,11 @@ curl http://127.0.0.1:4100/readyz
 | POST | `/admin/exchange/import` | 导入资产 |
 | POST | `/admin/backups` | 创建备份 |
 
-完整 API 列表见 [docs/operations.md](docs/operations.md)。
-
 ---
 
-## 🛡️ 安全边界
+## 安全边界
 
-- **凭证加密**：所有密钥使用 AES 加密存储，解密仅在请求构造时发生，日志/API 响应中永远不出现明文
+- **凭证加密**：所有密钥使用 AES 加密存储，解密仅在请求构造时发生，日志和 API 响应中不出现明文
 - **出站策略**：所有出站请求走统一 SSRF 防护——DNS 校验、重定向重校验、跨域凭证移除、环回/内网地址默认拒绝
 - **令牌隔离**：ADMIN_TOKEN 仅存于浏览器内存/Tab SessionStorage，不进 Cookie、不进 URL
 - **审计留痕**：所有管理操作记录审计事件，支持保留策略
@@ -339,7 +382,7 @@ curl http://127.0.0.1:4100/readyz
 
 ---
 
-## 🔧 常见问题
+## 常见问题
 
 <details>
 <summary><strong>Q: 支持哪些上游平台？</strong></summary>
@@ -354,15 +397,21 @@ curl http://127.0.0.1:4100/readyz
 </details>
 
 <details>
-<summary><strong>Q: 支持 Claude 官方 API 吗？</strong></summary>
+<summary><strong>Q: 如何配置自动故障转移？</strong></summary>
 
-支持。连接类型选择 "Anthropic (Claude Official)"，填入 API Key，网关会自动处理 Anthropic 认证头和 `/v1/messages` 路径翻译。下游客户端调用标准 `/v1/chat/completions` 即可。
+默认已启用。为同一个模型配置多个通道（不同优先级），高优先级通道失败时会自动尝试低优先级通道。可通过 `RETRY_TIMES` 调整重试轮次，`CHANNEL_AUTO_DISABLE_THRESHOLD` 调整自动禁用阈值。
 </details>
 
 <details>
-<summary><strong>Q: 如何配置自动故障转移？</strong></summary>
+<summary><strong>Q: 路由分组什么场景用？</strong></summary>
 
-默认已启用。只需为同一个模型配置多个通道（不同优先级），当高优先级通道失败时会自动尝试低优先级通道。可通过 `RETRY_TIMES` 调整重试轮次，`CHANNEL_AUTO_DISABLE_THRESHOLD` 调整自动禁用阈值。
+比如同一个模型在三个渠道都有：把主力渠道留在 default，其余渠道拉进一个新分组，然后给跑批或测试用的下游令牌绑定这个分组——这些令牌的请求只落在这批渠道上，失败了也只在分组内转移，不会挤占正式流量的主链路。
+</details>
+
+<details>
+<summary><strong>Q: 支持 Claude 官方 API 吗？</strong></summary>
+
+支持。连接类型选择 "Anthropic (Claude Official)"，填入 API Key，网关会自动处理 Anthropic 认证头和 `/v1/messages` 路径翻译。下游客户端调用标准 `/v1/chat/completions` 即可。
 </details>
 
 <details>
@@ -374,26 +423,26 @@ curl http://127.0.0.1:4100/readyz
 <details>
 <summary><strong>Q: 如何备份和恢复？</strong></summary>
 
-管理后台 → 设置 → 备份，点击"创建备份"即可。恢复时停止服务后运行 `meta-gateway restore --from <备份文件>`。备份包含加密凭证，恢复时需使用相同的 `MASTER_KEY`。
+管理后台 → 设置 → 备份，点击"创建备份"。恢复时停止服务后运行 `meta-gateway restore --from <备份文件>`。备份包含加密凭证，恢复时需使用相同的 `MASTER_KEY`。
 </details>
 
 ---
 
-## 🤝 参与贡献
+## 参与贡献
 
 欢迎提交 Issue 和 Pull Request！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-## 📄 开源协议
+## 开源协议
 
 本项目基于 [MIT License](LICENSE) 开源。
 
-## 🙏 致谢
+## 致谢
+
 - [LINUX DO](https://linux.do)
-- [New API](https://github.com/QuantumNous/new-api) / [One API](https://github.com/songquanpeng/one-api) 
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 
-- [metapi](https://github.com/cita-777/metapi) 
+- [New API](https://github.com/QuantumNous/new-api) / [One API](https://github.com/songquanpeng/one-api)
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
+- [metapi](https://github.com/cita-777/metapi)
 - AxonHUB
 - All API Hub
 - Sub2API
 - CC-SWITCH
-
