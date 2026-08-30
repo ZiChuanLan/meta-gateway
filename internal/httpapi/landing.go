@@ -6,7 +6,9 @@ import (
 
 // Root landing page: a slim brand surface served at "/" so the root URL is
 // never a bare 404. Styled to match the admin connect screen (dark, squared,
-// mono accents) and probes /readyz live to show gateway health.
+// mono accents), probes /readyz live to show gateway health, and runs a
+// canvas code-waterfall background (warm-white glyph rain, reduced-motion
+// aware). Kept in sync with tools/landing/index.html.
 const landingPageHTML = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -37,9 +39,18 @@ const landingPageHTML = `<!doctype html>
     display: grid;
     place-items: center;
     padding: 24px;
+    overflow: hidden;
     -webkit-font-smoothing: antialiased;
   }
+  #codefall {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
   .card {
+    position: relative;
+    z-index: 1;
     width: min(520px, 100%);
     background: var(--panel);
     border: 1px solid var(--line);
@@ -147,6 +158,7 @@ const landingPageHTML = `<!doctype html>
 </style>
 </head>
 <body>
+  <canvas id="codefall" aria-hidden="true"></canvas>
   <main class="card">
     <header class="brand">
       <div class="mark" aria-hidden="true">MG</div>
@@ -182,6 +194,108 @@ const landingPageHTML = `<!doctype html>
     </footer>
   </main>
   <script>
+    (function () {
+      var canvas = document.getElementById("codefall");
+      var ctx = canvas.getContext("2d");
+      var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      var GLYPHS = "01{}<>=/;().+*#$&|!?~^%[]:-_abcdef→".split("");
+
+      var DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+      var FONT = 13, LEAD = 15, W = 0, H = 0;
+      var cols = [];
+      var last = 0, raf = 0;
+
+      function rand(a, b) { return a + Math.random() * (b - a); }
+      function glyph() { return GLYPHS[(Math.random() * GLYPHS.length) | 0]; }
+      function ink(a) { return "rgba(247, 242, 234, " + a.toFixed(3) + ")"; }
+
+      function makeCol(x) {
+        var len = (28 * rand(0.7, 1.8)) | 0;
+        var chars = [];
+        for (var k = 0; k < len; k++) chars.push(glyph());
+        return {
+          x: x, y: rand(-H * 1.4, H), len: len, chars: chars,
+          speed: rand(34, 110), flip: rand(0, 6)
+        };
+      }
+
+      function layout() {
+        W = window.innerWidth; H = window.innerHeight;
+        canvas.width = Math.round(W * DPR);
+        canvas.height = Math.round(H * DPR);
+        canvas.style.width = W + "px";
+        canvas.style.height = H + "px";
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        var step = FONT + 5;
+        cols = [];
+        for (var x = step / 2; x < W; x += step) {
+          if (Math.random() < 0.1) continue;
+          cols.push(makeCol(x));
+        }
+      }
+
+      function drawCols(dt) {
+        ctx.font = FONT + 'px "JetBrains Mono", "IBM Plex Mono", Consolas, monospace';
+        ctx.textAlign = "center";
+        for (var i = 0; i < cols.length; i++) {
+          var c = cols[i];
+          c.y += c.speed * dt;
+          c.flip -= dt;
+          if (c.flip <= 0) {
+            c.chars[(Math.random() * c.chars.length) | 0] = glyph();
+            c.flip = rand(0.05, 0.5);
+          }
+          for (var k = 0; k < c.len; k++) {
+            var a = 0.85 * Math.pow(1 - k / c.len, 1.35);
+            if (a < 0.02) break;
+            var yy = c.y - k * LEAD;
+            if (yy < -LEAD || yy > H + LEAD) continue;
+            ctx.fillStyle = ink(a);
+            ctx.fillText(c.chars[k], c.x, yy);
+          }
+          if (c.y - c.len * LEAD > H) cols[i] = makeCol(c.x);
+        }
+      }
+
+      function frame(now) {
+        raf = requestAnimationFrame(frame);
+        var dt = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        ctx.clearRect(0, 0, W, H);
+        drawCols(dt);
+      }
+
+      function start() {
+        if (reduced) {
+          ctx.clearRect(0, 0, W, H);
+          drawCols(0);
+          return;
+        }
+        cancelAnimationFrame(raf);
+        last = performance.now();
+        raf = requestAnimationFrame(frame);
+      }
+
+      layout();
+      start();
+
+      window.__codefallTick = function (dt) {
+        ctx.clearRect(0, 0, W, H);
+        drawCols(dt || 0.016);
+      };
+
+      var resizeTimer = 0;
+      window.addEventListener("resize", function () {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function () { layout(); start(); }, 150);
+      });
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) cancelAnimationFrame(raf);
+        else start();
+      });
+    })();
+
     (function () {
       var dot = document.getElementById("dot");
       var label = document.getElementById("status-label");
