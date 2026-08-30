@@ -1040,6 +1040,25 @@ export function RuntimeSettingsPanel() {
           </label>
           <label className="field">
             <SettingLabel
+              label={t("ops.runtime.defaultModelSyncMode")}
+              hint={t("ops.runtime.defaultModelSyncModeHint")}
+            />
+            <select
+              disabled={busy}
+              value={draft.default_model_sync_mode ?? "manual"}
+              onChange={(e) =>
+                patch(
+                  "default_model_sync_mode",
+                  e.target.value === "auto" ? "auto" : "manual",
+                )
+              }
+            >
+              <option value="manual">{t("channels.syncModeManual")}</option>
+              <option value="auto">{t("channels.syncModeAuto")}</option>
+            </select>
+          </label>
+          <label className="field">
+            <SettingLabel
               label={t("ops.maintenance.cron")}
               hint={t("ops.maintenance.cronHint")}
             />

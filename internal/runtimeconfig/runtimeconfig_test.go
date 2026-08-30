@@ -27,21 +27,25 @@ func (f *fakeSched) SetSchedule(expr string, enabled bool) error {
 // and CheckinAllowed gating through a custom apply path with nil CheckinSched plus allowed flag.
 
 func TestValidateBoundsAndCron(t *testing.T) {
-	if err := Validate(Editable{RetryTimes: 1, CooldownSeconds: 1, CheckinCron: "0 8 * * *", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300}); err != nil {
+	if err := Validate(Editable{RetryTimes: 1, CooldownSeconds: 1, CheckinCron: "0 8 * * *", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300, DefaultModelSyncMode: "manual"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := Validate(Editable{RetryTimes: -1, CheckinCron: "0 8 * * *"}); err == nil {
+	if err := Validate(Editable{RetryTimes: -1, CheckinCron: "0 8 * * *", DefaultModelSyncMode: "manual"}); err == nil {
 		t.Fatal("expected retry bounds error")
 	}
-	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "not a cron"}); err == nil {
+	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "not a cron", DefaultModelSyncMode: "manual"}); err == nil {
 		t.Fatal("expected cron error")
 	}
 	// Discovery cron: empty = disabled (valid); malformed = rejected.
-	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "0 8 * * *", DiscoveryCron: "0 3 * * *", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300}); err != nil {
+	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "0 8 * * *", DiscoveryCron: "0 3 * * *", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300, DefaultModelSyncMode: "auto"}); err != nil {
 		t.Fatalf("valid discovery cron rejected: %v", err)
 	}
-	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "0 8 * * *", DiscoveryCron: "nope", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300}); err == nil {
+	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "0 8 * * *", DiscoveryCron: "nope", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300, DefaultModelSyncMode: "manual"}); err == nil {
 		t.Fatal("expected discovery cron error")
+	}
+	// New-channel default sync mode: only auto|manual accepted.
+	if err := Validate(Editable{RetryTimes: 1, CheckinCron: "0 8 * * *", DefaultModelSyncMode: "sometimes"}); err == nil {
+		t.Fatal("expected default_model_sync_mode error")
 	}
 }
 
@@ -232,6 +236,7 @@ func TestUpdateAndClearOverride(t *testing.T) {
 		HealthSweepTimeoutSeconds:   10,
 		ChannelRetryTimes:           3,
 		KeyPoolRotation:             false,
+		DefaultModelSyncMode:        "auto",
 	}
 	snap, err := controller.Update(next)
 	if err != nil {
@@ -251,7 +256,8 @@ func TestUpdateAndClearOverride(t *testing.T) {
 		persisted.HealthSweepEnabled != 1 || persisted.HealthSweepIntervalSeconds != 120 ||
 		persisted.HealthSweepJitterSeconds != 5 || persisted.HealthSweepDegradedMs != 1000 ||
 		persisted.HealthSweepConcurrency != 2 || persisted.HealthSweepTimeoutSeconds != 10 ||
-		persisted.ChannelRetryTimes != 3 || persisted.KeyPoolRotation != 0 {
+		persisted.ChannelRetryTimes != 3 || persisted.KeyPoolRotation != 0 ||
+		persisted.DefaultModelSyncMode != "auto" {
 		t.Fatalf("runtime policy persistence mismatch: %+v", persisted)
 	}
 	cleared, err := controller.ClearOverride()
@@ -260,6 +266,9 @@ func TestUpdateAndClearOverride(t *testing.T) {
 	}
 	if cleared.Source != "environment" || cleared.HasOverride || cleared.Editable.RetryTimes != 2 || !cleared.Editable.CrossChannelFailoverEnabled {
 		t.Fatalf("after clear=%+v", cleared)
+	}
+	if cleared.Editable.DefaultModelSyncMode != "manual" {
+		t.Fatalf("cleared default_model_sync_mode = %q, want manual", cleared.Editable.DefaultModelSyncMode)
 	}
 }
 

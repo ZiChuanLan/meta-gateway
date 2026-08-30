@@ -239,3 +239,39 @@ func TestMissingModelsSkipsManualChannels(t *testing.T) {
 		t.Fatalf("missing = %+v, want only auto-model (manual channel skipped)", missing)
 	}
 }
+
+// A channel created without an explicit mode inherits the Admin-configured
+// default from runtime settings; explicit modes always win, and a missing or
+// malformed runtime value degrades to manual.
+func TestChannelCreateUsesRuntimeDefaultSyncMode(t *testing.T) {
+	db := openTestDB(t)
+
+	// No runtime row yet → manual.
+	noRowID := syncModeFixture(t, db, "no-runtime-row", "")
+	if got, _ := db.Channel.GetByID(noRowID); got.ModelSyncMode != domain.ModelSyncModeManual {
+		t.Errorf("no runtime row: mode = %q, want manual", got.ModelSyncMode)
+	}
+
+	// Admin sets the default to auto → empty create inherits it, an explicit
+	// manual still wins.
+	if err := db.RuntimeSettings.Save(&store.RuntimeSettingsRow{HasOverride: true, DefaultModelSyncMode: domain.ModelSyncModeAuto}); err != nil {
+		t.Fatal(err)
+	}
+	inheritID := syncModeFixture(t, db, "inherits-auto", "")
+	if got, _ := db.Channel.GetByID(inheritID); got.ModelSyncMode != domain.ModelSyncModeAuto {
+		t.Errorf("inherited mode = %q, want auto", got.ModelSyncMode)
+	}
+	explicitID := syncModeFixture(t, db, "explicit-manual", domain.ModelSyncModeManual)
+	if got, _ := db.Channel.GetByID(explicitID); got.ModelSyncMode != domain.ModelSyncModeManual {
+		t.Errorf("explicit mode = %q, want manual", got.ModelSyncMode)
+	}
+
+	// A malformed stored value must degrade to manual, not leak through.
+	if err := db.RuntimeSettings.Save(&store.RuntimeSettingsRow{HasOverride: true, DefaultModelSyncMode: "sometimes"}); err != nil {
+		t.Fatal(err)
+	}
+	garbageID := syncModeFixture(t, db, "garbage-default", "")
+	if got, _ := db.Channel.GetByID(garbageID); got.ModelSyncMode != domain.ModelSyncModeManual {
+		t.Errorf("garbage runtime default: mode = %q, want manual", got.ModelSyncMode)
+	}
+}

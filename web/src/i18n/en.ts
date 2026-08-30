@@ -1509,6 +1509,9 @@ export const en: Dict = {
   "ops.runtime.discoveryCron": "Scheduled model refresh",
   "ops.runtime.discoveryCronHint":
     "Five-field cron (e.g. 0 3 * * * = daily 03:00) to re-scan channel model lists automatically; empty = disabled.",
+  "ops.runtime.defaultModelSyncMode": "Default sync mode for new channels",
+  "ops.runtime.defaultModelSyncModeHint":
+    "Applied when a newly created channel does not pick a sync mode; existing channels are unaffected. Auto sync = discovered models are routed automatically; pick on demand = candidates only, adopted from the models page.",
   "ops.maintenance.title": "Database maintenance",
   "ops.maintenance.run": "Run now",
   "ops.maintenance.hint":

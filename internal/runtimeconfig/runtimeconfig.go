@@ -127,6 +127,10 @@ type Editable struct {
 	ChannelRetryTimes int `json:"channel_retry_times"`
 	// KeyPoolRotation enables rotating through the site key pool on failure.
 	KeyPoolRotation bool `json:"key_pool_rotation"`
+	// DefaultModelSyncMode is the sync mode ("auto"|"manual") new channels
+	// get when the create request omits model_sync_mode. Existing channels
+	// keep their own mode.
+	DefaultModelSyncMode string `json:"default_model_sync_mode"`
 }
 
 // Snapshot is the effective runtime view returned to Admin UI.
@@ -247,6 +251,10 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		HealthSweepTimeoutSeconds:        cfg.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                cfg.ChannelRetryTimes,
 		KeyPoolRotation:                  cfg.KeyPoolRotation,
+		// No env knob: the bootstrap default for new channels is manual
+		// (discovery only fills the candidate snapshot until models are
+		// explicitly adopted); Admin can override it here.
+		DefaultModelSyncMode: "manual",
 	}
 	c := &Controller{
 		env:      env,
@@ -379,6 +387,7 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		HealthSweepTimeoutSeconds:        next.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                next.ChannelRetryTimes,
 		KeyPoolRotation:                  boolInt(next.KeyPoolRotation),
+		DefaultModelSyncMode:             next.DefaultModelSyncMode,
 	}
 	previousRow, err := c.store.Get()
 	if err != nil {
@@ -635,6 +644,7 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		HealthSweepTimeoutSeconds:        row.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                row.ChannelRetryTimes,
 		KeyPoolRotation:                  row.KeyPoolRotation == 1,
+		DefaultModelSyncMode:             row.DefaultModelSyncMode,
 	}
 }
 
@@ -722,6 +732,9 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	}
 	if editable.KeyPoolRotation == false && row.KeyPoolRotation == -1 {
 		editable.KeyPoolRotation = c.env.KeyPoolRotation
+	}
+	if editable.DefaultModelSyncMode == "" {
+		editable.DefaultModelSyncMode = c.env.DefaultModelSyncMode
 	}
 	return editable
 }
@@ -840,6 +853,9 @@ func Validate(values Editable) error {
 	// here, so a negative threshold is rejected rather than silently coerced.
 	if values.ProbeAutoDisable < 0 {
 		return fmt.Errorf("probe_auto_disable must be >= 0")
+	}
+	if values.DefaultModelSyncMode != "auto" && values.DefaultModelSyncMode != "manual" {
+		return fmt.Errorf("default_model_sync_mode must be auto or manual")
 	}
 	return nil
 }

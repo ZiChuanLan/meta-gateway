@@ -63,6 +63,9 @@ type RuntimeSettingsRow struct {
 	ChannelRetryTimes int
 	// KeyPoolRotation: rotate through the site key pool on failure. -1 = env.
 	KeyPoolRotation int
+	// DefaultModelSyncMode is the sync mode new channels get when the create
+	// request omits model_sync_mode ("auto"|"manual"; "" = cleared override).
+	DefaultModelSyncMode string
 
 	// Scheduled model-probe configuration. ProbeChannels and ProbeModels are
 	// stored as JSON arrays; an empty slice (which is also what a malformed
@@ -104,6 +107,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 		       channel_retry_times,
 		       key_pool_rotation,
+		       default_model_sync_mode,
 		       probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 		       probe_auto_disable, probe_channels, probe_models,
 		       updated_at
@@ -126,6 +130,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		hsEnabled, hsInterval, hsJitter, hsDegraded, hsConcurrency, hsTimeout              sql.NullInt64
 		channelRetry                                                                       sql.NullInt64
 		keyPoolRotation                                                                    sql.NullInt64
+		defaultSyncMode                                                                    sql.NullString
 		probeCron, probePrompt                                                             sql.NullString
 		probeMaxTokens, probeConcurrency, probeAutoDisable                                 sql.NullInt64
 		probeChannels, probeModels                                                         sql.NullString
@@ -144,6 +149,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&alertConfigJSON, &alertSweep, &alertDaily,
 		&hsEnabled, &hsInterval, &hsJitter, &hsDegraded, &hsConcurrency, &hsTimeout,
 		&channelRetry, &keyPoolRotation,
+		&defaultSyncMode,
 		&probeCron, &probePrompt, &probeMaxTokens, &probeConcurrency, &probeAutoDisable,
 		&probeChannels, &probeModels,
 		&updated,
@@ -325,6 +331,9 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	} else {
 		out.KeyPoolRotation = -1
 	}
+	if defaultSyncMode.Valid {
+		out.DefaultModelSyncMode = strings.TrimSpace(defaultSyncMode.String)
+	}
 	// The probe columns are NOT NULL with defaults, so they always read back.
 	// The JSON lists are the only ones that can fail to parse, and a bad list
 	// degrades to "everything" rather than an error: a malformed scope should
@@ -396,6 +405,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 			channel_retry_times,
 			key_pool_rotation,
+			default_model_sync_mode,
 			probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 			probe_auto_disable, probe_channels, probe_models,
 			updated_at
@@ -415,6 +425,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?, ?, ?,
 			?, ?, ?,
 			?, ?, ?,
+			?,
 			?,
 			?,
 			?, ?, ?, ?,
@@ -463,6 +474,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_timeout_seconds = excluded.health_sweep_timeout_seconds,
 			channel_retry_times = excluded.channel_retry_times,
 			key_pool_rotation = excluded.key_pool_rotation,
+			default_model_sync_mode = excluded.default_model_sync_mode,
 			probe_cron = excluded.probe_cron,
 			probe_prompt = excluded.probe_prompt,
 			probe_max_tokens = excluded.probe_max_tokens,
@@ -512,6 +524,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.HealthSweepTimeoutSeconds,
 		settings.ChannelRetryTimes,
 		settings.KeyPoolRotation,
+		settings.DefaultModelSyncMode,
 		settings.ProbeCron,
 		settings.ProbePrompt,
 		settings.ProbeMaxTokens,

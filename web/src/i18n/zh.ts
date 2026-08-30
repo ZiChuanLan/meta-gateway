@@ -1391,6 +1391,9 @@ export const zh: Dict = {
   "ops.runtime.discoveryCron": "定时模型同步",
   "ops.runtime.discoveryCronHint":
     "五段 cron（如 0 3 * * * = 每天 03:00）定时重新扫描渠道模型列表；留空 = 关闭。",
+  "ops.runtime.defaultModelSyncMode": "新渠道默认同步模式",
+  "ops.runtime.defaultModelSyncModeHint":
+    "新建渠道时若未选择同步模式则采用此模式，不影响已有渠道。自动同步 = 探测到的模型自动接入路由；按需勾选 = 只进候选列表，到模型页手动接入。",
   "ops.maintenance.title": "数据库维护",
   "ops.maintenance.run": "立即运行",
   "ops.maintenance.hint":

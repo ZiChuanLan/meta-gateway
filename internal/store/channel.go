@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -291,12 +292,27 @@ func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
 }
 
 func (s *ChannelStore) Create(c *domain.Channel) (int64, error) {
+	syncMode := domain.NormalizeModelSyncMode(c.ModelSyncMode)
+	if strings.TrimSpace(c.ModelSyncMode) == "" {
+		syncMode = s.defaultModelSyncMode()
+	}
 	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, proxy_url, header_override, system_prompt, retry_config, stable_first, model_sync_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.ProxyURL, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, boolInt(c.StableFirst), domain.NormalizeModelSyncMode(c.ModelSyncMode))
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.ProxyURL, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, boolInt(c.StableFirst), syncMode)
 	if err != nil {
 		return 0, fmt.Errorf("channel create: %w", err)
 	}
 	return res.LastInsertId()
+}
+
+// defaultModelSyncMode is the Admin-configured mode for channels created
+// without an explicit model_sync_mode; a missing row or any error falls back
+// to manual.
+func (s *ChannelStore) defaultModelSyncMode() string {
+	var mode string
+	if err := s.db.QueryRow(`SELECT default_model_sync_mode FROM runtime_settings WHERE id = 1`).Scan(&mode); err != nil {
+		return domain.ModelSyncModeManual
+	}
+	return domain.NormalizeModelSyncMode(mode)
 }
 
 func (s *ChannelStore) Update(c *domain.Channel) error {

@@ -547,6 +547,8 @@ export interface RuntimeEditableSettings {
   health_sweep_timeout_seconds: number;
   channel_retry_times: number;
   key_pool_rotation: boolean;
+  /** Sync mode newly created channels inherit when the request omits it. */
+  default_model_sync_mode: "auto" | "manual";
 }
 
 export interface RuntimeSettings {
