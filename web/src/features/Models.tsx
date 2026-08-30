@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FocusEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
@@ -632,6 +632,19 @@ function ModelCatalog({
       setActiveGroup((current) => (current === name ? "default" : current));
     },
   });
+  /** Blur cancels the inline group editor — unless focus is only moving to
+   *  another part of it (the copy-default checkbox), which would unmount
+   *  together with the draft and become impossible to click. */
+  const groupEditorBlur = (event: FocusEvent) => {
+    const scope = event.currentTarget.closest(".member-group-tabs");
+    if (
+      scope &&
+      event.relatedTarget instanceof Node &&
+      scope.contains(event.relatedTarget)
+    )
+      return;
+    setGroupDraft(null);
+  };
   /** Commits the inline tab editor; new groups are local until first member. */
   const submitGroupDraft = () => {
     if (!groupDraft || !selected) return;
@@ -1587,7 +1600,7 @@ function ModelCatalog({
                             if (event.key === "Enter") submitGroupDraft();
                             if (event.key === "Escape") setGroupDraft(null);
                           }}
-                          onBlur={() => setGroupDraft(null)}
+                          onBlur={groupEditorBlur}
                         />
                       ) : (
                         <button
@@ -1613,6 +1626,7 @@ function ModelCatalog({
                               copyDefault: event.target.checked,
                             })
                           }
+                          onBlur={groupEditorBlur}
                         />
                         <span>{t("routing.groupCopyDefault")}</span>
                       </label>

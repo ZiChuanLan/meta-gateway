@@ -74,6 +74,21 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
     ...riskyGroups.filter((group) => isChecked(`r:${group.canonical}`, false)),
   ];
 
+  const allSelected =
+    groups.length > 0 &&
+    groups.every((group) =>
+      group.risky
+        ? isChecked(`r:${group.canonical}`, false)
+        : isChecked(`s:${group.canonical}`, true),
+    );
+  const setAllChecked = (value: boolean) =>
+    setChecked(() => {
+      const next: Record<string, boolean> = {};
+      for (const group of groups)
+        next[`${group.risky ? "r" : "s"}:${group.canonical}`] = value;
+      return next;
+    });
+
   const apply = useAdminMutation({
     // Hiding the superseded originals is what an alias means — the server
     // archives every route the group provably covers and skips the rest.
@@ -134,7 +149,19 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
       ) : empty ? (
         <Empty>{t("modelsPage.unify.empty")}</Empty>
       ) : (
-        <div className="unify-body">
+        <div className="unify-body-wrap">
+          <div className="unify-selectall">
+            <button
+              type="button"
+              className="unify-covered-toggle"
+              onClick={() => setAllChecked(!allSelected)}
+            >
+              {allSelected
+                ? t("modelsPage.unify.deselectAll")
+                : t("modelsPage.unify.selectAll")}
+            </button>
+          </div>
+          <div className="unify-body">
           {safeGroups.length > 0 ? (
             <section className="unify-section">
               <h3>{t("modelsPage.unify.safeSection")}</h3>
@@ -167,6 +194,7 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
               ))}
             </section>
           ) : null}
+          </div>
         </div>
       )}
 

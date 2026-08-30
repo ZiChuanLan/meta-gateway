@@ -715,6 +715,8 @@ export const en: Dict = {
   "modelsPage.unify.mapped": "covered",
   "modelsPage.unify.pending": "pending",
   "modelsPage.unify.apply": "Apply {count} group(s)",
+  "modelsPage.unify.selectAll": "Select all",
+  "modelsPage.unify.deselectAll": "Deselect all",
   "modelsPage.unify.result":
     "Created {routes} route(s) and {members} member(s); {skipped} already present; hid {archived} original name(s).",
   "modelsPage.unify.showCovered": "Show {count} covered channel(s)",

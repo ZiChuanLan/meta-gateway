@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { formatTokens } from "../lib/format";
 
@@ -56,18 +56,33 @@ export function HourlyTrafficChart({
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const { t } = useI18n();
 
+	// Render the SVG at the container's real pixel width: axis text stays 1:1
+	// instead of being stretched by preserveAspectRatio="none" on wide panels.
+	const [width, setWidth] = useState(720);
+	useEffect(() => {
+		const el = wrapRef.current;
+		if (!el || typeof ResizeObserver === "undefined") return;
+		const ro = new ResizeObserver((entries) => {
+			const w = entries[0]?.contentRect.width;
+			if (w && w > 0)
+				setWidth((prev) => (Math.abs(prev - w) > 0.5 ? Math.round(w) : prev));
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
+
+	const W = width;
 	const PAD_L = 34;
 	const PAD_B = 20;
 	const PAD_T = 8;
 
 	const { bars, linePath, areaPath, yTicks } = useMemo(() => {
-		const W = 720;
 		const H = height;
 		const n = requests.length;
 		const maxReq = Math.max(1, ...requests);
 		const maxTok = Math.max(1, ...tokens);
 		const slot = W / Math.max(1, n);
-		const barW = Math.max(3, slot * 0.62);
+		const barW = Math.max(3, slot * 0.5);
 		const plotH = H - PAD_B - PAD_T;
 		const bars = requests.map((v, i) => ({
 			x: PAD_L + i * slot + (slot - barW) / 2,
@@ -102,7 +117,7 @@ export function HourlyTrafficChart({
 			y: H - PAD_B - f * plotH,
 		}));
 		return { bars, linePath, areaPath, yTicks };
-	}, [requests, tokens, height]);
+	}, [requests, tokens, height, W]);
 
 	const hasData = requests.some((v) => v > 0) || tokens.some((v) => v > 0);
 	const hotBar = hot != null && hot < bars.length ? bars[hot] : null;
@@ -112,8 +127,8 @@ export function HourlyTrafficChart({
 	const indexFromX = (clientX: number) => {
 		const rect = wrapRef.current?.getBoundingClientRect();
 		if (!rect || rect.width === 0) return null;
-		const x = ((clientX - rect.left) / rect.width) * 720 - PAD_L;
-		const i = Math.floor(x / (720 / Math.max(1, bars.length)));
+		const x = ((clientX - rect.left) / rect.width) * W - PAD_L;
+		const i = Math.floor(x / (W / Math.max(1, bars.length)));
 		return i >= 0 && i < bars.length ? i : null;
 	};
 
@@ -150,12 +165,11 @@ export function HourlyTrafficChart({
 					<p className="dashboard-empty chart-empty">{t("dashboard.chartEmpty")}</p>
 				) : (
 					<svg
-						viewBox={`0 0 720 ${height}`}
+						viewBox={`0 0 ${W} ${height}`}
 						width="100%"
 						height={height}
 						role="img"
 						aria-label="hourly requests and tokens"
-						preserveAspectRatio="none"
 					>
 						<defs>
 							<linearGradient id="chart-area-fill" x1="0" y1="0" x2="0" y2="1">
@@ -180,7 +194,7 @@ export function HourlyTrafficChart({
 							<line
 								key={f}
 								x1={PAD_L}
-								x2="720"
+								x2={W}
 								y1={height - PAD_B - (height - PAD_B - PAD_T) * f}
 								y2={height - PAD_B - (height - PAD_B - PAD_T) * f}
 								className="chart-gridline"
@@ -212,7 +226,7 @@ export function HourlyTrafficChart({
 							i % labelStep === 0 ? (
 								<text
 									key={i}
-									x={PAD_L + i * (720 / labels.length) + 720 / labels.length / 2}
+									x={PAD_L + i * (W / labels.length) + W / labels.length / 2}
 									y={height - 5}
 									textAnchor="middle"
 									className="chart-tick"

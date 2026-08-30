@@ -6935,13 +6935,19 @@ td.actions {
   white-space: nowrap;
 }
 .result-distribution {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px dashed var(--line);
 }
 .result-distribution-bar {
+  flex: 1;
+  min-width: 90px;
   display: flex;
-  height: 8px;
+  height: 4px;
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface-subtle);
@@ -6963,11 +6969,13 @@ td.actions {
 }
 .result-distribution-legend {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin-top: 8px;
+  align-items: center;
+  gap: 4px 14px;
+  font-family: var(--mono);
   font-size: 11px;
-  color: var(--muted);
+  font-weight: 600;
+  color: var(--ink-soft);
+  white-space: nowrap;
 }
 .result-distribution-legend span {
   display: inline-flex;
@@ -6975,8 +6983,8 @@ td.actions {
   gap: 5px;
 }
 .result-distribution-legend i {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius);
   display: inline-block;
 }
@@ -7117,6 +7125,15 @@ td.actions {
   color: var(--ink);
   font-size: 13px;
   font-weight: 500;
+}
+.unify-body-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.unify-selectall {
+  display: flex;
+  justify-content: flex-end;
 }
 .unify-body {
   display: flex;
@@ -8370,11 +8387,12 @@ td.actions {
   height: 6px;
   border-right: 1.5px solid var(--muted);
   border-bottom: 1.5px solid var(--muted);
-  transform: rotate(-45deg);
+  /* Expanded points down; collapsed swings to point right. */
+  transform: rotate(45deg);
   transition: transform var(--dur-hover) var(--ease-hover);
 }
 .channel-model-group-head.is-collapsed::before {
-  transform: rotate(45deg);
+  transform: rotate(-45deg);
 }
 .channel-model-group-head:hover {
   color: var(--text);
@@ -8583,6 +8601,10 @@ td.actions {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.models-simple-toolbar .channel-model-add .button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .models-simple-toolbar .channel-model-add input {
   flex: 1 1 200px;
@@ -11561,6 +11583,12 @@ table {
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   gap: 16px;
   align-items: stretch;
+}
+/* .panel + .panel stacks vertical panels with an 18px top margin; inside this
+   side-by-side grid the gap already spaces the columns, so the same rule
+   would shove the right panel down. */
+.cockpit-dual-grid > .panel + .panel {
+  margin-top: 0;
 }
 @media (max-width: 1024px) {
   .cockpit-dual-grid {

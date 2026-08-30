@@ -797,6 +797,8 @@ export const zh: Dict = {
   "modelsPage.unify.mapped": "已覆盖",
   "modelsPage.unify.pending": "待合并",
   "modelsPage.unify.apply": "应用 {count} 组",
+  "modelsPage.unify.selectAll": "全选",
+  "modelsPage.unify.deselectAll": "全不选",
   "modelsPage.unify.result":
     "已创建 {routes} 个路由、{members} 个成员；{skipped} 个已存在被跳过；{archived} 个原名已隐藏。",
   "modelsPage.unify.showCovered": "展开 {count} 个已覆盖渠道",
