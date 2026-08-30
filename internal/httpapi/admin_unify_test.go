@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -98,7 +99,14 @@ func TestBuildUnifyPreviewDateGroups(t *testing.T) {
 		{ChannelID: 3, ModelName: "deepseek-v4-flash", Available: true},
 		{ChannelID: 2, ModelName: "deepseek-v4-flash-0731", Available: true},
 	}
-	preview := buildUnifyPreview(channels, models, nil, allRules())
+	// Every channel must actually serve its model for it to be manageable.
+	overviews := []domain.RouteOverview{
+		overview(1, "deepseek-v4-flash",
+			domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true},
+			domain.RouteMember{ID: 3, ChannelID: 3, Enabled: true}),
+		overview(2, "deepseek-v4-flash-0731", domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true}),
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
 
 	if len(preview.Groups) != 1 {
 		t.Fatalf("expected 1 date group, got %+v", preview.Groups)
@@ -129,7 +137,13 @@ func TestBuildUnifyPreviewNoSpuriousDateGroup(t *testing.T) {
 		{ChannelID: 1, ModelName: "deepseek-v4-flash", Available: true},
 		{ChannelID: 2, ModelName: "deepseek-v4-flash", Available: true},
 	}
-	preview := buildUnifyPreview(channels, models, nil, allRules())
+	// C1 serves the name directly; C2 serves it through an alias binding so the
+	// route "deepseek-v4-flash" does not already cover every variant.
+	overviews := []domain.RouteOverview{
+		overview(1, "deepseek-v4-flash", domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true}),
+		overview(2, "c2-alias", domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true, MappingJSON: `{"real":"deepseek-v4-flash"}`}),
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
 	if len(preview.Groups) != 1 {
 		t.Fatalf("expected 1 group, got %+v", preview.Groups)
 	}
@@ -162,14 +176,18 @@ func allRules() map[string]bool {
 	return rules
 }
 
-// overview builds a route overview for the grouping core.
+// overview builds a route overview for the grouping core. Channels default to
+// enabled so the binding counts as adopted unless a test says otherwise.
 func overview(routeID int64, pattern string, members ...domain.RouteMember) domain.RouteOverview {
 	for i := range members {
 		members[i].RouteID = routeID
 	}
 	candidates := make([]domain.RoutingCandidate, 0, len(members))
 	for _, m := range members {
-		candidates = append(candidates, domain.RoutingCandidate{Member: m})
+		candidates = append(candidates, domain.RoutingCandidate{
+			Member:  m,
+			Channel: domain.Channel{Status: domain.StatusEnabled},
+		})
 	}
 	return domain.RouteOverview{
 		Route:   domain.Route{ID: routeID, ModelPattern: pattern, Enabled: true},
@@ -191,9 +209,14 @@ func TestBuildUnifyPreviewMappedIsPerCanonical(t *testing.T) {
 		{ChannelID: 2, ModelName: "5.6-sol-1", Available: true},
 		{ChannelID: 3, ModelName: "5.6-sol", Available: true},
 	}
-	// Route "5.6-sol-1" exists and only ch1 serves it.
+	// Route "5.6-sol-1" exists and ch1 serves it; ch2 serves it too, ch3 is
+	// adopted through an alias binding to "5.6-sol" on an unrelated route, so
+	// no route literally named "5.6-sol" exists and nothing maps to it.
 	overviews := []domain.RouteOverview{
-		overview(10, "5.6-sol-1", domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true}),
+		overview(10, "5.6-sol-1",
+			domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true},
+			domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true}),
+		overview(12, "legacy", domain.RouteMember{ID: 3, ChannelID: 3, Enabled: true, MappingJSON: `{"real":"5.6-sol"}`}),
 	}
 	preview := buildUnifyPreview(channels, models, overviews, allRules())
 
@@ -232,12 +255,16 @@ func TestBuildUnifyPreviewIgnoresMembersPointingElsewhere(t *testing.T) {
 		{ChannelID: 1, ModelName: "deepseek-v3", Available: true},
 		{ChannelID: 2, ModelName: "deepseek-v3", Available: true},
 	}
-	// C1 already sits on the route, but its member rewrites to a snapshot, so
-	// it does not serve deepseek-v3 at all.
+	// C1 sits on the deepseek-v3 route but its member rewrites to a snapshot,
+	// so it does not serve deepseek-v3 at all; C1 and C2 are adopted through
+	// extra alias bindings that reach the deepseek-v3 upstream.
 	overviews := []domain.RouteOverview{
 		overview(20, "deepseek-v3", domain.RouteMember{
 			ID: 1, ChannelID: 1, Enabled: true, MappingJSON: `{"real":"deepseek-v3-0324"}`,
 		}),
+		overview(30, "extra",
+			domain.RouteMember{ID: 2, ChannelID: 1, Enabled: true, MappingJSON: `{"real":"deepseek-v3"}`},
+			domain.RouteMember{ID: 3, ChannelID: 2, Enabled: true, MappingJSON: `{"real":"deepseek-v3"}`}),
 	}
 	preview := buildUnifyPreview(channels, models, overviews, allRules())
 
@@ -266,8 +293,11 @@ func TestBuildUnifyPreviewCountsPlainMembers(t *testing.T) {
 		{ChannelID: 1, ModelName: "deepseek-v3", Available: true},
 		{ChannelID: 2, ModelName: "deepseek-v3", Available: true},
 	}
+	// C1 serves deepseek-v3 directly on the route; C2 reaches the same
+	// upstream through an alias binding, so it is adopted but not mapped.
 	overviews := []domain.RouteOverview{
 		overview(20, "deepseek-v3", domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true}),
+		overview(30, "extra", domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true, MappingJSON: `{"real":"deepseek-v3"}`}),
 	}
 	preview := buildUnifyPreview(channels, models, overviews, allRules())
 
@@ -292,7 +322,11 @@ func TestBuildUnifyPreviewVendorGroups(t *testing.T) {
 		{ChannelID: 1, ModelName: "deepseek-ai/deepseek-v4-flash", Available: true},
 		{ChannelID: 2, ModelName: "deepseek-v4-flash", Available: true},
 	}
-	preview := buildUnifyPreview(channels, models, nil, allRules())
+	overviews := []domain.RouteOverview{
+		overview(1, "deepseek-ai/deepseek-v4-flash", domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true}),
+		overview(2, "deepseek-v4-flash", domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true}),
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
 
 	if len(preview.Groups) != 1 {
 		t.Fatalf("expected 1 vendor group, got %+v", preview.Groups)
@@ -323,7 +357,16 @@ func TestBuildUnifyPreview(t *testing.T) {
 		{ChannelID: 1, ModelName: "unique-solo", Available: true},
 		{ChannelID: 2, ModelName: "unavailable-model", Available: false},
 	}
-	preview := buildUnifyPreview(channels, models, nil, allRules())
+	// Every manageable model must be adopted; unique-solo has no binding and is
+	// therefore not manageable (and unavailable-model is not available).
+	overviews := []domain.RouteOverview{
+		overview(1, "[A]GEMINI-3.6-FLASH", domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true}),
+		overview(2, "[B]GEMINI-3.6-FLASH", domain.RouteMember{ID: 2, ChannelID: 1, Enabled: true}),
+		overview(3, "GEMINI-3.6-FLASH", domain.RouteMember{ID: 3, ChannelID: 2, Enabled: true}),
+		overview(4, "5.6-sol", domain.RouteMember{ID: 4, ChannelID: 1, Enabled: true}),
+		overview(5, "5.6-sol-1", domain.RouteMember{ID: 5, ChannelID: 2, Enabled: true}),
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
 
 	// Sorted by variant count, largest first. "unique-solo" and the
 	// unavailable model are omitted.
@@ -343,6 +386,73 @@ func TestBuildUnifyPreview(t *testing.T) {
 	}
 	if !containsRule(loose.Rules, RuleIndexSuffix) {
 		t.Errorf("expected the index rule to be reported, got %v", loose.Rules)
+	}
+}
+
+// A discovered-but-unadopted model must never surface in a group: it is not
+// callable, so the assistant has nothing to manage for it. Even a name that
+// would merge into an existing group stays out.
+func TestBuildUnifyPreviewExcludesUnadoptedModels(t *testing.T) {
+	channels := []domain.Channel{
+		{ID: 1, Name: "C1", Status: domain.StatusEnabled},
+		{ID: 2, Name: "C2", Status: domain.StatusEnabled},
+	}
+	models := []domain.DiscoveredModel{
+		{ChannelID: 1, ModelName: "5.6-sol", Available: true},
+		{ChannelID: 2, ModelName: "5.6-sol-1", Available: true},
+		// Discovered on C2 like "wong" in the wild, but never adopted.
+		{ChannelID: 2, ModelName: "wong-2.5", Available: true},
+	}
+	overviews := []domain.RouteOverview{
+		overview(1, "5.6-sol", domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true}),
+		overview(2, "5.6-sol-1", domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true}),
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
+
+	if len(preview.Groups) != 1 {
+		t.Fatalf("expected exactly the adopted group, got %+v", preview.Groups)
+	}
+	group := preview.Groups[0]
+	if group.Canonical != "5.6-sol" || len(group.Variants) != 2 {
+		t.Fatalf("unexpected group: %+v", group)
+	}
+	for _, v := range group.Variants {
+		if strings.Contains(v.ModelName, "wong") {
+			t.Errorf("unadopted model %q leaked into the group", v.ModelName)
+		}
+	}
+}
+
+// A binding that is disabled — member disabled, route disabled, or channel
+// disabled — serves nothing, so it must not adopt the model it points at.
+func TestBuildUnifyPreviewDisabledBindingsNotAdopted(t *testing.T) {
+	channels := []domain.Channel{
+		{ID: 1, Name: "C1", Status: domain.StatusEnabled},
+		{ID: 2, Name: "C2", Status: domain.StatusEnabled},
+		{ID: 3, Name: "C3", Status: domain.StatusEnabled},
+	}
+	models := []domain.DiscoveredModel{
+		{ChannelID: 1, ModelName: "deepseek-v3", Available: true},
+		{ChannelID: 2, ModelName: "deepseek-v3", Available: true},
+		{ChannelID: 3, ModelName: "deepseek-v3", Available: true},
+	}
+	overviews := []domain.RouteOverview{
+		// Member disabled.
+		overview(1, "deepseek-v3", domain.RouteMember{ID: 1, ChannelID: 1, Enabled: false}),
+		// Route disabled.
+		{
+			Route:   domain.Route{ID: 2, ModelPattern: "deepseek-v3", Enabled: false},
+			Members: []domain.RoutingCandidate{{Member: domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true}, Channel: domain.Channel{Status: domain.StatusEnabled}}},
+		},
+		// Channel disabled.
+		{
+			Route:   domain.Route{ID: 3, ModelPattern: "deepseek-v3", Enabled: true},
+			Members: []domain.RoutingCandidate{{Member: domain.RouteMember{ID: 3, ChannelID: 3, Enabled: true}, Channel: domain.Channel{Status: domain.StatusDisabled}}},
+		},
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
+	if len(preview.Groups) != 0 {
+		t.Fatalf("disabled bindings must not adopt models, got %+v", preview.Groups)
 	}
 }
 

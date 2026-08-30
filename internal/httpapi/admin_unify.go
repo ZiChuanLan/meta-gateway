@@ -358,12 +358,46 @@ type servedKey struct {
 	real    string
 }
 
+// adoptedModelNames collects the upstream models each channel actually serves
+// right now: one entry per enabled member of an enabled route on an enabled
+// channel. Only these are manageable by the unification assistant — a model
+// that is merely discovered (channel model list, not yet adopted) is not
+// callable, so unifying it would only mint an alias that answers with errors.
+func adoptedModelNames(overviews []domain.RouteOverview) map[int64]map[string]struct{} {
+	adopted := make(map[int64]map[string]struct{})
+	for _, overview := range overviews {
+		if !overview.Route.Enabled {
+			continue
+		}
+		pattern := strings.TrimSpace(overview.Route.ModelPattern)
+		if pattern == "" {
+			continue
+		}
+		for _, candidate := range overview.Members {
+			member := candidate.Member
+			if !member.Enabled || candidate.Channel.Status != domain.StatusEnabled {
+				continue
+			}
+			real := mappingRealName(member.MappingJSON)
+			if real == "" {
+				real = pattern
+			}
+			if adopted[member.ChannelID] == nil {
+				adopted[member.ChannelID] = make(map[string]struct{})
+			}
+			adopted[member.ChannelID][real] = struct{}{}
+		}
+	}
+	return adopted
+}
+
 // buildUnifyPreview is the pure grouping core behind the preview endpoint.
 func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredModel, overviews []domain.RouteOverview, rules map[string]bool) UnifyPreview {
 	channelNames := make(map[int64]string, len(channels))
 	for _, channel := range channels {
 		channelNames[channel.ID] = channel.Name
 	}
+	adopted := adoptedModelNames(overviews)
 	served := make(map[servedKey]struct{})
 	routeByPattern := make(map[string]int64)
 	for _, overview := range overviews {
@@ -379,6 +413,11 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 		routeByPattern[pattern] = overview.Route.ID
 		for _, candidate := range overview.Members {
 			member := candidate.Member
+			// A disabled binding serves nothing, so it neither marks a variant
+			// as mapped nor counts as adopted.
+			if !member.Enabled || !overview.Route.Enabled || candidate.Channel.Status != domain.StatusEnabled {
+				continue
+			}
 			real := mappingRealName(member.MappingJSON)
 			if real == "" {
 				real = pattern
@@ -400,6 +439,11 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 		}
 		name := strings.TrimSpace(model.ModelName)
 		if name == "" {
+			continue
+		}
+		// Only adopted models are manageable: a discovered-but-unadopted one is
+		// not callable, so it must not appear here or be bound by apply.
+		if _, ok := adopted[model.ChannelID][name]; !ok {
 			continue
 		}
 		canonical, used := canonicalizeWithRules(name, rules)
@@ -588,14 +632,35 @@ func (h *AdminHandler) unifyApply(w http.ResponseWriter, r *http.Request) {
 	if req.ArchiveOriginals != nil {
 		archive = *req.ArchiveOriginals
 	}
+
+	// Safety net for stale or hand-crafted payloads: only variants the channel
+	// actually serves today may be bound. Without this, a variant that was
+	// never adopted would get a member that rewrites to a model the channel
+	// does not answer — a callable alias that always fails.
+	overviews, err := h.db.RouteMember.ListRouteOverviews()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	adopted := adoptedModelNames(overviews)
+
 	groups := make([]store.UnifyApplyGroup, 0, len(req.Groups))
+	dropped := 0
 	for _, group := range req.Groups {
 		variants := make([]store.UnifyApplyVariant, 0, len(group.Variants))
 		for _, variant := range group.Variants {
+			if _, ok := adopted[variant.ChannelID][strings.TrimSpace(variant.ModelName)]; !ok {
+				dropped++
+				continue
+			}
 			variants = append(variants, store.UnifyApplyVariant{
 				ChannelID: variant.ChannelID,
 				ModelName: variant.ModelName,
 			})
+		}
+		// A group left with no adopted variants must not mint an empty alias.
+		if len(variants) == 0 {
+			continue
 		}
 		groups = append(groups, store.UnifyApplyGroup{
 			Canonical: group.Canonical,
@@ -616,7 +681,7 @@ func (h *AdminHandler) unifyApply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, UnifyApplyResult{
 		RoutesCreated:  outcome.RoutesCreated,
 		MembersCreated: outcome.MembersCreated,
-		MembersSkipped: outcome.MembersSkipped,
+		MembersSkipped: outcome.MembersSkipped + dropped,
 		RoutesArchived: outcome.RoutesArchived,
 		BatchCount:     len(outcome.Batches),
 	})
