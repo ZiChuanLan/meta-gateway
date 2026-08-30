@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -767,6 +768,111 @@ func TestRoutingCandidatesGroupFilterAndFallback(t *testing.T) {
 	_, candidates, _ = db.RouteMember.RoutingCandidates("group-model", "B")
 	if got := channelNames(candidates); len(got) != 2 {
 		t.Fatalf("deleted group B candidates = %v, want default fallback's 2", got)
+	}
+}
+
+func TestCopyMemberGroupAndListNames(t *testing.T) {
+	db := openTestDB(t)
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "copy-model", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newChannel := func(name string) int64 {
+		id, err := db.Channel.Create(&domain.Channel{Name: name, Status: domain.StatusEnabled})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	ch1, ch2, ch3 := newChannel("c1"), newChannel("c2"), newChannel("c3")
+	memberID := func(channelID int64, group string) int64 {
+		members, err := db.RouteMember.ListByRoute(routeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range members {
+			if m.ChannelID == channelID && m.GroupName == group {
+				return m.ID
+			}
+		}
+		t.Fatalf("member ch=%d group=%q not found", channelID, group)
+		return 0
+	}
+	create := func(channelID int64, group string, priority int, enabled bool, mapping string) {
+		if _, err := db.RouteMember.Create(&domain.RouteMember{
+			RouteID: routeID, ChannelID: channelID, GroupName: group,
+			Priority: priority, Enabled: enabled, Weight: 1, MappingJSON: mapping,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// default: two real members (one failed) + one alias; dest already holds ch1.
+	create(ch1, "default", 5, true, "")
+	create(ch2, "default", 3, false, "")
+	create(ch3, "default", 1, true, `{"model":"alias"}`)
+	create(ch1, "X", 9, true, "")
+	failed := memberID(ch2, "default")
+	cooldown := time.Now().Add(time.Hour)
+	failedMember, err := db.RouteMember.GetByID(failed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedMember.FailCount = 2
+	failedMember.CooldownUntil = &cooldown
+	failedMember.LastError = "boom"
+	if err := db.RouteMember.Update(failedMember); err != nil {
+		t.Fatal(err)
+	}
+
+	copied, err := db.RouteMember.CopyMemberGroup(routeID, "default", "X")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copied != 1 {
+		t.Fatalf("copy copied=%d, want 1 (ch1 skipped by OR IGNORE, alias skipped)", copied)
+	}
+	members, err := db.RouteMember.ListByRoute(routeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var xCh1, xCh2 domain.RouteMember
+	for _, m := range members {
+		if m.GroupName != "X" {
+			continue
+		}
+		switch m.ChannelID {
+		case ch1:
+			xCh1 = m
+		case ch2:
+			xCh2 = m
+		default:
+			t.Fatalf("unexpected member in group X for channel %d", m.ChannelID)
+		}
+	}
+	// Pre-existing member is untouched; the copy keeps priority/enabled but
+	// starts with clean failure state.
+	if xCh1.Priority != 9 || xCh2.Priority != 3 || xCh2.Enabled {
+		t.Fatalf("X members = %+v / %+v, want ch1 priority 9, ch2 priority 3 disabled", xCh1, xCh2)
+	}
+	if xCh2.FailCount != 0 || xCh2.CooldownUntil != nil || xCh2.LastError != "" {
+		t.Fatalf("copied member kept failure state: %+v", xCh2)
+	}
+	// Copying again has nothing new to add.
+	if again, err := db.RouteMember.CopyMemberGroup(routeID, "default", "X"); err != nil || again != 0 {
+		t.Fatalf("second copy = %d err=%v, want 0", again, err)
+	}
+	// from == to is a no-op.
+	if same, err := db.RouteMember.CopyMemberGroup(routeID, "X", "X"); err != nil || same != 0 {
+		t.Fatalf("same-group copy = %d err=%v, want 0", same, err)
+	}
+	// Distinct names across all routes, sorted.
+	names, err := db.RouteMember.ListRouteGroupNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"X", "default"}
+	if fmt.Sprint(names) != fmt.Sprint(want) {
+		t.Fatalf("group names = %v, want %v", names, want)
 	}
 }
 

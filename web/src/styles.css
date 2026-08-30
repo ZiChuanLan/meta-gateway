@@ -3064,6 +3064,27 @@ td.actions {
   font-size: 12px;
   line-height: 1.45;
 }
+.member-group-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--dur-hover) var(--ease-hover);
+}
+.member-group-copy:hover {
+  color: var(--text);
+}
+.member-group-copy input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 .routing-group-empty {
   display: flex;
   align-items: center;

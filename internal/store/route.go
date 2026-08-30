@@ -733,6 +733,44 @@ func (s *RouteMemberStore) DeleteMemberGroup(routeID int64, name string) (int, e
 	return int(changed), err
 }
 
+// CopyMemberGroup clones every member of one group into another. Members whose
+// channel already exists in the destination group are skipped (partial unique
+// index on route_id+channel_id+group_name), and failure state is not carried
+// over — the copy starts clean. Only non-alias members are copied.
+func (s *RouteMemberStore) CopyMemberGroup(routeID int64, from, to string) (int, error) {
+	from = NormalizeMemberGroup(from)
+	to = NormalizeMemberGroup(to)
+	if from == to {
+		return 0, nil
+	}
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at) SELECT route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, ?, 0, NULL, '', datetime('now'), datetime('now') FROM route_members WHERE route_id = ? AND group_name = ? AND mapping_json = ''`,
+		to, routeID, from)
+	if err != nil {
+		return 0, fmt.Errorf("route member group copy: %w", err)
+	}
+	changed, err := res.RowsAffected()
+	return int(changed), err
+}
+
+// ListRouteGroupNames returns every distinct member group name across all
+// routes, sorted, so callers can offer a pick list.
+func (s *RouteMemberStore) ListRouteGroupNames() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT group_name FROM route_members ORDER BY group_name`)
+	if err != nil {
+		return nil, fmt.Errorf("route member group names: %w", err)
+	}
+	defer rows.Close()
+	names := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("route member group names scan: %w", err)
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
 	enabled, auto, manual := boolInt(r.Enabled), boolInt(r.Auto), boolInt(r.ManualOverride)
 	var cooldownUntil any

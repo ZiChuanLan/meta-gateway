@@ -199,6 +199,10 @@ export function Keys() {
     queryKey: ["route-overviews"],
     queryFn: ({ signal }) => service.routeOverviews(signal),
   });
+  const routeGroups = useQuery({
+    queryKey: ["route-groups"],
+    queryFn: ({ signal }) => service.routeGroups(signal),
+  });
   const metadata = useQuery({
     queryKey: ["model-metadata"],
     queryFn: ({ signal }) => service.modelMetadata(signal),
@@ -588,6 +592,7 @@ export function Keys() {
           allModels={allModels}
           modelGroupOptions={modelGroupOptions}
           modelsByGroup={modelsByGroup}
+          routeGroupNames={routeGroups.data?.groups ?? []}
         />
       )}
       {edit && (
@@ -618,6 +623,7 @@ export function Keys() {
           allModels={allModels}
           modelGroupOptions={modelGroupOptions}
           modelsByGroup={modelsByGroup}
+          routeGroupNames={routeGroups.data?.groups ?? []}
         />
       )}
       {created && (
@@ -722,6 +728,7 @@ function KeyDialog({
   allModels,
   modelGroupOptions,
   modelsByGroup,
+  routeGroupNames,
 }: {
   mode: "create" | "edit";
   initial?: DownstreamKey;
@@ -732,6 +739,7 @@ function KeyDialog({
   allModels: string[];
   modelGroupOptions: string[];
   modelsByGroup: Map<string, Set<string>>;
+  routeGroupNames: string[];
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(initial?.name ?? "");
@@ -1022,13 +1030,21 @@ function KeyDialog({
         {openAdvanced ? (
           <div className="key-dialog-fold-body">
             <Field label={t("keys.routeGroup")} hint={t("keys.routeGroupHint")}>
-              <input
+              <select
                 value={routeGroup}
                 disabled={pending}
                 onChange={(e) => setRouteGroup(e.target.value)}
-                placeholder={t("keys.routeGroupPlaceholder")}
-                maxLength={64}
-              />
+              >
+                <option value="">{t("keys.routeGroupNone")}</option>
+                {routeGroup && !routeGroupNames.includes(routeGroup) ? (
+                  <option value={routeGroup}>{routeGroup}</option>
+                ) : null}
+                {routeGroupNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
             </Field>
             <div className="split" style={{ gap: "0.75rem" }}>
               <Field label={t("keys.expiresAt")} hint={t("keys.expiresAtHint")}>

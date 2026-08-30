@@ -661,7 +661,7 @@ export const zh: Dict = {
   "keys.routeGroup": "路由分组",
   "keys.routeGroupHint":
     "绑定分组后，该 Key 的请求在每个模型只在该模型对应分组内选择渠道；留空则使用各模型的 default 分组。",
-  "keys.routeGroupPlaceholder": "留空 = 每个模型用 default 分组",
+  "keys.routeGroupNone": "留空 = 各模型用 default 分组",
   "keys.customToken": "令牌内容",
   "keys.customTokenHint":
     "至少 16 位。只存哈希，无法回看。不勾选则由网关生成 mg-… 随机令牌。",
@@ -1113,6 +1113,7 @@ export const zh: Dict = {
   "routing.groupDeleteConfirm":
     "删除分组 {name} 及其全部 {count} 个通道成员？此操作不可撤销。",
   "routing.groupEmpty": "分组 {name} 还没有通道成员。",
+  "routing.groupCopyDefault": "复制 default 分组的全部通道",
   "routing.groupTabsHint":
     "同一渠道可加入多个分组、各有优先级；API Key 绑定分组名后，请求只在该模型对应分组内选渠道，未定义时回退 default。",
   "routing.memberGroupLabel": "所属分组",

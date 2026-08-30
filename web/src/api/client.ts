@@ -289,6 +289,13 @@ export const api = (client: ApiClient) => ({
       `/admin/routes/${routeId}/groups/rename`,
       { from, to },
     ),
+  copyMemberGroup: (routeId: number, from: string, to: string) =>
+    client.post<{ copied: number }>(
+      `/admin/routes/${routeId}/groups/copy`,
+      { from, to },
+    ),
+  routeGroups: (signal?: AbortSignal) =>
+    client.get<{ groups: string[] }>("/admin/route-groups", signal),
   deleteMemberGroup: (routeId: number, name: string) =>
     client.delete(
       `/admin/routes/${routeId}/groups/${encodeURIComponent(name)}`,

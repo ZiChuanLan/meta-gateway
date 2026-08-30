@@ -323,6 +323,49 @@ func (h *AdminHandler) deleteRouteMemberGroup(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "removed": removed})
 }
 
+// copyRouteMemberGroup clones every member of one group into another, skipping
+// channels already present in the destination group.
+func (h *AdminHandler) copyRouteMemberGroup(w http.ResponseWriter, r *http.Request) {
+	routeID, ok := pathID(w, r, "routeId")
+	if !ok {
+		return
+	}
+	var body struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := decodeJSON(w, r, &body, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	to, valid := validateRouteGroup(body.To)
+	if !valid {
+		writeError(w, http.StatusBadRequest, "group name too long")
+		return
+	}
+	if to == "" {
+		writeError(w, http.StatusBadRequest, "group name is required")
+		return
+	}
+	copied, err := h.db.RouteMember.CopyMemberGroup(routeID, body.From, to)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "copied": copied})
+}
+
+// listRouteGroupNames returns every distinct member group name across all
+// routes, for pick lists (e.g. key routing group selection).
+func (h *AdminHandler) listRouteGroupNames(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.db.RouteMember.ListRouteGroupNames()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+}
+
 // ---------------------------------------------------------------------------
 // Downstream Keys
 // ---------------------------------------------------------------------------

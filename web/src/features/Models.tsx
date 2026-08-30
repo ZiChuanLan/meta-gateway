@@ -238,6 +238,7 @@ function ModelCatalog({
     mode: "new" | "rename";
     from?: string;
     value: string;
+    copyDefault?: boolean;
   } | null>(null);
   const [removeGroup, setRemoveGroup] = useState<string | null>(null);
   const [missingDismissed, setMissingDismissed] =
@@ -612,6 +613,16 @@ function ModelCatalog({
       setGroupDraft(null);
     },
   });
+  const copyDefaultGroup = useAdminMutation({
+    mutationFn: (to: string) =>
+      service.copyMemberGroup(selected!, "default", to),
+    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    toastOnError: false,
+    onSuccess: (_data, to) => {
+      setActiveGroup(to);
+      setGroupDraft(null);
+    },
+  });
   const removeGroupMut = useAdminMutation({
     mutationFn: (name: string) => service.deleteMemberGroup(selected!, name),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
@@ -628,6 +639,10 @@ function ModelCatalog({
     if (!name || name.length > 64) return;
     if (groupDraft.mode === "new") {
       if (groupNames.includes(name)) return;
+      if (groupDraft.copyDefault) {
+        copyDefaultGroup.mutate(name);
+        return;
+      }
       setActiveGroup(name);
       setGroupDraft(null);
       return;
@@ -1587,6 +1602,21 @@ function ModelCatalog({
                         </button>
                       )}
                     </div>
+                    {groupDraft?.mode === "new" ? (
+                      <label className="member-group-copy">
+                        <input
+                          type="checkbox"
+                          checked={groupDraft.copyDefault ?? false}
+                          onChange={(event) =>
+                            setGroupDraft({
+                              ...groupDraft,
+                              copyDefault: event.target.checked,
+                            })
+                          }
+                        />
+                        <span>{t("routing.groupCopyDefault")}</span>
+                      </label>
+                    ) : null}
                     <p className="member-group-hint">
                       {t("routing.groupTabsHint")}
                     </p>

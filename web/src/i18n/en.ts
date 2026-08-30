@@ -798,7 +798,7 @@ export const en: Dict = {
   "keys.routeGroup": "Route group",
   "keys.routeGroupHint":
     "Bind a group so requests from this Key only pick channels within that group per model; empty = each model uses its default group.",
-  "keys.routeGroupPlaceholder": "Empty = per-model default group",
+  "keys.routeGroupNone": "Empty = per-model default group",
   "keys.customToken": "Secret",
   "keys.customTokenHint":
     "At least 16 characters. Stored as a hash only — leave blank and uncheck to let the server generate mg-…",
@@ -1220,6 +1220,7 @@ export const en: Dict = {
   "routing.groupDeleteConfirm":
     "Delete group {name} and all of its {count} channel member(s)? This cannot be undone.",
   "routing.groupEmpty": "Group {name} has no channel members yet.",
+  "routing.groupCopyDefault": "Copy all channels from the default group",
   "routing.groupTabsHint":
     "A channel may join multiple groups with its own priority in each. Keys bound to a group only pick channels within that group per model, falling back to default when the model has no such group.",
   "routing.memberGroupLabel": "Group",
