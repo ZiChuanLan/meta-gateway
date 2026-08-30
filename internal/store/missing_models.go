@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"strings"
+
+	"github.com/lan/meta-gateway/internal/domain"
 )
 
 // MissingModel is a model a channel exposes (via its models_csv or the
@@ -56,14 +58,31 @@ func (s *DB) MissingModels() ([]MissingModel, error) {
 		out = append(out, MissingModel{Model: model, ChannelID: channelID, ChannelName: name, Source: source})
 	}
 	for _, channel := range channels {
+		// Manual-sync channels adopt models on demand: an unadopted snapshot
+		// model is intent, not a gap, so it is not reported as missing.
+		if channel.ModelSyncMode == domain.ModelSyncModeManual {
+			continue
+		}
 		for _, model := range splitCSV(channel.ModelsCSV) {
 			add(channel.ID, channel.Name, model, "models_csv")
 		}
 	}
 	for _, model := range discovered {
+		if channelManual(channels, model.ChannelID) {
+			continue
+		}
 		add(model.ChannelID, "", model.ModelName, "discovered")
 	}
 	return out, nil
+}
+
+func channelManual(channels []domain.Channel, id int64) bool {
+	for _, channel := range channels {
+		if channel.ID == id {
+			return channel.ModelSyncMode == domain.ModelSyncModeManual
+		}
+	}
+	return false
 }
 
 func splitCSV(raw string) []string {

@@ -185,13 +185,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 79 {
-		t.Fatalf("got %d applied migrations, want 79", count)
+	if count != 83 {
+		t.Fatalf("got %d applied migrations, want 83", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 79 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 83 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -310,6 +310,7 @@ func TestSiteDeleteCascadesChannelsModelsAndEmptyRoutes(t *testing.T) {
 	}
 	channelID, err := db.Channel.Create(&domain.Channel{
 		SiteID: &siteID, CredentialID: &credID, Name: "owned-ch", Status: domain.StatusEnabled,
+		ModelSyncMode: domain.ModelSyncModeAuto,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -346,6 +347,7 @@ func TestChannelDeleteCleansEmptyRoutes(t *testing.T) {
 	})
 	channelID, err := db.Channel.Create(&domain.Channel{
 		SiteID: &siteID, CredentialID: &credID, Name: "only", Status: domain.StatusEnabled,
+		ModelSyncMode: domain.ModelSyncModeAuto,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -415,7 +417,7 @@ func TestCheckinCredentialAndLogs(t *testing.T) {
 
 func TestDiscoveryReconcileIsIdempotentAndProtectsManualMembers(t *testing.T) {
 	db := openTestDB(t)
-	channelID, err := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 7, Weight: 33, Status: domain.StatusEnabled})
+	channelID, err := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 7, Weight: 33, Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +473,7 @@ func TestDiscoveryReconcileIsIdempotentAndProtectsManualMembers(t *testing.T) {
 
 func TestDiscoveryReconcileRemovesAndRecreatesAutomaticMember(t *testing.T) {
 	db := openTestDB(t)
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 2, Weight: 10, Status: domain.StatusEnabled})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 2, Weight: 10, Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	base := store.ReconcileInput{ChannelID: channelID, Models: []string{"model-a"}, Source: "new-api", CheckedAt: time.Now()}
 	if _, err := db.DiscoveredModel.Reconcile(t.Context(), base); err != nil {
 		t.Fatal(err)
@@ -512,7 +514,7 @@ func TestDiscoveryReconcileRemovesAndRecreatesAutomaticMember(t *testing.T) {
 
 func TestDiscoveryReconcileDoesNotChangeManualMember(t *testing.T) {
 	db := openTestDB(t)
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "manual", Status: domain.StatusEnabled})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "manual", Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	routeID, _ := db.Route.Create(&domain.Route{ModelPattern: "manual-model", Enabled: true})
 	memberID, err := db.RouteMember.Create(&domain.RouteMember{RouteID: routeID, ChannelID: channelID, Priority: 42, Weight: 9, Enabled: true, Auto: false})
 	if err != nil {
@@ -535,7 +537,7 @@ func TestDiscoveryReconcileDoesNotChangeManualMember(t *testing.T) {
 
 func TestDiscoveredModelsCascadeWithChannel(t *testing.T) {
 	db := openTestDB(t)
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "cascade", Status: domain.StatusEnabled})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "cascade", Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	_, err := db.DiscoveredModel.Reconcile(t.Context(), store.ReconcileInput{ChannelID: channelID, Models: []string{"model"}, CheckedAt: time.Now()})
 	if err != nil {
 		t.Fatal(err)
@@ -551,7 +553,7 @@ func TestDiscoveredModelsCascadeWithChannel(t *testing.T) {
 
 func TestDiscoveryReconcileRollsBackAllState(t *testing.T) {
 	db := openTestDB(t)
-	channelID, _ := db.Channel.Create(&domain.Channel{Name: "rollback", Status: domain.StatusEnabled})
+	channelID, _ := db.Channel.Create(&domain.Channel{Name: "rollback", Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	valid := store.ReconcileInput{ChannelID: channelID, Models: []string{"old-model"}, Source: "openai-compatible", CheckedAt: time.Now()}
 	if _, err := db.DiscoveredModel.Reconcile(t.Context(), valid); err != nil {
 		t.Fatal(err)
@@ -725,6 +727,67 @@ func TestRuntimeSettingsMaintenanceCronsRoundTrip(t *testing.T) {
 	}
 	if got.DiscoveryCron != row.DiscoveryCron || got.DBGCCron != row.DBGCCron {
 		t.Fatalf("maintenance cron round trip mismatch: discovery=%q gc=%q", got.DiscoveryCron, got.DBGCCron)
+	}
+}
+
+// The probe columns were appended to a long SELECT whose scan is positional, so
+// every field is asserted individually: a one-column slip here would otherwise
+// land a value in a compatible neighbour and pass silently.
+func TestRuntimeSettingsProbeScheduleRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	row := &store.RuntimeSettingsRow{
+		HasOverride:      true,
+		ProbeCron:        "0 */6 * * *",
+		ProbePrompt:      "ping",
+		ProbeMaxTokens:   32,
+		ProbeConcurrency: 8,
+		ProbeAutoDisable: 2,
+		ProbeChannels:    []int64{7, 9},
+		ProbeModels:      []string{"gpt-4o", "claude-3"},
+	}
+	if err := db.RuntimeSettings.Save(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProbeCron != row.ProbeCron {
+		t.Errorf("probe_cron = %q, want %q", got.ProbeCron, row.ProbeCron)
+	}
+	if got.ProbePrompt != row.ProbePrompt {
+		t.Errorf("probe_prompt = %q, want %q", got.ProbePrompt, row.ProbePrompt)
+	}
+	if got.ProbeMaxTokens != row.ProbeMaxTokens {
+		t.Errorf("probe_max_tokens = %d, want %d", got.ProbeMaxTokens, row.ProbeMaxTokens)
+	}
+	if got.ProbeConcurrency != row.ProbeConcurrency {
+		t.Errorf("probe_concurrency = %d, want %d", got.ProbeConcurrency, row.ProbeConcurrency)
+	}
+	if got.ProbeAutoDisable != row.ProbeAutoDisable {
+		t.Errorf("probe_auto_disable = %d, want %d", got.ProbeAutoDisable, row.ProbeAutoDisable)
+	}
+	if len(got.ProbeChannels) != 2 || got.ProbeChannels[0] != 7 || got.ProbeChannels[1] != 9 {
+		t.Errorf("probe_channels = %v, want [7 9]", got.ProbeChannels)
+	}
+	if len(got.ProbeModels) != 2 || got.ProbeModels[0] != "gpt-4o" {
+		t.Errorf("probe_models = %v, want [gpt-4o claude-3]", got.ProbeModels)
+	}
+}
+
+// A malformed scope must degrade to "everything" rather than break startup.
+func TestRuntimeSettingsProbeScopeDegradesGracefully(t *testing.T) {
+	db := openTestDB(t)
+	if _, err := db.Exec(`UPDATE runtime_settings SET probe_channels = 'not json', probe_models = '{{{'`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatalf("malformed scope must not fail the read: %v", err)
+	}
+	if len(got.ProbeChannels) != 0 || len(got.ProbeModels) != 0 {
+		t.Errorf("malformed scope = %v / %v, want empty (meaning everything)",
+			got.ProbeChannels, got.ProbeModels)
 	}
 }
 
@@ -1076,7 +1139,7 @@ func TestRouteMemberRecoverExpired(t *testing.T) {
 
 func TestChannelUpdatePropagatesDefaultsOnlyToAutomaticMembers(t *testing.T) {
 	db := openTestDB(t)
-	channelID, err := db.Channel.Create(&domain.Channel{Name: "defaults", Priority: 1, Weight: 10, Status: domain.StatusEnabled})
+	channelID, err := db.Channel.Create(&domain.Channel{Name: "defaults", Priority: 1, Weight: 10, Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	if err != nil {
 		t.Fatal(err)
 	}

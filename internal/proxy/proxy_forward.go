@@ -131,7 +131,15 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 	if strings.TrimSpace(req.Method) == "" {
 		req.Method = http.MethodPost
 	}
-	excluded := make(map[int64]struct{})
+	// Failover state for one relay request: channels retired entirely
+	// (channel-wide failure), individual alias variants retired (the upstream
+	// name failed while its channel siblings may be healthy), and the two-layer
+	// fallback preference — stay on the last failing channel to exhaust its
+	// variants before moving to another channel. constraint is passed into every
+	// round's selector call and mutated as attempts fail.
+	excludedChannels := make(map[int64]struct{})
+	excludedMembers := make(map[int64]struct{})
+	constraint := &routing.SelectionConstraint{ExcludedMembers: excludedMembers}
 	// Resolve the sticky session key: an explicit client header wins;
 	// otherwise derive a content digest from the request body (stateless
 	// clients get affinity through their conversation content).
@@ -173,7 +181,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					return &relay.Result{StatusCode: http.StatusBadRequest, Err: fmt.Errorf("%w: %s", ErrGuardRejected, hit.Message)}, nil
 				case "exclude":
 					for _, id := range hit.Exclude {
-						excluded[id] = struct{}{}
+						excludedChannels[id] = struct{}{}
 					}
 					log.Printf("proxy: prompt guard %q excludes channels %v for request (request_id=%s)", hit.Rule, hit.Exclude, req.RequestID)
 				default:
@@ -196,7 +204,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		// monitorSkipped is set when an ignore_monitor error-passthrough rule
 		// fired; the breaker/cooldown bookkeeping is skipped for that attempt.
 		monitorSkipped := false
-		decision, err := s.selector.SelectSticky(ctx, req.Model, excluded, sessionKey)
+		// memberScopedFailure marks an outgoing failure as variant-specific: the
+		// upstream answered for this real name while its channel siblings may
+		// behave differently. The failover tail then retires only the member and
+		// keeps the fallback walk on this channel instead of leaving it entirely.
+		memberScopedFailure := false
+		decision, err := s.selector.SelectSticky(ctx, req.Model, excludedChannels, sessionKey, constraint)
 		// Persist a decision snapshot for audit: the full explanation
 		// (candidates, scores, reasons, sticky/stable-first state) survives
 		// even when the request later fails or the UI is long gone. Errors
@@ -238,6 +251,20 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		modelGrayPool := decision.StableFirstOverride != nil && *decision.StableFirstOverride
 		req.GrayAttempt = candidate.Channel.StableFirst && (decision.StableFirstHit || modelGrayPool)
+		// Effective upstream name: members carrying {"real":"…"} rewrite the
+		// client-facing alias into the channel's own name. Health bookkeeping
+		// keyed on the request alias would conflate every variant sharing it —
+		// blacklists below MUST use this real name instead.
+		mappingJSON := strings.TrimSpace(decision.RouteMappingJSON)
+		if memberMapping := strings.TrimSpace(candidate.Member.MappingJSON); memberMapping != "" {
+			mappingJSON = memberMapping
+		}
+		effectiveModel := req.Model
+		if mappingJSON != "" {
+			if real := realModelFromMapping(mappingJSON); real != "" {
+				effectiveModel = real
+			}
+		}
 		// Channel-scoped rules are evaluated only once the candidate is known;
 		// applying them before selection would incorrectly affect every channel.
 		requestBody := req.Body
@@ -250,21 +277,24 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				case "reject":
 					return &relay.Result{StatusCode: http.StatusBadRequest, Err: fmt.Errorf("%w: %s", ErrGuardRejected, hit.Message)}, nil
 				case "exclude":
-					excluded[candidate.Channel.ID] = struct{}{}
+					excludedChannels[candidate.Channel.ID] = struct{}{}
 					continue
 				default:
 					requestBody = guarded
 				}
 			}
 		}
-		// Model-not-found blacklist: skip a channel that reported this model as
-		// unknown (permanent condition) before spending an attempt on it.
-		if blocked, err := s.db.IsModelBlocked(candidate.Channel.ID, req.Model); err == nil && blocked {
-			excluded[candidate.Channel.ID] = struct{}{}
+		// Model-not-found blacklist: skip a channel×real-name combination the
+		// upstream permanently reported as unknown before spending an attempt.
+		// Only the affected VARIANT retires — sibling names on the channel stay
+		// eligible, and the fallback walk prefers their remaining ones.
+		if blocked, err := s.db.IsModelBlocked(candidate.Channel.ID, effectiveModel); err == nil && blocked {
+			excludedMembers[candidate.Member.ID] = struct{}{}
+			constraint.PreferChannel = candidate.Channel.ID
 			if last != nil && last.Body != nil {
 				_ = last.Body.Close()
 			}
-			last = preserve(&relay.Result{StatusCode: http.StatusServiceUnavailable, Err: fmt.Errorf("%w: model %s on channel %d", ErrModelBlacklisted, req.Model, candidate.Channel.ID)})
+			last = preserve(&relay.Result{StatusCode: http.StatusServiceUnavailable, Err: fmt.Errorf("%w: model %s on channel %d", ErrModelBlacklisted, effectiveModel, candidate.Channel.ID)})
 			lastMeta = &AttemptMeta{
 				ChannelID:   candidate.Channel.ID,
 				ChannelName: candidate.Channel.Name,
@@ -353,10 +383,6 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		// upstream's real model name. Member-level mapping wins (shared aliases
 		// rewrite per channel); route-level mapping is the legacy/fallback
 		// form for aliases created before per-member mappings existed.
-		mappingJSON := strings.TrimSpace(decision.RouteMappingJSON)
-		if memberMapping := strings.TrimSpace(candidate.Member.MappingJSON); memberMapping != "" {
-			mappingJSON = memberMapping
-		}
 		mappedBody := requestBody
 		if mappingJSON != "" {
 			mappedBody = rewriteModelName(requestBody, req.Model, mappingJSON)
@@ -464,9 +490,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			category = "no_credential"
 			retryable = true
 			s.recordAttempt(req, candidate, attempt+1, result, category, "")
-			s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
+			s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
 
-			excluded[candidate.Channel.ID] = struct{}{}
+			excludedChannels[candidate.Channel.ID] = struct{}{}
+			constraint.PreferChannel = 0
 			last = preserve(result)
 			lastMeta = meta
 			releaseAttempt()
@@ -737,13 +764,19 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if last != nil && last.Body != nil {
 				_ = last.Body.Close()
 			}
-			if err := s.db.RouteMember.RecordSuccess(candidate.Member.ID, s.now()); err != nil {
-				log.Printf("proxy: record success member_id=%d: %v", candidate.Member.ID, err)
-			}
-			s.decayError(candidate.Channel.ID, req.Model)
-			s.recordMemberSuccess(candidate.Channel.ID)
-			if s.latencyAware.Load() && result.LatencyMs > 0 {
-				s.observeLatency(candidate.Channel.ID, req.Model, result.LatencyMs)
+			// A probe success is the answer the operator asked for, not a health
+			// signal: member cooldown reset, channel counter, error decay, and
+			// latency sampling stay untouched so probe traffic never looks like
+			// real traffic to the bookkeeping.
+			if !req.Probe {
+				if err := s.db.RouteMember.RecordSuccess(candidate.Member.ID, s.now()); err != nil {
+					log.Printf("proxy: record success member_id=%d: %v", candidate.Member.ID, err)
+				}
+				s.decayError(candidate.Channel.ID, req.Model)
+				s.recordMemberSuccess(candidate.Channel.ID)
+				if s.latencyAware.Load() && result.LatencyMs > 0 {
+					s.observeLatency(candidate.Channel.ID, req.Model, result.LatencyMs)
+				}
 			}
 			// Bind the successful relay to its session key so the next request
 			// of the same conversation prefers this channel (prompt-cache and
@@ -799,12 +832,34 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// failure count. ignore_monitor rules skip bookkeeping entirely.
 			if !monitorSkipped && category != "transport" {
 				penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
-				s.recordMemberFailure(candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
+				s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
+			}
+			// Two-layer fallback scope: an upstream that ANSWERED (any status,
+			// or a stream that died mid-flight — surfaced as the
+			// stream_interrupted category) speaks for this name's account;
+			// retire the variant and keep walking the channel's other names.
+			// No HTTP response at all (connection refused, TLS, DNS) or an auth
+			// failure applies to everything on the channel.
+			switch {
+			case category == "stream_interrupted":
+				memberScopedFailure = true
+			case result.Err == nil && result.StatusCode >= 400 &&
+				result.StatusCode != http.StatusUnauthorized && result.StatusCode != http.StatusForbidden:
+				memberScopedFailure = true
 			}
 			if req.PreferChannelID > 0 {
 				return result, meta
 			}
 		} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
+			// A model_not_found / unknown-model response is permanent for this
+			// channel × real-name combination. Detected once here: the blacklist
+			// write below keys on the EFFECTIVE (mapped) name so sibling
+			// variants sharing the alias stay untouched, and the failover tail
+			// retires only this member even when monitor bookkeeping is skipped.
+			notFound := isModelNotFoundError(result.StatusCode, modelNotFoundText(result))
+			if notFound {
+				memberScopedFailure = true
+			}
 			// 4xx client error: fail over to the next channel — a different
 			// upstream may accept the same request (channel capabilities are
 			// heterogeneous: one gateway may reject reasoning_effort=max while
@@ -814,21 +869,27 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// be at fault, and counting would let a bad client request take
 			// down every channel via repeated 4xx failover.
 			if !monitorSkipped {
-				// A model_not_found / unknown-model response is permanent for this
-				// channel × model: blacklist the combination so routing skips it
-				// outright instead of failing over on every request.
-				if isModelNotFoundError(result.StatusCode, modelNotFoundText(result)) {
-					if err := s.db.BlockModel(candidate.Channel.ID, req.Model, category); err != nil {
-						log.Printf("proxy: block model channel=%d model=%s: %v", candidate.Channel.ID, req.Model, err)
+				if notFound {
+					// The blacklist write stays probe-visible: a probe discovering
+					// a dead model name on a channel is exactly what the blacklist
+					// exists to record.
+					if err := s.db.BlockModel(candidate.Channel.ID, effectiveModel, category); err != nil {
+						log.Printf("proxy: block model channel=%d model=%s: %v", candidate.Channel.ID, effectiveModel, err)
 					}
-					log.Printf("proxy: model %s not found on channel %d — blacklisted (request_id=%s)", req.Model, candidate.Channel.ID, req.RequestID)
+					log.Printf("proxy: model %s not found on channel %d — blacklisted (request_id=%s)", effectiveModel, candidate.Channel.ID, req.RequestID)
 				}
-				if s.faultProtectionEnabled.Load() {
-					if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
-						log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
+				// Probes are pinned synthetic traffic: a 4xx here is information,
+				// not a fault, so member cooldown and error bookkeeping stay
+				// untouched (recordMemberFailure guards the same way on the
+				// retryable path).
+				if !req.Probe {
+					if s.faultProtectionEnabled.Load() {
+						if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
+							log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
+						}
 					}
+					s.observeError(candidate.Channel.ID, req.Model)
 				}
-				s.observeError(candidate.Channel.ID, req.Model)
 			}
 			if req.PreferChannelID > 0 {
 				return result, meta
@@ -842,7 +903,13 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 
 	nextCandidate:
-		excluded[candidate.Channel.ID] = struct{}{}
+		if memberScopedFailure {
+			excludedMembers[candidate.Member.ID] = struct{}{}
+			constraint.PreferChannel = candidate.Channel.ID
+		} else {
+			excludedChannels[candidate.Channel.ID] = struct{}{}
+			constraint.PreferChannel = 0
+		}
 		if last != nil && last.Body != nil {
 			_ = last.Body.Close()
 		}

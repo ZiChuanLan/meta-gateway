@@ -337,7 +337,6 @@ export function ChannelDetail({
         >
           {t("common.edit")}
         </Button>
-        <p className="detail-actions-hint is-quiet">{t("channels.pathHint")}</p>
       </div>
     </>
   );

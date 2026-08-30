@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useEffect, useState } from "react";
+import { Fragment, useMemo, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuditPanel, DiscoveryPanel } from "./ops";
 import { api } from "../api/client";
@@ -9,7 +9,7 @@ import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
-import { StatGrid } from "../components/StatGrid";
+import { TelemetryStrip } from "../components/TelemetryStrip";
 import { categorizeError } from "../errorCatalog";
 import {
   Button,
@@ -220,27 +220,29 @@ function ProxyLogsPanel() {
   return (
     <>
       <div
-        className="toolbar"
+        className="toolbar log-filter-toolbar"
         style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}
       >
-        <label className="check marginless">
-          <input
-            type="checkbox"
-            checked={failedOnly}
-            onChange={(e) =>
-              setFilter({ status: e.target.checked ? "failed" : null })
-            }
-          />
-          <span>{t("logsPage.failedOnly")}</span>
-        </label>
-        <label className="check marginless">
-          <input
-            type="checkbox"
-            checked={slowOnly}
-            onChange={(e) => setSlowOnly(e.target.checked)}
-          />
-          <span>{t("logsPage.slowOnly")}</span>
-        </label>
+        <div className="log-filter-switches">
+          <label className="check marginless">
+            <input
+              type="checkbox"
+              checked={failedOnly}
+              onChange={(e) =>
+                setFilter({ status: e.target.checked ? "failed" : null })
+              }
+            />
+            <span>{t("logsPage.failedOnly")}</span>
+          </label>
+          <label className="check marginless">
+            <input
+              type="checkbox"
+              checked={slowOnly}
+              onChange={(e) => setSlowOnly(e.target.checked)}
+            />
+            <span>{t("logsPage.slowOnly")}</span>
+          </label>
+        </div>
         <Button
           variant="secondary"
           icon={<RefreshCw size={16} />}
@@ -252,15 +254,17 @@ function ProxyLogsPanel() {
           {t("common.refresh")}
         </Button>
       </div>
-      <StatGrid
+      <TelemetryStrip
         items={[
           {
             label: t("logsPage.stat.shown"),
             value: logs.isPending ? "—" : rows.length,
+            tone: "primary",
           },
           {
             label: t("logsPage.stat.failed"),
             value: logs.isPending ? "—" : failedCount,
+            tone: "danger",
           },
           {
             label: t("logsPage.stat.failRate"),
@@ -268,6 +272,7 @@ function ProxyLogsPanel() {
               logs.isPending || rows.length === 0
                 ? "—"
                 : `${Math.round((failedCount / rows.length) * 100)}%`,
+            tone: rows.length === 0 || failedCount / Math.max(1, rows.length) < 0.05 ? "success" : "warning",
           },
         ]}
       />
@@ -313,7 +318,7 @@ function ProxyLogsPanel() {
 
       <div className="logs-split">
         <Panel className="ops-list-panel">
-          <div className="filter-bar">
+          <div className="filter-bar log-filter-bar">
             <select
               aria-label={t("ops.filterChannel")}
               value={channelId ?? 0}
@@ -419,121 +424,131 @@ function ProxyLogsPanel() {
                 />
               }
             >
-              <DataTable
-                headers={[
-                  t("common.time"),
-                  t("common.model"),
-                  t("logsPage.reasoningEffort"),
-                  t("common.route"),
-                  t("common.channel"),
-                  t("common.status"),
-                  t("common.tokens"),
-                  t("common.cacheTokens"),
-					t("common.latency"),
-					t("common.firstByte"),
-					t("common.cost"),
-					t("common.clientFamily"),
-                ]}
-              >
-				{pageRows.map((log) => (
-					<>
-					<tr
-						key={log.id}
-						className={`${log.status >= 400 ? "row-failed" : ""} log-row-clickable${expandedRequest === log.request_id ? " is-expanded" : ""}`}
-						onClick={() =>
-							setExpandedRequest((current) =>
-								current === log.request_id ? null : log.request_id,
-							)
-						}
-						title={t("logsPage.decisionHint")}
-					>
-                    <td>{formatDate(log.created_at)}</td>
-                    <td>
-                      <strong>{log.model}</strong>
-                      <small className="mono">{log.request_id}</small>
-                    </td>
-                    <td>
-                      {log.reasoning_effort ? (
-                        <code className="log-effort">
-                          {log.reasoning_effort}
-                        </code>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td>
-                      {log.route_id ? (
-                        <Link
-                          to={`/models?model=${encodeURIComponent(
-                            log.route_pattern ?? "",
-                          )}`}
-                          title={log.route_pattern || undefined}
-                        >
-                          <code>#{log.route_id}</code>
-                        </Link>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td>
-                      <Link
-                        to={`/channels?id=${log.channel_id}`}
-                        title={t("logsPage.openConnection")}
-                      >
-                        {channelName.get(log.channel_id) ??
-                          `#${log.channel_id}`}
-                      </Link>
-                    </td>
-                    <td>
-                      <StatusBadge
-                        value={
-                          log.status >= 400 ? "failed" : String(log.status)
-                        }
-                      />
-                      {log.error_brief ? (
-                        <span
-                          className="log-error-label"
-                          title={log.error_brief}
-                        >
-                          {errorLabel(log.error_brief)}
-                        </span>
-                      ) : null}
-                      {log.attempt > 1 ? (
-                        <span
-                          className="log-retry-mark"
-                          title={t("logsPage.retried")}
-                        >
-                          {t("logsPage.retried")}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>{log.total_tokens ? log.total_tokens : "—"}</td>
-                    <td>
-                      {log.cache_read_tokens || log.cache_creation_tokens
-                        ? `${log.cache_read_tokens ?? 0} / ${log.cache_creation_tokens ?? 0}`
-                        : "—"}
-                    </td>
-					<td>{t("common.ms", { n: log.latency_ms })}</td>
-					<td>
-						{log.stream && log.first_byte_ms
-							? t("common.ms", { n: log.first_byte_ms })
-							: "—"}
-					</td>
-					<td className="log-cost">
-						{logCost(log) != null ? formatCost(logCost(log)!) : "—"}
-					</td>
-					<td>{log.client_family || "—"}</td>
-					</tr>
-					{expandedRequest === log.request_id ? (
-						<tr className="log-decision-row" key={`${log.id}-decision`}>
-							<td colSpan={12}>
-								<DecisionSnapshotView requestId={log.request_id} />
-							</td>
-						</tr>
-					) : null}
-					</>
-				))}
-              </DataTable>
+							<DataTable
+								headers={[
+									t("common.time"),
+									t("common.model"),
+									t("logsPage.reasoningEffort"),
+									t("common.route"),
+									t("common.channel"),
+									t("common.status"),
+									t("common.tokens"),
+									t("common.cacheTokens"),
+									t("common.latency"),
+									t("common.firstByte"),
+									t("common.cost"),
+									t("common.clientFamily"),
+								]}
+							>
+								{pageRows.map((log) => {
+									return (
+										<Fragment key={log.id}>
+										<tr
+											className={`${log.status >= 400 ? "row-failed" : ""} log-row-clickable${expandedRequest === log.request_id ? " is-expanded" : ""}`}
+									onClick={() =>
+										setExpandedRequest((current) =>
+											current === log.request_id ? null : log.request_id,
+										)
+									}
+									title={t("logsPage.decisionHint")}
+								>
+									<td>{formatDate(log.created_at)}</td>
+									<td>
+										<strong className="log-model-name">{log.model}</strong>
+										<small className="mono">{log.request_id}</small>
+									</td>
+									<td>
+										{log.reasoning_effort ? (
+											<code className="log-effort">
+												{log.reasoning_effort}
+											</code>
+										) : (
+											"—"
+										)}
+									</td>
+									<td>
+										{log.route_id ? (
+											<Link
+												to={`/models?model=${encodeURIComponent(
+													log.route_pattern ?? "",
+												)}`}
+												title={log.route_pattern || undefined}
+											>
+												<code>#{log.route_id}</code>
+											</Link>
+										) : (
+											"—"
+										)}
+									</td>
+									<td>
+										<Link
+											to={`/channels?id=${log.channel_id}`}
+											title={t("logsPage.openConnection")}
+										>
+											{channelName.get(log.channel_id) ??
+												`#${log.channel_id}`}
+										</Link>
+									</td>
+									<td className="log-status-cell">
+										<span className={`log-status-light${log.status >= 400 ? " is-bad" : log.status >= 300 ? " is-warn" : " is-ok"}`} aria-hidden="true" />
+										<StatusBadge
+											value={
+												log.status >= 400 ? "failed" : String(log.status)
+											}
+										/>
+										{log.error_brief ? (
+											<span
+												className="log-error-label"
+												title={log.error_brief}
+											>
+												{errorLabel(log.error_brief)}
+											</span>
+										) : null}
+										{log.attempt > 1 ? (
+											<span
+												className="log-retry-mark"
+												title={t("logsPage.retried")}
+											>
+												{t("logsPage.retried")}
+											</span>
+										) : null}
+									</td>
+									<td>{log.total_tokens ? log.total_tokens : "—"}</td>
+									<td>
+										{log.cache_read_tokens || log.cache_creation_tokens
+											? `${log.cache_read_tokens ?? 0} / ${log.cache_creation_tokens ?? 0}`
+											: "—"}
+									</td>
+									<td className="log-latency-cell">
+										<span className="log-latency-bar" aria-hidden="true">
+											<span
+												className={log.latency_ms >= 5000 ? "is-slow" : log.latency_ms >= 1000 ? "is-warn" : ""}
+												style={{ transform: `scaleX(${Math.min(1, Math.max(0.06, log.latency_ms / 10000))})` }}
+											/>
+										</span>
+										{t("common.ms", { n: log.latency_ms })}
+									</td>
+									<td>
+										{log.stream && log.first_byte_ms
+											? t("common.ms", { n: log.first_byte_ms })
+											: "—"}
+									</td>
+									<td className="log-cost">
+										{logCost(log) != null ? formatCost(logCost(log)!) : "—"}
+									</td>
+									<td>{log.client_family || "—"}</td>
+									</tr>
+										{expandedRequest === log.request_id ? (
+											<tr className="log-decision-row">
+												<td colSpan={12}>
+													<DecisionSnapshotView requestId={log.request_id} />
+												</td>
+											</tr>
+										) : null}
+										</Fragment>
+									);
+								})}
+							</DataTable>
             </ListShell>
           </EntityState>
         </Panel>

@@ -28,11 +28,29 @@ const (
 	ReasonCoolingDown      Reason = "cooling_down"
 	ReasonExcluded         Reason = "already_attempted"
 	ReasonInvalidWeight    Reason = "invalid_weight"
-	ReasonCircuitOpen      Reason = "circuit_open"
 	// ReasonSingleMode marks members skipped because the route is pinned to
 	// another member via routing_mode=single.
 	ReasonSingleMode Reason = "single_mode_other_member"
 )
+
+// SelectionConstraint narrows the candidate pool of ONE selection attempt. The
+// proxy builds one per relay request and mutates it between failover rounds;
+// each attribute is optional and they compose:
+//
+//   - ExcludedMembers skips individual route_members rows. This is the
+//     per-variant exclusion used by alias groups ([A]/[B]/[次] of one logical
+//     model live on the same channel as separate rows): failing one variant
+//     must not blacklist the channel's healthy siblings.
+//   - PreferChannel implements the two-layer fallback order. When nonzero and
+//     that channel still has eligible members, the pick is restricted to the
+//     channel's top priority tier and becomes deterministic (lowest member ID),
+//     so retries exhaust [A]→[B]→[次] before moving to the next channel. When
+//     the channel has no eligible members left, selection falls back to the
+//     normal weighted/sticky behavior across the remaining fleet.
+type SelectionConstraint struct {
+	ExcludedMembers map[int64]struct{}
+	PreferChannel   int64
+}
 
 type Evaluation struct {
 	Candidate domain.RoutingCandidate `json:"candidate"`
@@ -66,6 +84,11 @@ type Explanation struct {
 	StableFirstHit bool `json:"stable_first_hit,omitempty"`
 	// StableFirstDenominator is the active 1/N gray ratio (0 = disabled).
 	StableFirstDenominator int `json:"stable_first_denominator,omitempty"`
+	// PreferredChannelID / PreferredApplied record the intra-channel variant
+	// walk: a retry preferred channel C and the restriction actually applied
+	// (C still had eligible members). Absent on fresh attempts.
+	PreferredChannelID *int64 `json:"preferred_channel_id,omitempty"`
+	PreferredApplied   bool   `json:"preferred_applied,omitempty"`
 	// RetryTimesOverride / ChannelRetryTimesOverride carry the route-level
 	// retry policy (nil = follow the global runtime setting). The proxy reads
 	// them from the selection decision.
@@ -233,19 +256,32 @@ func (s *Selector) Explain(ctx context.Context, model string) (Explanation, erro
 // ExplainWithSession is Explain with an optional session key: the response
 // carries the sticky binding for that session when one exists.
 func (s *Selector) ExplainWithSession(ctx context.Context, model, sessionKey string) (Explanation, error) {
-	return s.evaluateWithSession(ctx, model, nil, sessionKey)
+	return s.evaluateWithSession(ctx, model, nil, sessionKey, nil)
 }
 
-func (s *Selector) Select(ctx context.Context, model string, excluded map[int64]struct{}) (Decision, error) {
-	return s.SelectSticky(ctx, model, excluded, "")
+func (s *Selector) Select(ctx context.Context, model string, excluded map[int64]struct{}, constraints ...*SelectionConstraint) (Decision, error) {
+	return s.SelectSticky(ctx, model, excluded, "", constraints...)
 }
 
 // SelectSticky selects a channel for a request, preferring the channel bound
 // to the session key when it is still eligible. A bound channel that is
 // cooling down, disabled, or already attempted in this request is escaped
 // (StickyReason is set) and a normal weighted/latency pick happens instead.
-func (s *Selector) SelectSticky(ctx context.Context, model string, excluded map[int64]struct{}, sessionKey string) (Decision, error) {
-	explanation, err := s.evaluateWithSession(ctx, model, excluded, sessionKey)
+//
+// An optional SelectionConstraint narrows this attempt: ExcludedMembers skips
+// individual variants and PreferChannel restricts a retry to the previous
+// channel's remaining members before any cross-channel move. The constraint
+// outranks the sticky binding — a failing request finishes walking its
+// channel's variants before session affinity is honored again.
+func (s *Selector) SelectSticky(ctx context.Context, model string, excluded map[int64]struct{}, sessionKey string, constraints ...*SelectionConstraint) (Decision, error) {
+	var constraint *SelectionConstraint
+	for _, c := range constraints {
+		if c != nil {
+			constraint = c
+			break
+		}
+	}
+	explanation, err := s.evaluateWithSession(ctx, model, excluded, sessionKey, constraint)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -268,12 +304,44 @@ func (s *Selector) SelectSticky(ctx context.Context, model string, excluded map[
 		return Decision{Explanation: explanation}, ErrNoEligible
 	}
 	explanation.SelectedPriority = &priority
+	var selected domain.RoutingCandidate
+	selectedSet := false
+	// Intra-channel variant walk: a retry that prefers channel C exhausts C's
+	// remaining members (deterministically, lowest member ID first, top tier of
+	// the channel) before any other channel is considered. Session affinity is
+	// bypassed here — a request already failing over finishes its fallback walk.
+	if constraint != nil && constraint.PreferChannel > 0 {
+		preferredChannelID := constraint.PreferChannel
+		var tier []domain.RoutingCandidate
+		for _, candidate := range eligible {
+			if candidate.Channel.ID == preferredChannelID {
+				tier = append(tier, candidate)
+			}
+		}
+		if len(tier) > 0 {
+			topPriority := tier[0].Member.Priority
+			for _, candidate := range tier[1:] {
+				if candidate.Member.Priority > topPriority {
+					topPriority = candidate.Member.Priority
+				}
+			}
+			for _, candidate := range tier {
+				if candidate.Member.Priority == topPriority {
+					selected = candidate
+					break // eligible is sorted by (priority desc, member id asc)
+				}
+			}
+			selectedSet = true
+			explanation.PreferredChannelID = &preferredChannelID
+			explanation.PreferredApplied = true
+			priority = topPriority
+			explanation.SelectedPriority = &priority
+		}
+	}
 	// A sticky hit is deterministic: the bound channel is the answer whenever
 	// it is still eligible in the selected priority tier, so no random pick
 	// happens for it.
-	var selected domain.RoutingCandidate
-	selectedSet := false
-	if explanation.StickyHit && explanation.StickyChannelID != nil {
+	if !selectedSet && explanation.StickyHit && explanation.StickyChannelID != nil {
 		// Binding outranks the priority tier: the bound channel is chosen even
 		// when a higher-priority member appeared since the binding was made.
 		// Channel continuity (prompt cache, multi-turn coherence) wins over
@@ -318,7 +386,7 @@ func (s *Selector) SelectSticky(ctx context.Context, model string, excluded map[
 	return Decision{Explanation: explanation, Selected: selected}, nil
 }
 
-func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int64]struct{}) (Explanation, error) {
+func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int64]struct{}, constraint *SelectionConstraint) (Explanation, error) {
 	if err := ctx.Err(); err != nil {
 		return Explanation{}, err
 	}
@@ -361,6 +429,11 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		}
 		if _, ok := excluded[candidate.Channel.ID]; ok {
 			reasons = append(reasons, ReasonExcluded)
+		}
+		if constraint != nil && len(constraint.ExcludedMembers) > 0 {
+			if _, ok := constraint.ExcludedMembers[candidate.Member.ID]; ok {
+				reasons = append(reasons, ReasonExcluded)
+			}
 		}
 		if candidate.Member.Weight < 0 {
 			reasons = append(reasons, ReasonInvalidWeight)
@@ -406,8 +479,8 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 
 // evaluateWithSession runs the plain evaluation and annotates the sticky
 // binding for the session key when one exists.
-func (s *Selector) evaluateWithSession(ctx context.Context, model string, excluded map[int64]struct{}, sessionKey string) (Explanation, error) {
-	explanation, err := s.evaluate(ctx, model, excluded)
+func (s *Selector) evaluateWithSession(ctx context.Context, model string, excluded map[int64]struct{}, sessionKey string, constraint *SelectionConstraint) (Explanation, error) {
+	explanation, err := s.evaluate(ctx, model, excluded, constraint)
 	if err != nil {
 		return explanation, err
 	}

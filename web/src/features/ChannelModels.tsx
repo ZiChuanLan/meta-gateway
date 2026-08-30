@@ -1,6 +1,13 @@
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useMemo,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useToast } from "../toast";
@@ -11,11 +18,12 @@ import type {
   RouteOverview,
 } from "../api/types";
 import { EntityState } from "../components/EntityState";
-import { StatGrid } from "../components/StatGrid";
+import { TelemetryStrip } from "../components/TelemetryStrip";
 import { Button, ErrorState, Page, Panel, StatusBadge } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
+import { MODEL_GROUP_ORDER, autoModelGroup } from "./models/modelGroups";
 import { positiveId } from "../lib/positiveId"
 
 const INVALIDATE = [
@@ -135,9 +143,34 @@ export function ChannelModelsPanel({
     pendingIdOf: (member) => member.id,
   });
 
+  // adoptModel wires one snapshot model into routing: reuse the route when its
+  // name already exists (routes are global), otherwise create it, then attach
+  // this channel's member. Adopted members share the exact parameters of
+  // Reconcile-created ones (auto=1, manual_override=0), so upstream removals
+  // recycle them through the same stale cleanup as auto-sync members.
+  const adoptModel = async (realModel: string) => {
+    if (channelId == null) return;
+    const target = (routeOverviews.data ?? []).find(
+      (entry) => entry.route.model_pattern === realModel,
+    );
+    const routeId =
+      target?.route.id ??
+      (await service.createRoute({ model_pattern: realModel, enabled: true }))
+        .id;
+    await service.createMember(routeId, {
+      channel_id: channelId,
+      priority: 0,
+      weight: 100,
+      enabled: true,
+      auto: true,
+      manual_override: false,
+    });
+  };
+
   const bulkToggle = useAdminMutation({
     mutationFn: async (input: {
       updates: { member: RouteMember; enabled: boolean }[];
+      adoptions?: string[];
     }) => {
       await Promise.all(
         input.updates.map(({ member, enabled }) =>
@@ -147,7 +180,15 @@ export function ChannelModelsPanel({
           }),
         ),
       );
+      for (const name of input.adoptions ?? []) {
+        await adoptModel(name);
+      }
     },
+    invalidateKeys: [...INVALIDATE],
+  });
+
+  const adopt = useAdminMutation({
+    mutationFn: adoptModel,
     invalidateKeys: [...INVALIDATE],
   });
 
@@ -426,7 +467,7 @@ export function ChannelModelsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [models, customModels, query, routeOverviews.data]);
 
-  const selectable = filtered.filter((item) => memberFor(item.name) != null);
+  const selectable = filtered;
   const allSelected =
     selectable.length > 0 && selectable.every((m) => selectedIds.has(m.key));
   const someSelected =
@@ -470,10 +511,10 @@ export function ChannelModelsPanel({
 
 
   const runBulk = (enabled: boolean) => {
-    // Enable-selected acts as a whitelist: checked rows are enabled and every
-    // other selectable row is disabled in the same pass, so the saved state
-    // matches exactly what the operator checked. Disable-selected only touches
-    // the checked rows.
+    // Enable-selected acts as a whitelist: checked rows are enabled (or
+    // adopted when not wired yet) and every other wired row is disabled in
+    // the same pass, so the saved state matches exactly what the operator
+    // checked. Disable-selected only touches wired, checked rows.
     const updates = selectable
       .map((item) => {
         const member = memberFor(item.name);
@@ -489,8 +530,15 @@ export function ChannelModelsPanel({
       .filter(
         (u): u is { member: RouteMember; enabled: boolean } => u != null,
       );
-    if (updates.length === 0) return;
-    bulkToggle.mutate({ updates });
+    const adoptions = enabled
+      ? selectable
+          .filter(
+            (item) => selectedIds.has(item.key) && memberFor(item.name) == null,
+          )
+          .map((item) => item.name)
+      : [];
+    if (updates.length === 0 && adoptions.length === 0) return;
+    bulkToggle.mutate({ updates, adoptions });
   };
 
   const selectedCount = selectable.filter((item) =>
@@ -498,11 +546,30 @@ export function ChannelModelsPanel({
   ).length;
 
   const enabledCount =
-    models.filter((model) => memberFor(model.model_name)?.enabled ?? true)
+    models.filter((model) => memberFor(model.model_name)?.enabled ?? false)
       .length + customModels.filter((custom) => custom.member.enabled).length;
   const aliasedCount = models.filter((model) =>
     Boolean(aliasFor(model.model_name)),
   ).length;
+
+  // Group the filtered rows by vendor family for scannable bulk selection;
+  // known groups keep their defined order, anything else lands in "Other".
+  const grouped = useMemo(() => {
+    const buckets = new Map<string, { key: string; name: string }[]>();
+    for (const item of filtered) {
+      const group = autoModelGroup(item.name);
+      const bucket = buckets.get(group);
+      if (bucket) bucket.push(item);
+      else buckets.set(group, [item]);
+    }
+    const known = MODEL_GROUP_ORDER.filter((group) => buckets.has(group)).map(
+      (group) => ({ group, items: buckets.get(group)! }),
+    );
+    const extra = [...buckets.keys()]
+      .filter((group) => !MODEL_GROUP_ORDER.includes(group))
+      .map((group) => ({ group, items: buckets.get(group)! }));
+    return [...known, ...extra];
+  }, [filtered]);
 
   return (
     <>
@@ -511,19 +578,22 @@ export function ChannelModelsPanel({
           <div>
             <p className="page-kicker">{channel?.name ?? `#${channelId}`}</p>
             <p className="detail-section-empty is-quiet">
-              {t("channels.modelsManageHint")}
+              {channel?.model_sync_mode === "manual"
+                ? t("channels.adoptHint")
+                : t("channels.modelsManageHint")}
             </p>
           </div>
         </div>
       )}
-      <StatGrid
+      <TelemetryStrip
         items={[
           {
             label: t("channels.stat.total"),
             value: models.length + customModels.length,
+            tone: "primary",
           },
-          { label: t("common.enabled"), value: enabledCount },
-          { label: t("channels.aliasStat"), value: aliasedCount },
+          { label: t("common.enabled"), value: enabledCount, tone: "success" },
+          { label: t("channels.aliasStat"), value: aliasedCount, tone: "info" },
         ]}
       />
 
@@ -639,116 +709,135 @@ export function ChannelModelsPanel({
           retry={() => discovered.refetch()}
         >
           <ul className="channel-model-list is-page">
-            {filtered.map((item) => {
-              const discoveredModel = models.find(
-                (m) => m.model_name === item.name,
-              );
-              const isCustom = !discoveredModel;
-              const custom = isCustom
-                ? customModels.find((c) => c.name === item.name)
-                : undefined;
-              const member = memberFor(item.name);
-              const enabled = member ? member.enabled : true;
-              const aliasInfo = aliasFor(item.name);
-              const alias = aliasInfo?.overview.route.model_pattern ?? "";
-              const inputValue = discoveredModel
-                ? (aliasInputs[discoveredModel.id] ?? alias)
-                : alias;
-              return (
-                <li key={item.key} className="channel-model-row is-alias">
-                  {bulkMode ? (
-                    <label
-                      className="channel-model-select"
-                      title={t("channels.modelsSelectAll")}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(item.key)}
-                        disabled={!member || bulkToggle.isPending}
-                        onChange={() => toggleSelect(item.key)}
-                      />
-                    </label>
-                  ) : (
-                    <label
-                      className="channel-model-toggle"
-                      title={t("channels.modelEnabledHint")}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={enabled}
-                        disabled={
-                          !member || toggleMember.pendingId === member.id
-                        }
-                        onChange={() => {
-                          if (member) toggleMember.mutate(member);
-                        }}
-                      />
-                    </label>
-                  )}
-                  <span className="mono truncate" title={item.name}>
-                    {item.name}
+            {grouped.map(({ group, items }) => (
+              <Fragment key={group}>
+                <li className="channel-model-group-head">
+                  <span className="channel-model-group-name">{group}</span>
+                  <span className="channel-model-group-count">
+                    {items.length}
                   </span>
-                  <span className="channel-model-alias">
-                    {discoveredModel ? (
-                      <>
-                        <input
-                          value={inputValue}
-                          placeholder={t("channels.aliasPlaceholder")}
-                          onChange={(event) =>
-                            setAliasInputs((previous) => ({
-                              ...previous,
-                              [discoveredModel.id]: event.target.value,
-                            }))
+                </li>
+                {items.map((item) => {
+                  const discoveredModel = models.find(
+                    (m) => m.model_name === item.name,
+                  );
+                  const isCustom = !discoveredModel;
+                  const custom = isCustom
+                    ? customModels.find((c) => c.name === item.name)
+                    : undefined;
+                  const member = memberFor(item.name);
+                  const enabled = member ? member.enabled : false;
+                  const aliasInfo = aliasFor(item.name);
+                  const alias = aliasInfo?.overview.route.model_pattern ?? "";
+                  const inputValue = discoveredModel
+                    ? (aliasInputs[discoveredModel.id] ?? alias)
+                    : alias;
+                  return (
+                    <li key={item.key} className="channel-model-row is-alias">
+                      {bulkMode ? (
+                        <label
+                          className="channel-model-select"
+                          title={t("channels.modelsSelectAll")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(item.key)}
+                            disabled={bulkToggle.isPending}
+                            onChange={() => toggleSelect(item.key)}
+                          />
+                        </label>
+                      ) : (
+                        <label
+                          className="channel-model-toggle"
+                          title={
+                            member
+                              ? t("channels.modelEnabledHint")
+                              : t("channels.modelAdoptHint")
                           }
-                        />
-                        {aliasInfo && inputValue === alias ? (
-                          <button
-                            type="button"
-                            className="icon-button"
-                            aria-label={t("channels.aliasRemove")}
-                            title={t("channels.aliasRemove")}
-                            disabled={removeAlias.isPending}
-                            onClick={() => removeAlias.mutate(item.name)}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        ) : inputValue.trim() !== alias ? (
+                        >
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            disabled={
+                              member
+                                ? toggleMember.pendingId === member.id
+                                : adopt.isPending
+                            }
+                            onChange={() => {
+                              if (member) toggleMember.mutate(member);
+                              else adopt.mutate(item.name);
+                            }}
+                          />
+                        </label>
+                      )}
+                      <span className="mono truncate" title={item.name}>
+                        {item.name}
+                      </span>
+                      <span className="channel-model-alias">
+                        {discoveredModel ? (
+                          <>
+                            <input
+                              value={inputValue}
+                              placeholder={t("channels.aliasPlaceholder")}
+                              onChange={(event) =>
+                                setAliasInputs((previous) => ({
+                                  ...previous,
+                                  [discoveredModel.id]: event.target.value,
+                                }))
+                              }
+                            />
+                            {aliasInfo && inputValue === alias ? (
+                              <button
+                                type="button"
+                                className="icon-button"
+                                aria-label={t("channels.aliasRemove")}
+                                title={t("channels.aliasRemove")}
+                                disabled={removeAlias.isPending}
+                                onClick={() => removeAlias.mutate(item.name)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            ) : inputValue.trim() !== alias ? (
+                              <Button
+                                variant="secondary"
+                                className="channel-alias-save"
+                                disabled={
+                                  saveAlias.isPending || !inputValue.trim()
+                                }
+                                onClick={() =>
+                                  saveAlias.mutate({
+                                    realModel: item.name,
+                                    alias: inputValue,
+                                  })
+                                }
+                              >
+                                {t("channels.aliasSave")}
+                              </Button>
+                            ) : null}
+                          </>
+                        ) : custom ? (
                           <Button
-                            variant="secondary"
+                            variant="quiet"
                             className="channel-alias-save"
-                            disabled={saveAlias.isPending || !inputValue.trim()}
+                            icon={<Trash2 size={13} />}
+                            disabled={removeCustom.isPending}
                             onClick={() =>
-                              saveAlias.mutate({
-                                realModel: item.name,
-                                alias: inputValue,
+                              removeCustom.mutate({
+                                routeId: custom.routeId,
+                                memberId: custom.member.id,
                               })
                             }
                           >
-                            {t("channels.aliasSave")}
+                            {t("channels.customModelRemove")}
                           </Button>
                         ) : null}
-                      </>
-                    ) : custom ? (
-                      <Button
-                        variant="quiet"
-                        className="channel-alias-save"
-                        icon={<Trash2 size={13} />}
-                        disabled={removeCustom.isPending}
-                        onClick={() =>
-                          removeCustom.mutate({
-                            routeId: custom.routeId,
-                            memberId: custom.member.id,
-                          })
-                        }
-                      >
-                        {t("channels.customModelRemove")}
-                      </Button>
-                    ) : null}
-                  </span>
-                  <StatusBadge value={enabled ? "enabled" : "disabled"} />
-                </li>
-              );
-            })}
+                      </span>
+                      <StatusBadge value={enabled ? "enabled" : "disabled"} />
+                    </li>
+                  );
+                })}
+              </Fragment>
+            ))}
           </ul>
         </EntityState>
       </Panel>

@@ -166,12 +166,12 @@ const landingPageHTML = `<!doctype html>
         </div>
       </div>
       <div class="actions">
-        <a class="btn btn-primary" href="/console/">进入管理控制台</a>
+        <a class="btn btn-primary" href="/console">进入管理控制台</a>
         <a class="btn btn-secondary" href="/healthz">健康检查</a>
       </div>
       <section class="endpoints">
         <h2>Endpoints</h2>
-        <div class="endpoint"><code>/console/</code><span>管理控制台</span></div>
+        <div class="endpoint"><code>/console</code><span>管理控制台</span></div>
         <div class="endpoint"><code>/healthz · /readyz</code><span>健康检查</span></div>
         <div class="endpoint"><code>/metrics</code><span>Prometheus 指标</span></div>
       </section>

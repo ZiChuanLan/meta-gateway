@@ -208,6 +208,8 @@ describe("Keys page", () => {
 		fireEvent.change(screen.getByLabelText("Name"), {
 			target: { value: "custom-app" },
 		});
+		// Custom token lives in the Advanced fold (progressive disclosure).
+		fireEvent.click(screen.getByRole("button", { name: /^Advanced/ }));
 		fireEvent.click(screen.getByLabelText(/Set my own secret/i));
 		fireEvent.change(screen.getByLabelText("Secret"), {
 			target: { value: "my-custom-secret-16" },

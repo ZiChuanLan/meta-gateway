@@ -1,13 +1,15 @@
 import {
+  Activity,
   ExternalLink,
   ChevronDown,
+  Combine,
   GripVertical,
+  History,
   Info,
   Pencil,
   Plus,
   Power,
   RotateCcw,
-  Route as RouteIcon,
   Search,
   Shield,
   Sparkles,
@@ -30,7 +32,7 @@ import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
-import { StatGrid } from "../components/StatGrid";
+import { TelemetryStrip } from "../components/TelemetryStrip";
 import {
   Button,
   ConfirmDialog,
@@ -52,6 +54,9 @@ import { modelGroup } from "./models/modelGroups";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
 import { RouteDialog } from "./models/RouteDialog";
 import { MemberDialog } from "./models/MemberDialog";
+import { UnifyDialog } from "./models/UnifyDialog";
+import { UnifyHistory } from "./models/UnifyHistory";
+import { ProbeDialog } from "./models/ProbeDialog";
 
 function readMissingDismissed() {
   try {
@@ -219,6 +224,9 @@ function ModelCatalog({
   const [member, setMember] = useState<Partial<RouteMember> | null>(null);
   const [removeMember, setRemoveMember] = useState<RouteMember | null>(null);
   const [tryOpen, setTryOpen] = useState(false);
+  const [unifyOpen, setUnifyOpen] = useState(false);
+  const [unifyHistoryOpen, setUnifyHistoryOpen] = useState(false);
+  const [probeOpen, setProbeOpen] = useState(false);
   const [bulkSelect, setBulkSelect] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(
     () => new Set(),
@@ -622,17 +630,6 @@ function ModelCatalog({
         },
       },
       {
-        key: "overrides",
-        label: t("modelsPage.editOverrides"),
-        icon: <Pencil size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          save.reset();
-          setEdit(route);
-        },
-      },
-      {
         key: "toggle",
         label: route.enabled
           ? t("common.disableAction")
@@ -651,16 +648,6 @@ function ModelCatalog({
         onSelect: () => {
           close();
           navigate(`/logs?model=${encodeURIComponent(route.model_pattern)}`);
-        },
-      },
-      {
-        key: "routing",
-        label: t("modelsPage.showRouting"),
-        icon: <RouteIcon size={14} />,
-        onSelect: () => {
-          close();
-          selectRow(route.id);
-          setShowAdvanced(true);
         },
       },
       {
@@ -714,15 +701,17 @@ function ModelCatalog({
 
   return (
     <div className="ops-canvas">
-      <StatGrid
+      <TelemetryStrip
         items={[
           {
             label: t("modelsPage.stat.total"),
             value: overviews.isPending ? "—" : total,
+            tone: "primary",
           },
           {
             label: t("modelsPage.stat.enabled"),
             value: overviews.isPending ? "—" : enabledCount,
+            tone: "success",
           },
           {
             label: t("modelsPage.stat.multi"),
@@ -731,6 +720,7 @@ function ModelCatalog({
               : (overviews.data ?? []).filter(
                   (o) => (o.members ?? []).length > 1,
                 ).length,
+            tone: "info",
           },
         ]}
       />
@@ -835,16 +825,42 @@ function ModelCatalog({
           className="ops-list-panel"
           title={t("modelsPage.listTitle")}
           actions={
-            <Button
-              variant="secondary"
-              icon={<Plus size={16} />}
-              onClick={() => {
-                save.reset();
-                setEdit({ enabled: true });
-              }}
-            >
-              {t("routing.addRoute")}
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                icon={<Combine size={16} />}
+                onClick={() => setUnifyOpen(true)}
+                title={t("modelsPage.unify.actionHint")}
+              >
+                {t("modelsPage.unify.action")}
+              </Button>
+              <Button
+                variant="secondary"
+                icon={<History size={16} />}
+                onClick={() => setUnifyHistoryOpen(true)}
+                title={t("modelsPage.unify.history.actionHint")}
+              >
+                {t("modelsPage.unify.history.action")}
+              </Button>
+              <Button
+                variant="secondary"
+                icon={<Activity size={16} />}
+                onClick={() => setProbeOpen(true)}
+                title={t("modelsPage.probe.actionHint")}
+              >
+                {t("modelsPage.probe.action")}
+              </Button>
+              <Button
+                variant="secondary"
+                icon={<Plus size={16} />}
+                onClick={() => {
+                  save.reset();
+                  setEdit({ enabled: true });
+                }}
+              >
+                {t("routing.addRoute")}
+              </Button>
+            </>
           }
         >
           <div className="models-simple-toolbar">
@@ -1787,6 +1803,11 @@ function ModelCatalog({
         </div>
       </div>
 
+      {unifyOpen ? <UnifyDialog onClose={() => setUnifyOpen(false)} /> : null}
+      {unifyHistoryOpen ? (
+        <UnifyHistory onClose={() => setUnifyHistoryOpen(false)} />
+      ) : null}
+      {probeOpen ? <ProbeDialog onClose={() => setProbeOpen(false)} /> : null}
       {edit ? (
         <RouteDialog
           value={edit}

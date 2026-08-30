@@ -92,20 +92,24 @@ export function ExternalCheckinsPanel() {
       ) : !list.data?.length ? (
         <p className="detail-empty">{t("ops.external.empty")}</p>
       ) : (
-        <div className="external-checkin-list">
+        <div className="external-checkin-grid">
           {list.data.map((item) => (
-            <div className="external-checkin-row" key={item.site_id}>
-              <div className="external-checkin-main">
+            <div className="external-checkin-card" key={item.site_id}>
+              <div className="external-checkin-card-head">
                 <strong>{item.name}</strong>
-				<small className="mono truncate" title={item.base_url}>
-					{item.base_url}
-					{item.checkin_path
-						? ` · ${item.checkin_method || "POST"} ${item.checkin_path}`
-						: ""}
-					{!item.has_cookie ? ` · ${t("ops.external.noCookie")}` : ""}
-				</small>
+                <span
+                  className={`external-checkin-lamp${item.checkin_enabled ? " is-on" : ""}`}
+                  aria-hidden="true"
+                />
               </div>
-              <div className="external-checkin-actions">
+              <small className="mono truncate" title={item.base_url}>
+                {item.base_url}
+                {item.checkin_path
+                  ? ` · ${item.checkin_method || "POST"} ${item.checkin_path}`
+                  : ""}
+                {!item.has_cookie ? ` · ${t("ops.external.noCookie")}` : ""}
+              </small>
+              <div className="external-checkin-card-actions">
                 <label className="check">
                   <input
                     type="checkbox"
@@ -120,9 +124,10 @@ export function ExternalCheckinsPanel() {
                   />
                   <span>{t("ops.external.scheduled")}</span>
                 </label>
+                <span className="flex-spacer" />
                 <Button
                   variant="secondary"
-                  icon={<Play size={14} />}
+                  icon={<Play size={13} />}
                   disabled={run.pendingId === item.credential_id}
                   onClick={() => run.mutate(item.credential_id)}
                 >
@@ -131,15 +136,15 @@ export function ExternalCheckinsPanel() {
                     : t("ops.external.run")}
                 </Button>
                 <Button
-                  variant="secondary"
-                  icon={<RefreshCw size={14} />}
+                  variant="quiet"
+                  icon={<RefreshCw size={13} />}
                   onClick={() => setEditing(item)}
                 >
                   {t("common.edit")}
                 </Button>
                 <Button
                   variant="quiet"
-                  icon={<Trash2 size={14} />}
+                  icon={<Trash2 size={13} />}
                   onClick={() => setConfirmDelete(item)}
                 >
                   {t("store.uninstall")}

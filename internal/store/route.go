@@ -10,6 +10,16 @@ import (
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
+// sqlExecutor is the subset of *sql.DB and *sql.Tx used by store helpers.
+// Helpers written against it run either standalone or inside a caller-owned
+// transaction, which is what lets unification mutate routes, members and its
+// own change log atomically.
+type sqlExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // RouteStore provides CRUD operations for routes.
 type RouteStore struct {
 	db *sql.DB
@@ -148,22 +158,71 @@ func (s *RouteStore) GetByID(id int64) (*domain.Route, error) {
 
 // GetByModel returns the best enabled route for the given model (exact, then wildcard).
 func (s *RouteStore) GetByModel(model string) (*domain.Route, error) {
-	row := s.db.QueryRow(`SELECT `+routeSelectColumns+` FROM routes WHERE model_pattern = ? AND enabled = 1 LIMIT 1`, model)
-	var exact domain.Route
-	if err := scanRoute(row, &exact); err == nil {
-		return &exact, nil
-	} else if err != sql.ErrNoRows {
-		return nil, fmt.Errorf("route by model: %w", err)
+	exact, err := getExactRoute(s.db, model, true)
+	if err != nil {
+		return nil, err
+	}
+	if exact != nil {
+		return exact, nil
 	}
 	return findBestWildcardRoute(s.db, model)
 }
 
+// GetByModelAny looks up an exact route regardless of its enabled state.
+// Anything that must not create a second row for a name that already exists
+// needs this: a disabled route is invisible to GetByModel, so creating
+// "because it is missing" would leave two rows with the same model_pattern and
+// make ListEnabledPatterns return duplicates.
+func (s *RouteStore) GetByModelAny(model string) (*domain.Route, error) {
+	return getExactRoute(s.db, model, false)
+}
+
+// GetByModelAnyTx is the transactional form of GetByModelAny.
+func (s *RouteStore) GetByModelAnyTx(tx *sql.Tx, model string) (*domain.Route, error) {
+	return getExactRoute(tx, model, false)
+}
+
+func getExactRoute(ex sqlExecutor, model string, onlyEnabled bool) (*domain.Route, error) {
+	query := `SELECT ` + routeSelectColumns + ` FROM routes WHERE model_pattern = ?`
+	if onlyEnabled {
+		query += ` AND enabled = 1`
+	}
+	var r domain.Route
+	if err := scanRoute(ex.QueryRow(query+` LIMIT 1`, model), &r); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("route by model: %w", err)
+	}
+	return &r, nil
+}
+
 func (s *RouteStore) Create(r *domain.Route) (int64, error) {
+	return createRoute(s.db, r)
+}
+
+// CreateTx is Create inside a caller-owned transaction.
+func (s *RouteStore) CreateTx(tx *sql.Tx, r *domain.Route) (int64, error) {
+	return createRoute(tx, r)
+}
+
+// SetEnabledTx flips a route's enabled flag inside a caller-owned transaction.
+// Archiving — rather than deleting — is how unification retires a superseded
+// name: the row, its members and every model-level override survive, so
+// restoring is a single flag flip instead of a rebuild.
+func (s *RouteStore) SetEnabledTx(tx *sql.Tx, id int64, enabled bool) error {
+	if _, err := tx.Exec(`UPDATE routes SET enabled = ?, updated_at = datetime('now') WHERE id = ?`, boolInt(enabled), id); err != nil {
+		return fmt.Errorf("route set enabled: %w", err)
+	}
+	return nil
+}
+
+func createRoute(ex sqlExecutor, r *domain.Route) (int64, error) {
 	enabled := 0
 	if r.Enabled {
 		enabled = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, max_reasoning_effort, max_concurrent, proxy_url, header_override, system_prompt, retry_config, payload_rules, stable_first, stable_first_denominator, stable_first_promote_requests, stable_first_requests, model_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := ex.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, max_reasoning_effort, max_concurrent, proxy_url, header_override, system_prompt, retry_config, payload_rules, stable_first, stable_first_denominator, stable_first_promote_requests, stable_first_requests, model_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt64Ptr(r.SingleMemberID), nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), nullableString(r.MaxReasoningEffort), nullableInt(r.MaxConcurrent), nullableString(r.ProxyURL), nullableString(r.HeaderOverride), nullableString(r.SystemPrompt), nullableString(r.RetryConfig), nullableString(r.PayloadRules), nullableBool(r.StableFirst), nullableInt(r.StableFirstDenominator), nullableInt(r.StableFirstPromoteRequests), r.StableFirstRequests, strings.TrimSpace(r.ModelGroup))
 	if err != nil {
 		return 0, fmt.Errorf("route create: %w", err)
@@ -185,8 +244,22 @@ func (s *RouteStore) Update(r *domain.Route) error {
 }
 
 func (s *RouteStore) Delete(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM routes WHERE id = ?`, id)
-	if err != nil {
+	return deleteRoute(s.db, id)
+}
+
+// DeleteTx is Delete inside a caller-owned transaction. The route_members
+// foreign key is ON DELETE CASCADE and foreign_keys is on, so members go with
+// the route; the explicit delete below keeps the behaviour identical if the
+// pragma is ever off.
+func (s *RouteStore) DeleteTx(tx *sql.Tx, id int64) error {
+	if _, err := tx.Exec(`DELETE FROM route_members WHERE route_id = ?`, id); err != nil {
+		return fmt.Errorf("route delete members: %w", err)
+	}
+	return deleteRoute(tx, id)
+}
+
+func deleteRoute(ex sqlExecutor, id int64) error {
+	if _, err := ex.Exec(`DELETE FROM routes WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("route delete: %w", err)
 	}
 	return nil
@@ -220,7 +293,7 @@ func (s *RouteStore) RecordGraySuccess(id int64, threshold int) (promoted bool, 
 func scanRouteMember(scanner interface {
 	Scan(dest ...any) error
 }, r *domain.RouteMember) error {
-	var enabled, auto, manual int
+	var enabled, auto, manual, autoDisabled int
 	if err := scanner.Scan(
 		&r.ID,
 		&r.RouteID,
@@ -230,6 +303,7 @@ func scanRouteMember(scanner interface {
 		&enabled,
 		&auto,
 		&manual,
+		&autoDisabled,
 		&r.MappingJSON,
 		&r.FailCount,
 		scanNullTime(&r.CooldownUntil),
@@ -242,6 +316,7 @@ func scanRouteMember(scanner interface {
 	r.Enabled = enabled != 0
 	r.Auto = auto != 0
 	r.ManualOverride = manual != 0
+	r.AutoDisabled = autoDisabled != 0
 	return nil
 }
 
@@ -249,7 +324,17 @@ func (s *RouteMemberStore) ListByRoute(routeID int64) ([]domain.RouteMember, err
 	if err := s.RecoverExpired(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
+	return listRouteMembers(s.db, routeID)
+}
+
+// ListByRouteTx lists members inside a caller-owned transaction. It skips the
+// expiry sweep ListByRoute does, since that would need a second connection.
+func (s *RouteMemberStore) ListByRouteTx(tx *sql.Tx, routeID int64) ([]domain.RouteMember, error) {
+	return listRouteMembers(tx, routeID)
+}
+
+func listRouteMembers(ex sqlExecutor, routeID int64) ([]domain.RouteMember, error) {
+	rows, err := ex.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
 	if err != nil {
 		return nil, fmt.Errorf("route member list: %w", err)
 	}
@@ -289,7 +374,7 @@ func (s *RouteMemberStore) ListRouteOverviews() ([]domain.RouteOverview, error) 
 func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.RoutingCandidate, error) {
 	routeID := route.ID
 	rows, err := s.db.Query(`SELECT
-			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
+			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
 			rm.mapping_json, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
@@ -316,10 +401,10 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 	var result []domain.RoutingCandidate
 	for rows.Next() {
 		var candidate domain.RoutingCandidate
-		var enabled, auto, manual, credentialUsable, stableFirst int
+		var enabled, auto, manual, autoDisabled, credentialUsable, stableFirst int
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
-			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual,
+			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
 			&candidate.Member.MappingJSON, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
@@ -341,6 +426,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 		candidate.Member.Enabled = enabled != 0
 		candidate.Member.Auto = auto != 0
 		candidate.Member.ManualOverride = manual != 0
+		candidate.Member.AutoDisabled = autoDisabled != 0
 		candidate.CredentialUsable = credentialUsable != 0
 		candidate.Channel.StableFirst = stableFirst != 0
 		applyRouteModelOverrides(&candidate.Channel, route)
@@ -404,7 +490,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		}
 	}
 	rows, err := s.db.Query(`SELECT
-		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override,
+		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
 		rm.mapping_json, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
@@ -434,10 +520,10 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 	var result []domain.RoutingCandidate
 	for rows.Next() {
 		var candidate domain.RoutingCandidate
-		var enabled, auto, manual, credentialUsable, stableFirst int
+		var enabled, auto, manual, autoDisabled, credentialUsable, stableFirst int
 		if err := rows.Scan(
 			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
-			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual,
+			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
 			&candidate.Member.MappingJSON, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
@@ -459,6 +545,7 @@ func (s *RouteMemberStore) RoutingCandidates(model string) (*domain.Route, []dom
 		candidate.Member.Enabled = enabled != 0
 		candidate.Member.Auto = auto != 0
 		candidate.Member.ManualOverride = manual != 0
+		candidate.Member.AutoDisabled = autoDisabled != 0
 		candidate.CredentialUsable = credentialUsable != 0
 		candidate.Channel.StableFirst = stableFirst != 0
 		applyRouteModelOverrides(&candidate.Channel, route)
@@ -548,7 +635,7 @@ func (s *RouteMemberStore) RecoverExpired() error {
 }
 
 func (s *RouteMemberStore) GetByID(id int64) (*domain.RouteMember, error) {
-	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE id = ?`, id)
 	var r domain.RouteMember
 	if err := scanRouteMember(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -560,8 +647,17 @@ func (s *RouteMemberStore) GetByID(id int64) (*domain.RouteMember, error) {
 }
 
 func (s *RouteMemberStore) Create(r *domain.RouteMember) (int64, error) {
+	return createRouteMember(s.db, r)
+}
+
+// CreateTx is Create inside a caller-owned transaction.
+func (s *RouteMemberStore) CreateTx(tx *sql.Tx, r *domain.RouteMember) (int64, error) {
+	return createRouteMember(tx, r)
+}
+
+func createRouteMember(ex sqlExecutor, r *domain.RouteMember) (int64, error) {
 	enabled, auto, manual := boolInt(r.Enabled), boolInt(r.Auto), boolInt(r.ManualOverride)
-	res, err := s.db.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON)
 	if err != nil {
 		return 0, fmt.Errorf("route member create: %w", err)
@@ -583,14 +679,98 @@ func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
 	return nil
 }
 
+// AutoDisableByPair disables every enabled member that serves this model on
+// this channel and marks it auto-disabled, so recovery can later tell a member
+// the probe turned off from one an operator turned off by hand.
+//
+// Members pinned as a route's single_member_id are skipped: taking one of those
+// away would leave the model with no route at all, and a preventive system
+// should not be able to make a model completely unavailable.
+//
+// It returns the number of members disabled.
+func (s *RouteMemberStore) AutoDisableByPair(channelID int64, model, reason string) (int, error) {
+	res, err := s.db.Exec(`UPDATE route_members SET enabled = 0, auto_disabled = 1,
+			last_error = ?, updated_at = datetime('now')
+		WHERE channel_id = ? AND enabled = 1
+			AND id NOT IN (SELECT single_member_id FROM routes WHERE single_member_id IS NOT NULL)
+			AND route_id IN (SELECT id FROM routes WHERE model_pattern = ? AND enabled = 1)`,
+		reason, channelID, model)
+	if err != nil {
+		return 0, fmt.Errorf("route member auto disable: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("route member auto disable rows: %w", err)
+	}
+	return int(affected), nil
+}
+
+// AutoRecoverByPair re-enables members a probe previously disabled. The
+// auto_disabled guard is what keeps this from resurrecting a member an
+// operator disabled on purpose.
+//
+// It returns the number of members re-enabled.
+func (s *RouteMemberStore) AutoRecoverByPair(channelID int64, model string) (int, error) {
+	res, err := s.db.Exec(`UPDATE route_members SET enabled = 1, auto_disabled = 0,
+			last_error = '', updated_at = datetime('now')
+		WHERE channel_id = ? AND enabled = 0 AND auto_disabled = 1
+			AND route_id IN (SELECT id FROM routes WHERE model_pattern = ? AND enabled = 1)`,
+		channelID, model)
+	if err != nil {
+		return 0, fmt.Errorf("route member auto recover: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("route member auto recover rows: %w", err)
+	}
+	return int(affected), nil
+}
+
+// ApplyManualIntent records what an operator just did to a member, so the
+// flag state matches their decision rather than whatever the probe last left
+// behind. Enabling overrides the probe's negative verdict; disabling resets
+// the health fields, keeping the channel-recovery invariant that a manually
+// disabled member carries no fail_count mark and is therefore never
+// resurrected by an automatic recovery.
+func (s *RouteMemberStore) ApplyManualIntent(id int64, enabled bool) error {
+	if enabled {
+		if _, err := s.db.Exec(`UPDATE route_members SET auto_disabled = 0, updated_at = datetime('now') WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("route member manual enable: %w", err)
+		}
+		return nil
+	}
+	if _, err := s.db.Exec(`UPDATE route_members SET auto_disabled = 0, fail_count = 0, cooldown_until = NULL, last_error = '', updated_at = datetime('now') WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("route member manual disable: %w", err)
+	}
+	return nil
+}
+
+// CountAutoDisabled reports how many members are currently disabled by
+// probing, for the settings panel to surface as an at-a-glance number.
+func (s *RouteMemberStore) CountAutoDisabled() (int, error) {
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM route_members WHERE auto_disabled = 1`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("route member count auto disabled: %w", err)
+	}
+	return count, nil
+}
+
 func (s *RouteMemberStore) Delete(id int64) error {
+	return deleteRouteMember(s.db, id)
+}
+
+// DeleteTx is Delete inside a caller-owned transaction.
+func (s *RouteMemberStore) DeleteTx(tx *sql.Tx, id int64) error {
+	return deleteRouteMember(tx, id)
+}
+
+func deleteRouteMember(ex sqlExecutor, id int64) error {
 	// Deleting a pinned single-mode member exits that mode: the pin would be
 	// dangling otherwise. auto is the safe fallback (full candidate pool).
-	if _, err := s.db.Exec(`UPDATE routes SET routing_mode='auto', single_member_id=NULL, updated_at=datetime('now') WHERE single_member_id = ?`, id); err != nil {
+	if _, err := ex.Exec(`UPDATE routes SET routing_mode='auto', single_member_id=NULL, updated_at=datetime('now') WHERE single_member_id = ?`, id); err != nil {
 		return fmt.Errorf("route member delete unpin: %w", err)
 	}
-	_, err := s.db.Exec(`DELETE FROM route_members WHERE id = ?`, id)
-	if err != nil {
+	if _, err := ex.Exec(`DELETE FROM route_members WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("route member delete: %w", err)
 	}
 	return nil

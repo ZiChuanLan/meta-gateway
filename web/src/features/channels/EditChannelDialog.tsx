@@ -100,6 +100,7 @@ export function EditChannelDialog({
     header_override?: string;
     system_prompt?: string;
     retry_config?: string;
+    model_sync_mode: "auto" | "manual";
     stable_first?: boolean;
     userToken: string;
     userCookie: string;
@@ -137,6 +138,9 @@ export function EditChannelDialog({
   };
   const [systemPrompt, setSystemPrompt] = useState(value.system_prompt ?? "");
   const [retryConfig, setRetryConfig] = useState(value.retry_config ?? "");
+  const [syncMode, setSyncMode] = useState<"auto" | "manual">(
+    value.model_sync_mode === "auto" ? "auto" : "manual",
+  );
   const [stableFirst, setStableFirst] = useState(value.stable_first ?? false);
   const [userToken, setUserToken] = useState(
     userCredential?.has_secret ? SECRET_MASK : "",
@@ -226,6 +230,7 @@ export function EditChannelDialog({
                 header_override: headerOverride,
                 system_prompt: systemPrompt,
                 retry_config: retryConfig,
+                model_sync_mode: syncMode,
                 stable_first: stableFirst,
                 userToken,
                 userCookie,
@@ -471,6 +476,34 @@ export function EditChannelDialog({
               <ExternalLink size={12} />
               {t("channels.modelsManage")}
             </button>
+          </div>
+          <div className="sync-mode-picker" role="radiogroup" aria-label={t("channels.syncMode")}>
+            <label className={`sync-mode-option${syncMode === "auto" ? " is-active" : ""}`}>
+              <input
+                type="radio"
+                name="sync-mode"
+                checked={syncMode === "auto"}
+                disabled={pending}
+                onChange={() => setSyncMode("auto")}
+              />
+              <span>
+                <strong>{t("channels.syncModeAuto")}</strong>
+                <small>{t("channels.syncModeAutoHint")}</small>
+              </span>
+            </label>
+            <label className={`sync-mode-option${syncMode === "manual" ? " is-active" : ""}`}>
+              <input
+                type="radio"
+                name="sync-mode"
+                checked={syncMode === "manual"}
+                disabled={pending}
+                onChange={() => setSyncMode("manual")}
+              />
+              <span>
+                <strong>{t("channels.syncModeManual")}</strong>
+                <small>{t("channels.syncModeManualHint")}</small>
+              </span>
+            </label>
           </div>
           {discovered.isLoading ? (
             <p className="detail-section-empty is-quiet">

@@ -26,7 +26,6 @@ type ReconcileInput struct {
 type ReconcileResult struct {
 	CreatedRoutes  int `json:"created_routes"`
 	CreatedMembers int `json:"created_members"`
-	EnabledMembers int `json:"enabled_members"`
 	DeletedMembers int `json:"deleted_members"`
 	DeletedRoutes  int `json:"deleted_routes"`
 }
@@ -70,7 +69,8 @@ func (s *DiscoveredModelStore) Reconcile(ctx context.Context, input ReconcileInp
 	}()
 
 	var priority, weight int
-	if err = tx.QueryRowContext(ctx, `SELECT priority, weight FROM channels WHERE id = ?`, input.ChannelID).Scan(&priority, &weight); err != nil {
+	var syncMode string
+	if err = tx.QueryRowContext(ctx, `SELECT priority, weight, model_sync_mode FROM channels WHERE id = ?`, input.ChannelID).Scan(&priority, &weight, &syncMode); err != nil {
 		return result, fmt.Errorf("discovery reconcile channel: %w", err)
 	}
 
@@ -109,6 +109,12 @@ func (s *DiscoveredModelStore) Reconcile(ctx context.Context, input ReconcileInp
 	current := make(map[string]struct{}, len(input.Models))
 	for _, model := range input.Models {
 		current[model] = struct{}{}
+		// Manual-sync channels keep the snapshot as the adoption candidate
+		// list only: routes/members are created on demand from the channel
+		// models panel. Auto-sync channels adopt every probed model.
+		if domain.NormalizeModelSyncMode(syncMode) != domain.ModelSyncModeAuto {
+			continue
+		}
 		var routeID int64
 		err = tx.QueryRowContext(ctx, `SELECT id FROM routes WHERE model_pattern = ?`, model).Scan(&routeID)
 		if err == sql.ErrNoRows {
@@ -127,8 +133,7 @@ func (s *DiscoveredModelStore) Reconcile(ctx context.Context, input ReconcileInp
 		}
 
 		var memberID int64
-		var enabled, auto, manualOverride int
-		err = tx.QueryRowContext(ctx, `SELECT id, enabled, auto, manual_override FROM route_members WHERE route_id = ? AND channel_id = ?`, routeID, input.ChannelID).Scan(&memberID, &enabled, &auto, &manualOverride)
+		err = tx.QueryRowContext(ctx, `SELECT id FROM route_members WHERE route_id = ? AND channel_id = ?`, routeID, input.ChannelID).Scan(&memberID)
 		if err == sql.ErrNoRows {
 			_, err = tx.ExecContext(ctx, `INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override) VALUES (?, ?, ?, ?, 1, 1, 0)`, routeID, input.ChannelID, priority, weight)
 			if err != nil {
@@ -137,12 +142,10 @@ func (s *DiscoveredModelStore) Reconcile(ctx context.Context, input ReconcileInp
 			result.CreatedMembers++
 		} else if err != nil {
 			return result, fmt.Errorf("discovery reconcile member: %w", err)
-		} else if enabled == 0 && auto != 0 && manualOverride == 0 {
-			if _, err = tx.ExecContext(ctx, `UPDATE route_members SET enabled = 1, updated_at = datetime('now') WHERE id = ?`, memberID); err != nil {
-				return result, fmt.Errorf("discovery reconcile enable member: %w", err)
-			}
-			result.EnabledMembers++
 		}
+		// An existing member's enabled flag is left alone: whether a member is
+		// off belongs to the operator (or the probe that disabled it), not to a
+		// snapshot refresh. Reconcile only creates and removes members.
 	}
 
 	for _, model := range oldModels {

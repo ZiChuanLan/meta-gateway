@@ -204,6 +204,13 @@ func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request)
 		writeStoreError(w, err)
 		return
 	}
+	// The PUT came from an operator action, so record the intent: this is what
+	// keeps a probe-disabled flag from surviving a manual toggle and a manual
+	// disable from being resurrected by automatic recovery.
+	if err := h.db.RouteMember.ApplyManualIntent(id, rm.Enabled); err != nil {
+		writeStoreError(w, err)
+		return
+	}
 	updated, err := h.db.RouteMember.GetByID(id)
 	if err != nil {
 		writeStoreError(w, err)

@@ -41,7 +41,11 @@ export function IconButton({
   children,
   className,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  // React 19 passes ref as a regular prop; callers anchor popovers to it.
+  ref?: React.Ref<HTMLButtonElement>;
+}) {
   return (
     <button
       className={["icon-button", className].filter(Boolean).join(" ")}
@@ -64,7 +68,7 @@ export function Page({
   title: string;
   description: string;
   actions?: ReactNode;
-  /** Small brand label above the title (ops console continuity). */
+  /** @deprecated Kicker eyebrows are banned on this surface; kept for call-site compat. */
   kicker?: string;
   children: ReactNode;
 }) {
@@ -72,7 +76,6 @@ export function Page({
     <main className="page">
       <header className="page-header">
         <div className="page-heading">
-          {kicker ? <p className="page-kicker">{kicker}</p> : null}
           <h1>{title}</h1>
           <p>{description}</p>
         </div>

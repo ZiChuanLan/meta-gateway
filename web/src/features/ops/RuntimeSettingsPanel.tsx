@@ -36,19 +36,43 @@ function numberOr(value: string, fallback: number) {
 }
 
 /** Panel-level anchor order for the runtime settings section nav. */
-const RUNTIME_SECTION_ANCHORS = [
-  ["relay", "ops.runtime.section.relay"],
-  ["cooldown", "ops.runtime.section.cooldown"],
-  ["health", "ops.runtime.section.healthSweep"],
-  ["sticky", "ops.runtime.section.sticky"],
-  ["checkin", "ops.runtime.section.checkin"],
-  ["limits", "ops.runtime.section.limits"],
-  ["audit", "ops.runtime.section.audit"],
-  ["routing", "ops.runtime.section.routing"],
-  ["stableFirst", "ops.runtime.section.stableFirst"],
-  ["maintenance", "ops.runtime.section.maintenance"],
-  ["alerts", "ops.runtime.section.alerts"],
-  ["server", "ops.runtime.section.server"],
+const RUNTIME_SECTION_GROUPS = [
+  {
+    key: "routing",
+    label: "ops.runtime.navGroup.routing",
+    anchors: [
+      ["relay", "ops.runtime.section.relay"],
+      ["routing", "ops.runtime.section.routing"],
+      ["stableFirst", "ops.runtime.section.stableFirst"],
+      ["sticky", "ops.runtime.section.sticky"],
+    ],
+  },
+  {
+    key: "health",
+    label: "ops.runtime.navGroup.health",
+    anchors: [
+      ["cooldown", "ops.runtime.section.cooldown"],
+      ["health", "ops.runtime.section.healthSweep"],
+      ["checkin", "ops.runtime.section.checkin"],
+    ],
+  },
+  {
+    key: "governance",
+    label: "ops.runtime.navGroup.governance",
+    anchors: [
+      ["limits", "ops.runtime.section.limits"],
+      ["audit", "ops.runtime.section.audit"],
+      ["server", "ops.runtime.section.server"],
+    ],
+  },
+  {
+    key: "ops",
+    label: "ops.runtime.navGroup.ops",
+    anchors: [
+      ["alerts", "ops.runtime.section.alerts"],
+      ["maintenance", "ops.runtime.section.maintenance"],
+    ],
+  },
 ] as const;
 
 function SettingLabel({ label, hint }: { label: string; hint: string }) {
@@ -235,18 +259,23 @@ export function RuntimeSettingsPanel() {
         className="runtime-section-nav"
         aria-label={t("ops.runtime.sectionNav")}
       >
-        {RUNTIME_SECTION_ANCHORS.map(([key, i18nKey]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() =>
-              document
-                .getElementById(`runtime-${key}`)
-                ?.scrollIntoView({ behavior: "smooth", block: "start" })
-            }
-          >
-            {t(i18nKey)}
-          </button>
+        {RUNTIME_SECTION_GROUPS.map((group) => (
+          <div key={group.key} className="runtime-nav-group">
+            <span className="runtime-nav-group-label">{t(group.label)}</span>
+            {group.anchors.map(([key, i18nKey]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById(`runtime-${key}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+              >
+                {t(i18nKey)}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <RuntimeSettingsColumns>
@@ -1020,6 +1049,87 @@ export function RuntimeSettingsPanel() {
               disabled={busy}
               value={draft.db_gc_cron ?? ""}
               onChange={(e) => patch("db_gc_cron", e.target.value)}
+            />
+          </label>
+        </Panel>
+
+        <Panel className="runtime-card runtime-card-probe" id="runtime-probe">
+          <div className="panel-header">
+            <strong>{t("ops.runtime.section.probe")}</strong>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            {t("ops.runtime.probeIntro")}
+          </p>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.probeCron")}
+              hint={t("ops.runtime.probeCronHint")}
+            />
+            <input
+              type="text"
+              placeholder="0 */6 * * *"
+              disabled={busy}
+              value={draft.probe_cron ?? ""}
+              onChange={(e) => patch("probe_cron", e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.probePrompt")}
+              hint={t("ops.runtime.probePromptHint")}
+            />
+            <input
+              type="text"
+              placeholder="hi"
+              disabled={busy}
+              value={draft.probe_prompt ?? ""}
+              onChange={(e) => patch("probe_prompt", e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.probeMaxTokens")}
+              hint={t("ops.runtime.probeMaxTokensHint")}
+            />
+            <input
+              type="number"
+              min={1}
+              max={256}
+              disabled={busy}
+              value={draft.probe_max_tokens ?? 1}
+              onChange={(e) => patch("probe_max_tokens", Number(e.target.value))}
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.probeConcurrency")}
+              hint={t("ops.runtime.probeConcurrencyHint")}
+            />
+            <input
+              type="number"
+              min={1}
+              max={16}
+              disabled={busy}
+              value={draft.probe_concurrency ?? 4}
+              onChange={(e) =>
+                patch("probe_concurrency", Number(e.target.value))
+              }
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.probeAutoDisable")}
+              hint={t("ops.runtime.probeAutoDisableHint")}
+            />
+            <input
+              type="number"
+              min={0}
+              max={10}
+              disabled={busy}
+              value={draft.probe_auto_disable ?? 0}
+              onChange={(e) =>
+                patch("probe_auto_disable", Number(e.target.value))
+              }
             />
           </label>
         </Panel>

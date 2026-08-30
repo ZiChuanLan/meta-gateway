@@ -26,7 +26,7 @@ import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
 import { ResultStrip } from "../components/ResultStrip";
-import { StatGrid } from "../components/StatGrid";
+import { TelemetryStrip } from "../components/TelemetryStrip";
 import {
   Button,
   ConfirmDialog,
@@ -356,6 +356,7 @@ export function Channels() {
       header_override?: string;
       system_prompt?: string;
       retry_config?: string;
+      model_sync_mode?: "auto" | "manual";
       stable_first?: boolean;
       userToken: string;
       userCookie: string;
@@ -499,6 +500,7 @@ export function Channels() {
         header_override: input.header_override ?? "",
         system_prompt: input.system_prompt ?? "",
         retry_config: input.retry_config ?? "",
+        model_sync_mode: input.model_sync_mode,
         stable_first: input.stable_first ?? false,
         site_id: siteId,
         credential_id: relayCredentialId,
@@ -1067,8 +1069,7 @@ export function Channels() {
       }
     >
       <div className="ops-canvas">
-        <StatGrid
-          columns={4}
+        <TelemetryStrip
           items={[
             {
               label: t("channels.stat.total"),
@@ -1076,6 +1077,7 @@ export function Channels() {
               onClick: () => setHealthFilter("all"),
               active: healthFilter === "all",
               hint: t("channels.stat.totalHint"),
+              tone: "primary",
             },
             {
               label: t("channels.stat.ready"),
@@ -1083,6 +1085,7 @@ export function Channels() {
               onClick: () => toggleHealthFilter("ready"),
               active: healthFilter === "ready",
               hint: t("channels.stat.readyHint"),
+              tone: "success",
             },
             {
               label: t("channels.stat.missingKey"),
@@ -1090,6 +1093,7 @@ export function Channels() {
               onClick: () => toggleHealthFilter("missing_key"),
               active: healthFilter === "missing_key",
               hint: t("channels.stat.missingKeyHint"),
+              tone: "warning",
             },
             {
               label: t("channels.stat.attention"),
@@ -1097,6 +1101,7 @@ export function Channels() {
               onClick: () => toggleHealthFilter("attention"),
               active: healthFilter === "attention",
               hint: t("channels.stat.attentionHint"),
+              tone: "danger",
             },
           ]}
         />

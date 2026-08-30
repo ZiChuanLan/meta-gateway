@@ -49,6 +49,17 @@ import type {
   RuntimeEditableSettings,
   RuntimeSettings,
   Site,
+  UnifyApplyResult,
+  UnifyGroup,
+  UnifyPreview,
+  UnifyBatch,
+  UnifyOp,
+  UnifyRule,
+  ArchivedRoute,
+  ProbeTask,
+  ModelProbeResult,
+  ModelHealth,
+  ProbeStartRequest,
 } from "./types";
 
 export class ApiError extends Error {
@@ -399,6 +410,57 @@ export const api = (client: ApiClient) => ({
         source: "models_csv" | "discovered";
       }>;
     }>("/admin/discovery/missing-models", signal),
+  // Omitting rules asks the server for every rule, which yields the simplest
+  // canonical form; groups that then need a risky rule come back flagged.
+  unifyPreview: (rules?: UnifyRule[]) =>
+    client.post<UnifyPreview>("/admin/models/unify/preview", { rules }),
+  // Model probing. A probe is a real upstream call with a tiny max_tokens,
+  // so it is always an explicit, cancellable task.
+  probeStart: (request: ProbeStartRequest) =>
+    client.post<ProbeTask>("/admin/probes", request),
+  probeTasks: () => client.get<ProbeTask[]>("/admin/probes"),
+  probeTask: (id: number, signal?: AbortSignal) =>
+    client.get<ProbeTask>(`/admin/probes/${id}`, signal),
+  probeResults: (id: number, signal?: AbortSignal) =>
+    client.get<ModelProbeResult[]>(`/admin/probes/${id}/results`, signal),
+  probeCancel: (id: number) =>
+    client.post<{ status: string }>(`/admin/probes/${id}/cancel`, {}),
+  modelHealth: (signal?: AbortSignal) =>
+    client.get<ModelHealth[]>("/admin/model-health", signal),
+  unifyApply: (groups: UnifyGroup[], archiveOriginals = true) =>
+    client.post<UnifyApplyResult>("/admin/models/unify/apply", {
+      // Hiding the originals is what actually unifies a name; the server
+      // archives only routes the group provably covers.
+      archive_originals: archiveOriginals,
+      // Mapped variants already reach the canonical name — drop them so a
+      // stale preview never creates duplicate members. A group where every
+      // variant is mapped is skipped entirely, which also means it archives
+      // nothing (it was already archived on the first pass).
+      groups: groups
+        .map((group) => ({
+          canonical: group.canonical,
+          variants: group.variants
+            .filter((variant) => !variant.mapped)
+            .map((variant) => ({
+              channel_id: variant.channel_id,
+              model_name: variant.model_name,
+            })),
+        }))
+        .filter((group) => group.variants.length > 0),
+    }),
+  unifyBatches: (signal?: AbortSignal) =>
+    client.get<{
+      batches: UnifyBatch[];
+      archived: ArchivedRoute[];
+    }>("/admin/models/unify/batches", signal),
+  unifyBatchOps: (id: number, signal?: AbortSignal) =>
+    client.get<UnifyOp[]>(`/admin/models/unify/batches/${id}/ops`, signal),
+  unifyUndo: (id: number) =>
+    client.post<{ status: string }>(`/admin/models/unify/batches/${id}/undo`),
+  unifyRestoreRoute: (id: number) =>
+    client.post<{ status: string }>(
+      `/admin/models/unify/archived/${id}/restore`,
+    ),
   probeChannel: (id: number) =>
     client.post<ProbeResult>(`/admin/discovery/channels/${id}/probe`),
   tryChat: (body: {

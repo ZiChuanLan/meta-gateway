@@ -117,6 +117,15 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Post("/route-members/{id}/clear-health", h.clearRouteMemberHealth)
 	r.Delete("/route-members/{id}", h.deleteRouteMember)
 
+	// Model-name unification assistant
+	r.Post("/models/unify/preview", h.unifyPreview)
+	r.Post("/models/unify/apply", h.unifyApply)
+	r.Get("/models/unify/batches", h.unifyBatches)
+	r.Get("/models/unify/batches/{id}/ops", h.unifyBatchOps)
+	r.Post("/models/unify/batches/{id}/undo", h.unifyUndo)
+	// Bring a single archived original back without discarding the alias.
+	r.Post("/models/unify/archived/{id}/restore", h.unifyRestoreRoute)
+
 	// Downstream keys
 	r.Get("/downstream-keys", h.listDownstreamKeys)
 	r.Post("/downstream-keys", h.createDownstreamKey)

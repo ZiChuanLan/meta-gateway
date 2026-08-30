@@ -251,6 +251,7 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		HeaderOverride     *string `json:"header_override"`
 		SystemPrompt       *string `json:"system_prompt"`
 		RetryConfig        *string `json:"retry_config"`
+		ModelSyncMode      *string `json:"model_sync_mode"`
 		StableFirst        *bool   `json:"stable_first"`
 	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
@@ -352,6 +353,16 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if patch.RetryConfig != nil {
 		ch.RetryConfig = strings.TrimSpace(*patch.RetryConfig)
 	}
+	// Model sync mode: only auto/manual are accepted; a missing field
+	// preserves the stored mode.
+	if patch.ModelSyncMode != nil {
+		mode := strings.ToLower(strings.TrimSpace(*patch.ModelSyncMode))
+		if mode != domain.ModelSyncModeAuto && mode != domain.ModelSyncModeManual {
+			writeError(w, http.StatusBadRequest, "model_sync_mode must be auto or manual")
+			return
+		}
+		ch.ModelSyncMode = mode
+	}
 	// StableFirst: a missing field preserves the current grayscale state.
 	if patch.StableFirst != nil {
 		ch.StableFirst = *patch.StableFirst
@@ -433,6 +444,9 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	}
 	if ch.Status != domain.StatusEnabled && ch.Status != domain.StatusDisabled {
 		return errors.New("invalid channel status")
+	}
+	if ch.ModelSyncMode != "" && ch.ModelSyncMode != domain.ModelSyncModeAuto && ch.ModelSyncMode != domain.ModelSyncModeManual {
+		return errors.New("invalid model_sync_mode")
 	}
 	if ch.PayloadRules == "[]" {
 		ch.PayloadRules = ""

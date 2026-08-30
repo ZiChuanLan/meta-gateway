@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   Activity,
   ArrowLeft,
-  ArrowRight,
   Boxes,
   Check,
   CheckCircle2,
@@ -14,8 +13,6 @@ import {
   Cpu,
   Database,
   HeartPulse,
-  KeyRound,
-  Plug,
   ScrollText,
   TrendingUp,
   Wallet,
@@ -25,7 +22,7 @@ import { api } from "../api/client";
 import type { ProxyLog, UsageRecord } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import { StatGrid } from "../components/StatGrid";
+import { TelemetrySecondary, TelemetryStrip } from "../components/TelemetryStrip";
 import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
 import { formatCost, formatTokens } from "../lib/format";
@@ -81,11 +78,14 @@ function EndpointStrip() {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      // Clipboard unavailable (e.g. insecure context); leave as-is.
+      // Clipboard unavailable
     }
   };
   return (
     <div className="endpoint-strip">
+      <span className="endpoint-mono" aria-hidden="true">
+        POST
+      </span>
       <span
         className={`endpoint-dot${ready.data === true ? " is-healthy" : ""}`}
       />
@@ -164,7 +164,6 @@ function ResultDistribution({
   );
 }
 
-
 export function Dashboard() {
   const { client } = useSession();
   const s = api(client!);
@@ -196,8 +195,8 @@ export function Dashboard() {
     refetchInterval: 30_000,
   });
   const logs = useQuery({
-    queryKey: ["proxy-logs", { limit: 5 }],
-    queryFn: ({ signal }) => s.proxyLogs({ limit: 5 }, signal),
+    queryKey: ["proxy-logs", { limit: 6 }],
+    queryFn: ({ signal }) => s.proxyLogs({ limit: 6 }, signal),
     refetchInterval: 15_000,
   });
 
@@ -240,82 +239,61 @@ export function Dashboard() {
       const index = Math.floor(
         (new Date(row.created_at).getTime() - firstStart) / 3600_000,
       );
-      const bucket = buckets[index];
-      if (!bucket) continue;
-      bucket.req += 1;
-      bucket.tok += row.total_tokens ?? 0;
-      bucket.cacheRead += row.cache_read_tokens ?? 0;
-      bucket.cacheWrite += row.cache_creation_tokens ?? 0;
+      if (index >= 0 && index < n) {
+        buckets[index]!.req += 1;
+        buckets[index]!.tok += row.total_tokens ?? 0;
+        buckets[index]!.cacheRead += row.cache_read_tokens ?? 0;
+        buckets[index]!.cacheWrite += row.cache_creation_tokens ?? 0;
+      }
     }
-    const labels = starts.map((start) => {
-      const d = new Date(start);
-      const hh = `${String(d.getHours()).padStart(2, "0")}:00`;
-      return n > 24 ? `${d.getMonth() + 1}/${d.getDate()} ${hh}` : hh;
-    });
     return {
       requests: buckets.map((b) => b.req),
       tokens: buckets.map((b) => b.tok),
-      cacheReads: buckets.map((b) => b.cacheRead),
-      cacheWrites: buckets.map((b) => b.cacheWrite),
-      labels,
+      cacheRead: buckets.map((b) => b.cacheRead),
+      cacheWrite: buckets.map((b) => b.cacheWrite),
+      labels: starts.map((ms) => {
+        const d = new Date(ms);
+        return `${String(d.getHours()).padStart(2, "0")}:00`;
+      }),
       starts,
     };
   }, [usage.data, now, windowHours]);
 
-  /** Ten-minute buckets inside the selected hour. */
+  /** Detailed minute buckets for the selected hour. */
   const detail = useMemo(() => {
     if (selectedHour == null) return null;
-    const start = hourly.starts[selectedHour];
-    if (start == null) return null;
-    const interval = 10 * 60_000;
-    const buckets = Array.from({ length: 6 }, () => ({
-      req: 0,
-      tok: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    }));
+    const hourStart = hourly.starts[selectedHour];
+    if (hourStart == null) return null;
+    const buckets = Array.from({ length: 12 }, () => ({ req: 0, tok: 0 }));
     for (const row of usage.data ?? []) {
-      const index = Math.floor(
-        (new Date(row.created_at).getTime() - start) / interval,
-      );
-      const bucket = buckets[index];
-      if (!bucket) continue;
-      bucket.req += 1;
-      bucket.tok += row.total_tokens ?? 0;
-      bucket.cacheRead += row.cache_read_tokens ?? 0;
-      bucket.cacheWrite += row.cache_creation_tokens ?? 0;
+      const ms = new Date(row.created_at).getTime();
+      if (ms >= hourStart && ms < hourStart + 3600_000) {
+        const index = Math.floor((ms - hourStart) / (5 * 60_000));
+        if (index >= 0 && index < 12) {
+          buckets[index]!.req += 1;
+          buckets[index]!.tok += row.total_tokens ?? 0;
+        }
+      }
     }
-    const labels = buckets.map((_, i) => {
-      const d = new Date(start + i * interval);
-      return `${String(d.getHours()).padStart(2, "0")}:${String(
-        d.getMinutes(),
-      ).padStart(2, "0")}`;
-    });
     return {
       requests: buckets.map((b) => b.req),
       tokens: buckets.map((b) => b.tok),
-      cacheReads: buckets.map((b) => b.cacheRead),
-      cacheWrites: buckets.map((b) => b.cacheWrite),
-      labels,
-      start,
+      labels: Array.from({ length: 12 }, (_, i) => {
+        const d = new Date(hourStart + i * 5 * 60_000);
+        return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      }),
+      start: hourStart,
     };
-  }, [hourly.starts, selectedHour, usage.data]);
+  }, [selectedHour, hourly.starts, usage.data]);
 
-  /** Requests in the previous 24h window, for the trend badge. */
-  const prev24 = useMemo(() => {
-    const from = now - HOUR_24 * 2;
-    const to = now - HOUR_24;
-    return (usage.data ?? []).filter((row) => {
-      const ms = new Date(row.created_at).getTime();
-      return ms >= from && ms < to;
-    }).length;
-  }, [usage.data, now]);
-
-  const recentTokens = recent.reduce(
-    (sum, row) => sum + (row.total_tokens ?? 0),
-    0,
-  );
-  const recentRequests = recent.length;
+  const recentRequests =
+    recentSummary.data?.request_count ??
+    recent.length;
+  const recentTokens =
+    recentSummary.data?.total_tokens ??
+    recent.reduce((sum, row) => sum + (row.total_tokens ?? 0), 0);
+  const prev24 =
+    (summary.data?.request_count ?? 0) - recentRequests;
   const recentCost =
     recentSummary.data?.cost ??
     recentSummary.data?.estimated_cost ??
@@ -395,7 +373,7 @@ export function Dashboard() {
   }, [recent]);
   const maxModelRequests = Math.max(1, ...topModels.map((m) => m.requests));
 
-  const recentLogs = (logs.data ?? []).slice(0, 5);
+  const recentLogs = logs.data ?? [];
 
   return (
     <Page
@@ -403,129 +381,80 @@ export function Dashboard() {
       title={t("dashboard.title")}
       description={t("dashboard.description")}
     >
-      <div className="stack">
+      <div className="cockpit-stack">
+        {/* 1. 终端接入端点条 (Gateway Endpoint Strip) */}
         <EndpointStrip />
-        {!channels.isPending && channelCounts.total === 0 && (
-          <section className="quickstart">
-            <div className="quickstart-head">
-              <strong>{t("dashboard.quickstart.title")}</strong>
-              <span className="muted">{t("dashboard.quickstart.body")}</span>
-            </div>
-            <ol className="quickstart-steps">
-              <li>
-                <span className="quickstart-step-icon">
-                  <Plug size={16} />
-                </span>
-                <div>
-                  <strong>{t("dashboard.quickstart.step1")}</strong>
-                  <span className="muted">
-                    {t("dashboard.quickstart.step1Desc")}
-                  </span>
-                </div>
-                <Link className="button button-secondary" to="/channels">
-                  {t("dashboard.quickstart.action1")}
-                  <ArrowRight size={14} />
-                </Link>
-              </li>
-              <li>
-                <span className="quickstart-step-icon">
-                  <Boxes size={16} />
-                </span>
-                <div>
-                  <strong>{t("dashboard.quickstart.step2")}</strong>
-                  <span className="muted">
-                    {t("dashboard.quickstart.step2Desc")}
-                  </span>
-                </div>
-                <Link className="button button-secondary" to="/models">
-                  {t("dashboard.quickstart.action2")}
-                  <ArrowRight size={14} />
-                </Link>
-              </li>
-              <li>
-                <span className="quickstart-step-icon">
-                  <KeyRound size={16} />
-                </span>
-                <div>
-                  <strong>{t("dashboard.quickstart.step3")}</strong>
-                  <span className="muted">
-                    {t("dashboard.quickstart.step3Desc")}
-                  </span>
-                </div>
-                <Link className="button button-secondary" to="/keys">
-                  {t("dashboard.quickstart.action3")}
-                  <ArrowRight size={14} />
-                </Link>
-              </li>
-            </ol>
-          </section>
-        )}
-        <StatGrid
-          columns={7}
-          items={[
-            {
-              label: t("dashboard.totalRequests"),
-              value: summary.data?.request_count ?? "—",
-              hint: t("dashboard.totalRequestsHint"),
-              icon: <Activity size={14} />,
-              tone: "primary",
-            },
-            {
-              label: t("dashboard.totalTokens"),
-              value: summary.data
-                ? formatTokens(summary.data.total_tokens)
-                : "—",
-              hint: t("dashboard.totalTokensHint"),
-              icon: <Coins size={14} />,
-              tone: "info",
-            },
-            {
-              label: t("dashboard.recentRequests"),
-              value: summary.isPending ? "—" : recentRequests,
-              hint: t("dashboard.recentRequestsHint"),
-              icon: <ScrollText size={14} />,
-              tone: "success",
-              trend: requestTrend,
-            },
-            {
-              label: t("dashboard.healthyChannels"),
-              value: channels.isPending
-                ? "—"
-                : `${channelCounts.healthy}/${channelCounts.total}`,
-              hint: t("dashboard.healthyChannelsHint"),
-              icon: <HeartPulse size={14} />,
-              tone: healthTone,
-            },
-            {
-              label: t("dashboard.cost24h"),
-              value: recentSummary.isPending ? "—" : formatCost(recentCost),
-              hint: t("dashboard.cost24hHint"),
-              icon: <Wallet size={14} />,
-              tone: "warning",
-            },
-            {
-              label: t("dashboard.successRate"),
-              value:
-                summary.isPending || successRate === null
-                  ? "—"
-                  : `${Math.round(successRate * 100)}%`,
-              hint: t("dashboard.successRateHint"),
-              icon: <CheckCircle2 size={14} />,
-              tone: successTone,
-            },
-            {
-              label: t("dashboard.cacheRead"),
-              value: summary.isPending ? "—" : formatTokens(cacheRead24h),
-              hint: t("dashboard.cacheReadHint"),
-              icon: <Database size={14} />,
-              tone: "info",
-            },
-          ]}
-        />
 
-        <Panel className="dashboard-panel dashboard-chart-panel">
-          <div className="panel-header dashboard-chart-header">
-            <div className="dashboard-chart-title">
+        {/* 2. 一体化遥测读数条 (Instrument Telemetry Band) */}
+        <div className="telemetry-stack">
+          <TelemetryStrip
+            items={[
+              {
+                label: t("dashboard.totalRequests"),
+                value: summary.data?.request_count ?? "—",
+                hint: t("dashboard.totalRequestsHint"),
+                icon: <Activity size={13} />,
+                tone: "primary",
+              },
+              {
+                label: t("dashboard.recentRequests"),
+                value: summary.isPending ? "—" : recentRequests,
+                hint: t("dashboard.recentRequestsHint"),
+                icon: <ScrollText size={13} />,
+                tone: "success",
+                trend: requestTrend,
+              },
+              {
+                label: t("dashboard.healthyChannels"),
+                value: channels.isPending
+                  ? "—"
+                  : `${channelCounts.healthy}/${channelCounts.total}`,
+                hint: t("dashboard.healthyChannelsHint"),
+                icon: <HeartPulse size={13} />,
+                tone: healthTone,
+              },
+              {
+                label: t("dashboard.successRate"),
+                value:
+                  summary.isPending || successRate === null
+                    ? "—"
+                    : `${Math.round(successRate * 100)}%`,
+                hint: t("dashboard.successRateHint"),
+                icon: <CheckCircle2 size={13} />,
+                tone: successTone,
+              },
+            ]}
+          />
+          <TelemetrySecondary
+            items={[
+              {
+                label: t("dashboard.totalTokens"),
+                value: summary.data
+                  ? formatTokens(summary.data.total_tokens)
+                  : "—",
+                hint: t("dashboard.totalTokensHint"),
+                icon: <Coins size={13} />,
+              },
+              {
+                label: t("dashboard.cost24h"),
+                value: recentSummary.isPending ? "—" : formatCost(recentCost),
+                hint: t("dashboard.cost24hHint"),
+                icon: <Wallet size={13} />,
+              },
+              {
+                label: t("dashboard.cacheRead"),
+                value: summary.isPending ? "—" : formatTokens(cacheRead24h),
+                hint: t("dashboard.cacheReadHint"),
+                icon: <Database size={13} />,
+              },
+            ]}
+          />
+        </div>
+
+        {/* 3. 全景流量波形与状态分布监视舱 (Traffic & Result Matrix) */}
+        <Panel className="cockpit-panel cockpit-chart-panel">
+          <div className="panel-header cockpit-chart-header">
+            <div className="cockpit-chart-title">
               {detail ? (
                 <button
                   type="button"
@@ -585,7 +514,7 @@ export function Dashboard() {
             requests={detail?.requests ?? hourly.requests}
             tokens={detail?.tokens ?? hourly.tokens}
             labels={detail?.labels ?? hourly.labels}
-            height={detail ? 218 : 168}
+            height={detail ? 200 : 160}
             labelStep={detail ? 1 : windowHours > 24 ? 8 : 4}
             zoomed={detail != null}
             onSelect={detail ? undefined : setSelectedHour}
@@ -598,11 +527,15 @@ export function Dashboard() {
           />
         </Panel>
 
-        <div className="dashboard-grid dashboard-overview-grid">
-          <Panel className="dashboard-panel dashboard-health">
+        {/* 4. 双轨联动作战区：渠道健康状态阵列 + 实时遥测日志流 */}
+        <div className="cockpit-dual-grid">
+          {/* 左轨：渠道健康雷达点阵 */}
+          <Panel className="cockpit-panel cockpit-health-panel">
             <div className="panel-header">
-              <Boxes size={15} />
-              <strong>{t("dashboard.channelHealth")}</strong>
+              <div className="cockpit-panel-title">
+                <Boxes size={14} />
+                <strong>{t("dashboard.channelHealth")}</strong>
+              </div>
               <span className="panel-muted">
                 {t("dashboard.enabledOf", {
                   n: channelCounts.enabled,
@@ -610,8 +543,8 @@ export function Dashboard() {
                 })}
               </span>
             </div>
-          <ul className="dashboard-list">
-            {(channels.data ?? []).map((c) => {
+            <ul className="cockpit-channel-list">
+              {(channels.data ?? []).map((c) => {
                 const health = channelHealthState(c);
                 const tone =
                   health === "healthy"
@@ -622,18 +555,18 @@ export function Dashboard() {
                         ? "off"
                         : "warn";
                 return (
-                  <li key={c.channel.id}>
-                    <span className={`dot dot-${tone}`} />
+                  <li key={c.channel.id} className={`cockpit-channel-item is-${tone}`}>
                     <Link
-                      className="dashboard-model"
+                      className="cockpit-channel-name"
                       to={`/channels?id=${c.channel.id}`}
+                      title={c.channel.name}
                     >
                       {c.channel.name}
                     </Link>
-                    <span className="dashboard-meta">
+                    <span className="cockpit-channel-meta">
                       {health === "healthy" ? (
                         <span className="badge badge-ok">
-                          <Zap size={11} /> {t("dashboard.ready")}
+                          <Zap size={10} /> {t("dashboard.ready")}
                         </span>
                       ) : health === "disabled" ? (
                         <span className="badge badge-neutral">
@@ -643,7 +576,7 @@ export function Dashboard() {
                         <span
                           className={`badge badge-${health === "unhealthy" ? "danger" : "warn"}`}
                         >
-                          <AlertTriangle size={11} />
+                          <AlertTriangle size={10} />
                           {t(`channels.healthState.${health}`)}
                         </span>
                       )}
@@ -654,10 +587,13 @@ export function Dashboard() {
             </ul>
           </Panel>
 
-          <Panel className="dashboard-panel dashboard-recent-logs">
+          {/* 右轨：最近代理请求流 */}
+          <Panel className="cockpit-panel cockpit-logs-panel">
             <div className="panel-header">
-              <ScrollText size={15} />
-              <strong>{t("dashboard.recentLogs")}</strong>
+              <div className="cockpit-panel-title">
+                <ScrollText size={14} />
+                <strong>{t("dashboard.recentLogs")}</strong>
+              </div>
               <span className="panel-muted">
                 {t("dashboard.cost", { n: recentCost.toFixed(6) })}
               </span>
@@ -665,27 +601,28 @@ export function Dashboard() {
             {recentLogs.length === 0 ? (
               <p className="dashboard-empty">{t("dashboard.noLogs")}</p>
             ) : (
-              <ul className="dashboard-list">
+              <ul className="cockpit-log-list">
                 {recentLogs.map((log: ProxyLog) => {
                   const tone = statusTone(log.status);
                   return (
-                    <li key={log.id}>
+                    <li key={log.id} className="cockpit-log-item">
+                      <span className={`cockpit-log-status is-${tone}`} aria-hidden="true" />
                       <Link
-                        className="dashboard-model"
+                        className="cockpit-log-model"
                         to={`/models?model=${encodeURIComponent(log.model)}`}
                       >
                         {log.model}
                         {log.route_id ? ` #${log.route_id}` : ""}
                       </Link>
-                      <span className="dashboard-meta">
+                      <div className="cockpit-log-right">
                         <span className={`badge badge-${tone}`}>
                           {log.status}
                         </span>
                         <span className="mono-value">{log.latency_ms}ms</span>
-                      </span>
-                      <span className="dashboard-time">
-                        {relativeTime(log.created_at, t)}
-                      </span>
+                        <span className="cockpit-log-time">
+                          {relativeTime(log.created_at, t)}
+                        </span>
+                      </div>
                     </li>
                   );
                 })}
@@ -694,82 +631,83 @@ export function Dashboard() {
           </Panel>
         </div>
 
-        <div className="dashboard-grid dashboard-usage-grid">
-          <Panel className="dashboard-panel dashboard-usage-activity">
-            <div className="panel-header">
-              <TrendingUp size={15} />
+        {/* 5. 模型负载消耗排行与 24h 实时请求分析 */}
+        <Panel className="cockpit-panel cockpit-usage-panel">
+          <div className="panel-header">
+            <div className="cockpit-panel-title">
+              <TrendingUp size={14} />
               <strong>{t("dashboard.topModels")}</strong>
-              <span className="panel-muted">
-                {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
-              </span>
             </div>
-            <div className="dashboard-usage-activity-body">
-              <section className="dashboard-subpanel">
-                {topModels.length === 0 ? (
-                  <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
-                ) : (
-                  <ul className="model-rank">
-                    {topModels.map((m) => (
-                      <li key={m.model}>
-                        <Link
-                          className="model-rank-name"
-                          to={`/models?model=${encodeURIComponent(m.model)}`}
-                          title={m.model}
-                        >
-                          {m.model}
-                        </Link>
-                        <span className="model-rank-track">
-                          <span
-                            className="model-rank-fill"
-                            style={{
-                              width: `${(m.requests / maxModelRequests) * 100}%`,
-                            }}
-                          />
+            <span className="panel-muted">
+              {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
+            </span>
+          </div>
+          <div className="cockpit-usage-body">
+            <div className="cockpit-subcol">
+              {topModels.length === 0 ? (
+                <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
+              ) : (
+                <ul className="model-rank">
+                  {topModels.map((m) => (
+                    <li key={m.model}>
+                      <Link
+                        className="model-rank-name"
+                        to={`/models?model=${encodeURIComponent(m.model)}`}
+                        title={m.model}
+                      >
+                        {m.model}
+                      </Link>
+                      <span className="model-rank-track">
+                        <span
+                          className="model-rank-fill"
+                          style={{
+                            transform: `scaleX(${m.requests / maxModelRequests})`,
+                          }}
+                        />
+                      </span>
+                      <span className="model-rank-meta">
+                        <strong>{m.requests}</strong>
+                        <small>{t("dashboard.colRequests")}</small>
+                        <i>·</i>
+                        <strong>{formatTokens(m.tokens)}</strong>
+                        <small>{t("dashboard.colTokens")}</small>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="cockpit-subcol cockpit-subcol-bordered">
+              <div className="cockpit-subhead">
+                <Cpu size={13} />
+                <strong>{t("dashboard.activity24h")}</strong>
+                <span className="panel-muted">
+                  {t("dashboard.recentRequests")}
+                </span>
+              </div>
+              {recent.length === 0 ? (
+                <p className="dashboard-empty">{t("dashboard.noActivity")}</p>
+              ) : (
+                <ul className="cockpit-log-list is-compact">
+                  {recent.slice(0, 8).map((row: UsageRecord) => (
+                    <li key={row.id} className="cockpit-log-item">
+                      <span className="cockpit-log-model">{row.model}</span>
+                      <div className="cockpit-log-right">
+                        <span className="mono-value">
+                          {formatTokens(row.total_tokens ?? 0)}
                         </span>
-                        <span className="model-rank-meta">
-                          <strong>{m.requests}</strong>
-                          <small>{t("dashboard.colRequests")}</small>
-                          <i>·</i>
-                          <strong>{formatTokens(m.tokens)}</strong>
-                          <small>{t("dashboard.colTokens")}</small>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-              <section className="dashboard-subpanel dashboard-activity-subpanel">
-                <div className="dashboard-subpanel-head">
-                  <Cpu size={14} />
-                  <strong>{t("dashboard.activity24h")}</strong>
-                  <span className="panel-muted">
-                    {t("dashboard.recentRequests")}
-                  </span>
-                </div>
-                {recent.length === 0 ? (
-                  <p className="dashboard-empty">{t("dashboard.noActivity")}</p>
-                ) : (
-                  <ul className="dashboard-list">
-                    {recent.slice(0, 10).map((row: UsageRecord) => (
-                      <li key={row.id}>
-                        <span className="dashboard-model">{row.model}</span>
-                        <span className="dashboard-meta">
-                          <span className="mono-value">
-                            {formatTokens(row.total_tokens ?? 0)}
-                          </span>
-                          <span className="badge badge-neutral">{row.status}</span>
-                        </span>
-                        <span className="dashboard-time">
+                        <span className="badge badge-neutral">{row.status}</span>
+                        <span className="cockpit-log-time">
                           {relativeTime(row.created_at, t)}
                         </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-          </Panel>
-        </div>
+          </div>
+        </Panel>
       </div>
     </Page>
   );

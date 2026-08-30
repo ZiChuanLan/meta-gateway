@@ -45,6 +45,19 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
 	return rewritten
 }
 
+// realModelFromMapping extracts {"real":"…"} from a member/route mapping so
+// health bookkeeping can key on the actual upstream name rather than the
+// client-facing alias. Empty when the mapping is absent or malformed.
+func realModelFromMapping(mappingJSON string) string {
+	var mapping struct {
+		Real string `json:"real"`
+	}
+	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil || mapping.Real == "" {
+		return ""
+	}
+	return strings.TrimSpace(mapping.Real)
+}
+
 // reasoningEffortLevels is the ordered set of OpenAI-style reasoning effort
 // values understood by the gateway. A client-requested effort beyond a
 // channel's declared max is downgraded to the max at forward time.

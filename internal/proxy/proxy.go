@@ -38,9 +38,12 @@ var (
 )
 
 type Selector interface {
-	Select(ctx context.Context, model string, excluded map[int64]struct{}) (routing.Decision, error)
+	Select(ctx context.Context, model string, excluded map[int64]struct{}, constraints ...*routing.SelectionConstraint) (routing.Decision, error)
 	// SelectSticky is Select with an optional session key for affinity routing.
-	SelectSticky(ctx context.Context, model string, excluded map[int64]struct{}, sessionKey string) (routing.Decision, error)
+	// The optional constraint skips individual member variants (ExcludedMembers)
+	// and keeps failover inside the previous channel while it still has healthy
+	// variants (PreferChannel).
+	SelectSticky(ctx context.Context, model string, excluded map[int64]struct{}, sessionKey string, constraints ...*routing.SelectionConstraint) (routing.Decision, error)
 	// SetConcurrencyAware wires the in-flight burst guard into scoring.
 	SetConcurrencyAware(enabled bool, limit int, provider routing.ConcurrencyProvider)
 }
@@ -134,6 +137,12 @@ type Request struct {
 	Headers map[string]string
 	// PreferChannelID pins upstream selection (admin try). Zero means normal routing.
 	PreferChannelID int64
+	// Probe marks a synthetic availability check (model probing). Probe traffic
+	// must not look like real traffic to the health bookkeeping: a probe that
+	// fails is information, not a fault, so member cooldowns and the channel
+	// consecutive-failure counter are left untouched. Probes are also never
+	// metered (no DownstreamKeyID), so they cost nothing but upstream tokens.
+	Probe bool
 	// DownstreamKeyID is the authenticated client key, used for usage metering.
 	DownstreamKeyID int64
 	// ContentType preserves client Content-Type for multipart passthrough.

@@ -21,6 +21,7 @@ func TestMissingModels(t *testing.T) {
 		SiteID: &siteID, CredentialID: credIDPtr(credID), Name: "ch",
 		BaseURL: "https://api.example.com", TypeHint: "openai-compatible",
 		Status: domain.StatusEnabled, ModelsCSV: "gpt-4o,gpt-5-missing,deepseek-v4-flash",
+		ModelSyncMode: domain.ModelSyncModeAuto,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +58,8 @@ func TestMissingModelsIncludesDiscovered(t *testing.T) {
 	channelID, _ := db.Channel.Create(&domain.Channel{
 		SiteID: &siteID, CredentialID: credIDPtr(credID), Name: "ch2",
 		BaseURL: "https://api.example.com", TypeHint: "openai-compatible",
-		Status: domain.StatusEnabled,
+		Status:        domain.StatusEnabled,
+		ModelSyncMode: domain.ModelSyncModeAuto,
 	})
 
 	// Discovery snapshot exposes a model with no route (inserted directly to
@@ -87,6 +89,7 @@ func TestMissingModelsEmptyWhenCovered(t *testing.T) {
 		SiteID: &siteID, CredentialID: credIDPtr(credID), Name: "ch3",
 		BaseURL: "https://api.example.com", TypeHint: "openai-compatible",
 		Status: domain.StatusEnabled, ModelsCSV: "gpt-4o, gpt-4o-mini",
+		ModelSyncMode: domain.ModelSyncModeAuto,
 	})
 	if _, err := db.Route.Create(&domain.Route{ModelPattern: "gpt-4o*", Enabled: true}); err != nil {
 		t.Fatal(err)

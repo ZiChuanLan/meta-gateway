@@ -17,7 +17,14 @@ import (
 // recordMemberFailure records a member failure (member cooldown + channel
 // consecutive counter) and auto-disables the channel once the channel-level
 // consecutive failures reach the configured threshold.
-func (s *Service) recordMemberFailure(memberID, channelID int64, model string, cooldown time.Duration, category string) {
+//
+// Probe traffic is excluded: a failing probe is the answer the operator asked
+// for, not a fault, so it must not cool a member down, bump the channel
+// consecutive counter, or nudge the error rate.
+func (s *Service) recordMemberFailure(req Request, memberID, channelID int64, model string, cooldown time.Duration, category string) {
+	if req.Probe {
+		return
+	}
 	if !s.faultProtectionEnabled.Load() {
 		return
 	}
@@ -69,6 +76,11 @@ func (s *Service) recordMemberSuccess(channelID int64) {
 }
 
 func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string) {
+	// Probes are synthetic; logging them would flood the proxy log with
+	// traffic no client asked for. Their outcome lives in probe_results.
+	if req.Probe {
+		return
+	}
 	status := result.StatusCode
 	if status == 0 && result.Err != nil {
 		status = http.StatusBadGateway

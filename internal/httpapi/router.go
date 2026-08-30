@@ -29,6 +29,7 @@ import (
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
 	"github.com/lan/meta-gateway/internal/plugins"
+	"github.com/lan/meta-gateway/internal/probe"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/ratelimit"
 	"github.com/lan/meta-gateway/internal/relay"
@@ -151,20 +152,29 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			logger.ErrorContext(request.Context(), "metrics write failed", "category", "write")
 		}
 	})
-	r.Get("/console", func(w http.ResponseWriter, request *http.Request) {
-		http.Redirect(w, request, "/console/", http.StatusPermanentRedirect)
+	// The console lives at /console — no trailing slash. The SPA's
+	// BrowserRouter basename is "/console" too, so an exact match serves the
+	// app directly and "/console/" is normalized down to it. A bare
+	// trailing-slash URL would otherwise be treated as a directory by the
+	// browser, breaking relative-path resolution.
+	r.Get("/console/", func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, "/console", http.StatusTemporaryRedirect)
 	})
 	r.Group(func(console chi.Router) {
 		console.Use(securityHeaders)
+		console.Handle("/console", webui.Handler())
 		console.Handle("/console/*", webui.Handler())
 	})
 	// Legacy paths: keep old /admin-ui bookmarks working.
 	r.Get("/admin-ui", func(w http.ResponseWriter, request *http.Request) {
-		http.Redirect(w, request, "/console/", http.StatusPermanentRedirect)
+		http.Redirect(w, request, "/console", http.StatusPermanentRedirect)
 	})
 	r.Handle("/admin-ui/*", http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		request.URL.Path = "/console/" + strings.TrimPrefix(request.URL.Path, "/admin-ui/")
-		http.Redirect(w, request, request.URL.String(), http.StatusPermanentRedirect)
+		target := "/console" + strings.TrimPrefix(request.URL.Path, "/admin-ui")
+		if target == "/console/" {
+			target = "/console"
+		}
+		http.Redirect(w, request, target, http.StatusPermanentRedirect)
 	}))
 	r.Get("/", handleLanding)
 
@@ -304,6 +314,15 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	}
 	NewAccountHandler(accountService).Register(adminGroup)
 	NewTryHandler(proxyService).Register(adminGroup)
+	// Model probing rides the same proxy path as /v1, so it needs the live
+	// proxy service rather than its own upstream client.
+	probeService := probe.NewService(db, proxyService, logger)
+	NewProbeHandler(db, probeService).Register(adminGroup)
+	// Scheduled probing: a cron from the runtime settings drives a probe run
+	// ("" = off). It shares the service with on-demand runs, so the two can
+	// never be in flight at once.
+	probeScheduler := probe.NewScheduler(db, probeService, probe.Schedule{}, logger, nil)
+	RegisterStopper(probeScheduler.Stop)
 
 	// Plugin catalog + add-on gates. Optional modules (exchange, checkin) must be
 	// enabled to expose their Admin surfaces. Core audit/backup stay always-on.
@@ -379,6 +398,19 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			},
 			SetDBGCCron: func(expression string) error {
 				return gcService.SetSchedule(expression)
+			},
+			SetProbeSchedule: func(schedule runtimeconfig.ProbeSchedule) error {
+				return probeScheduler.SetSchedule(probe.Schedule{
+					Expr: schedule.Cron,
+					Options: probe.Options{
+						Prompt:           schedule.Prompt,
+						MaxTokens:        schedule.MaxTokens,
+						Concurrency:      schedule.Concurrency,
+						AutoDisableAfter: schedule.AutoDisableAfter,
+					},
+					ChannelIDs: schedule.ChannelIDs,
+					Models:     schedule.Models,
+				})
 			},
 			CheckinSched: dependencies.CheckinScheduler,
 			CheckinAllowed: func() bool {

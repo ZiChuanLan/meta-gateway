@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Copy,
   Eye,
   KeyRound,
@@ -22,7 +23,7 @@ import { modelGroup, modelPatternMatches } from "./models/modelGroups";
 import { PaginationBar } from "../components/PaginationBar";
 import { SecretRevealDialog } from "../components/SecretRevealDialog";
 import { EntityState } from "../components/EntityState";
-import { StatGrid } from "../components/StatGrid";
+import { TelemetryStrip } from "../components/TelemetryStrip";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
@@ -408,27 +409,31 @@ export function Keys() {
       }
     >
       <div className="ops-canvas">
-        <StatGrid
+        <TelemetryStrip
           items={[
             {
               label: t("keys.stat.total"),
               value: query.isPending ? "—" : rows.length,
+              tone: "primary",
             },
             {
               label: t("keys.stat.enabled"),
               value: query.isPending ? "—" : enabledCount,
+              tone: "success",
             },
             {
               label: t("keys.stat.usedTokens"),
               value: query.isPending
                 ? "—"
                 : formatNumber(usage.data?.total_tokens ?? totalUsed),
+              tone: "info",
             },
             {
               label: t("keys.stat.requests"),
               value: usage.isPending
                 ? "—"
                 : formatNumber(usage.data?.request_count ?? 0),
+              tone: "warning",
             },
           ]}
         />
@@ -493,9 +498,24 @@ export function Keys() {
                     </td>
                     <td>{k.scopes?.trim() || "relay"}</td>
                     <td>
-                      <code>
-                        {formatQuota(k.quota_used_tokens, k.quota_total_tokens)}
-                      </code>
+                      <div className="quota-cell">
+                        <code>
+                          {formatQuota(k.quota_used_tokens, k.quota_total_tokens)}
+                        </code>
+                        {k.quota_total_tokens && k.quota_total_tokens > 0 ? (
+                          <span className="quota-meter" aria-hidden="true">
+                            <span
+                              className="quota-meter-fill"
+                              style={{
+                                transform: `scaleX(${Math.min(
+                                  1,
+                                  (k.quota_used_tokens ?? 0) / k.quota_total_tokens,
+                                )})`,
+                              }}
+                            />
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td>{formatCost(k.estimated_cost)}</td>
                     <td>
@@ -765,6 +785,32 @@ function KeyDialog({
   const [expiresAt, setExpiresAt] = useState(initial?.expires_at ?? "");
   const [allowedIPs, setAllowedIPs] = useState(initial?.allowed_ips ?? "");
   const [resetUsed, setResetUsed] = useState(false);
+  // Progressive disclosure: billing, model scoping and advanced controls are
+  // folded sections so the common path (name + scopes) stays two steps.
+  const [openBilling, setOpenBilling] = useState(false);
+  const [openModels, setOpenModels] = useState(false);
+  const [openAdvanced, setOpenAdvanced] = useState(false);
+  // Pre-open a section when the stored value is non-trivial (edit mode).
+  useEffect(() => {
+    if (mode !== "edit") return;
+    if (
+      (initial?.quota_total_tokens ?? 0) > 0 ||
+      (initial?.price_prompt_per_1k ?? 0) > 0 ||
+      (initial?.price_completion_per_1k ?? 0) > 0 ||
+      (initial?.price_cache_per_1k ?? 0) > 0
+    ) {
+      setOpenBilling(true);
+    }
+    if ((initial?.model_allowlist ?? "").trim() || (initial?.model_denylist ?? "").trim()) {
+      setOpenModels(true);
+    }
+    if (
+      (initial?.expires_at ?? "").trim() ||
+      (initial?.allowed_ips ?? "").trim()
+    ) {
+      setOpenAdvanced(true);
+    }
+  }, [mode, initial]);
   const addModelGroup = (group: string) => {
     setModelGroupSelection(group);
     if (!group) return;
@@ -843,150 +889,201 @@ function KeyDialog({
       <Field label={t("common.scopes")} hint={t("keys.scopesHint")}>
         <ScopePicker value={scopes} onChange={setScopes} disabled={pending} />
       </Field>
-      <Field label={t("keys.quotaTotal")} hint={t("keys.quotaTotalHint")}>
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={quotaTotal}
-          onChange={(e) => setQuotaTotal(e.target.value)}
-          placeholder="0 = unlimited"
-        />
-      </Field>
-      <div className="split" style={{ gap: "0.75rem" }}>
-        <Field label={t("keys.pricePrompt")} hint={t("keys.priceHint")}>
-          <input
-            type="number"
-            min={0}
-            step="0.0001"
-            value={pricePrompt}
-            onChange={(e) => setPricePrompt(e.target.value)}
-            placeholder="0"
-          />
-        </Field>
-        <Field label={t("keys.priceCompletion")}>
-          <input
-            type="number"
-            min={0}
-            step="0.0001"
-            value={priceCompletion}
-            onChange={(e) => setPriceCompletion(e.target.value)}
-            placeholder="0"
-          />
-        </Field>
-        <Field label={t("keys.priceCache")} hint={t("keys.priceCacheHint")}>
-          <input
-            type="number"
-            min={0}
-            step="0.0001"
-            value={priceCache}
-            onChange={(e) => setPriceCache(e.target.value)}
-            placeholder="0"
-          />
-        </Field>
-      </div>
-      <Field
-        label={t("keys.modelAllowlist")}
-        hint={t("keys.modelAllowlistHint")}
-      >
-        <div className="model-group-picker">
-          <select
-            value={modelGroupSelection}
-            onChange={(event) => addModelGroup(event.target.value)}
-            disabled={pending}
-          >
-            <option value="">{t("keys.modelGroupPlaceholder")}</option>
-            {modelGroupOptions.map((group) => (
-              <option key={group} value={group}>
-                {group} ({modelsByGroup.get(group)?.size ?? 0})
-              </option>
-            ))}
-          </select>
-          <span className="field-hint">{t("keys.modelGroupHint")}</span>
-        </div>
-        <ModelPicker
-          allModels={allModels}
-          selected={allowlist}
-          onChange={setAllowlist}
-          placeholder={t("keys.modelPickerPlaceholder")}
-          emptyLabel={t("keys.modelPickerEmpty")}
-        />
-      </Field>
-      <Field label={t("keys.modelDenylist")} hint={t("keys.modelDenylistHint")}>
-        <ModelPicker
-          allModels={allModels}
-          selected={denylist}
-          onChange={setDenylist}
-          placeholder={t("keys.modelPickerPlaceholder")}
-          emptyLabel={t("keys.modelPickerEmpty")}
-        />
-      </Field>
-      <div className="split" style={{ gap: "0.75rem" }}>
-        <Field label={t("keys.expiresAt")} hint={t("keys.expiresAtHint")}>
-          <input
-            type="datetime-local"
-            value={expiresAt ? toLocalInput(expiresAt) : ""}
-            disabled={pending}
-            onChange={(e) =>
-              setExpiresAt(e.target.value ? toRFC3339(e.target.value) : "")
-            }
-          />
-        </Field>
-        <Field label={t("keys.allowedIPs")} hint={t("keys.allowedIPsHint")}>
-          <textarea
-            value={allowedIPs}
-            disabled={pending}
-            onChange={(e) => setAllowedIPs(e.target.value)}
-            placeholder="1.2.3.4&#10;10.0.0.0/8"
-            style={{ minHeight: 64 }}
-          />
-        </Field>
-      </div>
-      {mode === "edit" ? (
-        <label className="check" style={{ marginTop: 12 }}>
-          <input
-            type="checkbox"
-            checked={resetUsed}
-            disabled={pending}
-            onChange={(event) => setResetUsed(event.target.checked)}
-          />
-          <span>{t("keys.resetUsed")}</span>
-        </label>
-      ) : (
-        <>
-          <label className="check" style={{ marginTop: 12 }}>
-            <input
-              type="checkbox"
-              checked={useCustomToken}
-              disabled={pending}
-              aria-label={t("keys.useCustomToken")}
-              onChange={(event) => {
-                setUseCustomToken(event.target.checked);
-                if (!event.target.checked) setCustomToken("");
-              }}
-            />
-            <span>{t("keys.useCustomToken")}</span>
-          </label>
-          {useCustomToken ? (
-            <Field
-              label={t("keys.customToken")}
-              hint={t("keys.customTokenHint")}
-            >
+
+      <div className="key-dialog-section">
+        <button
+          type="button"
+          className="key-dialog-fold"
+          aria-expanded={openBilling}
+          onClick={() => setOpenBilling((v) => !v)}
+        >
+          <ChevronDown size={13} className={openBilling ? "is-open" : ""} />
+          <span>{t("keys.sectionBilling")}</span>
+          {openBilling ? null : <small>{t("keys.sectionBillingHint")}</small>}
+        </button>
+        {openBilling ? (
+          <div className="key-dialog-fold-body">
+            <Field label={t("keys.quotaTotal")} hint={t("keys.quotaTotalHint")}>
               <input
-                type="password"
-                autoComplete="new-password"
-                aria-label={t("keys.customToken")}
-                value={customToken}
-                onChange={(e) => setCustomToken(e.target.value)}
-                placeholder={t("keys.customTokenPlaceholder")}
-                disabled={pending}
+                type="number"
+                min={0}
+                step={1}
+                value={quotaTotal}
+                onChange={(e) => setQuotaTotal(e.target.value)}
+                placeholder="0 = unlimited"
               />
             </Field>
-          ) : (
-            <p className="exchange-panel-note">{t("keys.autoTokenHint")}</p>
-          )}
-        </>
-      )}
+            <div className="split" style={{ gap: "0.75rem" }}>
+              <Field label={t("keys.pricePrompt")} hint={t("keys.priceHint")}>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.0001"
+                  value={pricePrompt}
+                  onChange={(e) => setPricePrompt(e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+              <Field label={t("keys.priceCompletion")}>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.0001"
+                  value={priceCompletion}
+                  onChange={(e) => setPriceCompletion(e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+              <Field label={t("keys.priceCache")} hint={t("keys.priceCacheHint")}>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.0001"
+                  value={priceCache}
+                  onChange={(e) => setPriceCache(e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="key-dialog-section">
+        <button
+          type="button"
+          className="key-dialog-fold"
+          aria-expanded={openModels}
+          onClick={() => setOpenModels((v) => !v)}
+        >
+          <ChevronDown size={13} className={openModels ? "is-open" : ""} />
+          <span>{t("keys.sectionModels")}</span>
+          {openModels ? null : <small>{t("keys.sectionModelsHint")}</small>}
+        </button>
+        {openModels ? (
+          <div className="key-dialog-fold-body">
+            <Field
+              label={t("keys.modelAllowlist")}
+              hint={t("keys.modelAllowlistHint")}
+            >
+              <div className="model-group-picker">
+                <select
+                  value={modelGroupSelection}
+                  onChange={(event) => addModelGroup(event.target.value)}
+                  disabled={pending}
+                >
+                  <option value="">{t("keys.modelGroupPlaceholder")}</option>
+                  {modelGroupOptions.map((group) => (
+                    <option key={group} value={group}>
+                      {group} ({modelsByGroup.get(group)?.size ?? 0})
+                    </option>
+                  ))}
+                </select>
+                <span className="field-hint">{t("keys.modelGroupHint")}</span>
+              </div>
+              <ModelPicker
+                allModels={allModels}
+                selected={allowlist}
+                onChange={setAllowlist}
+                placeholder={t("keys.modelPickerPlaceholder")}
+                emptyLabel={t("keys.modelPickerEmpty")}
+              />
+            </Field>
+            <Field label={t("keys.modelDenylist")} hint={t("keys.modelDenylistHint")}>
+              <ModelPicker
+                allModels={allModels}
+                selected={denylist}
+                onChange={setDenylist}
+                placeholder={t("keys.modelPickerPlaceholder")}
+                emptyLabel={t("keys.modelPickerEmpty")}
+              />
+            </Field>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="key-dialog-section">
+        <button
+          type="button"
+          className="key-dialog-fold"
+          aria-expanded={openAdvanced}
+          onClick={() => setOpenAdvanced((v) => !v)}
+        >
+          <ChevronDown size={13} className={openAdvanced ? "is-open" : ""} />
+          <span>{t("keys.sectionAdvanced")}</span>
+          {openAdvanced ? null : <small>{t("keys.sectionAdvancedHint")}</small>}
+        </button>
+        {openAdvanced ? (
+          <div className="key-dialog-fold-body">
+            <div className="split" style={{ gap: "0.75rem" }}>
+              <Field label={t("keys.expiresAt")} hint={t("keys.expiresAtHint")}>
+                <input
+                  type="datetime-local"
+                  value={expiresAt ? toLocalInput(expiresAt) : ""}
+                  disabled={pending}
+                  onChange={(e) =>
+                    setExpiresAt(e.target.value ? toRFC3339(e.target.value) : "")
+                  }
+                />
+              </Field>
+              <Field label={t("keys.allowedIPs")} hint={t("keys.allowedIPsHint")}>
+                <textarea
+                  value={allowedIPs}
+                  disabled={pending}
+                  onChange={(e) => setAllowedIPs(e.target.value)}
+                  placeholder="1.2.3.4&#10;10.0.0.0/8"
+                  style={{ minHeight: 64 }}
+                />
+              </Field>
+            </div>
+            {mode === "edit" ? (
+              <label className="check" style={{ marginTop: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={resetUsed}
+                  disabled={pending}
+                  onChange={(event) => setResetUsed(event.target.checked)}
+                />
+                <span>{t("keys.resetUsed")}</span>
+              </label>
+            ) : (
+              <>
+                <label className="check" style={{ marginTop: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={useCustomToken}
+                    disabled={pending}
+                    aria-label={t("keys.useCustomToken")}
+                    onChange={(event) => {
+                      setUseCustomToken(event.target.checked);
+                      if (!event.target.checked) setCustomToken("");
+                    }}
+                  />
+                  <span>{t("keys.useCustomToken")}</span>
+                </label>
+                {useCustomToken ? (
+                  <Field
+                    label={t("keys.customToken")}
+                    hint={t("keys.customTokenHint")}
+                  >
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      aria-label={t("keys.customToken")}
+                      value={customToken}
+                      onChange={(e) => setCustomToken(e.target.value)}
+                      placeholder={t("keys.customTokenPlaceholder")}
+                      disabled={pending}
+                    />
+                  </Field>
+                ) : (
+                  <p className="exchange-panel-note">{t("keys.autoTokenHint")}</p>
+                )}
+              </>
+            )}
+          </div>
+        ) : null}
+      </div>
       {error ? <ErrorState error={error} /> : null}
     </Dialog>
   );

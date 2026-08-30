@@ -7,14 +7,16 @@ import {
 	KeyRound,
 	LogOut,
 	Menu,
-	Moon,
 	Network,
 	Package,
 	Puzzle,
 	ScrollText,
 	Settings,
-	Sun,
 	X,
+	Sword,
+	Zap,
+	Image,
+	Search,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,6 +27,7 @@ import {
 	useLocation,
 } from "react-router-dom";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ApiClient, ApiError, api } from "./api/client";
 import type { Site } from "./api/types";
 import { LanguageSwitcher, useI18n } from "./i18n";
@@ -36,10 +39,12 @@ import {
 	Field,
 	IconButton,
 	Loading,
-	StatusBadge,
 } from "./components/ui";
-import { GlobalSearch } from "./components/GlobalSearch";
+import { CommandPalette } from "./components/CommandPalette";
 import { Dashboard } from "./features/Dashboard";
+import { KatanaCanvas } from "./components/KatanaCanvas";
+import { createEdgeSparkHost } from "./lib/katanafx";
+import { channelHealthState } from "./features/channelHealth";
 
 const Channels = lazy(() =>
 	import("./features/Channels").then((module) => ({ default: module.Channels })),
@@ -72,7 +77,7 @@ const Store = lazy(() =>
 	import("./features/Store").then((module) => ({ default: module.Store })),
 );
 
-type TransitionPhase = "idle" | "fading" | "sealing" | "revealing";
+type TransitionPhase = "idle" | "fading" | "sealing" | "revealing" | "sheathing";
 
 type AuthorizedSession = {
 	token: string;
@@ -83,6 +88,8 @@ type AuthorizedSession = {
 const SEAL_DURATION = 1400;
 const REVEAL_DURATION = 1600;
 const REDUCED_REVEAL_DURATION = 160;
+const SHEATH_COVER_MS = 380;
+const SHEATH_DURATION = 1000;
 
 export function App() {
 	const { client, connect, disconnect } = useSession();
@@ -142,9 +149,15 @@ export function App() {
 		clearTransitionTimers();
 		pendingSession.current = null;
 		setBootstrapSites(undefined);
-		setTransitionPhase("idle");
-		disconnect();
-	}, [clearTransitionTimers, disconnect]);
+		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+			setTransitionPhase("idle");
+			disconnect();
+			return;
+		}
+		setTransitionPhase("sheathing");
+		schedule(() => disconnect(), SHEATH_COVER_MS);
+		schedule(() => setTransitionPhase("idle"), SHEATH_DURATION);
+	}, [clearTransitionTimers, disconnect, schedule]);
 
 	return (
 		<>
@@ -186,6 +199,91 @@ function Connect({
 	const [pending, setPending] = useState(false);
 	const [needTOTP, setNeedTOTP] = useState(false);
 	const [totpCode, setTotpCode] = useState("");
+
+	// Katana Interactive States: Charge & Stance
+	const [isFocused, setIsFocused] = useState(false);
+	const [chargeRatio, setChargeRatio] = useState(0);
+
+	// 按钮 hover「磨刀」边缘火花（原生 JS，见 katanafx.ts）
+	useEffect(() => {
+		const btn = document.querySelector<HTMLButtonElement>(".katana-submit-btn");
+		if (!btn) return;
+		const host = createEdgeSparkHost(btn);
+		const enter = () => host.start();
+		const leave = () => host.stop();
+		btn.addEventListener("pointerenter", enter);
+		btn.addEventListener("pointerleave", leave);
+		return () => {
+			btn.removeEventListener("pointerenter", enter);
+			btn.removeEventListener("pointerleave", leave);
+			host.dispose();
+		};
+	}, []);
+
+	// Custom login background (persisted locally, per browser)
+	const [bgUrl, setBgUrl] = useState<string>(() => {
+		try {
+			return localStorage.getItem("mg.login.bg") ?? "";
+		} catch {
+			return "";
+		}
+	});
+	const [bgOpen, setBgOpen] = useState(false);
+	const bgInputRef = useRef<HTMLInputElement | null>(null);
+	const bgBtnRef = useRef<HTMLButtonElement | null>(null);
+	const [bgPos, setBgPos] = useState<{ top: number; left: number } | null>(null);
+	useEffect(() => {
+		if (!bgOpen) {
+			setBgPos(null);
+			return;
+		}
+		const compute = () => {
+			const btn = bgBtnRef.current;
+			if (!btn) return;
+			const r = btn.getBoundingClientRect();
+			const w = 280;
+			const left = Math.max(
+				8,
+				Math.min(r.right - w, window.innerWidth - w - 8),
+			);
+			setBgPos({ top: Math.round(r.bottom + 8), left: Math.round(left) });
+		};
+		compute();
+		window.addEventListener("resize", compute);
+		return () => window.removeEventListener("resize", compute);
+	}, [bgOpen]);
+	const applyBg = (value: string) => {
+		const url = value.trim();
+		try {
+			if (url) localStorage.setItem("mg.login.bg", url);
+			else localStorage.removeItem("mg.login.bg");
+		} catch {
+			// Storage unavailable; background only applies for this session.
+		}
+		setBgUrl(url);
+		setBgOpen(false);
+	};
+	const onBgFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = () => applyBg(String(reader.result ?? ""));
+		reader.readAsDataURL(file);
+		e.target.value = "";
+	};
+
+	useEffect(() => {
+		let interval: number;
+		if (isFocused || pending || transitioning) {
+			interval = window.setInterval(() => {
+				setChargeRatio((prev) => Math.min(1, prev + 0.05));
+			}, 30);
+		} else {
+			setChargeRatio(0);
+		}
+		return () => clearInterval(interval);
+	}, [isFocused, pending, transitioning]);
+
 	async function submit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!token.trim()) return;
@@ -325,177 +423,201 @@ function Connect({
 	return (
 		<div
 			ref={pageRef}
-			className={`connect-page${transitioning ? " is-routing" : ""}${transitionPhase === "sealing" ? " is-sealing-out" : ""}`}
+			className={`connect-page${transitioning ? " is-routing" : ""}${transitionPhase === "sealing" ? " is-sealing-out" : ""}${isFocused ? " is-focused-blade" : ""}`}
 			onPointerMove={trackPointer}
 			onPointerLeave={resetPointer}
 		>
+			{/* High-speed Katana Physics Canvas & Energy Vortex */}
+			<KatanaCanvas
+				charging={isFocused || pending || transitioning}
+				chargeProgress={chargeRatio}
+			/>
+
+			{bgUrl ? (
+				<div
+					className="connect-custom-bg"
+					style={{ backgroundImage: `url("${bgUrl}")` }}
+				/>
+			) : null}
+
 			<div className="connect-ambient" aria-hidden="true">
 				<div className="impact-sky" />
 				<div className="impact-bloom impact-bloom-blue" />
-				<div className="impact-bloom impact-bloom-warm" />
-				<div className="impact-shard impact-shard-a" />
-				<div className="impact-shard impact-shard-b" />
-				<div className="impact-shard impact-shard-c" />
-				<div className="impact-slash" />
-				<div className="impact-giant">ADMIN</div>
-				<div className="impact-giant impact-giant-sub">RELAY</div>
-				<div className="impact-ring" />
-				<div className="impact-orbit">
-					<span />
-					<span />
-					<span />
-				</div>
-				<div className="impact-stripe impact-stripe-a" />
-				<div className="impact-stripe impact-stripe-b" />
-				<div className="impact-barcode">
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-					<span />
-				</div>
-				<div className="impact-stamp">
-					<span>OPENAI-COMPATIBLE RELAY</span>
-					<strong>API</strong>
-					<em>MULTI-CHANNEL ROUTING</em>
-				</div>
-				<div className="impact-chip impact-chip-a">SITES · MULTI-CHANNEL</div>
-				<div className="impact-chip impact-chip-b">RETRY · FAILOVER</div>
-				<div className="impact-chip impact-chip-c">AUDIT · METRICS</div>
-				<div className="impact-code impact-code-main">
-					<span className="impact-code-kicker">REQUEST PATH / ADMIN API</span>
-					<div className="impact-code-body">
-						<span>
-							<b>POST</b> /v1/chat/completions
-						</span>
-						<span>Authorization: Bearer &lt;upstream-key&gt;</span>
-						<span>
-							<b>route.select</b>(site, model, policy)
-						</span>
-						<span>retry on upstream error / cooldown</span>
-						<span>audit.write(request_id, outcome)</span>
-						<span>metrics.observe(latency, status)</span>
-					</div>
-				</div>
-				<div className="impact-code impact-code-side">
-					<span className="impact-code-kicker">ADMIN SURFACE / LIVE</span>
-					<div className="impact-code-body impact-code-body-row">
-						<span>Bearer ADMIN_TOKEN</span>
-						<span>
-							<b>/console/</b>
-						</span>
-						<span>sites · models · keys</span>
-						<span>healthz · metrics</span>
-					</div>
-				</div>
-				<div className="impact-mark">
-					<span>MG</span>
-					<small>META GATEWAY</small>
-				</div>
-				<div className="ambient-unlock-mid">
-					<span>ADMIN BEARER VERIFIED</span>
-					<strong>
-						SESSION
-						<br />
-						READY
-					</strong>
-					<div>
-						<b>OK</b>
-						<i>SITES</i>
-					</div>
-					<small>TOKEN STAYS IN MEMORY OR SESSION STORAGE</small>
-				</div>
-				<div className="ambient-pointer-glow" />
 				<div className="ambient-vignette" />
 			</div>
-			<section className="connect-panel">
-				<div className="connect-panel-frame" aria-hidden="true" />
-				<div className="connect-panel-meta">
-					<span>ADMIN API</span>
-					<strong>BEARER TOKEN</strong>
-					<em>REQUIRED</em>
-				</div>
-				<div className="connect-toolbar">
-					<LanguageSwitcher />
-				</div>
-				<div className="connect-brand">
-					<div className="brand-mark" aria-hidden="true">
-						<Network size={20} />
+			<div className="connect-stage">
+				<header className="connect-editorial">
+					<div className="connect-brand">
+						<div className="brand-mark" aria-hidden="true">
+							<Sword size={20} className="brand-katana-icon" />
+						</div>
+						<div className="connect-brand-copy">
+							<span>META GATEWAY</span>
+							<small>OPERATIONS CONSOLE // 先鋒中繼</small>
+						</div>
 					</div>
-					<div className="connect-brand-copy">
-						<span>META GATEWAY</span>
-						<small>OPERATIONS CONSOLE</small>
-					</div>
-				</div>
-				<div className="connect-heading">
-					<p className="connect-kicker">ADMIN ACCESS</p>
-					<h1>{t("app.connect.title")}</h1>
+					<h1 className="connect-masthead-title">
+						{t("app.connect.title")
+							.split("")
+							.map((ch, i) => (
+								<span
+									key={i}
+									className="masthead-char"
+									style={{ "--i": i } as React.CSSProperties}
+								>
+									{ch === " " ? "\u00A0" : ch}
+								</span>
+							))}
+					</h1>
 					<p className="connect-subtitle">{t("app.connect.subtitle")}</p>
-				</div>
-				<form onSubmit={submit} aria-busy={pending || transitioning}>
-					<Field label={t("app.connect.token")}>
-						<input
-							autoFocus
-							type="password"
-							value={token}
-							onChange={(e) => setToken(e.target.value)}
-							autoComplete="current-password"
-							disabled={pending || transitioning}
-							required
-						/>
-					</Field>
-					{needTOTP ? (
-						<Field label={t("app.connect.totp")}>
+					<div className="connect-edition">
+						<span>OPENAI-COMPATIBLE RELAY</span>
+						<span>MULTI-CHANNEL · RETRY · FAILOVER</span>
+					</div>
+				</header>
+				<section className="connect-panel">
+					<div className="connect-panel-frame" aria-hidden="true" />
+					<span className="connect-panel-beam" aria-hidden="true" />
+					<span className="connect-panel-tag">MG-07 :// BEARER</span>
+					<div className="connect-panel-meta">
+						<span>ADMIN API</span>
+						<strong>BEARER TOKEN</strong>
+						<em>REQUIRED</em>
+					</div>
+					<div className="connect-toolbar">
+						<LanguageSwitcher />
+						<IconButton
+							ref={bgBtnRef}
+							label={t("app.connect.background")}
+							onClick={() => setBgOpen((v) => !v)}
+							className={bgOpen ? "is-active" : ""}
+						>
+							<Image size={16} />
+						</IconButton>
+						{bgOpen && bgPos
+							? createPortal(
+									<div
+										className="bg-picker"
+										style={{ top: bgPos.top, left: bgPos.left }}
+									>
+										<input
+											ref={bgInputRef}
+											type="text"
+											placeholder={t("app.connect.bgPlaceholder")}
+											defaultValue={bgUrl.startsWith("data:") ? "" : bgUrl}
+											onKeyDown={(e) => {
+												if (e.key === "Enter" && bgInputRef.current) {
+													applyBg(bgInputRef.current.value);
+												}
+											}}
+										/>
+										<div className="bg-row">
+											<button
+												className="is-primary"
+												onClick={() =>
+													bgInputRef.current && applyBg(bgInputRef.current.value)
+												}
+											>
+												{t("app.connect.bgApply")}
+											</button>
+											<label className="bg-upload-btn">
+												<input
+													type="file"
+													accept="image/*"
+													hidden
+													onChange={onBgFile}
+												/>
+												{t("app.connect.bgUpload")}
+											</label>
+											<button onClick={() => applyBg("")}>
+												{t("app.connect.bgClear")}
+											</button>
+										</div>
+									</div>,
+									document.body,
+								)
+							: null}
+					</div>
+					<form onSubmit={submit} aria-busy={pending || transitioning}>
+						<Field label={t("app.connect.token")}>
 							<input
-								type="text"
-								inputMode="numeric"
-								pattern="[0-9]{6}"
-								maxLength={6}
-								value={totpCode}
-								onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
-								autoComplete="one-time-code"
-								placeholder="123456"
+								autoFocus
+								type="password"
+								value={token}
+								onChange={(e) => setToken(e.target.value)}
+								onFocus={() => setIsFocused(true)}
+								onBlur={() => setIsFocused(false)}
+								autoComplete="current-password"
 								disabled={pending || transitioning}
 								required
 							/>
 						</Field>
-					) : null}
-					<label className="check">
-						<input
-							type="checkbox"
-							checked={remember}
-							onChange={(e) => setRemember(e.target.checked)}
-							disabled={pending || transitioning}
-						/>
-						<span>{t("app.connect.remember")}</span>
-					</label>
-					{error && <div className="inline-error">{error}</div>}
-					<Button
-						type="submit"
-						disabled={pending || transitioning || !token.trim()}
-					>
-						{pending || transitioning
-							? t("app.connect.connecting")
-							: t("app.connect.submit")}
-					</Button>
-				</form>
-				<div className="connect-footer">
-					<span>NO COOKIE · NO URL TOKEN · TAB SESSION ONLY</span>
-				</div>
-			</section>
+						{needTOTP ? (
+							<Field label={t("app.connect.totp")}>
+								<input
+									type="text"
+									inputMode="numeric"
+									pattern="[0-9]{6}"
+									maxLength={6}
+									value={totpCode}
+									onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+									onFocus={() => setIsFocused(true)}
+									onBlur={() => setIsFocused(false)}
+									autoComplete="one-time-code"
+									placeholder="123456"
+									disabled={pending || transitioning}
+									required
+								/>
+							</Field>
+						) : null}
+						<label className="check">
+							<input
+								type="checkbox"
+								checked={remember}
+								onChange={(e) => setRemember(e.target.checked)}
+								disabled={pending || transitioning}
+							/>
+							<span>{t("app.connect.remember")}</span>
+						</label>
+						{error && <div className="inline-error">{error}</div>}
+						<Button
+							type="submit"
+							disabled={pending || transitioning || !token.trim()}
+							className="katana-submit-btn"
+						>
+							<span className="btn-content">
+								<Zap size={14} className="btn-blade-icon" />
+								{pending || transitioning
+									? t("app.connect.connecting")
+									: t("app.connect.submit")}
+							</span>
+							<span className="btn-energy-charge" style={{ transform: `scaleX(${chargeRatio})` }} />
+						</Button>
+					</form>
+					<div className="connect-footer">
+						<span>NO COOKIE · NO URL TOKEN · TAB SESSION ONLY</span>
+					</div>
+				</section>
+			</div>
 		</div>
 	);
 }
 
 function GatewayTransition({ phase }: { phase: TransitionPhase }) {
 	if (phase === "idle" || phase === "fading") return null;
+	if (phase === "sheathing") {
+		return (
+			<div className="gateway-transition is-sheathing" aria-hidden="true">
+				<div className="sheath-veil" />
+				<div className="sheath-blade" />
+				<div className="sheath-point" />
+				<div className="sheath-word">
+					<span>SESSION SEALED</span>
+					<small>BEARER DISCARDED</small>
+				</div>
+			</div>
+		);
+	}
 	return (
 		<div className={`gateway-transition is-${phase}`} aria-hidden="true">
 			<div className="gateway-plane" aria-hidden="true">
@@ -547,14 +669,6 @@ function Authenticated({
 }) {
 	const { client } = useSession();
 	const { t } = useI18n();
-	const ready = useQuery({
-		queryKey: ["ready"],
-		queryFn: async () => {
-			const response = await fetch("/readyz");
-			return response.ok;
-		},
-		refetchInterval: 30_000,
-	});
 	const auth = useQuery({
 		queryKey: ["auth", clientKey],
 		queryFn: ({ signal }) => api(client!).sites(signal),
@@ -580,31 +694,45 @@ function Authenticated({
 			</div>
 		);
 	return (
-		<AuthenticatedShell
-			ready={ready.data === true}
-			onUnauthorized={onUnauthorized}
-		/>
+		<AuthenticatedShell onUnauthorized={onUnauthorized} />
 	);
 }
-
 function AuthenticatedShell({
-	ready,
 	onUnauthorized,
 }: {
-	ready: boolean;
 	onUnauthorized: () => void;
 }) {
 	const { t } = useI18n();
 	const { checkinEnabled, exchangeEnabled, addons } = useModules();
-	const [open, setOpen] = useState(false);
-	const [theme, setTheme] = useState<"light" | "dark">(() => {
-		const stored = window.localStorage.getItem("meta-gateway.theme");
-		return stored === "dark" ? "dark" : "light";
+	const [paletteOpen, setPaletteOpen] = useState(false);
+	const { client } = useSession();
+	// Real telemetry: channel health drives the deck readout instead of a static ONLINE.
+	const channelStats = useQuery({
+		queryKey: ["channel-overviews"],
+		queryFn: ({ signal }) => api(client!).channelOverviews(signal),
+		refetchInterval: 30_000,
 	});
+	const healthy = (channelStats.data ?? []).filter((o) =>
+		channelHealthState(o) === "healthy",
+	).length;
+	const total = channelStats.data?.length ?? 0;
+
 	useEffect(() => {
-		document.documentElement.classList.toggle("dark", theme === "dark");
-		window.localStorage.setItem("meta-gateway.theme", theme);
-	}, [theme]);
+		const onKey = (event: KeyboardEvent) => {
+			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+				event.preventDefault();
+				setPaletteOpen((value) => !value);
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
+
+	useEffect(() => {
+		document.documentElement.classList.remove("dark");
+		window.localStorage.removeItem("meta-gateway.theme");
+	}, []);
+
 	const location = useLocation();
 	const [routeAnim, setRouteAnim] = useState(0);
 	useEffect(() => {
@@ -612,21 +740,16 @@ function AuthenticatedShell({
 		const frame = window.requestAnimationFrame(() => setRouteAnim(1));
 		return () => window.cancelAnimationFrame(frame);
 	}, [location.pathname]);
-	useEffect(() => setOpen(false), [location.pathname]);
-	useEffect(() => {
-		if (!open) return;
-		const previousOverflow = document.body.style.overflow;
-		const closeOnEscape = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setOpen(false);
-		};
-		document.body.style.overflow = "hidden";
-		window.addEventListener("keydown", closeOnEscape);
-		return () => {
-			document.body.style.overflow = previousOverflow;
-			window.removeEventListener("keydown", closeOnEscape);
-		};
-	}, [open]);
-	// Daily loop: Connections → Models → Tokens → Logs → Check-in → Store
+
+	// Same persisted custom background as the login page, applied to the console.
+	const [consoleBg] = useState<string>(() => {
+		try {
+			return localStorage.getItem("mg.login.bg") ?? "";
+		} catch {
+			return "";
+		}
+	});
+
 	const primaryNav = [
 		{ to: "/", label: t("app.nav.overview"), icon: Activity },
 		{ to: "/channels", label: t("app.nav.channels"), icon: Cable },
@@ -639,8 +762,6 @@ function AuthenticatedShell({
 		...(exchangeEnabled
 			? [{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight }]
 			: []),
-		// Installed sidecar plugins get their own sidebar entry (like the
-		// built-in add-ons), opening their embedded page in the shell.
 		...(addons
 			.filter(
 				(m) =>
@@ -652,122 +773,121 @@ function AuthenticatedShell({
 			.map((m) => ({ to: m.open_path!, label: m.name, icon: Puzzle }))),
 		{ to: "/store", label: t("app.nav.store"), icon: Package },
 	];
+
 	const settingsNav = {
 		to: "/settings",
 		label: t("app.nav.settings"),
 		icon: Settings,
 	};
+
+	const paletteNav = [...primaryNav, settingsNav];
+
+	const telehealthTone =
+		total === 0 ? "idle" : healthy === total ? "ok" : healthy === 0 ? "down" : "warn";
+
 	return (
-		<div className="app-shell">
-			<header className="mobile-header">
-				<IconButton
-					label={t("app.nav.open")}
-					aria-expanded={open}
-					aria-controls="app-sidebar"
-					onClick={() => setOpen(true)}
-				>
-					<Menu />
-				</IconButton>
-				<strong>{t("app.brand")}</strong>
-				<LanguageSwitcher className="mobile-lang" />
-				<StatusBadge value={ready ? "ready" : "unavailable"} />
-			</header>
-			<aside id="app-sidebar" className={open ? "sidebar open" : "sidebar"}>
-				<div className="sidebar-brand">
+		<div className="gate-console-shell">
+			{consoleBg ? (
+				<div
+					className="console-custom-bg"
+					style={{ backgroundImage: `url("${consoleBg}")` }}
+				/>
+			) : null}
+			<header className="gate-console-deck">
+				<div className="deck-identity">
 					<div className="brand-mark" aria-hidden="true">
 						<Network size={18} />
 					</div>
-					<div className="sidebar-brand-copy">
-						<strong>{t("app.brand")}</strong>
-						<span>{t("app.console")}</span>
+					<div className="deck-identity-copy">
+						<strong>META GATEWAY</strong>
+						<span>OPERATIONS CONSOLE // {new Date().getFullYear()}</span>
 					</div>
-					<IconButton label={t("app.nav.close")} onClick={() => setOpen(false)}>
-						<X />
-					</IconButton>
 				</div>
-				<GlobalSearch />
-				<nav className="sidebar-nav">
-					{primaryNav.map(({ to, label, icon: Icon }) => (
-						<NavLink key={to} to={to} end={to === "/"}>
-							<span className="nav-icon" aria-hidden="true">
-								<Icon size={16} />
+
+				<nav className="deck-sector-rail" aria-label={t("app.nav.open")}>
+					{paletteNav.map(({ to, label, icon: Icon }) => (
+						<NavLink
+							key={to}
+							to={to}
+							end={to === "/"}
+							className={({ isActive }) =>
+								`deck-sector${isActive || (to === "/settings" && location.pathname.startsWith("/maintain")) ? " active" : ""}`
+							}
+						>
+							<span className="deck-sector-icon">
+								<Icon size={15} />
 							</span>
-							<span className="nav-label">{label}</span>
+							<span className="deck-sector-label">{label}</span>
+							<span className="deck-sector-blade" aria-hidden="true" />
 						</NavLink>
 					))}
 				</nav>
-				<nav className="sidebar-settings" aria-label={t("app.nav.settings")}>
-					<NavLink
-						to={settingsNav.to}
-						className={({ isActive }) =>
-							isActive || location.pathname.startsWith("/maintain")
-								? "active"
-								: undefined
-						}
-					>
-						<span className="nav-icon" aria-hidden="true">
-							<Settings size={16} />
+
+				<div className="deck-status-cluster">
+					<div className={`deck-telemetry is-${telehealthTone}`} title={t("dashboard.healthyChannelsHint")}>
+						<span className="deck-telemetry-dot" />
+						<span className="deck-telemetry-read">
+							{channelStats.isPending ? "···" : `${healthy}/${total}`}
 						</span>
-						<span className="nav-label">{settingsNav.label}</span>
-					</NavLink>
-				</nav>
-				<div className="sidebar-footer">
-					<div className="connection">
-						<span className={ready ? "dot healthy" : "dot"} />
-						<div>
-							<strong>{ready ? t("app.ready") : t("app.notReady")}</strong>
-							<span>{t("app.sessionActive")}</span>
-						</div>
+						<span className="deck-telemetry-label">{t("dashboard.healthyChannels")}</span>
 					</div>
-					<LanguageSwitcher className="sidebar-lang" />
+					<span className="deck-divider" />
 					<button
-						className="theme-toggle"
-						title={theme === "dark" ? t("app.themeLight") : t("app.themeDark")}
-						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+						type="button"
+						className="deck-palette-btn"
+						onClick={() => setPaletteOpen(true)}
+						title="Command Palette (⌘K / Ctrl+K)"
 					>
-						{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+						<Search size={13} />
+						<span>{t("command.placeholder")}</span>
+						<kbd className="deck-kbd">⌘K</kbd>
 					</button>
-					<button onClick={onUnauthorized}>
-						<LogOut size={16} />
-						{t("app.disconnect")}
+					<LanguageSwitcher className="deck-lang" />
+					<button
+						type="button"
+						className="deck-exit-btn"
+						onClick={onUnauthorized}
+						title={t("app.disconnect")}
+						aria-label={t("app.disconnect")}
+					>
+						<LogOut size={14} />
 					</button>
 				</div>
-			</aside>
-			{open && (
-				<button
-					className="drawer-scrim"
-					aria-label={t("app.nav.close")}
-					onClick={() => setOpen(false)}
-				/>
-			)}
-			<div className={`content${routeAnim ? " route-enter" : ""}`}>
+			</header>
+
+			<main className={`gate-console-viewport${routeAnim ? " route-enter" : ""}`}>
 				<Suspense fallback={<Loading />}>
-				<Routes>
-					<Route index element={<Dashboard />} />
-					<Route path="channels" element={<Channels />} />
-					<Route path="models/channel/:channelId" element={<ChannelModels />} />
-					<Route path="models" element={<Models />} />
-					<Route path="keys" element={<Keys />} />
-					<Route path="logs" element={<Logs />} />
-					<Route path="checkins" element={<Checkins />} />
-	<Route path="exchange" element={<ExchangePage />} />
-	<Route path="maintain" element={<Maintain />} />
-					<Route path="settings" element={<Maintain />} />
-					<Route path="store" element={<Store />} />
-	<Route path="plugins/:id" element={<PluginHost />} />
-					{/* Legacy paths map into the channel-first product. */}
-					<Route path="sites/*" element={<Navigate to="/" replace />} />
-					<Route path="routing" element={<Navigate to="/models" replace />} />
-					<Route
-						path="operations"
-						element={<Navigate to="/logs?tab=discovery" replace />}
-					/>
-					<Route path="assets" element={<Navigate to="/" replace />} />
-					<Route path="dashboard" element={<Navigate to="/" replace />} />
-					<Route path="*" element={<Navigate to="/" replace />} />
-				</Routes>
+					<Routes>
+						<Route index element={<Dashboard />} />
+						<Route path="channels" element={<Channels />} />
+						<Route path="models/channel/:channelId" element={<ChannelModels />} />
+						<Route path="models" element={<Models />} />
+						<Route path="keys" element={<Keys />} />
+						<Route path="logs" element={<Logs />} />
+						<Route path="checkins" element={<Checkins />} />
+						<Route path="exchange" element={<ExchangePage />} />
+						<Route path="maintain" element={<Maintain />} />
+						<Route path="settings" element={<Maintain />} />
+						<Route path="store" element={<Store />} />
+						<Route path="plugins/:id" element={<PluginHost />} />
+						<Route path="sites/*" element={<Navigate to="/" replace />} />
+						<Route path="routing" element={<Navigate to="/models" replace />} />
+						<Route
+							path="operations"
+							element={<Navigate to="/logs?tab=discovery" replace />}
+						/>
+						<Route path="assets" element={<Navigate to="/" replace />} />
+						<Route path="dashboard" element={<Navigate to="/" replace />} />
+						<Route path="*" element={<Navigate to="/" replace />} />
+					</Routes>
 				</Suspense>
-			</div>
+			</main>
+
+			<CommandPalette
+				open={paletteOpen}
+				onClose={() => setPaletteOpen(false)}
+				nav={paletteNav}
+			/>
 		</div>
 	);
 }

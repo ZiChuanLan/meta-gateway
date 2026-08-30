@@ -142,17 +142,20 @@ func newMarket(client *http.Client, extraURLs []string) *market {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	m := &market{
-		client:  client,
-		cache:   map[string]marketCacheEntry{},
-		sources: []MarketSource{marketSourceOf(DefaultMarketURL)},
+		client: client,
+		cache:  map[string]marketCacheEntry{},
 	}
-	for _, raw := range extraURLs {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			continue
-		}
-		if src, err := parseMarketSource(raw); err == nil {
-			m.sources = append(m.sources, src)
+	if len(extraURLs) == 0 {
+		m.sources = []MarketSource{marketSourceOf(DefaultMarketURL)}
+	} else {
+		for _, raw := range extraURLs {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			if src, err := parseMarketSource(raw); err == nil {
+				m.sources = append(m.sources, src)
+			}
 		}
 	}
 	return m

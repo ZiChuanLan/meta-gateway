@@ -47,6 +47,7 @@ export interface Channel {
   header_override?: string;
   system_prompt?: string;
   retry_config?: string;
+  model_sync_mode?: "auto" | "manual";
   stable_first?: boolean;
   stable_first_requests?: number;
   created_at: string;
@@ -224,6 +225,137 @@ export interface DiscoveredModel {
   checked_at: string;
 }
 
+export interface UnifyVariant {
+  channel_id: number;
+  channel_name: string;
+  model_name: string;
+  /** Already served by an existing member — applying skips it. */
+  mapped: boolean;
+}
+
+/** Normalization rules, applied as a pipeline in this order. */
+export type UnifyRule =
+  | "account_prefix"
+  | "vendor_prefix"
+  | "date_suffix"
+  | "index_suffix";
+
+export interface UnifyGroup {
+  canonical: string;
+  variants: UnifyVariant[];
+  /** Set when a route with this exact pattern already exists. */
+  route_id?: number;
+  mapped_count?: number;
+  /** Rules this merge actually needed, excluding the always-safe prefix strip. */
+  rules?: UnifyRule[];
+  /** True when a rule that can conflate different models was needed. */
+  risky: boolean;
+}
+
+export interface UnifyPreview {
+  /** Every merge the enabled rules produce, canonical form already applied. */
+  groups: UnifyGroup[];
+  /** Originals currently hidden by an applied group. */
+  archived: ArchivedRoute[];
+}
+
+/** One probe run over a selection of (channel, model) pairs. */
+export interface ProbeTask {
+  id: number;
+  status: "running" | "done" | "cancelled";
+  total: number;
+  completed: number;
+  ok_count: number;
+  fail_count: number;
+  max_tokens: number;
+  concurrency: number;
+  /** What was sent upstream; runs with different prompts are not comparable. */
+  prompt: string;
+  started_at: string;
+  finished_at: string | null;
+}
+
+/** A single probe attempt: one model, on one channel. */
+export interface ModelProbeResult {
+  id: number;
+  task_id: number;
+  channel_id: number;
+  model: string;
+  ok: boolean;
+  status_code: number;
+  latency_ms: number;
+  error?: string;
+  probed_at: string;
+}
+
+/** Latest known state of a (channel, model) pair. */
+export interface ModelHealth {
+  channel_id: number;
+  model: string;
+  ok: boolean;
+  latency_ms: number;
+  probed_at: string;
+  source: string;
+  /** Consecutive probe failures; drives automatic member disabling. */
+  consecutive_failures: number;
+}
+
+/** Probe scope. Empty arrays mean "everything". */
+export interface ProbeStartRequest {
+  channel_ids?: number[];
+  models?: string[];
+  /** User message sent upstream; omitted means the built-in default. */
+  prompt?: string;
+  max_tokens?: number;
+  concurrency?: number;
+  /**
+   * Consecutive failures after which a member is disabled for this run.
+   * Omitted or 0 leaves routing untouched.
+   */
+  auto_disable_after?: number;
+}
+
+export interface UnifyApplyResult {
+  routes_created: number;
+  members_created: number;
+  members_skipped: number;
+  routes_archived: number;
+  batch_count: number;
+}
+
+/** One applied group, kept so it can be reverted later. */
+export interface UnifyBatch {
+  id: number;
+  canonical: string;
+  route_id: number;
+  routes_created: number;
+  members_created: number;
+  routes_archived: number;
+  created_at: string;
+  /** Set once the batch has been reverted. */
+  undone_at?: string;
+}
+
+/** An original model name hidden by an applied group, restorable on its own. */
+export interface ArchivedRoute {
+  batch_id: number;
+  canonical: string;
+  route_id: number;
+  model_name: string;
+  archived_at: string;
+}
+
+export interface UnifyOp {
+  id: number;
+  batch_id: number;
+  seq: number;
+  op: "route_created" | "member_created" | "route_archived";
+  route_id: number;
+  member_id?: number;
+  prev_enabled?: boolean;
+  undone: boolean;
+}
+
 export interface ModelMetadata {
   id?: number;
   model_name: string;
@@ -392,6 +524,15 @@ export interface RuntimeEditableSettings {
   max_concurrent?: number;
   discovery_cron?: string;
   db_gc_cron?: string;
+  /** Scheduled model probing. Empty cron = schedule off. */
+  probe_cron?: string;
+  probe_prompt?: string;
+  probe_max_tokens: number;
+  probe_concurrency: number;
+  /** Consecutive failures before a member is disabled; 0 = report only. */
+  probe_auto_disable: number;
+  probe_channels: number[];
+  probe_models: string[];
   webhook_throttle_seconds: number;
   sticky_enabled: boolean;
   sticky_ttl_minutes: number;
@@ -544,7 +685,6 @@ export interface CreateUpstreamKeyResult {
 export interface RefreshResult extends ProbeResult {
   created_routes: number;
   created_members: number;
-  enabled_members: number;
   deleted_members: number;
   deleted_routes: number;
 }

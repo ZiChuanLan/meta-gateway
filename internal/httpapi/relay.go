@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/ratelimit"
 
 	"github.com/go-chi/chi/v5"
@@ -170,9 +171,15 @@ func (h *RelayHandler) computeRawModels() []string {
 		}
 	}
 	if len(raw) == 0 {
+		// Cold fallback (no enabled routes at all): manual-sync channels
+		// adopt models on demand, so their unadopted models_csv entries are
+		// not part of the catalogue.
 		channels, err := h.db.Channel.ListEnabled()
 		if err == nil {
 			for _, channel := range channels {
+				if channel.ModelSyncMode == domain.ModelSyncModeManual {
+					continue
+				}
 				for _, model := range strings.Split(channel.ModelsCSV, ",") {
 					add(model)
 				}

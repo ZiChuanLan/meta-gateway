@@ -179,6 +179,7 @@ export const en: Dict = {
   "app.console": "Admin Console",
   "dashboard.kicker": "Gateway status",
   "dashboard.title": "Overview",
+  "dashboard.live": "LIVE TELEMETRY",
   "dashboard.description":
     "Gateway activity at a glance — usage, channel health, and recent traffic.",
   "dashboard.totalRequests": "Total requests",
@@ -269,6 +270,11 @@ export const en: Dict = {
   "app.connect.failed": "Connection failed",
   "app.connect.hint":
     "Token stays in memory, or this tab session only. Never put it in the URL.",
+  "app.connect.background": "Custom login background",
+  "app.connect.bgPlaceholder": "Image URL, press Enter",
+  "app.connect.bgApply": "Apply",
+  "app.connect.bgUpload": "Upload",
+  "app.connect.bgClear": "Clear",
   "app.nav.overview": "Overview",
   "app.nav.channels": "Connections",
   "app.nav.models": "Models",
@@ -324,6 +330,16 @@ export const en: Dict = {
   "channels.customModelReenabled": "Model re-enabled",
   "channels.customModelExists": "Model {name} already exists on this channel",
   "channels.customModelRemove": "Remove",
+  "channels.syncMode": "Model sync",
+  "channels.syncModeAuto": "Auto sync",
+  "channels.syncModeAutoHint":
+    "Probed models are adopted as routes and enabled automatically.",
+  "channels.syncModeManual": "Pick on demand",
+  "channels.syncModeManualHint":
+    "New models only enter the candidate list; adopt them from the models page.",
+  "channels.adoptHint":
+    "Checking a model adopts it; newly probed models start unchecked.",
+  "channels.modelAdoptHint": "Not adopted yet; check to start serving this model",
   "channels.empty":
     "No upstream connections yet. Add one with base URL and API key.",
   "channels.test": "Test connection",
@@ -624,6 +640,100 @@ export const en: Dict = {
     "Select a model to edit its route, members, and model-level overrides.",
   "modelsPage.scopeHint":
     "Changes here affect the selected model. Connection priority and weight remain defaults.",
+  "modelsPage.probe.action": "Probe models",
+  "modelsPage.probe.actionHint":
+    "Send a real request to the selected channels and models to see which ones actually answer",
+  "modelsPage.probe.title": "Model probing",
+  "modelsPage.probe.description":
+    "Sends one minimal request (tiny max_tokens) to every (channel × model) pair to find out whether that model really works on that channel. Probing consumes upstream quota, so the scope and cost stay visible before you start and the run can be stopped at any time.",
+  "modelsPage.probe.channels": "Channels (none = all)",
+  "modelsPage.probe.models": "Models (none = all)",
+  "modelsPage.probe.allHint":
+    "Leaving both unselected probes every model of every route.",
+  "modelsPage.probe.filteredHint":
+    "The model list narrows to what the selected channels actually serve.",
+  "modelsPage.probe.searchChannels": "Search channels",
+  "modelsPage.probe.searchModels": "Search models",
+  "modelsPage.probe.selectedCount": "{count} selected",
+  "modelsPage.probe.selectVisible": "Select shown",
+  "modelsPage.probe.clearVisible": "Unselect shown",
+  "modelsPage.probe.clearAll": "Clear",
+  "modelsPage.probe.modelCount": "{count} models",
+  "modelsPage.probe.channelCount": "{count} channels",
+  "modelsPage.probe.scope":
+    "This run probes {channels} channels × {models} models — {pairs} real calls.",
+  "modelsPage.probe.prompt": "Probe prompt",
+  "modelsPage.probe.promptPlaceholder": "Leave blank to use the default hi",
+  "modelsPage.probe.maxTokens": "Max tokens per probe",
+  "modelsPage.probe.concurrency": "Concurrency",
+  "modelsPage.probe.autoDisable": "Disable after N failures",
+  "modelsPage.probe.autoDisableHint":
+    "A member failing {count} times in a row is disabled, and comes back as soon as a probe succeeds. 0 only reports. Members you disabled by hand are never re-enabled.",
+  "modelsPage.probe.start": "Start probing",
+  "modelsPage.probe.cancel": "Stop",
+  "modelsPage.probe.running": "running",
+  "modelsPage.probe.progress":
+    "{done}/{total} done · {ok} working · {fail} failing",
+  "modelsPage.probe.noResults": "No probe results yet",
+  "modelsPage.probe.ok": "working",
+  "modelsPage.probe.failed": "failing",
+  "modelsPage.probe.colChannel": "Channel",
+  "modelsPage.probe.colModel": "Model",
+  "modelsPage.probe.colStatus": "Status",
+  "modelsPage.probe.colLatency": "Latency",
+  "modelsPage.probe.colError": "Error",
+  "modelsPage.unify.action": "Unify names",
+  "modelsPage.unify.actionHint":
+    "Scan channel models for per-account variants of one model and expose a single shared name",
+  "modelsPage.unify.title": "Unify model names",
+  "modelsPage.unify.description":
+    "Folds variants of one model ([A]/[B] account prefixes, deepseek-ai/ owner prefixes, -0731 snapshot dates, -1 account indexes) onto the simplest name in a single pass. Original routes are hidden rather than deleted, so you can bring any of them back from Unify history.",
+  "modelsPage.unify.rulesSection": "Normalization rules",
+  "modelsPage.unify.rulesHint":
+    "Rules run in the listed order against the same name and compose. Turn one off to keep that suffix.",
+  "modelsPage.unify.rule.account_prefix": "Strip account prefix [A] / 【次】",
+  "modelsPage.unify.rule.vendor_prefix": "Strip owner prefix deepseek-ai/",
+  "modelsPage.unify.rule.date_suffix": "Strip snapshot date -0731 / -20250514",
+  "modelsPage.unify.rule.index_suffix": "Strip account index -1 / -2",
+  "modelsPage.unify.safeSection": "Ready to merge — only safe rules needed",
+  "modelsPage.unify.riskySection": "Needs review — required a rule that can conflate models",
+  "modelsPage.unify.riskyHint":
+    "These groups only merge because of an owner prefix, a snapshot date or an index suffix. Different owners can publish different models under the same short name, and different snapshots can be different versions, so confirm before checking one.",
+  "modelsPage.unify.archivedNote":
+    "{count} original name(s) are currently hidden. Restore them from Unify history.",
+  "modelsPage.unify.empty":
+    "Nothing to unify — no duplicate model names found across channels.",
+  "modelsPage.unify.routeExists": "route exists",
+  "modelsPage.unify.canonicalPrefix": "Unify as",
+  "modelsPage.unify.originalPrefix": "original",
+  "modelsPage.unify.progress": "{done}/{total} covered",
+  "modelsPage.unify.pendingCount": "{count} to merge",
+  "modelsPage.unify.nativeName": "same as target — no rewrite",
+  "modelsPage.unify.allMapped": "all covered",
+  "modelsPage.unify.mapped": "covered",
+  "modelsPage.unify.pending": "pending",
+  "modelsPage.unify.apply": "Apply {count} group(s)",
+  "modelsPage.unify.result":
+    "Created {routes} route(s) and {members} member(s); {skipped} already present; hid {archived} original name(s).",
+  "modelsPage.unify.showCovered": "Show {count} covered channel(s)",
+  "modelsPage.unify.collapseCovered": "Collapse covered",
+  "modelsPage.unify.history.action": "Unify history",
+  "modelsPage.unify.history.actionHint":
+    "Review applied unifications — revert a whole group or restore a single hidden name",
+  "modelsPage.unify.history.title": "Unify history",
+  "modelsPage.unify.history.description":
+    "Every apply is recorded as a batch. Reverting one deletes the alias route and members it created and restores the originals it hid. You can also restore a single original and keep the alias.",
+  "modelsPage.unify.history.empty": "Nothing has been unified yet.",
+  "modelsPage.unify.history.archivedSection": "Hidden originals",
+  "modelsPage.unify.history.archivedHint":
+    "Restoring one original leaves the alias itself untouched; the others stay hidden.",
+  "modelsPage.unify.history.batchSection": "Applied batches",
+  "modelsPage.unify.history.restore": "Restore",
+  "modelsPage.unify.history.undo": "Revert",
+  "modelsPage.unify.history.undone": "reverted",
+  "modelsPage.unify.history.active": "active",
+  "modelsPage.unify.history.summary":
+    "{members} member(s) · {archived} original(s) hidden",
 
   "sticky.title": "Sticky sessions",
   "sticky.hint":
@@ -654,7 +764,6 @@ export const en: Dict = {
     "Use the row action menu to test, enable, inspect logs, or edit this model.",
   "modelsPage.groupFilter": "Model family",
   "modelsPage.allGroups": "All model families",
-  "modelsPage.editOverrides": "Edit model settings",
   "modelsPage.showOverrides": "Show model-level settings",
   "modelsPage.hideOverrides": "Hide model-level settings",
   "modelsPage.overrideEnabled": "Override channel default",
@@ -716,6 +825,12 @@ export const en: Dict = {
   "keys.editHint":
     "Adjust quota and unit prices. Used tokens accumulate from successful metered responses.",
   "keys.quotaTotal": "Token quota",
+  "keys.sectionBilling": "Quota & pricing",
+  "keys.sectionBillingHint": "Set a token cap and unit prices",
+  "keys.sectionModels": "Model access",
+  "keys.sectionModelsHint": "Restrict which models this key may call",
+  "keys.sectionAdvanced": "Advanced",
+  "keys.sectionAdvancedHint": "Expiry, IP allowlist, custom token",
   "keys.scopesHint":
     "What this key may call. relay grants every /v1 endpoint; narrower scopes limit it to specific endpoints.",
   "keys.scopeRemove": "Remove {scope}",
@@ -841,6 +956,12 @@ export const en: Dict = {
   "search.models": "Models",
   "search.keys": "Keys",
   "search.logs": "Logs",
+  "command.placeholder": "Search or jump to a page…",
+  "command.go": "Go to",
+  "command.empty": "No matches",
+  "command.move": "Navigate",
+  "command.open": "Open",
+  "command.close": "Close",
   "app.disconnect": "Disconnect",
 
   "assets.refreshResult": "Found {models} models; created {routes} routes.",
@@ -1136,6 +1257,10 @@ export const en: Dict = {
   "routing.enabledLabel": "Enabled",
   "routing.enabledHint":
     "Off = skip this channel for this model (route still exists).",
+  "routing.memberRealName": "Upstream model name (alias target)",
+  "routing.memberRealNamePlaceholder": "Blank forwards the route name as-is",
+  "routing.memberRealNameHint":
+    "When set, requests routed through this channel are rewritten to this name. This is what lets one alias hit each channel's own real model after unification.",
   "routing.protectedLabel": "Independent priority/weight",
   "routing.protectedHint":
     "This member keeps its own priority/weight; the Connections page and model discovery won't overwrite it. Usually set for the whole model from the model edit dialog instead.",
@@ -1391,6 +1516,24 @@ export const en: Dict = {
   "ops.maintenance.cron": "Maintenance schedule",
   "ops.maintenance.cronHint":
     "Five-field cron for the daily maintenance pass (default 0 4 * * *); empty = disabled.",
+  "ops.runtime.section.probe": "Scheduled model probing",
+  "ops.runtime.probeIntro":
+    "Calls every model of every route on a schedule to catch broken members before traffic reaches them. Probing spends upstream quota, so watch the cadence.",
+  "ops.runtime.probeCron": "Probe schedule",
+  "ops.runtime.probeCronHint":
+    "Five-field cron (e.g. 0 */6 * * * = every 6 hours) probing every model on every channel; empty = disabled.",
+  "ops.runtime.probePrompt": "Probe prompt",
+  "ops.runtime.probePromptHint":
+    "The user message sent upstream. Blank uses the default hi; reasoning models need something longer or they fail on output budget alone.",
+  "ops.runtime.probeMaxTokens": "Max tokens per probe",
+  "ops.runtime.probeMaxTokensHint":
+    "Caps each reply to keep the run cheap; ceiling is 256. Use 16 or more for reasoning models.",
+  "ops.runtime.probeConcurrency": "Concurrency",
+  "ops.runtime.probeConcurrencyHint":
+    "How many pairs are probed at once; ceiling is 16. Higher is faster but harder on upstreams.",
+  "ops.runtime.probeAutoDisable": "Disable after N failures",
+  "ops.runtime.probeAutoDisableHint":
+    "A member failing this many times in a row is pulled from routing, and returns as soon as a probe succeeds. 0 = record only. Members you disabled by hand are never re-enabled.",
   "ops.maintenance.result": "Cleaned {total} orphan rows · {vacuumed}",
   "ops.maintenance.vacuumed": "VACUUM freed {bytes}",
   "ops.maintenance.noVacuum": "no VACUUM needed",
@@ -1449,6 +1592,10 @@ export const en: Dict = {
     "How long a session binding stays valid without renewal (1-1440).",
   "ops.runtime.section.server": "Server",
   "ops.runtime.sectionNav": "Jump to section",
+  "ops.runtime.navGroup.routing": "Routing",
+  "ops.runtime.navGroup.health": "Health",
+  "ops.runtime.navGroup.governance": "Limits & Audit",
+  "ops.runtime.navGroup.ops": "Alerts & Ops",
   "ops.runtime.keyPoolRotation": "Key-pool rotation",
   "ops.runtime.crossChannelFailover": "Cross-channel failover",
   "ops.runtime.keyPoolRotationHint":

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -62,7 +63,20 @@ type RuntimeSettingsRow struct {
 	ChannelRetryTimes int
 	// KeyPoolRotation: rotate through the site key pool on failure. -1 = env.
 	KeyPoolRotation int
-	UpdatedAt       time.Time
+
+	// Scheduled model-probe configuration. ProbeChannels and ProbeModels are
+	// stored as JSON arrays; an empty slice (which is also what a malformed
+	// value degrades to) means "everything".
+	ProbeCron        string
+	ProbePrompt      string
+	ProbeMaxTokens   int
+	ProbeConcurrency int
+	// ProbeAutoDisable is the consecutive-failure threshold; 0 = report only.
+	ProbeAutoDisable int
+	ProbeChannels    []int64
+	ProbeModels      []string
+
+	UpdatedAt time.Time
 }
 
 // RuntimeSettingsStore persists a single-row runtime settings document.
@@ -90,6 +104,8 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 		       channel_retry_times,
 		       key_pool_rotation,
+		       probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
+		       probe_auto_disable, probe_channels, probe_models,
 		       updated_at
 		FROM runtime_settings WHERE id = 1`)
 	var (
@@ -110,6 +126,9 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		hsEnabled, hsInterval, hsJitter, hsDegraded, hsConcurrency, hsTimeout              sql.NullInt64
 		channelRetry                                                                       sql.NullInt64
 		keyPoolRotation                                                                    sql.NullInt64
+		probeCron, probePrompt                                                             sql.NullString
+		probeMaxTokens, probeConcurrency, probeAutoDisable                                 sql.NullInt64
+		probeChannels, probeModels                                                         sql.NullString
 		cron, updated                                                                      sql.NullString
 	)
 	if err := row.Scan(
@@ -124,7 +143,10 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&stickyEnabled, &stickyTTL,
 		&alertConfigJSON, &alertSweep, &alertDaily,
 		&hsEnabled, &hsInterval, &hsJitter, &hsDegraded, &hsConcurrency, &hsTimeout,
-		&channelRetry, &keyPoolRotation, &updated,
+		&channelRetry, &keyPoolRotation,
+		&probeCron, &probePrompt, &probeMaxTokens, &probeConcurrency, &probeAutoDisable,
+		&probeChannels, &probeModels,
+		&updated,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return &RuntimeSettingsRow{}, nil
@@ -303,6 +325,31 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	} else {
 		out.KeyPoolRotation = -1
 	}
+	// The probe columns are NOT NULL with defaults, so they always read back.
+	// The JSON lists are the only ones that can fail to parse, and a bad list
+	// degrades to "everything" rather than an error: a malformed scope should
+	// not stop the gateway from booting.
+	if probeCron.Valid {
+		out.ProbeCron = strings.TrimSpace(probeCron.String)
+	}
+	if probePrompt.Valid {
+		out.ProbePrompt = probePrompt.String
+	}
+	if probeMaxTokens.Valid {
+		out.ProbeMaxTokens = int(probeMaxTokens.Int64)
+	}
+	if probeConcurrency.Valid {
+		out.ProbeConcurrency = int(probeConcurrency.Int64)
+	}
+	if probeAutoDisable.Valid {
+		out.ProbeAutoDisable = int(probeAutoDisable.Int64)
+	}
+	if probeChannels.Valid {
+		out.ProbeChannels = decodeIntList(probeChannels.String)
+	}
+	if probeModels.Valid {
+		out.ProbeModels = decodeStringList(probeModels.String)
+	}
 	if updated.Valid {
 		if parsed, err := time.Parse("2006-01-02 15:04:05", updated.String); err == nil {
 			out.UpdatedAt = parsed.UTC()
@@ -349,6 +396,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 			channel_retry_times,
 			key_pool_rotation,
+			probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
+			probe_auto_disable, probe_channels, probe_models,
 			updated_at
 		) VALUES (
 			1, ?, ?, ?, ?, ?, ?,
@@ -368,6 +417,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?, ?, ?,
 			?,
 			?,
+			?, ?, ?, ?,
+			?, ?, ?,
 			datetime('now')
 		)
 		ON CONFLICT(id) DO UPDATE SET
@@ -412,6 +463,13 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_timeout_seconds = excluded.health_sweep_timeout_seconds,
 			channel_retry_times = excluded.channel_retry_times,
 			key_pool_rotation = excluded.key_pool_rotation,
+			probe_cron = excluded.probe_cron,
+			probe_prompt = excluded.probe_prompt,
+			probe_max_tokens = excluded.probe_max_tokens,
+			probe_concurrency = excluded.probe_concurrency,
+			probe_auto_disable = excluded.probe_auto_disable,
+			probe_channels = excluded.probe_channels,
+			probe_models = excluded.probe_models,
 			updated_at = datetime('now')`,
 		hasOverride,
 		settings.RetryTimes,
@@ -454,9 +512,57 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.HealthSweepTimeoutSeconds,
 		settings.ChannelRetryTimes,
 		settings.KeyPoolRotation,
+		settings.ProbeCron,
+		settings.ProbePrompt,
+		settings.ProbeMaxTokens,
+		settings.ProbeConcurrency,
+		settings.ProbeAutoDisable,
+		encodeIntList(settings.ProbeChannels),
+		encodeStringList(settings.ProbeModels),
 	)
 	if err != nil {
 		return fmt.Errorf("runtime settings save: %w", err)
 	}
 	return nil
+}
+
+// A scheduled scope is stored as a JSON array. Both encoders write "[]" for an
+// empty selection and both decoders return nil on any error, because the worst
+// outcome of a malformed scope is a wider probe run — never a startup failure.
+func encodeIntList(values []int64) string {
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return "[]"
+	}
+	return string(encoded)
+}
+
+func encodeStringList(values []string) string {
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return "[]"
+	}
+	return string(encoded)
+}
+
+func decodeIntList(raw string) []int64 {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var values []int64
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil
+	}
+	return values
+}
+
+func decodeStringList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil
+	}
+	return values
 }

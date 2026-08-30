@@ -167,7 +167,7 @@ func setupService(t *testing.T, upstreamURL, platform string) (*store.DB, *disco
 	secret, _ := enc.Encrypt([]byte("service-secret"))
 	siteID, _ := db.Site.Create(&domain.Site{Name: "site", BaseURL: upstreamURL, Platform: platform, Status: domain.StatusEnabled})
 	credentialID, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(secret), Status: domain.StatusEnabled})
-	channelID, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credentialID, Name: "channel", BaseURL: upstreamURL, Priority: 3, Weight: 20, Status: domain.StatusEnabled})
+	channelID, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &credentialID, Name: "channel", BaseURL: upstreamURL, Priority: 3, Weight: 20, Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	if err != nil {
 		t.Fatal(err)
 	}

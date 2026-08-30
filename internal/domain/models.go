@@ -159,6 +159,11 @@ type Channel struct {
 	// RetryConfig is a JSON-encoded RetryConfig (per-channel retryable status
 	// codes and error-text patterns). Empty string = global defaults only.
 	RetryConfig string `json:"retry_config,omitempty"`
+	// ModelSyncMode controls what discovery does with probed models: "auto"
+	// adopts every model as route+member (legacy behaviour), "manual" only
+	// refreshes the discovery snapshot and models_csv — adoption happens per
+	// model from the channel models panel.
+	ModelSyncMode string `json:"model_sync_mode,omitempty"`
 	// StableFirst marks the channel as a grayscale candidate: it receives a
 	// small 1/N fraction of traffic until it earns promotion.
 	StableFirst bool `json:"stable_first,omitempty"`
@@ -169,6 +174,24 @@ type Channel struct {
 	ConsecutiveFailures int       `json:"-"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+// Model sync modes for Channel.ModelSyncMode. The empty string and unknown
+// values are treated as ModelSyncModeManual (opt-in adoption is the safe
+// default; only explicitly configured channels auto-adopt).
+const (
+	ModelSyncModeAuto   = "auto"
+	ModelSyncModeManual = "manual"
+)
+
+// NormalizeModelSyncMode maps an empty or unknown mode to ModelSyncModeManual.
+func NormalizeModelSyncMode(mode string) string {
+	switch mode {
+	case ModelSyncModeAuto:
+		return ModelSyncModeAuto
+	default:
+		return ModelSyncModeManual
+	}
 }
 
 // RetryableErrorPattern matches an upstream error message (substring or regex).
@@ -368,23 +391,27 @@ type Route struct {
 
 // RouteMember binds a channel to a route with priority/weight.
 type RouteMember struct {
-	ID             int64      `json:"id"`
-	RouteID        int64      `json:"route_id"`
-	ChannelID      int64      `json:"channel_id"`
-	Priority       int        `json:"priority"`
-	Weight         int        `json:"weight"`
-	Enabled        bool       `json:"enabled"`
-	Auto           bool       `json:"auto"`
-	ManualOverride bool       `json:"manual_override"`
+	ID             int64 `json:"id"`
+	RouteID        int64 `json:"route_id"`
+	ChannelID      int64 `json:"channel_id"`
+	Priority       int   `json:"priority"`
+	Weight         int   `json:"weight"`
+	Enabled        bool  `json:"enabled"`
+	Auto           bool  `json:"auto"`
+	ManualOverride bool  `json:"manual_override"`
+	// AutoDisabled marks a member a probe turned off, as opposed to one an
+	// operator disabled. The probe keeps probing such members so recovery can
+	// reach them.
+	AutoDisabled bool `json:"auto_disabled"`
 	// MappingJSON holds a per-member alias redirect ({"real":"…"}) so several
 	// channels can share one route/alias name while each rewrites to its own
 	// upstream model. Empty = follow the route-level mapping_json (legacy).
-	MappingJSON string     `json:"mapping_json,omitempty"`
-	FailCount      int        `json:"fail_count"`
-	CooldownUntil  *time.Time `json:"cooldown_until,omitempty"`
-	LastError      string     `json:"last_error,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	MappingJSON   string     `json:"mapping_json,omitempty"`
+	FailCount     int        `json:"fail_count"`
+	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------

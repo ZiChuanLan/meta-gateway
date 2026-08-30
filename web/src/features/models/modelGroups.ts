@@ -1,21 +1,39 @@
 const GROUP_RULES: Array<[string, RegExp]> = [
   ["DeepSeek", /deepseek/i],
-  ["GPT", /(^|[-_/])gpt(?:[-_/]|$)|openai/i],
-  ["Grok", /grok|xai/i],
+  ["GPT", /(^|[-_/])gpt(?:[-_/]|$)|openai|chatgpt|(^|[-_/])o[134](?:[-_/.]|$)/i],
+  ["Grok", /grok|(^|[-_/])xai([-_/]|$)/i],
   ["Claude", /claude|anthropic/i],
-  ["Gemini", /gemini|google/i],
-  ["Qwen", /qwen|通义|千问/i],
-  ["Llama", /llama|meta/i],
-  ["Mistral", /mistral/i],
+  ["Gemma", /gemma/i],
+  ["Gemini", /gemini|(^|[-_/])google([-_/]|$)|palm/i],
+  ["Qwen", /qwen|tongyi|通义|千问/i],
+  ["Kimi", /kimi|moonshot/i],
+  ["GLM", /glm|zhipu|chatglm|(^|[-_/])zai([-_/]|$)/i],
+  ["MiniMax", /minimax|(^|[-_/])abab/i],
+  ["Llama", /llama|(^|[-_/])meta([-_/]|$)/i],
+  ["Mistral", /mistral|mixtral|codestral/i],
+  ["Phi", /(^|[-_/])phi(?:[-_/]|$)/i],
+  ["Doubao", /doubao|豆包/i],
+  ["Hunyuan", /hunyuan|混元/i],
+  ["Baichuan", /baichuan|百川/i],
+  ["Step", /stepfun|阶跃|(^|[-_/])step[-_/]?\d/i],
+  ["Command", /(^|[-_/])command[-_/]|cohere/i],
+  ["ERNIE", /ernie|文心|qianfan/i],
+  ["InternLM", /internlm/i],
   ["Yi", /(^|[-_/])yi(?:[-_/]|$)|零一万物/i],
 ];
 
 export function autoModelGroup(model: string, vendor?: string): string {
-  const source = `${vendor ?? ""} ${model}`;
+  const source = `${vendor ?? ""}/${model.trim()}`;
   return (
     GROUP_RULES.find(([, pattern]) => pattern.test(source))?.[0] ?? "Other"
   );
 }
+
+/** Stable display order for auto groups; groups outside the list go last. */
+export const MODEL_GROUP_ORDER: string[] = [
+  ...GROUP_RULES.map(([name]) => name),
+  "Other",
+];
 
 export function modelGroup(
   model: string,

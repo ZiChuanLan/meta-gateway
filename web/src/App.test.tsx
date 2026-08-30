@@ -118,11 +118,17 @@ describe("channel-first shell", () => {
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
 
-		await flushAsyncWork();
+	await flushAsyncWork();
 
-		expect(
-			document.querySelector(".gateway-transition.is-sealing"),
-		).toBeInTheDocument();
+	// 鹰角极简启幕过场（点击 → 光轴凝聚启幕 420ms）完成后平滑触发大门开启 → sealing
+	await act(async () => {
+		vi.advanceTimersByTime(450);
+		await Promise.resolve();
+	});
+
+	expect(
+		document.querySelector(".gateway-transition.is-sealing"),
+	).toBeInTheDocument();
 		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBeNull();
 		expect(
 			screen.getByRole("button", { name: "Connecting..." }),
@@ -229,11 +235,15 @@ describe("channel-first shell", () => {
 			target: { value: "reduced-token" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
-		await flushAsyncWork();
+	await flushAsyncWork();
+	await act(async () => {
+		vi.advanceTimersByTime(620);
+		await Promise.resolve();
+	});
 
-		expect(sessionStorage.getItem("meta-gateway.admin-token")).toBe(
-			"mg-sess.test",
-		);
+	expect(sessionStorage.getItem("meta-gateway.admin-token")).toBe(
+		"mg-sess.test",
+	);
 		expect(
 			screen.getByRole("heading", { name: "Overview" }),
 		).toBeInTheDocument();

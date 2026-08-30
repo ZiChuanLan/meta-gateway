@@ -2,6 +2,7 @@ import { useState } from "react"
 import type { RouteMember } from "../../api/types"
 import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui"
 import { useI18n } from "../../i18n"
+import { memberRealName, serializeMemberMapping } from "../../lib/alias"
 
 export function MemberDialog({
   value,
@@ -20,6 +21,9 @@ export function MemberDialog({
 }) {
   const { t } = useI18n();
   const [form, setForm] = useState(value);
+  // The upstream model this member rewrites to. Unified aliases depend on it,
+  // and without an editor the redirect was invisible in the UI.
+  const [realName, setRealName] = useState(() => memberRealName(value));
   // Editing priority/weight makes the member independent of the connection
   // defaults (otherwise a later connection edit or model re-sync overwrites
   // the values). Keeping the checkbox off and saving without touching the
@@ -97,6 +101,19 @@ export function MemberDialog({
           <InfoTip label={t("routing.weightHint")} />
         </Field>
       </div>
+      <Field label={t("routing.memberRealName")}>
+        <input
+          value={realName}
+          placeholder={t("routing.memberRealNamePlaceholder")}
+          onChange={(event) => {
+            const next = event.target.value;
+            setRealName(next);
+            markTouched();
+            setForm({ ...form, mapping_json: serializeMemberMapping(next) });
+          }}
+        />
+        <InfoTip label={t("routing.memberRealNameHint")} />
+      </Field>
       <label className="check check-with-hint">
         <input
           type="checkbox"
