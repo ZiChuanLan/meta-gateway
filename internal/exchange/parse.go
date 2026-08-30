@@ -57,9 +57,11 @@ func parseObject(data []byte) ([]Item, error) {
 		}
 		return parseCanonical(data)
 	}
-	// All API Hub V2 backups always declare version "2.0". Credentials may live in
-	// apiCredentialProfiles.profiles (API keys) or accounts[].account_info.access_token
-	// (site session tokens). Prefer profiles when non-empty; otherwise fall back.
+	// All API Hub full-state backups declare a top-level version string and
+	// carry credentials in apiCredentialProfiles.profiles (API keys) or
+	// accounts[].account_info.access_token (site session tokens). Prefer
+	// profiles when non-empty; otherwise fall back. The version value itself
+	// is not gated: structure decides, and zero parsed items is an error.
 	if isAAHV2Document(fields) {
 		if channels || listData {
 			return nil, formatError(ErrorUnsupported)
@@ -88,7 +90,7 @@ func isAAHV2Document(fields map[string]json.RawMessage) bool {
 		return false
 	}
 	var version string
-	if json.Unmarshal(raw, &version) != nil || version != "2.0" {
+	if json.Unmarshal(raw, &version) != nil {
 		return false
 	}
 	_, hasProfiles := fields["apiCredentialProfiles"]
@@ -207,11 +209,6 @@ func parseNewAPIList(data []byte) ([]Item, error) {
 }
 
 func parseAAHV2(fields map[string]json.RawMessage) ([]Item, error) {
-	var version string
-	if raw, ok := fields["version"]; !ok || json.Unmarshal(raw, &version) != nil || version != "2.0" {
-		return nil, formatError(ErrorUnsupported)
-	}
-
 	// Collect from BOTH profiles and accounts when both exist.
 	// Profiles carry api_key entries; accounts carry access_token/session entries
 	// for check-in. Silently dropping one leaks data, especially in replace mode.

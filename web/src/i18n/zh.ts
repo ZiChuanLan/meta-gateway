@@ -30,6 +30,11 @@ export const zh: Dict = {
     "当前连接存的是用户 access_token（适合签到/账号 API）。同步模型需要 OpenAI 兼容的 API Key。请编辑连接并填写 API Key。",
   "error.backup_unlock_required":
     "云备份是加密的。请填写「备份解锁密码」（不是网盘登录密码），保存后再同步。",
+  "error.webdavInvalidBackup": "网盘备份不是受支持的导入格式",
+  "error.webdavInvalidBackupCause":
+    "下载成功了，但网盘里的这个文件不是 Meta Gateway 交换包，也不是 All API Hub 2.x–4.x 的备份。",
+  "error.webdavInvalidBackupFix":
+    "确认网盘文件夹里放的是 AAH 自动备份，或 Meta Gateway 导出的交换包，然后再同步。",
   "error.upstream_unauthorized":
     "上游返回 401/403。请检查 API Key 与 Base URL 是否正确。",
   "error.upstream_failure": "上游模型发现失败。",

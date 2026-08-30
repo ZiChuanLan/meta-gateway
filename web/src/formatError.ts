@@ -65,6 +65,17 @@ export function formatErrorObject(error: unknown, t: Translate): FormattedError 
 			class: "config",
 		};
 	}
+	// WebDAV pull succeeded but the downloaded document is not an importable
+	// Meta Gateway / AAH backup (wrong file in the cloud folder).
+	if (lower.includes("not a supported import document")) {
+		return {
+			title: t("error.webdavInvalidBackup"),
+			cause: t("error.webdavInvalidBackupCause"),
+			fix: t("error.webdavInvalidBackupFix"),
+			raw,
+			class: "config",
+		};
+	}
 	// The upstream created the token but masked the returned secret (sk-xxxx****yyyy).
 	// This is a distinct outcome from "no key available at all": the key exists
 	// upstream, the gateway just cannot capture the plaintext.
@@ -83,9 +94,12 @@ export function formatErrorObject(error: unknown, t: Translate): FormattedError 
 	const title = t(CLASS_KEY[cls]);
 	const cause = t(`err.${clsKey(cls)}.cause`);
 	const fix = t(`err.${clsKey(cls)}.fix`);
+	// When nothing matched, the raw backend phrase is usually the most
+	// informative thing we have — surface it instead of a second generic line.
+	const fallbackCause = cls === "unknown" && raw !== "common.error" ? raw : cause;
 	return {
 		title,
-		cause,
+		cause: fallbackCause,
 		fix,
 		raw,
 		class: cls,

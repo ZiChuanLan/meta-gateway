@@ -18,6 +18,9 @@ func TestParseSupportedShapes(t *testing.T) {
 		{"aah-v2", `{"version":"2.0","accounts":[],"channelConfigs":{},"apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}]}}`},
 		{"aah-v2-accounts-fallback", `{"version":"2.0","timestamp":1,"accounts":{"accounts":[{"id":"a1","site_name":"WONG","site_url":"https://wzw.pp.ua","site_type":"new-api","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"site-secret","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]},"apiCredentialProfiles":{"version":3,"profiles":[],"lastUpdated":1}}`},
 		{"aah-v2-profiles-and-accounts", `{"version":"2.0","apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}]},"accounts":{"accounts":[{"id":"a1","site_name":"WONG","site_url":"https://wzw.pp.ua","site_type":"new-api","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"site-secret","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]}}`},
+		{"aah-v9-future", `{"version":"9.9","apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}]},"accounts":{"accounts":[{"id":"a1","site_name":"WONG","site_url":"https://wzw.pp.ua","site_type":"new-api","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"site-secret","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]}}`},
+		{"aah-v4-full-state", `{"version":"4.0","timestamp":1788000000,"accounts":{"accounts":[{"id":"a1","site_name":"WONG","site_url":"https://wzw.pp.ua","site_type":"new-api","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"site-secret","username":"u"},"checkIn":{"autoCheckInEnabled":true}}],"bookmarks":[],"pinnedAccountIds":[]},"apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}],"links":{}},"channelConfigs":{"schemaVersion":2,"configs":{}},"preferences":{"themeMode":"dark"},"tagStore":{"tagsById":{},"version":1}}`},
+		{"aah-v3", `{"version":"3.0","apiCredentialProfiles":{"version":3,"profiles":[{"name":"main","apiType":"openai","baseUrl":"https://api.example.com","apiKey":"secret"}]}}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -45,7 +48,7 @@ func TestParseSupportedShapes(t *testing.T) {
 				if !items[0].CheckinEnabled {
 					t.Fatal("expected checkin enabled")
 				}
-			case "aah-v2-profiles-and-accounts":
+			case "aah-v2-profiles-and-accounts", "aah-v9-future", "aah-v4-full-state":
 				if len(items) != 2 {
 					t.Fatalf("expected 2 items (profile + account), got %d: %+v", len(items), items)
 				}
@@ -89,6 +92,7 @@ func TestParseRejectsUnsafeOrAmbiguousDocuments(t *testing.T) {
 		`[{"name":"main","base_url":"https://example.com","key":"secret","type":42}]`,
 		`[]`,
 		`{"version":"2.0","accounts":{"accounts":[]},"apiCredentialProfiles":{"version":3,"profiles":[]}}`,
+		`{"version":2,"accounts":{"accounts":[{"id":"a1","site_name":"X","site_url":"https://x.example.com"}]}}`,
 		`{} trailing`,
 	}
 	for _, body := range tests {

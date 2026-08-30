@@ -30,6 +30,11 @@ export const en: Dict = {
     "This connection stores a user access_token (good for check-in / account APIs). Model sync needs an OpenAI-compatible API key. Edit the connection and add an API key.",
   "error.backup_unlock_required":
     "This cloud backup is encrypted. Enter the backup unlock password (not the WebDAV login password), save, then sync again.",
+  "error.webdavInvalidBackup": "Cloud backup is not a supported import format",
+  "error.webdavInvalidBackupCause":
+    "The download succeeded, but the file in your cloud folder is neither a Meta Gateway exchange package nor an All API Hub 2.x–4.x backup.",
+  "error.webdavInvalidBackupFix":
+    "Make sure the folder contains the AAH automatic backup (or a Meta Gateway export), then sync again.",
   "error.upstream_unauthorized":
     "Upstream returned 401/403. Check the API key and whether the base URL is correct.",
   "error.upstream_failure": "Upstream model discovery failed.",
