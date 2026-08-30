@@ -8213,6 +8213,27 @@ td.actions {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--dur-hover) var(--ease-hover);
+}
+.channel-model-group-head::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform var(--dur-hover) var(--ease-hover);
+}
+.channel-model-group-head.is-collapsed::before {
+  transform: rotate(45deg);
+}
+.channel-model-group-head:hover {
+  color: var(--text);
+}
+.channel-model-group-head:hover::before {
+  border-color: var(--text);
 }
 .channel-model-group-head:first-child {
   padding-top: 0;

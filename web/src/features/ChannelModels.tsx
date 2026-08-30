@@ -79,6 +79,21 @@ export function ChannelModelsPanel({
   const [bulkMode, setBulkMode] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
+  // Vendor groups start collapsed so a long candidate list stays scannable.
+  // Search or bulk mode forces them open, otherwise hidden rows would read
+  // as empty results.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    () => new Set(MODEL_GROUP_ORDER),
+  );
+  const toggleGroup = (group: string) =>
+    setCollapsedGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  const forcedOpen = query.trim() !== "" || bulkMode;
+
   // mappingReal parses a {"real":"…"} mapping value; empty when absent.
   const mappingReal = (raw: string | undefined): string => {
     if (!raw) return "";
@@ -709,15 +724,22 @@ export function ChannelModelsPanel({
           retry={() => discovered.refetch()}
         >
           <ul className="channel-model-list is-page">
-            {grouped.map(({ group, items }) => (
-              <Fragment key={group}>
-                <li className="channel-model-group-head">
-                  <span className="channel-model-group-name">{group}</span>
-                  <span className="channel-model-group-count">
-                    {items.length}
-                  </span>
-                </li>
-                {items.map((item) => {
+            {grouped.map(({ group, items }) => {
+              const isCollapsed = !forcedOpen && collapsedGroups.has(group);
+              return (
+                <Fragment key={group}>
+                  <li
+                    className={`channel-model-group-head${isCollapsed ? " is-collapsed" : ""}`}
+                    onClick={() => toggleGroup(group)}
+                    title={isCollapsed ? t("channels.groupExpand") : t("channels.groupCollapse")}
+                  >
+                    <span className="channel-model-group-name">{group}</span>
+                    <span className="channel-model-group-count">
+                      {items.length}
+                    </span>
+                  </li>
+                  {!isCollapsed &&
+                    items.map((item) => {
                   const discoveredModel = models.find(
                     (m) => m.model_name === item.name,
                   );
@@ -836,8 +858,9 @@ export function ChannelModelsPanel({
                     </li>
                   );
                 })}
-              </Fragment>
-            ))}
+                </Fragment>
+              );
+            })}
           </ul>
         </EntityState>
       </Panel>

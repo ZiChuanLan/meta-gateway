@@ -340,6 +340,8 @@ export const en: Dict = {
   "channels.adoptHint":
     "Checking a model adopts it; newly probed models start unchecked.",
   "channels.modelAdoptHint": "Not adopted yet; check to start serving this model",
+  "channels.groupExpand": "Expand group",
+  "channels.groupCollapse": "Collapse group",
   "channels.empty":
     "No upstream connections yet. Add one with base URL and API key.",
   "channels.test": "Test connection",

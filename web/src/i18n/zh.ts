@@ -317,6 +317,8 @@ export const zh: Dict = {
   "channels.syncModeManualHint": "新模型只进候选列表，到模型页勾选接入。",
   "channels.adoptHint": "勾选即接入该模型；新探测到的模型默认未勾选。",
   "channels.modelAdoptHint": "尚未接入，勾选后开始服务此模型",
+  "channels.groupExpand": "展开分组",
+  "channels.groupCollapse": "折叠分组",
   "channels.empty": "还没有上游连接。添加 Base URL 和 API Key 即可。",
   "channels.test": "测试连接",
   "channels.fetchModels": "同步模型",
