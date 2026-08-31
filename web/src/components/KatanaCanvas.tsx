@@ -38,8 +38,6 @@ export const KatanaCanvas: React.FC<KatanaCanvasProps> = ({
 		const ctx = canvas.getContext("2d", { alpha: true });
 		if (!ctx) return;
 
-		let lastTime = performance.now();
-
 		const resize = () => {
 			if (!canvas) return;
 			const rect = canvas.getBoundingClientRect();
@@ -51,9 +49,7 @@ export const KatanaCanvas: React.FC<KatanaCanvasProps> = ({
 		window.addEventListener("resize", resize);
 		resize();
 
-		const render = (time: number) => {
-			lastTime = time;
-
+		const render = () => {
 			const w = canvas.width;
 			const h = canvas.height;
 

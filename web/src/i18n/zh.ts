@@ -174,6 +174,7 @@ export const zh: Dict = {
   "app.console": "管理控制台",
   "app.themeDark": "切换到深色模式",
   "app.themeLight": "切换到浅色模式",
+  "app.updateAvailable": "新版本 {version}",
   "dashboard.kicker": "网关运行状况",
   "dashboard.title": "总览",
   "dashboard.live": "实时遥测",
@@ -1523,6 +1524,9 @@ export const zh: Dict = {
     "一个 Key 失败后轮换到站点下其他 Key。关闭 = 只用渠道绑定的 Key（不换 Key；同渠道重发仍生效）。",
   "ops.runtime.crossChannelFailoverHint":
     "关闭后每个请求只尝试首选渠道；RETRY_TIMES 的值会保留，重新开启后恢复使用。同一渠道内的 API Key 轮换不受影响。",
+  "ops.runtime.updateCheck": "检查更新",
+  "ops.runtime.updateCheckHint":
+    "定期向 GitHub 查询最新 Release，有新版本时在顶栏提示。关闭后不做任何外呼。环境变量：UPDATE_CHECK_ENABLED。",
   "ops.runtime.retryTimes": "重试轮次",
   "ops.runtime.retryTimesHint":
     "失败后最多尝试几轮：每轮尝试一个新渠道（0 = 只用首选渠道）。每轮内同一 Key 会先按「同渠道重发次数」重发，再换 Key/换渠道。环境变量：RETRY_TIMES。",

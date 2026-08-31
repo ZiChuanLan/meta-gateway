@@ -10,11 +10,15 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /build
 ENV GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 ENV GOSUMDB=sum.golang.google.cn
+ARG VERSION=dev
+ARG COMMIT=unknown
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web-builder /build/internal/webui/dist ./internal/webui/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /bin/meta-gateway ./cmd/server
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X github.com/lan/meta-gateway/internal/buildinfo.Version=${VERSION} -X github.com/lan/meta-gateway/internal/buildinfo.Commit=${COMMIT}" \
+    -o /bin/meta-gateway ./cmd/server
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates curl \

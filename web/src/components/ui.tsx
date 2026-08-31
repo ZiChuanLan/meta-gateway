@@ -62,7 +62,6 @@ export function Page({
   title,
   description,
   actions,
-  kicker,
   children,
 }: {
   title: string;

@@ -63,6 +63,8 @@ type RuntimeSettingsRow struct {
 	ChannelRetryTimes int
 	// KeyPoolRotation: rotate through the site key pool on failure. -1 = env.
 	KeyPoolRotation int
+	// UpdateCheckEnabled gates the GitHub release update check. -1 = env.
+	UpdateCheckEnabled int
 	// DefaultModelSyncMode is the sync mode new channels get when the create
 	// request omits model_sync_mode ("auto"|"manual"; "" = cleared override).
 	DefaultModelSyncMode string
@@ -107,6 +109,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 		       channel_retry_times,
 		       key_pool_rotation,
+		       update_check_enabled,
 		       default_model_sync_mode,
 		       probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 		       probe_auto_disable, probe_channels, probe_models,
@@ -129,7 +132,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		alertSweep, alertDaily                                                             sql.NullInt64
 		hsEnabled, hsInterval, hsJitter, hsDegraded, hsConcurrency, hsTimeout              sql.NullInt64
 		channelRetry                                                                       sql.NullInt64
-		keyPoolRotation                                                                    sql.NullInt64
+		keyPoolRotation, updateCheck                                                       sql.NullInt64
 		defaultSyncMode                                                                    sql.NullString
 		probeCron, probePrompt                                                             sql.NullString
 		probeMaxTokens, probeConcurrency, probeAutoDisable                                 sql.NullInt64
@@ -148,7 +151,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&stickyEnabled, &stickyTTL,
 		&alertConfigJSON, &alertSweep, &alertDaily,
 		&hsEnabled, &hsInterval, &hsJitter, &hsDegraded, &hsConcurrency, &hsTimeout,
-		&channelRetry, &keyPoolRotation,
+		&channelRetry, &keyPoolRotation, &updateCheck,
 		&defaultSyncMode,
 		&probeCron, &probePrompt, &probeMaxTokens, &probeConcurrency, &probeAutoDisable,
 		&probeChannels, &probeModels,
@@ -331,6 +334,11 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	} else {
 		out.KeyPoolRotation = -1
 	}
+	if updateCheck.Valid {
+		out.UpdateCheckEnabled = int(updateCheck.Int64)
+	} else {
+		out.UpdateCheckEnabled = -1
+	}
 	if defaultSyncMode.Valid {
 		out.DefaultModelSyncMode = strings.TrimSpace(defaultSyncMode.String)
 	}
@@ -405,6 +413,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 			channel_retry_times,
 			key_pool_rotation,
+			update_check_enabled,
 			default_model_sync_mode,
 			probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 			probe_auto_disable, probe_channels, probe_models,
@@ -425,6 +434,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?, ?, ?,
 			?, ?, ?,
 			?, ?, ?,
+			?,
 			?,
 			?,
 			?,
@@ -474,6 +484,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_timeout_seconds = excluded.health_sweep_timeout_seconds,
 			channel_retry_times = excluded.channel_retry_times,
 			key_pool_rotation = excluded.key_pool_rotation,
+			update_check_enabled = excluded.update_check_enabled,
 			default_model_sync_mode = excluded.default_model_sync_mode,
 			probe_cron = excluded.probe_cron,
 			probe_prompt = excluded.probe_prompt,
@@ -524,6 +535,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.HealthSweepTimeoutSeconds,
 		settings.ChannelRetryTimes,
 		settings.KeyPoolRotation,
+		settings.UpdateCheckEnabled,
 		settings.DefaultModelSyncMode,
 		settings.ProbeCron,
 		settings.ProbePrompt,

@@ -35,13 +35,6 @@ type Command = {
 	run: () => void;
 };
 
-const HIT_ICONS: Record<string, LucideIcon> = {
-	channels: Cable,
-	routes: Boxes,
-	credentials: KeyRound,
-	logs: ScrollText,
-};
-
 /**
  * ⌘K command palette: jump to any page instantly, or fuzzy-search the whole
  * gateway (channels / models / keys / logs) and teleport to the result.

@@ -25,7 +25,10 @@ type Config struct {
 	ChannelRetryTimes int
 	// KeyPoolRotation enables rotating through the site key pool on failure.
 	// Disabled = only the channel's bound key is used.
-	KeyPoolRotation             bool
+	KeyPoolRotation bool
+	// UpdateCheckEnabled lets the gateway query GitHub for newer releases to
+	// power the console update badge.
+	UpdateCheckEnabled          bool
 	CrossChannelFailoverEnabled bool
 	Cooldown                    time.Duration
 	// SQLiteMaxOpenConns is the SQLite connection-pool ceiling (WAL allows
@@ -162,6 +165,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	keyPoolRotation, err := envBool("KEY_POOL_ROTATION", true)
+	if err != nil {
+		return nil, err
+	}
+	updateCheckEnabled, err := envBool("UPDATE_CHECK_ENABLED", true)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +442,7 @@ func Load() (*Config, error) {
 		RetryTimes:                  retryTimes,
 		ChannelRetryTimes:           channelRetryTimes,
 		KeyPoolRotation:             keyPoolRotation,
+		UpdateCheckEnabled:          updateCheckEnabled,
 		CrossChannelFailoverEnabled: crossChannelFailover,
 		Cooldown:                    time.Duration(cooldownSeconds) * time.Second,
 		CheckinEnabled:              checkinEnabled,

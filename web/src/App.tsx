@@ -1,19 +1,18 @@
 import {
 	Activity,
 	ArrowLeftRight,
+	ArrowUpCircle,
 	Boxes,
 	Cable,
 	CalendarCheck,
 	KeyRound,
 	LogOut,
-	Menu,
 	Moon,
 	Network,
 	Package,
 	Puzzle,
 	ScrollText,
 	Settings,
-	X,
 	Sun,
 	Zap,
 	Image,
@@ -759,6 +758,25 @@ function AuthenticatedShell({
 	).length;
 	const total = channelStats.data?.length ?? 0;
 
+	// Build identity: /healthz is public and reports the injected version.
+	const [gatewayVersion, setGatewayVersion] = useState("dev");
+	useEffect(() => {
+		const controller = new AbortController();
+		fetch("/healthz", { signal: controller.signal })
+			.then((r) => (r.ok ? r.json() : null))
+			.then((body: { version?: string } | null) => {
+				if (body?.version) setGatewayVersion(body.version);
+			})
+			.catch(() => {});
+		return () => controller.abort();
+	}, []);
+	const updateCheck = useQuery({
+		queryKey: ["update-check"],
+		queryFn: ({ signal }) => api(client!).updateCheck(signal),
+		staleTime: 10 * 60_000,
+		refetchInterval: 30 * 60_000,
+	});
+
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -846,7 +864,7 @@ function AuthenticatedShell({
 					</div>
 					<div className="deck-identity-copy">
 						<strong>META GATEWAY</strong>
-						<span>OPERATIONS CONSOLE // {new Date().getFullYear()}</span>
+						<span>OPERATIONS CONSOLE // {gatewayVersion}</span>
 					</div>
 				</div>
 
@@ -878,6 +896,19 @@ function AuthenticatedShell({
 						<span className="deck-telemetry-label">{t("dashboard.healthyChannels")}</span>
 					</div>
 					<span className="deck-divider" />
+					{updateCheck.data?.has_update ? (
+						<a
+							className="deck-update-pill"
+							href={updateCheck.data.release_url || undefined}
+							target="_blank"
+							rel="noreferrer"
+						>
+							<ArrowUpCircle size={12} />
+							{t("app.updateAvailable", {
+								version: updateCheck.data.latest,
+							})}
+						</a>
+					) : null}
 					<button
 						type="button"
 						className="deck-palette-btn"

@@ -309,6 +309,18 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.keyPoolRotationHint")} />
             </span>
           </label>
+          <label className="check" style={{ marginBottom: 10 }}>
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={draft.update_check_enabled}
+              onChange={(e) => patch("update_check_enabled", e.target.checked)}
+            />
+            <span className="setting-check-label">
+              <span>{t("ops.runtime.updateCheck")}</span>
+              <InfoTip label={t("ops.runtime.updateCheckHint")} />
+            </span>
+          </label>
           <label className="field">
             <SettingLabel
               label={t("ops.runtime.retryTimes")}

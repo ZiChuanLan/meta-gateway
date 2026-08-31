@@ -549,8 +549,20 @@ export interface RuntimeEditableSettings {
   health_sweep_timeout_seconds: number;
   channel_retry_times: number;
   key_pool_rotation: boolean;
+  /** Gateway may query GitHub for newer releases to power the update badge. */
+  update_check_enabled: boolean;
   /** Sync mode newly created channels inherit when the request omits it. */
   default_model_sync_mode: "auto" | "manual";
+}
+
+export interface UpdateCheckStatus {
+  enabled: boolean;
+  current: string;
+  latest: string;
+  has_update: boolean;
+  release_url: string;
+  checked_at?: string;
+  error?: string;
 }
 
 export interface RuntimeSettings {

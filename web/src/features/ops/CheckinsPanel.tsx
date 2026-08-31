@@ -10,7 +10,7 @@ import { useModules } from "../../hooks/useModules"
 import { useToast } from "../../toast"
 import { SCHEDULE_PRESETS, scheduleFromSettings, settingsFromSchedule, type SchedulePresetId } from "../../lib/schedulePresets"
 import { PaginationBar } from "../../components/PaginationBar"
-import { Button, ConfirmDialog, DataTable, ErrorState, Loading, Panel, InfoTip, StatusBadge, formatDate } from "../../components/ui"
+import { Button, ConfirmDialog, DataTable, ErrorState, Loading, Panel, StatusBadge, formatDate } from "../../components/ui"
 import { CheckinTimePicker } from "./CheckinTimePicker"
 
 /** Human-readable check-in category; falls back to the raw code. */

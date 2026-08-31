@@ -181,6 +181,7 @@ export const en: Dict = {
   "app.brand": "Meta Gateway",
   "app.themeDark": "Switch to dark mode",
   "app.themeLight": "Switch to light mode",
+  "app.updateAvailable": "New version {version}",
   "app.console": "Admin Console",
   "dashboard.kicker": "Gateway status",
   "dashboard.title": "Overview",
@@ -1642,6 +1643,9 @@ export const en: Dict = {
     "Rotate through the site's API keys when one fails. Off = only the channel's bound key is used (no key switching; same-key re-sends still apply).",
   "ops.runtime.crossChannelFailoverHint":
     "When disabled, each request uses only its first selected channel. The retry limit is retained for when this is enabled again; same-channel API-key rotation is unchanged.",
+  "ops.runtime.updateCheck": "Check for updates",
+  "ops.runtime.updateCheckHint":
+    "Periodically query GitHub for the latest release and flag new versions in the top bar. Off = no outbound calls at all. Env: UPDATE_CHECK_ENABLED.",
   "ops.runtime.retryTimes": "Retry rounds",
   "ops.runtime.retryTimesHint":
     "How many failover rounds are attempted after a failure: each round tries one more channel (0 = first channel only). Within each round the same key is re-sent channel-retry-times times before moving on. Env: RETRY_TIMES.",

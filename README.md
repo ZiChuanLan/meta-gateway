@@ -13,6 +13,9 @@
 <a href="https://hub.docker.com/r/zichuanlan/meta-gateway">
   <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=flat&logo=docker&label=Docker%20Pulls">
 </a>
+<a href="https://github.com/ZiChuanLan/meta-gateway/releases">
+  <img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=flat&label=Release">
+</a>
 <a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat">
 </a>

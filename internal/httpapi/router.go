@@ -18,6 +18,7 @@ import (
 	"github.com/lan/meta-gateway/internal/alerts"
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/backup"
+	"github.com/lan/meta-gateway/internal/buildinfo"
 	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/crypto"
@@ -36,6 +37,7 @@ import (
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/runtimeconfig"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/updatecheck"
 	"github.com/lan/meta-gateway/internal/webdavsync"
 	"github.com/lan/meta-gateway/internal/webhook"
 	"github.com/lan/meta-gateway/internal/webui"
@@ -132,7 +134,11 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	r.Use(recoverMiddleware(logger))
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status":  "ok",
+			"version": buildinfo.Version,
+			"commit":  buildinfo.Commit,
+		})
 	})
 	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		if !state.Ready() || !pingReady(db, cfg.ReadinessTimeout) {
@@ -465,6 +471,17 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	if err := runtimeController.Bootstrap(); err != nil {
 		logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
 	}
+	// Update check: periodic GitHub latest-release comparison for the console
+	// badge. The admin toggle (read live from runtime settings) gates every
+	// outbound call.
+	updateCtx, updateCancel := context.WithCancel(context.Background())
+	RegisterStopper(updateCancel)
+	updateService := updatecheck.New(func() bool {
+		return runtimeController.Snapshot().Editable.UpdateCheckEnabled
+	})
+	go updateService.Run(updateCtx)
+	NewUpdateCheckHandler(updateService, runtimeController).Register(adminGroup)
+	NewRuntimeSettingsHandler(runtimeController).Register(adminGroup)
 	// Passive-recovery loop: probes auto-disabled channels on a schedule and
 	// restores them when the upstream answers (config hot-reloadable).
 	recoveryCtx, recoveryCancel := context.WithCancel(context.Background())

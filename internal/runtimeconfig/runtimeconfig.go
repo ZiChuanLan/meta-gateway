@@ -127,6 +127,9 @@ type Editable struct {
 	ChannelRetryTimes int `json:"channel_retry_times"`
 	// KeyPoolRotation enables rotating through the site key pool on failure.
 	KeyPoolRotation bool `json:"key_pool_rotation"`
+	// UpdateCheckEnabled lets the gateway query GitHub for a newer release to
+	// power the console update badge. Off means no outbound calls at all.
+	UpdateCheckEnabled bool `json:"update_check_enabled"`
 	// DefaultModelSyncMode is the sync mode ("auto"|"manual") new channels
 	// get when the create request omits model_sync_mode. Existing channels
 	// keep their own mode.
@@ -251,6 +254,7 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		HealthSweepTimeoutSeconds:        cfg.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                cfg.ChannelRetryTimes,
 		KeyPoolRotation:                  cfg.KeyPoolRotation,
+		UpdateCheckEnabled:               cfg.UpdateCheckEnabled,
 		// No env knob: the bootstrap default for new channels is manual
 		// (discovery only fills the candidate snapshot until models are
 		// explicitly adopted); Admin can override it here.
@@ -387,6 +391,7 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		HealthSweepTimeoutSeconds:        next.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                next.ChannelRetryTimes,
 		KeyPoolRotation:                  boolInt(next.KeyPoolRotation),
+		UpdateCheckEnabled:               boolInt(next.UpdateCheckEnabled),
 		DefaultModelSyncMode:             next.DefaultModelSyncMode,
 	}
 	previousRow, err := c.store.Get()
@@ -644,6 +649,7 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		HealthSweepTimeoutSeconds:        row.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                row.ChannelRetryTimes,
 		KeyPoolRotation:                  row.KeyPoolRotation == 1,
+		UpdateCheckEnabled:               row.UpdateCheckEnabled == 1,
 		DefaultModelSyncMode:             row.DefaultModelSyncMode,
 	}
 }
@@ -732,6 +738,9 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	}
 	if editable.KeyPoolRotation == false && row.KeyPoolRotation == -1 {
 		editable.KeyPoolRotation = c.env.KeyPoolRotation
+	}
+	if editable.UpdateCheckEnabled == false && row.UpdateCheckEnabled == -1 {
+		editable.UpdateCheckEnabled = c.env.UpdateCheckEnabled
 	}
 	if editable.DefaultModelSyncMode == "" {
 		editable.DefaultModelSyncMode = c.env.DefaultModelSyncMode

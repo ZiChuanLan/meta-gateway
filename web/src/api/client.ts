@@ -49,6 +49,7 @@ import type {
   StickySnapshot,
   RuntimeEditableSettings,
   RuntimeSettings,
+  UpdateCheckStatus,
   Site,
   UnifyApplyResult,
   UnifyGroup,
@@ -680,6 +681,8 @@ export const api = (client: ApiClient) => ({
   createBackup: () => client.post<BackupRecord>("/admin/backups"),
   runtimeSettings: (signal?: AbortSignal) =>
     client.get<RuntimeSettings>("/admin/runtime-settings", signal),
+  updateCheck: (signal?: AbortSignal) =>
+    client.get<UpdateCheckStatus>("/admin/update-check", signal),
   updateRuntimeSettings: (body: RuntimeEditableSettings) =>
     client.put<RuntimeSettings>("/admin/runtime-settings", body),
   resetRuntimeSettings: () =>
