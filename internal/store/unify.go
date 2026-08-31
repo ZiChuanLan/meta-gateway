@@ -24,10 +24,10 @@ type UnifyApplyGroup struct {
 
 // UnifyApplyOutcome reports what an apply did across all groups.
 type UnifyApplyOutcome struct {
-	RoutesCreated  int                `json:"routes_created"`
-	MembersCreated int                `json:"members_created"`
-	MembersSkipped int                `json:"members_skipped"`
-	RoutesArchived int                `json:"routes_archived"`
+	RoutesCreated  int                 `json:"routes_created"`
+	MembersCreated int                 `json:"members_created"`
+	MembersSkipped int                 `json:"members_skipped"`
+	RoutesArchived int                 `json:"routes_archived"`
 	Batches        []domain.UnifyBatch `json:"batches"`
 }
 

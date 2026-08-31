@@ -98,9 +98,9 @@ func TestSelectWeightedAndAllZeroFallback(t *testing.T) {
 func TestSelectPassesRouteGroupToRepo(t *testing.T) {
 	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name    string
+		name       string
 		constraint *SelectionConstraint
-		want    string
+		want       string
 	}{
 		{"explicit group", &SelectionConstraint{RouteGroup: "A"}, "A"},
 		{"no constraint", nil, ""},

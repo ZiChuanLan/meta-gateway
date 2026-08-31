@@ -410,7 +410,7 @@ type RouteMember struct {
 	// MappingJSON holds a per-member alias redirect ({"real":"…"}) so several
 	// channels can share one route/alias name while each rewrites to its own
 	// upstream model. Empty = follow the route-level mapping_json (legacy).
-	MappingJSON   string     `json:"mapping_json,omitempty"`
+	MappingJSON string `json:"mapping_json,omitempty"`
 	// GroupName scopes the member to a route group; each group has its own
 	// priority ordering. 'default' is the built-in group every legacy member
 	// belongs to.

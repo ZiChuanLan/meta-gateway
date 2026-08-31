@@ -79,9 +79,9 @@ func TestUnifyApplySkipsUnadoptedVariants(t *testing.T) {
 		"groups": []map[string]any{{
 			"canonical": "5.6-sol",
 			"variants": []map[string]any{
-				{"channel_id": c1, "model_name": "5.6-sol"},    // adopted -> bound
-				{"channel_id": c2, "model_name": "5.6-sol-1"},  // never adopted -> dropped
-				{"channel_id": c2, "model_name": "wong-2.5"},   // never adopted -> dropped
+				{"channel_id": c1, "model_name": "5.6-sol"},   // adopted -> bound
+				{"channel_id": c2, "model_name": "5.6-sol-1"}, // never adopted -> dropped
+				{"channel_id": c2, "model_name": "wong-2.5"},  // never adopted -> dropped
 			},
 		}},
 	})
