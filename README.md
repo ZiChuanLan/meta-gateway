@@ -115,13 +115,16 @@ Meta Gateway 架在这些站点之上：所有站点挂到同一个网关后面�
 
 ### 方式一：Docker Compose（推荐）
 
+镜像发布在 Docker Hub（`zichuanlan/meta-gateway`），提供 amd64 / arm64 双架构，随 [Releases](https://github.com/ZiChuanLan/meta-gateway/releases) 发版。
+
 ```bash
 mkdir meta-gateway && cd meta-gateway
 
 cat > docker-compose.yml << 'EOF'
 services:
   meta-gateway:
-    image: zichuanlan/meta-gateway:latest
+    # 建议锁定具体版本；换成别的版本就改这里的 tag
+    image: zichuanlan/meta-gateway:v2.0.2
     ports:
       - "4100:4100"
     volumes:
@@ -153,7 +156,7 @@ docker run -d --name meta-gateway \
   -e METRICS_TOKEN=your-metrics-token \
   -v ./data:/data \
   --restart unless-stopped \
-  zichuanlan/meta-gateway:latest
+  zichuanlan/meta-gateway:v2.0.2
 ```
 
 </details>
@@ -186,6 +189,17 @@ ADMIN_TOKEN=my-token MASTER_KEY=my-32-char-key-for-encryption! ./bin/meta-gatewa
 curl http://127.0.0.1:4100/readyz
 # → {"status":"ok"}
 ```
+
+### 升级
+
+把 compose 里的镜像 tag 换成新版本号，然后：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+数据都在 `./data` 目录（SQLite + 备份），升级不会丢失。每个版本的变化见
+[Releases](https://github.com/ZiChuanLan/meta-gateway/releases)；开启「检查更新」后，有新版本时控制台顶栏会直接提示（设置 → 运行参数可关闭）。
 
 ---
 
