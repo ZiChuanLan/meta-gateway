@@ -109,19 +109,47 @@
 .dark {
   --bg: #0f1620;
   --bg-deep: #0a0f16;
+  --bg-canvas: #0c1219;
   --surface: #141d29;
   --surface-raised: #1a2534;
-  --surface-subtle: #1f2c3d;
-  --surface-hover: #263550;
-  --surface-active: #2e4058;
+  --surface-subtle: #1b2736;
+  --surface-hover: #223148;
+  --surface-active: #2a3c56;
+  --surface-glass: rgba(15, 22, 32, 0.82);
+  --surface-glass-border: rgba(224, 240, 250, 0.08);
+
   --ink: #eef4f9;
+  --ink-primary: #f4f9fd;
   --ink-soft: #c3d2e0;
-  --muted: #7e92a8;
-  --muted-strong: #9aadc2;
+  --muted: #879cb2;
+  --muted-strong: #a3b6ca;
+  --muted-dark: #64788e;
+
   --line: rgba(224, 240, 250, 0.09);
+  --line-light: rgba(224, 240, 250, 0.05);
   --line-strong: rgba(224, 240, 250, 0.18);
+  --line-glow: rgba(124, 196, 240, 0.26);
+
+  --header-bg: rgba(15, 22, 32, 0.9);
   --sidebar: #0d141e;
   --sidebar-raised: #131d2b;
+  --sidebar-ink: #dbe7f2;
+  --sidebar-muted: #7e92a8;
+  --sidebar-line: rgba(224, 240, 250, 0.08);
+
+  /* Semantic hues brightened for contrast on dark surfaces */
+  --danger: #e0695f;
+  --danger-hover: #e8837a;
+  --danger-soft: rgba(224, 105, 95, 0.12);
+  --warning: #d09b35;
+  --warning-soft: rgba(208, 155, 53, 0.12);
+  --success: #46c98a;
+  --success-soft: rgba(70, 201, 138, 0.12);
+  --info: #7cc4f0;
+  --info-soft: rgba(124, 196, 240, 0.12);
+
+  --focus: #7cc4f0;
+  color-scheme: dark;
 }
 
 * {
@@ -3662,6 +3690,38 @@ td.actions {
     radial-gradient(120% 90% at 50% 0%, #f7f9fb 0%, #eef3f7 55%, #e3ecf3 100%);
 }
 
+/* Dark mode — same blueprint-grid scene rendered in night ink */
+.dark .connect-page {
+  --ink: #eef4f9;
+  --ink-soft: #c3d2e0;
+  --muted: #879cb2;
+  --line: rgba(224, 240, 250, 0.12);
+  --line-light: rgba(224, 240, 250, 0.08);
+  --line-strong: rgba(224, 240, 250, 0.22);
+  color-scheme: dark;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Cpath d='M40 0H0v40' fill='none' stroke='%23eef4f9' stroke-opacity='0.05'/%3E%3C/svg%3E"),
+    radial-gradient(120% 90% at 50% 0%, #16202e 0%, #101823 55%, #0a0f16 100%);
+}
+.dark .connect-panel {
+  background: linear-gradient(180deg, #1c2839 0%, #141d29 100%);
+  border: 1px solid rgba(224, 240, 250, 0.1);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(124, 196, 240, 0.08),
+    inset 0 1px 0 rgba(224, 240, 250, 0.06);
+}
+.dark .impact-chip {
+  background: rgba(20, 29, 41, 0.85);
+}
+.dark .impact-code {
+  background: rgba(15, 22, 32, 0.8);
+}
+.dark .ambient-unlock-mid {
+  background: rgba(20, 29, 41, 0.72);
+  border-color: rgba(224, 240, 250, 0.08);
+}
+
 .connect-ambient {
   position: absolute;
   inset: 0;
@@ -4454,9 +4514,9 @@ td.actions {
 }
 .connect-page .brand-mark {
   color: var(--on-primary);
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  box-shadow: 0 0 14px rgba(212, 175, 55, 0.25);
+  background: linear-gradient(135deg, var(--primary-hover), var(--primary));
+  border: 0;
+  box-shadow: none;
 }
 .connect-page .brand-mark::after {
   background: rgba(6, 18, 32, 0.5);
@@ -11343,16 +11403,6 @@ table {
   box-shadow: 0 0 25px rgba(124, 196, 240, 0.15), inset 0 0 15px rgba(124, 196, 240, 0.1);
 }
 
-.brand-katana-icon {
-  transform: rotate(-45deg);
-  transition: transform var(--dur-hover) var(--ease-hover), filter var(--dur-hover) var(--ease-hover);
-}
-
-.connect-page.is-focused-blade .brand-katana-icon {
-  transform: rotate(-15deg) scale(1.15);
-  filter: drop-shadow(0 0 8px #7cc4f0);
-}
-
 .katana-submit-btn {
   position: relative;
   overflow: hidden;
@@ -12980,4 +13030,22 @@ table {
 }
 .webdav-mode-card.is-danger.is-selected {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+/* Dark-mode toggle in the deck status cluster */
+.deck-theme-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--dur-hover) var(--ease-hover);
+}
+.deck-theme-btn:hover {
+  color: var(--ink);
+  background: var(--surface-subtle);
 }

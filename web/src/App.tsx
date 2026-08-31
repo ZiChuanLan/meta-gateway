@@ -7,13 +7,14 @@ import {
 	KeyRound,
 	LogOut,
 	Menu,
+	Moon,
 	Network,
 	Package,
 	Puzzle,
 	ScrollText,
 	Settings,
 	X,
-	Sword,
+	Sun,
 	Zap,
 	Image,
 	Search,
@@ -26,7 +27,7 @@ import {
 	Routes,
 	useLocation,
 } from "react-router-dom";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ApiClient, ApiError, api } from "./api/client";
 import type { Site } from "./api/types";
@@ -159,6 +160,13 @@ export function App() {
 		schedule(() => setTransitionPhase("idle"), SHEATH_DURATION);
 	}, [clearTransitionTimers, disconnect, schedule]);
 
+	useLayoutEffect(() => {
+		document.documentElement.classList.toggle(
+			"dark",
+			window.localStorage.getItem("meta-gateway.theme") === "dark",
+		);
+	}, []);
+
 	return (
 		<>
 			{client ? (
@@ -266,9 +274,43 @@ function Connect({
 	const onBgFile = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
 		if (!file) return;
-		const reader = new FileReader();
-		reader.onload = () => applyBg(String(reader.result ?? ""));
-		reader.readAsDataURL(file);
+		// Raw data URLs of photos blow past the localStorage quota, so re-encode
+		// through a canvas (WebP first, JPEG fallback) sized for a backdrop.
+		// createElement("img") because the lucide Image icon import shadows the
+		// global Image constructor in this module.
+		const img = document.createElement("img");
+		const revoke = () => URL.revokeObjectURL(img.src);
+		img.onload = () => {
+			revoke();
+			const maxSide = 2048;
+			const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+			const canvas = document.createElement("canvas");
+			canvas.width = Math.max(1, Math.round(img.width * scale));
+			canvas.height = Math.max(1, Math.round(img.height * scale));
+			const ctx = canvas.getContext("2d");
+			if (!ctx) {
+				const reader = new FileReader();
+				reader.onload = () => applyBg(String(reader.result ?? ""));
+				reader.readAsDataURL(file);
+				return;
+			}
+			ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+			let data = canvas.toDataURL("image/webp", 0.85);
+			if (!data.startsWith("data:image/webp")) {
+				data = canvas.toDataURL("image/jpeg", 0.85);
+			}
+			if (data.length > 3_500_000) {
+				const small = document.createElement("canvas");
+				small.width = Math.round(canvas.width * 0.66);
+				small.height = Math.round(canvas.height * 0.66);
+				small.getContext("2d")?.drawImage(canvas, 0, 0, small.width, small.height);
+				const retry = small.toDataURL("image/webp", 0.7);
+				data = retry.startsWith("data:image/webp") ? retry : small.toDataURL("image/jpeg", 0.7);
+			}
+			applyBg(data);
+		};
+		img.onerror = revoke;
+		img.src = URL.createObjectURL(file);
 		e.target.value = "";
 	};
 
@@ -449,11 +491,11 @@ function Connect({
 				<header className="connect-editorial">
 					<div className="connect-brand">
 						<div className="brand-mark" aria-hidden="true">
-							<Sword size={20} className="brand-katana-icon" />
+							<Network size={20} />
 						</div>
 						<div className="connect-brand-copy">
 							<span>META GATEWAY</span>
-							<small>OPERATIONS CONSOLE // 先鋒中繼</small>
+							<small>OPERATIONS CONSOLE // MULTI-CHANNEL RELAY</small>
 						</div>
 					</div>
 					<h1 className="connect-masthead-title">
@@ -728,10 +770,14 @@ function AuthenticatedShell({
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
+	const [theme, setTheme] = useState<"light" | "dark">(() => {
+		const stored = window.localStorage.getItem("meta-gateway.theme");
+		return stored === "dark" ? "dark" : "light";
+	});
 	useEffect(() => {
-		document.documentElement.classList.remove("dark");
-		window.localStorage.removeItem("meta-gateway.theme");
-	}, []);
+		document.documentElement.classList.toggle("dark", theme === "dark");
+		window.localStorage.setItem("meta-gateway.theme", theme);
+	}, [theme]);
 
 	const location = useLocation();
 	const [routeAnim, setRouteAnim] = useState(0);
@@ -841,6 +887,15 @@ function AuthenticatedShell({
 						<Search size={13} />
 						<span>{t("command.placeholder")}</span>
 						<kbd className="deck-kbd">⌘K</kbd>
+					</button>
+					<button
+						type="button"
+						className="deck-theme-btn"
+						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+						title={theme === "dark" ? t("app.themeLight") : t("app.themeDark")}
+						aria-label={theme === "dark" ? t("app.themeLight") : t("app.themeDark")}
+					>
+						{theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
 					</button>
 					<LanguageSwitcher className="deck-lang" />
 					<button
