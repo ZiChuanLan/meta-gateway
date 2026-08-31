@@ -4,6 +4,39 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.2.0] — 2026-08-31
+
+### Added
+
+- Upstream error details on failed log rows: the real upstream error body or
+  transport error string (UTF-8-safe, 600 bytes) is captured into
+  `proxy_logs.error_detail` and rendered in the log expansion next to the
+  routing decision panel, so a failure no longer needs guesswork to diagnose
+- Consecutive transport failures (connection refused, TLS, timeouts) now
+  count toward channel health: the first failure of a streak stays
+  cooldown-free (pure jitter is still free) while a repeat inside the same
+  streak earns the full cooldown, the channel consecutive-failure counter
+  (auto-disable) accumulates, and the next success clears the streak
+
+### Fixed
+
+- An outbound header/TLS timeout no longer kills the request as
+  "cancelled": with the client still waiting it is reclassified as a
+  retryable transport failure, so the failover walk reaches the other
+  channels instead of ending after the first slow upstream
+- The retried mark on log rows now sits on the row that TRIGGERED the retry
+  (a later attempt of the same request exists) instead of on the retried
+  attempt itself — a 200 row no longer reads as "retried"
+- When every member of a route is cooling, the selector now tries the
+  least-bad cooling member (highest priority, earliest expiry) instead of
+  failing the request outright: a sole-member route no longer
+  self-inflicts an outage for the whole cooldown window, and a successful
+  fallback attempt doubles as the natural recovery path. Disabled,
+  absent-credential, and already-attempted members stay out of the
+  fallback; a fully disabled fleet still fails fast
+- Fault-protection settings hint now describes the transport-failure
+  streak semantics instead of the old "jitter is never penalized" wording
+
 ## [v2.1.2] — 2026-08-31
 
 ### Fixed
