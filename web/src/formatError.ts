@@ -14,6 +14,8 @@ const CLASS_KEY: Record<ErrorClass, string> = {
 	upstream_reject: "err.upstreamReject.title",
 	not_found: "err.notFound.title",
 	server: "err.server.title",
+	cancelled: "err.cancelled.title",
+	empty_response: "err.emptyResponse.title",
 	unknown: "err.unknown.title",
 };
 
@@ -127,6 +129,10 @@ function clsKey(cls: ErrorClass): string {
 			return "notFound";
 		case "server":
 			return "server";
+		case "cancelled":
+			return "cancelled";
+		case "empty_response":
+			return "emptyResponse";
 		case "unknown":
 			return "unknown";
 	}

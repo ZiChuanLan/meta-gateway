@@ -4,6 +4,28 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.1.2] — 2026-08-31
+
+### Fixed
+
+- Proxy log audit: every failover attempt row now shows the routing
+  decision behind THAT attempt — snapshots carry an attempt number, the
+  panel names the channel actually picked (`selected_channel_id`,
+  highlighted) instead of repeating the last attempt's decision and
+  the highest-priority candidate on every row
+- Silent upstream failures no longer reach clients as empty replies:
+  a 2xx chat completion with no choices / an empty message / a 2xx
+  error object, and 200 streams that end or stall after only
+  role/usage frames, are now retryable failures that fail over.
+  The empty-reply failure is variant-scoped, so the channel's other
+  names stay in the fallback walk; `content_filter` and tool-call
+  responses still pass through untouched
+- Error labels no longer disguise client cancellations as network
+  errors: "cancelled (client gone/timeout, no retry)" and
+  "empty reply" are their own classes now
+- Routing decision panel renders cooldown reasons in amber and marks
+  the picked channel
+
 ## [v2.1.1] — 2026-08-31
 
 ### Admin console

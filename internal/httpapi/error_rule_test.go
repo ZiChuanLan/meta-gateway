@@ -34,7 +34,7 @@ func TestErrorRuleHotReload(t *testing.T) {
 		io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{"id":"c2","object":"chat.completion","model":"gemini-2.5-flash","choices":[]}`)
+		fmt.Fprint(w, `{"id":"c2","object":"chat.completion","model":"gemini-2.5-flash","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer second.Close()
 

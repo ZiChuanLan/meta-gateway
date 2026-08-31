@@ -219,7 +219,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			if decision.Selected.Channel.ID > 0 {
 				selectedID = decision.Selected.Channel.ID
 			}
-			if snapErr := s.db.InsertDecisionSnapshot(req.RequestID, req.Model, decision.RouteID, selectedID, payload, s.now()); snapErr != nil {
+			// attempt+1 matches the proxy_logs row this selection produces, so
+			// the log UI can show the decision behind EACH attempt.
+			if snapErr := s.db.InsertDecisionSnapshot(req.RequestID, req.Model, decision.RouteID, selectedID, attempt+1, payload, s.now()); snapErr != nil {
 				log.Printf("proxy: decision snapshot request_id=%s: %v", req.RequestID, snapErr)
 			}
 		}
@@ -624,18 +626,31 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 								Err:        fmt.Errorf("proxy: %s response: %w", adapter.Name(), convErr),
 							}
 						} else {
-							result.Body = io.NopCloser(bytes.NewReader(converted))
-							if result.Header == nil {
-								result.Header = make(http.Header)
+							// Empty-success check: a 2xx chat completion with no
+							// choices or an empty message is a silent upstream
+							// failure — fail over instead of returning emptiness.
+							if effectivePath == "chat/completions" && isEmptyChatSuccess(converted) {
+								result = &relay.Result{
+									StatusCode: result.StatusCode,
+									Header:     result.Header,
+									LatencyMs:  result.LatencyMs,
+									Err:        ErrEmptyCompletion,
+								}
+							} else {
+								result.Body = io.NopCloser(bytes.NewReader(converted))
+								if result.Header == nil {
+									result.Header = make(http.Header)
+								}
+								result.Header.Set("Content-Type", transformedContentType(effectivePath, adapter.Name(), result.Header.Get("Content-Type")))
 							}
-							result.Header.Set("Content-Type", transformedContentType(effectivePath, adapter.Name(), result.Header.Get("Content-Type")))
 						}
 					}
 				}
 				streamInterrupted := false
 				if req.Stream && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
-					first, peekErr := peekFirstChunkWithTimeout(result.Body, streamFirstByteTimeout)
-					if peekErr != nil {
+					first, silent, peekErr := peekStreamStartWithTimeout(result.Body, streamFirstByteTimeout)
+					switch {
+					case peekErr != nil:
 						// Upstream answered 200 and then died before emitting any
 						// data. The client has not received a byte yet, so this is a
 						// normal retryable failure — fail over to the next key/channel.
@@ -647,32 +662,29 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 							Err:        fmt.Errorf("proxy: stream closed before first byte: %w", peekErr),
 						}
 						streamInterrupted = true
-					} else {
-						// Semantic check: a 200 stream that immediately delivers a
-						// terminal/empty SSE frame ([DONE] or a delta with neither
-						// content nor role) is a silent failure — the client would
-						// receive an empty response. Treat it like a first-byte death
-						// and fail over.
-						if isSilentSSEStart(first) {
-							_ = result.Body.Close()
-							result = &relay.Result{
-								StatusCode: result.StatusCode,
-								Header:     result.Header,
-								LatencyMs:  result.LatencyMs,
-								Err:        fmt.Errorf("proxy: stream ended silently before any content"),
-							}
-							streamInterrupted = true
-						} else {
-							// Replay the buffered prefix, then continue streaming the rest.
-							result.Body = &replayReadCloser{
-								ReadCloser: result.Body,
-								prefix:     bytes.NewReader(first),
-							}
-							result.Body = &idleTimeoutBody{ReadCloser: result.Body, timeout: streamIdleTimeout}
-							// First-byte latency measured from relay start to the first
-							// upstream byte (the peek above consumed it).
-							result.FirstByteMs = int(s.now().Sub(forwardStarted).Milliseconds())
+					case silent:
+						// A 200 stream that ended without delivering any content
+						// frame ([DONE]/EOF after only role/usage frames) is a
+						// silent failure — the client would receive an empty
+						// response. Treat it like a first-byte death and fail over.
+						_ = result.Body.Close()
+						result = &relay.Result{
+							StatusCode: result.StatusCode,
+							Header:     result.Header,
+							LatencyMs:  result.LatencyMs,
+							Err:        fmt.Errorf("proxy: stream ended silently before any content: %w", ErrEmptyCompletion),
 						}
+						streamInterrupted = true
+					default:
+						// Replay the buffered prefix, then continue streaming the rest.
+						result.Body = &replayReadCloser{
+							ReadCloser: result.Body,
+							prefix:     bytes.NewReader(first),
+						}
+						result.Body = &idleTimeoutBody{ReadCloser: result.Body, timeout: streamIdleTimeout}
+						// First-byte latency measured from relay start to the first
+						// upstream byte (the peek above consumed it).
+						result.FirstByteMs = int(s.now().Sub(forwardStarted).Milliseconds())
 					}
 				}
 				if attemptCancel != nil {
@@ -703,7 +715,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					}
 				}
 				if streamInterrupted && !localAdapterFailure {
-					category = "stream_interrupted"
+					// The silent-empty variant keeps the finer empty_response
+					// category; plain first-byte deaths read as interrupted.
+					if !errors.Is(result.Err, ErrEmptyCompletion) {
+						category = "stream_interrupted"
+					}
 					retryable = true
 				}
 				// The channel consecutive-failure counter is incremented exactly once
@@ -842,6 +858,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// failure applies to everything on the channel.
 			switch {
 			case category == "stream_interrupted":
+				memberScopedFailure = true
+			case errors.Is(result.Err, ErrEmptyCompletion):
+				// An empty 2xx (body or stream) still speaks for this name's
+				// account — retire the variant, keep walking this channel.
 				memberScopedFailure = true
 			case result.Err == nil && result.StatusCode >= 400 &&
 				result.StatusCode != http.StatusUnauthorized && result.StatusCode != http.StatusForbidden:

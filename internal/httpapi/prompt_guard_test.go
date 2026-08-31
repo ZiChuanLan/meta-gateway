@@ -21,7 +21,7 @@ func TestPromptGuardsEndToEnd(t *testing.T) {
 		raw, _ := io.ReadAll(r.Body)
 		received = string(raw)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"id":"c1","object":"chat.completion","model":"gemini-2.5-flash","choices":[]}`)
+		_, _ = fmt.Fprint(w, `{"id":"c1","object":"chat.completion","model":"gemini-2.5-flash","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer upstream.Close()
 

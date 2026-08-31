@@ -27,13 +27,23 @@ import { formatCost, logCostUsd } from "../lib/format";
 import { positiveId } from "../lib/positiveId"
 
 // Routing decision audit view: fetched on demand when a log row expands.
-function DecisionSnapshotView({ requestId }: { requestId: string }) {
+// Each attempt row shows the snapshot of ITS OWN selection (matched by
+// attempt number); requests whose snapshots predate per-attempt storage fall
+// back to the latest one.
+function DecisionSnapshotView({
+	requestId,
+	attempt,
+}: {
+	requestId: string;
+	attempt: number;
+}) {
 	const { client } = useSession();
 	const service = api(client!);
 	const { t } = useI18n();
 	const snap = useQuery({
-		queryKey: ["decision-snapshot", requestId],
-		queryFn: ({ signal }) => service.decisionSnapshot(requestId, signal),
+		queryKey: ["decision-snapshot", requestId, attempt],
+		queryFn: ({ signal }) =>
+			service.decisionSnapshot(requestId, attempt, signal),
 		retry: false,
 	});
 	if (snap.isLoading) {
@@ -44,7 +54,13 @@ function DecisionSnapshotView({ requestId }: { requestId: string }) {
 		return <p className="log-decision-empty">{t("logsPage.decisionEmpty")}</p>;
 	}
 	const candidates = payload.candidates ?? [];
-	const selected = candidates.find((c) => c.eligible)?.candidate?.channel?.name;
+	const selectedID = snap.data?.selected_channel_id;
+	// "Served by" must name the channel this attempt actually picked, not the
+	// highest-priority eligible candidate.
+	const selected =
+		candidates.find((c) => c.candidate?.channel?.id === selectedID)
+			?.candidate?.channel?.name ??
+		candidates.find((c) => c.eligible)?.candidate?.channel?.name;
 	return (
 		<div className="log-decision">
 			<div className="log-decision-head">
@@ -69,30 +85,40 @@ function DecisionSnapshotView({ requestId }: { requestId: string }) {
 				) : null}
 			</div>
 			<ul className="log-decision-candidates">
-				{candidates.map((candidate, index) => (
-					<li
-						key={index}
-						className={candidate.eligible ? "is-eligible" : ""}
-					>
-						<span className="log-decision-channel">
-							{candidate.candidate?.channel?.name ??
-								`#${candidate.candidate?.channel?.id ?? "?"}`}
-						</span>
-						{candidate.score != null && candidate.score > 0 ? (
-							<code>{Math.round(candidate.score)}</code>
-						) : null}
-						{candidate.eligible ? (
-							<span className="log-decision-tag is-ok">
-								{t("status.enabled")}
+				{candidates.map((candidate, index) => {
+					const isPicked =
+						candidate.candidate?.channel?.id != null &&
+						candidate.candidate.channel.id === selectedID;
+					const cooling = (candidate.reasons ?? []).includes(
+						"cooling_down",
+					);
+					return (
+						<li
+							key={index}
+							className={`${candidate.eligible ? "is-eligible" : "is-skipped"}${isPicked ? " is-picked" : ""}`}
+						>
+							<span className="log-decision-channel">
+								{candidate.candidate?.channel?.name ??
+									`#${candidate.candidate?.channel?.id ?? "?"}`}
 							</span>
-						) : (
-							<span className="log-decision-tag is-skip">
-								{(candidate.reasons ?? []).join(", ") ||
-									t("logsPage.decisionSkipped")}
-							</span>
-						)}
-					</li>
-				))}
+							{candidate.score != null && candidate.score > 0 ? (
+								<code>{Math.round(candidate.score)}</code>
+							) : null}
+							{candidate.eligible ? (
+								<span className="log-decision-tag is-ok">
+									{t("status.enabled")}
+								</span>
+							) : (
+								<span
+									className={`log-decision-tag is-skip${cooling ? " is-cooling" : ""}`}
+								>
+									{(candidate.reasons ?? []).join(", ") ||
+										t("logsPage.decisionSkipped")}
+								</span>
+							)}
+						</li>
+					);
+				})}
 			</ul>
 		</div>
 	);
@@ -541,7 +567,10 @@ function ProxyLogsPanel() {
 										{expandedRequest === log.request_id ? (
 											<tr className="log-decision-row">
 												<td colSpan={12}>
-													<DecisionSnapshotView requestId={log.request_id} />
+													<DecisionSnapshotView
+														requestId={log.request_id}
+														attempt={log.attempt}
+													/>
 												</td>
 											</tr>
 										) : null}

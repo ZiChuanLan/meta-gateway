@@ -21,7 +21,7 @@ func TestPayloadRulesRewriteAndFilter(t *testing.T) {
 		raw, _ := io.ReadAll(r.Body)
 		received = string(raw)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"c1","object":"chat.completion","model":"gemini-2.5-flash","choices":[]}`)
+		fmt.Fprint(w, `{"id":"c1","object":"chat.completion","model":"gemini-2.5-flash","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer upstream.Close()
 

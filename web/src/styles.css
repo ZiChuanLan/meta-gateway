@@ -8206,6 +8206,17 @@ td.actions {
 .log-decision-candidates li.is-eligible {
   font-weight: 650;
 }
+/* The channel this attempt actually picked — anchor glyph + accent bar so
+   the audit panel matches the row's 通道 column at a glance. */
+.log-decision-candidates li.is-picked {
+  padding-left: 8px;
+  border-left: 2px solid var(--accent, var(--primary, #4a7dff));
+}
+.log-decision-candidates li.is-picked .log-decision-channel::after {
+  content: " ●";
+  font-size: 9px;
+  color: var(--accent, var(--primary, #4a7dff));
+}
 .log-decision-channel {
   min-width: 160px;
   overflow: hidden;
@@ -8224,6 +8235,12 @@ td.actions {
 .log-decision-tag.is-skip {
   color: var(--muted);
   background: var(--surface-raised);
+}
+/* Cooldowns are actionable state, not background noise — amber, loud. */
+.log-decision-tag.is-skip.is-cooling {
+  color: var(--warning, #b45309);
+  background: var(--warning-soft, rgba(217, 119, 6, 0.14));
+  font-weight: 650;
 }
 .log-decision-loading,
 .log-decision-empty {

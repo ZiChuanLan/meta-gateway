@@ -606,13 +606,14 @@ export const api = (client: ApiClient) => ({
       `/admin/health-history/summary?hours=${hours}`,
       signal,
     ),
-  decisionSnapshot: (requestId: string, signal?: AbortSignal) =>
+  decisionSnapshot: (requestId: string, attempt?: number, signal?: AbortSignal) =>
     client.get<{
       id: number;
       request_id: string;
       model: string;
       route_id: number;
       selected_channel_id: number;
+      attempt?: number;
       payload: {
         model?: string;
         route_id?: number;
@@ -632,7 +633,9 @@ export const api = (client: ApiClient) => ({
       };
       created_at: string;
     }>(
-      `/admin/decision-snapshot?request_id=${encodeURIComponent(requestId)}`,
+      `/admin/decision-snapshot?request_id=${encodeURIComponent(requestId)}${
+        attempt && attempt > 0 ? `&attempt=${attempt}` : ""
+      }`,
       signal,
     ),
   syncKeys: (

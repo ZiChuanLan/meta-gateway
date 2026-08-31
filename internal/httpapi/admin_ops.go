@@ -256,17 +256,33 @@ func (h *AdminHandler) deleteModelBlock(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// decisionSnapshot serves the routing audit trail for one request id.
+// decisionSnapshot serves the routing audit trail for one request id. An
+// optional ?attempt=N returns the snapshot of that exact attempt (matching
+// the proxy_logs row); without it — or when that attempt has no snapshot
+// (legacy rows) — the latest one is served.
 func (h *AdminHandler) decisionSnapshot(w http.ResponseWriter, r *http.Request) {
 	requestID := strings.TrimSpace(r.URL.Query().Get("request_id"))
 	if requestID == "" {
 		writeError(w, http.StatusBadRequest, "request_id is required")
 		return
 	}
-	snap, err := h.db.LatestDecisionSnapshot(requestID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "decision snapshot")
-		return
+	attempt := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("attempt")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			attempt = parsed
+		}
+	}
+	var snap *store.DecisionSnapshot
+	if attempt > 0 {
+		snap, _ = h.db.DecisionSnapshotForAttempt(requestID, attempt)
+	}
+	if snap == nil {
+		var err error
+		snap, err = h.db.LatestDecisionSnapshot(requestID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "decision snapshot")
+			return
+		}
 	}
 	if snap == nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no snapshot"})

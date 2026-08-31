@@ -77,6 +77,8 @@ func classifyForChannel(result *relay.Result, cfg domain.RetryConfig) (string, b
 		switch {
 		case errors.Is(result.Err, ErrResponseTooLarge):
 			return "response_too_large", false
+		case errors.Is(result.Err, ErrEmptyCompletion):
+			return "empty_response", true
 		case errors.Is(result.Err, adapters.ErrInvalidURL):
 			return "invalid_url", false
 		case errors.Is(result.Err, adapters.ErrUnsupportedPath):

@@ -35,6 +35,11 @@ var (
 	// transformation buffer. It is a local, non-retryable failure: replaying a
 	// charged generation would be worse than returning a gateway error.
 	ErrResponseTooLarge = errors.New("proxy: upstream response too large")
+	// ErrEmptyCompletion marks a 2xx response that carries no usable content
+	// (empty choices, empty message, or a 2xx-wrapped error object). The
+	// upstream answered, so the failure is variant-scoped, and the request
+	// fails over instead of handing the client an empty reply.
+	ErrEmptyCompletion = errors.New("proxy: upstream answered 200 with an empty completion")
 )
 
 type Selector interface {

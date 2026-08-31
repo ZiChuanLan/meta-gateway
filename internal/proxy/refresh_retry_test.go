@@ -26,7 +26,7 @@ func (f *fakeRefresher) RefreshForRelay(_ context.Context, _ int64) (bool, error
 func TestRefreshRetry401(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{
 		response(http.StatusUnauthorized, `{"error":{"message":"session expired","code":"invalid_token"}}`),
-		response(http.StatusOK, `{"id":"c1","object":"chat.completion","model":"model","choices":[]}`),
+		response(http.StatusOK, `{"id":"c1","object":"chat.completion","model":"model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`),
 	}}
 	service, db, highMember, _ := setupProxy(t, upstream)
 
@@ -89,7 +89,7 @@ func TestRefreshRetry401(t *testing.T) {
 func TestRefreshRetryFailureFallsThrough(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{
 		response(http.StatusUnauthorized, `{"error":{"message":"session expired","code":"invalid_token"}}`),
-		response(http.StatusOK, `{"id":"c2","object":"chat.completion","model":"model","choices":[]}`),
+		response(http.StatusOK, `{"id":"c2","object":"chat.completion","model":"model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`),
 	}}
 	service, db, highMember, _ := setupProxy(t, upstream)
 	member, _ := db.RouteMember.GetByID(highMember)
@@ -128,7 +128,7 @@ func TestRefreshRetryFailureFallsThrough(t *testing.T) {
 func TestRefreshRetryAPIKeyKindSkips(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{
 		response(http.StatusUnauthorized, `{"error":{"message":"invalid api key"}}`),
-		response(http.StatusOK, `{"id":"c3","object":"chat.completion","model":"model","choices":[]}`),
+		response(http.StatusOK, `{"id":"c3","object":"chat.completion","model":"model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`),
 	}}
 	service, _, _, _ := setupProxy(t, upstream) // credential kind stays api_key
 	refresher := &fakeRefresher{ok: true}

@@ -88,6 +88,15 @@ export const en: Dict = {
   "err.server.cause":
     "Meta Gateway hit an internal error while processing the request.",
   "err.server.fix": "Check the gateway logs and retry.",
+  "err.cancelled.title": "Request cancelled",
+  "err.cancelled.cause":
+    "The client disconnected or the deadline hit before the upstream answered; the gateway stopped forwarding (no automatic retry).",
+  "err.cancelled.fix": "Send the request again; if this repeats, review the client timeout.",
+  "err.emptyResponse.title": "Upstream returned an empty reply",
+  "err.emptyResponse.cause":
+    "The upstream answered 200 with no content; the gateway already failed over to the next channel.",
+  "err.emptyResponse.fix":
+    "Nothing to do; if it clusters on one channel, disable that model there.",
   "err.unknown.title": "Unexpected error",
   "err.unknown.cause": "The gateway returned an unrecognized error.",
   "err.unknown.fix": "Retry, or check the gateway logs for details.",
@@ -915,6 +924,8 @@ export const en: Dict = {
   "logsPage.errorClass.upstream_reject": "Upstream rejected",
   "logsPage.errorClass.not_found": "Not found",
   "logsPage.errorClass.server": "Server error",
+  "logsPage.errorClass.cancelled": "Cancelled (client gone/timeout, no retry)",
+  "logsPage.errorClass.empty_response": "Empty reply (200 without content, failed over)",
   "logsPage.errorClass.unknown": "Unknown error",
   "logsPage.selectHint":
     "Select a request to inspect errors and jump to the connection.",

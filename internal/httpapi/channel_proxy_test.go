@@ -23,7 +23,7 @@ func TestChannelProxyRoutesThroughProxy(t *testing.T) {
 			t.Errorf("proxy body missing marker: %s", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"id":"c1","object":"chat.completion","model":"gemini-2.5-flash","choices":[]}`)
+		_, _ = fmt.Fprint(w, `{"id":"c1","object":"chat.completion","model":"gemini-2.5-flash","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer proxy.Close()
 
@@ -31,7 +31,7 @@ func TestChannelProxyRoutesThroughProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		direct.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"id":"c2","object":"chat.completion","model":"gemini-2.5-flash","choices":[]}`)
+		_, _ = fmt.Fprint(w, `{"id":"c2","object":"chat.completion","model":"gemini-2.5-flash","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`)
 	}))
 	defer upstream.Close()
 	serverURL, token, channelID := setupRelay(t, upstream.URL, "openai")

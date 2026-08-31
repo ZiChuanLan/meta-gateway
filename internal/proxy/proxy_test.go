@@ -974,26 +974,71 @@ func TestBillingCostFormula(t *testing.T) {
 	}
 }
 
-func TestIsSilentSSEStart(t *testing.T) {
+func TestClassifyStreamFrames(t *testing.T) {
+	role := "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"index\":0}]}\n\n"
+	content := "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"index\":0}]}\n\n"
 	cases := []struct {
 		name   string
 		prefix string
-		want   bool
+		want   streamPrefixDecision
 	}{
-		{"empty", "", false},
-		{"normal first chunk with role", "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"index\":0}]}\n\n", false},
-		{"normal content chunk", "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"index\":0}]}\n\n", false},
-		{"immediate DONE", "data: [DONE]\n\n", true},
-		{"empty choices", "data: {\"choices\":[]}\n\ndata: [DONE]\n\n", true},
-		{"delta with neither role nor content", "data: {\"choices\":[{\"delta\":{},\"index\":0}]}\n\n", true},
-		{"usage-only frame then done", "data: {\"choices\":[],\"usage\":{\"total_tokens\":5}}\n\ndata: [DONE]\n\n", true},
-		{"content after silent frame is not silent", "data: {\"choices\":[{\"delta\":{},\"index\":0}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"Hi\"},\"index\":0}]}\n\n", false},
-		{"non-json keepalive not silent", ": keep-alive\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n", false},
-		{"nonstandard json without choices not silent", "data: {\"chunk\":1}\n\n", false},
+		// Role-only frames are inconclusive: the peek keeps reading until
+		// real content or the stream ends (this is what catches a 200 that
+		// emits a role header and then [DONE]/silence — an empty reply).
+		{"role frame alone needs more", role, streamNeedMore},
+		{"role then content commits", role + content, streamCommit},
+		{"immediate DONE is silent", "data: [DONE]\n\n", streamSilent},
+		{"empty choices then DONE is silent", "data: {\"choices\":[]}\n\ndata: [DONE]\n\n", streamSilent},
+		{"empty delta then DONE is silent", "data: {\"choices\":[{\"delta\":{},\"index\":0}]}\n\ndata: [DONE]\n\n", streamSilent},
+		{"usage-only frame then DONE is silent", "data: {\"choices\":[],\"usage\":{\"total_tokens\":5}}\n\ndata: [DONE]\n\n", streamSilent},
+		{"reasoning content commits", "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n", streamCommit},
+		{"tool calls commit", "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":\"t\"}]}}]}\n\n", streamCommit},
+		// Fail-open shapes must commit immediately (never judged silent).
+		{"non-json keepalive commits", ": keep-alive\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n", streamCommit},
+		{"nonstandard json without choices commits", "data: {\"chunk\":1}\n\n", streamCommit},
+		{"anthropic-style frame commits", "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n", streamCommit},
+		// A trailing partial frame must not be judged yet.
+		{"partial trailing frame needs more", content[:len(content)-2], streamNeedMore},
 	}
 	for _, tc := range cases {
-		if got := isSilentSSEStart([]byte(tc.prefix)); got != tc.want {
-			t.Errorf("%s: isSilentSSEStart=%v want %v", tc.name, got, tc.want)
+		if got := classifyStreamFrames([]byte(tc.prefix)); got != tc.want {
+			t.Errorf("%s: classifyStreamFrames=%v want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestPeekStreamStartSilentOnEOF(t *testing.T) {
+	// A stream that delivers a role header and then EOF is an empty answer.
+	prefix, silent, err := peekStreamStart(strings.NewReader(
+		"data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}\n\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !silent {
+		t.Fatalf("EOF after role-only frames must be silent, prefix=%s", prefix)
+	}
+}
+
+func TestIsEmptyChatSuccess(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"normal content", `{"choices":[{"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}`, false},
+		{"empty choices array", `{"choices":[]}`, true},
+		{"empty content string", `{"choices":[{"message":{"role":"assistant","content":""},"finish_reason":"stop"}]}`, true},
+		{"null content", `{"choices":[{"message":{"role":"assistant","content":null},"finish_reason":"stop"}]}`, true},
+		{"tool calls are content", `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"t"}]},"finish_reason":"tool_calls"}]}`, false},
+		{"content filter is an answer", `{"choices":[{"message":{"role":"assistant","content":""},"finish_reason":"content_filter"}]}`, false},
+		{"2xx wrapped error object", `{"error":{"message":"upstream exploded"}}`, true},
+		{"no choices key fails open", `{"data":[{"embedding":[0.1]}]}`, false},
+		{"non-json fails open", `OK`, false},
+		{"empty body", ``, true},
+	}
+	for _, tc := range cases {
+		if got := isEmptyChatSuccess([]byte(tc.body)); got != tc.want {
+			t.Errorf("%s: isEmptyChatSuccess=%v want %v", tc.name, got, tc.want)
 		}
 	}
 }

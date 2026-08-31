@@ -17,6 +17,8 @@ export type ErrorClass =
 	| "upstream_reject"
 	| "not_found"
 	| "server"
+	| "cancelled"
+	| "empty_response"
 	| "unknown";
 
 export interface CategorizedError {
@@ -110,9 +112,16 @@ const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
 	decrypt_failed: "server",
 	response_too_large: "server",
 
-	// — Cancelled / stream interruptions (contextual, treat as network) —
-	cancelled: "network",
+	// — Client cancelled / gateway attempt timeout: no retry happens because
+	// the caller is gone (or the attempt budget was consumed) — surfacing
+	// these as "network error" made the no-retry behavior look like a bug.
+	cancelled: "cancelled",
+
+	// — Stream broke mid-flight (network-shaped, retried when possible) —
 	stream_interrupted: "network",
+
+	// — 2xx with no usable content: silent upstream failure, failed over —
+	empty_response: "empty_response",
 };
 
 function classForRaw(raw: string): ErrorClass {

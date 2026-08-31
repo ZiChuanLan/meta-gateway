@@ -15,13 +15,13 @@ func (silentReader) Read([]byte) (int, error) {
 	select {}
 }
 
-// TestPeekFirstChunkWithTimeoutFailsOverOnSilence verifies that a stream that
+// TestPeekStreamStartTimeoutFailsOverOnSilence verifies that a stream that
 // stays silent past the deadline is reported as a first-byte timeout (the
 // candidate loop then fails over) instead of blocking forever.
-func TestPeekFirstChunkWithTimeoutFailsOverOnSilence(t *testing.T) {
+func TestPeekStreamStartTimeoutFailsOverOnSilence(t *testing.T) {
 	body := io.NopCloser(silentReader{})
 	started := time.Now()
-	_, err := peekFirstChunkWithTimeout(body, 120*time.Millisecond)
+	_, _, err := peekStreamStartWithTimeout(body, 120*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected first-byte timeout error")
 	}
@@ -33,17 +33,24 @@ func TestPeekFirstChunkWithTimeoutFailsOverOnSilence(t *testing.T) {
 	}
 }
 
-// TestPeekFirstChunkWithTimeoutFastPath verifies the timeout wrapper does not
-// delay normal first chunks (data arrives → immediate return).
-func TestPeekFirstChunkWithTimeoutFastPath(t *testing.T) {
-	body := io.NopCloser(strings.NewReader("data: {\"role\":\"assistant\"}\n\n"))
+// TestPeekStreamStartCommitsOnRoleHeader verifies the timeout wrapper does
+// not delay normal streams: a leading role-header frame cannot be judged
+// silent, but it must not stall the fast path — the peek keeps reading and
+// commits as soon as content arrives.
+func TestPeekStreamStartCommitsOnRoleHeader(t *testing.T) {
+	body := io.NopCloser(strings.NewReader(
+		"data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"index\":0}]}\n\n" +
+			"data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"index\":0}]}\n\n"))
 	started := time.Now()
-	first, err := peekFirstChunkWithTimeout(body, 5*time.Second)
+	prefix, silent, err := peekStreamStartWithTimeout(body, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(first), "assistant") {
-		t.Fatalf("unexpected prefix: %s", first)
+	if silent {
+		t.Fatal("content stream must not be silent")
+	}
+	if !strings.Contains(string(prefix), "Hello") {
+		t.Fatalf("prefix must include the content frame, got: %s", prefix)
 	}
 	if time.Since(started) > time.Second {
 		t.Fatal("fast path was slow")
