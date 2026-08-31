@@ -123,8 +123,8 @@ mkdir meta-gateway && cd meta-gateway
 cat > docker-compose.yml << 'EOF'
 services:
   meta-gateway:
-    # 建议锁定具体版本；换成别的版本就改这里的 tag
-    image: zichuanlan/meta-gateway:v2.0.2
+    # 想锁定版本就把 latest 换成具体版本号，如 v2.0.2（见下方「升级」）
+    image: zichuanlan/meta-gateway:latest
     ports:
       - "4100:4100"
     volumes:
@@ -156,7 +156,7 @@ docker run -d --name meta-gateway \
   -e METRICS_TOKEN=your-metrics-token \
   -v ./data:/data \
   --restart unless-stopped \
-  zichuanlan/meta-gateway:v2.0.2
+  zichuanlan/meta-gateway:latest
 ```
 
 </details>
@@ -192,14 +192,12 @@ curl http://127.0.0.1:4100/readyz
 
 ### 升级
 
-把 compose 里的镜像 tag 换成新版本号，然后：
-
 ```bash
 docker compose pull && docker compose up -d
 ```
 
 数据都在 `./data` 目录（SQLite + 备份），升级不会丢失。每个版本的变化见
-[Releases](https://github.com/ZiChuanLan/meta-gateway/releases)；开启「检查更新」后，有新版本时控制台顶栏会直接提示（设置 → 运行参数可关闭）。
+[Releases](https://github.com/ZiChuanLan/meta-gateway/releases)；开启「检查更新」后，有新版本时控制台顶栏会直接提示（设置 → 运行参数可关闭）。想固定在某个版本、不受 `latest` 更新影响的话，把 compose 里的 tag 换成具体版本号（如 `v2.0.2`）即可。
 
 ---
 
