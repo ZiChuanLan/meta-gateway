@@ -11,6 +11,8 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 - Model list gains a status filter (enabled / disabled / all, default
   enabled) next to the channel filter, so shadow models left behind
   by name unification stay out of sight until wanted
+- Toolbar keeps search + family/channel/status filters on one row at
+  desktop widths (selects size to content, search absorbs the rest)
 
 ## [v2.1.0] — 2026-08-31
 
