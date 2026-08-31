@@ -1646,6 +1646,24 @@ export const en: Dict = {
   "ops.runtime.updateCheck": "Check for updates",
   "ops.runtime.updateCheckHint":
     "Periodically query GitHub for the latest release and flag new versions in the top bar. Off = no outbound calls at all. Env: UPDATE_CHECK_ENABLED.",
+  "ops.runtime.group.routingDesc":
+    "Failover and retries, routing strategy, gray release, session stickiness",
+  "ops.runtime.group.healthDesc":
+    "Fault protection, channel health sweeps, and model probing",
+  "ops.runtime.group.governanceDesc": "Rate limits and audit log retention",
+  "ops.runtime.group.opsDesc":
+    "Alerting, maintenance, scheduled check-ins, and service info",
+  "ops.runtime.group.tools": "Maintenance tools",
+  "ops.runtime.group.toolsDesc":
+    "TOTP, alert and error rules, maintenance operations, and factory reset",
+  "ops.runtime.buildVersion": "Build",
+  "ops.runtime.updateNow": "Check now",
+  "ops.runtime.updateChecking": "Checking…",
+  "ops.runtime.updateUpToDate": "Up to date",
+  "ops.runtime.updateFound": "New version {version} available",
+  "ops.runtime.updateFailed": "Check failed, try again",
+  "ops.runtime.updateOff": "Update check is off",
+  "ops.runtime.updateNotYet": "Not checked yet",
   "ops.runtime.retryTimes": "Retry rounds",
   "ops.runtime.retryTimesHint":
     "How many failover rounds are attempted after a failure: each round tries one more channel (0 = first channel only). Within each round the same key is re-sent channel-retry-times times before moving on. Env: RETRY_TIMES.",

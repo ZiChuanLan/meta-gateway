@@ -683,6 +683,8 @@ export const api = (client: ApiClient) => ({
     client.get<RuntimeSettings>("/admin/runtime-settings", signal),
   updateCheck: (signal?: AbortSignal) =>
     client.get<UpdateCheckStatus>("/admin/update-check", signal),
+  refreshUpdateCheck: () =>
+    client.post<UpdateCheckStatus>("/admin/update-check/refresh"),
   updateRuntimeSettings: (body: RuntimeEditableSettings) =>
     client.put<RuntimeSettings>("/admin/runtime-settings", body),
   resetRuntimeSettings: () =>

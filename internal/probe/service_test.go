@@ -46,8 +46,12 @@ func (f *fakeRelay) sentPrompt() string {
 }
 
 func (f *fakeRelay) ChatCompletionsWithMeta(_ context.Context, req proxy.Request) (*relay.Result, *proxy.AttemptMeta) {
+	f.mu.Lock()
 	f.calls++
 	f.sawFlag = req.Probe
+	release := f.release
+	ok := f.ok
+	f.mu.Unlock()
 
 	var body probeBody
 	if err := json.Unmarshal(req.Body, &body); err == nil && len(body.Messages) > 0 {
@@ -57,11 +61,11 @@ func (f *fakeRelay) ChatCompletionsWithMeta(_ context.Context, req proxy.Request
 		f.mu.Unlock()
 	}
 
-	if f.release != nil {
-		<-f.release
+	if release != nil {
+		<-release
 	}
 	status := http.StatusOK
-	if !f.ok[req.PreferChannelID] {
+	if !ok[req.PreferChannelID] {
 		status = http.StatusBadGateway
 	}
 	return &relay.Result{StatusCode: status, LatencyMs: 7},

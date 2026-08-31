@@ -24,6 +24,7 @@ func NewUpdateCheckHandler(service *updatecheck.Service, controller *runtimeconf
 
 func (h *UpdateCheckHandler) Register(r chi.Router) {
 	r.Get("/update-check", h.get)
+	r.Post("/update-check/refresh", h.refresh)
 }
 
 func (h *UpdateCheckHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +33,20 @@ func (h *UpdateCheckHandler) get(w http.ResponseWriter, r *http.Request) {
 	if enabled {
 		status = h.service.RefreshIfStale(r.Context(), h.service.Interval())
 	}
+	h.write(w, enabled, status)
+}
+
+// refresh forces a synchronous comparison regardless of cache freshness.
+func (h *UpdateCheckHandler) refresh(w http.ResponseWriter, r *http.Request) {
+	enabled := h.controller.Snapshot().Editable.UpdateCheckEnabled
+	status := h.service.Status()
+	if enabled {
+		status = h.service.Refresh(r.Context())
+	}
+	h.write(w, enabled, status)
+}
+
+func (h *UpdateCheckHandler) write(w http.ResponseWriter, enabled bool, status updatecheck.Status) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enabled":     enabled,
 		"current":     buildinfo.Version,

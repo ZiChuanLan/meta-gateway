@@ -13074,3 +13074,48 @@ table {
   background: var(--accent);
   box-shadow: 0 6px 16px var(--accent-glow);
 }
+
+/* Settings page: semantic group sections */
+.runtime-group {
+  margin-bottom: 26px;
+}
+.runtime-group-header {
+  margin: 0 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.runtime-group-title strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.runtime-group-title p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Update-check row in the server card */
+.runtime-update-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.runtime-update-result {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.runtime-update-link {
+  color: var(--accent-hover);
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-glow);
+  transition: color var(--dur-hover) var(--ease-hover);
+}
+.runtime-update-link:hover {
+  color: var(--accent);
+}
