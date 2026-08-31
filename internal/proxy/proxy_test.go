@@ -704,7 +704,8 @@ func TestSameKeyResendCountsAreConfigurable(t *testing.T) {
 func TestTransportErrorFailsFastAfterSameKeyResend(t *testing.T) {
 	// A network error (dial refused) is re-sent on the same key, then the
 	// request fails over to the next channel instead of returning early.
-	// Transport jitter is not penalized: no cooldown, no failure count.
+	// The first transport failure of a streak earns no cooldown (jitter
+	// exemption) but is still counted for the error-aware score.
 	upstream := &queuedRelay{results: []*relay.Result{
 		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
 		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
@@ -724,14 +725,105 @@ func TestTransportErrorFailsFastAfterSameKeyResend(t *testing.T) {
 	if len(upstream.calls) != 4 {
 		t.Fatalf("expected 4 sends across two channels, got %#v", upstream.calls)
 	}
-	// Transport jitter must NOT cool the members or count channel failures.
+	// First transport failure of the streak: counted, not cooled.
 	high, _ := db.RouteMember.GetByID(highMember)
 	low, _ := db.RouteMember.GetByID(lowMember)
-	if high.FailCount != 0 || high.CooldownUntil != nil {
-		t.Fatalf("transport error must not cool high: %+v", high)
+	if high.FailCount != 1 || high.CooldownUntil != nil {
+		t.Fatalf("first transport failure must count but not cool high: %+v", high)
 	}
-	if low.FailCount != 0 || low.CooldownUntil != nil {
-		t.Fatalf("transport error must not cool low: %+v", low)
+	if low.FailCount != 1 || low.CooldownUntil != nil {
+		t.Fatalf("first transport failure must count but not cool low: %+v", low)
+	}
+}
+
+func TestTransportRepeatFailureCoolsMember(t *testing.T) {
+	// A channel that fails transport on consecutive requests is a chronic
+	// offender, not jitter: the second consecutive failure earns the full
+	// member cooldown. A cooled member is skipped while alternatives exist;
+	// once every member is cooling the selector still tries the least-bad
+	// one (last resort) rather than hard-failing the request.
+	results := make([]*relay.Result, 0, 12)
+	for i := 0; i < 12; i++ {
+		results = append(results, &relay.Result{Err: fmt.Errorf("dial tcp 10.0.0.%d:443: connect: connection refused", i)})
+	}
+	upstream := &queuedRelay{results: results}
+	service, db, highMember, lowMember := setupProxy(t, upstream)
+
+	for i := 0; i < 2; i++ {
+		result := service.ChatCompletions(context.Background(), Request{RequestID: fmt.Sprintf("req-net-%d", i), Model: "model", Body: []byte(`{}`)})
+		if result.Body != nil {
+			_ = result.Body.Close()
+		}
+	}
+	if len(upstream.calls) != 8 {
+		t.Fatalf("expected 8 sends across two failing requests, got %#v", upstream.calls)
+	}
+	high, _ := db.RouteMember.GetByID(highMember)
+	low, _ := db.RouteMember.GetByID(lowMember)
+	if high.CooldownUntil == nil || low.CooldownUntil == nil {
+		t.Fatalf("repeat transport failures must cool both members: high=%+v low=%+v", high, low)
+	}
+
+	// Third request: both members are cooling — the last-resort walk still
+	// attempts them (4 more sends: 2 per member), then returns the error.
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-net-2", Model: "model", Body: []byte(`{}`)})
+	if result.Body != nil {
+		_ = result.Body.Close()
+	}
+	if len(upstream.calls) != 12 {
+		t.Fatalf("expected last-resort attempts on cooling members, got %#v", upstream.calls)
+	}
+	if result.Err == nil {
+		t.Fatalf("expected upstream failure after last-resort attempts, got %+v", result)
+	}
+}
+
+func TestTransportStreakResetsOnSuccess(t *testing.T) {
+	// The transport failure streak is per member and clears on that member's
+	// next success: after fail/repair, the next isolated failure is jitter
+	// again (no cooldown), while a member that never recovered escalates.
+	upstream := &queuedRelay{results: []*relay.Result{
+		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
+		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
+		response(http.StatusOK, `{"ok":true}`),
+		{Err: fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused")},
+		{Err: fmt.Errorf("dial tcp 10.0.0.2:443: connect: connection refused")},
+	}}
+	service, db, highMember, lowMember := setupProxy(t, upstream)
+	service.SetChannelRetryTimes(0)
+
+	// req1: high refused (streak 1, exempt), failover to low refused (streak 1).
+	result := service.ChatCompletions(context.Background(), Request{RequestID: "req-a", Model: "model", Body: []byte(`{}`)})
+	if result.Body != nil {
+		_ = result.Body.Close()
+	}
+	if result.Err == nil {
+		t.Fatalf("expected failure while both members refuse, got %+v", result)
+	}
+	// req2: high recovered and serves — its streak clears.
+	result = service.ChatCompletions(context.Background(), Request{RequestID: "req-b", Model: "model", Body: []byte(`{}`)})
+	if result.Body != nil {
+		_ = result.Body.Close()
+	}
+	if result.Err != nil || result.StatusCode != http.StatusOK {
+		t.Fatalf("expected success from repaired high, got %+v", result)
+	}
+	// req3: high's fresh failure is jitter again (no cooldown); low, never
+	// recovered since its first failure, escalates into cooldown.
+	result = service.ChatCompletions(context.Background(), Request{RequestID: "req-c", Model: "model", Body: []byte(`{}`)})
+	if result.Body != nil {
+		_ = result.Body.Close()
+	}
+	if result.Err == nil {
+		t.Fatalf("expected low's repeat failure to fail the request, got %+v", result)
+	}
+	high, _ := db.RouteMember.GetByID(highMember)
+	low, _ := db.RouteMember.GetByID(lowMember)
+	if high.CooldownUntil != nil {
+		t.Fatalf("high's streak was reset by success — must not cool: %+v", high)
+	}
+	if low.CooldownUntil == nil {
+		t.Fatalf("low never recovered between failures — must cool: %+v", low)
 	}
 }
 

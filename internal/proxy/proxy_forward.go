@@ -149,9 +149,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 	var last *relay.Result
 	var lastMeta *AttemptMeta
 	retrySafe := retrySafeRequest(req)
-	// Route-level retry overrides historically opt a model back into failover
-	// even when the process default is off. They can never override an admin
-	// pin or the non-idempotent-write safety gate.
+	// Route-level retry overrides tune the round counts (retry_times /
+	// channel_retry_times) but cannot re-enable cross-channel failover when
+	// the process default is off, bypass an admin channel pin, or skip the
+	// non-idempotent-write safety gate.
 	allowCrossChannelRetries := s.crossChannelFailoverEnabled.Load() && req.PreferChannelID <= 0 && retrySafe
 	maxAttempts := int(s.retryTimes.Load())
 	if !allowCrossChannelRetries {
@@ -201,6 +202,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		// refreshed tracks whether a 401 triggered a credential refresh for
 		// this request; a successful replay is logged as refresh_retry.
 		refreshed := false
+		// attemptDeadlineFired records that the non-stream per-attempt timeout
+		// (fwdCtx) expired — our own patience cap, after which failover stops.
+		attemptDeadlineFired := false
 		// monitorSkipped is set when an ignore_monitor error-passthrough rule
 		// fired; the breaker/cooldown bookkeeping is skipped for that attempt.
 		monitorSkipped := false
@@ -691,11 +695,25 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					if result != nil && result.Err == nil && result.Body != nil {
 						result.Body = &cancelBoundBody{ReadCloser: result.Body, cancel: attemptCancel}
 					} else {
+						// Capture the cap state before the cancel wipes fwdCtx.Err().
+						if errors.Is(fwdCtx.Err(), context.DeadlineExceeded) {
+							attemptDeadlineFired = true
+						}
 						attemptCancel()
 					}
 					attemptCancel = nil
 				}
 				category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
+				// A transport-level timeout (outbound header/TLS timeout) surfaces
+				// as context.DeadlineExceeded even though the client request
+				// context is still alive and waiting. Reclassify it as a retryable
+				// transport failure so the failover walk can try a faster channel;
+				// only our own per-attempt cap (attemptDeadlineFired) or a dead
+				// request context keeps the terminal "cancelled" semantics.
+				if errors.Is(result.Err, context.DeadlineExceeded) && ctx.Err() == nil && !attemptDeadlineFired {
+					category = "transport"
+					retryable = true
+				}
 				localAdapterFailure := isLocalFailure(result.Err)
 				// 401 refresh-retry: an expired session/access-token credential is
 				// re-established through the check-in machinery exactly once per
@@ -790,6 +808,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				}
 				s.decayError(candidate.Channel.ID, req.Model)
 				s.recordMemberSuccess(candidate.Channel.ID)
+				s.resetTransportFails(candidate.Member.ID)
 				if s.latencyAware.Load() && result.LatencyMs > 0 {
 					s.observeLatency(candidate.Channel.ID, req.Model, result.LatencyMs)
 				}
@@ -814,7 +833,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			return result, meta
 		}
-		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
+		// A dead request context (client gone, request deadline) or our own
+		// per-attempt patience cap ends the walk. Transport-level timeouts with
+		// a still-waiting client were reclassified above and keep failing over.
+		if ctx.Err() != nil || errors.Is(result.Err, context.Canceled) || attemptDeadlineFired {
 			return result, meta
 		}
 		// Configurable error passthrough rules (error_passthrough_rules)
@@ -844,10 +866,18 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 		}
 		if retryable {
-			// Pure transport jitter is not penalized: no cooldown, no channel
-			// failure count. ignore_monitor rules skip bookkeeping entirely.
-			if !monitorSkipped && category != "transport" {
+			// 429/5xx take the fixed cooldown (extended by Retry-After).
+			// Transport failures (refused/TLS/timeout) get the jitter
+			// exemption: the first failure of a consecutive streak earns no
+			// cooldown, a repeat does — the channel never silently keeps
+			// eating full timeouts on every request. ignore_monitor rules
+			// skip bookkeeping entirely.
+			if !monitorSkipped && !req.Probe {
 				penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
+				if category == "transport" {
+					penalty = s.transportPenalty(candidate.Member.ID, cooldown)
+					s.observeTransportFailure(candidate.Member.ID)
+				}
 				s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
 			}
 			// Two-layer fallback scope: an upstream that ANSWERED (any status,

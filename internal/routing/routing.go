@@ -304,6 +304,25 @@ func (s *Selector) SelectSticky(ctx context.Context, model string, excluded map[
 		}
 	}
 	if len(eligible) == 0 {
+		// Last resort: when every member is disqualified ONLY by an active
+		// cooldown, try the least-bad one instead of hard-failing. A cooldown
+		// is a health hint, not proof the channel is down — without this a
+		// sole-member route would self-inflict an outage for the whole
+		// cooldown window even after the upstream recovered. Members failed
+		// earlier in THIS request (already_attempted) stay out, as do
+		// disabled / absent-credential / non-pinned members.
+		best := -1
+		for i, evaluation := range explanation.Candidates {
+			if len(evaluation.Reasons) != 1 || evaluation.Reasons[0] != ReasonCoolingDown {
+				continue
+			}
+			if best == -1 || betterCoolingFallback(evaluation.Candidate, explanation.Candidates[best].Candidate) {
+				best = i
+			}
+		}
+		if best >= 0 {
+			return Decision{Selected: explanation.Candidates[best].Candidate, Explanation: explanation}, nil
+		}
 		return Decision{Explanation: explanation}, ErrNoEligible
 	}
 	explanation.SelectedPriority = &priority
@@ -606,6 +625,20 @@ func (s *Selector) pick(candidates []domain.RoutingCandidate, mode string) domai
 		return s.pickErrorAware(candidates)
 	}
 	return s.pickWeighted(candidates)
+}
+
+// betterCoolingFallback orders last-resort picks among cooling members:
+// higher priority wins, then the cooldown expiring soonest, then the lower
+// member id for determinism.
+func betterCoolingFallback(a, b domain.RoutingCandidate) bool {
+	if a.Member.Priority != b.Member.Priority {
+		return a.Member.Priority > b.Member.Priority
+	}
+	if a.Member.CooldownUntil != nil && b.Member.CooldownUntil != nil &&
+		!a.Member.CooldownUntil.Equal(*b.Member.CooldownUntil) {
+		return a.Member.CooldownUntil.Before(*b.Member.CooldownUntil)
+	}
+	return a.Member.ID < b.Member.ID
 }
 
 // concurrencyFactor returns the burst-guard share multiplier for a channel:

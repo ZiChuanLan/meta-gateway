@@ -8203,6 +8203,44 @@ td.actions {
   align-items: center;
   gap: 8px;
 }
+/* Expanded log row: upstream error excerpt next to the routing decision. */
+.log-expand-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.log-error-detail {
+  flex: 0 1 420px;
+  min-width: 260px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  padding: 8px 12px;
+}
+.log-error-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.log-error-detail-head code {
+  font-size: 11px;
+  color: var(--danger);
+}
+.log-error-detail pre {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow: auto;
+  color: var(--ink);
+}
 .log-decision-candidates li.is-eligible {
   font-weight: 650;
 }

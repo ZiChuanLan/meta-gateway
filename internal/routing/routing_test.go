@@ -157,6 +157,78 @@ func TestSelectNoRouteAndNoEligible(t *testing.T) {
 	}
 }
 
+func TestCoolingLastResortFallback(t *testing.T) {
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	cooling := func(id, priority int64, until time.Time) domain.RoutingCandidate {
+		c := candidate(id, priority, 100)
+		c.Member.CooldownUntil = &until
+		return c
+	}
+	soon := now.Add(time.Minute)
+	later := now.Add(5 * time.Minute)
+
+	// Every member cooling: the higher-priority one is tried (last resort)
+	// instead of hard-failing the request.
+	repo := fakeRepo{route: &domain.Route{ID: 1}, candidates: []domain.RoutingCandidate{
+		cooling(1, 10, soon), cooling(2, 20, later),
+	}}
+	selector := NewWithDependencies(repo, fakeClock{now}, &fakeRandom{values: []int{0}})
+	decision, err := selector.Select(context.Background(), "model", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Selected.Channel.ID != 2 {
+		t.Fatalf("last resort must pick the higher priority cooling member, got %+v", decision.Selected)
+	}
+
+	// Same priority: the cooldown expiring sooner wins.
+	repo = fakeRepo{route: &domain.Route{ID: 1}, candidates: []domain.RoutingCandidate{
+		cooling(1, 20, later), cooling(2, 20, soon),
+	}}
+	selector = NewWithDependencies(repo, fakeClock{now}, &fakeRandom{values: []int{0}})
+	decision, err = selector.Select(context.Background(), "model", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Selected.Channel.ID != 2 {
+		t.Fatalf("last resort must pick the earliest expiring cooldown, got %+v", decision.Selected)
+	}
+
+	// A member already failed in THIS request (excluded, also cooling) stays
+	// out; the other cooling member is still tried.
+	repo = fakeRepo{route: &domain.Route{ID: 1}, candidates: []domain.RoutingCandidate{
+		cooling(1, 20, soon), cooling(2, 10, soon),
+	}}
+	selector = NewWithDependencies(repo, fakeClock{now}, &fakeRandom{values: []int{0}})
+	decision, err = selector.Select(context.Background(), "model", map[int64]struct{}{1: {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Selected.Channel.ID != 2 {
+		t.Fatalf("excluded cooling member must not be retried, got %+v", decision.Selected)
+	}
+
+	// A disabled channel is never a fallback candidate.
+	disabled := cooling(1, 20, soon)
+	disabled.Channel.Status = domain.StatusDisabled
+	repo = fakeRepo{route: &domain.Route{ID: 1}, candidates: []domain.RoutingCandidate{disabled, cooling(2, 10, soon)}}
+	selector = NewWithDependencies(repo, fakeClock{now}, &fakeRandom{values: []int{0}})
+	decision, err = selector.Select(context.Background(), "model", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Selected.Channel.ID != 2 {
+		t.Fatalf("disabled channel must not be a fallback, got %+v", decision.Selected)
+	}
+
+	// Nothing but a disabled member: still a hard error.
+	repo = fakeRepo{route: &domain.Route{ID: 1}, candidates: []domain.RoutingCandidate{disabled}}
+	selector = NewWithDependencies(repo, fakeClock{now}, &fakeRandom{values: []int{0}})
+	if _, err := selector.Select(context.Background(), "model", nil); !errors.Is(err, ErrNoEligible) {
+		t.Fatalf("disabled-only fleet must hard fail, got %v", err)
+	}
+}
+
 func TestPickLatencyAwarePrefersFastChannel(t *testing.T) {
 	// Two candidates, equal weight; channel 1 fast, channel 2 slow.
 	fast := candidate(1, 0, 100)

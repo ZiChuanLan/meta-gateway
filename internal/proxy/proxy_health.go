@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/relay"
@@ -33,6 +35,39 @@ func (s *Service) recordMemberFailure(req Request, memberID, channelID int64, mo
 	}
 	s.recordChannelFailure(channelID)
 	s.observeError(channelID, model)
+}
+
+// transportPenalty implements the jitter exemption for transport failures
+// (connection refused, TLS, timeouts): the FIRST failure of a consecutive
+// streak earns no member cooldown, while a repeat inside the same streak
+// (no success in between) earns the full one. The error-aware score already
+// deprioritizes the channel from the first failure on.
+func (s *Service) transportPenalty(memberID int64, base time.Duration) time.Duration {
+	s.transportMu.Lock()
+	defer s.transportMu.Unlock()
+	if s.transportFails[memberID] <= 0 {
+		return 0
+	}
+	return base
+}
+
+// observeTransportFailure advances the member's consecutive transport-failure
+// streak (cleared by resetTransportFails on a successful relay).
+func (s *Service) observeTransportFailure(memberID int64) {
+	s.transportMu.Lock()
+	defer s.transportMu.Unlock()
+	if s.transportFails == nil {
+		s.transportFails = make(map[int64]int)
+	}
+	s.transportFails[memberID]++
+}
+
+// resetTransportFails clears the member's consecutive transport-failure streak
+// after a successful relay.
+func (s *Service) resetTransportFails(memberID int64) {
+	s.transportMu.Lock()
+	defer s.transportMu.Unlock()
+	delete(s.transportFails, memberID)
 }
 
 // recordChannelFailure increments the channel consecutive-failure counter and
@@ -100,6 +135,7 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		LatencyMs:             result.LatencyMs,
 		Attempt:               attempt,
 		ErrorBrief:            errorBrief,
+		ErrorDetail:           attemptErrorDetail(result),
 		DownstreamKeyID:       req.DownstreamKeyID,
 		PromptTokens:          req.PromptTokens,
 		CompletionTokens:      req.CompletionTokens,
@@ -115,6 +151,34 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
 	}
+}
+
+// attemptErrorDetail extracts a short excerpt of what the upstream actually
+// returned for a failed attempt — the error body text for HTTP failures, or
+// the transport error string when nothing arrived. Successes and live stream
+// bodies are left untouched (only non-2xx bodies are buffered, so reading
+// them is safe).
+func attemptErrorDetail(result *relay.Result) string {
+	if result == nil {
+		return ""
+	}
+	var text string
+	switch {
+	case result.Err != nil:
+		text = result.Err.Error()
+	case result.StatusCode >= 400 && result.Body != nil:
+		text = modelNotFoundText(result)
+	default:
+		return ""
+	}
+	text = strings.TrimSpace(text)
+	if len(text) > 600 {
+		text = text[:600]
+		for len(text) > 0 && !utf8.ValidString(text) {
+			text = text[:len(text)-1]
+		}
+	}
+	return text
 }
 
 // RecordUsage persists metered tokens for a completed relay response.

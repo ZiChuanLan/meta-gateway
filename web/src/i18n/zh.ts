@@ -712,6 +712,7 @@ export const zh: Dict = {
   "logsPage.errorClass.server": "服务端错误",
   "logsPage.errorClass.cancelled": "已取消（客户端中断/超时，不重试）",
   "logsPage.errorClass.empty_response": "空回复（上游 200 无内容，已转移）",
+  "logsPage.errorDetail": "上游返回",
   "logsPage.errorClass.unknown": "未知错误",
   "logsPage.selectHint": "选择一条请求查看错误，并跳转到对应连接。",
   "logsPage.emptyKicker": "暂时安静",
@@ -1404,7 +1405,7 @@ export const zh: Dict = {
   "ops.runtime.section.cooldown": "故障保护",
   "ops.runtime.faultProtection": "启用故障保护",
   "ops.runtime.faultProtectionHint":
-    "开启后，429/5xx 等可重试失败触发固定冷却并允许自动禁用渠道；网络抖动不惩罚。关闭后仍会继续重试和跨渠道转移。",
+    "开启后，429/5xx 等可重试失败触发固定冷却并允许自动禁用渠道；传输类失败（拒连/超时）首次不冷却，连续失败会冷却并计入自动禁用。关闭后仍会继续重试和跨渠道转移，但失败不会被记住。",
   "ops.runtime.section.healthSweep": "渠道健康巡检",
   "ops.runtime.autoDisable": "自动禁用阈值",
   "ops.runtime.autoDisableHint":

@@ -611,7 +611,12 @@ func (s *RouteMemberStore) RecordFailure(id int64, now time.Time, cooldown time.
 		currentFailures = 0
 	}
 	nextFailures := currentFailures + 1
-	until := now.Add(cooldown).UTC().Format(time.RFC3339Nano)
+	// A zero cooldown (first transport failure of a streak) records the count
+	// but no active cooldown window — the member stays immediately eligible.
+	var until any
+	if cooldown > 0 {
+		until = now.Add(cooldown).UTC().Format(time.RFC3339Nano)
+	}
 	if _, err = tx.Exec(`UPDATE route_members SET fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
 		nextFailures, until, category, id); err != nil {
 		return fmt.Errorf("route member record failure: %w", err)

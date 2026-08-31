@@ -494,6 +494,10 @@ type ProxyLog struct {
 	LatencyMs        int    `json:"latency_ms"`
 	Attempt          int    `json:"attempt"`
 	ErrorBrief       string `json:"error_brief,omitempty"`
+	// ErrorDetail is a truncated excerpt of what the upstream actually
+	// returned for a failed attempt (error body text, or the transport error
+	// string when no response arrived). Empty on success.
+	ErrorDetail      string `json:"error_detail,omitempty"`
 	DownstreamKeyID  int64  `json:"downstream_key_id,omitempty"`
 	PromptTokens     int    `json:"prompt_tokens,omitempty"`
 	CompletionTokens int    `json:"completion_tokens,omitempty"`

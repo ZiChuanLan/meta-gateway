@@ -91,6 +91,11 @@ type Service struct {
 	latencyEMA   map[channelModel]float64
 	errorMu      sync.Mutex
 	errorEMA     map[channelModel]float64
+	// transportFails tracks consecutive transport failures per member
+	// (in-memory; a member success clears the streak). The first failure of
+	// a streak earns no cooldown — jitter stays free — while repeats do.
+	transportMu    sync.Mutex
+	transportFails map[int64]int
 	// sticky is the optional session-affinity store; nil disables sticky routing.
 	sticky atomic.Pointer[routing.StickyStore]
 	// grayPromoteRequests is the stable-first promotion threshold (successful

@@ -926,6 +926,7 @@ export const en: Dict = {
   "logsPage.errorClass.server": "Server error",
   "logsPage.errorClass.cancelled": "Cancelled (client gone/timeout, no retry)",
   "logsPage.errorClass.empty_response": "Empty reply (200 without content, failed over)",
+  "logsPage.errorDetail": "Upstream returned",
   "logsPage.errorClass.unknown": "Unknown error",
   "logsPage.selectHint":
     "Select a request to inspect errors and jump to the connection.",
@@ -1527,7 +1528,7 @@ export const en: Dict = {
   "ops.runtime.section.cooldown": "Fault protection",
   "ops.runtime.faultProtection": "Enable fault protection",
   "ops.runtime.faultProtectionHint":
-    "When enabled, retryable 429/5xx failures use fixed cooldown and can auto-disable a channel. Network jitter is not penalized. When disabled, retries and failover still work.",
+    "When enabled, retryable 429/5xx failures use fixed cooldown and can auto-disable a channel. Transport failures (refused/timeouts) skip the cooldown on the first strike but cool down when they repeat. When disabled, retries and failover still work but failures are not remembered.",
   "ops.runtime.section.healthSweep": "Channel health sweep",
   "ops.runtime.autoDisable": "Auto-disable threshold",
   "ops.runtime.autoDisableHint":

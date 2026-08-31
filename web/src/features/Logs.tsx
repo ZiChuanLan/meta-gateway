@@ -227,6 +227,18 @@ function ProxyLogsPanel() {
   const pageRows = pagination.pageItems;
   const failedCount = rows.filter((log) => log.status >= 400).length;
 
+  // Rows are newest-first; a row was retried when a newer row of the same
+  // request carries a higher attempt number.
+  const retriedRowIds = new Set<number>();
+  const maxAttemptByRequest = new Map<string, number>();
+  for (const log of rows) {
+    const seen = maxAttemptByRequest.get(log.request_id);
+    if (seen !== undefined && seen > log.attempt) retriedRowIds.add(log.id);
+    if ((seen ?? 0) < log.attempt) {
+      maxAttemptByRequest.set(log.request_id, log.attempt);
+    }
+  }
+
   // Friendly, translatable label for a raw backend error category.
   const errorLabel = (raw?: string): string => {
     if (!raw) return "—";
@@ -530,7 +542,7 @@ function ProxyLogsPanel() {
 												{errorLabel(log.error_brief)}
 											</span>
 										) : null}
-										{log.attempt > 1 ? (
+										{retriedRowIds.has(log.id) ? (
 											<span
 												className="log-retry-mark"
 												title={t("logsPage.retried")}
@@ -567,10 +579,21 @@ function ProxyLogsPanel() {
 										{expandedRequest === log.request_id ? (
 											<tr className="log-decision-row">
 												<td colSpan={12}>
-													<DecisionSnapshotView
-														requestId={log.request_id}
-														attempt={log.attempt}
-													/>
+													<div className="log-expand-grid">
+														{log.error_detail ? (
+															<div className="log-error-detail">
+																<div className="log-error-detail-head">
+																	<strong>{t("logsPage.errorDetail")}</strong>
+																	<code>HTTP {log.status}</code>
+																</div>
+																<pre>{log.error_detail}</pre>
+															</div>
+														) : null}
+														<DecisionSnapshotView
+															requestId={log.request_id}
+															attempt={log.attempt}
+														/>
+													</div>
 												</td>
 											</tr>
 										) : null}

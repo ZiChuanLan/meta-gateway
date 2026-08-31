@@ -201,6 +201,7 @@ export interface ProxyLog {
   latency_ms: number;
   attempt: number;
   error_brief?: string;
+  error_detail?: string;
   downstream_key_id?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
