@@ -53,6 +53,7 @@ const RUNTIME_SECTION_GROUPS = [
     anchors: [
       ["cooldown", "ops.runtime.section.cooldown"],
       ["health", "ops.runtime.section.healthSweep"],
+      ["sync", "ops.runtime.section.sync"],
       ["probe", "ops.runtime.section.probe"],
     ],
   },
@@ -785,6 +786,44 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
+        <Panel className="runtime-card runtime-card-sync" id="runtime-sync">
+          <div className="panel-header">
+            <strong>{t("ops.runtime.section.sync")}</strong>
+          </div>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.discoveryCron")}
+              hint={t("ops.runtime.discoveryCronHint")}
+            />
+            <input
+              type="text"
+              placeholder="0 3 * * *"
+              disabled={busy}
+              value={draft.discovery_cron ?? ""}
+              onChange={(e) => patch("discovery_cron", e.target.value)}
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.defaultModelSyncMode")}
+              hint={t("ops.runtime.defaultModelSyncModeHint")}
+            />
+            <select
+              disabled={busy}
+              value={draft.default_model_sync_mode ?? "manual"}
+              onChange={(e) =>
+                patch(
+                  "default_model_sync_mode",
+                  e.target.value === "auto" ? "auto" : "manual",
+                )
+              }
+            >
+              <option value="manual">{t("channels.syncModeManual")}</option>
+              <option value="auto">{t("channels.syncModeAuto")}</option>
+            </select>
+          </label>
+        </Panel>
+
         <Panel className="runtime-card runtime-card-probe" id="runtime-probe">
           <div className="panel-header">
             <strong>{t("ops.runtime.section.probe")}</strong>
@@ -1128,51 +1167,6 @@ export function RuntimeSettingsPanel() {
           </div>
           <label className="field">
             <SettingLabel
-              label={t("ops.runtime.proxyURL")}
-              hint={t("ops.runtime.proxyURLHint")}
-            />
-            <input
-              type="url"
-              placeholder="http://127.0.0.1:7897"
-              disabled={busy}
-              value={draft.proxy_url ?? ""}
-              onChange={(e) => patch("proxy_url", e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.discoveryCron")}
-              hint={t("ops.runtime.discoveryCronHint")}
-            />
-            <input
-              type="text"
-              placeholder="0 3 * * *"
-              disabled={busy}
-              value={draft.discovery_cron ?? ""}
-              onChange={(e) => patch("discovery_cron", e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <SettingLabel
-              label={t("ops.runtime.defaultModelSyncMode")}
-              hint={t("ops.runtime.defaultModelSyncModeHint")}
-            />
-            <select
-              disabled={busy}
-              value={draft.default_model_sync_mode ?? "manual"}
-              onChange={(e) =>
-                patch(
-                  "default_model_sync_mode",
-                  e.target.value === "auto" ? "auto" : "manual",
-                )
-              }
-            >
-              <option value="manual">{t("channels.syncModeManual")}</option>
-              <option value="auto">{t("channels.syncModeAuto")}</option>
-            </select>
-          </label>
-          <label className="field">
-            <SettingLabel
               label={t("ops.maintenance.cron")}
               hint={t("ops.maintenance.cronHint")}
             />
@@ -1228,6 +1222,19 @@ export function RuntimeSettingsPanel() {
           <div className="panel-header">
             <strong>{t("ops.runtime.section.server")}</strong>
           </div>
+          <label className="field" style={{ marginBottom: 10 }}>
+            <SettingLabel
+              label={t("ops.runtime.proxyURL")}
+              hint={t("ops.runtime.proxyURLHint")}
+            />
+            <input
+              type="url"
+              placeholder="http://127.0.0.1:7897"
+              disabled={busy}
+              value={draft.proxy_url ?? ""}
+              onChange={(e) => patch("proxy_url", e.target.value)}
+            />
+          </label>
           <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
             {t("ops.runtime.serverReadonly")}
           </p>

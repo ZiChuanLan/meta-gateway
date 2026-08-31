@@ -1439,6 +1439,7 @@ export const zh: Dict = {
   "ops.maintenance.cron": "维护计划",
   "ops.maintenance.cronHint":
     "定时维护的五段 cron（默认 0 4 * * * = 每天 04:00）；留空 = 关闭。",
+  "ops.runtime.section.sync": "模型同步",
   "ops.runtime.section.probe": "定时模型探测",
   "ops.runtime.probeIntro":
     "按计划对所有路由的模型发起真实调用，提前发现不可用的成员。探测会消耗上游额度，请留意频率与范围。",
@@ -1512,7 +1513,7 @@ export const zh: Dict = {
     "同一会话的请求优先使用上次成功的渠道（利于 prompt 缓存）。关闭 = 普通路由；切换开关会丢弃现有绑定。",
   "ops.runtime.stickyTTL": "粘性 TTL（分钟）",
   "ops.runtime.stickyTTLHint": "会话绑定在未续期情况下的有效时长（1-1440）。",
-  "ops.runtime.section.server": "服务",
+  "ops.runtime.section.server": "服务与网络",
   "ops.runtime.sectionNav": "跳转到分组",
   "ops.runtime.navGroup.routing": "路由调度",
   "ops.runtime.navGroup.health": "健康自愈",
@@ -1528,7 +1529,7 @@ export const zh: Dict = {
   "ops.runtime.updateCheckHint":
     "定期向 GitHub 查询最新 Release，有新版本时在顶栏提示。关闭后不做任何外呼。环境变量：UPDATE_CHECK_ENABLED。",
   "ops.runtime.group.routingDesc": "故障转移与重试、路由策略、灰度发布、会话粘性",
-  "ops.runtime.group.healthDesc": "故障保护、渠道健康巡检、模型探测",
+  "ops.runtime.group.healthDesc": "故障保护、渠道健康巡检、模型同步与探测",
   "ops.runtime.group.governanceDesc": "限流与审计日志保留",
   "ops.runtime.group.opsDesc": "告警通知、维护任务、定时签到与服务信息",
   "ops.runtime.group.tools": "维护工具",

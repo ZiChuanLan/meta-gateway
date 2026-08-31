@@ -1557,6 +1557,7 @@ export const en: Dict = {
   "ops.maintenance.cron": "Maintenance schedule",
   "ops.maintenance.cronHint":
     "Five-field cron for the daily maintenance pass (default 0 4 * * *); empty = disabled.",
+  "ops.runtime.section.sync": "Model sync",
   "ops.runtime.section.probe": "Scheduled model probing",
   "ops.runtime.probeIntro":
     "Calls every model of every route on a schedule to catch broken members before traffic reaches them. Probing spends upstream quota, so watch the cadence.",
@@ -1631,7 +1632,7 @@ export const en: Dict = {
   "ops.runtime.stickyTTL": "Sticky TTL (minutes)",
   "ops.runtime.stickyTTLHint":
     "How long a session binding stays valid without renewal (1-1440).",
-  "ops.runtime.section.server": "Server",
+  "ops.runtime.section.server": "Service & network",
   "ops.runtime.sectionNav": "Jump to section",
   "ops.runtime.navGroup.routing": "Routing",
   "ops.runtime.navGroup.health": "Health",
