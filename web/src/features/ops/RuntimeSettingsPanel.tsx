@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  Children,
   useEffect,
   useId,
   useState,
@@ -156,19 +155,9 @@ function ValidatedNumberInput({
   );
 }
 
-/** Render the row-major cards as two independent vertical columns. */
+/** Masonry container: CSS columns balance the cards by height. */
 function RuntimeSettingsColumns({ children }: { children: ReactNode }) {
-  const cards = Children.toArray(children);
-  return (
-    <div className="runtime-settings-grid">
-      <div className="runtime-settings-column">
-        {cards.filter((_, index) => index % 2 === 0)}
-      </div>
-      <div className="runtime-settings-column">
-        {cards.filter((_, index) => index % 2 === 1)}
-      </div>
-    </div>
-  );
+  return <div className="runtime-settings-grid">{children}</div>;
 }
 
 /** Admin-writable runtime parameters with hot reload. */
