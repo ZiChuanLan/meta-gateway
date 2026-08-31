@@ -4,6 +4,14 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.1.1] — 2026-08-31
+
+### Admin console
+
+- Model list gains a status filter (enabled / disabled / all, default
+  enabled) next to the channel filter, so shadow models left behind
+  by name unification stay out of sight until wanted
+
 ## [v2.1.0] — 2026-08-31
 
 ### Admin console

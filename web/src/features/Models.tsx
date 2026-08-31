@@ -217,6 +217,9 @@ function ModelCatalog({
   const [groupFilter, setGroupFilter] = useState(
     () => initialGroup || readTabState("group", ""),
   );
+  const [statusFilter, setStatusFilter] = useState<"enabled" | "disabled" | "all">(
+    () => readTabState("status", "enabled"),
+  );
   const [showAdvanced, setShowAdvanced] = useState(true);
   const [edit, setEdit] = useState<Partial<Route> | null>(null);
   const [editMeta, setEditMeta] = useState<ModelMetadata | null>(null);
@@ -256,6 +259,7 @@ function ModelCatalog({
   useEffect(() => writeTabState("query", query), [query]);
   useEffect(() => writeTabState("channel", channelFilter), [channelFilter]);
   useEffect(() => writeTabState("group", groupFilter), [groupFilter]);
+  useEffect(() => writeTabState("status", statusFilter), [statusFilter]);
   useEffect(() => writeTabState("selected", selected), [selected]);
 
   const modelGroups = useMemo(() => {
@@ -286,6 +290,8 @@ function ModelCatalog({
         ) !== groupFilter
       )
         return false;
+      if (statusFilter === "enabled" && !item.route.enabled) return false;
+      if (statusFilter === "disabled" && item.route.enabled) return false;
       const members = item.members ?? [];
       if (channelFilter > 0) {
         if (!members.some((m) => m.channel.id === channelFilter)) {
@@ -296,7 +302,7 @@ function ModelCatalog({
       if (item.route.model_pattern.toLowerCase().includes(term)) return true;
       return members.some((m) => m.channel.name.toLowerCase().includes(term));
     });
-  }, [channelFilter, groupFilter, metaByModel, overviews.data, query]);
+  }, [channelFilter, groupFilter, metaByModel, overviews.data, query, statusFilter]);
 
   const pagination = useClientPagination(rows, 20, "models");
   const pageRows = pagination.pageItems;
@@ -1042,6 +1048,21 @@ function ModelCatalog({
                   {channel.name}
                 </option>
               ))}
+            </select>
+            <select
+              aria-label={t("modelsPage.statusFilter")}
+              value={statusFilter}
+              onChange={(event) => {
+                const next = event.target.value as "enabled" | "disabled" | "all";
+                setStatusFilter(next);
+                const nextParams = new URLSearchParams(params);
+                nextParams.delete("route");
+                setSearchParams(nextParams, { replace: true });
+              }}
+            >
+              <option value="enabled">{t("common.enabled")}</option>
+              <option value="disabled">{t("common.disabled")}</option>
+              <option value="all">{t("modelsPage.statusAll")}</option>
             </select>
           </div>
 

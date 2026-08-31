@@ -1669,6 +1669,8 @@ export const zh: Dict = {
   "channels.groupHint": "自定义运营分组，例如 paid、free、internal。",
   "modelsPage.groupFilter": "模型家族",
   "modelsPage.allGroups": "全部模型家族",
+  "modelsPage.statusFilter": "状态筛选",
+  "modelsPage.statusAll": "全部",
   "modelsPage.showOverrides": "显示模型级设置",
   "modelsPage.hideOverrides": "隐藏模型级设置",
   "modelsPage.overrideEnabled": "覆盖渠道默认值",

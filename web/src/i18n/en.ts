@@ -774,6 +774,8 @@ export const en: Dict = {
     "Use the row action menu to test, enable, inspect logs, or edit this model.",
   "modelsPage.groupFilter": "Model family",
   "modelsPage.allGroups": "All model families",
+  "modelsPage.statusFilter": "Status filter",
+  "modelsPage.statusAll": "All",
   "modelsPage.showOverrides": "Show model-level settings",
   "modelsPage.hideOverrides": "Hide model-level settings",
   "modelsPage.overrideEnabled": "Override channel default",
