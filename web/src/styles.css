@@ -5840,14 +5840,14 @@ td.actions {
   background: var(--surface);
 }
 .models-simple-toolbar .models-search {
-  flex: 1 1 160px;
-  min-width: 0;
+  flex: 1 1 120px;
+  min-width: 96px;
   max-width: none !important;
   margin-bottom: 0 !important;
 }
 .models-simple-toolbar select {
-  flex: 0 1 220px;
-  min-width: 140px;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
   min-height: 36px;
   height: 36px;
