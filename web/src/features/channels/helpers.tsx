@@ -30,6 +30,8 @@ export type CreateConnectionInput = {
   secret: string;
   type_hint: string;
   group_name?: string;
+  /** Empty/undefined = inherit the Admin-configured default. */
+  model_sync_mode?: "auto" | "manual";
 };
 
 export function normalizeBase(url: string) {

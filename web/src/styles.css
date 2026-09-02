@@ -8641,6 +8641,231 @@ td.actions {
     grid-template-columns: 1fr;
   }
 }
+
+/* —— Model sync mode: guided picker ——
+   The most consequential channel setting and the least self-explanatory one,
+   so the control carries its own onboarding copy plus live counters. */
+.sync-mode-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.sync-mode-intro {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.sync-mode-option-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sync-mode-badge {
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.sync-mode-pros {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+.sync-mode-pro,
+.sync-mode-con {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.sync-mode-pro {
+  color: var(--success);
+}
+.sync-mode-con {
+  color: var(--muted);
+}
+.sync-mode-option.is-active .sync-mode-con {
+  color: var(--muted-strong);
+}
+.sync-mode-inherit {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.sync-mode-effect {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  background: var(--surface-subtle);
+  border-left: 2px solid var(--line-strong);
+}
+.sync-mode-effect.is-auto {
+  border-left-color: var(--primary-active);
+  background: var(--primary-soft);
+}
+.sync-mode-effect.is-manual {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sync-mode-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.sync-mode-counts {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.sync-mode-pending {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sync-mode-guide-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--primary-active);
+  cursor: pointer;
+}
+.sync-mode-guide-toggle svg {
+  transition: transform 0.18s ease;
+}
+.sync-mode-guide-toggle.is-open svg {
+  transform: rotate(180deg);
+}
+.sync-mode-guide-toggle:hover {
+  text-decoration: underline;
+}
+.sync-mode-guide {
+  margin-top: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-strong);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+}
+.sync-mode-guide p {
+  margin: 0;
+}
+.sync-mode-guide strong {
+  color: var(--ink);
+  margin-right: 2px;
+}
+.sync-mode-guide-switch {
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+}
+.sync-mode-guide-recommend {
+  color: var(--ink-soft);
+}
+
+/* Sync-mode bar on the channel models panel: states the rule that governs
+   the adoption list right where models are adopted. */
+.channel-models-syncbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+}
+.channel-models-syncbar.is-auto {
+  border-left-color: var(--primary-active);
+}
+.channel-models-syncbar-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.channel-models-syncbar-copy strong {
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.channel-models-syncbar-copy span {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.channel-models-syncbar-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--line-strong);
+}
+.channel-models-syncbar-option {
+  padding: 4px 11px;
+  border: 0;
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted-strong);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.channel-models-syncbar-option + .channel-models-syncbar-option {
+  border-left: 1px solid var(--line);
+}
+.channel-models-syncbar-option:hover:not(:disabled) {
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
+.channel-models-syncbar-option.is-active {
+  background: var(--primary-soft);
+  color: var(--primary-active);
+  font-weight: 600;
+}
+.channel-models-syncbar-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.channel-models-tip {
+  margin: -2px 0 10px;
+}
+.detail-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
 .channel-model-row {
   display: flex;
   align-items: center;

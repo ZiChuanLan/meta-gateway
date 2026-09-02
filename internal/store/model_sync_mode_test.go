@@ -99,6 +99,59 @@ func TestChannelSyncModeNormalize(t *testing.T) {
 	}
 }
 
+// The edit drawer initializes its whole form from GET /admin/channels/overview,
+// so ListOverviews must carry every per-channel override the drawer writes back.
+// A column missing from that projection silently round-trips as its zero value
+// and saving the form would then wipe the stored configuration (regression:
+// model_sync_mode always read back as "manual").
+func TestListOverviewsCarriesChannelOverrides(t *testing.T) {
+	db := openTestDB(t)
+	id := syncModeFixture(t, db, "override-ch", domain.ModelSyncModeAuto)
+
+	channel, err := db.Channel.GetByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel.ModelSyncMode = domain.ModelSyncModeAuto
+	channel.MaxReasoningEffort = "high"
+	channel.PayloadRules = `[{"name":"cap","match":{},"actions":[]}]`
+	channel.MaxConcurrent = 7
+	channel.ProxyURL = "http://127.0.0.1:7897"
+	if err := db.Channel.Update(channel); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Channel.ListOverviews(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *domain.ChannelOverview
+	for index := range rows {
+		if rows[index].Channel.ID == id {
+			found = &rows[index]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("channel %d missing from ListOverviews", id)
+	}
+	if found.Channel.ModelSyncMode != domain.ModelSyncModeAuto {
+		t.Errorf("model_sync_mode = %q, want auto", found.Channel.ModelSyncMode)
+	}
+	if found.Channel.MaxReasoningEffort != "high" {
+		t.Errorf("max_reasoning_effort = %q, want high", found.Channel.MaxReasoningEffort)
+	}
+	if found.Channel.PayloadRules != `[{"name":"cap","match":{},"actions":[]}]` {
+		t.Errorf("payload_rules = %q, want the stored rule array", found.Channel.PayloadRules)
+	}
+	if found.Channel.MaxConcurrent != 7 {
+		t.Errorf("max_concurrent = %d, want 7", found.Channel.MaxConcurrent)
+	}
+	if found.Channel.ProxyURL != "http://127.0.0.1:7897" {
+		t.Errorf("proxy_url = %q, want http://127.0.0.1:7897", found.Channel.ProxyURL)
+	}
+}
+
 // Manual-sync discovery must only refresh the snapshot: no route or member may
 // appear, while models_csv still tracks the upstream list. An auto channel in
 // the same run keeps adopting everything.

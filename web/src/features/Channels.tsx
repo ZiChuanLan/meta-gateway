@@ -238,6 +238,9 @@ export function Channels() {
         type_hint: input.type_hint || "openai-compatible",
         group_name: input.group_name?.trim() || "default",
         status: "enabled",
+        // Explicit choice from the dialog; undefined would silently inherit
+        // the system default, which is exactly what used to confuse people.
+        model_sync_mode: input.model_sync_mode,
       }),
     invalidateKeys: [...INVALIDATE],
     toastOnError: false,
@@ -1497,6 +1500,10 @@ export function Channels() {
       ) : null}
       {edit ? (
         <EditChannelDialog
+          // Remount per channel: every field seeds from `value`, so reusing
+          // the instance across rows would leave the previous channel's
+          // values (notably the sync mode radio) in the form.
+          key={edit.id}
           value={edit}
           routeOverviews={routeOverviewsQuery.data}
           site={edit.site_id != null ? siteById.get(edit.site_id) : undefined}
@@ -1551,6 +1558,11 @@ export function Channels() {
             setModelsChannel(null);
             setKeysChannel(edit);
           }}
+          onRefreshModels={() => {
+            refresh.reset();
+            refresh.mutate(edit.id);
+          }}
+          refreshingModels={refresh.pendingId === edit.id}
         />
       ) : null}
       {createKeyChannel ? (

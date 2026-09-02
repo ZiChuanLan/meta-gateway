@@ -327,6 +327,42 @@ export const zh: Dict = {
   "channels.syncModeAutoHint": "探测到的模型自动接入路由并启用。",
   "channels.syncModeManual": "按需勾选",
   "channels.syncModeManualHint": "新模型只进候选列表，到模型页勾选接入。",
+  "channels.syncModeIntro":
+    "决定这个连接探测到的模型如何进入网关。两种模式随时可切换，切换不会删除已接入的模型。",
+  "channels.syncModeAutoBadge": "省事",
+  "channels.syncModeManualBadge": "可控",
+  "channels.syncModeAutoPro": "同步完就能直接调用",
+  "channels.syncModeAutoCon": "上游新增模型也会自动上线",
+  "channels.syncModeManualPro": "只暴露你勾选的模型",
+  "channels.syncModeManualCon": "新模型要手动接入才生效",
+  "channels.syncModeInheritDefault": "系统默认（{mode}）",
+  "channels.syncModeEffectAuto":
+    "当前：自动同步。下次「同步模型」后，新探测到的模型会自动接入并启用。",
+  "channels.syncModeEffectAutoPending":
+    "当前：自动同步。下次「同步模型」后，清单里未接入的 {n} 个模型会自动接入并启用。",
+  "channels.syncModeEffectManual":
+    "当前：按需勾选。「同步模型」只刷新候选清单，需要在这里勾选后才会接入。",
+  "channels.syncModeCountsLoading": "正在读取模型清单…",
+  "channels.syncModeNoModels": "还没同步过模型，保存后点「同步模型」拉取清单。",
+  "channels.syncModeCounts": "共 {total} 个模型 · 已接入 {adopted} 个",
+  "channels.syncModeNotAdopted": "还有 {n} 个未接入",
+  "channels.syncModeGuide": "两种模式有什么区别？",
+  "channels.syncModeGuideAuto":
+    "：每次「同步模型」后，上游返回的模型会全部创建路由并启用，同步完即可调用。",
+  "channels.syncModeGuideManual":
+    "：同步只刷新候选清单，不创建任何路由；你在下面的清单里勾选哪个，哪个才接入。",
+  "channels.syncModeGuideSwitch":
+    "切换模式不会动已经接入的模型。自动转按需：已接入的保留，之后新增的等你勾选；按需转自动：下次同步会把清单里还没接入的一起接入。",
+  "channels.syncModeGuideRecommend":
+    "拿不准就先用「按需勾选」——模型多的时候它最安全，确认无误后再切成自动同步。",
+  "channels.modelsTotalStat": "模型总数",
+  "channels.modelsTotalHint": "上游探测到的候选模型数量",
+  "channels.modelsAdoptedStat": "已接入",
+  "channels.modelsAdoptedHint": "已经接入路由的模型（含被手动停用的）",
+  "channels.modelsSyncBannerAuto":
+    "新探测到的模型会自动接入路由；取消勾选可停用单个模型。",
+  "channels.modelsSyncBannerManual":
+    "同步只刷新候选清单，勾选后才会接入路由。",
   "channels.adoptHint": "勾选即接入该模型；新探测到的模型默认未勾选。",
   "channels.modelAdoptHint": "尚未接入，勾选后开始服务此模型",
   "channels.groupExpand": "展开分组",

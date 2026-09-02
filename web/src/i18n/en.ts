@@ -352,6 +352,44 @@ export const en: Dict = {
   "channels.syncModeManual": "Pick on demand",
   "channels.syncModeManualHint":
     "New models only enter the candidate list; adopt them from the models page.",
+  "channels.syncModeIntro":
+    "Decides how the models probed on this connection enter the gateway. You can switch at any time — switching never removes models that are already adopted.",
+  "channels.syncModeAutoBadge": "Hands-off",
+  "channels.syncModeManualBadge": "Full control",
+  "channels.syncModeAutoPro": "Callable right after a sync",
+  "channels.syncModeAutoCon": "Models added upstream go live on their own",
+  "channels.syncModeManualPro": "Only the models you check are exposed",
+  "channels.syncModeManualCon": "New models need a manual adoption",
+  "channels.syncModeInheritDefault": "System default ({mode})",
+  "channels.syncModeEffectAuto":
+    "Current: auto sync. Models discovered by the next sync are adopted and enabled automatically.",
+  "channels.syncModeEffectAutoPending":
+    "Current: auto sync. The next sync adopts and enables the {n} models from the list that are not adopted yet.",
+  "channels.syncModeEffectManual":
+    "Current: pick on demand. A sync only refreshes the candidate list; adopt models here to serve them.",
+  "channels.syncModeCountsLoading": "Reading the model list…",
+  "channels.syncModeNoModels":
+    "No models synced yet — save, then run “Sync models” to pull the list.",
+  "channels.syncModeCounts": "{total} models · {adopted} adopted",
+  "channels.syncModeNotAdopted": "{n} not adopted yet",
+  "channels.syncModeGuide": "What is the difference?",
+  "channels.syncModeGuideAuto":
+    ": every sync creates and enables a route for each model returned upstream, so they are callable immediately.",
+  "channels.syncModeGuideManual":
+    ": a sync only refreshes the candidate list and creates no routes; a model is adopted when you check it below.",
+  "channels.syncModeGuideSwitch":
+    "Switching never touches already adopted models. Auto → on demand keeps what is adopted and stops adopting new ones; on demand → auto adopts whatever the list is missing on the next sync.",
+  "channels.syncModeGuideRecommend":
+    "When in doubt start with “Pick on demand” — it is the safe option, especially with large model catalogs. Switch to auto sync once you trust the list.",
+  "channels.modelsTotalStat": "Models",
+  "channels.modelsTotalHint": "Candidate models probed from upstream",
+  "channels.modelsAdoptedStat": "Adopted",
+  "channels.modelsAdoptedHint":
+    "Models wired into routing (including manually disabled ones)",
+  "channels.modelsSyncBannerAuto":
+    "Newly probed models are adopted automatically; uncheck one to disable it.",
+  "channels.modelsSyncBannerManual":
+    "A sync only refreshes the candidate list — check a model to adopt it.",
   "channels.adoptHint":
     "Checking a model adopts it; newly probed models start unchecked.",
   "channels.modelAdoptHint": "Not adopted yet; check to start serving this model",

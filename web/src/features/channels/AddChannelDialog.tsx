@@ -1,5 +1,6 @@
 import { Cable, ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
@@ -14,6 +15,7 @@ import { PROVIDER_BASE_URLS } from "../../connectionTypes";
 import { useSession } from "../../session";
 import { TYPE_OPTIONS } from "./helpers";
 import { TYPE_GROUPS, type CreateConnectionInput } from "./helpers";
+import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
 
 export function AddChannelDialog({
   pending,
@@ -37,6 +39,21 @@ export function AddChannelDialog({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const canSubmit = Boolean(baseUrl.trim() && secret.trim());
 
+  // The sync mode is a per-channel decision with a real operational cost, so
+  // it is asked up front instead of being silently inherited. The system
+  // default only seeds the pre-selection and is labelled as such.
+  const runtimeSettings = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: ({ signal }) => service.runtimeSettings(signal),
+    retry: false,
+  });
+  const defaultSyncMode: ModelSyncMode =
+    runtimeSettings.data?.editable.default_model_sync_mode === "auto"
+      ? "auto"
+      : "manual";
+  const [syncMode, setSyncMode] = useState<ModelSyncMode | null>(null);
+  const effectiveSyncMode = syncMode ?? defaultSyncMode;
+
   return (
     <Dialog
       title={t("channels.add")}
@@ -57,6 +74,7 @@ export function AddChannelDialog({
                   secret,
                   type_hint: typeHint,
                   group_name: groupName,
+                  model_sync_mode: effectiveSyncMode,
                 },
                 { verify: true },
               )
@@ -152,6 +170,22 @@ export function AddChannelDialog({
           />
         </Field>
       </div>
+
+      <section
+        className="detail-section connection-subpanel"
+        aria-label={t("channels.syncMode")}
+      >
+        <div className="detail-section-head">
+          <h3>{t("channels.modelsSection")}</h3>
+        </div>
+        <SyncModePicker
+          value={effectiveSyncMode}
+          onChange={setSyncMode}
+          disabled={pending}
+          defaultMode={defaultSyncMode}
+        />
+      </section>
+
       <button
         type="button"
         className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
@@ -173,6 +207,7 @@ export function AddChannelDialog({
                   secret,
                   type_hint: typeHint,
                   group_name: groupName,
+                  model_sync_mode: effectiveSyncMode,
                 },
                 { verify: false },
               )

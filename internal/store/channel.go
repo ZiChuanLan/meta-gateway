@@ -73,7 +73,12 @@ func (s *ChannelStore) List() ([]domain.Channel, error) {
 func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, error) {
 	rows, err := s.db.Query(`SELECT
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.retry_config, c.stable_first, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.header_override, c.system_prompt, c.retry_config,
+		-- Per-channel overrides surfaced by the edit drawer. They must match
+		-- scanChannel(): a column missing here silently round-trips as its
+		-- zero value, so saving the edit form would wipe the stored config.
+		c.model_sync_mode, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url,
+		c.stable_first, c.created_at, c.updated_at,
 		COALESCE(cred.kind, ''),
 		CASE WHEN EXISTS (
 			SELECT 1 FROM credentials user_checkin
@@ -167,6 +172,11 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			&overview.Channel.HeaderOverride,
 			&overview.Channel.SystemPrompt,
 			&overview.Channel.RetryConfig,
+			&overview.Channel.ModelSyncMode,
+			&overview.Channel.MaxReasoningEffort,
+			&overview.Channel.PayloadRules,
+			&overview.Channel.MaxConcurrent,
+			&overview.Channel.ProxyURL,
 			&stableFirst,
 			scanTime(&overview.Channel.CreatedAt),
 			scanTime(&overview.Channel.UpdatedAt),
@@ -210,6 +220,9 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		overview.SiteUsable = siteUsable != 0
 		overview.CredentialUsable = credentialUsable != 0
 		overview.Channel.StableFirst = stableFirst != 0
+		// Mirror scanChannel(): the drawer's radio group has no "unset" state,
+		// so an unknown/empty column must still read back as manual.
+		overview.Channel.ModelSyncMode = domain.NormalizeModelSyncMode(overview.Channel.ModelSyncMode)
 		overview.HealthState = DeriveHealthState(overview)
 		overview.HealthReason = DeriveHealthReason(overview)
 		overview.ConnectivityState = DeriveConnectivityState(overview)

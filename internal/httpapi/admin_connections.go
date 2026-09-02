@@ -17,6 +17,9 @@ type createConnectionRequest struct {
 	Status    string `json:"status"`
 	ModelsCSV string `json:"models_csv"`
 	GroupName string `json:"group_name"`
+	// ModelSyncMode is optional: an empty value makes Channel.Create inherit
+	// the Admin-configured default (runtime_settings.default_model_sync_mode).
+	ModelSyncMode string `json:"model_sync_mode"`
 }
 
 // normalizeBaseURL canonicalizes a provider base URL for site reuse matching
@@ -60,6 +63,13 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 	}
 	if status != domain.StatusEnabled && status != domain.StatusDisabled {
 		writeError(w, http.StatusBadRequest, "invalid status")
+		return
+	}
+	// model_sync_mode is a strict enum when supplied; leaving it empty is how
+	// the UI asks for the Admin-configured default.
+	syncMode := strings.ToLower(strings.TrimSpace(req.ModelSyncMode))
+	if syncMode != "" && syncMode != domain.ModelSyncModeAuto && syncMode != domain.ModelSyncModeManual {
+		writeError(w, http.StatusBadRequest, "model_sync_mode must be auto or manual")
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -116,8 +126,9 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		Priority:     0,
 		Weight:       100,
 		Status:       status,
-		TypeHint:     strings.TrimSpace(req.TypeHint),
-		ModelsCSV:    strings.TrimSpace(req.ModelsCSV),
+		TypeHint:      strings.TrimSpace(req.TypeHint),
+		ModelsCSV:     strings.TrimSpace(req.ModelsCSV),
+		ModelSyncMode: syncMode,
 	})
 	if err != nil {
 		_ = h.db.Credential.Delete(credID)

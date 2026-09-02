@@ -24,7 +24,8 @@ import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { MODEL_GROUP_ORDER, autoModelGroup } from "./models/modelGroups";
-import { positiveId } from "../lib/positiveId"
+import { positiveId } from "../lib/positiveId";
+import type { ModelSyncMode } from "./channels/SyncModePicker";
 
 const INVALIDATE = [
   ["channel-overviews"],
@@ -204,6 +205,14 @@ export function ChannelModelsPanel({
 
   const adopt = useAdminMutation({
     mutationFn: adoptModel,
+    invalidateKeys: [...INVALIDATE],
+  });
+
+  // Single-field PATCH: the admin API preserves every key the body omits, so
+  // flipping the sync mode from here cannot touch the rest of the channel.
+  const setSyncMode = useAdminMutation({
+    mutationFn: (mode: ModelSyncMode) =>
+      service.updateChannel(channelId, { model_sync_mode: mode }),
     invalidateKeys: [...INVALIDATE],
   });
 
@@ -566,6 +575,14 @@ export function ChannelModelsPanel({
   const aliasedCount = models.filter((model) =>
     Boolean(aliasFor(model.model_name)),
   ).length;
+  // "Adopted" = wired into routing (enabled or parked); "enabled" = currently
+  // serving. Splitting them is what makes manual mode readable: a fresh
+  // channel shows N models / 0 adopted by design, not because sync failed.
+  const adoptedCount =
+    models.filter((model) => memberFor(model.model_name) != null).length +
+    customModels.length;
+  const syncMode: ModelSyncMode =
+    channel?.model_sync_mode === "auto" ? "auto" : "manual";
 
   // Group the filtered rows by vendor family for scannable bulk selection;
   // known groups keep their defined order, anything else lands in "Other".
@@ -592,25 +609,71 @@ export function ChannelModelsPanel({
         <div className="channel-models-panel-head">
           <div>
             <p className="page-kicker">{channel?.name ?? `#${channelId}`}</p>
-            <p className="detail-section-empty is-quiet">
-              {channel?.model_sync_mode === "manual"
-                ? t("channels.adoptHint")
-                : t("channels.modelsManageHint")}
-            </p>
           </div>
         </div>
       )}
+
+      {/* Sync mode is the rule that decides everything below, so it is stated
+          up front (and switchable) instead of being buried in the edit drawer. */}
+      <div className={`channel-models-syncbar is-${syncMode}`}>
+        <div className="channel-models-syncbar-copy">
+          <strong>{t("channels.syncMode")}</strong>
+          <span>
+            {syncMode === "auto"
+              ? t("channels.modelsSyncBannerAuto")
+              : t("channels.modelsSyncBannerManual")}
+          </span>
+        </div>
+        <div
+          className="channel-models-syncbar-switch"
+          role="radiogroup"
+          aria-label={t("channels.syncMode")}
+        >
+          {(["manual", "auto"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={`channel-models-syncbar-option${syncMode === mode ? " is-active" : ""}`}
+              aria-pressed={syncMode === mode}
+              disabled={setSyncMode.isPending || !channel}
+              title={
+                mode === "auto"
+                  ? t("channels.syncModeAutoHint")
+                  : t("channels.syncModeManualHint")
+              }
+              onClick={() => setSyncMode.mutate(mode)}
+            >
+              {mode === "auto"
+                ? t("channels.syncModeAuto")
+                : t("channels.syncModeManual")}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <TelemetryStrip
         items={[
           {
-            label: t("channels.stat.total"),
+            label: t("channels.modelsTotalStat"),
             value: models.length + customModels.length,
             tone: "primary",
+            hint: t("channels.modelsTotalHint"),
+          },
+          {
+            label: t("channels.modelsAdoptedStat"),
+            value: adoptedCount,
+            tone: "info",
+            hint: t("channels.modelsAdoptedHint"),
           },
           { label: t("common.enabled"), value: enabledCount, tone: "success" },
-          { label: t("channels.aliasStat"), value: aliasedCount, tone: "info" },
+          { label: t("channels.aliasStat"), value: aliasedCount },
         ]}
       />
+      {syncMode === "manual" && models.length > 0 ? (
+        <p className="detail-section-empty is-quiet channel-models-tip">
+          {t("channels.adoptHint")}
+        </p>
+      ) : null}
 
       <Panel className="ops-list-panel">
         <div className="models-simple-toolbar">

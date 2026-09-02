@@ -250,6 +250,8 @@ export const api = (client: ApiClient) => ({
     status?: string;
     models_csv?: string;
     group_name?: string;
+    /** Omit to inherit runtime_settings.default_model_sync_mode. */
+    model_sync_mode?: "auto" | "manual";
   }) => client.post<ConnectionCreateResponse>("/admin/connections", body),
   channelOverviews: (signal?: AbortSignal) =>
     client.getList<ChannelOverview>("/admin/channels/overview", signal),
