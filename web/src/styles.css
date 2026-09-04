@@ -13559,6 +13559,69 @@ table {
   line-height: 1.6;
   color: var(--muted);
 }
+.setup-wizard-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+.setup-wizard-tabs button {
+  flex: 1;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px 10px;
+  transition: background var(--dur-hover) var(--ease-hover),
+    color var(--dur-hover) var(--ease-hover);
+}
+.setup-wizard-tabs button:hover {
+  color: var(--ink);
+}
+.setup-wizard-tabs button.is-active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+.setup-wizard-file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color var(--dur-hover) var(--ease-hover),
+    color var(--dur-hover) var(--ease-hover),
+    background var(--dur-hover) var(--ease-hover);
+}
+.setup-wizard-file:hover {
+  border-color: var(--primary);
+  color: var(--ink);
+  background: var(--primary-soft);
+}
+.setup-wizard-file:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
+}
+.setup-wizard-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
 .setup-wizard-option {
   display: flex;
   align-items: flex-start;

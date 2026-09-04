@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Copy } from "lucide-react";
 import { api } from "../api/client";
+import type { ImportResult } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { Button, Field } from "../components/ui";
@@ -36,6 +37,8 @@ export function SetupWizard() {
 	const [secret, setSecret] = useState("");
 	const [channelId, setChannelId] = useState<number | null>(null);
 	const [synced, setSynced] = useState(false);
+	const [connTab, setConnTab] = useState<"manual" | "aah">("manual");
+	const [imported, setImported] = useState<ImportResult | null>(null);
 	const [keyName, setKeyName] = useState("default");
 	const [keyCreated, setKeyCreated] = useState(false);
 	const [error, setError] = useState("");
@@ -91,6 +94,30 @@ export function SetupWizard() {
 		// A failed sync usually means the upstream key is wrong; non-blocking.
 		onError: () => setError(t("wizard.syncFail")),
 	});
+
+	const importBackup = useMutation({
+		mutationFn: async (doc: unknown) => s.importData(doc),
+		onSuccess: (res) => {
+			setImported(res);
+			setError("");
+			// Adoption kicks off discovery server-side; refresh the checklist.
+			queryClient.invalidateQueries({ queryKey: ["channel-overviews"] });
+		},
+		onError: (err) =>
+			setError(err instanceof Error ? err.message : String(err)),
+	});
+
+	const onImportFile = async (file: File | undefined) => {
+		if (!file) return;
+		setImported(null);
+		setError("");
+		try {
+			const doc: unknown = JSON.parse(await file.text());
+			importBackup.mutate(doc);
+		} catch {
+			setError(t("wizard.importInvalid"));
+		}
+	};
 
 	const createKey = useMutation({
 		mutationFn: async () => {
@@ -200,79 +227,138 @@ export function SetupWizard() {
 					<section>
 						<h2>{t("wizard.connTitle")}</h2>
 						<p className="setup-wizard-desc">{t("wizard.connDesc")}</p>
-						<Field label={t("wizard.name")}>
-							<input
-								value={connName}
-								onChange={(e) => setConnName(e.target.value)}
-								disabled={channelId != null}
-								placeholder="my-upstream"
-							/>
-						</Field>
-						<Field label={t("wizard.baseUrl")}>
-							<input
-								required
-								value={baseUrl}
-								onChange={(e) => setBaseUrl(e.target.value)}
-								disabled={channelId != null}
-								placeholder="https://api.example.com"
-							/>
-						</Field>
-						<Field label={t("wizard.secret")}>
-							<input
-								required
-								type="password"
-								autoComplete="new-password"
-								value={secret}
-								onChange={(e) => setSecret(e.target.value)}
-								disabled={channelId != null}
-							/>
-						</Field>
-						{channelId != null ? (
-							<p className="setup-wizard-ok">
-								<Check size={13} /> {t("wizard.connCreated")}
-							</p>
+						<div className="setup-wizard-tabs" role="tablist">
+							<button
+								type="button"
+								role="tab"
+								aria-selected={connTab === "manual"}
+								className={connTab === "manual" ? "is-active" : ""}
+								onClick={() => setConnTab("manual")}
+							>
+								{t("wizard.manualTab")}
+							</button>
+							<button
+								type="button"
+								role="tab"
+								aria-selected={connTab === "aah"}
+								className={connTab === "aah" ? "is-active" : ""}
+								onClick={() => setConnTab("aah")}
+							>
+								{t("wizard.importTab")}
+							</button>
+						</div>
+						{connTab === "manual" ? (
+							<>
+								<Field label={t("wizard.name")}>
+									<input
+										value={connName}
+										onChange={(e) => setConnName(e.target.value)}
+										disabled={channelId != null}
+										placeholder="my-upstream"
+									/>
+								</Field>
+								<Field label={t("wizard.baseUrl")}>
+									<input
+										required
+										value={baseUrl}
+										onChange={(e) => setBaseUrl(e.target.value)}
+										disabled={channelId != null}
+										placeholder="https://api.example.com"
+									/>
+								</Field>
+								<Field label={t("wizard.secret")}>
+									<input
+										required
+										type="password"
+										autoComplete="new-password"
+										value={secret}
+										onChange={(e) => setSecret(e.target.value)}
+										disabled={channelId != null}
+									/>
+								</Field>
+								{channelId != null ? (
+									<p className="setup-wizard-ok">
+										<Check size={13} /> {t("wizard.connCreated")}
+									</p>
+								) : (
+									<Button
+										disabled={
+											createConnection.isPending ||
+											!baseUrl.trim() ||
+											!secret.trim()
+										}
+										onClick={() => createConnection.mutate()}
+									>
+										{createConnection.isPending
+											? t("common.loading")
+											: t("wizard.createConn")}
+									</Button>
+								)}
+								{channelId != null && !synced ? (
+									<Button
+										variant="secondary"
+										disabled={syncModels.isPending}
+										onClick={() => syncModels.mutate()}
+									>
+										{syncModels.isPending
+											? t("wizard.syncing")
+											: t("wizard.trySync")}
+									</Button>
+								) : null}
+								{synced ? (
+									<p className="setup-wizard-ok">
+										<Check size={13} /> {t("wizard.synced")}
+									</p>
+								) : null}
+							</>
 						) : (
-							<Button
-								disabled={
-									createConnection.isPending ||
-									!baseUrl.trim() ||
-									!secret.trim()
-								}
-								onClick={() => createConnection.mutate()}
-							>
-								{createConnection.isPending
-									? t("common.loading")
-									: t("wizard.createConn")}
-							</Button>
+							<>
+								<p className="setup-wizard-desc">
+									{t("wizard.importHint")}
+								</p>
+								<label className="setup-wizard-file">
+									<input
+										type="file"
+										accept="application/json,.json"
+										disabled={importBackup.isPending}
+										onChange={(e) => {
+											onImportFile(e.target.files?.[0]);
+											e.currentTarget.value = "";
+										}}
+									/>
+									<span>
+										{importBackup.isPending
+											? t("common.loading")
+											: t("wizard.pickFile")}
+									</span>
+								</label>
+								{imported ? (
+									<p className="setup-wizard-ok">
+										<Check size={13} />{" "}
+										{t("wizard.importDone", {
+											created: imported.created_count,
+											updated: imported.updated_count,
+										})}
+									</p>
+								) : null}
+							</>
 						)}
-						{channelId != null && !synced ? (
-							<Button
-								variant="secondary"
-								disabled={syncModels.isPending}
-								onClick={() => syncModels.mutate()}
-							>
-								{syncModels.isPending
-									? t("wizard.syncing")
-									: t("wizard.trySync")}
-							</Button>
-						) : null}
-						{synced ? (
-							<p className="setup-wizard-ok">
-								<Check size={13} /> {t("wizard.synced")}
-							</p>
-						) : null}
 						<div className="setup-wizard-actions">
 							<Button variant="secondary" onClick={() => setStep(0)}>
 								{t("wizard.back")}
 							</Button>
 							<Button
-								variant="secondary"
+								variant={
+									channelId != null || imported
+										? "primary"
+										: "secondary"
+								}
 								onClick={() => {
 									setError("");
 									setStep(2);
 								}}
 							>
-								{channelId != null
+								{channelId != null || imported
 									? t("wizard.next")
 									: t("wizard.later")}
 							</Button>
