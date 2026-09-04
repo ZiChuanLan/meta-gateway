@@ -42,6 +42,7 @@ import {
 } from "./components/ui";
 import { CommandPalette } from "./components/CommandPalette";
 import { Dashboard } from "./features/Dashboard";
+import { GuidedTour } from "./features/GuidedTour";
 import { KatanaCanvas } from "./components/KatanaCanvas";
 import { createEdgeSparkHost } from "./lib/katanafx";
 import { channelHealthState } from "./features/channelHealth";
@@ -974,6 +975,8 @@ function AuthenticatedShell({
 				onClose={() => setPaletteOpen(false)}
 				nav={paletteNav}
 			/>
+
+			<GuidedTour />
 		</div>
 	);
 }
