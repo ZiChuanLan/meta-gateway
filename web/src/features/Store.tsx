@@ -556,7 +556,7 @@ function PluginConfigDialog({
 		queryKey: ["plugin-config", row.id],
 		queryFn: ({ signal }) => service.pluginConfig(row.id, signal),
 	});
-	const fields = info.data?.fields ?? [];
+	const fields = useMemo(() => info.data?.fields ?? [], [info.data]);
 	useEffect(() => {
 		if (!info.data || values !== null) return;
 		let stored: Record<string, unknown> = {};

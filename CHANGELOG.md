@@ -4,6 +4,36 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [Unreleased]
+
+### Added
+
+- A guided picker for the per-channel model sync mode (auto vs on-demand) in
+  the channel edit drawer, the add-channel dialog, and a quick auto/manual
+  switch on the channel models page: mode cards with trade-offs, a preview
+  of what the next sync will do, live "N models · M adopted" counters, the
+  inherit-system-default marker, and a collapsible "how do the modes
+  differ?" explainer
+- `POST /admin/connections` accepts an optional `model_sync_mode`
+  (`auto`/`manual`; empty inherits the system default)
+- The channel models page telemetry now pairs model total with adopted,
+  enabled, and aliased counts, and manual-mode channels with pending
+  candidates show a "N not adopted yet" hint instead of a bare 0
+
+### Fixed
+
+- The channel edit drawer no longer forgets the model sync mode:
+  `ListOverviews` (the endpoint the form seeds from) omitted the
+  `model_sync_mode` column — along with `max_reasoning_effort`,
+  `payload_rules`, `max_concurrent`, and `proxy_url` — so the empty
+  read-back normalized to "manual" and a saved auto-sync channel reopened
+  as on-demand; the columns are now selected, scanned, and normalized, with
+  a regression test covering the projection
+- The channel list model column no longer shows a stark bold 0 for channels
+  without models: synced-but-nothing-adopted renders a muted 0 with a
+  tooltip pointing at the models page or auto sync, never-synced renders a
+  muted dash (mirroring the latency column), and adopted counts stay bold
+
 ## [v2.2.0] — 2026-08-31
 
 ### Added
