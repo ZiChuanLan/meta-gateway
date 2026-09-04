@@ -1861,6 +1861,12 @@ export const en: Dict = {
   "tour.keysDesc": "Click “Create” to mint a key for callers — their credential to reach the gateway.",
   "tour.logsTitle": "Relay logs",
   "tour.logsDesc": "Channel, model and latency for every request; start here when something misbehaves.",
+  "tour.checkinsTitle": "Automated check-in",
+  "tour.checkinsDesc":
+    "Turn it on and the gateway checks in to upstream sites on a schedule; logs and external check-ins live here too.",
+  "tour.settingsTitle": "Global settings",
+  "tour.settingsDesc":
+    "Default sync mode, audit, backups — system-level options you can change any time.",
   "tour.next": "Next",
   "tour.prev": "Back",
   "tour.done": "Finish",

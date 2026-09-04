@@ -124,6 +124,18 @@ function start(
       title: t("tour.logsTitle"),
       description: t("tour.logsDesc"),
     },
+    {
+      route: "/checkins",
+      locate: () => document.querySelector(".ops-canvas .panel"),
+      title: t("tour.checkinsTitle"),
+      description: t("tour.checkinsDesc"),
+    },
+    {
+      route: "/settings",
+      locate: () => document.querySelector(".runtime-settings"),
+      title: t("tour.settingsTitle"),
+      description: t("tour.settingsDesc"),
+    },
   ];
 
   const asDriveSteps: DriveStep[] = steps.map((step) => ({

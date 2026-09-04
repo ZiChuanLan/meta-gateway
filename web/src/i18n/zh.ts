@@ -1746,6 +1746,12 @@ export const zh: Dict = {
   "tour.keysDesc": "点「创建」生成一把 Key 发给调用方，这是他们访问网关的凭证。",
   "tour.logsTitle": "转发日志",
   "tour.logsDesc": "每笔请求的渠道、模型、延迟都在这里，出问题先来这里看。",
+  "tour.checkinsTitle": "签到自动化",
+  "tour.checkinsDesc":
+    "开启后网关按计划替你签到上游站点；签到记录和外部签到都在这一页。",
+  "tour.settingsTitle": "全局设置",
+  "tour.settingsDesc":
+    "默认同步模式、审计、备份等系统级选项都在这里，随时可以改。",
   "tour.next": "下一步",
   "tour.prev": "上一步",
   "tour.done": "完成",
