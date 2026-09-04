@@ -327,34 +327,15 @@ export const zh: Dict = {
   "channels.syncModeAutoHint": "探测到的模型自动接入路由并启用。",
   "channels.syncModeManual": "按需勾选",
   "channels.syncModeManualHint": "新模型只进候选列表，到模型页勾选接入。",
-  "channels.syncModeIntro":
-    "决定这个连接探测到的模型如何进入网关。两种模式随时可切换，切换不会删除已接入的模型。",
-  "channels.syncModeAutoBadge": "省事",
-  "channels.syncModeManualBadge": "可控",
   "channels.syncModeAutoPro": "同步完就能直接调用",
   "channels.syncModeAutoCon": "上游新增模型也会自动上线",
   "channels.syncModeManualPro": "只暴露你勾选的模型",
   "channels.syncModeManualCon": "新模型要手动接入才生效",
   "channels.syncModeInheritDefault": "系统默认（{mode}）",
-  "channels.syncModeEffectAuto":
-    "当前：自动同步。下次「同步模型」后，新探测到的模型会自动接入并启用。",
-  "channels.syncModeEffectAutoPending":
-    "当前：自动同步。下次「同步模型」后，清单里未接入的 {n} 个模型会自动接入并启用。",
-  "channels.syncModeEffectManual":
-    "当前：按需勾选。「同步模型」只刷新候选清单，需要在这里勾选后才会接入。",
-  "channels.syncModeCountsLoading": "正在读取模型清单…",
-  "channels.syncModeNoModels": "还没同步过模型，保存后点「同步模型」拉取清单。",
-  "channels.syncModeCounts": "共 {total} 个模型 · 已接入 {adopted} 个",
-  "channels.syncModeNotAdopted": "还有 {n} 个未接入",
+  "channels.syncModeCounts": "{adopted}/{total} 已接入",
   "channels.syncModeGuide": "两种模式有什么区别？",
-  "channels.syncModeGuideAuto":
-    "：每次「同步模型」后，上游返回的模型会全部创建路由并启用，同步完即可调用。",
-  "channels.syncModeGuideManual":
-    "：同步只刷新候选清单，不创建任何路由；你在下面的清单里勾选哪个，哪个才接入。",
   "channels.syncModeGuideSwitch":
     "切换模式不会动已经接入的模型。自动转按需：已接入的保留，之后新增的等你勾选；按需转自动：下次同步会把清单里还没接入的一起接入。",
-  "channels.syncModeGuideRecommend":
-    "拿不准就先用「按需勾选」——模型多的时候它最安全，确认无误后再切成自动同步。",
   "channels.modelsTotalStat": "模型总数",
   "channels.modelsTotalHint": "上游探测到的候选模型数量",
   "channels.modelsAdoptedStat": "已接入",
@@ -1731,4 +1712,20 @@ export const zh: Dict = {
   "modelsPage.grayDenominator": "灰度比例分母（1/N）",
   "modelsPage.grayPromote": "成功次数自动转正",
   "api.unreachable": "无法连接 Meta Gateway",
+
+  "setup.title": "新手引导",
+  "setup.progress": "{done}/{total}",
+  "setup.dismiss": "跳过，不再显示",
+  "setup.allDone": "全部就绪，开始使用吧。",
+  "setup.step1Title": "添加第一个上游连接",
+  "setup.step1Desc": "填入上游地址与 API Key，网关才有可转发的渠道。",
+  "setup.step2Title": "同步模型",
+  "setup.step2Desc": "在连接里点「同步模型」拉取清单；自动同步直接接入，按需勾选由你挑选。",
+  "setup.step3Title": "创建下游 API Key",
+  "setup.step3Desc": "调用方用这把 Key 访问网关。",
+  "setup.step4Title": "发起第一次调用",
+  "setup.step4Desc": "把下面的 curl 里的 Key 和模型名换成你的，返回 200 即接入成功。",
+  "setup.go": "去操作",
+  "setup.copy": "复制",
+  "setup.copied": "已复制",
 };

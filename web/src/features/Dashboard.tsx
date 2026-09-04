@@ -22,6 +22,7 @@ import { api } from "../api/client";
 import type { ProxyLog, UsageRecord } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
+import { SetupGuide } from "./SetupGuide";
 import { TelemetrySecondary, TelemetryStrip } from "../components/TelemetryStrip";
 import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
@@ -382,6 +383,8 @@ export function Dashboard() {
       description={t("dashboard.description")}
     >
       <div className="cockpit-stack">
+        <SetupGuide />
+
         {/* 1. 终端接入端点条 (Gateway Endpoint Strip) */}
         <EndpointStrip />
 

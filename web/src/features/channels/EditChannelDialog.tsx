@@ -527,7 +527,6 @@ export function EditChannelDialog({
             value={syncMode}
             onChange={setSyncMode}
             disabled={pending}
-            loading={discovered.isLoading}
             modelCount={discovered.data ? editModels.length : null}
             adoptedCount={adoptedCount}
           />

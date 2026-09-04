@@ -8584,213 +8584,121 @@ td.actions {
   height: 1px;
   background: var(--line);
 }
-.sync-mode-picker {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 10px 0 12px;
-}
-.sync-mode-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  cursor: pointer;
-  transition: all var(--dur-hover) var(--ease-hover);
-}
-.sync-mode-option:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-subtle);
-}
-.sync-mode-option input {
-  width: auto;
-  min-height: 0;
-  margin: 2px 0 0;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-.sync-mode-option span {
-  display: block;
-  min-width: 0;
-}
-.sync-mode-option strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--ink);
-}
-.sync-mode-option small {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--muted);
-}
-.sync-mode-option.is-active {
-  border-color: color-mix(in srgb, var(--primary) 55%, var(--line));
-  background: var(--primary-soft);
-}
-.sync-mode-option.is-active strong {
-  color: var(--primary-active);
-}
-@media (max-width: 600px) {
-  .sync-mode-picker {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* —— Model sync mode: guided picker ——
-   The most consequential channel setting and the least self-explanatory one,
-   so the control carries its own onboarding copy plus live counters. */
-.sync-mode-field {
+/* —— Model sync mode: compact segmented control ——
+   One row: toggle + help popover + muted counts. Guidance lives in the
+   hover/focus popover instead of dominating the drawer. */
+.sync-mode {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 4px;
+  margin: 10px 0;
 }
-.sync-mode-intro {
-  margin: 0 0 8px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--muted);
-}
-.sync-mode-option-head {
+.sync-mode-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.sync-mode-badge {
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  line-height: 16px;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-soft);
-  color: var(--warning);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-}
-.sync-mode-pros {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--line);
-}
-.sync-mode-pro,
-.sync-mode-con {
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-.sync-mode-pro {
-  color: var(--success);
-}
-.sync-mode-con {
-  color: var(--muted);
-}
-.sync-mode-option.is-active .sync-mode-con {
-  color: var(--muted-strong);
-}
-.sync-mode-inherit {
-  display: inline-block;
-  margin-top: 6px;
-  font-size: 10.5px;
-  line-height: 16px;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-subtle);
-  color: var(--muted);
-  border: 1px solid var(--line);
-}
-.sync-mode-effect {
-  margin: 0 0 8px;
-  padding: 8px 10px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--ink-soft);
-  background: var(--surface-subtle);
-  border-left: 2px solid var(--line-strong);
-}
-.sync-mode-effect.is-auto {
-  border-left-color: var(--primary-active);
-  background: var(--primary-soft);
-}
-.sync-mode-effect.is-manual {
-  border-left-color: var(--accent);
-  background: var(--accent-soft);
-}
-.sync-mode-stats {
-  display: flex;
-  align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
 }
-.sync-mode-counts {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.sync-mode-pending {
-  font-size: 11.5px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.sync-mode-guide-toggle {
+.sync-mode-toggle {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  align-self: flex-start;
-  margin: 0;
-  padding: 0;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.sync-mode-toggle button {
   border: 0;
-  background: none;
+  background: transparent;
+  padding: 4px 14px;
   font-family: inherit;
   font-size: 12px;
   font-weight: 550;
-  color: var(--primary-active);
+  color: var(--muted);
+  border-radius: 6px;
   cursor: pointer;
+  transition: all var(--dur-hover) var(--ease-hover);
 }
-.sync-mode-guide-toggle svg {
-  transition: transform 0.18s ease;
+.sync-mode-toggle button:hover {
+  color: var(--ink);
 }
-.sync-mode-guide-toggle.is-open svg {
-  transform: rotate(180deg);
+.sync-mode-toggle button.is-active {
+  background: var(--surface);
+  color: var(--primary-active);
+  box-shadow: 0 1px 2px rgba(15, 42, 66, 0.08);
 }
-.sync-mode-guide-toggle:hover {
-  text-decoration: underline;
+.sync-mode-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted-dark);
+  cursor: help;
+  outline: none;
 }
-.sync-mode-guide {
-  margin-top: 8px;
+.sync-mode-info:hover,
+.sync-mode-info:focus-within {
+  color: var(--primary-active);
+}
+.sync-mode-pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -10px;
+  z-index: 40;
+  width: 300px;
   padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(15, 42, 66, 0.12);
+}
+.sync-mode-info:hover .sync-mode-pop,
+.sync-mode-info:focus-within .sync-mode-pop {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
+}
+.sync-mode-pop strong {
   font-size: 12px;
-  line-height: 1.6;
-  color: var(--muted-strong);
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
-}
-.sync-mode-guide p {
-  margin: 0;
-}
-.sync-mode-guide strong {
   color: var(--ink);
-  margin-right: 2px;
 }
-.sync-mode-guide-switch {
-  padding-top: 7px;
-  border-top: 1px solid var(--line);
+.sync-mode-pop-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
 }
-.sync-mode-guide-recommend {
+.sync-mode-pop-row b {
   color: var(--ink-soft);
+  font-weight: 600;
+}
+.sync-mode-pop-row em {
+  font-style: normal;
+}
+.sync-mode-pop-row em.is-pro::before {
+  content: "+ ";
+  color: var(--success);
+}
+.sync-mode-pop-row em.is-con::before {
+  content: "− ";
+}
+.sync-mode-pop-row.is-switch {
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  color: var(--muted-strong);
+}
+.sync-mode-counts {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sync-mode-default {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted-dark);
 }
 
 /* Sync-mode bar on the channel models panel: states the rule that governs
@@ -13386,4 +13294,145 @@ table {
 }
 .runtime-update-link:hover {
   color: var(--accent);
+}
+
+/* —— First-run setup guide (dashboard checklist) ——
+   Shows while the gateway has no upstream connections; each step reflects
+   real state (channels / adopted models / keys / relay logs). */
+.setup-guide {
+  margin-bottom: 14px;
+}
+.setup-guide-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.setup-guide-progress {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.setup-guide-dismiss {
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted-dark);
+  cursor: pointer;
+  padding: 0;
+}
+.setup-guide-dismiss:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.setup-guide-complete {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--success);
+}
+.setup-guide-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.setup-guide-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.setup-guide-steps li:first-child {
+  border-top: 0;
+}
+.setup-guide-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+.setup-guide-steps li.is-done .setup-guide-check {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+.setup-guide-body {
+  flex: 1;
+  min-width: 0;
+}
+.setup-guide-body strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.setup-guide-steps li.is-done .setup-guide-body strong {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-strong);
+}
+.setup-guide-body p {
+  margin: 1px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.setup-guide-go {
+  flex: none;
+  align-self: center;
+  font-size: 12px;
+  color: var(--primary-active);
+  text-decoration: none;
+}
+.setup-guide-go:hover {
+  text-decoration: underline;
+}
+.setup-guide-curl {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  overflow: hidden;
+}
+.setup-guide-curl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.setup-guide-curl-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.setup-guide-curl-head button:hover {
+  color: var(--ink);
+}
+.setup-guide-curl pre {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  overflow-x: auto;
 }
