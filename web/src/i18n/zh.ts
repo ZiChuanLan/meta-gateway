@@ -359,6 +359,9 @@ export const zh: Dict = {
   "channels.modelsTotalHint": "上游探测到的候选模型数量",
   "channels.modelsAdoptedStat": "已接入",
   "channels.modelsAdoptedHint": "已经接入路由的模型（含被手动停用的）",
+  "channels.modelsNeverSyncedHint": "尚未同步模型；编辑渠道后点「同步模型」拉取清单。",
+  "channels.modelsNoneAdoptedHint":
+    "已同步但还没有模型接入路由；到模型页勾选接入，或切换为自动同步。",
   "channels.modelsSyncBannerAuto":
     "新探测到的模型会自动接入路由；取消勾选可停用单个模型。",
   "channels.modelsSyncBannerManual":

@@ -1375,7 +1375,23 @@ export function Channels() {
                           </div>
                         </td>
                         <td>
-                          <strong>{overview.model_count}</strong>
+                          {overview.model_count > 0 ? (
+                            <strong>{overview.model_count}</strong>
+                          ) : overview.last_checked_at ? (
+                            <span
+                              className="muted"
+                              title={t("channels.modelsNoneAdoptedHint")}
+                            >
+                              0
+                            </span>
+                          ) : (
+                            <span
+                              className="muted"
+                              title={t("channels.modelsNeverSyncedHint")}
+                            >
+                              —
+                            </span>
+                          )}
                         </td>
                         <td>
                           {overview.last_checked_at

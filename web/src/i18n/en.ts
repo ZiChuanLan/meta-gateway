@@ -386,6 +386,10 @@ export const en: Dict = {
   "channels.modelsAdoptedStat": "Adopted",
   "channels.modelsAdoptedHint":
     "Models wired into routing (including manually disabled ones)",
+  "channels.modelsNeverSyncedHint":
+    "Models not synced yet; open the channel and click \u201cSync models\u201d to fetch the list.",
+  "channels.modelsNoneAdoptedHint":
+    "Synced, but no model is wired into routing yet; adopt them on the models page or switch to auto sync.",
   "channels.modelsSyncBannerAuto":
     "Newly probed models are adopted automatically; uncheck one to disable it.",
   "channels.modelsSyncBannerManual":
