@@ -23,6 +23,7 @@ import type { ProxyLog, UsageRecord } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { SetupGuide } from "./SetupGuide";
+import { GuidedTour } from "./GuidedTour";
 import { TelemetrySecondary, TelemetryStrip } from "../components/TelemetryStrip";
 import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
@@ -384,6 +385,7 @@ export function Dashboard() {
     >
       <div className="cockpit-stack">
         <SetupGuide />
+        <GuidedTour />
 
         {/* 1. 终端接入端点条 (Gateway Endpoint Strip) */}
         <EndpointStrip />

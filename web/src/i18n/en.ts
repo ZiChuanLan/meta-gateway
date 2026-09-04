@@ -1843,4 +1843,18 @@ export const en: Dict = {
   "setup.go": "Go",
   "setup.copy": "Copy",
   "setup.copied": "Copied",
+
+  "tour.navTitle": "Navigation",
+  "tour.navDesc":
+    "“Connections” manages upstream channels, “Keys” holds the keys you hand to callers, “Logs” traces every relay attempt.",
+  "tour.endpointTitle": "API endpoint",
+  "tour.endpointDesc": "Point caller base_url here; the API is OpenAI-compatible.",
+  "tour.guideTitle": "Four-step checklist",
+  "tour.guideDesc": "Finish the steps and you are relaying; ticks reflect real state, not clicks.",
+  "tour.telemetryTitle": "Live telemetry",
+  "tour.telemetryDesc": "Traffic, channel health and model usage update here in real time.",
+  "tour.next": "Next",
+  "tour.prev": "Back",
+  "tour.done": "Finish",
+  "tour.progress": "{{current}} / {{total}}",
 };

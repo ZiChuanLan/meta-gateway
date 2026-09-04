@@ -13436,3 +13436,45 @@ table {
   color: var(--ink-soft);
   overflow-x: auto;
 }
+
+/* —— Guided tour (driver.js spotlight) ——
+   Restyle the stock popover to match the console's hairline aesthetic. */
+.driver-popover {
+  max-width: 320px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 12px 32px rgba(15, 42, 66, 0.16);
+  font-family: inherit;
+}
+.driver-popover-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.driver-popover-description {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.driver-popover-progress-text {
+  font-size: 11px;
+  color: var(--muted-dark);
+}
+.driver-popover-close-btn {
+  color: var(--muted);
+}
+.driver-popover-navigation-btns button {
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 6px;
+}
+.driver-popover-navigation-btns button:last-child {
+  background: var(--primary-active);
+  color: #fff;
+  border: 1px solid var(--primary-active);
+}
+.driver-popover-navigation-btns button:first-child {
+  background: var(--surface);
+  color: var(--ink-soft);
+  border: 1px solid var(--line-strong);
+}

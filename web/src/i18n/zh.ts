@@ -1728,4 +1728,18 @@ export const zh: Dict = {
   "setup.go": "去操作",
   "setup.copy": "复制",
   "setup.copied": "已复制",
+
+  "tour.navTitle": "功能导航",
+  "tour.navDesc":
+    "「连接」管理上游渠道，「令牌」是发给调用方的 Key，「日志」可逐笔排查转发。",
+  "tour.endpointTitle": "API 接入地址",
+  "tour.endpointDesc": "调用方的 base_url 填这里，接口与 OpenAI 兼容。",
+  "tour.guideTitle": "四步接入清单",
+  "tour.guideDesc": "按步骤走完即完成接入；勾选基于真实状态，不是点了就算。",
+  "tour.telemetryTitle": "实时遥测",
+  "tour.telemetryDesc": "请求量、渠道健康、模型用量都在这里实时更新。",
+  "tour.next": "下一步",
+  "tour.prev": "上一步",
+  "tour.done": "完成",
+  "tour.progress": "{{current}} / {{total}}",
 };
