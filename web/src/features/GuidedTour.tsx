@@ -47,6 +47,8 @@ export function GuidedTour() {
 
   useEffect(() => {
     if (launched.current) return;
+    // never run under vitest — the overlay buries whatever the test asserts.
+    if (import.meta.env.VITEST) return;
     const forced =
       new URLSearchParams(window.location.search).get("tour") === "1";
     if (

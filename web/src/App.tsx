@@ -25,6 +25,7 @@ import {
 	Route,
 	Routes,
 	useLocation,
+	useNavigate,
 } from "react-router-dom";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -43,6 +44,7 @@ import {
 import { CommandPalette } from "./components/CommandPalette";
 import { Dashboard } from "./features/Dashboard";
 import { GuidedTour } from "./features/GuidedTour";
+import { SetupWizard } from "./features/SetupWizard";
 import { KatanaCanvas } from "./components/KatanaCanvas";
 import { createEdgeSparkHost } from "./lib/katanafx";
 import { channelHealthState } from "./features/channelHealth";
@@ -799,6 +801,19 @@ function AuthenticatedShell({
 	}, [theme]);
 
 	const location = useLocation();
+	const navigate = useNavigate();
+
+	// First-run: a fresh instance (no channels) is claimed by the setup
+	// wizard once; the completion/skip flag persists in localStorage.
+	useEffect(() => {
+		if (import.meta.env.VITEST) return;
+		if (location.pathname === "/setup") return;
+		if (!channelStats.isSuccess) return;
+		if ((channelStats.data?.length ?? 0) !== 0) return;
+		if (window.localStorage.getItem("mg.setup-wizard.done") === "1") return;
+		navigate("/setup", { replace: true });
+	}, [channelStats.isSuccess, channelStats.data, location.pathname, navigate]);
+
 	const [routeAnim, setRouteAnim] = useState(0);
 	useEffect(() => {
 		setRouteAnim(0);
@@ -946,6 +961,7 @@ function AuthenticatedShell({
 				<Suspense fallback={<Loading />}>
 					<Routes>
 						<Route index element={<Dashboard />} />
+						<Route path="setup" element={<SetupWizard />} />
 						<Route path="channels" element={<Channels />} />
 						<Route path="models/channel/:channelId" element={<ChannelModels />} />
 						<Route path="models" element={<Models />} />
