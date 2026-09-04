@@ -127,7 +127,9 @@ function start(
   ];
 
   const asDriveSteps: DriveStep[] = steps.map((step) => ({
-    element: () => step.locate() ?? document.body,
+    // driver.js centers the popover on a dummy element when the locator
+    // returns null; its types are stricter than its runtime, hence the cast.
+    element: () => step.locate() as Element,
     popover: { title: step.title, description: step.description },
   }));
 
@@ -156,17 +158,20 @@ function start(
     busy = true;
     try {
       let nextIndex = index + dir;
-      // A stop whose target never mounted (e.g. the dashboard checklist is
-      // already done after the setup wizard) is skipped, not fatal — the
-      // tour keeps walking until it runs out of stops.
+      // The popover moves immediately — spotlighted when the target is
+      // already mounted, centered while it mounts. A stop whose target
+      // never shows up (e.g. the dashboard checklist is already done or
+      // dismissed) is skipped after a short wait, never a dead click.
       while (nextIndex >= 0 && nextIndex < steps.length) {
         const step = steps[nextIndex];
         if (!step) break;
         if (window.location.pathname !== step.route) navigate(step.route);
         step.prepare?.();
-        const el = await waitFor(step);
+        index = nextIndex;
+        driverObj.drive(nextIndex);
+        if (step.locate()) return;
+        const el = await waitFor(step, 3000);
         if (el) {
-          index = nextIndex;
           driverObj.drive(nextIndex);
           return;
         }
