@@ -155,29 +155,24 @@ function start(
     if (busy) return;
     busy = true;
     try {
-      const nextIndex = index + dir;
-      if (nextIndex < 0) {
-        driverObj.drive(0);
-        return;
+      let nextIndex = index + dir;
+      // A stop whose target never mounted (e.g. the dashboard checklist is
+      // already done after the setup wizard) is skipped, not fatal — the
+      // tour keeps walking until it runs out of stops.
+      while (nextIndex >= 0 && nextIndex < steps.length) {
+        const step = steps[nextIndex];
+        if (!step) break;
+        if (window.location.pathname !== step.route) navigate(step.route);
+        step.prepare?.();
+        const el = await waitFor(step);
+        if (el) {
+          index = nextIndex;
+          driverObj.drive(nextIndex);
+          return;
+        }
+        nextIndex += dir;
       }
-      if (nextIndex >= steps.length) {
-        driverObj.destroy();
-        return;
-      }
-      const step = steps[nextIndex];
-      if (!step) {
-        driverObj.destroy();
-        return;
-      }
-      if (window.location.pathname !== step.route) navigate(step.route);
-      step.prepare?.();
-      const el = await waitFor(step);
-      if (!el) {
-        driverObj.destroy();
-        return;
-      }
-      index = nextIndex;
-      driverObj.drive(index);
+      driverObj.destroy();
     } finally {
       busy = false;
     }
