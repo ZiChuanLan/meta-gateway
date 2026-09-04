@@ -3,6 +3,7 @@ import "driver.js/dist/driver.css";
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../i18n";
+import { useModules } from "../hooks/useModules";
 
 const DISMISS_KEY = "mg.guided-tour.done";
 
@@ -43,6 +44,7 @@ export function GuidedTour() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
+  const { checkinEnabled } = useModules();
   const launched = useRef(false);
 
   useEffect(() => {
@@ -61,10 +63,10 @@ export function GuidedTour() {
     // Give the first page a beat to mount so its boxes measure correctly.
     const timer = window.setTimeout(() => {
       launched.current = true;
-      start(t, navigate);
+      start(t, navigate, checkinEnabled);
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [location.pathname, t, navigate]);
+  }, [location.pathname, t, navigate, checkinEnabled]);
 
   return null;
 }
@@ -72,6 +74,7 @@ export function GuidedTour() {
 function start(
   t: (key: string, vars?: Record<string, string | number>) => string,
   navigate: (to: string) => void,
+  checkinEnabled: boolean,
 ) {
   const textButton = (label: string): Element | null =>
     [...document.querySelectorAll("button")].find(
@@ -128,13 +131,27 @@ function start(
       route: "/checkins",
       locate: () => document.querySelector(".ops-canvas .panel"),
       title: t("tour.checkinsTitle"),
-      description: t("tour.checkinsDesc"),
+      description: checkinEnabled
+        ? t("tour.checkinsDesc")
+        : t("tour.checkinsOffDesc"),
     },
     {
       route: "/settings",
-      locate: () => document.querySelector(".runtime-settings"),
-      title: t("tour.settingsTitle"),
-      description: t("tour.settingsDesc"),
+      locate: () => document.getElementById("runtime-relay"),
+      title: t("tour.settingsRelayTitle"),
+      description: t("tour.settingsRelayDesc"),
+    },
+    {
+      route: "/settings",
+      locate: () => document.getElementById("runtime-sync"),
+      title: t("tour.settingsSyncTitle"),
+      description: t("tour.settingsSyncDesc"),
+    },
+    {
+      route: "/settings",
+      locate: () => document.getElementById("runtime-alerts"),
+      title: t("tour.settingsAlertsTitle"),
+      description: t("tour.settingsAlertsDesc"),
     },
   ];
 

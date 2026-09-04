@@ -1864,9 +1864,17 @@ export const en: Dict = {
   "tour.checkinsTitle": "Automated check-in",
   "tour.checkinsDesc":
     "Turn it on and the gateway checks in to upstream sites on a schedule; logs and external check-ins live here too.",
-  "tour.settingsTitle": "Global settings",
-  "tour.settingsDesc":
-    "Default sync mode, audit, backups — system-level options you can change any time.",
+  "tour.checkinsOffDesc":
+    "The check-in module is off — enable it in the Store and this page will schedule automatic check-ins for you.",
+  "tour.settingsRelayTitle": "Relay failover",
+  "tour.settingsRelayDesc":
+    "Automatic channel failover, key pool rotation and retry counts — relay resilience lives in this card.",
+  "tour.settingsSyncTitle": "Model sync",
+  "tour.settingsSyncDesc":
+    "Change the default sync mode for new connections here — the same choice you made in the setup wizard.",
+  "tour.settingsAlertsTitle": "Alert notifications",
+  "tour.settingsAlertsDesc":
+    "Fill in a webhook, Bark, Telegram or email to know the moment a channel fails.",
   "tour.next": "Next",
   "tour.prev": "Back",
   "tour.done": "Finish",

@@ -1749,9 +1749,17 @@ export const zh: Dict = {
   "tour.checkinsTitle": "签到自动化",
   "tour.checkinsDesc":
     "开启后网关按计划替你签到上游站点；签到记录和外部签到都在这一页。",
-  "tour.settingsTitle": "全局设置",
-  "tour.settingsDesc":
-    "默认同步模式、审计、备份等系统级选项都在这里，随时可以改。",
+  "tour.checkinsOffDesc":
+    "签到模块还没开启——在商店启用后，这里就能按计划替你自动签到。",
+  "tour.settingsRelayTitle": "中继故障转移",
+  "tour.settingsRelayDesc":
+    "渠道挂了自动切下一个、Key 池轮换、重试次数——中继的容错都在这张卡片。",
+  "tour.settingsSyncTitle": "模型同步",
+  "tour.settingsSyncDesc":
+    "新渠道的默认同步模式在这里改，就是向导第一步选的那个，随时可换。",
+  "tour.settingsAlertsTitle": "告警通知",
+  "tour.settingsAlertsDesc":
+    "填上 Webhook、Bark、Telegram 或邮箱，渠道出故障第一时间知道。",
   "tour.next": "下一步",
   "tour.prev": "上一步",
   "tour.done": "完成",
