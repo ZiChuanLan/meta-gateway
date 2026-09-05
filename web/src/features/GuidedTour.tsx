@@ -129,7 +129,13 @@ function start(
     },
     {
       route: "/checkins",
-      locate: () => document.querySelector(".ops-canvas .panel"),
+      // The page renders several panels and some can be display:none
+      // depending on module state; a 0x0 element makes driver.js pin the
+      // popover to the viewport origin, so only consider visible panels.
+      locate: () =>
+        [...document.querySelectorAll(".ops-canvas .panel")].find(
+          (panel) => panel.getBoundingClientRect().width > 0,
+        ) ?? null,
       title: t("tour.checkinsTitle"),
       description: checkinEnabled
         ? t("tour.checkinsDesc")
