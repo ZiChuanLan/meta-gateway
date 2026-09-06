@@ -240,6 +240,27 @@ function GroupCard({
   const pendingNew = total - covered;
   const pendingVariants = group.variants.filter((variant) => !variant.mapped);
   const coveredVariants = group.variants.filter((variant) => variant.mapped);
+  // The "strip owner prefix" badge names what this group actually loses, not a
+  // hardcoded example: collect the distinct "vendor/" prefixes present in the
+  // variants (deepseek-ai/, meta/, …) so a meta/* group never reads as a
+  // deepseek one. Mirrors the backend's stripVendorPrefix (everything up to
+  // the last slash).
+  const vendorPrefixes =
+    group.rules?.includes("vendor_prefix")
+      ? [
+          ...new Set(
+            group.variants
+              .filter((variant) => variant.model_name.includes("/"))
+              .map((variant) =>
+                variant.model_name.slice(
+                  0,
+                  variant.model_name.lastIndexOf("/") + 1,
+                ),
+              )
+              .filter((prefix) => prefix !== ""),
+          ),
+        ]
+      : [];
   // Rows for variants that still need merging stay visible; already-covered
   // rows collapse behind a one-line toggle so a 23-variant group does not
   // drown the preview in "covered" noise (54 of every 135 rows today).
@@ -305,11 +326,19 @@ function GroupCard({
             })}
           </span>
         ) : null}
-        {group.rules?.map((rule) => (
-          <span className="model-meta-badge" key={rule}>
-            {t(`modelsPage.unify.rule.${rule}`)}
-          </span>
-        ))}
+        {group.rules?.map((rule) =>
+          rule === "vendor_prefix" && vendorPrefixes.length > 0 ? (
+            vendorPrefixes.map((prefix) => (
+              <span className="model-meta-badge" key={`${rule}:${prefix}`}>
+                {t("modelsPage.unify.ruleBadge.vendor_prefix", { prefix })}
+              </span>
+            ))
+          ) : (
+            <span className="model-meta-badge" key={rule}>
+              {t(`modelsPage.unify.rule.${rule}`)}
+            </span>
+          ),
+        )}
         {pendingNew > 0 ? (
           <span className="model-meta-badge is-mapped">
             {t("modelsPage.unify.pendingCount", { count: pendingNew })}

@@ -734,9 +734,10 @@ export const en: Dict = {
   "modelsPage.unify.rulesHint":
     "Rules run in the listed order against the same name and compose. Turn one off to keep that suffix.",
   "modelsPage.unify.rule.account_prefix": "Strip account prefix [A] / 【次】",
-  "modelsPage.unify.rule.vendor_prefix": "Strip owner prefix deepseek-ai/",
+  "modelsPage.unify.rule.vendor_prefix": "Strip owner prefix (e.g. deepseek-ai/)",
   "modelsPage.unify.rule.date_suffix": "Strip snapshot date -0731 / -20250514",
   "modelsPage.unify.rule.index_suffix": "Strip account index -1 / -2",
+  "modelsPage.unify.ruleBadge.vendor_prefix": "Strip owner prefix {prefix}",
   "modelsPage.unify.safeSection": "Ready to merge — only safe rules needed",
   "modelsPage.unify.riskySection": "Needs review — required a rule that can conflate models",
   "modelsPage.unify.riskyHint":
@@ -1367,6 +1368,7 @@ export const en: Dict = {
   "routing.memberOrigin": "origin {model}",
   "routing.memberOriginHint":
     "This member rewrites the route name to this upstream model (shared aliases show one channel on several rows, each rewriting to its own origin).",
+  "routing.openChannelModels": "Open this channel's model list",
   "routing.financeMissingHint":
     "No price data — the upstream did not return pricing for this model (or the account has no balance data).",
   "routing.independentLabel": "Independent priority/weight for this model",

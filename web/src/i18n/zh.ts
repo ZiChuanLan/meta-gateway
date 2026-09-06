@@ -815,9 +815,10 @@ export const zh: Dict = {
   "modelsPage.unify.rulesHint":
     "规则按列出的顺序依次作用到同一个名字上，可以叠加。关掉某条，就保留对应的那段后缀。",
   "modelsPage.unify.rule.account_prefix": "去掉账号前缀 [A] /【次】",
-  "modelsPage.unify.rule.vendor_prefix": "去掉厂商前缀 deepseek-ai/",
+  "modelsPage.unify.rule.vendor_prefix": "去掉厂商前缀（如 deepseek-ai/）",
   "modelsPage.unify.rule.date_suffix": "去掉日期快照 -0731 / -20250514",
   "modelsPage.unify.rule.index_suffix": "去掉账号序号 -1 / -2",
+  "modelsPage.unify.ruleBadge.vendor_prefix": "去掉厂商前缀 {prefix}",
   "modelsPage.unify.safeSection": "可直接合并 · 只用到安全规则",
   "modelsPage.unify.riskySection": "需人工确认 · 用到了可能混淆模型的规则",
   "modelsPage.unify.riskyHint":
@@ -1246,6 +1247,7 @@ export const zh: Dict = {
   "routing.memberOrigin": "原模型 {model}",
   "routing.memberOriginHint":
     "该成员把这个路由名改写为该上游模型（共享别名时同一连接会出现多行，各自回写不同的原模型）。",
+  "routing.openChannelModels": "查看该渠道的模型列表",
   "routing.financeMissingHint":
     "无价格数据——上游未提供该模型定价（或账户无余额数据）。",
   "routing.independentLabel": "此模型使用独立优先级/权重",
