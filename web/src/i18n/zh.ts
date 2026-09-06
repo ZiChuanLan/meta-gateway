@@ -1343,7 +1343,10 @@ export const zh: Dict = {
   "ops.schedule.preset.every6h": "每 6 小时",
   "ops.schedule.preset.every12h": "每 12 小时",
   "ops.schedule.preset.daily": "每天 08:00",
+  "ops.schedule.preset.dailyAt": "每天指定时间",
   "ops.schedule.preset.custom": "自定义…",
+  "ops.schedule.presetLabel": "调度预设",
+  "ops.schedule.offHint": "定时已关闭",
   "ops.runEnabledConfirm":
     "只会跑「已开启定时」且类型为 session/access_token 的凭证。API Key 会跳过。解密失败通常要在更换 MASTER_KEY 后重新录入。",
   "ops.checkinHint":

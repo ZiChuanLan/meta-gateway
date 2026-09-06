@@ -6,6 +6,13 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Added
+
+- The runtime schedule fields (定时模型同步 / 探测计划) use the same
+  preset picker as check-in instead of a raw cron input: off / hourly /
+  every 3-12 hours / daily at a picked time / custom cron, with the empty
+  (disabled) state spelled out instead of a blank text box
+
 ## [v2.3.0] — 2026-09-06
 
 ### Added

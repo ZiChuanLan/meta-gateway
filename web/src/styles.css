@@ -13736,3 +13736,15 @@ table {
   color: var(--ink-soft);
   overflow-x: auto;
 }
+
+/* Preset dropdown + conditional time picker for runtime cron schedules. */
+.cron-schedule-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cron-schedule-picker select {
+  width: auto;
+  flex: 0 0 auto;
+}

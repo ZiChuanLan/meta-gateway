@@ -1464,7 +1464,10 @@ export const en: Dict = {
   "ops.schedule.preset.every6h": "Every 6 hours",
   "ops.schedule.preset.every12h": "Every 12 hours",
   "ops.schedule.preset.daily": "Daily at 08:00",
+  "ops.schedule.preset.dailyAt": "Daily at a specific time",
   "ops.schedule.preset.custom": "Custom…",
+  "ops.schedule.presetLabel": "Schedule preset",
+  "ops.schedule.offHint": "Schedule off",
   "ops.runEnabledConfirm":
     "Runs check-in only for credentials with schedule enabled and a session/access token. API keys are skipped. Decrypt failures usually mean re-enter secrets after MASTER_KEY change.",
   "ops.checkinHint":

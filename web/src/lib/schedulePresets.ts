@@ -31,6 +31,19 @@ export const SCHEDULE_PRESETS: SchedulePreset[] = [
 /** Default cron used when none configured and scheduling is on. */
 const DEFAULT_SCHEDULE_CRON = "0 8 * * *";
 
+/**
+ * Map a stored cron back to its preset id. Empty means the schedule is off
+ * (the scheduler treats "" as disabled); anything unrecognized is "custom".
+ */
+export function presetOfCron(cron: string): SchedulePresetId {
+	const value = (cron || "").trim();
+	if (!value) return "off";
+	const known = SCHEDULE_PRESETS.find(
+		(item) => item.id !== "off" && item.id !== "custom" && item.cron === value,
+	);
+	return known ? known.id : "custom";
+}
+
 export function scheduleFromSettings(input: {
 	enabled: boolean;
 	cron: string;

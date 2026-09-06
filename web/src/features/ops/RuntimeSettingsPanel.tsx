@@ -28,6 +28,7 @@ import { MaintenancePanel } from "./MaintenancePanel";
 import { FactoryResetPanel } from "./FactoryResetPanel";
 import { TOTPPanel } from "./TOTPPanel";
 import { CheckinTimePicker } from "./CheckinTimePicker";
+import { CronSchedulePicker } from "./CronSchedulePicker";
 
 function numberOr(value: string, fallback: number) {
   const parsed = Number(value);
@@ -784,12 +785,10 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.discoveryCron")}
               hint={t("ops.runtime.discoveryCronHint")}
             />
-            <input
-              type="text"
-              placeholder="0 3 * * *"
+            <CronSchedulePicker
               disabled={busy}
               value={draft.discovery_cron ?? ""}
-              onChange={(e) => patch("discovery_cron", e.target.value)}
+              onChange={(cron) => patch("discovery_cron", cron)}
             />
           </label>
           <label className="field">
@@ -825,12 +824,10 @@ export function RuntimeSettingsPanel() {
               label={t("ops.runtime.probeCron")}
               hint={t("ops.runtime.probeCronHint")}
             />
-            <input
-              type="text"
-              placeholder="0 */6 * * *"
+            <CronSchedulePicker
               disabled={busy}
               value={draft.probe_cron ?? ""}
-              onChange={(e) => patch("probe_cron", e.target.value)}
+              onChange={(cron) => patch("probe_cron", cron)}
             />
           </label>
           <label className="field">
