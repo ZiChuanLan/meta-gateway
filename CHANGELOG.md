@@ -6,6 +6,24 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v2.3.3] — 2026-09-06
+
+### Fixed
+
+- The logs page status column no longer shows a misaligned green dot: the
+  colored status light and the status badge now share one vertically
+  centered row, and the badge's redundant built-in dot is hidden
+- The connection type picker no longer freezes when typing Chinese: the
+  search box stayed mounted only while more than four options matched, so
+  two letters unmounted the input mid-composition and stranded the IME.
+  Whether the box appears is now decided once when the panel opens
+
+### Maintenance
+
+- CI is green again: restore gofmt struct-tag alignment (failing since
+  v2.3.1) and remove a data race in the probe service tests that
+  `go test -race` flagged
+
 ## [v2.3.2] — 2026-09-06
 
 ### Added
