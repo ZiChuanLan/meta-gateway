@@ -45,6 +45,27 @@ func (f *fakeRelay) sentPrompt() string {
 	return f.prompts[0]
 }
 
+// callCount, sawProbeFlag and sentMaxToken are the locked read side for the
+// fields ChatCompletionsWithMeta writes: probes run on the service's worker
+// goroutines, so the test must not touch them directly.
+func (f *fakeRelay) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+func (f *fakeRelay) sawProbeFlag() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sawFlag
+}
+
+func (f *fakeRelay) sentMaxToken() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.maxToken
+}
+
 func (f *fakeRelay) ChatCompletionsWithMeta(_ context.Context, req proxy.Request) (*relay.Result, *proxy.AttemptMeta) {
 	f.mu.Lock()
 	f.calls++
@@ -118,7 +139,7 @@ func TestProbeRunRecordsResultsAndHealth(t *testing.T) {
 	if finished.OKCount != 1 || finished.FailCount != 1 {
 		t.Fatalf("ok/fail = %d/%d, want 1/1", finished.OKCount, finished.FailCount)
 	}
-	if !fake.sawFlag {
+	if !fake.sawProbeFlag() {
 		t.Error("probe flag not set: probe traffic would pollute health bookkeeping")
 	}
 
@@ -201,8 +222,8 @@ func TestProbeCancelStopsDispatching(t *testing.T) {
 	if finished.Status != store.ProbeTaskCancelled {
 		t.Fatalf("status = %q, want cancelled", finished.Status)
 	}
-	if fake.calls >= len(pairs) {
-		t.Errorf("calls = %d, want fewer than %d (cancel should stop new probes)", fake.calls, len(pairs))
+	if calls := fake.callCount(); calls >= len(pairs) {
+		t.Errorf("calls = %d, want fewer than %d (cancel should stop new probes)", calls, len(pairs))
 	}
 }
 
@@ -228,8 +249,8 @@ func TestProbeSendsConfiguredPrompt(t *testing.T) {
 	if got := fake.sentPrompt(); got != "say ok" {
 		t.Errorf("upstream received prompt %q, want %q", got, "say ok")
 	}
-	if fake.maxToken != 32 {
-		t.Errorf("upstream received max_tokens %d, want 32", fake.maxToken)
+	if got := fake.sentMaxToken(); got != 32 {
+		t.Errorf("upstream received max_tokens %d, want 32", got)
 	}
 	stored, err := db.GetProbeTask(task.ID)
 	if err != nil || stored == nil {
