@@ -12949,13 +12949,26 @@ table {
 .log-status-cell {
   position: relative;
 }
+/* Flex line keeps the status light, the badge and any error label on one
+   vertically-centered row — the light used to ride on the text x-height
+   while the badge centered inside its own 24px box, so the dots misaligned. */
+.log-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+}
+.log-status-line .badge::before {
+  /* The colored status light already says ok/warn/bad; the badge's built-in
+     dot just read as a second, gray, misaligned indicator. */
+  display: none;
+}
 .log-status-light {
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  margin-right: 7px;
-  vertical-align: middle;
+  flex-shrink: 0;
   background: var(--muted);
 }
 .log-status-light.is-ok { background: var(--success); box-shadow: 0 0 5px var(--success-glow); }

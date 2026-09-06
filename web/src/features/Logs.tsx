@@ -528,28 +528,30 @@ function ProxyLogsPanel() {
 										</Link>
 									</td>
 									<td className="log-status-cell">
-										<span className={`log-status-light${log.status >= 400 ? " is-bad" : log.status >= 300 ? " is-warn" : " is-ok"}`} aria-hidden="true" />
-										<StatusBadge
-											value={
-												log.status >= 400 ? "failed" : String(log.status)
-											}
-										/>
-										{log.error_brief ? (
-											<span
-												className="log-error-label"
-												title={log.error_brief}
-											>
-												{errorLabel(log.error_brief)}
-											</span>
-										) : null}
-										{retriedRowIds.has(log.id) ? (
-											<span
-												className="log-retry-mark"
-												title={t("logsPage.retried")}
-											>
-												{t("logsPage.retried")}
-											</span>
-										) : null}
+										<span className="log-status-line">
+											<span className={`log-status-light${log.status >= 400 ? " is-bad" : log.status >= 300 ? " is-warn" : " is-ok"}`} aria-hidden="true" />
+											<StatusBadge
+												value={
+													log.status >= 400 ? "failed" : String(log.status)
+												}
+											/>
+											{log.error_brief ? (
+												<span
+													className="log-error-label"
+													title={log.error_brief}
+												>
+													{errorLabel(log.error_brief)}
+												</span>
+											) : null}
+											{retriedRowIds.has(log.id) ? (
+												<span
+													className="log-retry-mark"
+													title={t("logsPage.retried")}
+												>
+													{t("logsPage.retried")}
+												</span>
+											) : null}
+										</span>
 									</td>
 									<td>{log.total_tokens ? log.total_tokens : "—"}</td>
 									<td>
