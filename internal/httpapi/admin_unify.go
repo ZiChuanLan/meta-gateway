@@ -323,6 +323,13 @@ type UnifyGroup struct {
 	// different models (vendor prefix, date suffix, index suffix). Such groups
 	// start unchecked and must be confirmed.
 	Risky bool `json:"risky"`
+	// ExposedOriginals counts enabled routes whose name normalizes onto this
+	// canonical form but is not the canonical name itself — typically an
+	// original the operator restored from history. The group stays listed
+	// (even when every variant is already mapped) so re-applying can hide
+	// those duplicates again; without it a restored name could never be
+	// re-unified from the UI.
+	ExposedOriginals int `json:"exposed_originals,omitempty"`
 }
 
 type UnifyPreview struct {
@@ -490,6 +497,28 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 		return group
 	}
 
+	// exposedOriginals counts enabled routes whose name folds onto a
+	// canonical form without being it. A restored original is the usual
+	// source: the alias and the original then both serve, and the group must
+	// stay visible so the duplicate can be hidden again.
+	exposedOriginals := make(map[string]int)
+	for _, overview := range overviews {
+		if !overview.Route.Enabled || overview.Route.ID <= 0 {
+			continue
+		}
+		pattern := strings.TrimSpace(overview.Route.ModelPattern)
+		if pattern == "" || strings.ContainsAny(pattern, "*?") {
+			continue
+		}
+		folded := canonicalize(pattern, rules)
+		if folded == strings.ToLower(pattern) {
+			continue
+		}
+		if _, ok := grouped[folded]; ok {
+			exposedOriginals[folded]++
+		}
+	}
+
 	preview := UnifyPreview{Groups: []UnifyGroup{}}
 
 	canonicals := make([]string, 0, len(grouped))
@@ -499,12 +528,16 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 	sort.Strings(canonicals)
 	for _, canonical := range canonicals {
 		acc := grouped[canonical]
+		group := groupFor(canonical, acc.variants)
+		exposed := exposedOriginals[canonical]
+		group.ExposedOriginals = exposed
 		// Nothing to unify: a single variant that already carries the
-		// canonical name needs no assistant action.
-		if len(acc.variants) == 1 && acc.original {
+		// canonical name needs no assistant action — unless an original with
+		// a variant name is exposed again (restored from history), which the
+		// apply pass can hide once more.
+		if len(acc.variants) == 1 && acc.original && exposed == 0 {
 			continue
 		}
-		group := groupFor(canonical, acc.variants)
 		for _, rule := range AllUnifyRules {
 			// Account-prefix stripping is always safe and never worth
 			// flagging; only the ones that can conflate models are.
@@ -516,8 +549,9 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 				group.Risky = true
 			}
 		}
-		// Fully unified already: nothing applying would change.
-		if group.RouteID > 0 && group.MappedCount == len(group.Variants) {
+		// Fully unified already: nothing applying would change — except when
+		// an exposed original still needs hiding, which apply handles.
+		if group.RouteID > 0 && group.MappedCount == len(group.Variants) && exposed == 0 {
 			continue
 		}
 		preview.Groups = append(preview.Groups, group)
@@ -588,7 +622,16 @@ func (h *AdminHandler) unifyPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	preview := buildUnifyPreview(channels, models, overviews, unifyRulesFromRequest(req.Rules))
-	preview.Archived = archived
+	// The preview's archived note counts names currently hidden; restored
+	// entries are history, not hidden names, so they are left out here. The
+	// history dialog uses the unfiltered batch list instead.
+	hidden := make([]domain.ArchivedRoute, 0, len(archived))
+	for _, entry := range archived {
+		if !entry.Restored {
+			hidden = append(hidden, entry)
+		}
+	}
+	preview.Archived = hidden
 	writeJSON(w, http.StatusOK, preview)
 }
 

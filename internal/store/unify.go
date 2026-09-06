@@ -102,6 +102,22 @@ func (db *DB) ApplyUnify(groups []UnifyApplyGroup, archiveOriginals bool) (*Unif
 			}); err != nil {
 				return nil, err
 			}
+		} else if !route.Enabled {
+			// A disabled route with the canonical name would swallow every
+			// member created below: the alias exists but never serves, and
+			// the unified model seems to have vanished. Switch it on and
+			// record the flip so undo can restore the parked state.
+			if err := routes.SetEnabledTx(tx, routeID, true); err != nil {
+				return nil, err
+			}
+			prev := false
+			if err := addUnifyOp(tx, batchID, &seq, &domain.UnifyOp{
+				Op:          domain.UnifyOpRouteEnabled,
+				RouteID:     routeID,
+				PrevEnabled: &prev,
+			}); err != nil {
+				return nil, err
+			}
 		}
 
 		existing, err := members.ListByRouteTx(tx, routeID)
@@ -289,6 +305,14 @@ func (db *DB) UndoBatch(batchID int64) error {
 		}
 		switch op.Op {
 		case domain.UnifyOpRouteCreated:
+			// Deleting the alias route cascades every member on it. That is
+			// only safe when nothing else lives there: members created by
+			// another still-active batch, or members the operator added by
+			// hand, would vanish without a trace. Refuse instead — a refused
+			// undo is recoverable, a silenced one is not.
+			if err := ensureRouteUndoable(tx, batchID, op.RouteID); err != nil {
+				return err
+			}
 			if err := routes.DeleteTx(tx, op.RouteID); err != nil {
 				return err
 			}
@@ -300,6 +324,13 @@ func (db *DB) UndoBatch(batchID int64) error {
 				return err
 			}
 		case domain.UnifyOpRouteArchived:
+			if op.PrevEnabled == nil {
+				break
+			}
+			if err := routes.SetEnabledTx(tx, op.RouteID, *op.PrevEnabled); err != nil {
+				return err
+			}
+		case domain.UnifyOpRouteEnabled:
 			if op.PrevEnabled == nil {
 				break
 			}
@@ -378,15 +409,17 @@ func (db *DB) UnifyBatchOps(batchID int64) ([]domain.UnifyOp, error) {
 	return listUnifyOps(db.DB, batchID)
 }
 
-// UnifyArchivedRoutes lists routes currently hidden by an active unification
-// batch, newest first. These are the names an operator can bring back without
-// undoing the whole group.
+// UnifyArchivedRoutes lists every archive operation belonging to an active
+// (not undone) batch, newest first. Entries with Restored set have been brought
+// back by a single restore — they stay listed so the history shows what
+// happened to them, while entries without it are currently hidden names an
+// operator can bring back.
 func (db *DB) UnifyArchivedRoutes() ([]domain.ArchivedRoute, error) {
-	rows, err := db.Query(`SELECT o.batch_id, b.canonical, o.route_id, r.model_pattern, b.created_at
+	rows, err := db.Query(`SELECT o.batch_id, b.canonical, o.route_id, r.model_pattern, b.created_at, o.undone
 		FROM model_unify_ops o
 		JOIN model_unify_batches b ON b.id = o.batch_id
 		JOIN routes r ON r.id = o.route_id
-		WHERE o.op = ? AND o.undone = 0 AND b.undone_at IS NULL
+		WHERE o.op = ? AND b.undone_at IS NULL
 		ORDER BY b.id DESC, o.seq`, domain.UnifyOpRouteArchived)
 	if err != nil {
 		return nil, fmt.Errorf("unify archived list: %w", err)
@@ -395,15 +428,83 @@ func (db *DB) UnifyArchivedRoutes() ([]domain.ArchivedRoute, error) {
 	var result []domain.ArchivedRoute
 	for rows.Next() {
 		var a domain.ArchivedRoute
-		if err := rows.Scan(&a.BatchID, &a.Canonical, &a.RouteID, &a.ModelName, scanTime(&a.ArchivedAt)); err != nil {
+		var undone int
+		if err := rows.Scan(&a.BatchID, &a.Canonical, &a.RouteID, &a.ModelName, scanTime(&a.ArchivedAt), &undone); err != nil {
 			return nil, fmt.Errorf("unify archived scan: %w", err)
 		}
+		a.Restored = undone != 0
 		result = append(result, a)
 	}
 	return result, rows.Err()
 }
 
 // --- helpers ---------------------------------------------------------------
+
+// ensureRouteUndoable refuses to delete an alias route that anything else
+// still depends on. Two situations are rejected:
+//
+//  1. Another batch that is still active created members on this route —
+//     deleting the route would orphan that batch, leaving it marked active
+//     while its members are gone.
+//  2. The route carries members no unify batch created — the operator added
+//     them by hand, and undo must not silently discard manual work.
+//
+// Members created by this very batch (or by batches that are already fully
+// undone, whose members are gone anyway) are fine to cascade away.
+func ensureRouteUndoable(tx *sql.Tx, batchID, routeID int64) error {
+	// Member IDs created by unify batches on this route, split by owning batch.
+	thisBatch := make(map[int64]struct{})
+	otherAny := make(map[int64]struct{})
+	otherActive := make(map[int64]struct{})
+	rows, err := tx.Query(`SELECT member_id, batch_id, undone FROM model_unify_ops
+		WHERE op = ? AND route_id = ? AND member_id IS NOT NULL`,
+		domain.UnifyOpMemberCreated, routeID)
+	if err != nil {
+		return fmt.Errorf("unify undo member ops: %w", err)
+	}
+	for rows.Next() {
+		var memberID, opBatch, undone int64
+		if err := rows.Scan(&memberID, &opBatch, &undone); err != nil {
+			rows.Close()
+			return fmt.Errorf("unify undo member ops scan: %w", err)
+		}
+		if opBatch == batchID {
+			thisBatch[memberID] = struct{}{}
+			continue
+		}
+		otherAny[memberID] = struct{}{}
+		if undone == 0 {
+			otherActive[memberID] = struct{}{}
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("unify undo member ops: %w", err)
+	}
+	if len(otherActive) > 0 {
+		return &UnifyValidationError{
+			Message: "cannot undo: the alias route is still shared by another active unify batch — undo that batch first",
+		}
+	}
+
+	// Everything on the route today must be accounted for by batch ops.
+	current, err := listRouteMembers(tx, routeID)
+	if err != nil {
+		return err
+	}
+	for _, member := range current {
+		if _, ok := thisBatch[member.ID]; ok {
+			continue
+		}
+		if _, ok := otherAny[member.ID]; ok {
+			continue
+		}
+		return &UnifyValidationError{
+			Message: "cannot undo: the alias route has members not created by unification — remove them first, or delete the route manually",
+		}
+	}
+	return nil
+}
 
 func createUnifyBatch(tx *sql.Tx, canonical string, routeID int64) (int64, error) {
 	res, err := tx.Exec(`INSERT INTO model_unify_batches (canonical, route_id) VALUES (?, ?)`, canonical, routeID)

@@ -556,3 +556,62 @@ func TestApplyUnifyReusesDisabledRoute(t *testing.T) {
 		t.Fatalf("expected exactly 1 route row, got %d", count)
 	}
 }
+
+// Restoring an original from history re-exposes a variant-named route. The
+// preview must keep offering the group (flagged with exposed_originals) even
+// though every variant is already mapped — otherwise the restored duplicate
+// could never be hidden again from the UI.
+func TestBuildUnifyPreviewKeepsGroupWithExposedOriginal(t *testing.T) {
+	channels := []domain.Channel{
+		{ID: 1, Name: "C1", Status: domain.StatusEnabled},
+		{ID: 2, Name: "C2", Status: domain.StatusEnabled},
+	}
+	models := []domain.DiscoveredModel{
+		{ChannelID: 1, ModelName: "[A]GEMINI", Available: true},
+		{ChannelID: 2, ModelName: "GEMINI", Available: true},
+	}
+	// The alias route covers both channels (both variants mapped), while the
+	// restored original "[A]GEMINI" is enabled again next to it.
+	overviews := []domain.RouteOverview{
+		overview(10, "gemini",
+			domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true, MappingJSON: `{"real":"[A]GEMINI"}`},
+			domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true, MappingJSON: `{"real":"GEMINI"}`}),
+		overview(11, "[A]GEMINI", domain.RouteMember{ID: 3, ChannelID: 1, Enabled: true}),
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
+
+	if len(preview.Groups) != 1 {
+		t.Fatalf("expected the fully-mapped group to stay visible, got %+v", preview.Groups)
+	}
+	group := preview.Groups[0]
+	if group.Canonical != "gemini" {
+		t.Fatalf("canonical = %q, want gemini", group.Canonical)
+	}
+	if group.ExposedOriginals != 1 {
+		t.Fatalf("exposed_originals = %d, want 1", group.ExposedOriginals)
+	}
+	if group.MappedCount != 2 {
+		t.Fatalf("mapped_count = %d, want 2", group.MappedCount)
+	}
+}
+
+// Without an exposed original, a fully-mapped group is omitted as before.
+func TestBuildUnifyPreviewOmitsFullyMappedGroup(t *testing.T) {
+	channels := []domain.Channel{
+		{ID: 1, Name: "C1", Status: domain.StatusEnabled},
+		{ID: 2, Name: "C2", Status: domain.StatusEnabled},
+	}
+	models := []domain.DiscoveredModel{
+		{ChannelID: 1, ModelName: "[A]GEMINI", Available: true},
+		{ChannelID: 2, ModelName: "GEMINI", Available: true},
+	}
+	overviews := []domain.RouteOverview{
+		overview(10, "gemini",
+			domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true, MappingJSON: `{"real":"[A]GEMINI"}`},
+			domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true, MappingJSON: `{"real":"GEMINI"}`}),
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
+	if len(preview.Groups) != 0 {
+		t.Fatalf("fully-mapped group must be omitted, got %+v", preview.Groups)
+	}
+}

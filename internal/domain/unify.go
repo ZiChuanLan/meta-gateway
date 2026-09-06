@@ -7,6 +7,10 @@ const (
 	UnifyOpRouteCreated  = "route_created"
 	UnifyOpMemberCreated = "member_created"
 	UnifyOpRouteArchived = "route_archived"
+	// UnifyOpRouteEnabled records an apply that switched a pre-existing
+	// disabled route with the canonical name back on — without it the alias
+	// would silently never serve. Undo flips it back to PrevEnabled.
+	UnifyOpRouteEnabled = "route_enabled"
 )
 
 // UnifyBatch is one applied unification group. UndoneAt is nil while the batch
@@ -27,12 +31,17 @@ func (b UnifyBatch) Active() bool { return b.UndoneAt == nil }
 
 // ArchivedRoute is an original model name that an active unification batch
 // hid. Restoring it re-enables the route without discarding the alias.
+// Restored entries stay listed (greyed out in the UI) so a single restore
+// leaves a visible trace in the history instead of silently vanishing.
 type ArchivedRoute struct {
 	BatchID    int64     `json:"batch_id"`
 	Canonical  string    `json:"canonical"`
 	RouteID    int64     `json:"route_id"`
 	ModelName  string    `json:"model_name"`
 	ArchivedAt time.Time `json:"archived_at"`
+	// Restored is true when this archive has been reverted (single restore or
+	// batch undo), i.e. the name is not currently hidden.
+	Restored bool `json:"restored"`
 }
 
 // UnifyOp is a single recorded mutation belonging to a batch.

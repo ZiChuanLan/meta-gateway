@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -301,5 +302,202 @@ func TestUnifyRestoreUnknownRoute(t *testing.T) {
 	db := openTestDB(t)
 	if err := db.RestoreArchivedRoute(9999); err == nil {
 		t.Fatal("expected an error for an unknown route")
+	}
+}
+
+// Restoring an original must not dead-end the assistant: re-applying the same
+// group hides the exposed original again, and the history keeps a trace of
+// both the restore and the re-archive.
+func TestUnifyRestoreThenReapplyRearchives(t *testing.T) {
+	db := openTestDB(t)
+	c1 := newUnifyChannel(t, db, "C1")
+	c2 := newUnifyChannel(t, db, "C2")
+
+	originalA, err := db.Route.Create(&domain.Route{ModelPattern: "[A]GEMINI", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalB, err := db.Route.Create(&domain.Route{ModelPattern: "GEMINI", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: originalA, ChannelID: c1, Enabled: true, Weight: 100}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: originalB, ChannelID: c2, Enabled: true, Weight: 100}); err != nil {
+		t.Fatal(err)
+	}
+
+	group := []store.UnifyApplyGroup{{
+		Canonical: "gemini-flash",
+		Variants: []store.UnifyApplyVariant{
+			{ChannelID: c1, ModelName: "[A]GEMINI"},
+			{ChannelID: c2, ModelName: "GEMINI"},
+		},
+	}}
+	if _, err := db.ApplyUnify(group, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RestoreArchivedRoute(originalA); err != nil {
+		t.Fatal(err)
+	}
+	if !routeEnabled(t, db, originalA) {
+		t.Fatal("[A]GEMINI should be back after restore")
+	}
+
+	// The history must still show the restored entry next to the hidden one.
+	archived, err := db.UnifyArchivedRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoredCount, activeCount := 0, 0
+	for _, entry := range archived {
+		if entry.RouteID == originalA && entry.Restored {
+			restoredCount++
+		}
+		if entry.RouteID == originalB && !entry.Restored {
+			activeCount++
+		}
+	}
+	if restoredCount != 1 || activeCount != 1 {
+		t.Fatalf("expected 1 restored + 1 active entry, got %+v", archived)
+	}
+
+	// Re-applying the same group must hide the restored original again.
+	second, err := db.ApplyUnify(group, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RoutesArchived != 1 || second.MembersCreated != 0 || second.MembersSkipped != 2 {
+		t.Fatalf("unexpected re-apply outcome: %+v", second)
+	}
+	if routeEnabled(t, db, originalA) {
+		t.Fatal("[A]GEMINI should be hidden again after re-apply")
+	}
+}
+
+// Undoing a batch whose alias route gained a member nobody recorded must be
+// refused, not silently delete the operator's manual work.
+func TestUnifyUndoRefusesManualMembers(t *testing.T) {
+	db := openTestDB(t)
+	c1 := newUnifyChannel(t, db, "C1")
+	outcome, err := db.ApplyUnify([]store.UnifyApplyGroup{{
+		Canonical: "solo-alias",
+		Variants:  []store.UnifyApplyVariant{{ChannelID: c1, ModelName: "[A]Real"}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchID := outcome.Batches[0].ID
+
+	alias, err := db.Route.GetByModel("solo-alias")
+	if err != nil || alias == nil {
+		t.Fatalf("alias missing: %v %v", alias, err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: alias.ID, ChannelID: c1, Enabled: true, ManualOverride: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err = db.UndoBatch(batchID)
+	var validation *store.UnifyValidationError
+	if err == nil || !errors.As(err, &validation) {
+		t.Fatalf("expected a validation error for the manual member, got %v", err)
+	}
+	if !routeEnabled(t, db, alias.ID) {
+		t.Fatal("alias route must survive a refused undo")
+	}
+	members, err := db.RouteMember.ListByRoute(alias.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("manual member must survive a refused undo, got %d", len(members))
+	}
+
+	// Removing the manual member unblocks the undo.
+	if err := db.RouteMember.Delete(members[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UndoBatch(batchID); err != nil {
+		t.Fatalf("undo should succeed once the manual member is gone: %v", err)
+	}
+}
+
+// Two batches sharing one alias route: undoing the older one must not
+// cascade-delete the newer batch's members and leave it marked active.
+func TestUnifyUndoRefusesSharedRoute(t *testing.T) {
+	db := openTestDB(t)
+	c1 := newUnifyChannel(t, db, "C1")
+	c2 := newUnifyChannel(t, db, "C2")
+	first, err := db.ApplyUnify([]store.UnifyApplyGroup{{
+		Canonical: "shared-alias",
+		Variants:  []store.UnifyApplyVariant{{ChannelID: c1, ModelName: "[A]Real"}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := db.ApplyUnify([]store.UnifyApplyGroup{{
+		Canonical: "shared-alias",
+		Variants:  []store.UnifyApplyVariant{{ChannelID: c2, ModelName: "[B]Real"}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = db.UndoBatch(first.Batches[0].ID)
+	var validation *store.UnifyValidationError
+	if err == nil || !errors.As(err, &validation) {
+		t.Fatalf("expected undo to be refused while another batch shares the route, got %v", err)
+	}
+	alias, err := db.Route.GetByModel("shared-alias")
+	if err != nil || alias == nil {
+		t.Fatalf("alias missing: %v %v", alias, err)
+	}
+	members, err := db.RouteMember.ListByRoute(alias.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("both batches' members must survive, got %d", len(members))
+	}
+
+	// Undoing the newest batch first unblocks the older one.
+	if err := db.UndoBatch(second.Batches[0].ID); err != nil {
+		t.Fatalf("newest batch should undo cleanly: %v", err)
+	}
+	if err := db.UndoBatch(first.Batches[0].ID); err != nil {
+		t.Fatalf("older batch should undo once unshared: %v", err)
+	}
+	if remaining, err := db.Route.GetByModelAny("shared-alias"); err != nil || remaining != nil {
+		t.Fatalf("alias should be gone after both undos: %v %v", remaining, err)
+	}
+}
+
+// Applying onto a pre-existing disabled route must switch it on — otherwise
+// the unified model simply never serves — and undo must park it again.
+func TestUnifyApplyEnablesDisabledRoute(t *testing.T) {
+	db := openTestDB(t)
+	c1 := newUnifyChannel(t, db, "C1")
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "alias-name", Enabled: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := db.ApplyUnify([]store.UnifyApplyGroup{{
+		Canonical: "alias-name",
+		Variants:  []store.UnifyApplyVariant{{ChannelID: c1, ModelName: "[A]Real-Name"}},
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !routeEnabled(t, db, routeID) {
+		t.Fatal("apply must enable the disabled canonical route")
+	}
+	if err := db.UndoBatch(outcome.Batches[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if routeEnabled(t, db, routeID) {
+		t.Fatal("undo must restore the parked (disabled) state")
 	}
 }

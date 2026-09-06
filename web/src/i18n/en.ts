@@ -370,6 +370,9 @@ export const en: Dict = {
     "Models not synced yet; open the channel and click \u201cSync models\u201d to fetch the list.",
   "channels.modelsNoneAdoptedHint":
     "Synced, but no model is wired into routing yet; adopt them on the models page or switch to auto sync.",
+  "channels.modelsSelectedCol": "Selected",
+  "channels.modelsSelectedHint":
+    "Models adopted into routing (a subset of the synced candidates).",
   "channels.modelsSyncBannerAuto":
     "Newly probed models are adopted automatically; uncheck one to disable it.",
   "channels.modelsSyncBannerManual":
@@ -674,7 +677,7 @@ export const en: Dict = {
   "modelsPage.description":
     "Manage exposed models, upstream members, and model-level routing policy.",
   "modelsPage.empty":
-    "No models are available yet. Verify and sync an upstream connection first.",
+    "No models are available yet. Recommended: edit a channel on the connections page and tick models under model settings — routes are created automatically. You can also add a route manually below.",
   "modelsPage.selectHint":
     "Select a model to edit its route, members, and model-level overrides.",
   "modelsPage.scopeHint":
@@ -740,6 +743,9 @@ export const en: Dict = {
     "These groups only merge because of an owner prefix, a snapshot date or an index suffix. Different owners can publish different models under the same short name, and different snapshots can be different versions, so confirm before checking one.",
   "modelsPage.unify.archivedNote":
     "{count} original name(s) are currently hidden. Restore them from Unify history.",
+  "modelsPage.unify.exposedOriginals": "{count} original(s) restored",
+  "modelsPage.unify.exposedOriginalsHint":
+    "An original route with a variant name is enabled again (usually restored from Unify history). Applying this group hides it once more.",
   "modelsPage.unify.empty":
     "Nothing to unify — no duplicate model names found across channels.",
   "modelsPage.unify.routeExists": "route exists",
@@ -772,6 +778,7 @@ export const en: Dict = {
   "modelsPage.unify.history.restore": "Restore",
   "modelsPage.unify.history.undo": "Revert",
   "modelsPage.unify.history.undone": "reverted",
+  "modelsPage.unify.history.restored": "restored",
   "modelsPage.unify.history.active": "active",
   "modelsPage.unify.history.summary":
     "{members} member(s) · {archived} original(s) hidden",
@@ -793,6 +800,7 @@ export const en: Dict = {
   "modelsPage.listTitle": "Models",
   "modelsPage.col.upstream": "Upstream",
   "modelsPage.noUpstream": "No upstream",
+  "modelsPage.openChannelHint": "Open this channel's model settings",
   "modelsPage.servedBy": "Served by {name}",
   "modelsPage.extraPaths": "+{n} fallback",
   "modelsPage.showRouting": "Show routing options",
@@ -1309,6 +1317,15 @@ export const en: Dict = {
   "routing.cooldownHint": "cooldown {left} left",
   "routing.exactModel": "Exact model",
   "routing.routeEnabled": "Route enabled",
+  "routing.autoMatchLabel": "Auto-match channels serving this model",
+  "routing.autoMatchHint":
+    "On save, scan every enabled channel's model list (models.csv and the discovery snapshot) and attach all channels serving this model as route members in one step — no per-channel manual adding.",
+  "routing.autoMatchSelected":
+    "{total} channel(s) serve this model, {selected} selected — only checked ones are attached on save",
+  "routing.autoMatchNone":
+    "No enabled channel serves this model; nothing will be attached",
+  "routing.autoMatchUnknown":
+    "Match count unavailable; saving still applies the current toggle",
   "routing.retryOverrideTitle": "Retry overrides",
   "routing.retryRounds": "Retry rounds",
   "routing.retryRoundsHint":

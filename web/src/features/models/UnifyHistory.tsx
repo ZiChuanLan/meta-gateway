@@ -51,6 +51,16 @@ export function UnifyHistory({ onClose }: { onClose: () => void }) {
   const batches = history.data?.batches ?? [];
   const archived = history.data?.archived ?? [];
   const pending = undo.isPending || restore.isPending;
+  // Per-batch count of names that are still hidden: a restore (or a batch
+  // that lost one of its entries) must not keep claiming "隐藏 N 个原名".
+  const activeArchivedByBatch = new Map<number, number>();
+  for (const entry of archived) {
+    if (entry.restored) continue;
+    activeArchivedByBatch.set(
+      entry.batch_id,
+      (activeArchivedByBatch.get(entry.batch_id) ?? 0) + 1,
+    );
+  }
 
   return (
     <Dialog title={t("modelsPage.unify.history.title")} onClose={onClose}>
@@ -114,7 +124,7 @@ export function UnifyHistory({ onClose }: { onClose: () => void }) {
                   <span className="unify-count">
                     {t("modelsPage.unify.history.summary", {
                       members: batch.members_created,
-                      archived: batch.routes_archived,
+                      archived: activeArchivedByBatch.get(batch.id) ?? 0,
                     })}
                   </span>
                   <span className="unify-count">{formatDate(batch.created_at)}</span>

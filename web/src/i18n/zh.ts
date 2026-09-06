@@ -341,6 +341,8 @@ export const zh: Dict = {
   "channels.modelsAdoptedStat": "已接入",
   "channels.modelsAdoptedHint": "已经接入路由的模型（含被手动停用的）",
   "channels.modelsNeverSyncedHint": "尚未同步模型；编辑渠道后点「同步模型」拉取清单。",
+  "channels.modelsSelectedCol": "已选",
+  "channels.modelsSelectedHint": "已勾选接入路由的模型数（同步到的候选模型的子集）。",
   "channels.modelsNoneAdoptedHint":
     "已同步但还没有模型接入路由；到模型页勾选接入，或切换为自动同步。",
   "channels.modelsSyncBannerAuto":
@@ -750,6 +752,7 @@ export const zh: Dict = {
   "modelsPage.listTitle": "模型",
   "modelsPage.col.upstream": "上游",
   "modelsPage.noUpstream": "无上游",
+  "modelsPage.openChannelHint": "跳转到该渠道的模型设置",
   "modelsPage.servedBy": "由 {name} 提供",
   "modelsPage.extraPaths": "另有 {n} 条备用",
   "modelsPage.showRouting": "显示路由选项",
@@ -761,7 +764,7 @@ export const zh: Dict = {
     "通过行操作菜单测试、启用、查看日志或编辑当前模型。",
 
   "modelsPage.description": "管理对外模型、上游成员与模型级路由策略。",
-  "modelsPage.empty": "暂无可用模型。先在连接页验证并同步一个上游连接。",
+  "modelsPage.empty": "暂无可用模型。推荐流程：在连接页编辑渠道 → 模型设置里勾选模型，路由会自动创建；也可以在下方手动添加路由。",
   "modelsPage.selectHint": "选择模型后可直接调整路由、成员和模型级覆盖项。",
   "modelsPage.scopeHint":
     "此处的变更只影响当前模型；连接页的优先级和权重仍是默认值。",
@@ -821,6 +824,9 @@ export const zh: Dict = {
     "这些组是靠厂商前缀、日期快照或序号后缀才归到一起的。不同厂商可能用同一个短名发布不同模型，不同日期快照也可能是不同版本，请确认后再勾选。",
   "modelsPage.unify.archivedNote":
     "当前有 {count} 个原名被隐藏，可在「统一历史」中还原。",
+  "modelsPage.unify.exposedOriginals": "{count} 个原名已还原",
+  "modelsPage.unify.exposedOriginalsHint":
+    "同名原名路由当前处于启用状态（通常是从统一历史还原的）。再次应用本组会把它们重新隐藏。",
   "modelsPage.unify.empty": "没有可统一的名称 —— 未发现跨渠道重复的模型名。",
   "modelsPage.unify.routeExists": "路由已存在",
   "modelsPage.unify.canonicalPrefix": "统一为",
@@ -852,6 +858,7 @@ export const zh: Dict = {
   "modelsPage.unify.history.restore": "还原",
   "modelsPage.unify.history.undo": "撤销",
   "modelsPage.unify.history.undone": "已撤销",
+  "modelsPage.unify.history.restored": "已还原",
   "modelsPage.unify.history.active": "生效中",
   "modelsPage.unify.history.summary": "{members} 个成员 · 隐藏 {archived} 个原名",
 
@@ -1192,6 +1199,13 @@ export const zh: Dict = {
   "routing.cooldownHint": "冷却剩余 {left}",
   "routing.exactModel": "精确模型",
   "routing.routeEnabled": "启用路由",
+  "routing.autoMatchLabel": "自动匹配含此模型的渠道",
+  "routing.autoMatchHint":
+    "保存时扫描所有启用渠道的模型列表（models.csv 与探测快照），把提供此模型的渠道一次性挂载为路由成员，无需逐个手动添加。",
+  "routing.autoMatchSelected":
+    "共 {total} 个渠道提供此模型，已选 {selected} 个，保存时仅挂载勾选项",
+  "routing.autoMatchNone": "没有启用中的渠道提供此模型，保存后将不挂载任何渠道",
+  "routing.autoMatchUnknown": "匹配数量获取失败，保存时仍会按当前状态执行",
   "routing.retryOverrideTitle": "重试覆盖",
   "routing.retryRounds": "重试轮次",
   "routing.retryRoundsHint":

@@ -259,8 +259,12 @@ type ChannelOverview struct {
 	SiteUsable         bool       `json:"site_usable"`
 	CredentialUsable   bool       `json:"credential_usable"`
 	ModelCount         int        `json:"model_count"`
-	LastCheckedAt      *time.Time `json:"last_checked_at,omitempty"`
-	LastLatencyMs      int        `json:"last_latency_ms"`
+	// DiscoveredModelCount is how many models the last sync found on the
+	// upstream (available rows in discovered_models) — the full candidate
+	// list, of which ModelCount (adopted into routing) is the subset.
+	DiscoveredModelCount int        `json:"discovered_model_count"`
+	LastCheckedAt        *time.Time `json:"last_checked_at,omitempty"`
+	LastLatencyMs        int        `json:"last_latency_ms"`
 	DiscoverySource    string     `json:"discovery_source,omitempty"`
 	RouteCount         int        `json:"route_count"`
 	EnabledMemberCount int        `json:"enabled_member_count"`

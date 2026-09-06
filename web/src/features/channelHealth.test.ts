@@ -32,6 +32,7 @@ function overview(overrides: Partial<ChannelOverview> = {}): ChannelOverview {
     site_usable: true,
     credential_usable: true,
     model_count: 1,
+    discovered_model_count: 3,
     last_latency_ms: 100,
     route_count: 1,
     enabled_member_count: 1,

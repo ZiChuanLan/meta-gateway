@@ -295,6 +295,16 @@ function GroupCard({
         <span className="unify-count">
           {t("modelsPage.unify.progress", { done: covered, total })}
         </span>
+        {(group.exposed_originals ?? 0) > 0 ? (
+          <span
+            className="model-meta-badge"
+            title={t("modelsPage.unify.exposedOriginalsHint")}
+          >
+            {t("modelsPage.unify.exposedOriginals", {
+              count: group.exposed_originals ?? 0,
+            })}
+          </span>
+        ) : null}
         {group.rules?.map((rule) => (
           <span className="model-meta-badge" key={rule}>
             {t(`modelsPage.unify.rule.${rule}`)}

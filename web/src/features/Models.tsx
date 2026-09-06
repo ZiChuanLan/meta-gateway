@@ -981,6 +981,7 @@ function ModelCatalog({
               <Button
                 variant="secondary"
                 icon={<Plus size={16} />}
+                title={t("modelsPage.addRouteHint")}
                 onClick={() => {
                   save.reset();
                   setEdit({ enabled: true });
@@ -1078,7 +1079,14 @@ function ModelCatalog({
                 body={t("modelsPage.empty")}
                 actions={
                   <>
+                    {/* The recommended path: adopt models from the channel's
+                        model settings — routes are created automatically.
+                        Manual route creation stays available but demoted. */}
+                    <Link className="button" to="/channels">
+                      {t("modelsPage.ctaConnections")}
+                    </Link>
                     <Button
+                      variant="secondary"
                       icon={<Plus size={16} />}
                       onClick={() => {
                         save.reset();
@@ -1087,9 +1095,6 @@ function ModelCatalog({
                     >
                       {t("routing.addRoute")}
                     </Button>
-                    <Link className="button button-secondary" to="/channels">
-                      {t("modelsPage.ctaConnections")}
-                    </Link>
                   </>
                 }
               />
@@ -1194,12 +1199,23 @@ function ModelCatalog({
                           </td>
                           <td>
                             {head ? (
-                              <span title={head.channel.name}>
-                                {head.channel.name}
+                              <>
+                                <Link
+                                  to={`/channels?channel=${head.channel.id}`}
+                                  className="upstream-link"
+                                  title={t("modelsPage.openChannelHint")}
+                                  onClick={(event) => {
+                                    // Don't trigger the row's selectRow when
+                                    // jumping straight to the channel editor.
+                                    event.stopPropagation();
+                                  }}
+                                >
+                                  {head.channel.name}
+                                </Link>
                                 {item.members.length > 1
                                   ? ` +${item.members.length - 1}`
                                   : ""}
-                              </span>
+                              </>
                             ) : (
                               <span className="muted">
                                 {t("modelsPage.noUpstream")}
