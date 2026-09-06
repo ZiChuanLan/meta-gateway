@@ -40,6 +40,11 @@ export function SearchableSelect({
 	const [query, setQuery] = useState("");
 	const [customMode, setCustomMode] = useState(false);
 	const [customValue, setCustomValue] = useState("");
+	// Decided once when the panel opens, not re-evaluated per keystroke: if
+	// the search box disappeared the moment filtering dropped the list below
+	// the threshold, typing two letters would unmount the input mid-composition
+	// and strand the IME (the "typing Chinese freezes the type picker" bug).
+	const [searchVisible, setSearchVisible] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const searchRef = useRef<HTMLInputElement>(null);
 	// The panel is fixed-positioned so scroll containers (e.g. Dialog) cannot clip it.
@@ -51,6 +56,7 @@ export function SearchableSelect({
 	const suppressOpenUntil = useRef(0);
 	const openPanel = () => {
 		if (Date.now() < suppressOpenUntil.current) return;
+		setSearchVisible(options.length > 4);
 		const trigger = rootRef.current?.querySelector<HTMLElement>(
 			".searchable-select-trigger",
 		);
@@ -193,7 +199,7 @@ export function SearchableSelect({
 			)}
 			{open ? (
 				<div className="searchable-select-panel" style={panelStyle ?? undefined} role="listbox">
-					{filtered.length > 4 ? (
+					{searchVisible ? (
 						<div className="searchable-select-search">
 							<Search size={13} />
 							<input
