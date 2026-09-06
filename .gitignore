@@ -29,3 +29,8 @@ web/shots/
 # Debug logs and ad-hoc analysis scripts
 *.log
 scripts/
+
+# Debug snapshots and verification screenshots dumped at the repo root
+# (tracked docs assets live under docs/screenshots and are not affected)
+/*.png
+/*.txt
