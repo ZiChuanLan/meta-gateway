@@ -14,6 +14,56 @@ export const TYPE_OPTIONS: SelectOption[] = [
 
 export const TYPE_GROUPS = ["core", "relay", "other"];
 
+/**
+ * Which user-account credential fields a channel type can make use of.
+ * "both" = 用户 Access Token + 用户 Cookie (New-API-family account surfaces),
+ * "cookie" = cookie-only (generic external check-in sites), "none" = the type
+ * has no user-account system (plain OpenAI-compatible relays, official
+ * provider APIs, unsupported families) — the fields would be dead weight.
+ */
+export type UserAuthFields = "both" | "cookie" | "none";
+
+const COOKIE_ONLY_USER_AUTH_TYPES = new Set(["external-checkin"]);
+
+const NO_USER_AUTH_TYPES = new Set([
+  // Plain OpenAI-compatible relays and official provider APIs.
+  "openai-compatible",
+  "anthropic",
+  "gemini",
+  "deepseek",
+  "moonshot",
+  "zhipu",
+  "qwen",
+  "doubao",
+  "siliconflow",
+  "minimax",
+  "stepfun",
+  "lingyiwanwu",
+  "baichuan",
+  "spark",
+  "hunyuan",
+  "qianfan",
+  "openrouter",
+  "groq",
+  "xai",
+  "mistral",
+  "perplexity",
+  // Site families with no server-side account adapter.
+  "octopus",
+  "axonhub",
+  "claude-code-hub",
+]);
+
+export function userAuthFieldsFor(typeHint: string): UserAuthFields {
+  const key = (typeHint || "").trim().toLowerCase();
+  if (!key) return "both";
+  if (COOKIE_ONLY_USER_AUTH_TYPES.has(key)) return "cookie";
+  if (NO_USER_AUTH_TYPES.has(key)) return "none";
+  // New-API-family brands and unknown/custom brands: the backend defaults
+  // unknown families to the New-API profile, so keep the fields available.
+  return "both";
+}
+
 export /** Value shown in secret inputs when a credential is stored; keeping it means "don't change". */
 const SECRET_MASK = "••••••••••";
 

@@ -18,7 +18,7 @@ import {
   uaFromHeaderOverride,
 } from "../../lib/uaPresets";
 import { useSession } from "../../session";
-import { SECRET_MASK, TYPE_GROUPS, TYPE_OPTIONS } from "./helpers";
+import { SECRET_MASK, TYPE_GROUPS, TYPE_OPTIONS, userAuthFieldsFor } from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
 
 export function EditChannelDialog({
@@ -123,6 +123,17 @@ export function EditChannelDialog({
   const [typeHint, setTypeHint] = useState(
     value.type_hint || site?.platform || "openai-compatible",
   );
+  // 用户 Access Token / 用户 Cookie only make sense for site families with
+  // account surfaces (check-in, balance, key creation). They live in the
+  // advanced section and disappear entirely for types that cannot use them.
+  const authFields = userAuthFieldsFor(typeHint);
+  const showUserTokenField =
+    authFields === "both" ||
+    (authFields === "none" && Boolean(userCredential?.has_secret));
+  const showUserCookieField =
+    authFields === "both" ||
+    authFields === "cookie" ||
+    Boolean(userCredential?.has_cookie);
   const [groupName, setGroupName] = useState(value.group_name || "default");
   const [maxReasoningEffort, setMaxReasoningEffort] = useState(
     value.max_reasoning_effort ?? "",
@@ -319,49 +330,7 @@ export function EditChannelDialog({
               disabled={pending}
             />
           </Field>
-          <Field
-            label={t("channels.userToken")}
-            hint={
-              userCredential?.has_secret
-                ? t("channels.userTokenPresentHint")
-                : t("channels.userTokenHint")
-            }
-          >
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={userToken}
-              onChange={(e) => setUserToken(e.target.value)}
-              placeholder={
-                userCredential?.has_secret
-                  ? t("channels.editSecretPlaceholder")
-                  : t("channels.userTokenEmptyPlaceholder")
-              }
-              disabled={pending}
-            />
-          </Field>
-								<Field
-									label={t("channels.userCookie")}
-									hint={
-										userCredential?.has_cookie
-											? t("channels.userCookiePresentHint")
-											: t("channels.userCookieHint")
-									}
-								>
-									<input
-										type="password"
-										autoComplete="new-password"
-										value={userCookie}
-										onChange={(e) => setUserCookie(e.target.value)}
-										placeholder={
-											userCredential?.has_cookie
-												? t("channels.editSecretPlaceholder")
-												: t("channels.userCookiePlaceholder")
-										}
-										disabled={pending}
-									/>
-								</Field>
-							</div>
+		</div>
 
 							<section
 								className="detail-section connection-subpanel"
@@ -572,6 +541,56 @@ export function EditChannelDialog({
         </div>
         {showAdvanced ? (
           <div className="advanced-fields">
+            {showUserTokenField || showUserCookieField ? (
+              <div className="form-grid">
+                {showUserTokenField ? (
+                  <Field
+                    label={t("channels.userToken")}
+                    hint={
+                      userCredential?.has_secret
+                        ? t("channels.userTokenPresentHint")
+                        : t("channels.userTokenHint")
+                    }
+                  >
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={userToken}
+                      onChange={(e) => setUserToken(e.target.value)}
+                      placeholder={
+                        userCredential?.has_secret
+                          ? t("channels.editSecretPlaceholder")
+                          : t("channels.userTokenEmptyPlaceholder")
+                      }
+                      disabled={pending}
+                    />
+                  </Field>
+                ) : null}
+                {showUserCookieField ? (
+                  <Field
+                    label={t("channels.userCookie")}
+                    hint={
+                      userCredential?.has_cookie
+                        ? t("channels.userCookiePresentHint")
+                        : t("channels.userCookieHint")
+                    }
+                  >
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={userCookie}
+                      onChange={(e) => setUserCookie(e.target.value)}
+                      placeholder={
+                        userCredential?.has_cookie
+                          ? t("channels.editSecretPlaceholder")
+                          : t("channels.userCookiePlaceholder")
+                      }
+                      disabled={pending}
+                    />
+                  </Field>
+                ) : null}
+              </div>
+            ) : null}
             <div className="form-grid">
               <Field
                 label={t("common.priority")}

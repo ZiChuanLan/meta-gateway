@@ -4,14 +4,22 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [Unreleased]
-
 ### Added
 
 - The runtime schedule fields (定时模型同步 / 探测计划) use the same
   preset picker as check-in instead of a raw cron input: off / hourly /
   every 3-12 hours / daily at a picked time / custom cron, with the empty
   (disabled) state spelled out instead of a blank text box
+
+### Changed
+
+- The channel edit drawer moved 用户 Access Token / 用户 Cookie out of the
+  main form into the advanced section, and only shows them for site
+  families that can actually use them (New-API-family account surfaces;
+  cookie-only for generic external check-in). Plain OpenAI-compatible
+  relays, official provider APIs, and unsupported families no longer show
+  the fields at all — unless a credential is already stored, so it stays
+  clearable
 
 ## [v2.3.0] — 2026-09-06
 
