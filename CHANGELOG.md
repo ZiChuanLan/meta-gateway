@@ -4,6 +4,10 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [Unreleased]
+
+## [v2.3.1] — 2026-09-06
+
 ### Added
 
 - The runtime schedule fields (定时模型同步 / 探测计划) use the same
