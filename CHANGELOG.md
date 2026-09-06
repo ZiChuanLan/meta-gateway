@@ -6,6 +6,8 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v2.3.0] — 2026-09-06
+
 ### Added
 
 - A guided picker for the per-channel model sync mode (auto vs on-demand) in
@@ -19,6 +21,21 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 - The channel models page telemetry now pairs model total with adopted,
   enabled, and aliased counts, and manual-mode channels with pending
   candidates show a "N not adopted yet" hint instead of a bare 0
+- The add-route dialog can auto-match channels serving the model: it lists
+  every enabled channel whose models.csv or discovery snapshot matches the
+  pattern (`GET /admin/discovery/model-channels` previews the match) with
+  per-channel checkboxes, all selected by default, and only the checked
+  ones are attached as members (`auto_match_channel_ids` on
+  `POST /admin/routes`). A route that already carries the pattern is
+  reused — the checked channels attach to it — instead of failing with
+  "already exists"
+- The unify assistant can now re-unify restored originals: a group whose
+  canonical route exists but whose original name is exposed again (restored
+  from history) stays listed with an "N exposed originals" badge, and
+  applying hides the duplicates once more
+- The channel overview and list report the discovered candidate count
+  (`discovered_model_count`) next to the adopted model count, so
+  manual-mode channels read as "N of M adopted" instead of a bare 0
 
 ### Fixed
 
@@ -33,6 +50,20 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   without models: synced-but-nothing-adopted renders a muted 0 with a
   tooltip pointing at the models page or auto sync, never-synced renders a
   muted dash (mirroring the latency column), and adopted counts stay bold
+- Unify apply no longer leaves a silent dead alias: a pre-existing disabled
+  route with the canonical name is re-enabled, recorded as its own
+  undoable op
+- Unify undo refuses to delete a created route that still carries members
+  from another batch or added by hand, instead of cascading them away
+- Unify history counts only the still-hidden originals per batch and keeps
+  restored entries visible (greyed out) so a restore leaves a trace
+- Jumping from the models page to a channel's model settings drawer no
+  longer needs closing it twice: the deep-link effect is one-shot per
+  navigation (a close committed before the router's param transition used
+  to re-fire it with the stale `?channel=` URL) and closing strips the
+  resurrected param
+- Info tips in checkbox labels stay inline after the label instead of
+  wrapping onto their own line
 
 ## [v2.2.0] — 2026-08-31
 
