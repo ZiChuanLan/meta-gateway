@@ -1802,7 +1802,21 @@ function ModelCatalog({
                           )}
                           <div className="member-row-main">
                             <strong>
-                              {candidate.channel.name}
+                              <button
+                                type="button"
+                                className="member-channel-link"
+                                title={t("routing.openChannelModels")}
+                                onClick={() =>
+                                  navigate(
+                                    `/models/channel/${candidate.channel.id}?model=${encodeURIComponent(
+                                      originModelOf(entry, selectedRoute) ||
+                                        selectedModel,
+                                    )}`,
+                                  )
+                                }
+                              >
+                                {candidate.channel.name}
+                              </button>
                               {originModelOf(entry, selectedRoute) ? (
                                 <span
                                   className="member-origin-badge"

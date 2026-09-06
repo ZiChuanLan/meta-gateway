@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useToast } from "../toast";
 import type {
@@ -44,9 +44,13 @@ const INVALIDATE = [
 export function ChannelModelsPanel({
   channelId,
   header,
+  initialQuery,
 }: {
   channelId: number;
   header?: ReactNode;
+  // Seeds the search box so a deep link (?model=…) lands filtered on that
+  // model — e.g. arriving from a routing member row.
+  initialQuery?: string;
 }) {
   const { client } = useSession();
   const { t } = useI18n();
@@ -75,7 +79,7 @@ export function ChannelModelsPanel({
 	);
   const [customName, setCustomName] = useState("");
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkMode, setBulkMode] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -936,6 +940,7 @@ export function ChannelModels() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const params = useParams();
+  const [searchParams] = useSearchParams();
   const channelId = positiveId(params.channelId);
 
   if (channelId == null) {
@@ -965,7 +970,10 @@ export function ChannelModels() {
         </Button>
       }
     >
-      <ChannelModelsPanel channelId={channelId} />
+      <ChannelModelsPanel
+        channelId={channelId}
+        initialQuery={searchParams.get("model") ?? undefined}
+      />
     </Page>
   );
 }
