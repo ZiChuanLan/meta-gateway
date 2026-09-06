@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/discovery"
@@ -30,6 +31,7 @@ func (h *DiscoveryHandler) Register(r chi.Router) {
 	r.Post("/discovery/refresh", h.refreshAll)
 	r.Get("/discovery/models", h.listModels)
 	r.Get("/discovery/missing-models", h.missingModels)
+	r.Get("/discovery/model-channels", h.modelChannels)
 }
 
 // missingModels reports channel-exposed models no enabled route covers.
@@ -43,6 +45,25 @@ func (h *DiscoveryHandler) missingModels(w http.ResponseWriter, r *http.Request)
 		missing = []store.MissingModel{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": missing})
+}
+
+// modelChannels lists the enabled channels serving a route pattern — the live
+// preview behind the add-route dialog's auto-match option.
+func (h *DiscoveryHandler) modelChannels(w http.ResponseWriter, r *http.Request) {
+	pattern := strings.TrimSpace(r.URL.Query().Get("model"))
+	if pattern == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	matches, err := h.db.ChannelsWithModel(pattern)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to match channels")
+		return
+	}
+	if matches == nil {
+		matches = []store.ModelChannelMatch{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": matches})
 }
 
 func (h *DiscoveryHandler) probeChannel(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { Route, RoutingCandidate } from "../../api/types";
+import { api } from "../../api/client";
 import {
   Button,
   Dialog,
@@ -8,6 +10,7 @@ import {
   InfoTip,
 } from "../../components/ui";
 import { useI18n } from "../../i18n";
+import { useSession } from "../../session";
 
 const REASONING_LEVELS = [
   "none",
@@ -32,11 +35,48 @@ export function RouteDialog({
   pending: boolean;
   error: unknown;
   onClose: () => void;
-  onSave: (value: Partial<Route> & { pin_priority?: boolean }) => void;
+  onSave: (
+    value: Partial<Route> & {
+      pin_priority?: boolean;
+      auto_match_channel_ids?: number[];
+    },
+  ) => void;
 }) {
   const { t } = useI18n();
+  const { client } = useSession();
+  const service = api(client!);
   const [form, setForm] = useState(value);
   const [advanced, setAdvanced] = useState(false);
+  // Auto-match only exists at creation: the edit dialog manages members
+  // through the member list instead.
+  const isCreate = value.id == null;
+  const [autoMatch, setAutoMatch] = useState(true);
+  const pattern = (form.model_pattern ?? "").trim();
+  // Live candidates: enabled channels serving this pattern, so the checkbox
+  // states its consequence before saving instead of surprising afterwards.
+  const matches = useQuery({
+    queryKey: ["model-channels", pattern],
+    queryFn: ({ signal }) => service.modelChannels(pattern, signal),
+    enabled: isCreate && autoMatch && pattern.length > 0,
+    placeholderData: (previous) => previous,
+  });
+  const matchItems = matches.data?.items ?? [];
+  // Per-channel pick: which of the matched channels to attach. The selection
+  // is scoped to the pattern — typing a new model resets to all-selected.
+  const [selection, setSelection] = useState<{
+    pattern: string;
+    ids: Set<number>;
+  } | null>(null);
+  const selectedMatches =
+    selection && selection.pattern === pattern
+      ? selection.ids
+      : new Set(matchItems.map((item) => item.channel_id));
+  const toggleMatch = (id: number) => {
+    const next = new Set(selectedMatches);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelection({ pattern, ids: next });
+  };
   const patch = (partial: Partial<Route>) =>
     setForm((current) => ({ ...current, ...partial }));
   // Model-level overrides use the same convention as the channel advanced
@@ -57,7 +97,14 @@ export function RouteDialog({
           </Button>
           <Button
             disabled={pending || !form.model_pattern}
-            onClick={() => onSave({ ...form, pin_priority: pinPriority })}
+            onClick={() =>
+              onSave({
+                ...form,
+                pin_priority: pinPriority,
+                auto_match_channel_ids:
+                  isCreate && autoMatch ? [...selectedMatches] : undefined,
+              })
+            }
           >
             {pending ? t("common.working") : t("common.save")}
           </Button>
@@ -86,6 +133,60 @@ export function RouteDialog({
         />
         <span>{t("routing.routeEnabled")}</span>
       </label>
+      {isCreate ? (
+        <>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={autoMatch}
+              onChange={(event) => setAutoMatch(event.target.checked)}
+            />
+            <span>
+              <strong>{t("routing.autoMatchLabel")}</strong>
+              <InfoTip label={t("routing.autoMatchHint")} />
+            </span>
+          </label>
+          {autoMatch && pattern ? (
+            matches.isPending ? (
+              <p className="ops-panel-context" role="status">
+                {t("common.loading")}
+              </p>
+            ) : matches.isError ? (
+              <p className="ops-panel-context" role="status">
+                {t("routing.autoMatchUnknown")}
+              </p>
+            ) : matchItems.length > 0 ? (
+              <div className="auto-match-preview">
+                <p className="ops-panel-context" role="status">
+                  {t("routing.autoMatchSelected", {
+                    selected: selectedMatches.size,
+                    total: matchItems.length,
+                  })}
+                </p>
+                <div
+                  className="selection-list"
+                  style={{ maxHeight: 220, overflowY: "auto" }}
+                >
+                  {matchItems.map((item) => (
+                    <label className="check" key={item.channel_id}>
+                      <input
+                        type="checkbox"
+                        checked={selectedMatches.has(item.channel_id)}
+                        onChange={() => toggleMatch(item.channel_id)}
+                      />
+                      <span>{item.channel_name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="ops-panel-context" role="status">
+                {t("routing.autoMatchNone")}
+              </p>
+            )
+          ) : null}
+        </>
+      ) : null}
       <div className="ops-panel-context" style={{ marginTop: 12 }}>
         <span>{t("routing.retryOverrideTitle")}</span>
       </div>
@@ -312,7 +413,7 @@ export function RouteDialog({
         </section>
       ) : null}
       {members.length > 0 ? (
-        <label className="check check-with-hint">
+        <label className="check">
           <input
             type="checkbox"
             checked={pinPriority}

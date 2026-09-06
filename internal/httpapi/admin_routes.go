@@ -38,11 +38,18 @@ func (h *AdminHandler) listRouteOverviews(w http.ResponseWriter, r *http.Request
 }
 
 func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
-	var rt domain.Route
-	if err := decodeJSON(w, r, &rt, 0, false); err != nil {
+	// auto_match_channel_ids is a create-time directive, not route state: it
+	// attaches one member per listed channel that verifiably serves the model,
+	// then disappears. The store intersects the ids with the current match set.
+	var body struct {
+		domain.Route
+		AutoMatchChannelIDs []int64 `json:"auto_match_channel_ids"`
+	}
+	if err := decodeJSON(w, r, &body, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
+	rt := body.Route
 	if rt.ModelPattern == "" {
 		writeError(w, http.StatusBadRequest, "model_pattern is required")
 		return
@@ -57,7 +64,7 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	// Pins are only meaningful on an existing route (members exist first), so
 	// creating a route in single mode without a pin is accepted as auto-fall-back.
-	id, err := h.db.Route.Create(&rt)
+	id, _, err := h.db.CreateRouteWithAutoMatch(&rt, body.AutoMatchChannelIDs)
 	if err != nil {
 		writeStoreError(w, err)
 		return

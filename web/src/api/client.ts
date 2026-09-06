@@ -44,6 +44,7 @@ import type {
   SearchHits,
   RouteMember,
   RouteOverview,
+  ModelChannelMatch,
   RunResult,
   RunSummary,
   StickySnapshot,
@@ -276,7 +277,10 @@ export const api = (client: ApiClient) => ({
     client.get<SearchHits>(`/admin/search?q=${encodeURIComponent(q)}`, signal),
   routeOverviews: (signal?: AbortSignal) =>
     client.getList<RouteOverview>("/admin/routes/overview", signal),
-  createRoute: (body: Partial<Route>) =>
+  // auto_match_channel_ids is create-only: the server attaches one member per
+  // listed channel that verifiably serves the pattern (intersection), then
+  // drops the flag (not route state).
+  createRoute: (body: Partial<Route> & { auto_match_channel_ids?: number[] }) =>
     client.post<Route>("/admin/routes", body),
   updateRoute: (id: number, body: Partial<Route>) =>
     client.put<Route>(`/admin/routes/${id}`, body),
@@ -430,6 +434,13 @@ export const api = (client: ApiClient) => ({
         source: "models_csv" | "discovered";
       }>;
     }>("/admin/discovery/missing-models", signal),
+  // Live preview for the add-route dialog's auto-match: enabled channels whose
+  // models.csv or discovery snapshot matches the pattern.
+  modelChannels: (model: string, signal?: AbortSignal) =>
+    client.get<{ items: ModelChannelMatch[] }>(
+      `/admin/discovery/model-channels?model=${encodeURIComponent(model)}`,
+      signal,
+    ),
   // Omitting rules asks the server for every rule, which yields the simplest
   // canonical form; groups that then need a risky rule come back flagged.
   unifyPreview: (rules?: UnifyRule[]) =>

@@ -74,6 +74,8 @@ export interface ChannelOverview {
   site_usable: boolean;
   credential_usable: boolean;
   model_count: number;
+  /** Models the last sync discovered upstream (candidate list; model_count is the adopted subset). */
+  discovered_model_count: number;
   last_checked_at?: string;
   last_latency_ms: number;
   discovery_source?: string;
@@ -228,6 +230,13 @@ export interface DiscoveredModel {
   checked_at: string;
 }
 
+/** One enabled channel able to serve a route pattern (models.csv or discovery snapshot). */
+export interface ModelChannelMatch {
+  channel_id: number;
+  channel_name: string;
+  source: "models_csv" | "discovered";
+}
+
 export interface UnifyVariant {
   channel_id: number;
   channel_name: string;
@@ -253,6 +262,12 @@ export interface UnifyGroup {
   rules?: UnifyRule[];
   /** True when a rule that can conflate different models was needed. */
   risky: boolean;
+  /**
+   * Enabled routes whose name folds onto this canonical form but is not the
+   * canonical name itself — usually an original restored from history. The
+   * group stays listed so re-applying can hide those duplicates again.
+   */
+  exposed_originals?: number;
 }
 
 export interface UnifyPreview {
@@ -346,13 +361,15 @@ export interface ArchivedRoute {
   route_id: number;
   model_name: string;
   archived_at: string;
+  /** True once this archive has been reverted (single restore or batch undo). */
+  restored: boolean;
 }
 
 export interface UnifyOp {
   id: number;
   batch_id: number;
   seq: number;
-  op: "route_created" | "member_created" | "route_archived";
+  op: "route_created" | "member_created" | "route_archived" | "route_enabled";
   route_id: number;
   member_id?: number;
   prev_enabled?: boolean;

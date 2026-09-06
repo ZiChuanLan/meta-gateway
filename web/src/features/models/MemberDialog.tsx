@@ -133,7 +133,7 @@ export function MemberDialog({
         />
         <InfoTip label={t("routing.memberRealNameHint")} />
       </Field>
-      <label className="check check-with-hint">
+      <label className="check">
         <input
           type="checkbox"
           checked={form.enabled ?? true}
