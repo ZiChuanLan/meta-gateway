@@ -119,13 +119,13 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		groupName = "default"
 	}
 	channelID, err := h.db.Channel.Create(&domain.Channel{
-		SiteID:       &siteID,
-		CredentialID: &credID,
-		Name:         name,
-		GroupName:    groupName,
-		Priority:     0,
-		Weight:       100,
-		Status:       status,
+		SiteID:        &siteID,
+		CredentialID:  &credID,
+		Name:          name,
+		GroupName:     groupName,
+		Priority:      0,
+		Weight:        100,
+		Status:        status,
 		TypeHint:      strings.TrimSpace(req.TypeHint),
 		ModelsCSV:     strings.TrimSpace(req.ModelsCSV),
 		ModelSyncMode: syncMode,

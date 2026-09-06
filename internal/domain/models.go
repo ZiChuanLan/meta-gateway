@@ -249,30 +249,30 @@ type ChannelOverview struct {
 	SitePlatform string  `json:"site_platform,omitempty"`
 	// CheckinSupported / AccountSupported come from the site family profile
 	// (AAH-derived capability table), filled by the admin API layer.
-	CheckinSupported   bool       `json:"checkin_supported"`
-	AccountSupported   bool       `json:"account_supported"`
-	CredentialKind     string     `json:"credential_kind,omitempty"`
-	CheckinEnabled     bool       `json:"checkin_enabled"`
-	HasUserCredential  bool       `json:"has_user_credential"`
-	HasPlatformUserID  bool       `json:"has_platform_user_id"`
-	HasAPIKey          bool       `json:"has_api_key"`
-	SiteUsable         bool       `json:"site_usable"`
-	CredentialUsable   bool       `json:"credential_usable"`
-	ModelCount         int        `json:"model_count"`
+	CheckinSupported  bool   `json:"checkin_supported"`
+	AccountSupported  bool   `json:"account_supported"`
+	CredentialKind    string `json:"credential_kind,omitempty"`
+	CheckinEnabled    bool   `json:"checkin_enabled"`
+	HasUserCredential bool   `json:"has_user_credential"`
+	HasPlatformUserID bool   `json:"has_platform_user_id"`
+	HasAPIKey         bool   `json:"has_api_key"`
+	SiteUsable        bool   `json:"site_usable"`
+	CredentialUsable  bool   `json:"credential_usable"`
+	ModelCount        int    `json:"model_count"`
 	// DiscoveredModelCount is how many models the last sync found on the
 	// upstream (available rows in discovered_models) — the full candidate
 	// list, of which ModelCount (adopted into routing) is the subset.
 	DiscoveredModelCount int        `json:"discovered_model_count"`
 	LastCheckedAt        *time.Time `json:"last_checked_at,omitempty"`
 	LastLatencyMs        int        `json:"last_latency_ms"`
-	DiscoverySource    string     `json:"discovery_source,omitempty"`
-	RouteCount         int        `json:"route_count"`
-	EnabledMemberCount int        `json:"enabled_member_count"`
-	CoolingMemberCount int        `json:"cooling_member_count"`
-	FailureCount       int        `json:"failure_count"`
-	LastError          string     `json:"last_error,omitempty"`
-	LastProbeAt        *time.Time `json:"last_probe_at,omitempty"`
-	LastProbeOK        bool       `json:"last_probe_ok"`
+	DiscoverySource      string     `json:"discovery_source,omitempty"`
+	RouteCount           int        `json:"route_count"`
+	EnabledMemberCount   int        `json:"enabled_member_count"`
+	CoolingMemberCount   int        `json:"cooling_member_count"`
+	FailureCount         int        `json:"failure_count"`
+	LastError            string     `json:"last_error,omitempty"`
+	LastProbeAt          *time.Time `json:"last_probe_at,omitempty"`
+	LastProbeOK          bool       `json:"last_probe_ok"`
 	// LastProbeError stores a redacted failure category or a non-error verdict
 	// such as probe_slow when the health sweep grades latency.
 	LastProbeError string `json:"last_probe_error,omitempty"`
@@ -488,16 +488,16 @@ type KeyGroup struct {
 
 // ProxyLog records a relayed request (without secrets).
 type ProxyLog struct {
-	ID               int64  `json:"id"`
-	RequestID        string `json:"request_id"`
-	ChannelID        int64  `json:"channel_id"`
-	RouteID          int64  `json:"route_id,omitempty"`
-	RoutePattern     string `json:"route_pattern,omitempty"`
-	Model            string `json:"model"`
-	Status           int    `json:"status"`
-	LatencyMs        int    `json:"latency_ms"`
-	Attempt          int    `json:"attempt"`
-	ErrorBrief       string `json:"error_brief,omitempty"`
+	ID           int64  `json:"id"`
+	RequestID    string `json:"request_id"`
+	ChannelID    int64  `json:"channel_id"`
+	RouteID      int64  `json:"route_id,omitempty"`
+	RoutePattern string `json:"route_pattern,omitempty"`
+	Model        string `json:"model"`
+	Status       int    `json:"status"`
+	LatencyMs    int    `json:"latency_ms"`
+	Attempt      int    `json:"attempt"`
+	ErrorBrief   string `json:"error_brief,omitempty"`
 	// ErrorDetail is a truncated excerpt of what the upstream actually
 	// returned for a failed attempt (error body text, or the transport error
 	// string when no response arrived). Empty on success.
