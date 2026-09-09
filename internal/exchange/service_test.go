@@ -213,3 +213,37 @@ func TestServiceExportSkipsChannelsWithoutBaseURLOrCredential(t *testing.T) {
 		t.Fatalf("expected both skip reasons, got %+v", env.Skipped)
 	}
 }
+func TestServiceIncrementalImportKeepsLocallySavedKey(t *testing.T) {
+	db, _, _, service := openExchangeService(t)
+	// 第一次导入：AAH v2 账户格式（access_token），带 import_fingerprint。
+	body := `{"version":"2.0","accounts":{"accounts":[{"id":"a1","site_name":"Anyrouter","site_url":"https://anyrouter.top","site_type":"anyrouter","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"old-token","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]}}`
+	first, err := service.Import(t.Context(), []byte(body))
+	if err != nil || first.CreatedCount != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+
+	channelID := first.ChannelIDs[0]
+	ch, err := db.Channel.GetByID(channelID)
+	if err != nil || ch == nil || ch.CredentialID == nil {
+		t.Fatalf("channel=%+v err=%v", ch, err)
+	}
+	// 用户在控制台手动保存新 token：admin_credentials 会清空 import_fingerprint。
+	localSecret := "v2:locally-rotated-token"
+	if _, err := db.Exec(`UPDATE credentials SET secret_enc = ?, import_fingerprint = '' WHERE id = ?`, localSecret, *ch.CredentialID); err != nil {
+		t.Fatal(err)
+	}
+
+	// 下一次增量同步带回轮换后的 token（同站点同名,不同 access_token）。
+	nextBody := `{"version":"2.0","accounts":{"accounts":[{"id":"a1","site_name":"Anyrouter","site_url":"https://anyrouter.top","site_type":"anyrouter","disabled":false,"authType":"access_token","account_info":{"id":"1","access_token":"new-rotated-token","username":"u"},"checkIn":{"autoCheckInEnabled":true}}]}}`
+	second, err := service.Import(t.Context(), []byte(nextBody))
+	if err != nil || second.UpdatedCount != 1 {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	var got string
+	if err := db.QueryRow(`SELECT secret_enc FROM credentials WHERE id = ?`, *ch.CredentialID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != localSecret {
+		t.Fatalf("incremental sync overwrote local secret: got %q want %q", got, localSecret)
+	}
+}

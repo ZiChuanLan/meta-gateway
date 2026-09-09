@@ -148,6 +148,11 @@ func (s *ExchangeStore) Import(ctx context.Context, items []ExchangeImportItem) 
 // existing connection assets are removed only after parsing/preparation succeeds,
 // and the delete + import commit atomically.
 func (s *ExchangeStore) ImportReplacing(ctx context.Context, items []ExchangeImportItem, replace bool) (ExchangeImportResult, error) {
+	// Incremental imports never overwrite a locally stored credential with the
+	// backup's secret: an operator who saved or rotated a key in the console must
+	// not have it silently reverted by the next scheduled sync. Replace mode is
+	// the explicit "backup is truth" escape hatch and still overwrites everything.
+	preserveSecret := !replace
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ExchangeImportResult{}, fmt.Errorf("exchange import begin: %w", err)
@@ -162,7 +167,7 @@ func (s *ExchangeStore) ImportReplacing(ctx context.Context, items []ExchangeImp
 
 	var result ExchangeImportResult
 	for _, item := range items {
-		channelID, outcome, err := importExchangeItem(ctx, tx, item)
+		channelID, outcome, err := importExchangeItem(ctx, tx, item, preserveSecret)
 		if err != nil {
 			return ExchangeImportResult{}, err
 		}
@@ -202,7 +207,7 @@ func replaceExchangeAssets(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem) (int64, string, error) {
+func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem, preserveSecret bool) (int64, string, error) {
 	credentialID, channelID, found, err := fingerprintIdentity(ctx, tx, item.Fingerprint)
 	if err != nil {
 		return 0, "", err
@@ -211,7 +216,7 @@ func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 		if item.AdoptChannelID != 0 || item.AdoptCredentialID != 0 {
 			return 0, "", ErrExchangeConflict
 		}
-		if err := updateExchangeAsset(ctx, tx, credentialID, channelID, item); err != nil {
+		if err := updateExchangeAsset(ctx, tx, credentialID, channelID, item, preserveSecret); err != nil {
 			return 0, "", err
 		}
 		return channelID, "updated", nil
@@ -221,7 +226,7 @@ func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 		if item.AdoptChannelID <= 0 || item.AdoptCredentialID <= 0 {
 			return 0, "", ErrExchangeConflict
 		}
-		if err := adoptExchangeAsset(ctx, tx, item); err != nil {
+		if err := adoptExchangeAsset(ctx, tx, item, preserveSecret); err != nil {
 			return 0, "", err
 		}
 		return item.AdoptChannelID, "adopted", nil
@@ -238,7 +243,7 @@ func importExchangeItem(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 		if reuseCredID, reuseChannelID, ok, matchErr := findReusableExchangeSlot(ctx, tx, siteID, item); matchErr != nil {
 			return 0, "", matchErr
 		} else if ok {
-			if err := updateExchangeAsset(ctx, tx, reuseCredID, reuseChannelID, item); err != nil {
+			if err := updateExchangeAsset(ctx, tx, reuseCredID, reuseChannelID, item, preserveSecret); err != nil {
 				return 0, "", err
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE channels SET credential_id = ?, updated_at = datetime('now') WHERE id = ? AND (credential_id IS NULL OR credential_id != ?)`,
@@ -380,7 +385,7 @@ func reattachOrphanFingerprint(ctx context.Context, tx *sql.Tx, credentialID int
 	return res.LastInsertId()
 }
 
-func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelID int64, item ExchangeImportItem) error {
+func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelID int64, item ExchangeImportItem, preserveSecret bool) error {
 	var siteID int64
 	if err := tx.QueryRowContext(ctx, `SELECT site_id FROM credentials WHERE id = ?`, credentialID).Scan(&siteID); err != nil {
 		return fmt.Errorf("exchange credential site: %w", err)
@@ -389,19 +394,39 @@ func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelI
 		item.Name, item.BaseURL, item.TypeHint, item.Status, siteID); err != nil {
 		return fmt.Errorf("exchange site update: %w", err)
 	}
-	kind := item.CredentialKind
-	if kind == "" {
-		kind = "api_key"
+
+	// Incremental imports must not overwrite an operator-managed credential: a
+	// secret saved/edited in the console clears import_fingerprint (see
+	// admin_credentials.go), so an empty fingerprint is the marker that the
+	// credential is locally owned. Import-managed credentials (non-empty
+	// fingerprint) keep their rotation/refresh semantics, and credentials with no
+	// stored secret are backfilled from the backup.
+	skipCredential := false
+	if preserveSecret {
+		var localFP, localEnc string
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(import_fingerprint, ''), COALESCE(secret_enc, '') FROM credentials WHERE id = ?`, credentialID).Scan(&localFP, &localEnc); err != nil {
+			return fmt.Errorf("exchange credential ownership read: %w", err)
+		}
+		if localEnc != "" && localFP == "" {
+			skipCredential = true
+		}
 	}
-	checkinEnabled := 0
-	if item.CheckinEnabled {
-		checkinEnabled = 1
-	}
-	// Always refresh import_fingerprint so re-import with a rotated secret still
-	// hits the fingerprint path next time (and secondary-match updates stick).
-	if _, err := tx.ExecContext(ctx, `UPDATE credentials SET kind = ?, secret_enc = ?, meta_json = ?, status = ?, checkin_enabled = ?, import_fingerprint = ?, updated_at = datetime('now') WHERE id = ?`,
-		kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, item.Fingerprint, credentialID); err != nil {
-		return fmt.Errorf("exchange credential update: %w", err)
+
+	if !skipCredential {
+		kind := item.CredentialKind
+		if kind == "" {
+			kind = "api_key"
+		}
+		checkinEnabled := 0
+		if item.CheckinEnabled {
+			checkinEnabled = 1
+		}
+		// Always refresh import_fingerprint so re-import with a rotated secret still
+		// hits the fingerprint path next time (and secondary-match updates stick).
+		if _, err := tx.ExecContext(ctx, `UPDATE credentials SET kind = ?, secret_enc = ?, meta_json = ?, status = ?, checkin_enabled = ?, import_fingerprint = ?, updated_at = datetime('now') WHERE id = ?`,
+			kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, item.Fingerprint, credentialID); err != nil {
+			return fmt.Errorf("exchange credential update: %w", err)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE channels SET site_id = ?, name = ?, base_url = ?, models_csv = ?, group_name = ?, priority = ?, weight = ?, status = ?, type_hint = ?, updated_at = datetime('now') WHERE id = ?`,
 		siteID, item.Name, item.BaseURL, item.ModelsCSV, item.GroupName, item.Priority,
@@ -411,7 +436,7 @@ func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelI
 	return nil
 }
 
-func adoptExchangeAsset(ctx context.Context, tx *sql.Tx, item ExchangeImportItem) error {
+func adoptExchangeAsset(ctx context.Context, tx *sql.Tx, item ExchangeImportItem, preserveSecret bool) error {
 	var linkedCredentialID int64
 	var uses int
 	err := tx.QueryRowContext(ctx, `SELECT credential_id,
@@ -444,7 +469,7 @@ func adoptExchangeAsset(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 	if changed != 1 {
 		return ErrExchangeConflict
 	}
-	return updateExchangeAsset(ctx, tx, item.AdoptCredentialID, item.AdoptChannelID, item)
+	return updateExchangeAsset(ctx, tx, item.AdoptCredentialID, item.AdoptChannelID, item, preserveSecret)
 }
 
 // findReusableExchangeSlot locates an existing channel/credential on siteID that

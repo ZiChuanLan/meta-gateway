@@ -245,3 +245,108 @@ func TestExchangeImportMergesSameUpstreamOnResync(t *testing.T) {
 		t.Fatalf("fingerprint not rotated: %q", fp)
 	}
 }
+func TestExchangeIncrementalPreservesLocallyManagedAccessToken(t *testing.T) {
+	db := openTestDB(t)
+	// 第一次导入建立同站点的 access_token 上游（AAH 账号路径）。
+	firstItem := exchangeItem("conn", "fp-old")
+	firstItem.CredentialKind = "access_token"
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{firstItem})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	channelID := first.CreatedChannelIDs[0]
+	channel, _ := db.Channel.GetByID(channelID)
+	if channel == nil || channel.CredentialID == nil {
+		t.Fatal("missing channel credential")
+	}
+	credID := *channel.CredentialID
+
+	// 模拟操作员在控制台手动保存新密钥：admin_credentials.go 改 secret 时
+	// 会同时清空 import_fingerprint，标记该凭据为本地持有。
+	localSecret := "v9:locally-managed-secret"
+	if _, err := db.Exec(`UPDATE credentials SET secret_enc = ?, import_fingerprint = '' WHERE id = ?`, localSecret, credID); err != nil {
+		t.Fatal(err)
+	}
+
+	// 下一次增量同步带回上游轮换后的 token（同站点同名、不同指纹）。
+	rotated := exchangeItem("conn", "fp-rotated")
+	rotated.CredentialKind = "access_token"
+	rotated.SecretEnc = "v1:stale-backup-token"
+	second, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{rotated})
+	if err != nil || len(second.UpdatedChannelIDs) != 1 {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+
+	// 本地持有的凭据必须不被覆盖。
+	var enc, fp string
+	if err := db.QueryRow(`SELECT secret_enc, COALESCE(import_fingerprint,'') FROM credentials WHERE id = ?`, credID).Scan(&enc, &fp); err != nil {
+		t.Fatal(err)
+	}
+	if enc != localSecret {
+		t.Fatalf("incremental sync overwrote local secret: got %q want %q", enc, localSecret)
+	}
+	if fp != "" {
+		t.Fatalf("locally managed credential should keep cleared fingerprint, got %q", fp)
+	}
+}
+
+func TestExchangeIncrementalRotatesImportManagedAccessToken(t *testing.T) {
+	db := openTestDB(t)
+	// 导入管理的凭据（指纹非空）必须保留 token 轮换语义。
+	firstItem := exchangeItem("conn", "fp-old")
+	firstItem.CredentialKind = "access_token"
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{firstItem})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	channelID := first.CreatedChannelIDs[0]
+	channel, _ := db.Channel.GetByID(channelID)
+	if channel == nil || channel.CredentialID == nil {
+		t.Fatal("missing channel credential")
+	}
+	credID := *channel.CredentialID
+
+	rotated := exchangeItem("conn", "fp-rotated")
+	rotated.CredentialKind = "access_token"
+	rotated.SecretEnc = "v1:new-upstream-token"
+	second, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{rotated})
+	if err != nil || len(second.UpdatedChannelIDs) != 1 {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	// 导入管理的凭据应被轮换为新 token，并刷新指纹。
+	var enc, fp string
+	if err := db.QueryRow(`SELECT secret_enc, COALESCE(import_fingerprint,'') FROM credentials WHERE id = ?`, credID).Scan(&enc, &fp); err != nil {
+		t.Fatal(err)
+	}
+	if enc != "v1:new-upstream-token" {
+		t.Fatalf("import-managed credential not rotated: got %q", enc)
+	}
+	if fp != "fp-rotated" {
+		t.Fatalf("import-managed fingerprint not refreshed: got %q", fp)
+	}
+}
+
+func TestExchangeReplaceOverwritesLocalCredential(t *testing.T) {
+	db := openTestDB(t)
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{exchangeItem("conn", "fingerprint-replace")})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	channelID := first.CreatedChannelIDs[0]
+	channel, _ := db.Channel.GetByID(channelID)
+	if channel == nil || channel.CredentialID == nil {
+		t.Fatal("missing channel credential")
+	}
+	// Replace mode is the explicit "backup is truth" path: it wipes assets and
+	// reimports, so the secret comes from the backup regardless of local edits.
+	replacement := exchangeItem("conn-replaced", "fingerprint-replace-2")
+	replacement.SecretEnc = "v1:authoritative-backup"
+	_, err = db.Exchange.ImportReplacing(t.Context(), []store.ExchangeImportItem{replacement}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM channels WHERE name = 'conn-replaced'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("replace reimport channels count=%d err=%v", count, err)
+	}
+}
