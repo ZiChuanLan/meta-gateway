@@ -49,6 +49,12 @@ func (a *ExternalCheckinAdapter) RequiresPlatformUserID() bool { return false }
 // a checkin_path. It matches the 薄荷公益站 convention.
 const DefaultExternalCheckinPath = "/api/checkin/spin"
 
+// defaultExternalCheckinUserAgent masquerades the gateway as a desktop browser
+// so Cloudflare-fronted sites do not hard-block the bare Go default
+// ("Go-http-client/1.1"). Operators can still override it per-credential via
+// custom headers (applied after this default).
+const defaultExternalCheckinUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
 func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput) (CheckinResult, error) {
 	if strings.TrimSpace(input.Cookie) == "" {
 		return CheckinResult{}, &CheckinError{Kind: ErrorPayload, Message: "external check-in requires a cookie"}
@@ -94,6 +100,9 @@ func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput
 	// Browser-like Origin/Referer so server-side CSRF / hotlink checks pass.
 	req.Header.Set("Origin", origin)
 	req.Header.Set("Referer", origin+"/")
+	// A browser User-Agent avoids the Cloudflare / WAF block that the Go default
+	// UA triggers; custom headers below can still override it.
+	req.Header.Set("User-Agent", defaultExternalCheckinUserAgent)
 	// Site-specific headers (e.g. New-API forks want new-api-user). Host /
 	// Cookie / hop-by-hop headers are never overridable.
 	for key, value := range input.Headers {

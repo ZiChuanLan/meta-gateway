@@ -166,3 +166,40 @@ func TestExternalCheckinAdapterCustomHeaders(t *testing.T) {
 		t.Fatalf("cookie = %q, want untouched session=abc", gotCookie)
 	}
 }
+
+// TestExternalCheckinAdapterUserAgent verifies a browser User-Agent is sent by
+// default (so Cloudflare-fronted sites don't block the Go default UA) and can
+// still be overridden per-credential via custom headers.
+func TestExternalCheckinAdapterUserAgent(t *testing.T) {
+	var gotUA string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"reward":"5 积分"}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	adapter := NewExternalCheckinAdapter("external-checkin", srv.Client())
+
+	// Default: browser UA is sent without any custom header.
+	if _, err := adapter.Checkin(context.Background(), CheckinInput{
+		BaseURL: srv.URL,
+		Cookie:  "session=abc",
+	}); err != nil {
+		t.Fatalf("checkin default UA: %v", err)
+	}
+	if !strings.Contains(gotUA, "Mozilla/5.0") {
+		t.Fatalf("default User-Agent = %q, want browser UA", gotUA)
+	}
+
+	// Custom header still overrides the built-in default.
+	if _, err := adapter.Checkin(context.Background(), CheckinInput{
+		BaseURL: srv.URL,
+		Cookie:  "session=abc",
+		Headers: map[string]string{"User-Agent": "custom-agent/1.0"},
+	}); err != nil {
+		t.Fatalf("checkin custom UA: %v", err)
+	}
+	if gotUA != "custom-agent/1.0" {
+		t.Fatalf("custom User-Agent = %q, want custom-agent/1.0", gotUA)
+	}
+}
