@@ -6,6 +6,22 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v2.3.4] — 2026-09-10
+
+### Fixed
+
+- WebDAV scheduled sync no longer overwrites a key you saved or rotated in
+  the console: incremental imports now treat a credential with a cleared
+  `import_fingerprint` (the marker left by a manual secret edit) as locally
+  owned and skip the backup value, while import-managed credentials keep
+  their token-rotation semantics and empty creds are still backfilled
+
+### Changed
+
+- External check-in sends a browser `User-Agent` by default so
+  Cloudflare-fronted sites stop rejecting the bare Go client UA with 403;
+  per-credential custom headers still override it
+
 ## [v2.3.3] — 2026-09-06
 
 ### Fixed
