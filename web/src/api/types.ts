@@ -230,6 +230,20 @@ export interface DiscoveredModel {
   checked_at: string;
 }
 
+/** One live-trace frame pushed by GET /admin/relay/live (SSE `request` events). */
+export interface LiveTraceRequest {
+  request_id: string;
+  status: "running" | "success" | "failed" | "canceled" | "interrupted";
+  protocol: string;
+  model: string;
+  started_at: string;
+  duration_ms: number;
+  round: number;
+  target_channel?: string;
+  key_name?: string;
+  error?: string;
+}
+
 /** One enabled channel able to serve a route pattern (models.csv or discovery snapshot). */
 export interface ModelChannelMatch {
   channel_id: number;

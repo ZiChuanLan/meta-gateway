@@ -47,6 +47,9 @@ type TranslationRegistry struct {
 //	openai    → anthropic  (OpenAI clients on Anthropic upstreams)
 //	anthropic → anthropic  (passthrough; count_tokens forwarded upstream)
 //	openai    → gemini     (OpenAI clients on Gemini upstreams)
+//	responses → openai     (Responses API clients pivoted to chat/completions)
+//	responses → anthropic  (Responses API clients pivoted through chat to Messages)
+//	responses → gemini     (Responses API clients pivoted through chat to Gemini)
 func NewTranslationRegistry() *TranslationRegistry {
 	r := &TranslationRegistry{pairs: make(map[ProtocolPair]Translation)}
 	openAI := OpenAIPassthroughAdapter{}
@@ -96,6 +99,78 @@ func NewTranslationRegistry() *TranslationRegistry {
 		Body:        gemini.TransformRequest,
 		Response:    gemini.TransformResponse,
 		Stream:      gemini.WrapStream,
+		CountTokens: nil,
+	})
+
+	// responses → openai: Responses API clients served through chat/completions.
+	r.Register(ProtocolPair{From: "responses", To: "openai"}, Translation{
+		Body: func(_ string, body []byte) (string, []byte, error) {
+			converted, err := ResponsesToChat(body)
+			if err != nil {
+				return "", nil, err
+			}
+			return "chat/completions", converted, nil
+		},
+		Response: func(_ string, body []byte) ([]byte, error) {
+			return ChatToResponses(body)
+		},
+		Stream: func(_ string, body io.ReadCloser) (io.ReadCloser, error) {
+			return NewChatStreamToResponsesStream(body), nil
+		},
+		CountTokens: nil,
+	})
+
+	// responses → anthropic: Responses API clients through the chat pivot into
+	// native Messages.
+	r.Register(ProtocolPair{From: "responses", To: "anthropic"}, Translation{
+		Body: func(fromPath string, body []byte) (string, []byte, error) {
+			chat, err := ResponsesToChat(body)
+			if err != nil {
+				return "", nil, err
+			}
+			return anthropicFwd.TransformRequest("chat/completions", chat)
+		},
+		Response: func(_ string, body []byte) ([]byte, error) {
+			chat, err := anthropicFwd.TransformResponse("chat/completions", body)
+			if err != nil {
+				return nil, err
+			}
+			return ChatToResponses(chat)
+		},
+		Stream: func(_ string, body io.ReadCloser) (io.ReadCloser, error) {
+			openaiStream, err := anthropicFwd.WrapStream("chat/completions", body)
+			if err != nil {
+				return nil, err
+			}
+			return NewChatStreamToResponsesStream(openaiStream), nil
+		},
+		CountTokens: nil,
+	})
+
+	// responses → gemini: Responses API clients through the chat pivot into
+	// native Gemini generateContent.
+	r.Register(ProtocolPair{From: "responses", To: "gemini"}, Translation{
+		Body: func(fromPath string, body []byte) (string, []byte, error) {
+			chat, err := ResponsesToChat(body)
+			if err != nil {
+				return "", nil, err
+			}
+			return gemini.TransformRequest("chat/completions", chat)
+		},
+		Response: func(_ string, body []byte) ([]byte, error) {
+			chat, err := gemini.TransformResponse("chat/completions", body)
+			if err != nil {
+				return nil, err
+			}
+			return ChatToResponses(chat)
+		},
+		Stream: func(_ string, body io.ReadCloser) (io.ReadCloser, error) {
+			openaiStream, err := gemini.WrapStream("chat/completions", body)
+			if err != nil {
+				return nil, err
+			}
+			return NewChatStreamToResponsesStream(openaiStream), nil
+		},
 		CountTokens: nil,
 	})
 

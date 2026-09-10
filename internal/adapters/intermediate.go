@@ -92,6 +92,34 @@ func (AnthropicDownstreamSegment) WrapOpenAIStream(source io.ReadCloser) io.Read
 	return NewOpenAIStreamToAnthropicStream(source)
 }
 
+// ResponsesDownstreamSegment serves the Responses API wire contract through
+// any upstream: requests pivot to OpenAI chat, responses and streams pivot
+// back to the Responses shape. Composed upstreams therefore translate
+// Responses → chat → (anthropic | gemini | …) with one segment.
+type ResponsesDownstreamSegment struct{}
+
+func (ResponsesDownstreamSegment) Name() string { return "responses" }
+
+func (ResponsesDownstreamSegment) ToOpenAI(openAIPath string, body []byte) (string, []byte, error) {
+	converted, err := ResponsesToChat(body)
+	if err != nil {
+		return "", nil, err
+	}
+	return "chat/completions", converted, nil
+}
+
+func (ResponsesDownstreamSegment) FromOpenAI(_ string, body []byte) ([]byte, error) {
+	return ChatToResponses(body)
+}
+
+func (ResponsesDownstreamSegment) PivotPath(openAIPath string) string {
+	return "chat/completions"
+}
+
+func (ResponsesDownstreamSegment) WrapOpenAIStream(source io.ReadCloser) io.ReadCloser {
+	return NewChatStreamToResponsesStream(source)
+}
+
 // ComposeForwardAdapter serves a downstream protocol (From) through an
 // upstream platform adapter (Upstream) via the OpenAI pivot. The upstream
 // adapter keeps its own URL building, auth headers, and stream reshaping; only
@@ -172,13 +200,24 @@ func (c *ComposeForwardAdapter) WrapStream(openAIPath string, source io.ReadClos
 // ComposeDownstream returns an adapter that serves the given downstream
 // protocol through the upstream adapter. OpenAI clients get the upstream
 // adapter unchanged; Anthropic clients get a composed adapter (unless the
-// upstream is Anthropic-native, whose "messages" path is verbatim passthrough).
+// upstream is Anthropic-native, whose "messages" path is verbatim
+// passthrough); Responses clients pivot through chat/completions.
 func ComposeDownstream(upstream ForwardAdapter, downstreamProtocol string) ForwardAdapter {
-	if !strings.EqualFold(downstreamProtocol, "anthropic") || upstream.Name() == "anthropic" {
+	switch strings.ToLower(strings.TrimSpace(downstreamProtocol)) {
+	case "anthropic":
+		if upstream.Name() == "anthropic" {
+			return upstream
+		}
+		return &ComposeForwardAdapter{
+			From:     AnthropicDownstreamSegment{},
+			Upstream: upstream,
+		}
+	case "responses":
+		return &ComposeForwardAdapter{
+			From:     ResponsesDownstreamSegment{},
+			Upstream: upstream,
+		}
+	default:
 		return upstream
-	}
-	return &ComposeForwardAdapter{
-		From:     AnthropicDownstreamSegment{},
-		Upstream: upstream,
 	}
 }

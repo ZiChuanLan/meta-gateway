@@ -26,6 +26,7 @@ import (
 	"github.com/lan/meta-gateway/internal/exchange"
 	"github.com/lan/meta-gateway/internal/financesweep"
 	"github.com/lan/meta-gateway/internal/healthsweep"
+	"github.com/lan/meta-gateway/internal/livetrace"
 	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
@@ -504,6 +505,13 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 
 	// Relay routes (v1)
 	relayHandler := NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst), newGroupRateLimiter(), modelsCache)
+	// Live-trace registry: in-memory request states for the admin console's
+	// live view + manual interrupt. Wired into both the proxy (round updates)
+	// and the relay handler (begin/finish + interrupt context).
+	liveRegistry := livetrace.New()
+	proxyService.SetLiveTraceObserver(liveRegistry)
+	relayHandler.SetLiveTrace(liveRegistry)
+	newLiveTraceHandler(liveRegistry).Register(adminGroup)
 	v1Group := chi.NewRouter()
 	v1Group.Use(auth.NewDownstreamAuth(db.DownstreamKey).Middleware())
 	v1Group.Use(rateLimitMiddleware(relayLimiter, downstreamRateKey, "relay", metrics))

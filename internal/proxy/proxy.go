@@ -119,6 +119,8 @@ type Service struct {
 	// read); 0 uses the package default nonStreamRequestTimeout. Streaming
 	// requests are exempt. Injectable for tests.
 	nonStreamTimeout time.Duration
+	// liveTraceObserver receives per-round attempt callbacks (optional).
+	liveTraceObserver atomic.Pointer[LiveTraceObserver]
 }
 
 // channelModel scopes adaptive latency/error EWMA to one channel on one model,
@@ -373,6 +375,17 @@ func (s *Service) observeLatency(channelID int64, model string, latencyMs int) {
 // per-channel forward adapters (OpenAI passthrough, Anthropic, Gemini, …).
 func (s *Service) SetAdapterRegistry(registry *adapters.Registry) {
 	s.registry = registry
+}
+
+// LiveTraceObserver receives per-round callbacks so the admin live-trace
+// console can show which channel each in-flight request is attacking.
+type LiveTraceObserver interface {
+	Attempt(requestID string, round int, channel, protocol, keyName string)
+}
+
+// SetLiveTraceObserver installs the optional observer (nil disables).
+func (s *Service) SetLiveTraceObserver(observer LiveTraceObserver) {
+	s.liveTraceObserver.Store(&observer)
 }
 
 // resolveForward returns the forward adapter for a channel, falling back to

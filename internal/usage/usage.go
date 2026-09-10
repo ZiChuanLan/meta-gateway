@@ -67,6 +67,11 @@ func ExtractFromJSONBody(body []byte) Tokens {
 		Message *struct {
 			Usage *usagePayload `json:"usage"`
 		} `json:"message"`
+		// OpenAI Responses streams embed usage under response.usage in the
+		// terminal response.completed event.
+		Response *struct {
+			Usage *usagePayload `json:"usage"`
+		} `json:"response"`
 		// Gemini top-level usageMetadata (generateContent / streamGenerateContent).
 		UsageMetadata *struct {
 			PromptTokenCount        int `json:"promptTokenCount"`
@@ -82,6 +87,9 @@ func ExtractFromJSONBody(body []byte) Tokens {
 	rawUsage := payload.Usage
 	if rawUsage == nil && payload.Message != nil {
 		rawUsage = payload.Message.Usage
+	}
+	if rawUsage == nil && payload.Response != nil {
+		rawUsage = payload.Response.Usage
 	}
 	if rawUsage != nil {
 		tokens = Tokens{

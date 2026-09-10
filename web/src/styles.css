@@ -13779,3 +13779,120 @@ table {
   width: auto;
   flex: 0 0 auto;
 }
+/* ============================================================
+   Live trace panel (Logs → Live Trace)
+   ============================================================ */
+.live-trace-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.live-trace-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.live-trace-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.live-trace-state.is-ok { color: var(--success); }
+.live-trace-state.is-warn { color: var(--warning); }
+.live-trace-state.is-bad { color: var(--danger); }
+.live-trace-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.live-trace-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-trace-model {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.live-trace-model strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+.live-trace-model small {
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+.live-trace-settled td {
+  opacity: 0.55;
+}
+.live-trace-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.live-trace-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.is-running .live-trace-pulse {
+  background: var(--success);
+  animation: live-trace-pulse 1.6s ease-in-out infinite;
+}
+.is-success .live-trace-pulse { background: var(--success); }
+.is-failed .live-trace-pulse { background: var(--danger); }
+.is-canceled .live-trace-pulse { background: var(--ink-soft); }
+.is-interrupted .live-trace-pulse { background: var(--warning); }
+@keyframes live-trace-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+.live-trace-key {
+  margin-left: 6px;
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
+}
+.live-trace-error {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--danger);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-trace-terminal {
+  color: var(--ink-soft);
+}
+.live-trace-action {
+  white-space: nowrap;
+  text-align: right;
+}
+.live-trace-empty {
+  padding: 28px 16px;
+}

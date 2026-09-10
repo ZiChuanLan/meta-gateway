@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/livetrace"
 	"github.com/lan/meta-gateway/internal/ratelimit"
 
 	"github.com/go-chi/chi/v5"
@@ -57,10 +58,18 @@ type RelayHandler struct {
 	groupLimiter *groupRateLimiter
 	// modelsCache serves /v1/models from memory (invalidated on admin writes).
 	modelsCache *modelsCache
+	// liveTrace is the optional in-memory request-state hub for the admin
+	// live view and manual interrupt (nil disables).
+	liveTrace *livetrace.Registry
 }
 
 func NewRelayHandler(db *store.DB, service RelayProxy, modelLimiter *ratelimit.Limiter, groupLimiter *groupRateLimiter, modelsCache *modelsCache) *RelayHandler {
 	return &RelayHandler{db: db, proxy: service, modelLimiter: modelLimiter, groupLimiter: groupLimiter, modelsCache: modelsCache}
+}
+
+// SetLiveTrace installs the live-trace registry (nil disables).
+func (h *RelayHandler) SetLiveTrace(registry *livetrace.Registry) {
+	h.liveTrace = registry
 }
 
 func (h *RelayHandler) Register(r chi.Router) {
@@ -221,7 +230,9 @@ func (h *RelayHandler) embeddings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RelayHandler) responses(w http.ResponseWriter, r *http.Request) {
-	h.forwardModelRequest(w, r, "responses", true, auth.ScopeResponses)
+	// Downstream Responses API clients: upstream translation/fallback is
+	// decided per channel in the proxy.
+	h.forwardModelRequest(w, r, "responses", true, auth.ScopeResponses, "responses")
 }
 
 // messages is the Anthropic Messages API surface (native clients). The
@@ -387,6 +398,19 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	requestID, _ := r.Context().Value(chimw.RequestIDKey).(string)
 	keyID, _ := auth.DownstreamKeyID(r)
 	clientFamily := ClientFamilyOf(r)
+
+	// Live-trace hook: same as forwardModelRequest.
+	watchCtx := r.Context()
+	var finishTrace func()
+	if h.liveTrace != nil && requestID != "" {
+		lbCtx, release, _ := h.liveTrace.Begin(r.Context(), requestID, "openai", modelName)
+		watchCtx, finishTrace = lbCtx, release
+	}
+	if finishTrace == nil {
+		finishTrace = func() {}
+	}
+	defer finishTrace()
+
 	proxyReq := proxy.Request{
 		RequestID:       requestID,
 		Model:           modelName,
@@ -401,11 +425,25 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		Headers:         clientHeaders(r.Header),
 		RouteGroup:      downstreamRouteGroup(r),
 	}
-	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
+	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
+	if h.liveTrace != nil && requestID != "" {
+		switch {
+		case result == nil:
+			h.liveTrace.Finish(requestID, livetrace.StatusFailed, "upstream response missing")
+		case result.Err != nil:
+			if r.Context().Err() != nil {
+				h.liveTrace.Finish(requestID, livetrace.StatusCanceled, result.Err.Error())
+			} else {
+				h.liveTrace.Finish(requestID, livetrace.StatusFailed, result.Err.Error())
+			}
+		default:
+			h.liveTrace.Finish(requestID, livetrace.StatusSuccess, "")
+		}
+	}
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
 	forceSSE := stream
 	writeUpstreamResult(
-		w, r.Context(), requestID, result, forceSSE,
+		w, watchCtx, requestID, result, forceSSE,
 		func(tokens usage.Tokens, status int, firstByteMs int) {
 			channelID := int64(0)
 			if meta != nil {
@@ -420,7 +458,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 				}
 			}
 		},
-		h.streamErrorCallback(r, meta),
+		h.streamErrorCallback(watchCtx, meta),
 	)
 }
 
@@ -572,6 +610,24 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		downstream = downstreamProtocol[0]
 	}
 	clientFamily := ClientFamilyOf(r)
+
+	// Live-trace hook (optional): register the request for the admin live view
+	// and manual interrupt; the watch context cancels on operator interrupt.
+	watchCtx := r.Context()
+	var finishTrace func()
+	if h.liveTrace != nil && requestID != "" {
+		lbCtx, release, ok := h.liveTrace.Begin(r.Context(), requestID, downstream, modelName)
+		if ok {
+			watchCtx, finishTrace = lbCtx, release
+		} else {
+			finishTrace = release
+		}
+	}
+	if finishTrace == nil {
+		finishTrace = func() {}
+	}
+	defer finishTrace()
+
 	proxyReq := proxy.Request{
 		RequestID:          requestID,
 		Model:              modelName,
@@ -586,9 +642,9 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		Headers:            clientHeaders(r.Header),
 		RouteGroup:         downstreamRouteGroup(r),
 	}
-	result, meta := h.proxy.ForwardWithMeta(r.Context(), proxyReq)
+	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
 	writeUpstreamResult(
-		w, r.Context(), requestID, result, stream,
+		w, watchCtx, requestID, result, stream,
 		func(tokens usage.Tokens, status int, firstByteMs int) {
 			channelID := int64(0)
 			if meta != nil {
@@ -602,9 +658,22 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 					log.Printf("relay: update log meta request_id=%s: %v", requestID, err)
 				}
 			}
+			if h.liveTrace != nil && requestID != "" {
+				h.liveTrace.Finish(requestID, livetrace.StatusSuccess, "")
+			}
 		},
-		h.streamErrorCallback(r, meta),
+		h.streamErrorCallback(watchCtx, meta),
 	)
+	if h.liveTrace != nil && requestID != "" {
+		switch {
+		case result == nil:
+			h.liveTrace.Finish(requestID, livetrace.StatusFailed, "upstream response missing")
+		case result.Err != nil && r.Context().Err() != nil:
+			h.liveTrace.Finish(requestID, livetrace.StatusCanceled, result.Err.Error())
+		case result.Err != nil:
+			h.liveTrace.Finish(requestID, livetrace.StatusFailed, result.Err.Error())
+		}
+	}
 }
 
 // ensureStreamUsageOption asks OpenAI-compatible upstreams to emit a final usage
@@ -658,10 +727,11 @@ func (h *RelayHandler) ensureGroupRate(w http.ResponseWriter, r *http.Request) b
 
 // streamErrorCallback returns a callback that records a failure for the member
 // that served a stream when the upstream connection breaks mid-stream. Client
-// disconnects (context canceled) are not treated as upstream failures.
-func (h *RelayHandler) streamErrorCallback(r *http.Request, meta *proxy.AttemptMeta) func() {
+// disconnects and operator interrupts (either context canceled) are not
+// treated as upstream failures.
+func (h *RelayHandler) streamErrorCallback(requestCtx context.Context, meta *proxy.AttemptMeta) func() {
 	return func() {
-		if r.Context().Err() != nil || meta == nil || meta.MemberID <= 0 {
+		if requestCtx.Err() != nil || meta == nil || meta.MemberID <= 0 {
 			return
 		}
 		h.proxy.RecordStreamFailure(meta.MemberID)

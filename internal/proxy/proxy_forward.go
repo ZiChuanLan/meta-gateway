@@ -213,6 +213,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		// behave differently. The failover tail then retires only the member and
 		// keeps the fallback walk on this channel instead of leaving it entirely.
 		memberScopedFailure := false
+		// responsesPassthroughFallback state: whether the Responses→chat
+		// fallback already ran for this attempt, and the category label attached
+		// when the translated retry succeeds.
+		responsesFallbackTried := false
+		responsesFallbackCategory := ""
 		decision, err := s.selector.SelectSticky(ctx, req.Model, excludedChannels, sessionKey, constraint)
 		// Persist a decision snapshot for audit: the full explanation
 		// (candidates, scores, reasons, sticky/stable-first state) survives
@@ -332,6 +337,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			Priority:    candidate.Member.Priority,
 			Weight:      candidate.Member.Weight,
 		}
+		if observer := s.liveTraceObserver.Load(); observer != nil && req.RequestID != "" {
+			(*observer).Attempt(req.RequestID, attempt+1, candidate.Channel.Name, req.DownstreamProtocol, "")
+		}
 		gateHeld := false
 		var gateGen uint64
 		releaseGate := func() {
@@ -359,17 +367,48 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		var retryable bool
 		adapter := s.resolveForward(candidate.Channel)
 
-		// Downstream Anthropic clients (/v1/messages): prefer the registered
-		// N×M translation for (anthropic → upstream family); when the pair is
-		// not registered, fall back to composing the upstream adapter with the
-		// Anthropic pivot segment (keeps the OpenAI pivot between protocols).
-		downstreamAnthropic := strings.EqualFold(req.DownstreamProtocol, "anthropic")
+		// Downstream protocol handling. OpenAI is the pivot contract; native
+		// Anthropic and Responses clients are translated per upstream family.
+		// Prefer the registered N×M translation pair; when absent, compose the
+		// upstream adapter with the protocol's pivot segment.
+		downstreamProto := strings.ToLower(strings.TrimSpace(req.DownstreamProtocol))
+		if downstreamProto == "" {
+			downstreamProto = "openai"
+		}
+		downstreamAnthropic := downstreamProto == "anthropic"
+		downstreamResponses := downstreamProto == "responses" && req.OpenAIPath == "responses"
 		var registryTranslation *adapters.Translation
+		// Responses passthrough on OpenAI-compatible upstreams stays native
+		// FIRST (an upstream with real /v1/responses keeps full semantics); a
+		// 404/405 later falls back to a translated chat/completions retry.
+		responsesPassthroughFallback := false
 		if downstreamAnthropic && req.OpenAIPath == "messages" && adapter.Name() != "anthropic" {
 			if tr, ok := s.registry.Translations.Lookup("anthropic", adapters.CanonicalFamily(adapter.Name())); ok && tr.Body != nil {
 				registryTranslation = &tr
 			} else {
 				composed := adapters.ComposeDownstream(adapter, "anthropic")
+				if c, ok := composed.(*adapters.ComposeForwardAdapter); ok {
+					prompt := strings.TrimSpace(candidate.Channel.SystemPrompt)
+					c.OnOpenAI = func(openaiBody []byte) ([]byte, error) {
+						if prompt != "" {
+							return injectSystemPrompt(openaiBody, prompt), nil
+						}
+						return openaiBody, nil
+					}
+				}
+				adapter = composed
+			}
+		} else if downstreamResponses {
+			family := adapters.CanonicalFamily(adapter.Name())
+			if family == "openai" {
+				// Native passthrough first; arm the in-place translated fallback.
+				if tr, ok := s.registry.Translations.Lookup("responses", "openai"); ok && tr.Body != nil && tr.Response != nil {
+					responsesPassthroughFallback = true
+				}
+			} else if tr, ok := s.registry.Translations.Lookup("responses", family); ok && tr.Body != nil {
+				registryTranslation = &tr
+			} else {
+				composed := adapters.ComposeDownstream(adapter, "responses")
 				if c, ok := composed.(*adapters.ComposeForwardAdapter); ok {
 					prompt := strings.TrimSpace(candidate.Channel.SystemPrompt)
 					c.OnOpenAI = func(openaiBody []byte) ([]byte, error) {
@@ -454,17 +493,21 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			s.recordAttempt(req, candidate, attempt+1, result, category, "")
 			return result, meta
 		}
-		// Registered N×M translation path: the (anthropic → upstream family)
+		// Registered N×M translation path: the (protocol → upstream family)
 		// pair exists in the matrix, so translate directly instead of going
 		// through the composed adapter. The translation returns the upstream
 		// body; the response/stream conversion happens via the pair's
 		// Response/Stream modes inside the relay conversion block below.
 		if registryTranslation != nil {
-			toPath, out, tr, ok, trErr := s.registry.Translations.Translate("anthropic", adapters.CanonicalFamily(adapter.Name()), effectivePath, requestSource)
+			translateProto := "anthropic"
+			if downstreamResponses {
+				translateProto = "responses"
+			}
+			toPath, out, tr, ok, trErr := s.registry.Translations.Translate(translateProto, adapters.CanonicalFamily(adapter.Name()), effectivePath, requestSource)
 			if trErr != nil || !ok || tr.Body == nil {
 				result = &relay.Result{
 					StatusCode: http.StatusBadRequest,
-					Err:        fmt.Errorf("proxy: anthropic translation: %w", trErr),
+					Err:        fmt.Errorf("proxy: %s translation: %w", translateProto, trErr),
 				}
 				s.recordAttempt(req, candidate, attempt+1, result, "translate", "")
 				return result, meta
@@ -476,6 +519,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			upstreamPath = toPath
 			requestBody = out
+			_ = tr
 		}
 		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, upstreamPath, adapter)
 		if err != nil {
@@ -560,6 +604,32 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				// (gate slot is held at the channel-attempt level, above the retry
 				// loops — see the Acquire/releaseGate pair near the meta setup)
 				result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, upstreamURL, headers, requestBody)
+				// Responses passthrough fallback: an OpenAI-compatible channel that
+				// lacks a native /v1/responses surface answers 404/405 (endpoint
+				// missing). Replay ONCE with the request pivoted to chat/completions;
+				// the pair's Response/Stream modes below convert the upstream
+				// answer back to the Responses contract.
+				if responsesPassthroughFallback && !responsesFallbackTried &&
+					result != nil && result.Err == nil &&
+					(result.StatusCode == http.StatusNotFound || result.StatusCode == http.StatusMethodNotAllowed) {
+					_ = result.Body.Close()
+					translated, translateErr := adapters.ResponsesToChat(requestSource)
+					if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && translateErr == nil {
+						translated = injectSystemPrompt(translated, prompt)
+					}
+					chatURL, urlErr := s.resolveUpstreamURL(candidate.Channel, "chat/completions", adapter)
+					if translateErr == nil && urlErr == nil {
+						fallbackTranslation, fallbackOK := s.registry.Translations.Lookup("responses", "openai")
+						if fallbackOK && fallbackTranslation.Response != nil {
+							responsesFallbackTried = true
+							registryTranslation = &fallbackTranslation
+							responsesFallbackCategory = "responses_translated"
+							result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, chatURL, headers, translated)
+						} else {
+							log.Printf("proxy: responses fallback translation missing (request_id=%s)", req.RequestID)
+						}
+					}
+				}
 				// Convert upstream 2xx bodies back to the OpenAI contract.
 				if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
 					// N×M matrix path: the (anthropic → family) pair's Response/Stream
@@ -704,6 +774,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					attemptCancel = nil
 				}
 				category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
+				// A successful Responses→chat fallback retry carries its own
+				// category so logs show the protocol pivot instead of a plain 200.
+				if responsesFallbackCategory != "" && result != nil && result.Err == nil &&
+					result.StatusCode >= 200 && result.StatusCode < 300 {
+					category = responsesFallbackCategory
+				}
 				// A transport-level timeout (outbound header/TLS timeout) surfaces
 				// as context.DeadlineExceeded even though the client request
 				// context is still alive and waiting. Reclassify it as a retryable

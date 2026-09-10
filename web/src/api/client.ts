@@ -63,6 +63,7 @@ import type {
   ModelProbeResult,
   ModelHealth,
   ProbeStartRequest,
+  LiveTraceRequest,
 } from "./types";
 
 export class ApiError extends Error {
@@ -135,6 +136,51 @@ export class ApiClient {
   get<T>(path: string, signal?: AbortSignal) {
     return this.request<T>(path, { signal });
   }
+
+  /**
+   * Opens the admin live-trace SSE stream. SSE needs a long-lived response
+   * body the caller reads itself, so this bypasses request()'s JSON decode
+   * and returns the raw fetch Response (body unread). Callers read resp.body
+   * as text and cancel via the signal. A non-2xx rejects with ApiError.
+   */
+  async openLiveTrace(signal?: AbortSignal): Promise<Response> {
+    let response: Response;
+    try {
+      response = await fetch("/admin/relay/live", {
+        headers: {
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${this.token}`,
+        },
+        signal,
+      });
+    } catch {
+      throw new ApiError(0, "Unable to reach Meta Gateway");
+    }
+    if (!response.ok) {
+      if (response.status === 401) this.onUnauthorized?.();
+      let message = `Request failed (${response.status})`;
+      try {
+        const body: unknown = await response.json();
+        if (isErrorBody(body)) message = body.error;
+      } catch {
+        /* Stable status fallback. */
+      }
+      throw new ApiError(response.status, message);
+    }
+    return response;
+  }
+
+  /**
+   * Asks the gateway to cancel an in-flight relay attempt. The request must
+   * currently be running; 404 means it already settled or is unknown.
+   */
+  interruptLiveRequest(requestId: string) {
+    return this.request<{ status: string; request_id: string }>(
+      `/admin/relay/live/${encodeURIComponent(requestId)}/interrupt`,
+      { method: "POST" },
+    );
+  }
+
   async getList<T>(path: string, signal?: AbortSignal) {
     return (await this.get<T[] | null>(path, signal)) ?? [];
   }

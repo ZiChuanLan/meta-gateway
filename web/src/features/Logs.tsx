@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, MessagesSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useMemo, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -25,6 +25,7 @@ import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { formatCost, logCostUsd } from "../lib/format";
 import { positiveId } from "../lib/positiveId"
+import { LiveTracePanel } from "./LiveTracePanel";
 
 // Routing decision audit view: fetched on demand when a log row expands.
 // Each attempt row shows the snapshot of ITS OWN selection (matched by
@@ -617,6 +618,7 @@ export function Logs() {
   const rawTab = params.get("tab");
   const tabItems = [
     { value: "proxy", label: t("logsPage.tab.proxy") },
+    { value: "live", label: t("logsPage.tab.live"), icon: <MessagesSquare size={14} /> },
     { value: "discovery", label: t("logsPage.tab.discovery") },
     { value: "audit", label: t("logsPage.tab.audit") },
   ];
@@ -646,6 +648,7 @@ export function Logs() {
       <div className="ops-canvas">
         <Tabs items={tabItems} active={active} onChange={changeTab} />
         {active === "proxy" ? <ProxyLogsPanel /> : null}
+        {active === "live" ? <LiveTracePanel /> : null}
         {active === "discovery" ? <DiscoveryPanel /> : null}
         {active === "audit" ? <AuditPanel /> : null}
       </div>
