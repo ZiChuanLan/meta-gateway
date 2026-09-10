@@ -4,7 +4,7 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [Unreleased]
+## [v2.4.0] — 2026-09-10
 
 ### Added
 
