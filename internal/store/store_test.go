@@ -186,13 +186,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 92 {
-		t.Fatalf("got %d applied migrations, want 92", count)
+	if count != 93 {
+		t.Fatalf("got %d applied migrations, want 93", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 92 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 93 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }

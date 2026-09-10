@@ -839,12 +839,13 @@ export function Channels() {
       });
     }
     // Only offer key creation when the account token is known-good (last
-    // probe succeeded for this channel) and the site has no key.
-    // A dead/blocked token should never show a create button that can only fail.
+    // probe succeeded for this channel). A dead/blocked token should never
+    // show a create button that can only fail. Keys can be created even when
+    // the site already has keys — group-scoped upstreams (New API groups)
+    // typically need one key per group.
     const canCreateKey =
       caps.accountSupported &&
       caps.hasUser &&
-      caps.needsKeyForRelay &&
       Boolean(overview.last_probe_at) &&
       overview.last_probe_ok === true;
     if (canCreateKey) {

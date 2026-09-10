@@ -13,11 +13,20 @@ import (
 // Prefer the bound credential first, then every other enabled api_key on the same site.
 // Keys that hit the per-key auto-disable threshold are excluded until they heal.
 // Keys whose models_csv allowlist does not cover the requested model are skipped
-// (empty model = no filtering). With key-pool rotation disabled, only the bound
-// key (or the first pool key) is used.
+// (empty model = no filtering). When models_csv is unset, a key's discovered
+// model set acts as the allowlist: a key that never listed the model is skipped,
+// so a group-scoped key is only used for members of its group. With key-pool
+// rotation disabled, only the bound key (or the first pool key) is used.
 func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]string, error) {
 	seen := make(map[int64]struct{})
 	var keys []string
+	// Per-credential discovered model sets for the channel's site. nil means
+	// "no sets loaded" (cache hit on empty site or lookup error): the naive
+	// allowlist filter stays authoritative.
+	var modelSets map[int64]map[string]struct{}
+	if channel.SiteID != nil {
+		modelSets, _ = s.db.Credential.ModelSetsBySite(*channel.SiteID)
+	}
 
 	appendCredential := func(credential *domain.Credential) {
 		if credential == nil {
@@ -37,6 +46,17 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]str
 		}
 		if !modelAllowedByKey(model, credential.ModelsCSV) {
 			return
+		}
+		// A key without an explicit allowlist is only trusted for models it
+		// has actually listed. modelSets is keyed by credential id; a missing
+		// entry means no successful snapshot recorded sets for this key, so it
+		// stays usable (the pool fallback preserves current behaviour).
+		if strings.TrimSpace(credential.ModelsCSV) == "" && model != "" {
+			if set, ok := modelSets[credential.ID]; ok && len(set) > 0 {
+				if _, serves := set[model]; !serves {
+					return
+				}
+			}
 		}
 		plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
 		if err != nil || len(plaintext) == 0 {

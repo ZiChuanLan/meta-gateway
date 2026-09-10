@@ -95,7 +95,7 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 		Site:            siteStore,
 		Credential:      credentialStore,
 		Channel:         &ChannelStore{db: sqldb},
-		DiscoveredModel: &DiscoveredModelStore{db: sqldb},
+		DiscoveredModel: &DiscoveredModelStore{db: sqldb, credential: credentialStore},
 		Route:           &RouteStore{db: sqldb},
 		RouteMember:     &RouteMemberStore{db: sqldb},
 		DownstreamKey:   newDownstreamKeyStore(sqldb),

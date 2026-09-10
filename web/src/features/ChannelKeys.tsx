@@ -151,6 +151,11 @@ export function ChannelKeysDrawer({
                         {!item.has_secret
                           ? ` · ${t("channels.apiKeyNoSecret")}`
                           : ""}
+                        {item.model_count != null && item.model_count >= 0
+                          ? ` · ${t("channels.apiKeyModelCount", {
+                              count: item.model_count,
+                            })}`
+                          : ""}
                       </small>
                     </div>
                     <div className="credential-key-actions">

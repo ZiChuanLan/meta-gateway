@@ -25,7 +25,9 @@ export interface Credential {
   meta_json?: string;
   status: Status;
   checkin_enabled: boolean;
-  models_csv?: string;
+models_csv?: string;
+  /** Distinct models this key listed in the latest discovery snapshot (-1 = none yet). */
+  model_count?: number;
   created_at?: string;
 }
 export interface Channel {

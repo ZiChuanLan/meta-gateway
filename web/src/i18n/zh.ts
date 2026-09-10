@@ -500,6 +500,7 @@ export const zh: Dict = {
   "channels.keyModelsAll": "全部模型",
   "channels.keyModelsToggle": "展开模型白名单",
   "channels.apiKeyNoSecret": "无密钥正文",
+  "channels.apiKeyModelCount": "同步模型 {count} 个",
   "channels.apiKeyUsedByConnection": "优先",
   "channels.apiKeyDelete": "删除密钥",
   "channels.apiKeyDeleteConfirm": "删除 {name}？此操作不可撤销。",

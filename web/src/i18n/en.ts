@@ -535,6 +535,7 @@ export const en: Dict = {
   "channels.keyModelsAll": "All models",
   "channels.keyModelsToggle": "Expand model allowlist",
   "channels.apiKeyNoSecret": "secret missing",
+  "channels.apiKeyModelCount": "{count} synced models",
   "channels.apiKeyUsedByConnection": "Preferred",
   "channels.apiKeyDelete": "Remove key",
   "channels.apiKeyDeleteConfirm": "Remove {name}? This cannot be undone.",

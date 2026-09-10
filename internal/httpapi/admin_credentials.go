@@ -17,6 +17,13 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	// Discovered model sets per key, used to show which models each key
+	// actually lists upstream (group-scoped keys differ).
+	modelSets, modelSetsErr := h.db.Credential.ModelSetsBySite(siteID)
+	if modelSetsErr != nil {
+		writeStoreError(w, modelSetsErr)
+		return
+	}
 	// Never expose secret_enc in JSON responses.
 	type safeCred struct {
 		ID             int64  `json:"id"`
@@ -29,9 +36,16 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 		Status         string `json:"status"`
 		CheckinEnabled bool   `json:"checkin_enabled"`
 		ModelsCSV      string `json:"models_csv,omitempty"`
+		// ModelCount is how many distinct models this key listed in the latest
+		// successful discovery snapshot. -1 when the site has no snapshot yet.
+		ModelCount int `json:"model_count"`
 	}
 	result := make([]safeCred, 0, len(creds))
 	for _, c := range creds {
+		modelCount := -1
+		if set, ok := modelSets[c.ID]; ok {
+			modelCount = len(set)
+		}
 		result = append(result, safeCred{
 			ID:             c.ID,
 			SiteID:         c.SiteID,
@@ -43,6 +57,7 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 			Status:         c.Status,
 			CheckinEnabled: c.CheckinEnabled,
 			ModelsCSV:      c.ModelsCSV,
+			ModelCount:     modelCount,
 		})
 	}
 	writeJSON(w, http.StatusOK, result)

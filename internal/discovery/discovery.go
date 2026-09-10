@@ -68,11 +68,13 @@ type RefreshResult struct {
 }
 
 type ProbeResult struct {
-	ChannelID int64     `json:"channel_id"`
-	Adapter   string    `json:"adapter"`
-	Models    []string  `json:"models"`
-	LatencyMs int       `json:"latency_ms"`
-	CheckedAt time.Time `json:"checked_at"`
+	ChannelID int64    `json:"channel_id"`
+	Adapter   string   `json:"adapter"`
+	Models    []string `json:"models"`
+	// CredentialModels maps each usable credential to the models it could list.
+	CredentialModels map[int64][]string `json:"credential_models,omitempty"`
+	LatencyMs        int                `json:"latency_ms"`
+	CheckedAt        time.Time          `json:"checked_at"`
 }
 
 type RefreshItem struct {
@@ -171,7 +173,7 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		baseURL = site.BaseURL
 	}
 	started := s.now()
-	models, lastErr, lastCredential, fatal := s.probeModels(ctx, adapter, baseURL, credentials)
+	models, perKey, lastErr, lastCredential, fatal := s.probeModels(ctx, adapter, baseURL, credentials)
 	if fatal != nil {
 		if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
 			return nil, fatal
@@ -193,7 +195,7 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 			return nil, lastErr
 		case <-time.After(1200 * time.Millisecond):
 		}
-		models, lastErr, lastCredential, fatal = s.probeModels(ctx, adapter, baseURL, credentials)
+		models, perKey, lastErr, lastCredential, fatal = s.probeModels(ctx, adapter, baseURL, credentials)
 		if fatal != nil {
 			if errors.Is(fatal, context.Canceled) || errors.Is(fatal, context.DeadlineExceeded) {
 				return nil, fatal
@@ -249,19 +251,25 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		_ = s.db.HealthHistory.Append(channel.ID, domain.ProbeKindProbe, true, latency, "", checkedAt)
 	}
 	return &ProbeResult{
-		ChannelID: channel.ID,
-		Adapter:   adapter.Name(),
-		Models:    models,
-		LatencyMs: latency,
-		CheckedAt: checkedAt,
+		ChannelID:        channel.ID,
+		Adapter:          adapter.Name(),
+		Models:           models,
+		CredentialModels: perKey,
+		LatencyMs:        latency,
+		CheckedAt:        checkedAt,
 	}, nil
 }
 
-// probeModels tries every credential in the pool against /v1/models. Returns
-// the first successful model list, or the last error. fatal carries errors that
-// must abort immediately (invalid base URL, context cancellation) — these are
-// never retried.
-func (s *Service) probeModels(ctx context.Context, adapter adapters.ModelAdapter, baseURL string, credentials []domain.Credential) (models []string, lastErr error, lastCredential *domain.Credential, fatal error) {
+// probeModels lists models with EVERY usable key in the pool and merges the
+// results. Upstream groups differ per key: a New API token bound to one group
+// sees only that group's models, so stopping at the first success misses the
+// others. The per-key lists are returned so the snapshot can record which key
+// serves which model (used by routing to pick a capable key). Keys that fail
+// (empty decrypt, auth error, transport error) are skipped; fatal errors
+// (invalid base URL, context cancellation) abort immediately.
+func (s *Service) probeModels(ctx context.Context, adapter adapters.ModelAdapter, baseURL string, credentials []domain.Credential) (models []string, perKey map[int64][]string, lastErr error, lastCredential *domain.Credential, fatal error) {
+	merged := make(map[string]struct{})
+	perKey = make(map[int64][]string)
 	for index := range credentials {
 		credential := credentials[index]
 		lastCredential = &credential
@@ -274,19 +282,37 @@ func (s *Service) probeModels(ctx context.Context, adapter adapters.ModelAdapter
 		for i := range plaintext {
 			plaintext[i] = 0
 		}
-		if listErr == nil {
-			return listed, nil, lastCredential, nil
+		if listErr != nil {
+			lastErr = listErr
+			if errors.Is(listErr, context.Canceled) || errors.Is(listErr, context.DeadlineExceeded) {
+				return nil, nil, nil, nil, listErr
+			}
+			var adapterErr *adapters.Error
+			if errors.As(listErr, &adapterErr) && adapterErr.Kind == adapters.ErrorInvalidURL {
+				return nil, nil, nil, nil, listErr
+			}
+			continue
 		}
-		lastErr = listErr
-		if errors.Is(listErr, context.Canceled) || errors.Is(listErr, context.DeadlineExceeded) {
-			return nil, nil, nil, listErr
+		seen := make(map[string]struct{}, len(listed))
+		for _, model := range listed {
+			seen[model] = struct{}{}
+			merged[model] = struct{}{}
 		}
-		var adapterErr *adapters.Error
-		if errors.As(listErr, &adapterErr) && adapterErr.Kind == adapters.ErrorInvalidURL {
-			return nil, nil, nil, listErr
+		perKey[credential.ID] = make([]string, 0, len(seen))
+		for model := range seen {
+			perKey[credential.ID] = append(perKey[credential.ID], model)
 		}
+		sort.Strings(perKey[credential.ID])
 	}
-	return nil, lastErr, lastCredential, nil
+	if len(merged) == 0 {
+		return nil, perKey, lastErr, lastCredential, nil
+	}
+	models = make([]string, 0, len(merged))
+	for model := range merged {
+		models = append(models, model)
+	}
+	sort.Strings(models)
+	return models, perKey, nil, lastCredential, nil
 }
 
 // isTransientListError reports whether a model-list failure is worth one
@@ -343,11 +369,12 @@ func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult,
 		return nil, err
 	}
 	reconciled, err := s.db.DiscoveredModel.Reconcile(ctx, store.ReconcileInput{
-		ChannelID: probe.ChannelID,
-		Models:    probe.Models,
-		Source:    probe.Adapter,
-		LatencyMs: probe.LatencyMs,
-		CheckedAt: probe.CheckedAt,
+		ChannelID:        probe.ChannelID,
+		Models:           probe.Models,
+		CredentialModels: probe.CredentialModels,
+		Source:           probe.Adapter,
+		LatencyMs:        probe.LatencyMs,
+		CheckedAt:        probe.CheckedAt,
 	})
 	if err != nil {
 		return nil, internalError("persistence_failure")
