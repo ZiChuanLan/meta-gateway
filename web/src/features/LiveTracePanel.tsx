@@ -231,14 +231,13 @@ export function LiveTracePanel() {
       backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
     };
 
-    void connect();
-    return () => {
-      disposed = true;
-      window.clearTimeout(retryTimer);
-      abort?.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
+	void connect();
+	return () => {
+		disposed = true;
+		window.clearTimeout(retryTimer);
+		abort?.abort();
+	};
+	}, [client]);
 
   const mergeFrames = (incoming: LiveTraceRequest[]) => {
     setFrames((current) => {

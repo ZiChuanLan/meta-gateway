@@ -62,8 +62,7 @@ import type {
   ProbeTask,
   ModelProbeResult,
   ModelHealth,
-  ProbeStartRequest,
-  LiveTraceRequest,
+	ProbeStartRequest,
 } from "./types";
 
 export class ApiError extends Error {
