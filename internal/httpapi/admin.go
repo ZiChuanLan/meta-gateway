@@ -122,6 +122,11 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Delete("/routes/{routeId}/groups/{name}", h.deleteRouteMemberGroup)
 	r.Get("/route-groups", h.listRouteGroupNames)
 
+	r.Get("/models/changes", h.listModelChanges)
+	r.Post("/models/changes/ignore", h.ignoreModelChanges)
+	r.Post("/models/changes/preview", h.previewModelChanges)
+	r.Post("/models/changes/apply", h.applyModelChanges)
+
 	// Model-name unification assistant
 	r.Post("/models/unify/preview", h.unifyPreview)
 	r.Post("/models/unify/apply", h.unifyApply)

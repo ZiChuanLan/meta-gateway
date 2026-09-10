@@ -221,9 +221,7 @@ func TestReconcileManualModeKeepsAdoptedMemberState(t *testing.T) {
 	}
 }
 
-// An adopted manual-sync member (auto=1, manual_override=0) whose model
-// disappears from upstream is recycled by the same stale cleanup as auto
-// members, so dead routes do not linger.
+// Adopted manual-sync members survive disappearance for operator remapping.
 func TestReconcileManualModeStaleCleanup(t *testing.T) {
 	db := openTestDB(t)
 	manualID := syncModeFixture(t, db, "manual-ch", domain.ModelSyncModeManual)
@@ -242,15 +240,15 @@ func TestReconcileManualModeStaleCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Next discovery drops the model upstream: the adopted member is recycled.
+	// Next discovery drops the model upstream: retain the adopted binding.
 	reconcile(t, db, manualID, "other-model")
 
-	if got, getErr := db.RouteMember.GetByID(memberID); getErr != nil || got != nil {
-		t.Errorf("stale adopted member should have been removed (got %v, err %v)", got, getErr)
+	if got, getErr := db.RouteMember.GetByID(memberID); getErr != nil || got == nil {
+		t.Errorf("stale adopted member should be retained (got %v, err %v)", got, getErr)
 	}
 	patterns := routePatterns(t, db)
-	if patterns["adopted-model"] {
-		t.Error("empty route for a vanished adopted model should have been removed")
+	if !patterns["adopted-model"] {
+		t.Error("route for a vanished adopted model should be retained")
 	}
 	snapshot, err := db.DiscoveredModel.List(&manualID)
 	if err != nil {

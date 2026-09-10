@@ -186,13 +186,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 91 {
-		t.Fatalf("got %d applied migrations, want 91", count)
+	if count != 92 {
+		t.Fatalf("got %d applied migrations, want 92", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 91 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 92 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -472,7 +472,7 @@ func TestDiscoveryReconcileIsIdempotentAndProtectsManualMembers(t *testing.T) {
 	}
 }
 
-func TestDiscoveryReconcileRemovesAndRecreatesAutomaticMember(t *testing.T) {
+func TestDiscoveryReconcileRetainsAutomaticMember(t *testing.T) {
 	db := openTestDB(t)
 	channelID, _ := db.Channel.Create(&domain.Channel{Name: "discovery", Priority: 2, Weight: 10, Status: domain.StatusEnabled, ModelSyncMode: domain.ModelSyncModeAuto})
 	base := store.ReconcileInput{ChannelID: channelID, Models: []string{"model-a"}, Source: "new-api", CheckedAt: time.Now()}
@@ -489,18 +489,18 @@ func TestDiscoveryReconcileRemovesAndRecreatesAutomaticMember(t *testing.T) {
 	}
 	base.Models = nil
 	result, err := db.DiscoveredModel.Reconcile(t.Context(), base)
-	if err != nil || result.DeletedMembers != 1 || result.DeletedRoutes != 1 {
+	if err != nil || result.DeletedMembers != 0 || result.DeletedRoutes != 0 {
 		t.Fatalf("empty reconcile: %+v err=%v", result, err)
 	}
-	if got, _ := db.RouteMember.GetByID(member.ID); got != nil {
-		t.Fatalf("automatic member was not deleted: %+v", got)
+	if got, _ := db.RouteMember.GetByID(member.ID); got == nil {
+		t.Fatal("automatic member was deleted")
 	}
-	if got, _ := db.Route.GetByModel("model-a"); got != nil {
-		t.Fatalf("empty route was not deleted: %+v", got)
+	if got, _ := db.Route.GetByModel("model-a"); got == nil || got.ID != route.ID {
+		t.Fatalf("route was not retained: %+v", got)
 	}
 	base.Models = []string{"model-a"}
 	result, err = db.DiscoveredModel.Reconcile(t.Context(), base)
-	if err != nil || result.CreatedRoutes != 1 || result.CreatedMembers != 1 {
+	if err != nil || result.CreatedRoutes != 0 || result.CreatedMembers != 0 {
 		t.Fatalf("restore reconcile: %+v err=%v", result, err)
 	}
 	newRoute, _ := db.Route.GetByModel("model-a")
@@ -508,8 +508,8 @@ func TestDiscoveryReconcileRemovesAndRecreatesAutomaticMember(t *testing.T) {
 		t.Fatal("route was not recreated")
 	}
 	restored, _ := db.RouteMember.ListByRoute(newRoute.ID)
-	if len(restored) != 1 || !restored[0].Enabled || restored[0].Priority != 2 || restored[0].Weight != 10 {
-		t.Fatalf("member was not recreated with channel defaults: %+v", restored)
+	if len(restored) != 1 || restored[0].ID != member.ID || !restored[0].Enabled || restored[0].Priority != 88 || restored[0].Weight != 4 {
+		t.Fatalf("member settings were not retained: %+v", restored)
 	}
 }
 

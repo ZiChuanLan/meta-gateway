@@ -21,6 +21,9 @@ import type {
   ChannelPingResult,
   FinanceItem,
   ModelMetadata,
+  ModelChangesResponse,
+  ModelReplacementRequest,
+  ModelReplacementPreview,
   ErrorPassRule,
   DBGCResult,
   AlertRule,
@@ -470,6 +473,14 @@ export const api = (client: ApiClient) => ({
       `/admin/discovery/models${channelId ? `?channel_id=${channelId}` : ""}`,
       signal,
     ),
+  modelChanges: (signal?: AbortSignal) =>
+    client.get<ModelChangesResponse>("/admin/models/changes", signal),
+  ignoreModelChanges: (ids: number[]) =>
+    client.post<{ updated: number }>("/admin/models/changes/ignore", { ids }),
+  previewModelReplacement: (input: ModelReplacementRequest) =>
+    client.post<ModelReplacementPreview>("/admin/models/changes/preview", input),
+  applyModelReplacement: (input: ModelReplacementRequest) =>
+    client.post<{ updated: number }>("/admin/models/changes/apply", input),
   missingModels: (signal?: AbortSignal) =>
     client.get<{
       items: Array<{

@@ -57,6 +57,7 @@ import { MemberDialog } from "./models/MemberDialog";
 import { UnifyDialog } from "./models/UnifyDialog";
 import { UnifyHistory } from "./models/UnifyHistory";
 import { ProbeDialog } from "./models/ProbeDialog";
+import { ModelChangesPanel } from "./models/ModelChangesPanel";
 
 function readMissingDismissed() {
   try {
@@ -829,6 +830,7 @@ function ModelCatalog({
 
   return (
     <div className="ops-canvas">
+      <ModelChangesPanel />
       <TelemetryStrip
         items={[
           {

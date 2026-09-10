@@ -23,6 +23,7 @@ web/coverage/
 # Tool artifacts (design-skill sessions, external tools)
 .workbuddy/
 web/.impeccable/
+.impeccable/
 web/.gitignore
 web/shots/
 

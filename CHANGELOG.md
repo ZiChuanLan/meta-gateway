@@ -4,6 +4,33 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.0] — 2026-09-10
+
+### Added
+
+- Upstream model change maintenance: the Models page surfaces a change
+  summary (added / possibly removed / impacted routes) and an expandable,
+  filterable history (channel, change type, handling status, model name).
+  Snapshots are compared per channel; the first successful sync establishes
+  a baseline, a failed sync never counts as removal, and a model missing
+  from one channel is reported as possibly removed — not as retired
+  everywhere.
+- The sync no longer silently deletes automatic members or routes when a
+  model disappears: bindings stay in place (IDs, overrides, health state
+  intact) so an operator can inspect and remap them.
+- Replacement workflow: select changes → pick a target model from the
+  current inventory (same-sync additions are shown as candidates, never
+  auto-guessed as "newer versions") → choose affected members → preview on
+  the server → confirm. Supports same-channel bulk replacement and an
+  explicit cross-channel choice; only the upstream mapping changes, public
+  model names, route names and other settings are preserved.
+- Preview tokens are state fingerprints: applying with a stale selection
+  (snapshot refresh, changed mapping, moved credential) is rejected with
+  409, so a preview you looked at applies exactly what it showed. Bulk
+  application rolls back atomically on failure.
+- Ignoring a change only dismisses the reminder; reappearing models are
+  tracked again, and outdated pending entries are resolved.
+
 ## [v2.4.0] — 2026-09-10
 
 ### Added
