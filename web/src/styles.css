@@ -5863,6 +5863,35 @@ td.actions {
   max-width: none !important;
   margin-bottom: 0 !important;
 }
+.channel-model-status-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 2px;
+  border-radius: calc(var(--radius) - 2px);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+.channel-model-status-filter button {
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: calc(var(--radius) - 4px);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.channel-model-status-filter button:hover {
+  color: var(--ink);
+}
+.channel-model-status-filter button.is-active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
 .models-simple-toolbar select {
   flex: 0 1 auto;
   min-width: 0;

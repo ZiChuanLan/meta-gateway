@@ -80,6 +80,11 @@ export function ChannelModelsPanel({
   const [customName, setCustomName] = useState("");
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
   const [query, setQuery] = useState(initialQuery ?? "");
+  // Narrow the list by adoption state: enabled rows (member on and on),
+  // disabled rows (parked/never adopted), or everything.
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "enabled" | "disabled"
+  >("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkMode, setBulkMode] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -484,16 +489,23 @@ export function ChannelModelsPanel({
         seen.add(custom.name);
       }
     }
-    if (!needle) return base;
-    return base.filter(
-      (item) =>
-        item.name.toLowerCase().includes(needle) ||
-        (aliasFor(item.name)?.overview.route.model_pattern ?? "")
-          .toLowerCase()
-          .includes(needle),
-    );
+    const byNeedle = !needle
+      ? base
+      : base.filter(
+          (item) =>
+            item.name.toLowerCase().includes(needle) ||
+            (aliasFor(item.name)?.overview.route.model_pattern ?? "")
+              .toLowerCase()
+              .includes(needle),
+        );
+    if (statusFilter === "all") return byNeedle;
+    return byNeedle.filter((item) => {
+      const member = memberFor(item.name);
+      const enabled = member ? member.enabled : false;
+      return statusFilter === "enabled" ? enabled : !enabled;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, customModels, query, routeOverviews.data]);
+  }, [models, customModels, query, routeOverviews.data, statusFilter]);
 
   const selectable = filtered;
   const allSelected =
@@ -687,6 +699,30 @@ export function ChannelModelsPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("routing.searchPlaceholder")}
           />
+          <div
+            className="channel-model-status-filter"
+            role="radiogroup"
+            aria-label={t("channels.modelsFilterLabel")}
+          >
+            {(
+              [
+                ["all", t("channels.modelsFilterAll")],
+                ["enabled", t("channels.modelsFilterEnabled")],
+                ["disabled", t("channels.modelsFilterDisabled")],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                className={statusFilter === mode ? "is-active" : ""}
+                aria-pressed={statusFilter === mode}
+                title={t("channels.modelsFilterHint")}
+                onClick={() => setStatusFilter(mode)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="channel-model-add">
             <input
               value={customName}
@@ -790,6 +826,11 @@ export function ChannelModelsPanel({
           }
           retry={() => discovered.refetch()}
         >
+          {filtered.length === 0 ? (
+            <p className="detail-section-empty is-quiet">
+              {t("channels.modelsFilterEmpty")}
+            </p>
+          ) : (
           <ul className="channel-model-list is-page">
             {grouped.map(({ group, items }) => {
               const isCollapsed = !forcedOpen && collapsedGroups.has(group);
@@ -929,6 +970,7 @@ export function ChannelModelsPanel({
               );
             })}
           </ul>
+          )}
         </EntityState>
       </Panel>
     </>
