@@ -73,8 +73,13 @@ type ProbeResult struct {
 	Models    []string `json:"models"`
 	// CredentialModels maps each usable credential to the models it could list.
 	CredentialModels map[int64][]string `json:"credential_models,omitempty"`
-	LatencyMs        int                `json:"latency_ms"`
-	CheckedAt        time.Time          `json:"checked_at"`
+	// KeysAttempted/KeysListed expose per-round multi-key coverage: when only
+	// some of the channel's keys answered, the merged list may be incomplete
+	// and removals derived from it are flagged as possible false positives.
+	KeysAttempted int       `json:"keys_attempted,omitempty"`
+	KeysListed    int       `json:"keys_listed,omitempty"`
+	LatencyMs     int       `json:"latency_ms"`
+	CheckedAt     time.Time `json:"checked_at"`
 }
 
 type RefreshItem struct {
@@ -255,6 +260,8 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		Adapter:          adapter.Name(),
 		Models:           models,
 		CredentialModels: perKey,
+		KeysAttempted:    len(credentials),
+		KeysListed:       len(perKey),
 		LatencyMs:        latency,
 		CheckedAt:        checkedAt,
 	}, nil
@@ -372,6 +379,7 @@ func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult,
 		ChannelID:        probe.ChannelID,
 		Models:           probe.Models,
 		CredentialModels: probe.CredentialModels,
+		PartialDiscovery: probe.KeysAttempted > 1 && probe.KeysListed < probe.KeysAttempted,
 		Source:           probe.Adapter,
 		LatencyMs:        probe.LatencyMs,
 		CheckedAt:        probe.CheckedAt,

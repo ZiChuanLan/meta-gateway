@@ -40,3 +40,31 @@
   .model-changes-summary > span { flex-basis: 100%; order: 3; }
   .model-change-mapping { gap: 8px; }
 }
+
+/* Confidence signals on removal rows: compact pill badges, one per signal. */
+.model-change-signals { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.model-change-signal {
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  cursor: help;
+}
+.model-change-signal.is-confirmed {
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.model-change-signal.is-partial {
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.model-change-signal.is-flap { color: var(--ink-soft); }
+.model-change-signal.is-runtime {
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+  background: var(--info-soft);
+  color: var(--info);
+}

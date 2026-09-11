@@ -1,8 +1,14 @@
 services:
   meta-gateway:
-    build: .
     # Published image on Docker Hub; `docker compose pull` upgrades to it
-    # while `docker compose build` still builds locally.
+    # while `docker compose build` still builds locally. Local builds report
+    # "dev" unless VERSION/COMMIT are supplied, e.g.
+    #   VERSION=v2.5.2 COMMIT=<sha> docker compose build
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
     image: zichuanlan/meta-gateway:latest
     init: true
     ports:
@@ -43,6 +49,11 @@ services:
       READINESS_TIMEOUT_SECONDS: "${READINESS_TIMEOUT_SECONDS:-2}"
       AUDIT_RETENTION_DAYS: "${AUDIT_RETENTION_DAYS:-90}"
       AUDIT_RETENTION_ROWS: "${AUDIT_RETENTION_ROWS:-100000}"
+      # Model-change ledger upkeep: finished entries older than the retention
+      # window are pruned daily; pending removals with no route impact can be
+      # auto-ignored after N days (0 = keep reminding until handled manually).
+      MODEL_CHANGE_RETENTION_DAYS: "${MODEL_CHANGE_RETENTION_DAYS:-90}"
+      MODEL_CHANGE_AUTO_IGNORE_DAYS: "${MODEL_CHANGE_AUTO_IGNORE_DAYS:-0}"
       RETRY_TIMES: "${RETRY_TIMES:-2}"
       CHANNEL_RETRY_TIMES: "${CHANNEL_RETRY_TIMES:-1}"
       KEY_POOL_ROTATION: "${KEY_POOL_ROTATION:-true}"

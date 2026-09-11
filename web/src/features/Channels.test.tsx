@@ -615,3 +615,102 @@ it("creates exactly one upstream key despite rapid repeated clicks", async () =>
 			});
 		});
 	});
+
+describe("Channels edit dialog sync mode", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		sessionStorage.clear();
+		localStorage.setItem("meta-gateway.locale", "en");
+		localStorage.setItem("meta-gateway.admin-token", "test-token");
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	it("seeds the picker from the channel's saved sync mode", async () => {
+		// Regression: the edit drawer once opened on the default mode instead of
+		// the stored per-channel override.
+		const overview = {
+			channel: {
+				id: 7,
+				name: "manual-channel",
+				base_url: "https://api.example.com",
+				models_csv: "",
+				group_name: "default",
+				priority: 0,
+				weight: 100,
+				status: "enabled",
+				model_sync_mode: "manual",
+				created_at: "",
+				updated_at: "",
+			},
+			credential_kind: "access_token",
+			checkin_enabled: false,
+			has_user_credential: true,
+			has_platform_user_id: true,
+			has_api_key: true,
+			site_usable: true,
+			credential_usable: true,
+			model_count: 0,
+			discovered_model_count: 0,
+			last_probe_at: "2026-08-02T00:00:00Z",
+			last_probe_ok: true,
+			last_latency_ms: 5,
+			route_count: 0,
+			enabled_member_count: 0,
+			cooling_member_count: 0,
+			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
+		};
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = String(input).split("?")[0] ?? "";
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (path === "/admin/channels/overview" && method === "GET") {
+					return jsonResponse([overview]);
+				}
+				if (path === "/admin/sites" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/plugins/status" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/channels" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/routes/overview" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path.startsWith("/admin/discovery/models")) {
+					return jsonResponse([]);
+				}
+				return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+			}),
+		);
+
+		renderChannels();
+		expect(
+			await screen.findByRole("heading", { name: "Connections" }),
+		).toBeInTheDocument();
+
+		await waitFor(async () => {
+			const trigger = screen.getByRole("button", { name: /more actions/i });
+			trigger.click();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			screen.getByRole("menuitem", { name: /^edit$/i }).click();
+		});
+
+		const dialog = await screen.findByRole("dialog");
+		const manual = await within(dialog).findByRole("button", {
+			name: "Pick on demand",
+		});
+		expect(manual).toHaveAttribute("aria-pressed", "true");
+		expect(
+			within(dialog).getByRole("button", { name: "Auto sync" }),
+		).toHaveAttribute("aria-pressed", "false");
+	});
+});

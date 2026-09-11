@@ -25,6 +25,11 @@ const (
 	MetricRequestFailRate     = "request_fail_rate"    // failed requests / total over window (0..1)
 	MetricChannelError        = "channel_error"        // 1 when any channel's latest probe failed
 	MetricErrorRate           = "error_rate"           // alias of request_fail_rate
+	// Model-change gauges from the upstream-diff ledger. Pending removals
+	// with impacted routes are the ones actively breaking or about to break
+	// routing; candidate-list churn stays silent unless a rule asks for it.
+	MetricModelChangeRemoved = "model_change_removed"
+	MetricModelChangeRoutes  = "model_change_affected_routes"
 )
 
 // MetricDescriptions documents each metric for the admin UI.
@@ -33,6 +38,8 @@ var MetricDescriptions = map[string]string{
 	MetricRequestFailRate:     "share of relay requests that failed over the window (0..1, from proxy logs)",
 	MetricChannelError:        "1 when any enabled channel's latest probe failed, else 0",
 	MetricErrorRate:           "alias of request_fail_rate",
+	MetricModelChangeRemoved:  "count of pending suspected removals from upstream model syncs",
+	MetricModelChangeRoutes:   "count of routes impacted by pending suspected removals",
 }
 
 // Operator semantics.
@@ -158,6 +165,15 @@ func (s *Service) computeMetrics(ctx context.Context, rules []store.AlertRule) m
 	}
 	if want(MetricChannelError) {
 		out[MetricChannelError] = s.computeChannelError()
+	}
+	if want(MetricModelChangeRemoved) || want(MetricModelChangeRoutes) {
+		changes, err := s.db.ModelChanges()
+		if err != nil {
+			log.Printf("alerts: model change metrics: %v", err)
+		} else {
+			out[MetricModelChangeRemoved] = float64(changes.Summary.Removed)
+			out[MetricModelChangeRoutes] = float64(changes.Summary.AffectedRoutes)
+		}
 	}
 	return out
 }

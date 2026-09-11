@@ -1,10 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { I18nProvider } from "../../i18n";
 import { SessionProvider } from "../../session";
 import { ToastProvider } from "../../toast";
 import { ModelChangesPanel } from "./ModelChangesPanel";
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
+}
 
 const member = { member_id: 11, route_id: 7, route_name: "Public route", model_pattern: "public-model", channel_id: 1, upstream_model: "old-model", group_name: "default" };
 const removed = { id: 1, channel_id: 1, channel_name: "Channel A", model_name: "old-model", kind: "removed", status: "pending", detected_at: "2026-08-20T00:00:00Z", candidates: ["new-model"], members: [member, { ...member, member_id: 12 }] };
@@ -27,7 +33,7 @@ function setup(options: { applyError?: boolean; empty?: boolean } = {}) {
   });
   vi.stubGlobal("fetch", fetch);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const view = render(<QueryClientProvider client={queryClient}><I18nProvider><ToastProvider><SessionProvider><ModelChangesPanel /></SessionProvider></ToastProvider></I18nProvider></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={queryClient}><I18nProvider><ToastProvider><SessionProvider><MemoryRouter initialEntries={["/models"]}><ModelChangesPanel /></MemoryRouter></SessionProvider></ToastProvider></I18nProvider></QueryClientProvider>);
   return { ...view, calls, queryClient };
 }
 async function openReplacement() {
@@ -98,5 +104,100 @@ describe("upstream model maintenance", () => {
     expect(calls).toHaveLength(0);
     fireEvent.click(screen.getAllByRole("button", { name: "Ignore" }).at(-1)!);
     await waitFor(() => expect(calls).toEqual([{ path: "/admin/models/changes/ignore", body: { ids: [1] } }]));
+  });
+});
+
+// Confidence signals, bulk-ignore of harmless removals, and the adopt
+// deep-link — zh locale, with a router so the deep link can be observed.
+describe("upstream model maintenance signals", () => {
+  beforeEach(() => {
+    localStorage.setItem("meta-gateway.locale", "zh-CN");
+  });
+
+  const signalMember = { member_id: 31, route_id: 9, route_name: "impacted-model", model_pattern: "impacted-model", channel_id: 7, upstream_model: "impacted-model", group_name: "default" };
+  const signalItems = [
+    {
+      id: 21, channel_id: 7, channel_name: "WONG", model_name: "gone-model", kind: "removed", status: "pending",
+      detected_at: new Date(Date.now() - 3 * 86_400_000).toISOString(), candidates: [], members: [],
+      confirmed: true, miss_count: 3, partial_keys: true, flap_count: 2, runtime_blocked: true, blocked_at: "2026-09-10T08:00:00Z",
+    },
+    {
+      id: 22, channel_id: 7, channel_name: "WONG", model_name: "brand-new", kind: "added", status: "pending",
+      detected_at: new Date().toISOString(), candidates: [], members: [],
+    },
+    {
+      id: 23, channel_id: 7, channel_name: "WONG", model_name: "impacted-model", kind: "removed", status: "pending",
+      detected_at: new Date().toISOString(), candidates: [], members: [signalMember],
+    },
+  ];
+  const signalSummary = { added: 1, removed: 2, affected_routes: 1, confirmed: 1 };
+
+  function setupWithRouter() {
+    const ignoreCalls: number[][] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/models/changes/ignore")) {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { ids?: number[] };
+        ignoreCalls.push(body.ids ?? []);
+        return response({ updated: (body.ids ?? []).length });
+      }
+      if (path.endsWith("/models/changes")) return response({ items: signalItems, summary: signalSummary });
+      return response({ error: `unexpected ${path}` }, 500);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nProvider>
+          <ToastProvider>
+            <SessionProvider>
+              <MemoryRouter initialEntries={["/models"]}>
+                <Routes>
+                  <Route path="/models" element={<><ModelChangesPanel /><div data-testid="location" /></>} />
+                  <Route path="/models/channel/:channelId" element={<LocationProbe />} />
+                </Routes>
+              </MemoryRouter>
+            </SessionProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </QueryClientProvider>,
+    );
+    return { ignoreCalls };
+  }
+
+  it("surfaces the confirmed count, badges, and missing duration", async () => {
+    setupWithRouter();
+    fireEvent.click(await screen.findByRole("button", { name: "查看变更" }));
+    expect(await screen.findByText("已确认 1")).toBeInTheDocument();
+    const row = screen.getByText("gone-model").closest("article")!;
+    expect(within(row).getByText("已确认缺失")).toBeInTheDocument();
+    expect(within(row).getByText("部分 Key 未响应")).toBeInTheDocument();
+    expect(within(row).getByText("反复上下线 ×2")).toBeInTheDocument();
+    expect(within(row).getByText("运行时观测到不可用")).toBeInTheDocument();
+    expect(within(row).getByText("已持续缺失 3 天")).toBeInTheDocument();
+    // The heading span renders before the member list, so the first match
+    // is the row title.
+    const impacted = screen.getAllByText("impacted-model")[0]!.closest("article")!;
+    expect(within(impacted).queryByText("已确认缺失")).not.toBeInTheDocument();
+  });
+
+  it("deep-links a pending addition to the channel models page", async () => {
+    setupWithRouter();
+    fireEvent.click(await screen.findByRole("button", { name: "查看变更" }));
+    const row = (await screen.findByText("brand-new")).closest("article")!;
+    fireEvent.click(within(row).getByRole("button", { name: "去接入" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("/models/channel/7?model=brand-new");
+    });
+  });
+
+  it("bulk-ignores pending removals without route impact", async () => {
+    const { ignoreCalls } = setupWithRouter();
+    // Only the member-free removal counts as harmless.
+    fireEvent.click(await screen.findByRole("button", { name: "查看变更" }));
+    fireEvent.click(await screen.findByRole("button", { name: "忽略无影响（1）" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "忽略" }));
+    await waitFor(() => expect(ignoreCalls).toEqual([[21]]));
   });
 });

@@ -706,11 +706,19 @@ export function ChannelModelsPanel({
           >
             {(
               [
-                ["all", t("channels.modelsFilterAll")],
-                ["enabled", t("channels.modelsFilterEnabled")],
-                ["disabled", t("channels.modelsFilterDisabled")],
+                [
+                  "all",
+                  t("channels.modelsFilterAll"),
+                  models.length + customModels.length,
+                ],
+                ["enabled", t("channels.modelsFilterEnabled"), enabledCount],
+                [
+                  "disabled",
+                  t("channels.modelsFilterDisabled"),
+                  models.length + customModels.length - enabledCount,
+                ],
               ] as const
-            ).map(([mode, label]) => (
+            ).map(([mode, label, count]) => (
               <button
                 key={mode}
                 type="button"
@@ -720,6 +728,7 @@ export function ChannelModelsPanel({
                 onClick={() => setStatusFilter(mode)}
               >
                 {label}
+                <span className="channel-model-status-count">{count}</span>
               </button>
             ))}
           </div>

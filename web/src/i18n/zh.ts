@@ -45,6 +45,21 @@ export const zh: Dict = {
   "modelChanges.done": "已更新 {count} 个成员的上游映射。",
   "modelChanges.stale": "预览已失效或应用失败，请返回核对并重新预览。",
   "modelChanges.noTargets": "该渠道尚无可选模型，请先成功同步模型清单。",
+  "modelChanges.summaryConfirmed": "已确认 {count}",
+  "modelChanges.confirmedBadge": "已确认缺失",
+  "modelChanges.confirmedHint":
+    "该模型已连续 {count} 次完整同步未出现，基本可以认定上游已下线。",
+  "modelChanges.partialKeys": "部分 Key 未响应",
+  "modelChanges.partialKeysHint":
+    "本次同步只有部分 API Key 返回了清单，缺失可能来自未响应的 Key，属于疑似假阳性。",
+  "modelChanges.flap": "反复上下线 ×{count}",
+  "modelChanges.missingFor": "已持续缺失 {days} 天",
+  "modelChanges.runtimeBlocked": "运行时观测到不可用",
+  "modelChanges.blockedAtHint": "上游在 {time} 的真实请求中报告该模型不存在。",
+  "modelChanges.ignoreHarmless": "忽略无影响（{count}）",
+  "modelChanges.ignoreHarmlessHint":
+    "批量忽略没有路由成员受影响的待处理移除记录；忽略后可随时在历史中查看。",
+  "modelChanges.adopt": "去接入",
 
   "lang.en": "English",
   "lang.zh": "中文",
@@ -1660,6 +1675,8 @@ export const zh: Dict = {
   "ops.runtime.updateNow": "立即检查",
   "ops.runtime.updateChecking": "检查中…",
   "ops.runtime.updateUpToDate": "已是最新版本",
+  "ops.runtime.updateDevBuild":
+    "开发构建（{current}），无法比对版本；最新发布 {version}",
   "ops.runtime.updateFound": "发现新版本 {version}",
   "ops.runtime.updateFailed": "检查失败，稍后重试",
   "ops.runtime.updateOff": "检查更新已关闭",

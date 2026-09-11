@@ -308,11 +308,13 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	go alertRules.Run(alertRulesCtx)
 	RegisterStopper(alertRulesCancel)
 	// Daily balance-history snapshot + retention prunes (balance, decision
-	// snapshots, health history): see maintenance.BalanceSweeper.
+	// snapshots, health history, model changes): see maintenance.BalanceSweeper.
 	balanceSweeper := maintenance.NewBalanceSweeperWithRetention(accountService, db, maintenance.RetentionConfig{
-		BalanceHistoryDays:   cfg.BalanceHistoryRetentionDays,
-		DecisionSnapshotDays: cfg.DecisionSnapshotRetentionDays,
-		HealthHistoryDays:    cfg.HealthHistoryRetentionDays,
+		BalanceHistoryDays:        cfg.BalanceHistoryRetentionDays,
+		DecisionSnapshotDays:      cfg.DecisionSnapshotRetentionDays,
+		HealthHistoryDays:         cfg.HealthHistoryRetentionDays,
+		ModelChangeDays:           cfg.ModelChangeRetentionDays,
+		ModelChangeAutoIgnoreDays: cfg.ModelChangeAutoIgnoreDays,
 	}, logger)
 	balanceSweeper.Start()
 	RegisterStopper(balanceSweeper.Stop)

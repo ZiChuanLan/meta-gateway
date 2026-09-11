@@ -35,6 +35,13 @@ function numberOr(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Update comparison is dotted-numeric only (see updatecheck.IsNewer); anything
+// else (e.g. "dev") can never register as an update, so the panel must not
+// claim "up to date" for it.
+function isReleaseVersion(version: string) {
+  return /^v?\d+(\.\d+)*(-[\w.]+)?$/.test(version.trim());
+}
+
 /** Panel-level anchor order for the runtime settings section nav. */
 const RUNTIME_SECTION_GROUPS = [
   {
@@ -231,6 +238,15 @@ export function RuntimeSettingsPanel() {
       return <span className="muted">{t("ops.runtime.updateNotYet")}</span>;
     if (!updateInfo.latest && updateInfo.error)
       return <span className="muted">{t("ops.runtime.updateFailed")}</span>;
+    if (!isReleaseVersion(updateInfo.current))
+      return (
+        <span className="muted">
+          {t("ops.runtime.updateDevBuild", {
+            current: updateInfo.current,
+            version: updateInfo.latest || "—",
+          })}
+        </span>
+      );
     if (updateInfo.has_update)
       return (
         <a

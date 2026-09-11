@@ -993,10 +993,26 @@ export interface ModelChange {
   detected_at: string;
   candidates: string[];
   members: ModelChangeMember[];
+  // Confidence signals (removals): confirmed = missing from several
+  // consecutive complete syncs; partial_keys = the snapshot ran with only
+  // some API keys answering (possible false positive); flap_count = repeated
+  // disappearances inside the flap window; runtime_blocked = the relay's
+  // upstream reported this channel × model as not found at request time.
+  confirmed?: boolean;
+  miss_count?: number;
+  partial_keys?: boolean;
+  flap_count?: number;
+  runtime_blocked?: boolean;
+  blocked_at?: string;
 }
 export interface ModelChangesResponse {
   items: ModelChange[];
-  summary: { added: number; removed: number; affected_routes: number };
+  summary: {
+    added: number;
+    removed: number;
+    affected_routes: number;
+    confirmed: number;
+  };
 }
 export interface ModelReplacementRequest {
   change_ids: number[];

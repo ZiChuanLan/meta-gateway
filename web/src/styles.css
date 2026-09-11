@@ -5865,32 +5865,54 @@ td.actions {
 }
 .channel-model-status-filter {
   display: inline-flex;
-  align-items: center;
-  gap: 2px;
+  align-items: stretch;
   flex: 0 0 auto;
-  padding: 2px;
-  border-radius: calc(var(--radius) - 2px);
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  height: 36px;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
 }
 .channel-model-status-filter button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--ink) 62%, transparent);
+  color: var(--muted);
   font: inherit;
   font-size: 12px;
+  font-weight: 550;
   line-height: 1;
-  padding: 6px 10px;
-  border-radius: calc(var(--radius) - 4px);
+  padding: 0 12px;
   cursor: pointer;
   white-space: nowrap;
+  transition:
+    color var(--dur-hover) var(--ease-hover),
+    background var(--dur-hover) var(--ease-hover);
+}
+.channel-model-status-filter button + button {
+  border-left: 1px solid var(--line);
 }
 .channel-model-status-filter button:hover {
   color: var(--ink);
 }
 .channel-model-status-filter button.is-active {
+  background: var(--primary-soft);
+  color: var(--primary-active);
+}
+.channel-model-status-count {
+  min-width: 17px;
+  padding: 3px 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--muted);
+}
+.channel-model-status-filter button.is-active .channel-model-status-count {
   background: var(--surface);
-  color: var(--ink);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  color: var(--primary-active);
 }
 .models-simple-toolbar select {
   flex: 0 1 auto;

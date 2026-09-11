@@ -45,6 +45,22 @@ export const en: Dict = {
   "modelChanges.done": "Updated upstream mappings for {count} members.",
   "modelChanges.stale": "The preview expired or applying failed. Go back, check the selection and preview again.",
   "modelChanges.noTargets": "No models available on this channel. Successfully sync its inventory first.",
+  "modelChanges.summaryConfirmed": "{count} confirmed",
+  "modelChanges.confirmedBadge": "Confirmed missing",
+  "modelChanges.confirmedHint":
+    "The model has been absent from {count} consecutive complete syncs — almost certainly retired upstream.",
+  "modelChanges.partialKeys": "Some keys unreachable",
+  "modelChanges.partialKeysHint":
+    "Only some API keys returned a list during this sync. The removal may come from the silent keys — a possible false positive.",
+  "modelChanges.flap": "Flapped ×{count}",
+  "modelChanges.missingFor": "missing for {days}d",
+  "modelChanges.runtimeBlocked": "Unavailable at request time",
+  "modelChanges.blockedAtHint":
+    "The upstream reported this model as not found during a real request at {time}.",
+  "modelChanges.ignoreHarmless": "Ignore harmless ({count})",
+  "modelChanges.ignoreHarmlessHint":
+    "Bulk-ignore pending removals with no impacted route member; they stay inspectable in the history.",
+  "modelChanges.adopt": "Adopt",
 
   "lang.en": "English",
   "lang.zh": "中文",
@@ -1793,6 +1809,8 @@ export const en: Dict = {
   "ops.runtime.updateNow": "Check now",
   "ops.runtime.updateChecking": "Checking…",
   "ops.runtime.updateUpToDate": "Up to date",
+  "ops.runtime.updateDevBuild":
+    "Dev build ({current}); version comparison unavailable — latest release: {version}",
   "ops.runtime.updateFound": "New version {version} available",
   "ops.runtime.updateFailed": "Check failed, try again",
   "ops.runtime.updateOff": "Update check is off",

@@ -25,6 +25,11 @@ type ReconcileInput struct {
 	// successful snapshot (key -> model names). It is persisted so routing can
 	// pick a key that actually serves the requested model.
 	CredentialModels map[int64][]string
+	// PartialDiscovery marks a snapshot taken while only some of the channel's
+	// API keys returned a model list. Removals recorded from such a snapshot
+	// may be false positives (an unreachable key hides its models from the
+	// merge), so they are flagged and do not advance the confirmation counter.
+	PartialDiscovery bool
 	Source           string
 	LatencyMs        int
 	CheckedAt        time.Time

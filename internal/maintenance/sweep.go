@@ -23,12 +23,14 @@ type BalanceAccount interface {
 // the balance-history, decision-snapshot and health-history tables on the
 // same cadence.
 type BalanceSweeper struct {
-	account               BalanceAccount
-	db                    *store.DB
-	balanceRetentionDays  int
-	decisionRetentionDays int
-	healthRetentionDays   int
-	logger                *slog.Logger
+	account                    BalanceAccount
+	db                         *store.DB
+	balanceRetentionDays       int
+	decisionRetentionDays      int
+	healthRetentionDays        int
+	modelChangeRetentionDays   int
+	modelChangeAutoIgnoreDays  int
+	logger                     *slog.Logger
 
 	lifecycleMu sync.Mutex
 	started     bool
@@ -44,12 +46,18 @@ type RetentionConfig struct {
 	BalanceHistoryDays   int
 	DecisionSnapshotDays int
 	HealthHistoryDays    int
+	// ModelChangeDays bounds finished model_changes rows (0 disables).
+	ModelChangeDays int
+	// ModelChangeAutoIgnoreDays auto-ignores pending removals with no route
+	// impact after that many days (0 = off — the operator decides).
+	ModelChangeAutoIgnoreDays int
 }
 
 const (
 	DefaultBalanceHistoryRetentionDays   = 90
 	DefaultDecisionSnapshotRetentionDays = 7
 	DefaultHealthHistoryRetentionDays    = 90
+	DefaultModelChangeRetentionDays      = 90
 )
 
 // NewBalanceSweeper preserves the historical constructor defaults.
@@ -77,17 +85,22 @@ func NewBalanceSweeperWithRetention(account BalanceAccount, db *store.DB, retent
 	if retention.HealthHistoryDays < 0 {
 		retention.HealthHistoryDays = DefaultHealthHistoryRetentionDays
 	}
+	if retention.ModelChangeDays < 0 {
+		retention.ModelChangeDays = DefaultModelChangeRetentionDays
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &BalanceSweeper{
-		account:               account,
-		db:                    db,
-		balanceRetentionDays:  retention.BalanceHistoryDays,
-		decisionRetentionDays: retention.DecisionSnapshotDays,
-		healthRetentionDays:   retention.HealthHistoryDays,
-		logger:                logger,
-		done:                  make(chan struct{}),
+		account:                   account,
+		db:                        db,
+		balanceRetentionDays:      retention.BalanceHistoryDays,
+		decisionRetentionDays:     retention.DecisionSnapshotDays,
+		healthRetentionDays:       retention.HealthHistoryDays,
+		modelChangeRetentionDays:  retention.ModelChangeDays,
+		modelChangeAutoIgnoreDays: retention.ModelChangeAutoIgnoreDays,
+		logger:                    logger,
+		done:                      make(chan struct{}),
 	}
 }
 
@@ -178,6 +191,19 @@ func (s *BalanceSweeper) run(parent context.Context) {
 	if s.healthRetentionDays > 0 {
 		if _, err := s.db.HealthHistory.Prune(time.Now().AddDate(0, 0, -s.healthRetentionDays)); err != nil {
 			s.logger.Warn("health history prune failed", "error", err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
+	if s.modelChangeRetentionDays > 0 {
+		if _, err := s.db.PruneModelChanges(s.modelChangeRetentionDays); err != nil {
+			s.logger.Warn("model change prune failed", "error", err)
+		}
+	}
+	if s.modelChangeAutoIgnoreDays > 0 {
+		if _, err := s.db.AutoIgnoreHarmlessModelChanges(s.modelChangeAutoIgnoreDays); err != nil {
+			s.logger.Warn("model change auto-ignore failed", "error", err)
 		}
 	}
 }

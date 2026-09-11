@@ -1,10 +1,12 @@
 package store_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
@@ -41,8 +43,18 @@ func TestModelChangesSnapshotLifecycle(t *testing.T) {
 	}
 	reconcile(t, db, a, "new")
 	repeated, _ := db.ModelChanges()
-	if !reflect.DeepEqual(got, repeated) {
-		t.Fatalf("repeat changed log")
+	// The repeat must not spawn rows, but the pending removal's sustained-
+	// absence counter advances once per complete snapshot.
+	if len(repeated.Items) != len(got.Items) {
+		t.Fatalf("repeat changed row count: %+v", repeated)
+	}
+	for i := range repeated.Items {
+		if repeated.Items[i].ID != got.Items[i].ID || repeated.Items[i].Kind != got.Items[i].Kind || repeated.Items[i].Status != got.Items[i].Status {
+			t.Fatalf("repeat changed log: %+v vs %+v", repeated.Items[i], got.Items[i])
+		}
+		if repeated.Items[i].Kind == "removed" && repeated.Items[i].MissCount != 1 {
+			t.Fatalf("miss count not advanced: %+v", repeated.Items[i])
+		}
 	}
 	// Duplicate snapshot rows force the entire reconcile transaction to fail.
 	_, err = db.DiscoveredModel.Reconcile(t.Context(), store.ReconcileInput{ChannelID: a, Models: []string{"broken", "broken"}})
@@ -50,7 +62,7 @@ func TestModelChangesSnapshotLifecycle(t *testing.T) {
 		t.Fatal("expected snapshot failure")
 	}
 	failed, _ := db.ModelChanges()
-	if !reflect.DeepEqual(got, failed) {
+	if !reflect.DeepEqual(repeated, failed) {
 		t.Fatal("failure changed log")
 	}
 	reconcile(t, db, a, "old", "new")
@@ -196,4 +208,132 @@ func TestModelChangesBulkApplyRollsBack(t *testing.T) {
 	if n, err := db.ApplyModelChanges(req); err != nil || n != 2 {
 		t.Fatalf("bulk: %d %v", n, err)
 	}
+}
+
+func findRemoved(t *testing.T, items []store.ModelChange, model string) store.ModelChange {
+	t.Helper()
+	for _, x := range items {
+		if x.Kind == "removed" && x.ModelName == model {
+			return x
+		}
+	}
+	t.Fatalf("removed row for %q not found", model)
+	return store.ModelChange{}
+}
+
+func TestModelChangesConfirmationSignals(t *testing.T) {
+	db := openTestDB(t)
+	a := syncModeFixture(t, db, "conf", domain.ModelSyncModeManual)
+	reconcile(t, db, a, "gone")
+	reconcile(t, db, a)
+	removed := findRemoved(t, mustChanges(t, db).Items, "gone")
+	if removed.Confirmed || removed.MissCount != 0 {
+		t.Fatalf("detection round: %+v", removed)
+	}
+
+	// Each complete sync without the model advances the counter; the row is
+	// confirmed once it reaches the threshold.
+	for i := 0; i < store.ModelChangeConfirmSynces; i++ {
+		reconcile(t, db, a)
+	}
+	removed = findRemoved(t, mustChanges(t, db).Items, "gone")
+	if !removed.Confirmed || removed.MissCount != store.ModelChangeConfirmSynces {
+		t.Fatalf("after %d syncs: %+v", store.ModelChangeConfirmSynces, removed)
+	}
+
+	// A partial snapshot (some keys silent) is unreliable evidence: flagged on
+	// fresh removals, and it must not advance the confirmation counter.
+	if _, err := db.DiscoveredModel.Reconcile(context.Background(), store.ReconcileInput{
+		ChannelID: a, Source: "test", CheckedAt: time.Now(), PartialDiscovery: true,
+	}); err != nil {
+		t.Fatalf("partial reconcile: %v", err)
+	}
+	removed = findRemoved(t, mustChanges(t, db).Items, "gone")
+	if !removed.Confirmed || removed.MissCount != store.ModelChangeConfirmSynces {
+		t.Fatalf("partial sync advanced counter: %+v", removed)
+	}
+
+	// The relay-reported model-not-found blacklist surfaces on the row.
+	if err := db.BlockModel(a, "gone", "model_not_found"); err != nil {
+		t.Fatal(err)
+	}
+	removed = findRemoved(t, mustChanges(t, db).Items, "gone")
+	if !removed.RuntimeBlocked || removed.BlockedAt == "" {
+		t.Fatalf("runtime block not surfaced: %+v", removed)
+	}
+
+	// Return, then vanish again inside the flap window: the fresh removal
+	// carries the churn counter instead of reading as a first-time event.
+	if _, err := db.Exec(`DELETE FROM channel_model_blocks WHERE channel_id=?`, a); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(t, db, a, "gone")
+	reconcile(t, db, a)
+	removed = findRemoved(t, mustChanges(t, db).Items, "gone")
+	if removed.FlapCount != 1 {
+		t.Fatalf("flap count: %+v", removed)
+	}
+}
+
+func TestModelChangesPruneAndAutoIgnore(t *testing.T) {
+	db := openTestDB(t)
+	a := syncModeFixture(t, db, "sweep", domain.ModelSyncModeManual)
+	reconcile(t, db, a, "gone-impact", "stale-harmless")
+	// "gone-impact" has a live member, so its removal is NOT harmless.
+	route, err := db.Route.Create(&domain.Route{ModelPattern: "gone-impact", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: route, ChannelID: a, Weight: 100, Enabled: true, Auto: true}); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(t, db, a, "stale-harmless", "brand-new")
+	reconcile(t, db, a, "brand-new")
+	changes := mustChanges(t, db)
+	if changes.Summary.Removed != 2 {
+		t.Fatalf("setup: %+v", changes.Summary)
+	}
+
+	stale := time.Now().UTC().AddDate(0, 0, -30).Format(time.RFC3339Nano)
+	if _, err := db.Exec(`UPDATE model_changes SET detected_at=? WHERE kind='removed'`, stale); err != nil {
+		t.Fatal(err)
+	}
+
+	// Auto-ignore flips only the member-free removal; "gone-impact" keeps
+	// reminding because a route member still binds the model.
+	n, err := db.AutoIgnoreHarmlessModelChanges(7)
+	if err != nil || n != 1 {
+		t.Fatalf("auto ignore: %d %v", n, err)
+	}
+	changes = mustChanges(t, db)
+	if got := findRemoved(t, changes.Items, "stale-harmless"); got.Status != "ignored" {
+		t.Fatalf("harmless not ignored: %+v", got)
+	}
+	if got := findRemoved(t, changes.Items, "gone-impact"); got.Status != "pending" {
+		t.Fatalf("impacted removal ignored: %+v", got)
+	}
+
+	// Prune deletes finished rows past the window; pending ones survive.
+	if _, err := db.Exec(`UPDATE model_changes SET detected_at=?, status='resolved' WHERE model_name='stale-harmless'`, stale); err != nil {
+		t.Fatal(err)
+	}
+	pruned, err := db.PruneModelChanges(7)
+	if err != nil || pruned != 1 {
+		t.Fatalf("prune: %d %v", pruned, err)
+	}
+	changes = mustChanges(t, db)
+	for _, x := range changes.Items {
+		if x.ModelName == "stale-harmless" {
+			t.Fatalf("pruned row survived: %+v", x)
+		}
+	}
+}
+
+func mustChanges(t *testing.T, db *store.DB) store.ModelChanges {
+	t.Helper()
+	changes, err := db.ModelChanges()
+	if err != nil {
+		t.Fatalf("model changes: %v", err)
+	}
+	return changes
 }

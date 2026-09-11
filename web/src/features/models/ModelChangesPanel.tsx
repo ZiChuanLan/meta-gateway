@@ -1,6 +1,7 @@
 import { ArrowRight, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import type { ModelChange, ModelReplacementPreview, ModelReplacementRequest } from "../../api/types";
 import { Button, ConfirmDialog, Dialog, Empty } from "../../components/ui";
@@ -17,11 +18,25 @@ function readFilters(): Filters {
   catch { return INITIAL; }
 }
 
+// A pending removal without any route member bound to the model cannot break
+// routing — candidate-list churn only. These are safe to bulk-ignore.
+function harmless(item: ModelChange): boolean {
+  return item.kind === "removed" && item.status === "pending" && item.members.length === 0;
+}
+
+// Whole days a pending removal has gone unhandled, from first detection.
+function missingDays(item: ModelChange): number {
+  const detected = Date.parse(item.detected_at);
+  if (Number.isNaN(detected)) return 0;
+  return Math.floor((Date.now() - detected) / 86_400_000);
+}
+
 // Local extension of the model workspace: compact reminder, inline history,
 // then a protected selection → server preview → explicit apply workflow.
 export function ModelChangesPanel() {
   const { client } = useSession();
   const { t } = useI18n();
+  const navigate = useNavigate();
   const service = api(client!);
   const [filters, setFilters] = useState(readFilters);
   const [selected, setSelected] = useState<number[]>([]);
@@ -43,6 +58,7 @@ export function ModelChangesPanel() {
     && `${item.model_name} ${item.channel_name}`.toLowerCase().includes(filters.query.trim().toLowerCase()));
   const chosen = visible.filter(item => selected.includes(item.id) && item.status === "pending");
   const replaceable = chosen.length > 0 && chosen.every(item => item.kind === "removed" && item.members.length > 0 && item.channel_id === chosen[0]!.channel_id);
+  const harmlessVisible = visible.filter(harmless);
   const channels = [...new Map(items.map(item => [item.channel_id, item.channel_name])).entries()];
   const setFilter = (patch: Partial<Filters>) => { setFilters(current => ({ ...current, ...patch })); setSelected([]); };
   return <section className="model-changes" aria-label={t("modelChanges.title")}>
@@ -50,6 +66,7 @@ export function ModelChangesPanel() {
       <RefreshCw size={15} aria-hidden="true" />
       <strong>{t("modelChanges.title")}</strong>
       {summary && (summary.added > 0 || summary.removed > 0) ? <span>{t("modelChanges.summary", { added: summary.added, removed: summary.removed, routes: summary.affected_routes })}</span> : null}
+      {summary && summary.confirmed > 0 ? <span className="model-change-warning">{t("modelChanges.summaryConfirmed", { count: summary.confirmed })}</span> : null}
       <Button variant="secondary" aria-expanded={filters.open} aria-controls="model-change-history" onClick={() => setFilter({ open: !filters.open })} icon={filters.open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}>
         {t(filters.open ? "modelChanges.collapse" : summary && summary.added + summary.removed > 0 ? "modelChanges.open" : "modelChanges.history")}
       </Button>
@@ -75,6 +92,15 @@ export function ModelChangesPanel() {
         <Button variant="secondary" onClick={() => { ignore.reset(); setIgnoreIds(chosen.map(item => item.id)); }}>{t("modelChanges.ignore")}</Button>
         {!replaceable ? <span className="muted">{t("modelChanges.sameChannel")}</span> : null}
       </div> : null}
+      {!chosen.length && harmlessVisible.length ? <div className="model-change-bulk">
+        <Button
+          variant="secondary"
+          title={t("modelChanges.ignoreHarmlessHint")}
+          onClick={() => { ignore.reset(); setIgnoreIds(harmlessVisible.map(item => item.id)); }}
+        >
+          {t("modelChanges.ignoreHarmless", { count: harmlessVisible.length })}
+        </Button>
+      </div> : null}
       {changes.isPending ? <Empty>{t("common.loading")}</Empty> : !visible.length ? <Empty>{t("modelChanges.empty")}</Empty> : <div className="model-change-list">
         {visible.map(item => <article key={item.id} className="model-change-row">
           <div className="model-change-heading">
@@ -83,7 +109,21 @@ export function ModelChangesPanel() {
             <span className={item.kind === "removed" ? "model-change-warning" : "muted"}>{t(`modelChanges.${item.kind}`)}</span>
             <span className="muted">{t(`modelChanges.${item.status}`)}</span>
           </div>
-          <div className="model-change-meta"><span>{item.channel_name}</span><time dateTime={item.detected_at}>{new Date(item.detected_at).toLocaleString()}</time></div>
+          <div className="model-change-meta">
+            <span>{item.channel_name}</span>
+            <time dateTime={item.detected_at}>{new Date(item.detected_at).toLocaleString()}</time>
+            {item.status === "pending" && item.kind === "removed" && missingDays(item) >= 1
+              ? <span className="muted">{t("modelChanges.missingFor", { days: missingDays(item) })}</span>
+              : null}
+          </div>
+          {item.kind === "removed" && (item.confirmed || item.partial_keys || (item.flap_count ?? 0) > 0 || item.runtime_blocked)
+            ? <div className="model-change-signals">
+              {item.confirmed ? <span className="model-change-signal is-confirmed" title={t("modelChanges.confirmedHint", { count: item.miss_count ?? 0 })}>{t("modelChanges.confirmedBadge")}</span> : null}
+              {item.partial_keys ? <span className="model-change-signal is-partial" title={t("modelChanges.partialKeysHint")}>{t("modelChanges.partialKeys")}</span> : null}
+              {(item.flap_count ?? 0) > 0 ? <span className="model-change-signal is-flap">{t("modelChanges.flap", { count: item.flap_count ?? 0 })}</span> : null}
+              {item.runtime_blocked ? <span className="model-change-signal is-runtime" title={t("modelChanges.blockedAtHint", { time: item.blocked_at ? new Date(item.blocked_at).toLocaleString() : "—" })}>{t("modelChanges.runtimeBlocked")}</span> : null}
+            </div>
+            : null}
           {item.kind === "removed" ? <>
             {item.members.length ? <ul className="model-change-impacts">{item.members.map(member => <li key={member.member_id}><strong className="mono">{member.model_pattern}</strong> {member.route_name} <span className="muted">{t("modelChanges.member", { id: member.member_id, group: member.group_name || "default" })}</span></li>)}</ul> : <p className="muted">{t("modelChanges.noImpact")}</p>}
             <p className="muted">{item.candidates.length ? t("modelChanges.candidates") : t("modelChanges.noCandidates")}</p>
@@ -91,6 +131,14 @@ export function ModelChangesPanel() {
           </> : null}
           {item.status === "pending" ? <div className="model-change-actions">
             {item.kind === "removed" ? <Button variant="secondary" disabled={!item.members.length} onClick={() => setReplacement([item])}>{t("modelChanges.replace")}</Button> : null}
+            {item.kind === "added" ? (
+              <Button
+                variant="secondary"
+                onClick={() => navigate(`/models/channel/${item.channel_id}?model=${encodeURIComponent(item.model_name)}`)}
+              >
+                {t("modelChanges.adopt")}
+              </Button>
+            ) : null}
             <Button variant="secondary" onClick={() => { ignore.reset(); setIgnoreIds([item.id]); }}>{t("modelChanges.ignore")}</Button>
           </div> : null}
         </article>)}

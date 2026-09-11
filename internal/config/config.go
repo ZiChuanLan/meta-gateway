@@ -131,6 +131,11 @@ type Config struct {
 	// the other daily maintenance pruners. Zero disables each pruner.
 	BalanceHistoryRetentionDays   int
 	DecisionSnapshotRetentionDays int
+	// ModelChangeRetentionDays bounds finished model_changes rows (default
+	// 90); ModelChangeAutoIgnoreDays auto-ignores pending removals with no
+	// route impact after that many days (0 = off by default).
+	ModelChangeRetentionDays  int
+	ModelChangeAutoIgnoreDays int
 	BackupRetentionCount          int
 	BackupDir                     string
 	PluginsDir                    string
@@ -390,6 +395,14 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	modelChangeRetentionDays, err := envInt("MODEL_CHANGE_RETENTION_DAYS", 90, 0, 36500)
+	if err != nil {
+		return nil, err
+	}
+	modelChangeAutoIgnoreDays, err := envInt("MODEL_CHANGE_AUTO_IGNORE_DAYS", 0, 0, 36500)
+	if err != nil {
+		return nil, err
+	}
 	backupRetentionCount, err := envInt("BACKUP_RETENTION_COUNT", 30, 0, 100000)
 	if err != nil {
 		return nil, err
@@ -500,6 +513,8 @@ func Load() (*Config, error) {
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
 		AuditRetentionRows: auditRows, HealthHistoryRetentionDays: healthHistoryDays,
 		BalanceHistoryRetentionDays: balanceHistoryDays, DecisionSnapshotRetentionDays: decisionSnapshotDays,
+		ModelChangeRetentionDays:   modelChangeRetentionDays,
+		ModelChangeAutoIgnoreDays:  modelChangeAutoIgnoreDays,
 		BackupRetentionCount:       backupRetentionCount,
 		BackupDir:                  envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
 		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
