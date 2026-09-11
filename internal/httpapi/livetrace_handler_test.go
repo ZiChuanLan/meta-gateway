@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/livetrace"
 )
+
+// liveQueueSize mirrors livetrace's unexported per-subscriber queue capacity
+// (streamBuffer). It is the threshold a retained snapshot must exceed to hit
+// the outage: replay sends the snapshot while holding the registry mutex, so a
+// queue smaller than the snapshot wedges the relay path.
+const liveQueueSize = 32
 
 // lockedRecorder is an http.ResponseWriter + http.Flusher whose body is safe
 // for the handler goroutine to keep writing while the test reads a snapshot.
@@ -121,6 +128,151 @@ func TestLiveTraceSSEAndInterrupt(t *testing.T) {
 	}
 	if !strings.Contains(body, `"status":"interrupted"`) {
 		t.Fatalf("SSE stream missing interrupted state:\n%s", body)
+	}
+}
+
+// TestLiveTraceStreamSurvivesSnapshotLargerThanLiveQueue is the end-to-end
+// guard for the 2026-09-11 production outage: opening the console's live tab
+// after more than streamBuffer relay requests had been retained deadlocked the
+// registry mutex on snapshot replay, which stalled every relay request so no
+// model could answer. The SSE stream must deliver the whole snapshot, and the
+// registry must stay usable afterwards.
+func TestLiveTraceStreamSurvivesSnapshotLargerThanLiveQueue(t *testing.T) {
+	registry := livetrace.New()
+	// Retention keeps far more than the live queue, so the snapshot is the big one.
+	const total = 60
+	for i := 0; i < total; i++ {
+		id := "req-" + strconv.Itoa(i)
+		_, release, ok := registry.Begin(context.Background(), id, "openai", "m")
+		if !ok {
+			t.Fatalf("Begin(%s) failed", id)
+		}
+		registry.Finish(id, livetrace.StatusSuccess, "")
+		release()
+	}
+	// pruneLocked caps retained history, so replay exactly what is retained.
+	want := len(registry.Snapshot())
+	if want <= liveQueueSize {
+		t.Fatalf("snapshot %d must exceed the live queue %d to exercise the bug", want, liveQueueSize)
+	}
+
+	router := chi.NewRouter()
+	newLiveTraceHandler(registry).Register(router)
+	streamReq := httptest.NewRequest(http.MethodGet, "/relay/live", nil)
+	streamCtx, streamCancel := context.WithCancel(streamReq.Context())
+	defer streamCancel()
+
+	rec := newLockedRecorder()
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(rec, streamReq.WithContext(streamCtx))
+		close(done)
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	served := false
+	for time.Now().Before(deadline) {
+		_, body := rec.snapshot()
+		if strings.Count(body, "event: request") >= want {
+			served = true
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !served {
+		_, body := rec.snapshot()
+		t.Fatalf("SSE replayed %d/%d snapshot frames; relay path is wedged:\n%s",
+			strings.Count(body, "event: request"), want, body)
+	}
+
+	// The relay path must still make progress: this is the call that stalled in
+	// production (livetrace.Registry.Attempt from proxy ForwardWithMeta).
+	relay := make(chan struct{})
+	go func() {
+		registry.Attempt("req-0", 2, "channel-x", "openai", "key")
+		close(relay)
+	}()
+	select {
+	case <-relay:
+	case <-time.After(2 * time.Second):
+		t.Fatal("relay Attempt blocked behind a live-trace subscriber")
+	}
+
+	streamCancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("SSE stream did not stop on client disconnect")
+	}
+}
+
+// gatedRecorder blocks the SSE handler inside a write until released, so the
+// subscriber's queue can be overflowed (which drops and closes the stream).
+// The handler must then return instead of spinning on a closed channel
+// delivering zero-value frames forever.
+type gatedRecorder struct {
+	*lockedRecorder
+	gate    chan struct{}
+	blocked chan struct{}
+	once    sync.Once
+	helper  *testing.T
+}
+
+func (g *gatedRecorder) Write(p []byte) (int, error) {
+	g.once.Do(func() { close(g.blocked) })
+	select {
+	case <-g.gate:
+	case <-time.After(10 * time.Second):
+		g.helper.Error("gated write never released")
+	}
+	return g.lockedRecorder.Write(p)
+}
+
+func TestLiveTraceStreamEndsWhenSubscriberOverflows(t *testing.T) {
+	registry := livetrace.New()
+	router := chi.NewRouter()
+	newLiveTraceHandler(registry).Register(router)
+
+	// One in-flight request so the handler has a snapshot frame to emit, which
+	// parks it inside the gated write below.
+	_, release, ok := registry.Begin(context.Background(), "req-x", "openai", "m")
+	if !ok {
+		t.Fatal("Begin failed")
+	}
+	defer release()
+
+	rec := &gatedRecorder{
+		lockedRecorder: newLockedRecorder(),
+		gate:           make(chan struct{}),
+		blocked:        make(chan struct{}),
+		helper:         t,
+	}
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	defer streamCancel()
+
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/relay/live", nil).WithContext(streamCtx))
+		close(done)
+	}()
+	select {
+	case <-rec.blocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SSE handler never wrote a frame")
+	}
+
+	// Overflow the stalled subscriber's queue so the registry drops and closes
+	// it. The handler must notice the close and return instead of replaying
+	// zero-value frames forever.
+	for i := 0; i < liveQueueSize*4; i++ {
+		registry.Attempt("req-x", i, "channel", "openai", "key")
+	}
+	close(rec.gate)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SSE handler spun on its closed subscriber channel instead of returning")
 	}
 }
 

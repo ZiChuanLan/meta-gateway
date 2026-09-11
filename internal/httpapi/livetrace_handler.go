@@ -73,7 +73,14 @@ func (h *liveTraceHandler) stream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case update := <-updates:
+		case update, ok := <-updates:
+			if !ok {
+				// Overflow dropped this subscriber and closed the stream (see
+				// Registry.publishLocked). Returning lets the client reconnect
+				// and re-receive the snapshot instead of spinning on a closed
+				// channel delivering zero-value frames.
+				return
+			}
 			if !writeEvent("request", update) {
 				return
 			}

@@ -2,6 +2,7 @@ package livetrace
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -126,6 +127,62 @@ func TestDuplicateBeginIsRejected(t *testing.T) {
 	if ok2 {
 		release2()
 		t.Fatal("duplicate Begin must be rejected")
+	}
+}
+
+func TestSubscribeReplaysSnapshotLargerThanLiveQueue(t *testing.T) {
+	registry := New()
+	// Retention keeps up to maxFinished requests, so the snapshot routinely
+	// exceeds the live-update queue. Replaying it must never block: Subscribe
+	// holds r.mu while sending, and a stalled send freezes the whole relay path
+	// (2026-09-11 production outage: every model stopped responding).
+	total := streamBuffer + 20
+	for i := 0; i < total; i++ {
+		id := "req-" + strconv.Itoa(i)
+		_, release, ok := registry.Begin(context.Background(), id, "openai", "m")
+		if !ok {
+			t.Fatalf("Begin(%s) failed", id)
+		}
+		release()
+	}
+	if got := len(registry.Snapshot()); got != total {
+		t.Fatalf("snapshot size = %d, want %d", got, total)
+	}
+
+	streams := make(chan chan Request, 1)
+	go func() { streams <- registry.Subscribe() }()
+	var stream chan Request
+	select {
+	case stream = <-streams:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Subscribe blocked replaying a snapshot larger than the live queue")
+	}
+	defer registry.Unsubscribe(stream)
+
+	replayed := 0
+Drain:
+	for i := 0; i < total; i++ {
+		select {
+		case <-stream:
+			replayed++
+		default:
+			break Drain
+		}
+	}
+	if replayed != total {
+		t.Fatalf("replayed %d updates, want %d", replayed, total)
+	}
+
+	// The registry must still be usable: queued relay work cannot be blocked.
+	done := make(chan struct{})
+	go func() {
+		registry.Attempt("req-0", 2, "channel-x", "openai", "key")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Attempt blocked after a large snapshot replay")
 	}
 }
 

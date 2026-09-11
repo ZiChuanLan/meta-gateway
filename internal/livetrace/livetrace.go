@@ -197,10 +197,17 @@ func (r *Registry) Snapshot() []Request {
 // Subscribe registers a state stream. The returned channel receives the full
 // snapshot first (as individual updates), then live updates until the
 // subscriber unsubscribes or overflows (overflow closes it).
+//
+// The queue is sized for the entire snapshot plus the same live headroom
+// publishLocked tolerates, so replaying the snapshot can never block. The send
+// below runs while r.mu is held, and the retained request list grows to
+// maxFinished: a queue smaller than the snapshot would block the sender
+// forever, hold r.mu forever, and with it stall every Attempt/Begin/Finish on
+// the relay path.
 func (r *Registry) Subscribe() chan Request {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	ch := make(chan Request, streamBuffer)
+	ch := make(chan Request, len(r.order)+streamBuffer)
 	r.wchs[ch] = struct{}{}
 	for _, id := range r.order {
 		if req := r.reqs[id]; req != nil {
