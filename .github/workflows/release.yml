@@ -17,6 +17,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -50,7 +53,41 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The release body is the version's CHANGELOG section, so the notes carry
+      # the actual changes instead of the generated "Full Changelog" line alone.
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          set -euo pipefail
+          # CHANGELOG headings keep the tag's "v" prefix (## [v2.5.2]).
+          tag="${GITHUB_REF_NAME}"
+          awk -v ver="$tag" '
+            index($0, "## [" ver "]") == 1 { found = 1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ -s release-notes.md ]; then
+            prev="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+            if [ -n "$prev" ]; then
+              printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "$GITHUB_REPOSITORY" "$prev" "$GITHUB_REF_NAME" >> release-notes.md
+            fi
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No [$tag] section in CHANGELOG.md; falling back to generated notes"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "--- release-notes.md ---"
+          cat release-notes.md
+
       - name: Create GitHub release
+        if: steps.changelog.outputs.found == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+
+      - name: Create GitHub release (generated notes)
+        if: steps.changelog.outputs.found != 'true'
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
