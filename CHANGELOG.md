@@ -4,6 +4,39 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.2] — 2026-09-11
+
+### Fixed
+
+- Opening the console's live view could freeze every model at once. The live
+  tab (Logs → live, SSE `/admin/relay/live`) subscribed through
+  `livetrace.Registry.Subscribe`, which replayed the retained snapshot onto a
+  subscriber channel sized for the live queue (32) while retention keeps up to
+  50 finished requests. Past 32 served requests the replay blocked on the 33rd
+  send **with the registry mutex held**; because every relay request calls
+  `Attempt`/`Begin`/`Finish` — all of which take that mutex — the first
+  live-view connection stalled all traffic. Requests were still accepted and
+  model lists still loaded, but no model could answer, streaming or not, and
+  the process never recovered on its own: only a restart cleared it. The
+  subscriber queue is now sized for the snapshot plus the same live headroom
+  the publisher tolerates, so replay can never block.
+- The SSE handler treats a closed subscriber channel as terminal. After an
+  overflow drop it read from the closed channel forever, replaying zero-value
+  frames to the browser in a tight loop instead of returning so the client
+  could reconnect and re-receive the snapshot.
+
+### Changed
+
+- Container images build the web and Go stages on the build platform and
+  cross-compile per target architecture instead of running the whole toolchain
+  under QEMU emulation. Multi-architecture releases no longer inherit QEMU's
+  flakiness — `go mod download` died under emulation on 2026-09-10, which left
+  v2.5.1 with a tag but no published image and no GitHub release — and release
+  builds are substantially faster.
+- GitHub releases are published with that version's CHANGELOG section as the
+  release body plus the compare link, instead of the generated
+  "Full Changelog" line on its own.
+
 ## [v2.5.1] — 2026-09-10
 
 ### Added
