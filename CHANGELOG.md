@@ -4,6 +4,17 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.3] — 2026-09-11
+
+### Added
+
+- The channel model manager (edit connection → 管理, or the `/models/channel/:id`
+  page) can now narrow the candidate list by adoption state: **全部 / 已启用 /
+  已禁用**（All / Enabled / Disabled）. The filter composes with search and bulk
+  mode, updates the vendor-group counts, and shows an empty-state line when
+  nothing matches. Previously the panel only offered search and bulk select, so
+  parked models could not be isolated from adopted ones.
+
 ## [v2.5.2] — 2026-09-11
 
 ### Fixed
