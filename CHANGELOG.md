@@ -4,6 +4,54 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.4] — 2026-09-12
+
+### Added
+
+- Upstream model-change maintenance gains confidence signals and automation.
+  Each pending removal now tracks how many consecutive complete syncs have
+  lacked the model and is badged **已确认缺失**（Confirmed missing）once that
+  reaches three, with the summary showing the confirmed count; snapshots taken
+  while only some of a channel's API keys answered flag the row **部分 Key
+  未响应**（possible false positive）and do not advance the counter; a model
+  re-disappearing within 30 days increments a **反复上下线 ×N** churn counter
+  instead of stacking history rows; and when the relay's upstream itself
+  reported the channel × model as not found at request time (the existing
+  model-block blacklist), the row shows **运行时观测到不可用** with the
+  timestamp. Pending removals also display how many days they have gone
+  unhandled.
+- Handling is faster on both ends: pending additions offer a **去接入**
+  deep link straight into the channel's model page with the model pre-filtered
+  in search, and a **忽略无影响（N）** bulk action ignores every pending
+  removal with no impacted route member in one click.
+- Alert rules gain two gauges, `model_change_removed` and
+  `model_change_affected_routes`, so upstream churn can notify through the
+  existing webhook/bark/serverchan/telegram/smtp rules — recommended rule:
+  `model_change_affected_routes > 0`.
+- Two upkeep knobs (daily sweep, zero disables): `MODEL_CHANGE_RETENTION_DAYS`
+  (default 90) prunes finished model-change entries;
+  `MODEL_CHANGE_AUTO_IGNORE_DAYS` (default 0 = off) auto-ignores harmless
+  pending removals — candidate-list churn with no route impact — after N days.
+- The channel model manager's status filter（全部 / 已启用 / 已禁用）now carries
+  a live count badge on every option（total / enabled / disabled）, and the
+  control is styled as a toolbar-height segmented switch aligned with the
+  search and custom-model inputs.
+
+### Fixed
+
+- The console update check no longer claims "已是最新版本" (up to date) on dev
+  builds. The comparison only parses dotted-numeric versions, so a binary
+  built without the version ldflags could never see an update even when a
+  newer release existed on GitHub; the panel now reports the build as a dev
+  build and shows the latest release it found instead.
+
+### Changed
+
+- `docker compose build` forwards the VERSION and COMMIT build args
+  (`VERSION=v2.5.4 docker compose build`), so locally built images can carry
+  the real release tag in the console title and 当前版本 row instead of the
+  buildinfo default "dev".
+
 ## [v2.5.3] — 2026-09-11
 
 ### Added
