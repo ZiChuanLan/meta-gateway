@@ -20,13 +20,16 @@ func TestModelMetadataLifecycle(t *testing.T) {
 
 	// Upsert creates.
 	if err := db.ModelMetadata.Upsert(&domain.ModelMetadata{
-		ModelName:        "deepseek-v4-flash",
-		ContextWindow:    128000,
-		InputModalities:  "text,image",
-		OutputModalities: "text",
-		SupportsThinking: 1,
-		Vendor:           "DeepSeek",
-		Notes:            "default",
+		ModelName:            "deepseek-v4-flash",
+		ContextWindow:        128000,
+		InputModalities:      "text,image",
+		OutputModalities:     "text",
+		SupportsThinking:     1,
+		Vendor:               "DeepSeek",
+		Notes:                "default",
+		PricePromptPer1k:     2,
+		PriceCompletionPer1k: 5,
+		PriceCachePer1k:      0.5,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -36,6 +39,9 @@ func TestModelMetadataLifecycle(t *testing.T) {
 	}
 	if got.ContextWindow != 128000 || got.SupportsThinking != 1 || got.Vendor != "DeepSeek" {
 		t.Fatalf("upsert round trip = %+v", got)
+	}
+	if got.PricePromptPer1k != 2 || got.PriceCompletionPer1k != 5 || got.PriceCachePer1k != 0.5 {
+		t.Fatalf("prices round trip = %+v", got)
 	}
 
 	// Upsert updates in place (same row).

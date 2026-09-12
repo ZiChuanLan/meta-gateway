@@ -276,11 +276,38 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 			log.Printf("proxy: billing ratio model=%s: %v", req.Model, err)
 		}
 	}
-	pricePrompt, priceCompletion := 0.0, 0.0
-	if req.DownstreamKeyID > 0 && s.db.DownstreamKey != nil {
+	// Model self-set prices take precedence: metadata is keyed by the
+	// requested model name and carries its own per-1k unit prices (with a
+	// dedicated cache-read price). Without a priced row the legacy per-key
+	// prices apply, and cache-read/creation tokens bill at the prompt rate.
+	pricePrompt, priceCompletion, priceCache := 0.0, 0.0, 0.0
+	modelPriced := false
+	if s.db.ModelMetadata != nil {
+		if meta, err := s.db.ModelMetadata.Get(req.Model); err == nil && meta != nil &&
+			(meta.PricePromptPer1k > 0 || meta.PriceCompletionPer1k > 0) {
+			pricePrompt = meta.PricePromptPer1k
+			priceCompletion = meta.PriceCompletionPer1k
+			priceCache = meta.PriceCachePer1k
+			modelPriced = true
+		}
+	}
+	if !modelPriced && req.DownstreamKeyID > 0 && s.db.DownstreamKey != nil {
 		if key, err := s.db.DownstreamKey.GetByID(req.DownstreamKeyID); err == nil && key != nil {
 			pricePrompt, priceCompletion = key.PricePromptPer1k, key.PriceCompletionPer1k
 		}
+	}
+	if modelPriced {
+		// Cache-read tokens bill at the cache price (prompt price when unset);
+		// cache-creation tokens bill at the prompt price.
+		prompt := float64(tokens.PromptTokens + tokens.CacheCreationTokens)
+		completion := float64(tokens.CompletionTokens)
+		cacheRead := float64(tokens.CacheReadTokens)
+		cachePrice := priceCache
+		if cachePrice <= 0 {
+			cachePrice = pricePrompt
+		}
+		return (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion +
+			cacheRead/1000.0*cachePrice) * ratio
 	}
 	prompt := float64(tokens.PromptTokens + tokens.CacheReadTokens + tokens.CacheCreationTokens)
 	completion := float64(tokens.CompletionTokens)

@@ -121,6 +121,8 @@ services:
       WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN:-meta-gateway-local-update}"
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_CLEANUP: "true"
+      # containrrr/watchtower 停更于 2023，对 Docker 29+ 需要固定 API 版本
+      DOCKER_API_VERSION: "1.44"
     restart: unless-stopped
 
 volumes:

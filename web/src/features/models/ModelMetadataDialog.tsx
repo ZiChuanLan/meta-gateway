@@ -94,6 +94,42 @@ function ModelMetadataDialog({
             disabled={pending}
           />
         </Field>
+        <Field label={t("modelsPage.metaPricePrompt")} hint={t("modelsPage.metaPriceHint")}>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={form.price_prompt_per_1k ?? 0}
+            onChange={(e) =>
+              patch({ price_prompt_per_1k: Math.max(0, Number(e.target.value) || 0) })
+            }
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("modelsPage.metaPriceCompletion")}>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={form.price_completion_per_1k ?? 0}
+            onChange={(e) =>
+              patch({ price_completion_per_1k: Math.max(0, Number(e.target.value) || 0) })
+            }
+            disabled={pending}
+          />
+        </Field>
+        <Field label={t("modelsPage.metaPriceCache")}>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={form.price_cache_per_1k ?? 0}
+            onChange={(e) =>
+              patch({ price_cache_per_1k: Math.max(0, Number(e.target.value) || 0) })
+            }
+            disabled={pending}
+          />
+        </Field>
       </div>
 	  {error ? <div className="inline-error">{String(error)}</div> : null}
       <div className="dialog-actions">

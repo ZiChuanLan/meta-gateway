@@ -356,7 +356,13 @@ type ModelMetadata struct {
 	SupportsThinking int    `json:"supports_thinking"`
 	Vendor           string `json:"vendor"`
 	Notes            string `json:"notes"`
-	UpdatedAt        string `json:"updated_at"`
+	// Optional self-set unit prices per 1k tokens, used for cost estimation
+	// and billing (they take precedence over the downstream key's prices).
+	// 0 = fall back to the key price.
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
+	PriceCachePer1k      float64 `json:"price_cache_per_1k"`
+	UpdatedAt            string  `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------

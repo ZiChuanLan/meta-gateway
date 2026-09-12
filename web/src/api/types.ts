@@ -422,6 +422,10 @@ export interface ModelMetadata {
   supports_thinking: number; // -1 unknown, 0 no, 1 yes
   vendor: string;
   notes: string;
+  /** Self-set unit prices per 1k tokens (0 = fall back to the key price). */
+  price_prompt_per_1k?: number;
+  price_completion_per_1k?: number;
+  price_cache_per_1k?: number;
   updated_at?: string;
 }
 

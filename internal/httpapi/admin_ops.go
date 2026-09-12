@@ -94,12 +94,15 @@ func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Reques
 	}
 	name = strings.TrimSpace(name)
 	var req struct {
-		ContextWindow    *int64  `json:"context_window"`
-		InputModalities  *string `json:"input_modalities"`
-		OutputModalities *string `json:"output_modalities"`
-		SupportsThinking *int    `json:"supports_thinking"`
-		Vendor           *string `json:"vendor"`
-		Notes            *string `json:"notes"`
+		ContextWindow    *int64   `json:"context_window"`
+		InputModalities  *string  `json:"input_modalities"`
+		OutputModalities *string  `json:"output_modalities"`
+		SupportsThinking *int     `json:"supports_thinking"`
+		Vendor           *string  `json:"vendor"`
+		Notes            *string  `json:"notes"`
+		PricePrompt      *float64 `json:"price_prompt_per_1k"`
+		PriceCompletion  *float64 `json:"price_completion_per_1k"`
+		PriceCache       *float64 `json:"price_cache_per_1k"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")
@@ -139,6 +142,32 @@ func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Reques
 	}
 	if req.Notes != nil {
 		meta.Notes = *req.Notes
+	}
+	// Self-set per-model unit prices: 0 keeps the per-key fallback billing.
+	for _, price := range []struct {
+		name  string
+		value *float64
+	}{
+		{"price_prompt_per_1k", req.PricePrompt},
+		{"price_completion_per_1k", req.PriceCompletion},
+		{"price_cache_per_1k", req.PriceCache},
+	} {
+		if price.value == nil {
+			continue
+		}
+		if *price.value < 0 {
+			writeError(w, http.StatusBadRequest, price.name+" must be >= 0")
+			return
+		}
+	}
+	if req.PricePrompt != nil {
+		meta.PricePromptPer1k = *req.PricePrompt
+	}
+	if req.PriceCompletion != nil {
+		meta.PriceCompletionPer1k = *req.PriceCompletion
+	}
+	if req.PriceCache != nil {
+		meta.PriceCachePer1k = *req.PriceCache
 	}
 	if err := h.db.ModelMetadata.Upsert(&meta); err != nil {
 		writeStoreError(w, err)

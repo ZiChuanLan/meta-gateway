@@ -704,6 +704,11 @@ export const zh: Dict = {
   "modelsPage.metaThinkingYes": "支持",
   "modelsPage.metaThinkingNo": "不支持",
   "modelsPage.metaVendor": "厂商",
+  "modelsPage.metaPricePrompt": "输入单价 /1k",
+  "modelsPage.metaPriceCompletion": "输出单价 /1k",
+  "modelsPage.metaPriceCache": "缓存读取单价 /1k",
+  "modelsPage.metaPriceHint":
+    "按模型计费：优先于下游密钥的单价。缓存读取留 0 = 按输入价计费。单位自定（与费用展示一致）。",
   "modelsPage.metaNotes": "备注",
   "modelsPage.missingModels": "有 {count} 个渠道暴露的模型未被任何路由覆盖",
   "modelsPage.missingModelsFocus": "定位第一个",

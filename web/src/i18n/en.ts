@@ -758,6 +758,11 @@ export const en: Dict = {
   "modelsPage.metaThinkingYes": "Supported",
   "modelsPage.metaThinkingNo": "Not supported",
   "modelsPage.metaVendor": "Vendor",
+  "modelsPage.metaPricePrompt": "Input price /1k",
+  "modelsPage.metaPriceCompletion": "Output price /1k",
+  "modelsPage.metaPriceCache": "Cache-read price /1k",
+  "modelsPage.metaPriceHint":
+    "Per-model billing takes precedence over the downstream key's unit prices. Cache-read 0 = billed at the input price. Units are whatever you use consistently across cost displays.",
   "modelsPage.metaNotes": "Notes",
   "modelsPage.missingModels":
     "{count} channel-exposed models are not covered by any route",

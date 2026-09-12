@@ -11,6 +11,7 @@ import (
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
+	"github.com/lan/meta-gateway/internal/usage"
 )
 
 // Routing must pick the key capable of serving the requested model. With two
@@ -348,4 +349,54 @@ func buildPoolService(db *store.DB, enc *crypto.Encrypter) (*Service, error) {
 	service := New(selector, &queuedRelay{}, db, enc, 2, time.Minute)
 	service.SetKeyPoolRotation(true)
 	return service, nil
+}
+
+// Per-model self-set prices take precedence over the downstream key's unit
+// prices; models without a priced metadata row fall back to the key price.
+func TestBillingCostModelPricePrecedence(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, _ := crypto.New("billing-test")
+	keyID, err := db.DownstreamKey.Create(&domain.DownstreamKey{
+		Name:             "client",
+		Enabled:          true,
+		PricePromptPer1k:     10,
+		PriceCompletionPer1k: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := buildPoolService(db, enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No metadata row: the key price bills everything (legacy formula lumps
+	// cache tokens into the prompt).
+	req := Request{Model: "m1", DownstreamKeyID: keyID}
+	if cost := service.billingCost(req, usage.Tokens{PromptTokens: 1000, CompletionTokens: 1000}); cost != 20 {
+		t.Fatalf("key-price cost = %v, want 20", cost)
+	}
+
+	// Priced metadata: prompt 2, completion 4, cache-read 1 per 1k.
+	if err := db.ModelMetadata.Upsert(&domain.ModelMetadata{
+		ModelName: "m1", PricePromptPer1k: 2, PriceCompletionPer1k: 4, PriceCachePer1k: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cost := service.billingCost(req, usage.Tokens{
+		PromptTokens: 1000, CompletionTokens: 1000, CacheReadTokens: 1000,
+	})
+	if cost != 7 {
+		t.Fatalf("model-price cost = %v, want 7", cost)
+	}
+
+	// A model without a priced row keeps the key price.
+	other := Request{Model: "m2", DownstreamKeyID: keyID}
+	if cost := service.billingCost(other, usage.Tokens{CompletionTokens: 1000}); cost != 10 {
+		t.Fatalf("fallback cost = %v, want 10", cost)
+	}
 }
