@@ -4,6 +4,19 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.7] — 2026-09-12
+
+### Added
+
+- Bulk selection on the two remaining list pages. 连接 (channels): checkbox
+  column with select-all-page, then 同步模型 / 启用 / 停用 over the selection
+  in one pass. 模型 (routing): checkbox column with 启用选中 / 停用选中 /
+  删除选中 (delete confirms first; member bindings go with the route).
+- The upstream-change reminder now recognises work already done: a pending
+  新增 whose model is already wired into the channel's routing is badged
+  已接入, excluded from the summary count, covered by the one-click 忽略无影响
+  bulk action, and resolved automatically by the nightly sweep.
+
 ## [v2.5.6] — 2026-09-12
 
 ### Fixed
