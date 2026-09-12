@@ -377,7 +377,7 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 	// No metadata row: the key price bills everything (legacy formula lumps
 	// cache tokens into the prompt).
 	req := Request{Model: "m1", DownstreamKeyID: keyID}
-	if cost := service.billingCost(req, usage.Tokens{PromptTokens: 1000, CompletionTokens: 1000}); cost != 20 {
+	if cost := service.billingCost(req, 0, usage.Tokens{PromptTokens: 1000, CompletionTokens: 1000}); cost != 20 {
 		t.Fatalf("key-price cost = %v, want 20", cost)
 	}
 
@@ -387,7 +387,7 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	cost := service.billingCost(req, usage.Tokens{
+	cost := service.billingCost(req, 0, usage.Tokens{
 		PromptTokens: 1000, CompletionTokens: 1000, CacheReadTokens: 1000,
 	})
 	if cost != 7 {
@@ -396,7 +396,32 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 
 	// A model without a priced row keeps the key price.
 	other := Request{Model: "m2", DownstreamKeyID: keyID}
-	if cost := service.billingCost(other, usage.Tokens{CompletionTokens: 1000}); cost != 10 {
+	if cost := service.billingCost(other, 0, usage.Tokens{CompletionTokens: 1000}); cost != 10 {
 		t.Fatalf("fallback cost = %v, want 10", cost)
+	}
+
+	// Member layer: the route member binding this channel to m1 prices the
+	// model 5/7/0.5 — most specific, beats both the model metadata and the
+	// key price.
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "m1", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelID, err := db.Channel.Create(&domain.Channel{Name: "c2", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: channelID, Weight: 100, Enabled: true,
+		PricePromptPer1k: 5, PriceCompletionPer1k: 7, PriceCachePer1k: 0.5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reqMember := Request{Model: "m1", RouteID: routeID, DownstreamKeyID: keyID}
+	cost = service.billingCost(reqMember, channelID, usage.Tokens{
+		PromptTokens: 1000, CompletionTokens: 1000, CacheReadTokens: 1000,
+	})
+	if cost != 12.5 {
+		t.Fatalf("member-price cost = %v, want 12.5", cost)
 	}
 }

@@ -1369,6 +1369,11 @@ export const zh: Dict = {
   "routing.priorityHint":
     "数字越大越先试。优先级不同时是严格先后顺序（像排行榜）。",
   "routing.weightLabel": "权重（同优先级内）",
+  "routing.memberPricePrompt": "输入单价 /1k",
+  "routing.memberPriceCompletion": "输出单价 /1k",
+  "routing.memberPriceCache": "缓存读取单价 /1k",
+  "routing.memberPriceHint":
+    "该渠道服务此模型的专属单价，优先于模型默认价和密钥价；留 0 = 使用模型默认价。单位与费用展示一致。",
   "routing.weightHint":
     "仅当两条通道优先级相同时生效。权重大的分到更多流量（例如 70 对 30）。",
   "routing.enabledLabel": "已启用",

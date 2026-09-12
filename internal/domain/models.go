@@ -462,6 +462,13 @@ type RouteMember struct {
 	LastError     string     `json:"last_error,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
+	// Optional self-set unit prices per 1k tokens for THIS channel serving
+	// this model — the most specific billing layer (overrides the model's
+	// metadata prices, which override the downstream key's prices). 0 = fall
+	// through to the next layer.
+	PricePromptPer1k     float64 `json:"price_prompt_per_1k,omitempty"`
+	PriceCompletionPer1k float64 `json:"price_completion_per_1k,omitempty"`
+	PriceCachePer1k      float64 `json:"price_cache_per_1k,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

@@ -1490,6 +1490,11 @@ export const en: Dict = {
   "routing.priorityHint":
     "Higher number is tried first. Different priorities = strict order (like a ranked list).",
   "routing.weightLabel": "Weight (same priority)",
+  "routing.memberPricePrompt": "Input price /1k",
+  "routing.memberPriceCompletion": "Output price /1k",
+  "routing.memberPriceCache": "Cache-read price /1k",
+  "routing.memberPriceHint":
+    "This channel's dedicated unit price for the model - overrides the model default and the key price. 0 = use the model default. Units match the cost displays.",
   "routing.weightHint":
     "Only used when two channels share the same priority. Higher weight gets more traffic (e.g. 70 vs 30).",
   "routing.enabledLabel": "Enabled",

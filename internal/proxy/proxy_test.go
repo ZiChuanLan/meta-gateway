@@ -1056,12 +1056,12 @@ func TestBillingCostFormula(t *testing.T) {
 	tokens := usage.Tokens{PromptTokens: 1000, CompletionTokens: 250, CacheReadTokens: 100}
 	// prompt = 1000+100 = 1100 → 1.1 * 1.0; completion = 250 → 0.25 * 2.0;
 	// (1.1 + 0.5) * 3.0 = 4.8
-	cost := service.billingCost(req, tokens)
+	cost := service.billingCost(req, 0, tokens)
 	if cost < 4.79 || cost > 4.81 {
 		t.Fatalf("cost=%v want ~4.8", cost)
 	}
 	// Unknown model → ratio 1.0, no key → 0 price → 0 cost.
-	if cost := service.billingCost(Request{}, usage.Tokens{PromptTokens: 100}); cost != 0 {
+	if cost := service.billingCost(Request{}, 0, usage.Tokens{PromptTokens: 100}); cost != 0 {
 		t.Fatalf("no-key cost=%v want 0", cost)
 	}
 }

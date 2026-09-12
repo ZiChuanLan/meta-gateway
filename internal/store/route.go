@@ -311,6 +311,7 @@ func scanRouteMember(scanner interface {
 		&r.LastError,
 		scanTime(&r.CreatedAt),
 		scanTime(&r.UpdatedAt),
+		&r.PricePromptPer1k, &r.PriceCompletionPer1k, &r.PriceCachePer1k,
 	); err != nil {
 		return err
 	}
@@ -335,7 +336,7 @@ func (s *RouteMemberStore) ListByRouteTx(tx *sql.Tx, routeID int64) ([]domain.Ro
 }
 
 func listRouteMembers(ex sqlExecutor, routeID int64) ([]domain.RouteMember, error) {
-	rows, err := ex.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
+	rows, err := ex.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
 	if err != nil {
 		return nil, fmt.Errorf("route member list: %w", err)
 	}
@@ -377,6 +378,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 	rows, err := s.db.Query(`SELECT
 			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
 			rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
@@ -408,6 +410,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
 			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
+			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k,
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
@@ -496,6 +499,7 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 	rows, err := s.db.Query(`SELECT
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
 		rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
     c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
@@ -530,6 +534,7 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
 			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
+			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k,
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
@@ -673,7 +678,7 @@ func (s *RouteMemberStore) RecoverExpired() error {
 }
 
 func (s *RouteMemberStore) GetByID(id int64) (*domain.RouteMember, error) {
-	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at FROM route_members WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k FROM route_members WHERE id = ?`, id)
 	var r domain.RouteMember
 	if err := scanRouteMember(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -695,8 +700,8 @@ func (s *RouteMemberStore) CreateTx(tx *sql.Tx, r *domain.RouteMember) (int64, e
 
 func createRouteMember(ex sqlExecutor, r *domain.RouteMember) (int64, error) {
 	enabled, auto, manual := boolInt(r.Enabled), boolInt(r.Auto), boolInt(r.ManualOverride)
-	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName))
+	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.PricePromptPer1k, r.PriceCompletionPer1k, r.PriceCachePer1k)
 	if err != nil {
 		return 0, fmt.Errorf("route member create: %w", err)
 	}
@@ -776,14 +781,31 @@ func (s *RouteMemberStore) ListRouteGroupNames() ([]string, error) {
 	return names, rows.Err()
 }
 
+// MemberPrices returns the per-member unit prices for a channel serving a
+// route (0 values = unpriced). Used by relay billing as the most specific
+// price layer.
+func (s *RouteMemberStore) MemberPrices(routeID, channelID int64) (prompt, completion, cache float64, found bool, err error) {
+	row := s.db.QueryRow(
+		`SELECT price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k
+		 FROM route_members WHERE route_id = ? AND channel_id = ? ORDER BY priority DESC, id LIMIT 1`,
+		routeID, channelID)
+	if err := row.Scan(&prompt, &completion, &cache); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, 0, 0, false, nil
+		}
+		return 0, 0, 0, false, fmt.Errorf("route member prices: %w", err)
+	}
+	return prompt, completion, cache, true, nil
+}
+
 func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
 	enabled, auto, manual := boolInt(r.Enabled), boolInt(r.Auto), boolInt(r.ManualOverride)
 	var cooldownUntil any
 	if r.CooldownUntil != nil {
 		cooldownUntil = r.CooldownUntil.UTC().Format(time.RFC3339Nano)
 	}
-	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, mapping_json=?, group_name=?, fail_count=?, cooldown_until=?, last_error=?, updated_at=datetime('now') WHERE id=?`,
-		r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.FailCount, cooldownUntil, r.LastError, r.ID)
+	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, mapping_json=?, group_name=?, fail_count=?, cooldown_until=?, last_error=?, price_prompt_per_1k=?, price_completion_per_1k=?, price_cache_per_1k=?, updated_at=datetime('now') WHERE id=?`,
+		r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.FailCount, cooldownUntil, r.LastError, r.PricePromptPer1k, r.PriceCompletionPer1k, r.PriceCachePer1k, r.ID)
 	if err != nil {
 		return fmt.Errorf("route member update: %w", err)
 	}

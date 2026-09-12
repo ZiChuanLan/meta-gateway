@@ -102,6 +102,42 @@ export function MemberDialog({
           />
           <InfoTip label={t("routing.weightHint")} />
         </Field>
+        <Field label={t("routing.memberPricePrompt")} hint={t("routing.memberPriceHint")}>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={form.price_prompt_per_1k ?? 0}
+            onChange={(event) => {
+              markTouched();
+              setForm({ ...form, price_prompt_per_1k: Math.max(0, Number(event.target.value) || 0) });
+            }}
+          />
+        </Field>
+        <Field label={t("routing.memberPriceCompletion")}>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={form.price_completion_per_1k ?? 0}
+            onChange={(event) => {
+              markTouched();
+              setForm({ ...form, price_completion_per_1k: Math.max(0, Number(event.target.value) || 0) });
+            }}
+          />
+        </Field>
+        <Field label={t("routing.memberPriceCache")}>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={form.price_cache_per_1k ?? 0}
+            onChange={(event) => {
+              markTouched();
+              setForm({ ...form, price_cache_per_1k: Math.max(0, Number(event.target.value) || 0) });
+            }}
+          />
+        </Field>
       </div>
       <Field label={t("routing.memberGroupLabel")}>
         <select

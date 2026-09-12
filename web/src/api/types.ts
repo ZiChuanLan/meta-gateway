@@ -144,6 +144,10 @@ export interface RouteMember {
   last_error?: string;
   created_at: string;
   updated_at: string;
+  /** Self-set unit prices per 1k tokens (0 = fall to model price, then key price). */
+  price_prompt_per_1k?: number;
+  price_completion_per_1k?: number;
+  price_cache_per_1k?: number;
 }
 export interface DownstreamKey {
   id: number;
