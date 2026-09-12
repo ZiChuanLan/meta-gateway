@@ -456,6 +456,9 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 			if meta != nil {
 				channelID = meta.ChannelID
 				proxyReq.RouteID = meta.RouteID
+				// Billing resolves the member's own prices by id: the
+				// (route, channel) pair is not unique across route groups.
+				proxyReq.MemberID = meta.MemberID
 				proxyReq.GrayAttempt = meta.GrayAttempt
 			}
 			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
@@ -465,7 +468,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 				}
 			}
 			if h.liveTrace != nil && requestID != "" {
-				h.liveTrace.FinishSuccess(requestID, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
+				h.liveTrace.FinishCopied(requestID, status, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
 			}
 		},
 		func(bytesSent int64) {
@@ -677,6 +680,9 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 			if meta != nil {
 				channelID = meta.ChannelID
 				proxyReq.RouteID = meta.RouteID
+				// Billing resolves the member's own prices by id: the
+				// (route, channel) pair is not unique across route groups.
+				proxyReq.MemberID = meta.MemberID
 				proxyReq.GrayAttempt = meta.GrayAttempt
 			}
 			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
@@ -686,7 +692,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 				}
 			}
 			if h.liveTrace != nil && requestID != "" {
-				h.liveTrace.FinishSuccess(requestID, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
+				h.liveTrace.FinishCopied(requestID, status, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
 			}
 		},
 		func(bytesSent int64) {

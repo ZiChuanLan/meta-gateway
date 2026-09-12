@@ -164,8 +164,7 @@ export function RouteDialog({
                   })}
                 </p>
                 <div
-                  className="selection-list"
-                  style={{ maxHeight: 220, overflowY: "auto" }}
+                  className="selection-list scroll-list"
                 >
                   {matchItems.map((item) => (
                     <label className="check" key={item.channel_id}>
@@ -187,7 +186,7 @@ export function RouteDialog({
           ) : null}
         </>
       ) : null}
-      <div className="ops-panel-context" style={{ marginTop: 12 }}>
+      <div className="ops-panel-context is-spaced">
         <span>{t("routing.retryOverrideTitle")}</span>
       </div>
       <div className="form-grid">

@@ -927,7 +927,7 @@ function KeyDialog({
                 placeholder="0 = unlimited"
               />
             </Field>
-            <div className="split" style={{ gap: "0.75rem" }}>
+            <div className="split is-tight">
               <Field label={t("keys.pricePrompt")} hint={t("keys.priceHint")}>
                 <input
                   type="number"
@@ -1046,7 +1046,7 @@ function KeyDialog({
                 ))}
               </select>
             </Field>
-            <div className="split" style={{ gap: "0.75rem" }}>
+            <div className="split is-tight">
               <Field label={t("keys.expiresAt")} hint={t("keys.expiresAtHint")}>
                 <input
                   type="datetime-local"
@@ -1063,12 +1063,12 @@ function KeyDialog({
                   disabled={pending}
                   onChange={(e) => setAllowedIPs(e.target.value)}
                   placeholder="1.2.3.4&#10;10.0.0.0/8"
-                  style={{ minHeight: 64 }}
+                  className="textarea-sm"
                 />
               </Field>
             </div>
             {mode === "edit" ? (
-              <label className="check" style={{ marginTop: 12 }}>
+              <label className="check is-spaced">
                 <input
                   type="checkbox"
                   checked={resetUsed}
@@ -1079,7 +1079,7 @@ function KeyDialog({
               </label>
             ) : (
               <>
-                <label className="check" style={{ marginTop: 12 }}>
+                <label className="check is-spaced">
                   <input
                     type="checkbox"
                     checked={useCustomToken}

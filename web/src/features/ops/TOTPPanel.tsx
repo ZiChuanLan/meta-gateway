@@ -74,7 +74,7 @@ function TOTPPanel() {
       ) : null}
       {!enabled && phase === "setup" && setupData ? (
         <div className="totp-setup">
-          <p className="muted" style={{ fontSize: 12 }}>
+          <p className="muted panel-note">
             {t("ops.runtime.totpSetupHint")}
           </p>
           <div className="totp-secret-row mono">
@@ -104,7 +104,7 @@ function TOTPPanel() {
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
             placeholder="123456"
             disabled={busy}
-            style={{ width: 160 }}
+            className="is-narrow"
           />
           <Button
             disabled={busy || code.length !== 6}
@@ -116,7 +116,7 @@ function TOTPPanel() {
       ) : null}
       {enabled ? (
         <div className="totp-setup">
-          <p className="muted" style={{ fontSize: 12 }}>
+          <p className="muted panel-note">
             {t("ops.runtime.totpDisableHint")}
           </p>
           <input
@@ -128,7 +128,7 @@ function TOTPPanel() {
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
             placeholder="123456"
             disabled={busy}
-            style={{ width: 160 }}
+            className="is-narrow"
           />
           <Button
             variant="danger"

@@ -1,4 +1,13 @@
-import { Ban, CircleDot, Pause, Play, Radio, WifiOff } from "lucide-react";
+import {
+  Ban,
+  Check,
+  CircleDot,
+  Pause,
+  Play,
+  Radio,
+  WifiOff,
+  X,
+} from "lucide-react";
 import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { ApiError, api } from "../api/client";
 import type { LiveTraceRequest, LiveTraceRound } from "../api/types";
@@ -142,7 +151,13 @@ function LiveTraceRow({
                 className={`live-trace-chain-hop is-${entry.status}`}
               >
                 {entry.channel}
-                {entry.status === "failed" ? "✗" : entry.status === "running" ? "•" : "✓"}
+                {entry.status === "failed" ? (
+                  <X size={11} aria-hidden="true" />
+                ) : entry.status === "running" ? (
+                  <CircleDot size={11} aria-hidden="true" />
+                ) : (
+                  <Check size={11} aria-hidden="true" />
+                )}
               </span>
             ))}
           </span>

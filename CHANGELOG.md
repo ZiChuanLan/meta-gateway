@@ -4,7 +4,22 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [v2.7.1] — 2026-09-12
+## [v2.7.2] — 2026-09-12
+
+### Fixed
+
+- **Self-Update / Docker Pull**: Fix process panic caused by splitting image reference without explicit tag (e.g. `zichuanlan/meta-gateway`) or containing registry host port.
+- **Proxy Stream Policy**: Fix missing `stream_policy` and `non_stream_timeout_seconds` columns in route store candidate queries, unblocking stream conversion pipeline.
+- **Relay Stall Watchdog**: Fix potential infinite hang on non-stream clients under forced upstream streaming via `idleTimeoutBody` wrapper.
+- **Live Trace Status**: Accurately mark upstream HTTP errors (e.g. 429 / 500) as failed with error context instead of false-positive success.
+- **Negative Tool Index Panic**: Prevent slice bounds panic when processing negative tool call indices in stream chunks.
+- **Member Prices Resolution**: Resolve member prices strictly by member ID primary key to avoid multi-group rate collision.
+
+### Changed
+
+- **Console Layout & Hygiene**: Group governance rules, isolate TOTP security & dangerous reset zones, add delete confirmation dialogs to alert and guard rules, align accessibility focus rings, and tokenize layout spacing.
+- **Documentation & Identity**: Overhaul README.md with high-precision symmetrical 16:10 screenshots, real brandmark logo, cyber-kinetic banner, card-matrix features, and AI one-click prompt.
+
 
 ### Added
 

@@ -1846,6 +1846,10 @@ export const en: Dict = {
   "ops.runtime.navGroup.routing": "Routing",
   "ops.runtime.navGroup.health": "Health",
   "ops.runtime.navGroup.governance": "Limits & Audit",
+  "ops.runtime.navGroup.security": "Account & data",
+  "ops.runtime.section.totp": "Two-factor auth",
+  "ops.runtime.section.dbMaintenance": "Database upkeep",
+  "ops.runtime.section.factoryReset": "Factory reset",
   "ops.runtime.navGroup.ops": "Alerts & Ops",
   "ops.runtime.keyPoolRotation": "Key-pool rotation",
   "ops.runtime.crossChannelFailover": "Cross-channel failover",
@@ -1863,9 +1867,12 @@ export const en: Dict = {
   "ops.runtime.group.governanceDesc": "Rate limits and audit log retention",
   "ops.runtime.group.opsDesc":
     "Alerting, maintenance, scheduled check-ins, and service info",
-  "ops.runtime.group.tools": "Maintenance tools",
-  "ops.runtime.group.toolsDesc":
-    "TOTP, alert and error rules, maintenance operations, and factory reset",
+  "ops.runtime.group.security": "Account & data upkeep",
+  "ops.runtime.group.securityDesc":
+    "Two-factor auth and database cleanup \u2014 each saves on its own, not with the Save button above",
+  "ops.runtime.group.danger": "Danger zone",
+  "ops.runtime.group.dangerDesc":
+    "Irreversible actions. Take a backup first.",
   "ops.runtime.buildVersion": "Build",
   "ops.runtime.updateNow": "Check now",
   "ops.runtime.updateManualSummary": "Or update manually (copy a command)",
@@ -1941,6 +1948,9 @@ export const en: Dict = {
     "Metric rules evaluated every 60s; alerts go through the configured webhook/bark/serverchan/telegram/smtp channels.",
   "ops.alertRules.empty":
     "No rules yet. Add one to get notified when a metric crosses its threshold.",
+  "ops.alertRules.deleteTitle": "Delete alert rule",
+  "ops.alertRules.deleteConfirm":
+    "This alert rule will be removed and you will stop being notified when its metric crosses the threshold. This cannot be undone.",
   "ops.alertRules.add": "Add rule",
   "ops.alertRules.edit": "Edit rule",
   "ops.alertRules.name": "Name",
@@ -1954,6 +1964,9 @@ export const en: Dict = {
   "ops.guard.hint":
     "Regex rules applied to every string value in chat bodies: mask replaces matches, reject refuses the request (400), exclude skips the listed channels for matched requests.",
   "ops.guard.empty": "No guard rules yet.",
+  "ops.guard.deleteTitle": "Delete guard rule",
+  "ops.guard.deleteConfirm":
+    "This guard rule will be removed and prompts it currently blocks will pass through. This cannot be undone.",
   "ops.guard.add": "Add rule",
   "ops.guard.edit": "Edit rule",
   "ops.guard.name": "Name",
@@ -1968,6 +1981,9 @@ export const en: Dict = {
     "Match upstream 4xx errors (status + error-body keyword) and override failover: passthrough returns the error directly, rewrite changes its status code, ignore_monitor keeps failover but skips breaker/cooldown/counters. Rules apply to the very next request.",
   "ops.errorRules.empty":
     "No rules — all 4xx errors fail over to the next channel.",
+  "ops.errorRules.deleteTitle": "Delete error rule",
+  "ops.errorRules.deleteConfirm":
+    "This error rule will be removed and matching errors will fall back to the default failover behaviour. This cannot be undone.",
   "ops.errorRules.add": "Add rule",
   "ops.errorRules.edit": "Edit rule",
   "ops.errorRules.name": "Name",

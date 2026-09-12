@@ -5,7 +5,13 @@ import type { ErrorPassRule } from "../../api/types"
 import { useAdminMutation } from "../../hooks/useAdminMutation"
 import { useI18n } from "../../i18n"
 import { useSession } from "../../session"
-import { Button, Dialog, Field, Panel } from "../../components/ui"
+import {
+  Button,
+  ConfirmDialog,
+  Dialog,
+  Field,
+  Panel,
+} from "../../components/ui"
 
 export // Error passthrough rules: status/keyword → passthrough / rewrite /
 // ignore_monitor. Read live on every request, so edits apply instantly.
@@ -18,6 +24,11 @@ function ErrorRulesPanel() {
     queryFn: ({ signal }) => service.errorRules(signal),
   });
   const [draft, setDraft] = useState<Partial<ErrorPassRule> | null>(null);
+  // Deleting a rule is irreversible and was firing straight from the click,
+  // unlike every other delete in the console. Hold the target until confirmed.
+  const [confirmDelete, setConfirmDelete] = useState<ErrorPassRule | null>(
+    null,
+  );
   const save = useAdminMutation({
     mutationFn: (value: ErrorPassRule) =>
       value.id
@@ -57,11 +68,11 @@ function ErrorRulesPanel() {
           +
         </button>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+      <p className="muted panel-lede">
         {t("ops.errorRules.hint")}
       </p>
       {items.length === 0 ? (
-        <p className="is-quiet" style={{ fontSize: 12 }}>
+        <p className="is-quiet panel-note">
           {t("ops.errorRules.empty")}
         </p>
       ) : (
@@ -92,7 +103,7 @@ function ErrorRulesPanel() {
 			  <button
 				type="button"
 				className="error-rule-del"
-				onClick={() => remove.mutate(rule.id!)}
+				onClick={() => setConfirmDelete(rule)}
 			  >
                 {t("common.delete")}
               </button>
@@ -110,6 +121,19 @@ function ErrorRulesPanel() {
             save.mutate(value as ErrorPassRule);
             setDraft(null);
           }}
+        />
+      ) : null}
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={t("ops.errorRules.deleteTitle")}
+          message={t("ops.errorRules.deleteConfirm")}
+          pending={remove.isPending}
+          error={remove.error}
+          onConfirm={() => {
+            remove.mutate(confirmDelete.id!);
+            setConfirmDelete(null);
+          }}
+          onClose={() => setConfirmDelete(null)}
         />
       ) : null}
     </Panel>
@@ -203,7 +227,7 @@ function ErrorRuleEditor({
             />
           </Field>
         ) : null}
-        <label className="check" style={{ marginTop: 4 }}>
+        <label className="check is-tight">
           <input
             type="checkbox"
             checked={form.enabled ?? true}

@@ -377,7 +377,7 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 	// No metadata row: the key price bills everything (legacy formula lumps
 	// cache tokens into the prompt).
 	req := Request{Model: "m1", DownstreamKeyID: keyID}
-	if cost := service.billingCost(req, 0, usage.Tokens{PromptTokens: 1000, CompletionTokens: 1000}); cost != 20 {
+	if cost := service.billingCost(req, usage.Tokens{PromptTokens: 1000, CompletionTokens: 1000}); cost != 20 {
 		t.Fatalf("key-price cost = %v, want 20", cost)
 	}
 
@@ -387,7 +387,7 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	cost := service.billingCost(req, 0, usage.Tokens{
+	cost := service.billingCost(req, usage.Tokens{
 		PromptTokens: 1000, CompletionTokens: 1000, CacheReadTokens: 1000,
 	})
 	if cost != 7 {
@@ -396,7 +396,7 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 
 	// A model without a priced row keeps the key price.
 	other := Request{Model: "m2", DownstreamKeyID: keyID}
-	if cost := service.billingCost(other, 0, usage.Tokens{CompletionTokens: 1000}); cost != 10 {
+	if cost := service.billingCost(other, usage.Tokens{CompletionTokens: 1000}); cost != 10 {
 		t.Fatalf("fallback cost = %v, want 10", cost)
 	}
 
@@ -411,17 +411,35 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.RouteMember.Create(&domain.RouteMember{
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{
 		RouteID: routeID, ChannelID: channelID, Weight: 100, Enabled: true,
 		PricePromptPer1k: 5, PriceCompletionPer1k: 7, PriceCachePer1k: 0.5,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	reqMember := Request{Model: "m1", RouteID: routeID, DownstreamKeyID: keyID}
-	cost = service.billingCost(reqMember, channelID, usage.Tokens{
+	reqMember := Request{Model: "m1", RouteID: routeID, MemberID: memberID, DownstreamKeyID: keyID}
+	cost = service.billingCost(reqMember, usage.Tokens{
 		PromptTokens: 1000, CompletionTokens: 1000, CacheReadTokens: 1000,
 	})
 	if cost != 12.5 {
 		t.Fatalf("member-price cost = %v, want 12.5", cost)
+	}
+
+	// A SECOND member of the same route+channel in another group, priced much
+	// higher and at a higher priority. Billing must stay on the member the
+	// request actually used, not the pair's top-priority row.
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: channelID, GroupName: "vip",
+		Priority: 99, Weight: 100, Enabled: true,
+		PricePromptPer1k: 500, PriceCompletionPer1k: 500, PriceCachePer1k: 500,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cost = service.billingCost(reqMember, usage.Tokens{
+		PromptTokens: 1000, CompletionTokens: 1000, CacheReadTokens: 1000,
+	})
+	if cost != 12.5 {
+		t.Fatalf("sibling group member changed the bill: cost = %v, want 12.5", cost)
 	}
 }

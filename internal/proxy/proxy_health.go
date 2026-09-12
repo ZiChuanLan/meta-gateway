@@ -251,7 +251,7 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 			record.GroupName = key.GroupName
 		}
 	}
-	record.Cost = s.billingCost(req, channelID, tokens)
+	record.Cost = s.billingCost(req, tokens)
 	// Usage row, downstream-key quota increment, and proxy-log token backfill
 	// commit in one transaction (store.RecordRelayUsage), so a partial failure
 	// can never leave metered usage without its quota charge.
@@ -261,14 +261,14 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 }
 
 // billingCost computes the persisted cost for a usage record. Prices resolve
-// from the most specific layer that has one: the route member (this channel
-// serving this model — upstreams price the same model differently), then the
+// from the most specific layer that has one: the route member that actually
+// served the request (upstreams price the same model differently), then the
 // model's metadata prices, then the downstream key's unit prices. The result
 // is multiplied by the model's billing ratio. Cache-read tokens are billed at
 // the cache price when one is set, else at the prompt rate. Failures are
 // never fatal; a price lookup error degrades to 0 cost rather than dropping
 // the record.
-func (s *Service) billingCost(req Request, channelID int64, tokens usage.Tokens) float64 {
+func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 	if s.db == nil {
 		return 0
 	}
@@ -286,8 +286,8 @@ func (s *Service) billingCost(req Request, channelID int64, tokens usage.Tokens)
 	// prices apply, and cache-read/creation tokens bill at the prompt rate.
 	pricePrompt, priceCompletion, priceCache := 0.0, 0.0, 0.0
 	modelPriced := false
-	if req.RouteID > 0 && channelID > 0 && s.db.RouteMember != nil {
-		if prompt, completion, cache, found, err := s.db.RouteMember.MemberPrices(req.RouteID, channelID); err == nil && found &&
+	if req.MemberID > 0 && s.db.RouteMember != nil {
+		if prompt, completion, cache, found, err := s.db.RouteMember.MemberPrices(req.MemberID); err == nil && found &&
 			(prompt > 0 || completion > 0) {
 			pricePrompt, priceCompletion, priceCache = prompt, completion, cache
 			modelPriced = true

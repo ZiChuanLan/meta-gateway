@@ -191,7 +191,7 @@ export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
           <span>{t("ops.checkin.scheduleEnabled")}</span>
         </label>
         {schedule.preset !== "off" ? (
-          <div className="form-grid" style={{ marginTop: 12 }}>
+          <div className="form-grid is-spaced">
             <label className="field">
               <span>{t("ops.checkin.schedulePreset")}</span>
               <select
@@ -245,7 +245,7 @@ export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
             )}
           </div>
         ) : null}
-        <div style={{ marginTop: 4 }}>
+        <div className="stack-tight">
           <Button
             variant="secondary"
             disabled={

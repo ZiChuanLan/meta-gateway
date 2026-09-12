@@ -44,7 +44,7 @@ function MaintenancePanel() {
           {run.isPending ? t("common.working") : t("ops.maintenance.run")}
         </Button>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+      <p className="muted panel-lede">
         {t("ops.maintenance.hint")}
       </p>
       {run.data ? (
@@ -59,7 +59,7 @@ function MaintenancePanel() {
           })}
         </p>
       ) : res ? (
-        <p className="muted" style={{ fontSize: 12 }}>
+        <p className="muted panel-note">
           {t("ops.maintenance.lastRun", {
             total,
             at: last.data?.ran_at

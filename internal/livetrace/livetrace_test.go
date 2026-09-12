@@ -104,11 +104,51 @@ func TestRoundChainAndTransferMetrics(t *testing.T) {
 		t.Fatalf("progress=%+v", req)
 	}
 
-	registry.FinishSuccess("req-1", 320, 4096, 100, 200)
+	registry.FinishCopied("req-1", 200, 320, 4096, 100, 200)
 	final := registry.Snapshot()[0]
 	if final.Status != StatusSuccess || final.BytesWritten != 4096 ||
 		final.PromptTokens != 100 || final.CompletionTokens != 200 {
 		t.Fatalf("final=%+v", final)
+	}
+}
+
+// A copied body is not an outcome: the relay forwards an upstream 4xx/5xx
+// verbatim, so a fully transferred error response must settle as failed. The
+// live view exists to surface exactly these failures.
+func TestFinishCopiedMapsUpstreamErrorStatusToFailed(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		statusCode int
+		want       Status
+	}{
+		{"rate limited", 429, StatusFailed},
+		{"upstream error", 502, StatusFailed},
+		{"bad request", 400, StatusFailed},
+		{"ok", 200, StatusSuccess},
+		{"redirect", 302, StatusSuccess},
+		{"unknown status", 0, StatusSuccess},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := New()
+			_, release, ok := registry.Begin(context.Background(), "req-x", "openai", "m", BeginMeta{})
+			if !ok {
+				t.Fatal("Begin failed")
+			}
+			defer release()
+
+			registry.FinishCopied("req-x", testCase.statusCode, 10, 2048, 5, 7)
+			final := registry.Snapshot()[0]
+			if final.Status != testCase.want {
+				t.Fatalf("HTTP %d settled as %q, want %q", testCase.statusCode, final.Status, testCase.want)
+			}
+			// Transfer metrics must survive either way — the bytes really did move.
+			if final.BytesWritten != 2048 || final.PromptTokens != 5 || final.CompletionTokens != 7 {
+				t.Fatalf("metrics lost: %+v", final)
+			}
+			if testCase.want == StatusFailed && final.Error == "" {
+				t.Fatalf("failed row carries no reason: %+v", final)
+			}
+		})
 	}
 }
 

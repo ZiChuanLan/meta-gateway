@@ -31,7 +31,7 @@ function FactoryResetPanel() {
       <div className="panel-header">
         <strong>{t("ops.factoryReset.title")}</strong>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+      <p className="muted panel-lede">
         {t("ops.factoryReset.hint")}
       </p>
       {!arm ? (

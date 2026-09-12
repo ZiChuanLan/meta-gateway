@@ -351,7 +351,14 @@ export function Channels() {
           const overview = (overviews.data ?? []).find(
             (o) => o.channel.id === id,
           );
-          if (!overview) return Promise.resolve(null);
+          // A selected row whose overview is gone (deleted between the
+          // selection and this click) was NOT updated. Reject so it counts as
+          // a failure instead of silently inflating the success tally.
+          if (!overview) {
+            return Promise.reject(
+              new Error(`channel ${id} is no longer available`),
+            );
+          }
           return service.updateChannel(id, {
             ...overview.channel,
             status: input.status,

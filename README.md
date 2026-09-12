@@ -1,170 +1,204 @@
 <div align="center">
 
-<h1>Meta Gateway</h1>
-
-**多通道 AI 中继网关 — 多站聚合 · 智能路由 · 故障转移**
-
-把分散在各处的 AI API 聚合成一个入口。下游工具（Cursor、Claude Code、Open WebUI…）
-只配一个地址、一个令牌，就能用上所有站点的模型；
-哪个站点挂了，流量自动绕开。
+<img src="docs/banner.svg" alt="Meta Gateway — 多通道 AI 中继网关" width="100%">
 
 <p>
-
-<a href="https://hub.docker.com/r/zichuanlan/meta-gateway">
-  <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=flat&logo=docker&label=Docker%20Pulls">
-</a>
-<a href="https://github.com/ZiChuanLan/meta-gateway/releases">
-  <img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=flat&label=Release">
-</a>
-<a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-brightgreen?style=flat">
-</a>
-<img alt="Go" src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&style=flat">
-<img alt="SQLite" src="https://img.shields.io/badge/SQLite-embedded-003B57?logo=sqlite&style=flat">
+  <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=for-the-badge&logo=docker&logoColor=white&label=Docker%20Pulls&color=2496ED"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&label=Release&color=4059A3"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&label=Stars&color=E8B93E"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/ZiChuanLan/meta-gateway?style=for-the-badge&label=License&color=3DA639"></a>
+  <a href="https://mg.015201314.xyz"><img alt="在线体验" src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-mg.015201314.xyz-E8B93E?style=for-the-badge&logo=googlechrome&logoColor=black"></a>
 </p>
 
 <p>
-  <a href="#快速开始"><strong>快速开始</strong></a> ·
-  <a href="#接入下游">接入下游</a> ·
-  <a href="#功能特性">功能特性</a> ·
-  <a href="#界面预览">界面预览</a> ·
-  <a href="#配置说明">配置</a> ·
-  <a href="#架构设计">架构</a> ·
-  <a href="#常见问题">FAQ</a>
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&style=flat-square">
+  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-embedded-003B57?logo=sqlite&style=flat-square">
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-amd64%20%7C%20arm64-49436E?logo=linux&logoColor=white&style=flat-square">
+  <img alt="协议" src="https://img.shields.io/badge/%E5%8D%8F%E8%AE%AE-OpenAI%20%2F%20Anthropic%20%2F%20Gemini-8A2BE2?style=flat-square">
+  <a href="https://github.com/ZiChuanLan/meta-gateway/issues"><img alt="Issues" src="https://img.shields.io/github/issues/ZiChuanLan/meta-gateway?style=flat-square&logo=github&label=Issues"></a>
 </p>
 
 </div>
 
+> [!TIP]
+> **在线体验**：[https://mg.015201314.xyz](https://mg.015201314.xyz) 
+登录密码 `123456`（公开演示环境，请勿存放生产敏感密钥）
+
+<a id="screenshots" name="screenshots"></a>
+
+## <img src="docs/icons/monitor.svg" width="20" align="absmiddle"> 界面预览
+
+<div align="center">
+
+| <img src="docs/screenshots/login.png" width="480" /><br><b>安全控制台</b> · 零内存持久化的 Master 认证防御 | <img src="docs/screenshots/dashboard.png" width="480" /><br><b>数据总览</b> · 实时吞吐、健康分布与请求追踪 |
+| :---: | :---: |
+| <img src="docs/screenshots/connections.png" width="480" /><br><b>上游连接</b> · 多源站点、自动模型发现与鉴权 | <img src="docs/screenshots/models.png" width="480" /><br><b>模型路由</b> · 成员优先级、权重负载与别名归一 |
+| <img src="docs/screenshots/keys.png" width="480" /><br><b>令牌管理</b> · 独立额度、路由分组绑定与调用统计 | <img src="docs/screenshots/store.png" width="480" /><br><b>插件市场</b> · 模块化扩展、沙箱隔离与托管进程 |
+| <img src="docs/screenshots/checkin.png" width="480" /><br><b>自动化签到</b> · 多站点定时保活与 Cookie 调度 | <img src="docs/screenshots/exchange.png" width="480" /><br><b>资产交换</b> · 拓扑快照、加密导入与 WebDAV 备份 |
+
+</div>
+
+<p align="center">
+  <a href="#intro"><strong>核心价值</strong></a> ·
+  <a href="#features">特性矩阵</a> ·
+  <a href="#ai-prompt"><strong>AI 一键部署</strong></a> ·
+  <a href="#quickstart">快速开始</a> ·
+  <a href="#downstream">接入指南</a> ·
+  <a href="#config">配置参数</a> ·
+  <a href="#architecture">架构原理</a> ·
+  <a href="#faq">常见问题</a>
+</p>
+
 ---
 
-## 简介
+<a id="intro" name="intro"></a>
 
-现在的 AI 中转站大多基于 New API / One API：手里有三五个站，每个站有自己的余额、模型列表和 API Key。工具越接越多，配置越来越乱——想换一个站，所有客户端都得跟着改。
+## <img src="docs/icons/lightbulb.svg" width="20" align="absmiddle"> 核心价值
 
-Meta Gateway 架在这些站点之上：所有站点挂到同一个网关后面，下游只看到一个地址、一个令牌。模型自动汇总，请求按优先级分流，单个站点故障时自动绕开。
+下游工具越接越多（Cursor、Claude Code、Cherry Studio、Open WebUI），而上游分散在各类不同站点（New API、One API、官方接口与各路代理）。各站模型命名各异、额度分散、容易单点故障。
 
-| 你可能遇到 | Meta Gateway 的做法 |
-| --- | --- |
-| 每个站点一个 Key，下游工具要配一堆 | 统一代理入口，一个下游令牌访问全部模型 |
-| 不清楚哪个站点调某个模型更稳 | 按优先级与权重自动选通道，可按时延和错误率动态调整 |
-| 站点挂了要手动换 Key | 通道失败自动冷却并切换下一个，恢复后自动回归 |
-| 同一个模型想固定走某个渠道 | 模型页锁定单通道，或按场景建路由分组 |
-| 每天要去各站签到领额度 | 定时自动签到，支持外站 Cookie |
-| 不知道哪个站有什么模型 | 自动模型发现，上游新增模型零配置出现 |
-| 上游模型更名或从清单消失 | 模型页查看渠道级变更、预览并批量替换上游映射 |
-| 想加功能又不想改核心代码 | 插件市场(待续)一键安装社区扩展 |
+**Meta Gateway** 作为高可用的多通道聚合中枢：所有上游统一挂载，下游只需配置**一个接口地址、一个访问令牌**即可畅调全网模型。
 
-支持的上游：
-
-- **聚合面板**：New API、One API、OneHub、DoneHub、Veloera、AnyRouter、Sub2API 等
-- **通用兼容接口**：OpenAI / Anthropic / Gemini compatible endpoints
-- **官方预设**：DeepSeek、智谱 GLM、月之暗面 Moonshot、MiniMax 等
-
-> 在线体验：[https://mg.015201314.xyz](https://mg.015201314.xyz)
-密码 ：`123456`
+| 痛点场景 | Meta Gateway 解决方案 |
+| :--- | :--- |
+| **密钥繁多易混乱** | 统一中继代理，单一下游令牌即可穿透访问全站上游模型 |
+| **渠道故障易中断** | 失败自动进入冷却期并秒级转移至备用通道，恢复后无感回归 |
+| **模型命名不统一** | 跨渠道智能识别与一键别名归一，对外屏蔽上游命名碎片化 |
+| **协议不兼容** | OpenAI / Anthropic / Gemini 原生格式全自动双向互译 |
+| **额度浪费需打卡** | 内置定时签到引擎，原生支持 Session Cookie 与自动化保活 |
+| **业务隔离需求** | 支持模型路由分组，为不同客户端/场景精准分配专属通道集 |
 
 ---
 
-## 上游模型变更维护
+<a id="features" name="features"></a>
 
-模型页顶部的「上游模型变化」汇总待处理的新增、疑似移除和受影响路由；展开后可按渠道、变化类型、处理状态及模型名筛选。
+## <img src="docs/icons/sparkles.svg" width="20" align="absmiddle"> 特性矩阵
 
-- 只比较同一渠道的成功同步清单。首次同步建立基线，失败不产生移除记录；升级前已有的发现清单作为基线，无法恢复此前被覆盖的历史。
-- 模型从某渠道清单消失，只表示该渠道「疑似移除」，不代表其他渠道或官方已下线。同步保留原路由和成员，不再自动删除，便于人工维护。
-- 同次同步新增的模型仅作为候选，不根据名称猜测新版。选择变更 → 目标模型 → 受影响成员 → 预览 → 确认应用。
-- 同渠道的多条移除记录可以一起替换，也可显式开启「选择其他渠道的模型」。只改成员上游映射，对外模型名、路由名及其他配置不变。
-- 忽略仅关闭提醒，不会修复映射或停用成员。部分成员替换后，仍受影响的成员继续待处理；预览过期时必须重新预览。
-
-## 界面预览
-
-<table>
+<table width="100%">
   <tr>
-    <td align="center">
-      <img src="docs/screenshots/login.png" alt="登录页" style="width:100%;height:auto;"/>
-      <div><b>登录页</b> — ADMIN_TOKEN 认证，令牌仅存于浏览器内存</div>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/route.svg" width="16" align="absmiddle"> 智能路由与分流</h4>
+      <p><b>多维调度感知</b> · 支持按优先级梯度与权重比例分配；可叠加时延敏感度（Latency Aware）与实时错误率感知（Error Aware）动态调优通道。</p>
     </td>
-    <td align="center">
-      <img src="docs/screenshots/dashboard.png" alt="总览" style="width:100%;height:auto;"/>
-      <div><b>总览</b> — 流量统计、渠道健康、最近请求</div>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/refresh-cw.svg" width="16" align="absmiddle"> 多站发现与归一</h4>
+      <p><b>跨渠道资产同步</b> · 自动拉取上游站点模型清单，支持自动/手动发现双模式；建立统一对外别名，彻底抹平各平台命名差异。</p>
+    </td>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/arrow-right-left.svg" width="16" align="absmiddle"> 协议原生互译</h4>
+      <p><b>三方协议透明互通</b> · OpenAI ⟷ Claude Messages ⟷ Gemini 自动互译；下游任一协议均可透明中继调用任意上游。</p>
     </td>
   </tr>
   <tr>
-    <td align="center">
-      <img src="docs/screenshots/connections.png" alt="连接" style="width:100%;height:auto;"/>
-      <div><b>上游连接</b> — 多站点管理、模型同步模式、健康状态</div>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/heart-pulse.svg" width="16" align="absmiddle"> 高可用故障自愈</h4>
+      <p><b>智能熔断与无感切道</b> · 遭遇 5xx/断流时自动触发指数退避冷却；请求级自动跨站重试，节点自愈后平滑无感回归主链路。</p>
     </td>
-    <td align="center">
-      <img src="docs/screenshots/models.png" alt="模型" style="width:100%;height:auto;"/>
-      <div><b>模型路由</b> — 成员分组、优先级、统一名称、模型探测</div>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/coins.svg" width="16" align="absmiddle"> 精细配额与计费</h4>
+      <p><b>多级阶梯费率体系</b> · 支持成员级、模型级与令牌级独立定价；精确统计输入/输出/缓存读取 Token，支持配额限制与分组绑定。</p>
     </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="docs/screenshots/keys.png" alt="令牌" style="width:100%;height:auto;"/>
-      <div><b>令牌管理</b> — 下游令牌、配额计费、路由分组绑定</div>
-    </td>
-    <td align="center">
-      <img src="docs/screenshots/store.png" alt="商店" style="width:100%;height:auto;"/>
-      <div><b>插件商店</b> — 市场浏览、一键安装与托管运行</div>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="docs/screenshots/checkin.png" alt="签到" style="width:100%;height:auto;"/>
-      <div><b>签到调度</b> — 多站点定时签到、执行日志</div>
-    </td>
-    <td align="center">
-      <img src="docs/screenshots/exchange.png" alt="交换" style="width:100%;height:auto;"/>
-      <div><b>资产交换</b> — 连接配置导入导出、WebDAV 备份</div>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/puzzle.svg" width="16" align="absmiddle"> 模块化插件生态</h4>
+      <p><b>独立进程沙箱隔离</b> · 支持一键拉取并安装市场扩展（如自动签到/探针）；独立 sidecar 进程托管，环境变量白名单隔离核心凭证。</p>
     </td>
   </tr>
 </table>
 
+<details open>
+<summary><strong>多协议互译与中继转发</strong></summary>
+
+- **全面格式兼容**：完整支持 `/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/responses`、`/v1/images/*`。
+- **三方协议互通**：下游无论发起 Anthropic (`/v1/messages`) 还是 OpenAI 协议，均可透明调用任意上游平台（包括 Gemini 原生格式）。
+- **全链路 SSE 流式优化**：针对服务端推送（SSE）深度优化，提供流式保活与断流超时守护。
+</details>
+
+<details>
+<summary><strong>路由编排与弹性容灾</strong></summary>
+
+- **优先级与权重分流**：同层按权重分散流量，不同层按可用性严格梯次承接。
+- **多维感知调度**：支持开启时延敏感度（Latency Aware）与实时错误率感知（Error Aware）动态微调权重。
+- **故障自动冷却与回归**：遇到上游 5xx 或断流异常时，通道即刻进入指数退避冷却期，并在健康探测通过后平滑回归。
+- **路由成员分组**：同个模型可建多个成员分组（如「高可用生产组」与「低成本测试组」），下游令牌绑定分组后实现物理隔离。
+</details>
+
+<details>
+<summary><strong>模型生命周期维护</strong></summary>
+
+- **上游模型发现**：一键拉取上游最新模型列表，支持 `auto` 自动同步与 `manual` 人工审核双模式。
+- **模型跨站归一**：跨渠道识别同一底座模型的不同命名（如 `claude-3-5-sonnet-latest` ↔ `claude-3-5-sonnet-20241022`），一键建立对外统一路由。
+- **变更追溯面板**：上游模型清单变化自动记录审计，支持直观预览影响范围并提供一键平滑映射替换。
+</details>
+
 ---
 
-## 快速开始
+<a id="ai-prompt" name="ai-prompt"></a>
+
+## <img src="docs/icons/sparkles.svg" width="20" align="absmiddle"> AI 一键部署术语 (Prompt)
+
+如果你正在使用 **Cursor / Claude Code / Windsurf / ChatGPT / DeepSeek** 等 AI 编程助手或运维 Agent，直接复制下方提示词发送给 AI，即可让 AI 自动检测本地宿主机环境、自动生成高强度加密密钥，并全自动完成 Docker 容器编排与服务拉起：
+
+```markdown
+请帮我在当前服务器/本机部署 Meta Gateway（高性能 AI 统一中继网关）。
+项目仓库：https://github.com/ZiChuanLan/meta-gateway
+
+部署要求：
+1. 采用 Docker Compose 方式部署，使用官方镜像 `zichuanlan/meta-gateway:latest`；
+2. 宿主机服务端口映射为 4100（即 `4100:4100`）；
+3. 数据持久化挂载至当前目录下的 `./data` 目录（映射容器内 `/data`）；
+4. 环境变量要求：
+   - 自动生成一个高强度的 `ADMIN_TOKEN` 作为后台控制台登录密码；
+   - 自动生成一个 32 位的强随机字符串作为 AES 密钥 `MASTER_KEY`（必须 ≥ 32 字符）；
+   - 开启自动重启策略 `restart: unless-stopped`；
+5. 生成完整的 `docker-compose.yml` 文件后，自动执行 `docker compose up -d` 命令拉起容器；
+6. 检查容器运行状态，并在控制台清晰输出：
+   - 控制台 WebUI 访问地址（`http://<IP或localhost>:4100/console`）；
+   - API 中继调用地址（`http://<IP或localhost>:4100/v1`）；
+   - 随机生成的 ADMIN_TOKEN 密码与 MASTER_KEY 明文记录。
+```
+
+---
+
+<a id="quickstart" name="quickstart"></a>
+
+## <img src="docs/icons/rocket.svg" width="20" align="absmiddle"> 快速开始
 
 ### 方式一：Docker Compose（推荐）
 
-镜像发布在 Docker Hub（`zichuanlan/meta-gateway`），提供 amd64 / arm64 双架构，随 [Releases](https://github.com/ZiChuanLan/meta-gateway/releases) 发版。
-
-```bash
-mkdir meta-gateway && cd meta-gateway
-
-cat > docker-compose.yml << 'EOF'
+```yaml
+# docker-compose.yml
 services:
   meta-gateway:
-    # 想锁定版本就把 latest 换成具体版本号，如 v2.0.2（见下方「升级」）
     image: zichuanlan/meta-gateway:latest
+    container_name: meta-gateway
+    restart: unless-stopped
     ports:
       - "4100:4100"
     volumes:
       - ./data:/data
     environment:
-      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
-      MASTER_KEY: ${MASTER_KEY:?MASTER_KEY is required}
-      METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN is required}
-    restart: unless-stopped
-EOF
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN required}
+      MASTER_KEY: ${MASTER_KEY:?MASTER_KEY 32-char required}
+      METRICS_TOKEN: ${METRICS_TOKEN:-mg-metrics-secret}
+```
 
-# 设置密钥并启动
-export ADMIN_TOKEN=your-admin-token
-export MASTER_KEY=your-32-char-master-key-for-encryption!!
-export METRICS_TOKEN=your-metrics-token
+```bash
+# 生成安全配置并启动
+export ADMIN_TOKEN=$(openssl rand -hex 16)
+export MASTER_KEY=$(openssl rand -hex 16) # 32 字符加密密钥
 docker compose up -d
 ```
 
-启动后访问 `http://localhost:4100/console/`，用 `ADMIN_TOKEN` 登录。
+启动完成后，访问 `http://localhost:4100/console/` 并输入 `ADMIN_TOKEN` 即可进入管理控制台。
 
 <details>
-<summary><strong>一行 Docker 命令</strong></summary>
+<summary><strong>单行 Docker 运行命令</strong></summary>
 
 ```bash
 docker run -d --name meta-gateway \
   -p 4100:4100 \
-  -e ADMIN_TOKEN=your-admin-token \
-  -e MASTER_KEY=your-32-char-master-key-for-encryption!! \
-  -e METRICS_TOKEN=your-metrics-token \
+  -e ADMIN_TOKEN=your-secure-admin-token \
+  -e MASTER_KEY=your-32-char-encryption-key-here!! \
   -v ./data:/data \
   --restart unless-stopped \
   zichuanlan/meta-gateway:latest
@@ -172,70 +206,43 @@ docker run -d --name meta-gateway \
 
 </details>
 
-> [!IMPORTANT]
-> 请务必修改 `ADMIN_TOKEN`、`MASTER_KEY` 和 `METRICS_TOKEN`，不要使用默认值。数据存储在 `./data` 目录，升级不会丢失。
-
-### 方式二：源码构建
+### 方式二：源码构建运行
 
 ```bash
-# 前置条件
-# Go 1.26+ / Node.js 24+（仅构建前端）/ SQLite（内嵌，无需安装）
+# 前置环境: Go 1.26+ | Node.js 24+
+git clone https://github.com/ZiChuanLan/meta-gateway.git && cd meta-gateway
 
-git clone https://github.com/ZiChuanLan/meta-gateway.git
-cd meta-gateway
-
-# 构建前端
+# 构建前端静态资产
 cd web && npm ci && npm run build && cd ..
 
-# 构建后端
+# 构建独立二进制
 go build -o bin/meta-gateway ./cmd/server
 
-# 启动
-ADMIN_TOKEN=my-token MASTER_KEY=my-32-char-key-for-encryption! ./bin/meta-gateway
+# 启动服务
+ADMIN_TOKEN=my-admin-token MASTER_KEY=0123456789abcdef0123456789abcdef ./bin/meta-gateway
 ```
-
-### 验证
-
-```bash
-curl http://127.0.0.1:4100/readyz
-# → {"status":"ok"}
-```
-
-### 升级
-
-```bash
-docker compose pull && docker compose up -d
-```
-
-控制台的「检查更新」发现新版本时，也可以直接**一键更新**：compose 自带一个
-闲置的 watchtower 执行器（`docker compose up -d` 时一并启动，端口不对外发布，
-不做任何定时自动更新），按钮点击时它才拉取新镜像并重建容器——失败自动回滚，
-数据不受影响。执行器持有 Docker 套接字（等同宿主机 root 权限），介意的话可以
-移除该服务，改用上面的命令更新。`
-
-数据都在 `./data` 目录（SQLite + 备份），升级不会丢失。每个版本的变化见
-[Releases](https://github.com/ZiChuanLan/meta-gateway/releases)；开启「检查更新」后，有新版本时控制台顶栏会直接提示（设置 → 运行参数可关闭）。想固定在某个版本、不受 `latest` 更新影响的话，把 compose 里的 tag 换成具体版本号（如 `v2.0.2`）即可。
 
 ---
 
-## 接入下游
+<a id="downstream" name="downstream"></a>
 
-1. 管理后台 → 令牌 → 创建令牌（可设额度、计费单价、路由分组）
-2. 客户端的 API 地址指向网关，令牌填刚创建的下游令牌：
+## <img src="docs/icons/plug.svg" width="20" align="absmiddle"> 接入指南
+
+下游工具仅需将 API Base URL 替换为网关地址，并将鉴权密钥填为管理后台颁发的**下游令牌**：
 
 ```bash
+# cURL 请求示例
 curl http://localhost:4100/v1/chat/completions \
   -H "Authorization: Bearer <你的下游令牌>" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "deepseek-v4-flash",
-    "messages": [{ "role": "user", "content": "你好" }]
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
-OpenAI SDK（Python / JS / Go 同理）：
-
 ```python
+# OpenAI SDK 示例
 from openai import OpenAI
 
 client = OpenAI(
@@ -243,238 +250,108 @@ client = OpenAI(
     api_key="<你的下游令牌>",
 )
 
-resp = client.chat.completions.create(
+response = client.chat.completions.create(
     model="deepseek-v4-flash",
-    messages=[{"role": "user", "content": "你好"}],
+    messages=[{"role": "user", "content": "Hello!"}],
 )
-print(resp.choices[0].message.content)
+print(response.choices[0].message.content)
 ```
 
-Cursor、Cherry Studio、Open WebUI 等客户端：Base URL 填 `http://<网关地址>:4100/v1`，API Key 填下游令牌，协议选 OpenAI 兼容。走 Anthropic 协议的客户端（如 Claude Code）同样把地址指向 `/v1`、选 Anthropic 协议即可——网关会在 OpenAI / Anthropic / Gemini 三种协议之间自动互译。
-
-可用模型列表：`GET /v1/models`。
-
----
-
-## 功能特性
-
-### 中继与协议
-
-- OpenAI 兼容接口：`/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/responses`、`/v1/images/*`
-- Anthropic `/v1/messages`、Gemini 原生协议，与 OpenAI 格式自动互译——客户端用哪种协议都能调任意上游
-- SSE 流式传输全链路支持
-- 下游令牌按作用域限权（`relay` / `chat` / `models` / `embeddings` 等）
-
-### 路由与容错
-
-- 优先级分层、同层按权重分流；可开启时延与错误率感知
-- 失败自动重试：同通道换 Key → 跨通道转移，重试上限由 `RETRY_TIMES` 控制
-- 失败通道进入冷却，到期自动恢复探测；连续失败可自动禁用
-- 路由分组：同一模型可建多个成员分组（比如「日常」和「跑批」各一套优先级），分组内独立排序；新建分组可一键复制 default 的全部成员
-- 令牌绑定分组：给下游令牌指定分组名，它发出的请求只在该分组内选通道、只在分组内转移，不影响主链路
-- 灰度发布：`stable_first` 通道先承接小流量，验证后自动转正
-
-### 多站点管理
-
-- 多站点统一管理面板，凭证 AES 加密存储
-- 自动模型发现：一键同步上游模型并生成路由；渠道可设 auto / manual 同步模式，auto 渠道的新模型自动上线
-- 模型名称统一：跨渠道识别同一模型的不同命名，一键归一，操作可整体撤销
-- 模型探测：对渠道 + 模型发起真实调用，验证「列表里有」不等于「真的能用」
-- 模型级优先级可覆盖渠道全局排序，支持拖拽与批量操作
-
-### 运维
-
-- 签到调度：New API / One API 系站点定时签到，外站 Cookie 签到
-- 资产交换：连接配置导入导出，WebDAV 云备份
-- 审计日志、SQLite 在线备份与校验恢复
-- 告警规则：指标 → Webhook（Bark / ServerChan / Telegram / SMTP）
-- 运行时热配置：重试次数、限流、审计保留等在线调整，无需重启
-
-### 插件
-
-- 插件市场一键安装，网关托管插件进程并自动健康检查
-- `config_fields` 声明式配置，secret 自动掩码
-- 官方扩展（Exchange、Check-in）目前为内置功能，插件化适配中
+| 客户端类别 | API 地址 (Base URL) | 传输协议 | 鉴权填法 |
+| :--- | :--- | :--- | :--- |
+| **Cursor / VS Code / Cherry Studio** | `http://<网关地址>:4100/v1` | OpenAI 兼容 | 填入下游令牌 |
+| **Claude Code 等原生客户端** | `http://<网关地址>:4100/v1` | Anthropic Messages | 填入下游令牌 |
+| **Open WebUI / LibreChat** | `http://<网关地址>:4100/v1` | OpenAI 兼容 | 填入下游令牌 |
 
 ---
 
-## 配置说明
+<a id="architecture" name="architecture"></a>
 
-### 必填环境变量
+## <img src="docs/icons/network.svg" width="20" align="absmiddle"> 架构设计
 
-| 变量 | 说明 |
-| --- | --- |
-| `ADMIN_TOKEN` | 管理后台登录令牌（Bearer Token） |
-| `MASTER_KEY` | 数据加密密钥（≥32 字符，用于加密凭证） |
-| `METRICS_TOKEN` | `/metrics` 端点访问令牌 |
+```mermaid
+flowchart LR
+    subgraph UPSTREAM["上游模型提供方 (Upstreams)"]
+        direction TB
+        U1["New API / One API"]
+        U2["Done Hub / AnyRouter"]
+        U3["官方接口 (DeepSeek/Anthropic/Gemini)"]
+    end
 
-### 可选环境变量
+    subgraph GW["Meta Gateway 调度枢纽"]
+        direction TB
+        DISCOVERY["1. 模型发现 · 凭据聚合 · 状态探活"]
+        FAILOVER["2. 故障自愈 · 指数冷却 · 弹性重试"]
+        ROUTE["3. 统一命名 · 动态路由 · 权重负载 · 成员分组"]
+        TRANSLATE["4. 协议互译 · OpenAI ⟷ Claude ⟷ Gemini"]
+        AUTH["5. 统一入口 · 下游令牌鉴权 · 额度扣费"]
+        DISCOVERY --> FAILOVER --> ROUTE --> TRANSLATE --> AUTH
+    end
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `HTTP_ADDR` | `:4100` | 监听地址 |
-| `DATA_DIR` | `./data` | 数据存储目录 |
-| `EXCHANGE_ALLOW_SECRET_EXPORT` | `true` | 允许导出含密钥的资产 |
-| `BACKUP_RETENTION_COUNT` | `30` | 备份保留数量（0 禁用） |
-| `RETRY_TIMES` | `2` | 重试轮次（每个轮次多尝试一个通道） |
-| `CHANNEL_RETRY_TIMES` | `1` | 同通道重发次数 |
-| `CHANNEL_AUTO_DISABLE_THRESHOLD` | `5` | 连续失败后自动禁用阈值（0 禁用） |
-| `ROUTING_LATENCY_AWARE` | `true` | 延迟感知路由 |
-| `ROUTING_ERROR_AWARE` | `true` | 错误率感知路由 |
-| `CROSS_CHANNEL_FAILOVER_ENABLED` | `true` | 跨通道故障转移 |
-| `CHECKIN_ENABLED` | `false` | 启用签到调度 |
-| `CHECKIN_TZ` | (系统) | 签到时区（如 `Asia/Shanghai`） |
-| `PLUGIN_MARKET_URLS` | (内置) | 额外插件市场源（逗号分隔） |
+    subgraph CLIENTS["下游消费生态 (Downstreams)"]
+        direction TB
+        C1["Cursor / Windsurf"]
+        C2["Claude Code"]
+        C3["Open WebUI / Cherry Studio"]
+    end
 
-部署、备份、审计等运维细节见 [docs/operations.md](docs/operations.md)。
-
----
-
-## 架构设计
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    下游客户端                             │
-│         Cursor / Claude Code / Open WebUI / ...         │
-└───────────────────────┬─────────────────────────────────┘
-                        │ Bearer Token
-                        ▼
-┌─────────────────────────────────────────────────────────┐
-│                  Meta Gateway                            │
-│                                                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ 令牌验证  │→│ 模型路由  │→│ 重试/故障 │              │
-│  │          │  │ 优先级   │  │ 转移      │              │
-│  └──────────┘  │ 权重     │  └────┬─────┘              │
-│                └──────────┘       │                      │
-│                                   ▼                      │
-│  ┌──────────────────────────────────────────┐           │
-│  │            出站策略（SSRF 防护）           │           │
-│  │  DNS 校验 · 重定向校验 · 代理路由          │           │
-│  └──────────────────────────────────────────┘           │
-└───────────────────────┬─────────────────────────────────┘
-                        │
-        ┌───────────────┼───────────────┐
-        ▼               ▼               ▼
-   ┌─────────┐    ┌─────────┐    ┌─────────┐
-   │ 站点 A   │    │ 站点 B   │    │ 站点 C   │
-   │ New API  │    │ One API  │    │ 原生 API │
-   └─────────┘    └─────────┘    └─────────┘
+    UPSTREAM -->|"多源聚合 · AES-256 凭证托管"| DISCOVERY
+    AUTH -->|"统一 /v1 接口 · 单一下游令牌"| CLIENTS
 ```
 
-模型选择、分组回退、重试与冷却的完整规则见 [docs/architecture.md](docs/architecture.md)。
+---
+
+<a id="config" name="config"></a>
+
+## <img src="docs/icons/settings.svg" width="20" align="absmiddle"> 关键配置项
+
+| 变量名称 | 必填 | 默认值 | 作用说明 |
+| :--- | :---: | :---: | :--- |
+| `ADMIN_TOKEN` | **是** | - | 控制台管理员登录访问令牌 (Bearer) |
+| `MASTER_KEY` | **是** | - | 凭证存储 AES 加密主密钥 (需 ≥ 32 字符) |
+| `METRICS_TOKEN` | 否 | `""` | Prometheus `/metrics` 监控端点访问凭证 |
+| `HTTP_ADDR` | 否 | `:4100` | 网关服务监听绑定地址与端口 |
+| `DATA_DIR` | 否 | `./data` | 数据持久化目录（内嵌 SQLite 与备份存储） |
+| `RETRY_TIMES` | 否 | `2` | 跨通道重试轮次上限（故障转移轮数） |
+| `CHANNEL_AUTO_DISABLE_THRESHOLD` | 否 | `5` | 通道连续失败后自动挂起禁用的阈值（0 代表不禁用） |
+| `CHECKIN_ENABLED` | 否 | `false` | 是否激活后台多站点自动化签到引擎 |
+
+完整参数配置清单与高级调优请参阅 [docs/operations.md](docs/operations.md)。
 
 ---
 
-## API 概览
+<a id="faq" name="faq"></a>
 
-### 公开端点（需要下游 Key）
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/v1/models` | 可用模型列表 |
-| POST | `/v1/chat/completions` | 聊天补全（支持 SSE） |
-| POST | `/v1/completions` | 文本补全 |
-| POST | `/v1/embeddings` | 向量嵌入 |
-| POST | `/v1/responses` | OpenAI Responses API |
-| POST | `/v1/messages` | Anthropic Messages API |
-| POST | `/v1/images/generations` | 图片生成 |
-| GET | `/v1/dashboard/billing/credit_summary` | 额度/余额查询 |
-| POST | `/v1/redemption/redeem` | 兑换额度码 |
-
-### 管理端点（需要 ADMIN_TOKEN）
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/admin/sites` | 上游站点列表 |
-| POST | `/admin/sites` | 创建站点 |
-| GET | `/admin/channels` | 通道列表 |
-| POST | `/admin/channels` | 创建通道 |
-| GET | `/admin/routes` | 模型路由列表 |
-| POST | `/admin/routes` | 创建模型路由 |
-| GET | `/admin/route-groups` | 全系统成员分组名列表 |
-| POST | `/admin/routes/{id}/groups/copy` | 复制成员分组（如从 default 播种新分组） |
-| GET | `/admin/downstream-keys` | 下游 Key 列表 |
-| POST | `/admin/downstream-keys` | 创建下游 Key |
-| GET | `/admin/plugins/status` | 插件状态 |
-| GET | `/admin/checkin/logs` | 签到日志 |
-| POST | `/admin/exchange/export` | 导出资产 |
-| POST | `/admin/exchange/import` | 导入资产 |
-| POST | `/admin/backups` | 创建备份 |
-
----
-
-## 安全边界
-
-- **凭证加密**：所有密钥使用 AES 加密存储，解密仅在请求构造时发生，日志和 API 响应中不出现明文
-- **出站策略**：所有出站请求走统一 SSRF 防护——DNS 校验、重定向重校验、跨域凭证移除、环回/内网地址默认拒绝
-- **令牌隔离**：ADMIN_TOKEN 仅存于浏览器内存/Tab SessionStorage，不进 Cookie、不进 URL
-- **审计留痕**：所有管理操作记录审计事件，支持保留策略
-- **插件沙箱**：插件进程继承白名单环境变量，网关密钥（ADMIN_TOKEN/MASTER_KEY）不泄露给插件
-
----
-
-## 常见问题
+## <img src="docs/icons/circle-help.svg" width="20" align="absmiddle"> 常见问题
 
 <details>
-<summary><strong>Q: 支持哪些上游平台？</strong></summary>
+<summary><strong>Q: 它和普通的反向代理或 Nginx 有什么本质区别？</strong></summary>
 
-支持所有兼容 OpenAI / Anthropic / Gemini 接口的平台，包括但不限于：New API、One API、OneHub、DoneHub、Veloera、AnyRouter、Sub2API、DeepSeek、智谱 GLM、月之暗面 Moonshot 等。连接时选择对应的平台类型即可。
+Nginx 是纯传输层转发，无法理解 AI 模型的语义。Meta Gateway 运行在应用协议层：它能够**解析 OpenAI / Claude / Gemini 的请求与流式包**，完成多协议互译、识别每个 Token 的用量进行精确扣费、在流式发生中断时秒级触发备用通道故障转移，并具备跨站模型聚合与自动探活机制。
 </details>
 
 <details>
-<summary><strong>Q: 如何添加一个新的上游站点？</strong></summary>
+<summary><strong>Q: 节点出现网络抖动时，会不会直接把正常渠道误禁用？</strong></summary>
 
-管理后台 → 连接 → 添加连接 → 填写站点地址和 API Key → 同步模型 → 完成。路由会自动按优先级分配。
+不会。网关设有渐进式弹性防护机制：偶尔超时会先进入**平滑冷却期**并在后台执行静默健康探活，只有当连续失败触发阈值（如连续 5 次硬性不可达）且探活全军覆没时才会触发通道保护。
 </details>
 
 <details>
-<summary><strong>Q: 如何配置自动故障转移？</strong></summary>
+<summary><strong>Q: 数据与凭证安全如何保证？</strong></summary>
 
-默认已启用。为同一个模型配置多个通道（不同优先级），高优先级通道失败时会自动尝试低优先级通道。可通过 `RETRY_TIMES` 调整重试轮次，`CHANNEL_AUTO_DISABLE_THRESHOLD` 调整自动禁用阈值。
-</details>
-
-<details>
-<summary><strong>Q: 路由分组什么场景用？</strong></summary>
-
-比如同一个模型在三个渠道都有：把主力渠道留在 default，其余渠道拉进一个新分组，然后给跑批或测试用的下游令牌绑定这个分组——这些令牌的请求只落在这批渠道上，失败了也只在分组内转移，不会挤占正式流量的主链路。
-</details>
-
-<details>
-<summary><strong>Q: 支持 Claude 官方 API 吗？</strong></summary>
-
-支持。连接类型选择 "Anthropic (Claude Official)"，填入 API Key，网关会自动处理 Anthropic 认证头和 `/v1/messages` 路径翻译。下游客户端调用标准 `/v1/chat/completions` 即可。
-</details>
-
-<details>
-<summary><strong>Q: Docker 镜像支持哪些架构？</strong></summary>
-
-支持 `linux/amd64` 和 `linux/arm64`。
-</details>
-
-<details>
-<summary><strong>Q: 如何备份和恢复？</strong></summary>
-
-管理后台 → 设置 → 备份，点击"创建备份"。恢复时停止服务后运行 `meta-gateway restore --from <备份文件>`。备份包含加密凭证，恢复时需使用相同的 `MASTER_KEY`。
+1. 所有上游 API Key 在入库前均由 `MASTER_KEY` 执行 AES-GCM 高强度加密，仅在出站转发前在内存中瞬时解密；
+2. 控制台 `ADMIN_TOKEN` 仅保留在浏览器当前会话内存中，不存 Cookie、不入 URL；
+3. 出站流量全局搭载 SSRF 防护墙，严格拦截环回私网与非法重定向。
 </details>
 
 ---
 
-## 参与贡献
+<div align="center">
 
-欢迎提交 Issue 和 Pull Request！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+<p>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=social"></a>
+</p>
 
-## 开源协议
+<sub><b>Meta Gateway</b> — 让分散的 AI 算力与模型，汇聚于极致优雅的统一入口 · <a href="#top">返回顶部</a></sub>
 
-本项目基于 [MIT License](LICENSE) 开源。
-
-## 致谢
-
-- [LINUX DO](https://linux.do)
-- [New API](https://github.com/QuantumNous/new-api) / [One API](https://github.com/songquanpeng/one-api)
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
-- [metapi](https://github.com/cita-777/metapi)
-- AxonHUB
-- All API Hub
-- Sub2API
-- CC-SWITCH
+</div>

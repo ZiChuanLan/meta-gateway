@@ -195,7 +195,7 @@ export function AddChannelDialog({
         {showAdvanced ? t("channels.hideAdvanced") : t("channels.showAdvanced")}
       </button>
       {showAdvanced ? (
-        <div style={{ marginTop: 4 }}>
+        <div className="stack-tight">
           <Button
             variant="secondary"
             disabled={pending || !canSubmit}

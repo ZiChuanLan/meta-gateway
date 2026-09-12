@@ -1717,6 +1717,10 @@ export const zh: Dict = {
   "ops.runtime.navGroup.health": "健康自愈",
   "ops.runtime.navGroup.governance": "限额审计",
   "ops.runtime.navGroup.ops": "告警运维",
+  "ops.runtime.navGroup.security": "账号与数据",
+  "ops.runtime.section.totp": "两步验证",
+  "ops.runtime.section.dbMaintenance": "数据库维护",
+  "ops.runtime.section.factoryReset": "恢复出厂",
   "ops.runtime.keyPoolRotation": "Key 池轮换",
   "ops.runtime.crossChannelFailover": "跨渠道故障转移",
   "ops.runtime.keyPoolRotationHint":
@@ -1730,8 +1734,10 @@ export const zh: Dict = {
   "ops.runtime.group.healthDesc": "故障保护、渠道健康巡检、模型同步与探测",
   "ops.runtime.group.governanceDesc": "限流与审计日志保留",
   "ops.runtime.group.opsDesc": "告警通知、维护任务、定时签到与服务信息",
-  "ops.runtime.group.tools": "维护工具",
-  "ops.runtime.group.toolsDesc": "两步验证、告警与错误规则、维护操作与恢复出厂",
+  "ops.runtime.group.security": "账号与数据维护",
+  "ops.runtime.group.securityDesc": "两步验证与数据库清理——各自保存，不跟随上方的保存按钮",
+  "ops.runtime.group.danger": "危险操作",
+  "ops.runtime.group.dangerDesc": "不可逆操作，执行前请先备份",
   "ops.runtime.buildVersion": "当前版本",
   "ops.runtime.updateNow": "立即检查",
   "ops.runtime.updateManualSummary": "也可以手动更新（复制命令执行）",
@@ -1804,6 +1810,9 @@ export const zh: Dict = {
   "ops.alertRules.hint":
     "指标规则每 60 秒评估一次；告警通过已配置的 webhook/bark/serverchan/telegram/smtp 通道发送。",
   "ops.alertRules.empty": "还没有规则。添加一条，指标越阈值时就会收到通知。",
+  "ops.alertRules.deleteTitle": "删除告警规则",
+  "ops.alertRules.deleteConfirm":
+    "删除后该指标越过阈值时不再通知。此操作不可恢复。",
   "ops.alertRules.add": "添加规则",
   "ops.alertRules.edit": "编辑规则",
   "ops.alertRules.name": "名称",
@@ -1817,6 +1826,9 @@ export const zh: Dict = {
   "ops.guard.hint":
     "作用于对话体每个字符串值的正则规则：mask 替换命中内容，reject 直接拒绝请求（400），exclude 命中时跳过指定渠道。",
   "ops.guard.empty": "还没有保护规则。",
+  "ops.guard.deleteTitle": "删除保护规则",
+  "ops.guard.deleteConfirm":
+    "删除后该规则当前拦下的 prompt 将直接通过。此操作不可恢复。",
   "ops.guard.add": "添加规则",
   "ops.guard.edit": "编辑规则",
   "ops.guard.name": "名称",
@@ -1830,6 +1842,9 @@ export const zh: Dict = {
   "ops.errorRules.hint":
     "按上游 4xx 错误（状态码 + 错误体关键词）覆盖默认 failover：passthrough 直接透传错误（不重试）、rewrite 改写状态码、ignore_monitor 继续 failover 但跳过熔断/冷却/失败计数。规则对下一个请求立即生效。",
   "ops.errorRules.empty": "无规则——所有 4xx 错误都会 failover 到下一个渠道。",
+  "ops.errorRules.deleteTitle": "删除错误规则",
+  "ops.errorRules.deleteConfirm":
+    "删除后匹配的错误将回到默认 failover 行为。此操作不可恢复。",
   "ops.errorRules.add": "添加规则",
   "ops.errorRules.edit": "编辑规则",
   "ops.errorRules.name": "名称",

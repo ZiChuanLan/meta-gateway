@@ -319,7 +319,9 @@ func rewriteStreamFlag(body []byte, stream bool) ([]byte, bool) {
 // non-null finish_reason and usage frame win. Used by channels whose policy
 // forces a streaming upstream for non-streaming clients.
 func aggregateChatStream(body io.Reader) ([]byte, error) {
-	raw, err := io.ReadAll(body)
+	// Bounded like every other replayed body in the relay: a forced upstream
+	// stream is buffered whole, so an endless one must not grow unbounded.
+	raw, err := readResponseBody(body, preserveBodyReadLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -390,6 +392,12 @@ func aggregateChatStream(body io.Reader) ([]byte, error) {
 				content.WriteString(choice.Delta.Content)
 				reasoning.WriteString(choice.Delta.ReasoningContent)
 				for _, call := range choice.Delta.ToolCalls {
+					// A negative index is not a valid slot: the upstream is
+					// misbehaving (or hostile). Skip the fragment rather than
+					// indexing out of range and failing the whole relay.
+					if call.Index < 0 {
+						continue
+					}
 					for toolCalls == nil || call.Index >= len(toolCalls) {
 						toolCalls = append(toolCalls, map[string]any{
 							"index": len(toolCalls), "id": "", "type": "", "function": map[string]any{"name": "", "arguments": ""},

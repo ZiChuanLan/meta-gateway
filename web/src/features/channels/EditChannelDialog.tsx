@@ -370,7 +370,7 @@ export function EditChannelDialog({
 									</p>
 								) : (
 									<>
-										<label className="check" style={{ marginTop: 10 }}>
+										<label className="check is-spaced">
 											<input
 													type="checkbox"
 													checked={checkinOn}
@@ -760,7 +760,7 @@ export function EditChannelDialog({
                 hint={t("channels.headerOverrideHint")}
               >
                 <textarea
-                  className="mono"
+                  className="mono textarea-sm"
                   value={headerOverride}
                   onChange={(e) => {
                     const next = e.target.value;
@@ -769,7 +769,6 @@ export function EditChannelDialog({
                   }}
                   disabled={pending}
                   placeholder='{"User-Agent": "…", "X-Custom": "value"}'
-                  style={{ minHeight: 64 }}
                 />
               </Field>
               <Field
@@ -781,7 +780,7 @@ export function EditChannelDialog({
                   onChange={(e) => setSystemPrompt(e.target.value)}
                   disabled={pending}
                   placeholder={t("channels.systemPromptPlaceholder")}
-                  style={{ minHeight: 72 }}
+                  className="textarea-md"
                 />
               </Field>
               <Field
@@ -793,10 +792,10 @@ export function EditChannelDialog({
                   onChange={(e) => setRetryConfig(e.target.value)}
                   disabled={pending}
                   placeholder={t("channels.retryConfigPlaceholder")}
-                  style={{ minHeight: 72, fontFamily: "var(--font-mono)" }}
+                  className="textarea-code"
                 />
               </Field>
-              <label className="check" style={{ marginTop: 12 }}>
+              <label className="check is-spaced">
                 <input
                   type="checkbox"
                   checked={stableFirst}
@@ -810,7 +809,7 @@ export function EditChannelDialog({
                 hint={t("channels.payloadRulesHint")}
               >
                 <textarea
-                  className="mono"
+                  className="mono textarea-lg"
                   value={payloadRules}
                   onChange={(e) => setPayloadRules(e.target.value)}
                   disabled={pending}
@@ -834,7 +833,6 @@ export function EditChannelDialog({
                     null,
                     2,
                   )}
-                  style={{ minHeight: 90 }}
                 />
               </Field>
             </section>

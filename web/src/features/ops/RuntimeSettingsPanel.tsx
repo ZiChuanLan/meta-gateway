@@ -113,6 +113,15 @@ const RUNTIME_SECTION_GROUPS = [
       ["server", "ops.runtime.section.server"],
     ],
   },
+  {
+    key: "security",
+    label: "ops.runtime.navGroup.security",
+    anchors: [
+      ["totp", "ops.runtime.section.totp"],
+      ["db-maintenance", "ops.runtime.section.dbMaintenance"],
+      ["factory-reset", "ops.runtime.section.factoryReset"],
+    ],
+  },
 ] as const;
 
 function SettingLabel({ label, hint }: { label: string; hint: string }) {
@@ -411,7 +420,7 @@ export function RuntimeSettingsPanel() {
           <div className="panel-header">
             <strong>{t("ops.runtime.section.relay")}</strong>
           </div>
-          <label className="check" style={{ marginBottom: 10 }}>
+          <label className="check is-stacked">
             <input
               type="checkbox"
               disabled={busy}
@@ -425,7 +434,7 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.crossChannelFailoverHint")} />
             </span>
           </label>
-          <label className="check" style={{ marginBottom: 10 }}>
+          <label className="check is-stacked">
             <input
               type="checkbox"
               disabled={busy}
@@ -491,15 +500,7 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.latencyAwareHint")} />
             </span>
           </label>
-          <label
-            className="check"
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              marginTop: 10,
-            }}
-          >
+          <label className="check is-spaced">
             <input
               type="checkbox"
               disabled={busy}
@@ -511,15 +512,7 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.errorAwareHint")} />
             </span>
           </label>
-          <label
-            className="check"
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              marginTop: 10,
-            }}
-          >
+          <label className="check is-spaced">
             <input
               type="checkbox"
               disabled={busy}
@@ -614,7 +607,7 @@ export function RuntimeSettingsPanel() {
           <div className="panel-header">
             <strong>{t("ops.runtime.section.sticky")}</strong>
           </div>
-          <label className="check" style={{ marginBottom: 10 }}>
+          <label className="check is-stacked">
             <input
               type="checkbox"
               disabled={busy}
@@ -913,7 +906,7 @@ export function RuntimeSettingsPanel() {
           <div className="panel-header">
             <strong>{t("ops.runtime.section.probe")}</strong>
           </div>
-          <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          <p className="muted panel-lede">
             {t("ops.runtime.probeIntro")}
           </p>
           <label className="field">
@@ -1134,6 +1127,13 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
+        {/* Alert, error and prompt rules ARE governance: they decide what the
+            gateway refuses, rewrites or escalates. They previously sat in a
+            "tools" grid next to two-factor setup and database wipe, which made
+            three policy editors read as miscellaneous utilities. */}
+        <AlertRulesPanel />
+        <ErrorRulesPanel />
+        <PromptGuardPanel />
         </RuntimeSettingsColumns>
       </section>
       <section className="runtime-group" id="runtime-group-ops">
@@ -1288,7 +1288,7 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.checkinEnabledHint")} />
             </span>
           </label>
-          <label className="field" style={{ marginTop: 10 }}>
+          <label className="field is-spaced">
             <SettingLabel
               label={t("ops.runtime.checkinCron")}
               hint={t("ops.runtime.checkinCronHint")}
@@ -1305,7 +1305,7 @@ export function RuntimeSettingsPanel() {
           <div className="panel-header">
             <strong>{t("ops.runtime.section.server")}</strong>
           </div>
-          <label className="field" style={{ marginBottom: 10 }}>
+          <label className="field is-stacked">
             <SettingLabel
               label={t("ops.runtime.proxyURL")}
               hint={t("ops.runtime.proxyURLHint")}
@@ -1318,7 +1318,7 @@ export function RuntimeSettingsPanel() {
               onChange={(e) => patch("proxy_url", e.target.value)}
             />
           </label>
-          <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          <p className="muted panel-lede">
             {t("ops.runtime.serverReadonly")}
           </p>
           <div className="runtime-setting-row">
@@ -1371,7 +1371,7 @@ export function RuntimeSettingsPanel() {
                 : t("ops.runtime.metricsTokenNone")}
             </strong>
           </div>
-          <label className="check" style={{ margin: "12px 0 8px" }}>
+          <label className="check is-section">
             <input
               type="checkbox"
               disabled={busy}
@@ -1452,21 +1452,33 @@ export function RuntimeSettingsPanel() {
         </RuntimeSettingsColumns>
       </section>
 
-      <section className="runtime-group" id="runtime-group-tools">
+      {/* Account security and database upkeep save themselves — neither is part
+          of the runtime draft this page's Save button commits. Keeping them in
+          the same grid as traffic policy blurred that boundary. */}
+      <section className="runtime-group" id="runtime-group-security">
         <header className="runtime-group-header">
           <div className="runtime-group-title">
-            <strong>{t("ops.runtime.group.tools")}</strong>
-            <p>{t("ops.runtime.group.toolsDesc")}</p>
+            <strong>{t("ops.runtime.group.security")}</strong>
+            <p>{t("ops.runtime.group.securityDesc")}</p>
           </div>
         </header>
         <div className="runtime-tools-grid">
           <TOTPPanel />
-          <AlertRulesPanel />
-          <ErrorRulesPanel />
-          <PromptGuardPanel />
           <MaintenancePanel />
-          <FactoryResetPanel />
         </div>
+      </section>
+
+      {/* An irreversible wipe must not be a peer card in a settings grid. It
+          gets its own terminal region, last on the page, reached by deliberate
+          scroll rather than brushed past en route to something else. */}
+      <section className="runtime-group is-danger" id="runtime-group-danger">
+        <header className="runtime-group-header">
+          <div className="runtime-group-title">
+            <strong>{t("ops.runtime.group.danger")}</strong>
+            <p>{t("ops.runtime.group.dangerDesc")}</p>
+          </div>
+        </header>
+        <FactoryResetPanel />
       </section>
 
       <div className="runtime-settings-actions">

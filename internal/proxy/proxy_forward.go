@@ -638,7 +638,13 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				// exceed the global five-minute budget).
 				fwdCtx := ctx
 				var attemptCancel context.CancelFunc
-				if !upstreamStream {
+				// Only a true stream-to-stream passthrough is exempt. Whenever
+				// EITHER side is non-streaming the exchange must complete before
+				// the client can be answered, so it needs the overall budget:
+				// force_stream aggregates a streaming upstream for a
+				// non-streaming client, and that read is buffered whole with no
+				// peek/idle guard of its own (those only wrap client streams).
+				if !upstreamStream || !req.Stream {
 					timeout := s.nonStreamTimeout
 					if timeout <= 0 {
 						timeout = nonStreamRequestTimeout
@@ -692,7 +698,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 						aggregated, aggErr := aggregateChatStream(result.Body)
 						_ = result.Body.Close()
 						if aggErr != nil {
-							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("stream aggregation failed: %w", aggErr)}
+							result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("stream aggregation failed: %w", aggErr)}
 						} else {
 							result.Body = io.NopCloser(bytes.NewReader(aggregated))
 							if result.Header == nil {
@@ -701,14 +707,14 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 							result.Header.Set("Content-Type", "application/json")
 						}
 					} else if synthesizeClientStream {
-						raw, readErr := io.ReadAll(result.Body)
+						raw, readErr := readResponseBody(result.Body, preserveBodyReadLimit)
 						_ = result.Body.Close()
 						var synthesized []byte
 						if readErr == nil {
 							synthesized, readErr = synthesizeStreamFromCompletion(raw)
 						}
 						if readErr != nil {
-							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("stream synthesis failed: %w", readErr)}
+							result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("stream synthesis failed: %w", readErr)}
 						} else {
 							result.Body = io.NopCloser(bytes.NewReader(synthesized))
 							if result.Header == nil {
@@ -719,7 +725,13 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					}
 					// N×M matrix path: the (anthropic → family) pair's Response/Stream
 					// modes convert upstream output back to the Anthropic contract.
-					if registryTranslation != nil {
+					//
+					// A failed stream-policy conversion above replaced result with an
+					// error that carries NO body, so the outer body check no longer
+					// holds here: every branch below must re-verify it or it reads
+					// from a nil body and panics.
+					convertible := result.Err == nil && result.Body != nil
+					if convertible && registryTranslation != nil {
 						if req.Stream && registryTranslation.Stream != nil {
 							wrapped, wrapErr := registryTranslation.Stream(effectivePath, result.Body)
 							if wrapErr != nil {
@@ -754,7 +766,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 								result.Header.Set("Content-Type", transformedContentType(effectivePath, adapter.Name(), result.Header.Get("Content-Type")))
 							}
 						}
-					} else if req.Stream {
+					} else if convertible && req.Stream {
 						// Reshape native/upstream SSE into the downstream contract (the
 						// composed adapter pivots through OpenAI SSE internally).
 						wrapped, wrapErr := adapter.WrapStream(effectivePath, result.Body)
@@ -772,7 +784,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 								result.Header.Set("Content-Type", "text/event-stream")
 							}
 						}
-					} else {
+					} else if convertible {
 						raw, readErr := readResponseBody(result.Body, preserveBodyReadLimit)
 						_ = result.Body.Close()
 						if readErr != nil {

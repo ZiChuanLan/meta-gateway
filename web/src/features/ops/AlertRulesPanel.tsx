@@ -5,7 +5,13 @@ import type { AlertRule } from "../../api/types"
 import { useAdminMutation } from "../../hooks/useAdminMutation"
 import { useI18n } from "../../i18n"
 import { useSession } from "../../session"
-import { Button, Dialog, Field, Panel } from "../../components/ui"
+import {
+  Button,
+  ConfirmDialog,
+  Dialog,
+  Field,
+  Panel,
+} from "../../components/ui"
 
 export // Alert rules: metric/operator/threshold/window/sustained → webhook.
 function AlertRulesPanel() {
@@ -17,6 +23,9 @@ function AlertRulesPanel() {
     queryFn: ({ signal }) => service.alertRules(signal),
   });
   const [draft, setDraft] = useState<Partial<AlertRule> | null>(null);
+  // Irreversible, and it was firing straight from the click while every other
+  // delete in the console asks first.
+  const [confirmDelete, setConfirmDelete] = useState<AlertRule | null>(null);
   const save = useAdminMutation({
     mutationFn: (value: AlertRule) =>
       value.id
@@ -58,11 +67,11 @@ function AlertRulesPanel() {
           +
         </button>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+      <p className="muted panel-lede">
         {t("ops.alertRules.hint")}
       </p>
       {items.length === 0 ? (
-        <p className="is-quiet" style={{ fontSize: 12 }}>
+        <p className="is-quiet panel-note">
           {t("ops.alertRules.empty")}
         </p>
       ) : (
@@ -93,7 +102,7 @@ function AlertRulesPanel() {
               <button
                 type="button"
                 className="error-rule-del"
-                onClick={() => remove.mutate(rule.id!)}
+                    onClick={() => setConfirmDelete(rule)}
               >
                 {t("common.delete")}
               </button>
@@ -108,13 +117,26 @@ function AlertRulesPanel() {
 		  pending={save.isPending}
 		  error={save.error instanceof Error ? save.error : null}
 		  onClose={() => setDraft(null)}
-          onSave={(value) => {
-            save.mutate(value as AlertRule);
-            setDraft(null);
-          }}
-        />
-      ) : null}
-    </Panel>
+              onSave={(value) => {
+                save.mutate(value as AlertRule);
+                setDraft(null);
+              }}
+            />
+          ) : null}
+          {confirmDelete ? (
+            <ConfirmDialog
+              title={t("ops.alertRules.deleteTitle")}
+              message={t("ops.alertRules.deleteConfirm")}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() => {
+                remove.mutate(confirmDelete.id!);
+                setConfirmDelete(null);
+              }}
+              onClose={() => setConfirmDelete(null)}
+            />
+          ) : null}
+        </Panel>
   );
 }
 

@@ -96,7 +96,7 @@ export function BackupsPanel() {
           />
         </>
       )}
-      <p className="muted" style={{ marginTop: 12, fontSize: 12 }}>
+      <p className="muted panel-note is-spaced">
         {t("ops.restoreNote", {
           cmd: "meta-gateway restore --from <backup-name>",
         })}

@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-label="Meta Gateway — Multi-Channel AI Relay Gateway">
+  <defs>
+    <!-- Background Gradient: Deep Night Gateway Palette -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#050914" />
+      <stop offset="50%" stop-color="#091122" />
+      <stop offset="100%" stop-color="#0E1A34" />
+    </linearGradient>
+
+    <!-- Brand Cyan & Gold Gradients -->
+    <linearGradient id="cyan-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#7CC4F0" />
+    </linearGradient>
+    <linearGradient id="gold-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FCD34D" />
+      <stop offset="100%" stop-color="#D4A017" />
+    </linearGradient>
+
+    <!-- Precise Blueprint Grid Pattern -->
+    <pattern id="grid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#1E293B" stroke-width="0.75" stroke-opacity="0.45" />
+      <circle cx="0" cy="0" r="1" fill="#38BDF8" fill-opacity="0.25" />
+    </pattern>
+
+    <!-- Radial Gateway Glows -->
+    <radialGradient id="cyan-ambient" cx="80%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#0284C7" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#0284C7" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="gold-ambient" cx="20%" cy="90%" r="45%">
+      <stop offset="0%" stop-color="#D4A017" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#D4A017" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background Base Canvas -->
+  <rect width="1200" height="340" fill="url(#bg)" />
+  <rect width="1200" height="340" fill="url(#grid)" />
+  <rect width="1200" height="340" fill="url(#cyan-ambient)" />
+  <rect width="1200" height="340" fill="url(#gold-ambient)" />
+
+  <!-- Top Accent Horizon Line -->
+  <line x1="0" y1="0" x2="1200" y2="0" stroke="url(#cyan-grad)" stroke-width="3" />
+  <line x1="0" y1="339" x2="1200" y2="339" stroke="#1E293B" stroke-width="1" />
+
+  <!-- Left Hero Typography Section -->
+  <g transform="translate(80, 75)">
+    <!-- Subtitle Pill / Status Badge -->
+    <g transform="translate(0, 0)">
+      <rect x="0" y="0" width="280" height="26" fill="#0C1527" stroke="#0284C7" stroke-width="1" stroke-opacity="0.6" />
+      <circle cx="12" cy="13" r="3.5" fill="#38BDF8" />
+      <text x="24" y="17" fill="#7CC4F0" font-family="'JetBrains Mono', monospace" font-size="10.5" font-weight="700" letter-spacing="1.5">NEXT-GEN AI ROUTING RELAY</text>
+    </g>
+
+    <!-- Main Title -->
+    <text x="0" y="72" fill="#F8FAFC" font-family="'Space Grotesk', 'Plus Jakarta Sans', system-ui, sans-serif" font-size="44" font-weight="800" letter-spacing="-0.5">META GATEWAY</text>
+
+    <!-- Tagline -->
+    <text x="0" y="108" fill="#94A3B8" font-family="'Inter', system-ui, sans-serif" font-size="16" font-weight="400">
+      多通道 AI 中继网关 <tspan fill="#475569">|</tspan> <tspan fill="#E2E8F0">多站聚合</tspan> · <tspan fill="#E2E8F0">智能分流</tspan> · <tspan fill="#E2E8F0">协议互译</tspan> · <tspan fill="#E2E8F0">故障自愈</tspan>
+    </text>
+
+    <!-- Spec Chips -->
+    <g transform="translate(0, 140)">
+      <!-- Chip 1: Multi-Protocol -->
+      <g transform="translate(0, 0)">
+        <rect x="0" y="0" width="168" height="30" fill="#0C1527" stroke="#334155" stroke-width="1" />
+        <path d="M 12 15 L 18 10 M 12 15 L 18 20" stroke="#38BDF8" stroke-width="1.8" stroke-linecap="square" />
+        <text x="26" y="20" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="500">OpenAI / Claude / Gemini</text>
+      </g>
+
+      <!-- Chip 2: Fault Tolerance -->
+      <g transform="translate(180, 0)">
+        <rect x="0" y="0" width="144" height="30" fill="#0C1527" stroke="#334155" stroke-width="1" />
+        <rect x="10" y="11" width="8" height="8" fill="none" stroke="#FCD34D" stroke-width="1.6" />
+        <text x="26" y="20" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="500">Auto Cooldown &amp; Failover</text>
+      </g>
+
+      <!-- Chip 3: Embedded Stack -->
+      <g transform="translate(336, 0)">
+        <rect x="0" y="0" width="138" height="30" fill="#0C1527" stroke="#334155" stroke-width="1" />
+        <circle cx="14" cy="15" r="4" fill="none" stroke="#34D399" stroke-width="1.6" />
+        <text x="26" y="20" fill="#CBD5E1" font-family="'JetBrains Mono', monospace" font-size="11" font-weight="500">Single Binary + SQLite</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Right Architectural Network Symbol (Official Meta Gateway Mark) -->
+  <g transform="translate(860, 45)">
+    <!-- Architectural Frame Box -->
+    <rect x="0" y="0" width="240" height="240" fill="#070D19" stroke="#1E293B" stroke-width="2" />
+    <rect x="8" y="8" width="224" height="224" fill="none" stroke="#0284C7" stroke-width="1" stroke-opacity="0.25" />
+
+    <!-- Corner Framing Accents -->
+    <path d="M 8 20 V 8 H 20 M 220 8 H 232 V 20 M 8 220 V 232 H 20 M 220 232 H 232 V 220" fill="none" stroke="#38BDF8" stroke-width="2" stroke-opacity="0.75" />
+
+    <!-- Network Circuit Node Assembly (Lucide Network Architecture) -->
+    <g transform="translate(42, 42) scale(6.5)">
+      <!-- Trunk Lines -->
+      <path d="M 5 16 v -4 a 1 1 0 0 1 1 -1 h 12 a 1 1 0 0 1 1 1 v 4" fill="none" stroke="#7CC4F0" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter" />
+      <path d="M 12 11 V 8" fill="none" stroke="#FCD34D" stroke-width="1.8" stroke-linecap="square" />
+
+      <!-- Top Master Node (Gateway Core) -->
+      <rect x="9" y="2" width="6" height="6" fill="#091122" stroke="url(#gold-grad)" stroke-width="1.8" />
+      <rect x="11" y="4" width="2" height="2" fill="#FCD34D" />
+
+      <!-- Bottom Ingress Node (Consumer API) -->
+      <rect x="2" y="16" width="6" height="6" fill="#091122" stroke="url(#cyan-grad)" stroke-width="1.8" />
+      <rect x="4" y="18" width="2" height="2" fill="#38BDF8" />
+
+      <!-- Bottom Egress Node (Upstream Providers) -->
+      <rect x="16" y="16" width="6" height="6" fill="#091122" stroke="url(#cyan-grad)" stroke-width="1.8" />
+      <rect x="18" y="18" width="2" height="2" fill="#38BDF8" />
+    </g>
+
+    <!-- Telemetry Tag Bottom -->
+    <text x="120" y="222" text-anchor="middle" fill="#64748B" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="700" letter-spacing="1">CONSOLE ARCHITECTURE // v2.7</text>
+  </g>
+</svg>

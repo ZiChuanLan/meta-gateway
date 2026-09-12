@@ -45,7 +45,7 @@ func TestRouteMemberPricesRoundTrip(t *testing.T) {
 		t.Fatalf("prices round trip = %+v", got)
 	}
 
-	prompt, completion, cache, found, err := db.RouteMember.MemberPrices(routeID, channelID)
+	prompt, completion, cache, found, err := db.RouteMember.MemberPrices(memberID)
 	if err != nil || !found {
 		t.Fatalf("member prices lookup: found=%v err=%v", found, err)
 	}
@@ -53,9 +53,9 @@ func TestRouteMemberPricesRoundTrip(t *testing.T) {
 		t.Fatalf("lookup = %v/%v/%v", prompt, completion, cache)
 	}
 
-	// An unpriced channel×route pair reports found=false (fall-through).
-	_, _, _, found, err = db.RouteMember.MemberPrices(routeID, channelID+77)
+	// An unknown member reports found=false (fall-through).
+	_, _, _, found, err = db.RouteMember.MemberPrices(memberID + 77)
 	if err != nil || found {
-		t.Fatalf("unpriced pair: found=%v err=%v", found, err)
+		t.Fatalf("unknown member: found=%v err=%v", found, err)
 	}
 }

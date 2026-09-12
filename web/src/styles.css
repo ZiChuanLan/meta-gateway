@@ -88,6 +88,22 @@
   --shadow-glow: 0 0 24px rgba(124, 196, 240, 0.18);
   --shadow-glow-accent: 0 0 24px rgba(212, 175, 55, 0.2);
 
+  /* Spacing scale — the missing rung that pushed ad-hoc pixel values into
+     inline style props. Panels compose from these, never from raw numbers. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 10px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+
+  /* Type scale in rem so it honours the reader's browser font size. */
+  --text-xs: 0.6875rem; /* 11px */
+  --text-sm: 0.75rem; /* 12px */
+  --text-md: 0.8125rem; /* 13px */
+  --text-lg: 0.875rem; /* 14px */
+
   /* Typography scale */
   --font: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-serif: "Space Grotesk", "Plus Jakarta Sans", -apple-system, sans-serif;
@@ -1129,7 +1145,12 @@ a.button {
 }
 .panel-header {
   display: flex;
-  align-items: center;
+  /* flex-start + wrap is the single layout contract for every feature page:
+     a long title must be able to wrap above its toolbar rather than force the
+     row to overflow. Previously `center` was declared here and silently
+     overridden further down the sheet, so this rule read as a lie. */
+  align-items: flex-start;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
@@ -3013,7 +3034,7 @@ td.actions {
 }
 .member-group-tab > button:hover {
   background: var(--surface-subtle);
-  color: var(--text);
+  color: var(--ink);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .member-group-tab.is-active {
@@ -3022,7 +3043,7 @@ td.actions {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 .member-group-tab.is-active > button {
-  color: var(--text);
+  color: var(--ink);
 }
 .member-group-tab-main {
   display: inline-flex;
@@ -3041,7 +3062,7 @@ td.actions {
 }
 .member-group-tab.is-active .member-group-count {
   background: var(--surface-hover);
-  color: var(--text);
+  color: var(--ink);
 }
 .member-group-tab .action-menu-trigger {
   border-radius: var(--radius);
@@ -3074,7 +3095,7 @@ td.actions {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--text);
+  color: var(--ink);
   font-size: 12px;
   line-height: 1.4;
   outline: none;
@@ -3105,7 +3126,7 @@ td.actions {
   transition: color var(--dur-hover) var(--ease-hover);
 }
 .member-group-copy:hover {
-  color: var(--text);
+  color: var(--ink);
 }
 .member-group-copy input {
   width: 14px;
@@ -6511,9 +6532,102 @@ td.actions {
   padding: 14px 16px;
 }
 .field small,
-.field-hint {
-  max-width: 48ch;
-}
+  .field-hint {
+    max-width: 48ch;
+  }
+
+  /* —— Panel prose & control rhythm ——
+     Every ops panel opens with a lede paragraph and may close with a quiet
+     note. These carried identical inline fontSize/margin props on each panel,
+     which is why the settings pages drifted out of alignment with one another.
+     One class per role keeps the vertical rhythm identical everywhere. */
+  .panel-lede {
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    max-width: 72ch;
+    margin: 0 0 var(--space-2);
+  }
+  .panel-note {
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    max-width: 72ch;
+    margin: 0;
+  }
+  /* A note that follows a control group needs to clear it. */
+  .panel-note.is-spaced {
+    margin-top: var(--space-4);
+  }
+  /* Checkbox rows sit in a group; the modifier tunes the seam between a row
+     and whatever precedes it without redeclaring .check's flex layout. */
+  .check.is-stacked {
+    margin-bottom: var(--space-3);
+  }
+  .check.is-tight {
+    margin-top: var(--space-1);
+  }
+  .check.is-spaced {
+    margin-top: var(--space-3);
+  }
+  /* Grid that opens below a heading or toggle. */
+  .form-grid.is-spaced {
+    margin-top: var(--space-4);
+  }
+  .stack-tight {
+    margin-top: var(--space-1);
+  }
+  /* Numeric/code inputs that must not stretch to the full field width.
+     Standalone so it can constrain an input without also imposing .input's
+     full appearance on controls that inherit their styling from a parent. */
+  .is-narrow {
+    width: 160px;
+    max-width: 100%;
+  }
+  /* Field rows that open or close a group inside a longer settings column. */
+  .field.is-spaced {
+    margin-top: var(--space-3);
+  }
+  .field.is-stacked {
+    margin-bottom: var(--space-3);
+  }
+  /* A checkbox row that introduces its own sub-section. */
+  .check.is-section {
+    margin: var(--space-4) 0 var(--space-2);
+  }
+
+  /* Textarea sizing by role rather than by hand-picked pixel heights: the
+     same three sizes were being spelled out inline in every dialog. */
+  .textarea-sm {
+    min-height: 64px;
+  }
+  .textarea-md {
+    min-height: 72px;
+  }
+  .textarea-lg {
+    min-height: 90px;
+  }
+  .textarea-code {
+    min-height: 72px;
+    font-family: var(--mono);
+  }
+  /* Two-column rows inside dialogs share one seam width. */
+  .split.is-tight {
+    gap: var(--space-4);
+  }
+  /* A toolbar row that wraps on narrow viewports. */
+  .toolbar-wrap {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  /* Scrollable pick-list inside a dialog. */
+  .scroll-list {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  /* A context strip that follows a control instead of opening the panel. */
+  .ops-panel-context.is-spaced {
+    margin-top: var(--space-4);
+  }
 .page-header p {
   max-width: 56ch;
   line-height: 1.5;
@@ -7489,9 +7603,12 @@ td.actions {
   font-family: var(--font);
   font-size: 12.5px;
 }
-.probe-search input:focus {
-  outline: none;
-}
+  /* Suppress the ring for pointer focus only. A bare `:focus { outline: none }`
+     also matches keyboard focus, which cancelled the global :focus-visible ring
+     and left this field with no focus indication at all. */
+  .probe-search input:focus:not(:focus-visible) {
+    outline: none;
+  }
 .probe-picker-actions {
   display: flex;
   gap: 12px;
@@ -7539,7 +7656,7 @@ td.actions {
 }
 .probe-prompt {
   min-height: 58px;
-  font-family: var(--font-mono, "SF Mono", Fira Code, monospace);
+  font-family: var(--mono);
   font-size: 12.5px;
   resize: vertical;
 }
@@ -8640,10 +8757,10 @@ td.actions {
   transform: rotate(-45deg);
 }
 .channel-model-group-head:hover {
-  color: var(--text);
+  color: var(--ink);
 }
 .channel-model-group-head:hover::before {
-  border-color: var(--text);
+  border-color: var(--ink);
 }
 .channel-model-group-head:first-child {
   padding-top: 0;
@@ -8708,14 +8825,18 @@ td.actions {
   color: var(--primary-active);
   box-shadow: 0 1px 2px rgba(15, 42, 66, 0.08);
 }
-.sync-mode-info {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  color: var(--muted-dark);
-  cursor: help;
-  outline: none;
-}
+  .sync-mode-info {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    color: var(--muted-dark);
+    cursor: help;
+  }
+  /* This carries tabIndex={0}, so it is a keyboard stop: it must keep the
+     global focus ring. Only the pointer-focus ring is dropped. */
+  .sync-mode-info:focus:not(:focus-visible) {
+    outline: none;
+  }
 .sync-mode-info:hover,
 .sync-mode-info:focus-within {
   color: var(--primary-active);
@@ -10196,11 +10317,6 @@ label.check input[type="checkbox"] {
   margin: 0;
 }
 
-.runtime-tool-maintenance,
-.runtime-tool-factory-reset {
-  grid-column: auto;
-}
-
 .runtime-tools-grid > .runtime-card .muted {
   line-height: 1.65;
 }
@@ -10447,11 +10563,6 @@ label.check input[type="checkbox"] {
 .toolbar,
 .toolbar > * {
   min-width: 0;
-}
-
-.panel-header {
-  align-items: flex-start;
-  flex-wrap: wrap;
 }
 
 .panel-header > .toolbar {
@@ -13349,6 +13460,33 @@ table {
 .runtime-group {
   margin-bottom: 26px;
 }
+
+/* Terminal region for irreversible actions. It reads as a different KIND of
+   surface, not a louder settings card: a hairline danger rule above it and a
+   tinted well behind it, so the eye registers the boundary before the label.
+   Extra top margin makes the seam deliberate rather than continuous with the
+   settings flow above. */
+.runtime-group.is-danger {
+  margin-top: 34px;
+  padding: 18px 18px 4px;
+  border: 1px solid var(--danger-soft);
+  border-top: 2px solid var(--danger);
+  background: var(--danger-soft);
+}
+.runtime-group.is-danger > .runtime-group-header {
+  border-bottom-color: var(--danger-soft);
+}
+.runtime-group.is-danger .runtime-group-title strong {
+  color: var(--danger);
+}
+
+/* The reset card sits inside that well, so it drops its own frame instead of
+   stacking a second border on top of the region's. */
+.runtime-card.is-danger-zone {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
 .runtime-group-header {
   margin: 0 0 12px;
   padding-bottom: 10px;
@@ -13987,11 +14125,19 @@ table {
   cursor: help;
 }
 .live-trace-chain-hop {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 1px 5px;
   border-radius: 999px;
   background: var(--surface-subtle);
   color: var(--muted);
   white-space: nowrap;
+}
+/* The outcome glyph is an icon, not a text character: keep it optically
+   centred against the channel name instead of sitting on the baseline. */
+.live-trace-chain-hop svg {
+  flex: none;
 }
 .live-trace-chain-hop.is-failed {
   background: var(--danger-soft);
@@ -14068,4 +14214,33 @@ table {
 .runtime-update-manual summary {
   cursor: pointer;
   font-size: 12px;
+}
+
+
+/* ——————————————————————————————————————————————————————————————
+   Reduced motion — global backstop
+   ——————————————————————————————————————————————————————————————
+   The sheet already carries 15 hand-written reduced-motion blocks, but they
+   enumerate selectors one by one, so every animation added since then (82
+   @keyframes now exist) silently escapes them. This catch-all closes the gap
+   once and stays correct as the sheet grows.
+
+   Why 0.01ms instead of `animation: none`: 54 of those keyframes start from
+   opacity 0 and animate in. Cancelling such an animation outright leaves the
+   element stuck at its hidden initial state — an empty page. A near-zero
+   duration lets each animation jump straight to its final frame, so the UI
+   settles instantly with no motion.
+
+   Placed last so it wins over the per-component blocks without editing them. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
 }

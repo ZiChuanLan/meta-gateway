@@ -86,8 +86,9 @@ func (h *SelfUpdateHandler) audit(r *http.Request, target, outcome string) {
 	if h.db == nil {
 		return
 	}
+	requestID, _ := r.Context().Value(chimw.RequestIDKey).(string)
 	_ = h.db.AuditEvent.Insert(&store.AuditEvent{
-		RequestID:  r.Context().Value(chimw.RequestIDKey).(string),
+		RequestID:  requestID,
 		ActorKind:  "admin",
 		Action:     "self_update.apply",
 		Outcome:    outcome,

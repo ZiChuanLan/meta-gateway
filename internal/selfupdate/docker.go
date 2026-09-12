@@ -36,6 +36,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -109,11 +110,27 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
+// splitImageRef separates an image reference into repository and tag.
+// A ref without a tag yields "latest" (Docker's own default) instead of
+// panicking, and a registry host with a port (host:5000/img) is not mistaken
+// for a tag — the colon must appear after the last slash to be one.
+func splitImageRef(ref string) (repository, tag string) {
+	ref = strings.TrimSpace(ref)
+	colon := strings.LastIndex(ref, ":")
+	if colon > 0 && colon > strings.LastIndex(ref, "/") {
+		if candidate := ref[colon+1:]; candidate != "" {
+			return ref[:colon], candidate
+		}
+	}
+	return strings.TrimSuffix(ref, ":"), "latest"
+}
+
 // PullImage pulls ref and streams the daemon's progress lines to progress.
 func (c *Client) PullImage(ctx context.Context, ref string, progress func(string)) error {
+	repository, tag := splitImageRef(ref)
 	resp, err := c.do(ctx, http.MethodPost,
-		"/images/create?fromImage="+strings.SplitN(ref, ":", 2)[0]+
-			"&tag="+strings.TrimSuffix(strings.SplitN(ref, ":", 2)[1]+":", ":"),
+		"/images/create?fromImage="+url.QueryEscape(repository)+
+			"&tag="+url.QueryEscape(tag),
 		nil)
 	if err != nil {
 		return err

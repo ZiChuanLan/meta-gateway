@@ -7,6 +7,7 @@ package livetrace
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -286,8 +287,14 @@ func (r *Registry) Progress(requestID string, firstByteMs, bytesWritten int64) {
 	r.publishLocked(*req)
 }
 
-// FinishSuccess closes a fully copied response with its transfer metrics.
-func (r *Registry) FinishSuccess(requestID string, firstByteMs, bytesWritten int64, promptTokens, completionTokens int) {
+// FinishCopied closes a fully copied response with its transfer metrics.
+//
+// statusCode decides the terminal state: a copied body is not an outcome. The
+// relay forwards an upstream 4xx/5xx verbatim, so "the bytes arrived" and "the
+// request succeeded" are different claims — showing an upstream 429 as success
+// hides exactly the failures the live view exists to surface. Zero means the
+// status is unknown and is treated as success (the body was copied).
+func (r *Registry) FinishCopied(requestID string, statusCode int, firstByteMs, bytesWritten int64, promptTokens, completionTokens int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	req := r.reqs[requestID]
@@ -300,7 +307,14 @@ func (r *Registry) FinishSuccess(requestID string, firstByteMs, bytesWritten int
 	req.BytesWritten = bytesWritten
 	req.PromptTokens = promptTokens
 	req.CompletionTokens = completionTokens
-	req.Status = StatusSuccess
+	if statusCode >= 400 {
+		req.Status = StatusFailed
+		if req.Error == "" {
+			req.Error = fmt.Sprintf("upstream returned HTTP %d", statusCode)
+		}
+	} else {
+		req.Status = StatusSuccess
+	}
 	req.DurationMs = time.Since(req.StartedAt).Milliseconds()
 	r.publishLocked(*req)
 	r.pruneLocked()

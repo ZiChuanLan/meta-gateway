@@ -347,7 +347,7 @@ function ExternalCheckinDialog({
             disabled={save.isPending}
           />
         </Field>
-        <label className="check" style={{ marginTop: 4 }}>
+        <label className="check is-tight">
           <input
             type="checkbox"
             checked={enabled}

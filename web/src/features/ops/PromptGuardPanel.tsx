@@ -5,7 +5,13 @@ import type { PromptGuardRule } from "../../api/types"
 import { useAdminMutation } from "../../hooks/useAdminMutation"
 import { useI18n } from "../../i18n"
 import { useSession } from "../../session"
-import { Button, Dialog, Field, Panel } from "../../components/ui"
+import {
+  Button,
+  ConfirmDialog,
+  Dialog,
+  Field,
+  Panel,
+} from "../../components/ui"
 
 export // Sensitive prompt guards: regex rules that mask, reject, or channel-exclude
 // request bodies containing sensitive content (API keys, credentials…).
@@ -18,6 +24,11 @@ function PromptGuardPanel() {
     queryFn: ({ signal }) => service.promptGuards(signal),
   });
   const [draft, setDraft] = useState<Partial<PromptGuardRule> | null>(null);
+  // Irreversible, and it was firing straight from the click while every other
+  // delete in the console asks first.
+  const [confirmDelete, setConfirmDelete] = useState<PromptGuardRule | null>(
+    null,
+  );
   const save = useAdminMutation({
     mutationFn: (value: PromptGuardRule) =>
       value.id
@@ -56,11 +67,11 @@ function PromptGuardPanel() {
           +
         </button>
       </div>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+      <p className="muted panel-lede">
         {t("ops.guard.hint")}
       </p>
       {items.length === 0 ? (
-        <p className="is-quiet" style={{ fontSize: 12 }}>
+        <p className="is-quiet panel-note">
           {t("ops.guard.empty")}
         </p>
       ) : (
@@ -89,7 +100,7 @@ function PromptGuardPanel() {
               <button
                 type="button"
                 className="error-rule-del"
-                onClick={() => remove.mutate(rule.id!)}
+                    onClick={() => setConfirmDelete(rule)}
               >
                 {t("common.delete")}
               </button>
@@ -103,13 +114,26 @@ function PromptGuardPanel() {
           pending={save.isPending}
           error={save.error instanceof Error ? save.error : null}
           onClose={() => setDraft(null)}
-          onSave={(value) => {
-            save.mutate(value as PromptGuardRule);
-            setDraft(null);
-          }}
-        />
-      ) : null}
-    </Panel>
+              onSave={(value) => {
+                save.mutate(value as PromptGuardRule);
+                setDraft(null);
+              }}
+            />
+          ) : null}
+          {confirmDelete ? (
+            <ConfirmDialog
+              title={t("ops.guard.deleteTitle")}
+              message={t("ops.guard.deleteConfirm")}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() => {
+                remove.mutate(confirmDelete.id!);
+                setConfirmDelete(null);
+              }}
+              onClose={() => setConfirmDelete(null)}
+            />
+          ) : null}
+        </Panel>
   );
 }
 

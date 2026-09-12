@@ -891,7 +891,7 @@ function AuthenticatedShell({
 							to={to}
 							end={to === "/"}
 							className={({ isActive }) =>
-								`deck-sector${isActive || (to === "/settings" && location.pathname.startsWith("/maintain")) ? " active" : ""}`
+								`deck-sector${isActive ? " active" : ""}`
 							}
 						>
 							<span className="deck-sector-icon">
@@ -969,8 +969,16 @@ function AuthenticatedShell({
 						<Route path="logs" element={<Logs />} />
 						<Route path="checkins" element={<Checkins />} />
 						<Route path="exchange" element={<ExchangePage />} />
-						<Route path="maintain" element={<Maintain />} />
 						<Route path="settings" element={<Maintain />} />
+						{/* /maintain was the original path for this page. It is kept as a
+						    redirect (not a second mount) so one page has one URL: two live
+						    routes forked browser history, bookmarks and deep links. The
+						    search string carries over so /maintain?tab=backups still lands
+						    on the right tab. */}
+						<Route
+							path="maintain"
+							element={<Navigate to={`/settings${location.search}`} replace />}
+						/>
 						<Route path="store" element={<Store />} />
 						<Route path="plugins/:id" element={<PluginHost />} />
 						<Route path="sites/*" element={<Navigate to="/" replace />} />

@@ -169,6 +169,11 @@ type Request struct {
 	// RouteID is filled after selection so usage accounting can update a
 	// model-level stable-first route without changing the public relay API.
 	RouteID int64
+	// MemberID is the route member that actually served the request, filled
+	// after selection. Billing needs the exact row: (route_id, channel_id) is
+	// not unique across route groups and alias members, so the member's own
+	// prices can only be resolved by id.
+	MemberID int64
 	// GrayAttempt indicates that the selected candidate came from the gray pool.
 	GrayAttempt bool
 	// ReasoningEffort is the client-requested OpenAI-style reasoning effort

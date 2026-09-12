@@ -1242,8 +1242,10 @@ function ModelCatalog({
                   >
                     {t("modelsPage.bulkDisableSelected")}
                   </Button>
+                  {/* Irreversible, so it must not look identical to the two
+                      reversible toggles beside it. */}
                   <Button
-                    variant="secondary"
+                    variant="danger"
                     disabled={bulkBusy}
                     onClick={() => setBulkDeleteOpen(true)}
                   >

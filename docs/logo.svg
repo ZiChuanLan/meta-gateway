@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Meta Gateway logo">
+  <defs>
+    <linearGradient id="mg-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#070D19" />
+      <stop offset="60%" stop-color="#0C1527" />
+      <stop offset="100%" stop-color="#14213D" />
+    </linearGradient>
+    <linearGradient id="mg-cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7CC4F0" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+    <linearGradient id="mg-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FCD34D" />
+      <stop offset="100%" stop-color="#D4A017" />
+    </linearGradient>
+    <filter id="mg-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Base canvas with sharp precision and subtle gateway frame -->
+  <rect width="256" height="256" fill="url(#mg-bg)" />
+  <rect x="1" y="1" width="254" height="254" fill="none" stroke="#1E293B" stroke-width="2" />
+  <rect x="10" y="10" width="236" height="236" fill="none" stroke="#0EA5E9" stroke-opacity="0.18" stroke-width="1" />
+
+  <!-- Subtle corner accents for architectural precision -->
+  <path d="M 10 24 V 10 H 24 M 232 10 H 246 V 24 M 10 232 V 246 H 24 M 232 246 H 246 V 232" fill="none" stroke="#38BDF8" stroke-width="2" stroke-opacity="0.6" />
+
+  <!-- Gateway Circuit Nodes (Lucide Network Architecture) -->
+  <g transform="translate(40, 40) scale(7.33)" filter="url(#mg-glow)">
+    <!-- Circuit Bus Lines -->
+    <path d="M 5 16 v -4 a 1 1 0 0 1 1 -1 h 12 a 1 1 0 0 1 1 1 v 4" fill="none" stroke="#7CC4F0" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter" stroke-opacity="0.85" />
+    <path d="M 12 11 V 8" fill="none" stroke="#FCD34D" stroke-width="1.8" stroke-linecap="square" />
+
+    <!-- Top Root Hub (Master / Gateway Core) -->
+    <rect x="9" y="2" width="6" height="6" fill="#0C1527" stroke="url(#mg-gold)" stroke-width="1.8" />
+    <rect x="11" y="4" width="2" height="2" fill="#FCD34D" />
+
+    <!-- Left Ingress Node (Client / OpenAI / Consumer) -->
+    <rect x="2" y="16" width="6" height="6" fill="#0C1527" stroke="url(#mg-cyan)" stroke-width="1.8" />
+    <rect x="4" y="18" width="2" height="2" fill="#7CC4F0" />
+
+    <!-- Right Egress Node (Upstream Relay Channels / Models) -->
+    <rect x="16" y="16" width="6" height="6" fill="#0C1527" stroke="url(#mg-cyan)" stroke-width="1.8" />
+    <rect x="18" y="18" width="2" height="2" fill="#7CC4F0" />
+  </g>
+</svg>

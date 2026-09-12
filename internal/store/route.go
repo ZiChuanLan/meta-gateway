@@ -380,7 +380,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 			rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-    c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
+    c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
@@ -418,6 +418,7 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 			&candidate.Channel.MaxReasoningEffort,
 			&candidate.Channel.PayloadRules,
 			&candidate.Channel.MaxConcurrent,
+			&candidate.Channel.NonStreamTimeoutSeconds, &candidate.Channel.StreamPolicy,
 			&candidate.Channel.ProxyURL,
 			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
 			&candidate.Channel.RetryConfig,
@@ -501,7 +502,7 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 		rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-    c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
+    c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
@@ -542,6 +543,7 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 			&candidate.Channel.MaxReasoningEffort,
 			&candidate.Channel.PayloadRules,
 			&candidate.Channel.MaxConcurrent,
+			&candidate.Channel.NonStreamTimeoutSeconds, &candidate.Channel.StreamPolicy,
 			&candidate.Channel.ProxyURL,
 			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
 			&candidate.Channel.RetryConfig,
@@ -753,7 +755,7 @@ func (s *RouteMemberStore) CopyMemberGroup(routeID int64, from, to string) (int,
 	if from == to {
 		return 0, nil
 	}
-	res, err := s.db.Exec(`INSERT OR IGNORE INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at) SELECT route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, ?, 0, NULL, '', datetime('now'), datetime('now') FROM route_members WHERE route_id = ? AND group_name = ? AND mapping_json = ''`,
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, fail_count, cooldown_until, last_error, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, created_at, updated_at) SELECT route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, ?, 0, NULL, '', price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, datetime('now'), datetime('now') FROM route_members WHERE route_id = ? AND group_name = ? AND mapping_json = ''`,
 		to, routeID, from)
 	if err != nil {
 		return 0, fmt.Errorf("route member group copy: %w", err)
@@ -781,14 +783,19 @@ func (s *RouteMemberStore) ListRouteGroupNames() ([]string, error) {
 	return names, rows.Err()
 }
 
-// MemberPrices returns the per-member unit prices for a channel serving a
-// route (0 values = unpriced). Used by relay billing as the most specific
-// price layer.
-func (s *RouteMemberStore) MemberPrices(routeID, channelID int64) (prompt, completion, cache float64, found bool, err error) {
+// MemberPrices returns the unit prices of ONE member row (0 values =
+// unpriced). Used by relay billing as the most specific price layer.
+//
+// The lookup is by member id, not by (route_id, channel_id): that pair is not
+// unique — the partial unique index only covers
+// (route_id, channel_id, group_name) WHERE mapping_json = ”, so route groups
+// and alias members legitimately produce several rows for one route+channel.
+// Resolving by the pair could bill a request through a member it never used.
+func (s *RouteMemberStore) MemberPrices(memberID int64) (prompt, completion, cache float64, found bool, err error) {
 	row := s.db.QueryRow(
 		`SELECT price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k
-		 FROM route_members WHERE route_id = ? AND channel_id = ? ORDER BY priority DESC, id LIMIT 1`,
-		routeID, channelID)
+		 FROM route_members WHERE id = ?`,
+		memberID)
 	if err := row.Scan(&prompt, &completion, &cache); err != nil {
 		if err == sql.ErrNoRows {
 			return 0, 0, 0, false, nil

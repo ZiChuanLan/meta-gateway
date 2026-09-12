@@ -258,9 +258,7 @@ function ProxyLogsPanel() {
 
   return (
     <>
-      <div
-        className="toolbar log-filter-toolbar"
-        style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}
+      <div className="toolbar log-filter-toolbar toolbar-wrap"
       >
         <div className="log-filter-switches">
           <label className="check marginless">
