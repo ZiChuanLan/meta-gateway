@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   Coins,
   Copy,
-  Cpu,
   Database,
   HeartPulse,
   ScrollText,
@@ -19,7 +18,9 @@ import {
   Zap,
 } from "lucide-react";
 import { api } from "../api/client";
-import type { ProxyLog, UsageRecord } from "../api/types";
+import type {
+  ProxyLog,
+} from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { SetupGuide } from "./SetupGuide";
@@ -618,6 +619,11 @@ export function Dashboard() {
                         {log.route_id ? ` #${log.route_id}` : ""}
                       </Link>
                       <div className="cockpit-log-right">
+                        {(log.total_tokens ?? 0) > 0 ? (
+                          <span className="mono-value">
+                            {formatTokens(log.total_tokens ?? 0)}
+                          </span>
+                        ) : null}
                         <span className={`badge badge-${tone}`}>
                           {log.status}
                         </span>
@@ -680,35 +686,7 @@ export function Dashboard() {
                 </ul>
               )}
             </div>
-            <div className="cockpit-subcol cockpit-subcol-bordered">
-              <div className="cockpit-subhead">
-                <Cpu size={13} />
-                <strong>{t("dashboard.activity24h")}</strong>
-                <span className="panel-muted">
-                  {t("dashboard.recentRequests")}
-                </span>
-              </div>
-              {recent.length === 0 ? (
-                <p className="dashboard-empty">{t("dashboard.noActivity")}</p>
-              ) : (
-                <ul className="cockpit-log-list is-compact">
-                  {recent.slice(0, 8).map((row: UsageRecord) => (
-                    <li key={row.id} className="cockpit-log-item">
-                      <span className="cockpit-log-model">{row.model}</span>
-                      <div className="cockpit-log-right">
-                        <span className="mono-value">
-                          {formatTokens(row.total_tokens ?? 0)}
-                        </span>
-                        <span className="badge badge-neutral">{row.status}</span>
-                        <span className="cockpit-log-time">
-                          {relativeTime(row.created_at, t)}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+
           </div>
         </Panel>
       </div>

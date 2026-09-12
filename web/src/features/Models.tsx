@@ -1,4 +1,5 @@
 import {
+  ListChecks,
   Activity,
   ExternalLink,
   ChevronDown,
@@ -313,6 +314,11 @@ function ModelCatalog({
   // Bulk selection over the routing table (current-page checkboxes); actions
   // resolve against the full filtered list so selections survive paging.
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
+  const exitBulkMode = () => {
+    setBulkMode(false);
+    setBulkSelected(new Set());
+  };
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const bulkRoutes = useMemo(
     () => rows.filter((item) => bulkSelected.has(item.route.id)),
@@ -826,6 +832,16 @@ function ModelCatalog({
     };
     return [
       {
+        key: "bulk",
+        label: t("modelsPage.bulkMode"),
+        icon: <ListChecks size={14} />,
+        disabled: busy,
+        onSelect: () => {
+          close();
+          setBulkMode(true);
+        },
+      },
+      {
         key: "try",
         label: t("try.open"),
         icon: <Sparkles size={14} />,
@@ -1197,7 +1213,7 @@ function ModelCatalog({
                 />
               }
             >
-              {bulkSelected.size > 0 ? (
+              {bulkMode && bulkSelected.size > 0 ? (
                 <div className="toolbar bulk-bar">
                   <span className="live-trace-count">
                     {t("modelsPage.bulkSelected", { n: bulkSelected.size })}
@@ -1239,20 +1255,25 @@ function ModelCatalog({
                   >
                     {t("modelsPage.bulkClear")}
                   </Button>
+                  <Button variant="quiet" onClick={exitBulkMode}>
+                    {t("modelsPage.bulkDone")}
+                  </Button>
                 </div>
               ) : null}
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th className="bulk-cell">
-                        <input
-                          type="checkbox"
-                          aria-label={t("modelsPage.bulkSelectPage")}
-                          checked={pageAllSelected}
-                          onChange={selectAllPage}
-                        />
-                      </th>
+                      {bulkMode ? (
+                        <th className="bulk-cell">
+                          <input
+                            type="checkbox"
+                            aria-label={t("modelsPage.bulkSelectPage")}
+                            checked={pageAllSelected}
+                            onChange={selectAllPage}
+                          />
+                        </th>
+                      ) : null}
                       <th>{t("common.model")}</th>
                       <th>{t("modelsPage.col.upstream")}</th>
                       <th className="status-col">{t("common.status")}</th>
@@ -1290,19 +1311,21 @@ function ModelCatalog({
                             });
                           }}
                         >
-                          <td
-                            className="bulk-cell"
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              aria-label={t("modelsPage.bulkSelectOne", {
-                                model: item.route.model_pattern,
-                              })}
-                              checked={bulkSelected.has(item.route.id)}
-                              onChange={() => toggleBulkSelected(item.route.id)}
-                            />
-                          </td>
+                          {bulkMode ? (
+                            <td
+                              className="bulk-cell"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                aria-label={t("modelsPage.bulkSelectOne", {
+                                  model: item.route.model_pattern,
+                                })}
+                                checked={bulkSelected.has(item.route.id)}
+                                onChange={() => toggleBulkSelected(item.route.id)}
+                              />
+                            </td>
+                          ) : null}
                           <td>
                             <strong className="mono">
                               {item.route.model_pattern}

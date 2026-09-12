@@ -311,7 +311,6 @@ export const en: Dict = {
   "dashboard.quickstart.action1": "Add connection",
   "dashboard.quickstart.action2": "View models",
   "dashboard.quickstart.action3": "Create token",
-  "dashboard.activity24h": "Latest activity",
   "dashboard.hourlyTraffic": "Traffic (24h)",
   "dashboard.hourlyDetail": "{label} detail",
   "dashboard.chartBack": "Back to hourly view",
@@ -386,6 +385,8 @@ export const en: Dict = {
   "channels.modelsSection": "Models",
   "channels.modelsEmpty":
     "No models discovered yet — sync models to fetch the inventory.",
+  "channels.bulkMode": "Bulk select",
+  "channels.bulkDone": "Done",
   "channels.bulkSelected": "{n} connections selected",
   "channels.bulkSelectPage": "Select page",
   "channels.bulkSelectOne": "Select {name}",
@@ -895,6 +896,8 @@ export const en: Dict = {
   "sticky.empty": "No active sessions yet.",
 
   "modelsPage.listTitle": "Models",
+  "modelsPage.bulkMode": "Bulk select",
+  "modelsPage.bulkDone": "Done",
   "modelsPage.bulkSelected": "{n} routes selected",
   "modelsPage.bulkSelectPage": "Select page",
   "modelsPage.bulkSelectOne": "Select {model}",

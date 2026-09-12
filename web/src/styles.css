@@ -12053,7 +12053,7 @@ table {
 
 .cockpit-usage-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  grid-template-columns: 1fr;
   gap: 0;
 }
 @media (max-width: 900px) {

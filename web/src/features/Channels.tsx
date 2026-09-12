@@ -1,4 +1,5 @@
 import {
+  ListChecks,
   ExternalLink,
   KeyRound,
   Pencil,
@@ -308,6 +309,11 @@ export function Channels() {
 
   // Bulk selection over the connections table (current-page checkboxes).
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
+  const exitBulkMode = () => {
+    setBulkMode(false);
+    setBulkSelected(new Set());
+  };
   const toggleBulkSelected = (id: number) => {
     setBulkSelected((prev) => {
       const next = new Set(prev);
@@ -888,6 +894,16 @@ export function Channels() {
     };
     const items: ActionMenuItem[] = [
       {
+        key: "bulk",
+        label: t("channels.bulkMode"),
+        icon: <ListChecks size={14} />,
+        disabled: busy,
+        onSelect: () => {
+          close();
+          setBulkMode(true);
+        },
+      },
+      {
         key: "edit",
         label: t("common.edit"),
         icon: <Pencil size={14} />,
@@ -1401,7 +1417,7 @@ export function Channels() {
               }
               retry={() => overviews.refetch()}
             >
-              {bulkSelected.size > 0 ? (
+              {bulkMode && bulkSelected.size > 0 ? (
                 <div className="toolbar bulk-bar">
                   <span className="live-trace-count">
                     {t("channels.bulkSelected", { n: bulkSelected.size })}
@@ -1443,6 +1459,9 @@ export function Channels() {
                   >
                     {t("channels.bulkClear")}
                   </Button>
+                  <Button variant="quiet" onClick={exitBulkMode}>
+                    {t("channels.bulkDone")}
+                  </Button>
                 </div>
               ) : null}
               <ListShell
@@ -1463,7 +1482,7 @@ export function Channels() {
               >
                 <DataTable
                   headers={[
-                    bulkHeader,
+                    ...(bulkMode ? [bulkHeader] : []),
                     t("common.name"),
                     t("common.status"),
                     t("common.models"),
@@ -1501,19 +1520,21 @@ export function Channels() {
                           });
                         }}
                       >
-                        <td
-                          className="bulk-cell"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            aria-label={t("channels.bulkSelectOne", {
-                              name: ch.name,
-                            })}
-                            checked={bulkSelected.has(ch.id)}
-                            onChange={() => toggleBulkSelected(ch.id)}
-                          />
-                        </td>
+                        {bulkMode ? (
+                          <td
+                            className="bulk-cell"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label={t("channels.bulkSelectOne", {
+                                name: ch.name,
+                              })}
+                              checked={bulkSelected.has(ch.id)}
+                              onChange={() => toggleBulkSelected(ch.id)}
+                            />
+                          </td>
+                        ) : null}
                         <td>
                           <strong>{ch.name}</strong>
                           {ch.group_name ? (
