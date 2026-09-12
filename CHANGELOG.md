@@ -4,6 +4,21 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.9] — 2026-09-12
+
+### Changed
+
+- Bulk selection on the 连接 and 模型 pages is now opt-in instead of a
+  permanent checkbox column: right-click a row (or use the row menu) and pick
+  **批量选择** — the checkbox column and the bulk action bar appear, and
+  **完成** exits the mode and clears the selection.
+
+### Changed (dashboard)
+
+- The cockpit no longer shows two near-identical recent-request feeds: the
+  最新活动 column merged into 最近代理日志, which now also carries per-request
+  token usage; the 24 小时模型用量 ranking takes the full width.
+
 ## [v2.5.8] — 2026-09-12
 
 ### Added
