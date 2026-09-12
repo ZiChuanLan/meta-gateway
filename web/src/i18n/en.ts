@@ -1855,6 +1855,23 @@ export const en: Dict = {
     "TOTP, alert and error rules, maintenance operations, and factory reset",
   "ops.runtime.buildVersion": "Build",
   "ops.runtime.updateNow": "Check now",
+  "ops.runtime.oneClickUpdate": "Update to {version}",
+  "ops.runtime.oneClickHint":
+    "Docker socket detected — update in one click: the new image is pulled and the container swapped automatically (a few seconds of downtime; automatic rollback to the current version on failure).",
+  "ops.runtime.oneClickConfirm":
+    "Apply the update? The container restarts with a few seconds of downtime and in-flight requests are cut. Data volumes are untouched; failures roll back to the current version automatically.",
+  "ops.runtime.oneClickWaiting":
+    "Updating to {target}: pulling the image and swapping containers — this page refreshes when done…",
+  "ops.runtime.oneClickDone": "Updated to {target} successfully",
+  "ops.runtime.oneClickFailed":
+    "The update did not finish in time — the old container may have been restored. Check docker logs -f meta-gateway-next, or run docker compose pull && docker compose up -d manually.",
+  "ops.runtime.updateHelp":
+    "Container deployments update through Docker itself (the console cannot safely restart its own container). Run this in the project directory:",
+  "ops.runtime.updateAutoHint":
+    "Or enable automatic updates once: new releases are pulled and the container restarted automatically (checked hourly, meta-gateway only).",
+  "ops.runtime.copy": "Copy",
+  "ops.runtime.copied": "Copied",
+  "ops.runtime.copyFailed": "Copy failed - please copy the command manually",
   "ops.runtime.updateChecking": "Checking…",
   "ops.runtime.updateUpToDate": "Up to date",
   "ops.runtime.updateDevBuild":

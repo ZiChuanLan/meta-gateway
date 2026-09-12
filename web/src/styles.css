@@ -14032,3 +14032,32 @@ table {
   border: 1px solid var(--line);
   background: var(--surface);
 }
+
+/* —— Update helper next to the check-update row —— */
+.runtime-update-help {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+  display: grid;
+  gap: 6px;
+}
+.runtime-update-help p {
+  margin: 0;
+  font-size: 12px;
+  max-width: 72ch;
+}
+.update-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.update-cmd-row code {
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}

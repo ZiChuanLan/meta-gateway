@@ -53,6 +53,7 @@ import type {
   StickySnapshot,
   RuntimeEditableSettings,
   RuntimeSettings,
+  SelfUpdateStatus,
   UpdateCheckStatus,
   Site,
   UnifyApplyResult,
@@ -757,6 +758,13 @@ export const api = (client: ApiClient) => ({
     client.get<UpdateCheckStatus>("/admin/update-check", signal),
   refreshUpdateCheck: () =>
     client.post<UpdateCheckStatus>("/admin/update-check/refresh"),
+  selfUpdateStatus: (signal?: AbortSignal) =>
+    client.get<SelfUpdateStatus>("/admin/self-update", signal),
+  applySelfUpdate: (target: string) =>
+    client.post<{ started: boolean; target: string }>(
+      "/admin/self-update/apply",
+      { target },
+    ),
   updateRuntimeSettings: (body: RuntimeEditableSettings) =>
     client.put<RuntimeSettings>("/admin/runtime-settings", body),
   resetRuntimeSettings: () =>

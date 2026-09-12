@@ -207,6 +207,11 @@ curl http://127.0.0.1:4100/readyz
 docker compose pull && docker compose up -d
 ```
 
+控制台的「检查更新」发现新版本时，也可以直接一键更新：在 compose 里取消
+`/var/run/docker.sock` 挂载那行的注释（该套接字约等于宿主机 root 权限，仅在
+可信环境启用），重启后控制台即出现「一键更新」按钮——自动拉取新镜像并切换
+容器，失败自动回滚，数据不受影响。`
+
 数据都在 `./data` 目录（SQLite + 备份），升级不会丢失。每个版本的变化见
 [Releases](https://github.com/ZiChuanLan/meta-gateway/releases)；开启「检查更新」后，有新版本时控制台顶栏会直接提示（设置 → 运行参数可关闭）。想固定在某个版本、不受 `latest` 更新影响的话，把 compose 里的 tag 换成具体版本号（如 `v2.0.2`）即可。
 

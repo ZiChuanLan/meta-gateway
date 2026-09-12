@@ -8,12 +8,14 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
-import type { RuntimeEditableSettings } from "../../api/types";
+import type { RuntimeEditableSettings, SelfUpdateStatus } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
+import { useToast } from "../../toast";
 import { useSession } from "../../session";
 import {
   Button,
+  ConfirmDialog,
   ErrorState,
   Loading,
   Panel,
@@ -40,6 +42,35 @@ function numberOr(value: string, fallback: number) {
 // claim "up to date" for it.
 function isReleaseVersion(version: string) {
   return /^v?\d+(\.\d+)*(-[\w.]+)?$/.test(version.trim());
+}
+
+// One-click copy for an update command shown next to the check-update row.
+function CopyCommand({ command }: { command: string }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="update-cmd-row">
+      <code className="mono">{command}</code>
+      <Button
+        variant="quiet"
+        disabled={copied}
+        onClick={() => {
+          navigator.clipboard
+            .writeText(command)
+            .then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            })
+            .catch(() =>
+              toast.pushError(new Error(t("ops.runtime.copyFailed"))),
+            );
+        }}
+      >
+        {copied ? t("ops.runtime.copied") : t("ops.runtime.copy")}
+      </Button>
+    </div>
+  );
 }
 
 /** Panel-level anchor order for the runtime settings section nav. */
@@ -172,6 +203,7 @@ function RuntimeSettingsColumns({ children }: { children: ReactNode }) {
 export function RuntimeSettingsPanel() {
   const { client } = useSession();
   const { t } = useI18n();
+  const toast = useToast();
   const s = api(client!);
   const query = useQuery({
     queryKey: ["runtime-settings"],
@@ -205,6 +237,66 @@ export function RuntimeSettingsPanel() {
     invalidateKeys: [["update-check"]],
   });
 
+  const updateInfo = refreshUpdate.data ?? updateCheckQuery.data;
+  const [confirmUpdateTarget, setConfirmUpdateTarget] = useState<string | null>(
+    null,
+  );
+  const [updateWatch, setUpdateWatch] = useState<{
+    target: string;
+    startedAt: number;
+  } | null>(null);
+
+  // One-click update availability (Docker socket mounted): only polled once
+  // a newer release is on screen.
+  const selfUpdateQuery = useQuery({
+    queryKey: ["self-update"],
+    queryFn: ({ signal }) => s.selfUpdateStatus(signal),
+    enabled: Boolean(updateInfo?.has_update),
+    staleTime: 60_000,
+  });
+  const selfUpdate: SelfUpdateStatus | undefined = selfUpdateQuery.data;
+
+  // While an update is in flight, watch the public health endpoint: when it
+  // reports the target version the successor container took over.
+  useEffect(() => {
+    if (!updateWatch) return;
+    const started = Date.now();
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await fetch("/healthz");
+        const body = (await res.json()) as { version?: string };
+        if (body.version === updateWatch.target) {
+          toast.push({
+            tone: "success",
+            message: t("ops.runtime.oneClickDone", {
+              target: updateWatch.target,
+            }),
+          });
+          setUpdateWatch(null);
+          window.setTimeout(() => window.location.reload(), 1200);
+          return;
+        }
+      } catch {
+        // Container restarting — keep polling.
+      }
+      if (Date.now() - started > 180_000) {
+        setUpdateWatch(null);
+        toast.pushError(
+          new Error(t("ops.runtime.oneClickFailed", { target: updateWatch.target })),
+        );
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [updateWatch, t, toast]);
+
+  const applyUpdate = useAdminMutation({
+    mutationFn: (target: string) => s.applySelfUpdate(target),
+    onSuccess: (_data, target) => {
+      setConfirmUpdateTarget(null);
+      setUpdateWatch({ target, startedAt: Date.now() });
+    },
+    toastOnError: true,
+  });
   if (query.isPending || !draft) {
     return (
       <Panel>
@@ -230,7 +322,6 @@ export function RuntimeSettingsPanel() {
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
-  const updateInfo = refreshUpdate.data ?? updateCheckQuery.data;
   const updateResult = (() => {
     if (!draft.update_check_enabled)
       return <span className="muted">{t("ops.runtime.updateOff")}</span>;
@@ -1314,7 +1405,59 @@ export function RuntimeSettingsPanel() {
             </Button>
             <span className="runtime-update-result">{updateResult}</span>
           </div>
+          {updateInfo?.has_update ? (
+            <div className="runtime-update-help">
+              {selfUpdate?.available ? (
+                <>
+                  <p className="muted">{t("ops.runtime.oneClickHint")}</p>
+                  <Button
+                    disabled={applyUpdate.isPending || updateWatch != null}
+                    onClick={() =>
+                      setConfirmUpdateTarget(updateInfo.latest || "")
+                    }
+                  >
+                    {t("ops.runtime.oneClickUpdate", {
+                      version: updateInfo.latest || "",
+                    })}
+                  </Button>
+                  {updateWatch ? (
+                    <p className="muted" role="status">
+                      {t("ops.runtime.oneClickWaiting", {
+                        target: updateWatch.target,
+                      })}
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <p className="muted">{t("ops.runtime.updateHelp")}</p>
+                  <CopyCommand command="docker compose pull && docker compose up -d" />
+                  <p className="muted">{t("ops.runtime.updateAutoHint")}</p>
+                  <CopyCommand command="docker compose --profile auto-update up -d" />
+                </>
+              )}
+            </div>
+          ) : null}
         </Panel>
+        {confirmUpdateTarget ? (
+        <ConfirmDialog
+          title={t("ops.runtime.oneClickUpdate", {
+            version: confirmUpdateTarget,
+          })}
+          confirmLabel={t("ops.runtime.oneClickUpdate", {
+            version: confirmUpdateTarget,
+          })}
+          message={t("ops.runtime.oneClickConfirm")}
+          onClose={() => {
+            if (!applyUpdate.isPending) setConfirmUpdateTarget(null);
+          }}
+          onConfirm={() => {
+            if (confirmUpdateTarget) applyUpdate.mutate(confirmUpdateTarget);
+          }}
+          pending={applyUpdate.isPending}
+          error={applyUpdate.error}
+        />
+        ) : null}
         </RuntimeSettingsColumns>
       </section>
 

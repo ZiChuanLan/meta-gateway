@@ -24,6 +24,7 @@ import (
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
 	"github.com/lan/meta-gateway/internal/plugins"
+	"github.com/lan/meta-gateway/internal/selfupdate"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/webdavsync"
 	_ "time/tzdata" // embed IANA tz database so CHECKIN_TZ works in minimal containers
@@ -32,6 +33,12 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+	// One-click container update: when this process boots inside a successor
+	// container (META_SELFUPDATE_SWAP set), it tears the old container down
+	// and recreates the final one with the original ports/name — see
+	// internal/selfupdate. Blocks until the handoff completes; on failure it
+	// rolls the old container back and exits non-zero.
+	selfupdate.SwapIfRequested()
 	if len(os.Args) > 1 && os.Args[1] == "restore" {
 		if len(os.Args) != 4 || os.Args[2] != "--from" || os.Args[3] == "" {
 			logger.Error("usage: meta-gateway restore --from <backup-name>")

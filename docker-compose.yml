@@ -93,6 +93,9 @@ services:
       ALERT_SWEEP_INTERVAL_SECONDS: "${ALERT_SWEEP_INTERVAL_SECONDS:-0}"
     volumes:
       - meta-gateway-data:/data
+      # 一键更新（可选，默认关闭）：取消注释后控制台出现「一键更新」按钮。
+      # 注意：Docker 套接字约等于宿主机 root 权限，仅在可信环境启用。
+      # - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:4100/readyz"]
       interval: 10s

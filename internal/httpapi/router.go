@@ -37,6 +37,7 @@ import (
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/runtimeconfig"
+	"github.com/lan/meta-gateway/internal/selfupdate"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/updatecheck"
 	"github.com/lan/meta-gateway/internal/webdavsync"
@@ -484,6 +485,9 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	})
 	go updateService.Run(updateCtx)
 	NewUpdateCheckHandler(updateService, runtimeController).Register(adminGroup)
+	// One-click container update (opt-in: needs the Docker socket mounted).
+	selfUpdateService := selfupdate.New(selfupdate.DefaultSocket)
+	NewSelfUpdateHandler(selfUpdateService, updateService, db).Register(adminGroup)
 	NewRuntimeSettingsHandler(runtimeController).Register(adminGroup)
 	// Passive-recovery loop: probes auto-disabled channels on a schedule and
 	// restores them when the upstream answers (config hot-reloadable).

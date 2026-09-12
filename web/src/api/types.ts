@@ -610,6 +610,13 @@ export interface RuntimeEditableSettings {
   default_model_sync_mode: "auto" | "manual";
 }
 
+export interface SelfUpdateStatus {
+  available: boolean;
+  running: boolean;
+  phase: "idle" | "checking" | "pulling" | "starting-successor" | "handoff" | "failed";
+  error?: string;
+}
+
 export interface UpdateCheckStatus {
   enabled: boolean;
   current: string;

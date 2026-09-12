@@ -1721,6 +1721,23 @@ export const zh: Dict = {
   "ops.runtime.group.toolsDesc": "两步验证、告警与错误规则、维护操作与恢复出厂",
   "ops.runtime.buildVersion": "当前版本",
   "ops.runtime.updateNow": "立即检查",
+  "ops.runtime.oneClickUpdate": "一键更新到 {version}",
+  "ops.runtime.oneClickHint":
+    "已检测到 Docker 套接字，可直接一键更新：自动拉取新镜像并切换容器（服务中断数秒，失败自动回滚当前版本）。",
+  "ops.runtime.oneClickConfirm":
+    "确认更新？容器将重启，服务中断约数秒，进行中的请求会被切断。数据卷不受影响；更新失败会自动回滚到当前版本。",
+  "ops.runtime.oneClickWaiting":
+    "正在更新到 {target}：拉取镜像并切换容器，完成后页面自动刷新…",
+  "ops.runtime.oneClickDone": "已成功更新到 {target}",
+  "ops.runtime.oneClickFailed":
+    "更新未在预期时间内完成——旧容器可能已自动回滚。请检查 docker logs -f meta-gateway-next，或手动 docker compose pull && docker compose up -d。",
+  "ops.runtime.updateHelp":
+    "容器部署的更新由 Docker 完成（控制台无法安全重启自身所在容器）。在项目目录执行：",
+  "ops.runtime.updateAutoHint":
+    "或者启用一次自动更新：之后新版本发布会自动拉取并重启容器（每小时检查，仅更新 meta-gateway）。",
+  "ops.runtime.copy": "复制",
+  "ops.runtime.copied": "已复制",
+  "ops.runtime.copyFailed": "复制失败，请手动选择命令复制",
   "ops.runtime.updateChecking": "检查中…",
   "ops.runtime.updateUpToDate": "已是最新版本",
   "ops.runtime.updateDevBuild":
