@@ -4,6 +4,62 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.5] — 2026-09-12
+
+### Added
+
+- Live trace（日志 → 实时）overhaul. Running rows now tick every second
+  client-side and streams stay visible for their whole life: a streaming
+  response keeps its running state (with first-byte latency and a ~1/s byte
+  progress) until the client has received everything, instead of flipping to
+  success at response headers. New requests appear the moment they enter the
+  gateway (the registry publishes on admission, not after routing).
+- The live table carries real context: 客户端 (authenticated downstream key
+  name), protocol + stream marker per channel, a failover chain
+  (A✗ → B✗ → C with per-round failure reasons), TTFT, transferred bytes and
+  final token counts.
+- Operator interrupts now explain themselves: when a request interrupted from
+  the console is followed within 15 seconds by a new request for the same
+  model from the same client key, the new row is badged **疑似重试**（likely
+  client retry）and links the interrupted request — the gateway cannot stop
+  clients from auto-retrying, but the view finally says so. The interrupt
+  toast says the same. Plus 全部中止（interrupt all in-flight）and a pause
+  toggle that freezes the view for inspection and folds buffered frames back
+  in on resume.
+- Channel-level **非流式请求超时（秒）**（non-stream timeout, advanced edit
+  field, `non_stream_timeout_seconds`, 0 = global 5-minute default): slow
+  deep-reasoning upstreams can raise their own budget. Streaming requests are
+  exempt; the global 2-minute stream idle guard is unchanged.
+- Manual-sync channels now treat the checklist as the routing state:
+  **unchecking a model removes its binding outright** (and a route the removal
+  empties), re-checking adopts it fresh — the list no longer accumulates
+  parked rows. Alias mappings are deliberate configuration and still park,
+  and auto-sync channels keep the park semantic (reconcile respects parked
+  members there; a deleted one would be re-adopted on the next sync).
+  清理已停用（N）remains for legacy parked bindings and auto channels: one
+  click deletes every parked binding on the channel and removes routes the
+  cleanup empties.
+- Channel-level **流式策略**（stream policy, advanced edit field,
+  `stream_policy`). 跟随客户端 by default; 强制流式 serves non-streaming
+  clients from an upstream stream the gateway aggregates into one completion
+  (delta content, tool-call arguments and usage merge by frame); 强制非流式
+  serves streaming clients from a non-streaming upstream answer replayed as a
+  single-chunk SSE stream. The override applies to OpenAI-shaped chat
+  exchanges — native Anthropic passthrough and the Responses API are exempt —
+  and the non-stream budget follows the upstream's actual mode: an aggregated
+  stream is not capped at five minutes, a synthesized answer is.
+
+### Fixed
+
+- Saving the edit-connection dialog no longer stomps the model sync mode
+  changed in the model-management drawer. The drawer persists the toggle with
+  an immediate single-field PATCH, but the still-open dialog used to rewrite
+  it with its stale seeded value on save; the field is now sent only when the
+  operator actually moved the picker inside the dialog.
+- A request whose handler exited through an unhandled path no longer lingers
+  as a phantom running row in the live view; the registry settles it on
+  release.
+
 ## [v2.5.4] — 2026-09-12
 
 ### Added
