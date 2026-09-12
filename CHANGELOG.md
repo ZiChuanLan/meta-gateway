@@ -13,9 +13,9 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   project network (ports never published; it holds the Docker socket so the
   gateway container does not have to): it runs NO periodic updates and only
   wakes when the console button triggers it — pull, recreate, verify, done.
-  Removing the service () returns to the command-line update path. The direct socket
-  handoff remains as the alternative mode when the socket is mounted into
-  the gateway itself.
+  Removing the service (`docker compose stop watchtower`) returns to the
+  command-line update path. The direct socket handoff remains as the
+  alternative mode when the socket is mounted into the gateway itself.
 
 ## [v2.5.9] — 2026-09-12
 
