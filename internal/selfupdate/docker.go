@@ -54,6 +54,13 @@ const (
 	imageEnv = "META_SELFUPDATE_IMAGE"
 	// policyEnv carries the original restart policy for the final container.
 	policyEnv = "META_SELFUPDATE_POLICY"
+
+	// defaultWatchtowerURL is the compose companion service (idle unless the
+	// console's one-click update triggers it — no periodic polls, stability
+	// first). Its token only matters inside the compose network; the port is
+	// never published to the host.
+	defaultWatchtowerURL   = "http://watchtower:8080"
+	defaultWatchtowerToken = "meta-gateway-local-update"
 	// DefaultAPIVersion is the Docker Engine API version prefix used on calls.
 	DefaultAPIVersion = "v1.41"
 )

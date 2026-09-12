@@ -96,6 +96,8 @@ services:
       # 一键更新（可选，默认关闭）：取消注释后控制台出现「一键更新」按钮。
       # 注意：Docker 套接字约等于宿主机 root 权限，仅在可信环境启用。
       # - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:4100/readyz"]
       interval: 10s
@@ -103,6 +105,22 @@ services:
       retries: 5
       start_period: 10s
     stop_grace_period: 20s
+    restart: unless-stopped
+
+  # 一键更新的执行器（compose 默认网络内，端口不对外发布）。平时完全闲置——
+  # 只在控制台点「一键更新」时被调起：拉取新镜像并重建 meta-gateway 容器。
+  # 不做任何定时自动更新（稳定性优先）。移除：docker compose stop watchtower
+  # && docker compose rm watchtower
+  watchtower:
+    image: containrrr/watchtower
+    container_name: meta-gateway-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_HTTP_API_UPDATE: "true"
+      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN:-meta-gateway-local-update}"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
     restart: unless-stopped
 
 volumes:

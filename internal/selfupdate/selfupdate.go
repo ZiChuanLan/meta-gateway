@@ -32,11 +32,22 @@ var (
 	ErrBadTarget     = errors.New("self-update target must be a newer release tag")
 )
 
+// Update mode: watchtower companion (preferred — no socket in the gateway),
+// direct socket handoff, or none (copy-command fallback).
+type Mode string
+
+const (
+	ModeWatchtower Mode = "watchtower"
+	ModeSocket     Mode = "socket"
+	ModeNone       Mode = "none"
+)
+
 // Status is the console-facing update state.
 type Status struct {
 	Available bool   `json:"available"`
 	Running   bool   `json:"running"`
 	Phase     string `json:"phase"`
+	Mode      Mode   `json:"mode"`
 	Error     string `json:"error,omitempty"`
 }
 
@@ -60,20 +71,38 @@ func New(socket string) *Service {
 	}
 }
 
-// Available reports whether a one-click update can run at all: the Docker
-// socket must exist and the process must live in a container (HOSTNAME set).
-func (s *Service) Available() bool {
+// socketAvailable reports whether the direct handoff path can run: the
+// Docker socket exists and the process lives in a container (HOSTNAME set).
+func (s *Service) socketAvailable() bool {
 	return SocketAvailable(s.socket) && OwnContainerID() != ""
+}
+
+// Mode picks the execution path: the watchtower companion when it is on the
+// compose network, otherwise the direct socket handoff.
+func (s *Service) Mode() Mode {
+	if WatchtowerReachable() {
+		return ModeWatchtower
+	}
+	if s.socketAvailable() {
+		return ModeSocket
+	}
+	return ModeNone
 }
 
 // Status snapshots the current update state.
 func (s *Service) Status() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	mode := s.Mode()
+	available := mode != ModeNone
+	if s.phase == PhaseHandoff {
+		available = true
+	}
 	return Status{
-		Available: s.Available(),
+		Available: available,
 		Running:   s.phase != PhaseIdle && s.phase != PhaseFailed,
 		Phase:     s.phase,
+		Mode:      mode,
 		Error:     s.errStr,
 	}
 }
@@ -94,7 +123,7 @@ func (s *Service) setPhase(phase, errStr string) {
 // container's own configuration, so the update can never fetch a foreign
 // image.
 func (s *Service) Start() error {
-	if !s.Available() {
+	if !s.socketAvailable() && s.Mode() != ModeWatchtower {
 		return ErrUnavailable
 	}
 	s.mu.Lock()
@@ -103,6 +132,21 @@ func (s *Service) Start() error {
 		return ErrAlreadyRuning
 	}
 	s.mu.Unlock()
+	if s.Mode() == ModeWatchtower {
+		go func() {
+			s.setPhase(PhasePulling, "")
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			if err := TriggerWatchtower(ctx); err != nil {
+				s.fail(fmt.Errorf("watchtower trigger: %w", err))
+				return
+			}
+			// Watchtower recreates the container; this process stops when the
+			// companion tears it down. The console polls /healthz from here.
+			s.setPhase(PhaseHandoff, "")
+		}()
+		return nil
+	}
 	go s.handoff()
 	return nil
 }
