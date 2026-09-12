@@ -4,6 +4,19 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.6.0] — 2026-09-12
+
+### Added
+
+- The 一键更新 button now works out of the box — no socket mount needed in
+  the gateway container. Compose ships an idle watchtower executor on the
+  project network (ports never published; it holds the Docker socket so the
+  gateway container does not have to): it runs NO periodic updates and only
+  wakes when the console button triggers it — pull, recreate, verify, done.
+  Removing the service () returns to the command-line update path. The direct socket
+  handoff remains as the alternative mode when the socket is mounted into
+  the gateway itself.
+
 ## [v2.5.9] — 2026-09-12
 
 ### Changed
