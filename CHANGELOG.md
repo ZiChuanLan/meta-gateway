@@ -4,6 +4,23 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.6] — 2026-09-12
+
+### Fixed
+
+- Renaming a model — alias, 统一名称, or any member mapping — no longer breaks
+  relaying with `502 proxy: upstream credential unavailable`. The multi-key
+  feature filters the key pool by which key actually lists the requested
+  model, but it filtered on the public request name while a key's recorded
+  set contains upstream names: a mapped name matched nothing and starved the
+  pool even though the channel worked fine for listing. Key-pool selection
+  now resolves against the effective upstream name (the member/route
+  mapping's real model), and when no key's set claims the name at all
+  (custom names, fresh renames before the next sync) the pool fails open with
+  the model-blind selection — a wrong-group key just draws a missable 404
+  upstream and failover moves on, instead of misreporting a naming problem as
+  an auth failure.
+
 ## [v2.5.5] — 2026-09-12
 
 ### Added
