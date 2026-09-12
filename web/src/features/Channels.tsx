@@ -306,6 +306,68 @@ export function Channels() {
     invalidateKeys: [...INVALIDATE],
   });
 
+  // Bulk selection over the connections table (current-page checkboxes).
+  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  const toggleBulkSelected = (id: number) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const bulkSync = useAdminMutation({
+    mutationFn: async (ids: number[]) => {
+      const results = await Promise.allSettled(
+        ids.map((id) => service.refreshChannel(id)),
+      );
+      return {
+        ok: results.filter((r) => r.status === "fulfilled").length,
+        total: ids.length,
+      };
+    },
+    invalidateKeys: [...INVALIDATE],
+    onSuccess: ({ ok, total }) => {
+      toast.push({
+        tone: ok === total ? "success" : "error",
+        message: t("channels.bulkSyncDone", { ok, total }),
+      });
+      setBulkSelected(new Set());
+    },
+  });
+  const bulkStatus = useAdminMutation({
+    mutationFn: async (input: {
+      ids: number[];
+      status: "enabled" | "disabled";
+    }) => {
+      const results = await Promise.allSettled(
+        input.ids.map((id) => {
+          const overview = (overviews.data ?? []).find(
+            (o) => o.channel.id === id,
+          );
+          if (!overview) return Promise.resolve(null);
+          return service.updateChannel(id, {
+            ...overview.channel,
+            status: input.status,
+          });
+        }),
+      );
+      return {
+        ok: results.filter((r) => r.status === "fulfilled").length,
+        total: input.ids.length,
+      };
+    },
+    invalidateKeys: [...INVALIDATE],
+    onSuccess: ({ ok, total }) => {
+      toast.push({
+        tone: ok === total ? "success" : "error",
+        message: t("channels.bulkStatusDone", { ok, total }),
+      });
+      setBulkSelected(new Set());
+    },
+  });
+  const bulkBusy = bulkSync.isPending || bulkStatus.isPending;
+
   const probe = useAdminMutation({
     mutationFn: (id: number) => service.probeChannel(id),
     invalidateKeys: [...INVALIDATE],
@@ -681,6 +743,28 @@ export function Channels() {
 
   const pagination = useClientPagination(rows, 20, "channels");
   const pageRows = pagination.pageItems;
+  const pageAllSelected =
+    pageRows.length > 0 &&
+    pageRows.every((o) => bulkSelected.has(o.channel.id));
+  const selectAllPage = () => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (pageAllSelected) {
+        pageRows.forEach((o) => next.delete(o.channel.id));
+      } else {
+        pageRows.forEach((o) => next.add(o.channel.id));
+      }
+      return next;
+    });
+  };
+  const bulkHeader = (
+    <input
+      type="checkbox"
+      aria-label={t("channels.bulkSelectPage")}
+      checked={pageAllSelected}
+      onChange={selectAllPage}
+    />
+  );
 
   // Restore the previously selected channel from tab state when the URL has
   // no id (bare sidebar navigation drops the query string).
@@ -1317,6 +1401,50 @@ export function Channels() {
               }
               retry={() => overviews.refetch()}
             >
+              {bulkSelected.size > 0 ? (
+                <div className="toolbar bulk-bar">
+                  <span className="live-trace-count">
+                    {t("channels.bulkSelected", { n: bulkSelected.size })}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    disabled={bulkBusy}
+                    onClick={() => bulkSync.mutate([...bulkSelected])}
+                  >
+                    {t("channels.bulkSyncModels")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      bulkStatus.mutate({
+                        ids: [...bulkSelected],
+                        status: "enabled",
+                      })
+                    }
+                  >
+                    {t("common.enableAction")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      bulkStatus.mutate({
+                        ids: [...bulkSelected],
+                        status: "disabled",
+                      })
+                    }
+                  >
+                    {t("common.disableAction")}
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    onClick={() => setBulkSelected(new Set())}
+                  >
+                    {t("channels.bulkClear")}
+                  </Button>
+                </div>
+              ) : null}
               <ListShell
                 footer={
                   <PaginationBar
@@ -1335,6 +1463,7 @@ export function Channels() {
               >
                 <DataTable
                   headers={[
+                    bulkHeader,
                     t("common.name"),
                     t("common.status"),
                     t("common.models"),
@@ -1372,6 +1501,19 @@ export function Channels() {
                           });
                         }}
                       >
+                        <td
+                          className="bulk-cell"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label={t("channels.bulkSelectOne", {
+                              name: ch.name,
+                            })}
+                            checked={bulkSelected.has(ch.id)}
+                            onChange={() => toggleBulkSelected(ch.id)}
+                          />
+                        </td>
                         <td>
                           <strong>{ch.name}</strong>
                           {ch.group_name ? (

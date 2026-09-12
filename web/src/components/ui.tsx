@@ -486,7 +486,7 @@ export function DataTable({
   children,
   empty,
 }: {
-  headers: string[];
+  headers: ReactNode[];
   children: ReactNode;
   empty?: boolean;
 }) {
@@ -496,8 +496,8 @@ export function DataTable({
       <table>
         <thead>
           <tr>
-            {headers.map((h) => (
-              <th key={h}>{h}</th>
+            {headers.map((h, index) => (
+              <th key={index}>{h}</th>
             ))}
           </tr>
         </thead>

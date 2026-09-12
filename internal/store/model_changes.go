@@ -168,6 +168,10 @@ type ModelChange struct {
 	FlapCount      int    `json:"flap_count"`
 	RuntimeBlocked bool   `json:"runtime_blocked"`
 	BlockedAt      string `json:"blocked_at,omitempty"`
+	// Adopted marks a pending addition whose model is already wired into this
+	// channel's routing — the operator acted on the change, the reminder is
+	// stale until the next reconcile resolves it.
+	Adopted bool `json:"adopted,omitempty"`
 }
 type ModelChanges struct {
 	Items   []ModelChange `json:"items"`
@@ -250,14 +254,18 @@ func listModelChanges(q sqlExecutor) (ModelChanges, error) {
 		return out, err
 	}
 	routes := map[int64]bool{}
+	servesModel := func(member ModelChangeMember, channelID int64, model string) bool {
+		if member.ChannelID != channelID {
+			return false
+		}
+		return member.UpstreamModel == model ||
+			(member.UpstreamModel == "" && matchModelPattern(member.ModelPattern, model))
+	}
 	for i := range out.Items {
 		x := &out.Items[i]
 		if x.Kind == "removed" {
 			for _, m := range members {
-				if m.ChannelID != x.ChannelID {
-					continue
-				}
-				if m.UpstreamModel == x.ModelName || (m.UpstreamModel == "" && matchModelPattern(m.ModelPattern, x.ModelName)) {
+				if servesModel(m, x.ChannelID, x.ModelName) {
 					m.UpstreamModel = x.ModelName
 					x.Members = append(x.Members, m)
 					if x.Status == "pending" {
@@ -272,7 +280,17 @@ func listModelChanges(q sqlExecutor) (ModelChanges, error) {
 		}
 		if x.Status == "pending" {
 			if x.Kind == "added" {
-				out.Summary.Added++
+				// An addition the operator already wired into routing has been
+				// acted upon — count it separately from actionable reminders.
+				for _, m := range members {
+					if servesModel(m, x.ChannelID, x.ModelName) {
+						x.Adopted = true
+						break
+					}
+				}
+				if !x.Adopted {
+					out.Summary.Added++
+				}
 			} else {
 				out.Summary.Removed++
 				if x.Confirmed {
@@ -309,6 +327,77 @@ func runtimeBlocks(q sqlExecutor) (map[channelModelKey]string, error) {
 		out[channelModelKey{channel: channel, model: model}] = created
 	}
 	return out, rows.Err()
+}
+
+// ResolveAdoptedModelChanges closes pending additions whose model is already
+// wired into the channel's routing: the reminder did its job. Runs on the
+// daily sweep; the live view marks such rows immediately.
+func (s *DB) ResolveAdoptedModelChanges() (int64, error) {
+	tx, err := s.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id, channel_id, model_name FROM model_changes WHERE kind='added' AND status='pending'`)
+	if err != nil {
+		return 0, err
+	}
+	type candidate struct {
+		id      int64
+		channel int64
+		model   string
+	}
+	pending := []candidate{}
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.channel, &c.model); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		pending = append(pending, c)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	if len(pending) == 0 {
+		return 0, nil
+	}
+	members, err := changeMembers(tx)
+	if err != nil {
+		return 0, err
+	}
+	var resolved int64
+	for _, c := range pending {
+		adopted := false
+		for _, m := range members {
+			if m.ChannelID != c.channel {
+				continue
+			}
+			if m.UpstreamModel == c.model ||
+				(m.UpstreamModel == "" && matchModelPattern(m.ModelPattern, c.model)) {
+				adopted = true
+				break
+			}
+		}
+		if !adopted {
+			continue
+		}
+		res, err := tx.Exec(`UPDATE model_changes SET status='resolved' WHERE id=? AND kind='added' AND status='pending'`, c.id)
+		if err != nil {
+			return 0, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		resolved += n
+	}
+	if resolved == 0 {
+		return 0, nil
+	}
+	return resolved, tx.Commit()
 }
 
 // PruneModelChanges deletes finished (non-pending) entries older than the

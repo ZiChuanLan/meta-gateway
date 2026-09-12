@@ -18,10 +18,12 @@ function readFilters(): Filters {
   catch { return INITIAL; }
 }
 
-// A pending removal without any route member bound to the model cannot break
-// routing — candidate-list churn only. These are safe to bulk-ignore.
+// Additions are informational (adopting is optional); removals without any
+// route member bound to the model cannot break routing. All of these are
+// safe to bulk-ignore.
 function harmless(item: ModelChange): boolean {
-  return item.kind === "removed" && item.status === "pending" && item.members.length === 0;
+  return item.status === "pending" &&
+    (item.kind === "added" || item.members.length === 0);
 }
 
 // Whole days a pending removal has gone unhandled, from first detection.
@@ -108,6 +110,14 @@ export function ModelChangesPanel() {
             <strong className="mono">{item.model_name}</strong>
             <span className={item.kind === "removed" ? "model-change-warning" : "muted"}>{t(`modelChanges.${item.kind}`)}</span>
             <span className="muted">{t(`modelChanges.${item.status}`)}</span>
+            {item.status === "pending" && item.kind === "added" && item.adopted ? (
+              <span
+                className="live-trace-chain-hop is-ok"
+                title={t("modelChanges.adoptedHint")}
+              >
+                {t("modelChanges.adoptedChip")}
+              </span>
+            ) : null}
           </div>
           <div className="model-change-meta">
             <span>{item.channel_name}</span>
@@ -131,7 +141,7 @@ export function ModelChangesPanel() {
           </> : null}
           {item.status === "pending" ? <div className="model-change-actions">
             {item.kind === "removed" ? <Button variant="secondary" disabled={!item.members.length} onClick={() => setReplacement([item])}>{t("modelChanges.replace")}</Button> : null}
-            {item.kind === "added" ? (
+            {item.kind === "added" && !item.adopted ? (
               <Button
                 variant="secondary"
                 onClick={() => navigate(`/models/channel/${item.channel_id}?model=${encodeURIComponent(item.model_name)}`)}

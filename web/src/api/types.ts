@@ -1025,6 +1025,8 @@ export interface ModelChange {
   flap_count?: number;
   runtime_blocked?: boolean;
   blocked_at?: string;
+  /** Pending addition whose model is already wired into the channel. */
+  adopted?: boolean;
 }
 export interface ModelChangesResponse {
   items: ModelChange[];

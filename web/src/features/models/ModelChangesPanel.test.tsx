@@ -195,9 +195,9 @@ describe("upstream model maintenance signals", () => {
     const { ignoreCalls } = setupWithRouter();
     // Only the member-free removal counts as harmless.
     fireEvent.click(await screen.findByRole("button", { name: "查看变更" }));
-    fireEvent.click(await screen.findByRole("button", { name: "忽略无影响（1）" }));
+    fireEvent.click(await screen.findByRole("button", { name: "忽略无影响（2）" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "忽略" }));
-    await waitFor(() => expect(ignoreCalls).toEqual([[21]]));
+    await waitFor(() => expect(ignoreCalls).toEqual([[21, 22]]));
   });
 });

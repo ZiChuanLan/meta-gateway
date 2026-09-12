@@ -44,6 +44,7 @@ import {
   StatusBadge,
 } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
+import { useToast } from "../toast";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
@@ -153,6 +154,7 @@ function ModelCatalog({
   const { client } = useSession();
   const { t } = useI18n();
   const service = api(client!);
+  const toast = useToast();
   const navigate = useNavigate();
   const [params, setSearchParams] = useSearchParams();
 
@@ -307,6 +309,82 @@ function ModelCatalog({
 
   const pagination = useClientPagination(rows, 20, "models");
   const pageRows = pagination.pageItems;
+
+  // Bulk selection over the routing table (current-page checkboxes); actions
+  // resolve against the full filtered list so selections survive paging.
+  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const bulkRoutes = useMemo(
+    () => rows.filter((item) => bulkSelected.has(item.route.id)),
+    [rows, bulkSelected],
+  );
+  const pageAllSelected =
+    pageRows.length > 0 && pageRows.every((r) => bulkSelected.has(r.route.id));
+  const selectAllPage = () => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (pageAllSelected) {
+        pageRows.forEach((r) => next.delete(r.route.id));
+      } else {
+        pageRows.forEach((r) => next.add(r.route.id));
+      }
+      return next;
+    });
+  };
+  const toggleBulkSelected = (id: number) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const bulkToggleRoutes = useAdminMutation({
+    mutationFn: async (input: { ids: number[]; enabled: boolean }) => {
+      const results = await Promise.allSettled(
+        bulkRoutes
+          .filter((item) => input.ids.includes(item.route.id))
+          .map((item) =>
+            service.updateRoute(item.route.id, {
+              ...item.route,
+              enabled: input.enabled,
+            }),
+          ),
+      );
+      return {
+        ok: results.filter((r) => r.status === "fulfilled").length,
+        total: input.ids.length,
+      };
+    },
+    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    onSuccess: ({ ok, total }) => {
+      toast.push({
+        tone: ok === total ? "success" : "error",
+        message: t("modelsPage.bulkRouteDone", { ok, total }),
+      });
+      setBulkSelected(new Set());
+    },
+  });
+  const bulkDeleteRoutes = useAdminMutation({
+    mutationFn: async (ids: number[]) => {
+      const results = await Promise.allSettled(
+        ids.map((id) => service.deleteRoute(id)),
+      );
+      return {
+        ok: results.filter((r) => r.status === "fulfilled").length,
+        total: ids.length,
+      };
+    },
+    invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
+    onSuccess: ({ ok, total }) => {
+      toast.push({
+        tone: ok === total ? "success" : "error",
+        message: t("modelsPage.bulkDeleteDone", { ok, total }),
+      });
+      setBulkSelected(new Set());
+    },
+  });
+  const bulkBusy = bulkToggleRoutes.isPending || bulkDeleteRoutes.isPending;
 
   // URL → selection: restore the selected route when the URL changes (direct
   // links, back/forward, page refresh). Depends only on params/rows so a user
@@ -1119,10 +1197,62 @@ function ModelCatalog({
                 />
               }
             >
+              {bulkSelected.size > 0 ? (
+                <div className="toolbar bulk-bar">
+                  <span className="live-trace-count">
+                    {t("modelsPage.bulkSelected", { n: bulkSelected.size })}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      bulkToggleRoutes.mutate({
+                        ids: [...bulkSelected],
+                        enabled: true,
+                      })
+                    }
+                  >
+                    {t("modelsPage.bulkEnableSelected")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      bulkToggleRoutes.mutate({
+                        ids: [...bulkSelected],
+                        enabled: false,
+                      })
+                    }
+                  >
+                    {t("modelsPage.bulkDisableSelected")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={bulkBusy}
+                    onClick={() => setBulkDeleteOpen(true)}
+                  >
+                    {t("modelsPage.bulkDeleteSelected")}
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    onClick={() => setBulkSelected(new Set())}
+                  >
+                    {t("modelsPage.bulkClear")}
+                  </Button>
+                </div>
+              ) : null}
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
+                      <th className="bulk-cell">
+                        <input
+                          type="checkbox"
+                          aria-label={t("modelsPage.bulkSelectPage")}
+                          checked={pageAllSelected}
+                          onChange={selectAllPage}
+                        />
+                      </th>
                       <th>{t("common.model")}</th>
                       <th>{t("modelsPage.col.upstream")}</th>
                       <th className="status-col">{t("common.status")}</th>
@@ -1160,6 +1290,19 @@ function ModelCatalog({
                             });
                           }}
                         >
+                          <td
+                            className="bulk-cell"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label={t("modelsPage.bulkSelectOne", {
+                                model: item.route.model_pattern,
+                              })}
+                              checked={bulkSelected.has(item.route.id)}
+                              onChange={() => toggleBulkSelected(item.route.id)}
+                            />
+                          </td>
                           <td>
                             <strong className="mono">
                               {item.route.model_pattern}
@@ -2202,6 +2345,25 @@ function ModelCatalog({
             onClose={() => setTryOpen(false)}
           />
         </Dialog>
+      ) : null}
+      {bulkDeleteOpen ? (
+        <ConfirmDialog
+          title={t("modelsPage.bulkDeleteSelected")}
+          confirmLabel={t("common.delete")}
+          message={t("modelsPage.bulkDeleteConfirm", {
+            n: bulkSelected.size,
+          })}
+          onClose={() => {
+            if (!bulkDeleteRoutes.isPending) setBulkDeleteOpen(false);
+          }}
+          onConfirm={() =>
+            bulkDeleteRoutes.mutate([...bulkSelected], {
+              onSuccess: () => setBulkDeleteOpen(false),
+            })
+          }
+          pending={bulkDeleteRoutes.isPending}
+          error={bulkDeleteRoutes.error}
+        />
       ) : null}
     </div>
   );

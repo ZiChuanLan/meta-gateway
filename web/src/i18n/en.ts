@@ -61,6 +61,8 @@ export const en: Dict = {
   "modelChanges.ignoreHarmlessHint":
     "Bulk-ignore pending removals with no impacted route member; they stay inspectable in the history.",
   "modelChanges.adopt": "Adopt",
+  "modelChanges.adoptedChip": "adopted",
+  "modelChanges.adoptedHint": "This model is already wired into the channel's routing; the reminder can be ignored and resolves itself on the daily sweep.",
 
   "lang.en": "English",
   "lang.zh": "中文",
@@ -384,6 +386,13 @@ export const en: Dict = {
   "channels.modelsSection": "Models",
   "channels.modelsEmpty":
     "No models discovered yet — sync models to fetch the inventory.",
+  "channels.bulkSelected": "{n} connections selected",
+  "channels.bulkSelectPage": "Select page",
+  "channels.bulkSelectOne": "Select {name}",
+  "channels.bulkSyncModels": "Sync models",
+  "channels.bulkSyncDone": "Model sync: {ok}/{total} succeeded",
+  "channels.bulkStatusDone": "Updated {ok}/{total} connections",
+  "channels.bulkClear": "Clear selection",
   "channels.modelEnabledHint": "This channel serves this model.",
   "channels.aliasPlaceholder": "Alias (outward model name)",
   "channels.aliasSave": "Save alias",
@@ -886,6 +895,17 @@ export const en: Dict = {
   "sticky.empty": "No active sessions yet.",
 
   "modelsPage.listTitle": "Models",
+  "modelsPage.bulkSelected": "{n} routes selected",
+  "modelsPage.bulkSelectPage": "Select page",
+  "modelsPage.bulkSelectOne": "Select {model}",
+  "modelsPage.bulkEnableSelected": "Enable selected",
+  "modelsPage.bulkDisableSelected": "Disable selected",
+  "modelsPage.bulkDeleteSelected": "Delete selected",
+  "modelsPage.bulkDeleteConfirm":
+    "Delete the {n} selected model routes? Their member bindings are removed too. This cannot be undone.",
+  "modelsPage.bulkClear": "Clear selection",
+  "modelsPage.bulkRouteDone": "Updated {ok}/{total} routes",
+  "modelsPage.bulkDeleteDone": "Deleted {ok}/{total} routes",
   "modelsPage.col.upstream": "Upstream",
   "modelsPage.noUpstream": "No upstream",
   "modelsPage.openChannelHint": "Open this channel's model settings",

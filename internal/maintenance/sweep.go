@@ -206,4 +206,8 @@ func (s *BalanceSweeper) run(parent context.Context) {
 			s.logger.Warn("model change auto-ignore failed", "error", err)
 		}
 	}
+	// Adopted additions resolved their own reminder; always run, no knob.
+	if _, err := s.db.ResolveAdoptedModelChanges(); err != nil {
+		s.logger.Warn("model change adopt-resolve failed", "error", err)
+	}
 }

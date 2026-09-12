@@ -14014,3 +14014,21 @@ table {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* —— Bulk selection (connections + routing tables) —— */
+.bulk-cell {
+  width: 32px;
+  text-align: center;
+}
+.bulk-cell input[type="checkbox"] {
+  vertical-align: middle;
+}
+.bulk-bar {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
