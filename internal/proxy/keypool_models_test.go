@@ -361,8 +361,8 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	enc, _ := crypto.New("billing-test")
 	keyID, err := db.DownstreamKey.Create(&domain.DownstreamKey{
-		Name:             "client",
-		Enabled:          true,
+		Name:                 "client",
+		Enabled:              true,
 		PricePromptPer1k:     10,
 		PriceCompletionPer1k: 10,
 	})
