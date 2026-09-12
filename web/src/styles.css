@@ -14061,3 +14061,11 @@ table {
   border: 1px solid var(--line);
   background: var(--surface);
 }
+
+.runtime-update-manual {
+  margin-top: 4px;
+}
+.runtime-update-manual summary {
+  cursor: pointer;
+  font-size: 12px;
+}

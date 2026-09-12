@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
-import type { RuntimeEditableSettings, SelfUpdateStatus } from "../../api/types";
+import type { RuntimeEditableSettings } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useToast } from "../../toast";
@@ -245,16 +245,6 @@ export function RuntimeSettingsPanel() {
     target: string;
     startedAt: number;
   } | null>(null);
-
-  // One-click update availability (Docker socket mounted): only polled once
-  // a newer release is on screen.
-  const selfUpdateQuery = useQuery({
-    queryKey: ["self-update"],
-    queryFn: ({ signal }) => s.selfUpdateStatus(signal),
-    enabled: Boolean(updateInfo?.has_update),
-    staleTime: 60_000,
-  });
-  const selfUpdate: SelfUpdateStatus | undefined = selfUpdateQuery.data;
 
   // While an update is in flight, watch the public health endpoint: when it
   // reports the target version the successor container took over.
@@ -1407,35 +1397,36 @@ export function RuntimeSettingsPanel() {
           </div>
           {updateInfo?.has_update ? (
             <div className="runtime-update-help">
-              {selfUpdate?.available ? (
-                <>
-                  <p className="muted">{t("ops.runtime.oneClickHint")}</p>
-                  <Button
-                    disabled={applyUpdate.isPending || updateWatch != null}
-                    onClick={() =>
-                      setConfirmUpdateTarget(updateInfo.latest || "")
-                    }
-                  >
-                    {t("ops.runtime.oneClickUpdate", {
-                      version: updateInfo.latest || "",
-                    })}
-                  </Button>
-                  {updateWatch ? (
-                    <p className="muted" role="status">
-                      {t("ops.runtime.oneClickWaiting", {
+              <div className="runtime-update-row">
+                <Button
+                  disabled={applyUpdate.isPending || updateWatch != null}
+                  onClick={() =>
+                    setConfirmUpdateTarget(updateInfo.latest || "")
+                  }
+                >
+                  {updateWatch
+                    ? t("ops.runtime.oneClickWaiting", {
                         target: updateWatch.target,
+                      })
+                    : t("ops.runtime.oneClickUpdate", {
+                        version: updateInfo.latest || "",
                       })}
-                    </p>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <p className="muted">{t("ops.runtime.updateHelp")}</p>
-                  <CopyCommand command="docker compose pull && docker compose up -d" />
-                  <p className="muted">{t("ops.runtime.updateAutoHint")}</p>
-                  <CopyCommand command="docker compose --profile auto-update up -d" />
-                </>
-              )}
+                </Button>
+                {applyUpdate.error ? (
+                  <span className="inline-error" role="alert">
+                    {String(applyUpdate.error)}
+                  </span>
+                ) : null}
+              </div>
+              <details className="runtime-update-manual">
+                <summary className="muted">
+                  {t("ops.runtime.updateManualSummary")}
+                </summary>
+                <p className="muted">{t("ops.runtime.updateHelp")}</p>
+                <CopyCommand command="docker compose pull && docker compose up -d" />
+                <p className="muted">{t("ops.runtime.updateAutoHint")}</p>
+                <CopyCommand command="docker compose --profile auto-update up -d" />
+              </details>
             </div>
           ) : null}
         </Panel>

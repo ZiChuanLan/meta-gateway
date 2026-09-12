@@ -1868,9 +1868,8 @@ export const en: Dict = {
     "TOTP, alert and error rules, maintenance operations, and factory reset",
   "ops.runtime.buildVersion": "Build",
   "ops.runtime.updateNow": "Check now",
+  "ops.runtime.updateManualSummary": "Or update manually (copy a command)",
   "ops.runtime.oneClickUpdate": "Update to {version}",
-  "ops.runtime.oneClickHint":
-    "Docker socket detected — update in one click: the new image is pulled and the container swapped automatically (a few seconds of downtime; automatic rollback to the current version on failure).",
   "ops.runtime.oneClickConfirm":
     "Apply the update? The container restarts with a few seconds of downtime and in-flight requests are cut. Data volumes are untouched; failures roll back to the current version automatically.",
   "ops.runtime.oneClickWaiting":

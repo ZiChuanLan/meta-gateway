@@ -1734,9 +1734,8 @@ export const zh: Dict = {
   "ops.runtime.group.toolsDesc": "两步验证、告警与错误规则、维护操作与恢复出厂",
   "ops.runtime.buildVersion": "当前版本",
   "ops.runtime.updateNow": "立即检查",
+  "ops.runtime.updateManualSummary": "也可以手动更新（复制命令执行）",
   "ops.runtime.oneClickUpdate": "一键更新到 {version}",
-  "ops.runtime.oneClickHint":
-    "已检测到 Docker 套接字，可直接一键更新：自动拉取新镜像并切换容器（服务中断数秒，失败自动回滚当前版本）。",
   "ops.runtime.oneClickConfirm":
     "确认更新？容器将重启，服务中断约数秒，进行中的请求会被切断。数据卷不受影响；更新失败会自动回滚到当前版本。",
   "ops.runtime.oneClickWaiting":
