@@ -60,6 +60,10 @@ type ImportResult struct {
 	KeySyncSkipped      int                `json:"key_sync_skipped_count"`
 	KeySync             []KeySyncOutcome   `json:"key_sync,omitempty"`
 	Items               []CapabilityItem   `json:"items"`
+	// Skipped lists rows the document carried that could not be imported
+	// (no credential, duplicate identity, bad base URL). They never fail the
+	// import; the operator decides what to do with them.
+	Skipped []SkippedItem `json:"skipped,omitempty"`
 }
 
 type KeySyncOutcome struct {
@@ -168,10 +172,11 @@ func (s *Service) ImportWithOptions(ctx context.Context, data []byte, opts Impor
 	if mode != ImportModeIncremental && mode != ImportModeReplace {
 		return nil, formatError(ErrorValidation)
 	}
-	items, err := Parse(data)
+	report, err := ParseWithReport(data)
 	if err != nil {
 		return nil, err
 	}
+	items := report.Items
 	var candidates []store.ExchangeLegacyCandidate
 	if mode == ImportModeIncremental {
 		candidates, err = s.store.LegacyCandidates(ctx)
@@ -216,7 +221,8 @@ func (s *Service) ImportWithOptions(ctx context.Context, data []byte, opts Impor
 		return nil, formatError(ErrorInternal)
 	}
 	result := &ImportResult{CreatedCount: len(persisted.CreatedChannelIDs),
-		UpdatedCount: len(persisted.UpdatedChannelIDs), AdoptedCount: len(persisted.AdoptedChannelIDs)}
+		UpdatedCount: len(persisted.UpdatedChannelIDs), AdoptedCount: len(persisted.AdoptedChannelIDs),
+		Skipped: report.Skipped}
 	result.ChannelIDs = persisted.ChannelIDs()
 	sort.Slice(result.ChannelIDs, func(i, j int) bool { return result.ChannelIDs[i] < result.ChannelIDs[j] })
 	// Channels are already committed. Post-steps are best-effort only.

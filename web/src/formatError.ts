@@ -58,11 +58,21 @@ export function formatErrorObject(error: unknown, t: Translate): FormattedError 
 		};
 	}
 	const lower = raw.toLowerCase();
-	if (lower.includes("unlock password") || lower.includes("backup password required")) {
+	if (lower.includes("unlock password") || lower.includes("backup password required") || lower === "backup_unlock_required") {
 		return {
 			title: t("error.backup_unlock_required"),
 			cause: t("error.backup_unlock_required"),
 			fix: "",
+			raw,
+			class: "config",
+		};
+	}
+	// The unlock password was supplied but did not open the envelope.
+	if (lower === "decrypt_failed") {
+		return {
+			title: t("error.decryptFailed"),
+			cause: t("error.decryptFailedCause"),
+			fix: t("error.decryptFailedFix"),
 			raw,
 			class: "config",
 		};
@@ -74,6 +84,46 @@ export function formatErrorObject(error: unknown, t: Translate): FormattedError 
 			title: t("error.webdavInvalidBackup"),
 			cause: t("error.webdavInvalidBackupCause"),
 			fix: t("error.webdavInvalidBackupFix"),
+			raw,
+			class: "config",
+		};
+	}
+	// The same failure through the file importer, which reports categories
+	// rather than sentences.
+	if (lower === "exchange_document_unsupported") {
+		return {
+			title: t("error.importFormatUnsupported"),
+			cause: t("error.importFormatUnsupportedCause"),
+			fix: t("error.importFormatUnsupportedFix"),
+			raw,
+			class: "config",
+		};
+	}
+	// Recognized backup with nothing importable inside (no credential section,
+	// or every row unusable).
+	if (lower.includes("holds no importable credentials") || lower === "exchange_document_empty") {
+		return {
+			title: t("error.importEmpty"),
+			cause: t("error.importEmptyCause"),
+			fix: t("error.importEmptyFix"),
+			raw,
+			class: "config",
+		};
+	}
+	if (lower === "exchange_document_invalid") {
+		return {
+			title: t("error.importInvalid"),
+			cause: t("error.importInvalidCause"),
+			fix: t("error.importInvalidFix"),
+			raw,
+			class: "config",
+		};
+	}
+	if (lower === "exchange_document_conflict" || lower === "identity_conflict") {
+		return {
+			title: t("err.config.title"),
+			cause: t("error.identity_conflict"),
+			fix: "",
 			raw,
 			class: "config",
 		};

@@ -834,6 +834,8 @@ export interface ImportResult {
     discovery_status?: string;
     discovery_category?: string;
   }>;
+  /** Rows the document carried that could not be imported. */
+  skipped?: Array<{ index: number; name?: string; reason: string }>;
 }
 export interface ExchangeEnvelope {
   format: string;

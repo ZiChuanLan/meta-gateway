@@ -691,6 +691,11 @@ func (s *Service) runDownload(ctx context.Context, source string, doImport bool,
 			case exchange.ErrorValidation, exchange.ErrorUnsupported:
 				result.Category = CategoryInvalidBackup
 				result.Message = "backup is not a supported import document"
+			case exchange.ErrorNoEntries:
+				// Recognized backup, nothing importable inside it. Blaming the
+				// format here sent operators looking for the wrong file.
+				result.Category = CategoryInvalidBackup
+				result.Message = "backup holds no importable credentials"
 			case exchange.ErrorConflict:
 				result.Category = CategoryImportFailed
 				result.Message = "import identity conflict"

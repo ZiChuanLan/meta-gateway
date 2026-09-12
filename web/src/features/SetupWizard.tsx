@@ -2,11 +2,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Copy } from "lucide-react";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { ImportResult } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { Button, Field } from "../components/ui";
+import { isEncryptedBackup, skipReasonKey } from "../lib/aahBackup";
+import { formatErrorMessage } from "../formatError";
 
 const DONE_KEY = "mg.setup-wizard.done";
 
@@ -38,7 +40,17 @@ export function SetupWizard() {
 	const [channelId, setChannelId] = useState<number | null>(null);
 	const [synced, setSynced] = useState(false);
 	const [connTab, setConnTab] = useState<"manual" | "aah">("manual");
+	const [importMode, setImportMode] = useState<"file" | "webdav">("file");
 	const [imported, setImported] = useState<ImportResult | null>(null);
+	const [unlockPassword, setUnlockPassword] = useState("");
+	const [needsUnlock, setNeedsUnlock] = useState(false);
+	const [webdav, setWebdav] = useState({
+		url: "",
+		username: "",
+		password: "",
+		backup_password: "",
+	});
+	const [webdavTested, setWebdavTested] = useState(false);
 	const [keyName, setKeyName] = useState("default");
 	const [keyCreated, setKeyCreated] = useState(false);
 	const [error, setError] = useState("");
@@ -95,22 +107,46 @@ export function SetupWizard() {
 		onError: () => setError(t("wizard.syncFail")),
 	});
 
+	const describeError = (err: unknown) =>
+		formatErrorMessage(
+			err instanceof ApiError || typeof err === "string"
+				? err
+				: err instanceof Error
+					? err.message
+					: String(err),
+			t,
+		);
+
 	const importBackup = useMutation({
-		mutationFn: async (doc: unknown) => s.importData(doc),
+		// An AAH backup may be encrypted; unlock it server-side with the same
+		// envelope implementation the WebDAV pull uses.
+		mutationFn: async (doc: unknown) =>
+			isEncryptedBackup(doc)
+				? s.importEncryptedData(doc, unlockPassword)
+				: s.importData(doc),
 		onSuccess: (res) => {
 			setImported(res);
 			setError("");
+			setNeedsUnlock(false);
 			// Adoption kicks off discovery server-side; refresh the checklist.
 			queryClient.invalidateQueries({ queryKey: ["channel-overviews"] });
 		},
-		onError: (err) =>
-			setError(err instanceof Error ? err.message : String(err)),
+		onError: (err) => {
+			const message =
+				err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+			if (message.includes("unlock password") || message.includes("backup_unlock_required")) {
+				setNeedsUnlock(true);
+			}
+			setError(describeError(err));
+		},
 	});
 
 	const onImportFile = async (file: File | undefined) => {
 		if (!file) return;
 		setImported(null);
 		setError("");
+		setUnlockPassword("");
+		setNeedsUnlock(false);
 		try {
 			const doc: unknown = JSON.parse(await file.text());
 			importBackup.mutate(doc);
@@ -118,6 +154,55 @@ export function SetupWizard() {
 			setError(t("wizard.importInvalid"));
 		}
 	};
+
+	// WebDAV import: persist the connection, then pull the backup through the
+	// same admin endpoint the Exchange page uses.
+	const persistWebdav = () =>
+		s.updateWebdavSettings({
+			enabled: true,
+			upload_enabled: false,
+			url: webdav.url.trim(),
+			username: webdav.username,
+			password: webdav.password,
+			backup_password: webdav.backup_password,
+			upload_url: "",
+			upload_username: "",
+			// Scheduling stays off: the wizard connects the drive, it does not
+			// silently enable recurring imports.
+			download_cron: "off",
+			upload_cron: "off",
+		});
+
+	const webdavTest = useMutation({
+		mutationFn: async () => {
+			await persistWebdav();
+			return s.webdavTest("download");
+		},
+		onSuccess: () => {
+			setWebdavTested(true);
+			setError("");
+		},
+		onError: (err) => {
+			setWebdavTested(false);
+			setError(describeError(err));
+		},
+	});
+
+	const webdavImport = useMutation({
+		mutationFn: async () => {
+			await persistWebdav();
+			return s.webdavSync("download", "incremental");
+		},
+		onSuccess: (result) => {
+			setWebdavTested(true);
+			setImported(result.import ?? null);
+			setError("");
+			queryClient.invalidateQueries({ queryKey: ["channel-overviews"] });
+		},
+		onError: (err) => setError(describeError(err)),
+	});
+
+	const webdavReady = webdav.url.trim().length > 0 && webdav.username.trim().length > 0 && webdav.password.length > 0;
 
 	const createKey = useMutation({
 		mutationFn: async () => {
@@ -313,33 +398,184 @@ export function SetupWizard() {
 							</>
 						) : (
 							<>
-								<p className="setup-wizard-desc">
-									{t("wizard.importHint")}
-								</p>
-								<label className="setup-wizard-file">
-									<input
-										type="file"
-										accept="application/json,.json"
-										disabled={importBackup.isPending}
-										onChange={(e) => {
-											onImportFile(e.target.files?.[0]);
-											e.currentTarget.value = "";
-										}}
-									/>
-									<span>
-										{importBackup.isPending
-											? t("common.loading")
-											: t("wizard.pickFile")}
-									</span>
-								</label>
+								<p className="setup-wizard-desc">{t("wizard.importHint")}</p>
+								<div
+									className="setup-wizard-tabs is-sub"
+									role="group"
+									aria-label={t("wizard.importTab")}
+								>
+									<button
+										type="button"
+										aria-pressed={importMode === "file"}
+										className={importMode === "file" ? "is-active" : ""}
+										onClick={() => setImportMode("file")}
+									>
+										{t("wizard.importFromFile")}
+									</button>
+									<button
+										type="button"
+										aria-pressed={importMode === "webdav"}
+										className={importMode === "webdav" ? "is-active" : ""}
+										onClick={() => setImportMode("webdav")}
+									>
+										{t("wizard.importFromWebdav")}
+									</button>
+								</div>
+
+								{importMode === "file" ? (
+									<>
+										<label className="setup-wizard-file">
+											<input
+												type="file"
+												accept="application/json,.json"
+												disabled={importBackup.isPending}
+												onChange={(e) => {
+													onImportFile(e.target.files?.[0]);
+													e.currentTarget.value = "";
+												}}
+											/>
+											<span>
+												{importBackup.isPending
+													? t("common.loading")
+													: t("wizard.pickFile")}
+											</span>
+										</label>
+										{needsUnlock ? (
+											<Field label={t("exchange.unlockPassword")}>
+												<input
+													type="password"
+													autoComplete="off"
+													value={unlockPassword}
+													onChange={(e) => setUnlockPassword(e.target.value)}
+												/>
+											</Field>
+										) : null}
+									</>
+								) : (
+									<>
+										<p className="setup-wizard-desc">
+											{t("wizard.webdavHint")}
+										</p>
+										<Field label={t("wizard.webdavUrl")}>
+											<input
+												value={webdav.url}
+												onChange={(e) =>
+													setWebdav((prev) => ({ ...prev, url: e.target.value }))
+												}
+												placeholder="https://dav.jianguoyun.com/dav/"
+												autoComplete="off"
+											/>
+										</Field>
+										<Field label={t("wizard.webdavUsername")}>
+											<input
+												value={webdav.username}
+												onChange={(e) =>
+													setWebdav((prev) => ({
+														...prev,
+														username: e.target.value,
+													}))
+												}
+												autoComplete="username"
+											/>
+										</Field>
+										<Field
+											label={t("wizard.webdavPassword")}
+											hint={t("wizard.webdavPasswordHint")}
+										>
+											<input
+												type="password"
+												autoComplete="off"
+												value={webdav.password}
+												onChange={(e) =>
+													setWebdav((prev) => ({
+														...prev,
+														password: e.target.value,
+													}))
+												}
+											/>
+										</Field>
+										<Field
+											label={t("wizard.webdavBackupPassword")}
+											hint={t("wizard.webdavBackupPasswordHint")}
+										>
+											<input
+												type="password"
+												autoComplete="off"
+												value={webdav.backup_password}
+												onChange={(e) =>
+													setWebdav((prev) => ({
+														...prev,
+														backup_password: e.target.value,
+													}))
+												}
+											/>
+										</Field>
+										<div className="setup-wizard-inline-actions">
+											<Button
+												variant="secondary"
+												disabled={!webdavReady || webdavTest.isPending || webdavImport.isPending}
+												onClick={() => webdavTest.mutate()}
+											>
+												{webdavTest.isPending
+													? t("common.loading")
+													: t("wizard.webdavTest")}
+											</Button>
+											<Button
+												disabled={!webdavReady || webdavTest.isPending || webdavImport.isPending}
+												onClick={() => webdavImport.mutate()}
+											>
+												{webdavImport.isPending
+													? t("common.loading")
+													: t("wizard.webdavImport")}
+											</Button>
+										</div>
+										{webdavTested && !webdavImport.isSuccess ? (
+											<p className="setup-wizard-ok">
+												<Check size={13} /> {t("wizard.webdavTestOk")}
+											</p>
+										) : null}
+									</>
+								)}
+
 								{imported ? (
 									<p className="setup-wizard-ok">
 										<Check size={13} />{" "}
-										{t("wizard.importDone", {
-											created: imported.created_count,
-											updated: imported.updated_count,
-										})}
+										{importMode === "webdav"
+											? t("wizard.webdavDone", {
+													created: imported.created_count,
+													updated: imported.updated_count,
+												})
+											: t("wizard.importDone", {
+													created: imported.created_count,
+													updated: imported.updated_count,
+												})}
 									</p>
+								) : webdavImport.isSuccess ? (
+									<p className="setup-wizard-ok">
+										<Check size={13} /> {t("wizard.webdavSaved")}
+									</p>
+								) : null}
+
+								{(imported?.skipped?.length ?? 0) > 0 ? (
+									<div className="setup-wizard-skipped">
+										<p className="setup-wizard-desc">
+											{t("wizard.importSkipped", {
+												n: imported?.skipped?.length ?? 0,
+											})}
+										</p>
+										<ul>
+											{(imported?.skipped ?? []).slice(0, 5).map((row) => (
+												<li key={`wiz-skip-${row.index}-${row.reason}`}>
+													<span>{row.name || `#${row.index + 1}`}</span>
+													<small>
+														{t(
+															`exchange.skipReason.${skipReasonKey(row.reason)}`,
+														)}
+													</small>
+												</li>
+											))}
+										</ul>
+									</div>
 								) : null}
 							</>
 						)}

@@ -88,9 +88,13 @@ func TestExchangeAdminRoundTripAndSecurity(t *testing.T) {
 	metadataImport, _ := http.NewRequest(http.MethodPost, base+"/admin/exchange/import", bytes.NewReader(metadataRaw))
 	metadataImport.Header.Set("Authorization", "Bearer admin-secret")
 	metadataResponse, _ := http.DefaultClient.Do(metadataImport)
+	metadataRawBody, _ := io.ReadAll(metadataResponse.Body)
 	metadataResponse.Body.Close()
-	if metadataResponse.StatusCode != http.StatusBadRequest {
-		t.Fatalf("metadata import status=%d", metadataResponse.StatusCode)
+	// A secrets-less export is a valid document holding nothing importable, so
+	// the rejection must say "no entries", not blame the document structure.
+	if metadataResponse.StatusCode != http.StatusUnprocessableEntity ||
+		!bytes.Contains(metadataRawBody, []byte(`"error":"exchange_document_empty"`)) {
+		t.Fatalf("metadata import status=%d body=%s", metadataResponse.StatusCode, metadataRawBody)
 	}
 
 	resp, _ = do(`{"include_secrets":true,"channel_ids":[99999]}`, true)

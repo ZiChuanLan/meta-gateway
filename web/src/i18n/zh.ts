@@ -97,6 +97,24 @@ export const zh: Dict = {
     "下载成功了，但网盘里的这个文件不是 Meta Gateway 交换包，也认不出是 All API Hub 的备份。",
   "error.webdavInvalidBackupFix":
     "确认网盘文件夹里放的是 AAH 自动备份，或 Meta Gateway 导出的交换包，然后再同步。",
+  "error.importFormatUnsupported": "无法识别的备份格式",
+  "error.importFormatUnsupportedCause":
+    "这份文件既不是 All API Hub 的备份，也不是 Meta Gateway 导出的交换包。",
+  "error.importFormatUnsupportedFix":
+    "在 AAH 的「导入导出 → WebDAV 备份」下载备份，或用本页的「导出含密钥」生成交换包再试。",
+  "error.importEmpty": "备份里没有可导入的内容",
+  "error.importEmptyCause":
+    "格式识别成功，但里面没有任何带密钥的账号或 API Key（可能只勾选了偏好设置）。",
+  "error.importEmptyFix":
+    "在 AAH 的 WebDAV 同步里勾上「账号」与「API 凭据」后重新备份；若是 Meta Gateway 自己导出的文件，导出时请勾选「包含密钥」。",
+  "error.importInvalid": "备份内容不合法",
+  "error.importInvalidCause":
+    "文档结构不完整，或必要字段缺失、类型不对。",
+  "error.importInvalidFix": "重新导出一次；若文件被手工编辑过，请换回原始文件。",
+  "error.decryptFailed": "无法解密备份",
+  "error.decryptFailedCause": "解锁密码不正确，或备份文件已损坏。",
+  "error.decryptFailedFix":
+    "填写 AAH「备份加密」里设置的密码（不是网盘登录密码；坚果云等需用应用密码）。",
   "error.upstream_unauthorized":
     "上游返回 401/403。请检查 API Key 与 Base URL 是否正确。",
   "error.upstream_failure": "上游模型发现失败。",
@@ -1098,6 +1116,22 @@ export const zh: Dict = {
   "exchange.removeFile": "移除文件",
   "exchange.exportCountHint": "未选择时导出全部通道。",
   "exchange.exportSkipped": "已跳过 {n} 个通道（无凭证或地址无效）。",
+  "exchange.encryptedTitle": "这份备份是加密的",
+  "exchange.encryptedHint":
+    "填写 AAH「备份加密」里设置的密码即可解锁。这不是网盘登录密码。",
+  "exchange.unlockPassword": "备份解锁密码",
+  "exchange.importEncrypted": "解密并导入",
+  "exchange.unlockRequired": "这份备份已加密，请先填写解锁密码。",
+  "exchange.skippedTitle": "已跳过 {n} 行",
+  "exchange.skippedNote":
+    "这些行没有可用的密钥、或字段不完整，其余内容已正常导入。",
+  "exchange.skipReason.missing_credential": "没有可用密钥（Cookie 模式或未登录）",
+  "exchange.skipReason.missing_field": "缺少必要字段",
+  "exchange.skipReason.invalid_base_url": "地址无法识别",
+  "exchange.skipReason.duplicate_identity": "与前面的记录重复",
+  "exchange.skipReason.invalid_item": "字段内容不合法",
+  "exchange.previewEncrypted": "加密备份 · 需要解锁密码",
+  "exchange.previewEmptyBackup": "识别为备份，但没有可导入的账号或密钥",
   "exchange.webdavTitle": "云备份同步",
   "exchange.webdavHint":
     "连接网盘文件夹，下方两个部分相互独立：AAH 备份导入从网盘拉取备份合并到本机；WebDAV 原生同步把本机配置加密备份到网盘。",
@@ -1991,6 +2025,22 @@ export const zh: Dict = {
   "wizard.pickFile": "选择备份文件",
   "wizard.importDone": "导入完成：新建 {created}、更新 {updated} 个连接。",
   "wizard.importInvalid": "无法将此文件解析为 JSON 备份。",
+  "wizard.importFromFile": "选择备份文件",
+  "wizard.importFromWebdav": "从网盘导入",
+  "wizard.importSkipped": "另外 {n} 行被跳过（缺密钥或字段不完整），不影响其余导入。",
+  "wizard.webdavHint":
+    "填 AAH 里保存的 WebDAV 设置，网关会直接拉取 all-api-hub-backup/ 下的备份。",
+  "wizard.webdavUrl": "网盘地址",
+  "wizard.webdavUsername": "账号",
+  "wizard.webdavPassword": "密码 / 应用密码",
+  "wizard.webdavPasswordHint": "坚果云等需使用应用密码，不是登录密码。",
+  "wizard.webdavBackupPassword": "备份解锁密码",
+  "wizard.webdavBackupPasswordHint": "备份未加密时留空。",
+  "wizard.webdavTest": "测试连接",
+  "wizard.webdavTestOk": "网盘连接正常。",
+  "wizard.webdavImport": "连接并导入",
+  "wizard.webdavDone": "已从网盘导入：新建 {created}、更新 {updated} 个连接。",
+  "wizard.webdavSaved": "设置已保存，之后可在「交换」页调整定时同步。",
   "wizard.createConn": "创建连接",
   "wizard.name": "名称（可选）",
   "wizard.baseUrl": "Base URL",

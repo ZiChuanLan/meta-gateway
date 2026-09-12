@@ -776,6 +776,15 @@ export const api = (client: ApiClient) => ({
     }),
   importData: (document: unknown) =>
     client.post<ImportResult>("/admin/exchange/import", document),
+  /**
+   * Imports an AAH-encrypted backup. The server decrypts with the same
+   * PBKDF2/AES-GCM envelope implementation the WebDAV pull uses.
+   */
+  importEncryptedData: (document: unknown, password: string) =>
+    client.post<ImportResult>("/admin/exchange/import-encrypted", {
+      document,
+      password,
+    }),
   webdavStatus: (signal?: AbortSignal) =>
     client.get<WebDAVStatus>("/admin/webdav/status", signal),
   webdavSettings: (signal?: AbortSignal) =>

@@ -98,6 +98,25 @@ export const en: Dict = {
     "The download succeeded, but the file in your cloud folder is neither a Meta Gateway exchange package nor a recognizable All API Hub backup.",
   "error.webdavInvalidBackupFix":
     "Make sure the folder contains the AAH automatic backup (or a Meta Gateway export), then sync again.",
+  "error.importFormatUnsupported": "Unrecognized backup format",
+  "error.importFormatUnsupportedCause":
+    "This file is neither an All API Hub backup nor a Meta Gateway exchange package.",
+  "error.importFormatUnsupportedFix":
+    "Download the backup from AAH (Import & export → WebDAV backup), or use Export with secrets on this page and try again.",
+  "error.importEmpty": "The backup holds nothing importable",
+  "error.importEmptyCause":
+    "The format was recognized, but it contains no accounts or API keys with credentials (preferences only, perhaps).",
+  "error.importEmptyFix":
+    "Enable Accounts and API credentials in AAH's WebDAV sync data selection and back up again; if this is a Meta Gateway export, tick \"include secrets\" when exporting.",
+  "error.importInvalid": "The backup contents are invalid",
+  "error.importInvalidCause":
+    "The document structure is incomplete, or a required field is missing or has the wrong type.",
+  "error.importInvalidFix":
+    "Export the backup again; if the file was edited by hand, restore the original.",
+  "error.decryptFailed": "Could not decrypt the backup",
+  "error.decryptFailedCause": "The unlock password is wrong, or the backup file is damaged.",
+  "error.decryptFailedFix":
+    "Enter the password set in AAH's backup encryption (not the drive login password; Nutstore and similar services need an app password).",
   "error.upstream_unauthorized":
     "Upstream returned 401/403. Check the API key and whether the base URL is correct.",
   "error.upstream_failure": "Upstream model discovery failed.",
@@ -1200,6 +1219,22 @@ export const en: Dict = {
   "exchange.exportCountHint": "Empty selection exports every channel.",
   "exchange.exportSkipped":
     "{n} channels were skipped (no credential or invalid base URL).",
+  "exchange.encryptedTitle": "This backup is encrypted",
+  "exchange.encryptedHint":
+    "Enter the password set in AAH's backup encryption to unlock it. This is not the drive login password.",
+  "exchange.unlockPassword": "Backup unlock password",
+  "exchange.importEncrypted": "Decrypt and import",
+  "exchange.unlockRequired": "This backup is encrypted — enter its unlock password first.",
+  "exchange.skippedTitle": "{n} rows skipped",
+  "exchange.skippedNote":
+    "Those rows had no usable credential or were incomplete. Everything else imported normally.",
+  "exchange.skipReason.missing_credential": "No usable credential (cookie mode or not signed in)",
+  "exchange.skipReason.missing_field": "Required field missing",
+  "exchange.skipReason.invalid_base_url": "Unrecognized base URL",
+  "exchange.skipReason.duplicate_identity": "Duplicate of an earlier row",
+  "exchange.skipReason.invalid_item": "Invalid field value",
+  "exchange.previewEncrypted": "Encrypted backup · unlock password required",
+  "exchange.previewEmptyBackup": "Recognized as a backup, but it holds no importable account or key",
   "exchange.webdavTitle": "Cloud backup sync",
   "exchange.webdavHint":
     "Connect a WebDAV folder. The two sections below are independent: AAH backup import pulls remote backups into this gateway; native WebDAV sync pushes an encrypted backup of this gateway to the drive.",
@@ -2111,6 +2146,22 @@ export const en: Dict = {
   "wizard.pickFile": "Choose backup file",
   "wizard.importDone": "Import complete: {created} created, {updated} updated.",
   "wizard.importInvalid": "Could not parse the file as a JSON backup.",
+  "wizard.importFromFile": "Choose backup file",
+  "wizard.importFromWebdav": "Import from WebDAV",
+  "wizard.importSkipped": "{n} more rows were skipped (no credential or incomplete); the rest imported fine.",
+  "wizard.webdavHint":
+    "Enter the WebDAV settings you saved in AAH; the gateway pulls the backup from all-api-hub-backup/.",
+  "wizard.webdavUrl": "WebDAV address",
+  "wizard.webdavUsername": "Username",
+  "wizard.webdavPassword": "Password / app password",
+  "wizard.webdavPasswordHint": "Nutstore and similar services require an app password, not the login password.",
+  "wizard.webdavBackupPassword": "Backup unlock password",
+  "wizard.webdavBackupPasswordHint": "Leave blank when the backup is not encrypted.",
+  "wizard.webdavTest": "Test connection",
+  "wizard.webdavTestOk": "WebDAV connection works.",
+  "wizard.webdavImport": "Connect and import",
+  "wizard.webdavDone": "Imported from WebDAV: {created} created, {updated} updated.",
+  "wizard.webdavSaved": "Settings saved; adjust the schedule later on the Exchange page.",
   "wizard.createConn": "Create connection",
   "wizard.name": "Name (optional)",
   "wizard.baseUrl": "Base URL",

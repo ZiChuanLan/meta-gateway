@@ -4,7 +4,7 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [v2.7.2] — 2026-09-12
+## [v2.7.2] — 2026-09-13
 
 ### Fixed
 
@@ -14,6 +14,38 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 - **Live Trace Status**: Accurately mark upstream HTTP errors (e.g. 429 / 500) as failed with error context instead of false-positive success.
 - **Negative Tool Index Panic**: Prevent slice bounds panic when processing negative tool call indices in stream chunks.
 - **Member Prices Resolution**: Resolve member prices strictly by member ID primary key to avoid multi-group rate collision.
+- **导入全有或全无**：`exchange.Parse` 以前只要备份里有一行不可用就整份拒绝——
+  AAH 里 `authType:"cookie"` 的账号 `access_token` 本来就是空的，缺字段或指向同一
+  站点的重复条目也很常见，结果 99% 合法的备份被报成「无法识别的备份格式」，无论
+  走文件导入还是网盘同步。现在改为**逐条容错**：不可用的行连同原因进 `skipped`
+  明细，其余照常导入；只有一行都导不进来时才报「没有可导入的凭据」，与「格式不
+  认识」区分开。
+- **自导出往返自坏**：交换信封的严格解码（`DisallowUnknownFields`）不认自己写出的
+  `skipped` 字段。只要导出时有渠道因为没凭据而被跳过，这份导出就再也导不回来。
+- **无密钥导出误报**：`include_secrets:false` 的导出（信封自己标了 `importable:false`）
+  被报成「文档无效」，真实原因只是「这份导出不含凭据」。
+- **导入错误话术**：导入失败以前复用 `validation_error` / `unsupported_format`，控制台
+  据此渲染成「检查 Base URL、连接类型和凭据状态」，与真实原因无关。现在导入有专用
+  分类（`exchange_document_invalid` / `_unsupported` / `_empty` / `_conflict`，
+  以及 `backup_unlock_required` / `decrypt_failed`）。
+- **备份预览认不出新版备份**：前端预览写死 `version === "2.0"`，而 AAH 当前写 `"4.0"`、
+  还可能把各段嵌在 `data` 下。用户先被界面告知「认不出这份备份」，才去点导入。
+- **AAH 选择性同步的备份**：只勾了偏好设置 / 标签、完全没带凭据段的备份，以前报
+  「不支持的格式」，现在识别为「这份备份里没有可导入的凭据」，并提示去 AAH 勾上
+  「账号」与「API 凭据」后重新备份。
+
+### Added
+
+- **加密备份可直接导入**：AAH 的加密封套（`all-api-hub-webdav-backup-encrypted`，
+  PBKDF2-SHA256 250000 轮 + AES-256-GCM）以前只有网盘拉取认识，文件导入拿到的只是一份
+  认不出的 JSON。现在导入面板会识别出加密备份并给出解锁密码输入框，服务端与网盘下载
+  共用同一套解密实现，同一份备份在两条路径上都能打开。密码错误会明确提示「无法解密
+  备份」，而不是含混的格式错误。
+- **新手指引支持网盘导入**：引导页的 AAH 导入从「只能拖文件」扩展为**文件 / 网盘**两个
+  子页。网盘侧填地址、账号与密码 → 测试连接 → 立即导入，走的就是控制台同一个 WebDAV
+  同步接口；定时同步保持关闭，引导流程不会静默开启周期性导入。
+- 导入结果会回传被跳过的条目（序号、名称、原因），导入面板逐条列出，避免「导入成功但
+  少了几条」变成无声的数据丢失。
 
 ### Changed
 

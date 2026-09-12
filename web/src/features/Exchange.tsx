@@ -36,108 +36,14 @@ import {
 	settingsFromSchedule,
 	type WebDAVSchedulePresetId,
 } from "../lib/webdavSchedule";
+import {
+	isEncryptedBackup,
+	previewDocument,
+	skipReasonKey,
+	type BackupPreview,
+} from "../lib/aahBackup";
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
-
-type Preview = {
-	kind: "canonical" | "compatibility";
-	format: string;
-	version: string;
-	items: number;
-	importable: boolean | null;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function previewDocument(doc: unknown): Preview {
-	if (Array.isArray(doc)) {
-		return {
-			kind: "compatibility",
-			format: "new-api-array",
-			version: "-",
-			items: doc.length,
-			importable: true,
-		};
-	}
-	if (!isRecord(doc)) {
-		return {
-			kind: "compatibility",
-			format: "unknown",
-			version: "-",
-			items: 0,
-			importable: null,
-		};
-	}
-	if (typeof doc.format === "string") {
-		const items = Array.isArray(doc.items) ? doc.items.length : 0;
-		return {
-			kind: "canonical",
-			format: doc.format,
-			version: doc.version == null ? "-" : String(doc.version),
-			items,
-			importable: doc.importable === true,
-		};
-	}
-	if (Array.isArray(doc.channels)) {
-		return {
-			kind: "compatibility",
-			format: "new-api.channels",
-			version: "-",
-			items: doc.channels.length,
-			importable: true,
-		};
-	}
-	if (Array.isArray(doc.data)) {
-		return {
-			kind: "compatibility",
-			format: "new-api.data",
-			version: "-",
-			items: doc.data.length,
-			importable: true,
-		};
-	}
-	// All API Hub V2: profiles preferred; accounts.access_token is the common full backup shape.
-	if (doc.version === "2.0" && (isRecord(doc.apiCredentialProfiles) || isRecord(doc.accounts) || Array.isArray(doc.accounts))) {
-		const aah = isRecord(doc.apiCredentialProfiles) ? doc.apiCredentialProfiles : null;
-		const profiles = aah && Array.isArray(aah.profiles) ? aah.profiles : [];
-		let items = profiles.length;
-		if (items === 0) {
-			const accountRoot = doc.accounts;
-			const accountList = Array.isArray(accountRoot)
-				? accountRoot
-				: isRecord(accountRoot) && Array.isArray(accountRoot.accounts)
-					? accountRoot.accounts
-					: [];
-			items = accountList.filter((entry) => {
-				if (!isRecord(entry) || entry.disabled === true) return false;
-				const info = isRecord(entry.account_info) ? entry.account_info : null;
-				const token =
-					(info && (info.access_token || info.apiKey || info.api_key || info.token)) ||
-					entry.apiKey ||
-					entry.api_key ||
-					entry.key ||
-					entry.access_token;
-				return typeof token === "string" && token.trim().length > 0;
-			}).length;
-		}
-		return {
-			kind: "compatibility",
-			format: "all-api-hub-v2",
-			version: String(doc.version),
-			items,
-			importable: items > 0,
-		};
-	}
-	return {
-		kind: "compatibility",
-		format: "unknown",
-		version: "-",
-		items: 0,
-		importable: null,
-	};
-}
 
 export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const { client } = useSession();
@@ -158,6 +64,10 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const [parseError, setParseError] = useState<string | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const [importResult, setImportResult] = useState<ImportResult | null>(null);
+	// Encrypted AAH backups need their unlock password before the server can
+	// read them; the same password the WebDAV pull would use.
+	const [unlockPassword, setUnlockPassword] = useState("");
+	const [needsUnlock, setNeedsUnlock] = useState(false);
 	const [webdavDownloadResult, setWebdavDownloadResult] = useState<WebDAVSyncResult | null>(null);
 	const [webdavUploadResult, setWebdavUploadResult] = useState<WebDAVSyncResult | null>(null);
 	const [webdavSyncMode, setWebdavSyncMode] = useState<WebDAVSyncMode>("incremental");
@@ -205,7 +115,9 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	}, [channels.data, channelQuery]);
 
 	const exportAll = selected.length === 0;
-	const preview = document !== null ? previewDocument(document) : null;
+	const preview: BackupPreview | null = document !== null ? previewDocument(document) : null;
+	const encryptedFile = document !== null && isEncryptedBackup(document);
+	const unlockMissing = (encryptedFile || needsUnlock) && !unlockPassword.trim();
 
 	const exp = useMutation({
 		mutationFn: async ({ secrets }: { secrets: boolean }) => {
@@ -235,7 +147,10 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	});
 
 	const imp = useMutation({
-		mutationFn: () => s.importData(document),
+		mutationFn: () =>
+			encryptedFile
+				? s.importEncryptedData(document, unlockPassword)
+				: s.importData(document),
 		onSuccess: (result) => {
 			setImportResult(result);
 			void qc.invalidateQueries({ queryKey: ["sites"] });
@@ -253,7 +168,18 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 			setFileName("");
 			setFileSize(0);
 			setParseError(null);
+			setUnlockPassword("");
+			setNeedsUnlock(false);
 			if (input.current) input.current.value = "";
+		},
+		onError: (error) => {
+			// Dropped an encrypted backup without its password: reveal the field
+			// instead of making the operator guess.
+			const message =
+				error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+			if (message.includes("unlock password") || message.includes("backup_unlock_required")) {
+				setNeedsUnlock(true);
+			}
 		},
 	});
 
@@ -541,6 +467,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 		setFileName(file.name);
 		setFileSize(file.size);
 		setParseError(null);
+		setUnlockPassword("");
+		setNeedsUnlock(false);
 		if (file.size > MAX_IMPORT_BYTES) {
 			setDocument(null);
 			setParseError(t("exchange.fileTooLarge"));
@@ -559,6 +487,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 		setFileName("");
 		setFileSize(0);
 		setParseError(null);
+		setUnlockPassword("");
+		setNeedsUnlock(false);
 		if (input.current) input.current.value = "";
 	}
 
@@ -1094,6 +1024,21 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 						</div>
 					) : null}
 
+					{encryptedFile || needsUnlock ? (
+						<div className="exchange-unlock">
+							<strong>{t("exchange.encryptedTitle")}</strong>
+							<p className="exchange-panel-note">{t("exchange.encryptedHint")}</p>
+							<Field label={t("exchange.unlockPassword")}>
+								<input
+									type="password"
+									autoComplete="off"
+									value={unlockPassword}
+									onChange={(e) => setUnlockPassword(e.target.value)}
+								/>
+							</Field>
+						</div>
+					) : null}
+
 					{parseError && <ErrorState error={parseError} />}
 
 					{preview && (
@@ -1112,9 +1057,15 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 								<div>
 									<span>{t("exchange.previewFormat")}</span>
 									<strong>
-										{preview.kind === "canonical"
-											? preview.format
-											: t("exchange.previewUnknown")}
+										{preview.kind === "encrypted"
+											? t("exchange.previewEncrypted")
+											: preview.kind === "canonical"
+												? preview.format
+												: preview.format === "all-api-hub"
+													? t("exchange.formatAah")
+													: preview.format === "unknown"
+														? t("exchange.previewUnknown")
+														: preview.format}
 									</strong>
 								</div>
 								<div>
@@ -1136,9 +1087,13 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 									</strong>
 								</div>
 							</div>
-							{preview.importable === false ? (
+							{preview.kind === "encrypted" || needsUnlock ? (
+								<p className="exchange-panel-note">{t("exchange.unlockRequired")}</p>
+							) : preview.importable === false ? (
 								<p className="exchange-panel-note">
-									{t("exchange.exportHint")}
+									{preview.format === "all-api-hub" && preview.items === 0
+										? t("exchange.previewEmptyBackup")
+										: t("exchange.exportHint")}
 								</p>
 							) : (
 								<p className="exchange-panel-note">
@@ -1156,14 +1111,19 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 							disabled={
 								!document ||
 								imp.isPending ||
-								preview?.importable === false
+								preview?.importable === false ||
+								unlockMissing
 							}
 							onClick={() => {
 								imp.reset();
 								imp.mutate();
 							}}
 						>
-							{imp.isPending ? t("exchange.importing") : t("exchange.import")}
+							{imp.isPending
+								? t("exchange.importing")
+								: encryptedFile
+									? t("exchange.importEncrypted")
+									: t("exchange.import")}
 						</Button>
 					</div>
 					{imp.isPending ? (
@@ -1180,7 +1140,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 									// health "degraded" (shown as 不可达 / Unreachable).
 									const postImportIssues =
 										(importResult.key_sync_failure_count ?? 0) > 0 ||
-										importResult.discovery_failure_count > 0;
+										importResult.discovery_failure_count > 0 ||
+										(importResult.skipped?.length ?? 0) > 0;
 									const missingKeys =
 										(importResult.missing_api_key_count ?? 0) > 0;
 									const badge = postImportIssues
@@ -1240,6 +1201,33 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 										n: importResult.missing_api_key_count ?? 0,
 									})}
 								</p>
+							) : null}
+							{(importResult.skipped?.length ?? 0) > 0 ? (
+								<div className="import-discovery-list">
+									<strong>
+										{t("exchange.skippedTitle", {
+											n: importResult.skipped?.length ?? 0,
+										})}
+									</strong>
+									<p className="exchange-panel-note">{t("exchange.skippedNote")}</p>
+									<ul>
+										{(importResult.skipped ?? []).slice(0, 8).map((row) => (
+											<li key={`skip-${row.index}-${row.reason}`}>
+												<span>{row.name || `#${row.index + 1}`}</span>
+												<small className="mono">
+													{t(`exchange.skipReason.${skipReasonKey(row.reason)}`)}
+												</small>
+											</li>
+										))}
+									</ul>
+									{(importResult.skipped?.length ?? 0) > 8 ? (
+										<p className="exchange-panel-note">
+											{t("exchange.importIssuesMore", {
+												n: (importResult.skipped?.length ?? 0) - 8,
+											})}
+										</p>
+									) : null}
+								</div>
 							) : null}
 							{(() => {
 								const keyIssues = (importResult.key_sync ?? []).filter(
