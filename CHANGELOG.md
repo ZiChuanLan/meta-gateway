@@ -4,6 +4,22 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.5.8] — 2026-09-12
+
+### Added
+
+- One-click container update. With the Docker socket mounted (opt-in in
+  compose — the socket carries roughly host-root power, so it stays off by
+  default), 检查更新 gains a 一键更新到 {version} button next to the found
+  release: the gateway pulls the new image, hands off to a successor
+  container that recreates the final one with the original name/ports/volume
+  bindings, and restarts — a few seconds of downtime, automatic rollback to
+  the current version if the handoff fails, data volumes untouched. The
+  update endpoint is admin-token gated, validates the target against the
+  cached latest release, lands in the audit log, and only ever touches its
+  own container and image. Without the socket the panel keeps the
+  copy-command fallback.
+
 ## [v2.5.7] — 2026-09-12
 
 ### Added
