@@ -120,9 +120,12 @@ func (db *DB) UpdateProbeProgress(id int64, completed, okCount, failCount int) e
 	return nil
 }
 
-func (db *DB) FinishProbeTask(id int64, status string) error {
-	if _, err := db.Exec(`UPDATE probe_tasks SET status = ?, finished_at = datetime('now') WHERE id = ?`,
-		status, id); err != nil {
+// FinishProbeTask marks the task terminal and persists the final tally in
+// the same statement: a done/cancelled row must never be readable with a
+// stale completed count (the progress writes race the drain on busy CI).
+func (db *DB) FinishProbeTask(id int64, status string, completed, okCount, failCount int) error {
+	if _, err := db.Exec(`UPDATE probe_tasks SET status = ?, completed = ?, ok_count = ?, fail_count = ?, finished_at = datetime('now') WHERE id = ?`,
+		status, completed, okCount, failCount, id); err != nil {
 		return fmt.Errorf("probe: finish task: %w", err)
 	}
 	return nil

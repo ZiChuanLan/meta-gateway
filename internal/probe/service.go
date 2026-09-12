@@ -238,7 +238,14 @@ func (s *Service) run(ctx context.Context, task *store.ProbeTask, pairs []Pair, 
 	if stopped || ctx.Err() != nil {
 		status = store.ProbeTaskCancelled
 	}
-	if err := s.db.FinishProbeTask(task.ID, status); err != nil {
+	// Persist the final tally atomically with the terminal status: every
+	// worker has drained, so the closure counters are authoritative — a
+	// lost/delayed progress write can no longer surface as done with a
+	// stale completed count.
+	mu.Lock()
+	c, o, f := completed, okCount, failCount
+	mu.Unlock()
+	if err := s.db.FinishProbeTask(task.ID, status, c, o, f); err != nil {
 		s.logger.Warn("probe: finish task", "task", task.ID, "error", err)
 	}
 }
