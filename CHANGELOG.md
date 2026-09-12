@@ -4,6 +4,19 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.7.0] — 2026-09-12
+
+### Added
+
+- Per-model self-set pricing. The model metadata editor (model row → 编辑元
+  数据) gains three unit-price fields — 输入单价 / 输出单价 / 缓存读取单价,
+  each per 1k tokens in whatever unit the operator uses consistently. Billing
+  now prefers the model's own prices: prompt and cache-creation tokens at the
+  prompt price, cache-read tokens at the cache price, all scaled by the
+  model's billing ratio as before. When a model has no priced row (or both
+  prices are zero) the downstream key's unit prices apply exactly as before —
+  the per-key pricing stays as the fallback layer.
+
 ## [v2.6.0] — 2026-09-12
 
 ### Added
