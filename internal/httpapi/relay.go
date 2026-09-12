@@ -400,10 +400,14 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	clientFamily := ClientFamilyOf(r)
 
 	// Live-trace hook: same as forwardModelRequest.
+	clientKeyName := ""
+	if key := auth.DownstreamKey(r); key != nil {
+		clientKeyName = key.Name
+	}
 	watchCtx := r.Context()
 	var finishTrace func()
 	if h.liveTrace != nil && requestID != "" {
-		lbCtx, release, _ := h.liveTrace.Begin(r.Context(), requestID, "openai", modelName)
+		lbCtx, release, _ := h.liveTrace.Begin(r.Context(), requestID, "openai", modelName, livetrace.BeginMeta{Stream: stream, ClientKey: clientKeyName})
 		watchCtx, finishTrace = lbCtx, release
 	}
 	if finishTrace == nil {
@@ -437,14 +441,17 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 				h.liveTrace.Finish(requestID, livetrace.StatusFailed, result.Err.Error())
 			}
 		default:
-			h.liveTrace.Finish(requestID, livetrace.StatusSuccess, "")
+			// Success is finalized by the onUsage callback below, after the
+			// body has been fully copied — a stream stays "running" (with
+			// live byte/first-byte progress) until the client has it all.
 		}
 	}
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
 	forceSSE := stream
+	var lastProgress time.Time
 	writeUpstreamResult(
 		w, watchCtx, requestID, result, forceSSE,
-		func(tokens usage.Tokens, status int, firstByteMs int) {
+		func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
 			channelID := int64(0)
 			if meta != nil {
 				channelID = meta.ChannelID
@@ -457,6 +464,21 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 					log.Printf("relay: update log meta request_id=%s: %v", requestID, err)
 				}
 			}
+			if h.liveTrace != nil && requestID != "" {
+				h.liveTrace.FinishSuccess(requestID, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
+			}
+		},
+		func(bytesSent int64) {
+			// Throttled stream progress for the live view (~1 update/s).
+			if h.liveTrace == nil || requestID == "" {
+				return
+			}
+			now := time.Now()
+			if now.Sub(lastProgress) < time.Second {
+				return
+			}
+			lastProgress = now
+			h.liveTrace.Progress(requestID, int64(result.FirstByteMs), bytesSent)
 		},
 		h.streamErrorCallback(watchCtx, meta),
 	)
@@ -611,12 +633,16 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	}
 	clientFamily := ClientFamilyOf(r)
 
+	clientKeyName := ""
+	if key := auth.DownstreamKey(r); key != nil {
+		clientKeyName = key.Name
+	}
 	// Live-trace hook (optional): register the request for the admin live view
 	// and manual interrupt; the watch context cancels on operator interrupt.
 	watchCtx := r.Context()
 	var finishTrace func()
 	if h.liveTrace != nil && requestID != "" {
-		lbCtx, release, ok := h.liveTrace.Begin(r.Context(), requestID, downstream, modelName)
+		lbCtx, release, ok := h.liveTrace.Begin(r.Context(), requestID, downstream, modelName, livetrace.BeginMeta{Stream: stream, ClientKey: clientKeyName})
 		if ok {
 			watchCtx, finishTrace = lbCtx, release
 		} else {
@@ -643,9 +669,10 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		RouteGroup:         downstreamRouteGroup(r),
 	}
 	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
+	var lastProgress time.Time
 	writeUpstreamResult(
 		w, watchCtx, requestID, result, stream,
-		func(tokens usage.Tokens, status int, firstByteMs int) {
+		func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
 			channelID := int64(0)
 			if meta != nil {
 				channelID = meta.ChannelID
@@ -659,8 +686,20 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 				}
 			}
 			if h.liveTrace != nil && requestID != "" {
-				h.liveTrace.Finish(requestID, livetrace.StatusSuccess, "")
+				h.liveTrace.FinishSuccess(requestID, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
 			}
+		},
+		func(bytesSent int64) {
+			// Throttled stream progress for the live view (~1 update/s).
+			if h.liveTrace == nil || requestID == "" {
+				return
+			}
+			now := time.Now()
+			if now.Sub(lastProgress) < time.Second {
+				return
+			}
+			lastProgress = now
+			h.liveTrace.Progress(requestID, int64(result.FirstByteMs), bytesSent)
 		},
 		h.streamErrorCallback(watchCtx, meta),
 	)
@@ -738,7 +777,10 @@ func (h *RelayHandler) streamErrorCallback(requestCtx context.Context, meta *pro
 	}
 }
 
-func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int, int), onStreamError func()) {
+// onProgress streams the running byte count while a stream is being copied
+// (nil = no progress reporting); onUsage fires once after the transfer with
+// the final metrics.
+func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int, int, int64), onProgress func(int64), onStreamError func()) {
 	if result == nil {
 		writeError(w, http.StatusBadGateway, "upstream response missing")
 		return
@@ -794,7 +836,7 @@ func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requ
 	copyResponseHeaders(w.Header(), result.Header, stream)
 	w.WriteHeader(status)
 	tee := usage.NewTee(io.NopCloser(result.Body), stream)
-	bytesWritten, copyErr := copyUpstreamBody(w, tee, stream)
+	bytesWritten, copyErr := copyUpstreamBody(w, tee, stream, onProgress)
 	if copyErr != nil {
 		log.Printf("relay: copy upstream response request_id=%s: %v", requestID, copyErr)
 		if stream && onStreamError != nil {
@@ -815,7 +857,7 @@ func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requ
 				TotalTokens:      int(bytesWritten / streamEstimateBytesPerToken),
 			}
 		}
-		onUsage(tokens, status, result.FirstByteMs)
+		onUsage(tokens, status, result.FirstByteMs, bytesWritten)
 	}
 }
 
@@ -941,12 +983,12 @@ const sseKeepaliveInterval = 15 * time.Second
 // upstream stays silent past sseKeepaliveInterval. It returns the number of
 // bytes written to the client (used to estimate usage when an interrupted
 // stream never delivered its final usage chunk).
-func copyUpstreamBody(w http.ResponseWriter, body io.Reader, stream bool) (int64, error) {
+func copyUpstreamBody(w http.ResponseWriter, body io.Reader, stream bool, onProgress func(int64)) (int64, error) {
 	if !stream {
 		n, err := io.Copy(w, body)
 		return n, err
 	}
-	return copySSEWithKeepalive(w, body, sseKeepaliveInterval)
+	return copySSEWithKeepalive(w, body, sseKeepaliveInterval, onProgress)
 }
 
 // copySSEWithKeepalive pumps an SSE stream to the client. A single reader
@@ -955,7 +997,7 @@ func copyUpstreamBody(w http.ResponseWriter, body io.Reader, stream bool) (int64
 // and flushed, which keeps proxies/clients from timing the connection out
 // during long silent stretches (e.g. a model "thinking" for minutes before the
 // first token).
-func copySSEWithKeepalive(w http.ResponseWriter, body io.Reader, idle time.Duration) (int64, error) {
+func copySSEWithKeepalive(w http.ResponseWriter, body io.Reader, idle time.Duration, onProgress func(int64)) (int64, error) {
 	flusher, canFlush := w.(http.Flusher)
 	type readRes struct {
 		data []byte
@@ -994,6 +1036,9 @@ func copySSEWithKeepalive(w http.ResponseWriter, body io.Reader, idle time.Durat
 				written += int64(len(res.data))
 				if canFlush {
 					flusher.Flush()
+				}
+				if onProgress != nil {
+					onProgress(written)
 				}
 			}
 			if res.err != nil {

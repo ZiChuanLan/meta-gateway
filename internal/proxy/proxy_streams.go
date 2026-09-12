@@ -4,8 +4,10 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/relay"
@@ -270,4 +272,241 @@ func isEmptyChatSuccess(body []byte) bool {
 func jsonValuePresent(raw json.RawMessage) bool {
 	raw = bytes.TrimSpace(raw)
 	return len(raw) > 0 && !bytes.Equal(raw, []byte("null")) && !bytes.Equal(raw, []byte(`""`)) && !bytes.Equal(raw, []byte("[]")) && !bytes.Equal(raw, []byte("{}"))
+}
+
+// —— Per-channel stream policy ——
+
+// forceStreamRequestBody rewrites a chat/completions body to ask the upstream
+// for a stream (with usage reporting, so the aggregated completion still
+// meters). A body that is not a JSON object fails open: the caller drops the
+// policy for this attempt and the client's original shape goes through.
+func forceStreamRequestBody(body []byte) ([]byte, bool) {
+	return rewriteStreamFlag(body, true)
+}
+
+// forceNonStreamRequestBody rewrites a chat/completions body to a plain
+// non-streaming upstream request.
+func forceNonStreamRequestBody(body []byte) ([]byte, bool) {
+	return rewriteStreamFlag(body, false)
+}
+
+func rewriteStreamFlag(body []byte, stream bool) ([]byte, bool) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload == nil {
+		return body, false
+	}
+	payload["stream"] = stream
+	if stream {
+		options, ok := payload["stream_options"].(map[string]any)
+		if !ok {
+			options = map[string]any{}
+			payload["stream_options"] = options
+		}
+		options["include_usage"] = true
+	} else {
+		delete(payload, "stream_options")
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return body, false
+	}
+	return out, true
+}
+
+// aggregateChatStream drains an OpenAI-shaped SSE stream and rebuilds the
+// equivalent non-streaming chat.completion JSON: delta fragments merge in
+// order (content, reasoning, tool-call arguments by index), the last
+// non-null finish_reason and usage frame win. Used by channels whose policy
+// forces a streaming upstream for non-streaming clients.
+func aggregateChatStream(body io.Reader) ([]byte, error) {
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	completion := map[string]any{}
+	message := map[string]any{}
+	content := strings.Builder{}
+	reasoning := strings.Builder{}
+	var toolCalls []map[string]any
+	finishReason := any(nil)
+	var usage map[string]any
+	for _, frame := range bytes.Split(normalizeSSEFrames(raw), []byte("\n\n")) {
+		for _, line := range bytes.Split(frame, []byte("\n")) {
+			trimmed := bytes.TrimSpace(line)
+			if !bytes.HasPrefix(trimmed, []byte("data:")) {
+				continue
+			}
+			payload := bytes.TrimSpace(trimmed[len("data:"):])
+			if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+				continue
+			}
+			var chunk struct {
+				ID      string `json:"id"`
+				Created any    `json:"created"`
+				Model   string `json:"model"`
+				Choices []struct {
+					Delta struct {
+						Role             string `json:"role"`
+						Content          string `json:"content"`
+						ReasoningContent string `json:"reasoning_content"`
+						ToolCalls        []struct {
+							Index    int    `json:"index"`
+							ID       string `json:"id"`
+							Type     string `json:"type"`
+							Function struct {
+								Name      string `json:"name"`
+								Arguments string `json:"arguments"`
+							} `json:"function"`
+						} `json:"tool_calls"`
+					} `json:"delta"`
+					FinishReason any            `json:"finish_reason"`
+					FinishRsnStr string         `json:"-"`
+					Usage        map[string]any `json:"-"`
+					Raw          map[string]any `json:"-"`
+				} `json:"choices"`
+				Usage map[string]any `json:"usage"`
+			}
+			// Tool-call merging needs the raw map; decode twice, it is cheap
+			// relative to the relay itself.
+			if err := json.Unmarshal(payload, &chunk); err != nil {
+				continue
+			}
+			if completion["id"] == nil && chunk.ID != "" {
+				completion["id"] = chunk.ID
+			}
+			if completion["created"] == nil && chunk.Created != nil {
+				completion["created"] = chunk.Created
+			}
+			if completion["model"] == nil && chunk.Model != "" {
+				completion["model"] = chunk.Model
+			}
+			if chunk.Usage != nil {
+				usage = chunk.Usage
+			}
+			for _, choice := range chunk.Choices {
+				if choice.Delta.Role != "" {
+					message["role"] = choice.Delta.Role
+				}
+				content.WriteString(choice.Delta.Content)
+				reasoning.WriteString(choice.Delta.ReasoningContent)
+				for _, call := range choice.Delta.ToolCalls {
+					for toolCalls == nil || call.Index >= len(toolCalls) {
+						toolCalls = append(toolCalls, map[string]any{
+							"index": len(toolCalls), "id": "", "type": "", "function": map[string]any{"name": "", "arguments": ""},
+						})
+					}
+					slot := toolCalls[call.Index]
+					if call.ID != "" {
+						slot["id"] = call.ID
+					}
+					if call.Type != "" {
+						slot["type"] = call.Type
+					}
+					fn := slot["function"].(map[string]any)
+					if call.Function.Name != "" {
+						fn["name"] = call.Function.Name
+					}
+					fn["arguments"] = fn["arguments"].(string) + call.Function.Arguments
+				}
+				if choice.FinishReason != nil {
+					finishReason = choice.FinishReason
+				}
+			}
+		}
+	}
+	if role, _ := message["role"].(string); role == "" {
+		message["role"] = "assistant"
+	}
+	message["content"] = content.String()
+	if reasoning.Len() > 0 {
+		message["reasoning_content"] = reasoning.String()
+	}
+	if toolCalls != nil {
+		message["tool_calls"] = toolCalls
+	}
+	choiceOut := map[string]any{"index": 0, "message": message, "finish_reason": finishReason}
+	completion["object"] = "chat.completion"
+	completion["choices"] = []any{choiceOut}
+	if usage != nil {
+		completion["usage"] = usage
+	}
+	if _, ok := completion["created"]; !ok {
+		completion["created"] = time.Now().Unix()
+	}
+	out, err := json.Marshal(completion)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// normalizeSSEFrames normalizes CRLF to LF so frame splitting is uniform.
+func normalizeSSEFrames(raw []byte) []byte {
+	if bytes.IndexByte(raw, '\r') < 0 {
+		return raw
+	}
+	return bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
+}
+
+// synthesizeStreamFromCompletion wraps a complete chat.completion JSON into a
+// minimal OpenAI chunk stream — one delta carrying the whole message, one
+// close frame with the finish reason and usage, then [DONE]. Used by
+// channels whose policy forces a non-streaming upstream for streaming
+// clients: the client still receives valid SSE, just without token-by-token
+// pacing.
+func synthesizeStreamFromCompletion(completion []byte) ([]byte, error) {
+	var parsed struct {
+		ID      string `json:"id"`
+		Created any    `json:"created"`
+		Model   string `json:"model"`
+		Choices []struct {
+			Message map[string]any `json:"message"`
+		} `json:"choices"`
+		Usage map[string]any `json:"usage"`
+	}
+	if err := json.Unmarshal(completion, &parsed); err != nil {
+		return nil, err
+	}
+	if len(parsed.Choices) == 0 {
+		return nil, errors.New("completion has no choices")
+	}
+	delta := map[string]any{}
+	message := parsed.Choices[0].Message
+	if role, _ := message["role"].(string); role != "" {
+		delta["role"] = role
+	}
+	if content, ok := message["content"].(string); ok && content != "" {
+		delta["content"] = content
+	}
+	if reasoning, ok := message["reasoning_content"].(string); ok && reasoning != "" {
+		delta["reasoning_content"] = reasoning
+	}
+	if toolCalls, ok := message["tool_calls"]; ok {
+		delta["tool_calls"] = toolCalls
+	}
+	base := map[string]any{
+		"id": parsed.ID, "object": "chat.completion.chunk",
+		"created": parsed.Created, "model": parsed.Model,
+		"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": nil}},
+	}
+	final := map[string]any{
+		"id": parsed.ID, "object": "chat.completion.chunk",
+		"created": parsed.Created, "model": parsed.Model,
+		"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}},
+	}
+	if parsed.Usage != nil {
+		final["usage"] = parsed.Usage
+	}
+	stream := bytes.Buffer{}
+	for _, chunk := range []map[string]any{base, final} {
+		encoded, err := json.Marshal(chunk)
+		if err != nil {
+			return nil, err
+		}
+		stream.Write([]byte("data: "))
+		stream.Write(encoded)
+		stream.Write([]byte("\n\n"))
+	}
+	stream.Write([]byte("data: [DONE]\n\n"))
+	return stream.Bytes(), nil
 }

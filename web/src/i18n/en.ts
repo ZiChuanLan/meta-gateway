@@ -446,7 +446,14 @@ export const en: Dict = {
   "channels.modelsSyncBannerAuto":
     "Newly probed models are adopted automatically; uncheck one to disable it.",
   "channels.modelsSyncBannerManual":
-    "A sync only refreshes the candidate list — check a model to adopt it.",
+    "Sync refreshes the candidate list only; checking adopts a model, unchecking removes the binding (aliases stay, re-check rebuilds).",
+  "channels.modelsCleanup": "Clean parked ({n})",
+  "channels.modelsCleanupHint":
+    "Delete every parked model binding on this channel (alias bindings stay); routes left without any member are removed too.",
+  "channels.modelsCleanupConfirm":
+    "Delete {n} parked model bindings? Routes left without any member are removed as well. This cannot be undone.",
+  "channels.modelsCleanupConfirmLabel": "Delete",
+  "channels.modelsCleanupDone": "Cleaned {members} bindings and removed {routes} empty routes.",
   "channels.adoptHint":
     "Checking a model adopts it; newly probed models start unchecked.",
   "channels.modelAdoptHint": "Not adopted yet; check to start serving this model",
@@ -516,6 +523,15 @@ export const en: Dict = {
     "Highest reasoning_effort this upstream accepts. Requests asking for more are downgraded at forward time instead of failing over (e.g. gateways rejecting max).",
   "channels.payloadRules": "Payload rules (body rewrite)",
   "channels.maxConcurrent": "Max concurrent",
+  "channels.streamPolicy": "Stream policy",
+  "channels.streamPolicyHint":
+    "Overrides the client's stream choice for this channel. Effective for OpenAI-shaped chat exchanges only (native Anthropic passthrough and the Responses API are exempt). Force stream: non-streaming clients receive an aggregated completion; force non-stream: streaming clients receive a one-shot synthesized SSE replay. Default follows the client.",
+  "channels.streamPolicyDefault": "Follow client",
+  "channels.streamPolicyForceStream": "Force stream (aggregate for non-stream clients)",
+  "channels.streamPolicyForceNonStream": "Force non-stream (synthesize SSE for stream clients)",
+  "channels.nonStreamTimeout": "Non-stream timeout (s)",
+  "channels.nonStreamTimeoutHint":
+    "Total cap for a non-streaming upstream attempt on this channel (request + full body read); 0 = global default (5 minutes). Streaming requests are exempt. Raise it for slow deep-reasoning upstreams.",
   "channels.maxConcurrentHint":
     "Hard per-channel concurrency ceiling; requests beyond it queue FIFO. 0 = unlimited.",
   "channels.payloadRulesHint":
@@ -1053,7 +1069,19 @@ export const en: Dict = {
   "logsPage.ctaKeys": "Create a token",
   "logsLive.keyUsed": "Downstream key",
   "logsLive.interrupt": "Interrupt",
-  "logsLive.interrupted": "Request {id} interrupted",
+  "logsLive.interrupted": "Request {id} interrupted; the upstream is disconnected — a client that auto-retries shows up as a new request",
+  "logsLive.interruptAll": "Interrupt all",
+  "logsLive.interruptAllHint": "Interrupt every in-flight request",
+  "logsLive.interruptAllDone": "Interrupt sent: {ok}/{total} succeeded",
+  "logsLive.pause": "Pause",
+  "logsLive.resume": "Resume",
+  "logsLive.paused": "Paused (frames merge on resume)",
+  "logsLive.client": "Client",
+  "logsLive.streaming": "stream",
+  "logsLive.retryOf": "likely retry",
+  "logsLive.retryOfHint": "A new request for the same model from the same client key, right after interrupting {id} (client auto-retry)",
+  "logsLive.ttft": "Time to first byte (TTFT)",
+  "logsLive.ttftValue": "TTFT {n}ms",
   "logsLive.notInFlight": "Request is no longer in flight",
   "logsLive.interruptFailed": "Interrupt failed",
   "logsLive.connecting": "Connecting",

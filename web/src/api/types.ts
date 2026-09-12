@@ -45,6 +45,8 @@ export interface Channel {
   max_reasoning_effort?: string;
   payload_rules?: string;
   max_concurrent?: number;
+  non_stream_timeout_seconds?: number;
+  stream_policy?: "" | "force_stream" | "force_non_stream";
   proxy_url?: string;
   header_override?: string;
   system_prompt?: string;
@@ -233,6 +235,12 @@ export interface DiscoveredModel {
 }
 
 /** One live-trace frame pushed by GET /admin/relay/live (SSE `request` events). */
+export interface LiveTraceRound {
+  round: number;
+  channel: string;
+  status: "running" | "ok" | "failed";
+  error?: string;
+}
 export interface LiveTraceRequest {
   request_id: string;
   status: "running" | "success" | "failed" | "canceled" | "interrupted";
@@ -244,6 +252,19 @@ export interface LiveTraceRequest {
   target_channel?: string;
   key_name?: string;
   error?: string;
+  /** Streaming (SSE) transfer. */
+  stream?: boolean;
+  /** Authenticated downstream key name the request arrived on. */
+  client_key?: string;
+  /** Time to first upstream byte (streams); 0 until known. */
+  first_byte_ms?: number;
+  /** Client-facing bytes forwarded so far. */
+  bytes_written?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  /** The operator-interrupted request this one most likely retries. */
+  retry_of?: string;
+  history?: LiveTraceRound[];
 }
 
 /** One enabled channel able to serve a route pattern (models.csv or discovery snapshot). */

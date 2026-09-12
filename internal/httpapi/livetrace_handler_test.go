@@ -69,7 +69,7 @@ func TestLiveTraceSSEAndInterrupt(t *testing.T) {
 	handler.Register(router)
 
 	// A request enters the registry (simulating a relay in flight).
-	ctx, release, ok := registry.Begin(context.Background(), "req-live", "openai", "model")
+	ctx, release, ok := registry.Begin(context.Background(), "req-live", "openai", "model", livetrace.BeginMeta{})
 	if !ok {
 		t.Fatal("Begin failed")
 	}
@@ -143,7 +143,7 @@ func TestLiveTraceStreamSurvivesSnapshotLargerThanLiveQueue(t *testing.T) {
 	const total = 60
 	for i := 0; i < total; i++ {
 		id := "req-" + strconv.Itoa(i)
-		_, release, ok := registry.Begin(context.Background(), id, "openai", "m")
+		_, release, ok := registry.Begin(context.Background(), id, "openai", "m", livetrace.BeginMeta{})
 		if !ok {
 			t.Fatalf("Begin(%s) failed", id)
 		}
@@ -235,7 +235,7 @@ func TestLiveTraceStreamEndsWhenSubscriberOverflows(t *testing.T) {
 
 	// One in-flight request so the handler has a snapshot frame to emit, which
 	// parks it inside the gated write below.
-	_, release, ok := registry.Begin(context.Background(), "req-x", "openai", "m")
+	_, release, ok := registry.Begin(context.Background(), "req-x", "openai", "m", livetrace.BeginMeta{})
 	if !ok {
 		t.Fatal("Begin failed")
 	}

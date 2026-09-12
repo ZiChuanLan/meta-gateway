@@ -434,6 +434,32 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 
 		effectivePath := req.OpenAIPath
+
+		// Per-channel stream policy: override the client's stream choice for
+		// this attempt. Effective only for OpenAI-shaped chat exchanges — the
+		// native Anthropic passthrough and the Responses API have protocol-
+		// specific stream machinery the policy does not synthesize for.
+		// upstreamStream is what the upstream will actually speak: it governs
+		// the non-stream budget below, while the client's choice still governs
+		// the response shape the handler writes.
+		upstreamStream := req.Stream
+		aggregateUpstreamStream := false
+		synthesizeClientStream := false
+		if !req.Probe && (effectivePath == "chat/completions" || effectivePath == "completions") {
+			nativePassthrough := downstreamAnthropic && adapter.Name() == "anthropic"
+			switch candidate.Channel.StreamPolicy {
+			case domain.StreamPolicyForceStream:
+				if !upstreamStream && !nativePassthrough {
+					upstreamStream = true
+					aggregateUpstreamStream = true
+				}
+			case domain.StreamPolicyForceNonStream:
+				if upstreamStream && !nativePassthrough {
+					upstreamStream = false
+					synthesizeClientStream = true
+				}
+			}
+		}
 		requestSource := mappedBody
 		if !downstreamAnthropic || adapter.Name() == "anthropic" {
 			// Channel-level system prompt injection (OpenAI-format chat bodies
@@ -480,6 +506,22 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 		}
 
+		if aggregateUpstreamStream {
+			if forced, ok := forceStreamRequestBody(requestSource); ok {
+				requestSource = forced
+			} else {
+				// Undecodable body: fail open, drop the policy for this attempt.
+				aggregateUpstreamStream = false
+				upstreamStream = req.Stream
+			}
+		} else if synthesizeClientStream {
+			if forced, ok := forceNonStreamRequestBody(requestSource); ok {
+				requestSource = forced
+			} else {
+				synthesizeClientStream = false
+				upstreamStream = req.Stream
+			}
+		}
 		upstreamPath, requestBody, translateErr := adapter.TransformRequest(effectivePath, requestSource)
 		if translateErr != nil {
 			// Request conversion is local validation, not an upstream health signal.
@@ -586,13 +628,18 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				// headers and then stalls mid-body would otherwise pin this goroutine
 				// until the client disconnects. Streaming requests are exempt — long
 				// SSE sessions legitimately exceed any fixed budget, and their idle
-				// detection is the stream path's responsibility.
+				// detection is the stream path's responsibility. A channel-level
+				// override serves slow upstreams (deep-reasoning models routinely
+				// exceed the global five-minute budget).
 				fwdCtx := ctx
 				var attemptCancel context.CancelFunc
-				if !req.Stream {
+				if !upstreamStream {
 					timeout := s.nonStreamTimeout
 					if timeout <= 0 {
 						timeout = nonStreamRequestTimeout
+					}
+					if seconds := candidate.Channel.NonStreamTimeoutSeconds; seconds > 0 {
+						timeout = time.Duration(seconds) * time.Second
 					}
 					fwdCtx, attemptCancel = context.WithTimeout(ctx, timeout)
 				}
@@ -632,6 +679,39 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				}
 				// Convert upstream 2xx bodies back to the OpenAI contract.
 				if result != nil && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 && result.Body != nil {
+					// Stream policy: fold a forced upstream stream into one
+					// completion, or expand a forced non-stream answer into a
+					// single-chunk SSE replay — both before the protocol
+					// translation below, which then sees the shape it expects.
+					if aggregateUpstreamStream {
+						aggregated, aggErr := aggregateChatStream(result.Body)
+						_ = result.Body.Close()
+						if aggErr != nil {
+							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("stream aggregation failed: %w", aggErr)}
+						} else {
+							result.Body = io.NopCloser(bytes.NewReader(aggregated))
+							if result.Header == nil {
+								result.Header = make(http.Header)
+							}
+							result.Header.Set("Content-Type", "application/json")
+						}
+					} else if synthesizeClientStream {
+						raw, readErr := io.ReadAll(result.Body)
+						_ = result.Body.Close()
+						var synthesized []byte
+						if readErr == nil {
+							synthesized, readErr = synthesizeStreamFromCompletion(raw)
+						}
+						if readErr != nil {
+							result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("stream synthesis failed: %w", readErr)}
+						} else {
+							result.Body = io.NopCloser(bytes.NewReader(synthesized))
+							if result.Header == nil {
+								result.Header = make(http.Header)
+							}
+							result.Header.Set("Content-Type", "text/event-stream")
+						}
+					}
 					// N×M matrix path: the (anthropic → family) pair's Response/Stream
 					// modes convert upstream output back to the Anthropic contract.
 					if registryTranslation != nil {

@@ -47,7 +47,7 @@ func TestSSEKeepaliveInjectedDuringSilence(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = copySSEWithKeepalive(rec, body, 100*time.Millisecond)
+		_, _ = copySSEWithKeepalive(rec, body, 100*time.Millisecond, nil)
 	}()
 
 	body.feed("data: {\"a\":1}\n\n")
@@ -79,7 +79,7 @@ func TestSSEKeepaliveClientDisconnect(t *testing.T) {
 	var err error
 	go func() {
 		defer close(done)
-		_, err = copySSEWithKeepalive(failing, body, time.Hour)
+		_, err = copySSEWithKeepalive(failing, body, time.Hour, nil)
 	}()
 	body.feed("data: x\n\n")
 	<-done

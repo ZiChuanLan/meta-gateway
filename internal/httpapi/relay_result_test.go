@@ -25,7 +25,7 @@ func TestWriteUpstreamResultMapsInternalTimeouts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			writeUpstreamResult(recorder, context.Background(), "request", &relay.Result{Err: test.err}, false, nil, nil)
+			writeUpstreamResult(recorder, context.Background(), "request", &relay.Result{Err: test.err}, false, nil, nil, nil)
 			if recorder.Code != test.want {
 				t.Fatalf("status=%d, want %d", recorder.Code, test.want)
 			}
@@ -37,7 +37,7 @@ func TestWriteUpstreamResultSuppressesClientCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	recorder := httptest.NewRecorder()
-	writeUpstreamResult(recorder, ctx, "request", &relay.Result{Err: context.Canceled}, false, nil, nil)
+	writeUpstreamResult(recorder, ctx, "request", &relay.Result{Err: context.Canceled}, false, nil, nil, nil)
 	if recorder.Code != 200 {
 		t.Fatalf("client cancellation wrote status=%d, want no response", recorder.Code)
 	}
@@ -50,7 +50,7 @@ func TestWriteUpstreamResultNormalizesInvalidStatus(t *testing.T) {
 			writeUpstreamResult(recorder, context.Background(), "request", &relay.Result{
 				StatusCode: status,
 				Body:       io.NopCloser(strings.NewReader("")),
-			}, false, nil, nil)
+			}, false, nil, nil, nil)
 			if recorder.Code != 502 {
 				t.Fatalf("status=%d, want 502", recorder.Code)
 			}

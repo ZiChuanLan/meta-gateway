@@ -525,8 +525,13 @@ export function Channels() {
         ? base
         : input.channel.base_url;
       const siteId = input.channel.site_id ?? input.site?.id;
+      // Sync mode is intentionally absent from the spread: the drawer may
+      // have changed it since this dialog opened, and only an explicit
+      // picker change (below) may touch it.
+      const { model_sync_mode: _snapshotSyncMode, ...channelFields } =
+        input.channel;
       return service.updateChannel(input.channel.id, {
-        ...input.channel,
+        ...channelFields,
         name,
         base_url: channelBase,
         type_hint: typeHint,
@@ -540,7 +545,9 @@ export function Channels() {
         header_override: input.header_override ?? "",
         system_prompt: input.system_prompt ?? "",
         retry_config: input.retry_config ?? "",
-        model_sync_mode: input.model_sync_mode,
+        ...(input.model_sync_mode
+          ? { model_sync_mode: input.model_sync_mode }
+          : {}),
         stable_first: input.stable_first ?? false,
         site_id: siteId,
         credential_id: relayCredentialId,

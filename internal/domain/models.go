@@ -148,6 +148,17 @@ type Channel struct {
 	// MaxConcurrent is the hard per-channel concurrency ceiling (FIFO wait
 	// queue at the proxy; 0 = unlimited).
 	MaxConcurrent int `json:"max_concurrent,omitempty"`
+	// NonStreamTimeoutSeconds caps a non-streaming upstream attempt on this
+	// channel (request + full body read); 0 = global default (5 minutes).
+	// Streaming requests are exempt. Slow deep-reasoning upstreams raise it.
+	NonStreamTimeoutSeconds int `json:"non_stream_timeout_seconds,omitempty"`
+	// StreamPolicy overrides the client's stream choice for this channel:
+	// "" follows the client, "force_stream" answers non-streaming clients
+	// from an aggregated upstream stream, "force_non_stream" answers
+	// streaming clients from one synthesized chunk frame (upstreams whose
+	// SSE breaks mid-path). Effective for OpenAI-shaped exchanges; native
+	// Anthropic passthrough and the Responses API are exempt.
+	StreamPolicy string `json:"stream_policy,omitempty"`
 	// ProxyURL is the per-channel outbound HTTP(S) proxy; empty inherits the
 	// global proxy (runtime setting proxy_url).
 	ProxyURL string `json:"proxy_url,omitempty"`
@@ -183,6 +194,27 @@ const (
 	ModelSyncModeAuto   = "auto"
 	ModelSyncModeManual = "manual"
 )
+
+// Stream policy values for Channel.StreamPolicy.
+const (
+	// StreamPolicyDefault passes the client's stream choice through.
+	StreamPolicyDefault = ""
+	// StreamPolicyForceStream serves non-streaming clients from an upstream
+	// stream that the gateway aggregates into one completion.
+	StreamPolicyForceStream = "force_stream"
+	// StreamPolicyForceNonStream serves streaming clients from a non-stream
+	// upstream answer synthesized into a single-chunk SSE replay.
+	StreamPolicyForceNonStream = "force_non_stream"
+)
+
+// NormalizeStreamPolicy maps unknown values to the default (client decides).
+func NormalizeStreamPolicy(policy string) string {
+	switch policy {
+	case StreamPolicyForceStream, StreamPolicyForceNonStream:
+		return policy
+	}
+	return StreamPolicyDefault
+}
 
 // NormalizeModelSyncMode maps an empty or unknown mode to ModelSyncModeManual.
 func NormalizeModelSyncMode(mode string) string {

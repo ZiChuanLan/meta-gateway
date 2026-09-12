@@ -101,12 +101,14 @@ export function EditChannelDialog({
     payload_rules?: string;
     proxy_url?: string;
     max_concurrent?: number;
+    non_stream_timeout_seconds?: number;
+    stream_policy?: "" | "force_stream" | "force_non_stream";
     priority: number;
     weight: number;
     header_override?: string;
     system_prompt?: string;
     retry_config?: string;
-    model_sync_mode: ModelSyncMode;
+    model_sync_mode?: ModelSyncMode;
     stable_first?: boolean;
     userToken: string;
     userCookie: string;
@@ -141,6 +143,12 @@ export function EditChannelDialog({
   const [payloadRules, setPayloadRules] = useState(value.payload_rules ?? "");
   const [proxyUrl, setProxyUrl] = useState(value.proxy_url ?? "");
   const [maxConcurrent, setMaxConcurrent] = useState(value.max_concurrent ?? 0);
+  const [nonStreamTimeout, setNonStreamTimeout] = useState(
+    value.non_stream_timeout_seconds ?? 0,
+  );
+  const [streamPolicy, setStreamPolicy] = useState(
+    value.stream_policy ?? "",
+  );
   const [priority, setPriority] = useState(value.priority);
   const [weight, setWeight] = useState(value.weight);
   const [headerOverride, setHeaderOverride] = useState(
@@ -158,6 +166,10 @@ export function EditChannelDialog({
   const [syncMode, setSyncMode] = useState<ModelSyncMode>(
     value.model_sync_mode === "auto" ? "auto" : "manual",
   );
+  // The model-management drawer writes the sync mode directly (single-field
+  // PATCH); the edit dialog only sends its own picker value when the operator
+  // actually moved it here, so a stale snapshot can never stomp that choice.
+  const [syncModeDirty, setSyncModeDirty] = useState(false);
   const [stableFirst, setStableFirst] = useState(value.stable_first ?? false);
   const [userToken, setUserToken] = useState(
     userCredential?.has_secret ? SECRET_MASK : "",
@@ -265,12 +277,14 @@ export function EditChannelDialog({
                 payload_rules: payloadRules,
                 proxy_url: proxyUrl,
                 max_concurrent: maxConcurrent,
+                non_stream_timeout_seconds: nonStreamTimeout,
+                stream_policy: streamPolicy,
                 priority,
                 weight,
                 header_override: headerOverride,
                 system_prompt: systemPrompt,
                 retry_config: retryConfig,
-                model_sync_mode: syncMode,
+                ...(syncModeDirty ? { model_sync_mode: syncMode } : {}),
                 stable_first: stableFirst,
                 userToken,
                 userCookie,
@@ -494,7 +508,10 @@ export function EditChannelDialog({
           </div>
           <SyncModePicker
             value={syncMode}
-            onChange={setSyncMode}
+            onChange={(next) => {
+              setSyncMode(next);
+              setSyncModeDirty(true);
+            }}
             disabled={pending}
             modelCount={discovered.data ? editModels.length : null}
             adoptedCount={adoptedCount}
@@ -652,6 +669,37 @@ export function EditChannelDialog({
                   }
                   disabled={pending}
                 />
+              </Field>
+              <Field
+                label={t("channels.nonStreamTimeout")}
+                hint={t("channels.nonStreamTimeoutHint")}
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={86400}
+                  value={nonStreamTimeout}
+                  onChange={(e) =>
+                    setNonStreamTimeout(
+                      Math.max(0, Math.min(86400, Number(e.target.value) || 0)),
+                    )
+                  }
+                  disabled={pending}
+                />
+              </Field>
+              <Field
+                label={t("channels.streamPolicy")}
+                hint={t("channels.streamPolicyHint")}
+              >
+                <select
+                  value={streamPolicy}
+                  onChange={(e) => setStreamPolicy(e.target.value as typeof streamPolicy)}
+                  disabled={pending}
+                >
+                  <option value="">{t("channels.streamPolicyDefault")}</option>
+                  <option value="force_stream">{t("channels.streamPolicyForceStream")}</option>
+                  <option value="force_non_stream">{t("channels.streamPolicyForceNonStream")}</option>
+                </select>
               </Field>
               <Field
                 label={t("channels.proxyUrl")}

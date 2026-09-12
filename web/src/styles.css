@@ -13947,3 +13947,70 @@ table {
 .live-trace-empty {
   padding: 28px 16px;
 }
+/* —— Live trace: client/protocol/chain/retry context —— */
+.live-trace-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.live-trace-client {
+  font-size: 12px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.live-trace-channel-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.live-trace-proto {
+  color: var(--muted);
+  font-size: 11px;
+}
+.live-trace-retry {
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  background: var(--warning-soft);
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  cursor: help;
+  white-space: nowrap;
+}
+.live-trace-chain {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  cursor: help;
+}
+.live-trace-chain-hop {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.live-trace-chain-hop.is-failed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.live-trace-chain-hop.is-ok {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.live-trace-chain-hop.is-running {
+  background: var(--primary-soft);
+  color: var(--primary-active);
+}
+.live-trace-ttft,
+.live-trace-bytes,
+.live-trace-tokens {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

@@ -151,6 +151,12 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
 	}
+	// Live-trace failover chain: finalize this round's entry so the console
+	// shows A✗ → B✗ → C instead of only the current channel.
+	if observer := s.liveTraceObserver.Load(); observer != nil && req.RequestID != "" {
+		ok := result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300
+		(*observer).RoundOutcome(req.RequestID, attempt, candidate.Channel.Name, ok, category)
+	}
 }
 
 // attemptErrorDetail extracts a short excerpt of what the upstream actually

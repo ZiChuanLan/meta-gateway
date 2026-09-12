@@ -378,9 +378,13 @@ func (s *Service) SetAdapterRegistry(registry *adapters.Registry) {
 }
 
 // LiveTraceObserver receives per-round callbacks so the admin live-trace
-// console can show which channel each in-flight request is attacking.
+// console can show which channel each in-flight request is attacking, and how
+// each finished round ended (the failover chain).
 type LiveTraceObserver interface {
 	Attempt(requestID string, round int, channel, protocol, keyName string)
+	// RoundOutcome finalizes a round: ok reports whether the attempt
+	// succeeded, category carries the failure class ("" on success).
+	RoundOutcome(requestID string, round int, channel string, ok bool, category string)
 }
 
 // SetLiveTraceObserver installs the optional observer (nil disables).

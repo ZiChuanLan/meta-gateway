@@ -417,7 +417,14 @@ export const zh: Dict = {
   "channels.modelsSyncBannerAuto":
     "新探测到的模型会自动接入路由；取消勾选可停用单个模型。",
   "channels.modelsSyncBannerManual":
-    "同步只刷新候选清单，勾选后才会接入路由。",
+    "同步只刷新候选清单；勾选接入路由，取消勾选移除绑定（别名保留，可重新勾选重建）。",
+  "channels.modelsCleanup": "清理已停用（{n}）",
+  "channels.modelsCleanupHint":
+    "删除本渠道所有已停用的模型绑定（别名绑定保留）；路由在删除后无任何成员时一并删除。",
+  "channels.modelsCleanupConfirm":
+    "删除 {n} 个已停用的模型绑定？路由在删除后无任何成员时也会一并删除，此操作不可撤销。",
+  "channels.modelsCleanupConfirmLabel": "删除",
+  "channels.modelsCleanupDone": "已清理 {members} 个绑定，删除 {routes} 条空路由。",
   "channels.adoptHint": "勾选即接入该模型；新探测到的模型默认未勾选。",
   "channels.modelAdoptHint": "尚未接入，勾选后开始服务此模型",
   "channels.groupExpand": "展开分组",
@@ -482,6 +489,15 @@ export const zh: Dict = {
     "该上游接受的最大 reasoning_effort。请求超过此档位时在转发前自动降级（不再 failover 重试，例如拒绝 max 的网关）。",
   "channels.payloadRules": "Payload 规则（body 改写）",
   "channels.maxConcurrent": "最大并发",
+  "channels.streamPolicy": "流式策略",
+  "channels.streamPolicyHint":
+    "覆盖客户端的流式选择，仅对 OpenAI 形态的 chat 交换生效（Anthropic 原生透传与 Responses API 不适用）。强制流式：非流式客户端拿到聚合后的完整结果；强制非流式：流式客户端收到一次性合成的 SSE。默认跟随客户端。",
+  "channels.streamPolicyDefault": "跟随客户端",
+  "channels.streamPolicyForceStream": "强制流式（聚合回非流式客户端）",
+  "channels.streamPolicyForceNonStream": "强制非流式（合成 SSE 回流式客户端）",
+  "channels.nonStreamTimeout": "非流式请求超时（秒）",
+  "channels.nonStreamTimeoutHint":
+    "该通道非流式请求的总时长上限（请求+完整响应读取）；0 使用全局默认（5 分钟）。流式请求不受此限制，适合推理输出很慢的通道。",
   "channels.maxConcurrentHint":
     "渠道硬并发上限；超限请求 FIFO 排队等待。0 = 不限。",
   "channels.payloadRulesHint":
@@ -958,7 +974,19 @@ export const zh: Dict = {
   "logsPage.ctaKeys": "创建密钥",
   "logsLive.keyUsed": "下游密钥",
   "logsLive.interrupt": "中止",
-  "logsLive.interrupted": "请求 {id} 已中止",
+  "logsLive.interrupted": "请求 {id} 已中止；上游已断开，若客户端自动重试会以新请求出现",
+  "logsLive.interruptAll": "全部中止",
+  "logsLive.interruptAllHint": "中止当前所有进行中的请求",
+  "logsLive.interruptAllDone": "已发送中止：{ok}/{total} 成功",
+  "logsLive.pause": "暂停",
+  "logsLive.resume": "继续",
+  "logsLive.paused": "已暂停（帧将在继续后合并）",
+  "logsLive.client": "客户端",
+  "logsLive.streaming": "流式",
+  "logsLive.retryOf": "疑似重试",
+  "logsLive.retryOfHint": "中止请求 {id} 后，同一客户端密钥对该模型的再次请求（客户端自动重试）",
+  "logsLive.ttft": "首字延迟（TTFT）：收到上游第一个字节的时间",
+  "logsLive.ttftValue": "首字 {n}ms",
   "logsLive.notInFlight": "请求已不在进行中",
   "logsLive.interruptFailed": "中止请求失败",
   "logsLive.connecting": "连接中",

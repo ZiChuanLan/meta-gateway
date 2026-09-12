@@ -713,4 +713,100 @@ describe("Channels edit dialog sync mode", () => {
 			within(dialog).getByRole("button", { name: "Auto sync" }),
 		).toHaveAttribute("aria-pressed", "false");
 	});
+
+	it("sends model_sync_mode only when the operator changed it in the dialog", async () => {
+		// Regression: the model-management drawer persists the sync mode with
+		// an immediate PATCH; saving the still-open edit dialog used to stomp
+		// that choice with the dialog's stale seeded value.
+		const overview = {
+			channel: {
+				id: 7,
+				name: "manual-channel",
+				base_url: "https://api.example.com",
+				models_csv: "",
+				group_name: "default",
+				priority: 0,
+				weight: 100,
+				status: "enabled",
+				model_sync_mode: "manual",
+				created_at: "",
+				updated_at: "",
+			},
+			credential_kind: "access_token",
+			checkin_enabled: false,
+			has_user_credential: true,
+			has_platform_user_id: true,
+			has_api_key: true,
+			site_usable: true,
+			credential_usable: true,
+			model_count: 0,
+			discovered_model_count: 0,
+			last_probe_at: "2026-08-02T00:00:00Z",
+			last_probe_ok: true,
+			last_latency_ms: 5,
+			route_count: 0,
+			enabled_member_count: 0,
+			cooling_member_count: 0,
+			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
+		};
+		const putBodies: Record<string, unknown>[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = String(input).split("?")[0] ?? "";
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (path === "/admin/channels/7" && method === "PUT") {
+					putBodies.push(JSON.parse(String(init?.body ?? "{}")));
+					// Fail the PUT so the dialog stays open for the second save.
+					return jsonResponse({ error: "keep open" }, 500);
+				}
+				if (path === "/admin/channels/overview" && method === "GET") {
+					return jsonResponse([overview]);
+				}
+				if (path === "/admin/sites" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/plugins/status" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/channels" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/routes/overview" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path.startsWith("/admin/discovery/models")) {
+					return jsonResponse([]);
+				}
+				return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+			}),
+		);
+
+		renderChannels();
+		expect(
+			await screen.findByRole("heading", { name: "Connections" }),
+		).toBeInTheDocument();
+
+		await waitFor(async () => {
+			const trigger = screen.getByRole("button", { name: /more actions/i });
+			trigger.click();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			screen.getByRole("menuitem", { name: /^edit$/i }).click();
+		});
+
+		const dialog = await screen.findByRole("dialog");
+
+		// Save untouched: the drawer's value must survive (field omitted).
+		fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+		await waitFor(() => expect(putBodies.length).toBe(1));
+		expect(putBodies[0]).not.toHaveProperty("model_sync_mode");
+
+		// Change the picker explicitly: now the save carries it.
+		fireEvent.click(within(dialog).getByRole("button", { name: "Auto sync" }));
+		fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+		await waitFor(() => expect(putBodies.length).toBe(2));
+		expect(putBodies[1]).toHaveProperty("model_sync_mode", "auto");
+	});
 });

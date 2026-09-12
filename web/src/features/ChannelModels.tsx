@@ -19,7 +19,14 @@ import type {
 } from "../api/types";
 import { EntityState } from "../components/EntityState";
 import { TelemetryStrip } from "../components/TelemetryStrip";
-import { Button, ErrorState, Page, Panel, StatusBadge } from "../components/ui";
+import {
+  Button,
+  ConfirmDialog,
+  ErrorState,
+  Page,
+  Panel,
+  StatusBadge,
+} from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
@@ -73,10 +80,10 @@ export function ChannelModelsPanel({
     queryFn: ({ signal }) => service.routeOverviews(signal),
   });
 
-	const models = useMemo<DiscoveredModel[]>(
-		() => discovered.data ?? [],
-		[discovered.data],
-	);
+  const models = useMemo<DiscoveredModel[]>(
+    () => discovered.data ?? [],
+    [discovered.data],
+  );
   const [customName, setCustomName] = useState("");
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
   const [query, setQuery] = useState(initialQuery ?? "");
@@ -161,9 +168,42 @@ export function ChannelModelsPanel({
     )?.member;
   };
 
+  // Shared route cleanup after a binding removal: a route only disappears
+  // when the deleted member was its last one.
+  const deleteMemberAndEmptyRoute = async (member: RouteMember) => {
+    await service.deleteMember(member.id);
+    const overview = (routeOverviews.data ?? []).find((e) =>
+      (e.members ?? []).some((c) => c.member.id === member.id),
+    );
+    const remaining = (overview?.members ?? []).filter(
+      (c) => c.member.id !== member.id,
+    );
+    if ((overview?.members ?? []).length > 0 && remaining.length === 0) {
+      await service.deleteRoute(overview!.route.id);
+    }
+  };
+
   const toggleMember = useAdminMutation({
-    mutationFn: (member: RouteMember) =>
-      service.updateMember(member.id, { ...member, enabled: !member.enabled }),
+    mutationFn: async (member: RouteMember) => {
+      // Manual-sync channels: unchecking removes the binding outright —
+      // the checklist IS the routing state, and parking would pile up
+      // disabled rows forever. Plain bindings only: alias mappings are
+      // deliberate configuration, they park like on auto channels
+      // (reconcile respects parked members; a deleted one would just be
+      // re-adopted on the next sync anyway).
+      if (
+        channel?.model_sync_mode === "manual" &&
+        member.enabled &&
+        !member.mapping_json
+      ) {
+        await deleteMemberAndEmptyRoute(member);
+        return;
+      }
+      await service.updateMember(member.id, {
+        ...member,
+        enabled: !member.enabled,
+      });
+    },
     invalidateKeys: [...INVALIDATE],
     pendingIdOf: (member) => member.id,
   });
@@ -195,16 +235,20 @@ export function ChannelModelsPanel({
   const bulkToggle = useAdminMutation({
     mutationFn: async (input: {
       updates: { member: RouteMember; enabled: boolean }[];
+      removals?: RouteMember[];
       adoptions?: string[];
     }) => {
-      await Promise.all(
-        input.updates.map(({ member, enabled }) =>
+      await Promise.all([
+        ...input.updates.map(({ member, enabled }) =>
           service.updateMember(member.id, {
             ...member,
             enabled,
           }),
         ),
-      );
+        ...(input.removals ?? []).map((member) =>
+          deleteMemberAndEmptyRoute(member),
+        ),
+      ]);
       for (const name of input.adoptions ?? []) {
         await adoptModel(name);
       }
@@ -215,6 +259,55 @@ export function ChannelModelsPanel({
   const adopt = useAdminMutation({
     mutationFn: adoptModel,
     invalidateKeys: [...INVALIDATE],
+  });
+
+  // Parked bindings: disabled members on this channel that carry no alias
+  // mapping. Cleanup removes them (and routes that become empty); alias
+  // bindings stay because they are deliberate operator configuration.
+  const parkedMembers = useMemo(() => {
+    const out: { member: RouteMember; routeId: number }[] = [];
+    for (const overview of routeOverviews.data ?? []) {
+      if (overview.route.mapping_json) continue;
+      for (const candidate of overview.members ?? []) {
+        if (candidate.member.channel_id !== channelId) continue;
+        if (candidate.member.enabled) continue;
+        if (candidate.member.mapping_json) continue;
+        out.push({ member: candidate.member, routeId: overview.route.id });
+      }
+    }
+    return out;
+  }, [routeOverviews.data, channelId]);
+
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupNote, setCleanupNote] = useState("");
+  const cleanupParked = useAdminMutation({
+    mutationFn: async () => {
+      const targets = parkedMembers;
+      const deleted = new Set(targets.map((t) => t.member.id));
+      for (const { member } of targets) {
+        await service.deleteMember(member.id);
+      }
+      // A route only disappears when this cleanup emptied it; routes with
+      // any remaining member (other channels, aliases, enabled rows) stay.
+      let routes = 0;
+      for (const routeId of new Set(targets.map((t) => t.routeId))) {
+        const overview = (routeOverviews.data ?? []).find(
+          (e) => e.route.id === routeId,
+        );
+        const remaining = (overview?.members ?? []).filter(
+          (c) => !deleted.has(c.member.id),
+        );
+        if ((overview?.members ?? []).length > 0 && remaining.length === 0) {
+          await service.deleteRoute(routeId);
+          routes += 1;
+        }
+      }
+      return { members: targets.length, routes };
+    },
+    invalidateKeys: [...INVALIDATE],
+    onSuccess: ({ members, routes }) => {
+      setCleanupNote(t("channels.modelsCleanupDone", { members, routes }));
+    },
   });
 
   // Single-field PATCH: the admin API preserves every key the body omits, so
@@ -549,27 +642,26 @@ export function ChannelModelsPanel({
     setSelectedIds(new Set());
   };
 
-
   const runBulk = (enabled: boolean) => {
     // Enable-selected acts as a whitelist: checked rows are enabled (or
     // adopted when not wired yet) and every other wired row is disabled in
     // the same pass, so the saved state matches exactly what the operator
     // checked. Disable-selected only touches wired, checked rows.
-    const updates = selectable
-      .map((item) => {
-        const member = memberFor(item.name);
-        if (!member) return null;
-        const isSelected = selectedIds.has(item.key);
-        const next = enabled
-          ? isSelected
-          : isSelected
-            ? false
-            : member.enabled;
-        return member.enabled === next ? null : { member, enabled: next };
-      })
-      .filter(
-        (u): u is { member: RouteMember; enabled: boolean } => u != null,
-      );
+    const manual = channel?.model_sync_mode === "manual";
+    const updates: { member: RouteMember; enabled: boolean }[] = [];
+    const removals: RouteMember[] = [];
+    selectable.forEach((item) => {
+      const member = memberFor(item.name);
+      if (!member) return;
+      const isSelected = selectedIds.has(item.key);
+      const next = enabled ? isSelected : isSelected ? false : member.enabled;
+      if (member.enabled === next) return;
+      if (!next && manual && !member.mapping_json) {
+        removals.push(member);
+        return;
+      }
+      updates.push({ member, enabled: next });
+    });
     const adoptions = enabled
       ? selectable
           .filter(
@@ -577,8 +669,9 @@ export function ChannelModelsPanel({
           )
           .map((item) => item.name)
       : [];
-    if (updates.length === 0 && adoptions.length === 0) return;
-    bulkToggle.mutate({ updates, adoptions });
+    if (updates.length === 0 && removals.length === 0 && adoptions.length === 0)
+      return;
+    bulkToggle.mutate({ updates, removals, adoptions });
   };
 
   const selectedCount = selectable.filter((item) =>
@@ -690,6 +783,11 @@ export function ChannelModelsPanel({
           {t("channels.adoptHint")}
         </p>
       ) : null}
+      {cleanupNote ? (
+        <p className="detail-section-empty is-quiet" role="status">
+          {cleanupNote}
+        </p>
+      ) : null}
 
       <Panel className="ops-list-panel">
         <div className="models-simple-toolbar">
@@ -756,6 +854,15 @@ export function ChannelModelsPanel({
               {t("channels.customModelAdd")}
             </Button>
           </div>
+          <Button
+            variant="secondary"
+            icon={<Trash2 size={14} />}
+            disabled={cleanupParked.isPending || parkedMembers.length === 0}
+            title={t("channels.modelsCleanupHint")}
+            onClick={() => setCleanupOpen(true)}
+          >
+            {t("channels.modelsCleanup", { n: parkedMembers.length })}
+          </Button>
           {bulkMode ? (
             <label
               className="channel-model-select-all"
@@ -774,7 +881,7 @@ export function ChannelModelsPanel({
             <Button
               variant="secondary"
               className="channel-alias-save"
-               onClick={enterBulkMode}
+              onClick={enterBulkMode}
             >
               {t("channels.modelsBulkSelect")}
             </Button>
@@ -840,148 +947,181 @@ export function ChannelModelsPanel({
               {t("channels.modelsFilterEmpty")}
             </p>
           ) : (
-          <ul className="channel-model-list is-page">
-            {grouped.map(({ group, items }) => {
-              const isCollapsed = !forcedOpen && collapsedGroups.has(group);
-              return (
-                <Fragment key={group}>
-                  <li
-                    className={`channel-model-group-head${isCollapsed ? " is-collapsed" : ""}`}
-                    onClick={() => toggleGroup(group)}
-                    title={isCollapsed ? t("channels.groupExpand") : t("channels.groupCollapse")}
-                  >
-                    <span className="channel-model-group-name">{group}</span>
-                    <span className="channel-model-group-count">
-                      {items.length}
-                    </span>
-                  </li>
-                  {!isCollapsed &&
-                    items.map((item) => {
-                  const discoveredModel = models.find(
-                    (m) => m.model_name === item.name,
-                  );
-                  const isCustom = !discoveredModel;
-                  const custom = isCustom
-                    ? customModels.find((c) => c.name === item.name)
-                    : undefined;
-                  const member = memberFor(item.name);
-                  const enabled = member ? member.enabled : false;
-                  const aliasInfo = aliasFor(item.name);
-                  const alias = aliasInfo?.overview.route.model_pattern ?? "";
-                  const inputValue = discoveredModel
-                    ? (aliasInputs[discoveredModel.id] ?? alias)
-                    : alias;
-                  return (
-                    <li key={item.key} className="channel-model-row is-alias">
-                      {bulkMode ? (
-                        <label
-                          className="channel-model-select"
-                          title={t("channels.modelsSelectAll")}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(item.key)}
-                            disabled={bulkToggle.isPending}
-                            onChange={() => toggleSelect(item.key)}
-                          />
-                        </label>
-                      ) : (
-                        <label
-                          className="channel-model-toggle"
-                          title={
-                            member
-                              ? t("channels.modelEnabledHint")
-                              : t("channels.modelAdoptHint")
-                          }
-                        >
-                          <input
-                            type="checkbox"
-                            checked={enabled}
-                            disabled={
-                              member
-                                ? toggleMember.pendingId === member.id
-                                : adopt.isPending
-                            }
-                            onChange={() => {
-                              if (member) toggleMember.mutate(member);
-                              else adopt.mutate(item.name);
-                            }}
-                          />
-                        </label>
-                      )}
-                      <span className="mono truncate" title={item.name}>
-                        {item.name}
+            <ul className="channel-model-list is-page">
+              {grouped.map(({ group, items }) => {
+                const isCollapsed = !forcedOpen && collapsedGroups.has(group);
+                return (
+                  <Fragment key={group}>
+                    <li
+                      className={`channel-model-group-head${isCollapsed ? " is-collapsed" : ""}`}
+                      onClick={() => toggleGroup(group)}
+                      title={
+                        isCollapsed
+                          ? t("channels.groupExpand")
+                          : t("channels.groupCollapse")
+                      }
+                    >
+                      <span className="channel-model-group-name">{group}</span>
+                      <span className="channel-model-group-count">
+                        {items.length}
                       </span>
-                      <span className="channel-model-alias">
-                        {discoveredModel ? (
-                          <>
-                            <input
-                              value={inputValue}
-                              placeholder={t("channels.aliasPlaceholder")}
-                              onChange={(event) =>
-                                setAliasInputs((previous) => ({
-                                  ...previous,
-                                  [discoveredModel.id]: event.target.value,
-                                }))
-                              }
-                            />
-                            {aliasInfo && inputValue === alias ? (
-                              <button
-                                type="button"
-                                className="icon-button"
-                                aria-label={t("channels.aliasRemove")}
-                                title={t("channels.aliasRemove")}
-                                disabled={removeAlias.isPending}
-                                onClick={() => removeAlias.mutate(item.name)}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            ) : inputValue.trim() !== alias ? (
-                              <Button
-                                variant="secondary"
-                                className="channel-alias-save"
-                                disabled={
-                                  saveAlias.isPending || !inputValue.trim()
-                                }
-                                onClick={() =>
-                                  saveAlias.mutate({
-                                    realModel: item.name,
-                                    alias: inputValue,
-                                  })
-                                }
-                              >
-                                {t("channels.aliasSave")}
-                              </Button>
-                            ) : null}
-                          </>
-                        ) : custom ? (
-                          <Button
-                            variant="quiet"
-                            className="channel-alias-save"
-                            icon={<Trash2 size={13} />}
-                            disabled={removeCustom.isPending}
-                            onClick={() =>
-                              removeCustom.mutate({
-                                routeId: custom.routeId,
-                                memberId: custom.member.id,
-                              })
-                            }
-                          >
-                            {t("channels.customModelRemove")}
-                          </Button>
-                        ) : null}
-                      </span>
-                      <StatusBadge value={enabled ? "enabled" : "disabled"} />
                     </li>
-                  );
-                })}
-                </Fragment>
-              );
-            })}
-          </ul>
+                    {!isCollapsed &&
+                      items.map((item) => {
+                        const discoveredModel = models.find(
+                          (m) => m.model_name === item.name,
+                        );
+                        const isCustom = !discoveredModel;
+                        const custom = isCustom
+                          ? customModels.find((c) => c.name === item.name)
+                          : undefined;
+                        const member = memberFor(item.name);
+                        const enabled = member ? member.enabled : false;
+                        const aliasInfo = aliasFor(item.name);
+                        const alias =
+                          aliasInfo?.overview.route.model_pattern ?? "";
+                        const inputValue = discoveredModel
+                          ? (aliasInputs[discoveredModel.id] ?? alias)
+                          : alias;
+                        return (
+                          <li
+                            key={item.key}
+                            className="channel-model-row is-alias"
+                          >
+                            {bulkMode ? (
+                              <label
+                                className="channel-model-select"
+                                title={t("channels.modelsSelectAll")}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(item.key)}
+                                  disabled={bulkToggle.isPending}
+                                  onChange={() => toggleSelect(item.key)}
+                                />
+                              </label>
+                            ) : (
+                              <label
+                                className="channel-model-toggle"
+                                title={
+                                  member
+                                    ? t("channels.modelEnabledHint")
+                                    : t("channels.modelAdoptHint")
+                                }
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  disabled={
+                                    member
+                                      ? toggleMember.pendingId === member.id
+                                      : adopt.isPending
+                                  }
+                                  onChange={() => {
+                                    if (member) toggleMember.mutate(member);
+                                    else adopt.mutate(item.name);
+                                  }}
+                                />
+                              </label>
+                            )}
+                            <span className="mono truncate" title={item.name}>
+                              {item.name}
+                            </span>
+                            <span className="channel-model-alias">
+                              {discoveredModel ? (
+                                <>
+                                  <input
+                                    value={inputValue}
+                                    placeholder={t("channels.aliasPlaceholder")}
+                                    onChange={(event) =>
+                                      setAliasInputs((previous) => ({
+                                        ...previous,
+                                        [discoveredModel.id]:
+                                          event.target.value,
+                                      }))
+                                    }
+                                  />
+                                  {aliasInfo && inputValue === alias ? (
+                                    <button
+                                      type="button"
+                                      className="icon-button"
+                                      aria-label={t("channels.aliasRemove")}
+                                      title={t("channels.aliasRemove")}
+                                      disabled={removeAlias.isPending}
+                                      onClick={() =>
+                                        removeAlias.mutate(item.name)
+                                      }
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  ) : inputValue.trim() !== alias ? (
+                                    <Button
+                                      variant="secondary"
+                                      className="channel-alias-save"
+                                      disabled={
+                                        saveAlias.isPending ||
+                                        !inputValue.trim()
+                                      }
+                                      onClick={() =>
+                                        saveAlias.mutate({
+                                          realModel: item.name,
+                                          alias: inputValue,
+                                        })
+                                      }
+                                    >
+                                      {t("channels.aliasSave")}
+                                    </Button>
+                                  ) : null}
+                                </>
+                              ) : custom ? (
+                                <Button
+                                  variant="quiet"
+                                  className="channel-alias-save"
+                                  icon={<Trash2 size={13} />}
+                                  disabled={removeCustom.isPending}
+                                  onClick={() =>
+                                    removeCustom.mutate({
+                                      routeId: custom.routeId,
+                                      memberId: custom.member.id,
+                                    })
+                                  }
+                                >
+                                  {t("channels.customModelRemove")}
+                                </Button>
+                              ) : null}
+                            </span>
+                            <StatusBadge
+                              value={enabled ? "enabled" : "disabled"}
+                            />
+                          </li>
+                        );
+                      })}
+                  </Fragment>
+                );
+              })}
+            </ul>
           )}
         </EntityState>
       </Panel>
+      {cleanupOpen ? (
+        <ConfirmDialog
+          title={t("channels.modelsCleanup", { n: parkedMembers.length })}
+          confirmLabel={t("channels.modelsCleanupConfirmLabel")}
+          message={t("channels.modelsCleanupConfirm", {
+            n: parkedMembers.length,
+          })}
+          onClose={() => {
+            if (!cleanupParked.isPending) setCleanupOpen(false);
+          }}
+          onConfirm={() =>
+            cleanupParked.mutate(undefined, {
+              onSuccess: () => setCleanupOpen(false),
+            })
+          }
+          pending={cleanupParked.isPending}
+          error={cleanupParked.error}
+        />
+      ) : null}
     </>
   );
 }

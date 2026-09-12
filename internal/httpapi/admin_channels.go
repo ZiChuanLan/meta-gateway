@@ -234,25 +234,27 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	// Every field is a pointer so omission preserves the stored value while an
 	// explicit zero/empty value can still clear fields that support it.
 	var patch struct {
-		SiteID             *int64  `json:"site_id"`
-		CredentialID       *int64  `json:"credential_id"`
-		Name               *string `json:"name"`
-		BaseURL            *string `json:"base_url"`
-		ModelsCSV          *string `json:"models_csv"`
-		GroupName          *string `json:"group_name"`
-		Priority           *int    `json:"priority"`
-		Weight             *int    `json:"weight"`
-		Status             *string `json:"status"`
-		TypeHint           *string `json:"type_hint"`
-		MaxReasoningEffort *string `json:"max_reasoning_effort"`
-		PayloadRules       *string `json:"payload_rules"`
-		MaxConcurrent      *int    `json:"max_concurrent"`
-		ProxyURL           *string `json:"proxy_url"`
-		HeaderOverride     *string `json:"header_override"`
-		SystemPrompt       *string `json:"system_prompt"`
-		RetryConfig        *string `json:"retry_config"`
-		ModelSyncMode      *string `json:"model_sync_mode"`
-		StableFirst        *bool   `json:"stable_first"`
+		SiteID                  *int64  `json:"site_id"`
+		CredentialID            *int64  `json:"credential_id"`
+		Name                    *string `json:"name"`
+		BaseURL                 *string `json:"base_url"`
+		ModelsCSV               *string `json:"models_csv"`
+		GroupName               *string `json:"group_name"`
+		Priority                *int    `json:"priority"`
+		Weight                  *int    `json:"weight"`
+		Status                  *string `json:"status"`
+		TypeHint                *string `json:"type_hint"`
+		MaxReasoningEffort      *string `json:"max_reasoning_effort"`
+		PayloadRules            *string `json:"payload_rules"`
+		MaxConcurrent           *int    `json:"max_concurrent"`
+		NonStreamTimeoutSeconds *int    `json:"non_stream_timeout_seconds"`
+		StreamPolicy            *string `json:"stream_policy"`
+		ProxyURL                *string `json:"proxy_url"`
+		HeaderOverride          *string `json:"header_override"`
+		SystemPrompt            *string `json:"system_prompt"`
+		RetryConfig             *string `json:"retry_config"`
+		ModelSyncMode           *string `json:"model_sync_mode"`
+		StableFirst             *bool   `json:"stable_first"`
 	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -363,6 +365,25 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		}
 		ch.ModelSyncMode = mode
 	}
+	// NonStreamTimeoutSeconds: per-channel cap for non-streaming upstream
+	// attempts; 0 preserves the global default (5 minutes).
+	if patch.NonStreamTimeoutSeconds != nil {
+		if *patch.NonStreamTimeoutSeconds < 0 || *patch.NonStreamTimeoutSeconds > 86400 {
+			writeError(w, http.StatusBadRequest, "non_stream_timeout_seconds must be 0..86400")
+			return
+		}
+		ch.NonStreamTimeoutSeconds = *patch.NonStreamTimeoutSeconds
+	}
+	// StreamPolicy: only the known values are accepted; a missing field
+	// preserves the stored policy.
+	if patch.StreamPolicy != nil {
+		policy := strings.ToLower(strings.TrimSpace(*patch.StreamPolicy))
+		if domain.NormalizeStreamPolicy(policy) != policy {
+			writeError(w, http.StatusBadRequest, "stream_policy must be empty, force_stream or force_non_stream")
+			return
+		}
+		ch.StreamPolicy = policy
+	}
 	// StableFirst: a missing field preserves the current grayscale state.
 	if patch.StableFirst != nil {
 		ch.StableFirst = *patch.StableFirst
@@ -441,6 +462,12 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	}
 	if ch.MaxConcurrent < 0 {
 		return errors.New("max_concurrent must be non-negative")
+	}
+	if ch.NonStreamTimeoutSeconds < 0 {
+		return errors.New("non_stream_timeout_seconds must be non-negative")
+	}
+	if domain.NormalizeStreamPolicy(ch.StreamPolicy) != ch.StreamPolicy {
+		return errors.New("invalid stream_policy")
 	}
 	if ch.Status != domain.StatusEnabled && ch.Status != domain.StatusDisabled {
 		return errors.New("invalid channel status")
