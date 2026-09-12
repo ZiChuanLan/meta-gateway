@@ -4,6 +4,18 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.7.1] — 2026-09-12
+
+### Added
+
+- Pricing gains its most precise layer: **per route member** (this channel
+  serving this model — the same model is often priced differently per
+  upstream). The member edit dialog carries the three unit prices; relay
+  billing resolves from the most specific layer that has one: **成员价 →
+  模型默认价（元数据）→ 密钥价**, with cache-read tokens billing at the
+  member's cache price when set. Member prices survive full-member updates
+  (toggles, bulk edits) because they live on the member row itself.
+
 ## [v2.7.0] — 2026-09-12
 
 ### Added
