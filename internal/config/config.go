@@ -136,10 +136,10 @@ type Config struct {
 	// route impact after that many days (0 = off by default).
 	ModelChangeRetentionDays  int
 	ModelChangeAutoIgnoreDays int
-	BackupRetentionCount          int
-	BackupDir                     string
-	PluginsDir                    string
-	PluginCatalogURL              string
+	BackupRetentionCount      int
+	BackupDir                 string
+	PluginsDir                string
+	PluginCatalogURL          string
 	// PluginMarketURLs appends extra plugin market registry URLs
 	// (comma-separated; the built-in official registry is always included).
 	PluginMarketURLs []string

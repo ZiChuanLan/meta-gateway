@@ -23,14 +23,14 @@ type BalanceAccount interface {
 // the balance-history, decision-snapshot and health-history tables on the
 // same cadence.
 type BalanceSweeper struct {
-	account                    BalanceAccount
-	db                         *store.DB
-	balanceRetentionDays       int
-	decisionRetentionDays      int
-	healthRetentionDays        int
-	modelChangeRetentionDays   int
-	modelChangeAutoIgnoreDays  int
-	logger                     *slog.Logger
+	account                   BalanceAccount
+	db                        *store.DB
+	balanceRetentionDays      int
+	decisionRetentionDays     int
+	healthRetentionDays       int
+	modelChangeRetentionDays  int
+	modelChangeAutoIgnoreDays int
+	logger                    *slog.Logger
 
 	lifecycleMu sync.Mutex
 	started     bool
