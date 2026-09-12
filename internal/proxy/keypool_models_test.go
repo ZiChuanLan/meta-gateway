@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -80,9 +79,16 @@ func TestKeyPoolServesModelFromDiscoveredSet(t *testing.T) {
 	if len(keys) != 2 {
 		t.Fatalf("shared pool = %v, want 2 keys", keys)
 	}
-	// unknown model: nobody lists it → no key usable.
-	if _, err = service.resolveAPIKeyPool(*fromDB, "ghost"); !errors.Is(err, ErrCredential) {
-		t.Fatalf("ghost pool err = %v, want ErrCredential", err)
+	// unknown model: nobody's discovered set claims it — renamed/aliased or
+	// custom names never appear in a key's recorded list. The pool fails open
+	// with both keys (a wrong-group key draws a missable upstream 404) instead
+	// of hard-failing with a bogus credential error.
+	keys, err = service.resolveAPIKeyPool(*fromDB, "ghost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("ghost pool = %v, want both keys (fail-open)", keys)
 	}
 }
 
@@ -212,6 +218,107 @@ func TestRelayUsesKeyThatServesModel(t *testing.T) {
 		t.Fatalf("upstream auth = %v, want one codex key", recorder.headers)
 	}
 	_ = memberID
+}
+
+// End-to-end regression: an alias (or unified) name rides a member whose
+// mapping points at the real upstream model. Key-pool selection must resolve
+// credentials against that effective name — filtering on the public alias
+// starved the pool into a bogus "credential unavailable" 502 even though
+// model listing worked fine.
+func TestRelayResolvesKeysForAliasedModel(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, _ := crypto.New("alias-key-test")
+	codexSecret, _ := enc.Encrypt([]byte("sk-codex-secret"))
+	geminiSecret, _ := enc.Encrypt([]byte("sk-gemini-secret"))
+	siteID, _ := db.Site.Create(&domain.Site{Name: "site", Status: domain.StatusEnabled})
+	codexID, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(codexSecret), Status: domain.StatusEnabled})
+	geminiID, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(geminiSecret), Status: domain.StatusEnabled})
+	channelID, err := db.Channel.Create(&domain.Channel{SiteID: &siteID, Name: "channel", BaseURL: "https://upstream.example", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Alias route: public "codex-alias" → real "codex-latest" on the member.
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "codex-alias", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: channelID, Priority: 10, Weight: 100,
+		Enabled: true, MappingJSON: `{"real":"codex-latest"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := db.DiscoveredModel.Reconcile(context.Background(), store.ReconcileInput{
+		ChannelID:        channelID,
+		Models:           []string{"codex-latest", "gemini-flash"},
+		CredentialModels: map[int64][]string{codexID: {"codex-latest"}, geminiID: {"gemini-flash"}},
+		CheckedAt:        time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The gemini key cannot serve the request (upstream would 404); only the
+	// codex key answers.
+	relay := &keyAwareRelay{
+		codes: map[string]int{
+			"Bearer sk-codex-secret":  200,
+			"Bearer sk-gemini-secret": 404,
+		},
+	}
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, firstRandom{})
+	service := New(selector, relay, db, enc, 2, time.Minute)
+	service.SetKeyPoolRotation(true)
+	service.now = func() time.Time { return now }
+
+	result := service.ChatCompletions(context.Background(), Request{
+		RequestID: "alias-key-routing",
+		Model:     "codex-alias",
+		Body:      []byte(`{"model":"codex-alias","messages":[{"role":"user","content":"hi"}]}`),
+	})
+	if result.Err != nil || result.StatusCode != 200 {
+		t.Fatalf("aliased relay failed: %+v", result)
+	}
+	defer result.Body.Close()
+	if len(relay.headers) == 0 || relay.headers[0] != "Bearer sk-codex-secret" {
+		t.Fatalf("upstream auth = %v, want the codex key first", relay.headers)
+	}
+}
+
+// keyAwareRelay answers per-key: 200 for keys in codes with 200, the mapped
+// status otherwise. Records every Authorization header.
+type keyAwareRelay struct {
+	codes   map[string]int
+	headers []string
+}
+
+func (r *keyAwareRelay) answer(header string) *relay.Result {
+	code, ok := r.codes[header]
+	if !ok {
+		code = 404
+	}
+	if code == 200 {
+		r.headers = append(r.headers, header)
+	}
+	return response(code, `{"ok":true}`)
+}
+
+func (r *keyAwareRelay) ChatCompletionsContext(_ context.Context, _, apiKey string, _ []byte, _ bool) *relay.Result {
+	return r.answer("Bearer " + apiKey)
+}
+
+func (r *keyAwareRelay) ForwardContext(_ context.Context, _, _, _ string, _ []byte) *relay.Result {
+	return response(200, `{"ok":true}`)
+}
+
+func (r *keyAwareRelay) ForwardWithHeaders(_ context.Context, _, _ string, h http.Header, _ []byte) *relay.Result {
+	return r.answer(h.Get("Authorization"))
 }
 
 // keyRecordingRelay captures the Authorization header of every upstream call.

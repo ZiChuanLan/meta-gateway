@@ -576,7 +576,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			return result, meta
 		}
 		// Aggregate all enabled site API keys; failover keys before leaving the channel.
-		apiKeys, err := s.resolveAPIKeyPool(candidate.Channel, req.Model)
+		// Key-pool selection keys on the EFFECTIVE upstream name: a key's
+		// recorded model set contains real names, so an alias/unified/renamed
+		// request must resolve credentials against what the member maps to —
+		// filtering on the public name starves the pool into a bogus
+		// "credential unavailable".
+		apiKeys, err := s.resolveAPIKeyPool(candidate.Channel, effectiveModel)
 		if err != nil || len(apiKeys) == 0 {
 			result = &relay.Result{Err: ErrCredential}
 			category = "no_credential"
@@ -876,7 +881,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				// request, then the request is replayed from the first key in the
 				// refreshed pool. A successful replay is logged as refresh_retry.
 				if !refreshed && !localAdapterFailure && result.Err == nil && result.StatusCode == http.StatusUnauthorized && s.credentialRefresher != nil {
-					if s.refreshCredentialAndReplay(ctx, &candidate, &apiKeys, req.Model) {
+					if s.refreshCredentialAndReplay(ctx, &candidate, &apiKeys, effectiveModel) {
 						if result.Body != nil {
 							_ = result.Body.Close()
 							result.Body = nil

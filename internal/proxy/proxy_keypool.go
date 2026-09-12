@@ -17,7 +17,31 @@ import (
 // model set acts as the allowlist: a key that never listed the model is skipped,
 // so a group-scoped key is only used for members of its group. With key-pool
 // rotation disabled, only the bound key (or the first pool key) is used.
+//
+// The discovered-set hint is best effort: when NOTHING claims the model (a
+// renamed/aliased/custom name no key ever listed), the pool fails open with
+// the model-blind selection — the explicit models_csv allowlists still apply.
+// A wrong-group key just draws a missable 404 upstream and failover moves on;
+// a hard credential error would misreport a naming problem as an auth one.
 func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]string, error) {
+	keys, err := s.filterAPIKeyPool(channel, model)
+	if len(keys) > 0 {
+		return keys, nil
+	}
+	if model != "" {
+		// Nothing claimed the model: fail open with the model-blind pool.
+		keys, err = s.filterAPIKeyPool(channel, "")
+		if len(keys) > 0 {
+			return keys, nil
+		}
+	}
+	if err == nil {
+		err = ErrCredential
+	}
+	return nil, err
+}
+
+func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]string, error) {
 	seen := make(map[int64]struct{})
 	var keys []string
 	// Per-credential discovered model sets for the channel's site. nil means
