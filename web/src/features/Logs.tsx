@@ -4,7 +4,6 @@ import { Fragment, useMemo, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuditPanel, DiscoveryPanel } from "./ops";
 import { api } from "../api/client";
-import type { ProxyLog } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -23,7 +22,7 @@ import {
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import { formatCost, logCostUsd } from "../lib/format";
+import { formatCost } from "../lib/format";
 import { positiveId } from "../lib/positiveId"
 import { LiveTracePanel } from "./LiveTracePanel";
 
@@ -183,42 +182,6 @@ function ProxyLogsPanel() {
     }
     return map;
   }, [channels.data]);
-
-  // Downstream-key pricing: per-1k prompt/completion unit prices set on the
-  // key that issued the request. Used to render a per-log cost column.
-  const keys = useQuery({
-    queryKey: ["keys"],
-    queryFn: ({ signal }) => service.keys(signal),
-  });
-	const priceMap = useMemo(() => {
-		const map = new Map<
-			number,
-			{ prompt: number; completion: number; cache: number }
-		>();
-		for (const k of keys.data ?? []) {
-			if (k.price_prompt_per_1k || k.price_completion_per_1k || k.price_cache_per_1k) {
-				map.set(k.id, {
-					prompt: k.price_prompt_per_1k ?? 0,
-					completion: k.price_completion_per_1k ?? 0,
-					cache: k.price_cache_per_1k ?? 0,
-				});
-			}
-		}
-		return map;
-	}, [keys.data]);
-	const logCost = (log: ProxyLog): number | null => {
-		if (log.downstream_key_id == null) return null;
-		const price = priceMap.get(log.downstream_key_id);
-		if (!price) return null;
-		return logCostUsd({
-			promptTokens: log.prompt_tokens ?? 0,
-			completionTokens: log.completion_tokens ?? 0,
-			cacheReadTokens: log.cache_read_tokens ?? 0,
-			pricePromptPer1k: price.prompt,
-			priceCompletionPer1k: price.completion,
-			priceCachePer1k: price.cache,
-		});
-	};
 
   const rows = logs.data ?? [];
   const pagination = useClientPagination(
@@ -573,7 +536,7 @@ function ProxyLogsPanel() {
 											: "—"}
 									</td>
 									<td className="log-cost">
-										{logCost(log) != null ? formatCost(logCost(log)!) : "—"}
+										{log.cost != null ? formatCost(log.cost) : "—"}
 									</td>
 									<td>{log.client_family || "—"}</td>
 									</tr>

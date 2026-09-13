@@ -6836,6 +6836,9 @@ td.actions {
   flex: 1 1 auto;
   min-width: 0;
 }
+.credential-key-add-row input.credential-key-name-input {
+  flex: 0 1 180px;
+}
 .credential-key-add-row .button {
   flex: 0 0 auto;
   white-space: nowrap;

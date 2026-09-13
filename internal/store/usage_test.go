@@ -360,7 +360,6 @@ func TestUsageCostPersistedAndSummarized(t *testing.T) {
 	db := openTestDB(t)
 	key := &domain.DownstreamKey{
 		TokenHash: "hash-cost-1", Name: "billed", Enabled: true, Scopes: "relay",
-		PricePromptPer1k: 0.01, PriceCompletionPer1k: 0.02,
 	}
 	keyID, err := db.DownstreamKey.Create(key)
 	if err != nil {
@@ -418,6 +417,51 @@ func TestUsageCostPersistedAndSummarized(t *testing.T) {
 	}
 	if ratio, _ := db.ModelRatio.GetRatio("gpt-billed"); ratio != 1.0 {
 		t.Fatalf("ratio after delete=%v want 1.0", ratio)
+	}
+}
+
+func TestUsageCostAggregations(t *testing.T) {
+	db := openTestDB(t)
+	keyA, err := db.DownstreamKey.Create(&domain.DownstreamKey{TokenHash: "hash-agg-a", Name: "a", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyB, err := db.DownstreamKey.Create(&domain.DownstreamKey{TokenHash: "hash-agg-b", Name: "b", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := []domain.UsageRecord{
+		{RequestID: "r1", DownstreamKeyID: keyA, ChannelID: 1, Model: "m", TotalTokens: 10, PromptTokens: 10, Status: 200, Cost: 0.5},
+		{RequestID: "r2", DownstreamKeyID: keyA, ChannelID: 1, Model: "m", TotalTokens: 10, PromptTokens: 10, Status: 200, Cost: 0.25},
+		{RequestID: "r3", DownstreamKeyID: keyB, ChannelID: 1, Model: "m", TotalTokens: 10, PromptTokens: 10, Status: 200, Cost: 2},
+	}
+	for i := range records {
+		if err := db.RecordRelayUsage(&records[i], records[i].DownstreamKeyID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	byKey, err := db.Usage.CostByKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byKey[keyA] != 0.75 || byKey[keyB] != 2 {
+		t.Fatalf("cost by key = %+v, want %d→0.75 %d→2", byKey, keyA, keyB)
+	}
+
+	byRequest, err := db.Usage.CostByRequestIDs([]string{"r1", "r3", "missing", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byRequest["r1"] != 0.5 || byRequest["r3"] != 2 {
+		t.Fatalf("cost by request = %+v, want r1→0.5 r3→2", byRequest)
+	}
+	if _, ok := byRequest["missing"]; ok {
+		t.Fatalf("missing request must be absent, got %+v", byRequest)
+	}
+
+	if empty, err := db.Usage.CostByRequestIDs(nil); err != nil || len(empty) != 0 {
+		t.Fatalf("empty request ids = %+v err=%v", empty, err)
 	}
 }
 

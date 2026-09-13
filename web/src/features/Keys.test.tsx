@@ -276,7 +276,7 @@ describe("Keys page", () => {
 							scopes: "relay",
 							quota_used_tokens: 0,
 							quota_total_tokens: 0,
-							estimated_cost: 0,
+							cost: 0,
 							has_token: true,
 							created_at: "2026-07-17T00:00:00Z",
 						},

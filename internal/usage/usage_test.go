@@ -139,13 +139,6 @@ func TestTeeStream(t *testing.T) {
 	}
 }
 
-func TestEstimateCost(t *testing.T) {
-	cost := EstimateCost(1000, 500, 0.01, 0.02)
-	if cost < 0.0199 || cost > 0.0201 {
-		t.Fatalf("cost=%v", cost)
-	}
-}
-
 func TestTeeStreamChunkedCRLF(t *testing.T) {
 	// SSE with CRLF framing, delivered one byte at a time so every line
 	// boundary falls inside the trailing-partial-line buffer (no newline ever

@@ -156,16 +156,14 @@ export interface DownstreamKey {
   scopes?: string;
   quota_total_tokens?: number;
   quota_used_tokens?: number;
-  price_prompt_per_1k?: number;
-  price_completion_per_1k?: number;
-  price_cache_per_1k?: number;
   model_allowlist?: string;
   model_denylist?: string;
   expires_at?: string;
   allowed_ips?: string;
   group_name?: string;
   route_group_name?: string;
-  estimated_cost?: number;
+  /** Persisted billing total for this key (sum of usage_records.cost). */
+  cost?: number;
   has_token?: boolean;
   created_at: string;
 }
@@ -227,6 +225,8 @@ export interface ProxyLog {
   session_key?: string;
   upstream_request_id?: string;
   created_at: string;
+  /** Persisted billing amount, joined from usage_records by request_id. */
+  cost?: number;
 }
 export interface DiscoveredModel {
   id: number;

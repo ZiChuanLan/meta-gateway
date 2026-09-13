@@ -661,7 +661,7 @@ export function Channels() {
   });
 
   const addApiKeyCredential = useAdminMutation({
-    mutationFn: async (input: { siteId: number; secret: string }) => {
+    mutationFn: async (input: { siteId: number; secret: string; name?: string }) => {
       const secret = input.secret.trim();
       if (!secret) {
         throw new Error("api key is required");
@@ -671,7 +671,10 @@ export function Channels() {
         kind: "api_key",
         secret,
         status: "enabled",
-        meta_json: JSON.stringify({ name: "manual", group: "default" }),
+        meta_json: JSON.stringify({
+          name: input.name?.trim() || "manual",
+          group: "default",
+        }),
       });
     },
     invalidateKeys: [...INVALIDATE, ["credentials"]],
@@ -1901,10 +1904,10 @@ export function Channels() {
             updateKeyModels.mutate({ id, modelsCsv })
           }
           onDeleteKey={(id) => deleteApiKeyCredential.mutate(id)}
-          onAddApiKey={(secret) => {
+          onAddApiKey={(secret, name) => {
             const siteId = keysChannel.site_id;
             if (!siteId) return;
-            addApiKeyCredential.mutate({ siteId, secret });
+            addApiKeyCredential.mutate({ siteId, secret, name });
           }}
           onSyncKeys={() => {
             syncKeys.reset();

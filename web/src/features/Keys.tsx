@@ -285,9 +285,6 @@ export function Keys() {
       scopes?: string;
       token?: string;
       quota_total_tokens?: number;
-      price_prompt_per_1k?: number;
-      price_completion_per_1k?: number;
-      price_cache_per_1k?: number;
       model_allowlist?: string;
       model_denylist?: string;
       expires_at?: string;
@@ -308,9 +305,6 @@ export function Keys() {
         enabled?: boolean;
         scopes?: string;
         quota_total_tokens?: number;
-        price_prompt_per_1k?: number;
-        price_completion_per_1k?: number;
-        price_cache_per_1k?: number;
         model_allowlist?: string;
         model_denylist?: string;
         expires_at?: string;
@@ -521,7 +515,7 @@ export function Keys() {
                         ) : null}
                       </div>
                     </td>
-                    <td>{formatCost(k.estimated_cost)}</td>
+                    <td>{formatCost(k.cost)}</td>
                     <td>
                       <StatusBadge value={k.enabled} />
                     </td>
@@ -609,9 +603,6 @@ export function Keys() {
                 name: v.name,
                 scopes: v.scopes,
                 quota_total_tokens: v.quota_total_tokens,
-                price_prompt_per_1k: v.price_prompt_per_1k,
-                price_completion_per_1k: v.price_completion_per_1k,
-                price_cache_per_1k: v.price_cache_per_1k,
                 model_allowlist: v.model_allowlist,
                 model_denylist: v.model_denylist,
                 expires_at: v.expires_at ?? "",
@@ -707,9 +698,6 @@ type KeyFormValues = {
   scopes?: string;
   token?: string;
   quota_total_tokens?: number;
-  price_prompt_per_1k?: number;
-  price_completion_per_1k?: number;
-  price_cache_per_1k?: number;
   model_allowlist?: string;
   model_denylist?: string;
   expires_at?: string;
@@ -759,27 +747,6 @@ function KeyDialog({
         : "",
     ),
   );
-  const [pricePrompt, setPricePrompt] = useState(
-    String(
-      initial?.price_prompt_per_1k && initial.price_prompt_per_1k > 0
-        ? initial.price_prompt_per_1k
-        : "",
-    ),
-  );
-  const [priceCompletion, setPriceCompletion] = useState(
-    String(
-      initial?.price_completion_per_1k && initial.price_completion_per_1k > 0
-        ? initial.price_completion_per_1k
-        : "",
-    ),
-  );
-  const [priceCache, setPriceCache] = useState(
-    String(
-      initial?.price_cache_per_1k && initial.price_cache_per_1k > 0
-        ? initial.price_cache_per_1k
-        : "",
-    ),
-  );
   const splitModels = (raw?: string) =>
     (raw ?? "")
       .split(",")
@@ -805,12 +772,7 @@ function KeyDialog({
   // Pre-open a section when the stored value is non-trivial (edit mode).
   useEffect(() => {
     if (mode !== "edit") return;
-    if (
-      (initial?.quota_total_tokens ?? 0) > 0 ||
-      (initial?.price_prompt_per_1k ?? 0) > 0 ||
-      (initial?.price_completion_per_1k ?? 0) > 0 ||
-      (initial?.price_cache_per_1k ?? 0) > 0
-    ) {
+    if ((initial?.quota_total_tokens ?? 0) > 0) {
       setOpenBilling(true);
     }
     if ((initial?.model_allowlist ?? "").trim() || (initial?.model_denylist ?? "").trim()) {
@@ -870,9 +832,6 @@ function KeyDialog({
                     ? trimmedCustom
                     : undefined,
                 quota_total_tokens: parseOptionalNumber(quotaTotal),
-                price_prompt_per_1k: parseOptionalNumber(pricePrompt),
-                price_completion_per_1k: parseOptionalNumber(priceCompletion),
-                price_cache_per_1k: parseOptionalNumber(priceCache),
                 model_allowlist: allowlist.join(","),
                 model_denylist: denylist.join(","),
                 expires_at: expiresAt.trim() || undefined,
@@ -927,38 +886,6 @@ function KeyDialog({
                 placeholder="0 = unlimited"
               />
             </Field>
-            <div className="split is-tight">
-              <Field label={t("keys.pricePrompt")} hint={t("keys.priceHint")}>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.0001"
-                  value={pricePrompt}
-                  onChange={(e) => setPricePrompt(e.target.value)}
-                  placeholder="0"
-                />
-              </Field>
-              <Field label={t("keys.priceCompletion")}>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.0001"
-                  value={priceCompletion}
-                  onChange={(e) => setPriceCompletion(e.target.value)}
-                  placeholder="0"
-                />
-              </Field>
-              <Field label={t("keys.priceCache")} hint={t("keys.priceCacheHint")}>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.0001"
-                  value={priceCache}
-                  onChange={(e) => setPriceCache(e.target.value)}
-                  placeholder="0"
-                />
-              </Field>
-            </div>
           </div>
         ) : null}
       </div>

@@ -297,15 +297,3 @@ func (t *Tee) consumeSSELine(line string) Tokens {
 	}
 	return ExtractFromSSELine(payload)
 }
-
-// EstimateCost returns approximate cost using per-1k token prices.
-func EstimateCost(promptTokens, completionTokens int, pricePromptPer1k, priceCompletionPer1k float64) float64 {
-	cost := 0.0
-	if pricePromptPer1k > 0 && promptTokens > 0 {
-		cost += (float64(promptTokens) / 1000.0) * pricePromptPer1k
-	}
-	if priceCompletionPer1k > 0 && completionTokens > 0 {
-		cost += (float64(completionTokens) / 1000.0) * priceCompletionPer1k
-	}
-	return cost
-}

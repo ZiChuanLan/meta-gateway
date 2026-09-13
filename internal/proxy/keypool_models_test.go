@@ -351,8 +351,9 @@ func buildPoolService(db *store.DB, enc *crypto.Encrypter) (*Service, error) {
 	return service, nil
 }
 
-// Per-model self-set prices take precedence over the downstream key's unit
-// prices; models without a priced metadata row fall back to the key price.
+// Billing resolves prices from the most specific layer: the route member that
+// actually served the request, then the model's metadata prices. A model
+// priced at neither layer bills at zero.
 func TestBillingCostModelPricePrecedence(t *testing.T) {
 	db, err := store.Open(t.TempDir())
 	if err != nil {
@@ -361,10 +362,8 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	enc, _ := crypto.New("billing-test")
 	keyID, err := db.DownstreamKey.Create(&domain.DownstreamKey{
-		Name:                 "client",
-		Enabled:              true,
-		PricePromptPer1k:     10,
-		PriceCompletionPer1k: 10,
+		Name:    "client",
+		Enabled: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -374,11 +373,10 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No metadata row: the key price bills everything (legacy formula lumps
-	// cache tokens into the prompt).
+	// No price at any layer: the request bills at zero.
 	req := Request{Model: "m1", DownstreamKeyID: keyID}
-	if cost := service.billingCost(req, usage.Tokens{PromptTokens: 1000, CompletionTokens: 1000}); cost != 20 {
-		t.Fatalf("key-price cost = %v, want 20", cost)
+	if cost := service.billingCost(req, usage.Tokens{PromptTokens: 1000, CompletionTokens: 1000}); cost != 0 {
+		t.Fatalf("unpriced cost = %v, want 0", cost)
 	}
 
 	// Priced metadata: prompt 2, completion 4, cache-read 1 per 1k.
@@ -394,15 +392,14 @@ func TestBillingCostModelPricePrecedence(t *testing.T) {
 		t.Fatalf("model-price cost = %v, want 7", cost)
 	}
 
-	// A model without a priced row keeps the key price.
+	// A model with no priced row still bills at zero.
 	other := Request{Model: "m2", DownstreamKeyID: keyID}
-	if cost := service.billingCost(other, usage.Tokens{CompletionTokens: 1000}); cost != 10 {
-		t.Fatalf("fallback cost = %v, want 10", cost)
+	if cost := service.billingCost(other, usage.Tokens{CompletionTokens: 1000}); cost != 0 {
+		t.Fatalf("unpriced model cost = %v, want 0", cost)
 	}
 
 	// Member layer: the route member binding this channel to m1 prices the
-	// model 5/7/0.5 — most specific, beats both the model metadata and the
-	// key price.
+	// model 5/7/0.5 — most specific, beats the model metadata.
 	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "m1", Enabled: true})
 	if err != nil {
 		t.Fatal(err)

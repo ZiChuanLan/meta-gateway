@@ -464,8 +464,7 @@ type RouteMember struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 	// Optional self-set unit prices per 1k tokens for THIS channel serving
 	// this model — the most specific billing layer (overrides the model's
-	// metadata prices, which override the downstream key's prices). 0 = fall
-	// through to the next layer.
+	// metadata prices). 0 = fall through to the next layer.
 	PricePromptPer1k     float64 `json:"price_prompt_per_1k,omitempty"`
 	PriceCompletionPer1k float64 `json:"price_completion_per_1k,omitempty"`
 	PriceCachePer1k      float64 `json:"price_cache_per_1k,omitempty"`
@@ -490,12 +489,6 @@ type DownstreamKey struct {
 	QuotaTotalTokens int64 `json:"quota_total_tokens"`
 	// QuotaUsedTokens is the cumulative total tokens charged to this key.
 	QuotaUsedTokens int64 `json:"quota_used_tokens"`
-	// Optional display prices (currency-agnostic units per 1k tokens).
-	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
-	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
-	// PriceCachePer1k is the unit price for cache-read tokens. 0 = fall back
-	// to the prompt price (cache-read is billed as prompt).
-	PriceCachePer1k float64 `json:"price_cache_per_1k"`
 	// ModelAllowlist, when non-empty, restricts this key to the listed models.
 	// ModelDenylist blocks the listed models even if they are allowlisted.
 	// Both are comma-separated model names.
@@ -579,6 +572,11 @@ type ProxyLog struct {
 	// serving channel, enabling cross-referencing with the upstream's logs.
 	UpstreamRequestID string    `json:"upstream_request_id,omitempty"`
 	CreatedAt         time.Time `json:"created_at"`
+	// Cost is the persisted billing amount for this request, joined from
+	// usage_records by request_id. It is populated only in admin list
+	// responses; the proxy_logs table carries no cost column and inserts
+	// never write this field.
+	Cost *float64 `json:"cost,omitempty"`
 }
 
 // UsageRecord is one metered relay completion used for billing summaries.

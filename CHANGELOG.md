@@ -4,6 +4,35 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.7.3] — 2026-09-13
+
+### Added
+
+- **上游 API Key 自定义名称**：渠道凭证池的添加框此前只收 `sk-`，手工添加的密钥一律
+  落名为 `manual`（列表里 `metapi` / `cc` 等名字全靠上游同步带回）。现在添加行多了
+  一个可选的名称输入框，随密钥一起写入凭证 `meta_json.name`，故障转移池里的手工密钥
+  从此可读。
+- **引导页创建 Key 补全**：第三步创建成功后直接展示一次性明文 token（带复制按钮），
+  并提供「再创建一个」；名称输入框不再在创建后被锁死，可连续建多个不同名字的 Key。
+
+### Changed
+
+- **计价模型简化，删除下游密钥级单价**：结算优先级从「路由成员价 → 模型元数据价 →
+  密钥价」三层收敛为两层。模型在两层都没设价时按 0 计（免费），不再回落到密钥上的
+  全局单价——两层「按模型计价」语义一致，密钥价是游离的全局兜底，最易引起误解。
+  `downstream_keys` 的三个价格列保留在库但停止读写，可随时回滚。
+- **成本展示一律读真实账单**：密钥页「成本」列改为按密钥聚合的 `usage_records.cost`
+  真实入账合计（字段 `estimated_cost` → `cost`，列头「估算费用」→「累计费用」）；
+  日志页「成本」列改为按 `request_id` 关联每笔请求的真实结算金额。修复了原先日志页
+  在前端用密钥单价重算、与实际入账口径不一致的隐性偏差。
+- **连接徽标「已同步模型」→「已路由模型」**：该徽标统计的是已采纳进路由的模型数，
+  同步发现的模型数另有独立展示，原文案与语义不符。
+
+### Fixed
+
+- 清理死代码 `usage.EstimateCost`；计费与密钥相关测试改为双层语义并新增成本聚合
+  （按密钥 / 按请求）回归用例。
+
 ## [v2.7.2] — 2026-09-13
 
 ### Fixed

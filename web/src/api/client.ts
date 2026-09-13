@@ -371,9 +371,6 @@ export const api = (client: ApiClient) => ({
     scopes?: string;
     token?: string;
     quota_total_tokens?: number;
-    price_prompt_per_1k?: number;
-    price_completion_per_1k?: number;
-    price_cache_per_1k?: number;
     model_allowlist?: string;
     model_denylist?: string;
     expires_at?: string;
@@ -386,9 +383,6 @@ export const api = (client: ApiClient) => ({
       enabled?: boolean;
       scopes?: string;
       quota_total_tokens?: number;
-      price_prompt_per_1k?: number;
-      price_completion_per_1k?: number;
-      price_cache_per_1k?: number;
       model_allowlist?: string;
       model_denylist?: string;
       expires_at?: string;

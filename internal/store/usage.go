@@ -158,6 +158,79 @@ func (s *UsageStore) SummarySince(downstreamKeyID *int64, since *time.Time) (dom
 	return summary, nil
 }
 
+// CostByKey returns the persisted billing total per downstream key (all time).
+// Only keys with usage appear in the map. It replaces the retired key-level
+// unit prices: the authoritative per-key spend is what the relay actually
+// recorded, not a price×token estimate.
+func (s *UsageStore) CostByKey() (map[int64]float64, error) {
+	rows, err := s.db.Query(`SELECT downstream_key_id, COALESCE(SUM(cost), 0) FROM usage_records WHERE downstream_key_id > 0 GROUP BY downstream_key_id`)
+	if err != nil {
+		return nil, fmt.Errorf("usage cost by key: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64]float64)
+	for rows.Next() {
+		var id int64
+		var cost float64
+		if err := rows.Scan(&id, &cost); err != nil {
+			return nil, fmt.Errorf("usage cost by key scan: %w", err)
+		}
+		out[id] = cost
+	}
+	return out, rows.Err()
+}
+
+// CostByRequestIDs returns the persisted billing amount for each request id.
+// Missing ids are absent from the map. Batched to stay well within SQLite's
+// bound-parameter limit when a page of logs is annotated in one call.
+func (s *UsageStore) CostByRequestIDs(ids []string) (map[string]float64, error) {
+	out := make(map[string]float64)
+	filtered := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if strings.TrimSpace(id) != "" {
+			filtered = append(filtered, id)
+		}
+	}
+	if len(filtered) == 0 {
+		return out, nil
+	}
+	const chunkSize = 400
+	for start := 0; start < len(filtered); start += chunkSize {
+		end := start + chunkSize
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		batch := filtered[start:end]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			args[i] = id
+		}
+		rows, err := s.db.Query(
+			`SELECT request_id, COALESCE(SUM(cost), 0) FROM usage_records WHERE request_id IN (`+placeholders+`) GROUP BY request_id`,
+			args...,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("usage cost by request: %w", err)
+		}
+		for rows.Next() {
+			var requestID string
+			var cost float64
+			if err := rows.Scan(&requestID, &cost); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("usage cost by request scan: %w", err)
+			}
+			out[requestID] = cost
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, fmt.Errorf("usage cost by request rows: %w", err)
+		}
+	}
+	return out, nil
+}
+
 // RecordRelayUsage atomically persists one relay's usage accounting: the
 // usage_records row, the downstream-key quota increment, and the token
 // backfill on the newest proxy_log row for the request. A single transaction

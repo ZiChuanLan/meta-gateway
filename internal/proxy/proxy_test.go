@@ -1040,29 +1040,27 @@ func TestIsRetryableForChannelUsesPrecompiledRegex(t *testing.T) {
 func TestBillingCostFormula(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusOK, `{"ok":true}`)}}
 	service, db, _, _ := setupProxy(t, upstream)
-	// Key with unit prices; model ratio 3.0.
-	key := &domain.DownstreamKey{
-		TokenHash: "hash-formula-1", Name: "billed", Enabled: true, Scopes: "relay",
-		PricePromptPer1k: 1.0, PriceCompletionPer1k: 2.0,
-	}
-	keyID, err := db.DownstreamKey.Create(key)
-	if err != nil {
+	// Model metadata prices: prompt 1.0, completion 2.0 per 1k (no dedicated
+	// cache price → cache-read bills at the prompt rate). Model ratio 3.0.
+	if err := db.ModelMetadata.Upsert(&domain.ModelMetadata{
+		ModelName: "ratio-model", PricePromptPer1k: 1.0, PriceCompletionPer1k: 2.0,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.ModelRatio.SetRatio("ratio-model", 3.0); err != nil {
 		t.Fatal(err)
 	}
-	req := Request{DownstreamKeyID: keyID, Model: "ratio-model"}
+	req := Request{Model: "ratio-model"}
 	tokens := usage.Tokens{PromptTokens: 1000, CompletionTokens: 250, CacheReadTokens: 100}
-	// prompt = 1000+100 = 1100 → 1.1 * 1.0; completion = 250 → 0.25 * 2.0;
-	// (1.1 + 0.5) * 3.0 = 4.8
+	// prompt = 1000 + 0 cache-creation → 1.0 * 1.0; completion = 250 → 0.25 * 2.0;
+	// cache-read 100 → 0.1 * 1.0 (prompt rate); (1.0 + 0.5 + 0.1) * 3.0 = 4.8
 	cost := service.billingCost(req, tokens)
 	if cost < 4.79 || cost > 4.81 {
 		t.Fatalf("cost=%v want ~4.8", cost)
 	}
-	// Unknown model → ratio 1.0, no key → 0 price → 0 cost.
+	// Unknown model → no price at any layer → 0 cost.
 	if cost := service.billingCost(Request{}, usage.Tokens{PromptTokens: 100}); cost != 0 {
-		t.Fatalf("no-key cost=%v want 0", cost)
+		t.Fatalf("unpriced cost=%v want 0", cost)
 	}
 }
 

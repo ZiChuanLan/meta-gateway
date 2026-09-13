@@ -611,6 +611,7 @@ export const en: Dict = {
   "channels.apiKeyRevealWarning":
     "This is the live upstream credential. Anyone with console access can copy it — treat it like a password.",
   "channels.apiKeyAdd": "API key",
+  "channels.apiKeyNamePlaceholder": "Name (optional)",
   "channels.apiKeyAddSave": "Add",
   "channels.apiKeyAddHint": "Added keys join the site pool immediately.",
   "channels.apiKeyPlaceholder": "sk-…",
@@ -731,7 +732,7 @@ export const en: Dict = {
   "channels.userCookiePlaceholder": "Paste Cookie header value",
   "channels.badge.missingKey": "Needs API key",
   "channels.badge.hasKey": "API key",
-  "channels.badge.models": "Models",
+  "channels.badge.models": "Routed models",
   "channels.pathHint":
     "User token: account and check-in. API key: model sync and relay failover.",
   "channels.defaultRouting": "Connection defaults",
@@ -1009,7 +1010,7 @@ export const en: Dict = {
   "keys.stat.usedTokens": "Used tokens",
   "keys.stat.requests": "Requests",
   "keys.quotaCol": "Quota",
-  "keys.costCol": "Est. cost",
+  "keys.costCol": "Cost",
   "keys.edit": "Edit quota",
   "keys.editDialog": "Edit token quota",
   "keys.editHint":
@@ -1036,13 +1037,6 @@ export const en: Dict = {
   "keys.scope.moderations": "Moderations — /v1/moderations",
   "keys.quotaTotalHint":
     "0 means unlimited. When set, /v1 returns 402 after used tokens reach the limit.",
-  "keys.pricePrompt": "Prompt $/1k",
-  "keys.priceCompletion": "Completion $/1k",
-  "keys.priceCache": "Cache-read $/1k",
-  "keys.priceCacheHint":
-    "Unit price for cache-read tokens. 0 = billed at the prompt price (default).",
-  "keys.priceHint":
-    "Optional display prices for estimated cost (any currency units).",
   "keys.resetUsed": "Reset used tokens to 0",
   "keys.redemption": "Redemption codes",
   "keys.redemptionTitle": "Redemption codes",
@@ -2176,6 +2170,7 @@ export const en: Dict = {
   "wizard.keyName": "Key name",
   "wizard.createKey": "Create key",
   "wizard.keyCreated": "Key created — view it any time on the Keys page.",
+  "wizard.createAnother": "Create another",
   "wizard.doneTitle": "All set",
   "wizard.doneDesc": "Point caller base_url at the address below and call with your key.",
   "wizard.next": "Next",

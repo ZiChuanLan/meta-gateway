@@ -8,9 +8,8 @@ import (
 )
 
 // The regression tests here pin field-level round-trips through the admin
-// API. The price_cache_per_1k column was write-only for a whole feature
-// cycle precisely because no test asserted it survived create → list →
-// partial update.
+// API. A column can be write-only for a whole feature cycle unless a test
+// asserts it survives create → list → partial update.
 
 func keyByID(t *testing.T, base string, id float64) map[string]any {
 	t.Helper()
@@ -31,56 +30,6 @@ func keyByID(t *testing.T, base string, id float64) map[string]any {
 	}
 	t.Fatalf("key %v not found in list", id)
 	return nil
-}
-
-func TestDownstreamKeyPriceCacheRoundTrip(t *testing.T) {
-	srv, _, _ := revealTestServer(t)
-	base := srv.URL
-
-	status, created, _ := adminCall(t, base, http.MethodPost, "/admin/downstream-keys", map[string]any{
-		"name":                    "cache-priced",
-		"quota_total_tokens":      1000,
-		"price_prompt_per_1k":     0.1,
-		"price_completion_per_1k": 0.2,
-		"price_cache_per_1k":      0.05,
-	})
-	if status != http.StatusCreated {
-		t.Fatalf("create status = %d", status)
-	}
-	if got, _ := created["price_cache_per_1k"].(float64); got != 0.05 {
-		t.Fatalf("create response price_cache = %v, want 0.05", created["price_cache_per_1k"])
-	}
-	id, _ := created["id"].(float64)
-
-	// The list endpoint must read the stored value (the column was never
-	// selected before, so it always reported 0).
-	if entry := keyByID(t, base, id); entry["price_cache_per_1k"].(float64) != 0.05 {
-		t.Fatalf("listed price_cache = %v, want 0.05", entry["price_cache_per_1k"])
-	}
-
-	// A partial update that omits every price field must not zero the
-	// stored cache price (the update path used to merge onto a row whose
-	// cache price always read as 0).
-	status, _, _ = adminCall(t, base, http.MethodPut, fmt.Sprintf("/admin/downstream-keys/%d", int64(id)), map[string]any{
-		"name": "renamed",
-	})
-	if status != http.StatusOK {
-		t.Fatalf("partial update status = %d", status)
-	}
-	if entry := keyByID(t, base, id); entry["price_cache_per_1k"].(float64) != 0.05 {
-		t.Fatalf("price_cache after partial update = %v, want 0.05 (must survive)", entry["price_cache_per_1k"])
-	}
-
-	// Explicit updates still apply.
-	status, _, _ = adminCall(t, base, http.MethodPut, fmt.Sprintf("/admin/downstream-keys/%d", int64(id)), map[string]any{
-		"price_cache_per_1k": 0.5,
-	})
-	if status != http.StatusOK {
-		t.Fatalf("price update status = %d", status)
-	}
-	if entry := keyByID(t, base, id); entry["price_cache_per_1k"].(float64) != 0.5 {
-		t.Fatalf("price_cache after explicit update = %v, want 0.5", entry["price_cache_per_1k"])
-	}
 }
 
 func TestCreateKeyResponseEchoesExpiryAndIPs(t *testing.T) {
@@ -161,18 +110,6 @@ func TestDownstreamKeyRouteGroupRoundTrip(t *testing.T) {
 	}
 	if entry := keyByID(t, base, id); routeGroupOf(entry) != "" {
 		t.Fatalf("route_group_name after clear = %v, want empty (default routing)", entry["route_group_name"])
-	}
-}
-
-func TestCreateDownstreamKeyRejectsNegativeCachePrice(t *testing.T) {
-	srv, _, _ := revealTestServer(t)
-
-	status, _, _ := adminCall(t, srv.URL, http.MethodPost, "/admin/downstream-keys", map[string]any{
-		"name":               "negative",
-		"price_cache_per_1k": -0.1,
-	})
-	if status != http.StatusBadRequest {
-		t.Fatalf("negative cache price status = %d, want 400", status)
 	}
 }
 

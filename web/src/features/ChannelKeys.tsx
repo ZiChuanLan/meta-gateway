@@ -38,13 +38,14 @@ export function ChannelKeysDrawer({
   onToggleKey: (id: number, enabled: boolean) => void;
   onUpdateKeyModels: (id: number, modelsCsv: string) => void;
   onDeleteKey: (id: number) => void;
-  onAddApiKey: (secret: string) => void;
+  onAddApiKey: (secret: string, name?: string) => void;
   onSyncKeys: () => void;
   onClose: () => void;
 }) {
   const { client } = useSession();
   const { t } = useI18n();
   const service = api(client!);
+  const [apiKeyName, setApiKeyName] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [keyModelsDraft, setKeyModelsDraft] = useState<
     Record<number, string>
@@ -81,6 +82,15 @@ export function ChannelKeysDrawer({
       else next.add(id);
       return next;
     });
+  };
+
+  const submitAdd = () => {
+    const secret = apiKey.trim();
+    if (!secret || pending || addApiKeyPending) return;
+    // First key becomes the relay key; later keys just join the pool.
+    onAddApiKey(secret, apiKeyName.trim() || undefined);
+    setApiKey("");
+    setApiKeyName("");
   };
 
   return (
@@ -274,6 +284,19 @@ export function ChannelKeysDrawer({
         >
           <div className="credential-key-add-row">
             <input
+              className="credential-key-name-input"
+              value={apiKeyName}
+              onChange={(e) => setApiKeyName(e.target.value)}
+              placeholder={t("channels.apiKeyNamePlaceholder")}
+              disabled={pending || Boolean(addApiKeyPending)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submitAdd();
+                }
+              }}
+            />
+            <input
               type="password"
               autoComplete="new-password"
               value={apiKey}
@@ -283,10 +306,7 @@ export function ChannelKeysDrawer({
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  const secret = apiKey.trim();
-                  if (!secret || pending || addApiKeyPending) return;
-                  onAddApiKey(secret);
-                  setApiKey("");
+                  submitAdd();
                 }
               }}
             />
@@ -295,13 +315,7 @@ export function ChannelKeysDrawer({
               disabled={
                 pending || Boolean(addApiKeyPending) || !apiKey.trim()
               }
-              onClick={() => {
-                const secret = apiKey.trim();
-                if (!secret) return;
-                // First key becomes the relay key; later keys just join the pool.
-                onAddApiKey(secret);
-                setApiKey("");
-              }}
+              onClick={submitAdd}
             >
               {addApiKeyPending
                 ? t("common.loading")

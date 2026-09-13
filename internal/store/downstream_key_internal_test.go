@@ -127,11 +127,9 @@ func TestUsageCacheSyncIsAbsoluteOrderedAndResetSafe(t *testing.T) {
 	}
 }
 
-// TestDownstreamKeyPriceCachePer1kPersists pins the full store round-trip for
-// the cache-token unit price: it was write-only for a whole feature cycle
-// (never selected, never inserted) so listings always showed 0 and partial
-// updates silently wiped the stored value.
-func TestDownstreamKeyPriceCachePer1kPersists(t *testing.T) {
+// TestDownstreamKeyFieldsPersistAcrossReadPaths pins the store round-trip for
+// the mutable key fields across every read path (by id, by hash, list).
+func TestDownstreamKeyFieldsPersistAcrossReadPaths(t *testing.T) {
 	dir := t.TempDir()
 	db, err := Open(dir)
 	if err != nil {
@@ -140,13 +138,13 @@ func TestDownstreamKeyPriceCachePer1kPersists(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	key := &domain.DownstreamKey{
-		TokenHash:            "hash-price-cache",
-		Name:                 "priced",
-		Enabled:              true,
-		Scopes:               "relay",
-		PricePromptPer1k:     0.1,
-		PriceCompletionPer1k: 0.2,
-		PriceCachePer1k:      0.05,
+		TokenHash:        "hash-roundtrip",
+		Name:             "roundtrip",
+		Enabled:          true,
+		Scopes:           "relay",
+		QuotaTotalTokens: 5000,
+		ModelAllowlist:   "gpt-4o,claude-3",
+		RouteGroupName:   "vip",
 	}
 	id, err := db.DownstreamKey.Create(key)
 	if err != nil {
@@ -158,7 +156,7 @@ func TestDownstreamKeyPriceCachePer1kPersists(t *testing.T) {
 		case "by-id":
 			got, err = db.DownstreamKey.GetByID(id)
 		case "by-hash":
-			got, err = db.DownstreamKey.GetByHash("hash-price-cache")
+			got, err = db.DownstreamKey.GetByHash("hash-roundtrip")
 		case "list":
 			keys, listErr := db.DownstreamKey.List()
 			if listErr != nil {
@@ -173,8 +171,8 @@ func TestDownstreamKeyPriceCachePer1kPersists(t *testing.T) {
 		if err != nil || got == nil {
 			t.Fatalf("%s read: %+v err=%v", read, got, err)
 		}
-		if got.PriceCachePer1k != 0.05 {
-			t.Fatalf("%s read price_cache = %v, want 0.05", read, got.PriceCachePer1k)
+		if got.QuotaTotalTokens != 5000 || got.ModelAllowlist != "gpt-4o,claude-3" || got.RouteGroupName != "vip" {
+			t.Fatalf("%s read = %+v, want quota 5000 / allowlist gpt-4o,claude-3 / route group vip", read, got)
 		}
 	}
 }

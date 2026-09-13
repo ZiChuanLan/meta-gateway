@@ -263,11 +263,11 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 // billingCost computes the persisted cost for a usage record. Prices resolve
 // from the most specific layer that has one: the route member that actually
 // served the request (upstreams price the same model differently), then the
-// model's metadata prices, then the downstream key's unit prices. The result
-// is multiplied by the model's billing ratio. Cache-read tokens are billed at
-// the cache price when one is set, else at the prompt rate. Failures are
-// never fatal; a price lookup error degrades to 0 cost rather than dropping
-// the record.
+// model's metadata prices. A request whose model has no price at either layer
+// bills at zero. The result is multiplied by the model's billing ratio.
+// Cache-read tokens are billed at the cache price when one is set, else at the
+// prompt rate. Failures are never fatal; a price lookup error degrades to 0
+// cost rather than dropping the record.
 func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 	if s.db == nil {
 		return 0
@@ -280,10 +280,11 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 			log.Printf("proxy: billing ratio model=%s: %v", req.Model, err)
 		}
 	}
-	// Model self-set prices take precedence: metadata is keyed by the
-	// requested model name and carries its own per-1k unit prices (with a
-	// dedicated cache-read price). Without a priced row the legacy per-key
-	// prices apply, and cache-read/creation tokens bill at the prompt rate.
+	// Route-member prices are the most specific layer: they belong to the
+	// channel that served the request. Without them the model's metadata
+	// prices apply (keyed by the requested model name, with a dedicated
+	// cache-read price). Cache-read/creation tokens bill at the prompt rate
+	// when no dedicated cache price is set.
 	pricePrompt, priceCompletion, priceCache := 0.0, 0.0, 0.0
 	modelPriced := false
 	if req.MemberID > 0 && s.db.RouteMember != nil {
@@ -300,11 +301,6 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 			priceCompletion = meta.PriceCompletionPer1k
 			priceCache = meta.PriceCachePer1k
 			modelPriced = true
-		}
-	}
-	if !modelPriced && req.DownstreamKeyID > 0 && s.db.DownstreamKey != nil {
-		if key, err := s.db.DownstreamKey.GetByID(req.DownstreamKeyID); err == nil && key != nil {
-			pricePrompt, priceCompletion = key.PricePromptPer1k, key.PriceCompletionPer1k
 		}
 	}
 	if modelPriced {

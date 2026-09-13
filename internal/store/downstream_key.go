@@ -110,9 +110,6 @@ func scanDownstreamKey(scanner interface {
 		&r.Scopes,
 		&r.QuotaTotalTokens,
 		&r.QuotaUsedTokens,
-		&r.PricePromptPer1k,
-		&r.PriceCompletionPer1k,
-		&r.PriceCachePer1k,
 		&r.ModelAllowlist,
 		&r.ModelDenylist,
 		&r.ExpiresAt,
@@ -128,7 +125,7 @@ func scanDownstreamKey(scanner interface {
 	return nil
 }
 
-const downstreamKeySelect = `SELECT id, token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name, created_at FROM downstream_keys`
+const downstreamKeySelect = `SELECT id, token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name, created_at FROM downstream_keys`
 
 func (s *DownstreamKeyStore) List() ([]domain.DownstreamKey, error) {
 	rows, err := s.db.Query(downstreamKeySelect + ` ORDER BY id`)
@@ -198,8 +195,8 @@ func (s *DownstreamKeyStore) GetByHash(hash string) (*domain.DownstreamKey, erro
 
 func (s *DownstreamKeyStore) Create(k *domain.DownstreamKey) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO downstream_keys (token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		k.TokenHash, string(k.TokenEnc), k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.PriceCachePer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName),
+		`INSERT INTO downstream_keys (token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		k.TokenHash, string(k.TokenEnc), k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("downstream key create: %w", err)
@@ -224,8 +221,8 @@ func (s *DownstreamKeyStore) Delete(id int64) error {
 
 func (s *DownstreamKeyStore) Update(k *domain.DownstreamKey) error {
 	_, err := s.db.Exec(
-		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, price_prompt_per_1k=?, price_completion_per_1k=?, price_cache_per_1k=?, model_allowlist=?, model_denylist=?, expires_at=?, allowed_ips=?, group_name=?, route_group_name=? WHERE id=?`,
-		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.PricePromptPer1k, k.PriceCompletionPer1k, k.PriceCachePer1k, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName), k.ID,
+		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, model_allowlist=?, model_denylist=?, expires_at=?, allowed_ips=?, group_name=?, route_group_name=? WHERE id=?`,
+		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName), k.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("downstream key update: %w", err)

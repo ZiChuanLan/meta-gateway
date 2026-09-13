@@ -3,6 +3,7 @@ package httpapi
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -280,6 +281,26 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	// Annotate each row with its persisted billing amount. proxy_logs carries
+	// no cost column; the amount lives on usage_records, joined by request_id.
+	if h.db.Usage != nil && len(logs) > 0 {
+		requestIDs := make([]string, 0, len(logs))
+		for _, entry := range logs {
+			if entry.RequestID != "" {
+				requestIDs = append(requestIDs, entry.RequestID)
+			}
+		}
+		if costs, costErr := h.db.Usage.CostByRequestIDs(requestIDs); costErr == nil {
+			for i := range logs {
+				if cost, ok := costs[logs[i].RequestID]; ok {
+					value := cost
+					logs[i].Cost = &value
+				}
+			}
+		} else {
+			log.Printf("admin: proxy log costs: %v", costErr)
+		}
 	}
 	writeJSON(w, http.StatusOK, logs)
 }

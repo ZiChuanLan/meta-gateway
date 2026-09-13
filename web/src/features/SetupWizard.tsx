@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Copy } from "lucide-react";
 import { ApiError, api } from "../api/client";
-import type { ImportResult } from "../api/types";
+import type { CreatedDownstreamKey, ImportResult } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { Button, Field } from "../components/ui";
@@ -52,7 +52,8 @@ export function SetupWizard() {
 	});
 	const [webdavTested, setWebdavTested] = useState(false);
 	const [keyName, setKeyName] = useState("default");
-	const [keyCreated, setKeyCreated] = useState(false);
+	const [createdKey, setCreatedKey] = useState<CreatedDownstreamKey | null>(null);
+	const [keyCopied, setKeyCopied] = useState(false);
 	const [error, setError] = useState("");
 	const [copied, setCopied] = useState(false);
 
@@ -205,17 +206,29 @@ export function SetupWizard() {
 	const webdavReady = webdav.url.trim().length > 0 && webdav.username.trim().length > 0 && webdav.password.length > 0;
 
 	const createKey = useMutation({
-		mutationFn: async () => {
-			await s.createKey({ name: keyName.trim() || "default" });
-		},
-		onSuccess: () => {
-			setKeyCreated(true);
+		mutationFn: async (name: string) => s.createKey({ name }),
+		onSuccess: (created) => {
+			// Keep the one-time plaintext on screen with a fresh name field, so
+			// several keys can be created back to back without leaving the wizard.
+			setCreatedKey(created);
+			setKeyName("");
 			setError("");
 			queryClient.invalidateQueries({ queryKey: ["keys"] });
 		},
 		onError: (err) =>
 			setError(err instanceof Error ? err.message : String(err)),
 	});
+
+	const copyKey = async () => {
+		if (!createdKey) return;
+		try {
+			await navigator.clipboard.writeText(createdKey.token);
+			setKeyCopied(true);
+			setTimeout(() => setKeyCopied(false), 1500);
+		} catch {
+			// Clipboard unavailable; the token stays selectable.
+		}
+	};
 
 	const curl = `curl ${window.location.origin}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
@@ -610,17 +623,36 @@ export function SetupWizard() {
 							<input
 								value={keyName}
 								onChange={(e) => setKeyName(e.target.value)}
-								disabled={keyCreated}
+								placeholder={t("keys.namePlaceholder")}
 							/>
 						</Field>
-						{keyCreated ? (
-							<p className="setup-wizard-ok">
-								<Check size={13} /> {t("wizard.keyCreated")}
-							</p>
+						{createdKey ? (
+							<>
+								<p className="setup-wizard-ok">
+									<Check size={13} /> {t("wizard.keyCreated")}
+								</p>
+								<div className="setup-wizard-curl">
+									<div className="setup-wizard-curl-head">
+										<span>Bearer</span>
+										<button type="button" onClick={copyKey}>
+											<Copy size={12} />
+											{keyCopied ? t("setup.copied") : t("setup.copy")}
+										</button>
+									</div>
+									<code>{createdKey.token}</code>
+								</div>
+								<Button
+									variant="secondary"
+									disabled={createKey.isPending}
+									onClick={() => setCreatedKey(null)}
+								>
+									{t("wizard.createAnother")}
+								</Button>
+							</>
 						) : (
 							<Button
 								disabled={createKey.isPending}
-								onClick={() => createKey.mutate()}
+								onClick={() => createKey.mutate(keyName.trim() || "default")}
 							>
 								{t("wizard.createKey")}
 							</Button>
@@ -636,7 +668,7 @@ export function SetupWizard() {
 									setStep(3);
 								}}
 							>
-								{keyCreated ? t("wizard.next") : t("wizard.later")}
+								{createdKey ? t("wizard.next") : t("wizard.later")}
 							</Button>
 						</div>
 					</section>
