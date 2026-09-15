@@ -166,10 +166,18 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 			zero(plaintext)
 			zero(cookiePlain)
 			status, category, message := normalizeAdapterError(resolveErr)
-			if category == "" || category == "invalid_payload" {
-				category = "user_id_unavailable"
-				message = "could not resolve platform user id"
+			// Any failure while resolving the user id means check-in cannot run,
+			// whatever the underlying upstream replied. Reporting the raw probe
+			// status (e.g. "upstream_status") hides the actionable fact: the user
+			// id is missing and must be supplied. Only cancellation/timeouts keep
+			// their own category so the UI can distinguish a retryable hang.
+			switch category {
+			case "canceled", "deadline_exceeded":
+			default:
 				status = StatusFailed
+				message = "could not resolve platform user id — enter it in the connection's " +
+					"User ID field (" + message + ")"
+				category = "user_id_unavailable"
 			}
 			result, persistErr := s.persist(started, site.ID, credential.ID, source, status, category, message, "")
 			if persistErr != nil {
@@ -396,7 +404,7 @@ func platformUserID(raw string) (int64, error) {
 	decoder := json.NewDecoder(bytes.NewBufferString(raw))
 	decoder.UseNumber()
 	var metadata struct {
-		PlatformUserID *json.Number `json:"platform_user_id"`
+		PlatformUserID *any `json:"platform_user_id"`
 	}
 	if err := decoder.Decode(&metadata); err != nil {
 		return 0, err
@@ -407,8 +415,8 @@ func platformUserID(raw string) (int64, error) {
 	if metadata.PlatformUserID == nil {
 		return 0, nil
 	}
-	id, err := metadata.PlatformUserID.Int64()
-	if err != nil || id <= 0 {
+	id, ok := adapters.CoercePlatformUserID(*metadata.PlatformUserID)
+	if !ok {
 		return 0, errors.New("platform_user_id must be a positive integer")
 	}
 	return id, nil

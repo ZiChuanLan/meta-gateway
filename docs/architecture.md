@@ -188,6 +188,14 @@ discovery and routing. New API and One API session/access-token credentials use
 `POST /api/user/checkin`; New API can also receive a positive
 `platform_user_id` from credential metadata as `New-Api-User`.
 
+The numeric user id is resolved in this order: credential `meta_json` first
+(`{"platform_user_id":1544}`, written by an AAH import or typed into the
+connection editor's **User ID** field), then `/api/user/self` when empty. The
+admin API accepts it as a number or a quoted string and canonicalizes it to a
+bare JSON number. When neither source yields one, the run is recorded as
+`user_id_unavailable` (not `upstream_status`) so the operator is pointed at the
+field to fill in rather than at the upstream's probe reply.
+
 Generic external check-in sites (platform `external-checkin`, e.g. 薄荷公益站
 https://up.x666.me) are cookie-authenticated and not New-API-family: the
 adapter POSTs (or GETs) a configurable `checkin_path` (default

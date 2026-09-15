@@ -1421,7 +1421,7 @@ func platformUserID(raw string) (int64, error) {
 	decoder := json.NewDecoder(bytes.NewBufferString(raw))
 	decoder.UseNumber()
 	var metadata struct {
-		PlatformUserID *json.Number `json:"platform_user_id"`
+		PlatformUserID *any `json:"platform_user_id"`
 	}
 	if err := decoder.Decode(&metadata); err != nil {
 		return 0, err
@@ -1429,8 +1429,8 @@ func platformUserID(raw string) (int64, error) {
 	if metadata.PlatformUserID == nil {
 		return 0, nil
 	}
-	id, err := metadata.PlatformUserID.Int64()
-	if err != nil || id <= 0 {
+	id, ok := adapters.CoercePlatformUserID(*metadata.PlatformUserID)
+	if !ok {
 		return 0, errors.New("platform_user_id must be a positive integer")
 	}
 	return id, nil

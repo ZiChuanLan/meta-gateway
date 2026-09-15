@@ -116,13 +116,18 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "status must be enabled or disabled")
 		return
 	}
+	metaJSON, metaErr := normalizeCredentialMeta(req.MetaJSON)
+	if metaErr != nil {
+		writeError(w, http.StatusBadRequest, metaErr.Error())
+		return
+	}
 	cred := &domain.Credential{
 		SiteID:    siteID,
 		Kind:      req.Kind,
 		AuthMode:  authMode,
 		SecretEnc: []byte(encSecret),
 		CookieEnc: []byte(encCookie),
-		MetaJSON:  req.MetaJSON,
+		MetaJSON:  metaJSON,
 		Status:    req.Status,
 		ModelsCSV: req.ModelsCSV,
 	}
@@ -201,7 +206,12 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		existing.Status = req.Status
 	}
 	if req.MetaJSON != "" {
-		existing.MetaJSON = req.MetaJSON
+		metaJSON, metaErr := normalizeCredentialMeta(req.MetaJSON)
+		if metaErr != nil {
+			writeError(w, http.StatusBadRequest, metaErr.Error())
+			return
+		}
+		existing.MetaJSON = metaJSON
 	}
 	if req.ModelsCSV != nil {
 		existing.ModelsCSV = strings.TrimSpace(*req.ModelsCSV)

@@ -58,6 +58,7 @@ import {
   type CreateConnectionInput,
 } from "./channels/helpers";
 import { positiveId } from "../lib/positiveId";
+import { parseCredentialMeta, withCredentialMetaValue } from "./credentialMeta";
 export { channelReadiness } from "./channelHealth";
 
 const INVALIDATE = [
@@ -449,6 +450,7 @@ export function Channels() {
         has_secret: boolean;
         has_cookie?: boolean;
         checkin_enabled: boolean;
+        meta_json?: string;
       };
       relayCredential?: {
         id: number;
@@ -475,6 +477,8 @@ export function Channels() {
       stable_first?: boolean;
       userToken: string;
       userCookie: string;
+      /** New-API family numeric user id (`New-Api-User`). Empty = unknown. */
+      userID: string;
       apiKey: string;
     }) => {
       const name = input.name.trim() || input.channel.name;
@@ -509,68 +513,80 @@ export function Channels() {
       const apiKey = input.apiKey.trim();
       const userCred = input.userCredential;
       const relayCred = input.relayCredential;
-      if (userToken && input.site) {
-        if (userCred?.id) {
-          const kind =
-            userCred.kind === "session" || userCred.kind === "access_token"
+      // The New-API numeric user id lives in credential meta_json
+      // ({"platform_user_id":1544}). An empty field means "unknown": the
+      // gateway keeps resolving it from /api/user/self at check-in time, so
+      // only write when the operator typed something or cleared a stored id.
+      const userIDRaw = input.userID.trim();
+      const storedUserID = parseCredentialMeta(
+        userCred?.meta_json,
+      ).platform_user_id;
+      const userID = /^[0-9]+$/.test(userIDRaw) ? Number(userIDRaw) : undefined;
+      const metaChanged = userID !== storedUserID;
+      // The mask means "keep the stored value". An empty field means "remove"
+      // only when something was actually stored; otherwise every save of an
+      // untouched dialog would fire a pointless credential write.
+      const cookieChanged =
+        !userCookieKept && (userCookie !== "" || Boolean(userCred?.has_cookie));
+      const secretChanged =
+        !userTokenKept && (userToken !== "" || Boolean(userCred?.has_secret));
+      // Both auth materials were explicitly cleared → remove the credential.
+      const clearCredential =
+        Boolean(userCred?.id) &&
+        cookieChanged &&
+        secretChanged &&
+        !userToken &&
+        !userCookie;
+      /** Only the fields that actually changed are sent. */
+      const credentialPatch = (): Record<string, unknown> => {
+        const patch: Record<string, unknown> = {};
+        if (secretChanged) {
+          patch.kind =
+            userCred?.kind === "session" || userCred?.kind === "access_token"
               ? userCred.kind
               : "access_token";
-          await service.updateCredential(userCred.id, {
-            kind,
-            secret: userToken,
-            ...(userCookieKept
-              ? {}
-              : userCookie
-                ? { cookie: userCookie }
-                : { clear_cookie: true }),
-            auth_mode: userAuthMode,
-            status: "enabled",
-          });
-        } else {
+          if (userToken) patch.secret = userToken;
+          else patch.clear_secret = true;
+        }
+        if (cookieChanged) {
+          if (userCookie) patch.cookie = userCookie;
+          else patch.clear_cookie = true;
+        }
+        if (metaChanged) {
+          patch.meta_json = withCredentialMetaValue(
+            userCred?.meta_json,
+            "platform_user_id",
+            userID,
+          );
+        }
+        if (secretChanged || cookieChanged) {
+          patch.auth_mode = userAuthMode;
+          patch.status = "enabled";
+        }
+        return patch;
+      };
+      if (input.site) {
+        if (userCred?.id) {
+          if (clearCredential) {
+            await service.deleteCredential(userCred.id);
+          } else {
+            const patch = credentialPatch();
+            if (Object.keys(patch).length > 0) {
+              await service.updateCredential(userCred.id, patch);
+            }
+          }
+        } else if (userToken || userCookie) {
           await service.createCredential(input.site.id, {
             kind: "access_token",
-            secret: userToken,
+            ...(userToken ? { secret: userToken } : {}),
             ...(userCookie ? { cookie: userCookie } : {}),
+            ...(userID
+              ? { meta_json: JSON.stringify({ platform_user_id: userID }) }
+              : {}),
             auth_mode: userAuthMode,
             status: "enabled",
           });
         }
-      } else if (
-        userCred?.id &&
-        input.site &&
-        !userTokenKept &&
-        !userCookieKept &&
-        !userToken &&
-        !userCookie
-      ) {
-        // Both auth materials were explicitly cleared → remove the user credential.
-        await service.deleteCredential(userCred.id);
-      } else if (
-        userCred?.id &&
-        input.site &&
-        (!userCookieKept || !userTokenKept)
-      ) {
-        await service.updateCredential(userCred.id, {
-          auth_mode: userAuthMode,
-          ...(userCookieKept
-            ? {}
-            : userCookie
-              ? { cookie: userCookie }
-              : { clear_cookie: true }),
-          ...(userTokenKept
-            ? {}
-            : userToken
-              ? { secret: userToken }
-              : { clear_secret: true }),
-          status: "enabled",
-        });
-      } else if (!userCred?.id && input.site && userCookie) {
-        await service.createCredential(input.site.id, {
-          kind: "access_token",
-          cookie: userCookie,
-          auth_mode: "cookie",
-          status: "enabled",
-        });
       }
       if (apiKey && input.site) {
         if (relayCred?.id && relayCred.kind === "api_key") {

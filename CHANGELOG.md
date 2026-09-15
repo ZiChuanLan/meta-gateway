@@ -4,6 +4,33 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v2.7.4] — 2026-09-15
+
+### Added
+
+- **连接编辑支持手工填写用户 ID**：New-API 系的数字用户 ID 此前只能靠 AAH 导入带
+  入，或由网关在首次签到时用 `/api/user/self` 反查。若上游把这个接口也挡在
+  `New-Api-User` 请求头之后，反查必然失败，签到恒报「无法解析平台用户 ID」，而列表
+  上的「缺用户 ID」徽标没有对应的输入位置——手动添加的连接因此进了死胡同。现在编辑
+  连接的用户凭据区（用户 Access Token / 用户 Cookie 之后）多了「用户 ID」字段，随凭据
+  写入 `meta_json.platform_user_id`。该字段缺失时编辑抽屉会自动展开高级选项，让徽标
+  指向的地方可见。
+
+### Changed
+
+- **用户 ID 解析容错与归类**：`platform_user_id` 现在接受 JSON 数字或带引号的数字
+  字符串（老版本 AAH 导出的形态），管理 API 统一规范化成裸数字写库；非法值（0、负数、
+  非数字、非法 JSON）返回 400 而不是静默写零。解析用户 ID 失败时统一归类为
+  `user_id_unavailable` 并指明去哪个字段填写；此前上游返回 404/403 会被误报成
+  `upstream_status` / `upstream_unauthorized`，把排查方向引向上游而不是缺失的字段。
+
+### Fixed
+
+- **打开编辑抽屉后直接保存会删掉已存的用户凭据**：抽屉在站点凭据查询返回之前就已挂载，
+  此时 Token/Cookie 输入框为空，而空值在保存逻辑里被解读为「清除该凭据」，一次保存即可
+  删除整条 user credential（实测发出 `DELETE /admin/credentials/{id}`）。现在掩码只播种
+  一次，且只提交真正发生变化的字段——未改动的抽屉不再发出任何凭据写入。
+
 ## [v2.7.3] — 2026-09-13
 
 ### Added

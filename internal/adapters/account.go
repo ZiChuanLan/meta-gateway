@@ -408,7 +408,7 @@ func (a *NewAPIAccountAdapter) ProbeSelf(ctx context.Context, input AccountInput
 	if payload.Success != nil && !*payload.Success {
 		return AccountSelf{}, &Error{Kind: ErrorPayload}
 	}
-	userID, ok := coercePositiveInt64(payload.Data.ID)
+	userID, ok := CoercePlatformUserID(payload.Data.ID)
 	if !ok || strings.TrimSpace(payload.Data.Username) == "" {
 		// Some hosts omit success and nest fields at the top level.
 		var flat struct {
@@ -421,7 +421,7 @@ func (a *NewAPIAccountAdapter) ProbeSelf(ctx context.Context, input AccountInput
 		if err := json.Unmarshal(body, &flat); err != nil || strings.TrimSpace(flat.Username) == "" {
 			return AccountSelf{}, &Error{Kind: ErrorPayload}
 		}
-		userID, ok = coercePositiveInt64(flat.ID)
+		userID, ok = CoercePlatformUserID(flat.ID)
 		if !ok {
 			return AccountSelf{}, &Error{Kind: ErrorPayload}
 		}
@@ -878,6 +878,24 @@ func looksMasked(secret string) bool {
 		return true
 	}
 	return false
+}
+
+// CoercePlatformUserID normalizes a decoded JSON platform user id to a
+// positive int64. AAH exports may quote the value ("1544"), so numeric
+// strings are accepted alongside numbers.
+func CoercePlatformUserID(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return 0, false
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil || parsed <= 0 {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return coercePositiveInt64(value)
+	}
 }
 
 func coercePositiveInt64(value any) (int64, bool) {

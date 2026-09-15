@@ -681,6 +681,17 @@ export const zh: Dict = {
   "channels.userCookiePresentHint":
     "已保存 Cookie（以掩码显示）。输入新值可轮换，清空可删除。",
   "channels.userCookiePlaceholder": "粘贴 Cookie Header 值",
+  "channels.userID": "用户 ID",
+  "channels.userIDHint":
+    "New-API 的数字用户 ID，作为 New-Api-User 发送。留空时首次签到会尝试从 /api/user/self 自动读取。",
+  "channels.userIDNeededHint":
+    "当前为空：解析不到用户 ID 前签到会失败。若站点在缺少该请求头时拒绝 /api/user/self，请手动填写。",
+  "channels.userIDPlaceholder": "例如 1544",
+  "channels.userIDInvalid": "用户 ID 只能是数字。",
+  "channels.userIDNeedsCredential":
+    "当前没有用户凭据。请先在下方填写用户 Access Token（或 Cookie），否则该 ID 无处保存。",
+  "channels.userIDNeedsCredentialHint":
+    "先填写该站点的用户 Access Token 或 Cookie，保存后 ID 会存在该凭据上。",
   "channels.badge.missingKey": "缺 API Key",
   "channels.badge.hasKey": "有 API Key",
   "channels.badge.models": "已路由模型",

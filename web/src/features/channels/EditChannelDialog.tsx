@@ -1,6 +1,6 @@
 import { ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
@@ -68,6 +68,7 @@ export function EditChannelDialog({
 		has_secret: boolean;
 		has_cookie?: boolean;
 		checkin_enabled: boolean;
+		meta_json?: string;
 	};
 	checkinSupported?: boolean;
 	checkinModuleOn?: boolean;
@@ -86,6 +87,7 @@ export function EditChannelDialog({
       has_secret: boolean;
       has_cookie?: boolean;
       checkin_enabled: boolean;
+      meta_json?: string;
     };
     relayCredential?: {
       id: number;
@@ -112,6 +114,8 @@ export function EditChannelDialog({
     stable_first?: boolean;
     userToken: string;
     userCookie: string;
+    /** New-API family numeric user id (`New-Api-User`). Empty = unknown. */
+    userID: string;
     apiKey: string;
   }) => void;
   onManageModels?: () => void;
@@ -177,6 +181,35 @@ export function EditChannelDialog({
 	const [userCookie, setUserCookie] = useState(
 		userCredential?.has_cookie ? SECRET_MASK : "",
 	);
+	// The credential overview arrives asynchronously (the channel overview and
+	// the site's credential list are separate queries). Until it does, the token
+	// fields are empty — which the save path reads as "clear the credential".
+	// Track the arrival so the masks are seeded exactly once and an untouched
+	// dialog can never delete a stored credential.
+	const seededCredentialId = useRef<number | null>(null);
+	useEffect(() => {
+		if (userCredential == null) return;
+		if (seededCredentialId.current === userCredential.id) return;
+		seededCredentialId.current = userCredential.id;
+		setUserToken(userCredential.has_secret ? SECRET_MASK : "");
+		setUserCookie(userCredential.has_cookie ? SECRET_MASK : "");
+		setCheckinOn(userCredential.checkin_enabled);
+		setUserID(
+			String(
+				parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
+			),
+		);
+	}, [userCredential]);
+	// New-API family numeric user id. It is derivable from the account token
+	// (/api/user/self) but a fork may gate that endpoint behind the very header
+	// derived from this id, so it has to be enterable by hand.
+	const [userID, setUserID] = useState(
+		userCredential?.meta_json
+			? String(
+					parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
+				)
+			: "",
+	);
 	const [checkinOn, setCheckinOn] = useState(
 		userCredential?.checkin_enabled ?? false,
 	);
@@ -187,7 +220,32 @@ export function EditChannelDialog({
 		}
 	}, [userCredential?.id, userCredential?.checkin_enabled]);
 	const [showAdvanced, setShowAdvanced] = useState(false);
-  const canSubmit = Boolean(name.trim() && baseUrl.trim());
+	const userIDInvalid = userID !== "" && !/^[0-9]+$/.test(userID);
+	const userIDMissing = Boolean(userCredential?.id) && userID === "";
+	// The credential fields live behind "Show advanced". A connection that has a
+	// user credential but no user id cannot check in, and the badge that says so
+	// must lead somewhere visible: open the section automatically. Only once —
+	// an operator who collapses it again keeps it collapsed.
+	const autoOpenedForMissingUserID = useRef(false);
+	useEffect(() => {
+		if (autoOpenedForMissingUserID.current || !userIDMissing) return;
+		autoOpenedForMissingUserID.current = true;
+		setShowAdvanced(true);
+	}, [userIDMissing]);
+	// The numeric New-API user id only means something for New-API family sites
+	// (the "both" surface), or when one is already stored and must stay editable.
+	const userIDPersistable =
+		Boolean(userCredential?.id) ||
+		(userToken !== "" && userToken !== SECRET_MASK) ||
+		(userCookie !== "" && userCookie !== SECRET_MASK);
+	const showUserIDField =
+		authFields === "both" ||
+		Boolean(userCredential?.meta_json?.includes("platform_user_id"));
+	// A typed id with nothing to attach it to would be dropped on save; say so
+	// instead of losing it silently.
+	const userIDNeedsCredential =
+		showUserIDField && !userIDPersistable && userID !== "";
+	const canSubmit = Boolean(name.trim() && baseUrl.trim()) && !userIDInvalid;
   const apiKeys = credentials.filter((item) => item.kind === "api_key");
   const service = api(useSession().client!);
   const discovered = useQuery({
@@ -288,6 +346,7 @@ export function EditChannelDialog({
                 stable_first: stableFirst,
                 userToken,
                 userCookie,
+                userID,
                 apiKey: "",
               })
             }
@@ -604,6 +663,40 @@ export function EditChannelDialog({
                       }
                       disabled={pending}
                     />
+                  </Field>
+                ) : null}
+                {showUserIDField ? (
+                  // Sits with the credential it is stored on: the numeric id
+                  // lives in the user credential's meta_json.
+                  <Field
+                    label={t("channels.userID")}
+                    hint={
+                      userIDNeedsCredential
+                        ? t("channels.userIDNeedsCredentialHint")
+                        : userIDMissing
+                          ? t("channels.userIDNeededHint")
+                          : t("channels.userIDHint")
+                    }
+                    className={userIDInvalid ? "is-invalid" : undefined}
+                  >
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={userID}
+                      onChange={(e) => setUserID(e.target.value.trim())}
+                      placeholder={t("channels.userIDPlaceholder")}
+                      disabled={pending}
+                    />
+                    {userIDInvalid ? (
+                      <p className="ua-preset-error">
+                        {t("channels.userIDInvalid")}
+                      </p>
+                    ) : null}
+                    {userIDNeedsCredential ? (
+                      <p className="ua-preset-error">
+                        {t("channels.userIDNeedsCredential")}
+                      </p>
+                    ) : null}
                   </Field>
                 ) : null}
               </div>

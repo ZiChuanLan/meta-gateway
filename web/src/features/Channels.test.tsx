@@ -810,3 +810,237 @@ describe("Channels edit dialog sync mode", () => {
 		expect(putBodies[1]).toHaveProperty("model_sync_mode", "auto");
 	});
 });
+
+describe("Channels edit dialog user id", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		sessionStorage.clear();
+		localStorage.setItem("meta-gateway.locale", "en");
+		localStorage.setItem("meta-gateway.admin-token", "test-token");
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.unstubAllGlobals();
+	});
+
+	/** Boots the connections page with one New-API channel and returns fetchers. */
+	async function openEditDialog(options: {
+		/** platform_user_id already stored on the user credential, if any. */
+		storedUserID?: number;
+		/** Whether a user credential row exists at all. */
+		withUserCredential?: boolean;
+	}) {
+		const withUserCredential = options.withUserCredential ?? true;
+		const overview = {
+			channel: {
+				id: 7,
+				name: "new-api-channel",
+				site_id: 3,
+				base_url: "https://api.example.com",
+				models_csv: "",
+				group_name: "default",
+				priority: 0,
+				weight: 100,
+				status: "enabled",
+				model_sync_mode: "manual",
+				created_at: "",
+				updated_at: "",
+			},
+			credential_kind: "access_token",
+			checkin_enabled: false,
+			has_user_credential: withUserCredential,
+			has_platform_user_id: options.storedUserID != null,
+			has_api_key: true,
+			site_usable: true,
+			credential_usable: true,
+			model_count: 0,
+			discovered_model_count: 0,
+			last_probe_at: "2026-08-02T00:00:00Z",
+			last_probe_ok: true,
+			last_latency_ms: 5,
+			route_count: 0,
+			enabled_member_count: 0,
+			cooling_member_count: 0,
+			failure_count: 0,
+			checkin_supported: true,
+			account_supported: true,
+		};
+		const credentialPuts: { path: string; body: Record<string, unknown> }[] =
+			[];
+		const channelPuts: Record<string, unknown>[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = String(input).split("?")[0] ?? "";
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (path === "/admin/channels/overview" && method === "GET") {
+					return jsonResponse([overview]);
+				}
+				if (path === "/admin/sites" && method === "GET") {
+					return jsonResponse([
+						{
+							id: 3,
+							name: "new-api-channel",
+							base_url: "https://api.example.com",
+							platform: "new-api",
+							status: "enabled",
+							created_at: "",
+							updated_at: "",
+						},
+					]);
+				}
+				if (path === "/admin/sites/3/credentials" && method === "GET") {
+					return jsonResponse(
+						withUserCredential
+							? [
+									{
+										id: 42,
+										site_id: 3,
+										kind: "access_token",
+										auth_mode: "access_token",
+										has_secret: true,
+										has_cookie: false,
+										status: "enabled",
+										checkin_enabled: false,
+										meta_json:
+											options.storedUserID != null
+												? JSON.stringify({
+														platform_user_id: options.storedUserID,
+													})
+												: undefined,
+									},
+								]
+							: [],
+					);
+				}
+				if (path === "/admin/plugins/status" && method === "GET") {
+					return jsonResponse([
+						{
+							id: "checkin",
+							name: "Check-in",
+							version: "1",
+							kind: "addon",
+							installed: true,
+							enabled: true,
+							can_toggle: true,
+						},
+					]);
+				}
+				if (path === "/admin/channels" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path === "/admin/routes/overview" && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path.startsWith("/admin/discovery/models")) {
+					return jsonResponse([]);
+				}
+				if (path.startsWith("/admin/credentials/") && method === "PUT") {
+					credentialPuts.push({
+						path,
+						body: JSON.parse(String(init?.body ?? "{}")),
+					});
+					return jsonResponse({ id: 42 });
+				}
+				if (path === "/admin/channels/7" && method === "PUT") {
+					channelPuts.push(JSON.parse(String(init?.body ?? "{}")));
+					return jsonResponse({ id: 7 });
+				}
+				return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+			}),
+		);
+
+		renderChannels();
+		expect(
+			await screen.findByRole("heading", { name: "Connections" }),
+		).toBeInTheDocument();
+
+		await waitFor(async () => {
+			const trigger = screen.getByRole("button", { name: /more actions/i });
+			trigger.click();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			screen.getByRole("menuitem", { name: /^edit$/i }).click();
+		});
+		return {
+			dialog: await screen.findByRole("dialog"),
+			credentialPuts,
+			channelPuts,
+		};
+	}
+
+	it("seeds the stored platform user id and writes a changed one to credential meta", async () => {
+		// The dead end this feature closes: the row badge says "Needs user id"
+		// but there was nowhere to type it.
+		const { dialog, credentialPuts } = await openEditDialog({
+			storedUserID: 1544,
+		});
+
+		const field = within(dialog).getByLabelText("User ID");
+		expect(field).toHaveValue("1544");
+
+		fireEvent.change(field, { target: { value: "2001" } });
+		fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+		await waitFor(() => expect(credentialPuts.length).toBe(1));
+		expect(credentialPuts[0]?.path).toBe("/admin/credentials/42");
+		expect(credentialPuts[0]?.body).toMatchObject({
+			meta_json: JSON.stringify({ platform_user_id: 2001 }),
+		});
+	});
+
+	it("keeps stored meta untouched when the user id was not edited", async () => {
+		const { dialog, credentialPuts, channelPuts } = await openEditDialog({
+			storedUserID: 1544,
+		});
+		fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+		// The channel update completes, and no credential write happened: an
+		// untouched dialog must never rewrite (or drop) the stored user id.
+		await waitFor(() => expect(channelPuts.length).toBe(1));
+		expect(credentialPuts).toHaveLength(0);
+		expect(channelPuts[0]).not.toHaveProperty("meta_json");
+	});
+
+	it("rejects a non-numeric user id instead of silently dropping it", async () => {
+		const { dialog, credentialPuts } = await openEditDialog({
+			storedUserID: 1544,
+		});
+		const field = within(dialog).getByLabelText("User ID");
+		fireEvent.change(field, { target: { value: "abc" } });
+
+		expect(
+			within(dialog).getByText("User ID must be digits only."),
+		).toBeInTheDocument();
+		expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+		expect(credentialPuts).toHaveLength(0);
+	});
+
+	it("opens the credential section when a user id is missing", async () => {
+		// The row badge says "Needs user id"; the field that fixes it must not be
+		// hidden behind a collapsed section.
+		const { dialog } = await openEditDialog({ withUserCredential: true });
+		expect(within(dialog).getByLabelText("User ID")).toBeInTheDocument();
+	});
+
+	it("tells the operator a typed id needs a user credential to be saved on", async () => {
+		const { dialog } = await openEditDialog({
+			withUserCredential: false,
+		});
+
+		// Nothing stored yet, so the credential fields stay collapsed (the row
+		// badge for this state points at the token, not at the user id).
+		fireEvent.click(
+			within(dialog).getByRole("button", { name: /show advanced/i }),
+		);
+
+		const field = within(dialog).getByLabelText("User ID");
+		fireEvent.change(field, { target: { value: "1544" } });
+
+		expect(
+			within(dialog).getByText(
+				/No user credential is set\. Fill in the User Access Token/,
+			),
+		).toBeInTheDocument();
+	});
+});

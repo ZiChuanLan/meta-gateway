@@ -730,6 +730,17 @@ export const en: Dict = {
   "channels.userCookiePresentHint":
     "A Cookie is stored (shown masked). Type a new value to rotate it, or clear it to remove it.",
   "channels.userCookiePlaceholder": "Paste Cookie header value",
+  "channels.userID": "User ID",
+  "channels.userIDHint":
+    "New-API numeric user id, sent as New-Api-User. Leave empty to let the gateway read it from /api/user/self on first use.",
+  "channels.userIDNeededHint":
+    "Empty: check-in fails until the id is known. Fill it in when the site blocks /api/user/self without this header.",
+  "channels.userIDPlaceholder": "e.g. 1544",
+  "channels.userIDInvalid": "User ID must be digits only.",
+  "channels.userIDNeedsCredential":
+    "No user credential is set. Fill in the User Access Token (or Cookie) below, otherwise this id has nowhere to be saved.",
+  "channels.userIDNeedsCredentialHint":
+    "Enter the user Access Token or Cookie for this site, then save — the id is stored on that credential.",
   "channels.badge.missingKey": "Needs API key",
   "channels.badge.hasKey": "API key",
   "channels.badge.models": "Routed models",
