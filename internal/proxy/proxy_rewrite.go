@@ -2,8 +2,12 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 )
@@ -13,7 +17,7 @@ import (
 // the route's mapping_json value, expected to be {"real":"upstream-model"}.
 // It is a no-op when the body is not JSON, the field is absent, or it does not
 // match the requested alias.
-func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
+func rewriteModelName(body []byte, requestedModel, mappingJSON string, contentType ...string) []byte {
 	if len(body) == 0 || requestedModel == "" || mappingJSON == "" {
 		return body
 	}
@@ -22,6 +26,9 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
 	}
 	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil || mapping.Real == "" {
 		return body
+	}
+	if len(contentType) > 0 && strings.HasPrefix(strings.ToLower(contentType[0]), "multipart/form-data") {
+		return rewriteMultipartModel(body, requestedModel, mapping.Real, contentType[0])
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -43,6 +50,51 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string) []byte {
 		return body
 	}
 	return rewritten
+}
+
+// Rebuild only an explicitly mapped upload; ordinary passthrough stays byte
+// identical. Keep every file and optional form field, including false/zero.
+func rewriteMultipartModel(body []byte, requestedModel, realModel, contentType string) []byte {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil || params["boundary"] == "" {
+		return body
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	if err := writer.SetBoundary(params["boundary"]); err != nil {
+		return body
+	}
+	changed := false
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return body
+		}
+		output, err := writer.CreatePart(part.Header)
+		if err != nil {
+			return body
+		}
+		if part.FormName() == "model" && part.FileName() == "" {
+			value, err := io.ReadAll(io.LimitReader(part, 4097))
+			if err != nil || len(value) > 4096 || strings.TrimSpace(string(value)) != requestedModel {
+				return body
+			}
+			if _, err := io.WriteString(output, realModel); err != nil {
+				return body
+			}
+			changed = true
+		} else if _, err := io.Copy(output, part); err != nil {
+			return body
+		}
+	}
+	if err := writer.Close(); err != nil || !changed {
+		return body
+	}
+	return buffer.Bytes()
 }
 
 // realModelFromMapping extracts {"real":"…"} from a member/route mapping so

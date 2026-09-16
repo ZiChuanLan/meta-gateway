@@ -430,7 +430,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		// form for aliases created before per-member mappings existed.
 		mappedBody := requestBody
 		if mappingJSON != "" {
-			mappedBody = rewriteModelName(requestBody, req.Model, mappingJSON)
+			mappedBody = rewriteModelName(requestBody, req.Model, mappingJSON, req.ContentType)
 		}
 
 		effectivePath := req.OpenAIPath
@@ -892,7 +892,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				// re-established through the check-in machinery exactly once per
 				// request, then the request is replayed from the first key in the
 				// refreshed pool. A successful replay is logged as refresh_retry.
-				if !refreshed && !localAdapterFailure && result.Err == nil && result.StatusCode == http.StatusUnauthorized && s.credentialRefresher != nil {
+				if retrySafe && !refreshed && !localAdapterFailure && result.Err == nil && result.StatusCode == http.StatusUnauthorized && s.credentialRefresher != nil {
 					if s.refreshCredentialAndReplay(ctx, &candidate, &apiKeys, effectiveModel) {
 						if result.Body != nil {
 							_ = result.Body.Close()
@@ -1237,14 +1237,17 @@ func retrySafeRequest(req Request) bool {
 	if method != http.MethodPost && method != http.MethodPut && method != http.MethodPatch {
 		return true
 	}
+	path := strings.TrimPrefix(strings.Trim(strings.ToLower(req.OpenAIPath), "/"), "v1/")
+	// Image operations may already have been accepted and charged. An
+	// idempotency header cannot guarantee deduplication across channels/keys.
+	if strings.HasPrefix(path, "images/") {
+		return false
+	}
 	if requestHeader(req.Headers, "Idempotency-Key") != "" {
 		return true
 	}
-	path := strings.Trim(strings.ToLower(req.OpenAIPath), "/")
-	for _, prefix := range []string{"images/", "audio/"} {
-		if strings.HasPrefix(path, prefix) {
-			return false
-		}
+	if strings.HasPrefix(path, "audio/") {
+		return false
 	}
 	if path == "responses" || strings.HasPrefix(path, "responses/") {
 		return false

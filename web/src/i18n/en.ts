@@ -2,11 +2,13 @@ import type { Dict } from "./types";
 
 export const en: Dict = {
   "modelChanges.title": "Upstream model changes",
-  "modelChanges.summary": "Added {added} · Possibly removed {removed} · Affected routes {routes}",
+  "modelChanges.summary":
+    "Added {added} · Possibly removed {removed} · Affected routes {routes}",
   "modelChanges.open": "View changes",
   "modelChanges.history": "Change history",
   "modelChanges.collapse": "Collapse changes",
-  "modelChanges.hint": "Compares successful snapshots per channel. A missing model is not a global retirement. The first sync establishes a baseline; failed syncs never count as removals.",
+  "modelChanges.hint":
+    "Compares successful snapshots per channel. A missing model is not a global retirement. The first sync establishes a baseline; failed syncs never count as removals.",
   "modelChanges.allChannels": "All channels",
   "modelChanges.allKinds": "All changes",
   "modelChanges.allStatuses": "All statuses",
@@ -21,18 +23,24 @@ export const en: Dict = {
   "modelChanges.search": "Search model or channel",
   "modelChanges.empty": "No matching changes",
   "modelChanges.noImpact": "No currently affected route members",
-  "modelChanges.candidates": "Added in the same sync (not a version recommendation)",
-  "modelChanges.noCandidates": "No models were added in that sync. You can still choose from the current inventory.",
+  "modelChanges.candidates":
+    "Added in the same sync (not a version recommendation)",
+  "modelChanges.noCandidates":
+    "No models were added in that sync. You can still choose from the current inventory.",
   "modelChanges.replace": "Choose replacement",
   "modelChanges.ignore": "Ignore",
-  "modelChanges.ignoreConfirm": "Ignore {count} selected changes? This only dismisses the reminder; it does not repair or modify routes.",
+  "modelChanges.ignoreConfirm":
+    "Ignore {count} selected changes? This only dismisses the reminder; it does not repair or modify routes.",
   "modelChanges.select": "Select change {model} / {channel}",
   "modelChanges.bulk": "Replace selected changes ({count})",
-  "modelChanges.sameChannel": "For bulk replacement, select pending removals from one channel only.",
+  "modelChanges.sameChannel":
+    "For bulk replacement, select pending removals from one channel only.",
   "modelChanges.replaceTitle": "Replace upstream mapping",
-  "modelChanges.preserve": "Only the selected members' upstream mappings change. Public model names, route names and other settings stay intact. Names are never used to infer the latest version.",
+  "modelChanges.preserve":
+    "Only the selected members' upstream mappings change. Public model names, route names and other settings stay intact. Names are never used to infer the latest version.",
   "modelChanges.cross": "Choose a model from another channel",
-  "modelChanges.crossWarning": "Switching channels changes the request destination and may affect pricing, capabilities and credential compatibility. Check the target channel.",
+  "modelChanges.crossWarning":
+    "Switching channels changes the request destination and may affect pricing, capabilities and credential compatibility. Check the target channel.",
   "modelChanges.targetChannel": "Target channel",
   "modelChanges.targetModel": "Target model",
   "modelChanges.chooseModel": "Choose a target model",
@@ -43,8 +51,10 @@ export const en: Dict = {
   "modelChanges.confirm": "Apply ({count} members)",
   "modelChanges.back": "Back to selection",
   "modelChanges.done": "Updated upstream mappings for {count} members.",
-  "modelChanges.stale": "The preview expired or applying failed. Go back, check the selection and preview again.",
-  "modelChanges.noTargets": "No models available on this channel. Successfully sync its inventory first.",
+  "modelChanges.stale":
+    "The preview expired or applying failed. Go back, check the selection and preview again.",
+  "modelChanges.noTargets":
+    "No models available on this channel. Successfully sync its inventory first.",
   "modelChanges.summaryConfirmed": "{count} confirmed",
   "modelChanges.confirmedBadge": "Confirmed missing",
   "modelChanges.confirmedHint":
@@ -62,7 +72,8 @@ export const en: Dict = {
     "Bulk-ignore pending removals with no impacted route member; they stay inspectable in the history.",
   "modelChanges.adopt": "Adopt",
   "modelChanges.adoptedChip": "adopted",
-  "modelChanges.adoptedHint": "This model is already wired into the channel's routing; the reminder can be ignored and resolves itself on the daily sweep.",
+  "modelChanges.adoptedHint":
+    "This model is already wired into the channel's routing; the reminder can be ignored and resolves itself on the daily sweep.",
 
   "lang.en": "English",
   "lang.zh": "中文",
@@ -107,14 +118,15 @@ export const en: Dict = {
   "error.importEmptyCause":
     "The format was recognized, but it contains no accounts or API keys with credentials (preferences only, perhaps).",
   "error.importEmptyFix":
-    "Enable Accounts and API credentials in AAH's WebDAV sync data selection and back up again; if this is a Meta Gateway export, tick \"include secrets\" when exporting.",
+    'Enable Accounts and API credentials in AAH\'s WebDAV sync data selection and back up again; if this is a Meta Gateway export, tick "include secrets" when exporting.',
   "error.importInvalid": "The backup contents are invalid",
   "error.importInvalidCause":
     "The document structure is incomplete, or a required field is missing or has the wrong type.",
   "error.importInvalidFix":
     "Export the backup again; if the file was edited by hand, restore the original.",
   "error.decryptFailed": "Could not decrypt the backup",
-  "error.decryptFailedCause": "The unlock password is wrong, or the backup file is damaged.",
+  "error.decryptFailedCause":
+    "The unlock password is wrong, or the backup file is damaged.",
   "error.decryptFailedFix":
     "Enter the password set in AAH's backup encryption (not the drive login password; Nutstore and similar services need an app password).",
   "error.upstream_unauthorized":
@@ -173,7 +185,8 @@ export const en: Dict = {
   "err.cancelled.title": "Request cancelled",
   "err.cancelled.cause":
     "The client disconnected or the deadline hit before the upstream answered; the gateway stopped forwarding (no automatic retry).",
-  "err.cancelled.fix": "Send the request again; if this repeats, review the client timeout.",
+  "err.cancelled.fix":
+    "Send the request again; if this repeats, review the client timeout.",
   "err.emptyResponse.title": "Upstream returned an empty reply",
   "err.emptyResponse.cause":
     "The upstream answered 200 with no content; the gateway already failed over to the next channel.",
@@ -184,8 +197,8 @@ export const en: Dict = {
   "err.unknown.fix": "Retry, or check the gateway logs for details.",
   "err.classSuffix": " ({class})",
 
-"common.working": "Working…",
-"common.maskedPlaceholder": "•••••••••• (keep stored value)",
+  "common.working": "Working…",
+  "common.maskedPlaceholder": "•••••••••• (keep stored value)",
   "common.select": "Select",
   "common.actions": "Actions",
   "common.status": "Status",
@@ -226,6 +239,75 @@ export const en: Dict = {
   "common.credentialId": "Credential #{id}",
   "common.ms": "{n} ms",
   "common.moreActions": "More actions",
+  "actions.view": "Inspect and test",
+  "actions.manage": "Configuration",
+  "actions.maintenance": "Sync and maintenance",
+  "actions.selection": "Bulk selection",
+  "actions.danger": "Destructive actions",
+  "actions.accountUnavailable":
+    "Account details are unavailable. Wait for them to load or verify the account again.",
+  "modelsPage.tools": "Model tools",
+  "select.search": "Search options…",
+  "select.custom": "Custom type",
+  "select.noMatches": "No matching options",
+  "shell.workspace": "Your AI workspace",
+  "motion.entrance": "Workspace entrance",
+  "motion.opening": "Opening your workspace",
+  "motion.closing": "Leaving your workspace",
+  "motion.caption": "Connect models. Open new possibilities.",
+  "motion.skip": "Skip animation",
+  "motion.replay": "Replay entrance",
+  "appearance.title": "Appearance",
+  "appearance.styles": "Choose your workspace",
+  "appearance.description":
+    "Each theme has its own navigation, layouts, typography, and entrance. Select one to apply it, and switch back anytime.",
+  "appearance.classic.name": "Classic console",
+  "appearance.classic.description":
+    "Original blue and gold · Top navigation · Side-by-side directory and details · Sliding door entrance",
+  "appearance.modern.name": "Modern workspace",
+  "appearance.modern.description":
+    "Paper white and blue · Grouped sidebar · Full-width lists and detail drawers · Typographic entrance",
+  "appearance.bundled": "Built-in theme package",
+  "appearance.mode": "Light and dark",
+  "appearance.modeHint":
+    "Independent of your interface theme. You can also use the light/dark button on any page.",
+  "appearance.light": "Light",
+  "appearance.dark": "Dark",
+  "appearance.palette": "Colour palette",
+  "appearance.paletteHint":
+    "Retints the brand colours only, independently of the interface theme and light/dark mode.",
+  "appearance.palette.default": "Follow theme",
+  "appearance.palette.ocean": "Ocean",
+  "appearance.palette.forest": "Forest",
+  "appearance.palette.violet": "Violet",
+  "appearance.palette.ember": "Ember",
+  "appearance.palette.graphite": "Graphite",
+  "appearance.palette.sakura": "Sakura",
+  "appearance.localHint":
+    "Theme and brightness preferences are saved in this browser and do not affect other administrators. Switching keeps your current page and form input.",
+  "login.titleFirst": "One gateway.",
+  "login.titleSecond": "Your AI, connected.",
+  "login.description":
+    "Bring connections, model routing, and every request into one considered workspace.",
+  "login.welcome": "Welcome back",
+  "login.hint": "Enter your admin token to open your workspace.",
+  "login.private": "This workspace is for administrators",
+  "login.foundation": "Self-hosted · Multi-provider · Transparent relay",
+  "shell.search": "Search & commands",
+  "shell.gatewayStatus": "Gateway status",
+  "shell.expandNav": "Expand sidebar",
+  "shell.collapseNav": "Collapse sidebar",
+  "shell.section.gateway": "Workspace",
+  "shell.section.activity": "Explore & observe",
+  "shell.section.manage": "Manage",
+  "shell.footer": "Connect models. Make room to create.",
+  "channels.details": "Connection details",
+  "channels.listHint": "Select a connection to inspect",
+  "modelsPage.filters": "Filters",
+  "modelsPage.members": "Route members",
+  "logsPage.moreFilters": "Exact filters",
+  "logsPage.histogramScope": "Latest 1,000 requests across the gateway",
+  "logsPage.histogramBucket": "{n} requests",
   "common.dismiss": "Dismiss",
   "common.apply": "Apply",
   "common.clearFilters": "Clear filters",
@@ -387,7 +469,7 @@ export const en: Dict = {
   "app.nav.settings": "Settings",
   "maintain.title": "Settings",
   "maintain.description":
-    "Global runtime policy and backup operations. Model and connection changes stay in their workspaces.",
+    "Manage runtime policy, appearance, and backups. Model and connection changes stay in their workspaces.",
   "maintain.tab.exchange": "Exchange",
   "channels.searchPlaceholder": "Search connections",
   "channels.title": "Connections",
@@ -482,10 +564,12 @@ export const en: Dict = {
   "channels.modelsCleanupConfirm":
     "Delete {n} parked model bindings? Routes left without any member are removed as well. This cannot be undone.",
   "channels.modelsCleanupConfirmLabel": "Delete",
-  "channels.modelsCleanupDone": "Cleaned {members} bindings and removed {routes} empty routes.",
+  "channels.modelsCleanupDone":
+    "Cleaned {members} bindings and removed {routes} empty routes.",
   "channels.adoptHint":
     "Checking a model adopts it; newly probed models start unchecked.",
-  "channels.modelAdoptHint": "Not adopted yet; check to start serving this model",
+  "channels.modelAdoptHint":
+    "Not adopted yet; check to start serving this model",
   "channels.groupExpand": "Expand group",
   "channels.groupCollapse": "Collapse group",
   "channels.empty":
@@ -517,10 +601,9 @@ export const en: Dict = {
   "channels.stat.attention": "Need attention",
   "channels.stat.totalHint": "Show all connections",
   "channels.stat.readyHint": "Filter ready connections",
-  "channels.stat.missingKeyHint":
-    "Upstream has no usable sk- API key in this gateway (not CF reachability)",
+  "channels.stat.missingKeyHint": "Show connections without a usable API key",
   "channels.stat.attentionHint":
-    "Degraded, unhealthy, unverified, or blocked connections (excludes missing API key)",
+    "Show connections needing a health or configuration check",
   "channels.filter.missingKeyKicker": "Missing key",
   "channels.filter.missingKeyTitle": "No connections without an API key",
   "channels.filter.attentionTitle": "Nothing needs attention in this view",
@@ -556,8 +639,10 @@ export const en: Dict = {
   "channels.streamPolicyHint":
     "Overrides the client's stream choice for this channel. Effective for OpenAI-shaped chat exchanges only (native Anthropic passthrough and the Responses API are exempt). Force stream: non-streaming clients receive an aggregated completion; force non-stream: streaming clients receive a one-shot synthesized SSE replay. Default follows the client.",
   "channels.streamPolicyDefault": "Follow client",
-  "channels.streamPolicyForceStream": "Force stream (aggregate for non-stream clients)",
-  "channels.streamPolicyForceNonStream": "Force non-stream (synthesize SSE for stream clients)",
+  "channels.streamPolicyForceStream":
+    "Force stream (aggregate for non-stream clients)",
+  "channels.streamPolicyForceNonStream":
+    "Force non-stream (synthesize SSE for stream clients)",
   "channels.nonStreamTimeout": "Non-stream timeout (s)",
   "channels.nonStreamTimeoutHint":
     "Total cap for a non-streaming upstream attempt on this channel (request + full body read); 0 = global default (5 minutes). Streaming requests are exempt. Raise it for slow deep-reasoning upstreams.",
@@ -618,16 +703,20 @@ export const en: Dict = {
 
   "channels.editBaseUrlInherited":
     "This connection uses the site base URL. Saving updates the site URL for this upstream.",
-"channels.checkinEnable": "Enable scheduled check-in",
-"channels.checkinDisable": "Disable scheduled check-in",
-"channels.checkinRun": "Check in now",
-"channels.checkinSection": "Check-in",
-"channels.checkinLogs": "Logs",
-"channels.checkinModuleOff": "The Check-in add-on is not enabled. Turn it on in the Store to schedule daily check-ins.",
-"channels.checkinUnsupported": "This site family does not expose a check-in API.",
-"channels.checkinNeedsUserCredential": "Fill in an Access Token or Cookie above to enable daily check-in for this connection.",
-"channels.checkinScheduledHint": "This credential checks in daily on the schedule set in the Check-in page.",
-"channels.checkinOffHint": "Scheduled check-in is off for this credential.",
+  "channels.checkinEnable": "Enable scheduled check-in",
+  "channels.checkinDisable": "Disable scheduled check-in",
+  "channels.checkinRun": "Check in now",
+  "channels.checkinSection": "Check-in",
+  "channels.checkinLogs": "Logs",
+  "channels.checkinModuleOff":
+    "The Check-in add-on is not enabled. Turn it on in the Store to schedule daily check-ins.",
+  "channels.checkinUnsupported":
+    "This site family does not expose a check-in API.",
+  "channels.checkinNeedsUserCredential":
+    "Fill in an Access Token or Cookie above to enable daily check-in for this connection.",
+  "channels.checkinScheduledHint":
+    "This credential checks in daily on the schedule set in the Check-in page.",
+  "channels.checkinOffHint": "Scheduled check-in is off for this credential.",
 
   "channels.checkAccount": "Check access token",
   "channels.ping": "Check connectivity",
@@ -789,6 +878,7 @@ export const en: Dict = {
   "modelsPage.metaThinkingYes": "Supported",
   "modelsPage.metaThinkingNo": "Not supported",
   "modelsPage.metaVendor": "Vendor",
+  "modelsPage.metaImageEdit": "chat image edit",
   "modelsPage.metaPricePrompt": "Input price /1k",
   "modelsPage.metaPriceCompletion": "Output price /1k",
   "modelsPage.metaPriceCache": "Cache-read price /1k",
@@ -867,12 +957,14 @@ export const en: Dict = {
   "modelsPage.unify.rulesHint":
     "Rules run in the listed order against the same name and compose. Turn one off to keep that suffix.",
   "modelsPage.unify.rule.account_prefix": "Strip account prefix [A] / 【次】",
-  "modelsPage.unify.rule.vendor_prefix": "Strip owner prefix (e.g. deepseek-ai/)",
+  "modelsPage.unify.rule.vendor_prefix":
+    "Strip owner prefix (e.g. deepseek-ai/)",
   "modelsPage.unify.rule.date_suffix": "Strip snapshot date -0731 / -20250514",
   "modelsPage.unify.rule.index_suffix": "Strip account index -1 / -2",
   "modelsPage.unify.ruleBadge.vendor_prefix": "Strip owner prefix {prefix}",
   "modelsPage.unify.safeSection": "Ready to merge — only safe rules needed",
-  "modelsPage.unify.riskySection": "Needs review — required a rule that can conflate models",
+  "modelsPage.unify.riskySection":
+    "Needs review — required a rule that can conflate models",
   "modelsPage.unify.riskyHint":
     "These groups only merge because of an owner prefix, a snapshot date or an index suffix. Different owners can publish different models under the same short name, and different snapshots can be different versions, so confirm before checking one.",
   "modelsPage.unify.archivedNote":
@@ -931,7 +1023,7 @@ export const en: Dict = {
   "sticky.col.expires": "Expires",
   "sticky.empty": "No active sessions yet.",
 
-  "modelsPage.listTitle": "Models",
+  "modelsPage.listTitle": "Model catalog",
   "modelsPage.bulkMode": "Bulk select",
   "modelsPage.bulkDone": "Done",
   "modelsPage.bulkSelected": "{n} routes selected",
@@ -948,8 +1040,11 @@ export const en: Dict = {
   "modelsPage.col.upstream": "Upstream",
   "modelsPage.noUpstream": "No upstream",
   "modelsPage.openChannelHint": "Open this channel's model settings",
-  "modelsPage.servedBy": "Served by {name}",
-  "modelsPage.extraPaths": "+{n} fallback",
+  "modelsPage.servedBy": "Leading member: {name}",
+  "modelsPage.pinnedMember": "Pinned member: {name}",
+  "modelsPage.memberSummaryHint":
+    "This shows route configuration. Request logs identify the channel that actually served each request.",
+  "modelsPage.extraPaths": "+{n} other members",
   "modelsPage.showRouting": "Show routing options",
   "modelsPage.hideRouting": "Hide routing options",
   "modelsPage.routingHint":
@@ -1072,7 +1167,7 @@ export const en: Dict = {
   "logsPage.detailKicker": "Proxy attempt",
   "logsPage.retried": "Retried",
   "logsPage.slowOnly": "Slow only (≥5s)",
-  "logsPage.histogram": "Latency histogram (newest 1000)",
+  "logsPage.histogram": "Latency distribution",
   "logsPage.histogramStats":
     "total {total} · slow {slow} · p50 {p50}ms · p95 {p95}ms",
   "logsPage.reasoningEffort": "Reasoning effort",
@@ -1095,7 +1190,8 @@ export const en: Dict = {
   "logsPage.errorClass.not_found": "Not found",
   "logsPage.errorClass.server": "Server error",
   "logsPage.errorClass.cancelled": "Cancelled (client gone/timeout, no retry)",
-  "logsPage.errorClass.empty_response": "Empty reply (200 without content, failed over)",
+  "logsPage.errorClass.empty_response":
+    "Empty reply (200 without content, failed over)",
   "logsPage.errorDetail": "Upstream returned",
   "logsPage.errorClass.unknown": "Unknown error",
   "logsPage.selectHint":
@@ -1116,12 +1212,13 @@ export const en: Dict = {
   "logsPage.tab.audit": "Audit",
   "logsPage.empty":
     "No proxy logs match these filters. Create a token and send a /v1 request, or clear filters.",
-  "logsPage.failedOnly": "Failures first",
+  "logsPage.failedOnly": "Failures only",
   "logsPage.ctaChannels": "Go to connections",
   "logsPage.ctaKeys": "Create a token",
   "logsLive.keyUsed": "Downstream key",
   "logsLive.interrupt": "Interrupt",
-  "logsLive.interrupted": "Request {id} interrupted; the upstream is disconnected — a client that auto-retries shows up as a new request",
+  "logsLive.interrupted":
+    "Request {id} interrupted; the upstream is disconnected — a client that auto-retries shows up as a new request",
   "logsLive.interruptAll": "Interrupt all",
   "logsLive.interruptAllHint": "Interrupt every in-flight request",
   "logsLive.interruptAllDone": "Interrupt sent: {ok}/{total} succeeded",
@@ -1131,7 +1228,8 @@ export const en: Dict = {
   "logsLive.client": "Client",
   "logsLive.streaming": "stream",
   "logsLive.retryOf": "likely retry",
-  "logsLive.retryOfHint": "A new request for the same model from the same client key, right after interrupting {id} (client auto-retry)",
+  "logsLive.retryOfHint":
+    "A new request for the same model from the same client key, right after interrupting {id} (client auto-retry)",
   "logsLive.ttft": "Time to first byte (TTFT)",
   "logsLive.ttftValue": "TTFT {n}ms",
   "logsLive.notInFlight": "Request is no longer in flight",
@@ -1143,12 +1241,14 @@ export const en: Dict = {
   "logsLive.inFlight": "In flight {n}",
   "logsLive.total": "Session total {n}",
   "logsLive.interrupting": "Interrupting {n}",
-  "logsLive.hint": "The live view only shows requests made while the console is open",
+  "logsLive.hint":
+    "The live view only shows requests made while the console is open",
   "logsLive.channel": "Target",
   "logsLive.round": "Round",
   "logsLive.actions": "Actions",
   "logsLive.emptyTitle": "No live requests yet",
-  "logsLive.emptyBody": "Send a /v1 request and its routing and channel choice appear here in real time; in-flight requests can be interrupted.",
+  "logsLive.emptyBody":
+    "Send a /v1 request and its routing and channel choice appear here in real time; in-flight requests can be interrupted.",
   "maintain.kicker": "Settings",
   "maintain.bannerTitle": "Setup & maintenance",
   "maintain.bannerBody":
@@ -1229,17 +1329,20 @@ export const en: Dict = {
     "Enter the password set in AAH's backup encryption to unlock it. This is not the drive login password.",
   "exchange.unlockPassword": "Backup unlock password",
   "exchange.importEncrypted": "Decrypt and import",
-  "exchange.unlockRequired": "This backup is encrypted — enter its unlock password first.",
+  "exchange.unlockRequired":
+    "This backup is encrypted — enter its unlock password first.",
   "exchange.skippedTitle": "{n} rows skipped",
   "exchange.skippedNote":
     "Those rows had no usable credential or were incomplete. Everything else imported normally.",
-  "exchange.skipReason.missing_credential": "No usable credential (cookie mode or not signed in)",
+  "exchange.skipReason.missing_credential":
+    "No usable credential (cookie mode or not signed in)",
   "exchange.skipReason.missing_field": "Required field missing",
   "exchange.skipReason.invalid_base_url": "Unrecognized base URL",
   "exchange.skipReason.duplicate_identity": "Duplicate of an earlier row",
   "exchange.skipReason.invalid_item": "Invalid field value",
   "exchange.previewEncrypted": "Encrypted backup · unlock password required",
-  "exchange.previewEmptyBackup": "Recognized as a backup, but it holds no importable account or key",
+  "exchange.previewEmptyBackup":
+    "Recognized as a backup, but it holds no importable account or key",
   "exchange.webdavTitle": "Cloud backup sync",
   "exchange.webdavHint":
     "Connect a WebDAV folder. The two sections below are independent: AAH backup import pulls remote backups into this gateway; native WebDAV sync pushes an encrypted backup of this gateway to the drive.",
@@ -1377,8 +1480,7 @@ export const en: Dict = {
     "Run and review credential check-ins for supported platforms. Enable or disable this add-on in Store.",
   "maintain.addonDisabled":
     "This add-on is turned off. Enable it in Store to use this page.",
-  "store.description":
-    "Optional extensions that add capabilities. Core relay, audit, and backups are always available.",
+  "store.description": "Choose extensions to add the capabilities you need.",
   "store.orphans": "Unknown leftovers",
   "store.activate": "Activate",
   "store.deactivate": "Deactivate",
@@ -1403,16 +1505,18 @@ export const en: Dict = {
   "plugins.healthPlaceholder": "Health path (optional, default healthz)",
   "plugins.addFailed": "Failed to add plugin",
   "plugins.edit": "Edit",
-"plugins.config": "Configure",
-"plugins.configTitle": "Plugin configuration",
-"plugins.configHint":
-"Values are stored by the gateway and injected into every proxied request as the X-Plugin-Config header (base64 JSON). Secret fields are masked: keep the mask to keep the stored value, type a new one to replace it, leave empty to clear.",
-"plugins.configSecretHint": "Masked = keep the stored value. Empty = clear, new value = replace.",
-"plugins.configEnabled": "Enabled",
-"plugins.configJsonLabel": "Raw JSON",
-"plugins.configJsonHint": "The plugin declares no fields; edit the JSON object directly.",
-"plugins.configInvalidJson": "Config must be a JSON object",
-"plugins.configSaveFailed": "Failed to save plugin config",
+  "plugins.config": "Configure",
+  "plugins.configTitle": "Plugin configuration",
+  "plugins.configHint":
+    "Values are stored by the gateway and injected into every proxied request as the X-Plugin-Config header (base64 JSON). Secret fields are masked: keep the mask to keep the stored value, type a new one to replace it, leave empty to clear.",
+  "plugins.configSecretHint":
+    "Masked = keep the stored value. Empty = clear, new value = replace.",
+  "plugins.configEnabled": "Enabled",
+  "plugins.configJsonLabel": "Raw JSON",
+  "plugins.configJsonHint":
+    "The plugin declares no fields; edit the JSON object directly.",
+  "plugins.configInvalidJson": "Config must be a JSON object",
+  "plugins.configSaveFailed": "Failed to save plugin config",
   "plugins.editTitle": "Edit plugin",
   "plugins.editHint":
     "Changing connection settings re-runs the health check; if the service is unreachable the old config is kept.",
@@ -1454,8 +1558,8 @@ export const en: Dict = {
   "routing.editRoute": "Edit model route",
   "routing.deleteRoute": "Delete model route",
   "routing.deleteRouteMsg": "Delete route {name} and all channel memberships?",
-"routing.addMember": "Add channel",
-"routing.editMember": "Edit channel membership",
+  "routing.addMember": "Add channel",
+  "routing.editMember": "Edit channel membership",
   "routing.deleteMember": "Remove channel",
   "routing.deleteMemberMsg": "Remove channel #{id} from this model route?",
   "routing.noMembers": "No channels on this model yet.",
@@ -1468,6 +1572,10 @@ export const en: Dict = {
   "routing.groupDeleteConfirm":
     "Delete group {name} and all of its {count} channel member(s)? This cannot be undone.",
   "routing.groupEmpty": "Group {name} has no channel members yet.",
+  "routing.groupFallback":
+    "Requests for {name} currently fall back to group {target}.",
+  "routing.groupFallbackAll":
+    "Requests for {name} currently fall back to all members of this route.",
   "routing.groupCopyDefault": "Copy all channels from the default group",
   "routing.groupTabsHint":
     "A channel may join multiple groups with its own priority in each. Keys bound to a group only pick channels within that group per model, falling back to default when the model has no such group.",
@@ -1484,6 +1592,9 @@ export const en: Dict = {
   "routing.singleModeHint":
     "Only this channel receives traffic; cross-channel retry is 0. Other channels keep their enabled state.",
   "routing.singleModeMissingName": "target missing",
+  "routing.singleModeGroupMissing":
+    "The pinned member is outside this group's candidate pool, so this group uses automatic selection.",
+  "routing.policySource.single": "Pinned member policy",
   "routing.singleModeMissing":
     "The pinned member no longer exists — routing falls back to auto.",
   "routing.singleModeDisabledWarning":
@@ -1565,8 +1676,8 @@ export const en: Dict = {
   "routing.independentLabel": "Independent priority/weight for this model",
   "routing.independentHint":
     "On = every member of this model keeps its own priority/weight. Changes on the Connections page or a model re-sync won't overwrite them. Off = each member follows its connection's own default priority/weight; those defaults may differ. New members follow the connection by default.",
-"routing.reorderHint":
-"Dragging rows writes priority and makes this model's members independent. Weight still applies among equal priorities.",
+  "routing.reorderHint":
+    "Dragging rows writes priority and makes this model's members independent. Weight still applies among equal priorities.",
   "routing.moveUp": "Move up",
   "routing.moveDown": "Move down",
   "routing.orderLabel": "Order",
@@ -1602,6 +1713,11 @@ export const en: Dict = {
   "routing.independentClarification":
     "Off does not make all priorities equal. Each member follows its connection's own default priority and weight; different priorities remain strict order.",
   "routing.policyLoading": "Loading global policy…",
+  "routing.imageEditShim": "Image editing in chat",
+  "routing.imageEditShimHint":
+    "When enabled, chat requests with images are sent as image edits and the results are returned as chat messages. Applies only to models that require an image-editing endpoint. Off by default.",
+  "routing.imageEditShimEnable":
+    "Allow chat clients to use image-editing models",
 
   "ops.tab.runtime": "Runtime",
   "ops.tab.backups": "Backups",
@@ -1625,32 +1741,38 @@ export const en: Dict = {
   "ops.checkin.scheduleCron": "Cron expression",
   "ops.checkin.scheduleSave": "Save schedule",
   "ops.checkin.scheduleSaved": "Check-in schedule saved.",
-"ops.external.title": "External check-in sites",
-"ops.external.titleHint": "Generic cookie-authenticated daily check-in for platforms outside the New-API family (e.g. 薄荷公益站). Runs on the same schedule and appears in the same logs.",
-"ops.external.hint": "Add a site, paste its login Cookie, and the scheduler checks it in every day.",
-"ops.external.empty": "No external check-in sites yet.",
-"ops.external.add": "Add site",
-"ops.external.addTitle": "New external check-in site",
-"ops.external.editTitle": "Edit external check-in site",
-"ops.external.name": "Name",
-"ops.external.baseUrl": "Site URL",
-"ops.external.baseUrlHint": "Site root, e.g. https://up.x666.me",
-"ops.external.path": "Check-in path",
-"ops.external.method": "Method",
-"ops.external.headers": "Extra request headers (JSON)",
-"ops.external.headersHint":
-"Optional headers sent with every check-in request, e.g. {\"new-api-user\":\"68760\"} for New-API forks. Host / Cookie cannot be overridden.",
-"ops.external.headersInvalidJson": "Headers must be a JSON object of string values",
-"ops.external.cookie": "Cookie",
-"ops.external.cookieHint": "Login cookie, e.g. auth_token=…. Stored encrypted.",
-"ops.external.cookieKeepHint": "Leave empty to keep the stored cookie; fill to replace it.",
-"ops.external.enableSchedule": "Enable scheduled check-in",
-"ops.external.scheduled": "Scheduled",
-"ops.external.run": "Check in now",
-"ops.external.runDone": "Check-in run finished.",
-"ops.external.deleteTitle": "Remove external check-in site?",
-"ops.external.deleteConfirm": "\"{name}\" and its cookie will be removed; its check-in history is deleted by cascade.",
-"ops.external.noCookie": "no cookie set",
+  "ops.external.title": "External check-in sites",
+  "ops.external.titleHint":
+    "Generic cookie-authenticated daily check-in for platforms outside the New-API family (e.g. 薄荷公益站). Runs on the same schedule and appears in the same logs.",
+  "ops.external.hint":
+    "Add a site, paste its login Cookie, and the scheduler checks it in every day.",
+  "ops.external.empty": "No external check-in sites yet.",
+  "ops.external.add": "Add site",
+  "ops.external.addTitle": "New external check-in site",
+  "ops.external.editTitle": "Edit external check-in site",
+  "ops.external.name": "Name",
+  "ops.external.baseUrl": "Site URL",
+  "ops.external.baseUrlHint": "Site root, e.g. https://up.x666.me",
+  "ops.external.path": "Check-in path",
+  "ops.external.method": "Method",
+  "ops.external.headers": "Extra request headers (JSON)",
+  "ops.external.headersHint":
+    'Optional headers sent with every check-in request, e.g. {"new-api-user":"68760"} for New-API forks. Host / Cookie cannot be overridden.',
+  "ops.external.headersInvalidJson":
+    "Headers must be a JSON object of string values",
+  "ops.external.cookie": "Cookie",
+  "ops.external.cookieHint":
+    "Login cookie, e.g. auth_token=…. Stored encrypted.",
+  "ops.external.cookieKeepHint":
+    "Leave empty to keep the stored cookie; fill to replace it.",
+  "ops.external.enableSchedule": "Enable scheduled check-in",
+  "ops.external.scheduled": "Scheduled",
+  "ops.external.run": "Check in now",
+  "ops.external.runDone": "Check-in run finished.",
+  "ops.external.deleteTitle": "Remove external check-in site?",
+  "ops.external.deleteConfirm":
+    '"{name}" and its cookie will be removed; its check-in history is deleted by cascade.',
+  "ops.external.noCookie": "no cookie set",
   "ops.schedule.preset.off": "Off",
   "ops.schedule.preset.hourly": "Every hour",
   "ops.schedule.preset.every3h": "Every 3 hours",
@@ -1911,8 +2033,7 @@ export const en: Dict = {
   "ops.runtime.group.securityDesc":
     "Two-factor auth and database cleanup \u2014 each saves on its own, not with the Save button above",
   "ops.runtime.group.danger": "Danger zone",
-  "ops.runtime.group.dangerDesc":
-    "Irreversible actions. Take a backup first.",
+  "ops.runtime.group.dangerDesc": "Irreversible actions. Take a backup first.",
   "ops.runtime.buildVersion": "Build",
   "ops.runtime.updateNow": "Check now",
   "ops.runtime.updateManualSummary": "Or update manually (copy a command)",
@@ -2080,13 +2201,16 @@ export const en: Dict = {
   "setup.dismiss": "Skip, don't show again",
   "setup.allDone": "All set — the gateway is ready to use.",
   "setup.step1Title": "Add your first upstream connection",
-  "setup.step1Desc": "Enter the upstream base URL and API key so the gateway has a channel to relay through.",
+  "setup.step1Desc":
+    "Enter the upstream base URL and API key so the gateway has a channel to relay through.",
   "setup.step2Title": "Sync models",
-  "setup.step2Desc": "Click “Sync models” on the connection to pull the list; auto sync adopts everything, on-demand lets you pick.",
+  "setup.step2Desc":
+    "Click “Sync models” on the connection to pull the list; auto sync adopts everything, on-demand lets you pick.",
   "setup.step3Title": "Create a downstream API key",
   "setup.step3Desc": "Callers use this key to reach the gateway.",
   "setup.step4Title": "Make the first call",
-  "setup.step4Desc": "Replace the key and model in the curl below; a 200 response means you are relayed.",
+  "setup.step4Desc":
+    "Replace the key and model in the curl below; a 200 response means you are relayed.",
   "setup.go": "Go",
   "setup.copy": "Copy",
   "setup.copied": "Copied",
@@ -2095,19 +2219,26 @@ export const en: Dict = {
   "tour.navDesc":
     "“Connections” manages upstream channels, “Keys” holds the keys you hand to callers, “Logs” traces every relay attempt.",
   "tour.endpointTitle": "API endpoint",
-  "tour.endpointDesc": "Point caller base_url here; the API is OpenAI-compatible.",
+  "tour.endpointDesc":
+    "Point caller base_url here; the API is OpenAI-compatible.",
   "tour.guideTitle": "Four-step checklist",
-  "tour.guideDesc": "Finish the steps and you are relaying; ticks reflect real state, not clicks.",
+  "tour.guideDesc":
+    "Finish the steps and you are relaying; ticks reflect real state, not clicks.",
   "tour.telemetryTitle": "Live telemetry",
-  "tour.telemetryDesc": "Traffic, channel health and model usage update here in real time.",
+  "tour.telemetryDesc":
+    "Traffic, channel health and model usage update here in real time.",
   "tour.addTitle": "Start here: add a connection",
-  "tour.addDesc": "Click “Add connection”, enter the upstream URL and API key, and the gateway has a channel to relay through.",
+  "tour.addDesc":
+    "Click “Add connection”, enter the upstream URL and API key, and the gateway has a channel to relay through.",
   "tour.syncTitle": "Pick a sync mode",
-  "tour.syncDesc": "Auto sync adopts every probed model; on demand adopts only what you pick. Change it here any time.",
+  "tour.syncDesc":
+    "Auto sync adopts every probed model; on demand adopts only what you pick. Change it here any time.",
   "tour.keysTitle": "Create a downstream key",
-  "tour.keysDesc": "Click “Create” to mint a key for callers — their credential to reach the gateway.",
+  "tour.keysDesc":
+    "Click “Create” to mint a key for callers — their credential to reach the gateway.",
   "tour.logsTitle": "Relay logs",
-  "tour.logsDesc": "Channel, model and latency for every request; start here when something misbehaves.",
+  "tour.logsDesc":
+    "Channel, model and latency for every request; start here when something misbehaves.",
   "tour.checkinsTitle": "Automated check-in",
   "tour.checkinsDesc":
     "Turn it on and the gateway checks in to upstream sites on a schedule; logs and external check-ins live here too.",
@@ -2128,7 +2259,8 @@ export const en: Dict = {
   "tour.progress": "{{current}} / {{total}}",
 
   "wizard.title": "Meta Gateway setup",
-  "wizard.subtitle": "One minute of initial configuration; everything can be changed later in the console.",
+  "wizard.subtitle":
+    "One minute of initial configuration; everything can be changed later in the console.",
   "wizard.skip": "Skip wizard",
   "wizard.stepWelcome": "Welcome",
   "wizard.stepConnection": "Upstream",
@@ -2138,12 +2270,15 @@ export const en: Dict = {
   "wizard.welcomeDesc":
     "A multi-channel AI gateway that aggregates upstreams into one OpenAI-compatible endpoint. Spend a minute on the initial setup.",
   "wizard.modeTitle": "Default sync mode for new connections",
-  "wizard.modeDesc": "Decides how models probed on each new connection enter the gateway; only affects connections created later.",
+  "wizard.modeDesc":
+    "Decides how models probed on each new connection enter the gateway; only affects connections created later.",
   "wizard.modeAuto": "Auto sync — adopt everything probed, hands-off",
-  "wizard.modeManual": "Pick on demand — adopt only what you choose, full control",
+  "wizard.modeManual":
+    "Pick on demand — adopt only what you choose, full control",
   "wizard.modeSaved": "Saved as the system default",
   "wizard.connTitle": "Add your first upstream connection",
-  "wizard.connDesc": "Enter the upstream URL and key manually, or import an AAH plugin backup.",
+  "wizard.connDesc":
+    "Enter the upstream URL and key manually, or import an AAH plugin backup.",
   "wizard.manualTab": "Manual entry",
   "wizard.importTab": "Import from AAH backup",
   "wizard.importHint":
@@ -2153,20 +2288,25 @@ export const en: Dict = {
   "wizard.importInvalid": "Could not parse the file as a JSON backup.",
   "wizard.importFromFile": "Choose backup file",
   "wizard.importFromWebdav": "Import from WebDAV",
-  "wizard.importSkipped": "{n} more rows were skipped (no credential or incomplete); the rest imported fine.",
+  "wizard.importSkipped":
+    "{n} more rows were skipped (no credential or incomplete); the rest imported fine.",
   "wizard.webdavHint":
     "Enter the WebDAV settings you saved in AAH; the gateway pulls the backup from all-api-hub-backup/.",
   "wizard.webdavUrl": "WebDAV address",
   "wizard.webdavUsername": "Username",
   "wizard.webdavPassword": "Password / app password",
-  "wizard.webdavPasswordHint": "Nutstore and similar services require an app password, not the login password.",
+  "wizard.webdavPasswordHint":
+    "Nutstore and similar services require an app password, not the login password.",
   "wizard.webdavBackupPassword": "Backup unlock password",
-  "wizard.webdavBackupPasswordHint": "Leave blank when the backup is not encrypted.",
+  "wizard.webdavBackupPasswordHint":
+    "Leave blank when the backup is not encrypted.",
   "wizard.webdavTest": "Test connection",
   "wizard.webdavTestOk": "WebDAV connection works.",
   "wizard.webdavImport": "Connect and import",
-  "wizard.webdavDone": "Imported from WebDAV: {created} created, {updated} updated.",
-  "wizard.webdavSaved": "Settings saved; adjust the schedule later on the Exchange page.",
+  "wizard.webdavDone":
+    "Imported from WebDAV: {created} created, {updated} updated.",
+  "wizard.webdavSaved":
+    "Settings saved; adjust the schedule later on the Exchange page.",
   "wizard.createConn": "Create connection",
   "wizard.name": "Name (optional)",
   "wizard.baseUrl": "Base URL",
@@ -2175,17 +2315,208 @@ export const en: Dict = {
   "wizard.trySync": "Try syncing models",
   "wizard.syncing": "Syncing (may take a while)…",
   "wizard.synced": "Models synced",
-  "wizard.syncFail": "Sync failed: check the upstream key, then retry from the connection page.",
+  "wizard.syncFail":
+    "Sync failed: check the upstream key, then retry from the connection page.",
   "wizard.keyTitle": "Create a downstream key",
-  "wizard.keyDesc": "The credential callers use against the gateway — just give it a name.",
+  "wizard.keyDesc":
+    "The credential callers use against the gateway — just give it a name.",
   "wizard.keyName": "Key name",
   "wizard.createKey": "Create key",
   "wizard.keyCreated": "Key created — view it any time on the Keys page.",
   "wizard.createAnother": "Create another",
   "wizard.doneTitle": "All set",
-  "wizard.doneDesc": "Point caller base_url at the address below and call with your key.",
+  "wizard.doneDesc":
+    "Point caller base_url at the address below and call with your key.",
   "wizard.next": "Next",
   "wizard.back": "Back",
   "wizard.later": "Do it later",
   "wizard.enter": "Enter the console",
+  "app.nav.workbench": "Workbench",
+  "workbench.title": "Model workbench",
+  "workbench.desc":
+    "A capability-driven image and chat studio, plus manual fixes to model protocol capabilities.",
+  "workbench.tabImages": "Images",
+  "workbench.tabText": "Playground",
+  "workbench.tabCapabilities": "Capabilities",
+  "playground.title": "Chat playground",
+  "playground.help":
+    "Drive the upstream with admin credentials and verify routing over a real conversation",
+  "playground.desc":
+    "Lists routed models that answer on /v1/chat/completions. Every turn reuses the same routing, billing and cancellation path as live /v1 traffic, and needs no downstream key.",
+  "playground.noModels": "No chat-capable model is currently routed.",
+  "playground.empty": "Send a message to start — replies stream in as they arrive.",
+  "playground.suggest1": "Introduce yourself in one sentence.",
+  "playground.suggest2": "Translate this into Chinese: probing the model gateway.",
+  "playground.suggest3":
+    "Write a three-line Python function that returns the GCD of two numbers.",
+  "playground.you": "You",
+  "playground.assistant": "Model",
+  "playground.send": "Send",
+  "playground.stop": "Stop",
+  "playground.clear": "Clear",
+  "playground.promptPlaceholder": "Type a message — ⌘/Ctrl + Enter to send…",
+  "playground.promptHint": "⌘/Ctrl + Enter sends",
+  "playground.model": "Model",
+  "playground.modelHint": "Only routed models that answer on /v1/chat/completions",
+  "playground.upstream": "Upstream connection",
+  "playground.upstreamAuto": "Auto (gateway routing)",
+  "playground.upstreamHint":
+    "Pin one connection to verify that path. Auto uses the same rules as live /v1 traffic.",
+  "playground.upstreamHintOne": "Only one connection serves this model.",
+  "playground.params": "Parameters",
+  "playground.paramsHint":
+    "Only the sampling parameters you enable are sent; unchecked fields never reach the upstream request.",
+  "playground.system": "System prompt",
+  "playground.systemPlaceholder": "Optional — goes first as the system message…",
+  "playground.maxTokens": "Max output tokens",
+  "playground.maxTokensHint": "Defaults to 4096, capped at 32768",
+  "playground.temperature": "Temperature",
+  "playground.topP": "Top-p sampling",
+  "playground.useParam": "Send this parameter",
+  "playground.stream": "Streaming",
+  "playground.streamHint":
+    "Off switches to a single buffered response, which is how you rule out a stream-only failure",
+  "playground.streamEnable": "Stream token by token",
+  "playground.copy": "Copy",
+  "playground.copied": "Copied",
+  "playground.edit": "Edit",
+  "playground.regenerate": "Regenerate",
+  "playground.delete": "Delete this turn",
+  "playground.save": "Save",
+  "playground.saveAndSubmit": "Save and resend",
+  "playground.reasoning": "Reasoning",
+  "playground.latency": "{ms} ms",
+  "playground.stopped": "Stopped",
+  "playground.upstreamError": "Upstream returned HTTP {status}",
+  "playground.noContent": "Upstream returned HTTP {status} but no content could be read.",
+  "playground.unreadable": "The response stream could not be read. Try again.",
+  "workbench.image.requestTitle": "Request",
+  "workbench.image.resultTitle": "Result",
+  "workbench.image.model": "Model",
+  "workbench.image.modelHint":
+    "Only routes with an image-capable model are listed",
+  "workbench.image.mode": "Mode",
+  "workbench.image.modeAuto": "Auto",
+  "workbench.image.modeGenerate": "Generate",
+  "workbench.image.modeEdit": "Edit",
+  "workbench.image.size": "Size",
+  "workbench.image.sizeDefault": "Upstream default",
+  "workbench.image.prompt": "Prompt",
+  "workbench.image.promptPlaceholder":
+    "Describe the image you want, or the change to make…",
+  "workbench.image.refs": "Reference images",
+  "workbench.image.refsHint": "Up to {n}",
+  "workbench.image.refsHintUnbounded":
+    "No limit registered — the upstream decides",
+  "workbench.image.addRef": "Add images",
+  "workbench.image.maxImagesExceeded":
+    "This model accepts at most {n} reference image(s)",
+  "workbench.image.protocol": "Supported model endpoints",
+  "workbench.image.referencesRequired": "Add a reference image before editing.",
+  "workbench.image.chooseEdit":
+    "Choose Auto or Edit when using reference images.",
+  "workbench.image.editUnsupported":
+    "This model cannot edit images. Choose another model or remove the references.",
+  "workbench.image.generateUnsupported":
+    "This model requires a reference image. Choose image editing.",
+  "workbench.image.invalidFile": "{name} is not an image file.",
+  "workbench.image.uploadTooLarge":
+    "Reference images must total no more than {mb} MB.",
+  "workbench.image.fileReadFailed":
+    "Could not read {name}. Select the file again.",
+  "workbench.image.removeRef": "Remove reference image {name}",
+  "workbench.image.generateRun": "Generate image",
+  "workbench.image.editRun": "Edit image",
+  "workbench.image.waitHint":
+    "Waiting for the upstream image. You can switch to Capabilities without losing this result.",
+  "workbench.image.preview": "View full image",
+  "workbench.image.resultAlt": "Generated image {n}",
+  "workbench.image.protocolValue": "{endpoint} · {format}",
+  "workbench.image.run": "Run",
+  "workbench.image.empty": "No results yet",
+  "workbench.image.latency": "{ms} ms",
+  "workbench.image.channel": "Channel {name}",
+  "workbench.image.upstreamStatus":
+    "Upstream returned HTTP {status} with no image in the body",
+  "workbench.image.upstreamError": "Upstream returned HTTP {status}",
+  "workbench.image.download": "Download",
+  "workbench.image.history": "This session",
+  "workbench.image.noModels":
+    "No image model detected: create a route for one on the Models page, or register it on the Capabilities tab.",
+  "workbench.cap.title": "Model capability registry",
+  "workbench.cap.help":
+    "Decides which endpoint and encoding the gateway uses for a model",
+  "workbench.cap.desc":
+    "The registry is the source of truth for the protocol layer: the image studio and the chat→edit rewrite both read it. Rows marked manual are never overwritten by model discovery.",
+  "workbench.cap.add": "Register",
+  "workbench.cap.addPlaceholder": "Model name",
+  "workbench.cap.autoTag": "Auto-tag with built-in rules",
+  "workbench.cap.editTitle": "Capability · {name}",
+  "workbench.cap.model": "Model",
+  "workbench.cap.kind": "Kind",
+  "workbench.cap.provider": "Provider",
+  "workbench.cap.endpoints": "Endpoints",
+  "workbench.cap.endpointsHint": "Comma separated, e.g. /v1/images/edits",
+  "workbench.cap.formats": "Request encoding",
+  "workbench.cap.formatsHint":
+    "json or multipart; grok's editor accepts json only",
+  "workbench.cap.maxImages": "Max reference images",
+  "workbench.cap.source": "Source",
+  "workbench.cap.notes": "Notes",
+  "workbench.cap.inputs": "Input modalities",
+  "workbench.cap.outputs": "Output modalities",
+  "workbench.cap.sizes": "Available sizes",
+  "workbench.cap.empty":
+    "Nothing registered yet — unregistered models fall back to the built-in rules.",
+  "workbench.cap.source.builtin": "builtin",
+  "workbench.cap.source.discovery": "discovery",
+  "workbench.cap.source.manual": "manual",
+  "workbench.cap.source.catalog": "catalog",
+  "workbench.cap.catalog.sync": "Sync from catalogs",
+  "workbench.cap.catalog.title": "Sync from the public model indexes",
+  "workbench.cap.catalog.desc":
+    "Reads the LiteLLM price list and the models.dev index, then fills in the registry. Nothing is written until you confirm, and an operator-edited row is never touched.",
+  "workbench.cap.catalog.lastSync":
+    "Last sync {when} · {matched} models matched · {capabilities} capabilities, {metadata} metadata rows and {prices} prices written",
+  "workbench.cap.catalog.neverSynced":
+    "Never synced. A sync only covers models that an enabled route serves.",
+  "workbench.cap.catalog.scheduled": "Refreshes on a schedule",
+  "workbench.cap.catalog.manualOnly": "Manual sync only",
+  "workbench.cap.catalog.pricesOn": "Prices are filled automatically",
+  "workbench.cap.catalog.pricesOff": "Prices stay hand-managed",
+  "workbench.cap.catalog.writeCapabilities": "Write capabilities",
+  "workbench.cap.catalog.writeMetadata": "Write metadata",
+  "workbench.cap.catalog.writePrices": "Fill unset prices",
+  "workbench.cap.catalog.onlyChanges": "Only show models that would change",
+  "workbench.cap.catalog.summary":
+    "{matched} of {requested} models are in the catalogs · {missing} unknown · {changes} would change",
+  "workbench.cap.catalog.nothingToDo":
+    "Nothing to do — the registry already matches the catalogs for every routed model.",
+  "workbench.cap.catalog.sourceErrors": "A source could not be read: {errors}",
+  "workbench.cap.catalog.apply": "Apply {n} change(s)",
+  "workbench.cap.catalog.groupCapability": "How to call it",
+  "workbench.cap.catalog.groupMetadata": "Model metadata",
+  "workbench.cap.catalog.groupPrices": "Prices (per 1k tokens)",
+  "workbench.cap.catalog.notFound": "not in any catalog",
+  "workbench.cap.catalog.manualKept": "your override is kept",
+  "workbench.cap.catalog.noChange": "Already up to date.",
+  "workbench.cap.fieldStream": "Streaming",
+  "workbench.cap.fieldTools": "Tool calls",
+  "workbench.cap.fieldJsonMode": "JSON mode",
+  "workbench.cap.fieldContext": "Context window",
+  "workbench.cap.fieldThinking": "Reasoning",
+  "workbench.cap.fieldVendor": "Vendor",
+  "workbench.cap.fieldPricePrompt": "Prompt price",
+  "workbench.cap.fieldPriceCompletion": "Completion price",
+  "workbench.cap.fieldPriceCache": "Cache read price",
+  "workbench.cap.kindChat": "Chat",
+  "workbench.cap.kindImageGen": "Image gen",
+  "workbench.cap.kindImageEdit": "Image edit",
+  "workbench.cap.kindVideo": "Video",
+  "workbench.cap.kindEmbedding": "Embedding",
+  "workbench.cap.kindTTS": "Speech",
+  "workbench.cap.kindSTT": "Transcribe",
+  "workbench.cap.kindRerank": "Rerank",
+  "workbench.cap.kindModeration": "Moderation",
+  "logsPage.search": "Search model, error, path, request ID",
 };

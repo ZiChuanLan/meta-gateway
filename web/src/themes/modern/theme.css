@@ -1,0 +1,10 @@
+@import "../../styles/tokens.css";
+@import "../../styles/system.css";
+@import "../../styles/shell.css";
+@import "../../styles/workspaces.css";
+@import "../../styles/login.css";
+@import "../../styles/motion.css";
+
+.theme-modern > .console-topbar { margin-left: var(--nav-width); }
+.theme-modern > .console-main { min-height: calc(100dvh - 68px); }
+@media (max-width: 760px) { .theme-modern > .console-main { min-height: calc(100dvh - 58px); } }

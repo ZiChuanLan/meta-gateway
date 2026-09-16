@@ -387,6 +387,15 @@ func (s *Service) Refresh(ctx context.Context, channelID int64) (*RefreshResult,
 	if err != nil {
 		return nil, internalError("persistence_failure")
 	}
+	// Best-effort capability auto-tagging: give newly discovered models a
+	// protocol classification so the workbench and shim can reason about them
+	// without an operator visit. Rows that already exist (including manual
+	// overrides) are left alone, and a failure here must never fail a refresh.
+	for _, model := range probe.Models {
+		if tagErr := s.db.ModelCapability.AutoTag(model); tagErr != nil {
+			break
+		}
+	}
 	return &RefreshResult{
 		ChannelID: probe.ChannelID, Adapter: probe.Adapter, Models: probe.Models,
 		LatencyMs: probe.LatencyMs, CheckedAt: probe.CheckedAt,

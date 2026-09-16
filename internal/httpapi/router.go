@@ -28,6 +28,7 @@ import (
 	"github.com/lan/meta-gateway/internal/healthsweep"
 	"github.com/lan/meta-gateway/internal/livetrace"
 	"github.com/lan/meta-gateway/internal/maintenance"
+	"github.com/lan/meta-gateway/internal/modelcatalog"
 	"github.com/lan/meta-gateway/internal/observability"
 	"github.com/lan/meta-gateway/internal/outbound"
 	"github.com/lan/meta-gateway/internal/plugins"
@@ -134,6 +135,11 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	r.Use(clientIPs.Middleware)
 	r.Use(requestTelemetry(logger, metrics))
 	r.Use(recoverMiddleware(logger))
+	// CORS sits at the root rather than on the /v1 group: a preflight must be
+	// answered before the group's downstream-auth middleware runs, and a
+	// group-level middleware never sees an OPTIONS for a route that only
+	// registers POST.
+	r.Use(corsMiddleware("/v1", cfg.CORSAllowedOrigins))
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{
@@ -267,6 +273,25 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	adminHandler.SetProxyValidator(func(raw string) error {
 		return globalProxy.Validate(raw, outboundPolicy)
 	})
+	// External model index sync: refreshes the capability registry (how to call
+	// a model) and fills unset metadata/prices from the public LiteLLM and
+	// models.dev indexes. It reuses the SSRF-policy client, so a deployment can
+	// still fence it off with OUTBOUND_ALLOW_HOSTS. A zero interval disables the
+	// schedule but leaves the console's manual sync working.
+	catalogURLs := modelCatalogURLs(cfg.ModelCatalogSources)
+	if len(catalogURLs) > 0 {
+		catalogService := modelcatalog.New(db, modelcatalog.Options{
+			Client: outboundClient,
+			URLs:   catalogURLs,
+		})
+		scheduled := cfg.ModelCatalogInterval > 0
+		adminHandler.SetModelCatalog(catalogService, scheduled, cfg.ModelCatalogSyncPrices)
+		if scheduled {
+			catalogCtx, catalogCancel := context.WithCancel(context.Background())
+			RegisterStopper(catalogCancel)
+			go runCatalogSweep(catalogCtx, logger, db, catalogService, cfg.ModelCatalogInterval, cfg.ModelCatalogSyncPrices)
+		}
+	}
 	adminHandler.Register(adminGroup)
 	sessionHandler.RegisterAdmin(adminGroup)
 	discoveryHandler := NewDiscoveryHandler(db, discoveryService)
@@ -323,7 +348,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		exchangeService.SetKeySyncer(account.ExchangeKeySyncer{Service: accountService})
 	}
 	NewAccountHandler(accountService).Register(adminGroup)
-	NewTryHandler(proxyService).Register(adminGroup)
+	NewTryHandler(proxyService, db).Register(adminGroup)
 	// Model probing rides the same proxy path as /v1, so it needs the live
 	// proxy service rather than its own upstream client.
 	probeService := probe.NewService(db, proxyService, logger)

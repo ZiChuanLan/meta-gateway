@@ -1,5 +1,6 @@
 import {
   ListChecks,
+  PanelRightOpen,
   ExternalLink,
   KeyRound,
   Pencil,
@@ -21,7 +22,12 @@ import type { Channel, ChannelOverview, Site } from "../api/types";
 import { ChannelModelsPanel } from "./ChannelModels";
 import { ChannelKeysDrawer } from "./ChannelKeys";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
+import {
+  rowContextPoint,
+  rowKeyboardContextPoint,
+} from "../components/contextMenu";
 import { Drawer } from "../components/Drawer";
+import { ThemeDetails } from "../themes/ThemeDetails";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -160,6 +166,7 @@ export function Channels() {
     models?: number;
   } | null>(null);
   const selectedId = positiveId(params.get("id"));
+  const [inspectorOpen, setInspectorOpen] = useState(Boolean(selectedId));
   // URL wins over tab state; only overwrite when the URL actually carries a value
   // so a bare-path navigation never clears the tab-restored state.
   useEffect(() => {
@@ -677,7 +684,11 @@ export function Channels() {
   });
 
   const addApiKeyCredential = useAdminMutation({
-    mutationFn: async (input: { siteId: number; secret: string; name?: string }) => {
+    mutationFn: async (input: {
+      siteId: number;
+      secret: string;
+      name?: string;
+    }) => {
       const secret = input.secret.trim();
       if (!secret) {
         throw new Error("api key is required");
@@ -927,6 +938,7 @@ export function Channels() {
         onSelect: () => {
           close();
           setBulkMode(true);
+          setBulkSelected((current) => new Set(current).add(ch.id));
         },
       },
       {
@@ -1126,7 +1138,42 @@ export function Channels() {
         },
       },
     );
-    return items;
+    items.unshift({
+      key: "details",
+      label: t("channels.details"),
+      icon: <PanelRightOpen size={14} />,
+      onSelect: () => {
+        close();
+        selectRow(ch.id);
+        setInspectorOpen(true);
+      },
+    });
+    const ranks: Record<string, number> = {
+      details: 0,
+      models: 0,
+      logs: 0,
+      edit: 1,
+      duplicate: 1,
+      toggle: 1,
+      bulk: 3,
+      delete: 4,
+    };
+    const sections = [
+      "actions.view",
+      "actions.manage",
+      "actions.maintenance",
+      "actions.selection",
+      "actions.danger",
+    ];
+    return items
+      .sort((a, b) => (ranks[a.key] ?? 2) - (ranks[b.key] ?? 2))
+      .map((item) => ({
+        ...item,
+        group: t(sections[ranks[item.key] ?? 2]!),
+        disabledReason: item.disabled
+          ? t(busy ? "common.working" : "actions.accountUnavailable")
+          : undefined,
+      }));
   };
 
   const openAdd = () => {
@@ -1155,55 +1202,6 @@ export function Channels() {
       description={t("channels.description")}
       actions={
         <>
-          <label className="directory-search">
-            <Search size={14} aria-hidden="true" />
-            <input
-              value={query}
-              onChange={(e) => {
-                const value = e.target.value;
-                setQuery(value);
-                const next = new URLSearchParams(params);
-                if (value) next.set("search", value);
-                else next.delete("search");
-                next.delete("id");
-                setParams(next, { replace: true });
-              }}
-              placeholder={t("channels.searchPlaceholder")}
-              aria-label={t("channels.searchPlaceholder")}
-            />
-          </label>
-          <select
-            aria-label={t("channels.filterType")}
-            value={typeFilter}
-            onChange={(event) => {
-              const v = event.target.value;
-              setTypeFilter(v);
-              updateFilterParam("type", v);
-            }}
-          >
-            <option value="all">{t("channels.allTypes")}</option>
-            {filterOptions.types.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label={t("channels.filterGroup")}
-            value={groupFilter}
-            onChange={(event) => {
-              const v = event.target.value;
-              setGroupFilter(v);
-              updateFilterParam("group", v);
-            }}
-          >
-            <option value="all">{t("channels.allGroups")}</option>
-            {filterOptions.groups.map((group) => (
-              <option key={group} value={group}>
-                {group}
-              </option>
-            ))}
-          </select>
           <Button
             variant="secondary"
             icon={
@@ -1397,8 +1395,63 @@ export function Channels() {
           </ResultStrip>
         ) : null}
 
-        <div className="split">
-          <Panel className="ops-list-panel">
+        <div className="channels-workspace">
+          <Panel className="ops-list-panel channels-directory">
+            <div className="workspace-filter-row">
+              {" "}
+              <label className="directory-search">
+                <Search size={14} aria-hidden="true" />
+                <input
+                  value={query}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setQuery(value);
+                    const next = new URLSearchParams(params);
+                    if (value) next.set("search", value);
+                    else next.delete("search");
+                    next.delete("id");
+                    setParams(next, { replace: true });
+                  }}
+                  placeholder={t("channels.searchPlaceholder")}
+                  aria-label={t("channels.searchPlaceholder")}
+                />
+              </label>
+              <select
+                aria-label={t("channels.filterType")}
+                value={typeFilter}
+                onChange={(event) => {
+                  const v = event.target.value;
+                  setTypeFilter(v);
+                  updateFilterParam("type", v);
+                }}
+              >
+                <option value="all">{t("channels.allTypes")}</option>
+                {filterOptions.types.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={t("channels.filterGroup")}
+                value={groupFilter}
+                onChange={(event) => {
+                  const v = event.target.value;
+                  setGroupFilter(v);
+                  updateFilterParam("group", v);
+                }}
+              >
+                <option value="all">{t("channels.allGroups")}</option>
+                {filterOptions.groups.map((group) => (
+                  <option key={group} value={group}>
+                    {group}
+                  </option>
+                ))}
+              </select>
+              <span className="workspace-list-caption">
+                {t("channels.listHint")}
+              </span>
+            </div>
             <EntityState
               isLoading={overviews.isPending}
               isError={overviews.isError}
@@ -1534,16 +1587,27 @@ export function Channels() {
                     return (
                       <tr
                         key={ch.id}
+                        tabIndex={0}
                         className={`is-clickable${active ? " is-selected" : ""}`}
-                        onClick={() => selectRow(ch.id)}
+                        onClick={() => {
+                          selectRow(ch.id);
+                          setInspectorOpen(true);
+                        }}
                         onContextMenu={(event) => {
-                          event.preventDefault();
+                          const point = rowContextPoint(event);
+                          if (!point) return;
                           selectRow(ch.id);
                           setContextMenu({
                             channelId: ch.id,
-                            top: event.clientY,
-                            left: event.clientX,
+                            ...point,
                           });
+                        }}
+                        onKeyDown={(event) => {
+                          const point = rowKeyboardContextPoint(event);
+                          if (point) {
+                            selectRow(ch.id);
+                            setContextMenu({ channelId: ch.id, ...point });
+                          }
                         }}
                       >
                         {bulkMode ? (
@@ -1609,9 +1673,7 @@ export function Channels() {
                             ) : null}
                           </div>
                         </td>
-                        <td
-                          title={t("channels.modelsTotalHint")}
-                        >
+                        <td title={t("channels.modelsTotalHint")}>
                           {overview.last_checked_at ? (
                             overview.discovered_model_count > 0 ? (
                               <strong>{overview.discovered_model_count}</strong>
@@ -1647,6 +1709,7 @@ export function Channels() {
                           <ActionMenu
                             compact
                             label={t("common.moreActions")}
+                            title={ch.name}
                             disabled={rowBusy}
                             onOpenChange={(open) => {
                               // Ensure credentials for this row's site are loaded so check-in
@@ -1673,7 +1736,9 @@ export function Channels() {
                     if (!overview) return null;
                     return (
                       <ActionMenu
+                        key={overview.channel.id}
                         label={t("common.moreActions")}
+                        title={overview.channel.name}
                         open
                         onOpenChange={(open) => {
                           if (!open) setContextMenu(null);
@@ -1692,56 +1757,62 @@ export function Channels() {
             </EntityState>
           </Panel>
 
-          <div className="detail-card ops-detail-card is-compact">
-            {!selected ? (
-              <div className="detail-empty">{t("channels.selectHint")}</div>
-            ) : (
-              <ChannelDetail
-                overview={selected}
-                site={
-                  selected.channel.site_id != null
-                    ? siteById.get(selected.channel.site_id)
-                    : undefined
-                }
-                accountData={
-                  accountProbe.data?.channel_id === selected.channel.id
-                    ? accountProbe.data
-                    : null
-                }
-                busy={
-                  refresh.pendingId === selected.channel.id ||
-                  probe.pendingId === selected.channel.id ||
-                  accountProbe.pendingId === selected.channel.id ||
-                  syncKeys.pendingId === selected.channel.id ||
-                  toggle.pendingId === selected.channel.id ||
-                  del.pendingId === selected.channel.id ||
-                  ping.pendingId === selected.channel.id
-                }
-                onCheckAccount={() => {
-                  accountProbe.reset();
-                  accountProbe.mutate(selected.channel.id);
-                }}
-                onPing={() => {
-                  ping.reset();
-                  ping.mutate(selected.channel.id);
-                }}
-                pingPending={ping.pendingId === selected.channel.id}
-                pingResult={
-                  ping.data?.channel_id === selected.channel.id
-                    ? ping.data
-                    : null
-                }
-                onRefresh={() => {
-                  refresh.reset();
-                  refresh.mutate(selected.channel.id);
-                }}
-                onEdit={() => {
-                  saveEdit.reset();
-                  setEdit(selected.channel);
-                }}
-              />
-            )}
-          </div>
+          <ThemeDetails
+            open={inspectorOpen}
+            title={t("channels.details")}
+            onClose={() => setInspectorOpen(false)}
+          >
+            <div className="detail-card ops-detail-card is-compact">
+              {!selected ? (
+                <div className="detail-empty">{t("channels.selectHint")}</div>
+              ) : (
+                <ChannelDetail
+                  overview={selected}
+                  site={
+                    selected.channel.site_id != null
+                      ? siteById.get(selected.channel.site_id)
+                      : undefined
+                  }
+                  accountData={
+                    accountProbe.data?.channel_id === selected.channel.id
+                      ? accountProbe.data
+                      : null
+                  }
+                  busy={
+                    refresh.pendingId === selected.channel.id ||
+                    probe.pendingId === selected.channel.id ||
+                    accountProbe.pendingId === selected.channel.id ||
+                    syncKeys.pendingId === selected.channel.id ||
+                    toggle.pendingId === selected.channel.id ||
+                    del.pendingId === selected.channel.id ||
+                    ping.pendingId === selected.channel.id
+                  }
+                  onCheckAccount={() => {
+                    accountProbe.reset();
+                    accountProbe.mutate(selected.channel.id);
+                  }}
+                  onPing={() => {
+                    ping.reset();
+                    ping.mutate(selected.channel.id);
+                  }}
+                  pingPending={ping.pendingId === selected.channel.id}
+                  pingResult={
+                    ping.data?.channel_id === selected.channel.id
+                      ? ping.data
+                      : null
+                  }
+                  onRefresh={() => {
+                    refresh.reset();
+                    refresh.mutate(selected.channel.id);
+                  }}
+                  onEdit={() => {
+                    saveEdit.reset();
+                    setEdit(selected.channel);
+                  }}
+                />
+              )}
+            </div>
+          </ThemeDetails>
         </div>
       </div>
 
@@ -1773,23 +1844,21 @@ export function Channels() {
               ) ?? null;
             return overview ? relayCredentialFor(overview) : undefined;
           })()}
-							userCredential={(() => {
-								const overview =
-									(overviews.data ?? []).find(
-										(row) => row.channel.id === edit.id,
-									) ?? null;
-								return overview ? userCredentialFor(overview) : undefined;
-							})()}
-							checkinSupported={
-								(() => {
-									const overview =
-										(overviews.data ?? []).find(
-											(row) => row.channel.id === edit.id,
-										) ?? null;
-									return overview?.checkin_supported ?? false;
-								})()
-							}
-							checkinModuleOn={checkinEnabled}
+          userCredential={(() => {
+            const overview =
+              (overviews.data ?? []).find(
+                (row) => row.channel.id === edit.id,
+              ) ?? null;
+            return overview ? userCredentialFor(overview) : undefined;
+          })()}
+          checkinSupported={(() => {
+            const overview =
+              (overviews.data ?? []).find(
+                (row) => row.channel.id === edit.id,
+              ) ?? null;
+            return overview?.checkin_supported ?? false;
+          })()}
+          checkinModuleOn={checkinEnabled}
           pending={
             saveEdit.isPending ||
             setCredentialStatus.isPending ||

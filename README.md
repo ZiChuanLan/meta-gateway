@@ -33,6 +33,7 @@
 | <img src="docs/screenshots/login.png" width="480" /><br><b>安全控制台</b> · 零内存持久化的 Master 认证防御 | <img src="docs/screenshots/dashboard.png" width="480" /><br><b>数据总览</b> · 实时吞吐、健康分布与请求追踪 |
 | :---: | :---: |
 | <img src="docs/screenshots/connections.png" width="480" /><br><b>上游连接</b> · 多源站点、自动模型发现与鉴权 | <img src="docs/screenshots/models.png" width="480" /><br><b>模型路由</b> · 成员优先级、权重负载与别名归一 |
+| <img src="docs/screenshots/workbench.png" width="480" /><br><b>模型工作台</b> · 图像生成编辑、文字流式对话与能力校正 | <img src="docs/screenshots/capabilities.png" width="480" /><br><b>能力注册表</b> · 端点编码、模态上限与外部目录同步 |
 | <img src="docs/screenshots/keys.png" width="480" /><br><b>令牌管理</b> · 独立额度、路由分组绑定与调用统计 | <img src="docs/screenshots/store.png" width="480" /><br><b>插件市场</b> · 模块化扩展、沙箱隔离与托管进程 |
 | <img src="docs/screenshots/checkin.png" width="480" /><br><b>自动化签到</b> · 多站点定时保活与 Cookie 调度 | <img src="docs/screenshots/exchange.png" width="480" /><br><b>资产交换</b> · 拓扑快照、加密导入与 WebDAV 备份 |
 
@@ -45,7 +46,7 @@
   <a href="#quickstart">快速开始</a> ·
   <a href="#downstream">接入指南</a> ·
   <a href="#config">配置参数</a> ·
-  <a href="#architecture">架构原理</a> ·
+  <a href="#architecture">架构设计</a> ·
   <a href="#faq">常见问题</a>
 </p>
 
@@ -65,6 +66,7 @@
 | **渠道故障易中断** | 失败自动进入冷却期并秒级转移至备用通道，恢复后无感回归 |
 | **模型命名不统一** | 跨渠道智能识别与一键别名归一，对外屏蔽上游命名碎片化 |
 | **协议不兼容** | OpenAI / Anthropic / Gemini 原生格式全自动双向互译 |
+| **同模型接口各异** | 能力注册表逐模型记录端点与编码，并从外部目录一次补齐模态、上下文与单价 |
 | **额度浪费需打卡** | 内置定时签到引擎，原生支持 Session Cookie 与自动化保活 |
 | **业务隔离需求** | 支持模型路由分组，为不同客户端/场景精准分配专属通道集 |
 
@@ -103,6 +105,20 @@
       <p><b>独立进程沙箱隔离</b> · 支持一键拉取并安装市场扩展（如自动签到/探针）；独立 sidecar 进程托管，环境变量白名单隔离核心凭证。</p>
     </td>
   </tr>
+  <tr>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/sliders-horizontal.svg" width="16" align="absmiddle"> 模型能力注册表</h4>
+      <p><b>端点与编码的单一事实源</b> · 逐模型记录端点、请求编码、输入输出模态、参考图上限与异步特性；人工校正后即冻结，自动写入只填空位。</p>
+    </td>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/braces.svg" width="16" align="absmiddle"> 模型工作台</h4>
+      <p><b>上线前先试一次</b> · 图像按是否带参考图自动切换生成与编辑；文字为多轮流式对话，复用与线上 <code>/v1</code> 完全一致的选路、计费与取消逻辑。</p>
+    </td>
+    <td width="33.3%" valign="top">
+      <h4><img src="docs/icons/refresh-cw.svg" width="16" align="absmiddle"> 外部目录同步</h4>
+      <p><b>没断言 ≠ 零</b> · 接入 LiteLLM 价目表与 models.dev 索引，补齐模态、上下文窗口与单价；强制先 dry run 逐字段对比，三档写入可分别开关。</p>
+    </td>
+  </tr>
 </table>
 
 <details open>
@@ -111,6 +127,7 @@
 - **全面格式兼容**：完整支持 `/v1/chat/completions`、`/v1/completions`、`/v1/embeddings`、`/v1/responses`、`/v1/images/*`。
 - **三方协议互通**：下游无论发起 Anthropic (`/v1/messages`) 还是 OpenAI 协议，均可透明调用任意上游平台（包括 Gemini 原生格式）。
 - **全链路 SSE 流式优化**：针对服务端推送（SSE）深度优化，提供流式保活与断流超时守护。
+- **图片生成与编辑**：工作台按参考图选择生成或编辑，支持 GPT-Image multipart、grok2api JSON 与路由级聊天兼容。参见[图片接口说明](docs/image-editing.md)。
 </details>
 
 <details>
@@ -128,6 +145,36 @@
 - **上游模型发现**：一键拉取上游最新模型列表，支持 `auto` 自动同步与 `manual` 人工审核双模式。
 - **模型跨站归一**：跨渠道识别同一底座模型的不同命名（如 `claude-3-5-sonnet-latest` ↔ `claude-3-5-sonnet-20241022`），一键建立对外统一路由。
 - **变更追溯面板**：上游模型清单变化自动记录审计，支持直观预览影响范围并提供一键平滑映射替换。
+</details>
+
+<details>
+<summary><strong>模型能力注册表与外部目录同步</strong></summary>
+
+网关要知道的不只是「模型叫什么」，还有「该用哪个端点、哪种编码调用它」。`/v1/images/edits` 与
+`/v1/chat/completions` 的分工、参考图上限、是否异步，过去散落在各处判断里，现在集中成一张可查看、
+可校正、可同步的表（模型工作台 →「能力」）。
+
+- **四档来源**：`builtin`（模型名推断）/ `discovery`（探测自动标注）/ `catalog`（外部目录同步）/
+  `manual`（人工校正）。**人工校正后即冻结**，后续任何自动写入都不再覆盖；而机器推断的行会在
+  规则改进后被自动重算——否则改进一条规则永远到不了已经存在的行。
+- **外部目录同步**：接入 [LiteLLM](https://github.com/BerriAI/litellm) 价目表与
+  [models.dev](https://models.dev) 索引，一次补齐端点、模态、上下文窗口、厂商与单价。写库前
+  **强制先 dry run**，逐字段列出 `— → 值` 与数据来源，确认后才应用；能力、元数据、价格三档可
+  分别开关。默认每 24 小时自动同步，单源失败不中断。
+- **可逆写入**：元数据与价格只填空位，清空字段即等于「要求下次重填」；能力只在非人工行上写入。
+- **图片接口形态**：不同中转对同名模型的约定可能不同，以注册表的人工设置为准。详见
+  [图片接口说明](docs/image-editing.md)。
+</details>
+
+<details>
+<summary><strong>两套界面包与交互约定</strong></summary>
+
+- **经典控制台 / 现代工作空间**：`设置 → 外观` 一键切换，布局与过场随包变化；明暗与配色是彼此
+  独立的维度，调整其中一个不会重置另外两个。参见[界面主题包](docs/ui-themes.md)。
+- **操作入口分层**：每个区域突出一个主要操作，行内只保留高频项，其余收进「更多操作」——与右键
+  菜单共用同一份动作定义，禁用项带原因说明。
+- **浮层与键盘**：抽屉与确认框统一 pending 锁定、关闭限制与焦点恢复；列表行支持 Shift + F10
+  唤起菜单。参见[控制台交互约定](docs/console-interactions.md)。
 </details>
 
 ---
@@ -314,6 +361,10 @@ flowchart LR
 | `DATA_DIR` | 否 | `./data` | 数据持久化目录（内嵌 SQLite 与备份存储） |
 | `RETRY_TIMES` | 否 | `2` | 跨通道重试轮次上限（故障转移轮数） |
 | `CHANNEL_AUTO_DISABLE_THRESHOLD` | 否 | `5` | 通道连续失败后自动挂起禁用的阈值（0 代表不禁用） |
+| `MODEL_CATALOG_SOURCES` | 否 | 全部已知源 | 外部目录源，逗号分隔（`litellm,models.dev`）；填未知值会启动报错 |
+| `MODEL_CATALOG_SYNC_INTERVAL_HOURS` | 否 | `24` | 外部目录自动同步周期（小时），设 `0` 只保留控制台手动同步 |
+| `MODEL_CATALOG_SYNC_PRICES` | 否 | `true` | 同步时是否一并写入模型单价 |
+| `CORS_ALLOWED_ORIGINS` | 否 | `""` | 留空放行所有来源；填入逗号分隔白名单（支持 `*.example.com`）收紧 |
 | `CHECKIN_ENABLED` | 否 | `false` | 是否激活后台多站点自动化签到引擎 |
 
 完整参数配置清单与高级调优请参阅 [docs/operations.md](docs/operations.md)。
@@ -342,6 +393,23 @@ Nginx 是纯传输层转发，无法理解 AI 模型的语义。Meta Gateway 运
 1. 所有上游 API Key 在入库前均由 `MASTER_KEY` 执行 AES-GCM 高强度加密，仅在出站转发前在内存中瞬时解密；
 2. 控制台 `ADMIN_TOKEN` 仅保留在浏览器当前会话内存中，不存 Cookie、不入 URL；
 3. 出站流量全局搭载 SSRF 防护墙，严格拦截环回私网与非法重定向。
+</details>
+
+<details>
+<summary><strong>Q: 模型的价格、上下文窗口和模态是从哪来的？会覆盖我手工填的值吗？</strong></summary>
+
+优先级是**人工校正 > 外部目录同步 > 内置推断**。同步写入遵循「只填空位」：已有的上下文窗口、
+模态、厂商与单价不会被覆盖，把字段清空即代表「要求下次同步重填」。而人工在控制台改过的模型
+能力会被标记为 `manual` 并**永久冻结**，此后任何自动写入都不再碰它。所有写入都可在同步前用
+dry run 逐字段预览。
+</details>
+
+<details>
+<summary><strong>Q: 经典控制台和现代工作空间有什么区别？我只想换个明暗呢？</strong></summary>
+
+两套是完整界面包，切换后布局、过场与控件风格整体变化（经典偏蓝金直角，现代偏纸白留白）。
+**明暗与配色是彼此独立的两个维度**——可以只切明暗、只换配色，也可以整套换包，互不干扰。
+偏好存在浏览器本地，不影响同实例上的其他使用者。
 </details>
 
 ---

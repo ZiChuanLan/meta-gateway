@@ -1,6 +1,7 @@
 import {
   ListChecks,
   Activity,
+  RefreshCw,
   ExternalLink,
   ChevronDown,
   Combine,
@@ -29,6 +30,7 @@ import type {
   RoutingCandidate,
 } from "../api/types";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
+import { rowContextPoint, rowKeyboardContextPoint } from "../components/contextMenu";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -40,6 +42,7 @@ import {
   Dialog,
   Empty,
   Page,
+  PageActions,
   Panel,
   InfoTip,
   StatusBadge,
@@ -225,6 +228,8 @@ function ModelCatalog({
     () => readTabState("status", "enabled"),
   );
   const [showAdvanced, setShowAdvanced] = useState(true);
+  const [changesOpenRequest, setChangesOpenRequest] = useState(0);
+  const [showModelFilters, setShowModelFilters] = useState(Boolean(initialGroup || channelIdFromUrl));
   const [edit, setEdit] = useState<Partial<Route> | null>(null);
   const [editMeta, setEditMeta] = useState<ModelMetadata | null>(null);
   const [remove, setRemove] = useState<Route | null>(null);
@@ -497,14 +502,21 @@ function ModelCatalog({
       ),
     [activeGroup, orderedMembers],
   );
-  const primary = primaryMember(selectedMembers);
+  const explain = useQuery({
+    queryKey: ["explain", selected, activeGroup],
+    queryFn: ({ signal }) =>
+      service.explain(selectedRoute!.model_pattern, signal, activeGroup),
+    enabled: Boolean(selectedRoute),
+    refetchInterval: 15_000,
+  });
+  const primary = primaryMember(selectedMembers, selectedRoute ?? undefined);
   const selectedRoutingMode = selectedRoute?.routing_mode || "auto";
   const effectivePolicy = getEffectiveRoutingPolicy(
     selectedRoutingMode,
     runtimeSettings.data?.editable,
   );
   const effectiveRetryRounds =
-    selectedRoute?.retry_times ?? runtimeSettings.data?.editable.retry_times;
+    explain.data?.retry_times_override ?? selectedRoute?.retry_times ?? runtimeSettings.data?.editable.retry_times;
   const effectiveChannelRetries =
     selectedRoute?.channel_retry_times ??
     runtimeSettings.data?.editable.channel_retry_times;
@@ -519,13 +531,10 @@ function ModelCatalog({
         ) ?? null)
       : null;
   const singleModeActive = selectedRoute?.routing_mode === "single";
-  const explain = useQuery({
-    queryKey: ["explain", selected],
-    queryFn: ({ signal }) =>
-      service.explain(selectedRoute!.model_pattern, signal),
-    enabled: Boolean(selectedRoute),
-    refetchInterval: 15_000,
-  });
+  const singleModeApplies = Boolean(singleModePinned && explain.data?.candidates.some(
+    (item) => item.candidate.member.id === singleModePinned.member.id,
+  ));
+  const pinOutsideGroup = Boolean(singleModePinned && explain.data && !singleModeApplies);
   /** Members of the route currently being edited (may differ from selection). */
   const editingOverview =
     edit?.id != null
@@ -830,7 +839,7 @@ function ModelCatalog({
     const close = () => {
       if (options?.closeContext) setContextMenu(null);
     };
-    return [
+    const items: ActionMenuItem[] = [
       {
         key: "bulk",
         label: t("modelsPage.bulkMode"),
@@ -839,6 +848,7 @@ function ModelCatalog({
         onSelect: () => {
           close();
           setBulkMode(true);
+          setBulkSelected((current) => new Set(current).add(route.id));
         },
       },
       {
@@ -915,6 +925,12 @@ function ModelCatalog({
         },
       },
     ];
+    const ranks: Record<string, number> = { try: 0, logs: 0, meta: 1, edit: 1, toggle: 1, bulk: 2, delete: 3 };
+    const sections = ["actions.view", "actions.manage", "actions.selection", "actions.danger"];
+    return items.sort((a, b) => (ranks[a.key] ?? 1) - (ranks[b.key] ?? 1)).map((item) => ({
+      ...item, group: t(sections[ranks[item.key] ?? 1]!),
+      disabledReason: item.disabled ? t("common.working") : undefined,
+    }));
   };
 
   const total = overviews.data?.length ?? 0;
@@ -923,8 +939,8 @@ function ModelCatalog({
   ).length;
 
   return (
-    <div className="ops-canvas">
-      <ModelChangesPanel />
+    <div className="ops-canvas models-catalog">
+      <ModelChangesPanel openRequest={changesOpenRequest} hideWhenQuiet />
       <TelemetryStrip
         items={[
           {
@@ -1044,28 +1060,7 @@ function ModelCatalog({
         </div>
       ) : null}
 
-      <div className="split models-split">
-        <Panel
-          className="ops-list-panel"
-          title={t("modelsPage.listTitle")}
-          actions={
-            <>
-              <Button
-                variant="secondary"
-                icon={<Combine size={16} />}
-                onClick={() => setUnifyOpen(true)}
-                title={t("modelsPage.unify.actionHint")}
-              >
-                {t("modelsPage.unify.action")}
-              </Button>
-              <Button
-                variant="secondary"
-                icon={<History size={16} />}
-                onClick={() => setUnifyHistoryOpen(true)}
-                title={t("modelsPage.unify.history.actionHint")}
-              >
-                {t("modelsPage.unify.history.action")}
-              </Button>
+      <PageActions>
               <Button
                 variant="secondary"
                 icon={<Activity size={16} />}
@@ -1074,8 +1069,12 @@ function ModelCatalog({
               >
                 {t("modelsPage.probe.action")}
               </Button>
+              <ActionMenu label={t("modelsPage.tools")} items={[
+                { key: "unify", label: t("modelsPage.unify.action"), icon: <Combine size={14} />, onSelect: () => setUnifyOpen(true) },
+                { key: "history", label: t("modelsPage.unify.history.action"), icon: <History size={14} />, onSelect: () => setUnifyHistoryOpen(true) },
+                { key: "upstream-changes", label: t("modelChanges.title"), icon: <RefreshCw size={14} />, onSelect: () => setChangesOpenRequest((value) => value + 1) },
+              ]} />
               <Button
-                variant="secondary"
                 icon={<Plus size={16} />}
                 title={t("modelsPage.addRouteHint")}
                 onClick={() => {
@@ -1085,8 +1084,11 @@ function ModelCatalog({
               >
                 {t("routing.addRoute")}
               </Button>
-            </>
-          }
+      </PageActions>
+      <div className="split models-split">
+        <Panel
+          className="ops-list-panel model-directory"
+          title={t("modelsPage.listTitle")}
         >
           <div className="models-simple-toolbar">
             <label className="directory-search models-search">
@@ -1106,6 +1108,8 @@ function ModelCatalog({
                 aria-label={t("routing.searchPlaceholder")}
               />
             </label>
+            <Button variant="quiet" aria-expanded={showModelFilters} onClick={() => setShowModelFilters(!showModelFilters)}>{t("modelsPage.filters")}</Button>
+            <div className="models-filter-options" hidden={!showModelFilters}>
             <select
               aria-label={t("modelsPage.groupFilter")}
               value={groupFilter}
@@ -1161,6 +1165,7 @@ function ModelCatalog({
               <option value="disabled">{t("common.disabled")}</option>
               <option value="all">{t("modelsPage.statusAll")}</option>
             </select>
+            </div>
           </div>
 
           <EntityState
@@ -1262,8 +1267,8 @@ function ModelCatalog({
                   </Button>
                 </div>
               ) : null}
-              <div className="table-wrap">
-                <table>
+              <div className="table-wrap model-directory-wrap">
+                <table className={bulkMode ? "model-directory-table is-bulk" : "model-directory-table"}>
                   <thead>
                     <tr>
                       {bulkMode ? (
@@ -1277,7 +1282,7 @@ function ModelCatalog({
                         </th>
                       ) : null}
                       <th>{t("common.model")}</th>
-                      <th>{t("modelsPage.col.upstream")}</th>
+                      <th className="model-upstream-header">{t("modelsPage.col.upstream")}</th>
                       <th className="status-col">{t("common.status")}</th>
                       <th className="actions">{t("common.actions")}</th>
                     </tr>
@@ -1291,7 +1296,7 @@ function ModelCatalog({
                         item.route.model_group,
                         meta?.vendor,
                       );
-                      const head = primaryMember(item.members);
+                      const head = primaryMember(item.members, item.route);
                       const ready = item.members.filter(
                         (entry) => candidateState(entry) === "ready",
                       ).length;
@@ -1301,16 +1306,21 @@ function ModelCatalog({
                       return (
                         <tr
                           key={item.route.id}
+                          tabIndex={0}
                           className={`is-clickable${active ? " is-selected" : ""}`}
                           onClick={() => selectRow(item.route.id)}
                           onContextMenu={(event) => {
-                            event.preventDefault();
+                            const point = rowContextPoint(event);
+                            if (!point) return;
                             selectRow(item.route.id);
                             setContextMenu({
                               routeId: item.route.id,
-                              top: event.clientY,
-                              left: event.clientX,
+                              ...point,
                             });
+                          }}
+                          onKeyDown={(event) => {
+                            const point = rowKeyboardContextPoint(event);
+                            if (point) { selectRow(item.route.id); setContextMenu({ routeId: item.route.id, ...point }); }
                           }}
                         >
                           {bulkMode ? (
@@ -1328,13 +1338,25 @@ function ModelCatalog({
                               />
                             </td>
                           ) : null}
-                          <td>
-                            <strong className="mono">
+                          <td className="model-row-name">
+                            <strong className="mono" title={item.route.model_pattern}>
                               {item.route.model_pattern}
                             </strong>
+                            <small className="model-nav-provider">{head ? head.channel.name : t("modelsPage.noUpstream")}</small>
                             <span className="model-meta-badge is-group">
                               {group}
                             </span>
+                            {item.route.image_edit_shim ? (
+                              // Only meaningful on routes whose model has no
+                              // images endpoint of its own, so it stays a hint
+                              // rather than a status.
+                              <span
+                                className="model-meta-badge is-shim"
+                                title={t("routing.imageEditShimHint")}
+                              >
+                                {t("modelsPage.metaImageEdit")}
+                              </span>
+                            ) : null}
                             {(() => {
                               if (!meta) return null;
                               return (
@@ -1367,7 +1389,7 @@ function ModelCatalog({
                               );
                             })()}
                           </td>
-                          <td>
+                          <td className="model-row-upstream">
                             {head ? (
                               <>
                                 <Link
@@ -1392,7 +1414,7 @@ function ModelCatalog({
                               </span>
                             )}
                           </td>
-                          <td className="status-col">
+                          <td className="status-col model-row-status">
                             <StatusBadge
                               value={
                                 !item.route.enabled
@@ -1410,6 +1432,7 @@ function ModelCatalog({
                             <ActionMenu
                               compact
                               label={t("common.moreActions")}
+                              title={item.route.model_pattern}
                               disabled={rowBusy}
                               items={modelActions(item.route)}
                             />
@@ -1431,7 +1454,9 @@ function ModelCatalog({
                   if (!overview) return null;
                   return (
                     <ActionMenu
+                      key={overview.route.id}
                       label={t("common.moreActions")}
+                      title={overview.route.model_pattern}
                       open
                       onOpenChange={(open) => {
                         if (!open) setContextMenu(null);
@@ -1461,9 +1486,9 @@ function ModelCatalog({
                     {t("modelsPage.detailKicker")}
                   </p>
                   <h2 className="mono">{selectedRoute.model_pattern}</h2>
-                  <small>
+                  <small title={t("modelsPage.memberSummaryHint")}>
                     {primary
-                      ? t("modelsPage.servedBy", {
+                      ? t(singleModePinned ? "modelsPage.pinnedMember" : "modelsPage.servedBy", {
                           name: primary.channel.name,
                         })
                       : t("modelsPage.noUpstream")}
@@ -1537,77 +1562,7 @@ function ModelCatalog({
                 />
                 <InfoTip label={t("modelsPage.scopeHint")} />
               </div>
-              <div className="routing-policy-card">
-                <div className="routing-policy-summary">
-                  <span className="routing-policy-title">
-                    {t("routing.effectivePolicy")}
-                  </span>
-                  {effectivePolicy ? (
-                    <>
-                      <span
-                        className={`routing-signal${effectivePolicy.latency ? " is-on" : " is-off"}`}
-                      >
-                        {t("routing.signal.latency")}:{" "}
-                        {effectivePolicy.latency
-                          ? t("routing.signal.on")
-                          : t("routing.signal.off")}
-                      </span>
-                      <span
-                        className={`routing-signal${effectivePolicy.error ? " is-on" : " is-off"}`}
-                      >
-                        {t("routing.signal.error")}:{" "}
-                        {effectivePolicy.error
-                          ? t("routing.signal.on")
-                          : t("routing.signal.off")}
-                      </span>
-                      <span className="routing-policy-source">
-                        {t(effectivePolicy.source)}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="routing-policy-source">
-                      {t("routing.policyLoading")}
-                    </span>
-                  )}
-                </div>
-                <div className="routing-retry-summary">
-                  <span className="routing-policy-title">
-                    {t("routing.retryPolicy")}
-                  </span>
-                  <span className="routing-policy-value">
-                    {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
-                    <small>
-                      {t(
-                        retryPolicyIsOverridden
-                          ? "routing.policySource.model"
-                          : "routing.policySource.global",
-                      )}
-                    </small>
-                  </span>
-                  <span className="routing-policy-value">
-                    {t("routing.channelRetry")}:{" "}
-                    {effectiveChannelRetries ?? "?"}
-                    <small>
-                      {t(
-                        channelRetryPolicyIsOverridden
-                          ? "routing.policySource.model"
-                          : "routing.policySource.global",
-                      )}
-                    </small>
-                  </span>
-                  <span
-                    className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
-                  >
-                    {t("routing.failover")}:{" "}
-                    {runtimeSettings.data
-                      ? runtimeSettings.data.editable
-                          .cross_channel_failover_enabled
-                        ? t("routing.signal.on")
-                        : t("routing.signal.off")
-                      : "?"}
-                  </span>
-                </div>
-              </div>
+
 
               {singleModeActive && selectedRoute ? (
                 <div className="single-mode-banner">
@@ -1622,9 +1577,9 @@ function ModelCatalog({
                     </strong>
                     <small>
                       {singleModePinned
-                        ? t("routing.singleModeHint")
+                        ? t(pinOutsideGroup ? "routing.singleModeGroupMissing" : "routing.singleModeHint")
                         : t("routing.singleModeMissing")}
-                      {singleModePinned && !singleModePinned.member.enabled
+                      {singleModePinned && !pinOutsideGroup && !singleModePinned.member.enabled
                         ? ` ${t("routing.singleModeDisabledWarning")}`
                         : ""}
                     </small>
@@ -1644,28 +1599,15 @@ function ModelCatalog({
                 </div>
               ) : null}
 
-              <button
-                type="button"
-                className="advanced-toggle"
-                onClick={() => setShowAdvanced((value) => !value)}
-              >
-                <ChevronDown
-                  size={14}
-                  className={
-                    showAdvanced ? "chevron-flip is-open" : "chevron-flip"
-                  }
-                />
-                {showAdvanced
-                  ? t("modelsPage.hideRouting")
-                  : t("modelsPage.showRouting")}
-              </button>
-
+              <div className="member-section-heading">
+                <button type="button" aria-expanded={showAdvanced} onClick={() => setShowAdvanced((value) => !value)}>
+                  {t("modelsPage.members")}<ChevronDown size={14} className={showAdvanced ? "chevron-flip is-open" : "chevron-flip"} />
+                </button>
+                <InfoTip label={t("modelsPage.routingHint") + " " + t("routing.reorderHint") + " " + t("routing.groupTabsHint")} />
+              </div>
               {showAdvanced ? (
                 <section className="models-advanced">
                   <div className="models-advanced-bar">
-                    <div className="models-advanced-help">
-                      <span>{t("modelsPage.routingHint")}</span>
-                    </div>
                     <Button
                       variant="secondary"
                       icon={<Plus size={14} />}
@@ -1719,7 +1661,7 @@ function ModelCatalog({
                       </Button>
                     </div>
                   ) : null}
-				  {visibleMembers.length > 1 ? (
+				  {reorderMembers.isPending ? (
 				    <div className="routing-reorder-hint">
 				      <span>
 				        {reorderMembers.isPending
@@ -1838,10 +1780,14 @@ function ModelCatalog({
                         <span>{t("routing.groupCopyDefault")}</span>
                       </label>
                     ) : null}
-                    <p className="member-group-hint">
-                      {t("routing.groupTabsHint")}
-                    </p>
                   </div>
+                  {explain.data?.group_fallback ? (
+                    <p className="member-group-hint" role="status">
+                      {explain.data.route_group
+                        ? t("routing.groupFallback", { name: activeGroup, target: explain.data.route_group })
+                        : t("routing.groupFallbackAll", { name: activeGroup })}
+                    </p>
+                  ) : null}
                   {!selectedMembers.length ? (
                     <Empty>{t("routing.noMembers")}</Empty>
                   ) : visibleMembers.length === 0 ? (
@@ -2265,6 +2211,80 @@ function ModelCatalog({
                   )}
                 </section>
               ) : null}
+              <details className="route-policy-disclosure">
+                <summary>{t("routing.effectivePolicy")}<ChevronDown size={13} /></summary>
+              <div className="routing-policy-card">
+                <div className="routing-policy-summary">
+                  <span className="routing-policy-title">
+                    {t("routing.effectivePolicy")}
+                  </span>
+                  {effectivePolicy ? (
+                    <>
+                      <span
+                        className={`routing-signal${effectivePolicy.latency ? " is-on" : " is-off"}`}
+                      >
+                        {t("routing.signal.latency")}:{" "}
+                        {effectivePolicy.latency
+                          ? t("routing.signal.on")
+                          : t("routing.signal.off")}
+                      </span>
+                      <span
+                        className={`routing-signal${effectivePolicy.error ? " is-on" : " is-off"}`}
+                      >
+                        {t("routing.signal.error")}:{" "}
+                        {effectivePolicy.error
+                          ? t("routing.signal.on")
+                          : t("routing.signal.off")}
+                      </span>
+                      <span className="routing-policy-source">
+                        {t(effectivePolicy.source)}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="routing-policy-source">
+                      {t("routing.policyLoading")}
+                    </span>
+                  )}
+                </div>
+                <div className="routing-retry-summary">
+                  <span className="routing-policy-title">
+                    {t("routing.retryPolicy")}
+                  </span>
+                  <span className="routing-policy-value">
+                    {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
+                    <small>
+                      {t(
+                        singleModeApplies ? "routing.policySource.single" : retryPolicyIsOverridden
+                          ? "routing.policySource.model"
+                          : "routing.policySource.global",
+                      )}
+                    </small>
+                  </span>
+                  <span className="routing-policy-value">
+                    {t("routing.channelRetry")}:{" "}
+                    {effectiveChannelRetries ?? "?"}
+                    <small>
+                      {t(
+                        channelRetryPolicyIsOverridden
+                          ? "routing.policySource.model"
+                          : "routing.policySource.global",
+                      )}
+                    </small>
+                  </span>
+                  <span
+                    className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
+                  >
+                    {t("routing.failover")}:{" "}
+                    {runtimeSettings.data
+                      ? runtimeSettings.data.editable
+                          .cross_channel_failover_enabled
+                        ? t("routing.signal.on")
+                        : t("routing.signal.off")
+                      : "?"}
+                  </span>
+                </div>
+              </div>
+              </details>
             </>
           )}
         </div>

@@ -422,9 +422,14 @@ type Route struct {
 	StableFirstRequests        int     `json:"stable_first_requests,omitempty"`
 	// ModelGroup is a manual label; an empty value lets the UI use automatic
 	// vendor-family detection from the model name.
-	ModelGroup string    `json:"model_group,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ModelGroup string `json:"model_group,omitempty"`
+	// ImageEditShim opts this route into the chat→edit rewrite: a chat request
+	// carrying an image is re-issued in the model's real protocol and the
+	// result is returned as a chat completion. Off by default — it changes the
+	// wire contract, so it must be a deliberate, per-route decision.
+	ImageEditShim bool      `json:"image_edit_shim,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------

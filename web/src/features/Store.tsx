@@ -12,7 +12,7 @@ import {
 	Settings2,
 	Trash2,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -76,6 +76,16 @@ function sidecarOf(rec: PluginRecord | undefined): SidecarConfig | null {
 }
 
 export function Store() {
+	const [params] = useSearchParams();
+	if (params.get("tab") === "themes") {
+		const next = new URLSearchParams(params);
+		next.set("tab", "appearance");
+		return <Navigate to={`/settings?${next.toString()}`} replace />;
+	}
+	return <StoreExtensions />;
+}
+
+function StoreExtensions() {
 	const { t } = useI18n();
 	const { client } = useSession();
 	const service = api(client!);

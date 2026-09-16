@@ -58,6 +58,7 @@ export function AddChannelDialog({
     <Dialog
       title={t("channels.add")}
       onClose={onClose}
+      busy={pending}
       actions={
         <>
           <Button variant="secondary" onClick={onClose} disabled={pending}>

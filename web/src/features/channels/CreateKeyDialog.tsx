@@ -49,6 +49,7 @@ export function CreateKeyDialog({
     <Dialog
       title={t("channels.createKeyTitle")}
       onClose={onClose}
+      busy={pending}
       actions={
         <>
           <Button variant="secondary" onClick={onClose} disabled={pending}>

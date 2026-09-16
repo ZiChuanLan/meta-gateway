@@ -61,3 +61,45 @@ func TestNonIdempotentWriteDoesNotRotateAPIKeys(t *testing.T) {
 		t.Fatalf("non-idempotent write was replayed %d times, want exactly one", len(upstream.calls))
 	}
 }
+
+func TestImageWritesNeverReplayAfterRefreshOrIdempotencyHeader(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			upstream := &queuedRelay{results: []*relay.Result{
+				response(status, `{"error":"image request failed"}`),
+				response(http.StatusOK, `{"data":[]}`),
+			}}
+			service, db, memberID, _ := setupProxy(t, upstream)
+			member, err := db.RouteMember.GetByID(memberID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			channel, err := db.Channel.GetByID(member.ChannelID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := db.Credential.GetByID(*channel.CredentialID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential.Kind = "session"
+			if err := db.Credential.Update(credential); err != nil {
+				t.Fatal(err)
+			}
+			refresher := &fakeRefresher{ok: true}
+			service.SetCredentialRefresher(refresher)
+			service.SetChannelRetryTimes(3)
+			result := service.ChatCompletions(context.Background(), Request{
+				RequestID: "image-no-replay", Model: "model", Method: http.MethodPost,
+				OpenAIPath: "images/edits", Body: []byte(`{"model":"model","prompt":"edit"}`),
+				Headers: map[string]string{"Idempotency-Key": "image-operation"},
+			})
+			if result != nil && result.Body != nil {
+				defer result.Body.Close()
+			}
+			if len(upstream.calls) != 1 || refresher.calls != 0 {
+				t.Fatalf("image request replayed: requests=%d refreshes=%d", len(upstream.calls), refresher.calls)
+			}
+		})
+	}
+}

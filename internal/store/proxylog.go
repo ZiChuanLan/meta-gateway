@@ -12,7 +12,8 @@ import (
 
 // ProxyLogStore provides insert and query operations for proxy logs.
 type ProxyLogStore struct {
-	db *sql.DB
+	db  *sql.DB
+	fts LogFTSState
 }
 
 // ProxyLogFilter selects a page of proxy logs for Admin list views.
@@ -28,6 +29,10 @@ type ProxyLogFilter struct {
 	UpstreamRequestID string
 	BeforeID          *int64
 	Limit             int
+	// Query is free text searched across model, error text, path and both
+	// request ids. It runs through FTS5 when available and degrades to LIKE
+	// when the SQLite build has no FTS5 (or the query has no usable tokens).
+	Query string
 }
 
 // Insert writes a proxy log entry.
@@ -199,13 +204,28 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 		where = append(where, "pl.upstream_request_id = ?")
 		args = append(args, id)
 	}
-	args = append(args, limit)
 
 	from := "proxy_logs pl"
+	if query := strings.TrimSpace(f.Query); query != "" {
+		if match := BuildLogFTSMatch(query); match != "" && s.fts.Available(s.db) {
+			from += " INNER JOIN proxy_logs_fts fts ON fts.rowid = pl.id"
+			where = append(where, "proxy_logs_fts MATCH ?")
+			args = append(args, match)
+		} else {
+			// No FTS5 (or nothing tokenizable): substring scan over the same
+			// columns. Slower, but the feature still works.
+			like := "%" + strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(query) + "%"
+			where = append(where,
+				"(pl.model LIKE ? ESCAPE '\\' OR pl.error_brief LIKE ? ESCAPE '\\' OR pl.error_detail LIKE ? ESCAPE '\\' OR pl.path LIKE ? ESCAPE '\\' OR pl.request_id LIKE ? ESCAPE '\\' OR pl.upstream_request_id LIKE ? ESCAPE '\\')")
+			args = append(args, like, like, like, like, like, like)
+		}
+	}
+	args = append(args, limit)
+
 	if needsChannelJoin {
-		// LEFT JOIN so orphan channel_id rows remain visible when not site-filtered;
-		// site filter still requires a matching channels.site_id row.
-		from = "proxy_logs pl INNER JOIN channels c ON c.id = pl.channel_id"
+		// A site filter requires a matching channel, while unfiltered logs
+		// still include orphan channel IDs. Preserve any FTS join above.
+		from += " INNER JOIN channels c ON c.id = pl.channel_id"
 	}
 	// Always LEFT JOIN routes so the route pattern (model_pattern) can be shown
 	// alongside each log row; route_id 0 / missing routes render as empty.

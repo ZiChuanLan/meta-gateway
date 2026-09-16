@@ -29,6 +29,8 @@ type DB struct {
 	WebDAVSettings  *WebDAVSettingsStore
 	AdminTOTP       *AdminTOTPStore
 	ModelMetadata   *ModelMetadataStore
+	ModelCapability *ModelCapabilityStore
+	ModelCatalog    *ModelCatalogStore
 	ErrorRule       *ErrorPassRuleStore
 	HealthHistory   *HealthHistoryStore
 	AlertRule       *AlertRuleStore
@@ -107,6 +109,8 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 		WebDAVSettings:  &WebDAVSettingsStore{db: sqldb},
 		AdminTOTP:       &AdminTOTPStore{db: sqldb},
 		ModelMetadata:   &ModelMetadataStore{db: sqldb},
+		ModelCapability: &ModelCapabilityStore{db: sqldb},
+		ModelCatalog:    &ModelCatalogStore{db: sqldb},
 		ErrorRule:       &ErrorPassRuleStore{db: sqldb},
 		HealthHistory:   &HealthHistoryStore{db: sqldb},
 		AlertRule:       &AlertRuleStore{db: sqldb},

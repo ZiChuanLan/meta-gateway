@@ -35,12 +35,15 @@ function missingDays(item: ModelChange): number {
 
 // Local extension of the model workspace: compact reminder, inline history,
 // then a protected selection → server preview → explicit apply workflow.
-export function ModelChangesPanel() {
+export function ModelChangesPanel({ openRequest = 0, hideWhenQuiet = false }: { openRequest?: number; hideWhenQuiet?: boolean } = {}) {
   const { client } = useSession();
   const { t } = useI18n();
   const navigate = useNavigate();
   const service = api(client!);
   const [filters, setFilters] = useState(readFilters);
+  useEffect(() => {
+    if (openRequest > 0) setFilters((current) => ({ ...current, open: true }));
+  }, [openRequest]);
   const [selected, setSelected] = useState<number[]>([]);
   const [replacement, setReplacement] = useState<ModelChange[] | null>(null);
   const [ignoreIds, setIgnoreIds] = useState<number[] | null>(null);
@@ -63,6 +66,7 @@ export function ModelChangesPanel() {
   const harmlessVisible = visible.filter(harmless);
   const channels = [...new Map(items.map(item => [item.channel_id, item.channel_name])).entries()];
   const setFilter = (patch: Partial<Filters>) => { setFilters(current => ({ ...current, ...patch })); setSelected([]); };
+  if (hideWhenQuiet && !filters.open && !message && !changes.isError && !summary?.added && !summary?.removed && !summary?.confirmed) return null;
   return <section className="model-changes" aria-label={t("modelChanges.title")}>
     <div className="model-changes-summary">
       <RefreshCw size={15} aria-hidden="true" />

@@ -90,12 +90,14 @@ export function RouteDialog({
     <Dialog
       title={value.id ? t("routing.editRoute") : t("routing.addRoute")}
       onClose={onClose}
+      busy={pending}
       actions={
         <>
           <Button variant="secondary" onClick={onClose}>
             {t("common.cancel")}
           </Button>
           <Button
+            loading={pending}
             disabled={pending || !form.model_pattern}
             onClick={() =>
               onSave({
@@ -337,6 +339,21 @@ export function RouteDialog({
                 })
               }
             />
+          </Field>
+          <Field
+            label={t("routing.imageEditShim")}
+            hint={t("routing.imageEditShimHint")}
+          >
+            <label className="check marginless">
+              <input
+                type="checkbox"
+                checked={form.image_edit_shim ?? false}
+                onChange={(event) =>
+                  patch({ image_edit_shim: event.target.checked })
+                }
+              />
+              <span>{t("routing.imageEditShimEnable")}</span>
+            </label>
           </Field>
           <Field label={t("channels.payloadRules")}>
             <textarea

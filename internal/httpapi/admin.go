@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/crypto"
 	"github.com/lan/meta-gateway/internal/maintenance"
+	"github.com/lan/meta-gateway/internal/modelcatalog"
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/store"
 )
@@ -34,6 +35,14 @@ type AdminHandler struct {
 	// validateProxyURL validates a per-channel proxy URL against the outbound
 	// SSRF policy (nil skips validation — admin handlers without a policy).
 	validateProxyURL func(raw string) error
+	// modelCatalog drives the external model-index sync (nil disables the
+	// endpoint pair, which is how a deployment without outbound access runs).
+	modelCatalog *modelcatalog.Service
+	// modelCatalogScheduled / modelCatalogPrices mirror the process settings so
+	// the console can report whether the registry refreshes on its own and
+	// whether a sync is allowed to fill prices.
+	modelCatalogScheduled bool
+	modelCatalogPrices    bool
 	// connectionMu serializes the site-reuse/create/rollback sequence. Without
 	// it, two simultaneous creates for a new base URL could let one failed
 	// rollback delete the other request's newly attached credentials/channels.
@@ -61,6 +70,16 @@ func (h *AdminHandler) SetProxyValidator(fn func(raw string) error) {
 // SetGCService wires the database-maintenance service (may be nil).
 func (h *AdminHandler) SetGCService(s *maintenance.GCService) {
 	h.gcService = s
+}
+
+// SetModelCatalog wires the external model-index sync. scheduled reports whether
+// a background sweep is configured; pricesEnabled reports the process default
+// for writing prices during that sweep. A nil service disables both catalog
+// endpoints.
+func (h *AdminHandler) SetModelCatalog(service *modelcatalog.Service, scheduled, pricesEnabled bool) {
+	h.modelCatalog = service
+	h.modelCatalogScheduled = scheduled
+	h.modelCatalogPrices = pricesEnabled
 }
 
 // SetSticky hot-swaps the sticky-session store backing the admin read-only
@@ -177,6 +196,17 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Get("/model-metadata", h.listModelMetadata)
 	r.Put("/model-metadata/{name}", h.upsertModelMetadata)
 	r.Delete("/model-metadata/{name}", h.deleteModelMetadata)
+	// Model capability registry (protocol layer: endpoint, encoding, limits).
+	r.Get("/model-capabilities", h.listModelCapabilities)
+	r.Put("/model-capabilities/{name}", h.upsertModelCapability)
+	r.Delete("/model-capabilities/{name}", h.deleteModelCapability)
+	r.Post("/model-capabilities/resolve", h.resolveModelCapabilities)
+	r.Post("/model-capabilities/auto-tag", h.autoTagModelCapabilities)
+	// External model-index sync (LiteLLM / models.dev). Preview before sync is
+	// the intended order: the plan names every field the write would touch.
+	r.Get("/model-capabilities/catalog", h.catalogStatus)
+	r.Post("/model-capabilities/catalog/preview", h.previewModelCatalog)
+	r.Post("/model-capabilities/catalog/sync", h.syncModelCatalog)
 	// Channel health history + availability summaries.
 	r.Get("/health-history", h.listHealthHistory)
 	r.Get("/health-history/summary", h.healthHistorySummary)
@@ -277,6 +307,7 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 		UpstreamRequestID: upstreamRequestID,
 		BeforeID:          beforeID,
 		Limit:             limit,
+		Query:             query.Get("q"),
 	})
 	if err != nil {
 		writeStoreError(w, err)

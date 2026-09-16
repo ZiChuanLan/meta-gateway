@@ -12,6 +12,7 @@ import {
   Copy,
   Database,
   HeartPulse,
+  Play,
   ScrollText,
   TrendingUp,
   Wallet,
@@ -29,6 +30,8 @@ import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
 import { formatCost, formatTokens } from "../lib/format";
 import { channelHealthState } from "./channelHealth";
+import { DashboardAura } from "../components/DashboardAura";
+import { GatewayPreview } from "../components/GatewayTransition";
 
 const HOUR_24 = 24 * 3600 * 1000;
 
@@ -167,6 +170,7 @@ function ResultDistribution({
 }
 
 export function Dashboard() {
+  const [replayEntrance, setReplayEntrance] = useState(false);
   const { client } = useSession();
   const s = api(client!);
   const { t } = useI18n();
@@ -379,10 +383,14 @@ export function Dashboard() {
 
   return (
     <Page
+      className="dashboard-page"
       kicker={t("dashboard.kicker")}
       title={t("dashboard.title")}
       description={t("dashboard.description")}
+      actions={<Button variant="quiet" icon={<Play size={14} />} onClick={() => setReplayEntrance(true)}>{t("motion.replay")}</Button>}
     >
+      <DashboardAura />
+      {replayEntrance ? <GatewayPreview onClose={() => setReplayEntrance(false)} /> : null}
       <div className="cockpit-stack">
         <SetupGuide />
 

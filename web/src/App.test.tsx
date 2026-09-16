@@ -9,6 +9,7 @@ import {
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { ENTRANCE_CHARGE_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
 import { I18nProvider } from "./i18n";
 import { SessionProvider } from "./session";
 import { ToastProvider } from "./toast";
@@ -74,7 +75,9 @@ function stubAdminFetch() {
 			path === "/admin/channels/overview" ||
 			path === "/admin/discovery/models" ||
 			path === "/admin/downstream-keys" ||
-			path === "/admin/proxy-logs"
+			path === "/admin/proxy-logs" ||
+			path === "/admin/routes/overview" ||
+			path === "/admin/model-capabilities"
 		) {
 			return jsonResponse([]);
 		}
@@ -120,9 +123,9 @@ describe("channel-first shell", () => {
 
 	await flushAsyncWork();
 
-	// 鹰角极简启幕过场（点击 → 光轴凝聚启幕 420ms）完成后平滑触发大门开启 → sealing
+	// Authentication succeeds before the entrance transition publishes the session.
 	await act(async () => {
-		vi.advanceTimersByTime(450);
+		vi.advanceTimersByTime(100);
 		await Promise.resolve();
 	});
 
@@ -136,7 +139,7 @@ describe("channel-first shell", () => {
 		).toBeDisabled();
 
 		await act(async () => {
-			vi.advanceTimersByTime(1420);
+			vi.advanceTimersByTime(ENTRANCE_CHARGE_MS);
 			await Promise.resolve();
 		});
 
@@ -155,7 +158,7 @@ describe("channel-first shell", () => {
 		expect(screen.getByRole("link", { name: "Logs" })).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
 
-		act(() => vi.advanceTimersByTime(1620));
+		act(() => vi.advanceTimersByTime(ENTRANCE_REVEAL_MS));
 		expect(
 			document.querySelector(".gateway-transition"),
 		).not.toBeInTheDocument();
@@ -181,6 +184,24 @@ describe("channel-first shell", () => {
 		expect(localStorage.getItem("meta-gateway.admin-token")).toBeNull();
 	});
 
+	it("skips the visual sequence after successful authentication without logging in twice", async () => {
+		vi.useFakeTimers();
+		const fetch = stubAdminFetch();
+		vi.stubGlobal("fetch", fetch);
+		renderApp();
+		fireEvent.change(screen.getByLabelText("Admin token"), { target: { value: "skip-token" } });
+		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+		await flushAsyncWork();
+		fireEvent.click(screen.getByRole("button", { name: /Skip animation/ }));
+		await flushAsyncWork();
+		expect(screen.queryByRole("dialog", { name: "Workspace entrance" })).not.toBeInTheDocument();
+		expect(localStorage.getItem("meta-gateway.admin-token")).toBe("mg-sess.test");
+		expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
+		act(() => vi.advanceTimersByTime(5000));
+		expect(fetch.mock.calls.filter(([input]) => String(input) === "/admin/session")).toHaveLength(1);
+		expect(localStorage.getItem("meta-gateway.admin-token")).toBe("mg-sess.test");
+	});
+
 	it("lands legacy routes on the channel workspace", async () => {
 		localStorage.setItem("meta-gateway.admin-token", "redirect-token");
 		vi.stubGlobal("fetch", stubAdminFetch());
@@ -190,6 +211,18 @@ describe("channel-first shell", () => {
 		expect(
 			await screen.findByRole("heading", { name: "Overview" }),
 		).toBeInTheDocument();
+	});
+
+	it("opens the model workbench from the product nav", async () => {
+		localStorage.setItem("meta-gateway.admin-token", "nav-token");
+		vi.stubGlobal("fetch", stubAdminFetch());
+
+		renderApp(["/workbench"]);
+		expect(
+			await screen.findByRole("heading", { name: "Model workbench" }),
+		).toBeInTheDocument();
+		expect(screen.getByRole("tab", { name: "Images" })).toBeInTheDocument();
+		expect(screen.getByRole("tab", { name: "Capabilities" })).toBeInTheDocument();
 	});
 
 	it("opens models, logs, and maintain from the product nav", async () => {

@@ -1,33 +1,31 @@
 import {
 	Activity,
 	ArrowLeftRight,
-	ArrowUpCircle,
 	Boxes,
 	Cable,
 	CalendarCheck,
 	KeyRound,
-	LogOut,
-	Moon,
-	Network,
 	Package,
 	Puzzle,
 	ScrollText,
 	Settings,
-	Sun,
-	Zap,
+	Wand2,
+	ArrowRight,
+	ShieldCheck,
 	Image,
-	Search,
+	Moon,
+	Sun,
 } from "lucide-react";
+import { BrandMark } from "./components/BrandMark";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Navigate,
-	NavLink,
 	Route,
 	Routes,
 	useLocation,
 	useNavigate,
 } from "react-router-dom";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ApiClient, ApiError, api } from "./api/client";
 import type { Site } from "./api/types";
@@ -42,12 +40,16 @@ import {
 	Loading,
 } from "./components/ui";
 import { CommandPalette } from "./components/CommandPalette";
+import { ConsoleShell } from "./components/ConsoleShell";
 import { Dashboard } from "./features/Dashboard";
 import { GuidedTour } from "./features/GuidedTour";
 import { SetupWizard } from "./features/SetupWizard";
-import { KatanaCanvas } from "./components/KatanaCanvas";
-import { createEdgeSparkHost } from "./lib/katanafx";
 import { channelHealthState } from "./features/channelHealth";
+import { KatanaCanvas } from "./components/KatanaCanvas";
+import { GatewayTransition } from "./components/GatewayTransition";
+import { createEdgeSparkHost } from "./lib/katanafx";
+import { ENTRANCE_CHARGE_MS, ENTRANCE_EXIT_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
+import { AppearanceProvider, useAppearance } from "./appearance";
 
 const Channels = lazy(() =>
 	import("./features/Channels").then((module) => ({ default: module.Channels })),
@@ -79,6 +81,9 @@ const PluginHost = lazy(() =>
 const Store = lazy(() =>
 	import("./features/Store").then((module) => ({ default: module.Store })),
 );
+const Workbench = lazy(() =>
+	import("./features/Workbench").then((module) => ({ default: module.default })),
+);
 
 type TransitionPhase = "idle" | "fading" | "sealing" | "revealing" | "sheathing";
 
@@ -88,13 +93,18 @@ type AuthorizedSession = {
 	sites: Site[];
 };
 
-const SEAL_DURATION = 1400;
-const REVEAL_DURATION = 1600;
+const SEAL_DURATION = ENTRANCE_CHARGE_MS;
+const REVEAL_DURATION = ENTRANCE_REVEAL_MS;
 const REDUCED_REVEAL_DURATION = 160;
-const SHEATH_COVER_MS = 380;
-const SHEATH_DURATION = 1000;
+const SHEATH_COVER_MS = 300;
+const SHEATH_DURATION = ENTRANCE_EXIT_MS;
 
 export function App() {
+	return <AppearanceProvider><GatewayApp /></AppearanceProvider>;
+}
+
+function GatewayApp() {
+	const { appearance } = useAppearance();
 	const { client, connect, disconnect } = useSession();
 	const queryClient = useQueryClient();
 	const [transitionPhase, setTransitionPhase] =
@@ -131,13 +141,14 @@ export function App() {
 				schedule(() => setTransitionPhase("idle"), REDUCED_REVEAL_DURATION);
 				return;
 			}
-			// Doors start immediately so there is no empty white beat after the desk fades.
+			// Authentication has succeeded; the visual sequence now opens the workspace.
 			pendingSession.current = authorized;
 			setTransitionPhase("sealing");
 			schedule(() => {
 				const pending = pendingSession.current;
 				if (!pending) return;
 				connect(pending.token, pending.remember);
+				pendingSession.current = null;
 				setTransitionPhase("revealing");
 				schedule(() => {
 					pendingSession.current = null;
@@ -162,22 +173,27 @@ export function App() {
 		schedule(() => setTransitionPhase("idle"), SHEATH_DURATION);
 	}, [clearTransitionTimers, disconnect, schedule]);
 
-	useLayoutEffect(() => {
-		document.documentElement.classList.toggle(
-			"dark",
-			window.localStorage.getItem("meta-gateway.theme") === "dark",
-		);
-	}, []);
+	const finishTransition = useCallback(() => {
+		clearTransitionTimers();
+		const pending = pendingSession.current;
+		pendingSession.current = null;
+		// Skip only completes a transition after authentication has succeeded.
+		if (transitionPhase === "sheathing") disconnect();
+		else if (pending) connect(pending.token, pending.remember);
+		setTransitionPhase("idle");
+	}, [clearTransitionTimers, connect, disconnect, transitionPhase]);
 
 	return (
 		<>
 			{client ? (
 				<div
 					className={`authenticated-stage${transitionPhase === "revealing" ? " is-revealing" : ""}`}
+					style={{ animationDuration: `${REVEAL_DURATION}ms` }}
 				>
 					<Authenticated
 						clientKey={client}
 						initialSites={bootstrapSites}
+						entranceActive={transitionPhase !== "idle"}
 						onUnauthorized={handleDisconnect}
 					/>
 				</div>
@@ -188,7 +204,7 @@ export function App() {
 					transitionPhase={transitionPhase}
 				/>
 			)}
-			<GatewayTransition phase={transitionPhase} />
+			{transitionPhase !== "idle" && transitionPhase !== "fading" ? <GatewayTransition appearance={appearance} phase={transitionPhase} onSkip={finishTransition} /> : null}
 		</>
 	);
 }
@@ -210,25 +226,24 @@ function Connect({
 	const [needTOTP, setNeedTOTP] = useState(false);
 	const [totpCode, setTotpCode] = useState("");
 
-	// Katana Interactive States: Charge & Stance
 	const [isFocused, setIsFocused] = useState(false);
-	const [chargeRatio, setChargeRatio] = useState(0);
-
-	// 按钮 hover「磨刀」边缘火花（原生 JS，见 katanafx.ts）
+	const { scheme, toggleScheme, appearance } = useAppearance();
+	const loginRef = useRef<HTMLDivElement>(null);
+	const loginButtonRef = useRef<HTMLButtonElement>(null);
 	useEffect(() => {
-		const btn = document.querySelector<HTMLButtonElement>(".katana-submit-btn");
-		if (!btn) return;
-		const host = createEdgeSparkHost(btn);
-		const enter = () => host.start();
-		const leave = () => host.stop();
-		btn.addEventListener("pointerenter", enter);
-		btn.addEventListener("pointerleave", leave);
-		return () => {
-			btn.removeEventListener("pointerenter", enter);
-			btn.removeEventListener("pointerleave", leave);
-			host.dispose();
-		};
-	}, []);
+		const button = loginButtonRef.current;
+		if (!button) return;
+		const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+		const colors = getComputedStyle(document.documentElement);
+		const sparks = createEdgeSparkHost(button, [colors.getPropertyValue("--primary").trim() || "#7cc4f0", colors.getPropertyValue("--accent").trim() || "#d4af37", "#ffffff"], 160);
+		const start = () => { if (!reduced.matches && !button.disabled && !document.hidden) sparks.start(); };
+		const stop = () => sparks.stop();
+		button.addEventListener("pointerenter", start);
+		button.addEventListener("pointerleave", stop);
+		reduced.addEventListener("change", stop);
+		document.addEventListener("visibilitychange", stop);
+		return () => { sparks.dispose(); button.removeEventListener("pointerenter", start); button.removeEventListener("pointerleave", stop); reduced.removeEventListener("change", stop); document.removeEventListener("visibilitychange", stop); };
+	}, [appearance, scheme]);
 
 	// Custom login background (persisted locally, per browser)
 	const [bgUrl, setBgUrl] = useState<string>(() => {
@@ -316,17 +331,6 @@ function Connect({
 		e.target.value = "";
 	};
 
-	useEffect(() => {
-		let interval: number;
-		if (isFocused || pending || transitioning) {
-			interval = window.setInterval(() => {
-				setChargeRatio((prev) => Math.min(1, prev + 0.05));
-			}, 30);
-		} else {
-			setChargeRatio(0);
-		}
-		return () => clearInterval(interval);
-	}, [isFocused, pending, transitioning]);
 
 	async function submit(e: React.FormEvent) {
 		e.preventDefault();
@@ -376,159 +380,15 @@ function Connect({
 			setPending(false);
 		}
 	}
-	const pageRef = useRef<HTMLDivElement | null>(null);
-	const pointerFrame = useRef(0);
-	const pointerTarget = useRef({ rx: 0, ry: 0, xPx: 0.5, yPx: 0.5 });
-	const pointerCurrent = useRef({ rx: 0, ry: 0, xPx: 0.5, yPx: 0.5 });
-
-	const paintPointer = useCallback(
-		(rx: number, ry: number, xPct: number, yPct: number) => {
-			const node = pageRef.current;
-			if (!node) return;
-
-			// Continuous plane response: light center, shard bias, no zone swaps.
-			node.style.setProperty("--pointer-x", `${xPct * 100}%`);
-			node.style.setProperty("--pointer-y", `${yPct * 100}%`);
-			node.style.setProperty("--pointer-rx", rx.toFixed(4));
-			node.style.setProperty("--pointer-ry", ry.toFixed(4));
-			node.style.setProperty("--light-bias-x", `${50 + rx * 12}%`);
-			node.style.setProperty("--light-bias-y", `${44 + ry * 10}%`);
-			node.style.setProperty("--scene-shift-x", `${rx * 10}px`);
-			node.style.setProperty("--scene-shift-y", `${ry * 7}px`);
-			node.style.setProperty("--scene-tilt-x", `${ry * -1.8}deg`);
-			node.style.setProperty("--scene-tilt-y", `${rx * 2.2}deg`);
-			node.style.setProperty(
-				"--scene-glow",
-				`${0.62 + Math.abs(rx) * 0.16 + Math.abs(ry) * 0.1}`,
-			);
-			node.style.setProperty(
-				"--blue-bias",
-				`${0.55 + Math.max(0, -rx) * 0.2 + Math.max(0, ry) * 0.1}`,
-			);
-		},
-		[],
-	);
-
-	const runPointerLoop = useCallback(() => {
-		const target = pointerTarget.current;
-		const current = pointerCurrent.current;
-		const ease = 0.12;
-		current.rx += (target.rx - current.rx) * ease;
-		current.ry += (target.ry - current.ry) * ease;
-		current.xPx += (target.xPx - current.xPx) * ease;
-		current.yPx += (target.yPx - current.yPx) * ease;
-		paintPointer(current.rx, current.ry, current.xPx, current.yPx);
-		const settled =
-			Math.abs(target.rx - current.rx) < 0.001 &&
-			Math.abs(target.ry - current.ry) < 0.001 &&
-			Math.abs(target.xPx - current.xPx) < 0.0005 &&
-			Math.abs(target.yPx - current.yPx) < 0.0005;
-		if (settled) {
-			pointerFrame.current = 0;
-			return;
-		}
-		pointerFrame.current = window.requestAnimationFrame(runPointerLoop);
-	}, [paintPointer]);
-
-	function trackPointer(e: React.PointerEvent<HTMLDivElement>) {
-		const bounds = e.currentTarget.getBoundingClientRect();
-		const xPct = Math.max(
-			0,
-			Math.min(1, (e.clientX - bounds.left) / bounds.width),
-		);
-		const yPct = Math.max(
-			0,
-			Math.min(1, (e.clientY - bounds.top) / bounds.height),
-		);
-		const rx = Math.max(-1, Math.min(1, (xPct - 0.5) * 2));
-		const ry = Math.max(-1, Math.min(1, (yPct - 0.5) * 2));
-		pointerTarget.current = { rx, ry, xPx: xPct, yPx: yPct };
-		if (!pointerFrame.current) {
-			pointerFrame.current = window.requestAnimationFrame(runPointerLoop);
-		}
-	}
-
-	function resetPointer() {
-		pointerTarget.current = { rx: 0, ry: 0, xPx: 0.5, yPx: 0.5 };
-		if (!pointerFrame.current) {
-			pointerFrame.current = window.requestAnimationFrame(runPointerLoop);
-		}
-	}
-
-	useEffect(() => {
-		// seed center lighting
-		paintPointer(0, 0, 0.5, 0.5);
-		return () => {
-			if (pointerFrame.current)
-				window.cancelAnimationFrame(pointerFrame.current);
-		};
-	}, [paintPointer]);
-
 	return (
-		<div
-			ref={pageRef}
-			className={`connect-page${transitioning ? " is-routing" : ""}${transitionPhase === "sealing" ? " is-sealing-out" : ""}${isFocused ? " is-focused-blade" : ""}`}
-			onPointerMove={trackPointer}
-			onPointerLeave={resetPointer}
-		>
-			{/* High-speed Katana Physics Canvas & Energy Vortex */}
-			<KatanaCanvas
-				charging={isFocused || pending || transitioning}
-				chargeProgress={chargeRatio}
-			/>
-
-			{bgUrl ? (
-				<div
-					className="connect-custom-bg"
-					style={{ backgroundImage: `url("${bgUrl}")` }}
-				/>
-			) : null}
-
-			<div className="connect-ambient" aria-hidden="true">
-				<div className="impact-sky" />
-				<div className="impact-bloom impact-bloom-blue" />
-				<div className="ambient-vignette" />
-			</div>
-			<div className="connect-stage">
-				<header className="connect-editorial">
-					<div className="connect-brand">
-						<div className="brand-mark" aria-hidden="true">
-							<Network size={20} />
-						</div>
-						<div className="connect-brand-copy">
-							<span>META GATEWAY</span>
-							<small>OPERATIONS CONSOLE // MULTI-CHANNEL RELAY</small>
-						</div>
-					</div>
-					<h1 className="connect-masthead-title">
-						{t("app.connect.title")
-							.split("")
-							.map((ch, i) => (
-								<span
-									key={i}
-									className="masthead-char"
-									style={{ "--i": i } as React.CSSProperties}
-								>
-									{ch === " " ? "\u00A0" : ch}
-								</span>
-							))}
-					</h1>
-					<p className="connect-subtitle">{t("app.connect.subtitle")}</p>
-					<div className="connect-edition">
-						<span>OPENAI-COMPATIBLE RELAY</span>
-						<span>MULTI-CHANNEL · RETRY · FAILOVER</span>
-					</div>
-				</header>
-				<section className="connect-panel">
-					<div className="connect-panel-frame" aria-hidden="true" />
-					<span className="connect-panel-beam" aria-hidden="true" />
-					<span className="connect-panel-tag">MG-07 :// BEARER</span>
-					<div className="connect-panel-meta">
-						<span>ADMIN API</span>
-						<strong>BEARER TOKEN</strong>
-						<em>REQUIRED</em>
-					</div>
-					<div className="connect-toolbar">
+		<div ref={loginRef} className={"login-page login-motion" + (transitionPhase === "sealing" ? " is-leaving" : "")}>
+			<div className="login-atmosphere" aria-hidden="true" style={bgUrl ? { backgroundImage: "url(" + JSON.stringify(bgUrl) + ")" } : undefined} />
+			<KatanaCanvas charging={isFocused || pending || transitioning} chargeProgress={pending || transitioning ? 1 : .65} motionTarget={loginRef} />
+			<div className="login-light-ribbons" aria-hidden="true"><i /><i /><i /></div>
+			<header className="login-header">
+				<div className="login-brand"><span className="console-brand-mark"><BrandMark size={23} /></span><strong>Meta Gateway</strong></div>
+					<div className="login-tools">
+					<IconButton label={t(scheme === "dark" ? "app.themeLight" : "app.themeDark")} onClick={toggleScheme}>{scheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</IconButton>
 						<LanguageSwitcher />
 						<IconButton
 							ref={bgBtnRef}
@@ -582,6 +442,17 @@ function Connect({
 								)
 							: null}
 					</div>
+
+			</header>
+			<main className="login-stage">
+				<section className="login-introduction">
+					<span className="login-edition">{t("shell.workspace")}</span>
+					<h1>{t("login.titleFirst")}<br /><span>{t("login.titleSecond")}</span></h1>
+					<p>{t("login.description")}</p>
+					<div className="login-sculpture" aria-hidden="true"><span className="login-poster-code">01 / CONNECT</span><span className="login-orbit" /><span className="login-tile is-back" /><span className="login-tile is-middle" /><span className="login-tile is-front"><BrandMark size={46} /></span><span className="login-orbit-point" /><span className="login-poster-axis">META / GATEWAY</span></div>
+				</section>
+				<section className={"login-card" + (isFocused ? " is-focused" : "")} aria-labelledby="login-card-title">
+					<div className="login-card-heading"><span className="login-card-mark"><ShieldCheck size={22} strokeWidth={1.4} /></span><h2 id="login-card-title">{t("login.welcome")}</h2><p>{t("login.hint")}</p></div>
 					<form onSubmit={submit} aria-busy={pending || transitioning}>
 						<Field label={t("app.connect.token")}>
 							<input
@@ -623,81 +494,25 @@ function Connect({
 							/>
 							<span>{t("app.connect.remember")}</span>
 						</label>
-						{error && <div className="inline-error">{error}</div>}
+						{error && <div className="inline-error" role="alert">{error}</div>}
 						<Button
 							type="submit"
 							disabled={pending || transitioning || !token.trim()}
-							className="katana-submit-btn"
+							className="login-submit"
+							ref={loginButtonRef}
 						>
 							<span className="btn-content">
-								<Zap size={14} className="btn-blade-icon" />
+								<ArrowRight size={16} />
 								{pending || transitioning
 									? t("app.connect.connecting")
 									: t("app.connect.submit")}
 							</span>
-							<span className="btn-energy-charge" style={{ transform: `scaleX(${chargeRatio})` }} />
 						</Button>
 					</form>
-					<div className="connect-footer">
-						<span>NO COOKIE · NO URL TOKEN · OPT-IN LOCAL STORAGE</span>
-					</div>
+					<p className="login-private"><ShieldCheck size={13} />{t("login.private")}</p>
 				</section>
-			</div>
-		</div>
-	);
-}
-
-function GatewayTransition({ phase }: { phase: TransitionPhase }) {
-	if (phase === "idle" || phase === "fading") return null;
-	if (phase === "sheathing") {
-		return (
-			<div className="gateway-transition is-sheathing" aria-hidden="true">
-				<div className="sheath-veil" />
-				<div className="sheath-blade" />
-				<div className="sheath-point" />
-				<div className="sheath-word">
-					<span>SESSION SEALED</span>
-					<small>BEARER DISCARDED</small>
-				</div>
-			</div>
-		);
-	}
-	return (
-		<div className={`gateway-transition is-${phase}`} aria-hidden="true">
-			<div className="gateway-plane" aria-hidden="true">
-				<div className="gateway-plane-line gateway-plane-line-a" />
-				<div className="gateway-plane-line gateway-plane-line-b" />
-				<div className="gateway-plane-line gateway-plane-line-c" />
-				<div className="gateway-plane-line gateway-plane-line-d" />
-			</div>
-			<div className="gateway-doors">
-				<div className="gateway-door gateway-door-left">
-					<span>ADMIN / AUTH</span>
-					<strong>TOKEN</strong>
-					<small>BEARER VERIFIED</small>
-				</div>
-				<div className="gateway-door gateway-door-right">
-					<span>RELAY / ROUTING</span>
-					<strong>SITES</strong>
-					<small>CONSOLE OPENING</small>
-				</div>
-			</div>
-			<div className="gateway-console-stage">
-				<div className="gateway-transition-lock">
-					<span>ADMIN SESSION ESTABLISHED</span>
-					<strong>
-						CONSOLE
-						<br />
-						ONLINE
-					</strong>
-					<div>
-						<b>OK</b>
-						<i>API</i>
-					</div>
-					<small>SITES · MODELS · KEYS · AUDIT</small>
-				</div>
-			</div>
-			<div className="gateway-transition-axis" />
+			</main>
+			<footer className="login-footer"><span>Meta Gateway</span><span>{t("login.foundation")}</span></footer>
 		</div>
 	);
 }
@@ -705,10 +520,12 @@ function GatewayTransition({ phase }: { phase: TransitionPhase }) {
 function Authenticated({
 	clientKey,
 	initialSites,
+	entranceActive,
 	onUnauthorized,
 }: {
 	clientKey: object;
 	initialSites?: Site[];
+	entranceActive: boolean;
 	onUnauthorized: () => void;
 }) {
 	const { client } = useSession();
@@ -738,13 +555,15 @@ function Authenticated({
 			</div>
 		);
 	return (
-		<AuthenticatedShell onUnauthorized={onUnauthorized} />
+		<AuthenticatedShell onUnauthorized={onUnauthorized} entranceActive={entranceActive} />
 	);
 }
 function AuthenticatedShell({
 	onUnauthorized,
+	entranceActive,
 }: {
 	onUnauthorized: () => void;
+	entranceActive: boolean;
 }) {
 	const { t } = useI18n();
 	const { checkinEnabled, exchangeEnabled, addons } = useModules();
@@ -791,14 +610,7 @@ function AuthenticatedShell({
 		return () => window.removeEventListener("keydown", onKey);
 	}, []);
 
-	const [theme, setTheme] = useState<"light" | "dark">(() => {
-		const stored = window.localStorage.getItem("meta-gateway.theme");
-		return stored === "dark" ? "dark" : "light";
-	});
-	useEffect(() => {
-		document.documentElement.classList.toggle("dark", theme === "dark");
-		window.localStorage.setItem("meta-gateway.theme", theme);
-	}, [theme]);
+	const { scheme: theme, toggleScheme: changeTheme, appearance } = useAppearance();
 
 	const location = useLocation();
 	const navigate = useNavigate();
@@ -835,6 +647,7 @@ function AuthenticatedShell({
 		{ to: "/channels", label: t("app.nav.channels"), icon: Cable },
 		{ to: "/models", label: t("app.nav.models"), icon: Boxes },
 		{ to: "/keys", label: t("app.nav.keys"), icon: KeyRound },
+		{ to: "/workbench", label: t("app.nav.workbench"), icon: Wand2 },
 		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
 		...(checkinEnabled
 			? [{ to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck }]
@@ -862,102 +675,19 @@ function AuthenticatedShell({
 
 	const paletteNav = [...primaryNav, settingsNav];
 
-	const telehealthTone =
-		total === 0 ? "idle" : healthy === total ? "ok" : healthy === 0 ? "down" : "warn";
-
+	const corePaths = ["/", "/channels", "/models", "/keys"];
+	const activityPaths = ["/workbench", "/logs", "/checkins"];
+	const navSections = [
+		{ label: t("shell.section.gateway"), items: primaryNav.filter((item) => corePaths.includes(item.to)) },
+		{ label: t("shell.section.activity"), items: primaryNav.filter((item) => activityPaths.includes(item.to)) },
+		{ label: t("shell.section.manage"), items: [...primaryNav.filter((item) => !corePaths.includes(item.to) && !activityPaths.includes(item.to)), settingsNav] },
+	];
 	return (
-		<div className="gate-console-shell">
-			{consoleBg ? (
-				<div
-					className="console-custom-bg"
-					style={{ backgroundImage: `url("${consoleBg}")` }}
-				/>
-			) : null}
-			<header className="gate-console-deck">
-				<div className="deck-identity">
-					<div className="brand-mark" aria-hidden="true">
-						<Network size={18} />
-					</div>
-					<div className="deck-identity-copy">
-						<strong>META GATEWAY</strong>
-						<span>OPERATIONS CONSOLE // {gatewayVersion}</span>
-					</div>
-				</div>
-
-				<nav className="deck-sector-rail" aria-label={t("app.nav.open")}>
-					{paletteNav.map(({ to, label, icon: Icon }) => (
-						<NavLink
-							key={to}
-							to={to}
-							end={to === "/"}
-							className={({ isActive }) =>
-								`deck-sector${isActive ? " active" : ""}`
-							}
-						>
-							<span className="deck-sector-icon">
-								<Icon size={15} />
-							</span>
-							<span className="deck-sector-label">{label}</span>
-							<span className="deck-sector-blade" aria-hidden="true" />
-						</NavLink>
-					))}
-				</nav>
-
-				<div className="deck-status-cluster">
-					<div className={`deck-telemetry is-${telehealthTone}`} title={t("dashboard.healthyChannelsHint")}>
-						<span className="deck-telemetry-dot" />
-						<span className="deck-telemetry-read">
-							{channelStats.isPending ? "···" : `${healthy}/${total}`}
-						</span>
-						<span className="deck-telemetry-label">{t("dashboard.healthyChannels")}</span>
-					</div>
-					<span className="deck-divider" />
-					{updateCheck.data?.has_update ? (
-						<a
-							className="deck-update-pill"
-							href={updateCheck.data.release_url || undefined}
-							target="_blank"
-							rel="noreferrer"
-						>
-							<ArrowUpCircle size={12} />
-							{t("app.updateAvailable", {
-								version: updateCheck.data.latest,
-							})}
-						</a>
-					) : null}
-					<button
-						type="button"
-						className="deck-palette-btn"
-						onClick={() => setPaletteOpen(true)}
-						title="Command Palette (⌘K / Ctrl+K)"
-					>
-						<Search size={13} />
-						<span>{t("command.placeholder")}</span>
-						<kbd className="deck-kbd">⌘K</kbd>
-					</button>
-					<button
-						type="button"
-						className="deck-theme-btn"
-						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-						title={theme === "dark" ? t("app.themeLight") : t("app.themeDark")}
-						aria-label={theme === "dark" ? t("app.themeLight") : t("app.themeDark")}
-					>
-						{theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-					</button>
-					<LanguageSwitcher className="deck-lang" />
-					<button
-						type="button"
-						className="deck-exit-btn"
-						onClick={onUnauthorized}
-						title={t("app.disconnect")}
-						aria-label={t("app.disconnect")}
-					>
-						<LogOut size={14} />
-					</button>
-				</div>
-			</header>
-
-			<main className={`gate-console-viewport${routeAnim ? " route-enter" : ""}`}>
+		<>
+			<ConsoleShell appearance={appearance} sections={navSections} version={gatewayVersion} theme={theme} onThemeChange={changeTheme}
+				onSearch={() => setPaletteOpen(true)} onDisconnect={onUnauthorized}
+				health={{ healthy, total, loading: channelStats.isPending }}
+				update={updateCheck.data?.has_update ? updateCheck.data : undefined} background={consoleBg} entering={Boolean(routeAnim)}>
 				<Suspense fallback={<Loading />}>
 					<Routes>
 						<Route index element={<Dashboard />} />
@@ -966,6 +696,7 @@ function AuthenticatedShell({
 						<Route path="models/channel/:channelId" element={<ChannelModels />} />
 						<Route path="models" element={<Models />} />
 						<Route path="keys" element={<Keys />} />
+					<Route path="workbench" element={<Workbench />} />
 						<Route path="logs" element={<Logs />} />
 						<Route path="checkins" element={<Checkins />} />
 						<Route path="exchange" element={<ExchangePage />} />
@@ -992,15 +723,10 @@ function AuthenticatedShell({
 						<Route path="*" element={<Navigate to="/" replace />} />
 					</Routes>
 				</Suspense>
-			</main>
 
-			<CommandPalette
-				open={paletteOpen}
-				onClose={() => setPaletteOpen(false)}
-				nav={paletteNav}
-			/>
-
-			<GuidedTour />
-		</div>
+			</ConsoleShell>
+			<CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={paletteNav} />
+			<GuidedTour enabled={!entranceActive} />
+		</>
 	);
 }

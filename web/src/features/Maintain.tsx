@@ -3,11 +3,12 @@ import { useMemo } from "react";
 import { useI18n } from "../i18n";
 import { Page, Tabs } from "../components/ui";
 import { BackupsPanel, RuntimeSettingsPanel } from "./ops";
+import { AppearancePanel } from "./AppearancePanel";
 
-type SystemTab = "runtime" | "backups";
+type SystemTab = "runtime" | "appearance" | "backups";
 
 /**
- * Settings: runtime and backups. Discovery + Audit live under Logs;
+ * Settings: runtime, appearance, and backups. Discovery + Audit live under Logs;
  * Check-in and Exchange are top-level nav items.
  */
 export function Maintain() {
@@ -17,6 +18,7 @@ export function Maintain() {
 
 	const items = useMemo<Array<{ value: SystemTab; label: string }>>(() => [
 		{ value: "runtime", label: t("ops.tab.runtime") },
+		{ value: "appearance", label: t("appearance.title") },
 		{ value: "backups", label: t("ops.tab.backups") },
 	], [t]);
 
@@ -52,15 +54,16 @@ export function Maintain() {
 			description={t("maintain.description")}
 		>
 			<div className="ops-canvas">
-				<div className="system-banner">
+				{active !== "appearance" ? <div className="system-banner">
 					<strong>{t("maintain.bannerTitle")}</strong>
 					<p>
 						{t("maintain.bannerBody")}{" "}
 						<Link to="/store">{t("maintain.openStore")}</Link>
 					</p>
-				</div>
+				</div> : null}
 				<Tabs items={items} active={active} onChange={changeTab} />
 				{active === "runtime" ? <RuntimeSettingsPanel /> : null}
+				{active === "appearance" ? <AppearancePanel /> : null}
 				{active === "backups" ? <BackupsPanel /> : null}
 			</div>
 		</Page>

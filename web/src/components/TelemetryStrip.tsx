@@ -48,7 +48,7 @@ function SegmentBody({ item }: { item: TelemetryItem }) {
 				{item.trend != null ? <TrendBadge trend={item.trend} /> : null}
 			</span>
 			<span className="telemetry-segment-read">
-				<TelemetryValue value={item.value} />
+				<span className="telemetry-segment-value"><TelemetryValue value={item.value} /></span>
 				{item.icon ? (
 					<span className="telemetry-segment-icon">{item.icon}</span>
 				) : null}
@@ -66,8 +66,9 @@ function SegmentBody({ item }: { item: TelemetryItem }) {
  * measurements render as plain segments with a visible caption.
  */
 export function TelemetryStrip({ items }: { items: TelemetryItem[] }) {
+	const compact = items.length <= 3 && items.every((item) => !item.hint && item.trend == null);
 	return (
-		<div className="telemetry-strip" role="group" aria-label="Telemetry">
+		<div className={`telemetry-strip${compact ? " is-compact" : ""}`} role="group" aria-label="Telemetry">
 			{items.map((item) => {
 				const interactive = Boolean(item.onClick);
 				const className = [

@@ -116,15 +116,19 @@ type Config struct {
 	AdminRateBurst             int
 	MetricsToken               string
 	TrustedScraperCIDRs        []string
-	MaxHeaderBytes             int
-	MaxAdminBodyBytes          int64
-	ServerReadHeaderTimeout    time.Duration
-	ServerReadTimeout          time.Duration
-	ServerIdleTimeout          time.Duration
-	ServerShutdownTimeout      time.Duration
-	ReadinessTimeout           time.Duration
-	AuditRetentionDays         int
-	AuditRetentionRows         int
+	// CORSAllowedOrigins opens the downstream /v1 surface to browser callers.
+	// Empty means any origin ("*"), which is the zero-config default; entries
+	// are exact origins or "*.example.com" subdomain patterns.
+	CORSAllowedOrigins      []string
+	MaxHeaderBytes          int
+	MaxAdminBodyBytes       int64
+	ServerReadHeaderTimeout time.Duration
+	ServerReadTimeout       time.Duration
+	ServerIdleTimeout       time.Duration
+	ServerShutdownTimeout   time.Duration
+	ReadinessTimeout        time.Duration
+	AuditRetentionDays      int
+	AuditRetentionRows      int
 	// HealthHistoryRetentionDays bounds channel_health_history rows (default 90).
 	HealthHistoryRetentionDays int
 	// BalanceHistoryRetentionDays and DecisionSnapshotRetentionDays control
@@ -143,6 +147,17 @@ type Config struct {
 	// PluginMarketURLs appends extra plugin market registry URLs
 	// (comma-separated; the built-in official registry is always included).
 	PluginMarketURLs []string
+	// ModelCatalogSources selects which external model indexes a sync reads
+	// (comma-separated: "litellm", "models.dev"). Empty disables the sync
+	// entirely, which is also what a zero interval does.
+	ModelCatalogSources []string
+	// ModelCatalogInterval is the gap between scheduled catalog syncs. Zero
+	// turns the schedule off while leaving the manual sync available.
+	ModelCatalogInterval time.Duration
+	// ModelCatalogSyncPrices lets a sync fill in per-1k prices it finds. It
+	// only ever fills columns the gateway has left at zero, so an operator's own
+	// price always wins; set false to keep every price hand-managed.
+	ModelCatalogSyncPrices bool
 	// ExchangeAllowSecretExport gates include_secrets on export (default true for compat).
 	ExchangeAllowSecretExport bool
 	// HealthSweepEnabled enables the periodic channel health sweep (jittered
@@ -347,6 +362,8 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Absent or empty keeps the downstream surface open to any origin.
+	corsOrigins := splitList(os.Getenv("CORS_ALLOWED_ORIGINS"))
 	maxHeaderBytes, err := envInt("MAX_HEADER_BYTES", 1<<20, 4096, 16<<20)
 	if err != nil {
 		return nil, err
@@ -404,6 +421,20 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	backupRetentionCount, err := envInt("BACKUP_RETENTION_COUNT", 30, 0, 100000)
+	if err != nil {
+		return nil, err
+	}
+	// The catalog sweep defaults to daily. Zero disables the schedule but keeps
+	// the console's manual sync working.
+	modelCatalogHours, err := envInt("MODEL_CATALOG_SYNC_INTERVAL_HOURS", 24, 0, 8760)
+	if err != nil {
+		return nil, err
+	}
+	modelCatalogPrices, err := envBool("MODEL_CATALOG_SYNC_PRICES", true)
+	if err != nil {
+		return nil, err
+	}
+	modelCatalogSources, err := envModelCatalogSources()
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +538,8 @@ func Load() (*Config, error) {
 		StableFirstPromoteRequests:   stableFirstPromote,
 		AdminRatePerMinute:           adminRate, AdminRateBurst: adminBurst,
 		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
-		MaxHeaderBytes: maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),
+		CORSAllowedOrigins: corsOrigins,
+		MaxHeaderBytes:     maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),
 		ServerReadHeaderTimeout: readHeaderTimeout, ServerReadTimeout: readTimeout,
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
@@ -519,6 +551,9 @@ func Load() (*Config, error) {
 		BackupDir:                  envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
 		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
 		PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
+		ModelCatalogSources:        modelCatalogSources,
+		ModelCatalogInterval:       time.Duration(modelCatalogHours) * time.Hour,
+		ModelCatalogSyncPrices:     modelCatalogPrices,
 		PluginMarketURLs:           envList("PLUGIN_MARKET_URLS"),
 		ExchangeAllowSecretExport:  exchangeAllowSecretExport,
 		HealthSweepEnabled:         healthSweepEnabled,
@@ -627,6 +662,44 @@ func envIntSeconds(key string, def, min, max int) (time.Duration, error) {
 		return 0, err
 	}
 	return time.Duration(n) * time.Second, nil
+}
+
+// modelCatalogSourceIDs is the accepted set for MODEL_CATALOG_SOURCES. It is
+// duplicated from modelcatalog.DefaultURLs on purpose: config validates input
+// and the catalog package owns the endpoints, and a typo here should be a
+// startup error rather than a silently ignored source.
+var modelCatalogSourceIDs = []string{"litellm", "models.dev"}
+
+// envModelCatalogSources parses MODEL_CATALOG_SOURCES. Unset means every known
+// source; naming a subset narrows the sweep and the manual sync alike.
+func envModelCatalogSources() ([]string, error) {
+	configured := envList("MODEL_CATALOG_SOURCES")
+	if len(configured) == 0 {
+		out := make([]string, len(modelCatalogSourceIDs))
+		copy(out, modelCatalogSourceIDs)
+		return out, nil
+	}
+	seen := make(map[string]bool, len(configured))
+	out := make([]string, 0, len(configured))
+	for _, value := range configured {
+		match := ""
+		for _, known := range modelCatalogSourceIDs {
+			if strings.EqualFold(value, known) {
+				match = known
+				break
+			}
+		}
+		if match == "" {
+			return nil, fmt.Errorf("config: MODEL_CATALOG_SOURCES has unknown source %q (known: %s)",
+				value, strings.Join(modelCatalogSourceIDs, ", "))
+		}
+		if seen[match] {
+			continue
+		}
+		seen[match] = true
+		out = append(out, match)
+	}
+	return out, nil
 }
 
 func envInt(key string, def, min, max int) (int, error) {

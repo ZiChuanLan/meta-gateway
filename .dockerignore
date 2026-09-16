@@ -13,6 +13,7 @@ web/coverage
 *.exe
 *.log
 .workbuddy
+.tmp-*
 web/.impeccable
 web/.gitignore
 web/shots

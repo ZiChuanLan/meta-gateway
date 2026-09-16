@@ -40,7 +40,7 @@ function waitFor(step: TourStep, timeout = 8000): Promise<Element | null> {
  *
  * Mounted from the app shell so route changes never unmount the controller.
  */
-export function GuidedTour() {
+export function GuidedTour({ enabled = true }: { enabled?: boolean } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
@@ -48,6 +48,7 @@ export function GuidedTour() {
   const launched = useRef(false);
 
   useEffect(() => {
+    if (!enabled) return;
     if (launched.current) return;
     // never run under vitest — the overlay buries whatever the test asserts.
     if (import.meta.env.VITEST) return;
@@ -66,7 +67,7 @@ export function GuidedTour() {
       start(t, navigate, checkinEnabled);
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [location.pathname, t, navigate, checkinEnabled]);
+  }, [enabled, location.pathname, t, navigate, checkinEnabled]);
 
   return null;
 }
@@ -84,7 +85,12 @@ function start(
   const steps: TourStep[] = [
     {
       route: "/",
-      locate: () => document.querySelector(".deck-sector-rail"),
+      locate: () => {
+        const navigation = document.querySelector(".console-sidebar .console-navigation, .deck-sector-rail");
+        return navigation && navigation.getBoundingClientRect().width > 0
+          ? navigation
+          : document.querySelector(".console-mobile-trigger, .classic-mobile-trigger");
+      },
       title: t("tour.navTitle"),
       description: t("tour.navDesc"),
     },

@@ -1,5 +1,7 @@
 import { AlertTriangle, Info, LoaderCircle, X } from "lucide-react";
 import {
+  createContext,
+  useContext,
   useCallback,
   useEffect,
   useId,
@@ -11,26 +13,42 @@ import {
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import { formatErrorObject } from "../formatError";
-import { registerOverlay } from "./overlayStack";
+import { useModalFocus } from "./overlayFocus";
+
+const PageActionHost = createContext<HTMLElement | null>(null);
+
+/** Lets a page's data-owning child place actions in its shared page header. */
+export function PageActions({ children }: { children: ReactNode }) {
+  const host = useContext(PageActionHost);
+  return host ? createPortal(children, host) : null;
+}
 
 export function Button({
   children,
   variant = "primary",
   icon,
   className,
+  type = "button",
+  loading = false,
+  disabled,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "danger" | "quiet";
   icon?: ReactNode;
+  loading?: boolean;
+  ref?: React.Ref<HTMLButtonElement>;
 }) {
   return (
     <button
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       className={[`button button-${variant}`, className]
         .filter(Boolean)
         .join(" ")}
       {...props}
     >
-      {icon}
+      {loading ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : icon}
       {children}
     </button>
   );
@@ -40,6 +58,7 @@ export function IconButton({
   label,
   children,
   className,
+  type = "button",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
@@ -48,6 +67,7 @@ export function IconButton({
 }) {
   return (
     <button
+      type={type}
       className={["icon-button", className].filter(Boolean).join(" ")}
       aria-label={label}
       title={label}
@@ -63,25 +83,30 @@ export function Page({
   description,
   actions,
   children,
+  className = "",
 }: {
   title: string;
   description: string;
   actions?: ReactNode;
+  className?: string;
   /** @deprecated Kicker eyebrows are banned on this surface; kept for call-site compat. */
   kicker?: string;
   children: ReactNode;
 }) {
+  const [actionHost, setActionHost] = useState<HTMLDivElement | null>(null);
   return (
-    <main className="page">
-      <header className="page-header">
-        <div className="page-heading">
-          <h1>{title}</h1>
-          <p>{description}</p>
-        </div>
-        {actions && <div className="toolbar">{actions}</div>}
-      </header>
-      {children}
-    </main>
+    <PageActionHost.Provider value={actionHost}>
+      <main className={`page ${className}`.trim()}>
+        <header className="page-header">
+          <div className="page-heading">
+            <h1>{title}</h1>
+            <p>{description}</p>
+          </div>
+          <div className="toolbar page-actions" ref={setActionHost}>{actions}</div>
+        </header>
+        {children}
+      </main>
+    </PageActionHost.Provider>
   );
 }
 
@@ -125,83 +150,48 @@ export function Dialog({
   onClose,
   actions,
   danger = false,
+  busy = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   actions?: ReactNode;
   danger?: boolean;
+  busy?: boolean;
 }) {
   const { t } = useI18n();
   const titleId = useId();
   const dialogRef = useRef<HTMLElement | null>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    const node = dialogRef.current;
-    const previous =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const focusables = () =>
-      Array.from(
-        node?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      );
-    // Move focus into the dialog on open so keyboard users land inside.
-    const first = focusables()[0];
-    (first ?? node)?.focus();
-    const onKeydown = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || !node) return;
-      const items = focusables();
-      if (items.length === 0) return;
-      const firstItem = items[0];
-      const lastItem = items[items.length - 1];
-      const active = document.activeElement;
-      if (e.shiftKey && (active === firstItem || active === node)) {
-        e.preventDefault();
-        lastItem?.focus();
-      } else if (!e.shiftKey && active === lastItem) {
-        e.preventDefault();
-        firstItem?.focus();
-      }
-    };
-    const unregister = registerOverlay(() => onCloseRef.current());
-    window.addEventListener("keydown", onKeydown);
-    return () => {
-      unregister();
-      window.removeEventListener("keydown", onKeydown);
-      previous?.focus();
-    };
-    // Mount-only: onClose is tracked via ref so re-renders do not steal focus.
-  }, []);
+  const close = () => { if (!busy) onClose(); };
+  useModalFocus(dialogRef, close);
   // Portal to document.body so fixed backdrop is not clipped by Panel/content
   // overflow:hidden or filtered/transformed ancestors (common after ops shell restyle).
   return createPortal(
     <div
       className="dialog-backdrop"
       role="presentation"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onMouseDown={(e) => e.target === e.currentTarget && close()}
     >
       <section
         ref={dialogRef}
+        tabIndex={-1}
         className="dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-busy={busy || undefined}
       >
         <header>
           <div className={danger ? "danger-title" : ""}>
             {danger && <AlertTriangle size={18} />}
             <h2 id={titleId}>{title}</h2>
           </div>
-          <IconButton label={t("common.close")} onClick={onClose}>
+          <IconButton label={t("common.close")} onClick={close} disabled={busy}>
             <X size={18} />
           </IconButton>
         </header>
-        <div className="dialog-body">{children}</div>
-        {actions && <footer>{actions}</footer>}
+        <div className="dialog-body"><fieldset className="overlay-fields" disabled={busy}>{children}</fieldset></div>
+        {actions && <footer><fieldset className="overlay-actions" disabled={busy}>{actions}</fieldset></footer>}
       </section>
     </div>,
     document.body,
@@ -231,12 +221,13 @@ export function ConfirmDialog({
       title={title}
       onClose={onClose}
       danger
+      busy={pending}
       actions={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
             {t("common.cancel")}
           </Button>
-          <Button variant="danger" disabled={pending} onClick={onConfirm}>
+          <Button variant="danger" loading={pending} onClick={onConfirm}>
             {pending
               ? t("common.working")
               : (confirmLabel ?? t("common.delete"))}
@@ -343,12 +334,14 @@ export function InfoTip({ label }: { label: string }) {
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       setHovered(false);
       setFocused(false);
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", closeOnEscape, true);
+    return () => window.removeEventListener("keydown", closeOnEscape, true);
   }, [open]);
 
   const bubble =
@@ -463,7 +456,7 @@ export function ErrorState({
       ? ""
       : formatted.cause;
   return (
-    <div className="state state-error">
+    <div className="state state-error" role="alert">
       <AlertTriangle size={18} />
       <div className="error-state-body">
         <strong>{formatted.title}</strong>

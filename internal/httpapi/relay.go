@@ -338,7 +338,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	stream := false
 	reasoningEffort := ""
 	if isMultipart {
-		modelName, err = extractMultipartModel(body, contentType)
+		modelName, stream, err = extractMultipartRequest(body, contentType)
 		if err != nil {
 			switch {
 			case errors.Is(err, errMultipartModelMissing):
@@ -374,7 +374,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 			return
 		}
 		modelName = request.Model
-		// Only speech/json endpoints may stream; still pass flag through.
+		// Image generation/edit responses may stream too.
 		stream = request.Stream
 		reasoningEffort = request.ReasoningEffort
 	}
@@ -484,6 +484,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 			h.liveTrace.Progress(requestID, int64(result.FirstByteMs), bytesSent)
 		},
 		h.streamErrorCallback(watchCtx, meta),
+		!strings.HasPrefix(openAIPath, "images/"),
 	)
 }
 
@@ -501,16 +502,23 @@ const maxMultipartModelBytes = 4 << 10
 // never confused with the actual form field.  The caller keeps forwarding the
 // original body bytes, so parsing cannot alter the upstream request.
 func extractMultipartModel(body []byte, contentType string) (string, error) {
+	model, _, err := extractMultipartRequest(body, contentType)
+	return model, err
+}
+
+func extractMultipartRequest(body []byte, contentType string) (string, bool, error) {
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
-		return "", errMultipartInvalid
+		return "", false, errMultipartInvalid
 	}
 	boundary := params["boundary"]
 	if boundary == "" {
-		return "", errMultipartInvalid
+		return "", false, errMultipartInvalid
 	}
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
 	modelCount := 0
+	streamCount := 0
+	stream := false
 	model := ""
 	for {
 		part, nextErr := reader.NextPart()
@@ -518,33 +526,48 @@ func extractMultipartModel(body []byte, contentType string) (string, error) {
 			break
 		}
 		if nextErr != nil {
-			return "", errMultipartInvalid
+			return "", false, errMultipartInvalid
 		}
-		if part.FormName() != "model" {
+		field := part.FormName()
+		if field != "model" && field != "stream" {
 			continue
 		}
-		modelCount++
-		if modelCount > 1 {
-			return "", errMultipartModelDuplicate
+		if field == "model" {
+			modelCount++
+			if modelCount > 1 {
+				return "", false, errMultipartModelDuplicate
+			}
+		} else {
+			streamCount++
+			if streamCount > 1 {
+				return "", false, errMultipartInvalid
+			}
 		}
 		// A file part named model is not a scalar model selector. Reject it
 		// instead of interpreting arbitrary file bytes as an allowlisted model.
 		if part.FileName() != "" {
-			return "", errMultipartInvalid
+			return "", false, errMultipartInvalid
 		}
 		value, readErr := io.ReadAll(io.LimitReader(part, maxMultipartModelBytes+1))
 		if readErr != nil {
-			return "", errMultipartInvalid
+			return "", false, errMultipartInvalid
 		}
 		if len(value) > maxMultipartModelBytes {
-			return "", errMultipartModelTooLarge
+			return "", false, errMultipartModelTooLarge
 		}
-		model = strings.TrimSpace(string(value))
+		if field == "model" {
+			model = strings.TrimSpace(string(value))
+		} else {
+			stream, err = strconv.ParseBool(strings.TrimSpace(string(value)))
+			if err != nil {
+				return "", false, errMultipartInvalid
+			}
+		}
 	}
 	if modelCount == 0 || model == "" {
-		return "", errMultipartModelMissing
+		return "", stream, errMultipartModelMissing
 	}
-	return model, nil
+	return model, stream, nil
 }
 
 func (h *RelayHandler) ensureQuota(w http.ResponseWriter, r *http.Request) bool {
@@ -671,11 +694,25 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		Headers:            clientHeaders(r.Header),
 		RouteGroup:         downstreamRouteGroup(r),
 	}
+	proxyReq, imageEditShim, shimErr := h.prepareImageEditShim(proxyReq)
+	if shimErr != nil {
+		writeError(w, http.StatusBadRequest, shimErr.Error())
+		return
+	}
 	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
+	var imageTokens usage.Tokens
+	if imageEditShim {
+		w.Header().Set("X-Meta-Image-Shim", proxyReq.OpenAIPath)
+		result, imageTokens = imageEditChatResult(result, modelName, stream)
+	}
 	var lastProgress time.Time
 	writeUpstreamResult(
 		w, watchCtx, requestID, result, stream,
 		func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
+			if imageEditShim {
+				// Base64 image bytes and image counts are not token estimates.
+				tokens = imageTokens
+			}
 			channelID := int64(0)
 			if meta != nil {
 				channelID = meta.ChannelID
@@ -708,6 +745,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 			h.liveTrace.Progress(requestID, int64(result.FirstByteMs), bytesSent)
 		},
 		h.streamErrorCallback(watchCtx, meta),
+		!imageEditShim,
 	)
 	if h.liveTrace != nil && requestID != "" {
 		switch {
@@ -786,7 +824,7 @@ func (h *RelayHandler) streamErrorCallback(requestCtx context.Context, meta *pro
 // onProgress streams the running byte count while a stream is being copied
 // (nil = no progress reporting); onUsage fires once after the transfer with
 // the final metrics.
-func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int, int, int64), onProgress func(int64), onStreamError func()) {
+func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requestID string, result *relay.Result, stream bool, onUsage func(usage.Tokens, int, int, int64), onProgress func(int64), onStreamError func(), estimateOnInterrupt ...bool) {
 	if result == nil {
 		writeError(w, http.StatusBadGateway, "upstream response missing")
 		return
@@ -838,6 +876,8 @@ func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requ
 	if status < 100 || status > 999 {
 		status = http.StatusBadGateway
 	}
+	// A JSON error is not an SSE stream, even if the client requested one.
+	stream = stream && status >= 200 && status < 300
 	defer result.Body.Close()
 	copyResponseHeaders(w.Header(), result.Header, stream)
 	w.WriteHeader(status)
@@ -856,7 +896,8 @@ func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requ
 		// would otherwise meter nothing for bytes the client already received.
 		// Fall back to a conservative estimate from the written byte count so
 		// partial completions are never entirely free.
-		if stream && copyErr != nil && !tokens.Valid() && bytesWritten > 0 {
+		allowEstimate := len(estimateOnInterrupt) == 0 || estimateOnInterrupt[0]
+		if allowEstimate && stream && copyErr != nil && !tokens.Valid() && bytesWritten > 0 {
 			tokens = usage.Tokens{
 				PromptTokens:     0,
 				CompletionTokens: int(bytesWritten / streamEstimateBytesPerToken),

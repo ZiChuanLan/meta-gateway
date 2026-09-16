@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadCheckinDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("METRICS_TOKEN", "metrics-test-token")
@@ -184,5 +187,57 @@ func TestLoadConnectionPoolDefaultsAndRanges(t *testing.T) {
 	t.Setenv("OUTBOUND_MAX_IDLE_CONNS", "-1")
 	if _, err := Load(); err == nil {
 		t.Fatal("OUTBOUND_MAX_IDLE_CONNS=-1 must be rejected")
+	}
+}
+
+func TestLoadModelCatalogDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("METRICS_TOKEN", "metrics-test-token")
+	t.Setenv("MODEL_CATALOG_SOURCES", "")
+	t.Setenv("MODEL_CATALOG_SYNC_INTERVAL_HOURS", "")
+	t.Setenv("MODEL_CATALOG_SYNC_PRICES", "")
+
+	defaults, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both public indexes, a daily sweep, prices on: the combination the console
+	// promises out of the box.
+	if len(defaults.ModelCatalogSources) != 2 {
+		t.Fatalf("default sources = %v", defaults.ModelCatalogSources)
+	}
+	if defaults.ModelCatalogInterval != 24*time.Hour {
+		t.Errorf("default interval = %v", defaults.ModelCatalogInterval)
+	}
+	if !defaults.ModelCatalogSyncPrices {
+		t.Error("prices should default to on")
+	}
+
+	// A zero interval disables the schedule without emptying the source list,
+	// which is what keeps the console's manual sync usable.
+	t.Setenv("MODEL_CATALOG_SYNC_INTERVAL_HOURS", "0")
+	t.Setenv("MODEL_CATALOG_SOURCES", "LiteLLM")
+	t.Setenv("MODEL_CATALOG_SYNC_PRICES", "false")
+	overrides, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overrides.ModelCatalogInterval != 0 {
+		t.Errorf("interval = %v, want the schedule off", overrides.ModelCatalogInterval)
+	}
+	if len(overrides.ModelCatalogSources) != 1 || overrides.ModelCatalogSources[0] != "litellm" {
+		t.Errorf("sources = %v, want the canonical spelling", overrides.ModelCatalogSources)
+	}
+	if overrides.ModelCatalogSyncPrices {
+		t.Error("prices should be off")
+	}
+}
+
+func TestLoadRejectsUnknownModelCatalogSource(t *testing.T) {
+	t.Setenv("METRICS_TOKEN", "metrics-test-token")
+	t.Setenv("MODEL_CATALOG_SOURCES", "litellm,openrouter")
+	// A typo must fail loudly; silently dropping the source would leave the
+	// operator believing a catalog is being read when it is not.
+	if _, err := Load(); err == nil {
+		t.Fatal("expected an unknown source to be rejected")
 	}
 }

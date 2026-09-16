@@ -24,4 +24,22 @@ describe("overlay stack", () => {
 
     unregisterBottom();
   });
+
+  it("follows portal DOM order when effects register in a different order", () => {
+    const lower = document.createElement("section");
+    const upper = document.createElement("section");
+    document.body.append(lower, upper);
+    const closeLower = vi.fn();
+    const closeUpper = vi.fn();
+    const unregisterUpper = registerOverlay(closeUpper, { element: upper });
+    const unregisterLower = registerOverlay(closeLower, { element: lower });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(closeUpper).toHaveBeenCalledOnce();
+    expect(closeLower).not.toHaveBeenCalled();
+    expect(unregisterUpper.ownsFocus()).toBe(true);
+    unregisterUpper();
+    unregisterLower();
+    lower.remove();
+    upper.remove();
+  });
 });

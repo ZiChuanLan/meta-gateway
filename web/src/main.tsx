@@ -7,6 +7,13 @@ import { SessionProvider } from "./session";
 import { ToastProvider } from "./toast";
 import { App } from "./App";
 import "./styles.css";
+import "./themes/modern/theme.css";
+import "./themes/classic/theme.css";
+import "./themes/classic/compat.css";
+import "./styles/theme-gallery.css";
+// Last on purpose: a palette ties on specificity with the theme token blocks,
+// so cascade order is what lets it win. See styles/palettes.css.
+import "./styles/palettes.css";
 
 const queryClient = new QueryClient({
 	defaultOptions: {

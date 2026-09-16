@@ -13,13 +13,26 @@ const GROUP_RULES: Array<[string, RegExp]> = [
   ["Mistral", /mistral|mixtral|codestral/i],
   ["Phi", /(^|[-_/])phi(?:[-_/]|$)/i],
   ["Doubao", /doubao|豆包/i],
-  ["Hunyuan", /hunyuan|混元/i],
+  // Tencent Hunyuan, including the short "hy<generation>"/"hy-" alias.
+  // Enumerated rather than written as a bare "hy", the same way the backend's
+  // provider rule does it, so hyperclova/hyperbolic cannot be swallowed.
+  ["Hunyuan", /hunyuan|混元|(^|[-_/])hy(?:-|[34](?:[-_/]|$))/i],
   ["Baichuan", /baichuan|百川/i],
   ["Step", /stepfun|阶跃|(^|[-_/])step[-_/]?\d/i],
   ["Command", /(^|[-_/])command[-_/]|cohere/i],
   ["ERNIE", /ernie|文心|qianfan/i],
   ["InternLM", /internlm/i],
   ["Yi", /(^|[-_/])yi(?:[-_/]|$)|零一万物/i],
+  // Appended rather than slotted in beside their neighbours: GROUP_RULES is
+  // first-match-wins and MODEL_GROUP_ORDER is derived from its order, so
+  // appending cannot reorder any group a user has already learnt.
+  //
+  // Xiaomi's MiMo. The vendor half of the haystack is why "xiaomi/mimo-v2.5"
+  // groups correctly even though the model half is bare.
+  ["MiMo", /xiaomi|(^|[-_/])mimo(?:[-_/]|$)/i],
+  ["NVIDIA", /nvidia|nemotron/i],
+  ["InclusionAI", /inclusionai|(^|[-_/])ling-/i],
+  ["LongCat", /meituan|longcat/i],
 ];
 
 export function autoModelGroup(model: string, vendor?: string): string {

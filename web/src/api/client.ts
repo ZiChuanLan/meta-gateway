@@ -1,6 +1,10 @@
 import type {
   AuditEvent,
   BackupRecord,
+  CatalogPolicyInput,
+  CatalogPreview,
+  CatalogStatus,
+  CatalogSyncState,
   Channel,
   ChannelOverview,
   ConnectionCreateResponse,
@@ -21,6 +25,7 @@ import type {
   ChannelPingResult,
   FinanceItem,
   ModelMetadata,
+  ModelCapability,
   ModelChangesResponse,
   ModelReplacementRequest,
   ModelReplacementPreview,
@@ -141,20 +146,26 @@ export class ApiClient {
   }
 
   /**
-   * Opens the admin live-trace SSE stream. SSE needs a long-lived response
-   * body the caller reads itself, so this bypasses request()'s JSON decode
-   * and returns the raw fetch Response (body unread). Callers read resp.body
-   * as text and cancel via the signal. A non-2xx rejects with ApiError.
+   * Opens an SSE endpoint. SSE needs a long-lived response body the caller
+   * reads itself, so this bypasses request()'s JSON decode and returns the raw
+   * fetch Response (body unread). Callers read resp.body as text and cancel via
+   * the signal. A non-2xx rejects with ApiError.
    */
-  async openLiveTrace(signal?: AbortSignal): Promise<Response> {
+  private async openStream(
+    path: string,
+    init: RequestInit,
+    signal?: AbortSignal,
+  ): Promise<Response> {
     let response: Response;
     try {
-      response = await fetch("/admin/relay/live", {
+      response = await fetch(path, {
+        ...init,
+        signal,
         headers: {
           Accept: "text/event-stream",
           Authorization: `Bearer ${this.token}`,
+          ...(init.body ? { "Content-Type": "application/json" } : {}),
         },
-        signal,
       });
     } catch {
       throw new ApiError(0, "Unable to reach Meta Gateway");
@@ -171,6 +182,34 @@ export class ApiClient {
       throw new ApiError(response.status, message);
     }
     return response;
+  }
+
+  /** Opens the admin live-trace SSE stream. */
+  openLiveTrace(signal?: AbortSignal): Promise<Response> {
+    return this.openStream("/admin/relay/live", { method: "GET" }, signal);
+  }
+
+  /**
+   * Streams one admin chat probe for the workbench playground. Same contract as
+   * openLiveTrace: the caller reads the SSE body and aborts via the signal.
+   */
+  streamTryChat(
+    body: {
+      model: string;
+      messages?: { role: string; content: string }[];
+      system?: string;
+      max_tokens?: number;
+      temperature?: number;
+      top_p?: number;
+      channel_id?: number;
+    },
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    return this.openStream(
+      "/admin/try/chat",
+      { method: "POST", body: JSON.stringify({ ...body, stream: true }) },
+      signal,
+    );
   }
 
   /**
@@ -357,9 +396,9 @@ export const api = (client: ApiClient) => ({
     client.delete(
       `/admin/routes/${routeId}/groups/${encodeURIComponent(name)}`,
     ),
-  explain: (model: string, signal?: AbortSignal) =>
+  explain: (model: string, signal?: AbortSignal, routeGroup?: string) =>
     client.get<RouteExplanation>(
-      `/admin/routes/explain?model=${encodeURIComponent(model)}`,
+      `/admin/routes/explain?model=${encodeURIComponent(model)}${routeGroup ? `&route_group=${encodeURIComponent(routeGroup)}` : ""}`,
       signal,
     ),
   sticky: (signal?: AbortSignal) =>
@@ -438,10 +477,13 @@ export const api = (client: ApiClient) => ({
       upstream_request_id?: string;
       before_id?: number;
       limit?: number;
+      /** Free text across model, error text, path and request ids (FTS5). */
+      q?: string;
     },
     signal?: AbortSignal,
   ) => {
     const query = new URLSearchParams();
+    if (filters?.q) query.set("q", filters.q);
     if (filters?.site_id != null) query.set("site_id", String(filters.site_id));
     if (filters?.channel_id != null)
       query.set("channel_id", String(filters.channel_id));
@@ -548,7 +590,11 @@ export const api = (client: ApiClient) => ({
   tryChat: (body: {
     model: string;
     prompt?: string;
+    messages?: { role: string; content: string }[];
+    system?: string;
     max_tokens?: number;
+    temperature?: number;
+    top_p?: number;
     channel_id?: number;
   }) =>
     client.post<{
@@ -562,6 +608,51 @@ export const api = (client: ApiClient) => ({
       priority?: number;
       weight?: number;
     }>("/admin/try/chat", body),
+  /**
+   * Streams one playground turn. Returns the raw SSE response; the caller
+   * reads `body` and aborts via the signal. First frame is always `meta`.
+   */
+  streamTryChat: (
+    body: {
+      model: string;
+      messages?: { role: string; content: string }[];
+      system?: string;
+      max_tokens?: number;
+      temperature?: number;
+      top_p?: number;
+      channel_id?: number;
+    },
+    signal?: AbortSignal,
+  ) => client.streamTryChat(body, signal),
+  tryImage: (body: {
+    model: string;
+    prompt?: string;
+    mode?: "generate" | "edit" | "auto";
+    format?: "json" | "multipart";
+    size?: string;
+    n?: number;
+    images?: Array<{ data_url: string; name?: string }>;
+    channel_id?: number;
+    include_raw_response?: boolean;
+  }) =>
+    client.post<{
+      status: number;
+      latency_ms: number;
+      model: string;
+      plan: {
+        endpoint: string;
+        format: string;
+        mode: string;
+        max_images: number;
+        uses_chat_protocol: boolean;
+        source: string;
+        notes: string;
+      };
+      images: Array<{ data_url?: string; url?: string; revised_prompt?: string }>;
+      body?: unknown;
+      channel_id?: number;
+      channel_name?: string;
+    }>("/admin/try/image", body),
   probeAccount: (id: number) =>
     client.post<AccountProbeResult>(`/admin/channels/${id}/account/probe`),
   probeAllAccounts: () =>
@@ -635,6 +726,43 @@ export const api = (client: ApiClient) => ({
     ),
   deleteModelMetadata: (name: string) =>
     client.delete(`/admin/model-metadata/${encodeURIComponent(name)}`),
+  modelCapabilities: (signal?: AbortSignal) =>
+    client.get<{ items: ModelCapability[]; kinds: string[] }>(
+      "/admin/model-capabilities",
+      signal,
+    ),
+  upsertModelCapability: (name: string, body: Partial<ModelCapability>) =>
+    client.put<ModelCapability>(
+      `/admin/model-capabilities/${encodeURIComponent(name)}`,
+      body,
+    ),
+  deleteModelCapability: (name: string) =>
+    client.delete(`/admin/model-capabilities/${encodeURIComponent(name)}`),
+  resolveModelCapabilities: (models: string[]) =>
+    client.post<{ items: Record<string, ModelCapability> }>(
+      "/admin/model-capabilities/resolve",
+      { models },
+    ),
+  autoTagModelCapabilities: (models: string[]) =>
+    client.post<{ ok: boolean; requested: number }>(
+      "/admin/model-capabilities/auto-tag",
+      { models },
+    ),
+  /** Last sync outcome plus which catalogs are wired in. Never hits the network. */
+  catalogStatus: (signal?: AbortSignal) =>
+    client.get<CatalogStatus>("/admin/model-capabilities/catalog", signal),
+  /**
+   * Dry run of a catalog sync. Fetches the indexes, so it can be slow and can
+   * fail on a network error; nothing is written.
+   */
+  previewCatalog: (body: CatalogPolicyInput = {}) =>
+    client.post<CatalogPreview>("/admin/model-capabilities/catalog/preview", body),
+  /** Applies a sync and records it on the status board. */
+  syncCatalog: (body: CatalogPolicyInput = {}) =>
+    client.post<{ state: CatalogSyncState; sources: string[] }>(
+      "/admin/model-capabilities/catalog/sync",
+      body,
+    ),
   errorRules: (signal?: AbortSignal) =>
     client.get<{ items: ErrorPassRule[] }>("/admin/error-rules", signal),
   createErrorRule: (body: Partial<ErrorPassRule>) =>

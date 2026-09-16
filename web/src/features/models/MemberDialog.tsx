@@ -36,6 +36,7 @@ export function MemberDialog({
     <Dialog
       title={value.id ? t("routing.editMember") : t("routing.addMember")}
       onClose={onClose}
+      busy={pending}
       actions={
         <>
           <Button variant="secondary" onClick={onClose}>

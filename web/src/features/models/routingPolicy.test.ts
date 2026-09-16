@@ -54,6 +54,12 @@ function candidate(
 }
 
 describe("sortMembers / primaryMember", () => {
+  it("shows the pinned member even when another member has higher priority", () => {
+    const automatic = candidate(1, { priority: 100 });
+    const pinned = candidate(2, { priority: 1, enabled: false });
+    expect(primaryMember([automatic, pinned], { routing_mode: "single", single_member_id: 2 })).toBe(pinned);
+    expect(primaryMember([automatic, pinned], { routing_mode: "single", single_member_id: 99 })).toBe(automatic);
+  });
 	it("orders by priority desc, then weight desc, then name", () => {
 		const a = candidate(1, { priority: 10 });
 		const b = candidate(2, { priority: 20 });

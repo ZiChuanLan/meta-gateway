@@ -1,11 +1,17 @@
 import { Check, ChevronDown, Search } from "lucide-react";
 import {
 	useEffect,
+	useId,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 	type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
+import { useI18n } from "../i18n";
+import { registerOverlay } from "./overlayStack";
+import { focusAfterPopover } from "./overlayFocus";
 
 export type SelectOption = {
 	value: string;
@@ -36,6 +42,8 @@ export function SearchableSelect({
 	/** Order of group ids to render, with a "*" for ungroupped options. */
 	groups?: string[];
 }) {
+	const { t } = useI18n();
+	const listId = useId();
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [customMode, setCustomMode] = useState(false);
@@ -46,6 +54,8 @@ export function SearchableSelect({
 	// and strand the IME (the "typing Chinese freezes the type picker" bug).
 	const [searchVisible, setSearchVisible] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
+	const triggerRef = useRef<HTMLButtonElement>(null);
+	const panelRef = useRef<HTMLDivElement>(null);
 	const searchRef = useRef<HTMLInputElement>(null);
 	// The panel is fixed-positioned so scroll containers (e.g. Dialog) cannot clip it.
 	const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
@@ -55,6 +65,7 @@ export function SearchableSelect({
 	// would otherwise re-open the dropdown immediately after it closes.
 	const suppressOpenUntil = useRef(0);
 	const openPanel = () => {
+		if (disabled || triggerRef.current?.matches(":disabled")) return;
 		if (Date.now() < suppressOpenUntil.current) return;
 		setSearchVisible(options.length > 4);
 		const trigger = rootRef.current?.querySelector<HTMLElement>(
@@ -74,6 +85,24 @@ export function SearchableSelect({
 		setOpen(true);
 	};
 
+	const placePanel = () => {
+		const anchor = triggerRef.current?.getBoundingClientRect();
+		if (!anchor || !panelRef.current) return;
+		const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+		const width = Math.min(Math.max(anchor.width, 240), viewportWidth - 16);
+		const maxHeight = Math.min(400, window.innerHeight - 16);
+		const height = Math.min(panelRef.current.scrollHeight || 300, maxHeight);
+		let top = anchor.bottom + 8;
+		if (top + height > window.innerHeight - 8) top = anchor.top - height - 8;
+		setPanelStyle({ position: "fixed", width, maxHeight,
+			left: Math.max(8, Math.min(anchor.left, viewportWidth - width - 8)),
+			top: Math.max(8, Math.min(top, window.innerHeight - height - 8)),
+		});
+	};
+	const placeRef = useRef(placePanel);
+	placeRef.current = placePanel;
+	useLayoutEffect(() => { if (open) placeRef.current(); }, [open, query, options.length]);
+
 	const customSentinel = useMemo(
 		() => options.find((option) => option.value === "__custom__"),
 		[options],
@@ -88,34 +117,35 @@ export function SearchableSelect({
 
 	useEffect(() => {
 		if (!open) return;
-		const onPointerDown = (event: MouseEvent) => {
-			if (rootRef.current?.contains(event.target as Node)) return;
+		const unregister = registerOverlay(() => {
 			setOpen(false);
-		};
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setOpen(false);
+			triggerRef.current?.focus({ preventScroll: true });
+		}, { modal: false, transient: true, element: panelRef.current });
+		const onPointerDown = (event: PointerEvent) => {
+			if (rootRef.current?.contains(event.target as Node) || panelRef.current?.contains(event.target as Node)) return;
+			setOpen(false);
 		};
 		const onScrollOrResize = (event: Event) => {
 			// Scrolls inside the open panel must not dismiss it (mouse wheel over
 			// the option list otherwise closes the dropdown mid-selection).
 			const target = event.target as Node | null;
-			if (target && rootRef.current?.contains(target)) return;
+			if (target instanceof Node && (rootRef.current?.contains(target) || panelRef.current?.contains(target))) return;
+			if (event.type === "resize") { placeRef.current(); return; }
 			setOpen(false);
 		};
-		document.addEventListener("mousedown", onPointerDown);
-		document.addEventListener("keydown", onKeyDown);
+		document.addEventListener("pointerdown", onPointerDown, true);
 		window.addEventListener("scroll", onScrollOrResize, true);
 		window.addEventListener("resize", onScrollOrResize);
 		return () => {
-			document.removeEventListener("mousedown", onPointerDown);
-			document.removeEventListener("keydown", onKeyDown);
+			unregister();
+			document.removeEventListener("pointerdown", onPointerDown, true);
 			window.removeEventListener("scroll", onScrollOrResize, true);
 			window.removeEventListener("resize", onScrollOrResize);
 		};
 	}, [open]);
 
 	useEffect(() => {
-		if (open) searchRef.current?.focus();
+		if (open) (searchRef.current ?? panelRef.current?.querySelector<HTMLElement>('[role="option"][aria-selected="true"], [role="option"]'))?.focus({ preventScroll: true });
 	}, [open]);
 
 	// Entering custom mode hands control to the free-text field.
@@ -156,12 +186,20 @@ export function SearchableSelect({
 	}, [filtered, groups]);
 
 	const commit = (next: string) => {
+		if (disabled || triggerRef.current?.matches(":disabled")) return;
 		onChange(next);
 		setOpen(false);
 		setQuery("");
 		suppressOpenUntil.current = Date.now() + 300;
-		// Move focus off the trigger so a following Enter/Space cannot re-open.
-		(document.activeElement as HTMLElement | null)?.blur?.();
+		triggerRef.current?.focus({ preventScroll: true });
+	};
+	const enterCustom = () => {
+		if (disabled || triggerRef.current?.matches(":disabled")) return;
+		const next = query.trim() || (value === "__custom__" ? "" : value);
+		setCustomValue(next);
+		setCustomMode(true);
+		setQuery("");
+		onChange(next);
 	};
 
 	const triggerValue = isCustom
@@ -172,12 +210,17 @@ export function SearchableSelect({
 		<div className="searchable-select" ref={rootRef}>
 			{!customMode ? (
 				<button
+					ref={triggerRef}
 					type="button"
 					className="searchable-select-trigger"
 					disabled={disabled}
 					onClick={() => (open ? setOpen(false) : openPanel())}
+					onKeyDown={(event) => {
+						if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); openPanel(); }
+					}}
 					aria-haspopup="listbox"
 					aria-expanded={open}
+					aria-controls={open ? listId : undefined}
 				>
 					<span className="truncate">
 						{triggerValue || <em className="is-quiet">{placeholder}</em>}
@@ -197,8 +240,25 @@ export function SearchableSelect({
 					autoFocus
 				/>
 			)}
-			{open ? (
-				<div className="searchable-select-panel" style={panelStyle ?? undefined} role="listbox">
+			{open ? createPortal(
+				<div ref={panelRef} className="searchable-select-panel" style={panelStyle ?? undefined}
+					onClick={(event) => event.stopPropagation()}
+					onKeyDown={(event) => {
+						if (event.nativeEvent.isComposing) return;
+						if (event.key === "Tab") {
+							event.preventDefault(); event.stopPropagation(); setOpen(false);
+							focusAfterPopover(triggerRef.current, panelRef.current, event.shiftKey); return;
+						}
+						const options = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? []);
+						const index = options.indexOf(document.activeElement as HTMLElement);
+						let next: HTMLElement | undefined;
+						if (event.key === "ArrowDown") next = options[(index + 1) % options.length];
+						else if (event.key === "ArrowUp") next = options[index <= 0 ? options.length - 1 : index - 1];
+						else if (event.key === "Home" && event.target !== searchRef.current) next = options[0];
+						else if (event.key === "End" && event.target !== searchRef.current) next = options[options.length - 1];
+						else if (event.key === "Enter" && event.target === searchRef.current) { event.preventDefault(); options[0]?.click(); }
+						if (next) { event.preventDefault(); event.stopPropagation(); next.focus({ preventScroll: true }); next.scrollIntoView?.({ block: "nearest" }); }
+					}}>
 					{searchVisible ? (
 						<div className="searchable-select-search">
 							<Search size={13} />
@@ -206,12 +266,14 @@ export function SearchableSelect({
 								ref={searchRef}
 								value={query}
 								onChange={(event) => setQuery(event.target.value)}
-								placeholder={placeholder ?? "Search…"}
+								placeholder={placeholder ?? t("select.search")}
+								aria-label={placeholder ?? t("select.search")}
+								aria-controls={listId}
 								spellCheck={false}
 							/>
 						</div>
 					) : null}
-					<div className="searchable-select-list">
+					<div className="searchable-select-list" id={listId} role="listbox" aria-label={placeholder ?? t("select.search")}>
 						{byGroup.map(({ key, options: groupOptions }) => (
 							<div key={key} className="searchable-select-group">
 								{key !== "*" && byGroup.length > 1 ? (
@@ -221,12 +283,15 @@ export function SearchableSelect({
 									<button
 										type="button"
 										key={option.value}
+										role="option"
+										aria-selected={option.value === value}
+										tabIndex={-1}
 										className={`searchable-select-item${
 											option.value === value ? " is-selected" : ""
 										}`}
 										onClick={() => {
 											if (option.value === "__custom__") {
-												setCustomMode(true);
+												enterCustom();
 												return;
 											}
 											commit(option.value);
@@ -238,23 +303,16 @@ export function SearchableSelect({
 								))}
 							</div>
 						))}
-						{filtered.length === 0 ? (
+						{allowCustom ? <button type="button" role="option" aria-selected={isCustom} tabIndex={-1} className="searchable-select-item searchable-select-custom" onClick={enterCustom}>
+							{customSentinel?.label ?? t("select.custom")}{query.trim() ? ": " + query.trim() : ""}
+						</button> : null}
+						{filtered.length === 0 && !allowCustom ? (
 							<div className="searchable-select-empty">
-								{allowCustom ? (
-									<button
-										type="button"
-										className="searchable-select-item"
-										onClick={() => setCustomMode(true)}
-									>
-										{query.trim() || "Custom…"}
-									</button>
-								) : (
-									"Nothing found"
-								)}
+								{t("select.noMatches")}
 							</div>
 						) : null}
 					</div>
-				</div>
+				</div>, document.body
 			) : null}
 		</div>
 	);

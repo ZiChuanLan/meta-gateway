@@ -18,7 +18,12 @@ import {
   uaFromHeaderOverride,
 } from "../../lib/uaPresets";
 import { useSession } from "../../session";
-import { SECRET_MASK, TYPE_GROUPS, TYPE_OPTIONS, userAuthFieldsFor } from "./helpers";
+import {
+  SECRET_MASK,
+  TYPE_GROUPS,
+  TYPE_OPTIONS,
+  userAuthFieldsFor,
+} from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
 
 export function EditChannelDialog({
@@ -61,18 +66,18 @@ export function EditChannelDialog({
     has_cookie?: boolean;
     checkin_enabled: boolean;
   };
-	userCredential?: {
-		id: number;
-		kind: string;
-		auth_mode?: string;
-		has_secret: boolean;
-		has_cookie?: boolean;
-		checkin_enabled: boolean;
-		meta_json?: string;
-	};
-	checkinSupported?: boolean;
-	checkinModuleOn?: boolean;
-	pending: boolean;
+  userCredential?: {
+    id: number;
+    kind: string;
+    auth_mode?: string;
+    has_secret: boolean;
+    has_cookie?: boolean;
+    checkin_enabled: boolean;
+    meta_json?: string;
+  };
+  checkinSupported?: boolean;
+  checkinModuleOn?: boolean;
+  pending: boolean;
   error: unknown;
   onClose: () => void;
   onRefreshModels?: () => void;
@@ -150,9 +155,7 @@ export function EditChannelDialog({
   const [nonStreamTimeout, setNonStreamTimeout] = useState(
     value.non_stream_timeout_seconds ?? 0,
   );
-  const [streamPolicy, setStreamPolicy] = useState(
-    value.stream_policy ?? "",
-  );
+  const [streamPolicy, setStreamPolicy] = useState(value.stream_policy ?? "");
   const [priority, setPriority] = useState(value.priority);
   const [weight, setWeight] = useState(value.weight);
   const [headerOverride, setHeaderOverride] = useState(
@@ -178,90 +181,91 @@ export function EditChannelDialog({
   const [userToken, setUserToken] = useState(
     userCredential?.has_secret ? SECRET_MASK : "",
   );
-	const [userCookie, setUserCookie] = useState(
-		userCredential?.has_cookie ? SECRET_MASK : "",
-	);
-	// The credential overview arrives asynchronously (the channel overview and
-	// the site's credential list are separate queries). Until it does, the token
-	// fields are empty — which the save path reads as "clear the credential".
-	// Track the arrival so the masks are seeded exactly once and an untouched
-	// dialog can never delete a stored credential.
-	const seededCredentialId = useRef<number | null>(null);
-	useEffect(() => {
-		if (userCredential == null) return;
-		if (seededCredentialId.current === userCredential.id) return;
-		seededCredentialId.current = userCredential.id;
-		setUserToken(userCredential.has_secret ? SECRET_MASK : "");
-		setUserCookie(userCredential.has_cookie ? SECRET_MASK : "");
-		setCheckinOn(userCredential.checkin_enabled);
-		setUserID(
-			String(
-				parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
-			),
-		);
-	}, [userCredential]);
-	// New-API family numeric user id. It is derivable from the account token
-	// (/api/user/self) but a fork may gate that endpoint behind the very header
-	// derived from this id, so it has to be enterable by hand.
-	const [userID, setUserID] = useState(
-		userCredential?.meta_json
-			? String(
-					parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
-				)
-			: "",
-	);
-	const [checkinOn, setCheckinOn] = useState(
-		userCredential?.checkin_enabled ?? false,
-	);
-	// Keep the in-dialog switch in sync when the overview credential loads.
-	useEffect(() => {
-		if (userCredential?.id != null) {
-			setCheckinOn(userCredential.checkin_enabled);
-		}
-	}, [userCredential?.id, userCredential?.checkin_enabled]);
-	const [showAdvanced, setShowAdvanced] = useState(false);
-	const userIDInvalid = userID !== "" && !/^[0-9]+$/.test(userID);
-	const userIDMissing = Boolean(userCredential?.id) && userID === "";
-	// The credential fields live behind "Show advanced". A connection that has a
-	// user credential but no user id cannot check in, and the badge that says so
-	// must lead somewhere visible: open the section automatically. Only once —
-	// an operator who collapses it again keeps it collapsed.
-	const autoOpenedForMissingUserID = useRef(false);
-	useEffect(() => {
-		if (autoOpenedForMissingUserID.current || !userIDMissing) return;
-		autoOpenedForMissingUserID.current = true;
-		setShowAdvanced(true);
-	}, [userIDMissing]);
-	// The numeric New-API user id only means something for New-API family sites
-	// (the "both" surface), or when one is already stored and must stay editable.
-	const userIDPersistable =
-		Boolean(userCredential?.id) ||
-		(userToken !== "" && userToken !== SECRET_MASK) ||
-		(userCookie !== "" && userCookie !== SECRET_MASK);
-	const showUserIDField =
-		authFields === "both" ||
-		Boolean(userCredential?.meta_json?.includes("platform_user_id"));
-	// A typed id with nothing to attach it to would be dropped on save; say so
-	// instead of losing it silently.
-	const userIDNeedsCredential =
-		showUserIDField && !userIDPersistable && userID !== "";
-	const canSubmit = Boolean(name.trim() && baseUrl.trim()) && !userIDInvalid;
+  const [userCookie, setUserCookie] = useState(
+    userCredential?.has_cookie ? SECRET_MASK : "",
+  );
+  // The credential overview arrives asynchronously (the channel overview and
+  // the site's credential list are separate queries). Until it does, the token
+  // fields are empty — which the save path reads as "clear the credential".
+  // Track the arrival so the masks are seeded exactly once and an untouched
+  // dialog can never delete a stored credential.
+  const seededCredentialId = useRef<number | null>(null);
+  useEffect(() => {
+    if (userCredential == null) return;
+    if (seededCredentialId.current === userCredential.id) return;
+    seededCredentialId.current = userCredential.id;
+    setUserToken(userCredential.has_secret ? SECRET_MASK : "");
+    setUserCookie(userCredential.has_cookie ? SECRET_MASK : "");
+    setCheckinOn(userCredential.checkin_enabled);
+    setUserID(
+      String(
+        parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
+      ),
+    );
+  }, [userCredential]);
+  // New-API family numeric user id. It is derivable from the account token
+  // (/api/user/self) but a fork may gate that endpoint behind the very header
+  // derived from this id, so it has to be enterable by hand.
+  const [userID, setUserID] = useState(
+    userCredential?.meta_json
+      ? String(
+          parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
+        )
+      : "",
+  );
+  // Keep the scheduled-switch in sync when the overview credential loads.
+  const [checkinOn, setCheckinOn] = useState(
+    userCredential?.checkin_enabled ?? false,
+  );
+  // Keep the in-dialog switch in sync when the overview credential loads.
+  useEffect(() => {
+    if (userCredential?.id != null) {
+      setCheckinOn(userCredential.checkin_enabled);
+    }
+  }, [userCredential?.id, userCredential?.checkin_enabled]);
+  // The credential fields live behind "Show advanced". A connection that has a
+  // user credential but no user id cannot check in, and the badge that says so
+  // must lead somewhere visible: open the section automatically. Only once —
+  // an operator who collapses it again keeps it collapsed.
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const userIDInvalid = userID !== "" && !/^[0-9]+$/.test(userID);
+  const userIDMissing = Boolean(userCredential?.id) && userID === "";
+  const autoOpenedForMissingUserID = useRef(false);
+  useEffect(() => {
+    if (autoOpenedForMissingUserID.current || !userIDMissing) return;
+    autoOpenedForMissingUserID.current = true;
+    setShowAdvanced(true);
+  }, [userIDMissing]);
+  // The numeric New-API user id only means something for New-API family sites
+  // (the "both" surface), or when one is already stored and must stay editable.
+  const userIDPersistable =
+    Boolean(userCredential?.id) ||
+    (userToken !== "" && userToken !== SECRET_MASK) ||
+    (userCookie !== "" && userCookie !== SECRET_MASK);
+  const showUserIDField =
+    authFields === "both" ||
+    Boolean(userCredential?.meta_json?.includes("platform_user_id"));
+  // A typed id with nothing to attach it to would be dropped on save; say so
+  // instead of losing it silently.
+  const userIDNeedsCredential =
+    showUserIDField && !userIDPersistable && userID !== "";
+  const canSubmit = Boolean(name.trim() && baseUrl.trim()) && !userIDInvalid;
   const apiKeys = credentials.filter((item) => item.kind === "api_key");
   const service = api(useSession().client!);
   const discovered = useQuery({
     queryKey: ["discovered-models", value.id],
     queryFn: ({ signal }) => service.discoveredModels(value.id, signal),
   });
-	const editModels = discovered.data ?? [];
-	const toggleCheckin = useAdminMutation({
-		mutationFn: (next: boolean) => {
-			if (!userCredential?.id) {
-				throw new Error(t("channels.checkinNeedsUserCredential"));
-			}
-			return service.setCheckin(userCredential.id, next);
-		},
-		invalidateKeys: [["credentials"], ["channel-overviews"]],
-	});
+  const editModels = discovered.data ?? [];
+  const toggleCheckin = useAdminMutation({
+    mutationFn: (next: boolean) => {
+      if (!userCredential?.id) {
+        throw new Error(t("channels.checkinNeedsUserCredential"));
+      }
+      return service.setCheckin(userCredential.id, next);
+    },
+    invalidateKeys: [["credentials"], ["channel-overviews"]],
+  });
   // mappingReal parses a {"real":"…"} mapping value; empty when absent.
   const mappingReal = (raw: string | undefined): string => {
     if (!raw) return "";
@@ -314,6 +318,7 @@ export function EditChannelDialog({
     <Drawer
       title={t("channels.edit")}
       onClose={onClose}
+      busy={pending}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
@@ -403,63 +408,61 @@ export function EditChannelDialog({
               disabled={pending}
             />
           </Field>
-		</div>
+        </div>
 
-							<section
-								className="detail-section connection-subpanel"
-								aria-label={t("channels.checkinSection")}
-							>
-								<div className="detail-section-head">
-									<h3>{t("channels.checkinSection")}</h3>
-									<Link className="detail-section-expand" to="/checkins">
-										{t("channels.checkinLogs")}
-									</Link>
-								</div>
-								{!checkinModuleOn ? (
-									<p className="detail-section-empty is-quiet">
-										{t("channels.checkinModuleOff")}
-									</p>
-								) : !checkinSupported ? (
-									<p className="detail-section-empty is-quiet">
-										{t("channels.checkinUnsupported")}
-									</p>
-								) : !userCredential?.id ? (
-									<p className="detail-section-empty is-quiet">
-										{t("channels.checkinNeedsUserCredential")}
-									</p>
-								) : (
-									<>
-										<label className="check is-spaced">
-											<input
-													type="checkbox"
-													checked={checkinOn}
-													disabled={
-														pending || toggleCheckin.isPending
-													}
-													onChange={(e) => {
-														const next = e.target.checked;
-														setCheckinOn(next);
-														toggleCheckin.mutate(next);
-													}}
-												/>
-												<span>{t("channels.checkinEnable")}</span>
-											</label>
-											<p className="detail-section-empty is-quiet">
-												{checkinOn
-													? t("channels.checkinScheduledHint")
-													: t("channels.checkinOffHint")}
-											</p>
-										</>
-									)}
-								{toggleCheckin.isError ? (
-									<ErrorState error={toggleCheckin.error} />
-								) : null}
-							</section>
+        <section
+          className="detail-section connection-subpanel"
+          aria-label={t("channels.checkinSection")}
+        >
+          <div className="detail-section-head">
+            <h3>{t("channels.checkinSection")}</h3>
+            <Link className="detail-section-expand" to="/checkins">
+              {t("channels.checkinLogs")}
+            </Link>
+          </div>
+          {!checkinModuleOn ? (
+            <p className="detail-section-empty is-quiet">
+              {t("channels.checkinModuleOff")}
+            </p>
+          ) : !checkinSupported ? (
+            <p className="detail-section-empty is-quiet">
+              {t("channels.checkinUnsupported")}
+            </p>
+          ) : !userCredential?.id ? (
+            <p className="detail-section-empty is-quiet">
+              {t("channels.checkinNeedsUserCredential")}
+            </p>
+          ) : (
+            <>
+              <label className="check is-spaced">
+                <input
+                  type="checkbox"
+                  checked={checkinOn}
+                  disabled={pending || toggleCheckin.isPending}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setCheckinOn(next);
+                    toggleCheckin.mutate(next);
+                  }}
+                />
+                <span>{t("channels.checkinEnable")}</span>
+              </label>
+              <p className="detail-section-empty is-quiet">
+                {checkinOn
+                  ? t("channels.checkinScheduledHint")
+                  : t("channels.checkinOffHint")}
+              </p>
+            </>
+          )}
+          {toggleCheckin.isError ? (
+            <ErrorState error={toggleCheckin.error} />
+          ) : null}
+        </section>
 
-							<section
-								className="credential-key-panel connection-subpanel"
-								aria-label={t("channels.apiKeysTitle")}
-							>
+        <section
+          className="credential-key-panel connection-subpanel"
+          aria-label={t("channels.apiKeysTitle")}
+        >
           <div className="credential-key-panel-head">
             <div>
               <strong>{t("channels.apiKeysTitle")}</strong>
@@ -786,12 +789,18 @@ export function EditChannelDialog({
               >
                 <select
                   value={streamPolicy}
-                  onChange={(e) => setStreamPolicy(e.target.value as typeof streamPolicy)}
+                  onChange={(e) =>
+                    setStreamPolicy(e.target.value as typeof streamPolicy)
+                  }
                   disabled={pending}
                 >
                   <option value="">{t("channels.streamPolicyDefault")}</option>
-                  <option value="force_stream">{t("channels.streamPolicyForceStream")}</option>
-                  <option value="force_non_stream">{t("channels.streamPolicyForceNonStream")}</option>
+                  <option value="force_stream">
+                    {t("channels.streamPolicyForceStream")}
+                  </option>
+                  <option value="force_non_stream">
+                    {t("channels.streamPolicyForceNonStream")}
+                  </option>
                 </select>
               </Field>
               <Field

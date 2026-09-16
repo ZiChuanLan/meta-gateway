@@ -47,8 +47,9 @@ const (
 //     so retries exhaust [A]→[B]→[次] before moving to the next channel. When
 //     the channel has no eligible members left, selection falls back to the
 //     normal weighted/sticky behavior across the remaining fleet.
-//   - RouteGroup narrows the pool to one route group (see RoutingCandidates);
-//     empty means the route's 'default' group.
+//   - RouteGroup narrows the pool to one route group (see RoutingCandidates).
+//     Empty preserves the legacy pool across all groups; an explicit 'default'
+//     requests the default group with the repository's usual fallback.
 type SelectionConstraint struct {
 	ExcludedMembers map[int64]struct{}
 	PreferChannel   int64
@@ -68,7 +69,12 @@ type Evaluation struct {
 }
 
 type Explanation struct {
-	Model            string       `json:"model"`
+	Model          string `json:"model"`
+	RequestedGroup string `json:"requested_group,omitempty"`
+	// RouteGroup is set only when all returned candidates share one group.
+	// An unrestricted/legacy pool may contain several groups.
+	RouteGroup       string       `json:"route_group,omitempty"`
+	GroupFallback    bool         `json:"group_fallback,omitempty"`
 	RouteID          int64        `json:"route_id"`
 	RouteMappingJSON string       `json:"route_mapping_json,omitempty"`
 	RoutingMode      string       `json:"routing_mode,omitempty"`
@@ -258,8 +264,12 @@ func (s *Selector) Explain(ctx context.Context, model string) (Explanation, erro
 
 // ExplainWithSession is Explain with an optional session key: the response
 // carries the sticky binding for that session when one exists.
-func (s *Selector) ExplainWithSession(ctx context.Context, model, sessionKey string) (Explanation, error) {
-	return s.evaluateWithSession(ctx, model, nil, sessionKey, nil)
+func (s *Selector) ExplainWithSession(ctx context.Context, model, sessionKey string, constraints ...*SelectionConstraint) (Explanation, error) {
+	var constraint *SelectionConstraint
+	if len(constraints) > 0 {
+		constraint = constraints[0]
+	}
+	return s.evaluateWithSession(ctx, model, nil, sessionKey, constraint)
 }
 
 func (s *Selector) Select(ctx context.Context, model string, excluded map[int64]struct{}, constraints ...*SelectionConstraint) (Decision, error) {
@@ -489,8 +499,22 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		zero := 0
 		retryTimesOverride = &zero
 	}
+	requestedGroup := strings.TrimSpace(group)
+	effectiveGroup := ""
+	if len(candidates) > 0 {
+		effectiveGroup = candidates[0].Member.GroupName
+		for _, candidate := range candidates[1:] {
+			if candidate.Member.GroupName != effectiveGroup {
+				effectiveGroup = ""
+				break
+			}
+		}
+	}
 	return Explanation{
 		Model:                          model,
+		RequestedGroup:                 requestedGroup,
+		RouteGroup:                     effectiveGroup,
+		GroupFallback:                  requestedGroup != "" && len(candidates) > 0 && requestedGroup != effectiveGroup,
 		RouteID:                        route.ID,
 		RouteMappingJSON:               mappingJSON,
 		RoutingMode:                    mode,

@@ -15,6 +15,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { CreatedDownstreamKey, DownstreamKey } from "../api/types";
+import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
+import { rowContextPoint, rowKeyboardContextPoint } from "../components/contextMenu";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { ModelPicker } from "../components/ModelPicker";
@@ -254,6 +256,7 @@ export function Keys() {
   const [redemption, setRedemption] = useState(false);
   const [created, setCreated] = useState<CreatedDownstreamKey | null>(null);
   const [remove, setRemove] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ id: number; top: number; left: number } | null>(null);
   // Re-view a stored plaintext token (created after plaintext storage).
   const [viewing, setViewing] = useState<{ id: number; name: string } | null>(
     null,
@@ -370,6 +373,33 @@ export function Keys() {
     create.reset();
     setAdd(true);
   };
+
+  const viewKey = (key: DownstreamKey) => {
+    reveal.reset();
+    setViewedToken(null);
+    setViewing({ id: key.id, name: key.name });
+    reveal.mutate(key.id);
+  };
+  const keyActions = (key: DownstreamKey): ActionMenuItem[] => {
+    const busy = reveal.pendingId === key.id || del.pendingId === key.id ||
+      (rotate.isPending && rotate.variables?.id === key.id) ||
+      (update.isPending && update.variables?.id === key.id);
+    const actions: ActionMenuItem[] = [];
+    if (key.has_token || key.id === rotatedToken?.id) actions.push({
+      key: "view", label: t("keys.view"), group: t("actions.view"), icon: <Eye size={14} />,
+      disabled: busy, onSelect: () => viewKey(key),
+    });
+    actions.push(
+      { key: "edit", label: t("keys.edit"), group: t("actions.manage"), icon: <Pencil size={14} />, disabled: busy,
+        onSelect: () => { update.reset(); setEdit(key); } },
+      { key: "rotate", label: t("keys.rotate"), group: t("actions.danger"), danger: true, icon: <RefreshCw size={14} />, disabled: busy,
+        onSelect: () => { rotate.reset(); setRotateError(null); setRotating(key.id); } },
+      { key: "delete", label: t("keys.delete"), group: t("actions.danger"), danger: true, icon: <Trash2 size={14} />, disabled: busy,
+        onSelect: () => setRemove(key.id) },
+    );
+    return actions.map((action) => ({ ...action, disabledReason: action.disabled ? t("common.working") : undefined }));
+  };
+  const contextKey = contextMenu ? rows.find((key) => key.id === contextMenu.id) : undefined;
 
   return (
     <Page
@@ -489,7 +519,15 @@ export function Keys() {
                 ]}
               >
                 {pageRows.map((k) => (
-                  <tr key={k.id}>
+                  <tr key={k.id} tabIndex={0}
+                    onContextMenu={(event) => {
+                      const point = rowContextPoint(event);
+                      if (point) setContextMenu({ id: k.id, ...point });
+                    }}
+                    onKeyDown={(event) => {
+                      const point = rowKeyboardContextPoint(event);
+                      if (point) setContextMenu({ id: k.id, ...point });
+                    }}>
                     <td>
                       <strong>{k.name}</strong>
                       <small>#{k.id}</small>
@@ -520,52 +558,18 @@ export function Keys() {
                       <StatusBadge value={k.enabled} />
                     </td>
                     <td>{formatDate(k.created_at)}</td>
-                    <td className="actions">
+                    <td className="actions key-row-actions">
                       {(k.has_token || k.id === rotatedToken?.id) && (
                         <IconButton
                           className="is-bare"
                           label={t("keys.view")}
                           disabled={reveal.pendingId === k.id}
-                          onClick={() => {
-                            reveal.reset();
-                            setViewedToken(null);
-                            setViewing({ id: k.id, name: k.name });
-                            reveal.mutate(k.id);
-                          }}
+                          onClick={() => viewKey(k)}
                         >
                           <Eye size={14} />
                         </IconButton>
                       )}
-                      <IconButton
-                        className="is-bare"
-                        label={t("keys.rotate")}
-                        disabled={rotating === k.id || rotate.isPending}
-                        onClick={() => {
-                          rotate.reset();
-                          setRotateError(null);
-                          setRotating(k.id);
-                        }}
-                      >
-                        <RefreshCw size={14} />
-                      </IconButton>
-                      <IconButton
-                        className="is-bare"
-                        label={t("keys.edit")}
-                        onClick={() => {
-                          update.reset();
-                          setEdit(k);
-                        }}
-                      >
-                        <Pencil size={14} />
-                      </IconButton>
-                      <IconButton
-                        className="is-bare"
-                        label={t("keys.delete")}
-                        disabled={del.pendingId === k.id}
-                        onClick={() => setRemove(k.id)}
-                      >
-                        <Trash2 size={14} />
-                      </IconButton>
+                      <ActionMenu compact label={t("common.moreActions")} title={k.name} items={keyActions(k)} />
                     </td>
                   </tr>
                 ))}
@@ -575,6 +579,8 @@ export function Keys() {
         </Panel>
       </div>
 
+      {contextMenu && contextKey ? <ActionMenu key={contextKey.id} label={t("common.moreActions")} title={contextKey.name}
+        open position={contextMenu} onOpenChange={(open) => { if (!open) setContextMenu(null); }} items={keyActions(contextKey)} /> : null}
       {redemption && <RedemptionDialog onClose={() => setRedemption(false)} />}
       {add && (
         <KeyDialog
@@ -815,6 +821,7 @@ function KeyDialog({
     <Dialog
       title={mode === "create" ? t("keys.createDialog") : t("keys.editDialog")}
       onClose={onClose}
+      busy={pending}
       actions={
         <>
           <Button variant="secondary" onClick={onClose}>

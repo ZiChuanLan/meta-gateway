@@ -26,6 +26,9 @@ var businessTables = []string{
 	"channel_model_blocks",
 	"redemption_codes",
 	"model_metadata",
+	// The catalog sync board describes rows in the tables above, so it is
+	// derived state — a stale "12 prices filled" after a reset would be a lie.
+	"model_catalog_sync",
 	"error_passthrough_rules",
 	"channel_health_history",
 	"alert_rules",

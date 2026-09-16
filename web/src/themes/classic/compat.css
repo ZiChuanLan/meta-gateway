@@ -1,0 +1,167 @@
+/* The classic frame owns its layout; business views and safe overlays are shared. */
+:root[data-appearance="classic"] .theme-classic { --nav-width: 0px; background: transparent; }
+/* The atmosphere element carries two jobs: the ambient haze (CSS on modern)
+   and the user's persisted custom background (inline style from ConsoleShell).
+   Classic wants the image but none of the indigo haze — and it wants the
+   alabaster veil the old .console-custom-bg block used to lay over it.
+   Keying the veil on [style] keeps it off when no image is configured. */
+:root[data-appearance="classic"] .theme-classic .console-atmosphere { background-image: none; }
+:root[data-appearance="classic"] .theme-classic .console-atmosphere[style]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(248, 250, 252, .94) 0%, rgba(244, 247, 250, .9) 45%, rgba(236, 242, 247, .95) 100%);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+:root[data-appearance="classic"] .theme-classic .console-main { margin-left: 0; min-height: calc(100dvh - 95px); }
+:root[data-appearance="classic"] .theme-classic .console-content { max-width: 1600px; padding: 0 24px; }
+:root[data-appearance="classic"] .theme-classic .page { padding: 28px 0; }
+:root[data-appearance="classic"] .theme-classic .console-page-foot { padding: 12px 24px 22px; }
+:root[data-appearance="classic"] .theme-classic .dashboard-aura { display: none; }
+:root[data-appearance="classic"] .theme-classic .dashboard-page .page-header { min-height: 0; margin-bottom: 26px; padding: 0 0 20px; }
+:root[data-appearance="classic"] .theme-classic .dashboard-page h1:after { display: none; }
+/* The modern telemetry segment carries a 24px right margin so its own
+   border-right divider sits in the gap. Classic draws the divider on the LEFT
+   edge instead and never restates the margin, so it leaked through: the active
+   segment's tint stopped 24px short of its cell and the notch read as the
+   highlight failing to fill. Classic needs no margin at all. */
+:root[data-appearance="classic"] .telemetry-segment { margin-right: 0; }
+/* Both columns stretch so the directory and the detail card share one top and
+   one bottom edge. `align-items: start` let the detail card end wherever its
+   content happened to stop, which read as the two sides being misaligned. */
+:root[data-appearance="classic"] .theme-classic .channels-workspace { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(310px,1fr); gap: 20px; align-items: stretch; }
+:root[data-appearance="classic"] .classic-channel-detail { min-width: 0; position: sticky; top: 118px; }
+/* The directory's first row is already pushed down by its filter row, so the
+   detail card needs the same lead-in — otherwise its first chip row sits flush
+   against the frame and the two columns read as level but not aligned. */
+:root[data-appearance="classic"] .classic-channel-detail > .detail-card { padding-top: 25px; }
+:root[data-appearance="classic"] .theme-classic .models-split { grid-template-columns: minmax(0,1.35fr) minmax(390px,1fr); }
+:root[data-appearance="classic"] .theme-classic .model-directory { min-height: 0; position: static; max-height: none; }
+:root[data-appearance="classic"] .theme-classic .model-row-upstream,
+:root[data-appearance="classic"] .theme-classic .model-row-status { display: table-cell; }
+:root[data-appearance="classic"] .theme-classic .model-nav-provider { display: none; }
+:root[data-appearance="classic"] .workspace-filter-row { padding: 14px; border-bottom: 1px solid var(--line); }
+:root[data-appearance="classic"] .workspace-filter-row .workspace-list-caption { display: none; }
+:root[data-appearance="classic"] .classic-mobile-trigger { display: none; }
+:root[data-appearance="classic"] .gateway-classic { pointer-events: auto !important; z-index: 10000; outline: none; }
+:root[data-appearance="classic"] .gateway-classic .transition-art { position: absolute; inset: 0; pointer-events: none; }
+:root[data-appearance="classic"] .gateway-classic .cinematic-skip { z-index: 10; pointer-events: auto; background: var(--surface); border-color: var(--line-strong); color: var(--ink); }
+:root[data-appearance="classic"] .gateway-classic.is-revealing .gateway-door { animation-duration: var(--entry-reveal); }
+:root[data-appearance="classic"] .gateway-classic.is-sealing .gateway-door { animation-duration: var(--entry-charge); }
+:root[data-appearance="classic"] .gateway-classic.is-revealing .gateway-transition-lock { animation-duration: var(--entry-reveal); }
+:root[data-appearance="classic"] .login-page { min-height: 100dvh; display: flex; flex-direction: column; }
+:root[data-appearance="classic"] .login-stage { display: grid; grid-template-columns: 1.2fr 1fr; gap: 9%; width: min(1080px,100%); align-items: center; }
+:root[data-appearance="classic"] .login-card { width: auto; border-radius: 0; }
+:root[data-appearance="classic"] .console-brand-mark { background: transparent; border-radius: 0; box-shadow: none; }
+/* The brand mark carries its own near-black tile, so the classic frame and
+   tint come off; only the grid slot stays. */
+:root[data-appearance="classic"] .brand-mark { background: transparent; border-color: transparent; box-shadow: none; }
+:root[data-appearance="classic"] .brand-mark svg { width: 100%; height: 100%; display: block; }
+@media (min-width: 761px) and (max-width: 1400px) {
+  :root[data-appearance="classic"] .gate-console-deck { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; height: auto; min-height: 0; padding-top: 10px; padding-bottom: 10px; row-gap: 7px; }
+  :root[data-appearance="classic"] .deck-identity { grid-column: 1; grid-row: 1; }
+  :root[data-appearance="classic"] .deck-status-cluster { grid-column: 2; grid-row: 1; }
+  :root[data-appearance="classic"] .deck-sector-rail { grid-column: 1/-1; grid-row: 2; justify-content: flex-start; }
+}
+@media (max-width: 1100px) {
+  :root[data-appearance="classic"] .theme-classic .channels-workspace,
+  :root[data-appearance="classic"] .theme-classic .models-split { grid-template-columns: minmax(0,1fr); }
+  :root[data-appearance="classic"] .classic-channel-detail { position: static; }
+}
+@media (max-width: 760px) {
+  :root[data-appearance="classic"] .gate-console-deck { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
+  :root[data-appearance="classic"] .deck-sector-rail { display: none; }
+  :root[data-appearance="classic"] .classic-mobile-trigger { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+  :root[data-appearance="classic"] .deck-status-cluster { width: 100%; justify-content: flex-end; }
+  :root[data-appearance="classic"] .theme-classic .console-content { padding: 0 16px; }
+  :root[data-appearance="classic"] .theme-classic .page { padding-top: 22px; }
+  :root[data-appearance="classic"] .theme-classic .telemetry-strip { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  :root[data-appearance="classic"] .theme-classic .telemetry-segment { min-width: 0; margin: 0; padding: 16px; }
+  :root[data-appearance="classic"] .login-stage { grid-template-columns: 1fr; gap: 28px; }
+  :root[data-appearance="classic"] .login-sculpture { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-appearance="classic"] .gateway-classic { animation: none; background: var(--bg); }
+  :root[data-appearance="classic"] .gateway-classic .transition-art { display: none; }
+}
+
+/* ---------------------------------------------------------------- palette --
+   The snapshot was carried over from the deep-space canvas era. Four shadows
+   tuned for black read as heavy smudges on the alabaster surface, and one
+   hover border went full black. */
+:root[data-appearance="classic"] .chart-wrap {
+  box-shadow: inset 0 1px 2px rgba(15, 42, 66, .05);
+}
+:root[data-appearance="classic"] .toast {
+  box-shadow: 0 10px 28px rgba(15, 42, 66, .14), 0 2px 6px rgba(15, 42, 66, .08);
+}
+:root[data-appearance="classic"] .market-card:hover {
+  box-shadow: 0 10px 26px rgba(15, 42, 66, .12), 0 0 0 1px var(--primary-hairline);
+}
+:root[data-appearance="classic"] .tone-primary.is-interactive:hover {
+  border-color: var(--line-strong);
+}
+
+/* -------------------------------------------------------------- geometry --
+   Components introduced after the snapshot still carry the modern corner
+   radius, which fights the classic zero-radius language. */
+:root[data-appearance="classic"] .route-policy-disclosure,
+:root[data-appearance="classic"] .login-card-mark,
+:root[data-appearance="classic"] .workbench-ref,
+:root[data-appearance="classic"] .workbench-ref-add,
+:root[data-appearance="classic"] .workbench-ref-remove,
+:root[data-appearance="classic"] .workbench-shot,
+:root[data-appearance="classic"] .workbench-history-item,
+:root[data-appearance="classic"] .workbench-history-item img,
+:root[data-appearance="classic"] .appearance-card,
+:root[data-appearance="classic"] .appearance-modes > button,
+:root[data-appearance="classic"] .appearance-mini-header i {
+  border-radius: var(--radius);
+}
+
+/* ---------------------------------------------------------------- tokens --
+   tokens.css defines the ambient haze for modern only. Classic never
+   restated them, so every consumer — the login atmosphere above all — fell
+   back to the modern indigo. Restate them in the classic spectrum. */
+:root[data-appearance="classic"] {
+  --ambient-a: rgba(124, 196, 240, .1);
+  --ambient-b: rgba(212, 175, 55, .05);
+  --ambient-c: rgba(15, 42, 66, .04);
+}
+
+/* --------------------------------------------------------------- motion --
+   motion.css is the modern art layer and hardcodes its own palette
+   (#3357e8 indigo, #8ac3cf teal, #d5b66e gold, rgba(41,62,54,…) ink-green).
+   It carries no .theme-modern gate, so those pixels paint in classic too.
+   Only the rules that actually render on the classic login are restated. */
+:root[data-appearance="classic"] .login-motion .login-atmosphere {
+  background:
+    radial-gradient(ellipse at 12% 24%, var(--ambient-a), transparent 57%),
+    radial-gradient(ellipse at 82% 18%, var(--ambient-b), transparent 52%),
+    radial-gradient(ellipse at 25% 100%, var(--ambient-c), transparent 55%);
+}
+:root[data-appearance="classic"] .login-light-ribbons i {
+  background: linear-gradient(90deg, transparent, rgba(124, 196, 240, .3), rgba(212, 175, 55, .18), transparent);
+}
+:root[data-appearance="classic"] .login-light-ribbons i:after {
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+}
+:root[data-appearance="classic"] .login-motion .login-tile.is-front {
+  box-shadow: 8px 8px 0 rgba(15, 42, 66, .08);
+}
+:root[data-appearance="classic"] .login-motion .login-submit:before {
+  background: linear-gradient(90deg, transparent, rgba(124, 196, 240, .28), transparent);
+}
+:root[data-appearance="classic"] .login-motion .login-submit:after {
+  background: linear-gradient(90deg, transparent, var(--primary), var(--accent), transparent);
+}
+
+/* styles.css tints the chat-image-edit badge at (0,2,0) while classic's own
+   badge rule sits at (0,3,0) and would win — the classic counterpart has to be
+   spelled at (0,4,0). */
+:root[data-appearance="classic"] .model-meta-badge.is-shim {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--line));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+}

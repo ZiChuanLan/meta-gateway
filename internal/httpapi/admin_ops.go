@@ -321,12 +321,17 @@ func (h *AdminHandler) decisionSnapshot(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
-	model := r.URL.Query().Get("model")
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
 	if model == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
-	explanation, err := h.router.ExplainWithSession(r.Context(), model, r.URL.Query().Get("session"))
+	group, valid := validateRouteGroup(r.URL.Query().Get("route_group"))
+	if !valid {
+		writeError(w, http.StatusBadRequest, "group name too long")
+		return
+	}
+	explanation, err := h.router.ExplainWithSession(r.Context(), model, r.URL.Query().Get("session"), &routing.SelectionConstraint{RouteGroup: group})
 	if err != nil {
 		if errors.Is(err, routing.ErrRouteNotFound) {
 			writeError(w, http.StatusNotFound, "route not found")

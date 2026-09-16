@@ -10,9 +10,15 @@ export function createEdgeSparkHost(
 ): { start(): void; stop(): void; dispose(): void } {
 	let timer: number | null = null;
 	let disposed = false;
+	const sparks = new Map<HTMLElement, number>();
+	const remove = (spark: HTMLElement) => {
+		window.clearTimeout(sparks.get(spark));
+		sparks.delete(spark);
+		spark.remove();
+	};
 
 	const spawn = () => {
-		if (disposed || !host.isConnected) return;
+		if (disposed || !host.isConnected || document.hidden) { timer = null; return; }
 		const rect = host.getBoundingClientRect();
 		if (rect.width < 4 || rect.height < 4) return;
 
@@ -48,8 +54,10 @@ export function createEdgeSparkHost(
 		spark.style.setProperty("--sy", `${(dy + (Math.random() - 0.5) * 1.2) * (6 + Math.random() * 20)}px`);
 		spark.style.setProperty("--sr", `${(Math.random() - 0.5) * 900}deg`);
 		spark.style.setProperty("--sd", `${160 + Math.random() * 260}ms`);
-		spark.addEventListener("animationend", () => spark.remove(), { once: true });
+		spark.addEventListener("animationend", () => remove(spark), { once: true });
 		document.body.appendChild(spark);
+		// Cleanup also works when motion is disabled or the stylesheet is unavailable.
+		sparks.set(spark, window.setTimeout(() => remove(spark), 650));
 
 		timer = window.setTimeout(spawn, baseRateMs * (0.45 + Math.random() * 0.8));
 	};
@@ -67,6 +75,7 @@ export function createEdgeSparkHost(
 		dispose() {
 			disposed = true;
 			this.stop();
+			for (const spark of sparks.keys()) remove(spark);
 		},
 	};
 }

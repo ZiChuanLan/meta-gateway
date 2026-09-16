@@ -113,6 +113,7 @@ export function TryPanel({
           }
         >
           <select
+            aria-label={t("try.upstream")}
             value={channelId}
             onChange={(e) => setChannelId(Number(e.target.value) || 0)}
           >

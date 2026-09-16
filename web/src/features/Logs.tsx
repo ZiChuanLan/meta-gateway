@@ -1,4 +1,4 @@
-import { RefreshCw, MessagesSquare } from "lucide-react";
+import { RefreshCw, MessagesSquare, SlidersHorizontal } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useMemo, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -135,8 +135,15 @@ function ProxyLogsPanel() {
 	const upstreamIdParam = params.get("upstream_request_id")?.trim() || "";
 	const [modelDraft, setModelDraft] = useState(modelParam);
 	const [upstreamIdDraft, setUpstreamIdDraft] = useState(upstreamIdParam);
+	const queryParam = params.get("q")?.trim() || "";
+	const [queryDraft, setQueryDraft] = useState(queryParam);
 	const [slowOnly, setSlowOnly] = useState(false);
+  const [showExactFilters, setShowExactFilters] = useState(Boolean(modelParam || upstreamIdParam));
 	const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+	useEffect(() => setModelDraft(modelParam), [modelParam]);
+	useEffect(() => setUpstreamIdDraft(upstreamIdParam), [upstreamIdParam]);
+	useEffect(() => setQueryDraft(queryParam), [queryParam]);
+	const hasFilters = Boolean(channelId || modelParam || upstreamIdParam || queryParam || modelDraft || upstreamIdDraft || queryDraft || failedOnly || slowOnly);
   const [histogram, setHistogram] = useState<{
     buckets: number[];
     total: number;
@@ -151,9 +158,10 @@ function ProxyLogsPanel() {
 			model: modelParam || undefined,
 			status: failedOnly ? ("failed" as const) : undefined,
 			upstream_request_id: upstreamIdParam || undefined,
+			q: queryParam || undefined,
 			limit: 100,
 		}),
-		[channelId, failedOnly, modelParam, upstreamIdParam],
+		[channelId, failedOnly, modelParam, upstreamIdParam, queryParam],
 	);
 
   const logs = useQuery({
@@ -221,39 +229,7 @@ function ProxyLogsPanel() {
 
   return (
     <>
-      <div className="toolbar log-filter-toolbar toolbar-wrap"
-      >
-        <div className="log-filter-switches">
-          <label className="check marginless">
-            <input
-              type="checkbox"
-              checked={failedOnly}
-              onChange={(e) =>
-                setFilter({ status: e.target.checked ? "failed" : null })
-              }
-            />
-            <span>{t("logsPage.failedOnly")}</span>
-          </label>
-          <label className="check marginless">
-            <input
-              type="checkbox"
-              checked={slowOnly}
-              onChange={(e) => setSlowOnly(e.target.checked)}
-            />
-            <span>{t("logsPage.slowOnly")}</span>
-          </label>
-        </div>
-        <Button
-          variant="secondary"
-          icon={<RefreshCw size={16} />}
-          onClick={() => {
-            void logs.refetch();
-            loadHistogram();
-          }}
-        >
-          {t("common.refresh")}
-        </Button>
-      </div>
+      <div className="logs-overview">
       <TelemetryStrip
         items={[
           {
@@ -276,49 +252,26 @@ function ProxyLogsPanel() {
           },
         ]}
       />
+        <Button
+          variant="secondary"
+          icon={<RefreshCw size={16} />}
+          onClick={() => {
+            void logs.refetch();
+            loadHistogram();
+          }}
+        >
+          {t("common.refresh")}
+        </Button>
+      </div>
 
-      {histogram ? (
-        <div className="latency-histogram">
-          <div className="latency-histogram-head">
-            <strong>{t("logsPage.histogram")}</strong>
-            <span className="is-quiet">
-              {t("logsPage.histogramStats", {
-                total: histogram.total,
-                slow: histogram.slow_count,
-                p50: histogram.p50_ms,
-                p95: histogram.p95_ms,
-              })}
-            </span>
-          </div>
-          <div
-            className={`latency-histogram-bars${histogram.total === 0 ? " is-empty" : ""}`}
-          >
-            {histogram.buckets.map((count, index) => {
-              const max = Math.max(...histogram.buckets, 1);
-              const slow = index >= 6; // buckets 6+ = >= 5s
-              return (
-                <div
-                  key={index}
-                  className={`latency-histogram-bar${slow ? " is-slow" : ""}`}
-                  style={{ height: `${Math.max(4, (count / max) * 100)}%` }}
-                  title={`${count} 次`}
-                />
-              );
-            })}
-          </div>
-          <div className="latency-histogram-labels">
-            {["<0.25s", "0.5s", "1s", "2s", "3s", "5s", "8s", "13s", "21s", "34s", "34s+"].map(
-              (label, index) => (
-                <span key={index}>{label}</span>
-              ),
-            )}
-          </div>
-        </div>
-      ) : null}
+
 
       <div className="logs-split">
         <Panel className="ops-list-panel">
-          <div className="filter-bar log-filter-bar">
+          <form className="filter-bar log-filter-bar" onSubmit={(event) => {
+            event.preventDefault();
+            setFilter({ model: modelDraft.trim() || null, q: queryDraft.trim() || null, upstream_request_id: upstreamIdDraft.trim() || null });
+          }}>
             <select
               aria-label={t("ops.filterChannel")}
               value={channelId ?? 0}
@@ -337,48 +290,77 @@ function ProxyLogsPanel() {
               ))}
             </select>
 			<input
-				value={modelDraft}
-				placeholder={t("common.model")}
-				onChange={(e) => setModelDraft(e.target.value)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter") {
-						setFilter({ model: modelDraft.trim() || null });
-					}
-				}}
+				className="log-search-input"
+				aria-label={t("logsPage.search")}
+				value={queryDraft}
+				placeholder={t("logsPage.search")}
+				onChange={(e) => setQueryDraft(e.target.value)}
 			/>
-			<input
-				value={upstreamIdDraft}
-				placeholder={t("logsPage.upstreamRequestId")}
-				onChange={(e) => setUpstreamIdDraft(e.target.value)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter") {
-						setFilter({ upstream_request_id: upstreamIdDraft.trim() || null });
-					}
-				}}
-			/>
+            <Button variant="secondary" icon={<SlidersHorizontal size={14} />} aria-expanded={showExactFilters} aria-controls="proxy-log-exact-filters" onClick={() => setShowExactFilters((value) => !value)}>
+              {t("logsPage.moreFilters")}
+            </Button>
             <Button
               variant="secondary"
-              onClick={() => setFilter({ model: modelDraft.trim() || null })}
+              type="submit"
             >
               {t("common.apply")}
             </Button>
-			{(channelId || modelParam || upstreamIdParam || !failedOnly) && (
+			{hasFilters && (
 				<Button
 					variant="quiet"
 					onClick={() => {
 						setModelDraft("");
 						setUpstreamIdDraft("");
+						setQueryDraft("");
+						setSlowOnly(false);
 						setFilter({
 							channel_id: null,
 							model: null,
 							status: null,
 							upstream_request_id: null,
+							q: null,
 						});
 					}}
               >
                 {t("common.clearFilters")}
               </Button>
             )}
+            <div className="log-exact-filters" id="proxy-log-exact-filters" hidden={!showExactFilters}>
+			<input
+				value={modelDraft}
+				aria-label={t("common.model")}
+				placeholder={t("common.model")}
+				onChange={(e) => setModelDraft(e.target.value)}
+			/>
+			<input
+				value={upstreamIdDraft}
+				aria-label={t("logsPage.upstreamRequestId")}
+				placeholder={t("logsPage.upstreamRequestId")}
+				onChange={(e) => setUpstreamIdDraft(e.target.value)}
+			/>
+            </div>
+          </form>
+          <div className="log-quick-filters">
+        <div className="log-filter-switches">
+          <label className="check marginless">
+            <input
+              type="checkbox"
+              checked={failedOnly}
+              onChange={(e) =>
+                setFilter({ status: e.target.checked ? "failed" : null })
+              }
+            />
+            <span>{t("logsPage.failedOnly")}</span>
+          </label>
+          <label className="check marginless">
+            <input
+              type="checkbox"
+              checked={slowOnly}
+              onChange={(e) => setSlowOnly(e.target.checked)}
+            />
+            <span>{t("logsPage.slowOnly")}</span>
+          </label>
+        </div>
           </div>
 
           <EntityState
@@ -454,8 +436,8 @@ function ProxyLogsPanel() {
 								>
 									<td>{formatDate(log.created_at)}</td>
 									<td>
-										<strong className="log-model-name">{log.model}</strong>
-										<small className="mono">{log.request_id}</small>
+										<strong className="log-model-name" title={log.model}>{log.model}</strong>
+										<small className="mono" title={log.request_id}>{log.request_id}</small>
 									</td>
 									<td>
 										{log.reasoning_effort ? (
@@ -522,15 +504,19 @@ function ProxyLogsPanel() {
 											: "—"}
 									</td>
 									<td className="log-latency-cell">
-										<span className="log-latency-bar" aria-hidden="true">
-											<span
-												className={log.latency_ms >= 5000 ? "is-slow" : log.latency_ms >= 1000 ? "is-warn" : ""}
-												style={{ transform: `scaleX(${Math.min(1, Math.max(0.06, log.latency_ms / 10000))})` }}
-											/>
-										</span>
+										{/* A zero-latency attempt (a failure before any wait) drew
+										    the empty track as a stray grey line. */}
+										{log.latency_ms > 0 ? (
+											<span className="log-latency-bar" aria-hidden="true">
+												<span
+													className={log.latency_ms >= 5000 ? "is-slow" : log.latency_ms >= 1000 ? "is-warn" : ""}
+													style={{ transform: `scaleX(${Math.min(1, Math.max(0.06, log.latency_ms / 10000))})` }}
+												/>
+											</span>
+										) : null}
 										{t("common.ms", { n: log.latency_ms })}
 									</td>
-									<td>
+									<td className="log-ttfb-cell">
 										{log.stream && log.first_byte_ms
 											? t("common.ms", { n: log.first_byte_ms })
 											: "—"}
@@ -569,6 +555,47 @@ function ProxyLogsPanel() {
           </EntityState>
         </Panel>
       </div>
+      {histogram ? (
+        <details className="diagnostic-disclosure">
+        <summary>{t("logsPage.histogram")}<span>{t("logsPage.histogramScope")}</span></summary>
+        <div className="latency-histogram">
+          <div className="latency-histogram-head">
+            <strong>{t("logsPage.histogram")}</strong>
+            <span className="is-quiet">
+              {t("logsPage.histogramStats", {
+                total: histogram.total,
+                slow: histogram.slow_count,
+                p50: histogram.p50_ms,
+                p95: histogram.p95_ms,
+              })}
+            </span>
+          </div>
+          <div
+            className={`latency-histogram-bars${histogram.total === 0 ? " is-empty" : ""}`}
+          >
+            {histogram.buckets.map((count, index) => {
+              const max = Math.max(...histogram.buckets, 1);
+              const slow = index >= 6; // buckets 6+ = >= 5s
+              return (
+                <div
+                  key={index}
+                  className={`latency-histogram-bar${slow ? " is-slow" : ""}`}
+                  style={{ height: `${Math.max(4, (count / max) * 100)}%` }}
+                  title={t("logsPage.histogramBucket", { n: count })}
+                />
+              );
+            })}
+          </div>
+          <div className="latency-histogram-labels">
+            {["<0.25s", "0.5s", "1s", "2s", "3s", "5s", "8s", "13s", "21s", "34s", "34s+"].map(
+              (label, index) => (
+                <span key={index}>{label}</span>
+              ),
+            )}
+          </div>
+        </div>
+        </details>
+      ) : null}
     </>
   );
 }

@@ -5,8 +5,12 @@ import type {
   RoutingCandidate,
 } from "../../api/types";
 
-export function primaryMember(members: RoutingCandidate[]) {
+export function primaryMember(members: RoutingCandidate[], route?: Pick<Route, "routing_mode" | "single_member_id">) {
   if (!members.length) return null;
+  if (route?.routing_mode === "single" && route.single_member_id != null) {
+    const pinned = members.find((entry) => entry.member.id === route.single_member_id);
+    if (pinned) return pinned;
+  }
   return sortMembers(members)[0] ?? null;
 }
 

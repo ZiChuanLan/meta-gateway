@@ -1,0 +1,195 @@
+/* Preset colour palettes.
+   ---------------------------------------------------------------------------
+   A palette is orthogonal to both the appearance (classic / modern) and the
+   colour scheme (light / dark), so it only ever restates the brand tokens.
+   Every derived token is computed from the two base colours with color-mix,
+   which is why adding a palette costs two hex values rather than ten.
+
+   This file is imported last in main.tsx on purpose: `:root[data-palette="…"]`
+   ties on specificity with `:root[data-appearance="…"]` in the classic theme,
+   so the cascade order is what makes a palette win. Keep the import last.
+
+   The same rule also sets the tokens on the picker chip itself, which lets the
+   chip preview its own palette for free. */
+
+/* Derived tokens.
+   Light surfaces darken on hover, dark surfaces lighten — mirroring how
+   tokens.css and the classic theme each derive their own hover states. */
+:root[data-palette]:not([data-palette="default"]) {
+  --primary-hover: color-mix(in srgb, var(--primary) 86%, #000);
+  --primary-active: color-mix(in srgb, var(--primary) 74%, #000);
+  --primary-soft: color-mix(in srgb, var(--primary) 13%, transparent);
+  --primary-glow: color-mix(in srgb, var(--primary) 14%, transparent);
+  --primary-hairline: color-mix(in srgb, var(--primary) 42%, transparent);
+  --accent-hover: color-mix(in srgb, var(--accent) 86%, #000);
+  --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 14%, transparent);
+  --focus: color-mix(in srgb, var(--primary) 60%, transparent);
+}
+:root[data-palette]:not([data-palette="default"]).dark {
+  --primary-hover: color-mix(in srgb, var(--primary) 84%, #fff);
+  --primary-active: color-mix(in srgb, var(--primary) 72%, #fff);
+}
+
+/* Ocean — deep cyan with a burnt-amber counterpoint. */
+:root[data-palette="ocean"],
+.palette-swatch[data-palette="ocean"] {
+  --primary: #0d6e93;
+  --accent: #b8741a;
+  --on-primary: #fff;
+  --swatch-primary: #0d6e93;
+  --swatch-accent: #b8741a;
+}
+:root[data-palette="ocean"].dark {
+  --primary: #6dc0dd;
+  --accent: #dda85c;
+  --on-primary: #0f1720;
+}
+
+/* Forest — deep emerald with brass. */
+:root[data-palette="forest"],
+.palette-swatch[data-palette="forest"] {
+  --primary: #2b6e47;
+  --accent: #9c6f1c;
+  --on-primary: #fff;
+  --swatch-primary: #2b6e47;
+  --swatch-accent: #9c6f1c;
+}
+:root[data-palette="forest"].dark {
+  --primary: #6fc894;
+  --accent: #d4b45c;
+  --on-primary: #0f1720;
+}
+
+/* Violet — deep violet with a rose accent. */
+:root[data-palette="violet"],
+.palette-swatch[data-palette="violet"] {
+  --primary: #63419f;
+  --accent: #b8496b;
+  --on-primary: #fff;
+  --swatch-primary: #63419f;
+  --swatch-accent: #b8496b;
+}
+:root[data-palette="violet"].dark {
+  --primary: #a892e8;
+  --accent: #e08fae;
+  --on-primary: #0f1720;
+}
+
+/* Ember — terracotta against a cool teal. */
+:root[data-palette="ember"],
+.palette-swatch[data-palette="ember"] {
+  --primary: #b04a22;
+  --accent: #1a6b7c;
+  --on-primary: #fff;
+  --swatch-primary: #b04a22;
+  --swatch-accent: #1a6b7c;
+}
+:root[data-palette="ember"].dark {
+  --primary: #e8905f;
+  --accent: #64b8c9;
+  --on-primary: #0f1720;
+}
+
+/* Graphite — restrained slate with gilt. */
+:root[data-palette="graphite"],
+.palette-swatch[data-palette="graphite"] {
+  --primary: #414b5c;
+  --accent: #a8861f;
+  --on-primary: #fff;
+  --swatch-primary: #414b5c;
+  --swatch-accent: #a8861f;
+}
+:root[data-palette="graphite"].dark {
+  --primary: #a3b0c2;
+  --accent: #d4b95c;
+  --on-primary: #0f1720;
+}
+
+/* Sakura — deep pink with periwinkle. */
+:root[data-palette="sakura"],
+.palette-swatch[data-palette="sakura"] {
+  --primary: #a83c60;
+  --accent: #5f6aa0;
+  --on-primary: #fff;
+  --swatch-primary: #a83c60;
+  --swatch-accent: #5f6aa0;
+}
+:root[data-palette="sakura"].dark {
+  --primary: #ef92b2;
+  --accent: #a8b1dd;
+  --on-primary: #0f1720;
+}
+
+/* ------------------------------------------------------------------ picker --
+   Chips live in the appearance panel next to the style and mode pickers.
+   Radii come from the token scale rather than fixed pixels, so the chips adopt
+   the classic zero-radius language without needing a compat bridge.
+
+   The grid is a fixed seven columns rather than auto-fill: there are exactly
+   seven palettes, and auto-fill left the seventh orphaned on a row of its own
+   as soon as the content column got narrow. Pinning the column count keeps the
+   row full and even; narrower viewports step down instead. */
+.palette-picker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 980px) {
+  .palette-picker { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .palette-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.palette-swatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px 8px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font: 12px var(--font);
+  text-align: left;
+}
+.palette-swatch[aria-pressed="true"] {
+  border-color: var(--primary-active);
+  background: var(--primary-soft);
+}
+.palette-swatch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.palette-swatch-chip {
+  flex: 0 0 auto;
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--swatch-primary, var(--primary));
+}
+.palette-swatch-chip::after {
+  content: "";
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  background: var(--swatch-accent, var(--accent));
+}
+.palette-swatch-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.palette-swatch[aria-pressed="true"] .palette-swatch-name { font-weight: 550; }
+
+/* "Follow the appearance" is the absence of an override, so its chip has to
+   show the built-in brand pairs of whichever appearance is active rather than
+   whatever palette happens to be selected. */
+.palette-swatch[data-palette="default"] { --swatch-primary: #3357e8; --swatch-accent: #e55d49; }
+:root[data-appearance="classic"] .palette-swatch[data-palette="default"] { --swatch-primary: #7cc4f0; --swatch-accent: #d4af37; }

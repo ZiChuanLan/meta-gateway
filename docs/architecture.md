@@ -64,7 +64,7 @@ Operations
 | `internal/discovery` | Model-list refresh, reconcile into routes/members, passive recovery |
 | `internal/healthsweep` | Jittered periodic channel health probes (operational/degraded/error) |
 | **Persistence** | |
-| `internal/store` | SQLite: 72 tracked filename-keyed migrations, repo-per-entity stores, hot-path caches (downstream keys, groups), usage recording, GC |
+| `internal/store` | SQLite: tracked filename-keyed migrations, repo-per-entity stores, hot-path caches (downstream keys, groups), usage recording, GC |
 | `internal/domain` | Shared entity structs and status/category constants |
 | **Ops & integrations** | |
 | `internal/alerts` | Configurable alert-rule evaluation (60s tick) |

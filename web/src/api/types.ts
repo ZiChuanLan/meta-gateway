@@ -125,6 +125,7 @@ export interface Route {
   stable_first_promote_requests?: number | null;
   stable_first_requests?: number;
   model_group?: string;
+  image_edit_shim?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -433,6 +434,107 @@ export interface ModelMetadata {
   updated_at?: string;
 }
 
+/**
+ * Protocol-level capability: which endpoint to call, which encoding it wants,
+ * how many input images it accepts. Distinct from ModelMetadata, which
+ * describes *what* a model is (context window, vendor, price).
+ */
+export interface ModelCapability {
+  model: string;
+  kind: string;
+  provider: string;
+  endpoints: string[];
+  input_formats: string[];
+  input_modalities: string[];
+  output_modalities: string[];
+  max_input_images: number;
+  supports_stream: boolean;
+  supports_tools: boolean;
+  supports_json_mode: boolean;
+  async_task: boolean;
+  size_options: string;
+  /**
+   * builtin | discovery | manual | catalog — manual rows survive both discovery
+   * re-tagging and catalog syncs; catalog rows are owned by the sync service.
+   */
+  source: string;
+  notes: string;
+  updated_at?: string;
+  /** True when no registry row exists and the answer came from the classifier. */
+  resolved_by_builtin?: boolean;
+}
+
+/** One field a catalog sync would rewrite, already rendered as strings. */
+export interface CatalogFieldChange {
+  field: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * The planned outcome for one model. Each action is one of create | refresh |
+ * fill | skip_manual | disabled | unchanged.
+ */
+export interface CatalogPreviewItem {
+  model: string;
+  found: boolean;
+  sources: string[];
+  capability_action: string;
+  capability_source: string;
+  capability_kind: string;
+  capability_changes?: CatalogFieldChange[];
+  metadata_action: string;
+  metadata_changes?: CatalogFieldChange[];
+  price_action: string;
+  price_changes?: CatalogFieldChange[];
+}
+
+/** A dry run of a catalog sync: what it would write, model by model. */
+export interface CatalogPreview {
+  items: CatalogPreviewItem[];
+  requested: number;
+  matched: number;
+  missing: number;
+  sources: string[];
+  errors?: string[];
+  prices_enabled: boolean;
+  fetched: boolean;
+}
+
+/** The outcome recorded by the last applied sync. */
+export interface CatalogSyncState {
+  synced_at: string;
+  requested: number;
+  matched: number;
+  capabilities: number;
+  metadata: number;
+  prices: number;
+  skipped_manual: number;
+  missing: number;
+  sources: string[];
+  errors?: string[];
+}
+
+export interface CatalogStatus {
+  /** Null until the first sync runs. */
+  state: CatalogSyncState | null;
+  sources: string[];
+  /** True when a background sweep is configured. */
+  scheduled: boolean;
+  prices_enabled: boolean;
+}
+
+/**
+ * What a sync is allowed to write. Omitted fields default to on; prices are
+ * separate because writing them changes what a request costs.
+ */
+export interface CatalogPolicyInput {
+  models?: string[];
+  capabilities?: boolean;
+  metadata?: boolean;
+  prices?: boolean;
+}
+
 export interface ErrorPassRule {
   id?: number;
   name: string;
@@ -666,6 +768,9 @@ interface RouteEvaluation {
 }
 export interface RouteExplanation {
   model: string;
+  requested_group?: string;
+  route_group?: string;
+  group_fallback?: boolean;
   route_id: number;
   routing_mode?: string;
   evaluated_at: string;

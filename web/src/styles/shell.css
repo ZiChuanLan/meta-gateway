@@ -1,0 +1,94 @@
+/* `--nav-width` is the width the main column starts at: the sidebar card plus
+   one gutter, so the floating card never touches the topbar edge. */
+.console-shell { --nav-width: 230px; min-height: 100dvh; background: var(--bg); color: var(--ink); }
+.console-atmosphere { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 0 10%, var(--ambient-a), transparent 48%), radial-gradient(ellipse at 95% 0%, var(--ambient-b), transparent 48%), radial-gradient(ellipse at 55% 100%, var(--ambient-c), transparent 65%); background-size: cover; }
+.console-sidebar { position: fixed; top: 14px; left: 14px; bottom: 14px; z-index: 60; width: calc(var(--nav-width) - 28px); padding: 21px 13px 12px; display: flex; flex-direction: column; border: 1px solid var(--surface-glass-border); border-radius: 20px; background: var(--sidebar); backdrop-filter: blur(30px) saturate(1.3); box-shadow: inset 0 1px rgba(255,255,255,.24), var(--shadow-sm); transition: width var(--dur-slow) var(--ease-out); }
+.console-brand { display: flex; align-items: center; gap: 10px; padding: 0 5px 20px; white-space: nowrap; }
+/* The brand mark paints its own tile, so the wrapper is just a sizing slot. */
+.console-brand-mark { flex: 0 0 36px; height: 36px; display: grid; place-items: center; background: transparent; }
+.console-brand-mark svg { width: 100%; height: 100%; display: block; }
+.console-brand-copy { display: grid; gap: 5px; }
+.console-brand-copy strong { font-size: 14px; letter-spacing: -.045em; font-weight: 650; }
+.console-brand-copy small { color: var(--muted); font-size: 10px; letter-spacing: .03em; }
+.console-search { display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 10px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--sidebar-raised); color: var(--muted); text-align: left; cursor: pointer; font: 12px var(--font); box-shadow: inset 0 1px var(--surface-glass-border); }
+.console-search:hover { color: var(--ink); border-color: var(--line-strong); }
+.console-search kbd { margin-left: auto; display: flex; align-items: center; gap: 2px; font: 10px var(--font); opacity: .75; }
+.console-navigation { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; scrollbar-width: thin; padding: 2px; }
+.console-nav-group { display: grid; gap: 2px; }
+.console-nav-caption { padding: 0 12px 7px; color: var(--muted); font-size: 10px; font-weight: 550; letter-spacing: .08em; }
+.console-nav-link { display: flex; align-items: center; position: relative; gap: 11px; min-height: 35px; padding: 7px 11px; border: 1px solid transparent; border-radius: 10px; text-decoration: none; color: var(--muted-strong); font-size: 12px; font-weight: 500; transition: background var(--dur-base), color var(--dur-base), box-shadow var(--dur-base), transform var(--dur-fast); }
+.console-nav-link svg { flex: 0 0 auto; opacity: .83; }
+.console-nav-link:hover { color: var(--ink); background: var(--surface-hover); }
+.console-nav-link:active { transform: scale(.98); }
+.console-nav-link.active { color: var(--primary-active); background: var(--surface-glass); border-color: var(--surface-glass-border); box-shadow: var(--shadow-sm); font-weight: 650; }
+.console-nav-link.active svg { opacity: 1; }
+.console-nav-indicator { width: 3px; height: 12px; border-radius: 1px; transform: skewX(-16deg); background: var(--primary); position: absolute; right: 10px; opacity: 0; transition: opacity var(--dur-base); }
+.console-nav-link.active .console-nav-indicator { opacity: .8; }
+.console-sidebar-foot { margin-top: auto; padding: 16px 4px 0; }
+.console-health { display: flex; gap: 9px; padding: 14px 7px; border-top: 1px solid var(--line); font-size: 11px; }
+.console-health-dot { flex: 0 0 6px; height: 6px; margin-top: 4px; background: var(--muted); border-radius: 50%; }
+.console-health.is-ok .console-health-dot { background: var(--success); box-shadow: 0 0 0 4px var(--success-soft); }
+.console-health.is-warn .console-health-dot { background: var(--warning); }
+.console-health.is-down .console-health-dot { background: var(--danger); }
+.console-health > div { display: grid; gap: 7px; color: var(--muted); }
+.console-health strong { color: var(--ink); font-size: 12px; font-weight: 600; }
+.console-health small { font-size: 10px; font-weight: 400; color: var(--muted); }
+.console-sidebar-meta { display: flex; align-items: center; justify-content: space-between; padding: 0 5px; color: var(--muted); font-size: 10px; }
+.console-main { position: relative; margin-left: var(--nav-width); min-width: 0; min-height: 100dvh; display: flex; flex-direction: column; transition: margin-left var(--dur-slow) var(--ease-out); }
+/* Same gutters as the sidebar card, so the two surfaces read as one chrome
+   instead of butting into a rounded corner. */
+.console-topbar { min-height: 68px; position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-right: 14px; padding: 0 24px 0 38px; border: 1px solid var(--surface-glass-border); border-top: 0; border-radius: 0 0 18px 18px; background: var(--surface-glass); backdrop-filter: blur(22px) saturate(1.25); }
+.console-breadcrumb { display: flex; gap: 12px; align-items: center; font-size: 11px; color: var(--muted); min-width: 0; }
+.console-breadcrumb strong { color: var(--ink-soft); font-weight: 550; }
+.console-breadcrumb svg { color: var(--muted-dark); }
+.console-global-actions { display: flex; align-items: center; gap: 8px; }
+.console-global-actions .icon-button { color: var(--muted); border: 0; background: transparent; width: 32px; height: 32px; border-radius: 9px; }
+.console-global-actions .icon-button:hover { color: var(--ink); background: var(--surface-hover); }
+.console-language span { display: none; }
+.console-language select { height: 30px; width: 83px; border: 0; background: transparent; font-size: 11px; color: var(--ink-soft); padding: 0 6px; }
+.console-action-divider { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
+.console-update { display: flex; align-items: center; gap: 4px; color: var(--primary-active); text-decoration: none; font-size: 11px; padding: 5px 9px; background: var(--primary-soft); border-radius: 20px; }
+.console-content { width: 100%; flex: 1; min-width: 0; max-width: 1760px; margin: 0 auto; padding: 32px 38px 24px; }
+.console-content.route-enter { animation: workspace-arrive 260ms var(--ease-out) both; }
+.console-page-foot { display: flex; align-items: center; gap: 12px; padding: 16px 38px 24px; color: var(--muted-dark); font-size: 10px; }
+.console-page-foot > span:first-child { color: var(--muted); font-weight: 550; }
+.console-foot-dot { width: 4px; height: 4px; background: var(--accent); border-radius: 50%; margin-left: auto; }
+.console-topbar .console-mobile-trigger, .console-topbar .console-mobile-search { display: none; }
+.console-shell.is-collapsed { --nav-width: 96px; }
+.console-shell.is-collapsed .console-brand-copy, .console-shell.is-collapsed .console-search span, .console-shell.is-collapsed .console-search kbd, .console-shell.is-collapsed .console-nav-caption, .console-shell.is-collapsed .console-nav-link > span, .console-shell.is-collapsed .console-health > div, .console-shell.is-collapsed .console-sidebar-meta > span { display: none; }
+.console-shell.is-collapsed .console-sidebar { padding-left: 10px; padding-right: 10px; }
+.console-shell.is-collapsed .console-brand { padding-left: 4px; }
+.console-shell.is-collapsed .console-search, .console-shell.is-collapsed .console-nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
+.console-shell.is-collapsed .console-sidebar-meta { justify-content: center; }
+@keyframes workspace-arrive { from { opacity: .35; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (min-width: 761px) and (max-height: 780px) {
+  .console-navigation { gap: 10px; }
+  .console-nav-link { min-height: 32px; padding-top: 5px; padding-bottom: 5px; }
+  .console-nav-caption { padding-bottom: 4px; }
+  .console-sidebar-foot { padding-top: 12px; }
+}
+@media (min-width: 761px) and (max-width: 1120px) {
+  .console-shell { --nav-width: 96px; }
+  .console-sidebar { padding-left: 10px; padding-right: 10px; }
+  .console-brand { padding-left: 4px; }
+  .console-brand-copy, .console-search span, .console-search kbd, .console-nav-caption, .console-nav-link > span, .console-health > div, .console-sidebar-meta { display: none; }
+  .console-search, .console-nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
+}
+@media (max-width: 760px) {
+  .console-sidebar { display: none; }
+  .console-shell, .console-shell.is-collapsed { --nav-width: 0px; }
+  .console-topbar { min-height: 58px; margin-right: 0; padding: 0 16px; gap: 10px; border: 0; border-bottom: 1px solid var(--line-light); border-radius: 0; background: var(--header-bg); }
+  .console-topbar .console-mobile-trigger, .console-topbar .console-mobile-search { display: inline-flex; }
+  .console-breadcrumb { margin-right: auto; gap: 6px; font-size: 12px; }
+  .console-breadcrumb > span, .console-breadcrumb > svg { display: none; }
+  .console-global-actions { gap: 3px; }
+  .console-update, .console-action-divider { display: none; }
+  .console-content { padding: 23px 16px 20px; }
+  .console-page-foot { padding: 12px 16px 24px; font-size: 9px; gap: 9px; }
+  .console-nav-drawer .drawer { width: min(310px, calc(100vw - 24px)) !important; max-width: calc(100vw - 24px) !important; height: calc(100dvh - 24px); left: 12px !important; right: auto !important; top: 12px; border-radius: 20px; }
+  .console-nav-drawer .drawer-body { padding: 24px 18px; }
+  .console-nav-drawer .console-nav-caption { padding-bottom: 10px; }
+  .console-nav-drawer .console-nav-link { font-size: 14px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .console-content.route-enter { animation: none; } .console-main, .console-sidebar, .console-nav-link { transition: none; } ::view-transition-old(root), ::view-transition-new(root) { animation: none; } }
+@media (prefers-reduced-transparency: reduce) { .console-sidebar, .console-topbar { background: var(--surface); backdrop-filter: none; } }

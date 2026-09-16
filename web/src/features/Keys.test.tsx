@@ -304,7 +304,8 @@ describe("Keys page", () => {
 		);
 
 		// Rotate confirms, then shows the fresh token.
-		fireEvent.click(screen.getAllByRole("button", { name: "Rotate token" })[0]!);
+		fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+		fireEvent.click(screen.getByRole("menuitem", { name: "Rotate token" }));
 		expect(
 			await screen.findByText(/A new token will be generated/i),
 		).toBeInTheDocument();

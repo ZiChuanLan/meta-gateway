@@ -42,6 +42,29 @@ describe("autoModelGroup", () => {
     expect(autoModelGroup("ernie-4.0")).toBe("ERNIE");
     expect(autoModelGroup("internlm2-chat")).toBe("InternLM");
     expect(autoModelGroup("phi-4-mini")).toBe("Phi");
+    // Families the backend classifier already knew but grouping did not, which
+    // left them sitting in "Other" despite a correct vendor.
+    expect(autoModelGroup("xiaomi/mimo-v2.5")).toBe("MiMo");
+    expect(autoModelGroup("mimo-v2-flash")).toBe("MiMo");
+    expect(autoModelGroup("tencent/hy3-paid")).toBe("Hunyuan");
+    expect(autoModelGroup("hy4-preview")).toBe("Hunyuan");
+    expect(autoModelGroup("hy-mt2-plus")).toBe("Hunyuan");
+    expect(autoModelGroup("nvidia/nemotron-3-super-120b-a12b")).toBe("NVIDIA");
+    expect(autoModelGroup("inclusionai/ling-3.0-flash-sante")).toBe("InclusionAI");
+    expect(autoModelGroup("meituan/LongCat-2.0:free")).toBe("LongCat");
+  });
+
+  it("keeps the new short aliases narrow", () => {
+    // "hy" now has an alias, so the neighbours it was always meant to exclude
+    // have to stay excluded.
+    expect(autoModelGroup("hyperclovax-seed-text")).toBe("Other");
+    expect(autoModelGroup("hymm-1")).toBe("Other");
+    // "ling-" must not reach a name that merely starts with "labs-".
+    expect(autoModelGroup("labs-leanstral-1-5")).toBe("Other");
+    // "riva-" needs its hyphen, "rivage" does not have one.
+    expect(autoModelGroup("rivage-7b")).toBe("Other");
+    // "minimax" must not be read as Xiaomi's "mimo".
+    expect(autoModelGroup("minimaxai/minimax-m2.7")).toBe("MiniMax");
   });
 
   it("prefers the manual group when provided", () => {

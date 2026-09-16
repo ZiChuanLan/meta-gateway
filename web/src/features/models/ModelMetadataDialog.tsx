@@ -34,6 +34,7 @@ function ModelMetadataDialog({
     <Dialog
       title={t("modelsPage.metaTitle", { name: value.model_name })}
       onClose={onClose}
+      busy={pending}
     >
       <div className="meta-form">
         <Field label={t("modelsPage.metaCtx")}>

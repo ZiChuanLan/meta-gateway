@@ -1,0 +1,11 @@
+-- Route-level chat→edit rewrite. Default OFF.
+--
+-- Some image editors (grok-imagine-image-edit, gpt-image-*) simply cannot be
+-- driven from /v1/chat/completions: the upstream rejects the request. With this
+-- flag on, a chat request that carries an image and targets such a model is
+-- rewritten to the model's real protocol (see internal/imgproto) and the
+-- generated image is handed back as a chat completion the client can render.
+--
+-- It is opt-in per route because it is a semantic rewrite, not a passthrough:
+-- the gateway changes the wire contract, so no route should get it implicitly.
+ALTER TABLE routes ADD COLUMN image_edit_shim INTEGER NOT NULL DEFAULT 0;

@@ -4,6 +4,59 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.0.0] — 2026-09-16
+
+### Added
+
+- **模型能力注册表**（迁移 `097_model_capabilities.sql`）：把「该用哪个端点、哪种编码调一个
+  模型」从散落各处的内部判断，提升为一张可查看、可校正、可外部同步的表。每个模型记录端点、
+  请求编码、输入输出模态、参考图上限、是否流式/异步与尺寸选项，并标注来源：`builtin`
+  （模型名推断）/ `discovery`（探测自动标注）/ `catalog`（外部目录同步）/ `manual`（人工校正）。
+  **人工校正后即冻结**，后续任何自动写入都不再覆盖；而 `builtin`/`discovery` 行会在规则改进后
+  被自动重算——否则改进一条规则永远到不了已有行。
+- **外部模型目录同步**（迁移 `099_model_catalog.sql`）：接入 LiteLLM 价目表与 models.dev 索引，
+  一次补齐端点、模态、上下文窗口、厂商与单价。写库前强制走 **dry run**，逐字段列出 `— → 值`
+  与数据来源，再决定是否应用；能力、元数据、价格三档可分别开关。默认每 24 小时自动同步
+  （`MODEL_CATALOG_SYNC_INTERVAL_HOURS`，设 0 只保留手动）。单源失败不中断，全部源失败才报错。
+- **模型工作台**（`/console/workbench`）：**图像**按是否带参考图自动在生成与编辑之间切换；
+  **文字**是多轮流式对话试验台，复用与线上 `/v1` 完全相同的选路、计费与取消逻辑，无需下游
+  令牌；**能力**用于浏览与校正注册表。
+- **图片生成与编辑的原生入口**，以及 **`/chat` 兼容转移**（迁移 `098_route_image_edit_shim.sql`）：
+  下游把图片发到 `/v1/chat/completions` 时，可按路由开关转移到 `/v1/images/edits`。转移**只改
+  请求体、ContentType 与端点**，选路、分组、成员、计费与取消仍走原链路；opt-in，且对纯文本
+  请求以及「图像本来就走 chat」的模型不生效。详见 [图片接口说明](docs/image-editing.md)。
+- **两套完整界面包与正交配色**：`设置 → 外观` 可在**经典控制台**与**现代工作空间**之间切换，
+  布局与过场随包变化；明暗与配色是彼此独立的维度（调整其一不会重置另外两个）。详见
+  [界面主题包](docs/ui-themes.md)。
+- **日志全文检索**：`proxy_logs` 增加全文索引，日志页可按内容检索，而不只是按模型与状态筛选。
+- **CORS 白名单**：默认零配置即可放行，可用 `CORS_ALLOWED_ORIGINS` 收紧为白名单（支持
+  `*.example.com`）。中间件挂在根链上、**早于下游鉴权**，无凭据的预检因此不会被 401 拦死。
+- **首次引导**：Setup Wizard 与聚光式 GuidedTour，把「连上游 → 建路由 → 发令牌」的最短路径
+  直接铺出来。
+
+### Changed
+
+- **控制台信息架构重做**：分组侧栏与统一页头；操作入口按「一个主要操作 + 行内高频 + 更多菜单」
+  三层组织，更多菜单与右键菜单共用同一份动作定义；危险操作统一 pending 锁定、关闭限制与焦点
+  恢复。详见 [控制台交互约定](docs/console-interactions.md)。
+- **厂商归属以模型名推断为准**：外部目录里的 provider 块是**转售商**而非厂商（同一模型被数十个
+  provider 重复列出），用它会把 `openai/gpt-oss-20b` 记成 `deepinfra`。现在名字能推断出厂商时
+  不再被覆盖，只在无线索时退回目录。同时补齐 MiMo（小米）、混元、Mistral 各产品线、NVIDIA、
+  MiniMax、LongCat 等家族的识别。
+
+### Fixed
+
+- **模态在跨源合并时被吞**：合并曾按「先到者独占」，粗粒度来源会覆盖更细的策展结果，出现同步
+  反而把 `text,image,pdf` 收窄成 `text,image` 的情况；改为取并集。
+- **目录同步结果不确定**：models.dev 是 `provider → models → id` 三层，同一模型被数十个 provider
+  重复列出且模态不一致，map 遍历使「谁赢」随机、连续两次同步结果不同；改为排序遍历。
+- **单条脏数据拖垮整个数据源**：LiteLLM 的 `sample_spec` 把数值字段写成散文（schema 示例），
+  整份文档一次性解码会让该源数千条全部失败；改为逐条容错解码，并把跳过项汇入报告。
+- **模型元数据里的转售商厂商无法纠正**：`model_metadata.vendor` 没有来源列、只在空值时回填，
+  早期同步写错的转售商标识（如 `pioneer`）此后不会被任何同步纠正，只能显式改写。
+- **转录端点误判**：`audio` 输入 + `text` 输出的多模态对话模型曾被判成语音识别端点，改为只有
+  「输入含音频且不含文本」才算转录。
+
 ## [v2.7.4] — 2026-09-15
 
 ### Added

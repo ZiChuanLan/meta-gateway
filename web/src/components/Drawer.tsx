@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
-import { registerOverlay } from "./overlayStack";
+import { useModalFocus } from "./overlayFocus";
 import { IconButton } from "./ui";
 
 /**
@@ -20,6 +20,8 @@ export function Drawer({
 	rightOffset,
 	plain,
 	side = "right",
+	busy = false,
+	className,
 }: {
 	title: string;
 	children: ReactNode;
@@ -33,64 +35,22 @@ export function Drawer({
 	/** Which edge the drawer slides in from. Left drawers can stack beside
 	 * a right-hand editor without covering it. */
 	side?: "left" | "right";
+	busy?: boolean;
+	className?: string;
 }) {
 	const { t } = useI18n();
 	const titleId = useId();
 	const drawerRef = useRef<HTMLElement | null>(null);
-	const onCloseRef = useRef(onClose);
-	onCloseRef.current = onClose;
-
-	useEffect(() => {
-		const node = drawerRef.current;
-		// Same focus contract as Dialog: move focus in on open, trap Tab
-		// inside, restore focus on close.
-		const previous =
-			document.activeElement instanceof HTMLElement
-				? document.activeElement
-				: null;
-		const focusables = () =>
-			Array.from(
-				node?.querySelectorAll<HTMLElement>(
-					'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-				) ?? [],
-			);
-		const first = focusables()[0];
-		(first ?? node)?.focus();
-		const onKeydown = (e: KeyboardEvent) => {
-			if (e.key !== "Tab" || !node) return;
-			const items = focusables();
-			if (items.length === 0) return;
-			const firstItem = items[0];
-			const lastItem = items[items.length - 1];
-			const active = document.activeElement;
-			if (e.shiftKey && (active === firstItem || active === node)) {
-				e.preventDefault();
-				lastItem?.focus();
-			} else if (!e.shiftKey && active === lastItem) {
-				e.preventDefault();
-				firstItem?.focus();
-			}
-		};
-		const unregister = registerOverlay(() => onCloseRef.current());
-		// Lock body scroll while the drawer is open.
-		const previousOverflow = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		window.addEventListener("keydown", onKeydown);
-		return () => {
-			unregister();
-			window.removeEventListener("keydown", onKeydown);
-			document.body.style.overflow = previousOverflow;
-			previous?.focus();
-		};
-	}, []);
+	const close = () => { if (!busy) onClose(); };
+	useModalFocus(drawerRef, close, !plain);
 
 	return createPortal(
 		<div
-			className={`drawer-backdrop${plain ? " is-plain" : ""}${side === "left" ? " is-left" : ""}`}
+			className={`drawer-backdrop${plain ? " is-plain" : ""}${side === "left" ? " is-left" : ""}${className ? ` ${className}` : ""}`}
 			style={rightOffset != null ? { right: rightOffset } : undefined}
 			role="presentation"
 			onMouseDown={(event) =>
-				!plain && event.target === event.currentTarget && onClose()
+				!plain && event.target === event.currentTarget && close()
 			}
 		>
 			<aside
@@ -107,17 +67,18 @@ export function Drawer({
 						: { width: `min(${width}px, 100vw)` }
 				}
 				role="dialog"
-				aria-modal="true"
+				aria-modal={!plain}
 				aria-labelledby={titleId}
+				aria-busy={busy || undefined}
 			>
 				<header>
 					<h2 id={titleId}>{title}</h2>
-					<IconButton label={t("common.close")} onClick={onClose}>
+					<IconButton label={t("common.close")} onClick={close} disabled={busy}>
 						<X size={18} />
 					</IconButton>
 				</header>
-				<div className="drawer-body">{children}</div>
-				{footer ? <footer className="drawer-footer">{footer}</footer> : null}
+				<div className="drawer-body"><fieldset className="overlay-fields" disabled={busy}>{children}</fieldset></div>
+				{footer ? <footer className="drawer-footer"><fieldset className="overlay-actions" disabled={busy}>{footer}</fieldset></footer> : null}
 			</aside>
 		</div>,
 		document.body,
