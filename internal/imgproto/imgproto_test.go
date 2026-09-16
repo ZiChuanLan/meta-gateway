@@ -136,6 +136,46 @@ func TestBuildJSONBodyForGrok(t *testing.T) {
 	}
 }
 
+func TestBuildJSONBodyForGrokMultipleReferences(t *testing.T) {
+	p := plan(t, "grok-imagine-image-edit", imgproto.ModeEdit)
+	body, _, err := imgproto.BuildBody(p, "grok-imagine-image-edit", imgproto.Request{
+		Prompt: "merge both references",
+		Images: []imgproto.ImageInput{
+			{DataURL: "data:image/png;base64," + pngB64},
+			{DataURL: "data:image/png;base64," + pngB64},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	// grok2api keys multiple references under the plural "images" array; an
+	// array under the singular "image" is rejected upstream with
+	// 400 图片编辑 JSON 请求无效.
+	if v, ok := decoded["image"]; ok {
+		t.Errorf(`body carries singular "image" with two references: %#v`, v)
+	}
+	list, ok := decoded["images"].([]any)
+	if !ok {
+		t.Fatalf("images = %#v, want an array", decoded["images"])
+	}
+	if len(list) != 2 {
+		t.Fatalf("images length = %d, want 2", len(list))
+	}
+	for i, entry := range list {
+		obj, ok := entry.(map[string]any)
+		if !ok {
+			t.Fatalf("images[%d] = %#v, want an object", i, entry)
+		}
+		if !strings.HasPrefix(obj["url"].(string), "data:image/png;base64,") {
+			t.Errorf("images[%d].url = %v", i, obj["url"])
+		}
+	}
+}
+
 func TestBuildMultipartBodyForGPTImage(t *testing.T) {
 	p := plan(t, "gpt-image-2", imgproto.ModeEdit)
 	body, ctype, err := imgproto.BuildBody(p, "gpt-image-2", imgproto.Request{

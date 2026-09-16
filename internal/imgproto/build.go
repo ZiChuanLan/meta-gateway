@@ -167,8 +167,10 @@ func buildImageJSONBody(plan Plan, model string, req Request, images []parsedIma
 		body[k] = v
 	}
 	if len(images) > 0 {
-		// grok2api's editor wants an object for a single image; arrays only
-		// once there is more than one.
+		// grok2api's editor keys a single reference under the singular "image"
+		// as an object, but multiple references under the PLURAL "images"
+		// array. Sending an array under "image" is rejected with
+		// 400 图片编辑 JSON 请求无效, so the plural field is not cosmetic.
 		if len(images) == 1 {
 			body["image"] = map[string]any{"url": images[0].dataURL}
 		} else {
@@ -176,7 +178,7 @@ func buildImageJSONBody(plan Plan, model string, req Request, images []parsedIma
 			for _, img := range images {
 				list = append(list, map[string]any{"url": img.dataURL})
 			}
-			body["image"] = list
+			body["images"] = list
 		}
 	}
 	encoded, err := json.Marshal(body)

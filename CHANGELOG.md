@@ -4,6 +4,22 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.0.1] — 2026-09-17
+
+### Fixed
+
+- **多张参考图的编辑请求体用了单数键，导致该类请求必然失败**：网关自建编辑请求体时
+  （`/chat` 兼容转移、工作台图像编辑、管理试调），单张参考图写成 `"image": {…}` 对象，
+  多张却写成 `"image": [{…}, {…}]`——**数组挂在单数键下**。上游 grok2api 的编辑接口只认
+  **复数键 `"images"`** 承载数组，单数键塞数组一律回
+  `400 图片编辑 JSON 请求无效`。也就是说「一次带 2 张以上图片做编辑」此前是一次都跑不通的，
+  而单张路径（也是唯一有测试覆盖的路径）一直正常，问题因此长期潜伏。现在多图改写信 `"images"`，
+  并补上回归测试 `TestBuildJSONBodyForGrokMultipleReferences` 钉住该形状。
+  直接调 `/v1/images/edits` 的下游不受影响——那是纯透传，请求体形状由客户端自己决定。
+
+  另需注意的既有上游语义：多张参考图是**合成一张输出**，不是「按张各改一张」，
+  响应里的 `data` 恒为 1 项；要改 N 张图仍需调用 N 次。
+
 ## [v3.0.0] — 2026-09-16
 
 ### Added
