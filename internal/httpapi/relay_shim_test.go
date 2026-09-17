@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -291,5 +292,81 @@ func TestImageEditShimLeavesChatProtocolModelsAlone(t *testing.T) {
 	}, false)
 	if captured.path != "/v1/chat/completions" {
 		t.Fatalf("chat-protocol model was rewritten: %s", captured.path)
+	}
+}
+
+func shimPNGBytes(t *testing.T) []byte {
+	t.Helper()
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(shimPNG, "data:image/png;base64,"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// An upstream that answers with a link on its own origin would hand the chat
+// client a picture it cannot open: the link points at the provider, not at the
+// gateway the client is configured for (and carries no credential). The shim
+// therefore embeds the bytes, and falls back to the link when the fetch fails.
+func TestImageEditShimInlinesUpstreamImageLink(t *testing.T) {
+	raw := shimPNGBytes(t)
+	for _, tc := range []struct {
+		name       string
+		mediaFound bool
+		wantInline bool
+	}{
+		{"media reachable", true, true},
+		{"media unreachable", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var originURL string
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/out.png" {
+					if !tc.mediaFound {
+						http.NotFound(w, r)
+						return
+					}
+					w.Header().Set("Content-Type", "image/png")
+					_, _ = w.Write(raw)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"data":[{"url":"`+originURL+`/out.png"}]}`)
+			}))
+			defer origin.Close()
+			originURL = origin.URL
+
+			serverURL, token, routeID := setupImageRelay(t, origin.URL, "grok-imagine-image-edit")
+			put(t, serverURL+"/admin/routes/"+strconv.FormatInt(routeID, 10), map[string]any{
+				"model_pattern": "grok-imagine-image-edit", "enabled": true, "image_edit_shim": true,
+			})
+
+			status, body, _ := postChat(t, serverURL, token, chatWithImage("make it purple"), false)
+			if status != http.StatusOK {
+				t.Fatalf("status=%d body=%s", status, body)
+			}
+			var out struct {
+				Choices []struct {
+					Message struct{ Content string } `json:"message"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal(body, &out); err != nil || len(out.Choices) != 1 {
+				t.Fatalf("not a chat completion: %v (%s)", err, body)
+			}
+			content := out.Choices[0].Message.Content
+			if tc.wantInline {
+				want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(raw)
+				if !strings.Contains(content, want) {
+					t.Fatalf("image was not embedded: %q", content)
+				}
+				if strings.Contains(content, origin.URL) {
+					t.Fatalf("client is still asked to reach the provider origin: %q", content)
+				}
+				return
+			}
+			if !strings.Contains(content, origin.URL+"/out.png") {
+				t.Fatalf("fetch failure must keep the upstream link: %q", content)
+			}
+		})
 	}
 }

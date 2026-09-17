@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,20 @@ import (
 )
 
 const maxShimResponseBytes = 40 << 20
+
+// mediaFetcher is the optional capability the proxy service exposes so the
+// shim can pull an upstream image down and inline it. It stays optional so
+// embedders and test doubles that only forward traffic keep working.
+type mediaFetcher interface {
+	FetchMedia(ctx context.Context, rawURL string) ([]byte, string, error)
+}
+
+func (h *RelayHandler) mediaFetcher() imgproto.Fetcher {
+	if fetcher, ok := h.proxy.(mediaFetcher); ok {
+		return fetcher.FetchMedia
+	}
+	return nil
+}
 
 type shimChatRequest struct {
 	Size     string `json:"size"`
@@ -106,7 +121,11 @@ func (h *RelayHandler) prepareImageEditShim(req proxy.Request) (proxy.Request, b
 
 // imageEditChatResult wraps only successful image responses. Upstream failures
 // retain their status, headers and body, and are never retried as chat calls.
-func imageEditChatResult(result *relay.Result, model string, stream bool) (*relay.Result, usage.Tokens) {
+//
+// Upstreams answer with links on their own domain, which a chat client has no
+// route or credential for, so remote references are downloaded and embedded as
+// data URIs before the answer is rebuilt.
+func imageEditChatResult(ctx context.Context, result *relay.Result, model string, stream bool, fetch imgproto.Fetcher) (*relay.Result, usage.Tokens) {
 	if result == nil || result.Err != nil || result.StatusCode < 200 || result.StatusCode >= 300 || result.Body == nil {
 		return result, usage.Tokens{}
 	}
@@ -127,6 +146,7 @@ func imageEditChatResult(result *relay.Result, model string, stream bool) (*rela
 		result.Err = errors.New("upstream returned no image")
 		return result, usage.Tokens{}
 	}
+	images = imgproto.InlineImages(ctx, images, fetch, imgproto.MaxInlineImageBytes)
 	tokens := usage.ExtractFromJSONBody(payload)
 	answer := imgproto.ChatResponseFromImages(model, images, "", tokens)
 	result.Header = result.Header.Clone()

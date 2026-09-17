@@ -4,6 +4,23 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.0.2] — 2026-09-17
+
+### Fixed
+
+- **聊天客户端里编辑"成功却没图"**：`/chat` 兼容转移把图片结果包回聊天格式时，图片被渲染成
+  指向上游**自己域名**的 Markdown 链接（如 `![](https://<上游主机>/v1/media/images/img_xxx)`）。
+  下游客户端只配置了网关地址，既没有到那个域名的路由也没有它的凭据，链接取不到就等于没图；
+  有的客户端会把它当普通文本，表现为"回复里看不到图片"。现在网关在包装响应前
+  **把远程图片抓下来内联成 data URI**，结果自包含，客户端无需访问上游域名。
+  抓取复用与渠道流量同一个受策略约束的出站客户端（私网仍被拦、重定向仍复检），
+  只发 `Accept: image/*`；**抓取失败、响应不是图片、或超过 12 MiB 都退回原链接**，
+  不会把一次成功的编辑变成错误。仅影响已开启「聊天图片编辑兼容」的路由。
+
+  代价要说清楚：内联会把响应体撑大（12 MiB 图片约合 16 MiB base64），
+  并且多花一次到上游的抓取（上限 20 秒）。只走 `/v1/images/*` 的调用不受影响——
+  那是纯透传，图片仍以链接原样返回。
+
 ## [v3.0.1] — 2026-09-17
 
 ### Fixed

@@ -117,6 +117,41 @@ it through the normal Store path. If installation verification fails, it
 restores the prior database. A different `MASTER_KEY` cannot decrypt restored
 credentials; the key is never stored in backup inventory.
 
+## Reverse Proxy And Zero-Downtime Updates
+
+The gateway keeps `WriteTimeout` disabled and streams SSE, so the proxy in front
+of it must not buffer responses (`proxy_buffering off` / `flush_interval -1`).
+
+Updating the container stops the listener for about two seconds while the old
+container is removed and the new one binds the port. A reverse proxy that points
+directly at a single `host:port` will surface that gap as a `502`, and when the
+proxy sits behind a CDN the client may receive the CDN's **HTML** error page
+rather than JSON — which is why some clients report a JSON parse failure against
+a `<!DOCTYPE html>` body.
+
+nginx cannot retry the same single-address upstream, so point nginx at a small
+retrying relay instead:
+
+```nginx
+upstream meta_gateway_edge { server 127.0.0.1:4101; }
+```
+
+```caddyfile
+:4101 {
+	bind 127.0.0.1
+	reverse_proxy 127.0.0.1:4100 {
+		lb_try_duration 15s
+		lb_try_interval 200ms
+		flush_interval -1
+	}
+}
+```
+
+Add a `location @gateway_unavailable` returning a JSON body so a genuinely down
+gateway still answers with JSON. Note that a CDN in front may replace an origin
+`502` with its own response, so a JSON error body is a best effort, not a
+guarantee.
+
 ## Graceful Shutdown
 
 Compose sends the normal termination signal and allows 20 seconds. The service

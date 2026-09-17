@@ -703,7 +703,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	var imageTokens usage.Tokens
 	if imageEditShim {
 		w.Header().Set("X-Meta-Image-Shim", proxyReq.OpenAIPath)
-		result, imageTokens = imageEditChatResult(result, modelName, stream)
+		result, imageTokens = imageEditChatResult(watchCtx, result, modelName, stream, h.mediaFetcher())
 	}
 	var lastProgress time.Time
 	writeUpstreamResult(
