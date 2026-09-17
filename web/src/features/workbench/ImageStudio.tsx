@@ -138,6 +138,12 @@ export default function ImageStudio({ active }: { active: boolean }) {
     onError: setError,
   });
   const busy = run.isPending || reading;
+  // A failed attempt still becomes the newest result, and it carries no image.
+  // Keeping the strip hidden with a single entry would leave the one earlier
+  // image unreachable at exactly the moment the panel goes blank, so show it
+  // whenever it holds something the panel is not already showing.
+  const showingImage = (latest?.images.length ?? 0) > 0;
+  const showHistory = history.length > 1 || (history.length === 1 && !showingImage);
 
   async function addFiles(files: File[]) {
     if (!files.length || readingFiles.current || run.isPending) return;
@@ -282,7 +288,7 @@ export default function ImageStudio({ active }: { active: boolean }) {
             })}
           </div>
         </> : null}
-        {history.length > 1 ? <div className="workbench-history">
+        {showHistory ? <div className="workbench-history">
           <strong>{t("workbench.image.history")}</strong>
           <ul>{history.map((item, index) => <li key={`${item.at}-${index}`}>
             <button type="button" className="workbench-history-item" aria-pressed={latest === item} onClick={() => setLatest(item)}>

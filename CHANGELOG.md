@@ -4,6 +4,18 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.0.4] — 2026-09-17
+
+### Fixed
+
+- **一次失败会让上一次生成的图彻底够不到**：工作台结果区只渲染「最新一次运行」，而失败的那次
+  也会成为最新一次（只是没有图），面板于是变成一句错误提示。历史条又被
+  `history.length > 1` 挡着 —— 只有**一次**成功记录时它根本不渲染，而那恰恰是最需要它的时刻：
+  手里只有一张图，一次失败把它从界面上抹掉，没有任何入口能点回去。
+  → 历史条改为「只要它存着结果区当前没显示的东西就渲染」（只有单条、且那张图已显示时才隐藏）。
+  失败之后，那张图从历史条点一下就能回到结果区。
+  注意历史仍是**内存态**：换标签页保留，刷新页面即清空（上限 6 张 / 48 MiB）。
+
 ## [v3.0.3] — 2026-09-17
 
 ### Fixed

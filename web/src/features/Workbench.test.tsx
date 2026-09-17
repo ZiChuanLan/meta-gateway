@@ -229,6 +229,44 @@ describe("image workbench", () => {
     expect(alert).not.toHaveTextContent("Upstream returned HTTP 429");
   });
 
+  it("keeps an earlier result reachable when a later attempt fails", async () => {
+    let calls = 0;
+    const backend = mockBackend({
+      image: () => {
+        calls += 1;
+        return calls === 1
+          ? json({
+              status: 200, latency_ms: 12, model: "gpt-image-2",
+              plan: { endpoint: "images/generations", format: "json" },
+              images: [{ data_url: imageData, revised_prompt: "purple cube" }],
+            })
+          : json({
+              status: 429, latency_ms: 1677, model: "gpt-image-2",
+              plan: { endpoint: "images/generations", format: "json" },
+              images: [],
+              body: { error: { code: "upstream_quota_exhausted", message: "Upstream account quota is cooling down" } },
+            });
+      },
+    });
+    renderWorkbench();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), { target: { value: "a purple cube" } });
+    const submit = screen.getByRole("button", { name: "Generate image" });
+    fireEvent.click(submit);
+    expect(await screen.findByAltText("purple cube")).toBeVisible();
+    // Only one result and it is already on screen, so the strip stays out of the way.
+    expect(screen.queryByText("This session")).not.toBeInTheDocument();
+
+    fireEvent.click(submit);
+    await waitFor(() => expect(backend.image).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("alert")).toHaveTextContent("cooling down");
+    // The failed attempt blanks the panel, so the earlier image has to stay
+    // reachable — with a single entry the strip used to hide itself here.
+    const strip = (await screen.findByText("This session")).closest(".workbench-history");
+    expect(strip).not.toBeNull();
+    fireEvent.click(within(strip as HTMLElement).getByRole("button"));
+    expect(await screen.findByAltText("purple cube")).toBeVisible();
+  });
+
   it("keeps an in-flight result and the prompt when switching tabs", async () => {
     const pending = deferredResponse();
     const backend = mockBackend({ image: () => pending.promise });
