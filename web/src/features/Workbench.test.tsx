@@ -203,6 +203,32 @@ describe("image workbench", () => {
     });
   });
 
+  it("shows what the image upstream actually said instead of a bare status", async () => {
+    // grok2api refuses by plane: the Web plane is rate limited, the Console
+    // plane reports exhausted quota. Both surface as 429, so the status alone
+    // hid the difference — the panel now relays the provider's own message.
+    const backend = mockBackend({
+      image: () => json({
+        status: 429, latency_ms: 11644, model: "gpt-image-2",
+        plan: { endpoint: "images/edits", format: "json" },
+        images: [],
+        body: {
+          error: {
+            code: "upstream_unavailable",
+            message: "Grok Web 媒体上游返回 429: 8: Too many requests. Wait a moment and try again.",
+          },
+        },
+      }),
+    });
+    renderWorkbench();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), { target: { value: "add a hat" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
+    await waitFor(() => expect(backend.image).toHaveBeenCalledOnce());
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Too many requests");
+    expect(alert).not.toHaveTextContent("Upstream returned HTTP 429");
+  });
+
   it("keeps an in-flight result and the prompt when switching tabs", async () => {
     const pending = deferredResponse();
     const backend = mockBackend({ image: () => pending.promise });

@@ -4,6 +4,7 @@ import { Sparkles, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { Button, Empty, ErrorState, Field, Panel, formatDate } from "../../components/ui";
 import { useI18n } from "../../i18n";
+import { upstreamMessage } from "../../lib/upstreamError";
 import { useSession } from "../../session";
 
 const IMAGE_KINDS = new Set(["image_gen", "image_edit"]);
@@ -21,6 +22,12 @@ type RunResult = {
   endpoint: string;
   format: string;
   images: ImageResult[];
+  /**
+   * What the upstream actually said when it refused. Image upstreams spend
+   * real quota and rate limits per plane, so "429" alone is not actionable —
+   * the provider's own message is what tells an operator whether to wait.
+   */
+  upstreamError?: string;
 };
 type ImageRequest = Parameters<ReturnType<typeof api>["tryImage"]>[0];
 
@@ -94,19 +101,26 @@ export default function ImageStudio({ active }: { active: boolean }) {
     mutationFn: (request: ImageRequest) => service.tryImage(request),
     onMutate: () => { setError(null); setFeedback(""); },
     onSuccess: (data, request) => {
+      // The success path drops `body` (it duplicates a large base64 image), so
+      // read the upstream's own words only where the call actually failed.
+      const refused = data.status < 200 || data.status >= 300;
+      const detail = refused || (data.images ?? []).length === 0
+        ? upstreamMessage(data.body)
+        : "";
       const result: RunResult = {
         at: new Date().toISOString(), model: data.model || request.model,
         status: data.status, latencyMs: data.latency_ms, channelName: data.channel_name,
         endpoint: data.plan?.endpoint ?? "", format: data.plan?.format ?? "",
         images: (data.images ?? []).filter((image) => imageSource(image)),
+        upstreamError: detail || undefined,
       };
       setLatest(result);
-      if (data.status < 200 || data.status >= 300) {
-        setFeedback(t("workbench.image.upstreamError", { status: data.status }));
+      if (refused) {
+        setFeedback(detail || t("workbench.image.upstreamError", { status: data.status }));
         return;
       }
       if (result.images.length === 0) {
-        setFeedback(t("workbench.image.upstreamStatus", { status: data.status }));
+        setFeedback(detail || t("workbench.image.upstreamStatus", { status: data.status }));
         return;
       }
       setHistory((current) => {
@@ -253,7 +267,7 @@ export default function ImageStudio({ active }: { active: boolean }) {
             <span className="muted">{formatDate(latest.at)}</span>
           </div>
           <div className="workbench-gallery">
-            {latest.images.length === 0 ? <p className="muted">{t("workbench.image.upstreamStatus", { status: latest.status })}</p> : null}
+            {latest.images.length === 0 ? <p className="muted">{latest.upstreamError || t("workbench.image.upstreamStatus", { status: latest.status })}</p> : null}
             {latest.images.map((image, index) => {
               const source = imageSource(image);
               return <figure className="workbench-shot" key={index}>

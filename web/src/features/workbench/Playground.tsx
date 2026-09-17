@@ -21,6 +21,7 @@ import {
 } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { parseSseJson, splitSseFrames } from "../../lib/sse";
+import { upstreamMessage } from "../../lib/upstreamError";
 import { useSession } from "../../session";
 
 /**
@@ -87,19 +88,6 @@ function firstChoice(body: unknown): { delta?: unknown; message?: unknown } | nu
 	if (!Array.isArray(choices) || choices.length === 0) return null;
 	const choice = choices[0] as { delta?: unknown; message?: unknown };
 	return choice && typeof choice === "object" ? choice : null;
-}
-
-/** Providers wrap refusals differently; show whatever they actually said. */
-function upstreamMessage(body: unknown): string {
-	if (typeof body === "string") return body.trim().slice(0, 400);
-	if (!body || typeof body !== "object") return "";
-	const error = (body as Holder).error;
-	if (typeof error === "string") return error;
-	if (error && typeof error === "object") {
-		const message = (error as Holder).message;
-		if (typeof message === "string") return message;
-	}
-	return JSON.stringify(body).slice(0, 400);
 }
 
 export default function Playground({ active }: { active: boolean }) {

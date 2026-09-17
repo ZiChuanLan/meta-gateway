@@ -4,6 +4,22 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.0.3] — 2026-09-17
+
+### Fixed
+
+- **工作台把上游的拒绝理由吞掉了**：图像试调失败时只回一句
+  「上游返回 HTTP 429，没有解析出图片」，而上游其实已经把原因说清楚了。同一个 429 至少有两种
+  完全不同的含义——grok2api 的 Web 通道是「Grok Web 媒体上游返回 429: 8: Too many requests.
+  Wait a moment and try again.」（Cloudflare 侧限流），Console 通道是「上游账号额度等待恢复」
+  （账号额度冷却）。前者等几分钟、后者等额度恢复，处置完全不同，界面却显示成同一句话，
+  只能去翻网关日志才能分辨。
+
+  `/admin/try/image` 在失败或没解析出图片时本来就带回了上游原始响应体（`body`），
+  现在前端会从 `body.error.message` 取出上游原话并显示，取不到才退回原来的通用文案。
+  文字试调台早就是这么做的，这次把那个函数提成共享模块 `web/src/lib/upstreamError.ts` 给两边共用，
+  并补上图像路径一直缺失的测试（单元 + 界面各一条）。
+
 ## [v3.0.2] — 2026-09-17
 
 ### Fixed
