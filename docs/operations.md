@@ -48,6 +48,35 @@ Vite writes the production files to `internal/webui/dist`; `go:embed` then
 packages that directory into the executable. The Dockerfile and CI perform the
 same Node-before-Go build order.
 
+## Observability Time Windows
+
+The Overview and Logs workspaces share one time-range control: rolling presets
+(15m / 1h / 6h / 24h / 7d / 30d / all time) plus an absolute from/to pair with
+second precision. The selection lives in the URL (`range`, `from`, `to`), so a
+windowed view is reproducible and shareable, and it survives a reload.
+
+The console never filters a page of rows on the client to answer "how much".
+Every aggregate is computed in SQL for the selected window:
+
+| Endpoint | Windowed aggregate |
+| --- | --- |
+| `GET /admin/usage/summary` | requests, tokens, cache tokens, cost, status breakdown |
+| `GET /admin/usage/series` | per-bucket requests / failed / tokens / cost |
+| `GET /admin/usage/top-models` | per-model ranking by tokens |
+| `GET /admin/proxy-logs` | the log page itself |
+| `GET /admin/proxy-logs/latency-histogram` | latency distribution + p50/p95/p99 |
+
+All five accept an inclusive `since` / `until` in RFC3339. A malformed bound is
+rejected with `400` rather than ignored, because silently dropping a bound turns
+a narrow question ("the last 15 minutes") into an expensive full-table scan.
+`bucket_seconds` in the series response is epoch-aligned and snapped to a
+readable unit (1m … 1d); the console formats the labels in the viewer's
+timezone from `since` + `bucket_seconds`, so the server stays timezone-free.
+
+`latency-histogram` returns `matched` (rows the window held) alongside `total`
+(rows actually sampled). When `matched > total` the console says so instead of
+presenting a truncated sample as the whole window.
+
 ## Outbound Policy
 
 Public HTTP(S) upstreams need no exception. Private and special addresses are

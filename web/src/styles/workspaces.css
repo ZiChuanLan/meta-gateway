@@ -1,8 +1,22 @@
 /* Workspace composition. Navigation, shared controls and business styles have separate owners. */
 .channels-workspace { display: block; }
+/* ---- Time range control (shared by the overview and log workspaces) ---- */
+.time-range { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+.time-range-presets { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-subtle); }
+.time-range-presets button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: 500 11px var(--font); cursor: pointer; white-space: nowrap; }
+.time-range-presets button:hover { color: var(--ink); }
+.time-range-presets button.is-active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm, 0 1px 2px #171d2e0f); }
+.time-range.is-compact .time-range-presets button { padding: 4px 7px; font-size: 10px; }
+.time-range-custom { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.time-range-custom label { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.time-range-custom input[type="datetime-local"] { min-height: 30px; height: 30px; padding: 0 8px; font: 11px var(--font); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.time-range-invalid { font-size: 11px; color: var(--danger, #b42318); }
+.time-range-meta { display: inline-flex; align-items: center; gap: 6px; }
+.time-range-caption { font: 11px var(--font); color: var(--muted); font-variant-numeric: tabular-nums; }
 .logs-overview { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .logs-overview .telemetry-strip { flex: 1; margin: 0; max-width: 650px; }
 .logs-overview .telemetry-segment-value { font-size: 24px; }
+.logs-overview-actions { display: inline-flex; align-items: center; gap: 8px; }
 .log-quick-filters { padding: 0 17px 15px; border-bottom: 1px solid var(--line); font-size: 11px; }
 .log-quick-filters .check { font-size: 11px; color: var(--muted); }
 .theme-modern .logs-split .log-filter-bar { border: 0; flex-wrap: wrap; }
@@ -98,6 +112,12 @@
 .theme-modern .log-status-line .badge { background: transparent; border: 0; padding: 0; }
 .theme-modern .log-latency-bar { height: 3px; border-radius: 2px; background: var(--surface-hover); }
 .theme-modern .cockpit-panel { border-radius: 16px; }
+/* Overview: the time range governs every reading on the page, so it sits on
+   its own bar above the telemetry band instead of inside a panel header. */
+.dashboard-range-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.dashboard-range-label { display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--font); letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
+.chart-window-caption { margin-left: auto; font: 11px var(--font); color: var(--muted); font-variant-numeric: tabular-nums; }
+.model-rank-meta strong.is-warn { color: var(--danger, #b42318); }
 .theme-modern .cockpit-panel-header, .theme-modern .cockpit-chart-header { padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); background: transparent; }
 .theme-modern .cockpit-panel-header::before, .theme-modern .cockpit-chart-header::before { display: none; }
 .theme-modern .cockpit-panel h2, .theme-modern .cockpit-panel strong { letter-spacing: -.015em; }

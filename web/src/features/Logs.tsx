@@ -1,4 +1,10 @@
-import { RefreshCw, MessagesSquare, SlidersHorizontal } from "lucide-react";
+import {
+  RefreshCw,
+  MessagesSquare,
+  SlidersHorizontal,
+  Timer,
+  Download,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useMemo, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -9,6 +15,7 @@ import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
 import { TelemetryStrip } from "../components/TelemetryStrip";
+import { TimeRangePicker, useUrlTimeRange } from "../components/TimeRangePicker";
 import { categorizeError } from "../errorCatalog";
 import {
   Button,
@@ -24,7 +31,36 @@ import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { formatCost } from "../lib/format";
 import { positiveId } from "../lib/positiveId"
+import { downloadText, timestampedName, toCSV } from "../lib/csv";
 import { LiveTracePanel } from "./LiveTracePanel";
+
+/** Latency bucket labels mirror store.LatencyBucketBounds (ms upper bounds). */
+const HISTOGRAM_LABELS = [
+  "<0.25s",
+  "0.5s",
+  "1s",
+  "2s",
+  "3s",
+  "5s",
+  "8s",
+  "13s",
+  "21s",
+  "34s",
+  "34s+",
+];
+
+/** Buckets from index 6 up are >= 5s (the slow threshold). */
+const HISTOGRAM_SLOW_FROM = 6;
+
+/**
+ * Rows pulled for the distribution. An explicit window asks for a large sample
+ * so a busy hour is not judged by its newest thousand requests; "all time"
+ * stays small because it has no upper bound to narrow the scan.
+ */
+function histogramSample(bounded: boolean): number {
+  return bounded ? 20000 : 1000;
+}
+
 
 // Routing decision audit view: fetched on demand when a log row expands.
 // Each attempt row shows the snapshot of ITS OWN selection (matched by
@@ -144,13 +180,8 @@ function ProxyLogsPanel() {
 	useEffect(() => setUpstreamIdDraft(upstreamIdParam), [upstreamIdParam]);
 	useEffect(() => setQueryDraft(queryParam), [queryParam]);
 	const hasFilters = Boolean(channelId || modelParam || upstreamIdParam || queryParam || modelDraft || upstreamIdDraft || queryDraft || failedOnly || slowOnly);
-  const [histogram, setHistogram] = useState<{
-    buckets: number[];
-    total: number;
-    slow_count: number;
-    p50_ms: number;
-    p95_ms: number;
-  } | null>(null);
+  const range = useUrlTimeRange(params, setParams);
+  const sample = histogramSample(Boolean(range.since || range.until));
 
 	const filters = useMemo(
 		() => ({
@@ -159,26 +190,27 @@ function ProxyLogsPanel() {
 			status: failedOnly ? ("failed" as const) : undefined,
 			upstream_request_id: upstreamIdParam || undefined,
 			q: queryParam || undefined,
+			since: range.since,
+			until: range.until,
 			limit: 100,
 		}),
-		[channelId, failedOnly, modelParam, upstreamIdParam, queryParam],
+		[channelId, failedOnly, modelParam, upstreamIdParam, queryParam, range.since, range.until],
 	);
 
   const logs = useQuery({
     queryKey: ["proxy-logs", filters],
     queryFn: ({ signal }) => service.proxyLogs(filters, signal),
   });
-  // AAH-style latency histogram: load once on mount and with manual refresh.
-  const loadHistogram = () => {
-    service
-      .proxyLogLatencyHistogram(1000)
-      .then(setHistogram)
-      .catch(() => undefined);
-  };
-  useEffect(() => {
-    loadHistogram();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The distribution follows the same window as the list, so "what happened
+  // just now" and "what is slow" can never disagree about the time span.
+  const histogram = useQuery({
+    queryKey: ["proxy-log-histogram", { since: range.since, until: range.until, sample }],
+    queryFn: ({ signal }) =>
+      service.proxyLogLatencyHistogram(sample, signal, {
+        since: range.since,
+        until: range.until,
+      }),
+  });
   const channels = useQuery({
     queryKey: ["channels"],
     queryFn: ({ signal }) => service.channels(signal),
@@ -227,8 +259,160 @@ function ProxyLogsPanel() {
     setParams(next, { replace: true });
   };
 
+  const histogramData = histogram.data;
+  const sampled = histogramData?.total ?? 0;
+  const slowShare = sampled > 0 ? (histogramData?.slow_count ?? 0) / sampled : 0;
+  const maxBucket = Math.max(1, ...(histogramData?.buckets ?? [1]));
+  // Older gateways omit matched/p99; treat them as "the sample is the window".
+  const matched = histogramData?.matched ?? sampled;
+  const p50 = histogramData?.p50_ms ?? 0;
+  const p95 = histogramData?.p95_ms ?? 0;
+  const p99 = histogramData?.p99_ms ?? 0;
+
+  /**
+   * Export exactly what the current filters matched (not just the visible
+   * page) — the usual reason to open this page is to hand the evidence to
+   * someone else.
+   */
+  const exportCSV = () => {
+    const header = [
+      t("common.time"),
+      t("common.model"),
+      t("common.route"),
+      t("common.channel"),
+      t("common.status"),
+      t("logsPage.reasoningEffort"),
+      t("common.tokens"),
+      t("common.cacheTokens"),
+      t("common.latency"),
+      t("common.firstByte"),
+      t("common.cost"),
+      t("common.clientFamily"),
+      t("logsPage.upstreamRequestId"),
+      "request_id",
+      t("logsPage.errorDetail"),
+    ];
+    const body = rows.map((log) => [
+      log.created_at,
+      log.model,
+      log.route_pattern || "",
+      channelName.get(log.channel_id) ?? `#${log.channel_id}`,
+      log.status,
+      log.reasoning_effort ?? "",
+      log.total_tokens ?? 0,
+      `${log.cache_read_tokens ?? 0}/${log.cache_creation_tokens ?? 0}`,
+      log.latency_ms,
+      log.first_byte_ms ?? "",
+      log.cost ?? "",
+      log.client_family ?? "",
+      log.upstream_request_id ?? "",
+      log.request_id,
+      log.error_detail ?? log.error_brief ?? "",
+    ]);
+    downloadText(
+      timestampedName("meta-gateway-logs", "csv"),
+      toCSV([header, ...body]),
+    );
+  };
+
   return (
     <>
+      {/* 延迟分布 — 一等公民面板，置于日志页最上方（原为页面底部的折叠条）。 */}
+      <Panel className="latency-panel">
+        <div className="panel-header latency-panel-header">
+          <div className="cockpit-panel-title">
+            <Timer size={14} />
+            <strong>{t("logsPage.histogram")}</strong>
+          </div>
+          <span className="panel-muted latency-panel-scope">
+            {/* A bounded window is already spelled out by the picker's own
+                caption; only the unbounded case needs a sample note. */}
+            {range.since || range.until
+              ? null
+              : t("logsPage.histogramScope", { n: sample.toLocaleString() })}
+          </span>
+          <TimeRangePicker range={range} compact onRefresh={() => void histogram.refetch()} />
+        </div>
+        {histogram.isPending ? (
+          <p className="dashboard-empty">{t("common.working")}</p>
+        ) : !histogramData || histogramData.total === 0 ? (
+          <p className="dashboard-empty">{t("logsPage.histogramEmpty")}</p>
+        ) : (
+          <>
+            <div
+              className="latency-histogram-bars"
+              role="img"
+              aria-label={t("logsPage.histogramStats", {
+                total: histogramData.total,
+                slow: histogramData.slow_count,
+                p50,
+                p95,
+                p99,
+              })}
+            >
+              {histogramData.buckets.map((count, index) => (
+                <div
+                  key={index}
+                  className={`latency-histogram-bar${
+                    index >= HISTOGRAM_SLOW_FROM ? " is-slow" : ""
+                  }`}
+                  style={{ height: `${Math.max(4, (count / maxBucket) * 100)}%` }}
+                  title={t("logsPage.histogramBucket", {
+                    n: count,
+                    share: `${((count / Math.max(1, histogramData.total)) * 100).toFixed(1)}%`,
+                  })}
+                />
+              ))}
+            </div>
+            <div className="latency-histogram-labels">
+              {HISTOGRAM_LABELS.map((label, index) => (
+                <span key={index}>{label}</span>
+              ))}
+            </div>
+            <div className="latency-readouts">
+              <div className="latency-readout">
+                <span>{t("logsPage.stat.total")}</span>
+                <strong>{histogramData.total.toLocaleString()}</strong>
+              </div>
+              <div className="latency-readout">
+                <span>{t("logsPage.stat.slow")}</span>
+                <strong>{histogramData.slow_count.toLocaleString()}</strong>
+              </div>
+              <div className={`latency-readout${slowShare >= 0.05 ? " is-warn" : ""}`}>
+                <span>{t("logsPage.histogramSlowShare")}</span>
+                <strong>{(slowShare * 100).toFixed(1)}%</strong>
+              </div>
+              <div className="latency-readout">
+                <span>p50</span>
+                <strong>{p50} ms</strong>
+              </div>
+              <div className="latency-readout">
+                <span>p95</span>
+                <strong>{p95} ms</strong>
+              </div>
+              <div className="latency-readout">
+                <span>p99</span>
+                <strong>{p99} ms</strong>
+              </div>
+              <div className="latency-readout is-coverage">
+                <span>{t("logsPage.coverage")}</span>
+                <strong>
+                  {matched <= sampled
+                    ? t("logsPage.histogramCovered", {
+                        matched: matched.toLocaleString(),
+                      })
+                    : t("logsPage.histogramCoverage", {
+                        matched: matched.toLocaleString(),
+                        sample: sampled.toLocaleString(),
+                      })}
+                </strong>
+              </div>
+            </div>
+            <p className="latency-panel-hint">{t("logsPage.rangeScope")}</p>
+          </>
+        )}
+      </Panel>
+
       <div className="logs-overview">
       <TelemetryStrip
         items={[
@@ -252,16 +436,26 @@ function ProxyLogsPanel() {
           },
         ]}
       />
-        <Button
-          variant="secondary"
-          icon={<RefreshCw size={16} />}
-          onClick={() => {
-            void logs.refetch();
-            loadHistogram();
-          }}
-        >
-          {t("common.refresh")}
-        </Button>
+        <div className="logs-overview-actions">
+          <Button
+            variant="secondary"
+            icon={<Download size={15} />}
+            disabled={rows.length === 0}
+            onClick={exportCSV}
+          >
+            {t("logsPage.export")}
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<RefreshCw size={16} />}
+            onClick={() => {
+              void logs.refetch();
+              void histogram.refetch();
+            }}
+          >
+            {t("common.refresh")}
+          </Button>
+        </div>
       </div>
 
 
@@ -555,47 +749,6 @@ function ProxyLogsPanel() {
           </EntityState>
         </Panel>
       </div>
-      {histogram ? (
-        <details className="diagnostic-disclosure">
-        <summary>{t("logsPage.histogram")}<span>{t("logsPage.histogramScope")}</span></summary>
-        <div className="latency-histogram">
-          <div className="latency-histogram-head">
-            <strong>{t("logsPage.histogram")}</strong>
-            <span className="is-quiet">
-              {t("logsPage.histogramStats", {
-                total: histogram.total,
-                slow: histogram.slow_count,
-                p50: histogram.p50_ms,
-                p95: histogram.p95_ms,
-              })}
-            </span>
-          </div>
-          <div
-            className={`latency-histogram-bars${histogram.total === 0 ? " is-empty" : ""}`}
-          >
-            {histogram.buckets.map((count, index) => {
-              const max = Math.max(...histogram.buckets, 1);
-              const slow = index >= 6; // buckets 6+ = >= 5s
-              return (
-                <div
-                  key={index}
-                  className={`latency-histogram-bar${slow ? " is-slow" : ""}`}
-                  style={{ height: `${Math.max(4, (count / max) * 100)}%` }}
-                  title={t("logsPage.histogramBucket", { n: count })}
-                />
-              );
-            })}
-          </div>
-          <div className="latency-histogram-labels">
-            {["<0.25s", "0.5s", "1s", "2s", "3s", "5s", "8s", "13s", "21s", "34s", "34s+"].map(
-              (label, index) => (
-                <span key={index}>{label}</span>
-              ),
-            )}
-          </div>
-        </div>
-        </details>
-      ) : null}
     </>
   );
 }

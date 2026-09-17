@@ -13,6 +13,9 @@ import type {
   Credential,
   UsageRecord,
   UsageSummary,
+  UsageSeries,
+  ModelUsage,
+  LatencyHistogram,
   DiscoveredModel,
   DownstreamKey,
   ExchangeEnvelope,
@@ -441,13 +444,41 @@ export const api = (client: ApiClient) => ({
     downstreamKeyId?: number,
     signal?: AbortSignal,
     since?: string,
+    until?: string,
   ) => {
     const query = new URLSearchParams();
     if (downstreamKeyId != null)
       query.set("downstream_key_id", String(downstreamKeyId));
     if (since) query.set("since", since);
+    if (until) query.set("until", until);
     const suffix = query.size ? `?${query.toString()}` : "";
     return client.get<UsageSummary>(`/admin/usage/summary${suffix}`, signal);
+  },
+  /**
+   * Bucketed request/token/cost series over a window. Aggregated in SQL, so a
+   * wide window is not distorted by the newest-500 row cap on `usageRecords`.
+   */
+  usageSeries: (
+    filters?: { since?: string; until?: string; buckets?: number },
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams();
+    if (filters?.since) query.set("since", filters.since);
+    if (filters?.until) query.set("until", filters.until);
+    if (filters?.buckets != null) query.set("buckets", String(filters.buckets));
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return client.get<UsageSeries>(`/admin/usage/series${suffix}`, signal);
+  },
+  usageTopModels: (
+    filters?: { since?: string; until?: string; limit?: number },
+    signal?: AbortSignal,
+  ) => {
+    const query = new URLSearchParams();
+    if (filters?.since) query.set("since", filters.since);
+    if (filters?.until) query.set("until", filters.until);
+    if (filters?.limit != null) query.set("limit", String(filters.limit));
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return client.get<ModelUsage[]>(`/admin/usage/top-models${suffix}`, signal);
   },
   usageRecords: (
     filters?: {
@@ -455,6 +486,8 @@ export const api = (client: ApiClient) => ({
       channel_id?: number;
       model?: string;
       limit?: number;
+      since?: string;
+      until?: string;
     },
     signal?: AbortSignal,
   ) => {
@@ -465,6 +498,8 @@ export const api = (client: ApiClient) => ({
       query.set("channel_id", String(filters.channel_id));
     if (filters?.model) query.set("model", filters.model);
     if (filters?.limit != null) query.set("limit", String(filters.limit));
+    if (filters?.since) query.set("since", filters.since);
+    if (filters?.until) query.set("until", filters.until);
     const suffix = query.size ? `?${query.toString()}` : "";
     return client.getList<UsageRecord>(`/admin/usage${suffix}`, signal);
   },
@@ -477,6 +512,8 @@ export const api = (client: ApiClient) => ({
       upstream_request_id?: string;
       before_id?: number;
       limit?: number;
+      since?: string;
+      until?: string;
       /** Free text across model, error text, path and request ids (FTS5). */
       q?: string;
     },
@@ -493,18 +530,25 @@ export const api = (client: ApiClient) => ({
       query.set("upstream_request_id", filters.upstream_request_id);
     if (filters?.before_id != null)
       query.set("before_id", String(filters.before_id));
+    if (filters?.since) query.set("since", filters.since);
+    if (filters?.until) query.set("until", filters.until);
     if (filters?.limit != null) query.set("limit", String(filters.limit));
     const suffix = query.size ? `?${query.toString()}` : "";
     return client.getList<ProxyLog>(`/admin/proxy-logs${suffix}`, signal);
   },
-  proxyLogLatencyHistogram: (sample = 1000, signal?: AbortSignal) =>
-    client.get<{
-      buckets: number[];
-      total: number;
-      slow_count: number;
-      p50_ms: number;
-      p95_ms: number;
-    }>(`/admin/proxy-logs/latency-histogram?sample=${sample}`, signal),
+  proxyLogLatencyHistogram: (
+    sample = 1000,
+    signal?: AbortSignal,
+    filters?: { since?: string; until?: string },
+  ) => {
+    const query = new URLSearchParams({ sample: String(sample) });
+    if (filters?.since) query.set("since", filters.since);
+    if (filters?.until) query.set("until", filters.until);
+    return client.get<LatencyHistogram>(
+      `/admin/proxy-logs/latency-histogram?${query.toString()}`,
+      signal,
+    );
+  },
   discoveredModels: (channelId?: number, signal?: AbortSignal) =>
     client.getList<DiscoveredModel>(
       `/admin/discovery/models${channelId ? `?channel_id=${channelId}` : ""}`,

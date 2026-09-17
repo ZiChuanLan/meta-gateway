@@ -176,6 +176,14 @@ export interface UsageSummary {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /** Cache tokens inside the same window (added in v3.1). */
+  cache_read_tokens?: number;
+  cache_creation_tokens?: number;
+  /** Status breakdown inside the same window (added in v3.1). */
+  ok_count?: number;
+  client_error_count?: number;
+  server_error_count?: number;
+  other_count?: number;
   /** Persisted billing amount for the selected window (or all time). */
   cost: number;
   /** Legacy field returned by older gateways. */
@@ -198,6 +206,44 @@ export interface UsageRecord {
   /** Persisted billing amount; older gateways may omit it. */
   cost?: number;
   created_at: string;
+}
+/**
+ * Fixed-width usage time series. Buckets are epoch-aligned: index i covers
+ * `since + i * bucket_seconds`. Labels are formatted client-side so they land
+ * in the viewer's timezone.
+ */
+export interface UsageSeries {
+  since: string;
+  until: string;
+  bucket_seconds: number;
+  requests: number[];
+  failed: number[];
+  tokens: number[];
+  prompt_tokens: number[];
+  completion_tokens: number[];
+  cache_read_tokens: number[];
+  cache_creation_tokens: number[];
+  cost: number[];
+}
+/** One row of the per-model usage ranking (aggregated in SQL). */
+export interface ModelUsage {
+  model: string;
+  requests: number;
+  total_tokens: number;
+  cost: number;
+  failed: number;
+}
+/** Latency distribution over a sample of relay logs. */
+export interface LatencyHistogram {
+  buckets: number[];
+  total: number;
+  slow_count: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+  /** Rows the window held before the newest-first sample cut it down. */
+  matched: number;
+  sample_size: number;
 }
 export interface ProxyLog {
   id: number;

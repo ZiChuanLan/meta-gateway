@@ -17,6 +17,7 @@ function LocationProbe() {
 
 function renderLogs(initialEntry = "/logs") {
   const requests: URLSearchParams[] = [];
+  const histogramRequests: URLSearchParams[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost");
     let body: unknown = [];
@@ -27,15 +28,25 @@ function renderLogs(initialEntry = "/logs") {
         { id: 1, request_id: "req-slow", model: "slow-model", status: 502, latency_ms: 6000, attempt: 1 },
       ];
     } else if (url.pathname.endsWith("/latency-histogram")) {
-      body = { buckets: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], total: 2, slow_count: 1, p50_ms: 100, p95_ms: 6000 };
+      histogramRequests.push(url.searchParams);
+      body = {
+        buckets: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+        total: 2,
+        slow_count: 1,
+        p50_ms: 100,
+        p95_ms: 6000,
+        p99_ms: 6000,
+        matched: 2,
+        sample_size: 20000,
+      };
     }
     return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
   }));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={queryClient}><I18nProvider><SessionProvider>
+  const utils = render(<QueryClientProvider client={queryClient}><I18nProvider><SessionProvider>
     <MemoryRouter initialEntries={[initialEntry]}><Logs /><LocationProbe /></MemoryRouter>
   </SessionProvider></I18nProvider></QueryClientProvider>);
-  return requests;
+  return { requests, histogramRequests, ...utils };
 }
 
 describe("proxy log filters", () => {
@@ -48,7 +59,7 @@ describe("proxy log filters", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
   it("applies search, model and upstream request ID together", async () => {
-    const requests = renderLogs();
+    const { requests } = renderLogs();
     await screen.findByText("fast-model");
     expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "Search model, error, path, request ID" }), { target: { value: " quota " } });
@@ -61,7 +72,7 @@ describe("proxy log filters", () => {
   });
 
   it("submits the same filters from the form and clears slow-only too", async () => {
-    const requests = renderLogs("/logs?model=old&q=quota&upstream_request_id=up-old&status=failed");
+    const { requests } = renderLogs("/logs?model=old&q=quota&upstream_request_id=up-old&status=failed");
     await screen.findByText("fast-model");
     fireEvent.click(screen.getByRole("checkbox", { name: "Slow only (≥5s)" }));
     expect(screen.queryByText("fast-model")).not.toBeInTheDocument();
@@ -92,5 +103,85 @@ describe("proxy log filters", () => {
     expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("gpt-image-2");
     expect(screen.getByRole("textbox", { name: "Search model, error, path, request ID" })).toHaveValue("req-image");
     expect(screen.getByRole("textbox", { name: "Upstream request ID" })).toHaveValue("up-image");
+  });
+});
+
+describe("latency distribution at the top of the log page", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  // The distribution used to be a collapsed strip under the table, which made
+  // "what is slow right now" the last thing anyone saw.
+  it("renders the distribution above the log list", async () => {
+    const { container } = renderLogs();
+    await screen.findByText("fast-model");
+    const panel = container.querySelector(".latency-panel");
+    const list = container.querySelector(".logs-split");
+    expect(panel).not.toBeNull();
+    expect(list).not.toBeNull();
+    expect(
+      panel!.compareDocumentPosition(list!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // Expanded by default, with the readouts visible rather than hidden.
+    expect(screen.getByText("p95")).toBeInTheDocument();
+    expect(screen.getByText("p99")).toBeInTheDocument();
+  });
+
+  it("scopes both the list and the distribution to the selected range", async () => {
+    const { requests, histogramRequests } = renderLogs();
+    await screen.findByText("fast-model");
+    fireEvent.click(screen.getByRole("tab", { name: "15 min" }));
+    await waitFor(() => {
+      const last = requests.at(-1)!;
+      expect(last.get("since")).toBeTruthy();
+      expect(last.get("until")).toBeTruthy();
+    });
+    await waitFor(() => {
+      const last = histogramRequests.at(-1)!;
+      expect(last.get("since")).toBeTruthy();
+      expect(last.get("until")).toBeTruthy();
+      // A bounded window asks for a real sample rather than the newest 1,000.
+      expect(last.get("sample")).toBe("20000");
+    });
+  });
+
+  it("keeps a custom absolute window in the URL so it survives a reload", async () => {
+    renderLogs();
+    await screen.findByText("fast-model");
+    fireEvent.click(screen.getByRole("tab", { name: "Custom" }));
+    fireEvent.change(screen.getByLabelText("From"), {
+      target: { value: "2026-09-17T10:00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("To"), {
+      target: { value: "2026-09-17T11:30:00" },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("location").textContent).toContain("range=custom"),
+    );
+    const search = screen.getByTestId("location").textContent ?? "";
+    // Second precision is browser-dependent (`step=1` may normalize ":00"
+    // away), so assert the minute the user actually picked.
+    expect(search).toContain("from=2026-09-17T10%3A00");
+    expect(search).toContain("to=2026-09-17T11%3A30");
+  });
+
+  it("warns instead of querying an inverted custom window", async () => {
+    renderLogs();
+    await screen.findByText("fast-model");
+    fireEvent.click(screen.getByRole("tab", { name: "Custom" }));
+    fireEvent.change(screen.getByLabelText("From"), {
+      target: { value: "2026-09-17T12:00:00" },
+    });
+    fireEvent.change(screen.getByLabelText("To"), {
+      target: { value: "2026-09-17T09:00:00" },
+    });
+    expect(
+      screen.getByText("The end time is before the start time"),
+    ).toBeInTheDocument();
   });
 });

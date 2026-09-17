@@ -1,1 +1,0 @@
-import{j as t,X as x,E as f,a8 as j}from"./index-DID3q-4l.js";function E({isLoading:r,isError:s,error:a,isEmpty:e,empty:i,retry:n,children:o}){return r?t.jsx(x,{}):s?t.jsx(f,{error:a,retry:n}):e?t.jsx(j,{children:i}):t.jsx("div",{className:"entity-state-fill",children:o})}export{E};

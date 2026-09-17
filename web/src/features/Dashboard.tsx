@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   Activity,
@@ -14,18 +14,18 @@ import {
   HeartPulse,
   Play,
   ScrollText,
+  Timer,
   TrendingUp,
   Wallet,
   Zap,
 } from "lucide-react";
 import { api } from "../api/client";
-import type {
-  ProxyLog,
-} from "../api/types";
+import type { ProxyLog } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { SetupGuide } from "./SetupGuide";
 import { TelemetrySecondary, TelemetryStrip } from "../components/TelemetryStrip";
+import { TimeRangePicker, describeRange, useUrlTimeRange } from "../components/TimeRangePicker";
 import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
 import { formatCost, formatTokens } from "../lib/format";
@@ -33,25 +33,37 @@ import { channelHealthState } from "./channelHealth";
 import { DashboardAura } from "../components/DashboardAura";
 import { GatewayPreview } from "../components/GatewayTransition";
 
-const HOUR_24 = 24 * 3600 * 1000;
+const MINUTE_MS = 60_000;
 
-/** Chart window options: hourly buckets over the last N hours. */
-const WINDOWS = [
-  { hours: 24, labelKey: "dashboard.window24h" },
-  { hours: 48, labelKey: "dashboard.window48h" },
-] as const;
+/** Bucket labels are formatted here so they follow the viewer's timezone. */
+function seriesLabels(since: string, bucketSeconds: number, count: number): string[] {
+  const start = new Date(since).getTime();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(start + i * bucketSeconds * 1000);
+    if (bucketSeconds >= 86400) return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    if (bucketSeconds >= 3600) return `${pad(d.getHours())}:00`;
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
+}
+
+/** Localized bucket-size caption ("1 hour", "6 h", "15 min"). */
+function granularity(seconds: number): { key: string; n: number } {
+  if (seconds >= 86400) return { key: "dashboard.unitDay", n: Math.round(seconds / 86400) };
+  if (seconds >= 3600) return { key: "dashboard.unitHour", n: Math.round(seconds / 3600) };
+  return { key: "dashboard.unitMinute", n: Math.max(1, Math.round(seconds / 60)) };
+}
 
 function relativeTime(
   iso: string,
   t: (key: string, vars?: Record<string, string | number>) => string,
 ) {
   const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return t("dashboard.justNow");
-  if (ms < 3600_000)
-    return t("dashboard.minutesAgo", { n: Math.floor(ms / 60_000) });
-  if (ms < HOUR_24)
+  if (ms < MINUTE_MS) return t("dashboard.justNow");
+  if (ms < 3600_000) return t("dashboard.minutesAgo", { n: Math.floor(ms / MINUTE_MS) });
+  if (ms < 24 * 3600_000)
     return t("dashboard.hoursAgo", { n: Math.floor(ms / 3600_000) });
-  return t("dashboard.daysAgo", { n: Math.floor(ms / HOUR_24) });
+  return t("dashboard.daysAgo", { n: Math.floor(ms / (24 * 3600_000)) });
 }
 
 /** HTTP status → semantic tone for log badges. */
@@ -169,30 +181,68 @@ function ResultDistribution({
   );
 }
 
+/** Drill-down target: a bucket of the main series. */
+type Zoom = { since: string; until: string; label: string };
+
 export function Dashboard() {
   const [replayEntrance, setReplayEntrance] = useState(false);
   const { client } = useSession();
   const s = api(client!);
   const { t } = useI18n();
+  const [params, setParams] = useSearchParams();
+  const range = useUrlTimeRange(params, setParams);
+  const [zoom, setZoom] = useState<Zoom | null>(null);
 
-  const summary = useQuery({
-    queryKey: ["usage-summary"],
+  // All-time totals stay available so "how many requests has this gateway ever
+  // served" does not depend on the selected window.
+  const allTime = useQuery({
+    queryKey: ["usage-summary", "all"],
     queryFn: ({ signal }) => s.usageSummary(undefined, signal),
     refetchInterval: 30_000,
   });
-  const recentSummary = useQuery({
-    queryKey: ["usage-summary", "24h"],
+  // Everything else is windowed: the cards, the matrix, the chart, the ranking.
+  const rangeSummary = useQuery({
+    queryKey: ["usage-summary", "range", { since: range.since, until: range.until }],
     queryFn: ({ signal }) =>
-      s.usageSummary(
-        undefined,
-        signal,
-        new Date(Date.now() - HOUR_24).toISOString(),
-      ),
+      s.usageSummary(undefined, signal, range.since, range.until),
     refetchInterval: 30_000,
   });
-  const usage = useQuery({
-    queryKey: ["usage-latest"],
-    queryFn: ({ signal }) => s.usageRecords({ limit: 500 }, signal),
+  // The equal-length window immediately before, for an honest trend badge.
+  const previous = useQuery({
+    queryKey: ["usage-summary", "previous", { since: range.since, until: range.until }],
+    enabled: Boolean(range.since && range.until),
+    queryFn: ({ signal }) => {
+      const from = new Date(range.since!).getTime();
+      const span = new Date(range.until!).getTime() - from;
+      return s.usageSummary(
+        undefined,
+        signal,
+        new Date(from - span).toISOString(),
+        range.since,
+      );
+    },
+    refetchInterval: 60_000,
+  });
+  const zoomSummary = useQuery({
+    queryKey: ["usage-summary", "range", { since: zoom?.since, until: zoom?.until }],
+    enabled: zoom != null,
+    queryFn: ({ signal }) => s.usageSummary(undefined, signal, zoom!.since, zoom!.until),
+  });
+  const series = useQuery({
+    queryKey: [
+      "usage-series",
+      zoom ? { since: zoom.since, until: zoom.until, buckets: 12 } : { since: range.since, until: range.until, buckets: 48 },
+    ],
+    queryFn: ({ signal }) =>
+      zoom
+        ? s.usageSeries({ since: zoom.since, until: zoom.until, buckets: 12 }, signal)
+        : s.usageSeries({ since: range.since, until: range.until, buckets: 48 }, signal),
+    refetchInterval: zoom ? false : 30_000,
+  });
+  const topModels = useQuery({
+    queryKey: ["usage-top-models", { since: range.since, until: range.until }],
+    queryFn: ({ signal }) =>
+      s.usageTopModels({ since: range.since, until: range.until, limit: 6 }, signal),
     refetchInterval: 30_000,
   });
   const channels = useQuery({
@@ -201,115 +251,53 @@ export function Dashboard() {
     refetchInterval: 30_000,
   });
   const logs = useQuery({
-    queryKey: ["proxy-logs", { limit: 6 }],
-    queryFn: ({ signal }) => s.proxyLogs({ limit: 6 }, signal),
+    queryKey: ["proxy-logs", { limit: 8, since: range.since, until: range.until }],
+    queryFn: ({ signal }) =>
+      s.proxyLogs({ limit: 8, since: range.since, until: range.until }, signal),
     refetchInterval: 15_000,
   });
-
-  const [windowHours, setWindowHours] = useState<24 | 48>(24);
-  const [selectedHour, setSelectedHour] = useState<number | null>(null);
-  const now = Date.now();
-  const recent = useMemo(() => {
-    const cutoff = now - HOUR_24;
-    return (usage.data ?? []).filter(
-      (row) => new Date(row.created_at).getTime() >= cutoff,
-    );
-  }, [usage.data, now]);
 
   const channelCounts = useMemo(() => {
     const all = channels.data ?? [];
     const enabled = all.filter((c) => c.channel.status === "enabled").length;
-    const healthy = all.filter(
-      (c) => channelHealthState(c) === "healthy",
-    ).length;
+    const healthy = all.filter((c) => channelHealthState(c) === "healthy").length;
     return { total: all.length, enabled, healthy };
   }, [channels.data]);
 
-  /** Wall-clock hourly buckets (oldest → newest) for the overview chart. */
-  const hourly = useMemo(() => {
-    const n = windowHours;
-    const currentHour = new Date(now);
-    currentHour.setMinutes(0, 0, 0);
-    const firstStart = currentHour.getTime() - (n - 1) * 3600_000;
-    const starts = Array.from(
-      { length: n },
-      (_, i) => firstStart + i * 3600_000,
-    );
-    const buckets = Array.from({ length: n }, () => ({
-      req: 0,
-      tok: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    }));
-    for (const row of usage.data ?? []) {
-      const index = Math.floor(
-        (new Date(row.created_at).getTime() - firstStart) / 3600_000,
-      );
-      if (index >= 0 && index < n) {
-        buckets[index]!.req += 1;
-        buckets[index]!.tok += row.total_tokens ?? 0;
-        buckets[index]!.cacheRead += row.cache_read_tokens ?? 0;
-        buckets[index]!.cacheWrite += row.cache_creation_tokens ?? 0;
-      }
-    }
-    return {
-      requests: buckets.map((b) => b.req),
-      tokens: buckets.map((b) => b.tok),
-      cacheRead: buckets.map((b) => b.cacheRead),
-      cacheWrite: buckets.map((b) => b.cacheWrite),
-      labels: starts.map((ms) => {
-        const d = new Date(ms);
-        return `${String(d.getHours()).padStart(2, "0")}:00`;
-      }),
-      starts,
-    };
-  }, [usage.data, now, windowHours]);
+  const summary = rangeSummary.data;
+  const matrix = (zoom ? zoomSummary.data : undefined) ?? summary;
 
-  /** Detailed minute buckets for the selected hour. */
-  const detail = useMemo(() => {
-    if (selectedHour == null) return null;
-    const hourStart = hourly.starts[selectedHour];
-    if (hourStart == null) return null;
-    const buckets = Array.from({ length: 12 }, () => ({ req: 0, tok: 0 }));
-    for (const row of usage.data ?? []) {
-      const ms = new Date(row.created_at).getTime();
-      if (ms >= hourStart && ms < hourStart + 3600_000) {
-        const index = Math.floor((ms - hourStart) / (5 * 60_000));
-        if (index >= 0 && index < 12) {
-          buckets[index]!.req += 1;
-          buckets[index]!.tok += row.total_tokens ?? 0;
-        }
-      }
-    }
-    return {
-      requests: buckets.map((b) => b.req),
-      tokens: buckets.map((b) => b.tok),
-      labels: Array.from({ length: 12 }, (_, i) => {
-        const d = new Date(hourStart + i * 5 * 60_000);
-        return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      }),
-      start: hourStart,
-    };
-  }, [selectedHour, hourly.starts, usage.data]);
-
-  const recentRequests =
-    recentSummary.data?.request_count ??
-    recent.length;
-  const recentTokens =
-    recentSummary.data?.total_tokens ??
-    recent.reduce((sum, row) => sum + (row.total_tokens ?? 0), 0);
-  const prev24 =
-    (summary.data?.request_count ?? 0) - recentRequests;
-  const recentCost =
-    recentSummary.data?.cost ??
-    recentSummary.data?.estimated_cost ??
-    recent.reduce((sum, row) => sum + (row.cost ?? 0), 0);
-  const cacheRead24h = recent.reduce(
-    (sum, row) => sum + (row.cache_read_tokens ?? 0),
-    0,
-  );
+  const windowRequests = summary?.request_count ?? 0;
+  const previousRequests = previous.data?.request_count ?? 0;
   const requestTrend =
-    recentRequests > 0 && prev24 > 0 ? recentRequests / prev24 - 1 : null;
+    range.since && previousRequests > 0 && windowRequests > 0
+      ? windowRequests / previousRequests - 1
+      : null;
+
+  // 2xx share. Older gateways omit the breakdown, so fall back to "total minus
+  // everything that is not 2xx".
+  const okCount =
+    matrix == null
+      ? 0
+      : (matrix.ok_count ??
+        Math.max(
+          0,
+          matrix.request_count -
+            (matrix.client_error_count ?? 0) -
+            (matrix.server_error_count ?? 0) -
+            (matrix.other_count ?? 0),
+        ));
+  const successRate =
+    matrix && matrix.request_count > 0 ? okCount / matrix.request_count : null;
+  const successTone =
+    successRate === null
+      ? "primary"
+      : successRate >= 0.99
+        ? "success"
+        : successRate >= 0.9
+          ? "warning"
+          : "danger";
+
   const healthyRatio =
     channelCounts.total > 0 ? channelCounts.healthy / channelCounts.total : 1;
   const healthTone =
@@ -321,65 +309,36 @@ export function Dashboard() {
           ? "warning"
           : "danger";
 
-  // Status-code buckets over the visible chart window or selected hour.
-  const windowRows = useMemo(() => {
-    const cutoff = now - windowHours * 3600_000;
-    return (usage.data ?? []).filter(
-      (row) => new Date(row.created_at).getTime() >= cutoff,
-    );
-  }, [usage.data, now, windowHours]);
-  const chartRows = useMemo(() => {
-    if (detail == null) return windowRows;
-    return (usage.data ?? []).filter((row) => {
-      const ms = new Date(row.created_at).getTime();
-      return ms >= detail.start && ms < detail.start + 3600_000;
+  const bucketSeconds = series.data?.bucket_seconds ?? 3600;
+  const labels = useMemo(
+    () =>
+      series.data
+        ? seriesLabels(
+            series.data.since,
+            series.data.bucket_seconds,
+            series.data.requests.length,
+          )
+        : [],
+    [series.data],
+  );
+  const windowTokens = (series.data?.tokens ?? []).reduce((sum, n) => sum + n, 0);
+  const grain = granularity(bucketSeconds);
+
+  const openBucket = (index: number) => {
+    if (!series.data) return;
+    const start =
+      new Date(series.data.since).getTime() + index * series.data.bucket_seconds * 1000;
+    setZoom({
+      since: new Date(start).toISOString(),
+      until: new Date(start + series.data.bucket_seconds * 1000).toISOString(),
+      label: labels[index] ?? "",
     });
-  }, [detail, usage.data, windowRows]);
-  const breakdown = useMemo(() => {
-    const buckets = { ok: 0, clientError: 0, serverError: 0, other: 0 };
-    for (const row of chartRows) {
-      const s = row.status;
-      if (s >= 200 && s < 300) buckets.ok += 1;
-      else if (s >= 400 && s < 500) buckets.clientError += 1;
-      else if (s >= 500) buckets.serverError += 1;
-      else buckets.other += 1;
-    }
-    return buckets;
-  }, [chartRows]);
-  const successRate =
-    recentRequests > 0
-      ? recent.filter((row) => row.status >= 200 && row.status < 300).length /
-        recentRequests
-      : null;
-  const successTone =
-    successRate === null
-      ? "primary"
-      : successRate >= 0.99
-        ? "success"
-        : successRate >= 0.9
-          ? "warning"
-          : "danger";
+  };
 
-  // Model usage ranking over the visible 24h window.
-  const topModels = useMemo(() => {
-    const map = new Map<string, { requests: number; tokens: number }>();
-    for (const row of recent) {
-      const entry = map.get(row.model) ?? { requests: 0, tokens: 0 };
-      entry.requests += 1;
-      entry.tokens += row.total_tokens ?? 0;
-      map.set(row.model, entry);
-    }
-    return [...map.entries()]
-      .sort(
-        (a, b) =>
-          b[1].tokens - a[1].tokens || b[1].requests - a[1].requests,
-      )
-      .slice(0, 6)
-      .map(([model, stats]) => ({ model, ...stats }));
-  }, [recent]);
-  const maxModelRequests = Math.max(1, ...topModels.map((m) => m.requests));
-
+  const ranked = topModels.data ?? [];
+  const maxModelRequests = Math.max(1, ...ranked.map((m) => m.requests));
   const recentLogs = logs.data ?? [];
+  const rangeCaption = describeRange(range.since, range.until, t);
 
   return (
     <Page
@@ -394,6 +353,21 @@ export function Dashboard() {
       <div className="cockpit-stack">
         <SetupGuide />
 
+        {/* 0. 时间区间：驱动本页所有读数、图表与排行 */}
+        <div className="dashboard-range-bar">
+          <span className="dashboard-range-label">
+            <Timer size={13} />
+            {t("timeRange.label")}
+          </span>
+          <TimeRangePicker
+            range={range}
+            onRefresh={() => {
+              setZoom(null);
+              void series.refetch();
+            }}
+          />
+        </div>
+
         {/* 1. 终端接入端点条 (Gateway Endpoint Strip) */}
         <EndpointStrip />
 
@@ -403,14 +377,14 @@ export function Dashboard() {
             items={[
               {
                 label: t("dashboard.totalRequests"),
-                value: summary.data?.request_count ?? "—",
+                value: allTime.data?.request_count ?? "—",
                 hint: t("dashboard.totalRequestsHint"),
                 icon: <Activity size={13} />,
                 tone: "primary",
               },
               {
                 label: t("dashboard.recentRequests"),
-                value: summary.isPending ? "—" : recentRequests,
+                value: rangeSummary.isPending ? "—" : windowRequests,
                 hint: t("dashboard.recentRequestsHint"),
                 icon: <ScrollText size={13} />,
                 tone: "success",
@@ -428,7 +402,7 @@ export function Dashboard() {
               {
                 label: t("dashboard.successRate"),
                 value:
-                  summary.isPending || successRate === null
+                  rangeSummary.isPending || successRate === null
                     ? "—"
                     : `${Math.round(successRate * 100)}%`,
                 hint: t("dashboard.successRateHint"),
@@ -441,21 +415,23 @@ export function Dashboard() {
             items={[
               {
                 label: t("dashboard.totalTokens"),
-                value: summary.data
-                  ? formatTokens(summary.data.total_tokens)
+                value: allTime.data
+                  ? formatTokens(allTime.data.total_tokens)
                   : "—",
                 hint: t("dashboard.totalTokensHint"),
                 icon: <Coins size={13} />,
               },
               {
-                label: t("dashboard.cost24h"),
-                value: recentSummary.isPending ? "—" : formatCost(recentCost),
-                hint: t("dashboard.cost24hHint"),
+                label: t("dashboard.rangeCost"),
+                value: rangeSummary.isPending ? "—" : formatCost(summary?.cost ?? 0),
+                hint: t("dashboard.rangeCostHint"),
                 icon: <Wallet size={13} />,
               },
               {
                 label: t("dashboard.cacheRead"),
-                value: summary.isPending ? "—" : formatTokens(cacheRead24h),
+                value: rangeSummary.isPending
+                  ? "—"
+                  : formatTokens(summary?.cache_read_tokens ?? 0),
                 hint: t("dashboard.cacheReadHint"),
                 icon: <Database size={13} />,
               },
@@ -467,11 +443,11 @@ export function Dashboard() {
         <Panel className="cockpit-panel cockpit-chart-panel">
           <div className="panel-header cockpit-chart-header">
             <div className="cockpit-chart-title">
-              {detail ? (
+              {zoom ? (
                 <button
                   type="button"
                   className="chart-back-button"
-                  onClick={() => setSelectedHour(null)}
+                  onClick={() => setZoom(null)}
                   aria-label={t("dashboard.chartBack")}
                 >
                   <ArrowLeft size={14} />
@@ -480,62 +456,38 @@ export function Dashboard() {
                 <Activity size={15} />
               )}
               <strong>
-                {detail
-                  ? t("dashboard.hourlyDetail", {
-                      label: hourly.labels[selectedHour ?? 0] ?? "",
-                    })
+                {zoom
+                  ? t("dashboard.hourlyDetail", { label: zoom.label })
                   : t("dashboard.hourlyTraffic")}
               </strong>
-              {detail ? (
-                <span className="chart-detail-pill">
-                  {t("dashboard.chartDetailGranularity")}
-                </span>
-              ) : null}
+              <span className="chart-detail-pill">
+                {t("dashboard.granularity", { unit: t(grain.key, { n: grain.n }) })}
+              </span>
             </div>
             <span className="panel-muted">
-              {detail
+              {zoom
                 ? t("dashboard.chartDetailSummary", {
-                    n: detail.requests.reduce((sum, value) => sum + value, 0),
+                    n: (series.data?.requests ?? []).reduce((sum, n) => sum + n, 0),
                   })
-                : t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
+                : t("dashboard.rangeTokens", { n: formatTokens(windowTokens) })}
             </span>
-            <div
-              className="chart-window-tabs"
-              role="tablist"
-              aria-label={t("dashboard.chartWindow")}
-            >
-              {WINDOWS.map((w) => (
-                <button
-                  key={w.hours}
-                  type="button"
-                  role="tab"
-                  aria-selected={windowHours === w.hours}
-                  className={windowHours === w.hours ? "is-active" : ""}
-                  onClick={() => {
-                    setWindowHours(w.hours);
-                    setSelectedHour(null);
-                  }}
-                >
-                  {t(w.labelKey)}
-                </button>
-              ))}
-            </div>
           </div>
           <HourlyTrafficChart
-            key={detail ? `detail-${selectedHour}` : "overview"}
-            requests={detail?.requests ?? hourly.requests}
-            tokens={detail?.tokens ?? hourly.tokens}
-            labels={detail?.labels ?? hourly.labels}
-            height={detail ? 200 : 160}
-            labelStep={detail ? 1 : windowHours > 24 ? 8 : 4}
-            zoomed={detail != null}
-            onSelect={detail ? undefined : setSelectedHour}
+            key={zoom ? `zoom-${zoom.since}` : "overview"}
+            requests={series.data?.requests ?? []}
+            tokens={series.data?.tokens ?? []}
+            failed={series.data?.failed ?? []}
+            labels={labels}
+            height={zoom ? 200 : 168}
+            labelStep={Math.max(1, Math.round((labels.length || 1) / 8))}
+            zoomed={zoom != null}
+            onSelect={zoom ? undefined : openBucket}
           />
           <ResultDistribution
-            ok={breakdown.ok}
-            clientError={breakdown.clientError}
-            serverError={breakdown.serverError}
-            other={breakdown.other}
+            ok={okCount}
+            clientError={matrix?.client_error_count ?? 0}
+            serverError={matrix?.server_error_count ?? 0}
+            other={matrix?.other_count ?? 0}
           />
         </Panel>
 
@@ -599,16 +551,14 @@ export function Dashboard() {
             </ul>
           </Panel>
 
-          {/* 右轨：最近代理请求流 */}
+          {/* 右轨：最近代理请求流（跟随所选区间） */}
           <Panel className="cockpit-panel cockpit-logs-panel">
             <div className="panel-header">
               <div className="cockpit-panel-title">
                 <ScrollText size={14} />
                 <strong>{t("dashboard.recentLogs")}</strong>
               </div>
-              <span className="panel-muted">
-                {t("dashboard.cost", { n: recentCost.toFixed(6) })}
-              </span>
+              <span className="panel-muted">{rangeCaption}</span>
             </div>
             {recentLogs.length === 0 ? (
               <p className="dashboard-empty">{t("dashboard.noLogs")}</p>
@@ -648,7 +598,7 @@ export function Dashboard() {
           </Panel>
         </div>
 
-        {/* 5. 模型负载消耗排行与 24h 实时请求分析 */}
+        {/* 5. 模型负载消耗排行（SQL 聚合，不受列表行数上限影响） */}
         <Panel className="cockpit-panel cockpit-usage-panel">
           <div className="panel-header">
             <div className="cockpit-panel-title">
@@ -656,16 +606,16 @@ export function Dashboard() {
               <strong>{t("dashboard.topModels")}</strong>
             </div>
             <span className="panel-muted">
-              {t("dashboard.tokens24h", { n: formatTokens(recentTokens) })}
+              {t("dashboard.rangeTokens", { n: formatTokens(windowTokens) })}
             </span>
           </div>
           <div className="cockpit-usage-body">
             <div className="cockpit-subcol">
-              {topModels.length === 0 ? (
+              {ranked.length === 0 ? (
                 <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
               ) : (
                 <ul className="model-rank">
-                  {topModels.map((m) => (
+                  {ranked.map((m) => (
                     <li key={m.model}>
                       <Link
                         className="model-rank-name"
@@ -686,8 +636,15 @@ export function Dashboard() {
                         <strong>{m.requests}</strong>
                         <small>{t("dashboard.colRequests")}</small>
                         <i>·</i>
-                        <strong>{formatTokens(m.tokens)}</strong>
+                        <strong>{formatTokens(m.total_tokens)}</strong>
                         <small>{t("dashboard.colTokens")}</small>
+                        {m.failed > 0 ? (
+                          <>
+                            <i>·</i>
+                            <strong className="is-warn">{m.failed}</strong>
+                            <small>{t("dashboard.colFailed")}</small>
+                          </>
+                        ) : null}
                       </span>
                     </li>
                   ))}

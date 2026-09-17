@@ -611,10 +611,18 @@ type UsageRecord struct {
 
 // UsageSummary aggregates metered traffic for Admin views.
 type UsageSummary struct {
-	RequestCount     int64   `json:"request_count"`
-	PromptTokens     int64   `json:"prompt_tokens"`
-	CompletionTokens int64   `json:"completion_tokens"`
-	TotalTokens      int64   `json:"total_tokens"`
+	RequestCount        int64 `json:"request_count"`
+	PromptTokens        int64 `json:"prompt_tokens"`
+	CompletionTokens    int64 `json:"completion_tokens"`
+	TotalTokens         int64 `json:"total_tokens"`
+	CacheReadTokens     int64 `json:"cache_read_tokens"`
+	CacheCreationTokens int64 `json:"cache_creation_tokens"`
+	// Status breakdown over the same window, so the overview's result matrix
+	// is an aggregate instead of a tally over whatever rows it managed to load.
+	OkCount          int64   `json:"ok_count"`
+	ClientErrorCount int64   `json:"client_error_count"`
+	ServerErrorCount int64   `json:"server_error_count"`
+	OtherCount       int64   `json:"other_count"`
 	Cost             float64 `json:"cost"`
 }
 

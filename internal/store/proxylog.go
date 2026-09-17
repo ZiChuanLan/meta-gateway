@@ -29,10 +29,37 @@ type ProxyLogFilter struct {
 	UpstreamRequestID string
 	BeforeID          *int64
 	Limit             int
+	// Since/Until bound created_at inclusively (nil = open-ended). The console
+	// sends RFC3339; SQLiteStoreTime normalizes it to the stored UTC layout.
+	Since *time.Time
+	Until *time.Time
 	// Query is free text searched across model, error text, path and both
 	// request ids. It runs through FTS5 when available and degrades to LIKE
 	// when the SQLite build has no FTS5 (or the query has no usable tokens).
 	Query string
+}
+
+// sqliteUTC renders a time in the exact layout proxy_logs/usage_records store
+// (SQLite `datetime('now')` = UTC "YYYY-MM-DD HH:MM:SS"). Binding an RFC3339
+// string would compare greater than every row and silently return nothing.
+func sqliteUTC(t time.Time) string {
+	return t.UTC().Format("2006-01-02 15:04:05")
+}
+
+// createdRange narrows a query to an inclusive created_at window. Column is
+// the qualified column name (e.g. "pl.created_at").
+func createdRange(column string, since, until *time.Time) ([]string, []any) {
+	clauses := []string{}
+	args := []any{}
+	if since != nil {
+		clauses = append(clauses, column+" >= ?")
+		args = append(args, sqliteUTC(*since))
+	}
+	if until != nil {
+		clauses = append(clauses, column+" <= ?")
+		args = append(args, sqliteUTC(*until))
+	}
+	return clauses, args
 }
 
 // Insert writes a proxy log entry.
@@ -90,6 +117,14 @@ type LatencyHistogram struct {
 	SlowCount int   `json:"slow_count"`
 	P50Ms     int   `json:"p50_ms"`
 	P95Ms     int   `json:"p95_ms"`
+	P99Ms     int   `json:"p99_ms"`
+	// Matched is how many rows the window held before the newest-first sample
+	// cut it down to Total. The console shows both so a sample that is smaller
+	// than the window cannot be mistaken for the whole window.
+	Matched int `json:"matched"`
+	// SampleSize is the newest-first sample the distribution covers, so the
+	// caption can distinguish "all of the window" from "the tail of it".
+	SampleSize int `json:"sample_size"`
 }
 
 // FailRate returns (total, failed) relay requests since the given time.
@@ -100,28 +135,46 @@ type LatencyHistogram struct {
 func (s *ProxyLogStore) FailRate(since time.Time) (total, failed int) {
 	row := s.db.QueryRow(
 		`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status >= 400 OR error_brief <> '' THEN 1 ELSE 0 END), 0) FROM proxy_logs WHERE created_at >= ?`,
-		since.UTC().Format("2006-01-02 15:04:05"),
+		sqliteUTC(since),
 	)
 	_ = row.Scan(&total, &failed)
 	return total, failed
 }
 
-// LatencyHistogram aggregates the newest sampleSize proxy log latencies.
-func (s *ProxyLogStore) LatencyHistogram(sampleSize int) (*LatencyHistogram, error) {
+// LatencyHistogram aggregates the newest sampleSize proxy log latencies,
+// optionally restricted to an inclusive time window. A window makes the panel
+// answer "how slow was the last hour", not just "how slow is the tail".
+func (s *ProxyLogStore) LatencyHistogram(sampleSize int, since, until *time.Time) (*LatencyHistogram, error) {
 	if sampleSize <= 0 {
 		sampleSize = 1000
 	}
-	if sampleSize > 10000 {
-		sampleSize = 10000
+	if sampleSize > 200000 {
+		sampleSize = 200000
 	}
-	rows, err := s.db.Query(`SELECT latency_ms FROM proxy_logs ORDER BY id DESC LIMIT ?`, sampleSize)
+	where, args := createdRange("created_at", since, until)
+	scope := ""
+	if len(where) > 0 {
+		scope = " WHERE " + strings.Join(where, " AND ")
+	}
+
+	hist := &LatencyHistogram{
+		Buckets:    make([]int, len(LatencyBucketBounds)+1),
+		SampleSize: sampleSize,
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM proxy_logs`+scope, args...).Scan(&hist.Matched); err != nil {
+		return nil, fmt.Errorf("proxylog histogram count: %w", err)
+	}
+
+	rows, err := s.db.Query(
+		`SELECT latency_ms FROM proxy_logs`+scope+` ORDER BY id DESC LIMIT ?`,
+		append(append([]any{}, args...), sampleSize)...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("proxylog histogram: %w", err)
 	}
 	defer rows.Close()
 
-	hist := &LatencyHistogram{Buckets: make([]int, len(LatencyBucketBounds)+1)}
-	latencies := make([]int, 0, sampleSize)
+	latencies := make([]int, 0, 256)
 	for rows.Next() {
 		var latency int
 		if err := rows.Scan(&latency); err != nil {
@@ -140,6 +193,7 @@ func (s *ProxyLogStore) LatencyHistogram(sampleSize int) (*LatencyHistogram, err
 	sort.Ints(latencies)
 	hist.P50Ms = percentile(latencies, 50)
 	hist.P95Ms = percentile(latencies, 95)
+	hist.P99Ms = percentile(latencies, 99)
 	return hist, nil
 }
 
@@ -199,6 +253,10 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 	if f.BeforeID != nil {
 		where = append(where, "pl.id < ?")
 		args = append(args, *f.BeforeID)
+	}
+	if clauses, rangeArgs := createdRange("pl.created_at", f.Since, f.Until); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, rangeArgs...)
 	}
 	if id := strings.TrimSpace(f.UpstreamRequestID); id != "" {
 		where = append(where, "pl.upstream_request_id = ?")

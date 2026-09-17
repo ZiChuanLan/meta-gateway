@@ -168,6 +168,8 @@ func (h *AdminHandler) Register(r chi.Router) {
 
 	// Usage / simple billing
 	r.Get("/usage/summary", h.usageSummary)
+	r.Get("/usage/series", h.usageSeries)
+	r.Get("/usage/top-models", h.usageTopModels)
 	r.Get("/usage", h.listUsage)
 	// Billing ratios (model markup; 1.0 = no markup)
 	r.Get("/ratios", h.listModelRatios)
@@ -243,21 +245,32 @@ func writeStoreError(w http.ResponseWriter, err error) {
 }
 
 // latencyHistogram returns the latency distribution over the newest proxy
-// logs (AAH-style 10-bucket histogram; slow = >= 5s).
+// logs (AAH-style 10-bucket histogram; slow = >= 5s), optionally scoped to an
+// inclusive since/until window.
 func (h *AdminHandler) latencyHistogram(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
 	sample := 1000
-	if raw := r.URL.Query().Get("sample"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 10000 {
+	if raw := query.Get("sample"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= maxHistogramSample {
 			sample = parsed
 		}
 	}
-	hist, err := h.db.ProxyLog.LatencyHistogram(sample)
+	since, until, ok := parseTimeRange(w, query)
+	if !ok {
+		return
+	}
+	hist, err := h.db.ProxyLog.LatencyHistogram(sample, since, until)
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, hist)
 }
+
+// maxHistogramSample bounds how many latency rows one histogram request may
+// pull. Large enough that an explicit window is never silently truncated,
+// small enough that the scan cannot be used to exhaust memory.
+const maxHistogramSample = 100000
 
 func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
@@ -298,6 +311,10 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 			status = &parsed
 		}
 	}
+	since, until, ok := parseTimeRange(w, query)
+	if !ok {
+		return
+	}
 	logs, err := h.db.ProxyLog.ListFilter(store.ProxyLogFilter{
 		SiteID:            siteID,
 		ChannelID:         channelID,
@@ -306,6 +323,8 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 		FailedOnly:        failedOnly,
 		UpstreamRequestID: upstreamRequestID,
 		BeforeID:          beforeID,
+		Since:             since,
+		Until:             until,
 		Limit:             limit,
 		Query:             query.Get("q"),
 	})

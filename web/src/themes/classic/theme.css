@@ -2589,6 +2589,47 @@
   overflow: hidden;
   white-space: nowrap;
 }
+/* Latency panel + readouts (mirrors styles.css so the classic appearance
+   keeps the same panel geometry instead of falling back to 64px bars). */
+:root[data-appearance="classic"] .latency-panel .latency-histogram-bars {
+  height: 76px;
+}
+:root[data-appearance="classic"] .latency-readouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 26px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+:root[data-appearance="classic"] .latency-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+:root[data-appearance="classic"] .latency-readout > span {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+:root[data-appearance="classic"] .latency-readout > strong {
+  font: 600 15px var(--font);
+  color: var(--ink);
+}
+:root[data-appearance="classic"] .latency-readout.is-warn > strong {
+  color: var(--warning, #b54708);
+}
+:root[data-appearance="classic"] .latency-readout.is-coverage > strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+:root[data-appearance="classic"] .latency-panel-hint {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
 :root[data-appearance="classic"] .routing-mode-control {
   display: inline-flex;
   align-items: center;
@@ -9840,6 +9881,16 @@
   fill: var(--accent);
   opacity: 1;
   filter: drop-shadow(0 0 10px var(--accent-glow));
+}
+/* Failure slice needs the same specificity as the classic .chart-bar rule,
+   otherwise the primary fill wins and the slice disappears. */
+:root[data-appearance="classic"] .chart-bar.is-failed {
+  fill: var(--danger);
+  opacity: 0.95;
+}
+:root[data-appearance="classic"] .chart-legend-failed {
+  background: var(--danger);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 45%, transparent);
 }
 :root[data-appearance="classic"] .chart-window-tabs {
   display: inline-flex;

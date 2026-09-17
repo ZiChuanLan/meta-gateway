@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -11,22 +12,44 @@ import (
 	"github.com/lan/meta-gateway/internal/store"
 )
 
+// parseTimeRange reads the optional inclusive since/until query bounds
+// (RFC3339). An unparseable value is a 400 rather than a silently ignored
+// one — a typo in a link must not widen a window back to "all time".
+func parseTimeRange(w http.ResponseWriter, query url.Values) (since, until *time.Time, ok bool) {
+	for _, spec := range []struct {
+		key  string
+		dest **time.Time
+	}{{"since", &since}, {"until", &until}} {
+		raw := strings.TrimSpace(query.Get(spec.key))
+		if raw == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, spec.key+" must be RFC3339")
+			return nil, nil, false
+		}
+		value := parsed
+		*spec.dest = &value
+	}
+	if since != nil && until != nil && until.Before(*since) {
+		writeError(w, http.StatusBadRequest, "until must not be before since")
+		return nil, nil, false
+	}
+	return since, until, true
+}
+
 func (h *AdminHandler) usageSummary(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	keyID, ok := optionalPositiveQueryID(w, query.Get("downstream_key_id"), "downstream_key_id")
 	if !ok {
 		return
 	}
-	var since *time.Time
-	if raw := strings.TrimSpace(query.Get("since")); raw != "" {
-		parsed, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "since must be RFC3339")
-			return
-		}
-		since = &parsed
+	since, until, ok := parseTimeRange(w, query)
+	if !ok {
+		return
 	}
-	summary, err := h.db.Usage.SummarySince(keyID, since)
+	summary, err := h.db.Usage.SummaryRange(keyID, since, until)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -34,6 +57,43 @@ func (h *AdminHandler) usageSummary(w http.ResponseWriter, r *http.Request) {
 	// Cost is now persisted per record at relay time (key prices × model
 	// ratio); the summary aggregates the stored amounts directly.
 	writeJSON(w, http.StatusOK, summary)
+}
+
+// usageSeries returns a bucketed request/token/cost series over an inclusive
+// window. Aggregating in SQL keeps the overview chart honest for windows that
+// hold far more rows than the newest-500 list endpoint can return.
+func (h *AdminHandler) usageSeries(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	since, until, ok := parseTimeRange(w, query)
+	if !ok {
+		return
+	}
+	if since == nil {
+		window := time.Hour
+		if raw := strings.TrimSpace(query.Get("window_minutes")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 60*24*31 {
+				window = time.Duration(parsed) * time.Minute
+			}
+		}
+		start := time.Now().Add(-window)
+		since = &start
+	}
+	end := time.Now()
+	if until != nil {
+		end = *until
+	}
+	buckets := 24
+	if raw := strings.TrimSpace(query.Get("buckets")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 1500 {
+			buckets = parsed
+		}
+	}
+	series, err := h.db.Usage.Series(*since, end, buckets)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, series)
 }
 
 // listModelRatios returns all configured billing ratios.
@@ -93,16 +153,48 @@ func (h *AdminHandler) listUsage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	since, until, ok := parseTimeRange(w, query)
+	if !ok {
+		return
+	}
 	model := strings.TrimSpace(query.Get("model"))
 	rows, err := h.db.Usage.List(store.UsageFilter{
 		DownstreamKeyID: keyID,
 		ChannelID:       channelID,
 		Model:           model,
+		Since:           since,
+		Until:           until,
 		Limit:           limit,
 	})
 	if err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+// usageTopModels ranks models by token usage inside an inclusive window. The
+// aggregation runs in SQL so a wide window is not distorted by the list
+// endpoint's row cap.
+func (h *AdminHandler) usageTopModels(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	since, until, ok := parseTimeRange(w, query)
+	if !ok {
+		return
+	}
+	limit := 8
+	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 50 {
+			limit = parsed
+		}
+	}
+	rows, err := h.db.Usage.TopModels(since, until, limit)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if rows == nil {
+		rows = []store.ModelUsage{}
 	}
 	writeJSON(w, http.StatusOK, rows)
 }

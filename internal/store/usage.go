@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,9 @@ type UsageFilter struct {
 	ChannelID       *int64
 	Model           string
 	Limit           int
+	// Since/Until bound created_at inclusively (nil = open-ended).
+	Since *time.Time
+	Until *time.Time
 }
 
 // List returns newest usage records.
@@ -78,6 +82,10 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 	if model := strings.TrimSpace(filter.Model); model != "" {
 		where = append(where, "model = ?")
 		args = append(args, model)
+	}
+	if clauses, rangeArgs := createdRange("created_at", filter.Since, filter.Until); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, rangeArgs...)
 	}
 	args = append(args, limit)
 	query := `SELECT id, request_id, downstream_key_id, channel_id, model, path, stream,
@@ -126,10 +134,23 @@ func (s *UsageStore) Summary(downstreamKeyID *int64) (domain.UsageSummary, error
 
 // SummarySince aggregates usage from the optional inclusive UTC timestamp.
 func (s *UsageStore) SummarySince(downstreamKeyID *int64, since *time.Time) (domain.UsageSummary, error) {
+	return s.SummaryRange(downstreamKeyID, since, nil)
+}
+
+// SummaryRange aggregates usage over an inclusive [since, until] window; nil
+// bounds are open-ended. The console uses it for arbitrary time selections,
+// which is why the window — not just a lower bound — is expressible.
+func (s *UsageStore) SummaryRange(downstreamKeyID *int64, since, until *time.Time) (domain.UsageSummary, error) {
 	query := `SELECT COUNT(*),
 		COALESCE(SUM(prompt_tokens),0),
 		COALESCE(SUM(completion_tokens),0),
 		COALESCE(SUM(total_tokens),0),
+		COALESCE(SUM(cache_read_tokens),0),
+		COALESCE(SUM(cache_creation_tokens),0),
+		COALESCE(SUM(CASE WHEN status >= 200 AND status < 300 THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN status < 200 OR (status >= 300 AND status < 400) THEN 1 ELSE 0 END),0),
 		COALESCE(SUM(cost),0)
 		FROM usage_records`
 	where := []string{}
@@ -138,9 +159,9 @@ func (s *UsageStore) SummarySince(downstreamKeyID *int64, since *time.Time) (dom
 		where = append(where, "downstream_key_id = ?")
 		args = append(args, *downstreamKeyID)
 	}
-	if since != nil {
-		where = append(where, "created_at >= ?")
-		args = append(args, since.UTC().Format("2006-01-02 15:04:05"))
+	if clauses, rangeArgs := createdRange("created_at", since, until); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, rangeArgs...)
 	}
 	if len(where) > 0 {
 		query += ` WHERE ` + strings.Join(where, " AND ")
@@ -151,11 +172,191 @@ func (s *UsageStore) SummarySince(downstreamKeyID *int64, since *time.Time) (dom
 		&summary.PromptTokens,
 		&summary.CompletionTokens,
 		&summary.TotalTokens,
+		&summary.CacheReadTokens,
+		&summary.CacheCreationTokens,
+		&summary.OkCount,
+		&summary.ClientErrorCount,
+		&summary.ServerErrorCount,
+		&summary.OtherCount,
 		&summary.Cost,
 	); err != nil {
 		return domain.UsageSummary{}, fmt.Errorf("usage summary: %w", err)
 	}
 	return summary, nil
+}
+
+// seriesBucketUnits are the bucket sizes the console chart understands, in
+// seconds (1m, 5m, 15m, 30m, 1h, 3h, 6h, 12h, 1d).
+var seriesBucketUnits = []int{60, 300, 900, 1800, 3600, 10800, 21600, 43200, 86400}
+
+// UsageSeries is a fixed-width time series over usage_records. Buckets are
+// epoch-aligned so consecutive ranges produce adjacent, stable labels; the
+// caller formats them in ITS timezone from Since + BucketSeconds.
+type UsageSeries struct {
+	Since            time.Time `json:"since"`
+	Until            time.Time `json:"until"`
+	BucketSeconds    int       `json:"bucket_seconds"`
+	Requests         []int     `json:"requests"`
+	Failed           []int     `json:"failed"`
+	Tokens           []int64   `json:"tokens"`
+	PromptTokens     []int64   `json:"prompt_tokens"`
+	CompletionTokens []int64   `json:"completion_tokens"`
+	CacheRead        []int64   `json:"cache_read_tokens"`
+	CacheWrite       []int64   `json:"cache_creation_tokens"`
+	Cost             []float64 `json:"cost"`
+}
+
+// Series aggregates usage_records into at most `buckets` epoch-aligned slots.
+// Aggregation happens in SQL, so the chart reflects every row in the window
+// instead of the newest 500 the list endpoint can return.
+func (s *UsageStore) Series(since, until time.Time, buckets int) (*UsageSeries, error) {
+	if buckets <= 0 {
+		buckets = 24
+	}
+	if buckets > 1500 {
+		buckets = 1500
+	}
+	if !until.After(since) {
+		until = since.Add(time.Hour)
+	}
+	span := until.Sub(since).Seconds()
+	sec := int(math.Ceil(span / float64(buckets)))
+	if sec < seriesBucketUnits[0] {
+		sec = seriesBucketUnits[0]
+	}
+	for _, unit := range seriesBucketUnits {
+		if sec <= unit {
+			sec = unit
+			break
+		}
+	}
+	if sec > seriesBucketUnits[len(seriesBucketUnits)-1] {
+		sec = seriesBucketUnits[len(seriesBucketUnits)-1]
+	}
+
+	// Align the first bucket to the epoch grid so labels land on clean
+	// wall-clock boundaries (…:00, …:15, midnight).
+	startUnix := since.Unix()
+	startUnix -= startUnix % int64(sec)
+	start := time.Unix(startUnix, 0).UTC()
+	count := int((until.Unix()-startUnix)/int64(sec)) + 1
+	if count < 1 {
+		count = 1
+	}
+	if count > 1500 {
+		count = 1500
+	}
+
+	series := &UsageSeries{
+		Since:            start,
+		Until:            until.UTC(),
+		BucketSeconds:    sec,
+		Requests:         make([]int, count),
+		Failed:           make([]int, count),
+		Tokens:           make([]int64, count),
+		PromptTokens:     make([]int64, count),
+		CompletionTokens: make([]int64, count),
+		CacheRead:        make([]int64, count),
+		CacheWrite:       make([]int64, count),
+		Cost:             make([]float64, count),
+	}
+
+	rows, err := s.db.Query(
+		`SELECT CAST((CAST(strftime('%s', created_at) AS INTEGER) - ?) / ? AS INTEGER) AS idx,
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(total_tokens), 0),
+			COALESCE(SUM(prompt_tokens), 0),
+			COALESCE(SUM(completion_tokens), 0),
+			COALESCE(SUM(cache_read_tokens), 0),
+			COALESCE(SUM(cache_creation_tokens), 0),
+			COALESCE(SUM(cost), 0)
+		FROM usage_records
+		WHERE created_at >= ? AND created_at <= ?
+		GROUP BY idx`,
+		startUnix, int64(sec),
+		sqliteUTC(start), sqliteUTC(until),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("usage series: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var idx, requests, failed int
+		var tokens, prompt, completion, cacheRead, cacheWrite int64
+		var cost float64
+		if err := rows.Scan(&idx, &requests, &failed, &tokens, &prompt, &completion, &cacheRead, &cacheWrite, &cost); err != nil {
+			return nil, fmt.Errorf("usage series scan: %w", err)
+		}
+		if idx < 0 || idx >= count {
+			continue
+		}
+		series.Requests[idx] += requests
+		series.Failed[idx] += failed
+		series.Tokens[idx] += tokens
+		series.PromptTokens[idx] += prompt
+		series.CompletionTokens[idx] += completion
+		series.CacheRead[idx] += cacheRead
+		series.CacheWrite[idx] += cacheWrite
+		series.Cost[idx] += cost
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("usage series rows: %w", err)
+	}
+	return series, nil
+}
+
+// ModelUsage is one row of the per-model usage ranking.
+type ModelUsage struct {
+	Model    string  `json:"model"`
+	Requests int     `json:"requests"`
+	Tokens   int64   `json:"total_tokens"`
+	Cost     float64 `json:"cost"`
+	Failed   int     `json:"failed"`
+}
+
+// TopModels ranks models by token usage inside an inclusive window. Ranking in
+// SQL means a chart over a week is not biased by the list endpoint's row cap.
+func (s *UsageStore) TopModels(since, until *time.Time, limit int) ([]ModelUsage, error) {
+	if limit <= 0 {
+		limit = 8
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	where := []string{"model <> ''"}
+	args := []any{}
+	if clauses, rangeArgs := createdRange("created_at", since, until); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, rangeArgs...)
+	}
+	args = append(args, limit)
+	rows, err := s.db.Query(
+		`SELECT model, COUNT(*),
+			COALESCE(SUM(total_tokens), 0),
+			COALESCE(SUM(cost), 0),
+			COALESCE(SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END), 0)
+		FROM usage_records
+		WHERE `+strings.Join(where, " AND ")+`
+		GROUP BY model
+		ORDER BY 3 DESC, 2 DESC
+		LIMIT ?`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("usage top models: %w", err)
+	}
+	defer rows.Close()
+	var result []ModelUsage
+	for rows.Next() {
+		var row ModelUsage
+		if err := rows.Scan(&row.Model, &row.Requests, &row.Tokens, &row.Cost, &row.Failed); err != nil {
+			return nil, fmt.Errorf("usage top models scan: %w", err)
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }
 
 // CostByKey returns the persisted billing total per downstream key (all time).

@@ -29,6 +29,7 @@ function compactNumber(value: number) {
 export function HourlyTrafficChart({
 	requests,
 	tokens,
+	failed,
 	labels,
 	height = 168,
 	selected = null,
@@ -36,18 +37,20 @@ export function HourlyTrafficChart({
 	labelStep = 4,
 	zoomed = false,
 }: {
-	/** One value per hour, oldest → newest, aligned to local wall-clock hours. */
+	/** One value per bucket, oldest → newest, aligned to epoch buckets. */
 	requests: number[];
 	/** Parallel token values for the same buckets (may be all zero). */
 	tokens: number[];
-	/** Short display label per hour (e.g. "14:00"). Same length as requests. */
+	/** Parallel failed-request counts; drawn as the bottom slice of each bar. */
+	failed?: number[];
+	/** Short display label per bucket (e.g. "14:00"). Same length as requests. */
 	labels: string[];
 	height?: number;
 	/** Bucket index to render as selected (drill-down target). */
 	selected?: number | null;
 	/** Called with the bucket index when a bar is clicked. */
 	onSelect?: (index: number) => void;
-	/** Label one tick every N buckets (4 for 24h, 8 for 48h). */
+	/** Label one tick every N buckets. */
 	labelStep?: number;
 	/** Render the drill-down view with a zoom transition. */
 	zoomed?: boolean;
@@ -84,12 +87,22 @@ export function HourlyTrafficChart({
 		const slot = W / Math.max(1, n);
 		const barW = Math.max(3, slot * 0.5);
 		const plotH = H - PAD_B - PAD_T;
-		const bars = requests.map((v, i) => ({
-			x: PAD_L + i * slot + (slot - barW) / 2,
-			w: barW,
-			h: (v / maxReq) * plotH,
-			y: H - PAD_B - (v / maxReq) * plotH,
-		}));
+		const bars = requests.map((v, i) => {
+			const h = (v / maxReq) * plotH;
+			const y = H - PAD_B - h;
+			// Failed requests are the bottom slice of the bar, so the red
+			// height reads as a share of that bucket — not a separate scale.
+			const failCount = Math.min(failed?.[i] ?? 0, v);
+			const failH = v > 0 ? (failCount / v) * h : 0;
+			return {
+				x: PAD_L + i * slot + (slot - barW) / 2,
+				w: barW,
+				h,
+				y,
+				failH,
+				failY: H - PAD_B - failH,
+			};
+		});
 		const pts = tokens.map((v, i) => {
 			const x = PAD_L + i * slot + slot / 2;
 			const y = H - PAD_B - (v / maxTok) * plotH;
@@ -117,9 +130,10 @@ export function HourlyTrafficChart({
 			y: H - PAD_B - f * plotH,
 		}));
 		return { bars, linePath, areaPath, yTicks };
-	}, [requests, tokens, height, W]);
+	}, [requests, tokens, failed, height, W]);
 
 	const hasData = requests.some((v) => v > 0) || tokens.some((v) => v > 0);
+	const hasFailures = (failed ?? []).some((v) => v > 0);
 	const hotBar = hot != null && hot < bars.length ? bars[hot] : null;
 	const hotLabel = hot != null && hot < labels.length ? labels[hot] : null;
 
@@ -144,6 +158,12 @@ export function HourlyTrafficChart({
 						<i className="chart-legend-line" aria-hidden="true" />
 						{t("dashboard.chartLegendTokens")}
 					</span>
+					{hasFailures ? (
+						<span className="chart-legend-item">
+							<i className="chart-legend-failed" aria-hidden="true" />
+							{t("dashboard.chartLegendFailed")}
+						</span>
+					) : null}
 				</div>
 			) : null}
 			<div
@@ -203,23 +223,34 @@ export function HourlyTrafficChart({
 						{areaPath ? <path d={areaPath} fill="url(#chart-area-fill)" /> : null}
 						{linePath ? <path d={linePath} className="chart-token-line" /> : null}
 						{bars.map((b, i) => (
-							<rect
-								key={i}
-								x={b.x}
-								y={b.y}
-								width={b.w}
-								height={b.h}
-								rx={2}
-								className={
-									hot === i
-										? "chart-bar is-hot"
-										: selected === i
-											? "chart-bar is-selected"
-											: "chart-bar"
-								}
-								onMouseEnter={() => setHot(i)}
-								onClick={() => onSelect?.(i)}
-							/>
+							<g key={i}>
+								<rect
+									x={b.x}
+									y={b.y}
+									width={b.w}
+									height={b.h}
+									rx={2}
+									className={
+										hot === i
+											? "chart-bar is-hot"
+											: selected === i
+												? "chart-bar is-selected"
+												: "chart-bar"
+									}
+									onMouseEnter={() => setHot(i)}
+									onClick={() => onSelect?.(i)}
+								/>
+								{b.failH > 0 ? (
+									<rect
+										x={b.x}
+										y={b.failY}
+										width={b.w}
+										height={b.failH}
+										className="chart-bar is-failed"
+										pointerEvents="none"
+									/>
+								) : null}
+							</g>
 						))}
 						{/* bucket ticks every labelStep buckets */}
 						{labels.map((label, i) =>
@@ -251,6 +282,13 @@ export function HourlyTrafficChart({
 								tok: formatTokens(tokens[hot] ?? 0),
 							})}
 						</span>
+						{(failed?.[hot] ?? 0) > 0 ? (
+							<span className="chart-tip-failed">
+								{t("dashboard.chartTooltipFailed", {
+									n: String(failed?.[hot] ?? 0),
+								})}
+							</span>
+						) : null}
 					</div>
 				) : null}
 			</div>
