@@ -165,3 +165,16 @@
   border-color: color-mix(in srgb, var(--warning) 40%, var(--line));
   background: color-mix(in srgb, var(--warning) 10%, var(--surface));
 }
+
+/* A folded panel keeps only its header. Classic draws that header with a
+   bottom divider plus 14px of padding and pads the panel 24/26px, so a lone
+   title would sit above a stray rule inside an oversized box. */
+:root[data-appearance="classic"] .panel.is-collapsed {
+  padding: 16px 20px;
+}
+:root[data-appearance="classic"] .panel.is-collapsed .panel-header {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  min-height: 0;
+}
