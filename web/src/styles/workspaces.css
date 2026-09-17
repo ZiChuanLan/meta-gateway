@@ -35,6 +35,14 @@
 .channel-inspector .detail-meta { padding: 0; border: 0; background: transparent; gap: 20px; }
 .channel-inspector .detail-meta > div { padding: 0; border: 0; }
 .models-workspace-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: -6px 0 0; }
+/* Sticky-session readout on the models page. Numbers lead, labels recede, so
+   the row scans as data instead of prose — it is the only at-a-glance view of
+   which upstream each live session is pinned to. */
+.sticky-stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; margin: 0 0 16px; color: var(--muted); font: 11px/1.6 var(--font); }
+.sticky-stats > span { display: inline-flex; align-items: baseline; gap: 5px; }
+.sticky-stats strong { color: var(--ink); font: 600 13px/1.35 var(--font); font-variant-numeric: tabular-nums; }
+.sticky-entries { max-height: 264px; overflow-y: auto; }
+.sticky-entries thead th { position: sticky; top: 0; z-index: 2; }
 .route-policy-disclosure { margin: 15px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .route-policy-disclosure > summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; color: var(--muted); font-size: 11px; list-style: none; cursor: pointer; }
 .route-policy-disclosure > summary::-webkit-details-marker { display: none; }

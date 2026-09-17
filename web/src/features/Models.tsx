@@ -970,6 +970,19 @@ function ModelCatalog({
           className="sticky-panel"
           title={t("sticky.title")}
           titleHelp={t("sticky.hint")}
+          collapsible
+          defaultOpen={false}
+          storageKey="models.sticky"
+          summary={
+            <>
+              <strong>{sticky.data.stats.bound_sessions}</strong>{" "}
+              {t("sticky.bound")}
+              <span className="panel-summary-sep" aria-hidden="true">
+                ·
+              </span>
+              <strong>{sticky.data.stats.hits}</strong> {t("sticky.hits")}
+            </>
+          }
         >
           <div className="sticky-stats">
             <span>

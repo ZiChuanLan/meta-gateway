@@ -92,6 +92,8 @@ export const en: Dict = {
   "common.edit": "Edit",
   "common.retry": "Retry",
   "common.close": "Close",
+  "common.expand": "Expand",
+  "common.collapse": "Collapse",
   "common.loading": "Loading",
   "common.empty": "Nothing here yet.",
   "common.error": "Something went wrong",

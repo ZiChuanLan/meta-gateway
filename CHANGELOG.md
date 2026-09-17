@@ -4,6 +4,21 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [Unreleased]
+
+### Added
+
+- **粘性会话面板可折叠**：模型页那块「粘性会话」常驻在模型目录上方，活跃绑定一多就把目录
+  顶到首屏之外。现在标题即折叠开关，默认收起成一条窄栏（实测 212px → 56px），栏上仍带
+  `活跃绑定 / 命中` 两个读数，所以收起后照样能一眼看到会话状态；展开才铺开完整统计行与
+  绑定明细表。折叠选择按标签页记住（`sessionStorage`），从模型页跳走再回来不会自己弹开。
+  两套外观都适配，经典皮肤下折叠栏会去掉表头分隔线，避免一条孤零零的横线挂在标题下面。
+
+### Fixed
+
+- 模型页粘性面板的统计行此前没有任何样式，五个读数挤成一行纯文本；现在按「数字在前、
+  标签退后」的读数样式排版。
+
 ## [v3.1.0] — 2026-09-17
 
 ### Added

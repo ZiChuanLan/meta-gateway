@@ -31,6 +31,19 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .panel-title { display: flex; align-items: center; gap: 8px; }
 .panel-title h2, .panel-header h2 { margin: 0; color: var(--ink); font: 600 14px/1.45 var(--font); letter-spacing: -.02em; }
 .panel-header > .toolbar { justify-content: flex-end; }
+/* Collapsible panels: the title itself is the disclosure handle, and a folded
+   panel shrinks to its header so a live-state block stops owning the page. */
+.panel-toggle { display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 0; border: 0; background: none; color: var(--ink); cursor: pointer; }
+.panel-toggle:hover { color: var(--primary); }
+.panel-toggle-icon { flex: 0 0 auto; color: var(--muted); transform: rotate(-90deg); transition: transform var(--dur-base), color var(--dur-base); }
+.panel-toggle:hover .panel-toggle-icon { color: var(--primary); }
+.panel-toggle[aria-expanded="true"] .panel-toggle-icon { transform: rotate(0deg); }
+.panel-body[hidden] { display: none; }
+.panel.is-collapsed { padding: 15px 20px; }
+.panel.is-collapsed .panel-header { margin-bottom: 0; }
+.panel-summary { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border: 1px solid var(--line-light); border-radius: 999px; background: var(--surface-subtle); color: var(--muted); font: 500 11px/1.6 var(--font); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.panel-summary strong { color: var(--ink); font-weight: 600; }
+.panel-summary-sep { color: var(--line-strong); }
 .table-wrap { width: 100%; min-width: 0; overflow-x: auto; border: 0; border-radius: 0; background: transparent; box-shadow: none; scrollbar-width: thin; }
 table { width: 100%; border-collapse: collapse; font: 12px/1.5 var(--font); }
 thead th { padding: 13px 16px; text-align: left; font: 500 10px/1.5 var(--font); color: var(--muted); text-transform: none; letter-spacing: .015em; background: var(--surface-subtle); border: 0; border-bottom: 1px solid var(--line); white-space: nowrap; }

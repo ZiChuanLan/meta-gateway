@@ -87,6 +87,8 @@ export const zh: Dict = {
   "common.edit": "编辑",
   "common.retry": "重试",
   "common.close": "关闭",
+  "common.expand": "展开",
+  "common.collapse": "折叠",
   "common.loading": "加载中",
   "common.empty": "暂无数据。",
   "common.error": "出错了",

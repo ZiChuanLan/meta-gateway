@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, LoaderCircle, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Info, LoaderCircle, X } from "lucide-react";
 import {
   createContext,
   useContext,
@@ -110,6 +110,27 @@ export function Page({
   );
 }
 
+// Collapsible-panel state is tab scoped: the sidebar navigates away and back,
+// and a panel the operator folded should stay folded for that session.
+function readPanelOpen(storageKey: string | undefined, fallback: boolean) {
+  if (!storageKey) return fallback;
+  try {
+    const raw = sessionStorage.getItem(`panel.${storageKey}`);
+    return raw == null ? fallback : raw === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+function storePanelOpen(storageKey: string | undefined, open: boolean) {
+  if (!storageKey) return;
+  try {
+    sessionStorage.setItem(`panel.${storageKey}`, open ? "1" : "0");
+  } catch {
+    // Storage may be disabled; keep the state for this render tree only.
+  }
+}
+
 export function Panel({
   title,
   titleHelp,
@@ -117,6 +138,10 @@ export function Panel({
   children,
   className = "",
   id,
+  collapsible = false,
+  defaultOpen = true,
+  storageKey,
+  summary,
 }: {
   title?: string;
   titleHelp?: string;
@@ -125,21 +150,71 @@ export function Panel({
   className?: string;
   /** Optional DOM id (used by in-page section navigation). */
   id?: string;
+  /** Turn the header into a disclosure toggle so the body can fold away. */
+  collapsible?: boolean;
+  /** Starting body visibility; ignored once the operator has toggled it. */
+  defaultOpen?: boolean;
+  /** sessionStorage key that remembers the folded state across navigation. */
+  storageKey?: string;
+  /** Compact readout shown beside the title while the body is folded. */
+  summary?: ReactNode;
 }) {
+  const { t } = useI18n();
+  const bodyId = useId();
+  const [open, setOpen] = useState(() =>
+    readPanelOpen(storageKey, defaultOpen),
+  );
+  const folded = collapsible && !open;
+  const toggle = () => {
+    setOpen((prev) => {
+      storePanelOpen(storageKey, !prev);
+      return !prev;
+    });
+  };
   return (
-    <section id={id} className={`panel ${className}`.trim()}>
+    <section
+      id={id}
+      className={`panel ${className}${folded ? " is-collapsed" : ""}`.trim()}
+    >
       {(title || actions) && (
         <header className="panel-header">
           {title ? (
             <div className="panel-title">
-              <h2>{title}</h2>
+              {collapsible ? (
+                <button
+                  type="button"
+                  className="panel-toggle"
+                  aria-expanded={open}
+                  aria-controls={bodyId}
+                  title={open ? t("common.collapse") : t("common.expand")}
+                  onClick={toggle}
+                >
+                  <ChevronDown
+                    size={14}
+                    className="panel-toggle-icon"
+                    aria-hidden="true"
+                  />
+                  <h2>{title}</h2>
+                </button>
+              ) : (
+                <h2>{title}</h2>
+              )}
               {titleHelp ? <InfoTip label={titleHelp} /> : null}
+              {folded && summary ? (
+                <span className="panel-summary">{summary}</span>
+              ) : null}
             </div>
           ) : null}
           <div className="toolbar">{actions}</div>
         </header>
       )}
-      {children}
+      {collapsible ? (
+        <div className="panel-body" id={bodyId} hidden={folded}>
+          {children}
+        </div>
+      ) : (
+        children
+      )}
     </section>
   );
 }

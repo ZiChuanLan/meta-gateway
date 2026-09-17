@@ -89,6 +89,10 @@ export function useTimeRange(
     return () => window.clearInterval(id);
   }, [preset]);
 
+  // `tick` is the whole point here: the minute interval must produce a fresh
+  // `now` (and therefore a fresh query key / request), otherwise a rolling
+  // window would freeze at whatever moment the component first mounted.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const now = useMemo(() => Date.now(), [tick]);
 
   const draftSince = fromLocalInput(drafts.since);
