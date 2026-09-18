@@ -7,6 +7,7 @@
 </picture>
 
 <p>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ZiChuanLan/meta-gateway/ci.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=CI&labelColor=2F3646"></a>
   <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=for-the-badge&logo=docker&logoColor=white&label=Docker%20Pulls&labelColor=2F3646&color=2496ED"></a>
   <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&logoColor=white&label=Release&labelColor=2F3646&color=4F6BF0"></a>
   <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&logoColor=white&label=Stars&labelColor=2F3646&color=E8B93E"></a>
@@ -439,6 +440,60 @@ dry run 逐字段预览。
 **明暗与配色是彼此独立的两个维度**——可以只切明暗、只换配色，也可以整套换包，互不干扰。
 偏好存在浏览器本地，不影响同实例上的其他使用者。
 </details>
+
+---
+
+<a id="star-history" name="star-history"></a>
+
+## <img src="docs/icons/star.svg" width="20" align="absmiddle"> Star History
+
+<div align="center">
+
+<a href="https://star-history.com/#ZiChuanLan/meta-gateway&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ZiChuanLan/meta-gateway&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ZiChuanLan/meta-gateway&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ZiChuanLan/meta-gateway&type=Date" width="100%">
+  </picture>
+</a>
+
+</div>
+
+---
+
+<a id="contributing" name="contributing"></a>
+
+## <img src="docs/icons/heart-handshake.svg" width="20" align="absmiddle"> 贡献
+
+欢迎提 Issue 与 Pull Request。报问题时附上**网关版本、相关配置片段与日志**会省很多来回。
+
+```bash
+# 后端：构建 → 静态检查 → 单测（gofmt -l 应无输出）
+go build ./... && go vet ./... && go test ./...
+gofmt -l .
+
+# 前端（在 web/ 目录下）
+npm run lint && npm run typecheck && npm test -- --run && npm run build
+```
+
+提交前请确认这几条（CI 会逐条卡住）：
+
+- **`gofmt` 干净** —— 流水线里有 `test -z "$(gofmt -l .)"`，格式化不通过会直接失败；
+- 后端 `go vet ./...` 与 `go test ./...` 全绿（CI 另跑一遍 `go test -race ./...`，本地跑需要 cgo 与 gcc）；
+- 前端 `lint` / `typecheck` / `test` / `build` 四项全绿；
+- 新增数据库迁移时，同步更新 `store_test.go` 里的迁移数量断言。
+
+涉及界面改动的 PR，请顺手贴一张改前 / 改后截图（本项目同时维护**经典 / 现代**两套界面包，两边都要看一眼）。
+
+---
+
+<a id="license" name="license"></a>
+
+## <img src="docs/icons/scale.svg" width="20" align="absmiddle"> 许可
+
+以 **MIT License** 发布 —— 可自由商用、修改与再分发，只需保留原始版权声明。详见 [LICENSE](LICENSE)。
+
+仓库本身不附带任何上游密钥或用户数据；实例内的凭证均由 `MASTER_KEY` 加密后存放在本地 SQLite 中。
 
 ---
 
