@@ -27,16 +27,24 @@
 
 ## 二、本次产出的素材
 
-`docs/marketing/`（四个成品，可直接放进 README 或任意落地页）：
+`docs/marketing/`（当前在用的六张成品，全部 3200×1800 @2x）：
 
-| 文件 | 尺寸 | 用途 |
-| --- | --- | --- |
-| `hero-dark.png` | 1600×900 | 深色主视觉（总览控制台 + 品牌主张） |
-| `hero-light.png` | 1600×900 | 浅色主视觉（模型路由 + 品牌主张） |
-| `feature-aggregate.png` | 1600×1000 | 功能图 01：多通道聚合与故障自愈 |
-| `feature-protocol.png` | 1600×1000 | 功能图 02：一个接口，三种协议 |
+| 文件 | 用途 |
+| --- | --- |
+| `hero-light.png` / `hero-dark.png` | 主视觉，README 用 `<picture>` 按系统明暗自动切换 |
+| `feature-models.png` | 功能图：模型目录 · 自动发现与路由 |
+| `feature-security.png` | 功能图：密钥加密存储 · 用量全程可审计 |
+| `feature-appearance.png` | 两套外观同框（现代·深色设备 + 经典·浅色浮层卡片） |
+| `appearance-matrix.png` | 两套外观 × 明暗两种主题的 4 格矩阵（亮舞台、留暗面板） |
 
-它们**不是纯 AI 生图**。文字与界面若交给图像模型渲染必然糊成一片，所以做法是：
+> 早期那版 `feature-aggregate.png` / `feature-protocol.png` 已被上面两张替换，README 不再引用，文件仍留在
+> `docs/marketing/`（约 2 MB），待确认后删除。
+>
+> 流水线也已换代：最初是 `_art/`（AI 氛围底图）+ `_compose/`（母版 HTML + `render.sh`），
+> 现行为 `_grok/`（母版 `*.html` + `render.mjs`）。两者都是本地过程稿，已由 `.gitignore` 排除，只有成品入仓。
+
+它们**不是纯 AI 生图**。文字与界面若交给图像模型渲染必然糊成一片。最早那版的做法如下
+（现行 `_grok/` 流程同理，只是目录与脚本名不同）：
 
 1. `_art/bg-*.png` — 用图像模型生成**只有氛围、不含文字**的底图（品牌深蓝极光 / 浅色网格 / 光纤束流）；
 2. `_compose/*.html` — 真实中文排版 + `docs/screenshots/*.png` 里**真实控制台界面** + 真实代码片段，叠在底图上；
@@ -48,7 +56,7 @@
 
 ---
 
-## 三、可直接粘贴的 Hero 片段（替换现有 `docs/banner.svg` 那一行）
+## 三、Hero 片段（已落地，保留备查）
 
 ```html
 <picture>
@@ -64,15 +72,16 @@ GitHub 会按访问者的系统偏好自动选图，与 pi-desktop 的做法一�
 
 ## 四、待办清单（按性价比排序）
 
-### A 级 · 十分钟见效
+### A 级 · 十分钟见效 —— ✅ 三项已于 2026-09-18 完成
 
-1. **补仓库 About**：`homepage` 目前是 `None`、`topics` 是**空数组**。README 里推的在线演示
-   `https://mg.015201314.xyz` 没写进仓库主页，GitHub 搜索与话题页也完全吃不到流量。
-   → 设 homepage，topics 补 `ai-gateway` `llm` `openai` `anthropic` `gemini` `api-gateway`
-   `self-hosted` `golang`。
-2. **补 CI 徽章**：`.github/workflows/ci.yml` 一直在跑，但 README 没有它的状态徽章
-   （pi-desktop 有）。一行即可。
-3. **Hero 换成带产品画面的图**：见上面的 `<picture>` 片段。
+1. ✅ **补仓库 About**：`homepage` 已设为 `https://mg.015201314.xyz`，`topics` 已设为
+   `ai-gateway` `anthropic` `api-gateway` `gemini` `golang` `llm` `openai` `self-hosted`。
+   坑记一笔：**`PATCH /repos/{owner}/{repo}` 里的 `topics` 字段会返回 200 但被静默忽略**，
+   必须用专用端点 `PUT /repos/{owner}/{repo}/topics`（body 为 `{"names":[…]}`）。
+2. ✅ **补 CI 徽章**：已加在 README 徽章行首位，指向 `actions/workflows/ci.yml`
+   （用 shields.io 的 workflow status 端点，与其余徽章同为 shields 风格）。
+3. ✅ **Hero 换成带产品画面的图**：README 顶部已用 `<picture>` 按明暗切换
+   `hero-dark.png` / `hero-light.png`，兜底 `<img>` 指向 light 版；旧的 `docs/banner.svg` 已下线。
 
 ### B 级 · 内容层
 
@@ -80,9 +89,10 @@ GitHub 会按访问者的系统偏好自动选图，与 pi-desktop 的做法一�
    新增 `README.en.md`，两边顶部互链（pi-desktop 就是这么做的）。
 5. **截图补齐并重生成**：`docs/screenshots/` 缺 **logs 页**——而日志/延迟分布是 v3.1.0 的主打；
    也缺设置页（外观切换的入口）。且现有 10 张拍于 09-13/09-16，早于 v3.1.0 的界面改动。
-6. **补一张"两套外观"对比图**：README 文字里讲了经典/现代，却没有任何视觉证据。
-   一张并排图最划算（`设置 → 外观` 一键切换是本项目少见的差异化）。
-7. **补收尾三块**：Star History（`<picture>` 明暗两版）、`## 贡献`、`## 许可`（MIT）。
+6. ✅ **补一张"两套外观"对比图**：已产出 `feature-appearance.png`（同框）与
+   `appearance-matrix.png`（4 格矩阵），README 新增「双外观 · 经典 / 现代」整节。
+7. ✅ **补收尾三块**：README 末尾已补 Star History（`<picture>` 明暗两版）、`## 贡献`（含 CI 同款本地校验命令）、
+   `## 许可`（MIT）。
 
 ### C 级 · 工程化
 
@@ -91,8 +101,8 @@ GitHub 会按访问者的系统偏好自动选图，与 pi-desktop 的做法一�
    并统一转 webp（pi-desktop 主视觉就是 `.webp`）。
 9. **演示数据去测试味**：截图里的 `中转A / 中转B / 中转C`、`http://127.0.0.1:4567`
    是对外素材里最"像测试环境"的两处，换成接近真实站点的命名会顺眼很多。
-10. **本次底图入库前压一下**：`_art/bg-*.png` 每张约 1.6MB，转 JPEG 后入库即可，
-    成品四张 PNG 视需要再决定是否转 webp。
+10. **底图已不入仓**：`_art/`、`_compose/`、`_grok/` 现由 `.gitignore` 排除，此条作废；
+    仅剩「成品六张是否再转 webp」可选（当前直接提交 PNG）。
 
 ---
 
