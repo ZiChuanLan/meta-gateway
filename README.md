@@ -1,41 +1,69 @@
 <div align="center">
 
-<img src="docs/banner.svg" alt="Meta Gateway — 多通道 AI 中继网关" width="100%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/marketing/hero-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/marketing/hero-light.png">
+  <img src="docs/marketing/hero-light.png" alt="Meta Gateway — 多通道 AI 中继网关" width="100%">
+</picture>
 
 <p>
-  <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=for-the-badge&logo=docker&logoColor=white&label=Docker%20Pulls&color=2496ED"></a>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&label=Release&color=4059A3"></a>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&label=Stars&color=E8B93E"></a>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/ZiChuanLan/meta-gateway?style=for-the-badge&label=License&color=3DA639"></a>
-  <a href="https://mg.015201314.xyz"><img alt="在线体验" src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-mg.015201314.xyz-E8B93E?style=for-the-badge&logo=googlechrome&logoColor=black"></a>
+  <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=for-the-badge&logo=docker&logoColor=white&label=Docker%20Pulls&labelColor=2F3646&color=2496ED"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&logoColor=white&label=Release&labelColor=2F3646&color=4F6BF0"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&logoColor=white&label=Stars&labelColor=2F3646&color=E8B93E"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/ZiChuanLan/meta-gateway?style=for-the-badge&logo=opensourceinitiative&logoColor=white&label=License&labelColor=2F3646&color=3DA639"></a>
 </p>
 
 <p>
-  <img alt="Go" src="https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&style=flat-square">
-  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-embedded-003B57?logo=sqlite&style=flat-square">
-  <img alt="Platform" src="https://img.shields.io/badge/Platform-amd64%20%7C%20arm64-49436E?logo=linux&logoColor=white&style=flat-square">
-  <img alt="协议" src="https://img.shields.io/badge/%E5%8D%8F%E8%AE%AE-OpenAI%20%2F%20Anthropic%20%2F%20Gemini-8A2BE2?style=flat-square">
-  <a href="https://github.com/ZiChuanLan/meta-gateway/issues"><img alt="Issues" src="https://img.shields.io/github/issues/ZiChuanLan/meta-gateway?style=flat-square&logo=github&label=Issues"></a>
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.26%2B-4F6BF0?style=flat-square&logo=go&logoColor=white&labelColor=2F3646">
+  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-embedded-4F6BF0?style=flat-square&logo=sqlite&logoColor=white&labelColor=2F3646">
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-amd64%20%7C%20arm64-4F6BF0?style=flat-square&logo=linux&logoColor=white&labelColor=2F3646">
+  <img alt="Protocol" src="https://img.shields.io/badge/Protocol-OpenAI%20%2F%20Anthropic%20%2F%20Gemini-4F6BF0?style=flat-square&labelColor=2F3646">
+  <a href="https://github.com/ZiChuanLan/meta-gateway/issues"><img alt="Issues" src="https://img.shields.io/github/issues/ZiChuanLan/meta-gateway?style=flat-square&logo=github&logoColor=white&label=Issues&labelColor=2F3646&color=4F6BF0"></a>
 </p>
 
 </div>
 
 > [!TIP]
-> **在线体验**：[https://mg.015201314.xyz](https://mg.015201314.xyz) 
-登录密码 `123456`（公开演示环境，请勿存放生产敏感密钥）
+> **在线体验** · <https://mg.015201314.xyz> — 登录密码 `123456`
+>
+> 公开演示环境，请勿存放生产敏感密钥。控制台内置 **经典 / 现代** 双外观与明暗主题，登录后即可切换体验。
 
 <a id="screenshots" name="screenshots"></a>
+
+## <img src="docs/icons/palette.svg" width="20" align="absmiddle"> 双外观 · 经典 / 现代
+
+<div align="center">
+
+<img src="docs/marketing/feature-appearance.png" alt="经典与现代两种外观同框" width="100%">
+
+**经典 Classic** 紧凑信息密度，适合长时间盯盘运维 ｜ **现代 Modern** 卡片式工作台，层次更舒展
+
+<img src="docs/marketing/appearance-matrix.png" alt="两套外观 × 明暗两种主题" width="100%">
+
+两套外观 × 明暗两种主题共 4 种组合，随时切换，偏好按浏览器维度记忆。
+
+</div>
+
+## <img src="docs/icons/sparkles.svg" width="20" align="absmiddle"> 核心亮点
+
+<div align="center">
+
+<img src="docs/marketing/feature-models.png" alt="模型目录 · 自动发现与路由" width="100%">
+
+<img src="docs/marketing/feature-security.png" alt="密钥加密存储 · 用量全程可审计" width="100%">
+
+</div>
 
 ## <img src="docs/icons/monitor.svg" width="20" align="absmiddle"> 界面预览
 
 <div align="center">
 
-| <img src="docs/screenshots/login.png" width="480" /><br><b>安全控制台</b> · 零内存持久化的 Master 认证防御 | <img src="docs/screenshots/dashboard.png" width="480" /><br><b>数据总览</b> · 实时吞吐、健康分布与请求追踪 |
+| <img src="docs/screenshots/login.png" width="480" /><br><b>安全控制台</b> · 管理令牌登录，暗色 / 明亮双主题 | <img src="docs/screenshots/dashboard.png" width="480" /><br><b>数据总览</b> · 实时吞吐、渠道健康与流量追踪 |
 | :---: | :---: |
-| <img src="docs/screenshots/connections.png" width="480" /><br><b>上游连接</b> · 多源站点、自动模型发现与鉴权 | <img src="docs/screenshots/models.png" width="480" /><br><b>模型路由</b> · 成员优先级、权重负载与别名归一 |
-| <img src="docs/screenshots/workbench.png" width="480" /><br><b>模型工作台</b> · 图像生成编辑、文字流式对话与能力校正 | <img src="docs/screenshots/capabilities.png" width="480" /><br><b>能力注册表</b> · 端点编码、模态上限与外部目录同步 |
-| <img src="docs/screenshots/keys.png" width="480" /><br><b>令牌管理</b> · 独立额度、路由分组绑定与调用统计 | <img src="docs/screenshots/store.png" width="480" /><br><b>插件市场</b> · 模块化扩展、沙箱隔离与托管进程 |
-| <img src="docs/screenshots/checkin.png" width="480" /><br><b>自动化签到</b> · 多站点定时保活与 Cookie 调度 | <img src="docs/screenshots/exchange.png" width="480" /><br><b>资产交换</b> · 拓扑快照、加密导入与 WebDAV 备份 |
+| <img src="docs/screenshots/channels.png" width="480" /><br><b>上游连接</b> · 多源站点、自动模型发现与鉴权 | <img src="docs/screenshots/models.png" width="480" /><br><b>模型路由</b> · 成员优先级、权重负载与别名归一 |
+| <img src="docs/screenshots/workbench.png" width="480" /><br><b>模型工作台</b> · 图像生成编辑、文字流式对话与能力校正 | <img src="docs/screenshots/keys.png" width="480" /><br><b>令牌管理</b> · 独立额度、路由分组绑定与调用统计 |
+| <img src="docs/screenshots/logs.png" width="480" /><br><b>日志观测</b> · 延迟分布、失败率与代理审计 | <img src="docs/screenshots/settings.png" width="480" /><br><b>运行参数</b> · 故障转移、灰度发布与全局策略 |
+| <img src="docs/screenshots/store.png" width="480" /><br><b>插件市场</b> · 模块化扩展、沙箱隔离与托管进程 | <img src="docs/screenshots/exchange.png" width="480" /><br><b>资产交换</b> · 拓扑快照、加密导入与 WebDAV 备份 |
 
 </div>
 

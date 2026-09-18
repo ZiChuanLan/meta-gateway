@@ -48,3 +48,10 @@ scripts/
 
 # Stray frontend cache from running vitest at the repo root by mistake
 /node_modules/
+
+# Marketing image pipeline scratch. The six published plates under docs/marketing/
+# are tracked; the generators' working dirs are local-only (~37 MB of candidate
+# renders, verification scratch and raw AI backdrops).
+docs/marketing/_grok/
+docs/marketing/_compose/
+docs/marketing/_art/
