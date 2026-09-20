@@ -50,6 +50,22 @@ go build ./... && go test ./...
 > 带 hash 的 chunk）。在带批量删除护栏的沙箱里会被中断，表现为 `error during build:` 后面**没有任何
 > 错误详情**，`dist/assets` 被清空但新产物没写出来。遇到此特征请提权重跑，不要误判为代码问题。
 
+### race 预算与测试后台资源（2026-09-20）
+
+CI 的 race 步骤是 `go test -race -timeout 20m ./...`（**per-package** 20 分钟），不要调回默认的
+10 分钟：`-race` 会给纯 Go 版 SQLite（`modernc.org/sqlite`）插桩，而每个开新库的测试都要重放全部
+101 个迁移 —— 实测 **0.14s → 3.4s（25×）**。所以 `internal/store` 单包约 500s、`internal/httpapi`
+约 700s，默认 600s 上限正好压在悬崖上（09-17 那次 httpapi 504.9s 惊险通过，之后 store 599.8s
+只差 0.2s 就红）。race 步骤失败时先分清是 `DATA RACE` 还是 `test timed out`：后者是预算问题，
+不是代码问题。想真正砍掉这笔开销，方向是「每包迁移一次模板库、各测试拷贝」，可省掉每测试的固定成本。
+
+后台调度器（alert / balance / health sweep、alert rules、daily summary、model catalog、DB GC、
+probe、update check、discovery recovery loop）都由 `NewWithDependencies` 启动，各自往
+`RegisterStopper` 注册停止回调。**测试里建 router 必须用 `NewTestRouter(t, cfg, db, enc)`**
+（`httpapi_test` 里写 `httpapi.NewTestRouter`），它在该测试结束时 `StopBackground`；直接用 `New`
+会让调度器活到进程退出（实测 44 个泄漏 router ≈ 458 个常驻 goroutine）。
+`internal/httpapi/background_test.go` 里有一个不变量测试 + TestMain 兜底守着这条约定。
+
 ---
 
 ## 2. 目录地图

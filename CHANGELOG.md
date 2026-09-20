@@ -6,6 +6,23 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI 的 race 步骤不再靠运气**：`go test -race ./...` 吃的是 10 分钟**每包**默认超时，而 `-race`
+  会给纯 Go 版 SQLite 插桩、每个开新库的测试都要重放全部 101 个迁移（实测 0.14s → 3.4s，25×），
+  于是 `internal/store` 单包约 500s、`internal/httpapi` 约 700s —— 600s 的上限就压在悬崖边上
+  （09-17 那次 httpapi 504.9s 通过，之后 store 599.8s 只差 0.2s 就红）。现在 race 步骤显式给到
+  每包 20 分钟、作业预算 40 分钟；步骤再红时先看是不是 `DATA RACE`，超时不再是"这套测试跑不完"
+  的常态解释。
+- **测试不再泄漏路由器的后台调度器**：`NewWithDependencies` 会起 alert / balance / health sweep、
+  alert rules、daily summary、model catalog、DB GC、probe、update check、recovery loop，各自注册
+  停止回调；生产在关机路径统一 `StopBackground`，测试却从不调用，于是每个测试建过的 router 都把
+  自己的调度器留到进程退出（实测 44 个泄漏 router ≈ 458 个常驻 goroutine，且随测试数线性增长，
+  还持续对着已关闭的库打点）。新增 `NewTestRouter(t, cfg, db, enc)` 作为测试建 router 的唯一入口，
+  测试结束自动 `StopBackground`；另加一个不变量测试（router 停掉后不得剩 goroutine）与 TestMain
+  兜底（有停止回调没被 drain 直接判失败），避免这条约定再次腐化。注：这属于资源与关机语义问题，
+  **不是** race 超时的成因（A/B 实测每测试耗时比值中位数 1.056，即噪声）。
+
 ## [v3.1.1] — 2026-09-20
 
 ### Added
