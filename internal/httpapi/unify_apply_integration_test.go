@@ -29,7 +29,7 @@ func TestUnifyApplySkipsUnadoptedVariants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := httpapi.New(&config.Config{
+	handler := httpapi.NewTestRouter(t, &config.Config{
 		AdminToken:  "admin-secret",
 		AdminTokens: []string{"admin-secret"},
 	}, db, enc)

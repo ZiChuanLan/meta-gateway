@@ -28,7 +28,7 @@ func credentialMetaTestServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("crypto: %v", err)
 	}
-	handler := httpapi.New(&config.Config{
+	handler := httpapi.NewTestRouter(t, &config.Config{
 		AdminToken:         "admin-secret",
 		AdminTokens:        []string{"admin-secret"},
 		OutboundAllowCIDRs: []string{"127.0.0.0/8", "::1/128"},

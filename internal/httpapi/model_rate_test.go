@@ -74,7 +74,7 @@ func setupRelayWithModelLimit(t *testing.T, baseURL string) (string, string, int
 		t.Fatal(err)
 	}
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, RelayModelRatePerMinute: 2, RelayModelRateBurst: 1, OutboundAllowCIDRs: []string{"127.0.0.1/32"}}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 
 	// Wire entities (site/credential/channel/route/member/key) — reuse the

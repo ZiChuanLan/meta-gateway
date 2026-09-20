@@ -45,7 +45,7 @@ func setupServer(t *testing.T, upstreamURL string) (string, string, *store.DB) {
 		OutboundTLSHandshakeTimeout:   2 * time.Second,
 		OutboundResponseHeaderTimeout: 2 * time.Second,
 	}
-	handler := httpapi.New(cfg, db, enc)
+	handler := httpapi.NewTestRouter(t, cfg, db, enc)
 
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -673,7 +673,7 @@ func TestProxyLogsListFilters(t *testing.T) {
 		OutboundTLSHandshakeTimeout:   2 * time.Second,
 		OutboundResponseHeaderTimeout: 2 * time.Second,
 	}
-	srv := httptest.NewServer(httpapi.New(cfg, db, enc))
+	srv := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(srv.Close)
 
 	// Seed via store so we control channel/site ids without full admin bootstrap.

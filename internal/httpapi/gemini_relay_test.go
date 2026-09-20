@@ -67,7 +67,7 @@ func setupRelay(t *testing.T, baseURL, typeHint string) (string, string, int64) 
 		t.Fatal(err)
 	}
 	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, CrossChannelFailoverEnabled: true}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 
 	var site struct{ ID int64 }
@@ -118,7 +118,7 @@ func setupRelayPair(t *testing.T, baseURLA, baseURLB string) (string, string, in
 		t.Fatal(err)
 	}
 	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, RetryTimes: 2, CrossChannelFailoverEnabled: true}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 
 	var site struct{ ID int64 }
@@ -771,7 +771,7 @@ func TestStableFirstGraySplitAndPromotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 
 	var site struct{ ID int64 }
@@ -977,7 +977,7 @@ func TestConcurrencyGuardSpreadsBurst(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{AdminToken: "admin-test", AdminTokens: []string{"admin-test"}, MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, StableFirstDenominator: 25, StableFirstPromoteRequests: 100, WebhookThrottleSeconds: 300}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 
 	var site struct{ ID int64 }
@@ -1113,7 +1113,7 @@ func TestWebhookNotifiesDisableAndRecovery(t *testing.T) {
 		ChannelAutoDisableThreshold: 1,
 		RecoveryProbeEnabled:        true, RecoveryProbeIntervalSeconds: 10,
 	}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 
 	var site struct{ ID int64 }

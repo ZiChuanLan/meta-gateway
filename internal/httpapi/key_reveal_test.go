@@ -43,7 +43,7 @@ func revealTestServer(t *testing.T) (*httptest.Server, *store.DB, *crypto.Encryp
 		OutboundTLSHandshakeTimeout:   2 * time.Second,
 		OutboundResponseHeaderTimeout: 2 * time.Second,
 	}
-	handler := httpapi.New(cfg, db, enc)
+	handler := httpapi.NewTestRouter(t, cfg, db, enc)
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	return srv, db, enc

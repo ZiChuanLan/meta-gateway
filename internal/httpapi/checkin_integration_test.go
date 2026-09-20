@@ -35,7 +35,7 @@ func TestCheckinAdminWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := httpapi.New(&config.Config{
+	handler := httpapi.NewTestRouter(t, &config.Config{
 		AdminToken:                "admin-secret",
 		AdminTokens:               []string{"admin-secret"},
 		ExchangeAllowSecretExport: true,
@@ -184,7 +184,7 @@ func TestExternalCheckinAdminWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := httpapi.New(&config.Config{
+	handler := httpapi.NewTestRouter(t, &config.Config{
 		AdminToken:                "admin-secret",
 		AdminTokens:               []string{"admin-secret"},
 		ExchangeAllowSecretExport: true,

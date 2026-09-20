@@ -37,7 +37,7 @@ func catalogServer(t *testing.T) string {
 		ModelCatalogInterval:   24 * time.Hour,
 		ModelCatalogSyncPrices: true,
 	}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 	return server.URL
 }

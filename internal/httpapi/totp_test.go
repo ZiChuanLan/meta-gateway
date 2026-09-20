@@ -34,7 +34,7 @@ func setupTOTPServer(t *testing.T) *httptest.Server {
 		MetricsToken: "metrics-test",
 		BackupDir:    dataDir + "/backups",
 	}
-	srv := httptest.NewServer(httpapi.New(cfg, db, enc))
+	srv := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(srv.Close)
 	return srv
 }

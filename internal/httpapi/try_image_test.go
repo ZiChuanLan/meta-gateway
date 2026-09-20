@@ -67,7 +67,7 @@ func setupImageRelayWithStore(t *testing.T, baseURL, model string) (string, stri
 		AuditRetentionDays: 90, AuditRetentionRows: 100000,
 		OutboundAllowCIDRs: []string{"127.0.0.1/32"},
 	}
-	server := httptest.NewServer(httpapi.New(cfg, db, enc))
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
 
 	var site struct{ ID int64 }
