@@ -166,6 +166,18 @@
   background: color-mix(in srgb, var(--warning) 10%, var(--surface));
 }
 
+/* Classic top-aligns `.panel-header` where the base sheet (styles/system.css)
+   asks for `center`. Top-alignment only reads as aligned while every item is the
+   same height — but a header pairs a ~21px title with the 38px window picker, so
+   the two tops met and the two optical centres missed by 7px (8.5px on the log
+   histogram, 2.25px wherever a `.panel-muted` readout sits opposite the title).
+   The title looked lifted and the control looked sunk. Centring resolves per
+   flex line, so `flex-wrap` still owns overflow: a title that wraps above its
+   toolbar keeps its own row and is unaffected. */
+:root[data-appearance="classic"] .panel-header {
+  align-items: center;
+}
+
 /* A folded panel keeps only its header. Classic draws that header with a
    bottom divider plus 14px of padding and pads the panel 24/26px, so a lone
    title would sit above a stray rule inside an oversized box. */
