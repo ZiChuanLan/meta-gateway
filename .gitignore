@@ -21,6 +21,11 @@ web/coverage/
 # repro working trees and debug databases. Mirrors .dockerignore's `.tmp-*`.
 .tmp-*
 
+# Second scratch convention used by later agent sessions (A/B harnesses,
+# race-test binaries, verification screenshots). Race binaries alone are ~47 MB
+# each, so keep the whole directory local-only.
+.shots/
+
 # Accidental root lockfile (frontend lock lives under web/)
 /package-lock.json
 
