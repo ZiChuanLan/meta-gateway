@@ -74,7 +74,8 @@ import type {
   ProbeTask,
   ModelProbeResult,
   ModelHealth,
-	ProbeStartRequest,
+  ProbeStartRequest,
+  ChannelModelTestResult,
 } from "./types";
 
 export class ApiError extends Error {
@@ -652,6 +653,29 @@ export const api = (client: ApiClient) => ({
       priority?: number;
       weight?: number;
     }>("/admin/try/chat", body),
+  /**
+   * Route-free single-model check: "does this channel serve this model at
+   * all?". Because it skips route selection it can test models that are not
+   * adopted yet, which is exactly the question the connection drawer asks
+   * before committing candidates to a route.
+   *
+   * The upstream verdict is the payload, so a refused model comes back as a
+   * 200 with `ok: false`; only a malformed request throws.
+   */
+  tryChannelModel: (
+    body: {
+      channel_id: number;
+      model: string;
+      prompt?: string;
+      max_tokens?: number;
+    },
+    signal?: AbortSignal,
+  ) =>
+    client.request<ChannelModelTestResult>("/admin/try/channel-model", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
   /**
    * Streams one playground turn. Returns the raw SSE response; the caller
    * reads `body` and aborts via the signal. First frame is always `meta`.

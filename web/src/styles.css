@@ -6259,6 +6259,98 @@ td.actions {
   flex: 1;
   min-width: 0;
 }
+/* Route-free 试调: one channel, its whole inventory, one verdict per row. The
+   layout mirrors .channel-model-row so the dialog and the drawer read as the
+   same list, and every colour comes from a theme variable so both appearances
+   resolve it without a classic-specific override. */
+.channel-model-test-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.channel-model-test-bar .probe-search {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.channel-model-test-knob {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: help;
+}
+.channel-model-test-knob input {
+  width: 64px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+.channel-model-test-list {
+  padding-right: 4px;
+}
+.channel-model-test-name {
+  flex: 1 1 200px;
+}
+.channel-model-test-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.channel-model-test-idle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.channel-model-test-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.channel-model-test-badge.is-pass {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 32%, var(--line));
+}
+.channel-model-test-badge.is-fail {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+}
+.channel-model-test-latency {
+  font-size: 12px;
+  color: var(--muted-dark);
+  font-variant-numeric: tabular-nums;
+}
+.channel-model-test-error {
+  flex: 0 1 300px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--muted-dark);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel-model-test-run {
+  flex: 0 0 auto;
+}
 .channel-model-toggle {
   display: inline-flex;
   align-items: center;

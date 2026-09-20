@@ -508,6 +508,31 @@ export const en: Dict = {
   "channels.modelsManage": "Manage",
   "channels.modelsManageHint":
     "Enable/disable models and assign outward alias names for this channel.",
+  "channels.testAction": "Test",
+  "channels.testActionHint":
+    "Send one real call to this channel's model without adopting it into a route.",
+  "channels.testDialog.title": "Test · {name}",
+  "channels.testDialog.description":
+    "Sends one tiny real request per model to see whether it actually answers. Routing, health state and billing records are left untouched.",
+  "channels.testDialog.search": "Search models",
+  "channels.testDialog.maxTokens": "max tokens",
+  "channels.testDialog.maxTokensHint":
+    "Reasoning models may need a larger budget before they return any content.",
+  "channels.testDialog.onlyFailures": "Failures only",
+  "channels.testDialog.showAll": "Show all",
+  "channels.testDialog.start": "Test all",
+  "channels.testDialog.stop": "Stop",
+  "channels.testDialog.progress":
+    "Tested {done}/{total} · {ok} passed · {fail} failed",
+  "channels.testDialog.idle": "Not tested",
+  "channels.testDialog.testing": "Testing",
+  "channels.testDialog.ok": "Passed",
+  "channels.testDialog.failed": "Failed",
+  "channels.testDialog.test": "Test",
+  "channels.testDialog.retest": "Retest",
+  "channels.testDialog.adopted": "Adopted",
+  "channels.testDialog.empty": "No model matches the filter.",
+  "channels.testDialog.noFailures": "No failing model right now.",
   "channels.backToChannels": "Back to connections",
   "channels.aliasStat": "Aliased",
   "channels.aliasConflict": "Alias {alias} is already used by another model",

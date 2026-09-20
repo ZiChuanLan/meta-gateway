@@ -394,6 +394,20 @@ export interface ModelProbeResult {
   probed_at: string;
 }
 
+/**
+ * Verdict of one route-free upstream check: "does this channel serve this
+ * model?". Unlike ModelProbeResult it is never persisted — the connection
+ * drawer's 试调 is a look-before-you-adopt action, so it writes no health
+ * state and can never take a channel out of rotation.
+ */
+export interface ChannelModelTestResult {
+  model: string;
+  ok: boolean;
+  status_code: number;
+  latency_ms: number;
+  error?: string;
+}
+
 /** Latest known state of a (channel, model) pair. */
 export interface ModelHealth {
   channel_id: number;

@@ -1,4 +1,4 @@
-import { ChevronDown, ExternalLink, RefreshCw } from "lucide-react";
+import { ChevronDown, ExternalLink, FlaskConical, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -25,6 +25,7 @@ import {
   userAuthFieldsFor,
 } from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
+import { ChannelModelTestDialog } from "./ChannelModelTestDialog";
 
 export function EditChannelDialog({
   value,
@@ -228,6 +229,7 @@ export function EditChannelDialog({
   // must lead somewhere visible: open the section automatically. Only once —
   // an operator who collapses it again keeps it collapsed.
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [testOpen, setTestOpen] = useState(false);
   const userIDInvalid = userID !== "" && !/^[0-9]+$/.test(userID);
   const userIDMissing = Boolean(userCredential?.id) && userID === "";
   const autoOpenedForMissingUserID = useRef(false);
@@ -292,12 +294,15 @@ export function EditChannelDialog({
       );
     });
 
-  // Real model names this channel already serves, resolved through alias
-  // mappings ({"real": …} on the member, falling back to the route) so the
-  // counter stays correct for renamed models. Powers the "N models · M
-  // adopted" readout: in manual mode M is 0 by design, and a bare zero reads
-  // as a bug unless the total is shown next to it.
-  const adoptedCount = useMemo(() => {
+  // This channel's own model inventory, annotated with whether it is already
+  // served. One source of truth for both the "N models · M adopted" readout and
+  // the 试调 dialog, so the two can never disagree about what counts as adopted.
+  //
+  // Adoption is resolved through alias mappings ({"real": …} on the member,
+  // falling back to the route) so the count stays correct for renamed models:
+  // in manual sync mode M is 0 by design, and a bare zero reads as a bug unless
+  // the total is shown next to it.
+  const testModels = useMemo(() => {
     const bound = new Set<string>();
     for (const overview of routeOverviews ?? []) {
       const routeReal = mappingReal(overview.route.mapping_json);
@@ -309,14 +314,20 @@ export function EditChannelDialog({
         else bound.add(overview.route.model_pattern);
       }
     }
-    return (discovered.data ?? []).filter((model) =>
-      bound.has(model.model_name),
-    ).length;
+    return (discovered.data ?? []).map((model) => ({
+      name: model.model_name,
+      adopted: bound.has(model.model_name),
+    }));
   }, [routeOverviews, discovered.data, value.id]);
+  const adoptedCount = useMemo(
+    () => testModels.filter((model) => model.adopted).length,
+    [testModels],
+  );
 
   return (
-    <Drawer
-      title={t("channels.edit")}
+    <>
+      <Drawer
+        title={t("channels.edit")}
       onClose={onClose}
       busy={pending}
       footer={
@@ -543,6 +554,16 @@ export function EditChannelDialog({
             <h3>{t("channels.modelsSection")}</h3>
             <span className="detail-section-count">{editModels.length}</span>
             <div className="detail-section-actions">
+              <button
+                type="button"
+                className="detail-section-expand connection-manage-button"
+                onClick={() => setTestOpen(true)}
+                disabled={editModels.length === 0}
+                title={t("channels.testActionHint")}
+              >
+                <FlaskConical size={12} />
+                {t("channels.testAction")}
+              </button>
               {onRefreshModels ? (
                 <button
                   type="button"
@@ -944,5 +965,17 @@ export function EditChannelDialog({
         {error ? <ErrorState error={error} /> : null}
       </>
     </Drawer>
+      {/* Outside the drawer's body on purpose: that body is a <fieldset> the
+          drawer disables while saving, and a nested fieldset cannot re-enable
+          itself — the smoke test must stay usable while a save is pending. */}
+      {testOpen ? (
+        <ChannelModelTestDialog
+          channelId={value.id}
+          channelName={value.name}
+          models={testModels}
+          onClose={() => setTestOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
