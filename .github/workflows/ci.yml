@@ -10,7 +10,15 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # `-race` is the long pole, not the frontend or the E2E job. It instruments
+    # pure-Go SQLite, and every test that opens a fresh database replays all
+    # 101 migrations: ~3.4s under -race versus ~0.14s without (measured). That
+    # makes internal/store ~500s and internal/httpapi ~700s on their own, so
+    # the 10-minute *default* per-package -timeout sat on the cliff — the
+    # 2026-09-17 run finished internal/httpapi at 504.9s, and a later run had
+    # internal/store pass at 599.8s with 0.2s to spare. Budget for the step
+    # instead of gambling on it.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -39,7 +47,13 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Race test
-        run: go test -race ./...
+        # -timeout applies per package. 20m is roughly double the worst package
+        # measured (internal/httpapi, ~700s) which absorbs the ~30% run-to-run
+        # variance we see on shared runners, while still bounding a genuine
+        # deadlock. A race failure here is a real finding: the instrumented
+        # suite is clean, and the only thing that used to fail the step was the
+        # timeout, on a suite that reported no DATA RACE.
+        run: go test -race -timeout 20m ./...
       - name: Build
         run: go build -trimpath ./cmd/server
       - name: Validate Compose
