@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -1056,5 +1057,98 @@ describe("Channels edit dialog user id", () => {
         /No user credential is set\. Fill in the User Access Token/,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Channels cooldown freshness", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("clears a cooling verdict without a page switch", async () => {
+    // Regression: the page carried no refetch interval of its own, so a channel
+    // leaving cooldown kept rendering "Degraded" (with the "route members are
+    // cooling down" tooltip) until the operator navigated away and back, which
+    // remounted the query observer and forced the refetch.
+    vi.useFakeTimers();
+    let cooling = true;
+    const overview = () => ({
+      channel: {
+        id: 5,
+        name: "cooling-channel",
+        base_url: "https://api.example.com",
+        models_csv: "",
+        group_name: "default",
+        priority: 0,
+        weight: 100,
+        status: "enabled",
+        created_at: "",
+        updated_at: "",
+      },
+      credential_kind: "api_key",
+      checkin_enabled: false,
+      has_user_credential: false,
+      has_platform_user_id: false,
+      has_api_key: true,
+      site_usable: true,
+      credential_usable: true,
+      model_count: 1,
+      discovered_model_count: 1,
+      last_probe_at: "2026-08-02T00:00:00Z",
+      last_probe_ok: true,
+      last_latency_ms: 5,
+      route_count: 1,
+      enabled_member_count: 1,
+      cooling_member_count: cooling ? 1 : 0,
+      failure_count: 0,
+      checkin_supported: true,
+      account_supported: true,
+      health_state: cooling ? "degraded" : "healthy",
+      health_reason: cooling ? "route_cooling" : "probe_ok",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input).split("?")[0] ?? "";
+        switch (path) {
+          case "/admin/channels/overview":
+            return jsonResponse([overview()]);
+          case "/admin/sites":
+          case "/admin/channels":
+          case "/admin/routes/overview":
+          case "/admin/plugins/status":
+            return jsonResponse([]);
+          default:
+            return jsonResponse({ error: `unexpected ${path}` }, 500);
+        }
+      }),
+    );
+
+    renderChannels();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByTestId("channel-health-badge")).toHaveTextContent(
+      "Degraded",
+    );
+
+    // The backend now reports the cooldown as over; the page has to notice on
+    // its own poll rather than on the next mount.
+    cooling = false;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_100);
+    });
+    expect(screen.getByTestId("channel-health-badge")).toHaveTextContent(
+      "Healthy",
+    );
   });
 });

@@ -55,6 +55,7 @@ import { useSession } from "../session";
 import { TryPanel } from "./TryPanel";
 import { positiveId } from "../lib/positiveId";
 import { formatTokens } from "../lib/format";
+import { useCooldownExpiry } from "../lib/cooldownClock";
 import { modelGroup } from "./models/modelGroups";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
 import { RouteDialog } from "./models/RouteDialog";
@@ -501,6 +502,13 @@ function ModelCatalog({
           activeGroup,
       ),
     [activeGroup, orderedMembers],
+  );
+  // `candidateState` reads the wall clock, so without this a member whose
+  // cooldown has just elapsed keeps showing 冷却中 / offering 清除冷却 until the
+  // 15s poll (or a page switch) lands. Re-render the row at the deadline
+  // instead of waiting for unrelated state to change.
+  useCooldownExpiry(
+    visibleMembers.map((candidate) => candidate.member.cooldown_until),
   );
   const explain = useQuery({
     queryKey: ["explain", selected, activeGroup],

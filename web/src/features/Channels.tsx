@@ -106,9 +106,15 @@ export function Channels() {
   const [params, setParams] = useSearchParams();
   const searchParam = params.get("search") ?? "";
   const navigate = useNavigate();
+  // Cooldown counters (`cooling_member_count`, `failure_count`) are computed
+  // live by the backend from `route_members.cooldown_until`, and the degraded
+  // verdict + reason tooltip hang off them. Without an interval of our own the
+  // page only refreshed on the shell's 30s tick, so a channel entering or
+  // leaving cooldown looked stuck until the operator switched pages.
   const overviews = useQuery({
     queryKey: ["channel-overviews"],
     queryFn: ({ signal }) => service.channelOverviews(signal),
+    refetchInterval: 15_000,
   });
   const sites = useQuery({
     queryKey: ["sites"],
