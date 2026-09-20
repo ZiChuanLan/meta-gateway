@@ -22,18 +22,36 @@ import (
 // TryHandler lets the admin console probe chat completions without a downstream key.
 // Auth is the admin Bearer; upstream selection uses the same routing/proxy path as /v1.
 // Optional channel_id pins a specific upstream when multiple members share the model name.
+//
+// /try/channel-model is the exception: it answers "does this channel serve this
+// model at all", so it deliberately bypasses route selection (see
+// proxy.Service.DirectChatTest) and can therefore test models that are not
+// adopted yet.
 type TryHandler struct {
-	proxy RelayProxy
-	db    *store.DB
+	proxy  RelayProxy
+	db     *store.DB
+	tester ChannelModelTester
+}
+
+// ChannelModelTester is the route-free upstream check behind the connection
+// drawer's 试调 action. Satisfied by *proxy.Service.
+type ChannelModelTester interface {
+	DirectChatTest(ctx context.Context, channelID int64, model, prompt string, maxTokens int) proxy.DirectTestResult
 }
 
 func NewTryHandler(service RelayProxy, db *store.DB) *TryHandler {
 	return &TryHandler{proxy: service, db: db}
 }
 
+// SetChannelModelTester installs the direct tester (nil disables the route).
+func (h *TryHandler) SetChannelModelTester(tester ChannelModelTester) {
+	h.tester = tester
+}
+
 func (h *TryHandler) Register(r chi.Router) {
 	r.Post("/try/chat", h.tryChat)
 	r.Post("/try/image", h.tryImage)
+	r.Post("/try/channel-model", h.tryChannelModel)
 }
 
 type tryChatMessage struct {
@@ -290,6 +308,58 @@ func (h *TryHandler) writeTryChatError(w http.ResponseWriter, r *http.Request, r
 		message = message[:300] + "…"
 	}
 	writeError(w, http.StatusBadGateway, message)
+}
+
+// tryChannelModelPromptCap keeps one pasted transcript from turning a smoke
+// test into a large admin body; the router would reject it anyway.
+const tryChannelModelPromptCap = 8 << 10
+
+type tryChannelModelRequest struct {
+	ChannelID int64  `json:"channel_id"`
+	Model     string `json:"model"`
+	Prompt    string `json:"prompt"`
+	MaxTokens int    `json:"max_tokens"`
+}
+
+// tryChannelModel answers "does this channel serve this model?" for the
+// connection drawer, without requiring the model to be an adopted route member.
+//
+// The upstream's verdict IS the payload, so an upstream 401 or 404 is a
+// successful call reporting a failed test: HTTP 200 with ok=false. Only a
+// malformed request (400) or a missing tester (503) is a transport failure.
+// Keeping that split means the console never has to guess which failures it is
+// allowed to render as a result row.
+func (h *TryHandler) tryChannelModel(w http.ResponseWriter, r *http.Request) {
+	var request tryChannelModelRequest
+	if err := decodeJSON(w, r, &request, 1<<20, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if request.ChannelID <= 0 {
+		writeError(w, http.StatusBadRequest, "channel_id is required")
+		return
+	}
+	model := strings.TrimSpace(request.Model)
+	if model == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	if len([]byte(model)) > 256 {
+		writeError(w, http.StatusBadRequest, "model is too long")
+		return
+	}
+	if len(request.Prompt) > tryChannelModelPromptCap {
+		writeError(w, http.StatusBadRequest, "prompt is too large")
+		return
+	}
+	if h.tester == nil {
+		writeError(w, http.StatusServiceUnavailable, "channel model tester unavailable")
+		return
+	}
+	// The request context owns the upstream call, so closing the dialog stops
+	// the check instead of leaving it to run out its timeout.
+	result := h.tester.DirectChatTest(r.Context(), request.ChannelID, model, request.Prompt, request.MaxTokens)
+	writeJSON(w, http.StatusOK, result)
 }
 
 // streamTryChat hands an upstream SSE body to the console.

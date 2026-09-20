@@ -348,7 +348,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		exchangeService.SetKeySyncer(account.ExchangeKeySyncer{Service: accountService})
 	}
 	NewAccountHandler(accountService).Register(adminGroup)
-	NewTryHandler(proxyService, db).Register(adminGroup)
+	tryHandler := NewTryHandler(proxyService, db)
+	// The connection drawer's 试调 action asks whether a channel serves a model
+	// at all, before the model is adopted into a route — which is why it needs
+	// the route-free path rather than the ordinary try/chat relay.
+	tryHandler.SetChannelModelTester(proxyService)
+	tryHandler.Register(adminGroup)
 	// Model probing rides the same proxy path as /v1, so it needs the live
 	// proxy service rather than its own upstream client.
 	probeService := probe.NewService(db, proxyService, logger)
