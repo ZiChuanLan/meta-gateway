@@ -14,7 +14,6 @@ import {
   HeartPulse,
   Play,
   ScrollText,
-  Timer,
   TrendingUp,
   Wallet,
   Zap,
@@ -353,21 +352,6 @@ export function Dashboard() {
       <div className="cockpit-stack">
         <SetupGuide />
 
-        {/* 0. 时间区间：驱动本页所有读数、图表与排行 */}
-        <div className="dashboard-range-bar">
-          <span className="dashboard-range-label">
-            <Timer size={13} />
-            {t("timeRange.label")}
-          </span>
-          <TimeRangePicker
-            range={range}
-            onRefresh={() => {
-              setZoom(null);
-              void series.refetch();
-            }}
-          />
-        </div>
-
         {/* 1. 终端接入端点条 (Gateway Endpoint Strip) */}
         <EndpointStrip />
 
@@ -439,7 +423,8 @@ export function Dashboard() {
           />
         </div>
 
-        {/* 3. 全景流量波形与状态分布监视舱 (Traffic & Result Matrix) */}
+        {/* 3. 全景流量波形与状态分布监视舱 (Traffic & Result Matrix)
+               时间区间控件就落在本面板表头，紧贴它所解释的窗口读数。 */}
         <Panel className="cockpit-panel cockpit-chart-panel">
           <div className="panel-header cockpit-chart-header">
             <div className="cockpit-chart-title">
@@ -464,13 +449,25 @@ export function Dashboard() {
                 {t("dashboard.granularity", { unit: t(grain.key, { n: grain.n }) })}
               </span>
             </div>
-            <span className="panel-muted">
-              {zoom
-                ? t("dashboard.chartDetailSummary", {
-                    n: (series.data?.requests ?? []).reduce((sum, n) => sum + n, 0),
-                  })
-                : t("dashboard.rangeTokens", { n: formatTokens(windowTokens) })}
-            </span>
+            {/* The window control belongs with the readout it explains, not on
+                a full-width bar above the fold. */}
+            <div className="chart-header-tools">
+              <TimeRangePicker
+                range={range}
+                compact
+                onRefresh={() => {
+                  setZoom(null);
+                  void series.refetch();
+                }}
+              />
+              <span className="panel-muted">
+                {zoom
+                  ? t("dashboard.chartDetailSummary", {
+                      n: (series.data?.requests ?? []).reduce((sum, n) => sum + n, 0),
+                    })
+                  : t("dashboard.rangeTokens", { n: formatTokens(windowTokens) })}
+              </span>
+            </div>
           </div>
           <HourlyTrafficChart
             key={zoom ? `zoom-${zoom.since}` : "overview"}

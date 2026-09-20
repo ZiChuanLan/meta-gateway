@@ -106,7 +106,7 @@ describe("proxy log filters", () => {
   });
 });
 
-describe("latency distribution at the top of the log page", () => {
+describe("log page reading order", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -114,6 +114,20 @@ describe("latency distribution at the top of the log page", () => {
     localStorage.setItem("meta-gateway.admin-token", "test-token");
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  // "How many rows, how many of them failed" is the question the page opens
+  // with, so the readouts sit above every panel rather than between two.
+  it("opens with the readout strip, above the distribution", async () => {
+    const { container } = renderLogs();
+    await screen.findByText("fast-model");
+    const strip = container.querySelector(".logs-overview");
+    const panel = container.querySelector(".latency-panel");
+    expect(strip).not.toBeNull();
+    expect(panel).not.toBeNull();
+    expect(
+      strip!.compareDocumentPosition(panel!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 
   // The distribution used to be a collapsed strip under the table, which made
   // "what is slow right now" the last thing anyone saw.

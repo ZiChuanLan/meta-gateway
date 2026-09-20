@@ -153,6 +153,21 @@ describe("dashboard time range", () => {
     expect(screen.getByTestId("location").textContent).toContain("range=30d");
   });
 
+  // The window control used to own a full-width bar above the fold; it now
+  // lives in the chart panel header, next to the readout it explains.
+  it("keeps the window control inside the chart panel header", async () => {
+    const { container } = renderDashboard();
+    await screen.findAllByText("gpt-image-2");
+    expect(container.querySelector(".dashboard-range-bar")).toBeNull();
+    const header = container.querySelector(".cockpit-chart-header");
+    const picker = header?.querySelector(".time-range");
+    expect(picker).not.toBeNull();
+    expect(
+      header!.compareDocumentPosition(picker!) &
+        Node.DOCUMENT_POSITION_CONTAINED_BY,
+    ).toBeTruthy();
+  });
+
   it("zooms into a single bucket by requesting that sub-window", async () => {
     const { windowed, container } = renderDashboard();
     await screen.findAllByText("gpt-image-2");

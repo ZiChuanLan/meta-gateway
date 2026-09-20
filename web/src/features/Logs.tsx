@@ -317,7 +317,53 @@ function ProxyLogsPanel() {
 
   return (
     <>
-      {/* 延迟分布 — 一等公民面板，置于日志页最上方（原为页面底部的折叠条）。 */}
+      {/* 读数条先行：这一页现在有多少条、错了几条，是打开页面第一个问题。 */}
+      <div className="logs-overview">
+        <TelemetryStrip
+          items={[
+            {
+              label: t("logsPage.stat.shown"),
+              value: logs.isPending ? "—" : rows.length,
+              tone: "primary",
+            },
+            {
+              label: t("logsPage.stat.failed"),
+              value: logs.isPending ? "—" : failedCount,
+              tone: "danger",
+            },
+            {
+              label: t("logsPage.stat.failRate"),
+              value:
+                logs.isPending || rows.length === 0
+                  ? "—"
+                  : `${Math.round((failedCount / rows.length) * 100)}%`,
+              tone: rows.length === 0 || failedCount / Math.max(1, rows.length) < 0.05 ? "success" : "warning",
+            },
+          ]}
+        />
+        <div className="logs-overview-actions">
+          <Button
+            variant="secondary"
+            icon={<Download size={15} />}
+            disabled={rows.length === 0}
+            onClick={exportCSV}
+          >
+            {t("logsPage.export")}
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<RefreshCw size={16} />}
+            onClick={() => {
+              void logs.refetch();
+              void histogram.refetch();
+            }}
+          >
+            {t("common.refresh")}
+          </Button>
+        </div>
+      </div>
+
+      {/* 延迟分布 — 一等公民面板，紧跟读数条（原为页面底部的折叠条）。 */}
       <Panel className="latency-panel">
         <div className="panel-header latency-panel-header">
           <div className="cockpit-panel-title">
@@ -412,53 +458,6 @@ function ProxyLogsPanel() {
           </>
         )}
       </Panel>
-
-      <div className="logs-overview">
-      <TelemetryStrip
-        items={[
-          {
-            label: t("logsPage.stat.shown"),
-            value: logs.isPending ? "—" : rows.length,
-            tone: "primary",
-          },
-          {
-            label: t("logsPage.stat.failed"),
-            value: logs.isPending ? "—" : failedCount,
-            tone: "danger",
-          },
-          {
-            label: t("logsPage.stat.failRate"),
-            value:
-              logs.isPending || rows.length === 0
-                ? "—"
-                : `${Math.round((failedCount / rows.length) * 100)}%`,
-            tone: rows.length === 0 || failedCount / Math.max(1, rows.length) < 0.05 ? "success" : "warning",
-          },
-        ]}
-      />
-        <div className="logs-overview-actions">
-          <Button
-            variant="secondary"
-            icon={<Download size={15} />}
-            disabled={rows.length === 0}
-            onClick={exportCSV}
-          >
-            {t("logsPage.export")}
-          </Button>
-          <Button
-            variant="secondary"
-            icon={<RefreshCw size={16} />}
-            onClick={() => {
-              void logs.refetch();
-              void histogram.refetch();
-            }}
-          >
-            {t("common.refresh")}
-          </Button>
-        </div>
-      </div>
-
-
 
       <div className="logs-split">
         <Panel className="ops-list-panel">
