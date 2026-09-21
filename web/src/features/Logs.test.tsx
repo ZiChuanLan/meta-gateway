@@ -15,7 +15,7 @@ function LocationProbe() {
   </>;
 }
 
-function renderLogs(initialEntry = "/logs") {
+function renderLogs(initialEntry = "/logs", rows?: unknown[]) {
   const requests: URLSearchParams[] = [];
   const histogramRequests: URLSearchParams[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -23,7 +23,7 @@ function renderLogs(initialEntry = "/logs") {
     let body: unknown = [];
     if (url.pathname === "/admin/proxy-logs") {
       requests.push(url.searchParams);
-      body = [
+      body = rows ?? [
         { id: 2, request_id: "req-fast", model: "fast-model", status: 200, latency_ms: 100, attempt: 1 },
         { id: 1, request_id: "req-slow", model: "slow-model", status: 502, latency_ms: 6000, attempt: 1 },
       ];
@@ -197,5 +197,33 @@ describe("log page reading order", () => {
     expect(
       screen.getByText("The end time is before the start time"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("shared alias attribution", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  // One client-facing alias can be served by several real upstream models, so
+  // after the fact the row is the only place that says which one ran. Losing
+  // this makes a round-robin alias unaccountable.
+  it("names the real upstream model when an alias stood in for it", async () => {
+    renderLogs("/logs", [
+      { id: 3, request_id: "req-a", model: "unified", upstream_model: "claude-sonnet-4", status: 200, latency_ms: 10, attempt: 1 },
+      { id: 2, request_id: "req-b", model: "unified", upstream_model: "gpt-5-mini", status: 200, latency_ms: 10, attempt: 1 },
+      { id: 1, request_id: "req-c", model: "plain", upstream_model: "plain", status: 200, latency_ms: 10, attempt: 1 },
+    ]);
+
+    expect(await screen.findByText("origin claude-sonnet-4")).toBeInTheDocument();
+    expect(screen.getByText("origin gpt-5-mini")).toBeInTheDocument();
+    // The alias is still what the caller sent, so it stays the row's headline.
+    expect(screen.getAllByText("unified")).toHaveLength(2);
+    // No rewrite happened here — repeating the name as a badge is pure noise.
+    expect(screen.queryByText("origin plain")).not.toBeInTheDocument();
   });
 });

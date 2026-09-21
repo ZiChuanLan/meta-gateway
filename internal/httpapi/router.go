@@ -217,11 +217,18 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	adminGroup.Use(rateLimitMiddleware(adminLimiter, func(*http.Request) int64 { return 0 }, "admin", metrics))
 	adminGroup.Use(withAdminBodyLimit(cfg.MaxAdminBodyBytes))
 	selector := routing.New(db.RouteMember)
-	var stickyStore *routing.StickyStore
-	if cfg.StickyEnabled {
-		stickyStore = routing.NewStickyStore(cfg.StickyTTL, nil)
-		selector.SetSticky(stickyStore)
+	// The affinity store is installed unconditionally, and StickyEnabled only
+	// decides what routes INHERIT: a route may force affinity on for one model
+	// (routes.sticky_session) on a gateway whose global default is off. A
+	// non-positive TTL can only come from a config that never enabled sticky
+	// and left the placeholder value; a zero TTL would expire every binding
+	// immediately, so fall back to the shipped default.
+	stickyTTL := cfg.StickyTTL
+	if stickyTTL <= 0 {
+		stickyTTL = routing.DefaultStickyTTL
 	}
+	stickyStore := routing.NewStickyStore(stickyTTL, nil)
+	selector.SetSticky(stickyStore, cfg.StickyEnabled)
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	proxyService.SetAdapterRegistry(registry)
 	proxyService.SetCredentialRefresher(checkinService)
@@ -461,9 +468,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			SetAudit:     auditHandler.SetRetention,
 			SetAuditLoop: dependencies.SetAuditRetention,
 			// Sticky hot-swap: rewire selector + proxy + admin handler so an
-			// admin toggle takes effect without a restart.
-			SetSticky: func(store *routing.StickyStore, ttl time.Duration) {
-				selector.SetSticky(store)
+			// admin toggle takes effect without a restart. enabled is the
+			// inherited default, not a hard switch — routes may override it,
+			// and the admin stats endpoint reads the default back off the
+			// selector rather than keeping its own copy.
+			SetSticky: func(store *routing.StickyStore, enabled bool, ttl time.Duration) {
+				selector.SetSticky(store, enabled)
 				proxyService.SetSticky(store)
 				adminHandler.SetSticky(store)
 			},

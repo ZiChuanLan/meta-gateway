@@ -175,6 +175,11 @@ type Request struct {
 	// RouteID is filled after selection so usage accounting can update a
 	// model-level stable-first route without changing the public relay API.
 	RouteID int64
+	// UpstreamModel is the model name actually sent upstream for this attempt,
+	// filled after selection: it differs from Model when the route or member
+	// rewrote the alias via a {"real":"…"} mapping. Recorded on the log row so
+	// a shared alias stays attributable.
+	UpstreamModel string
 	// MemberID is the route member that actually served the request, filled
 	// after selection. Billing needs the exact row: (route_id, channel_id) is
 	// not unique across route groups and alias members, so the member's own

@@ -74,7 +74,7 @@ func TestSelectStickyPrefersBoundChannel(t *testing.T) {
 	clock := fakeClock{now: now}
 	store := NewStickyStore(time.Minute, clock)
 	selector := NewWithDependencies(repo, clock, &fakeRandom{values: []int{1}})
-	selector.SetSticky(store)
+	selector.SetSticky(store, true)
 
 	// Without a session the heavy channel wins; with a bound session the
 	// bound channel wins even though its weight is tiny.
@@ -95,6 +95,68 @@ func TestSelectStickyPrefersBoundChannel(t *testing.T) {
 	}
 }
 
+// TestStickySessionRouteOverride pins the per-model tri-state: a route can
+// force affinity on where the gateway default is off, and off where it is on.
+// An opted-out route must not even count hits/escapes, so the store statistics
+// keep meaning "requests affinity actually looked at".
+func TestStickySessionRouteOverride(t *testing.T) {
+	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
+	forceOn, forceOff := true, false
+	cases := []struct {
+		name       string
+		override   *bool
+		defaultOn  bool
+		wantActive bool
+	}{
+		{name: "inherits the default when off", defaultOn: false, wantActive: false},
+		{name: "inherits the default when on", defaultOn: true, wantActive: true},
+		{name: "route forces on while the default is off", override: &forceOn, defaultOn: false, wantActive: true},
+		{name: "route forces off while the default is on", override: &forceOff, defaultOn: true, wantActive: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := fakeRepo{
+				route: &domain.Route{ID: 1, StickySession: tc.override},
+				candidates: []domain.RoutingCandidate{
+					stickyCandidate(1, 10, 1), stickyCandidate(2, 10, 100),
+				},
+			}
+			clock := fakeClock{now: now}
+			store := NewStickyStore(time.Minute, clock)
+			selector := NewWithDependencies(repo, clock, &fakeRandom{values: []int{1}})
+			selector.SetSticky(store, tc.defaultOn)
+			store.Bind("sess-1", 1, now)
+
+			decision, err := selector.SelectSticky(context.Background(), "model", nil, "sess-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if decision.StickyActive != tc.wantActive {
+				t.Fatalf("StickyActive=%v, want %v", decision.StickyActive, tc.wantActive)
+			}
+			if (decision.StickySessionOverride == nil) != (tc.override == nil) {
+				t.Fatalf("override not mirrored onto the explanation: %+v", decision.StickySessionOverride)
+			}
+			// Affinity on: the tiny bound channel wins. Off: the weighted draw
+			// (value 1 into weights 1/100) picks the heavy one.
+			wantChannel := int64(2)
+			if tc.wantActive {
+				wantChannel = 1
+			}
+			if decision.Selected.Channel.ID != wantChannel {
+				t.Fatalf("picked channel %d, want %d", decision.Selected.Channel.ID, wantChannel)
+			}
+			stats := store.Stats()
+			if !tc.wantActive && (stats.Hits != 0 || stats.Escapes != 0) {
+				t.Fatalf("an opted-out route must not touch sticky stats: %+v", stats)
+			}
+			if tc.wantActive && stats.Hits != 1 {
+				t.Fatalf("expected 1 hit, got %+v", stats)
+			}
+		})
+	}
+}
+
 func TestSelectStickyEscapesOnCooldown(t *testing.T) {
 	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
 	cooling := stickyCandidate(1, 10, 100)
@@ -106,7 +168,7 @@ func TestSelectStickyEscapesOnCooldown(t *testing.T) {
 	clock := fakeClock{now: now}
 	store := NewStickyStore(time.Minute, clock)
 	selector := NewWithDependencies(repo, clock, &fakeRandom{values: []int{0}})
-	selector.SetSticky(store)
+	selector.SetSticky(store, true)
 	store.Bind("sess-1", 1, now)
 
 	decision, err := selector.SelectSticky(context.Background(), "model", nil, "sess-1")
@@ -132,7 +194,7 @@ func TestSelectStickyEscapesOnExcluded(t *testing.T) {
 	clock := fakeClock{now: now}
 	store := NewStickyStore(time.Minute, clock)
 	selector := NewWithDependencies(repo, clock, &fakeRandom{values: []int{0}})
-	selector.SetSticky(store)
+	selector.SetSticky(store, true)
 	store.Bind("sess-1", 1, now)
 
 	// Channel 1 was already attempted in this request: sticky must escape.
@@ -153,7 +215,7 @@ func TestSelectStickyIgnoresExpiredBinding(t *testing.T) {
 	clock := fakeClock{now: now}
 	store := NewStickyStore(5*time.Minute, clock)
 	selector := NewWithDependencies(repo, clock, &fakeRandom{values: []int{1}})
-	selector.SetSticky(store)
+	selector.SetSticky(store, true)
 	store.Bind("sess-1", 1, now.Add(-10*time.Minute)) // bound before the store existed
 
 	decision, err := selector.SelectSticky(context.Background(), "model", nil, "sess-1")
@@ -189,7 +251,7 @@ func TestExplainWithSessionAnnotates(t *testing.T) {
 	clock := fakeClock{now: now}
 	store := NewStickyStore(time.Minute, clock)
 	selector := NewWithDependencies(repo, clock, &fakeRandom{values: []int{0}})
-	selector.SetSticky(store)
+	selector.SetSticky(store, true)
 	store.Bind("sess-1", 1, now)
 
 	explanation, err := selector.ExplainWithSession(context.Background(), "model", "sess-1")

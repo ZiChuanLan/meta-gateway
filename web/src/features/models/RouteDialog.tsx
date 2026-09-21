@@ -27,6 +27,7 @@ export function RouteDialog({
   members,
   pending,
   error,
+  stickyGlobalDefault,
   onClose,
   onSave,
 }: {
@@ -34,6 +35,12 @@ export function RouteDialog({
   members: RoutingCandidate[];
   pending: boolean;
   error: unknown;
+  /**
+   * The gateway-wide sticky-session default, so the "inherit" option can name
+   * what it actually inherits instead of leaving the operator to guess. Null
+   * while that setting is still loading.
+   */
+  stickyGlobalDefault?: boolean | null;
   onClose: () => void;
   onSave: (
     value: Partial<Route> & {
@@ -46,6 +53,9 @@ export function RouteDialog({
   const { client } = useSession();
   const service = api(client!);
   const [form, setForm] = useState(value);
+  const globalState = t(
+    stickyGlobalDefault ? "common.enabled" : "common.disabled",
+  );
   const [advanced, setAdvanced] = useState(false);
   // Auto-match only exists at creation: the edit dialog manages members
   // through the member list instead.
@@ -368,6 +378,36 @@ export function RouteDialog({
             />
           </Field>
           <div className="form-grid">
+            <Field
+              label={t("modelsPage.stickySession")}
+              hint={t("modelsPage.stickySessionHint")}
+            >
+              <select
+                value={
+                  form.sticky_session == null
+                    ? "inherit"
+                    : form.sticky_session
+                      ? "on"
+                      : "off"
+                }
+                onChange={(event) =>
+                  patch({
+                    sticky_session:
+                      event.target.value === "inherit"
+                        ? null
+                        : event.target.value === "on",
+                  })
+                }
+              >
+                <option value="inherit">
+                  {stickyGlobalDefault == null
+                    ? t("modelsPage.inherit")
+                    : t("modelsPage.inheritCurrent", { state: globalState })}
+                </option>
+                <option value="on">{t("common.enabled")}</option>
+                <option value="off">{t("common.disabled")}</option>
+              </select>
+            </Field>
             <Field label={t("modelsPage.grayEnabled")}>
               <select
                 value={

@@ -234,6 +234,21 @@ func TestSharedAliasRewritesPerChannel(t *testing.T) {
 	if got := string(upstream.bodies[1]); !strings.Contains(got, `"model":"low-model"`) {
 		t.Fatalf("low-channel rewrite failed: %s", got)
 	}
+
+	// The log must stay attributable: every row names BOTH the alias the client
+	// asked for and the real model that answered it. Without the second name a
+	// unified route's rows are indistinguishable from one another.
+	logs, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Model: "model", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstreamModel := map[string]string{}
+	for _, row := range logs {
+		upstreamModel[row.RequestID] = row.UpstreamModel
+	}
+	if upstreamModel["req-shared-high"] != "high-model" || upstreamModel["req-shared-low"] != "low-model" {
+		t.Fatalf("log rows must record the upstream model, got %#v", upstreamModel)
+	}
 }
 
 func TestOversizedTransformedResponseIsBoundedAndNotRetried(t *testing.T) {

@@ -88,6 +88,14 @@ type Explanation struct {
 	StickyChannelID *int64 `json:"sticky_channel_id,omitempty"`
 	StickyHit       bool   `json:"sticky_hit,omitempty"`
 	StickyReason    string `json:"sticky_reason,omitempty"`
+	// StickySessionOverride mirrors routes.sticky_session: nil = follow the
+	// global setting, true/false = force affinity on/off for this model.
+	StickySessionOverride *bool `json:"sticky_session_override,omitempty"`
+	// StickyActive is the effective decision for this selection: the global
+	// default folded with the override. It is only meaningful together with a
+	// SessionKey; false there means the model opted out, so the proxy must not
+	// bind the session either.
+	StickyActive bool `json:"sticky_active,omitempty"`
 	// Stable-first grayscale fields: present when the pool is active.
 	// StableFirstHit is true when the grayscale pool won the 1/N draw.
 	StableFirstHit bool `json:"stable_first_hit,omitempty"`
@@ -171,14 +179,19 @@ type Selector struct {
 }
 
 type selectorSettings struct {
-	latencyAware           bool
-	latency                LatencyProvider
-	errorAware             bool
-	errorRate              ErrorProvider
-	concurrencyAware       bool
-	concurrencyLimit       int
-	inflight               ConcurrencyProvider
-	sticky                 *StickyStore
+	latencyAware     bool
+	latency          LatencyProvider
+	errorAware       bool
+	errorRate        ErrorProvider
+	concurrencyAware bool
+	concurrencyLimit int
+	inflight         ConcurrencyProvider
+	sticky           *StickyStore
+	// stickyDefault is what a route inherits when it carries no
+	// sticky_session override. The store itself is installed even while this
+	// is false, so a route can opt a single model in without a second global
+	// switch.
+	stickyDefault          bool
 	stableFirstEnabled     bool
 	stableFirstDenominator int
 }
@@ -204,10 +217,28 @@ func (s *Selector) updateSettings(update func(*selectorSettings)) {
 	}
 }
 
-// SetSticky installs the sticky-session store. Nil (or never called) disables
-// sticky routing; session keys then never influence selection.
-func (s *Selector) SetSticky(store *StickyStore) {
-	s.updateSettings(func(cfg *selectorSettings) { cfg.sticky = store })
+// SetSticky installs the sticky-session store and sets the default affinity
+// for routes that carry no sticky_session override. A nil store disables
+// affinity entirely (including for routes that ask for it); defaultEnabled
+// alone only decides what routes inherit.
+func (s *Selector) SetSticky(store *StickyStore, defaultEnabled bool) {
+	s.updateSettings(func(cfg *selectorSettings) {
+		cfg.sticky = store
+		cfg.stickyDefault = defaultEnabled
+	})
+}
+
+// StickyEnabled reports whether affinity applies to a selection, folding the
+// global default with the route-level override. Nil override = inherit.
+func (s *Selector) StickyEnabled(override *bool) bool {
+	cfg := s.loadSettings()
+	if cfg.sticky == nil {
+		return false
+	}
+	if override != nil {
+		return *override
+	}
+	return cfg.stickyDefault
 }
 
 // SetLatencyAware turns latency-weighted picking on/off. provider may be nil,
@@ -524,6 +555,7 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		ChannelRetryTimesOverride:      route.ChannelRetryTimes,
 		StableFirstOverride:            route.StableFirst,
 		StableFirstDenominatorOverride: route.StableFirstDenominator,
+		StickySessionOverride:          route.StickySession,
 	}, nil
 }
 
@@ -535,10 +567,24 @@ func (s *Selector) evaluateWithSession(ctx context.Context, model string, exclud
 		return explanation, err
 	}
 	explanation.SessionKey = sessionKey
-	sticky := s.loadSettings().sticky
+	cfg := s.loadSettings()
+	sticky := cfg.sticky
 	if sticky == nil || sessionKey == "" {
 		return explanation, nil
 	}
+	// The route wins over the global default in both directions: a model that
+	// wants affinity keeps it on a gateway where it is off, and a model that
+	// does not want it stays off where it is on. Recording the decision on the
+	// explanation lets the proxy skip the bind as well — a binding written for
+	// a route that later opts back in would be stale the moment it turns on.
+	enabled := cfg.stickyDefault
+	if explanation.StickySessionOverride != nil {
+		enabled = *explanation.StickySessionOverride
+	}
+	if !enabled {
+		return explanation, nil
+	}
+	explanation.StickyActive = true
 	channelID, ok := sticky.Lookup(sessionKey, explanation.EvaluatedAt)
 	if !ok {
 		return explanation, nil

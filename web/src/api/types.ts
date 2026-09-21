@@ -133,6 +133,13 @@ export interface Route {
   stable_first_requests?: number;
   model_group?: string;
   image_edit_shim?: boolean;
+  /**
+   * Session affinity for this model: `null`/undefined = inherit the global
+   * setting, `true` = always bind a conversation to the channel that served it
+   * (prompt cache, multi-turn continuity), `false` = never bind, so requests
+   * spread across the pool.
+   */
+  sticky_session?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -278,6 +285,12 @@ export interface ProxyLog {
   path?: string;
   session_key?: string;
   upstream_request_id?: string;
+  /**
+   * The model name this attempt actually sent upstream. Differs from `model`
+   * when the route/member rewrote the alias via a `{"real":"…"}` mapping —
+   * i.e. whenever one client-facing name is served by several real models.
+   */
+  upstream_model?: string;
   created_at: string;
   /** Persisted billing amount, joined from usage_records by request_id. */
   cost?: number;

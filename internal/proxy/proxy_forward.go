@@ -276,6 +276,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				effectiveModel = real
 			}
 		}
+		// Same value the upstream sees; the log keeps it so an alias shared by
+		// several real models stays attributable after the fact.
+		req.UpstreamModel = effectiveModel
 		// Channel-scoped rules are evaluated only once the candidate is known;
 		// applying them before selection would incorrectly affect every channel.
 		requestBody := req.Body
@@ -988,8 +991,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			// Bind the successful relay to its session key so the next request
 			// of the same conversation prefers this channel (prompt-cache and
-			// multi-turn continuity). Admin-pinned probes never bind.
-			if stickyStore != nil && sessionKey != "" && req.PreferChannelID == 0 {
+			// multi-turn continuity). Admin-pinned probes never bind, and a
+			// route that opted out of affinity (routes.sticky_session=false,
+			// or the global default off with no override) must not leave a
+			// binding behind for when it opts back in.
+			if stickyStore != nil && decision.StickyActive && sessionKey != "" && req.PreferChannelID == 0 {
 				stickyStore.Bind(sessionKey, candidate.Channel.ID, s.now())
 			}
 			// Hand the gate slot to the response body: the hard ceiling now

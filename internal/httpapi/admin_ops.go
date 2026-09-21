@@ -346,6 +346,13 @@ func (h *AdminHandler) explainRoute(w http.ResponseWriter, r *http.Request) {
 // stickyStats returns a stable response for the admin UI. Sticky routing is
 // optional, so a disabled instance is represented as an ordinary successful
 // response instead of a noisy 404 from the model page's status query.
+//
+// "enabled" is the INHERITED default, read back off the selector so the
+// runtime-settings toggle cannot drift from the snapshot it reports: the store
+// itself is always installed, because routes may force affinity on for one
+// model (routes.sticky_session) even while the default is off. A deployment
+// with the default off but a model opted in therefore reports enabled=false
+// and a non-zero bound-session count, which is what the console shows.
 func (h *AdminHandler) stickyStats(w http.ResponseWriter, _ *http.Request) {
 	sticky := h.sticky.Load()
 	if sticky == nil {
@@ -357,8 +364,9 @@ func (h *AdminHandler) stickyStats(w http.ResponseWriter, _ *http.Request) {
 		})
 		return
 	}
+	enabled := h.router != nil && h.router.StickyEnabled(nil)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":     true,
+		"enabled":     enabled,
 		"stats":       sticky.Stats(),
 		"entries":     sticky.Snapshot(100),
 		"ttl_seconds": int(sticky.TTL() / time.Second),

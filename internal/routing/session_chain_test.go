@@ -87,7 +87,7 @@ func TestBindingOutranksPriorityTier(t *testing.T) {
 	stickyStore := NewStickyStore(time.Hour, systemClock{})
 	stickyStore.Bind("sess-1", 20, now)
 	selector := New(repo)
-	selector.SetSticky(stickyStore)
+	selector.SetSticky(stickyStore, true)
 	decision, err := selector.SelectSticky(context.Background(), "m", nil, "sess-1")
 	if err != nil {
 		t.Fatal(err)

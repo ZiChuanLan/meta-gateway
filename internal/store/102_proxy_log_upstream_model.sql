@@ -1,0 +1,15 @@
+-- The upstream model name a relayed attempt actually asked for, which differs
+-- from proxy_logs.model whenever the route/member rewrote the name via a
+-- {"real":"…"} mapping.
+--
+-- Shared aliases are the reason this exists: several channels publish the same
+-- logical model under different upstream names ([A]/[B] prefixes, owner
+-- prefixes, snapshot dates), so a unified route can serve one client-facing
+-- name from a pool of distinct upstream models. The request log then shows the
+-- alias on every row and the operator cannot tell which real model answered —
+-- the model page shows it ("原模型 …") but the log did not.
+--
+-- Stored verbatim, including when it equals model: the value is the factual
+-- wire name, and the console decides whether it is worth displaying. Legacy
+-- rows stay NULL (= unknown, not "same").
+ALTER TABLE proxy_logs ADD COLUMN upstream_model TEXT;

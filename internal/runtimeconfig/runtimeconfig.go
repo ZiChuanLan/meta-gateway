@@ -166,10 +166,12 @@ type Appliers struct {
 	CheckinAllowed func() bool
 	SetAudit       func(days, rows int)
 	SetAuditLoop   func(days, rows int)
-	// SetSticky hot-applies sticky-session routing: a non-nil store enables it
-	// (with the given TTL), nil disables it. The applier must rewire selector,
-	// proxy, and admin handler so the switch is live without a restart.
-	SetSticky func(store *routing.StickyStore, ttl time.Duration)
+	// SetSticky hot-applies sticky-session routing. enabled is only the default
+	// that routes inherit — the store is installed either way so a route can
+	// force affinity on for one model (routes.sticky_session) without a second
+	// global switch. The applier must rewire selector, proxy, and admin handler
+	// so the switch is live without a restart.
+	SetSticky func(store *routing.StickyStore, enabled bool, ttl time.Duration)
 	// SetGlobalProxy hot-applies the global outbound proxy ("" = direct). The
 	// callback validates the URL against the outbound SSRF policy.
 	SetGlobalProxy func(raw string) error
@@ -535,14 +537,21 @@ func (c *Controller) applyWithError(values Editable) error {
 		c.appliers.Selector.SetLatencyAware(values.RoutingLatencyAware, c.appliers.Proxy.ChannelLatency)
 		c.appliers.Selector.SetErrorAware(values.RoutingErrorAware, c.appliers.Proxy.ChannelErrorRate)
 	}
-	// Sticky-session routing hot swap: enabled → build a store with the TTL and
-	// rewire selector/proxy/admin; disabled → nil store (off).
+	// Sticky-session routing hot swap. The store is rebuilt either way so a
+	// TTL change reaches it, but it is installed even while the switch is off:
+	// routes.sticky_session lets one model opt in, and a store that only
+	// existed when the default was on would make that override a silent no-op.
+	// A non-positive TTL (unset placeholder) would expire every binding on the
+	// next request, so fall back to the shipped default. Rebuilding drops the
+	// live bindings; each conversation then costs one unaffined request and
+	// rebinds on success, which is the behaviour sticky already had whenever
+	// this switch was toggled.
 	if c.appliers.SetSticky != nil {
-		var stickyStore *routing.StickyStore
-		if values.StickyEnabled {
-			stickyStore = routing.NewStickyStore(time.Duration(values.StickyTTLMinutes)*time.Minute, nil)
+		ttl := time.Duration(values.StickyTTLMinutes) * time.Minute
+		if ttl <= 0 {
+			ttl = routing.DefaultStickyTTL
 		}
-		c.appliers.SetSticky(stickyStore, time.Duration(values.StickyTTLMinutes)*time.Minute)
+		c.appliers.SetSticky(routing.NewStickyStore(ttl, nil), values.StickyEnabled, ttl)
 	}
 	// Passive-recovery probe configuration hot reload.
 	if c.appliers.SetRecoveryProbe != nil {

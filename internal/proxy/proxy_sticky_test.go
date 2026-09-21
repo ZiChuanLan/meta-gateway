@@ -76,7 +76,7 @@ func setupStickyProxy(t *testing.T, upstream Relay) (*Service, *routing.StickySt
 	random := &seqRandom{values: []int{0, 100, 0}}
 	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, random)
 	sticky := routing.NewStickyStore(30*time.Minute, fixedClock{now: now})
-	selector.SetSticky(sticky)
+	selector.SetSticky(sticky, true)
 	service := New(selector, upstream, db, enc, 0, time.Minute)
 	service.now = func() time.Time { return now }
 	service.SetSticky(sticky)
@@ -128,7 +128,7 @@ func setupStickyProxyWithRetries(t *testing.T, upstream Relay, retryTimes int) (
 	random := &seqRandom{values: []int{0, 100, 0}}
 	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, random)
 	sticky := routing.NewStickyStore(30*time.Minute, fixedClock{now: now})
-	selector.SetSticky(sticky)
+	selector.SetSticky(sticky, true)
 	service := New(selector, upstream, db, enc, retryTimes, time.Minute)
 	service.now = func() time.Time { return now }
 	service.SetSticky(sticky)
@@ -197,6 +197,47 @@ func TestStickyDoesNotBindFailedRelay(t *testing.T) {
 	defer second.Body.Close()
 	if len(upstream.calls) != 3 || !strings.Contains(upstream.calls[2], "a.example") {
 		t.Fatalf("second request must reuse the bound channel a, got %#v", upstream.calls)
+	}
+}
+
+func TestStickyRouteOptOutDoesNotBind(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusOK, `{"ok":true}`),
+		response(http.StatusOK, `{"ok":true}`),
+	}}
+	service, sticky, now := setupStickyProxy(t, upstream)
+	// The route opts out per model: affinity is on globally, off here.
+	route, err := service.db.Route.GetByModel("model")
+	if err != nil || route == nil {
+		t.Fatalf("route lookup: %v", err)
+	}
+	off := false
+	route.StickySession = &off
+	if err := service.db.Route.Update(route); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-bind the session to b.example so "affinity is off" has a visible
+	// consequence instead of depending on the random draw.
+	sticky.Bind("sess-1", 2, now)
+
+	first := service.ChatCompletions(context.Background(), Request{RequestID: "r1", Model: "model", Body: []byte(`{"model":"model"}`), SessionKey: "sess-1"})
+	defer first.Body.Close()
+	if first.Err != nil || first.StatusCode != http.StatusOK {
+		t.Fatalf("first request failed: %+v", first)
+	}
+	// The pre-existing binding must be IGNORED: with affinity on this request
+	// would have been pinned to b.example.
+	if len(upstream.calls) != 1 || !strings.Contains(upstream.calls[0], "a.example") {
+		t.Fatalf("opted-out route must ignore the binding, got %#v", upstream.calls)
+	}
+	// ...and it must not write one either. The binding still points at the
+	// channel this test set, so the relay never rebound it.
+	bound, ok := sticky.Lookup("sess-1", now)
+	if !ok || bound != 2 {
+		t.Fatalf("opted-out route must leave the binding alone, got bound=%d ok=%v", bound, ok)
+	}
+	if stats := sticky.Stats(); stats.Hits != 0 || stats.Binds != 1 {
+		t.Fatalf("opted-out route must stay out of sticky stats (1 bind = the fixture): %+v", stats)
 	}
 }
 

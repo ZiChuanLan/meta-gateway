@@ -2454,7 +2454,11 @@ td.actions {
   outline-offset: 2px;
   border-radius: 2px;
 }
-.member-origin-badge {
+/* The pill that names the real upstream model behind an alias. Shared by the
+   route member list and the log row — the log has no member row, so it carries
+   its own hook instead of borrowing the member vocabulary. */
+.member-origin-badge,
+.log-upstream-model {
   display: inline-block;
   margin-left: 8px;
   padding: 1px 6px;

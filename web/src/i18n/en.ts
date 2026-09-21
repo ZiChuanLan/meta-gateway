@@ -1108,6 +1108,10 @@ export const en: Dict = {
   "modelsPage.overrideHint":
     "Leave empty to inherit the selected channel's default.",
   "modelsPage.inherit": "Inherit",
+  "modelsPage.inheritCurrent": "Inherit ({state})",
+  "modelsPage.stickySession": "Sticky session",
+  "modelsPage.stickySessionHint":
+    "Requests in the same session prefer the channel that served it last, which helps prompt caching and multi-turn continuity. Inherit follows the gateway-wide switch; a single model can also force it on or off.",
   "modelsPage.modelGroup": "Manual model group",
   "modelsPage.modelGroupHint":
     "Empty uses automatic family detection from the model name.",
@@ -1224,6 +1228,8 @@ export const en: Dict = {
   "logsPage.export": "Export CSV",
   "logsPage.reasoningEffort": "Reasoning effort",
   "logsPage.upstreamRequestId": "Upstream request ID",
+  "logsPage.upstreamModelHint":
+    "The upstream model this request was actually forwarded to. When a route unifies several models behind one alias, this is how you tell which real model served the row.",
   "logsPage.throughput": "Throughput",
   "logsPage.decisionHint": "Click to inspect the routing decision",
   "logsPage.decisionTitle": "Routing decision",

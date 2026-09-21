@@ -929,6 +929,8 @@ export const zh: Dict = {
   "common.firstByte": "首字节",
   "logsPage.throughput": "吞吐",
   "logsPage.upstreamRequestId": "上游请求 ID",
+  "logsPage.upstreamModelHint":
+    "本次请求真正转发到的上游模型。路由把多个模型统一成同一个别名时，用它区分这一条是哪个真实模型服务的。",
   "logsPage.decisionHint": "点击查看路由决策",
   "logsPage.decisionTitle": "路由决策",
   "logsPage.decisionSelected": "由 {channel} 服务",
@@ -2102,6 +2104,10 @@ export const zh: Dict = {
   "modelsPage.overrideEnabled": "覆盖渠道默认值",
   "modelsPage.overrideHint": "留空 = 继承当前渠道默认配置。",
   "modelsPage.inherit": "继承",
+  "modelsPage.inheritCurrent": "继承（当前{state}）",
+  "modelsPage.stickySession": "粘性会话",
+  "modelsPage.stickySessionHint":
+    "同一会话的请求优先落在上次成功的渠道上，利于提示词缓存与多轮上下文。继承时跟随网关全局开关；也可只给这个模型单独开启或关闭。",
   "modelsPage.modelGroup": "手动模型分组",
   "modelsPage.modelGroupHint": "留空时按模型名自动判断厂商/家族。",
   "modelsPage.modelGroupAuto": "自动判断",

@@ -23,6 +23,13 @@ type StickyStore struct {
 
 const maxStickyEntries = 10000
 
+// DefaultStickyTTL is the binding lifetime used when the runtime setting is
+// unusable (unset, or left at its placeholder while sticky was off). The store
+// is always installed now so that a route can opt a single model in, which
+// means a non-positive TTL can reach it from a config that never bothered to
+// set one — a zero TTL would expire every binding on the next request.
+const DefaultStickyTTL = 30 * time.Minute
+
 type stickyEntry struct {
 	ChannelID int64
 	ExpiresAt time.Time

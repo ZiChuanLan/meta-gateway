@@ -973,7 +973,13 @@ function ModelCatalog({
         ]}
       />
 
-      {sticky.data?.enabled ? (
+      {/* Shown when affinity is on by default OR when something is actually
+          bound: with the global switch off, a single model can still opt in
+          per route (routes.sticky_session), and those live bindings are the
+          only place that is visible. The explicit `sticky.data &&` is what
+          narrows the payload for the reads below. */}
+      {sticky.data &&
+      (sticky.data.enabled || sticky.data.stats.bound_sessions > 0) ? (
         <Panel
           className="sticky-panel"
           title={t("sticky.title")}
@@ -2322,6 +2328,7 @@ function ModelCatalog({
           members={editingMembers}
           pending={save.isPending}
           error={save.error}
+          stickyGlobalDefault={sticky.data?.enabled ?? null}
           onClose={() => setEdit(null)}
           onSave={(value) => {
             const { pin_priority, ...routeValue } = value;

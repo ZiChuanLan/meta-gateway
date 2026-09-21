@@ -1,0 +1,16 @@
+-- Route-level sticky-session override. Three states, so the column stays
+-- nullable and inherits by default:
+--
+--   NULL = follow the global setting (runtime_settings.sticky_enabled)
+--      1 = force session affinity on for this model
+--      0 = force it off for this model
+--
+-- Session affinity is not universally desirable: it pins a conversation to one
+-- channel to keep the upstream prompt cache warm, which also pins it to one
+-- channel's latency, quota and failures. A model answered by a single fast
+-- channel wants affinity; one spread over an interchangeable fleet often does
+-- not. Making this a per-route override (rather than a second global switch)
+-- mirrors how stable_first / retry_times already work.
+--
+-- No backfill: NULL already means "unchanged behaviour".
+ALTER TABLE routes ADD COLUMN sticky_session INTEGER;

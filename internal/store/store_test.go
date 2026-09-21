@@ -186,13 +186,13 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 102 {
-		t.Fatalf("got %d applied migrations, want 102", count)
+	if count != 104 {
+		t.Fatalf("got %d applied migrations, want 104", count)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 102 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 104 {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
@@ -1121,6 +1121,69 @@ func TestRouteRetryOverridesRoundTrip(t *testing.T) {
 	cleared, _ := db.Route.GetByID(id)
 	if cleared.RetryTimes != nil || cleared.ChannelRetryTimes != nil {
 		t.Fatalf("override clear failed: %+v", cleared)
+	}
+}
+
+// TestRouteStickySessionRoundTrip covers the per-model affinity tri-state:
+// nil (inherit), forced on, forced off, and back to nil. The route PUT is a
+// full replace, so a nil must survive as NULL rather than collapsing to false
+// — "inherit" and "off" are different decisions.
+func TestRouteStickySessionRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	id, err := db.Route.Create(&domain.Route{ModelPattern: "sticky-model", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Route.GetByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.StickySession != nil {
+		t.Fatalf("a new route must inherit (nil), got %v", *got.StickySession)
+	}
+	for _, want := range []bool{false, true} {
+		v := want
+		got.StickySession = &v
+		if err := db.Route.Update(got); err != nil {
+			t.Fatal(err)
+		}
+		after, err := db.Route.GetByID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.StickySession == nil || *after.StickySession != want {
+			t.Fatalf("sticky_session=%v, want %v", after.StickySession, want)
+		}
+		got = after
+	}
+	got.StickySession = nil
+	if err := db.Route.Update(got); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := db.Route.GetByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.StickySession != nil {
+		t.Fatalf("clearing the override must store NULL, got %v", *cleared.StickySession)
+	}
+}
+
+func TestProxyLogUpstreamModelRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	// An aliased attempt records both names; a plain one repeats the model.
+	if _, err := db.ProxyLog.Insert(&domain.ProxyLog{RequestID: "alias", Model: "shared-alias", UpstreamModel: "deepseek-v4-flash", Status: 200}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ProxyLog.Insert(&domain.ProxyLog{RequestID: "plain", Model: "gpt-5", UpstreamModel: "gpt-5", Status: 200}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Model: "shared-alias", Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].UpstreamModel != "deepseek-v4-flash" {
+		t.Fatalf("upstream model lost on the aliased row: %+v", rows)
 	}
 }
 

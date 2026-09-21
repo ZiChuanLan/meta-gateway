@@ -29,7 +29,8 @@ const routeSelectColumns = `id, model_pattern, enabled, routing_mode, mapping_js
 	single_member_id, retry_times, channel_retry_times,
 	max_reasoning_effort, max_concurrent, proxy_url, header_override, system_prompt,
 	retry_config, payload_rules, stable_first, stable_first_denominator,
-	stable_first_promote_requests, stable_first_requests, model_group, image_edit_shim, created_at, updated_at`
+	stable_first_promote_requests, stable_first_requests, sticky_session, model_group,
+	image_edit_shim, created_at, updated_at`
 
 // RouteMemberStore provides CRUD operations for route members.
 //
@@ -48,12 +49,12 @@ func scanRoute(scanner interface {
 	var enabled int
 	var retryTimes, channelRetryTimes sql.NullInt64
 	var singleMemberID sql.NullInt64
-	var maxConcurrent, stableFirst, stableFirstDenominator, stableFirstPromote sql.NullInt64
+	var maxConcurrent, stableFirst, stableFirstDenominator, stableFirstPromote, stickySession sql.NullInt64
 	var stableFirstRequests, imageEditShim int
 	var maxReasoning, proxyURL, headerOverride, systemPrompt, retryConfig, payloadRules sql.NullString
 	if err := scanner.Scan(&r.ID, &r.ModelPattern, &enabled, &r.RoutingMode, &r.MappingJSON, &r.Notes, &singleMemberID, &retryTimes, &channelRetryTimes,
 		&maxReasoning, &maxConcurrent, &proxyURL, &headerOverride, &systemPrompt, &retryConfig, &payloadRules,
-		&stableFirst, &stableFirstDenominator, &stableFirstPromote, &stableFirstRequests, &r.ModelGroup, &imageEditShim, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		&stableFirst, &stableFirstDenominator, &stableFirstPromote, &stableFirstRequests, &stickySession, &r.ModelGroup, &imageEditShim, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		return err
 	}
 	r.Enabled = enabled != 0
@@ -104,6 +105,10 @@ func scanRoute(scanner interface {
 	if stableFirstPromote.Valid {
 		v := int(stableFirstPromote.Int64)
 		r.StableFirstPromoteRequests = &v
+	}
+	if stickySession.Valid {
+		v := stickySession.Int64 != 0
+		r.StickySession = &v
 	}
 	r.StableFirstRequests = stableFirstRequests
 	return nil
@@ -223,8 +228,8 @@ func createRoute(ex sqlExecutor, r *domain.Route) (int64, error) {
 	if r.Enabled {
 		enabled = 1
 	}
-	res, err := ex.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, max_reasoning_effort, max_concurrent, proxy_url, header_override, system_prompt, retry_config, payload_rules, stable_first, stable_first_denominator, stable_first_promote_requests, stable_first_requests, model_group, image_edit_shim) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt64Ptr(r.SingleMemberID), nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), nullableString(r.MaxReasoningEffort), nullableInt(r.MaxConcurrent), nullableString(r.ProxyURL), nullableString(r.HeaderOverride), nullableString(r.SystemPrompt), nullableString(r.RetryConfig), nullableString(r.PayloadRules), nullableBool(r.StableFirst), nullableInt(r.StableFirstDenominator), nullableInt(r.StableFirstPromoteRequests), r.StableFirstRequests, strings.TrimSpace(r.ModelGroup), boolInt(r.ImageEditShim))
+	res, err := ex.Exec(`INSERT INTO routes (model_pattern, enabled, routing_mode, mapping_json, notes, single_member_id, retry_times, channel_retry_times, max_reasoning_effort, max_concurrent, proxy_url, header_override, system_prompt, retry_config, payload_rules, stable_first, stable_first_denominator, stable_first_promote_requests, stable_first_requests, sticky_session, model_group, image_edit_shim) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt64Ptr(r.SingleMemberID), nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), nullableString(r.MaxReasoningEffort), nullableInt(r.MaxConcurrent), nullableString(r.ProxyURL), nullableString(r.HeaderOverride), nullableString(r.SystemPrompt), nullableString(r.RetryConfig), nullableString(r.PayloadRules), nullableBool(r.StableFirst), nullableInt(r.StableFirstDenominator), nullableInt(r.StableFirstPromoteRequests), r.StableFirstRequests, nullableBool(r.StickySession), strings.TrimSpace(r.ModelGroup), boolInt(r.ImageEditShim))
 	if err != nil {
 		return 0, fmt.Errorf("route create: %w", err)
 	}
@@ -236,8 +241,8 @@ func (s *RouteStore) Update(r *domain.Route) error {
 	if r.Enabled {
 		enabled = 1
 	}
-	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, routing_mode=?, mapping_json=?, notes=?, single_member_id=?, retry_times=NULLIF(?, ''), channel_retry_times=NULLIF(?, ''), max_reasoning_effort=?, max_concurrent=?, proxy_url=?, header_override=?, system_prompt=?, retry_config=?, payload_rules=?, stable_first=?, stable_first_denominator=?, stable_first_promote_requests=?, stable_first_requests=CASE WHEN ? = 1 AND stable_first IS NOT 1 THEN 0 ELSE ? END, model_group=?, image_edit_shim=?, updated_at=datetime('now') WHERE id=?`,
-		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt64Ptr(r.SingleMemberID), nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), nullableString(r.MaxReasoningEffort), nullableInt(r.MaxConcurrent), nullableString(r.ProxyURL), nullableString(r.HeaderOverride), nullableString(r.SystemPrompt), nullableString(r.RetryConfig), nullableString(r.PayloadRules), nullableBool(r.StableFirst), nullableInt(r.StableFirstDenominator), nullableInt(r.StableFirstPromoteRequests), boolInt(r.StableFirst != nil && *r.StableFirst), r.StableFirstRequests, strings.TrimSpace(r.ModelGroup), boolInt(r.ImageEditShim), r.ID)
+	_, err := s.db.Exec(`UPDATE routes SET model_pattern=?, enabled=?, routing_mode=?, mapping_json=?, notes=?, single_member_id=?, retry_times=NULLIF(?, ''), channel_retry_times=NULLIF(?, ''), max_reasoning_effort=?, max_concurrent=?, proxy_url=?, header_override=?, system_prompt=?, retry_config=?, payload_rules=?, stable_first=?, stable_first_denominator=?, stable_first_promote_requests=?, stable_first_requests=CASE WHEN ? = 1 AND stable_first IS NOT 1 THEN 0 ELSE ? END, sticky_session=?, model_group=?, image_edit_shim=?, updated_at=datetime('now') WHERE id=?`,
+		r.ModelPattern, enabled, domain.NormalizeRoutingMode(r.RoutingMode), r.MappingJSON, r.Notes, nullableInt64Ptr(r.SingleMemberID), nullableInt(r.RetryTimes), nullableInt(r.ChannelRetryTimes), nullableString(r.MaxReasoningEffort), nullableInt(r.MaxConcurrent), nullableString(r.ProxyURL), nullableString(r.HeaderOverride), nullableString(r.SystemPrompt), nullableString(r.RetryConfig), nullableString(r.PayloadRules), nullableBool(r.StableFirst), nullableInt(r.StableFirstDenominator), nullableInt(r.StableFirstPromoteRequests), boolInt(r.StableFirst != nil && *r.StableFirst), r.StableFirstRequests, nullableBool(r.StickySession), strings.TrimSpace(r.ModelGroup), boolInt(r.ImageEditShim), r.ID)
 	if err != nil {
 		return fmt.Errorf("route update: %w", err)
 	}

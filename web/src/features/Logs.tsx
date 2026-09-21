@@ -630,6 +630,19 @@ function ProxyLogsPanel() {
 									<td>{formatDate(log.created_at)}</td>
 									<td>
 										<strong className="log-model-name" title={log.model}>{log.model}</strong>
+										{log.upstream_model && log.upstream_model !== log.model ? (
+											// Shared aliases: one client-facing name served by
+											// several real upstream models. Without this the row
+											// cannot be attributed after the fact.
+											<span
+												className="log-upstream-model"
+												title={t("logsPage.upstreamModelHint")}
+											>
+												{t("routing.memberOrigin", {
+													model: log.upstream_model,
+												})}
+											</span>
+										) : null}
 										<small className="mono" title={log.request_id}>{log.request_id}</small>
 									</td>
 									<td>

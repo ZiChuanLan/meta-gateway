@@ -450,6 +450,14 @@ type Route struct {
 	StableFirstDenominator     *int    `json:"stable_first_denominator,omitempty"`
 	StableFirstPromoteRequests *int    `json:"stable_first_promote_requests,omitempty"`
 	StableFirstRequests        int     `json:"stable_first_requests,omitempty"`
+	// StickySession overrides session affinity for this model. nil = follow
+	// the global setting (runtime_settings.sticky_enabled / STICKY_ENABLED);
+	// true = always bind a conversation to the channel that served it (prompt
+	// cache and multi-turn continuity); false = never bind, so every request
+	// spreads across the pool. Affinity is a trade-off rather than a strict
+	// win, and which side is right depends on the model: a single fast channel
+	// wants it, an interchangeable fleet does not.
+	StickySession *bool `json:"sticky_session,omitempty"`
 	// ModelGroup is a manual label; an empty value lets the UI use automatic
 	// vendor-family detection from the model name.
 	ModelGroup string `json:"model_group,omitempty"`
@@ -605,8 +613,15 @@ type ProxyLog struct {
 	SessionKey     string `json:"session_key,omitempty"`
 	// UpstreamRequestID is the upstream x-request-id header echoed by the
 	// serving channel, enabling cross-referencing with the upstream's logs.
-	UpstreamRequestID string    `json:"upstream_request_id,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	UpstreamRequestID string `json:"upstream_request_id,omitempty"`
+	// UpstreamModel is the model name this attempt actually asked the upstream
+	// for. It equals Model unless the route/member carried a {"real":"…"}
+	// mapping, which is what a shared alias (several upstream models behind one
+	// client-facing name) looks like. The console shows the difference so a
+	// unified route's log rows stay attributable. Empty on rows written before
+	// the column existed.
+	UpstreamModel string    `json:"upstream_model,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 	// Cost is the persisted billing amount for this request, joined from
 	// usage_records by request_id. It is populated only in admin list
 	// responses; the proxy_logs table carries no cost column and inserts
