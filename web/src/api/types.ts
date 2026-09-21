@@ -28,6 +28,13 @@ export interface Credential {
 models_csv?: string;
   /** Distinct models this key listed in the latest discovery snapshot (-1 = none yet). */
   model_count?: number;
+  /** The model names behind model_count; empty when the key has no snapshot yet. */
+  models?: string[];
+  /**
+   * Pool tier inside the site relay pool: higher goes first, keys sharing a
+   * tier rotate. -10 = backup, 0 = balanced (default), 10 = preferred.
+   */
+  priority?: number;
   created_at?: string;
 }
 export interface Channel {

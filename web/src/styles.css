@@ -6588,6 +6588,26 @@ td.actions {
   gap: 7px;
   flex: 0 0 auto;
 }
+/* Pool tier selector: the segmented toggle look (shared with the sync-mode
+   picker, so both appearances style it identically), sized to sit in the row
+   head without squeezing the key name. */
+.credential-key-tier {
+  flex: 0 0 auto;
+}
+.credential-key-tier button {
+  white-space: nowrap;
+}
+/* Notes above the per-key model picker: which model list is on screen, and
+   which selections the key cannot actually serve. */
+.credential-key-model-note {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.credential-key-model-note.is-warning {
+  color: var(--danger);
+}
 @media (max-width: 600px) {
   .credential-key-panel {
     padding: 10px;

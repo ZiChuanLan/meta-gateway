@@ -703,7 +703,7 @@ export const en: Dict = {
 
   "channels.apiKeysTitle": "API keys",
   "channels.apiKeysHint":
-    "Enabled keys on this site form a failover pool for model sync and relay.",
+    "Enabled keys on this site form the relay pool: higher tiers go first, keys in one tier rotate, lower tiers only after the ones above fail.",
   "channels.apiKeysEmpty":
     "No keys yet. Sync from upstream or paste one below.",
   "channels.apiKeysManage": "Manage keys…",
@@ -711,15 +711,29 @@ export const en: Dict = {
   "channels.apiKeysMore": "+{n} more…",
   "channels.apiKeyGroupDefault": "default",
   "channels.apiKeyUnnamed": "Key #{id}",
+  "channels.keyTier": "Pool tier",
+  "channels.keyTierPreferred": "Preferred",
+  "channels.keyTierPreferredHint":
+    "Preferred tier: always tried before the tiers below.",
+  "channels.keyTierBalanced": "Balanced",
+  "channels.keyTierBalancedHint":
+    "Balanced (default): keys in this tier take turns serving requests.",
+  "channels.keyTierBackup": "Backup",
+  "channels.keyTierBackupHint":
+    "Backup tier: only used once every higher tier failed.",
   "channels.keyModelsPlaceholder": "models: gpt-4*,claude-3-5* (empty = all)",
   "channels.keyModelsHint":
-    "Per-key model allowlist: comma-separated, * suffix wildcards. Empty = this key serves every model on the channel. Saved on blur/Enter.",
+    "Per-key model allowlist: comma-separated, * suffix wildcards. Empty = every model this key synced. Selecting models writes an explicit allowlist, which skips the \"did this key list it?\" check upstream of the relay — so do not pick models this key never synced.",
+  "channels.keyModelsNoSnapshot":
+    "This key has no sync snapshot yet, so the channel's full model list is shown. After one sync this lists only the key's own models.",
+  "channels.keyModelsOutOfScope":
+    "{n} selected models are missing from this key's synced list; the upstream will most likely answer 404.",
   "channels.keyModelsSelected": "{n} models selected",
-  "channels.keyModelsAll": "All models",
+  "channels.keyModelsAll": "All synced models",
   "channels.keyModelsToggle": "Expand model allowlist",
   "channels.apiKeyNoSecret": "secret missing",
   "channels.apiKeyModelCount": "{count} synced models",
-  "channels.apiKeyUsedByConnection": "Preferred",
+  "channels.apiKeyUsedByConnection": "Bound to this channel",
   "channels.apiKeyDelete": "Remove key",
   "channels.apiKeyDeleteConfirm": "Remove {name}? This cannot be undone.",
   "channels.apiKeyReveal": "View plaintext key",

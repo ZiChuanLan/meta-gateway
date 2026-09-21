@@ -103,9 +103,39 @@ type Credential struct {
 	ImportFingerprint string `json:"-"`
 	// ModelsCSV is the per-key model allowlist (comma-separated, "*" suffix
 	// wildcards). Empty = the key serves every model on its channel.
-	ModelsCSV string    `json:"models_csv,omitempty"`
+	ModelsCSV string `json:"models_csv,omitempty"`
+	// Priority orders the site key pool: higher wins, keys sharing a priority
+	// are a tier and rotate (round-robin) inside it. Zero = balanced, which is
+	// the column default so credentials created without an explicit value stay
+	// ordinary pool members.
+	Priority  int       `json:"priority"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Key-pool priority tiers exposed on the site credentials API. Any value in
+// [-100, 100] is accepted (an operator may want an intermediate tier), these
+// three are the named presets the console offers.
+const (
+	// CredentialPriorityBackup is tried only after every higher tier failed.
+	CredentialPriorityBackup = -10
+	// CredentialPriorityBalanced rotates with its peers (the default).
+	CredentialPriorityBalanced = 0
+	// CredentialPriorityPreferred is tried before the balanced/backup tiers.
+	CredentialPriorityPreferred = 10
+)
+
+// CredentialPriorityBounds limits what the admin API accepts, so a typo
+// ("1000") cannot silently outrank every other key forever.
+const (
+	CredentialPriorityMin = -100
+	CredentialPriorityMax = 100
+)
+
+// ValidCredentialPriority reports whether a priority is within the accepted
+// range.
+func ValidCredentialPriority(priority int) bool {
+	return priority >= CredentialPriorityMin && priority <= CredentialPriorityMax
 }
 
 type CheckinLog struct {

@@ -13,6 +13,39 @@ import { useSession } from "../session";
 import { parseCredentialMeta } from "./credentialMeta";
 
 /**
+ * Pool tiers this drawer exposes, mirroring domain.CredentialPriority*.
+ * Higher goes first; keys that share a tier rotate, so equal tiers spread the
+ * traffic instead of pinning it on whichever key happens to come first.
+ */
+const KEY_TIERS = [
+  {
+    value: 10,
+    label: "channels.keyTierPreferred",
+    hint: "channels.keyTierPreferredHint",
+  },
+  {
+    value: 0,
+    label: "channels.keyTierBalanced",
+    hint: "channels.keyTierBalancedHint",
+  },
+  {
+    value: -10,
+    label: "channels.keyTierBackup",
+    hint: "channels.keyTierBackupHint",
+  },
+] as const;
+
+/**
+ * matchesModel reports whether one allowlist entry covers a model: an exact
+ * name, or a "*" suffix prefix wildcard — the same syntax the proxy's per-key
+ * allowlist accepts.
+ */
+function matchesModel(entry: string, model: string): boolean {
+  if (entry.endsWith("*")) return model.startsWith(entry.slice(0, -1));
+  return entry === model;
+}
+
+/**
  * Overlay drawer with the full API-key management UI for one channel.
  * Opened from the channel editor and covering it so the management surface
  * remains easy to use on narrow screens.
@@ -25,6 +58,7 @@ export function ChannelKeysDrawer({
   syncKeysPending,
   onToggleKey,
   onUpdateKeyModels,
+  onUpdateKeyPriority,
   onDeleteKey,
   onAddApiKey,
   onSyncKeys,
@@ -37,6 +71,7 @@ export function ChannelKeysDrawer({
   syncKeysPending?: boolean;
   onToggleKey: (id: number, enabled: boolean) => void;
   onUpdateKeyModels: (id: number, modelsCsv: string) => void;
+  onUpdateKeyPriority: (id: number, priority: number) => void;
   onDeleteKey: (id: number) => void;
   onAddApiKey: (secret: string, name?: string) => void;
   onSyncKeys: () => void;
@@ -139,6 +174,22 @@ export function ChannelKeysDrawer({
                 .map((model) => model.trim())
                 .filter(Boolean);
               const modelsExpanded = expandedModelIds.has(item.id);
+              const tier = item.priority ?? 0;
+              const ownModels = item.models ?? [];
+              const scoped = ownModels.length > 0;
+              // Candidates are the models THIS key synced. Without a snapshot
+              // there is nothing to scope by, so fall back to the channel-wide
+              // list and say so above the picker.
+              const candidateModels = scoped ? ownModels : channelModelNames;
+              // Selections this key never listed: an explicit allowlist
+              // overrides the proxy's per-key discovered filter, so these are
+              // tried upstream and 404 instead of being skipped.
+              const outOfScope = scoped
+                ? selectedModels.filter(
+                    (model) =>
+                      !ownModels.some((own) => matchesModel(model, own)),
+                  )
+                : [];
               return (
                 <li
                   key={item.id}
@@ -169,6 +220,35 @@ export function ChannelKeysDrawer({
                       </small>
                     </div>
                     <div className="credential-key-actions">
+                      {/* The pool tier sits where the old read-only "preferred"
+                          tag used to: same concept, upgraded from a label into
+                          the control that sets it. */}
+                      <div
+                        className="sync-mode-toggle credential-key-tier"
+                        role="radiogroup"
+                        aria-label={t("channels.keyTier")}
+                      >
+                        {KEY_TIERS.map((option) => {
+                          const active = tier === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              disabled={pending}
+                              className={active ? "is-active" : ""}
+                              aria-pressed={active}
+                              title={t(option.hint)}
+                              onClick={() => {
+                                if (!active) {
+                                  onUpdateKeyPriority(item.id, option.value);
+                                }
+                              }}
+                            >
+                              {t(option.label)}
+                            </button>
+                          );
+                        })}
+                      </div>
                       <label
                         className={`credential-key-status ${enabled ? "is-enabled" : "is-disabled"}`}
                       >
@@ -254,8 +334,20 @@ export function ChannelKeysDrawer({
                         id={`credential-key-models-${item.id}`}
                         className="credential-key-model-editor"
                       >
+                        {scoped ? null : (
+                          <p className="credential-key-model-note">
+                            {t("channels.keyModelsNoSnapshot")}
+                          </p>
+                        )}
+                        {outOfScope.length > 0 ? (
+                          <p className="credential-key-model-note is-warning">
+                            {t("channels.keyModelsOutOfScope", {
+                              n: outOfScope.length,
+                            })}
+                          </p>
+                        ) : null}
                         <ModelPicker
-                          allModels={channelModelNames}
+                          allModels={candidateModels}
                           selected={selectedModels}
                           onChange={(selected) => {
                             const next = selected.join(",");

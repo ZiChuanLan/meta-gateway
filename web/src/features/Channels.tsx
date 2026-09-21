@@ -689,6 +689,21 @@ export function Channels() {
     invalidateKeys: [...INVALIDATE, ["credentials"]],
   });
 
+  // Pool tier of one key. Single-field write on purpose: the credential PUT
+  // preserves every key the body omits, so a tier change cannot disturb the
+  // allowlist, the status, or the secret.
+  const updateKeyPriority = useAdminMutation({
+    mutationFn: async (input: { id: number; priority: number }) => {
+      const list = credentials.data ?? [];
+      const current = list.find((item) => item.id === input.id);
+      return service.updateCredential(input.id, {
+        kind: current?.kind || "api_key",
+        priority: input.priority,
+      });
+    },
+    invalidateKeys: [...INVALIDATE, ["credentials"]],
+  });
+
   const addApiKeyCredential = useAdminMutation({
     mutationFn: async (input: {
       siteId: number;
@@ -1993,6 +2008,9 @@ export function Channels() {
           }
           onUpdateKeyModels={(id, modelsCsv) =>
             updateKeyModels.mutate({ id, modelsCsv })
+          }
+          onUpdateKeyPriority={(id, priority) =>
+            updateKeyPriority.mutate({ id, priority })
           }
           onDeleteKey={(id) => deleteApiKeyCredential.mutate(id)}
           onAddApiKey={(secret, name) => {

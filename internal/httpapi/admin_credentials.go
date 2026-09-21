@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -39,12 +40,26 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 		// ModelCount is how many distinct models this key listed in the latest
 		// successful discovery snapshot. -1 when the site has no snapshot yet.
 		ModelCount int `json:"model_count"`
+		// Models are the model names from that same snapshot, so a console can
+		// offer this key's own vocabulary instead of the channel-wide union
+		// (an explicit models_csv allowlist overrides the per-key filter, so a
+		// picker fed from the union invites unusable selections).
+		Models []string `json:"models,omitempty"`
+		// Priority is the key's tier in the site relay pool (higher first;
+		// equal priorities rotate).
+		Priority int `json:"priority"`
 	}
 	result := make([]safeCred, 0, len(creds))
 	for _, c := range creds {
 		modelCount := -1
+		var models []string
 		if set, ok := modelSets[c.ID]; ok {
 			modelCount = len(set)
+			models = make([]string, 0, len(set))
+			for name := range set {
+				models = append(models, name)
+			}
+			sort.Strings(models)
 		}
 		result = append(result, safeCred{
 			ID:             c.ID,
@@ -58,6 +73,8 @@ func (h *AdminHandler) listCredentials(w http.ResponseWriter, r *http.Request) {
 			CheckinEnabled: c.CheckinEnabled,
 			ModelsCSV:      c.ModelsCSV,
 			ModelCount:     modelCount,
+			Models:         models,
+			Priority:       c.Priority,
 		})
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -72,6 +89,8 @@ type createCredentialRequest struct {
 	Status   string `json:"status,omitempty"`
 	// ModelsCSV is the per-key model allowlist (comma-separated; empty = all).
 	ModelsCSV string `json:"models_csv,omitempty"`
+	// Priority is the key's tier in the site relay pool; omitted = balanced (0).
+	Priority *int `json:"priority,omitempty"`
 }
 
 func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +140,14 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, metaErr.Error())
 		return
 	}
+	priority := domain.CredentialPriorityBalanced
+	if req.Priority != nil {
+		if !domain.ValidCredentialPriority(*req.Priority) {
+			writeError(w, http.StatusBadRequest, "priority must be between -100 and 100")
+			return
+		}
+		priority = *req.Priority
+	}
 	cred := &domain.Credential{
 		SiteID:    siteID,
 		Kind:      req.Kind,
@@ -130,6 +157,7 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		MetaJSON:  metaJSON,
 		Status:    req.Status,
 		ModelsCSV: req.ModelsCSV,
+		Priority:  priority,
 	}
 	id, err := h.db.Credential.Create(cred)
 	if err != nil {
@@ -156,6 +184,7 @@ func (h *AdminHandler) createCredential(w http.ResponseWriter, r *http.Request) 
 		"status":          created.Status,
 		"checkin_enabled": created.CheckinEnabled,
 		"models_csv":      created.ModelsCSV,
+		"priority":        created.Priority,
 		"created_at":      created.CreatedAt,
 	})
 }
@@ -171,6 +200,9 @@ type updateCredentialRequest struct {
 	Status      string `json:"status,omitempty"`
 	// ModelsCSV is the per-key model allowlist; nil keeps the existing value.
 	ModelsCSV *string `json:"models_csv,omitempty"`
+	// Priority is the key's tier in the site relay pool; nil keeps the existing
+	// value. Zero is a real tier (balanced), so this must stay a pointer.
+	Priority *int `json:"priority,omitempty"`
 }
 
 func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) {
@@ -215,6 +247,13 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.ModelsCSV != nil {
 		existing.ModelsCSV = strings.TrimSpace(*req.ModelsCSV)
+	}
+	if req.Priority != nil {
+		if !domain.ValidCredentialPriority(*req.Priority) {
+			writeError(w, http.StatusBadRequest, "priority must be between -100 and 100")
+			return
+		}
+		existing.Priority = *req.Priority
 	}
 	if req.ClearSecret {
 		existing.SecretEnc = nil
@@ -265,6 +304,7 @@ func (h *AdminHandler) updateCredential(w http.ResponseWriter, r *http.Request) 
 		"status":          updated.Status,
 		"checkin_enabled": updated.CheckinEnabled,
 		"models_csv":      updated.ModelsCSV,
+		"priority":        updated.Priority,
 		"created_at":      updated.CreatedAt,
 		"updated_at":      updated.UpdatedAt,
 	})

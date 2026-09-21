@@ -162,6 +162,97 @@ func TestKeyPoolManualAllowlistAndUnlearnedKey(t *testing.T) {
 	_ = unlearnedID
 }
 
+// Priority tiers decide the try order, and equal-priority keys rotate inside
+// their tier so a second key serving the same model actually shares the traffic
+// instead of waiting for the first one to fail. The bound credential is no
+// longer privileged by binding alone — an existing deployment keeps "bound
+// first" because the migration promotes those keys to the preferred tier.
+func TestKeyPoolPriorityTiersAndRotation(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	enc, _ := crypto.New("pool-priority-test")
+	siteID, _ := db.Site.Create(&domain.Site{Name: "site", Status: domain.StatusEnabled})
+
+	create := func(secret string, priority int) int64 {
+		t.Helper()
+		cipher, err := enc.Encrypt([]byte(secret))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := db.Credential.Create(&domain.Credential{
+			SiteID: siteID, Kind: "api_key", SecretEnc: []byte(cipher),
+			Status: domain.StatusEnabled, Priority: priority,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	firstID := create("sk-first", domain.CredentialPriorityPreferred)
+	create("sk-second", domain.CredentialPriorityPreferred)
+	create("sk-balanced", domain.CredentialPriorityBalanced)
+	create("sk-backup", domain.CredentialPriorityBackup)
+
+	channelID, err := db.Channel.Create(&domain.Channel{
+		SiteID: &siteID, CredentialID: &firstID, Name: "channel", Status: domain.StatusEnabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromDB, err := db.Channel.GetByID(channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := buildPoolService(db, enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertPool := func(label string, got, expected []string) {
+		t.Helper()
+		if len(got) != len(expected) {
+			t.Fatalf("%s pool = %v, want %v", label, got, expected)
+		}
+		for index := range expected {
+			if got[index] != expected[index] {
+				t.Fatalf("%s pool = %v, want %v", label, got, expected)
+			}
+		}
+	}
+	poolAt := func(offset uint64) []string {
+		t.Helper()
+		// Pin the round-robin cursor so the assertion is about ordering rather
+		// than about whatever the previous call consumed.
+		service.keyPoolCursor.Store(offset)
+		keys, err := service.resolveAPIKeyPool(*fromDB, "")
+		if err != nil {
+			t.Fatalf("pool at offset %d: %v", offset, err)
+		}
+		return keys
+	}
+
+	assertPool("offset 0", poolAt(0), []string{"sk-first", "sk-second", "sk-balanced", "sk-backup"})
+	// The preferred tier advances: this is what shares the load.
+	assertPool("offset 1", poolAt(1), []string{"sk-second", "sk-first", "sk-balanced", "sk-backup"})
+	// The cursor wraps inside the tier and never reorders the tiers below it.
+	assertPool("offset 2", poolAt(2), []string{"sk-first", "sk-second", "sk-balanced", "sk-backup"})
+
+	// Demoting the bound key puts a pool sibling ahead of it: binding alone
+	// stops being a privilege once the tier is explicit.
+	first, err := db.Credential.GetByID(firstID)
+	if err != nil || first == nil {
+		t.Fatalf("bound credential: %+v err=%v", first, err)
+	}
+	first.Priority = domain.CredentialPriorityBalanced
+	if err := db.Credential.Update(first); err != nil {
+		t.Fatal(err)
+	}
+	assertPool("after demote", poolAt(0), []string{"sk-second", "sk-first", "sk-balanced", "sk-backup"})
+}
+
 // End-to-end: a request for a model only served by one group-scoped key must
 // travel upstream with THAT key's Authorization header, not the other key.
 func TestRelayUsesKeyThatServesModel(t *testing.T) {

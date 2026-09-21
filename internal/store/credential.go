@@ -91,7 +91,7 @@ func (s *CredentialStore) cachePutIfGeneration(credential *domain.Credential, ge
 }
 
 func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE site_id = ? ORDER BY id`, siteID)
+	rows, err := s.db.Query(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), priority, created_at, updated_at FROM credentials WHERE site_id = ? ORDER BY id`, siteID)
 	if err != nil {
 		return nil, fmt.Errorf("credential list: %w", err)
 	}
@@ -101,7 +101,7 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 	for rows.Next() {
 		var r domain.Credential
 		var secret, cookie string
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, &r.Priority, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("credential scan: %w", err)
 		}
 		r.SecretEnc = []byte(secret)
@@ -113,6 +113,8 @@ func (s *CredentialStore) ListBySite(siteID int64) ([]domain.Credential, error) 
 
 // ListEnabledAPIKeysBySite returns enabled api_key credentials that still hold ciphertext.
 // Used as the site-level relay key pool (aggregation across many keys for one upstream).
+// Rows come back in pool order — priority DESC then id — so a caller that wants
+// the "best single key" can take the first entry without re-sorting.
 // Results are cached per site and invalidated by any credential write.
 func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Credential, error) {
 	s.mu.RLock()
@@ -124,13 +126,13 @@ func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Crede
 	}
 	rows, err := s.db.Query(`
 		SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled,
-		       COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at
+		       COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), priority, created_at, updated_at
 		FROM credentials
 		WHERE site_id = ?
 		  AND status = 'enabled'
 		  AND secret_enc <> ''
 		  AND lower(kind) = 'api_key'
-		ORDER BY id`, siteID)
+		ORDER BY priority DESC, id`, siteID)
 	if err != nil {
 		return nil, fmt.Errorf("credential api key pool list: %w", err)
 	}
@@ -142,7 +144,7 @@ func (s *CredentialStore) ListEnabledAPIKeysBySite(siteID int64) ([]domain.Crede
 		var secret, cookie string
 		if err := rows.Scan(
 			&row.ID, &row.SiteID, &row.Kind, &row.AuthMode, &secret, &cookie, &row.MetaJSON, &row.Status,
-			&row.CheckinEnabled, &row.ImportFingerprint, &row.ModelsCSV, scanTime(&row.CreatedAt), scanTime(&row.UpdatedAt),
+			&row.CheckinEnabled, &row.ImportFingerprint, &row.ModelsCSV, &row.Priority, scanTime(&row.CreatedAt), scanTime(&row.UpdatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("credential api key pool scan: %w", err)
 		}
@@ -296,10 +298,10 @@ func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 			return cloneCredential(cached), nil
 		}
 	}
-	row := s.db.QueryRow(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), priority, created_at, updated_at FROM credentials WHERE id = ?`, id)
 	var r domain.Credential
 	var secret, cookie string
-	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	if err := row.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, &r.Priority, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -312,8 +314,8 @@ func (s *CredentialStore) GetByID(id int64) (*domain.Credential, error) {
 }
 
 func (s *CredentialStore) Create(c *domain.Credential) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO credentials (site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, import_fingerprint, models_csv) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?)`,
-		c.SiteID, c.Kind, normalizeAuthMode(c.AuthMode), string(c.SecretEnc), string(c.CookieEnc), c.MetaJSON, c.Status, c.CheckinEnabled, c.ImportFingerprint, c.ModelsCSV)
+	res, err := s.db.Exec(`INSERT INTO credentials (site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, import_fingerprint, models_csv, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?)`,
+		c.SiteID, c.Kind, normalizeAuthMode(c.AuthMode), string(c.SecretEnc), string(c.CookieEnc), c.MetaJSON, c.Status, c.CheckinEnabled, c.ImportFingerprint, c.ModelsCSV, c.Priority)
 	if err != nil {
 		return 0, fmt.Errorf("credential create: %w", err)
 	}
@@ -344,7 +346,7 @@ func (s *CredentialStore) SetCheckinEnabled(id int64, enabled bool) error {
 }
 
 func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), created_at, updated_at FROM credentials WHERE checkin_enabled = 1 AND status = 'enabled' AND lower(kind) IN ('session', 'access_token') AND (secret_enc <> '' OR cookie_enc <> '') ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, site_id, kind, auth_mode, secret_enc, cookie_enc, meta_json, status, checkin_enabled, COALESCE(import_fingerprint, ''), COALESCE(models_csv, ''), priority, created_at, updated_at FROM credentials WHERE checkin_enabled = 1 AND status = 'enabled' AND lower(kind) IN ('session', 'access_token') AND (secret_enc <> '' OR cookie_enc <> '') ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("credential checkin list: %w", err)
 	}
@@ -353,7 +355,7 @@ func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
 	for rows.Next() {
 		var r domain.Credential
 		var secret, cookie string
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Kind, &r.AuthMode, &secret, &cookie, &r.MetaJSON, &r.Status, &r.CheckinEnabled, &r.ImportFingerprint, &r.ModelsCSV, &r.Priority, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("credential checkin scan: %w", err)
 		}
 		r.SecretEnc = []byte(secret)
@@ -364,8 +366,8 @@ func (s *CredentialStore) ListCheckinEnabled() ([]domain.Credential, error) {
 }
 
 func (s *CredentialStore) Update(c *domain.Credential) error {
-	_, err := s.db.Exec(`UPDATE credentials SET kind=?, auth_mode=?, secret_enc=?, cookie_enc=?, meta_json=?, status=?, models_csv=?, import_fingerprint=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
-		c.Kind, normalizeAuthMode(c.AuthMode), string(c.SecretEnc), string(c.CookieEnc), c.MetaJSON, c.Status, c.ModelsCSV, c.ImportFingerprint, c.ID)
+	_, err := s.db.Exec(`UPDATE credentials SET kind=?, auth_mode=?, secret_enc=?, cookie_enc=?, meta_json=?, status=?, models_csv=?, priority=?, import_fingerprint=NULLIF(?, ''), updated_at=datetime('now') WHERE id=?`,
+		c.Kind, normalizeAuthMode(c.AuthMode), string(c.SecretEnc), string(c.CookieEnc), c.MetaJSON, c.Status, c.ModelsCSV, c.Priority, c.ImportFingerprint, c.ID)
 	if err != nil {
 		return fmt.Errorf("credential update: %w", err)
 	}

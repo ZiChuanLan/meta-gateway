@@ -4,19 +4,28 @@ package proxy
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 	"strings"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
 // resolveAPIKeyPool builds the ordered list of plaintext API keys for a channel.
-// Prefer the bound credential first, then every other enabled api_key on the same site.
-// Keys that hit the per-key auto-disable threshold are excluded until they heal.
-// Keys whose models_csv allowlist does not cover the requested model are skipped
-// (empty model = no filtering). When models_csv is unset, a key's discovered
-// model set acts as the allowlist: a key that never listed the model is skipped,
-// so a group-scoped key is only used for members of its group. With key-pool
-// rotation disabled, only the bound key (or the first pool key) is used.
+//
+// The pool is the site's enabled pool-capable credentials — bound credential
+// included — ordered by priority: keys sharing a priority form a tier, tiers
+// are exhausted top-down, and inside a tier the starting key rotates
+// (round-robin) so equal-priority keys share the traffic instead of pinning it
+// on the first one. With key-pool rotation disabled, only the bound key (or the
+// first pool key) is used.
+//
+// Credentials that cannot serve the requested model are skipped: a models_csv
+// allowlist that does not cover it, or — when no explicit allowlist exists — a
+// key whose recorded discovery set never listed it (empty model = no
+// filtering). Keys are only excluded through those filters and their own
+// status/kind; there is no per-key failure bookkeeping in the relay path, so a
+// key that is enabled but broken upstream stays in the pool (mark it disabled,
+// or demote it to the backup tier, to take it out of rotation).
 //
 // The discovered-set hint is best effort: when NOTHING claims the model (a
 // renamed/aliased/custom name no key ever listed), the pool fails open with
@@ -43,7 +52,7 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]str
 
 func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]string, error) {
 	seen := make(map[int64]struct{})
-	var keys []string
+	var usable []domain.Credential
 	// Per-credential discovered model sets for the channel's site. nil means
 	// "no sets loaded" (cache hit on empty site or lookup error): the naive
 	// allowlist filter stays authoritative.
@@ -82,12 +91,8 @@ func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]stri
 				}
 			}
 		}
-		plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
-		if err != nil || len(plaintext) == 0 {
-			return
-		}
 		seen[credential.ID] = struct{}{}
-		keys = append(keys, string(plaintext))
+		usable = append(usable, *credential)
 	}
 
 	if !s.keyPoolRotation.Load() {
@@ -104,10 +109,7 @@ func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]stri
 				appendCredential(&pool[0])
 			}
 		}
-		if len(keys) == 0 {
-			return nil, ErrCredential
-		}
-		return keys, nil
+		return s.orderAndDecryptPool(usable)
 	}
 
 	if channel.CredentialID != nil {
@@ -118,15 +120,50 @@ func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]stri
 	}
 	if channel.SiteID != nil {
 		pool, err := s.db.Credential.ListEnabledAPIKeysBySite(*channel.SiteID)
-		if err != nil {
-			if len(keys) == 0 {
-				return nil, ErrCredential
-			}
-			return keys, nil
+		if err != nil && len(usable) == 0 {
+			return nil, ErrCredential
 		}
 		for index := range pool {
 			appendCredential(&pool[index])
 		}
+	}
+	return s.orderAndDecryptPool(usable)
+}
+
+// orderAndDecryptPool turns the usable credentials into the final try order:
+// tiers by priority (highest first), rotating the starting key inside each tier
+// so equal-priority keys share the load. Credentials whose secret cannot be
+// decrypted are dropped silently — that is local key material, not an upstream
+// signal — and an empty result is reported as an unavailable credential.
+func (s *Service) orderAndDecryptPool(usable []domain.Credential) ([]string, error) {
+	sort.SliceStable(usable, func(i, j int) bool {
+		if usable[i].Priority != usable[j].Priority {
+			return usable[i].Priority > usable[j].Priority
+		}
+		return usable[i].ID < usable[j].ID
+	})
+	// One advance per resolution; every tier of this pool shares the offset.
+	offset := s.keyPoolCursor.Add(1) - 1
+	keys := make([]string, 0, len(usable))
+	for start := 0; start < len(usable); {
+		end := start
+		for end < len(usable) && usable[end].Priority == usable[start].Priority {
+			end++
+		}
+		tier := usable[start:end]
+		shift := 0
+		if len(tier) > 1 {
+			shift = int(offset % uint64(len(tier)))
+		}
+		for index := range tier {
+			credential := tier[(shift+index)%len(tier)]
+			plaintext, err := s.enc.Decrypt(string(credential.SecretEnc))
+			if err != nil || len(plaintext) == 0 {
+				continue
+			}
+			keys = append(keys, string(plaintext))
+		}
+		start = end
 	}
 	if len(keys) == 0 {
 		return nil, ErrCredential

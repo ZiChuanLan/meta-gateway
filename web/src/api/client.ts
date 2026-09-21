@@ -277,6 +277,8 @@ export const api = (client: ApiClient) => ({
       meta_json?: string;
       status: string;
       models_csv?: string;
+      /** Pool tier: -10 backup, 0 balanced (default), 10 preferred. */
+      priority?: number;
     },
   ) => client.post<Credential>(`/admin/sites/${siteId}/credentials`, body),
   updateCredential: (
@@ -291,6 +293,8 @@ export const api = (client: ApiClient) => ({
       meta_json?: string;
       status?: string;
       models_csv?: string;
+      /** Pool tier: -10 backup, 0 balanced, 10 preferred. Omitted = keep. */
+      priority?: number;
     },
   ) => client.put<Credential>(`/admin/credentials/${id}`, body),
   deleteCredential: (id: number) => client.delete(`/admin/credentials/${id}`),

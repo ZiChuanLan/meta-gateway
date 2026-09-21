@@ -127,4 +127,25 @@ describe("api connection and usage contracts", () => {
 			"/admin/usage/summary?since=2026-08-16T00%3A00%3A00Z",
 		);
 	});
+
+	it("writes a credential tier without dragging the allowlist along", async () => {
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+		const { api } = await import("./client");
+		await api(new ApiClient("token")).updateCredential(143, {
+			kind: "api_key",
+			priority: 0,
+		});
+		const [path, init] = fetchMock.mock.calls[0]!;
+		expect(path).toBe("/admin/credentials/143");
+		expect(init?.method).toBe("PUT");
+		// The credential PUT is a partial update, so the body must carry only the
+		// fields the caller chose; anything injected here would overwrite a column
+		// the operator never touched.
+		expect(JSON.parse(String(init?.body))).toEqual({
+			kind: "api_key",
+			priority: 0,
+		});
+	});
 });

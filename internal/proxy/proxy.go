@@ -78,9 +78,15 @@ type Service struct {
 	channelRetryTimes           atomic.Int64
 	crossChannelFailoverEnabled atomic.Bool
 	keyPoolRotation             atomic.Bool
-	cooldownNs                  atomic.Int64
-	now                         func() time.Time
-	registry                    *adapters.Registry
+	// keyPoolCursor advances once per pool resolution and picks the starting
+	// key inside a priority tier, so equal-priority keys rotate instead of
+	// pinning every request on the first one. Process-wide and monotonic: a
+	// per-site cursor would need lifecycle management for no observable gain,
+	// since the offset only has to vary between requests.
+	keyPoolCursor atomic.Uint64
+	cooldownNs    atomic.Int64
+	now           func() time.Time
+	registry      *adapters.Registry
 	// autoDisableThreshold: consecutive member failures before a channel is
 	// auto-disabled (0 = feature off).
 	autoDisableThreshold   atomic.Int64
