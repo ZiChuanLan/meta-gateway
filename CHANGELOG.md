@@ -6,6 +6,8 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v3.3.0] — 2026-09-21
+
 ### Added
 
 - **同一模型有多个 Key 时，可以指定谁先上、谁兜底**：公益站常常给同一站点配好几把 Key，此前
