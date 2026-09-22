@@ -360,7 +360,11 @@ and sub2api's passthrough make it possible:
   that regression shipped in v3.4.1 and was caught by the Compose E2E, so
   `TestMountPrefixBaseURLKeepsTheV1Root` now reproduces the contract locally
   instead of leaving a ~20 minute feedback loop as its only defence. `JoinOpenAIPath`
-  resolves the same three base shapes and shares `isAPIRootPath` with the split.
+  resolves the same three base shapes and shares `isAPIRootPath` with the split;
+  `JoinAnthropicPath` additionally treats an override whose first segment is a
+  version as already-absolute (`/v1/messages`), because the split produces exactly
+  that and the previous fallback appended a second `/v1` — reachable by hand before
+  v3.4.1 and automatic after it.
 - **Per-request endpoints** (`upstream_path` / `upstream_url`, from the request
   body or a payload-rule header). Resolved after the payload rules and before the
   send, so one model can be retargeted to another endpoint without a channel per

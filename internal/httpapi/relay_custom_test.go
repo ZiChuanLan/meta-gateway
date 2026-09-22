@@ -244,6 +244,64 @@ func TestMountPrefixBaseURLKeepsTheV1Root(t *testing.T) {
 	}
 }
 
+// A complete Anthropic endpoint pasted as the base URL (new-api style) must
+// survive the save-time split. validateChannel splits it for every channel type,
+// so the override arrives already absolute (`/v1/messages`) and the Anthropic
+// joiner's own `/v1` rule must not add a second one — it produced
+// `/v1/v1/messages` before this was fixed. The OpenAI path was immune because it
+// uses JoinRawPath, which has no /v1 rule; only this joiner was affected.
+func TestAnthropicCompleteEndpointBaseURLIsNotDoubled(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		paths []string
+	)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		// Answer both the models probe and a Messages call, so whichever the
+		// request produces is observable.
+		if strings.HasSuffix(r.URL.Path, "/messages") {
+			_, _ = fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-3-5-sonnet","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"id":"claude-3-5-sonnet"}]}`)
+	}))
+	defer upstream.Close()
+
+	// The channel is created with the COMPLETE endpoint as its base URL, which is
+	// the operator habit this feature exists to support.
+	serverURL, token, _ := setupRelay(t, upstream.URL+"/v1/messages", "anthropic")
+
+	status, body := relayChat(t, serverURL, token, `{
+		"model": "gemini-2.5-flash",
+		"messages": [{"role": "user", "content": "hi"}]
+	}`)
+	if status != http.StatusOK {
+		t.Fatalf("status %d body %s", status, body)
+	}
+
+	mu.Lock()
+	seen := append([]string(nil), paths...)
+	mu.Unlock()
+	var chatPath string
+	for _, p := range seen {
+		if strings.HasSuffix(p, "messages") {
+			chatPath = p
+		}
+	}
+	if chatPath == "" {
+		t.Fatalf("no Messages call reached the upstream; paths=%v", seen)
+	}
+	if strings.Contains(chatPath, "/v1/v1/") {
+		t.Fatalf("upstream path = %q: the endpoint override was joined twice", chatPath)
+	}
+	if !strings.HasSuffix(chatPath, "/v1/messages") {
+		t.Fatalf("upstream path = %q, want a single /v1/messages", chatPath)
+	}
+}
+
 // postWithToken relays a downstream request and returns the response plus body.
 func postWithToken(t *testing.T, url, token, payload string) (*http.Response, []byte) {
 	t.Helper()

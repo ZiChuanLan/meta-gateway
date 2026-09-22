@@ -6,6 +6,20 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v3.4.3] — 2026-09-22
+
+### Fixed
+
+- **修复 Anthropic 渠道的端点重复拼接**（`adapters.JoinAnthropicPath`）：当端点覆盖是**已带版本根**的绝对路径时
+  （如 `/v1/messages`），旧实现会再插一个 `/v1` → `/v1/v1/messages`。
+  这是**既有 bug**（v3.4.0 的 `JoinAnthropicPath` 就是这段逻辑，手工在高级里填 `upstream_path_override=/v1/messages`
+  即可触发），但 v3.4.1 的 base_url 自動拆分让它**无需手工配置就会发生**：
+  `base_url = https://api.anthropic.com/v1/messages` 被拆成根 + `/v1/messages` 覆盖，随后走这个 joiner 就被拼了两次。
+  修复：覆盖路径首段是版本号时按绝对路径直接拼接，不再补 `/v1`。
+  OpenAI 路径不受影响（走 `JoinRawPath`，本身无 `/v1` 规则），Gemini 走裸拼接，故只有这一条链漏了。
+  - 端到端回归测试 `TestAnthropicCompleteEndpointBaseURLIsNotDoubled`（httpapi）实际发一次 Messages 请求，
+    断言上游收到的路径没有 `/v1/v1/`；并用 `.tools/prove_tests_catch_bug.py` 注入 bug 验证它会失败。
+
 ## [v3.4.2] — 2026-09-22
 
 ### Fixed

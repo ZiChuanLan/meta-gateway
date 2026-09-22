@@ -46,13 +46,24 @@ func JoinAnthropicPath(baseURL, path string) (string, error) {
 	}
 	basePath := strings.TrimRight(parsed.Path, "/")
 	lower := strings.ToLower(basePath)
-	if lower == "/v1" || strings.HasSuffix(lower, "/v1") {
+	// A path that already carries its own version root ("v1/messages") must not
+	// gain another one. This shape reaches here from the save-time split: an
+	// operator who pastes a complete endpoint
+	// (`https://api.anthropic.com/v1/messages`) gets base + `/v1/messages`
+	// override, and the fallback below then produced `/v1/v1/messages`.
+	// JoinRawPath, which the OpenAI adapter uses, has no /v1 rule and was never
+	// affected; this joiner did.
+	relRooted := isVersionSegment(strings.Split(rel, "/")[0])
+	switch {
+	case relRooted:
 		parsed.Path = basePath + "/" + rel
-	} else if basePath == "" {
+	case lower == "/v1" || strings.HasSuffix(lower, "/v1"):
+		parsed.Path = basePath + "/" + rel
+	case basePath == "":
 		parsed.Path = "/v1/" + rel
-	} else if strings.HasSuffix(lower, "/"+rel) || lower == "/"+rel {
+	case strings.HasSuffix(lower, "/"+rel) || lower == "/"+rel:
 		parsed.Path = basePath
-	} else {
+	default:
 		parsed.Path = basePath + "/v1/" + rel
 	}
 	return parsed.String(), nil

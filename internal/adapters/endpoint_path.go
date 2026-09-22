@@ -19,6 +19,7 @@ import (
 // that repeats the base's last segment is not duplicated, so `base=…/v1` +
 // `path=v1/models` and `base=…/v1` + `path=/models` both yield `…/v1/models` —
 // the two ways an operator writes the same thing behave the same.
+
 // SplitEndpointBaseURL splits a base URL that already carries its own endpoint
 // path into a clean root plus an explicit endpoint override.
 //
