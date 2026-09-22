@@ -11,6 +11,7 @@ import { SearchableSelect } from "../../components/SearchableSelect";
 import { Button, ErrorState, Field } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
+import { ENDPOINT_PRESETS, applyEndpointPreset } from "./endpointPresets";
 import {
   UA_PRESETS,
   isValidUserAgent,
@@ -985,6 +986,34 @@ export function EditChannelDialog({
                 <p className="detail-section-empty is-quiet">
                   {t("channels.endpointMapHint")}
                 </p>
+                <div className="endpoint-presets">
+                  <span className="endpoint-presets-label">
+                    {t("channels.endpointPreset")}
+                  </span>
+                  {ENDPOINT_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.id}
+                      variant="secondary"
+                      disabled={pending}
+                      onClick={() => {
+                        const next = applyEndpointPreset(preset, {
+                          baseUrl: value.base_url,
+                          override: pathOverride,
+                          requestMap,
+                          responseMap,
+                        });
+                        setPathOverride(next.override);
+                        setRequestMap(next.requestMap);
+                        setResponseMap(next.responseMap);
+                      }}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                  <span className="endpoint-presets-hint">
+                    {t("channels.endpointPresetHint")}
+                  </span>
+                </div>
                 <div className="form-grid form-grid-single">
                 <Field
                   label={t("channels.pathOverride")}

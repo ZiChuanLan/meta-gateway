@@ -6,6 +6,49 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **修复 OpenAI 兼容厂商预设全部打错端点**（`adapters.JoinOpenAIPath`）：只要 base URL 带非 `/v1` 的路径段，旧实现一律在中间硬插一个 `/v1`，于是类型下拉里选智谱就会请求不存在的
+  `/api/paas/v4/v1/chat/completions`（豆包 `/api/v3/v1/...`、千帆 `/v2/v1/...` 同理）——这就是「必须去高级里手填端点」的根本原因：不是配置麻烦，而是预设本身错了。
+  现在规则统一为：**路径段永远是 API 根，不是某个端点的一部分**——base 无路径时补 `/v1`（绝大多数供应商），base 带路径时原样拼在其后（`/api/paas/v4/chat/completions`、`/api/v3/chat/completions`）。
+  无路径的 base 是唯一真正歧义的情形，保留 `/v1`；**没有 `/v1` 的供应商（Perplexity）改为直接填官方文档的端点**，由保存时的拆分逻辑（`SplitEndpointBaseURL`）得到 root + 端点覆盖。
+  选择这个机制而不是主机名例外表：自建镜像/代理域名无法用主机名判定，而文档里的路径可以在「将请求到」预览里直接核对。
+  - 实测证据（无 key 探测区分 401/404）：Perplexity `/chat/completions` → 401 存在、`/v1/chat/completions` → 404 不存在；智谱/豆包/千帆/DashScope/OpenRouter/Groq/Moonshot/SiliconFlow 均与各自官方文档一致。
+- **新增端点预览 `GET /admin/endpoint-preview`**：返回该 base 实际会请求的 chat/models URL（带完整端点时返回拆分后的结果）；「添加连接」对话框在基础 URL 下方显示「将请求到：…」，把“路径拼错但看不出来”的问题提前到填写阶段。
+- **修复站点自动探测误覆盖手选类型**（`sitedetect` + 连接对话框）：探测链的两条兜底规则都不具区分性，且对话框会在失焦时用探测结果覆盖操作员的显式选择。
+  - `sitedetect` 修正（对照 new-api / sub2api 源码核实信封格式后）：
+    - 「`/api/user/self` 返 401 即 New-API」→ 改为要求 new-api `authHelper` 写出的 `{"success":…,"message":…}` 信封。旧规则在智谱（`{"error":{…}}` 信封）与 DeepSeek（纯文本 `Authentication Fails (governor)`）上均误命中。
+    - 「`/api/v1/auth/me` 返 401 即 Sub2API」→ 改为要求 **401 + sub2api 自己的 `{"code":…,"message":…}` 信封**。旧规则把 DeepSeek 判成 sub2api；而 `Code` 字段原本声明为 `string`，但 sub2api `response.Error` 写的是**整数** code，所以它对真实 sub2api 从来就没匹配上过（旧测试用的是手写的字符串 body）。只匹配信封形状还会让 Moonshot 的 404 body `{"code":5,…}` 误命中，因此同时要求 401。
+  - 对话框：新增 `typeTouched`，操作员一旦显式选过类型，自动探测不再覆盖它。
+  - 实测（真机探测）：智谱 /api/paas/v4、DeepSeek、Moonshot、SiliconFlow、Groq 均不再产生错误断言；真实形状的 sub2api 信封仍能识别。
+
+### Added
+
+- **一行配好一个非 OpenAI 上游（对齐 new-api Custom 渠道、sub2api 的可观测性）**：
+  以前接 TypeSafe 这类上游要在高级里填四个字段，客户端还得打 `/v1/chat/completions`；现在三条路任选：
+  - **任意路径透传**：`POST /v1/<未登记路径>` 原样转发到渠道的 `<base>/<同路径>`，body 与响应都不改写
+    （新文件 `internal/httpapi/relay_custom.go`，兜底路由注册在全部真实端点之后）。客户端直接打
+    `/v1/systemone` 就能用，渠道只需要一个 base_url。路径走**闭集白名单**（每段仅字母数字 `_ - .`、
+    最多 8 段 128 字节、禁止纯点段），照搬 sub2api `upstream_path_guard.go` 的理由：拼接进上游 URL 的
+    客户端字符串不能改变 URL 结构（无穿越、无额外路径、无 query/fragment）；query 不参与构造，因此
+    不会泄漏到上游地址。
+  - **base_url 直接写完整端点**：`https://api.typesafe.ai/v1/systemone` 保存时自动拆成根地址 +
+    `upstream_path_override`（`adapters.SplitEndpointBaseURL`）。版本号结尾的路径（`/v1`、`/api/paas/v4`、
+    `/v1beta`、`/openai/v1`）识别为 API 根，绝不被拆——拆了会把整站所有路径改道。
+  - **一键预设（两处）**：
+    - **类型下拉**（添加连接页，主路径）：选「智谱 GLM / 豆包 / 千帆 / Perplexity…」即自动带出官方 base URL，无需手填任何东西。
+    - **渠道编辑 → 高级 → 自定义端点**的预设：预填 TypeSafe System One 的 base_url、端点覆盖与请求/响应字段映射
+      （`web/src/features/channels/endpointPresets.ts`）。预设只填空位，不覆盖已填内容。
+- **单模型级别指定上游端点**：渠道 payload 规则可对某个模型设置 `upstream_path` / `upstream_url` 请求头
+  （写 body 的 `upstream_path` / `upstream_url` 字段同样生效），一次请求内解析并作用于发送前，因此
+  「jev-latest 走 `/v1/systemone`、其余模型走默认端点」不需要再建一个渠道。`upstream_url` 必须与渠道
+  同 host，否则拒绝——否则下游可以指定自己的服务器来钓取渠道密钥。
+- **代理日志与响应头暴露真实上游 URL**：`proxy_logs.upstream_url`（迁移 `104_proxy_log_upstream_url.sql`）
+  记录 scheme + host + path，query/fragment/userinfo 一律剥离（与 sub2api `safeUpstreamURL` 一致，避免落库
+  泄漏密钥）；成功响应带 `X-Meta-Upstream-URL`。日志页渠道列下方显示该地址。字段全文检索覆盖它。
+- **`upstream_url` 纳入 FTS 索引列**：`internal/store/logfts.go` 检测旧索引缺列时一次性 drop 表与触发器重建，
+  否则新触发器引用的列不存在会导致**每一次日志写入失败**。
+
 ## [v3.4.0] — 2026-09-22
 
 ### Added

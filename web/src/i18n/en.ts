@@ -484,9 +484,10 @@ export const en: Dict = {
   "channels.add": "Add connection",
   "channels.addHint":
     "Enter the upstream address and credential. Save & verify completes the initial connection check and model sync.",
+  "channels.endpointPreview": "Requests will go to: {url}",
   "channels.namePlaceholder": "Optional display name",
   "channels.baseUrlHint":
-    "OpenAI-compatible root, with or without trailing /v1.",
+    "OpenAI-compatible root, with or without trailing /v1. You may also paste a complete endpoint the new-api way (e.g. https://api.typesafe.ai/v1/systemone): saving splits it into the root plus an endpoint path override.",
   "channels.inheritsSite": "Uses site base URL",
   "channels.neverChecked": "Never",
   "channels.modelsSection": "Models",
@@ -682,6 +683,9 @@ export const en: Dict = {
   "channels.payloadRulesHint":
     "JSON array of rules: match (model glob, protocol, header substring, payload JSON-path conditions) + actions (set / delete / filter). Non-matching requests pass through untouched. Paths use dots and indexes: messages.0.content, messages.#.image_url (any element).",
   "channels.endpointMap": "Custom endpoint and field mapping",
+  "channels.endpointPreset": "Preset",
+  "channels.endpointPresetHint":
+    "A preset only fills empty fields, so nothing you filled in is overwritten. The TypeSafe preset's question text must be rewritten for your own semantics (and the question id / answer field must match your question type).",
   "channels.endpointMapHint":
     "For channels whose upstream is not OpenAI-shaped: relocate the endpoint path, and move fields between your wire contract and the upstream's. Leave everything empty for plain passthrough; existing channels are unaffected.",
   "channels.pathOverride": "Endpoint path override",
@@ -1245,6 +1249,8 @@ export const en: Dict = {
   "logsPage.upstreamRequestId": "Upstream request ID",
   "logsPage.upstreamModelHint":
     "The upstream model this request was actually forwarded to. When a route unifies several models behind one alias, this is how you tell which real model served the row.",
+  "logsPage.upstreamUrlHint":
+    "The upstream URL this attempt actually called (scheme + host + path; query and fragment stripped). A channel endpoint override/map relocates a request, and custom-path passthrough (POST /v1/<anything>) forwards the client's own path — this is the only place that shows the endpoint that was really reached.",
   "logsPage.throughput": "Throughput",
   "logsPage.decisionHint": "Click to inspect the routing decision",
   "logsPage.decisionTitle": "Routing decision",

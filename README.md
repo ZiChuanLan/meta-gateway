@@ -200,7 +200,21 @@
 <summary><strong>自定义端点与字段映射（接入非标准上游）</strong></summary>
 
 有些上游既不是 OpenAI 形态、也不在 `/v1` 根下（智谱 `/api/paas/v4`、火山 `/api/v3`、
-TypeSafe `/v1/systemone`）。渠道编辑→高级里新增四列，不用改代码就能接：
+TypeSafe `/v1/systemone`）。三条路，从最省事到最精细：
+
+- **类型下拉直接带出正确 base URL**：选「智谱 GLM / 豆包 / 千帆 / …」即自动填好官方地址，不用查文档也不用写高级配置。
+  （v3.5 之前这些预设是坏的：base 带路径时会被硬插一个 `/v1`，智谱变成不存在的 `/api/paas/v4/v1/chat/completions`。）
+  填写时基础 URL 下方会实时显示 **「将请求到：…」**，拼错一眼可见。
+
+- **任意路径透传**：`POST /v1/<未登记路径>` 原样转发到渠道的 `<base>/<同路径>`，不改 body 也不改响应。
+  客户端直接打 `/v1/systemone` 就行，渠道只需要填一个 base_url（和 new-api 的 Custom 渠道同体验）。
+  路径走闭集白名单（每段只能字母数字与 `_ - .`，最多 8 段），客户端的字符串无法改变上游 URL 结构。
+- **base_url 写完整端点**：`https://api.typesafe.ai/v1/systemone` 保存时自动拆成根地址 + 端点路径覆盖，
+  不用自己分两次填。以版本号结尾的路径（`/v1`、`/api/paas/v4`、`/v1beta`）识别为 API 根，不会被拆。
+- **一键预设**：渠道编辑 → 高级 → 自定义端点里选预设，自动填好 base_url、端点覆盖与请求/响应字段映射
+  （TypeSafe System One 已内置）。预设只填空位，不会覆盖已填内容。
+
+要手写映射时：
 
 - **端点路径覆盖 / 映射**：`systemone` 这种单段名字进 `/v1` 位（`/v1/systemone`）；带 `/` 或前导 `/`
   的值是绝对路径，直接接在 Base URL 后面（`/api/paas/v4/chat/completions`）。映射键可用 `*` 结尾，
@@ -209,9 +223,14 @@ TypeSafe `/v1/systemone`）。渠道编辑→高级里新增四列，不用改�
 - **请求 / 响应字段映射**：同一套 JSON-path 语法（与 Payload 规则一致，`messages.0.content`、
   `answers.#.choice` 都行）。四种写法：`{from,to}` 搬值（保留 JSON 类型）、`+move` 搬完删源、
   `template` 用 `…{messages.0.content}…` 拼字符串（可直接内嵌 JSON 字面量）、`value` 写常量。
+- **单模型改道**：payload 规则里对某个模型 set `upstream_path`（或 `upstream_url`）就能把该模型打到
+  另一个端点，不用为每个端点建一个渠道。`upstream_url` 必须与渠道同 host，否则拒绝（否则下游能
+  用自建服务器偷渠道密钥）。
 - **响应映射跑在协议转换之后**，所以路径描述的是客户端看到的文档；全程 fail-open，映射写错只会
   原样透传 + 日志一行，不会弄断路由。保存时校验严格拒绝拼写错误（空段路径、`from`+`value` 同给等），
   避免“配了没效果”这种最难排查的沉默失败。
+- **看得见实际打到哪**：日志行在渠道名下方显示真实上游 URL（`proxy_logs.upstream_url`，query 与
+  fragment 已剥离），响应也带 `X-Meta-Upstream-URL`。
 </details>
 
 <details>

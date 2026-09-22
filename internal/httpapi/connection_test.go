@@ -129,3 +129,53 @@ func TestConnectionCreateValidation(t *testing.T) {
 		}
 	}
 }
+
+// A pasted complete endpoint is the new-api Custom habit: the operator supplies
+// one URL and expects it to work. Splitting it at create time is what keeps the
+// relay from building `/v1/systemone/v1/chat/completions`, and the site must
+// store the ROOT so a second connection to the same upstream still reuses it.
+func TestConnectionCreateSplitsEndpointBaseURL(t *testing.T) {
+	base, _, _ := setupServer(t, "http://127.0.0.1:1")
+
+	status, conn := postConnection(t, base, "admin-secret", map[string]any{
+		"name":      "typesafe",
+		"base_url":  "https://api.typesafe.ai/v1/systemone",
+		"secret":    "sk-live",
+		"type_hint": "openai-compatible",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", status)
+	}
+	// A connection-created channel inherits its base URL from the site, so the
+	// split has to happen before the site is created/reused — that is exactly
+	// what makes the pasted endpoint land as an override on the channel.
+	if conn.Site.BaseURL != "https://api.typesafe.ai" {
+		t.Fatalf("site base_url = %q, want the root", conn.Site.BaseURL)
+	}
+	if conn.Channel.UpstreamPathOverride != "/v1/systemone" {
+		t.Fatalf("upstream_path_override = %q, want /v1/systemone", conn.Channel.UpstreamPathOverride)
+	}
+
+	// The same upstream pasted again must reuse the site rather than creating a
+	// second one for the same host.
+	_, second := postConnection(t, base, "admin-secret", map[string]any{
+		"name":      "typesafe-2",
+		"base_url":  "https://api.typesafe.ai/v1/systemone",
+		"secret":    "sk-live-2",
+		"type_hint": "openai-compatible",
+	})
+	if !second.ReusedSite || second.Site.ID != conn.Site.ID {
+		t.Fatalf("expected site reuse, got %+v", second)
+	}
+
+	// A version-root base URL is not an endpoint: nothing may be split off.
+	_, ark := postConnection(t, base, "admin-secret", map[string]any{
+		"name":      "ark",
+		"base_url":  "https://ark.cn-beijing.volces.com/api/v3",
+		"secret":    "sk-ark",
+		"type_hint": "openai-compatible",
+	})
+	if ark.Site.BaseURL != "https://ark.cn-beijing.volces.com/api/v3" || ark.Channel.UpstreamPathOverride != "" {
+		t.Fatalf("version-root base URL was split: site=%q override=%q", ark.Site.BaseURL, ark.Channel.UpstreamPathOverride)
+	}
+}

@@ -90,6 +90,10 @@ func (h *RelayHandler) Register(r chi.Router) {
 	r.Post("/audio/transcriptions", h.audioTranscriptions)
 	r.Post("/audio/translations", h.audioTranslations)
 	r.Post("/moderations", h.moderations)
+	// Custom-path passthrough: any OTHER /v1 path is forwarded verbatim to the
+	// channel's own endpoint (see relay_custom.go). Registered last so every
+	// real endpoint keeps its exact behaviour.
+	r.Post("/*", h.customPath)
 }
 
 // creditSummary is the OpenAI-compatible billing surface: a downstream key
@@ -1112,6 +1116,13 @@ func copyResponseHeaders(dst, src http.Header, stream bool) {
 		if value := src.Get(key); value != "" {
 			dst.Set(key, value)
 		}
+	}
+	// Surface the endpoint the gateway actually called. Custom-path passthrough
+	// (POST /v1/<anything>) forwards a path the client chose, and a channel's
+	// endpoint override can relocate it further; without this header an operator
+	// reading a proxy log cannot tell the two apart from their own client code.
+	if value := src.Get(UpstreamURLEchoHeader); value != "" {
+		dst.Set(UpstreamURLEchoHeader, value)
 	}
 	if stream {
 		dst.Set("Content-Type", "text/event-stream")

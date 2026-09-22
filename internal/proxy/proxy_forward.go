@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -581,6 +582,30 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			s.recordAttempt(req, candidate, attempt+1, result, category, "")
 			return result, meta
 		}
+		// One model, one upstream endpoint: the caller's own choice (body field or
+		// payload-rule header) wins over the configured channel mapping, because
+		// the caller describes the endpoint it wants while the mapping describes
+		// the channel default. Decoded here, after the payload rules, so a rule
+		// that targets one model can retarget its endpoint.
+		overridePath, overrideURL, fieldErr := upstreamFields(requestSource, req.Headers)
+		if fieldErr != nil {
+			result = &relay.Result{StatusCode: http.StatusBadRequest, Err: fmt.Errorf("proxy: %w", fieldErr)}
+			s.recordAttempt(req, candidate, attempt+1, result, "invalid_url", "")
+			return result, meta
+		}
+		if overridePath != "" || overrideURL != "" {
+			resolved, overrideErr := adapters.EndpointOverrideURL(upstreamURL, overridePath, overrideURL)
+			if overrideErr != nil {
+				result = &relay.Result{StatusCode: http.StatusBadRequest, Err: fmt.Errorf("proxy: %w", overrideErr)}
+				s.recordAttempt(req, candidate, attempt+1, result, "invalid_url", "")
+				return result, meta
+			}
+			upstreamURL = resolved
+		}
+		// Recorded on the log row so a relocated endpoint (channel mapping,
+		// per-request override, custom path) stays attributable after the fact.
+		req.UpstreamURLActual = adapters.SafeURL(upstreamURL)
+
 		// Channel endpoint/field mapping (row-level protocol escape hatch). The
 		// path resolver above already redirected the endpoint; the body maps run
 		// now so the upstream receives the shape it expects. Fail-open: a
@@ -1026,6 +1051,15 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				result.Body = &gateBoundBody{ReadCloser: body, release: func() { s.gate.Release(candidate.Channel.ID, gateGen) }}
 				gateHeld = false
 			}
+			if req.UpstreamURLActual != "" {
+				// Echo the endpoint that served the request. Without it a client
+				// calling a custom path cannot tell which upstream answered once a
+				// channel mapping or a per-request override relocated the call.
+				if result.Header == nil {
+					result.Header = make(http.Header)
+				}
+				result.Header.Set(UpstreamURLEchoHeader, req.UpstreamURLActual)
+			}
 			return result, meta
 		}
 		// A dead request context (client gone, request deadline) or our own
@@ -1275,6 +1309,68 @@ func retrySafeRequest(req Request) bool {
 		return false
 	}
 	return true
+}
+
+// UpstreamURLEchoHeader names the response header carrying the URL the gateway
+// actually called (scheme + host + path). The proxy sets it on the relay result
+// so the relay handler can forward it to the client and the operator can see,
+// without reading a log, which endpoint a custom-path call reached.
+const UpstreamURLEchoHeader = "X-Meta-Upstream-URL"
+
+// upstreamFieldValue reads a per-request endpoint field, preferring the request
+// body over the caller's headers (a body value is the more explicit statement of
+// intent; the header is what a payload rule or a pin sets). Both spellings of a
+// field are accepted — upstream_path and upstream-path, upstream_url and
+// upstream-url — because a JSON body key and an HTTP header naturally differ.
+func upstreamFieldValue(body []byte, headers map[string]string, field string) string {
+	alternative := strings.ReplaceAll(field, "_", "-")
+	if len(body) > 0 {
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal(body, &doc); err == nil {
+			for _, key := range []string{field, alternative} {
+				if raw, ok := doc[key]; ok {
+					var value string
+					if err := json.Unmarshal(raw, &value); err == nil {
+						return strings.TrimSpace(value)
+					}
+				}
+			}
+		}
+	}
+	for key, value := range headers {
+		normalized := strings.ReplaceAll(key, "_", "-")
+		if strings.EqualFold(normalized, alternative) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// upstreamFields decodes the two endpoint override fields from a request body
+// and the caller headers. Both are validated so a malformed value is rejected up
+// front instead of being forwarded to an unintended endpoint.
+//
+// It reads the caller's post-rewrite body, so a payload rule that writes
+// `upstream_path` (or `upstream_url`) for one model retargets THAT model's
+// request and no other.
+func upstreamFields(body []byte, headers map[string]string) (path string, urlOverride string, err error) {
+	path = upstreamFieldValue(body, headers, "upstream_path")
+	urlOverride = upstreamFieldValue(body, headers, "upstream_url")
+	if urlOverride == "" && path != "" && (strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")) {
+		// `upstream_path` carrying a whole URL is the natural mistake; accept it
+		// as the url override rather than rejecting a field name.
+		urlOverride, path = path, ""
+	}
+	if path != "" && !adapters.IsSafeURLPathSuffix(path) {
+		return "", "", errors.New("upstream_path must be a simple path (letters, digits, '-', '.', '/'; at most 8 segments)")
+	}
+	if urlOverride != "" {
+		parsed, parseErr := url.Parse(urlOverride)
+		if parseErr != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil {
+			return "", "", errors.New("upstream_url must be an absolute http(s) URL")
+		}
+	}
+	return path, urlOverride, nil
 }
 
 func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, adapter adapters.ForwardAdapter, model string) (string, error) {

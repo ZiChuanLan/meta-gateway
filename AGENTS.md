@@ -242,11 +242,38 @@ AAH 版本号是字符串且当前为 `"4.0"`，段可能嵌在 `data` 下，别
 
 实现全在 `internal/proxy/upstream_map.go`（引擎）与 `upstream_map_validate.go`（保存期校验），路径语言与 `payload_rules` 共用 `proxy/jsonpath.go`。三条不变量：
 
-1. **映射生效时 URL 拼接换用 `adapters.JoinRawPath`**，不再走 `JoinOpenAIPath` 的 `<base>/v1/<path>` 规则——否则「根不是 /v1 的供应商」依旧被塞进一个 `/v1`（智谱 `/api/paas/v4`、火山 `/api/v3`）。映射路径**原样拼在 Base URL 之后**，不自动补 `/v1`：需要 `/v1` 的供应商请在映射值里自己写（如 `"/v1/models"`）。
+1. **映射生效时 URL 拼接换用 `adapters.JoinRawPath`**，不再走 `JoinOpenAIPath` 的 `/v1` 规则。映射路径**原样拼在 Base URL 之后**，不自动补 `/v1`：需要 `/v1` 的供应商请在映射值里自己写（如 `"/v1/models"`）。
+
+**`JoinOpenAIPath` 的唯一规则（v3.5 修正）**：路径段永远是 API 根，不是某个端点的一部分——base 无路径时补 `/v1`，base 带路径时原样拼在其后。曾经只有「以 `/v1` 结尾」才不补，导致智谱 `/api/paas/v4`、火山 `/api/v3`、千帆 `/v2` 被拼成不存在的 `/api/paas/v4/v1/chat/completions`——**类型下拉里每个 cn 厂商预设都是坏的**，操作员只能去高级里手填端点。加一个厂商 base URL / 端点前，先跑 `go test ./internal/adapters/ -run TestJoinOpenAIPath` 并对照官方文档。
 2. **响应映射跑在适配器转换之后**（`UpstreamMap.ReshapeResponse`）：map 的路径描述的是**客户端看到的文档**，不是上游原始报文。这样别家后端的 `choices[0].message.content` 与 OpenAI 上游的语义一致。
 3. **全程 fail-open**：映射为空/畸形/源字段不存在 → 原样转发并在日志留一行；`from`/`to` 复制保留 JSON 类型（数字仍是数字），`template` 产出的永远是字符串。
 
 字段映射不是 JSONata 那种通用引擎（无 `$`/算术/正则），故意只保留四种写法（`from`/`to`、`move`、`template`、`value`）并与 payload_rules 共用 JSON-path 实现。`[]` 形式的「整包体路径」曾设计过但未实现，校验会明确拒绝并给出替代写法（响应方向还想换整个 body 的话，就在适配器层做，不是在这一列）。
+
+### 3.9 任意路径透传与端点级覆盖（v3.5）
+
+`relay_custom.go` 注册的 `POST /v1/*` 兜底路由转发**未登记**的 `/v1` 路径。三条边界：
+
+1. **已登记端点优先**：兜底路由注册在 `RelayHandler.Register` 最后，`/v1/chat/completions` 等永不被遮蔽。
+2. **路径闭集白名单**（`adapters.IsSafeURLPathSuffix`，全部拼 URL 的地方共用）：每段仅 `[A-Za-z0-9_-]` 与 `.`、
+   最多 8 段、每段 ≤128 字节、拒绝纯点段。默认拒绝而非“拒绝已知坏字符”，因为后者要穷举、漏一项就失效。
+   query 不参与 URL 构造，因此不会透传。（sub2api `upstream_path_guard.go` 同理。）
+3. **基础 URL 拆分**（`adapters.SplitEndpointBaseURL`）：版本号结尾的路径段（`/v1`、`/api/paas/v4`、`/v1beta`、
+   `/openai/v1`）识别为 API 根，不拆；其余最后一个路径段视为端点，保存时落到 `upstream_path_override`。
+   拆的是端点，不是根。
+
+单模型级别改道理：「请求体 / payload 规则头的 `upstream_path`（或 `upstream_url`）」→ 发送前解析并覆盖
+渠道映射结果（`adapters.EndpointOverrideURL`：url 形式优先，必须同 host，query/fragment 一律剥离）。
+
+### 3.10 日志与响应里的真实上游 URL
+
+`proxy_logs.upstream_url`（迁移 104）在每次 attempt 落库：`adapters.SafeURL(upstreamURL)` = scheme + host + path，
+query/fragment/userinfo 全剔。成功响应头 `X-Meta-Upstream-URL`（`proxy.UpstreamURLEchoHeader`）同步回传。
+日志页把该地址放在渠道名下方（`.log-upstream-url`），并用它回答“这次到底打到哪个端点”。
+
+> ⚠️ FTS5 索引列是固定的：`logfts.go` 的 `ensureLogFTS` 会先 `PRAGMA table_info(proxy_logs_fts)` 比对
+> `upstream_url`，缺列就 drop 表 + 触发器再重建。不做这一步的话，新触发器引用不存在的列会让
+> **每一次 proxy_logs 写入失败**（日志静默丢失），且 FTS5 是编译期选项、失败不能中断启动。
 
 ---
 

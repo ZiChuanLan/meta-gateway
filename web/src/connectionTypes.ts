@@ -79,5 +79,9 @@ export const PROVIDER_BASE_URLS: Record<string, string> = {
 	groq: "https://api.groq.com/openai/v1",
 	xai: "https://api.x.ai/v1",
 	mistral: "https://api.mistral.ai/v1",
-	perplexity: "https://api.perplexity.ai",
+	// Perplexity documents `base_url=https://api.perplexity.ai` with NO /v1, so the
+	// preset supplies the documented ENDPOINT. Saving splits it into the root plus
+	// an endpoint override, which is what keeps the /v1 root (correct for almost
+	// every other provider) from being applied here.
+	perplexity: "https://api.perplexity.ai/chat/completions",
 };

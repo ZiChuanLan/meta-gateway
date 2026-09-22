@@ -331,6 +331,46 @@ validates the grammar on save (`proxy.ValidateUpstreamMap`) because the runtime
 failure mode of a typo is a silent no-op, which is indistinguishable from "the
 upstream rejected it" to an operator.
 
+### Custom paths and per-request endpoints
+
+Three additions make a one-field setup possible, the way new-api's Custom channel
+and sub2api's passthrough make it possible:
+
+- **`POST /v1/<unregistered>` passthrough** (`internal/httpapi/relay_custom.go`).
+  The `/v1` surface is a fixed list, so an upstream speaking its own protocol had
+  no entry point; now an unregistered path is forwarded verbatim to
+  `<base>/<same path>`, body and response untouched. Registered endpoints win
+  because the fallback is registered last. The path passes a closed allowlist
+  (`adapters.IsSafeURLPathSuffix`: `[A-Za-z0-9_-]` plus `.` per segment, ≤8
+  segments, ≤128 bytes each, no dots-only segment) for the same reason sub2api's
+  `upstream_path_guard.go` exists: a client-controlled string concatenated into an
+  upstream URL must not be able to change that URL's structure. Any query string
+  is dropped, never forwarded.
+- **Base URL splitting** (`adapters.SplitEndpointBaseURL`). An operator who
+  pastes the whole endpoint (`https://api.typesafe.ai/v1/systemone`) gets it split
+  at save time into a root plus `upstream_path_override`, so `<base>/v1/<path>`
+  cannot double the version segment. A last segment that looks like an API root
+  (`v1`, `v2`, `v1beta`…) is never split — those bases are roots, and splitting
+  one would relocate every path on the channel.
+- **Per-request endpoints** (`upstream_path` / `upstream_url`, from the request
+  body or a payload-rule header). Resolved after the payload rules and before the
+  send, so one model can be retargeted to another endpoint without a channel per
+  endpoint. `adapters.EndpointOverrideURL` requires the URL form to stay on the
+  channel's host: the request carries the channel's API key, so a caller-chosen
+  host would be a credential-exfiltration primitive.
+
+Every call records `proxy_logs.upstream_url` (migration
+`104_proxy_log_upstream_url.sql`), rendered by `adapters.SafeURL` as scheme +
+host + path with query/fragment/userinfo stripped — query strings routinely carry
+keys, which is why sub2api's `safeUpstreamURL` cuts them before logging. The
+serving URL is also echoed to the client in `X-Meta-Upstream-URL`.
+
+> The FTS5 index over `proxy_logs` has a fixed column list. `logfts.go`
+> compares `PRAGMA table_info(proxy_logs_fts)` against the expected columns and
+> drops + rebuilds once when one is missing: a trigger referencing a column the
+> index lacks would make every log INSERT fail, and FTS5 being a compile-time
+> option means the failure must not be fatal to startup.
+
 ## Intermediate-Format Conversion Chain (pivot)
 
 ## Intermediate-Format Conversion Chain (pivot)

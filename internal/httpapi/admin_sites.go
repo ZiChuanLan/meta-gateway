@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/sitedetect"
 )
@@ -15,6 +16,52 @@ func (h *AdminHandler) listSites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sites)
+}
+
+// endpointPreview resolves, for each registered forward adapter, the URL this
+// base would produce — so the connection editor can show the operator what the
+// gateway will actually call BEFORE a mistake turns into a 404.
+//
+// It exists because the provider presets are only as good as the URL builder: a
+// preset whose base landed on the wrong path used to be invisible until the
+// first request failed, which is what pushed operators into hand-written
+// endpoint overrides. The preview makes the join checkable from the dialog.
+func (h *AdminHandler) endpointPreview(w http.ResponseWriter, r *http.Request) {
+	baseURL := strings.TrimSpace(r.URL.Query().Get("url"))
+	if baseURL == "" {
+		writeError(w, http.StatusBadRequest, "missing url")
+		return
+	}
+	// Chat is the path every OpenAI-compatible provider serves and the one the
+	// type dropdown is really about, so it is the only preview that matters.
+	chat, err := adapters.JoinOpenAIPath(baseURL, "chat/completions")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid base_url")
+		return
+	}
+	models, err := adapters.JoinOpenAIPath(baseURL, "models")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid base_url")
+		return
+	}
+	// A base that carries its own endpoint is reported the way the relay will
+	// really build it (root + endpoint override), not the way /v1 would join it.
+	resolvedBase, endpointOverride, _ := adapters.SplitEndpointBaseURL(baseURL)
+	payload := map[string]any{
+		"base_url":   resolvedBase,
+		"chat_url":   chat,
+		"models_url": models,
+	}
+	if endpointOverride != "" {
+		payload["endpoint_override"] = endpointOverride
+		if splitChat, splitErr := adapters.JoinRawPath(resolvedBase, endpointOverride); splitErr == nil {
+			payload["chat_url"] = splitChat
+		}
+		if splitModels, splitErr := adapters.JoinRawPath(resolvedBase, endpointOverride+"/models"); splitErr == nil {
+			payload["models_url"] = splitModels
+		}
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 // detectSiteType runs the AAH-style site-detection chain against a candidate

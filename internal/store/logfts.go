@@ -22,25 +22,25 @@ import (
 // instead of taking the process down.
 const (
 	logFTSCreate = `CREATE VIRTUAL TABLE IF NOT EXISTS proxy_logs_fts USING fts5(
-		model, error_brief, error_detail, path, request_id, upstream_request_id,
+		model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url,
 		content='proxy_logs', content_rowid='id'
 	)`
 
 	logFTSInsertTrigger = `CREATE TRIGGER IF NOT EXISTS proxy_logs_fts_ai AFTER INSERT ON proxy_logs BEGIN
-		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id)
-		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id);
+		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
+		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id, new.upstream_url);
 	END`
 
 	logFTSDeleteTrigger = `CREATE TRIGGER IF NOT EXISTS proxy_logs_fts_ad AFTER DELETE ON proxy_logs BEGIN
-		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id)
-		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id);
+		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
+		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id, old.upstream_url);
 	END`
 
 	logFTSUpdateTrigger = `CREATE TRIGGER IF NOT EXISTS proxy_logs_fts_au AFTER UPDATE ON proxy_logs BEGIN
-		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id)
-		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id);
-		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id)
-		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id);
+		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
+		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id, old.upstream_url);
+		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
+		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id, new.upstream_url);
 	END`
 )
 
@@ -67,6 +67,25 @@ func (s *LogFTSState) Available(db *sql.DB) bool {
 }
 
 func ensureLogFTS(db *sql.DB) bool {
+	if !logFTSHasColumn(db, "upstream_url") {
+		// The indexed column list changed (proxy_logs.upstream_url). An FTS5
+		// table cannot gain a column in place, and the insert triggers now
+		// reference one: leaving the old table would make every log write fail.
+		// Drop table + triggers once and let the DDL and the rebuild below
+		// recreate and repopulate them. Both statements are no-ops on a fresh
+		// database (nothing to drop).
+		for _, ddl := range []string{
+			`DROP TRIGGER IF EXISTS proxy_logs_fts_ai`,
+			`DROP TRIGGER IF EXISTS proxy_logs_fts_ad`,
+			`DROP TRIGGER IF EXISTS proxy_logs_fts_au`,
+			`DROP TABLE IF EXISTS proxy_logs_fts`,
+		} {
+			if _, err := db.Exec(ddl); err != nil {
+				log.Printf("store: log full-text search disabled: %v", err)
+				return false
+			}
+		}
+	}
 	for _, ddl := range []string{logFTSCreate, logFTSInsertTrigger, logFTSDeleteTrigger, logFTSUpdateTrigger} {
 		if _, err := db.Exec(ddl); err != nil {
 			log.Printf("store: log full-text search disabled: %v", err)
@@ -80,6 +99,34 @@ func ensureLogFTS(db *sql.DB) bool {
 		return false
 	}
 	return true
+}
+
+// logFTSHasColumn reports whether the existing full-text table carries a column.
+// A missing table (fresh database) answers false, which makes the caller drop
+// nothing before creating it.
+func logFTSHasColumn(db *sql.DB, column string) bool {
+	rows, err := db.Query(`PRAGMA table_info(proxy_logs_fts)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			type_   string
+			notNull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &type_, &notNull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildLogFTSMatch turns free text into a safe FTS5 MATCH expression.

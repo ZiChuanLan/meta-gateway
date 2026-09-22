@@ -477,6 +477,17 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	ch.UpstreamPathMap = strings.TrimSpace(ch.UpstreamPathMap)
 	ch.UpstreamRequestMap = strings.TrimSpace(ch.UpstreamRequestMap)
 	ch.UpstreamResponseMap = strings.TrimSpace(ch.UpstreamResponseMap)
+	// new-api-style one-field configuration: an operator who pastes the complete
+	// upstream endpoint (`https://api.typesafe.ai/v1/systemone`) as the base URL
+	// gets it split into root + endpoint override instead of being handed a
+	// doubled path (`/v1/systemone/v1/chat/completions`). An endpoint explicitly
+	// typed into the override field always wins over the inferred one.
+	if splitBase, inferredOverride, splitErr := adapters.SplitEndpointBaseURL(ch.BaseURL); splitErr == nil && inferredOverride != "" {
+		ch.BaseURL = splitBase
+		if ch.UpstreamPathOverride == "" {
+			ch.UpstreamPathOverride = inferredOverride
+		}
+	}
 	if ch.Name == "" {
 		return errors.New("name is required")
 	}

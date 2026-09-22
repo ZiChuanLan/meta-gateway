@@ -35,8 +35,20 @@ export function AddChannelDialog({
   const [baseUrl, setBaseUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [typeHint, setTypeHint] = useState("openai-compatible");
+  // Whether the operator has stated the type themselves. Auto-detection only
+  // fills the field while it is still untouched: the detector is a heuristic
+  // (it reported `new-api` for Zhipu's URL on a bare `user-self-401` response),
+  // so letting it overwrite an explicit pick silently reverted "智谱 GLM" back to
+  // "New API" on blur — taking the correct preset base URL with it.
+  const [typeTouched, setTypeTouched] = useState(false);
   const [groupName, setGroupName] = useState("default");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // The endpoint the gateway would actually call for this base URL. The
+  // provider presets are only as good as the URL builder, and a preset whose
+  // base lands on the wrong path is invisible until the first request 404s —
+  // which is what used to push operators into hand-written endpoint overrides.
+  // Showing the resolved URL in the dialog makes a wrong join obvious up front.
+  const [endpointPreview, setEndpointPreview] = useState<string | null>(null);
   const canSubmit = Boolean(baseUrl.trim() && secret.trim());
 
   // The sync mode is a per-channel decision with a real operational cost, so
@@ -112,6 +124,7 @@ export function AddChannelDialog({
                 return current;
               });
               setTypeHint(provider);
+              setTypeTouched(true);
             }}
             disabled={pending}
             allowCustom
@@ -138,8 +151,15 @@ export function AddChannelDialog({
               const url = baseUrl.trim();
               if (!url) return;
               service
+                .endpointPreview(url)
+                .then((preview) => setEndpointPreview(preview.chat_url ?? null))
+                .catch(() => setEndpointPreview(null));
+              service
                 .detectSiteType(url)
                 .then((detected) => {
+                  // Never clobber an explicit choice: the operator picked a
+                  // provider, and this heuristic has no authority over that.
+                  if (typeTouched) return;
                   if (
                     detected.family &&
                     TYPE_OPTIONS.some((o) => o.value === detected.family)
@@ -152,6 +172,11 @@ export function AddChannelDialog({
             placeholder="https://api.example.com"
             disabled={pending}
           />
+          {endpointPreview ? (
+            <small className="field-preview mono" title={endpointPreview}>
+              {t("channels.endpointPreview", { url: endpointPreview })}
+            </small>
+          ) : null}
         </Field>
         <Field label={t("channels.group")} hint={t("channels.groupHint")}>
           <input

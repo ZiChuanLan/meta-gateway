@@ -145,6 +145,11 @@ func (s *Service) DirectChatTest(ctx context.Context, channelID int64, model, pr
 		result.Error = strings.TrimPrefix(urlErr.Error(), "proxy: ")
 		return result
 	}
+	// The channel's endpoint mapping applies to the synthetic smoke test too: it
+	// is exactly the call an operator makes to verify a custom endpoint. A
+	// per-request override is NOT applied here — the drawer asks whether the
+	// channel itself serves the model, so honoring a client-supplied endpoint
+	// would report a different upstream's health.
 
 	// Exactly one key, no rotation and no 401 refresh replay: this is a single
 	// synthetic check, and silently walking the pool would make the reported

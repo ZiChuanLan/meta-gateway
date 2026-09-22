@@ -180,6 +180,18 @@ type Request struct {
 	// rewrote the alias via a {"real":"…"} mapping. Recorded on the log row so
 	// a shared alias stays attributable.
 	UpstreamModel string
+	// UpstreamPath / UpstreamURL are per-request endpoint overrides, supplied by
+	// the client body or by a payload rule (the latter through the request
+	// header map). UpstreamURL wins over UpstreamPath. Both are validated by the
+	// relay handler before they reach the proxy; a value that fails here was set
+	// by a channel rule, and the request is rejected as a bad request rather than
+	// forwarded to an invented endpoint.
+	UpstreamPath string
+	UpstreamURL  string
+	// UpstreamURLActual is the endpoint this attempt called, filled after URL
+	// resolution. Recorded on the log row so a relocated request (channel
+	// endpoint map, per-request override, custom path) stays attributable.
+	UpstreamURLActual string
 	// MemberID is the route member that actually served the request, filled
 	// after selection. Billing needs the exact row: (route_id, channel_id) is
 	// not unique across route groups and alias members, so the member's own

@@ -2479,6 +2479,34 @@ td.actions {
   line-height: 1.32;
   overflow-wrap: anywhere;
 }
+
+/* The endpoint a log row actually called. It is a supporting line under the
+   channel name, quieter than the model line, and it truncates instead of
+   stretching the column: a mapped upstream URL is long by nature. */
+.log-upstream-url {
+  display: block;
+  margin-top: 3px;
+  max-width: 320px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.32;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The resolved endpoint shown under the base-URL field: a supporting line that
+   truncates rather than stretching the form column. */
+.field-preview {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.32;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .member-row-main small > span {
   display: inline-flex;
   align-items: center;

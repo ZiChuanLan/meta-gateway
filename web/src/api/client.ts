@@ -265,6 +265,15 @@ export const api = (client: ApiClient) => ({
     }>(`/admin/site-type?url=${encodeURIComponent(url)}`, signal),
   updateSite: (id: number, body: Partial<Site>) =>
     client.put<Site>(`/admin/sites/${id}`, body),
+  /** What URL the gateway would actually call for a base URL, so a wrong join is
+   *  visible in the connection editor instead of surfacing as a 404 later. */
+  endpointPreview: (url: string, signal?: AbortSignal) =>
+    client.get<{
+      base_url?: string;
+      chat_url?: string;
+      models_url?: string;
+      endpoint_override?: string;
+    }>(`/admin/endpoint-preview?url=${encodeURIComponent(url)}`, signal),
   credentials: (siteId: number, signal?: AbortSignal) =>
     client.getList<Credential>(`/admin/sites/${siteId}/credentials`, signal),
   createCredential: (

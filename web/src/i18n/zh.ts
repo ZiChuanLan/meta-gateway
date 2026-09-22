@@ -457,8 +457,10 @@ export const zh: Dict = {
   "channels.add": "添加连接",
   "channels.addHint":
     "填写上游地址和凭证。「保存并验证」会完成连接检查与初次模型同步。",
+  "channels.endpointPreview": "将请求到：{url}",
   "channels.namePlaceholder": "可选显示名称",
-  "channels.baseUrlHint": "OpenAI 兼容根地址，是否带 /v1 均可。",
+  "channels.baseUrlHint":
+    "OpenAI 兼容根地址，是否带 /v1 均可。也可以按 new-api 的习惯直接粘贴完整端点（如 https://api.typesafe.ai/v1/systemone），保存时会自动拆成根地址 + 端点路径覆盖。",
   "channels.inheritsSite": "使用站点 Base URL",
   "channels.neverChecked": "从未",
   "channels.modelsSection": "模型",
@@ -637,6 +639,9 @@ export const zh: Dict = {
   "channels.payloadRulesHint":
     "JSON 规则数组：match（模型通配、协议、请求头子串、payload JSON path 条件）+ actions（set / delete / filter）。不匹配的请求原样透传。路径用点和索引：messages.0.content、messages.#.image_url（任意元素）。",
   "channels.endpointMap": "自定义端点与字段映射",
+  "channels.endpointPreset": "一键预设",
+  "channels.endpointPresetHint":
+    "预设只填空位，已填写的内容不会被覆盖。TypeSafe 预设里的提问文案需要改成你自己的语义（question id 与答案字段也要对应你的问题类型）。",
   "channels.endpointMapHint":
     "给上游不是 OpenAI 形态的渠道用：可以改端点路径，也可以把请求/响应体字段互相搬运。留空即完全透传，不会影响现有渠道。",
   "channels.pathOverride": "端点路径覆盖",
@@ -946,6 +951,8 @@ export const zh: Dict = {
   "logsPage.upstreamRequestId": "上游请求 ID",
   "logsPage.upstreamModelHint":
     "本次请求真正转发到的上游模型。路由把多个模型统一成同一个别名时，用它区分这一条是哪个真实模型服务的。",
+  "logsPage.upstreamUrlHint":
+    "本次请求真正打到的上游地址（scheme + host + path，已去掉 query 与 fragment）。渠道端点覆盖/映射会把请求改道，任意路径透传（POST /v1/<任意>）更是直接照搬客户端路径——只有这里能看出实际调用了哪个端点。",
   "logsPage.decisionHint": "点击查看路由决策",
   "logsPage.decisionTitle": "路由决策",
   "logsPage.decisionSelected": "由 {channel} 服务",

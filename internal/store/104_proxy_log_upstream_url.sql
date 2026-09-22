@@ -1,0 +1,19 @@
+-- The URL a relay attempt actually called (scheme + host + path; query and
+-- fragment stripped, because they routinely carry credentials).
+--
+-- proxy_logs.path holds the CLIENT-facing path, which stopped being the same
+-- thing as the upstream path once channel endpoint overrides existed
+-- (upstream_path_override/upstream_path_map, migration 103) and stopped being
+-- the whole story once custom-path passthrough landed (POST /v1/<anything>
+-- forwards the client's own path verbatim). Without this column an operator
+-- reading a log cannot answer "which endpoint did we actually call?" — the same
+-- gap sub2api's safeUpstreamURL fills in its request log.
+--
+-- No backfill: rows written before the column existed have no recorded URL and
+-- stay empty, which the console renders as "not recorded" rather than inventing
+-- one from today's configuration.
+--
+-- The full-text index is unaffected: it is an external-content FTS5 table over a
+-- fixed column list (logfts.go), and a new proxy_logs column simply stays
+-- outside it.
+ALTER TABLE proxy_logs ADD COLUMN upstream_url TEXT NOT NULL DEFAULT '';

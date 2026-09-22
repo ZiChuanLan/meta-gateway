@@ -125,16 +125,31 @@ func Detect(ctx context.Context, client *http.Client, baseURL string) (*Result, 
 		}
 	}
 
-	// ③ Sub2API endpoint shape: /api/v1/auth/me exists (AAH: JSON body with a
-	// string "code" field is the fingerprint; a bare 401 also strongly
-	// suggests the route exists).
-	if body, status, err := fetch(ctx, client, baseURL+"/api/v1/auth/me"); err == nil {
+	// ③ Sub2API endpoint shape: /api/v1/auth/me answers 401 with Sub2API's own JSON
+	// envelope. Verified in source: `response.Error` writes
+	// `{"code":<int>,"message":…}` (sub2api backend/internal/pkg/response/response.go)
+	// and `AuthHandler.GetCurrentUser` calls `response.Unauthorized` for an
+	// unauthenticated caller, so the observed body is
+	// `{"code":401,"message":"User not authenticated"}`.
+	//
+	// Three details are load-bearing, each learned from a live false positive:
+	//
+	//   - `code` is an INTEGER there. Decoding it into a `Code string` silently
+	//     failed on every real response, so the check could only ever match a
+	//     hand-written test body; it is decoded as raw JSON instead.
+	//   - The status must be 401. matching only the envelope shape also caught
+	//     Moonshot, whose unrelated 404 body `{"code":5,…,"message":"没找到对象",…}`
+	//     parses as the same shape.
+	//   - `message` must be present, which excludes a bare `{"code":…}`.
+	//
+	// A bare 401 on this path is explicitly NOT enough: measured, DeepSeek answers
+	// plain text "Authentication Fails (governor)" and used to be labelled sub2api.
+	if body, status, err := fetch(ctx, client, baseURL+"/api/v1/auth/me"); err == nil && status == http.StatusUnauthorized {
 		var authMe struct {
-			Code string `json:"code"`
+			Code    json.RawMessage `json:"code"`
+			Message string          `json:"message"`
 		}
-		jsonErr := json.Unmarshal(body, &authMe)
-		if jsonErr == nil && authMe.Code != "" ||
-			status == http.StatusUnauthorized && !strings.HasPrefix(strings.TrimSpace(string(body)), "{") {
+		if jsonErr := json.Unmarshal(body, &authMe); jsonErr == nil && len(authMe.Code) > 0 && authMe.Message != "" {
 			result.Family = "sub2api"
 			result.SiteType = "SUB2API"
 			result.Evidence = "sub2api-endpoint"
@@ -170,12 +185,27 @@ func Detect(ctx context.Context, client *http.Client, baseURL string) (*Result, 
 				}
 			}
 		}
-		// Any 401 on /api/user/self strongly suggests a New-API-family host.
+		// ④c Structurally, not "any 401". A New-API-family host answers
+		// /api/user/self with its own JSON envelope — `success` plus a `message`
+		// (new-api's authHelper writes exactly `{"success":false,"message":…}`).
+		//
+		// The previous fallback was "any 401 on this path is New API", which is not
+		// discriminating: measured, Zhipu answers 401 here with an `{"error":{…}}`
+		// envelope and DeepSeek answers plain text `Authentication Fails
+		// (governor)`. That rule labelled Zhipu as `new-api`, and because the
+		// connection dialog applied detection on blur it silently replaced an
+		// operator's explicit "智谱 GLM" pick — and its correct preset base URL.
 		if status == http.StatusUnauthorized {
-			result.Family = "new-api"
-			result.SiteType = "NEW_API"
-			result.Evidence = "user-self-401"
-			return result, nil
+			var envelope struct {
+				Success *bool  `json:"success"`
+				Message string `json:"message"`
+			}
+			if jsonErr := json.Unmarshal(body, &envelope); jsonErr == nil && envelope.Success != nil && envelope.Message != "" {
+				result.Family = "new-api"
+				result.SiteType = "NEW_API"
+				result.Evidence = "user-self-401"
+				return result, nil
+			}
 		}
 	}
 

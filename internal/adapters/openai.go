@@ -122,8 +122,30 @@ func modelEndpoint(baseURL string) (string, error) {
 }
 
 // JoinOpenAIPath joins an OpenAI-compatible base URL with a path under /v1.
-// If the base already ends with /v1, that segment is not duplicated.
-// path should be relative to /v1, e.g. "models" or "chat/completions".
+//
+// Two base shapes are in the wild and they behave differently on purpose:
+//
+//	https://api.deepseek.com      → /v1/chat/completions   (no path: the
+//	                               conventional /v1 root is added)
+//	…/v1, …/openai/v1, …/v1beta   → the path is appended under that root
+//	…/api/paas/v4, …/api/v3, …/v2 → appended under the vendor's own root
+//
+// The last two cases are the same rule: a path segment is only ever an API ROOT,
+// never a piece of one endpoint. A provider whose base is `/api/paas/v4` or
+// `/api/v3` serves `/chat/completions` UNDER it, so inserting another `/v1`
+// produced the non-existent `/api/paas/v4/v1/chat/completions` — measured, not
+// theorised: every Zhipu/Volcengine/Qianfan preset in the type dropdown was
+// unusable, which is why an operator had to fall back to hand-written endpoint
+// overrides.
+//
+// A base with NO path is the one genuinely ambiguous shape. It keeps the /v1
+// root, because that is what the OpenAI-compatible world overwhelmingly serves.
+// A provider whose documented base has no /v1 is expressed by pasting the
+// documented ENDPOINT instead (`https://api.perplexity.ai/chat/completions`),
+// which SplitEndpointBaseURL turns into root + endpoint override. That is a
+// deliberate choice over a host allowlist: a host list is unverifiable for
+// self-hosted mirrors and proxy domains, while a documented path is checkable
+// and visible to the operator in the endpoint preview.
 func JoinOpenAIPath(baseURL, path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
@@ -136,13 +158,10 @@ func JoinOpenAIPath(baseURL, path string) (string, error) {
 		return "", errors.New("invalid base URL")
 	}
 	basePath := strings.TrimRight(parsed.Path, "/")
-	lower := strings.ToLower(basePath)
-	if lower == "/v1" || strings.HasSuffix(lower, "/v1") {
-		parsed.Path = basePath + "/" + rel
-	} else if basePath == "" {
+	if basePath == "" {
 		parsed.Path = "/v1/" + rel
 	} else {
-		parsed.Path = basePath + "/v1/" + rel
+		parsed.Path = basePath + "/" + rel
 	}
 	return parsed.String(), nil
 }

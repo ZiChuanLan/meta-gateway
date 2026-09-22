@@ -299,6 +299,13 @@ export interface ProxyLog {
    * i.e. whenever one client-facing name is served by several real models.
    */
   upstream_model?: string;
+  /**
+   * The URL this attempt actually called (scheme + host + path; query and
+   * fragment stripped). Differs from `path` whenever a channel endpoint
+   * override/map relocated the request, and it is the only record of what a
+   * custom-path passthrough (`POST /v1/<anything>`) reached.
+   */
+  upstream_url?: string;
   created_at: string;
   /** Persisted billing amount, joined from usage_records by request_id. */
   cost?: number;

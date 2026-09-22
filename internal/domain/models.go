@@ -636,6 +636,12 @@ type ProxyLog struct {
 	// the column existed.
 	UpstreamModel string    `json:"upstream_model,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+	// UpstreamURL is the URL this attempt actually called (scheme + host + path,
+	// query and fragment stripped). It differs from Path whenever a channel
+	// endpoint override/map relocated the request, and it is the only record of
+	// what a custom-path passthrough (/v1/<anything>) reached. Empty on rows
+	// written before the column existed.
+	UpstreamURL string `json:"upstream_url,omitempty"`
 	// Cost is the persisted billing amount for this request, joined from
 	// usage_records by request_id. It is populated only in admin list
 	// responses; the proxy_logs table carries no cost column and inserts

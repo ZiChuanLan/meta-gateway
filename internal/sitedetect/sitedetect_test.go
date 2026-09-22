@@ -53,7 +53,11 @@ func TestDetectSub2APIByEndpointShape(t *testing.T) {
 		case "/":
 			_, _ = w.Write([]byte(`<html><head><title>Generic Dashboard</title></head></html>`))
 		case "/api/v1/auth/me":
-			http.Error(w, `{"code":"token_required"}`, http.StatusUnauthorized)
+			// The real sub2api body: `response.Error(401, …)` writes an INTEGER code
+			// (sub2api backend/internal/pkg/response/response.go), which the previous
+			// `Code string` decode silently failed to match.
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code":401,"message":"User not authenticated"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -143,5 +147,105 @@ func TestDetectUnknownSite(t *testing.T) {
 	}
 	if result.Family != "" {
 		t.Fatalf("expected no match, got %+v", result)
+	}
+}
+
+// A provider that is NOT a New-API host must not be labelled one just because it
+// answers 401 on /api/user/self. Both bodies below are real responses captured
+// from the live services; before this was tightened, Zhipu was reported as
+// `new-api` and the connection dialog then overwrote the operator's explicit
+// provider choice (and its correct preset base URL) on blur.
+func TestDetectDoesNotClaimNewAPIForUnrelatedProviders(t *testing.T) {
+	cases := []struct {
+		name         string
+		selfBody     string
+		selfStatus   int
+		authMe       string
+		authMeStatus int
+	}{
+		{
+			name:       "zhipu error envelope",
+			selfBody:   `{"error":{"code":"1001","message":"Header中未收到Authorization参数，无法进行身份验证。"}}`,
+			selfStatus: http.StatusUnauthorized,
+		},
+		{
+			name:         "deepseek plain text (also must not read as sub2api)",
+			selfBody:     `Authentication Fails (governor)`,
+			authMe:       `Authentication Fails (governor)`,
+			authMeStatus: http.StatusUnauthorized,
+		},
+		{
+			// Measured: Moonshot answers this unrelated path with its own 404
+			// envelope `{"code":5,…,"message":"没找到对象",…}`, which has the same
+			// SHAPE as sub2api's error envelope. Requiring 401 excludes it.
+			name:         "moonshot 404 envelope with a numeric code",
+			selfBody:     `{"code":5,"error":"url.not_found","message":"没找到对象"}`,
+			selfStatus:   http.StatusNotFound,
+			authMe:       `{"code":5,"error":"url.not_found","message":"没找到对象"}`,
+			authMeStatus: http.StatusNotFound,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/":
+					_, _ = w.Write([]byte(`<html><head><title>Generic Provider</title></head></html>`))
+				case "/api/user/self":
+					status := tc.selfStatus
+					if status == 0 {
+						status = http.StatusUnauthorized
+					}
+					w.WriteHeader(status)
+					_, _ = w.Write([]byte(tc.selfBody))
+				case "/api/v1/auth/me":
+					if tc.authMe == "" {
+						http.NotFound(w, r)
+						return
+					}
+					status := tc.authMeStatus
+					if status == 0 {
+						status = http.StatusUnauthorized
+					}
+					w.WriteHeader(status)
+					_, _ = w.Write([]byte(tc.authMe))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+
+			result, err := Detect(context.Background(), server.Client(), server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Family != "" {
+				t.Fatalf("family = %q (evidence %q), want no claim", result.Family, result.Evidence)
+			}
+		})
+	}
+}
+
+// A real New-API host still resolves, via its own JSON envelope.
+func TestDetectNewAPIByEnvelope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			_, _ = w.Write([]byte(`<html><head><title>Generic Dashboard</title></head></html>`))
+		case "/api/user/self":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"success":false,"message":"无权进行此操作，未登录且未提供 access token"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	result, err := Detect(context.Background(), server.Client(), server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Family != "new-api" || result.SiteType != "NEW_API" {
+		t.Fatalf("result=%+v", result)
 	}
 }

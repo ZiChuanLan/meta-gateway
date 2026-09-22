@@ -676,6 +676,18 @@ function ProxyLogsPanel() {
 											{channelName.get(log.channel_id) ??
 												`#${log.channel_id}`}
 										</Link>
+										{/* The endpoint this attempt actually called. It differs from the
+										    client path whenever a channel endpoint override/map or a
+										    custom-path passthrough relocated the request, and it is the
+										    only place that shows a per-model retarget. */}
+										{log.upstream_url ? (
+											<small
+												className="mono log-upstream-url"
+												title={t("logsPage.upstreamUrlHint")}
+											>
+												{log.upstream_url}
+											</small>
+										) : null}
 									</td>
 									<td className="log-status-cell">
 										<span className="log-status-line">

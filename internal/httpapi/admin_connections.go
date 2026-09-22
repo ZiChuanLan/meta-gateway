@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
@@ -49,6 +50,16 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
 		writeError(w, http.StatusBadRequest, "invalid base_url")
 		return
+	}
+	// new-api-style one-field configuration, applied on the add path too: an
+	// operator who pastes the complete upstream endpoint
+	// (`https://api.typesafe.ai/v1/systemone`) gets a clean site root plus the
+	// endpoint override, instead of a channel whose relay builds
+	// `/v1/systemone/v1/chat/completions`. The site stores the root, so reusing
+	// a site by base URL keeps matching the same upstream.
+	endpointOverride := ""
+	if splitBase, inferred, splitErr := adapters.SplitEndpointBaseURL(baseURL); splitErr == nil && inferred != "" {
+		baseURL, endpointOverride = splitBase, inferred
 	}
 	platform := strings.TrimSpace(req.Platform)
 	if platform == "" {
@@ -119,16 +130,17 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		groupName = "default"
 	}
 	channelID, err := h.db.Channel.Create(&domain.Channel{
-		SiteID:        &siteID,
-		CredentialID:  &credID,
-		Name:          name,
-		GroupName:     groupName,
-		Priority:      0,
-		Weight:        100,
-		Status:        status,
-		TypeHint:      strings.TrimSpace(req.TypeHint),
-		ModelsCSV:     strings.TrimSpace(req.ModelsCSV),
-		ModelSyncMode: syncMode,
+		SiteID:               &siteID,
+		CredentialID:         &credID,
+		Name:                 name,
+		GroupName:            groupName,
+		Priority:             0,
+		Weight:               100,
+		Status:               status,
+		TypeHint:             strings.TrimSpace(req.TypeHint),
+		ModelsCSV:            strings.TrimSpace(req.ModelsCSV),
+		ModelSyncMode:        syncMode,
+		UpstreamPathOverride: endpointOverride,
 	})
 	if err != nil {
 		_ = h.db.Credential.Delete(credID)

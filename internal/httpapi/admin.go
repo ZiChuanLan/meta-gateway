@@ -97,6 +97,9 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Delete("/sites/{id}", h.deleteSite)
 	// Site-type detection (AAH chain) for the connection editor.
 	r.Get("/site-type", h.detectSiteType)
+	// Endpoint preview: what URL this base would actually call, shown in the
+	// connection editor so a wrong join is visible before the first request.
+	r.Get("/endpoint-preview", h.endpointPreview)
 	// One-shot connection creation: site + credential + channel, with site
 	// reuse by normalized URL and rollback of partially created rows.
 	r.Post("/connections", h.createConnection)
