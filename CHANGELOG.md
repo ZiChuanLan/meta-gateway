@@ -6,6 +6,8 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v3.4.0] — 2026-09-22
+
 ### Added
 
 - **渠道级自定义端点与字段映射**：新增 `channels.upstream_path_override` / `upstream_path_map` /
