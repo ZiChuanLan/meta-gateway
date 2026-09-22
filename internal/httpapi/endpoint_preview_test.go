@@ -23,6 +23,9 @@ func TestEndpointPreviewReportsResolvedURL(t *testing.T) {
 		{"https://ark.cn-beijing.volces.com/api/v3", "https://ark.cn-beijing.volces.com/api/v3/chat/completions", "https://ark.cn-beijing.volces.com/api/v3/models"},
 		{"https://api.deepseek.com/v1", "https://api.deepseek.com/v1/chat/completions", "https://api.deepseek.com/v1/models"},
 		{"https://api.example.com", "https://api.example.com/v1/chat/completions", "https://api.example.com/v1/models"},
+		// A mount prefix is not an endpoint: the /v1 root still goes after it, and
+		// the preview is what shows that rule to the operator.
+		{"https://proxy.example.com/prefix", "https://proxy.example.com/prefix/v1/chat/completions", "https://proxy.example.com/prefix/v1/models"},
 		// Perplexity documents a base with no /v1, so its preset supplies the
 		// endpoint; the preview must report the endpoint itself, not a /v1 join.
 		{"https://api.perplexity.ai/chat/completions", "https://api.perplexity.ai/chat/completions", "https://api.perplexity.ai/chat/completions/models"},

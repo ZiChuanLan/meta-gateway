@@ -30,11 +30,17 @@ import (
 // become `/v1/systemone/v1/chat/completions`. Splitting at save time keeps the
 // operator's one-field habit while the relay keeps its ordinary endpoint rule.
 //
-// A path whose last segment looks like an API version root (`/v1`, `/api/v3`,
-// `/api/paas/v4`, `/v1beta`, `/openai/v1` …) is NOT an endpoint: those bases are
-// already roots, and every existing cn/intl provider presets one this way
-// (Zhipu, Doubao, Qianfan, Groq…). Splitting them would relocate the whole API
-// root and silently break every path on the channel.
+// The split happens ONLY when the path carries a version segment that is not the
+// last one (`/v1/systemone`, `/api/v2/core/generate`). Both other shapes are left
+// whole because splitting them relocated real channels:
+//
+//   - a last segment that is itself a version (`/api/paas/v4`, `/v1beta`,
+//     `/openai/v1`) is already an API root;
+//   - a path with no version segment at all (`/ok`, `/fail`, `/api/invoke`) is a
+//     MOUNT PREFIX — the upstream serves `/ok/v1/chat/completions` — so it must
+//     keep its ordinary `/v1` join. Splitting `/ok` into an override dropped
+//     `/v1/chat/completions` from every request on the channel, which is what the
+//     Compose E2E caught.
 //
 // The returned override is always in the absolute form (leading slash), so the
 // relay appends it to the bare host instead of guessing a `/v1` slot.
@@ -46,7 +52,7 @@ func SplitEndpointBaseURL(rawBaseURL string) (base string, override string, err 
 		return "", "", errors.New("invalid base URL")
 	}
 	path := strings.Trim(parsed.Path, "/")
-	if path == "" || isAPIRootPath(path) {
+	if path == "" || !carriesEndpoint(path) {
 		return strings.TrimRight(trimmed, "/"), "", nil
 	}
 	parsed.Path = ""
@@ -56,19 +62,74 @@ func SplitEndpointBaseURL(rawBaseURL string) (base string, override string, err 
 }
 
 // isAPIRootPath reports whether a base URL path names an API root rather than a
-// single endpoint. The rule is deliberately narrow (a version-looking last
-// segment) so that only an unambiguous endpoint is ever split off.
+// single endpoint: its LAST segment is version-shaped (`/v1`, `/api/v3`,
+// `/v1beta`, `/openai/v1`, `/compatible-mode/v1`).
+//
+// Version shape is what separates an API root from a MOUNT PREFIX here. A bare
+// extra segment cannot do it: `/ok`, `/fail` and `/prefix` are mount prefixes the
+// upstream serves `/v1/...` under (the Compose E2E mock relies on exactly that,
+// and v3.4.0 asserted `/prefix` → `/prefix/v1/models`).
 func isAPIRootPath(path string) bool {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	last := segments[len(segments)-1]
-	if last == "" {
-		return true
-	}
-	// v1, v2, v1beta, v1alpha, v4 …
-	if len(last) >= 2 && (last[0] == 'v' || last[0] == 'V') && last[1] >= '0' && last[1] <= '9' {
-		return true
+	return isVersionSegment(segments[len(segments)-1])
+}
+
+// carriesEndpoint reports whether a base URL path is a COMPLETE upstream
+// endpoint, i.e. the whole URL was pasted into the base field the way new-api's
+// Custom channel accepts. Only two shapes say that unambiguously:
+//
+//   - a version segment that is NOT last, as in `/v1/systemone` (TypeSafe's
+//     documented endpoint) or `/api/v2/core/generate`;
+//   - a trailing OpenAI-family surface name, as in Perplexity's documented
+//     `/chat/completions` (`base_url` + that path is their whole contract).
+//
+// Everything else must stay whole. `/api/paas/v4` and `/v1beta` are already API
+// roots, and `/ok`, `/fail`, `/prefix` are mount prefixes whose `/v1` root still
+// applies — splitting those into an override removed `/v1/chat/completions` from
+// every request, which is the regression the Compose E2E caught.
+func carriesEndpoint(path string) bool {
+	return hasInteriorVersionSegment(path) || hasKnownEndpointTail(path)
+}
+
+// hasInteriorVersionSegment reports whether a path contains a version-shaped
+// segment that is NOT its last one, e.g. `/v1/systemone`.
+func hasInteriorVersionSegment(path string) bool {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	for i := 0; i < len(segments)-1; i++ {
+		if isVersionSegment(segments[i]) {
+			return true
+		}
 	}
 	return false
+}
+
+// knownEndpointTails are the relay surfaces the gateway itself routes
+// (internal/httpapi/relay.go). A base URL ending in one of them names one
+// endpoint, not a mount point — which is how Perplexity is configured, since its
+// documented base carries no /v1 at all and `/v1/chat/completions` 404s.
+var knownEndpointTails = []string{
+	"chat/completions", "completions", "embeddings", "responses",
+	"messages/count_tokens", "messages", "models", "moderations",
+	"images/generations", "images/edits", "images/variations",
+	"audio/speech", "audio/transcriptions", "audio/translations",
+	"dashboard/billing/credit_summary",
+}
+
+func hasKnownEndpointTail(path string) bool {
+	trimmed := strings.Trim(path, "/")
+	for _, tail := range knownEndpointTails {
+		if trimmed == tail || strings.HasSuffix(trimmed, "/"+tail) {
+			return true
+		}
+	}
+	return false
+}
+
+// isVersionSegment matches the version naming used by API roots: v1, v2, v4,
+// v1beta, v1alpha, …
+func isVersionSegment(segment string) bool {
+	return len(segment) >= 2 && (segment[0] == 'v' || segment[0] == 'V') &&
+		segment[1] >= '0' && segment[1] <= '9'
 }
 
 // SafeURL renders a URL for logs, response headers and audit events: scheme,

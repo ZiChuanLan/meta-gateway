@@ -215,6 +215,35 @@ func TestPayloadRuleRetargetsUpstreamPathPerModel(t *testing.T) {
 	}
 }
 
+// The Compose E2E mock mounts each channel under a SUB-PATH (`base_url` .../ok,
+// upstream serves `/ok/v1/chat/completions`). v3.4.1 shipped a "a base path is
+// always an API root" rule that split that prefix into a complete-endpoint
+// override, so `/v1/chat/completions` was dropped and every mount-prefix channel
+// 404'd. Only the Compose job caught it, which meant a ~20 minute feedback loop;
+// this test reproduces the contract locally.
+func TestMountPrefixBaseURLKeepsTheV1Root(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The mock's own contract: the channel's prefix, then the API root.
+		if !strings.HasPrefix(r.URL.Path, "/ok/v1/") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"object":"chat.completion","choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
+	}))
+	defer upstream.Close()
+
+	serverURL, token, _ := setupRelay(t, upstream.URL+"/ok", "openai-compatible")
+	resp, raw := postWithToken(t, serverURL+"/v1/chat/completions", token,
+		`{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}]}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("mount-prefix channel status = %d body=%s (a 404 means the prefix was split and /v1/chat/completions was dropped)", resp.StatusCode, raw)
+	}
+	if echoed := resp.Header.Get("X-Meta-Upstream-URL"); !strings.HasSuffix(echoed, "/ok/v1/chat/completions") {
+		t.Fatalf("X-Meta-Upstream-URL = %q, want the mounted chat endpoint", echoed)
+	}
+}
+
 // postWithToken relays a downstream request and returns the response plus body.
 func postWithToken(t *testing.T, url, token, payload string) (*http.Response, []byte) {
 	t.Helper()

@@ -349,9 +349,18 @@ and sub2api's passthrough make it possible:
 - **Base URL splitting** (`adapters.SplitEndpointBaseURL`). An operator who
   pastes the whole endpoint (`https://api.typesafe.ai/v1/systemone`) gets it split
   at save time into a root plus `upstream_path_override`, so `<base>/v1/<path>`
-  cannot double the version segment. A last segment that looks like an API root
-  (`v1`, `v2`, `v1beta`…) is never split — those bases are roots, and splitting
-  one would relocate every path on the channel.
+  cannot double the version segment. The split is deliberately narrow
+  (`carriesEndpoint`): only a version segment that is NOT last (`/v1/systemone`)
+  or a trailing surface name the gateway itself routes (`/chat/completions`, which
+  is how Perplexity is configured — its documented base has no `/v1` and
+  `/v1/chat/completions` 404s). Everything else stays whole, because a base path
+  segment is not necessarily an endpoint: `/api/paas/v4` is already an API root,
+  while `/ok` or `/prefix` is a MOUNT PREFIX the upstream serves `/v1/...` under.
+  Splitting a mount prefix drops `/v1/<path>` from every request on the channel;
+  that regression shipped in v3.4.1 and was caught by the Compose E2E, so
+  `TestMountPrefixBaseURLKeepsTheV1Root` now reproduces the contract locally
+  instead of leaving a ~20 minute feedback loop as its only defence. `JoinOpenAIPath`
+  resolves the same three base shapes and shares `isAPIRootPath` with the split.
 - **Per-request endpoints** (`upstream_path` / `upstream_url`, from the request
   body or a payload-rule header). Resolved after the payload rules and before the
   send, so one model can be retargeted to another endpoint without a channel per

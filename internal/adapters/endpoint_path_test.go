@@ -25,16 +25,37 @@ func TestSplitEndpointBaseURL(t *testing.T) {
 			wantOverride: "/v1/systemone",
 		},
 		{
-			name:         "endpoint outside a version root is split",
-			in:           "https://host.example/api/invoke",
-			wantBase:     "https://host.example",
-			wantOverride: "/api/invoke",
+			// Ambiguous on purpose, and resolved toward the mount prefix. A path
+			// with neither a version segment nor a known endpoint tail cannot be
+			// told apart from a mount point, and guessing "endpoint" silently broke
+			// the mount-prefix case (E2E channel at `/ok` lost `/v1/chat/completions`).
+			// The endpoint preview shows the operator the /v1 join, so a genuine
+			// endpoint of this shape is a visible, one-field fix.
+			name:     "path without a version or known tail stays a mount prefix",
+			in:       "https://host.example/api/invoke",
+			wantBase: "https://host.example/api/invoke",
 		},
 		{
-			name:         "deep endpoint is split whole",
-			in:           "https://host.example/api/v2/core/generate",
+			name:     "mount prefix /ok is untouched",
+			in:       "http://mock-upstream:8080/ok",
+			wantBase: "http://mock-upstream:8080/ok",
+		},
+		{
+			name:     "mount prefix /prefix is untouched",
+			in:       "https://api.example.com/prefix",
+			wantBase: "https://api.example.com/prefix",
+		},
+		{
+			name:         "perplexity's documented endpoint is split (no /v1 base exists)",
+			in:           "https://api.perplexity.ai/chat/completions",
+			wantBase:     "https://api.perplexity.ai",
+			wantOverride: "/chat/completions",
+		},
+		{
+			name:         "a mount prefix before a known tail is kept whole",
+			in:           "https://host.example/gateway/v1/chat/completions",
 			wantBase:     "https://host.example",
-			wantOverride: "/api/v2/core/generate",
+			wantOverride: "/gateway/v1/chat/completions",
 		},
 		{
 			name:     "zhipu version root is untouched",

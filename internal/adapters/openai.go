@@ -123,29 +123,31 @@ func modelEndpoint(baseURL string) (string, error) {
 
 // JoinOpenAIPath joins an OpenAI-compatible base URL with a path under /v1.
 //
-// Two base shapes are in the wild and they behave differently on purpose:
+// The base can be a bare host, an API root, or a MOUNT PREFIX, and the join
+// differs for the last two:
 //
-//	https://api.deepseek.com      → /v1/chat/completions   (no path: the
-//	                               conventional /v1 root is added)
-//	…/v1, …/openai/v1, …/v1beta   → the path is appended under that root
-//	…/api/paas/v4, …/api/v3, …/v2 → appended under the vendor's own root
+//	https://api.deepseek.com      → /v1/chat/completions  (no path: the
+//	                              conventional /v1 root is added)
+//	…/v1, …/openai/v1, …/v1beta   → the path goes UNDER that root
+//	…/api/paas/v4, …/api/v3, …/v2 → also UNDER that root (the vendor's own)
+//	…/ok, …/proxy/upstream        → /ok/v1/chat/completions (mount prefix: the
+//	                              /v1 root still belongs between the two)
 //
-// The last two cases are the same rule: a path segment is only ever an API ROOT,
-// never a piece of one endpoint. A provider whose base is `/api/paas/v4` or
-// `/api/v3` serves `/chat/completions` UNDER it, so inserting another `/v1`
-// produced the non-existent `/api/paas/v4/v1/chat/completions` — measured, not
-// theorised: every Zhipu/Volcengine/Qianfan preset in the type dropdown was
-// unusable, which is why an operator had to fall back to hand-written endpoint
-// overrides.
+// A base whose last segment is version-shaped is already an API root, so the path
+// is appended directly. Otherwise the segment is a mount prefix shared with the
+// platform's other surfaces, so the conventional /v1 root goes after it.
 //
-// A base with NO path is the one genuinely ambiguous shape. It keeps the /v1
-// root, because that is what the OpenAI-compatible world overwhelmingly serves.
-// A provider whose documented base has no /v1 is expressed by pasting the
-// documented ENDPOINT instead (`https://api.perplexity.ai/chat/completions`),
-// which SplitEndpointBaseURL turns into root + endpoint override. That is a
-// deliberate choice over a host allowlist: a host list is unverifiable for
-// self-hosted mirrors and proxy domains, while a documented path is checkable
-// and visible to the operator in the endpoint preview.
+// Two simpler rules were each wrong, and the second shipped before CI caught it —
+// both are recorded here so neither is reintroduced:
+//
+//   - Looking only for a `/v1` SUFFIX broke every vendor with a differently named
+//     root, e.g. the Zhipu preset requested `/api/paas/v4/v1/chat/completions`.
+//   - Treating ANY path as an API root broke mount-prefix channels: a channel
+//     whose upstream serves `/ok/v1/chat/completions` was sent to
+//     `/ok/chat/completions`.
+//
+// A pasted complete endpoint never reaches the non-root branch below: it is peeled
+// off by SplitEndpointBaseURL at save time (see carriesEndpoint).
 func JoinOpenAIPath(baseURL, path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
@@ -158,10 +160,13 @@ func JoinOpenAIPath(baseURL, path string) (string, error) {
 		return "", errors.New("invalid base URL")
 	}
 	basePath := strings.TrimRight(parsed.Path, "/")
-	if basePath == "" {
+	switch {
+	case basePath == "":
 		parsed.Path = "/v1/" + rel
-	} else {
+	case isAPIRootPath(basePath):
 		parsed.Path = basePath + "/" + rel
+	default:
+		parsed.Path = basePath + "/v1/" + rel
 	}
 	return parsed.String(), nil
 }

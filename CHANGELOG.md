@@ -6,16 +6,42 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v3.4.2] — 2026-09-22
+
+### Fixed
+
+- **修复 v3.4.1 引入的挂载前缀回归**（`adapters.JoinOpenAIPath` / `SplitEndpointBaseURL`）：
+  v3.4.1 把「路径段」一律当作 API 根，于是 base 带**非版本路径**时不再插 `/v1`——但这不等于「完整端点」：
+  `base_url = <host>/ok` 的上游实际服务 `/ok/v1/chat/completions`（Compose E2E mock 就是这么挂的），
+  改后变成 `/ok/chat/completions` → 全部 404。v3.4.1 的 CI 因此失败，但 release.yml 并行进行、不依赖 CI，
+  所以**带红灯的镜像已经发到 Docker Hub**。
+  现在拆分为三种 base，用一个判别式（`carriesEndpoint`）：
+  - 无路径 → 补 `/v1`；
+  - **末段是版本号**（`/v1`、`/api/paas/v4`、`/v1beta`、`/openai/v1`）→ 已是 API 根，路径直接拼；
+  - **其余末段**（`/ok`、`/prefix`）→ 挂载前缀，`/v1` 仍插在两者之间。
+  拆分（`SplitEndpointBaseURL`）只在确有完整端点证据时发生：**非末段的版本号**（`/v1/systemone`）或
+  **末段是本网关自己路由的 surface 名**（`/chat/completions`，Perplexity 即属此类）。其余一律不拆。
+- **回归测试落到本地**：`TestMountPrefixBaseURLKeepsTheV1Root`（httpapi）与 `TestSplitEndpointBaseURL`
+  新增的挂载前缀用例，复现 Compose 的 `/ok/v1/...` 契约；此前只有 Compose job 能发现此问题，反馈周期约 20 分钟。
+  已用「注入 bug → 必须失败」验证这些测试是承重的，而非橡皮章（见 `.tools/prove_tests_catch_bug.py`）。
+- **纠正 v3.4.1 的错误描述**：该版本 CHANGELOG 写的「路径段永远是 API 根」是错的，已在条目内注明更正。
+- **发布流程门禁**（`.github/workflows/release.yml`）：此前 Release 与 CI 在 tag push 时**并行**运行，互不依赖，
+  因此 CI 全红的 tag 照样把镜像推到 Docker Hub（v3.4.1 就是同一秒 `Release: success` + `CI: failure`）。
+  新增 `wait-for-ci` job：轮询该 commit 的 CI run，结论非 success 则**拒绝发布**。
+  （被 `actions: read` 权限与一段真实的 bash 补丁语法错误卡过，两者均已修正并用 `bash -n` 验证。）
+
 ## [v3.4.1] — 2026-09-22
 
 ### Fixed
 
 - **修复 OpenAI 兼容厂商预设全部打错端点**（`adapters.JoinOpenAIPath`）：只要 base URL 带非 `/v1` 的路径段，旧实现一律在中间硬插一个 `/v1`，于是类型下拉里选智谱就会请求不存在的
   `/api/paas/v4/v1/chat/completions`（豆包 `/api/v3/v1/...`、千帆 `/v2/v1/...` 同理）——这就是「必须去高级里手填端点」的根本原因：不是配置麻烦，而是预设本身错了。
-  现在规则统一为：**路径段永远是 API 根，不是某个端点的一部分**——base 无路径时补 `/v1`（绝大多数供应商），base 带路径时原样拼在其后（`/api/paas/v4/chat/completions`、`/api/v3/chat/completions`）。
+  修正后的规则：base 无路径时补 `/v1`；**末段是版本号**（`/v1`、`/api/paas/v4`、`/v1beta`）时它是 API 根，路径直接拼在其后；其余非版本末段是**挂载前缀**，`/v1` 仍插在中间。
+  （本条的原始描述写成「路径段永远是 API 根」，那是错的，已由 v3.4.2 修正并说明。）
   无路径的 base 是唯一真正歧义的情形，保留 `/v1`；**没有 `/v1` 的供应商（Perplexity）改为直接填官方文档的端点**，由保存时的拆分逻辑（`SplitEndpointBaseURL`）得到 root + 端点覆盖。
   选择这个机制而不是主机名例外表：自建镜像/代理域名无法用主机名判定，而文档里的路径可以在「将请求到」预览里直接核对。
   - 实测证据（无 key 探测区分 401/404）：Perplexity `/chat/completions` → 401 存在、`/v1/chat/completions` → 404 不存在；智谱/豆包/千帆/DashScope/OpenRouter/Groq/Moonshot/SiliconFlow 均与各自官方文档一致。
+  - ⚠️ 本条随附的实现**引入了一个回归**（非版本路径的挂载前缀被当成完整端点拆掉），见 v3.4.2。
 - **新增端点预览 `GET /admin/endpoint-preview`**：返回该 base 实际会请求的 chat/models URL（带完整端点时返回拆分后的结果）；「添加连接」对话框在基础 URL 下方显示「将请求到：…」，把“路径拼错但看不出来”的问题提前到填写阶段。
 - **修复站点自动探测误覆盖手选类型**（`sitedetect` + 连接对话框）：探测链的两条兜底规则都不具区分性，且对话框会在失焦时用探测结果覆盖操作员的显式选择。
   - `sitedetect` 修正（对照 new-api / sub2api 源码核实信封格式后）：

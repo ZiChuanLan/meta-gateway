@@ -38,18 +38,20 @@ func TestJoinOpenAIPathMatchesDocumentedProviderEndpoints(t *testing.T) {
 		{name: "dashscope /compatible-mode/v1", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", path: "chat/completions", want: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"},
 		{name: "openrouter /api/v1", base: "https://openrouter.ai/api/v1", path: "chat/completions", want: "https://openrouter.ai/api/v1/chat/completions"},
 		{name: "groq /openai/v1", base: "https://api.groq.com/openai/v1", path: "chat/completions", want: "https://api.groq.com/openai/v1/chat/completions"},
-		// A vendor prefix that only LOOKS like a version must not be treated as one.
-		{name: "arbitrary prefix is preserved", base: "https://api.example.com/prefix", path: "models", want: "https://api.example.com/prefix/models"},
+		// A vendor prefix that is NOT version-shaped is a MOUNT PREFIX, not an API
+		// root: the platform mounts other surfaces next to it, so the conventional
+		// /v1 root still belongs between the two. Getting this backwards sent the
+		// E2E channel (upstream serves `/ok/v1/chat/completions`) to
+		// `/ok/chat/completions`.
+		{name: "mount prefix keeps the /v1 root", base: "https://api.example.com/prefix", path: "models", want: "https://api.example.com/prefix/v1/models"},
+		{name: "mount prefix with chat/completions", base: "http://mock-upstream:8080/ok", path: "chat/completions", want: "http://mock-upstream:8080/ok/v1/chat/completions"},
+		{name: "mount prefix under a shared root", base: "https://proxy.example.com/upstream", path: "chat/completions", want: "https://proxy.example.com/upstream/v1/chat/completions"},
+		{name: "a /v1 root after a mount prefix is not duplicated", base: "https://api.example.com/prefix/v1", path: "models", want: "https://api.example.com/prefix/v1/models"},
 		// Perplexity documents a base with no /v1 at all (verified: their
-		// OpenAI-compatibility guide uses `https://api.perplexity.ai`). The
-		// preset therefore supplies the documented ENDPOINT, which
-		// SplitEndpointBaseURL turns into root + endpoint override.
-		{
-			name: "perplexity documented endpoint is split, not /v1-joined",
-			base: "https://api.perplexity.ai/chat/completions",
-			path: "chat/completions",
-			want: "https://api.perplexity.ai/chat/completions/chat/completions",
-		},
+		// OpenAI-compatibility guide uses `https://api.perplexity.ai`). Its preset
+		// therefore supplies the documented ENDPOINT, which SplitEndpointBaseURL
+		// turns into root + endpoint override; that pair is asserted below, because
+		// joining an UNSPLIT endpoint never happens at runtime.
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -79,7 +81,7 @@ func TestJoinOpenAIPathMatchesDocumentedProviderEndpoints(t *testing.T) {
 
 func TestOpenAIModelAdapterNormalizesAndAuthenticates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/prefix/models" || r.Header.Get("Authorization") != "Bearer very-secret" {
+		if r.URL.Path != "/prefix/v1/models" || r.Header.Get("Authorization") != "Bearer very-secret" {
 			t.Fatalf("unexpected request: path=%s auth=%s", r.URL.Path, r.Header.Get("Authorization"))
 		}
 		_, _ = io.WriteString(w, `{"data":[{"id":" z-model "},{"id":"a-model"},{"id":"a-model"},{"id":" "}]}`)
