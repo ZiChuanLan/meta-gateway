@@ -6,6 +6,8 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v3.4.1] — 2026-09-22
+
 ### Fixed
 
 - **修复 OpenAI 兼容厂商预设全部打错端点**（`adapters.JoinOpenAIPath`）：只要 base URL 带非 `/v1` 的路径段，旧实现一律在中间硬插一个 `/v1`，于是类型下拉里选智谱就会请求不存在的
