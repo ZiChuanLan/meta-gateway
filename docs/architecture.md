@@ -54,7 +54,7 @@ Operations
 | `internal/auth` | Admin + session tokens, downstream-key bearer auth, scopes, model filters, expiry/IP checks |
 | `internal/ratelimit` | Process-local token buckets for Admin, downstream keys, groups, models |
 | **Relay core** | |
-| `internal/proxy` | The forward engine, split by responsibility: `proxy_forward.go` (candidate loop `ForwardWithMeta`), `proxy_keypool.go` (API-key pools, per-key breakers), `proxy_classify.go` (retryability, error categories), `proxy_health.go` (member/channel/key bookkeeping, usage recording), `proxy_rewrite.go` (model rename, reasoning downgrade, system prompt, header overrides), `proxy_streams.go` (first-chunk peek, silent-SSE detection), plus `circuit_breaker.go`, `channel_gate.go`, `payload_rules.go`, `prompt_guard.go` |
+| `internal/proxy` | The forward engine, split by responsibility: `proxy_forward.go` (candidate loop `ForwardWithMeta`), `proxy_keypool.go` (API-key pools, per-key breakers), `proxy_classify.go` (retryability, error categories), `proxy_health.go` (member/channel/key bookkeeping, usage recording), `proxy_rewrite.go` (model rename, reasoning downgrade, system prompt, header overrides), `proxy_streams.go` (first-chunk peek, silent-SSE detection), `proxy_direct.go` (route-free channel smoke test), plus `circuit_breaker.go`, `channel_gate.go`, `payload_rules.go`, `prompt_guard.go`, `jsonpath.go` + `upstream_map.go` + `upstream_map_validate.go` (channel endpoint/field mapping) |
 | `internal/routing` | Pure candidate evaluation (priority tiers, weighted/latency/adaptive, single-channel pin, sticky sessions), explain output |
 | `internal/relay` | Thin context-bound upstream HTTP transport |
 | `internal/adapters` | Stateless platform integrations: forward adapters + N×M translation registry, model-list, check-in, account adapters |
@@ -303,6 +303,35 @@ adapter. Usage accounting runs on the converted OpenAI-style body (non-stream)
 or the final SSE chunk (stream), so native channels report real token usage.
 
 Adding a channel platform = one adapter implementation + one registration line.
+
+## Channel Endpoint And Field Mapping (non-OpenAI upstreams)
+
+The forward adapters assume an OpenAI-shaped upstream under a `/v1` root. Two
+upstream families break that assumption, and one channel-level mechanism covers
+both (`internal/proxy/upstream_map.go`, columns `channels.upstream_*`):
+
+- **Wrong path root**: `JoinOpenAIPath` inserts `/v1`, so a Zhipu base
+  (`https://open.bigmodel.cn/api/paas/v4`) became the non-existent
+  `/api/paas/v4/v1/models`. `upstream_path_override` / `upstream_path_map`
+  replaces the path; when a mapping is present the URL is built with
+  `adapters.JoinRawPath` instead, so the base keeps its own root.
+- **Wrong protocol**: TypeSafe's `POST /v1/systemone` takes
+  `{state, model, questions}` and answers `{answers:{…}}` rather than OpenAI
+  chat. `upstream_request_map` / `upstream_response_map` move fields between the
+  two shapes with the payload_rules path language.
+
+Order matters in both directions. Request: adapter `TransformRequest` → field
+maps → upstream. Response: adapter `TransformResponse` → field maps → client, so
+map paths always describe the client-facing document.
+
+A channel with no mapping takes exactly the old path (the engine exits on
+`Empty()`), so the feature is additive. Every map is fail-open: a malformed or
+non-matching mapping forwards the original bytes and logs one line. The admin API
+validates the grammar on save (`proxy.ValidateUpstreamMap`) because the runtime
+failure mode of a typo is a silent no-op, which is indistinguishable from "the
+upstream rejected it" to an operator.
+
+## Intermediate-Format Conversion Chain (pivot)
 
 ## Intermediate-Format Conversion Chain (pivot)
 

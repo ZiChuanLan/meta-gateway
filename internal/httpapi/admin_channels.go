@@ -254,6 +254,10 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		SystemPrompt            *string `json:"system_prompt"`
 		RetryConfig             *string `json:"retry_config"`
 		ModelSyncMode           *string `json:"model_sync_mode"`
+		UpstreamPathOverride    *string `json:"upstream_path_override"`
+		UpstreamPathMap         *string `json:"upstream_path_map"`
+		UpstreamRequestMap      *string `json:"upstream_request_map"`
+		UpstreamResponseMap     *string `json:"upstream_response_map"`
 		StableFirst             *bool   `json:"stable_first"`
 	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
@@ -388,6 +392,21 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if patch.StableFirst != nil {
 		ch.StableFirst = *patch.StableFirst
 	}
+	// Custom endpoint / field mapping. An explicit empty value clears the
+	// mapping, so a channel can be returned to plain passthrough without a
+	// manual DB edit.
+	if patch.UpstreamPathOverride != nil {
+		ch.UpstreamPathOverride = strings.TrimSpace(*patch.UpstreamPathOverride)
+	}
+	if patch.UpstreamPathMap != nil {
+		ch.UpstreamPathMap = strings.TrimSpace(*patch.UpstreamPathMap)
+	}
+	if patch.UpstreamRequestMap != nil {
+		ch.UpstreamRequestMap = strings.TrimSpace(*patch.UpstreamRequestMap)
+	}
+	if patch.UpstreamResponseMap != nil {
+		ch.UpstreamResponseMap = strings.TrimSpace(*patch.UpstreamResponseMap)
+	}
 	// Only accept a new site_id when it is a positive id; never wipe ownership.
 	if patch.SiteID != nil && *patch.SiteID > 0 {
 		v := *patch.SiteID
@@ -454,6 +473,10 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	ch.HeaderOverride = strings.TrimSpace(ch.HeaderOverride)
 	ch.SystemPrompt = strings.TrimSpace(ch.SystemPrompt)
 	ch.RetryConfig = strings.TrimSpace(ch.RetryConfig)
+	ch.UpstreamPathOverride = strings.TrimSpace(ch.UpstreamPathOverride)
+	ch.UpstreamPathMap = strings.TrimSpace(ch.UpstreamPathMap)
+	ch.UpstreamRequestMap = strings.TrimSpace(ch.UpstreamRequestMap)
+	ch.UpstreamResponseMap = strings.TrimSpace(ch.UpstreamResponseMap)
 	if ch.Name == "" {
 		return errors.New("name is required")
 	}
@@ -482,6 +505,9 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 		if err := json.Unmarshal([]byte(ch.PayloadRules), &rules); err != nil || rules == nil {
 			return errors.New("payload_rules must be a valid JSON array")
 		}
+	}
+	if err := validateUpstreamMap(ch); err != nil {
+		return err
 	}
 	if ch.ProxyURL != "" && h.validateProxyURL != nil {
 		if err := h.validateProxyURL(ch.ProxyURL); err != nil {
@@ -513,3 +539,20 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+
+// validateUpstreamMap validates the custom-endpoint / field-mapping columns and
+// canonicalizes their empty forms. It delegates the grammar to the proxy package
+// (which owns the runtime engine) so the API and the relay can never disagree
+// about what a valid mapping is.
+func validateUpstreamMap(ch *domain.Channel) error {
+	override, pathMap, requestMap, responseMap, err := proxy.ValidateUpstreamMap(
+		ch.UpstreamPathOverride, ch.UpstreamPathMap, ch.UpstreamRequestMap, ch.UpstreamResponseMap)
+	if err != nil {
+		return err
+	}
+	ch.UpstreamPathOverride = override
+	ch.UpstreamPathMap = pathMap
+	ch.UpstreamRequestMap = requestMap
+	ch.UpstreamResponseMap = responseMap
+	return nil
+}

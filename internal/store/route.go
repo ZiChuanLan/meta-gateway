@@ -386,8 +386,10 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 			rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-    c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
-		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
+		c.stable_first, c.stable_first_requests,
+		c.upstream_path_override, c.upstream_path_map, c.upstream_request_map, c.upstream_response_map,
+		c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
 			AND cred.site_id = c.site_id AND lower(cred.kind) IN ('api_key','session','access_token')
@@ -429,6 +431,8 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
 			&candidate.Channel.RetryConfig,
 			&stableFirst, &candidate.Channel.StableFirstRequests,
+			&candidate.Channel.UpstreamPathOverride, &candidate.Channel.UpstreamPathMap,
+			&candidate.Channel.UpstreamRequestMap, &candidate.Channel.UpstreamResponseMap,
 			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
 			&credentialUsable, &candidate.ModelPattern,
 		); err != nil {
@@ -508,8 +512,10 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 		rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
 		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-    c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
-		c.stable_first, c.stable_first_requests, c.created_at, c.updated_at,
+		c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
+		c.stable_first, c.stable_first_requests,
+		c.upstream_path_override, c.upstream_path_map, c.upstream_request_map, c.upstream_response_map,
+		c.created_at, c.updated_at,
 		CASE WHEN (
 			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
 			AND cred.site_id = c.site_id
@@ -554,6 +560,8 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
 			&candidate.Channel.RetryConfig,
 			&stableFirst, &candidate.Channel.StableFirstRequests,
+			&candidate.Channel.UpstreamPathOverride, &candidate.Channel.UpstreamPathMap,
+			&candidate.Channel.UpstreamRequestMap, &candidate.Channel.UpstreamResponseMap,
 			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
 			&credentialUsable, &candidate.ModelPattern,
 		); err != nil {

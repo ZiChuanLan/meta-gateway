@@ -636,6 +636,21 @@ export const zh: Dict = {
     "渠道硬并发上限；超限请求 FIFO 排队等待。0 = 不限。",
   "channels.payloadRulesHint":
     "JSON 规则数组：match（模型通配、协议、请求头子串、payload JSON path 条件）+ actions（set / delete / filter）。不匹配的请求原样透传。路径用点和索引：messages.0.content、messages.#.image_url（任意元素）。",
+  "channels.endpointMap": "自定义端点与字段映射",
+  "channels.endpointMapHint":
+    "给上游不是 OpenAI 形态的渠道用：可以改端点路径，也可以把请求/响应体字段互相搬运。留空即完全透传，不会影响现有渠道。",
+  "channels.pathOverride": "端点路径覆盖",
+  "channels.pathOverrideHint":
+    "直接替换端点路径，例如填 systemone 就把 /v1/chat/completions 打到 /v1/systemone。留空 = 不覆盖。",
+  "channels.pathMap": "端点路径映射",
+  "channels.pathMapHint":
+    'JSON 对象：{"OpenAI 路径":"上游路径"}。键可用 * 结尾做前缀匹配；值可用 {path}（剩余路径）与 {model}。用于 API 根不是 /v1 的供应商，例如 {"models":"models","chat/completions":"chat/completions"}。',
+  "channels.requestMap": "请求字段映射",
+  "channels.requestMapHint":
+    'JSON 数组，作用于发往上游的请求体。每项四种写法：{"from":"源路径","to":"目标路径"} 搬值；加 "move":true 则搬完删除源；{"to":"目标","template":"…{messages.0.content}…"} 用模板拼字符串；{"to":"目标","value":{"str":"字面量"}} 写死值。源字段不存在时静默跳过。',
+  "channels.responseMap": "响应字段映射",
+  "channels.responseMapHint":
+    '同一套语法，作用于上游返回给客户端的响应体（在协议适配器转换之后）。例如 {"from":"choices.0.message.content","to":"state"} 先把结果收进 state，再用 {"to":"choices.0.message.content","template":"{answers.ask.choice}"} 把上游的 answers 放回标准位置。',
   "channels.proxyUrl": "代理地址",
   "channels.proxyUrlHint":
     "该渠道上游请求的 HTTP(S) 代理。留空 = 继承全局代理（设置页）。",

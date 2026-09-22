@@ -59,6 +59,14 @@ export interface Channel {
   system_prompt?: string;
   retry_config?: string;
   model_sync_mode?: "auto" | "manual";
+  /** Replaces the endpoint path outright, e.g. "chat/completions" → "systemone". */
+  upstream_path_override?: string;
+  /** JSON object {"<openai path>":"<upstream path>"}; keys may end in "*", values may use {path} / {model}. */
+  upstream_path_map?: string;
+  /** JSON array of field maps applied to the outbound body. */
+  upstream_request_map?: string;
+  /** JSON array of field maps applied to the inbound body. */
+  upstream_response_map?: string;
   stable_first?: boolean;
   stable_first_requests?: number;
   created_at: string;

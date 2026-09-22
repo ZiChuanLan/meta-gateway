@@ -124,8 +124,27 @@ docs/               # 设计文档
 
 > **给 channel 表加新列时，务必同时补 `ListOverviews` 的 SELECT + Scan**，否则前端的勾选、开关会静默失效。
 
+**同一条约束还适用于转发热路径的第二处投影。** `internal/store/route.go` 里有**两个**手写 channel 投影，两处都必须补列：
+
+| 函数 | 用途 | 漏列的后果 |
+| --- | --- | --- |
+| `ChannelStore.ListOverviews` | 控制台渠道列表/编辑抽屉 | 表单回填成零值，保存即抹掉配置 |
+| `RouteMemberStore.RoutingCandidates` | **实际转发选中的渠道** | 运行时读到零值，该列的功能完全不生效 |
+| `RouteMemberStore.listCandidatesByRoute` | 路由详情页成员列表 | 与上者不一致，UI 与行为对不上 |
+
+三处 SELECT 的列顺序必须与各自的 `Scan` 一一对应。2026-09-21 的「自定义端点映射」就踩过这个坑：migration 与 ListOverviews 都补了，但 `RoutingCandidates` 漏了，表现是「配了映射、请求仍走旧路径」——单测（`TestUpstreamMapTranslatesTypeSafeShapedUpstream`）才拦住。**加完列后跑一次 `go test ./internal/proxy/ -run TestUpstreamMap`。**
+
+**补列还不够：列的顺序也必须与 `Scan` 完全一致。** 同一个功能第二次踩坑是另一种形态——两处投影的列都补了，但我把四个 `upstream_*` 列放在了 `stable_first` **前面**，而 `Scan` 里它们仍在后面。结果是列整体错位一格：`upstream_path_override` 读到了 `created_at`（时间戳字符串），`created_at` 变成零值。
+
+这类错位**只在查询真的带出数据时才暴露**（空列表、零值列都看不出来），而且 `SELECT`/`Scan` 都是手写列表，编译器与 `go vet` 都不会报。所以：
+
+- 改动任一投影后，必须肉眼把该函数的 `SELECT` 列表与 `Scan` 参数列表逐项对齐看一遍；
+- `TestRouteMemberProjectionsCarryChannelColumns`（`internal/store/channel_projection_test.go`）把三处投影的全部列做往返断言，并显式检查「文本列里没有时间戳形状的值」——这正是错位的指纹。
+
+> 手写 `SELECT` + 手写 `Scan` 是“列数对得上、语义错半格”的经典温床；新增/移动列后务必跑该测试。
+
 新增表单字段的完整链路：
-`store 迁移列 → ListOverviews 投影 → domain 归一化 → httpapi 校验 → 前端类型/i18n/CSS → 测试`。
+`store 迁移列 → ListOverviews 投影 + RoutingCandidates 投影 → domain 归一化 → httpapi 校验 → 前端类型/i18n/CSS → 测试`。
 
 ### 3.2 计费单价：两层「整层替换」优先级链
 
@@ -209,6 +228,25 @@ AAH 版本号是字符串且当前为 `"4.0"`，段可能嵌在 `data` 下，别
 `domain.ModelSyncMode`：`auto`（discovery 自动把探测到的模型采纳为路由 + 成员）vs
 `manual`（只刷新候选快照，逐个人工采纳）。`NormalizeModelSyncMode` 把空值/未知值归一为
 **manual**（安全默认）。`runtime_settings.default_model_sync_mode` 是新 channel 的继承来源。
+
+### 3.8 自定义端点映射（`upstream_*` 列）
+
+`channels` 上的四列让一个渠道可以脱离 OpenAI 形态：
+
+| 列 | 作用 |
+| --- | --- |
+| `upstream_path_override` | 换掉端点路径（`systemone` → `/v1/systemone`；`/api/v3/x` → 原样绝对路径） |
+| `upstream_path_map` | JSON `{"openai 路径":"上游路径"}`，键可 `*` 结尾，值可用 `{path}`/`{model}` |
+| `upstream_request_map` | 请求体字段搬运 |
+| `upstream_response_map` | 响应体字段搬运 |
+
+实现全在 `internal/proxy/upstream_map.go`（引擎）与 `upstream_map_validate.go`（保存期校验），路径语言与 `payload_rules` 共用 `proxy/jsonpath.go`。三条不变量：
+
+1. **映射生效时 URL 拼接换用 `adapters.JoinRawPath`**，不再走 `JoinOpenAIPath` 的 `<base>/v1/<path>` 规则——否则「根不是 /v1 的供应商」依旧被塞进一个 `/v1`（智谱 `/api/paas/v4`、火山 `/api/v3`）。映射路径**原样拼在 Base URL 之后**，不自动补 `/v1`：需要 `/v1` 的供应商请在映射值里自己写（如 `"/v1/models"`）。
+2. **响应映射跑在适配器转换之后**（`UpstreamMap.ReshapeResponse`）：map 的路径描述的是**客户端看到的文档**，不是上游原始报文。这样别家后端的 `choices[0].message.content` 与 OpenAI 上游的语义一致。
+3. **全程 fail-open**：映射为空/畸形/源字段不存在 → 原样转发并在日志留一行；`from`/`to` 复制保留 JSON 类型（数字仍是数字），`template` 产出的永远是字符串。
+
+字段映射不是 JSONata 那种通用引擎（无 `$`/算术/正则），故意只保留四种写法（`from`/`to`、`move`、`template`、`value`）并与 payload_rules 共用 JSON-path 实现。`[]` 形式的「整包体路径」曾设计过但未实现，校验会明确拒绝并给出替代写法（响应方向还想换整个 body 的话，就在适配器层做，不是在这一列）。
 
 ---
 

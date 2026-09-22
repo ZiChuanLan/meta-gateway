@@ -205,6 +205,20 @@ type Channel struct {
 	// refreshes the discovery snapshot and models_csv — adoption happens per
 	// model from the channel models panel.
 	ModelSyncMode string `json:"model_sync_mode,omitempty"`
+	// UpstreamPathOverride replaces the OpenAI path outright ("chat/completions"
+	// → "systemone") for upstreams that do not speak the OpenAI endpoint set.
+	UpstreamPathOverride string `json:"upstream_path_override,omitempty"`
+	// UpstreamPathMap is a JSON object mapping OpenAI paths to this upstream's
+	// real paths (keys may end in "*" for a prefix match; values may use
+	// "{path}"/"{model}"). It exists for providers whose API root is not /v1,
+	// which the passthrough adapter would otherwise mangle into
+	// <base>/v1/<path>.
+	UpstreamPathMap string `json:"upstream_path_map,omitempty"`
+	// UpstreamRequestMap / UpstreamResponseMap are JSON arrays of field maps
+	// applied to the outbound and inbound bodies (same path language as
+	// payload_rules). They let a non-OpenAI upstream sit behind /v1.
+	UpstreamRequestMap  string `json:"upstream_request_map,omitempty"`
+	UpstreamResponseMap string `json:"upstream_response_map,omitempty"`
 	// StableFirst marks the channel as a grayscale candidate: it receives a
 	// small 1/N fraction of traffic until it earns promotion.
 	StableFirst bool `json:"stable_first,omitempty"`

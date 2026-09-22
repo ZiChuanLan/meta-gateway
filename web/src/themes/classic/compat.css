@@ -29,15 +29,69 @@
 :root[data-appearance="classic"] .telemetry-segment { margin-right: 0; }
 /* Both columns stretch so the directory and the detail card share one top and
    one bottom edge. `align-items: start` let the detail card end wherever its
-   content happened to stop, which read as the two sides being misaligned. */
-:root[data-appearance="classic"] .theme-classic .channels-workspace { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(310px,1fr); gap: 20px; align-items: stretch; }
-:root[data-appearance="classic"] .classic-channel-detail { min-width: 0; position: sticky; top: 118px; }
+   content happened to stop, which read as the two sides being misaligned.
+
+   Stretching the column is not enough on its own: the card inside is
+   `position: sticky` (theme.css), and a stretched grid item does NOT force a
+   sticky child to fill it — the child keeps its content height, so the card's
+   bottom edge stopped short of the directory's by however much content it was
+   missing. `.classic-channel-detail` is therefore a flex column and the card
+   grows into it. The card also has to stop being sticky itself, or it would
+   detach from its own column and float; the column carries the stickiness
+   instead, which is what keeps the card in view while the long list scrolls. */
+:root[data-appearance="classic"] .theme-classic .channels-workspace { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(310px,1fr); grid-template-rows: minmax(0, 1fr); gap: 20px; align-items: stretch; }
+:root[data-appearance="classic"] .classic-channel-detail { min-width: 0; position: sticky; top: 118px; display: flex; flex-direction: column; }
+:root[data-appearance="classic"] .classic-channel-detail > .detail-card { flex: 1 1 auto; position: static; }
+/* The workspace is capped to the space actually left below the page chrome so
+   the console stops scrolling as a whole. It used to inherit the directory's
+   `min(70vh, 820px)` (styles.css), and 70vh ignores everything the workspace
+   sits below — the fixed topbar (58), the page heading (81), the telemetry strip
+   (91) and their paddings, 322px in total — plus the page foot (49) and the gap
+   above it (28). At an 839px-tall viewport that put the page at 986px, so the
+   window scrolled to reveal a list that was already scrolling inside itself,
+   and the right card followed the list down because the two columns share one
+   bottom edge.
+
+   Capping the workspace (not just the list) is what makes both columns fit: the
+   grid row is the taller of the two, so capping only the list left the row sized
+   by the detail card's content. `max-height` rather than `height` matters — a
+   fixed height would stretch both columns to the cap even when a single row of
+   channels leaves nothing to fill, which is the same empty-space complaint in
+   another form. The row is `minmax(0, 1fr)` rather than the default `auto`
+   because an auto row grows to its content and would overflow the capped
+   container. Each column then fills the row and owns its own scrolling — the
+   list through `.list-shell-body`, the card through `overflow-y` here.
+
+   `min-height` keeps both usable on short viewports, where the page legitimately
+   scrolls again (a 200px list is worse than a scrollbar). */
+:root[data-appearance="classic"] .theme-classic .channels-workspace { max-height: calc(100dvh - 400px); min-height: 280px; }
+:root[data-appearance="classic"] .theme-classic .channels-directory { max-height: none; height: auto; min-height: 0; }
+:root[data-appearance="classic"] .classic-channel-detail { min-height: 0; height: auto; }
+:root[data-appearance="classic"] .classic-channel-detail > .detail-card { flex: 1 1 auto; position: static; overflow-y: auto; overscroll-behavior: contain; }
+/* The card scrolls once the workspace is capped at short viewports, and its
+   action bar is the reason the card exists — scrolling must never hide it.
+   Pinning the bar to the card's bottom edge keeps `检测连接` / `编辑` reachable
+   while the metadata scrolls behind it. The bar carries the surface colour so
+   content passing underneath does not show through, and its bottom margin is
+   dropped because the card edge already provides that space. */
+:root[data-appearance="classic"] .classic-channel-detail > .detail-card > .detail-primary-bar { position: sticky; bottom: 0; margin-bottom: 0; padding-bottom: 4px; background: var(--surface); }
 /* The directory's first row is already pushed down by its filter row, so the
    detail card needs the same lead-in — otherwise its first chip row sits flush
-   against the frame and the two columns read as level but not aligned. */
+   against the frame and the two columns read as level but not aligned. Placed
+   after the cap block above so the padding is not lost in the later shorthand. */
 :root[data-appearance="classic"] .classic-channel-detail > .detail-card { padding-top: 25px; }
-:root[data-appearance="classic"] .theme-classic .models-split { grid-template-columns: minmax(0,1.35fr) minmax(390px,1fr); }
+:root[data-appearance="classic"] .theme-classic .models-split { grid-template-columns: minmax(0,1.35fr) minmax(390px,1fr); grid-template-rows: minmax(0, 1fr); max-height: calc(100dvh - 376px); min-height: 280px; }
 :root[data-appearance="classic"] .theme-classic .model-directory { min-height: 0; position: static; max-height: none; }
+/* The model detail card is a direct grid child and carries
+   `max-height: min(70vh, 820px)` (styles.css `.ops-detail-card.is-compact`). At a
+   548px-tall viewport 70vh is 384px, so the card stopped there while the
+   directory kept its full 538px — the left column hung below the right one,
+   which is the misalignment this rule removes. The split's own cap now bounds
+   the row and the card stretches into it; the card still needs its own
+   `overflow-y` (already set by `.ops-detail-card.is-compact`) because its
+   content can exceed a short row. */
+:root[data-appearance="classic"] .theme-classic .models-split > .ops-detail-card { max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+:root[data-appearance="classic"] .theme-classic .models-split > .ops-detail-card > .detail-primary-bar { position: sticky; bottom: 0; margin-bottom: 0; padding-bottom: 4px; background: var(--surface); }
 :root[data-appearance="classic"] .theme-classic .model-row-upstream,
 :root[data-appearance="classic"] .theme-classic .model-row-status { display: table-cell; }
 :root[data-appearance="classic"] .theme-classic .model-nav-provider { display: none; }
@@ -66,8 +120,17 @@
 }
 @media (max-width: 1100px) {
   :root[data-appearance="classic"] .theme-classic .channels-workspace,
-  :root[data-appearance="classic"] .theme-classic .models-split { grid-template-columns: minmax(0,1fr); }
+  :root[data-appearance="classic"] .theme-classic .models-split { grid-template-columns: minmax(0,1fr); grid-template-rows: none; max-height: none; min-height: 0; }
+  /* Stacked: the detail card is no longer a sibling column, so there is no
+     bottom edge to match, nothing to cap, and no reason to stretch it. */
+  :root[data-appearance="classic"] .theme-classic .models-split > .ops-detail-card { max-height: min(70vh, 820px); }
+  :root[data-appearance="classic"] .theme-classic .models-split > .ops-detail-card > .detail-primary-bar { position: static; }
+  /* Stacked: the detail card is no longer a sibling column, so there is no
+     bottom edge to match, nothing to cap, and no reason to stretch it. */
+  :root[data-appearance="classic"] .theme-classic .channels-workspace { max-height: none; min-height: 0; grid-template-rows: none; }
+  :root[data-appearance="classic"] .theme-classic .channels-directory { height: auto; max-height: min(70vh, 820px); }
   :root[data-appearance="classic"] .classic-channel-detail { position: static; }
+  :root[data-appearance="classic"] .classic-channel-detail > .detail-card { flex: 0 0 auto; overflow-y: visible; }
 }
 @media (max-width: 760px) {
   :root[data-appearance="classic"] .gate-console-deck { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 16px; }

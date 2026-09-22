@@ -6,6 +6,48 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Added
+
+- **渠道级自定义端点与字段映射**：新增 `channels.upstream_path_override` / `upstream_path_map` /
+  `upstream_request_map` / `upstream_response_map`（迁移 `103_channel_upstream_map.sql`），让一个渠道
+  可以脱离 OpenAI 形态，控制台在「渠道 → 编辑 → 高级」里配置。
+  - 路径覆盖/映射：`systemone` 这种单段名字进 `/v1` 位（`/v1/systemone`）；带 `/` 或前导 `/` 的值
+    视为绝对路径，直接接在 Base URL 之后。映射键可用 `*` 结尾，值支持 `{path}` / `{model}`。
+    **映射一旦存在，`<base>/v1/<path>` 的自动补全不再参与**：修复了根路径不是 `/v1` 的供应商
+    （智谱 `/api/paas/v4`、火山 `/api/v3`）被拼成不存在路径的问题（新增 `adapters.JoinRawPath`）。
+  - 字段映射与 `payload_rules` 共用 JSON-path 实现（新文件 `proxy/jsonpath.go`），四种写法：
+    `{from,to}` 搬值（保留 JSON 类型）、`+move` 搬完删源、`template` 拼字符串（可直接内嵌 JSON 字面量、
+    `\{`/`\}` 转义字面花括号）、`value` 写常量。响应映射跑在协议适配器转换**之后**，因此路径描述的是
+    客户端看到的文档。
+  - 全程 fail-open：映射为空/畸形/源字段不存在 → 原样转发 + 日志一行；保存时
+    （`proxy.ValidateUpstreamMap`）严格拒绝空段路径、`from`+`value` 同时给出、非法模板转义等拼写错误。
+  - 同时修正 `store.RouteMemberStore.RoutingCandidates` 与 `listCandidatesByRoute` 两处手写 channel
+    投影（转发热路径）漏列问题；`AGENTS.md` 3.1 铁律已补上这条教训。
+
+### Fixed
+
+- **修复两栏工作区（连接页 / 模型页）底边不齐与整页滚动**（classic 外观包，`web/src/themes/classic/compat.css`）：
+  - **连接页右卡底部比左列表短一截**：`.channels-workspace` 虽已 `align-items: stretch`，但卡内的
+    `.detail-card` 是 `position: sticky`，拉伸的 grid item **不会**把这个 sticky 子元素撑满，所以卡仍是内容高度。
+    改为 `.classic-channel-detail` 作为 flex 列、卡片 `position: static` 且 `flex: 1 1 auto` 长进该列（sticky 交给外层列）。
+  - **模型页左列表凸出（同源、另一种形态）**：右卡被 `styles.css` `.ops-detail-card.is-compact` 的
+    `max-height: min(70vh, 820px)` 卡住（548px 高视口下仅 384px），而左列表无上限（538px）。改为给
+    `.models-split` 定量 `max-height` + `grid-template-rows: minmax(0,1fr)`，卡片改为 `max-height: none` 并自行 `overflow-y`。
+  - **整页仍要滚动**：`70vh` 没扣除上方固定 chrome（顶栏 58 + 页头 81 + 指标条 68~91 + 间距 ≈ 322~376px）
+    与页脚 49px + 间距 28px。工作区改用 `max-height: calc(100dvh - 400px)` / `calc(100dvh - 376px)` 并配
+    `min-height: 280px`（矮视口下允许整页滚动，避免列表被压成零高）。
+  - **卡片内部滚动会把主操作按钮推出可视区**：`detail-primary-bar`（检测连接/编辑、试调）已用
+    `position: sticky; bottom: 0` 钉在卡片底边。
+  - ≤1100px 单列堆叠时撤回上述定量与拉伸（没有并排底边可对齐，也不该封顶）。
+- **修复 `internal/store/route.go` 两处 channel 投影的列/Scan 错位**：`RoutingCandidates` 与
+  `listCandidatesByRoute` 的四个 `c.upstream_*` 列曾位于 `c.stable_first` **之前**，而 `Scan` 中它们在
+  `stable_first` **之后**，列整体错位一格 —— `GET /admin/routes/overview` 返回的 `upstream_path_override`
+  是 `created_at` 时间戳，且 `created_at` 为零值。两处 SELECT 现已与 Scan 同序。
+  该错位只在查询带出真实数据时才暴露，故新增 `TestRouteMemberProjectionsCarryChannelColumns`
+  （逐列往返 + 时间戳指纹检查），并已用「重造错位→红、恢复→绿」验证该测试确实能拦住。
+- `RoutingCandidates` 的 SELECT 未包含新增渠道列时，运行时会静默读到零值：新增列必须同步补
+  `ListOverviews`、`RoutingCandidates`、`listCandidatesByRoute` 三处投影（带 `TestUpstreamMap*` 守卫）。
+
 ## [v3.3.0] — 2026-09-21
 
 ### Added

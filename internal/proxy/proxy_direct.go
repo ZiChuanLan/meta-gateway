@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -130,7 +131,16 @@ func (s *Service) DirectChatTest(ctx context.Context, channelID int64, model, pr
 		result.Error = fmt.Sprintf("%s: %v", adapter.Name(), translateErr)
 		return result
 	}
-	upstreamURL, urlErr := s.resolveUpstreamURL(*channel, upstreamPath, adapter)
+	// The channel's endpoint mapping applies to the synthetic smoke test too:
+	// it is exactly the call an operator makes to verify a custom endpoint.
+	channelMap := ParseUpstreamMap(channel.UpstreamPathOverride, channel.UpstreamPathMap, channel.UpstreamRequestMap, channel.UpstreamResponseMap)
+	if mapped, changed, mapErr := channelMap.MapRequest(requestBody); mapErr != nil {
+		log.Printf("proxy: smoke test request map channel=%d: %v", channel.ID, mapErr)
+		_ = changed
+	} else if changed {
+		requestBody = mapped
+	}
+	upstreamURL, urlErr := s.resolveUpstreamURL(*channel, upstreamPath, adapter, model)
 	if urlErr != nil {
 		result.Error = strings.TrimPrefix(urlErr.Error(), "proxy: ")
 		return result

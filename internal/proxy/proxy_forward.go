@@ -369,6 +369,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		var category string
 		var retryable bool
 		adapter := s.resolveForward(candidate.Channel)
+		// Channel endpoint/field mapping, parsed once per attempt. Empty for
+		// every channel that does not opt in, so the hot path stays untouched.
+		channelMap := ParseUpstreamMap(candidate.Channel.UpstreamPathOverride, candidate.Channel.UpstreamPathMap, candidate.Channel.UpstreamRequestMap, candidate.Channel.UpstreamResponseMap)
 
 		// Downstream protocol handling. OpenAI is the pivot contract; native
 		// Anthropic and Responses clients are translated per upstream family.
@@ -566,7 +569,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			requestBody = out
 			_ = tr
 		}
-		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, upstreamPath, adapter)
+		upstreamURL, err := s.resolveUpstreamURL(candidate.Channel, upstreamPath, adapter, effectiveModel)
 		if err != nil {
 			// URL construction is local configuration validation. Do not treat it
 			// as an upstream health signal or retry it on another channel: a local
@@ -577,6 +580,19 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			result.Err = fmt.Errorf("proxy: %w: %v", adapters.ErrInvalidURL, result.Err)
 			s.recordAttempt(req, candidate, attempt+1, result, category, "")
 			return result, meta
+		}
+		// Channel endpoint/field mapping (row-level protocol escape hatch). The
+		// path resolver above already redirected the endpoint; the body maps run
+		// now so the upstream receives the shape it expects. Fail-open: a
+		// malformed map is logged and the body forwards unchanged.
+		if !channelMap.Empty() {
+			if mapped, changed, mapErr := channelMap.MapRequest(requestBody); mapErr != nil {
+				log.Printf("proxy: request map channel=%d path=%s: %v", candidate.Channel.ID, effectivePath, mapErr)
+				requestBody = mapped
+				_ = changed
+			} else if changed {
+				requestBody = mapped
+			}
 		}
 		// Aggregate all enabled site API keys; failover keys before leaving the channel.
 		// Key-pool selection keys on the EFFECTIVE upstream name: a key's
@@ -678,7 +694,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && translateErr == nil {
 						translated = injectSystemPrompt(translated, prompt)
 					}
-					chatURL, urlErr := s.resolveUpstreamURL(candidate.Channel, "chat/completions", adapter)
+					chatURL, urlErr := s.resolveUpstreamURL(candidate.Channel, "chat/completions", adapter, effectiveModel)
 					if translateErr == nil && urlErr == nil {
 						fallbackTranslation, fallbackOK := s.registry.Translations.Lookup("responses", "openai")
 						if fallbackOK && fallbackTranslation.Response != nil {
@@ -792,7 +808,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 						_ = result.Body.Close()
 						if readErr != nil {
 							result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
-						} else if converted, convErr := adapter.TransformResponse(effectivePath, raw); convErr != nil {
+						} else if converted, convErr := channelMap.ReshapeResponse(raw, effectivePath, adapter); convErr != nil {
 							result = &relay.Result{
 								StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
 								Header:     result.Header,
@@ -1261,7 +1277,7 @@ func retrySafeRequest(req Request) bool {
 	return true
 }
 
-func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, adapter adapters.ForwardAdapter) (string, error) {
+func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, adapter adapters.ForwardAdapter, model string) (string, error) {
 	baseURL := strings.TrimSpace(channel.BaseURL)
 	if baseURL == "" {
 		if channel.SiteID == nil {
@@ -1272,6 +1288,20 @@ func (s *Service) resolveUpstreamURL(channel domain.Channel, apiPath string, ada
 			return "", fmt.Errorf("proxy: channel base url unavailable")
 		}
 		baseURL = site.BaseURL
+	}
+	// Channel-level path override/map runs BEFORE the adapter's join, but the
+	// join itself must also change: the passthrough adapter's <base>/v1/<path>
+	// rule is exactly the assumption a mapped channel is escaping (a provider
+	// whose API root is /api/paas/v4 must not gain a /v1 segment).
+	if channelMap := ParseUpstreamMap(channel.UpstreamPathOverride, channel.UpstreamPathMap, "", ""); !channelMap.Empty() {
+		apiPath = channelMap.ResolvePath(apiPath, model)
+		if _, isOpenAI := adapter.(adapters.OpenAIPassthroughAdapter); isOpenAI || adapter.Name() == "openai-compatible" {
+			joined, joinErr := adapters.JoinRawPath(baseURL, apiPath)
+			if joinErr != nil {
+				return "", fmt.Errorf("%w: %v", adapters.ErrInvalidURL, joinErr)
+			}
+			return joined, nil
+		}
 	}
 	upstreamURL, err := adapter.BuildUpstreamURL(baseURL, apiPath)
 	if err != nil {

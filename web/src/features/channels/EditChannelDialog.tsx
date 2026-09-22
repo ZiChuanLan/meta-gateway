@@ -117,6 +117,10 @@ export function EditChannelDialog({
     system_prompt?: string;
     retry_config?: string;
     model_sync_mode?: ModelSyncMode;
+    upstream_path_override?: string;
+    upstream_path_map?: string;
+    upstream_request_map?: string;
+    upstream_response_map?: string;
     stable_first?: boolean;
     userToken: string;
     userCookie: string;
@@ -171,6 +175,18 @@ export function EditChannelDialog({
   };
   const [systemPrompt, setSystemPrompt] = useState(value.system_prompt ?? "");
   const [retryConfig, setRetryConfig] = useState(value.retry_config ?? "");
+  // Custom endpoint / field mapping. Kept as raw text so a half-typed JSON
+  // document survives re-renders; the API validates the grammar on save.
+  const [pathOverride, setPathOverride] = useState(
+    value.upstream_path_override ?? "",
+  );
+  const [pathMap, setPathMap] = useState(value.upstream_path_map ?? "");
+  const [requestMap, setRequestMap] = useState(
+    value.upstream_request_map ?? "",
+  );
+  const [responseMap, setResponseMap] = useState(
+    value.upstream_response_map ?? "",
+  );
   const [syncMode, setSyncMode] = useState<ModelSyncMode>(
     value.model_sync_mode === "auto" ? "auto" : "manual",
   );
@@ -358,6 +374,10 @@ export function EditChannelDialog({
                 header_override: headerOverride,
                 system_prompt: systemPrompt,
                 retry_config: retryConfig,
+                upstream_path_override: pathOverride,
+                upstream_path_map: pathMap,
+                upstream_request_map: requestMap,
+                upstream_response_map: responseMap,
                 ...(syncModeDirty ? { model_sync_mode: syncMode } : {}),
                 stable_first: stableFirst,
                 userToken,
@@ -958,6 +978,89 @@ export function EditChannelDialog({
                   )}
                 />
               </Field>
+              <div className="detail-section">
+                <div className="detail-section-head">
+                  <h3>{t("channels.endpointMap")}</h3>
+                </div>
+                <p className="detail-section-empty is-quiet">
+                  {t("channels.endpointMapHint")}
+                </p>
+                <div className="form-grid form-grid-single">
+                <Field
+                  label={t("channels.pathOverride")}
+                  hint={t("channels.pathOverrideHint")}
+                >
+                  <input
+                    value={pathOverride}
+                    onChange={(e) => setPathOverride(e.target.value)}
+                    disabled={pending}
+                    placeholder="systemone"
+                    className="mono"
+                  />
+                </Field>
+                <Field label={t("channels.pathMap")} hint={t("channels.pathMapHint")}>
+                  <textarea
+                    className="mono textarea-md"
+                    value={pathMap}
+                    onChange={(e) => setPathMap(e.target.value)}
+                    disabled={pending}
+                    placeholder={JSON.stringify(
+                      {
+                        models: "models",
+                        "chat/completions": "chat/completions",
+                      },
+                      null,
+                      2,
+                    )}
+                  />
+                </Field>
+                <Field
+                  label={t("channels.requestMap")}
+                  hint={t("channels.requestMapHint")}
+                >
+                  <textarea
+                    className="mono textarea-lg"
+                    value={requestMap}
+                    onChange={(e) => setRequestMap(e.target.value)}
+                    disabled={pending}
+                    placeholder={JSON.stringify(
+                      [
+                        { from: "messages.0.content", to: "state" },
+                        { to: "model", move: false },
+                        {
+                          to: "questions.ask",
+                          value: { str: "Is the request about billing?" },
+                        },
+                      ],
+                      null,
+                      2,
+                    )}
+                  />
+                </Field>
+                <Field
+                  label={t("channels.responseMap")}
+                  hint={t("channels.responseMapHint")}
+                >
+                  <textarea
+                    className="mono textarea-lg"
+                    value={responseMap}
+                    onChange={(e) => setResponseMap(e.target.value)}
+                    disabled={pending}
+                    placeholder={JSON.stringify(
+                      [
+                        { from: "choices.0.message.content", to: "state" },
+                        {
+                          to: "choices.0.message.content",
+                          template: "{answers.ask.choice}",
+                        },
+                      ],
+                      null,
+                      2,
+                    )}
+                  />
+                </Field>
+                </div>
+              </div>
             </section>
           </div>
         ) : null}

@@ -487,6 +487,10 @@ export function Channels() {
       system_prompt?: string;
       retry_config?: string;
       model_sync_mode?: "auto" | "manual";
+      upstream_path_override?: string;
+      upstream_path_map?: string;
+      upstream_request_map?: string;
+      upstream_response_map?: string;
       stable_first?: boolean;
       userToken: string;
       userCookie: string;
@@ -649,6 +653,10 @@ export function Channels() {
         header_override: input.header_override ?? "",
         system_prompt: input.system_prompt ?? "",
         retry_config: input.retry_config ?? "",
+        upstream_path_override: input.upstream_path_override ?? "",
+        upstream_path_map: input.upstream_path_map ?? "",
+        upstream_request_map: input.upstream_request_map ?? "",
+        upstream_response_map: input.upstream_response_map ?? "",
         ...(input.model_sync_mode
           ? { model_sync_mode: input.model_sync_mode }
           : {}),

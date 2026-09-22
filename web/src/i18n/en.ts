@@ -681,6 +681,21 @@ export const en: Dict = {
     "Hard per-channel concurrency ceiling; requests beyond it queue FIFO. 0 = unlimited.",
   "channels.payloadRulesHint":
     "JSON array of rules: match (model glob, protocol, header substring, payload JSON-path conditions) + actions (set / delete / filter). Non-matching requests pass through untouched. Paths use dots and indexes: messages.0.content, messages.#.image_url (any element).",
+  "channels.endpointMap": "Custom endpoint and field mapping",
+  "channels.endpointMapHint":
+    "For channels whose upstream is not OpenAI-shaped: relocate the endpoint path, and move fields between your wire contract and the upstream's. Leave everything empty for plain passthrough; existing channels are unaffected.",
+  "channels.pathOverride": "Endpoint path override",
+  "channels.pathOverrideHint":
+    "Replaces the endpoint path outright — \"systemone\" sends /v1/systemone instead of /v1/chat/completions. Empty = no override.",
+  "channels.pathMap": "Endpoint path map",
+  "channels.pathMapHint":
+    'JSON object {"OpenAI path":"upstream path"}. A key may end in * for a prefix match; values may use {path} (remaining segments) and {model}. For providers whose API root is not /v1, e.g. {"models":"models","chat/completions":"chat/completions"}.',
+  "channels.requestMap": "Request field map",
+  "channels.requestMapHint":
+    'JSON array applied to the outbound request body. Four forms: {"from":"source","to":"target"} copies a value; add "move":true to delete the source; {"to":"target","template":"…{messages.0.content}…"} builds a string; {"to":"target","value":{"str":"literal"}} writes a constant. A missing source is skipped silently.',
+  "channels.responseMap": "Response field map",
+  "channels.responseMapHint":
+    'Same grammar, applied to the body the upstream returns to the client (after the protocol adapter converts it). For example {"from":"choices.0.message.content","to":"state"} stashes the text, then {"to":"choices.0.message.content","template":"{answers.ask.choice}"} puts the upstream answer into the standard slot.',
   "channels.proxyUrl": "Proxy URL",
   "channels.proxyUrlHint":
     "HTTP(S) proxy for this channel's upstream requests. Empty = inherit the global proxy (settings page).",
