@@ -30,6 +30,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
+          # A tag push and a branch push of the same commit both start a CI run,
+          # so matching on the SHA alone is ambiguous and `sort_by(created_at) |
+          # last` would be a coin flip between them. CI reports the REF as
+          # head_branch (the tag name for a tag push), so match that too.
+          REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -37,8 +42,14 @@ jobs:
           # appear before treating its absence as a failure.
           run_id=""
           for _ in $(seq 1 30); do
-            run_id="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=50" \
-              --jq '[.workflow_runs[] | select(.name == "CI" and .event == "push")] | sort_by(.created_at) | last | .id // empty')" || true
+            # A tag push and a branch push of the same commit each start a CI
+            # run, so matching the SHA alone is ambiguous. The ref is passed with
+            # `jq --arg` rather than spliced into the jq program: nested quoting
+            # inside `gh api --jq` is a syntax-error trap (it was one twice).
+            # The API lists runs newest-first, so index 0 is the latest for REF.
+            runs_json="$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=50")" || runs_json=""
+            run_id="$(printf '%s' "$runs_json" | jq -r --arg ref "$REF" \
+              '[.workflow_runs[] | select(.name == "CI" and .event == "push" and .head_branch == $ref)] | .[0].id // empty' 2>/dev/null)" || true
             [ -n "$run_id" ] && break
             sleep 10
           done
