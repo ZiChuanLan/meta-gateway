@@ -39,12 +39,17 @@ npm run build          # tsc -b && vite build
 **`npm run build` 的产物写入 `internal/webui/dist`，由 `go:embed` 编译进二进制。**
 改了 `web/src` 却没重建 dist，Go 侧跑的仍是旧 UI —— 这是本项目最高频的"改了没生效"原因。
 
-### 完整交付前的质量门（四项全绿才算完成）
+### 完整交付前的质量门（全绿才算完成，少跑一项就可能被 CI 挡下）
 
 ```bash
-cd web && npx tsc -b && npx vitest run && npx vite build && cd ..
-go build ./... && go test ./...
+cd web && npm run lint && npx tsc -b && npx vitest run && npx vite build && cd ..
+gofmt -l . && go vet ./... && go build ./... && go test ./...
 ```
+
+> **`npm run lint` 别省。** CI 的 Verify 步骤是 `npm run lint && npm run typecheck && npm test -- --run
+> && npm run build`，一条 eslint **error**（例如测试文件里没被用到的 `within` 导入）就能让 CI 全红；
+> 而 `release.yml` 的 `wait-for-ci` 会因此**拒绝发布**（tag 推上去了，镜像不会发）。2026-09-24 的
+> v3.5.0 就是在推送前补跑 lint 时才拦下这条 —— 更早的清单里没有它，而 tsc / vitest 都不会报未使用的导入。
 
 > Windows / 沙箱环境注意：`vite build` 默认 `emptyOutDir: true`，会先删掉旧的 `dist/`（含数十个
 > 带 hash 的 chunk）。在带批量删除护栏的沙箱里，这一步有两种表现，**都是同一个根因、都要提权重跑**：
