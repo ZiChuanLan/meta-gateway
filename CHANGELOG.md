@@ -6,7 +6,64 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v3.5.0] — 2026-09-24
+
+> 版本号说明：3.4.3 曾按「Anthropic 端点重复 `/v1` 修复」准备好 CHANGELOG 段（`936f707`），
+> 但从未打 tag、origin 上也没有 `v3.4.3`。该条目已并入本版本，所以版本号从 v3.4.2 直接到 v3.5.0。
+
+### Added
+
+- **新建模型自动补齐能力与元数据**（`internal/httpapi/admin_model_bootstrap.go`）。以前新模型要手工去
+  「从外部目录同步」按一次。现在保存路由后自动分两半做，且都不占用请求：
+  - 内置分类器 `AutoTag` **同步**跑（本地、幂等，跳过 manual / catalog 已拥有的行），所以保存一返回
+    注册表里就有这一行；
+  - 外部目录**后台**只同步这一个模型（容量 32 的通道 + 常驻 worker）。队列满或没配目录就静默丢弃，
+    defer 到下一次计划扫描——**保存绝不能等一个下载，也绝不能因为它失败**。
+  - 通配符（`*` / `?`）跳过：`gpt-*` 是匹配器不是模型名，没有目录会收录它。
+- **一键挂载所有提供此模型的渠道**（`POST /admin/routes/{id}/auto-match`）。成员区「添加通道」旁边
+  新增按钮，先预览再挂：列出 `GET /admin/discovery/model-channels` 的启用渠道，默认全选，已在本分组的
+  渠道只做展示、不提供勾选（重复挂载在服务端本就是空操作，给一个能点的勾选框等于谎报按钮的作用）。
+  目标分组 = 当前正在看的分组 tab，和「添加通道」一致。失效/停用/已不再提供该模型的 id 会被服务端
+  交集挡下并回报 `skipped`。
+- 新增模型详情页的「模型工具 → 模型能力注册表」入口，注册表带筛选框。
+
+### Changed
+
+- 控制台的「自定义端点与字段映射」不再有一键预设按钮行，整块默认折叠（已配置映射的渠道默认展开），
+  折叠时用读数胶囊显示当前配置了哪几项；该区块此前**完全没有 CSS**（`.endpoint-presets*` 在任何
+  样式表里都不存在），所以预设按钮与说明文字是裸文本混排——这是它「看着很丑」的直接原因。
+- **映射区只对「自己接的端点」出现**：普通供应商渠道（含内置了 profile 的 TypeSafe）不再展开成四个
+  JSON 编辑器——映射是随供应商走的协议契约，不是每个渠道都要看的表单。判定为
+  `isCustomChannelType(typeHint) || 该行已有映射`：前者覆盖 `custom` 类型与手输的 id，后者保证
+  **已经存在的映射永远看得见、清得掉**（保存时落下的 profile、从 base URL 拆出来的端点覆盖都属于
+  这一类；把它们藏起来就等于不可逆）。新增前端测试三条，其中「普通渠道不渲染」那条会先断言高级区
+  确实展开了，避免用「没点到按钮」冒充通过。
+- 供应商下拉里的「Custom…」与输入框底部的自由文本「Custom…」此前**同名同处**，现把前者改名为
+  `Custom (endpoint mapping)`，让「有映射要写」和「我要手打一个 id」两件事不再长得一样。
+
+
+- **模型能力注册表从工作台搬进「模型」页**（`web/src/features/models/CapabilityRegistry.tsx`）。
+  它描述的是模型清单里的协议数据，却和「跑一次」的图像/对话放在一起，于是「登记能力」和「这个模型能不能
+  被规划」要跨页对照。现在它是一个弹窗，和工作台只剩「图像 / 文字」两个 tab。
+  - 列表从 7 列表格改为卡片行、端点单独一行：宽表格塞进 700px 的弹窗只会永远横向滚动。
+  - 相关文案（「没有检测到图像模型」、等待出图提示）已改为指向新位置。
+- **模型详情页工具栏重排**：以前是「试调 · 路由模式标签 ⓘ 选择框 ⋯ ⓘ」五个松散控件，末尾那个游离的
+  ⓘ 是主要噪声源。现在收成两组——左侧主操作（试调）、右侧设置组（路由模式 + ⋯），中间用
+  `.bar-spacer` 撑开；两个说明图标各自附着到它解释的元素上（模式说明在模式控件上，作用域说明在
+  标题下的摘要行）。成员区同一套路：「添加通道 / 一键挂载」在左，「批量选择」在右。
+
 ### Fixed
+
+- **修复 Anthropic 渠道的端点重复拼接**（`adapters.JoinAnthropicPath`）：当端点覆盖是**已带版本根**的绝对路径时
+  （如 `/v1/messages`），旧实现会再插一个 `/v1` → `/v1/v1/messages`。
+  这是**既有 bug**（v3.4.0 的 `JoinAnthropicPath` 就是这段逻辑，手工在高级里填 `upstream_path_override=/v1/messages`
+  即可触发），但 v3.4.1 的 base_url 自動拆分让它**无需手工配置就会发生**：
+  `base_url = https://api.anthropic.com/v1/messages` 被拆成根 + `/v1/messages` 覆盖，随后走这个 joiner 就被拼了两次。
+  修复：覆盖路径首段是版本号时按绝对路径直接拼接，不再补 `/v1`。
+  OpenAI 路径不受影响（走 `JoinRawPath`，本身无 `/v1` 规则），Gemini 走裸拼接，故只有这一条链漏了。
+  - 端到端回归测试 `TestAnthropicCompleteEndpointBaseURLIsNotDoubled`（httpapi）实际发一次 Messages 请求，
+    断言上游收到的路径没有 `/v1/v1/`；并用 `.tools/prove_tests_catch_bug.py` 注入 bug 验证它会失败。
+
 
 - **非 OpenAI 上游的模型清单拉不回来，且报错指向完全无关的方向**（`adapters.OpenAIModelAdapter` +
   `web/src/errorCatalog.ts`）。用户按 new-api 习惯把完整端点粘进 base URL
@@ -40,6 +97,13 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   （未收录的**手工 id** 仍然照旧报 `unsupported_adapter`——那是有意的，见
   `TestRegistryAliasesAndPrecedence`。`custom` 是唯一一个「已知的未知」。）
 
+
+- **挂载成员现在可以指定分组**：`store.AttachChannelsToRoute` 增加 `group` 参数。此前它只写 `default`
+  组，而「添加通道」写的是当前分组——同一个「把渠道挂上去」的动作，两个入口落到不同分组。
+  分组内判定沿用同一把尺：已在**目标分组**的渠道不计增、不计跳过（连点两次既不会重复挂载，也不会
+  看起来像失败），只在别的分组里的渠道仍会被挂进来（分组是可叠加的，绑定某分组的 API Key 不该因此
+  少看到一个渠道）。
+
 ### Verified
 
 - 对真实上游跑过端到端：`GET /v1/models` 拿到 `[jev-latest jev-preview]`（**不需要碰任何映射字段**）；
@@ -48,70 +112,6 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   `TestTypeSafeProfileProducesAnAllowedBody` / `TestRequestMapKeepReducesTheBodyToAnAllowlist`。
 - 边界如实记录：System One 是「给一个 state 就一个问题打分」，多轮对话在这套映射里表达不出来；
   客户端若带前置 system 消息，它会成为 `state`（测试断言了这一行为，避免静默漂移）。
-
-### Changed
-
-- 控制台的「自定义端点与字段映射」不再有一键预设按钮行，整块默认折叠（已配置映射的渠道默认展开），
-  折叠时用读数胶囊显示当前配置了哪几项；该区块此前**完全没有 CSS**（`.endpoint-presets*` 在任何
-  样式表里都不存在），所以预设按钮与说明文字是裸文本混排——这是它「看着很丑」的直接原因。
-- **映射区只对「自己接的端点」出现**：普通供应商渠道（含内置了 profile 的 TypeSafe）不再展开成四个
-  JSON 编辑器——映射是随供应商走的协议契约，不是每个渠道都要看的表单。判定为
-  `isCustomChannelType(typeHint) || 该行已有映射`：前者覆盖 `custom` 类型与手输的 id，后者保证
-  **已经存在的映射永远看得见、清得掉**（保存时落下的 profile、从 base URL 拆出来的端点覆盖都属于
-  这一类；把它们藏起来就等于不可逆）。新增前端测试三条，其中「普通渠道不渲染」那条会先断言高级区
-  确实展开了，避免用「没点到按钮」冒充通过。
-- 供应商下拉里的「Custom…」与输入框底部的自由文本「Custom…」此前**同名同处**，现把前者改名为
-  `Custom (endpoint mapping)`，让「有映射要写」和「我要手打一个 id」两件事不再长得一样。
-
-### Added
-
-- **新建模型自动补齐能力与元数据**（`internal/httpapi/admin_model_bootstrap.go`）。以前新模型要手工去
-  「从外部目录同步」按一次。现在保存路由后自动分两半做，且都不占用请求：
-  - 内置分类器 `AutoTag` **同步**跑（本地、幂等，跳过 manual / catalog 已拥有的行），所以保存一返回
-    注册表里就有这一行；
-  - 外部目录**后台**只同步这一个模型（容量 32 的通道 + 常驻 worker）。队列满或没配目录就静默丢弃，
-    defer 到下一次计划扫描——**保存绝不能等一个下载，也绝不能因为它失败**。
-  - 通配符（`*` / `?`）跳过：`gpt-*` 是匹配器不是模型名，没有目录会收录它。
-- **一键挂载所有提供此模型的渠道**（`POST /admin/routes/{id}/auto-match`）。成员区「添加通道」旁边
-  新增按钮，先预览再挂：列出 `GET /admin/discovery/model-channels` 的启用渠道，默认全选，已在本分组的
-  渠道只做展示、不提供勾选（重复挂载在服务端本就是空操作，给一个能点的勾选框等于谎报按钮的作用）。
-  目标分组 = 当前正在看的分组 tab，和「添加通道」一致。失效/停用/已不再提供该模型的 id 会被服务端
-  交集挡下并回报 `skipped`。
-- 新增模型详情页的「模型工具 → 模型能力注册表」入口，注册表带筛选框。
-
-### Changed
-
-- **模型能力注册表从工作台搬进「模型」页**（`web/src/features/models/CapabilityRegistry.tsx`）。
-  它描述的是模型清单里的协议数据，却和「跑一次」的图像/对话放在一起，于是「登记能力」和「这个模型能不能
-  被规划」要跨页对照。现在它是一个弹窗，和工作台只剩「图像 / 文字」两个 tab。
-  - 列表从 7 列表格改为卡片行、端点单独一行：宽表格塞进 700px 的弹窗只会永远横向滚动。
-  - 相关文案（「没有检测到图像模型」、等待出图提示）已改为指向新位置。
-- **模型详情页工具栏重排**：以前是「试调 · 路由模式标签 ⓘ 选择框 ⋯ ⓘ」五个松散控件，末尾那个游离的
-  ⓘ 是主要噪声源。现在收成两组——左侧主操作（试调）、右侧设置组（路由模式 + ⋯），中间用
-  `.bar-spacer` 撑开；两个说明图标各自附着到它解释的元素上（模式说明在模式控件上，作用域说明在
-  标题下的摘要行）。成员区同一套路：「添加通道 / 一键挂载」在左，「批量选择」在右。
-
-### Fixed
-
-- **挂载成员现在可以指定分组**：`store.AttachChannelsToRoute` 增加 `group` 参数。此前它只写 `default`
-  组，而「添加通道」写的是当前分组——同一个「把渠道挂上去」的动作，两个入口落到不同分组。
-  分组内判定沿用同一把尺：已在**目标分组**的渠道不计增、不计跳过（连点两次既不会重复挂载，也不会
-  看起来像失败），只在别的分组里的渠道仍会被挂进来（分组是可叠加的，绑定某分组的 API Key 不该因此
-  少看到一个渠道）。
-
-## [v3.4.3] — 2026-09-22
-
-### Fixed
-
-- **修复 Anthropic 渠道的端点重复拼接**（`adapters.JoinAnthropicPath`）：当端点覆盖是**已带版本根**的绝对路径时
-  （如 `/v1/messages`），旧实现会再插一个 `/v1` → `/v1/v1/messages`。
-  这是**既有 bug**（v3.4.0 的 `JoinAnthropicPath` 就是这段逻辑，手工在高级里填 `upstream_path_override=/v1/messages`
-  即可触发），但 v3.4.1 的 base_url 自動拆分让它**无需手工配置就会发生**：
-  `base_url = https://api.anthropic.com/v1/messages` 被拆成根 + `/v1/messages` 覆盖，随后走这个 joiner 就被拼了两次。
-  修复：覆盖路径首段是版本号时按绝对路径直接拼接，不再补 `/v1`。
-  OpenAI 路径不受影响（走 `JoinRawPath`，本身无 `/v1` 规则），Gemini 走裸拼接，故只有这一条链漏了。
-  - 端到端回归测试 `TestAnthropicCompleteEndpointBaseURLIsNotDoubled`（httpapi）实际发一次 Messages 请求，
-    断言上游收到的路径没有 `/v1/v1/`；并用 `.tools/prove_tests_catch_bug.py` 注入 bug 验证它会失败。
 
 ## [v3.4.2] — 2026-09-22
 
