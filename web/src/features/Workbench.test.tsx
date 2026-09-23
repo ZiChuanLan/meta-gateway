@@ -86,37 +86,6 @@ function mockBackend(options: {
           status: 200, latency_ms: 8, model: chatModel.model, channel_name: "chat-up",
           body: { id: "chatcmpl-test", choices: [{ message: { role: "assistant", content: "pong" } }] },
         })));
-  // The catalog sync is a two-step contract — preview, then apply — so the mock
-  // keeps both distinct and lets a test assert that opening the dialog did not
-  // write anything.
-  const catalogPreview = vi.fn((_request: Record<string, unknown>) => json({
-    items: [
-      {
-        model: chatModel.model, found: true, sources: ["litellm", "models.dev"],
-        capability_action: "refresh", capability_source: "catalog", capability_kind: "chat",
-        capability_changes: [{ field: "endpoints", from: "/v1/chat/completions", to: "/v1/chat/completions,/v1/batch" }],
-        metadata_action: "fill",
-        metadata_changes: [{ field: "context_window", from: "0", to: "400000" }],
-        price_action: "fill",
-        price_changes: [{ field: "price_completion_per_1k", from: "0", to: "0.01" }],
-      },
-      {
-        model: model.model, found: true, sources: ["models.dev"],
-        capability_action: "unchanged", capability_source: "catalog", capability_kind: "image_gen",
-        metadata_action: "unchanged", price_action: "unchanged",
-      },
-    ],
-    requested: 2, matched: 2, missing: 0,
-    sources: ["litellm", "models.dev"], prices_enabled: true, fetched: true,
-  }));
-  const catalogSync = vi.fn((_request: Record<string, unknown>) => json({
-    state: {
-      synced_at: "2026-09-15T12:00:00Z", requested: 2, matched: 2,
-      capabilities: 1, metadata: 1, prices: 1, skipped_manual: 0, missing: 0,
-      sources: ["litellm", "models.dev"],
-    },
-    sources: ["litellm", "models.dev"],
-  }));
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input), "http://localhost").pathname;
     if (path === "/admin/routes/overview") return json([
@@ -126,10 +95,6 @@ function mockBackend(options: {
     ]);
     if (path === "/admin/model-capabilities/resolve") return resolve();
     if (path === "/admin/model-capabilities") return json({ items: [model, chatModel] });
-    if (path === "/admin/model-capabilities/catalog/preview")
-      return catalogPreview(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-    if (path === "/admin/model-capabilities/catalog/sync")
-      return catalogSync(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
     if (path === "/admin/model-capabilities/catalog") return json({
       state: null, sources: ["litellm", "models.dev"], scheduled: true, prices_enabled: true,
     });
@@ -137,7 +102,7 @@ function mockBackend(options: {
     if (path === "/admin/try/chat") return chat(JSON.parse(String(init?.body)) as Record<string, unknown>);
     return json({});
   }));
-  return { resolve, image, chat, catalogPreview, catalogSync };
+  return { resolve, image, chat };
 }
 
 function renderWorkbench() {
@@ -276,7 +241,7 @@ describe("image workbench", () => {
     fireEvent.click(submit);
     await waitFor(() => expect(backend.image).toHaveBeenCalledOnce());
     expect(screen.getByRole("combobox", { name: "Model" })).toBeDisabled();
-    fireEvent.click(screen.getByText("Capabilities"));
+    fireEvent.click(screen.getByText("Playground"));
     await act(async () => pending.resolve(json({
       status: 200, latency_ms: 12, model: "gpt-image-2",
       plan: { endpoint: "images/generations", format: "json" },
@@ -361,63 +326,5 @@ describe("image workbench", () => {
     await waitFor(() => expect(backend.chat).toHaveBeenCalledOnce());
     expect(await screen.findByText("buffered")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-});
-
-describe("capability catalog sync", () => {
-  beforeEach(() => {
-    localStorage.clear(); sessionStorage.clear();
-    localStorage.setItem("meta-gateway.locale", "en");
-    localStorage.setItem("meta-gateway.admin-token", "test-token");
-  });
-  afterEach(() => {
-    cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.unstubAllGlobals();
-  });
-
-  it("previews the plan and only writes once the operator confirms", async () => {
-    const backend = mockBackend();
-    renderWorkbench();
-    fireEvent.click(await screen.findByText("Capabilities"));
-
-    const sync = await screen.findByRole("button", { name: "Sync from catalogs" });
-    // Enabled only once the server has reported which indexes are wired in.
-    await waitFor(() => expect(sync).toBeEnabled());
-    fireEvent.click(sync);
-
-    // The dialog opens on a dry run: the plan is fetched, nothing is written.
-    expect(
-      await screen.findByText("Sync from the public model indexes"),
-    ).toBeInTheDocument();
-    expect(backend.catalogPreview).toHaveBeenCalledOnce();
-    expect(backend.catalogSync).not.toHaveBeenCalled();
-    // Each planned write is spelled out with its before and after value.
-    expect(await screen.findByText("/v1/chat/completions,/v1/batch")).toBeInTheDocument();
-    expect(screen.getByText("0.01")).toBeInTheDocument();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Apply 1 change(s)" }));
-    await waitFor(() => expect(backend.catalogSync).toHaveBeenCalledOnce());
-    expect(backend.catalogSync.mock.calls[0]?.[0]).toEqual({
-      capabilities: true, metadata: true, prices: true,
-    });
-  });
-
-  it("hides the catalog action when the gateway has no index configured", async () => {
-    mockBackend();
-    // The console can outrun the server it talks to, so an empty source list
-    // must disable the action rather than offer a sync that cannot run.
-    const inner = globalThis.fetch as (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = new URL(String(input), "http://localhost").pathname;
-      if (path === "/admin/model-capabilities/catalog") {
-        return json({ state: null, sources: [], scheduled: false, prices_enabled: false });
-      }
-      return inner(input, init);
-    }));
-    renderWorkbench();
-    fireEvent.click(await screen.findByText("Capabilities"));
-    const sync = await screen.findByRole("button", { name: "Sync from catalogs" });
-    await waitFor(() => expect(sync).toBeDisabled());
-    // Nothing is offered, and no plan is fetched behind the scenes.
-    expect(screen.queryByText("Sync from the public model indexes")).not.toBeInTheDocument();
   });
 });

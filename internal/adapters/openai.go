@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -86,35 +87,102 @@ func (a *OpenAIModelAdapter) ListModels(ctx context.Context, baseURL, apiKey str
 	if len(body) > maxModelResponseBytes {
 		return nil, &Error{Kind: ErrorTooLarge}
 	}
+	return parseModelList(body)
+}
+
+// parseModelList reads the model names out of a `GET /models` body.
+//
+// OpenAI's {"data":[{"id":"gpt-4"}]} is the shape everything is written
+// against, but it is not the only list an upstream that means to be
+// OpenAI-compatible actually serves. Accepting only that one turned a working
+// upstream into `invalid_payload`, which the console reported as "check Base
+// URL, connection type and credentials" — so the operator re-typed the URL and
+// rotated the key while the real cause sat in a JSON key name. Measured shapes:
+//
+//	{"data":[{"id":"…"}]}       OpenAI and every fork of it
+//	{"data":[{"name":"…"}]}     FastAPI-style re-implementations
+//	{"models":[{"name":"…"}]}   TypeSafe System One (verified 2026-09-23)
+//	{"models":["…"]}            flat name lists
+//
+// The union is deliberately still "this is a model list", not "any JSON": a
+// body that matches none of the shapes, or one whose entries carry no usable
+// name ({"data":[{"id":123}]}), is still an ErrorPayload so a genuinely broken
+// upstream keeps failing loudly. An empty but well-formed list stays a
+// successful answer — a credential may simply expose no models.
+func parseModelList(body []byte) ([]string, error) {
 	var payload struct {
-		Data json.RawMessage `json:"data"`
+		Data   json.RawMessage `json:"data"`
+		Models json.RawMessage `json:"models"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil || len(payload.Data) == 0 || string(payload.Data) == "null" {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, &Error{Kind: ErrorPayload}
+	}
+	// `data` first: when an upstream carries both, the OpenAI one is the
+	// surface clients are supposed to read.
+	for _, raw := range []json.RawMessage{payload.Data, payload.Models} {
+		names, ok := decodeModelItems(raw)
+		if !ok {
+			continue
+		}
+		unique := make(map[string]struct{}, len(names))
+		for _, name := range names {
+			unique[name] = struct{}{}
+		}
+		models := make([]string, 0, len(unique))
+		for model := range unique {
+			models = append(models, model)
+		}
+		sort.Strings(models)
+		return models, nil
+	}
+	return nil, &Error{Kind: ErrorPayload}
+}
+
+// decodeModelItems reads one model-list container. ok is false when the node is
+// absent/unparseable, or when it carries entries but none of them names a model
+// — both mean "this is not a model list", which the caller turns into
+// ErrorPayload.
+func decodeModelItems(raw json.RawMessage) ([]string, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil, false
+	}
+	// A flat list of names is unambiguous, so try it first: it either decodes
+	// or it does not.
+	var flat []string
+	if err := json.Unmarshal(trimmed, &flat); err == nil {
+		names := make([]string, 0, len(flat))
+		for _, name := range flat {
+			if cleaned := strings.TrimSpace(name); cleaned != "" {
+				names = append(names, cleaned)
+			}
+		}
+		return names, true
 	}
 	var items []struct {
-		ID any `json:"id"`
+		ID   any `json:"id"`
+		Name any `json:"name"`
 	}
-	if err := json.Unmarshal(payload.Data, &items); err != nil || items == nil {
-		return nil, &Error{Kind: ErrorPayload}
+	if err := json.Unmarshal(trimmed, &items); err != nil {
+		return nil, false
 	}
-	unique := make(map[string]struct{}, len(items))
+	names := make([]string, 0, len(items))
 	for _, item := range items {
-		id, ok := item.ID.(string)
-		if !ok {
-			return nil, &Error{Kind: ErrorPayload}
-		}
-		id = strings.TrimSpace(id)
-		if id != "" {
-			unique[id] = struct{}{}
+		// `id` wins when both are present: it is the OpenAI field, and an
+		// upstream that carries a display `name` next to it still keys on id.
+		for _, candidate := range []any{item.ID, item.Name} {
+			if name, isString := candidate.(string); isString {
+				if cleaned := strings.TrimSpace(name); cleaned != "" {
+					names = append(names, cleaned)
+					break
+				}
+			}
 		}
 	}
-	models := make([]string, 0, len(unique))
-	for model := range unique {
-		models = append(models, model)
+	if len(items) > 0 && len(names) == 0 {
+		return nil, false
 	}
-	sort.Strings(models)
-	return models, nil
+	return names, true
 }
 
 func modelEndpoint(baseURL string) (string, error) {

@@ -35,6 +35,11 @@ export const CONNECTION_TYPE_OPTIONS: ConnectionTypeOption[] = [
 	{ value: "xai", label: "xAI (Grok)", group: "intl" },
 	{ value: "mistral", label: "Mistral AI", group: "intl" },
 	{ value: "perplexity", label: "Perplexity", group: "intl" },
+	// TypeSafe serves `GET /v1/models` like an OpenAI provider, but its chat
+	// surface is `POST /v1/systemone` with its own request/response shape. The
+	// backend ships that mapping with the provider (proxy.ProviderProfile), so
+	// picking this type is all an operator has to do.
+	{ value: "typesafe", label: "TypeSafe (System One)", group: "intl" },
 	{ value: "axonhub", label: "AxonHub", group: "relay" },
 	{ value: "metapi", label: "Metapi", group: "relay" },
 	{ value: "anyrouter", label: "AnyRouter", group: "relay" },
@@ -52,7 +57,11 @@ export const CONNECTION_TYPE_OPTIONS: ConnectionTypeOption[] = [
 	{ value: "octopus", label: "Octopus", group: "relay" },
 	{ value: "claude-code-hub", label: "Claude Code Hub", group: "relay" },
 	{ value: "wong-gongyi", label: "Wong Gongyi", group: "relay" },
-	{ value: "custom", label: "Custom…", group: "other" },
+	// Bespoke wiring: the operator supplies the endpoint and the field mapping
+	// themselves. Labeled apart from the picker's free-text "Custom…" row so the
+	// two affordances are not twins — picking this one means "I own the mapping",
+	// and it is the only type that opens the mapping panel from scratch.
+	{ value: "custom", label: "Custom (endpoint mapping)", group: "other" },
 ];
 
 /** Default upstream base URLs per provider (empty = operator fills in). */
@@ -84,4 +93,12 @@ export const PROVIDER_BASE_URLS: Record<string, string> = {
 	// an endpoint override, which is what keeps the /v1 root (correct for almost
 	// every other provider) from being applied here.
 	perplexity: "https://api.perplexity.ai/chat/completions",
+	// TypeSafe documents the ENDPOINT, not a root: `/v1/systemone` is the chat
+	// call, and its `/v1/models` sits on the bare host. Shipping the documented
+	// endpoint and letting the save-time split peel it back to the root (see
+	// SplitEndpointBaseURL) keeps model sync pointed at /v1/models, which is
+	// where the model list actually is — the reason the previous one-click
+	// preset, which wrote an endpoint override with no such split, could never
+	// list models.
+	typesafe: "https://api.typesafe.ai/v1/systemone",
 };

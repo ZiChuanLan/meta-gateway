@@ -1723,6 +1723,12 @@ label.directory-search input:focus {
   gap: 8px;
   margin-bottom: 12px;
 }
+/* Pushes everything after it to the right edge, so a toolbar reads as
+   "primary action | settings group" instead of a loose row of controls. */
+.detail-primary-bar .bar-spacer,
+.models-advanced-bar .bar-spacer {
+  flex: 1 1 auto;
+}
 .detail-pricing {
   margin-top: 16px;
   display: flex;
@@ -5993,6 +5999,12 @@ td.actions {
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--muted);
+}
+/* The mapping summary lists up to four parts, so it must be allowed to wrap —
+   the base .panel-summary is a nowrap chip built for a single count. */
+.detail-section-head .panel-summary {
+  flex-wrap: wrap;
+  white-space: normal;
 }
 .detail-section-count {
   font-size: 11px;

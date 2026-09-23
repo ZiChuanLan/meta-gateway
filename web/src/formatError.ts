@@ -8,6 +8,7 @@ const CLASS_KEY: Record<ErrorClass, string> = {
 	network: "err.network.title",
 	auth: "err.auth.title",
 	config: "err.config.title",
+	upstream_shape: "err.upstreamShape.title",
 	missing_key: "err.missingKey.title",
 	missing_user_token: "err.missingUserToken.title",
 	rate_limited: "err.rateLimited.title",
@@ -165,8 +166,10 @@ function clsKey(cls: ErrorClass): string {
 			return "network";
 		case "auth":
 			return "auth";
-		case "config":
-			return "config";
+	case "config":
+		return "config";
+	case "upstream_shape":
+		return "upstreamShape";
 		case "missing_key":
 			return "missingKey";
 		case "missing_user_token":

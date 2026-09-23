@@ -25,6 +25,25 @@ export type UserAuthFields = "both" | "cookie" | "none";
 
 const COOKIE_ONLY_USER_AUTH_TYPES = new Set(["external-checkin"]);
 
+/** Type ids the picker offers by name. Anything else is hand-typed. */
+const KNOWN_CHANNEL_TYPES = new Set(
+  CONNECTION_TYPE_OPTIONS.map((option) => option.value),
+);
+
+/**
+ * True when the operator is wiring an endpoint on their own terms — the
+ * literal "custom" type, or an id the picker does not know (typed in the
+ * free-text row). Only these types open the endpoint/field mapping panel from
+ * scratch: for everything else the mapping is a protocol contract that ships
+ * with the provider (backend `proxy.ProviderProfile`), not a form to fill in.
+ */
+export function isCustomChannelType(typeHint: string): boolean {
+  const key = (typeHint || "").trim().toLowerCase();
+  if (!key) return false;
+  if (key === "custom") return true;
+  return !KNOWN_CHANNEL_TYPES.has(key);
+}
+
 const NO_USER_AUTH_TYPES = new Set([
   // Plain OpenAI-compatible relays and official provider APIs.
   "openai-compatible",
@@ -48,6 +67,7 @@ const NO_USER_AUTH_TYPES = new Set([
   "xai",
   "mistral",
   "perplexity",
+  "typesafe",
   // Site families with no server-side account adapter.
   "octopus",
   "axonhub",

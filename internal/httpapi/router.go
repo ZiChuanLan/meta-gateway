@@ -293,6 +293,14 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		})
 		scheduled := cfg.ModelCatalogInterval > 0
 		adminHandler.SetModelCatalog(catalogService, scheduled, cfg.ModelCatalogSyncPrices)
+		adminHandler.SetLogger(logger)
+		// The bootstrap worker runs even when the periodic sweep is switched
+		// off: a model the operator just routed is worth one targeted sync, and
+		// "I had to press a button" is exactly the friction this removes.
+		bootstrapCtx, bootstrapCancel := context.WithCancel(context.Background())
+		RegisterStopper(bootstrapCancel)
+		go runModelBootstraps(bootstrapCtx, logger, adminHandler.ModelBootstrapQueue(),
+			catalogService, cfg.ModelCatalogSyncPrices)
 		if scheduled {
 			catalogCtx, catalogCancel := context.WithCancel(context.Background())
 			RegisterStopper(catalogCancel)

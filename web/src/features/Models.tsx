@@ -14,9 +14,11 @@ import {
   RotateCcw,
   Search,
   Shield,
+  SlidersHorizontal,
   Sparkles,
   Target,
   Trash2,
+  Wand2,
   X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -64,6 +66,8 @@ import { UnifyDialog } from "./models/UnifyDialog";
 import { UnifyHistory } from "./models/UnifyHistory";
 import { ProbeDialog } from "./models/ProbeDialog";
 import { ModelChangesPanel } from "./models/ModelChangesPanel";
+import { AutoMatchMembersDialog } from "./models/AutoMatchMembersDialog";
+import { CapabilityRegistryDialog } from "./models/CapabilityRegistry";
 
 function readMissingDismissed() {
   try {
@@ -240,6 +244,9 @@ function ModelCatalog({
   const [unifyOpen, setUnifyOpen] = useState(false);
   const [unifyHistoryOpen, setUnifyHistoryOpen] = useState(false);
   const [probeOpen, setProbeOpen] = useState(false);
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  /** Route whose "attach every channel serving this model" preview is open. */
+  const [autoMatchRoute, setAutoMatchRoute] = useState<Route | null>(null);
   const [bulkSelect, setBulkSelect] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(
     () => new Set(),
@@ -1097,6 +1104,7 @@ function ModelCatalog({
                 {t("modelsPage.probe.action")}
               </Button>
               <ActionMenu label={t("modelsPage.tools")} items={[
+                { key: "capabilities", label: t("workbench.cap.title"), icon: <SlidersHorizontal size={14} />, onSelect: () => setCapabilitiesOpen(true) },
                 { key: "unify", label: t("modelsPage.unify.action"), icon: <Combine size={14} />, onSelect: () => setUnifyOpen(true) },
                 { key: "history", label: t("modelsPage.unify.history.action"), icon: <History size={14} />, onSelect: () => setUnifyHistoryOpen(true) },
                 { key: "upstream-changes", label: t("modelChanges.title"), icon: <RefreshCw size={14} />, onSelect: () => setChangesOpenRequest((value) => value + 1) },
@@ -1513,7 +1521,9 @@ function ModelCatalog({
                     {t("modelsPage.detailKicker")}
                   </p>
                   <h2 className="mono">{selectedRoute.model_pattern}</h2>
-                  <small title={t("modelsPage.memberSummaryHint")}>
+                  <small
+                    title={`${t("modelsPage.memberSummaryHint")} ${t("modelsPage.scopeHint")}`}
+                  >
                     {primary
                       ? t(singleModePinned ? "modelsPage.pinnedMember" : "modelsPage.servedBy", {
                           name: primary.channel.name,
@@ -1531,6 +1541,12 @@ function ModelCatalog({
                 />
               </div>
 
+              {/* Two clusters, not five loose controls: the primary action
+                  (run a call) on the left, the settings group — routing mode
+                  and the overflow menu — pinned right. The two bare (i) icons
+                  that used to float here now live on the elements they
+                  explain: the mode hint on the mode control, the scope note on
+                  the summary line under the title. */}
               <div className="detail-primary-bar">
                 <Button
                   icon={<Sparkles size={14} />}
@@ -1538,7 +1554,11 @@ function ModelCatalog({
                 >
                   {t("try.open")}
                 </Button>
-                <div className="routing-mode-control">
+                <span className="bar-spacer" />
+                <div
+                  className="routing-mode-control"
+                  title={t("modelsPage.scopeHint")}
+                >
                   <span>{t("routing.mode.label")}</span>
                   <InfoTip label={t("routing.modeHint")} />
                   <select
@@ -1587,7 +1607,6 @@ function ModelCatalog({
                   disabled={toggleRoute.pendingId === selectedRoute.id}
                   items={modelActions(selectedRoute)}
                 />
-                <InfoTip label={t("modelsPage.scopeHint")} />
               </div>
 
 
@@ -1642,8 +1661,20 @@ function ModelCatalog({
                     >
                       {t("routing.addMember")}
                     </Button>
+                    {/* The bulk of what "add member" does over and over: one
+                        click attaches every enabled channel that really
+                        serves this model to the group being viewed. */}
                     <Button
                       variant="secondary"
+                      icon={<Wand2 size={14} />}
+                      title={t("modelsPage.autoMatchAddHint")}
+                      onClick={() => setAutoMatchRoute(selectedRoute)}
+                    >
+                      {t("modelsPage.autoMatchAdd")}
+                    </Button>
+                    <span className="bar-spacer" />
+                    <Button
+                      variant={bulkSelect ? "primary" : "secondary"}
                       onClick={() => {
                         setBulkSelect((value) => !value);
                         setSelectedMemberIds(new Set());
@@ -2322,6 +2353,19 @@ function ModelCatalog({
         <UnifyHistory onClose={() => setUnifyHistoryOpen(false)} />
       ) : null}
       {probeOpen ? <ProbeDialog onClose={() => setProbeOpen(false)} /> : null}
+      {capabilitiesOpen ? (
+        <CapabilityRegistryDialog onClose={() => setCapabilitiesOpen(false)} />
+      ) : null}
+      {autoMatchRoute && selectedRoute ? (
+        <AutoMatchMembersDialog
+          route={autoMatchRoute}
+          group={activeGroup}
+          attachedChannelIds={visibleMembers.map(
+            (candidate) => candidate.channel.id,
+          )}
+          onClose={() => setAutoMatchRoute(null)}
+        />
+      ) : null}
       {edit ? (
         <RouteDialog
           value={edit}

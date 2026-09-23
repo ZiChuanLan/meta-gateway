@@ -89,6 +89,18 @@ type UpstreamFieldMap struct {
 	Template string `json:"template,omitempty"`
 	// Value is a JSON literal (same shape payload_rules uses: str/num/bool/null).
 	Value *Value `json:"value,omitempty"`
+	// Keep is a top-level body allowlist: every key not listed is deleted.
+	//
+	// It exists because some upstreams validate their own request model
+	// strictly and reject ANY unknown key — measured on TypeSafe System One,
+	// which answers 400 to a body carrying a single extra field. An
+	// OpenAI-shaped body can never satisfy that on its own: it always brings
+	// `messages`, and usually `temperature` / `stream` as well. Deletion alone
+	// cannot express it either, since the set to delete is client-dependent;
+	// the operator knows the set to KEEP. Pair it with a `from` entry that
+	// reads what it needs first — `keep` is applied where it appears in the
+	// chain, so the order in the array is the order of operations.
+	Keep []string `json:"keep,omitempty"`
 }
 
 // ParseUpstreamMap decodes the channel columns into a usable engine. Malformed
@@ -361,6 +373,8 @@ func applyFieldMap(doc map[string]any, entry UpstreamFieldMap) (bool, error) {
 		to = from
 	}
 	switch {
+	case len(entry.Keep) > 0:
+		return keepOnlyKeys(doc, entry.Keep)
 	case from != "" && entry.Value != nil:
 		return false, fmt.Errorf("upstream map %q: use either from or value, not both", to)
 	case from != "" && entry.Template != "":
@@ -407,6 +421,36 @@ func applyFieldMap(doc map[string]any, entry UpstreamFieldMap) (bool, error) {
 	default:
 		return false, fmt.Errorf("upstream map: entry %q has neither from nor value", to)
 	}
+}
+
+// keepOnlyKeys deletes every top-level key of the body that is not in the
+// allowlist. Only top-level keys are addressable: the point of the primitive is
+// to shape the ENVELOPE an upstream validates strictly, and a nested allowlist
+// would be a different (and much more dangerous) tool.
+func keepOnlyKeys(doc map[string]any, keep []string) (bool, error) {
+	allowed := make(map[string]struct{}, len(keep))
+	for _, key := range keep {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			continue
+		}
+		if strings.ContainsAny(trimmed, ".[") {
+			return false, fmt.Errorf("keep takes top-level keys, got %q", key)
+		}
+		allowed[trimmed] = struct{}{}
+	}
+	if len(allowed) == 0 {
+		return false, fmt.Errorf("keep needs at least one key")
+	}
+	changed := false
+	for key := range doc {
+		if _, ok := allowed[key]; ok {
+			continue
+		}
+		delete(doc, key)
+		changed = true
+	}
+	return changed, nil
 }
 
 // templateToken is one piece of a parsed template: either literal text or a

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -43,6 +44,13 @@ type AdminHandler struct {
 	// whether a sync is allowed to fill prices.
 	modelCatalogScheduled bool
 	modelCatalogPrices    bool
+	// modelBootstraps carries newly routed models to the background worker that
+	// fills their registry row right away. Nil when no catalog service is
+	// wired; see ModelBootstrapQueue.
+	modelBootstraps chan string
+	// logger is optional (nil in tests that do not care) and only used for
+	// best-effort background failures, never for request outcomes.
+	logger *slog.Logger
 	// connectionMu serializes the site-reuse/create/rollback sequence. Without
 	// it, two simultaneous creates for a new base URL could let one failed
 	// rollback delete the other request's newly attached credentials/channels.
@@ -80,6 +88,18 @@ func (h *AdminHandler) SetModelCatalog(service *modelcatalog.Service, scheduled,
 	h.modelCatalog = service
 	h.modelCatalogScheduled = scheduled
 	h.modelCatalogPrices = pricesEnabled
+	// The bootstrap queue exists exactly as long as there is a catalog to sync
+	// against; a nil queue is what tells bootstrapNewModel to skip the network
+	// half and keep the (local) auto-tag.
+	if service != nil && h.modelBootstraps == nil {
+		h.modelBootstraps = make(chan string, modelBootstrapQueueSize)
+	}
+}
+
+// SetLogger wires the logger used for best-effort background failures (nil
+// silences them; request outcomes are reported through the response, not here).
+func (h *AdminHandler) SetLogger(logger *slog.Logger) {
+	h.logger = logger
 }
 
 // SetSticky hot-swaps the sticky-session store backing the admin read-only
@@ -144,6 +164,8 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Post("/routes/{routeId}/groups/copy", h.copyRouteMemberGroup)
 	r.Delete("/routes/{routeId}/groups/{name}", h.deleteRouteMemberGroup)
 	r.Get("/route-groups", h.listRouteGroupNames)
+	// Attach every channel that already serves the route's model ("add all").
+	r.Post("/routes/{id}/auto-match", h.autoMatchRouteMembers)
 
 	r.Get("/models/changes", h.listModelChanges)
 	r.Post("/models/changes/ignore", h.ignoreModelChanges)

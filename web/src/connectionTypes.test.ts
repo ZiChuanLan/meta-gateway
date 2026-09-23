@@ -54,4 +54,16 @@ describe("provider base URL presets", () => {
       "https://api.perplexity.ai/chat/completions",
     );
   });
+
+  it("gives TypeSafe its documented chat endpoint, keeping /v1/models reachable", () => {
+    // Measured against the live API on 2026-09-23: POST /v1/systemone answers
+    // 422 without a body (exists) while /v1/systemone/models answers 404 — the
+    // model list lives at the conventional /v1/models on the bare host. So the
+    // preset must be the chat endpoint, and the save-time split must peel it
+    // back to `https://api.typesafe.ai` (which is what lets sync work without
+    // the operator touching the endpoint mapping fields).
+    expect(PROVIDER_BASE_URLS.typesafe).toBe(
+      "https://api.typesafe.ai/v1/systemone",
+    );
+  });
 });

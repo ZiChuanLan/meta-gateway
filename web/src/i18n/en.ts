@@ -154,6 +154,11 @@ export const en: Dict = {
   "err.config.cause": "The connection or its credentials are misconfigured.",
   "err.config.fix":
     "Review the Base URL, connection type, and credential status.",
+  "err.upstreamShape.title": "Unrecognized upstream response",
+  "err.upstreamShape.cause":
+    "The upstream answered 2xx, but the body is not a shape the gateway can parse (for example a model list that is not OpenAI's data[].id).",
+  "err.upstreamShape.fix":
+    "Confirm the upstream really is OpenAI-shaped. If it is not (TypeSafe, custom APIs), configure the request / response field mapping under the channel's custom endpoint section, or set the channel's provider to the matching type.",
   "err.missingKey.title": "No API key",
   "err.missingKey.cause":
     "This site has no usable sk- API key, or the key list is hidden / masked upstream.",
@@ -487,7 +492,7 @@ export const en: Dict = {
   "channels.endpointPreview": "Requests will go to: {url}",
   "channels.namePlaceholder": "Optional display name",
   "channels.baseUrlHint":
-    "OpenAI-compatible root, with or without trailing /v1. You may also paste a complete endpoint the new-api way (e.g. https://api.typesafe.ai/v1/systemone): saving splits it into the root plus an endpoint path override.",
+    "OpenAI-compatible root, with or without /v1. A full URL works too.",
   "channels.inheritsSite": "Uses site base URL",
   "channels.neverChecked": "Never",
   "channels.modelsSection": "Models",
@@ -683,11 +688,12 @@ export const en: Dict = {
   "channels.payloadRulesHint":
     "JSON array of rules: match (model glob, protocol, header substring, payload JSON-path conditions) + actions (set / delete / filter). Non-matching requests pass through untouched. Paths use dots and indexes: messages.0.content, messages.#.image_url (any element).",
   "channels.endpointMap": "Custom endpoint and field mapping",
-  "channels.endpointPreset": "Preset",
-  "channels.endpointPresetHint":
-    "A preset only fills empty fields, so nothing you filled in is overwritten. The TypeSafe preset's question text must be rewritten for your own semantics (and the question id / answer field must match your question type).",
+  "channels.endpointMapSummaryNone": "Not configured (plain passthrough)",
+  "channels.endpointMapSummaryActive": "Configured: {parts}",
+  "channels.endpointMapConfigure": "Configure mapping",
+  "channels.endpointMapCollapse": "Hide mapping",
   "channels.endpointMapHint":
-    "For channels whose upstream is not OpenAI-shaped: relocate the endpoint path, and move fields between your wire contract and the upstream's. Leave everything empty for plain passthrough; existing channels are unaffected.",
+    "For channels whose upstream is not OpenAI-shaped: relocate the endpoint path, and move fields between your wire contract and the upstream's. Leave everything empty for plain passthrough. Picking the matching provider type (TypeSafe, …) fills this in on save, so there is usually nothing to edit here; an existing mapping is never overwritten — clear these fields and save to switch to the provider's built-in mapping.",
   "channels.pathOverride": "Endpoint path override",
   "channels.pathOverrideHint":
     "Replaces the endpoint path outright — \"systemone\" sends /v1/systemone instead of /v1/chat/completions. Empty = no override.",
@@ -696,7 +702,7 @@ export const en: Dict = {
     'JSON object {"OpenAI path":"upstream path"}. A key may end in * for a prefix match; values may use {path} (remaining segments) and {model}. For providers whose API root is not /v1, e.g. {"models":"models","chat/completions":"chat/completions"}.',
   "channels.requestMap": "Request field map",
   "channels.requestMapHint":
-    'JSON array applied to the outbound request body. Four forms: {"from":"source","to":"target"} copies a value; add "move":true to delete the source; {"to":"target","template":"…{messages.0.content}…"} builds a string; {"to":"target","value":{"str":"literal"}} writes a constant. A missing source is skipped silently.',
+    'JSON array applied to the outbound request body. Five forms: {"from":"source","to":"target"} copies a value; add "move":true to delete the source; {"to":"target","template":"…{messages.0.content}…"} builds a string; {"to":"target","value":{"str":"literal"}} writes a constant; {"keep":["model","state"]} deletes every top-level key that is not listed (for an upstream that rejects extra fields — entries apply in order, so read before you keep). A missing source is skipped silently.',
   "channels.responseMap": "Response field map",
   "channels.responseMapHint":
     'Same grammar, applied to the body the upstream returns to the client (after the protocol adapter converts it). For example {"from":"choices.0.message.content","to":"state"} stashes the text, then {"to":"choices.0.message.content","template":"{answers.ask.choice}"} puts the upstream answer into the standard slot.',
@@ -774,8 +780,6 @@ export const en: Dict = {
   "channels.checkinLogs": "Logs",
   "channels.checkinModuleOff":
     "The Check-in add-on is not enabled. Turn it on in the Store to schedule daily check-ins.",
-  "channels.checkinUnsupported":
-    "This site family does not expose a check-in API.",
   "channels.checkinNeedsUserCredential":
     "Fill in an Access Token or Cookie above to enable daily check-in for this connection.",
   "channels.checkinScheduledHint":
@@ -1117,6 +1121,28 @@ export const en: Dict = {
     "Synced models appear automatically. Add a route only for a model name that is not discovered upstream.",
   "modelsPage.rowActionsHint":
     "Use the row action menu to test, enable, inspect logs, or edit this model.",
+  "modelsPage.autoMatchAdd": "Attach every channel serving this model",
+  "modelsPage.autoMatchAddHint":
+    "Scan every enabled channel and attach the ones that really serve this model to the current group, in one step.",
+  "modelsPage.autoMatch.title": "Attach every channel serving this model",
+  "modelsPage.autoMatch.desc":
+    "Only enabled channels whose model list really contains this model are listed; channels already in this group are not added twice.",
+  "modelsPage.autoMatch.group": "Target group: {name}",
+  "modelsPage.autoMatch.selected": "{total} available, {selected} selected",
+  "modelsPage.autoMatch.selectAll": "Select all",
+  "modelsPage.autoMatch.selectNone": "Select none",
+  "modelsPage.autoMatch.attachedLabel":
+    "{n} channel(s) are already in this group and will not be added again",
+  "modelsPage.autoMatch.allAttached":
+    "Every channel serving this model is already in this group.",
+  "modelsPage.autoMatch.none":
+    "No enabled channel serves this model.",
+  "modelsPage.autoMatch.confirm": "Attach {n} channel(s)",
+  "modelsPage.autoMatch.done": "Attached {added} channel(s) to “{group}”",
+  "modelsPage.autoMatch.doneSkipped":
+    "Attached {added} channel(s) to “{group}”, skipped {skipped} that no longer qualify",
+  "modelsPage.autoMatch.footnote":
+    "Attached members start at priority 0 / weight 100, the same shape auto-sync creates; drag the member list to reorder.",
   "modelsPage.groupFilter": "Model family",
   "modelsPage.allGroups": "All model families",
   "modelsPage.statusFilter": "Status filter",
@@ -2415,10 +2441,9 @@ export const en: Dict = {
   "app.nav.workbench": "Workbench",
   "workbench.title": "Model workbench",
   "workbench.desc":
-    "A capability-driven image and chat studio, plus manual fixes to model protocol capabilities.",
+    "A studio that drives the upstream directly, reusing the same routing, billing and cancellation path as production.",
   "workbench.tabImages": "Images",
   "workbench.tabText": "Playground",
-  "workbench.tabCapabilities": "Capabilities",
   "playground.title": "Chat playground",
   "playground.help":
     "Drive the upstream with admin credentials and verify routing over a real conversation",
@@ -2523,7 +2548,7 @@ export const en: Dict = {
   "workbench.image.download": "Download",
   "workbench.image.history": "This session",
   "workbench.image.noModels":
-    "No image model detected: create a route for one on the Models page, or register it on the Capabilities tab.",
+    "No image model detected: create a route for one on the Models page, or register it under Model tools → Model capability registry there.",
   "workbench.cap.title": "Model capability registry",
   "workbench.cap.help":
     "Decides which endpoint and encoding the gateway uses for a model",
@@ -2531,6 +2556,13 @@ export const en: Dict = {
     "The registry is the source of truth for the protocol layer: the image studio and the chat→edit rewrite both read it. Rows marked manual are never overwritten by model discovery.",
   "workbench.cap.add": "Register",
   "workbench.cap.addPlaceholder": "Model name",
+  "workbench.cap.filter": "Filter models",
+  "workbench.cap.noMatch": "No model matches “{term}”.",
+  "workbench.cap.maxImagesShort": "{n} reference image(s)",
+  "workbench.cap.editHint":
+    "The endpoint list decides which API the gateway calls this model on. A typo is not rejected on write — it just makes the model unplannable.",
+  "workbench.cap.catalog.noSources":
+    "This gateway has no external index configured, so there is nothing to sync.",
   "workbench.cap.autoTag": "Auto-tag with built-in rules",
   "workbench.cap.editTitle": "Capability · {name}",
   "workbench.cap.model": "Model",

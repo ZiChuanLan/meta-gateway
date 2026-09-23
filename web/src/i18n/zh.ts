@@ -145,6 +145,11 @@ export const zh: Dict = {
   "err.config.title": "配置错误",
   "err.config.cause": "连接或凭据配置不正确。",
   "err.config.fix": "检查 Base URL、连接类型和凭据状态。",
+  "err.upstreamShape.title": "上游响应无法识别",
+  "err.upstreamShape.cause":
+    "上游返回了 2xx，但响应体不是网关能解析的形态（例如模型清单不是 OpenAI 的 data[].id）。",
+  "err.upstreamShape.fix":
+    "确认该上游确实是 OpenAI 兼容形态；若不是（如 TypeSafe、各类自研接口），请在渠道的「自定义端点与字段映射」里配置请求 / 响应字段映射，或把上游供应商改成对应类型。",
   "err.missingKey.title": "缺少 API Key",
   "err.missingKey.cause":
     "该站点没有可用的 sk- API Key，或上游隐藏 / 掩码了密钥列表。",
@@ -460,7 +465,7 @@ export const zh: Dict = {
   "channels.endpointPreview": "将请求到：{url}",
   "channels.namePlaceholder": "可选显示名称",
   "channels.baseUrlHint":
-    "OpenAI 兼容根地址，是否带 /v1 均可。也可以按 new-api 的习惯直接粘贴完整端点（如 https://api.typesafe.ai/v1/systemone），保存时会自动拆成根地址 + 端点路径覆盖。",
+    "OpenAI 兼容根地址，是否带 /v1 均可，也可以直接粘贴完整 URL。",
   "channels.inheritsSite": "使用站点 Base URL",
   "channels.neverChecked": "从未",
   "channels.modelsSection": "模型",
@@ -639,11 +644,12 @@ export const zh: Dict = {
   "channels.payloadRulesHint":
     "JSON 规则数组：match（模型通配、协议、请求头子串、payload JSON path 条件）+ actions（set / delete / filter）。不匹配的请求原样透传。路径用点和索引：messages.0.content、messages.#.image_url（任意元素）。",
   "channels.endpointMap": "自定义端点与字段映射",
-  "channels.endpointPreset": "一键预设",
-  "channels.endpointPresetHint":
-    "预设只填空位，已填写的内容不会被覆盖。TypeSafe 预设里的提问文案需要改成你自己的语义（question id 与答案字段也要对应你的问题类型）。",
+  "channels.endpointMapSummaryNone": "未配置（完全透传）",
+  "channels.endpointMapSummaryActive": "已配置：{parts}",
+  "channels.endpointMapConfigure": "配置映射",
+  "channels.endpointMapCollapse": "收起映射",
   "channels.endpointMapHint":
-    "给上游不是 OpenAI 形态的渠道用：可以改端点路径，也可以把请求/响应体字段互相搬运。留空即完全透传，不会影响现有渠道。",
+    "给上游不是 OpenAI 形态的渠道用：可以改端点路径，也可以把请求/响应体字段互相搬运。留空即完全透传，不会影响现有渠道。把「类型」选成对应供应商（如 TypeSafe）时，这里会在保存时自动填好，一般不需要手动改；已经有内容时不覆盖——想改用供应商自带的映射，先清空这几项再保存。",
   "channels.pathOverride": "端点路径覆盖",
   "channels.pathOverrideHint":
     "直接替换端点路径，例如填 systemone 就把 /v1/chat/completions 打到 /v1/systemone。留空 = 不覆盖。",
@@ -652,7 +658,7 @@ export const zh: Dict = {
     'JSON 对象：{"OpenAI 路径":"上游路径"}。键可用 * 结尾做前缀匹配；值可用 {path}（剩余路径）与 {model}。用于 API 根不是 /v1 的供应商，例如 {"models":"models","chat/completions":"chat/completions"}。',
   "channels.requestMap": "请求字段映射",
   "channels.requestMapHint":
-    'JSON 数组，作用于发往上游的请求体。每项四种写法：{"from":"源路径","to":"目标路径"} 搬值；加 "move":true 则搬完删除源；{"to":"目标","template":"…{messages.0.content}…"} 用模板拼字符串；{"to":"目标","value":{"str":"字面量"}} 写死值。源字段不存在时静默跳过。',
+    'JSON 数组，作用于发往上游的请求体。每项五种写法：{"from":"源路径","to":"目标路径"} 搬值；加 "move":true 则搬完删除源；{"to":"目标","template":"…{messages.0.content}…"} 用模板拼字符串；{"to":"目标","value":{"str":"字面量"}} 写死值；{"keep":["model","state"]} 只保留列出的顶层字段、其余全删（上游会给多余字段报错时用；按数组顺序生效，所以先读再删）。源字段不存在时静默跳过。',
   "channels.responseMap": "响应字段映射",
   "channels.responseMapHint":
     '同一套语法，作用于上游返回给客户端的响应体（在协议适配器转换之后）。例如 {"from":"choices.0.message.content","to":"state"} 先把结果收进 state，再用 {"to":"choices.0.message.content","template":"{answers.ask.choice}"} 把上游的 answers 放回标准位置。',
@@ -725,7 +731,6 @@ export const zh: Dict = {
   "channels.checkinLogs": "日志",
   "channels.checkinModuleOff":
     "签到组件未启用。请在商店中开启后即可安排每日签到。",
-  "channels.checkinUnsupported": "该站点类型不提供签到接口。",
   "channels.checkinNeedsUserCredential":
     "在上方填写 Access Token 或 Cookie 后，即可启用该连接的每日签到。",
   "channels.checkinScheduledHint": "该凭据将按签到页设置的日程每日签到。",
@@ -1057,6 +1062,25 @@ export const zh: Dict = {
     "同步模型会自动创建路由。只有上游未发现的模型名才需要手工添加。",
   "modelsPage.rowActionsHint":
     "通过行操作菜单测试、启用、查看日志或编辑当前模型。",
+  "modelsPage.autoMatchAdd": "一键挂载提供此模型的渠道",
+  "modelsPage.autoMatchAddHint":
+    "扫描所有启用中的渠道，把确实提供此模型的渠道一次性挂载到当前分组。",
+  "modelsPage.autoMatch.title": "挂载所有提供此模型的渠道",
+  "modelsPage.autoMatch.desc":
+    "只列出启用中、且模型列表里确实包含该模型的渠道；已在本分组的渠道不会重复添加。",
+  "modelsPage.autoMatch.group": "目标分组：{name}",
+  "modelsPage.autoMatch.selected": "可选 {total} 个，已选 {selected} 个",
+  "modelsPage.autoMatch.selectAll": "全选",
+  "modelsPage.autoMatch.selectNone": "全不选",
+  "modelsPage.autoMatch.attachedLabel": "{n} 个渠道已在本分组，不会重复添加",
+  "modelsPage.autoMatch.allAttached": "提供此模型的渠道都已在本分组中。",
+  "modelsPage.autoMatch.none": "没有启用中的渠道提供此模型。",
+  "modelsPage.autoMatch.confirm": "挂载 {n} 个渠道",
+  "modelsPage.autoMatch.done": "已在「{group}」挂载 {added} 个渠道",
+  "modelsPage.autoMatch.doneSkipped":
+    "已在「{group}」挂载 {added} 个渠道，跳过 {skipped} 个已失效的",
+  "modelsPage.autoMatch.footnote":
+    "挂载后成员优先级为 0、权重 100，与自动同步创建的成员一致；顺序可在成员列表里拖动调整。",
 
   "modelsPage.description": "管理对外模型、上游成员与模型级路由策略。",
   "modelsPage.empty":
@@ -2260,10 +2284,9 @@ export const zh: Dict = {
   "wizard.enter": "进入控制台",
   "app.nav.workbench": "工作台",
   "workbench.title": "模型工作台",
-  "workbench.desc": "能力注册表驱动的图像与对话试验台，以及模型协议能力的人工校正。",
+  "workbench.desc": "直接打上游的图像与对话试验台，复用线上同一套选路、计费与取消逻辑。",
   "workbench.tabImages": "图像",
   "workbench.tabText": "文字",
-  "workbench.tabCapabilities": "能力",
   "playground.title": "文字对话",
   "playground.help": "用管理端凭据直接打上游，多轮对话验证选路、计费与取消",
   "playground.desc":
@@ -2342,7 +2365,7 @@ export const zh: Dict = {
   "workbench.image.generateRun": "生成图片",
   "workbench.image.editRun": "编辑图片",
   "workbench.image.waitHint":
-    "正在等待上游返回图片，切换能力页不会丢失这次结果。",
+    "正在等待上游返回图片，切换到文字对话不会丢失这次结果。",
   "workbench.image.preview": "查看完整图片",
   "workbench.image.resultAlt": "生成的图片 {n}",
   "workbench.image.protocolValue": "{endpoint} · {format}",
@@ -2355,13 +2378,20 @@ export const zh: Dict = {
   "workbench.image.download": "下载",
   "workbench.image.history": "本次会话",
   "workbench.image.noModels":
-    "没有检测到图像模型：先在「模型」页建一条图像模型的路由，或在「能力」页手工登记。",
+    "没有检测到图像模型：在「模型」页建一条图像模型的路由，或在同一页的「模型工具 → 模型能力注册表」里手工登记。",
   "workbench.cap.title": "模型能力注册表",
   "workbench.cap.help": "决定网关用哪个端点、哪种编码调用模型",
   "workbench.cap.desc":
     "注册表是协议层的真相来源：图像工作台与 chat→edit 改写都读这里。标记为 manual 的记录不会被模型发现自动覆盖。",
   "workbench.cap.add": "登记",
   "workbench.cap.addPlaceholder": "模型名",
+  "workbench.cap.filter": "筛选模型",
+  "workbench.cap.noMatch": "没有匹配「{term}」的模型。",
+  "workbench.cap.maxImagesShort": "参考图 {n}",
+  "workbench.cap.editHint":
+    "端点列表决定网关用哪个接口调用此模型。填错不会被写入校验拦下，只会让该模型无法被规划。",
+  "workbench.cap.catalog.noSources":
+    "当前网关未配置任何外部目录，没有可同步的来源。",
   "workbench.cap.autoTag": "按内置规则标注",
   "workbench.cap.editTitle": "能力 · {name}",
   "workbench.cap.model": "模型",

@@ -222,7 +222,10 @@ describe("channel-first shell", () => {
 			await screen.findByRole("heading", { name: "Model workbench" }),
 		).toBeInTheDocument();
 		expect(screen.getByRole("tab", { name: "Images" })).toBeInTheDocument();
-		expect(screen.getByRole("tab", { name: "Capabilities" })).toBeInTheDocument();
+		// The capability registry is no longer a workbench tab — it is a popup
+		// on the Models page, where the model list it describes lives.
+		expect(screen.getByRole("tab", { name: "Playground" })).toBeInTheDocument();
+		expect(screen.queryByRole("tab", { name: "Capabilities" })).not.toBeInTheDocument();
 	});
 
 	it("opens models, logs, and maintain from the product nav", async () => {

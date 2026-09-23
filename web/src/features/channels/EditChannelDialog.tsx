@@ -8,10 +8,9 @@ import type { Channel, RouteOverview, Site } from "../../api/types";
 import { parseCredentialMeta } from "../credentialMeta";
 import { Drawer } from "../../components/Drawer";
 import { SearchableSelect } from "../../components/SearchableSelect";
-import { Button, ErrorState, Field } from "../../components/ui";
+import { Button, ErrorState, Field, InfoTip } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
-import { ENDPOINT_PRESETS, applyEndpointPreset } from "./endpointPresets";
 import {
   UA_PRESETS,
   isValidUserAgent,
@@ -23,6 +22,7 @@ import {
   SECRET_MASK,
   TYPE_GROUPS,
   TYPE_OPTIONS,
+  isCustomChannelType,
   userAuthFieldsFor,
 } from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
@@ -188,9 +188,42 @@ export function EditChannelDialog({
   const [responseMap, setResponseMap] = useState(
     value.upstream_response_map ?? "",
   );
+  // The mapping is a protocol contract, not a preference: a provider that is not
+  // OpenAI-shaped ships its mapping with the provider (see the backend's
+  // proxy.ProviderProfile), so these four boxes are an override and an
+  // inspection surface rather than the normal way in. Folded away when there is
+  // nothing configured — a channel that plain passes through should not open
+  // onto four JSON editors — but always shown when the row already carries a
+  // mapping, because then it is information the operator owns.
+  const [showEndpointMap, setShowEndpointMap] = useState(
+    () =>
+      Boolean(
+        (value.upstream_path_override ?? "").trim() ||
+          (value.upstream_path_map ?? "").trim() ||
+          (value.upstream_request_map ?? "").trim() ||
+          (value.upstream_response_map ?? "").trim(),
+      ),
+  );
   const [syncMode, setSyncMode] = useState<ModelSyncMode>(
     value.model_sync_mode === "auto" ? "auto" : "manual",
   );
+  // What the folded panel reports, so folding it never hides which parts of the
+  // mapping are in play.
+  const endpointMapParts = [
+    pathOverride.trim() ? t("channels.pathOverride") : "",
+    pathMap.trim() ? t("channels.pathMap") : "",
+    requestMap.trim() ? t("channels.requestMap") : "",
+    responseMap.trim() ? t("channels.responseMap") : "",
+  ].filter(Boolean);
+  // The panel is the way in only for a hand-wired endpoint: a provider that is
+  // not OpenAI-shaped ships its mapping with the provider, so four JSON editors
+  // would be noise on every other row. It also stays visible whenever the row
+  // already carries a mapping — that mapping is then information the operator
+  // owns, and hiding it would leave it uninspectable and unclearable (a provider
+  // profile applied at save, and an endpoint split out of a pasted URL, both
+  // land here).
+  const showEndpointMapSection =
+    isCustomChannelType(typeHint) || endpointMapParts.length > 0;
   // The model-management drawer writes the sync mode directly (single-field
   // PATCH); the edit dialog only sends its own picker value when the operator
   // actually moved it here, so a stale snapshot can never stomp that choice.
@@ -441,55 +474,6 @@ export function EditChannelDialog({
             />
           </Field>
         </div>
-
-        <section
-          className="detail-section connection-subpanel"
-          aria-label={t("channels.checkinSection")}
-        >
-          <div className="detail-section-head">
-            <h3>{t("channels.checkinSection")}</h3>
-            <Link className="detail-section-expand" to="/checkins">
-              {t("channels.checkinLogs")}
-            </Link>
-          </div>
-          {!checkinModuleOn ? (
-            <p className="detail-section-empty is-quiet">
-              {t("channels.checkinModuleOff")}
-            </p>
-          ) : !checkinSupported ? (
-            <p className="detail-section-empty is-quiet">
-              {t("channels.checkinUnsupported")}
-            </p>
-          ) : !userCredential?.id ? (
-            <p className="detail-section-empty is-quiet">
-              {t("channels.checkinNeedsUserCredential")}
-            </p>
-          ) : (
-            <>
-              <label className="check is-spaced">
-                <input
-                  type="checkbox"
-                  checked={checkinOn}
-                  disabled={pending || toggleCheckin.isPending}
-                  onChange={(e) => {
-                    const next = e.target.checked;
-                    setCheckinOn(next);
-                    toggleCheckin.mutate(next);
-                  }}
-                />
-                <span>{t("channels.checkinEnable")}</span>
-              </label>
-              <p className="detail-section-empty is-quiet">
-                {checkinOn
-                  ? t("channels.checkinScheduledHint")
-                  : t("channels.checkinOffHint")}
-              </p>
-            </>
-          )}
-          {toggleCheckin.isError ? (
-            <ErrorState error={toggleCheckin.error} />
-          ) : null}
-        </section>
 
         <section
           className="credential-key-panel connection-subpanel"
@@ -746,6 +730,58 @@ export function EditChannelDialog({
                 ) : null}
               </div>
             ) : null}
+            {/* Check-in acts on the user credential, so it lives with the
+                credential fields instead of as a standalone section in the main
+                form. It only exists for site families that actually expose a
+                check-in API — the backend profile says so per channel via
+                checkin_supported, so a provider without one now shows nothing
+                at all rather than a permanent explanatory block. */}
+            {checkinSupported ? (
+              <section
+                className="detail-section connection-subpanel"
+                aria-label={t("channels.checkinSection")}
+              >
+                <div className="detail-section-head">
+                  <h3>{t("channels.checkinSection")}</h3>
+                  <Link className="detail-section-expand" to="/checkins">
+                    {t("channels.checkinLogs")}
+                  </Link>
+                </div>
+                {!checkinModuleOn ? (
+                  <p className="detail-section-empty is-quiet">
+                    {t("channels.checkinModuleOff")}
+                  </p>
+                ) : !userCredential?.id ? (
+                  <p className="detail-section-empty is-quiet">
+                    {t("channels.checkinNeedsUserCredential")}
+                  </p>
+                ) : (
+                  <>
+                    <label className="check is-spaced">
+                      <input
+                        type="checkbox"
+                        checked={checkinOn}
+                        disabled={pending || toggleCheckin.isPending}
+                        onChange={(e) => {
+                          const next = e.target.checked;
+                          setCheckinOn(next);
+                          toggleCheckin.mutate(next);
+                        }}
+                      />
+                      <span>{t("channels.checkinEnable")}</span>
+                    </label>
+                    <p className="detail-section-empty is-quiet">
+                      {checkinOn
+                        ? t("channels.checkinScheduledHint")
+                        : t("channels.checkinOffHint")}
+                    </p>
+                  </>
+                )}
+                {toggleCheckin.isError ? (
+                  <ErrorState error={toggleCheckin.error} />
+                ) : null}
+              </section>
+            ) : null}
             <div className="form-grid">
               <Field
                 label={t("common.priority")}
@@ -979,41 +1015,36 @@ export function EditChannelDialog({
                   )}
                 />
               </Field>
+              {showEndpointMapSection ? (
               <div className="detail-section">
                 <div className="detail-section-head">
                   <h3>{t("channels.endpointMap")}</h3>
-                </div>
-                <p className="detail-section-empty is-quiet">
-                  {t("channels.endpointMapHint")}
-                </p>
-                <div className="endpoint-presets">
-                  <span className="endpoint-presets-label">
-                    {t("channels.endpointPreset")}
-                  </span>
-                  {ENDPOINT_PRESETS.map((preset) => (
-                    <Button
-                      key={preset.id}
-                      variant="secondary"
-                      disabled={pending}
-                      onClick={() => {
-                        const next = applyEndpointPreset(preset, {
-                          baseUrl: value.base_url,
-                          override: pathOverride,
-                          requestMap,
-                          responseMap,
-                        });
-                        setPathOverride(next.override);
-                        setRequestMap(next.requestMap);
-                        setResponseMap(next.responseMap);
-                      }}
-                    >
-                      {preset.label}
-                    </Button>
-                  ))}
-                  <span className="endpoint-presets-hint">
-                    {t("channels.endpointPresetHint")}
+                  {/* The "what is this section for" paragraph lives behind the
+                      title's (i) now: it used to sit here as a multi-line
+                      block, which pushed the fold-away toggle below the fold.
+                      Same affordance the field hints below already use. */}
+                  <InfoTip label={t("channels.endpointMapHint")} />
+                  <span className="panel-summary">
+                    {endpointMapParts.length === 0
+                      ? t("channels.endpointMapSummaryNone")
+                      : t("channels.endpointMapSummaryActive", {
+                          parts: endpointMapParts.join(" / "),
+                        })}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  className={`advanced-toggle${showEndpointMap ? " is-open" : ""}`}
+                  aria-expanded={showEndpointMap}
+                  disabled={pending}
+                  onClick={() => setShowEndpointMap((open) => !open)}
+                >
+                  <ChevronDown size={13} />
+                  {showEndpointMap
+                    ? t("channels.endpointMapCollapse")
+                    : t("channels.endpointMapConfigure")}
+                </button>
+                {showEndpointMap ? (
                 <div className="form-grid form-grid-single">
                 <Field
                   label={t("channels.pathOverride")}
@@ -1089,7 +1120,9 @@ export function EditChannelDialog({
                   />
                 </Field>
                 </div>
+                ) : null}
               </div>
+              ) : null}
             </section>
           </div>
         ) : null}

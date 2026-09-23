@@ -47,8 +47,22 @@ go build ./... && go test ./...
 ```
 
 > Windows / 沙箱环境注意：`vite build` 默认 `emptyOutDir: true`，会先删掉旧的 `dist/`（含数十个
-> 带 hash 的 chunk）。在带批量删除护栏的沙箱里会被中断，表现为 `error during build:` 后面**没有任何
-> 错误详情**，`dist/assets` 被清空但新产物没写出来。遇到此特征请提权重跑，不要误判为代码问题。
+> 带 hash 的 chunk）。在带批量删除护栏的沙箱里，这一步有两种表现，**都是同一个根因、都要提权重跑**：
+>
+> 1. **报错中断**：`error during build:` 后面**没有任何错误详情**，`dist/assets` 被清空但新产物没写出来。
+> 2. **静默挂死（更隐蔽，2026-09-24 实测）**：进程**永不退出、也不报任何错**，日志停在
+>    `✓ 1834 modules transformed.` 之后再无下文，`rendering chunks` 永远不出现。护栏拦掉删除、
+>    进程就在那里等。此时 `dist/` 里**仍是上一次构建的旧 chunk**（拿 `stat().st_mtime` 一看还是几十分钟前），
+>    容易误判成"已经构建好了"。
+>
+> **判断口径**：健康构建只要 **~4s**（transform 阶段也就几秒）。如果 `transformed` 之后超过十几秒没动静，
+> 就是被挂住了 —— 直接 kill 掉，改用 `dangerouslyDisableSandbox: true` 重跑。提权后实测 **4.03s** 完成。
+> 别去动 `vite.config`（关 `emptyOutDir` 会留下陈旧 chunk，反而制造新的"改了没生效"）。
+>
+> 连带坑：挂死期间 `internal/webui/embed.go` 会锁住 `dist/assets`，此时跑 **任何** 依赖
+> `internal/webui` 的 Go 测试（如 `go test ./internal/httpapi/`）都会报
+> `pattern dist: open ...\dist\assets: The process cannot access the file because it is being used by
+> another process.` —— 这是文件锁不是代码错，等构建结束后重跑即可。
 
 ### race 预算与测试后台资源（2026-09-20）
 
@@ -229,6 +243,28 @@ AAH 版本号是字符串且当前为 `"4.0"`，段可能嵌在 `data` 下，别
 `manual`（只刷新候选快照，逐个人工采纳）。`NormalizeModelSyncMode` 把空值/未知值归一为
 **manual**（安全默认）。`runtime_settings.default_model_sync_mode` 是新 channel 的继承来源。
 
+### 3.7.1 建路由后的两件自动化（2026-09-23）
+
+`POST /admin/routes` 成功之后，网关替操作员把「这个模型名」能回答的问题一并答掉：**怎么调它**（能力
+注册表）与**哪些渠道到得了它**（路由成员）。两条路径各有一条不能碰的底线：
+
+- **能力补齐**（`AdminHandler.bootstrapNewModel`）：内置分类器 `ModelCapability.AutoTag` **同步**跑
+  （本地、幂等、跳过 manual/catalog 已拥有的行）；外部目录 `modelcatalog.Runner.Sync` **后台**只同步
+  这一个模型（容量 32 的 `modelBootstraps` 通道 + `runModelBootstraps` 常驻消费）。
+  **两半都不许让保存变慢或变失败**：队列满、没配目录 → 静默丢弃并 defer 到下一次计划扫描；worker 里
+  一次失败的 sync 只记日志。写这条路径时不要把任何网络调用挪进 HTTP handler。
+  ⚠️ **通配符（含 `*` / `?`）必须跳过**：`gpt-*` 是匹配器，不是可调用模型名，没有目录会收录它。
+  worker 由 `router.go` 在**有 catalog 服务时无条件启动**（即使周期扫描被关掉），并注册 stopper。
+- **一键挂载**（`POST /admin/routes/{id}/auto-match` → `store.AttachChannelsToRoute(id, pattern, ids, group)`）：
+  把「确实提供该模型的启用渠道」挂进**指定分组**。三层语义别搞混：
+  ① handler：`channel_ids` 为空 = **全部当前匹配**；② store：空列表 = **空操作**（这就是前者必须由
+  handler 决定的原因，别顺手在 store 层加「空 = 全部」）；③ 前端：因此**全不选时不能发请求**（会挂上
+  全部），确认按钮在 0 选中时必须禁用。
+  目标分组沿用「添加通道」的语义（= 当前分组 tab），**不是永远 default**。交集保护与创建时同一套
+  （`ChannelsWithModel`）：disabled / 未知 / 已不再提供该模型的 id 计入 `skipped`；**已在目标分组的
+  渠道既不算 added 也不算 skipped**（纯空操作，连点两次不会重复挂载、也不会看起来像失败）；只在别的
+  分组里的渠道仍会被挂进来（分组可叠加）。
+
 ### 3.8 自定义端点映射（`upstream_*` 列）
 
 `channels` 上的四列让一个渠道可以脱离 OpenAI 形态：
@@ -248,7 +284,21 @@ AAH 版本号是字符串且当前为 `"4.0"`，段可能嵌在 `data` 下，别
 2. **响应映射跑在适配器转换之后**（`UpstreamMap.ReshapeResponse`）：map 的路径描述的是**客户端看到的文档**，不是上游原始报文。这样别家后端的 `choices[0].message.content` 与 OpenAI 上游的语义一致。
 3. **全程 fail-open**：映射为空/畸形/源字段不存在 → 原样转发并在日志留一行；`from`/`to` 复制保留 JSON 类型（数字仍是数字），`template` 产出的永远是字符串。
 
-字段映射不是 JSONata 那种通用引擎（无 `$`/算术/正则），故意只保留四种写法（`from`/`to`、`move`、`template`、`value`）并与 payload_rules 共用 JSON-path 实现。`[]` 形式的「整包体路径」曾设计过但未实现，校验会明确拒绝并给出替代写法（响应方向还想换整个 body 的话，就在适配器层做，不是在这一列）。
+字段映射不是 JSONata 那种通用引擎（无 `$`/算术/正则），故意只保留五种写法（`from`/`to`、`move`、`template`、`value`、`keep`）并与 payload_rules 共用 JSON-path 实现。`[]` 形式的「整包体路径」曾设计过但未实现，校验会明确拒绝并给出替代写法（响应方向还想换整个 body 的话，就在适配器层做，不是在这一列）。
+
+**`keep`（顶层 body 白名单）是第五种，也是唯一一种「删」的写法**：`{"keep":["model","state"]}` 会把不在名单里的顶层键全部删掉。它存在的唯一理由是有些上游把请求模型校验得很严——**多一个未知字段就 400**（TypeSafe System One 实测连 `temperature` 都拒绝），而 OpenAI 形态的请求体必然带 `messages`。只靠删除表达不了这件事，因为「要删的集合」取决于客户端，「要保留的集合」才是操作员知道的。**条目按数组顺序生效**，所以典型写法是先 `from` 读需要的值、再 `keep` 删（`{"from":"messages.0.content","to":"state"}` 必须在 `{"keep":[…]}` 之前，否则源已经没了）。只支持顶层键（带 `.`/`[` 会被校验拒绝）。
+
+### 3.8.1 供应商 profile：映射是供应商的属性
+
+**非 OpenAI 供应商的映射不再由控制台按钮填，而是随供应商走**（`internal/proxy/provider_profile.go`）。2026-09-23 之前它是一键预设按钮：操作员点一下，4 个 JSON 框被填上，然后这份协议契约就归他维护了；而且另外两条渠道来源（导入、API 创建）根本看不到那个按钮。现在：
+
+- `ApplyProviderProfile(ch, providerType)` 在保存时按 `type_hint`（空则 `site.platform`）查 profile，**只填空位**；**已手写 request/response map 的渠道完全不动**（路径覆盖豁免这条闸——「粘完整端点 URL」的保存期拆分写的就是那个字段，属同一意图）。profile 自己先过一遍 `ValidateUpstreamMap`，所以不可能存进一份非法映射。
+- 接线点两处：`httpapi.validateChannel`（create / clone / update 共用）与 `admin_connections.createConnection`。
+- **新增一个非 OpenAI 供应商要动四处**：① Go `OpenAICompatibleBrands()` + `CanonicalType`（映射到 `openai-compatible`，让 `ListModels` / `ResolveForward` 命中）；② `providerProfiles` 注册 profile；③ 前端 `connectionTypes.ts` 的 `CONNECTION_TYPE_OPTIONS` + `PROVIDER_BASE_URLS`；④ 前端 `helpers.tsx` 的 `NO_USER_AUTH_TYPES`（否则抽屉里会多出无用的用户令牌字段）。
+- `PROVIDER_BASE_URLS` 里**填文档里的端点而不是根地址**（Perplexity 与 TypeSafe 都这样）：保存时 `SplitEndpointBaseURL` 会拆成根 + 覆盖，这正是「模型清单与对话端点深度不同」也能同时可达的手法（TypeSafe：`GET /v1/models` 在裸主机上，`POST /v1/systemone` 在 `/v1` 下）。
+- **模型清单解析必须容错**（`adapters.parseModelList`）：接受 `data`/`models` 两种容器与 `id`/`name` 两种字段名。只认 OpenAI 那一种形状会把一个完全配好的渠道判成 `invalid_payload`，而它在前端属于 **`upstream_shape` 类**（曾经归在 `config` 类，于是提示「检查 Base URL、连接类型和凭据状态」，把排查引向一个已经正确的 URL 与凭据）。**新增后端 category 时，回 `web/src/errorCatalog.ts` 确认它落在哪一类**——这张表是「通用兜底文案」与「具体原因」之间唯一的翻译层。
+- **`custom` 是唯一「已知的未知」类型**，必须留在 `OpenAICompatibleBrands()` 与 `CanonicalType` 里。它表示「我自己接端点」（模型的 protocol family 未知，由字段映射来掰），所以默认落到 OpenAI 形态的 passthrough 最诚实。漏掉它 = 选完 Custom 就解析不到适配器、`discovery` 报 `unsupported_adapter`，也就是**唯一能手填映射的类型恰好拉不到模型**。⚠️ 但**未收录的手工 id 仍必须解析失败**（`TestRegistryAliasesAndPrecedence` 钉死这条）——那不是漏配，是刻意不让拼错的 type_hint 静默降级成 OpenAI。
+- **映射区只在「自己接的端点」上出现**（前端 `helpers.isCustomChannelType` + `EditChannelDialog.showEndpointMapSection`）：判定 `custom 类型 || 该行已有映射`。**第二条不可省**——保存时落下的 provider profile、从 base URL 拆出的端点覆盖都写在 `upstream_*` 列上，一旦把区块藏起来，操作员就既看不到也清不掉它们（不可逆）。改动这条判定时，`Channels.test.tsx` 里「普通渠道不渲染」那条会先断言高级区确实展开，别让「没点到按钮」冒充通过。
 
 ### 3.9 任意路径透传与端点级覆盖（v3.5）
 
@@ -364,6 +414,9 @@ curl -s -H "Authorization: Bearer <session_token>" \
 
 - 视觉与工作区设计见 `docs/visual-redesign.md`。前端样式位于 `web/src/styles/`：颜色/字号/材质改 `tokens.css`，共享控件改 `system.css`，导航改 `shell.css`，工作区布局改 `workspaces.css`，登录布局改 `login.css`，入场/品牌动效改 `motion.css`；不要把新主题继续堆进旧 `web/src/styles.css`。入场时长集中在 `lib/entranceMotion.ts`，重播不能触碰认证状态；动效须支持跳过、减少动态效果和隐藏页面暂停。
 - 业务子组件的主要操作通过 `PageActions` 放入页头。导航与页面框架复用 `ConsoleShell`；手机导航使用共享 Drawer。
+- **「模型能力注册表」是模型页「模型工具」里的弹窗**（`web/src/features/models/CapabilityRegistry.tsx`），
+  不是工作台 tab —— 它描述的是模型清单里的协议数据，工作台只保留「图像 / 文字」两个跑测 tab。
+  移动这类入口时，顺手 `grep` 一遍提到旧位置的文案（`workbench.image.noModels` 这类 hint 也是入口）。
 - 操作菜单、选择器与弹层复用共享组件，遵守 `docs/console-interactions.md` 的定位、键盘和焦点约定。
 - 编辑弹层传 `busy={pending}`，提交按钮显式声明类型；表单值为 `0`、`false` 或空字符串时，不得用 `||` 擦除其语义。
 - 路由说明必须带当前分组，展示后端评估；固定成员、配置优先级和实际承接渠道不能混为一谈。

@@ -158,6 +158,19 @@ func OpenAICompatibleBrands() []string {
 		"xai",
 		"mistral",
 		"perplexity",
+		// TypeSafe carries a Bearer-authenticated `GET /v1/models`, so model
+		// discovery is the ordinary OpenAI shape. Its chat surface is not —
+		// `POST /v1/systemone` — and is reached through the built-in provider
+		// profile (proxy.ProviderProfile), not through the adapter.
+		"typesafe",
+		// "custom" is the picker's escape hatch ("I will wire this endpoint
+		// myself"). Its protocol family is unknown by definition, and the
+		// endpoint/field mapping is what bends it into shape — so the safe
+		// default is the OpenAI-shaped surface the passthrough adapter speaks.
+		// Without this entry the type resolved to nothing and discovery failed
+		// outright with `unsupported_adapter`, which made picking Custom… a
+		// one-way trip to "cannot list models".
+		"custom",
 		"unknown",
 	}
 }
@@ -265,8 +278,8 @@ func CanonicalType(value string) string {
 		"metapi", "claude-code-hub", "aihubmix", "sharedchat", "wong-gongyi",
 		"deepseek", "moonshot", "zhipu", "qwen", "doubao", "siliconflow",
 		"minimax", "stepfun", "lingyiwanwu", "baichuan", "spark", "hunyuan",
-		"qianfan", "openrouter", "groq", "xai", "mistral", "perplexity",
-		"unknown":
+		"qianfan", "openrouter", "groq", "xai", "mistral", "perplexity", "typesafe",
+		"custom", "unknown":
 		// Brand-specific New-API / One-API style relays: OpenAI-compatible /v1 surface.
 		return "openai-compatible"
 	default:

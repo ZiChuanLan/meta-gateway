@@ -271,3 +271,23 @@
 .catalog-from { color: var(--muted); text-decoration: line-through; }
 .catalog-arrow { color: var(--muted); }
 .catalog-to { color: var(--primary); font-weight: 600; }
+
+/* Capability registry, as a popup on the Models page. Its rows are catalog
+   entries rather than table records — a wide table inside a 700px dialog
+   would only ever scroll sideways, so each entry is a card that states the
+   endpoints (the only field routing actually plans against) on its own line. */
+.cap-registry-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.cap-registry-bar .cap-registry-filter { width: min(200px, 100%); }
+.cap-registry-bar > input { flex: 1 1 130px; min-width: 0; }
+.cap-registry-list { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; padding: 2px; }
+.cap-registry-list .catalog-plan-row > header { align-items: center; }
+.cap-registry-meta { margin: 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* "Attach every channel serving this model": the preview list plus the ones
+   the write would leave alone. */
+.auto-match-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.auto-match-head .ops-panel-context { margin: 0; }
+.auto-match-attached { margin-top: 12px; }
+.auto-match-attached > .ops-panel-context { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 4px; }
+.auto-match-attached ul { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; padding: 0; }
+.auto-match-attached li { font-size: 11px; color: var(--muted); }

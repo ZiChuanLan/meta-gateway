@@ -70,6 +70,10 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.modelsCache.Invalidate()
+	// A model that was just routed should not need a manual catalog sync: the
+	// built-in classifier lands inline and the external indexes are consulted
+	// for this one model in the background. Neither can fail the create.
+	h.bootstrapNewModel(rt.ModelPattern)
 	created, err := h.db.Route.GetByID(id)
 	if err != nil {
 		writeStoreError(w, err)
@@ -80,6 +84,62 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// autoMatchRouteMembers attaches the channels that already serve a route's
+// model to one of its member groups. The console previews the candidates (they
+// come from /admin/discovery/model-channels) and posts the ones the operator
+// kept; an empty channel_ids means "every current match", which is the
+// one-click path.
+//
+// The store intersects the request against the live match set, so a stale
+// console selection can only ever attach a channel that really serves the
+// model — the same guard route creation uses.
+func (h *AdminHandler) autoMatchRouteMembers(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	rt, err := h.db.Route.GetByID(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if rt == nil {
+		writeError(w, http.StatusNotFound, "route not found")
+		return
+	}
+	var body struct {
+		ChannelIDs []int64 `json:"channel_ids"`
+		// Empty is the 'default' group, matching how members are named
+		// everywhere else.
+		GroupName string `json:"group_name"`
+	}
+	if err := decodeJSON(w, r, &body, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	ids := body.ChannelIDs
+	if len(ids) == 0 {
+		matches, err := h.db.ChannelsWithModel(rt.ModelPattern)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		ids = make([]int64, 0, len(matches))
+		for _, match := range matches {
+			ids = append(ids, match.ChannelID)
+		}
+	}
+	added, skipped, err := h.db.AttachChannelsToRoute(id, rt.ModelPattern, ids, body.GroupName)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if added > 0 {
+		h.modelsCache.Invalidate()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"added": added, "skipped": skipped})
 }
 
 func (h *AdminHandler) getRoute(w http.ResponseWriter, r *http.Request) {

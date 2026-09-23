@@ -14,6 +14,7 @@ import { I18nProvider } from "../i18n";
 import { SessionProvider } from "../session";
 import { ToastProvider } from "../toast";
 import { Channels, capabilityFlags, channelReadiness } from "./Channels";
+import { isCustomChannelType } from "./channels/helpers";
 import type { ChannelOverview } from "../api/types";
 
 function renderChannels() {
@@ -1150,5 +1151,178 @@ describe("Channels cooldown freshness", () => {
     expect(screen.getByTestId("channel-health-badge")).toHaveTextContent(
       "Healthy",
     );
+  });
+});
+
+describe("isCustomChannelType", () => {
+  it("treats the Custom type and hand-typed ids as custom, named providers as not", () => {
+    expect(isCustomChannelType("custom")).toBe(true);
+    expect(isCustomChannelType("  Custom ")).toBe(true);
+    expect(isCustomChannelType("my-bespoke-relay")).toBe(true);
+    expect(isCustomChannelType("openai-compatible")).toBe(false);
+    expect(isCustomChannelType("typesafe")).toBe(false);
+    // An unset type is not an assertion of bespoke wiring.
+    expect(isCustomChannelType("")).toBe(false);
+  });
+});
+
+describe("Channels edit dialog endpoint mapping visibility", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function overviewFor(channel: Record<string, unknown>) {
+    return {
+      channel: {
+        id: 11,
+        name: "probe-channel",
+        base_url: "https://api.example.com",
+        models_csv: "",
+        group_name: "default",
+        priority: 0,
+        weight: 100,
+        status: "enabled",
+        created_at: "",
+        updated_at: "",
+        ...channel,
+      },
+      credential_kind: "api_key",
+      checkin_enabled: false,
+      has_user_credential: false,
+      has_platform_user_id: false,
+      has_api_key: true,
+      site_usable: true,
+      credential_usable: true,
+      model_count: 0,
+      discovered_model_count: 0,
+      last_probe_at: "2026-08-02T00:00:00Z",
+      last_probe_ok: true,
+      last_latency_ms: 5,
+      route_count: 0,
+      enabled_member_count: 0,
+      cooling_member_count: 0,
+      failure_count: 0,
+      checkin_supported: false,
+      account_supported: false,
+    };
+  }
+
+  async function openEditAdvanced(
+    channel: Record<string, unknown>,
+    overviewPatch: Record<string, unknown> = {},
+  ) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input).split("?")[0] ?? "";
+        switch (path) {
+          case "/admin/channels/overview":
+            return jsonResponse([
+              { ...overviewFor(channel), ...overviewPatch },
+            ]);
+          case "/admin/sites":
+          case "/admin/channels":
+          case "/admin/routes/overview":
+          case "/admin/plugins/status":
+            return jsonResponse([]);
+          default:
+            return jsonResponse({ error: `unexpected ${path}` }, 500);
+        }
+      }),
+    );
+
+    renderChannels();
+    await screen.findByRole("heading", { name: "Connections" });
+
+    await waitFor(async () => {
+      screen.getByRole("button", { name: /more actions/i }).click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      screen.getByRole("menuitem", { name: /^edit$/i }).click();
+    });
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Show advanced" }));
+    return dialog;
+  }
+
+  it("stays out of the way for an ordinary provider with nothing mapped", async () => {
+    // Regression: the panel used to render for every channel, so a plain
+    // OpenAI-compatible row opened onto four JSON editors.
+    const dialog = await openEditAdvanced({ type_hint: "openai-compatible" });
+    // Proves the advanced block did open — the absence below is the gate, not a
+    // missing click.
+    expect(
+      within(dialog).getByText("Payload rules (body rewrite)"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("heading", {
+        name: "Custom endpoint and field mapping",
+      }),
+    ).toBeNull();
+  });
+
+  it("opens for a hand-wired Custom type", async () => {
+    const dialog = await openEditAdvanced({ type_hint: "custom" });
+    expect(
+      within(dialog).getByRole("heading", {
+        name: "Custom endpoint and field mapping",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Not configured (plain passthrough)"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a mapping that already exists on the row visible and inspectable", async () => {
+    // A provider profile applied at save (TypeSafe) or an endpoint split out of
+    // a pasted URL leaves a mapping on a non-custom type. Hiding it would leave
+    // the operator unable to read or clear it.
+    const dialog = await openEditAdvanced({
+      type_hint: "typesafe",
+      upstream_request_map: '[{"from":"messages.0.content","to":"state"}]',
+    });
+    expect(
+      within(dialog).getByRole("heading", {
+        name: "Custom endpoint and field mapping",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Configured: Request field map"),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the check-in block entirely for a provider with no check-in API", async () => {
+    // It used to render for every channel — including site families that have no
+    // check-in endpoint — where it showed a permanent "does not expose a check-in
+    // API" note plus a Logs link in the middle of the form.
+    const dialog = await openEditAdvanced({ type_hint: "openai-compatible" });
+    // Proves the advanced block really did open, so the absence below is the
+    // gate and not a missed click.
+    expect(
+      within(dialog).getByText("Payload rules (body rewrite)"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("heading", { name: "Check-in" }),
+    ).toBeNull();
+  });
+
+  it("offers scheduled check-in beside the credential for a supported provider", async () => {
+    const dialog = await openEditAdvanced(
+      { type_hint: "new-api" },
+      { checkin_supported: true },
+    );
+    const advanced = dialog.querySelector(".advanced-fields");
+    expect(advanced).not.toBeNull();
+    expect(
+      within(advanced as HTMLElement).getByRole("heading", { name: "Check-in" }),
+    ).toBeInTheDocument();
   });
 });

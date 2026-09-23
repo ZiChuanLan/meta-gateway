@@ -517,9 +517,6 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 			return errors.New("payload_rules must be a valid JSON array")
 		}
 	}
-	if err := validateUpstreamMap(ch); err != nil {
-		return err
-	}
 	if ch.ProxyURL != "" && h.validateProxyURL != nil {
 		if err := h.validateProxyURL(ch.ProxyURL); err != nil {
 			return fmt.Errorf("proxy_url: %w", err)
@@ -544,7 +541,17 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	if err != nil || credential == nil || credential.SiteID != *ch.SiteID {
 		return errors.New("credential does not belong to site")
 	}
-	return nil
+	// A provider whose wire contract is not OpenAI chat ships its endpoint and
+	// field mapping with the provider itself, so picking it in the console is
+	// enough. Applied after the base-URL split above (a pasted full endpoint is
+	// already peeled off by then) and before the validation below, so the
+	// profile's own maps go through the same gate as a hand-written one.
+	providerType := ch.TypeHint
+	if providerType == "" {
+		providerType = site.Platform
+	}
+	proxy.ApplyProviderProfile(ch, providerType)
+	return validateUpstreamMap(ch)
 }
 
 // ---------------------------------------------------------------------------

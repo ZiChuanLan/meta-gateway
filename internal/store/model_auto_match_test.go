@@ -33,15 +33,20 @@ func newAutoMatchChannel(t *testing.T, db *store.DB, name, modelsCSV, status, sy
 
 func memberChannelIDs(t *testing.T, db *store.DB, routeID int64) map[int64]domain.RouteMember {
 	t.Helper()
+	out := map[int64]domain.RouteMember{}
+	for _, member := range mustListMembers(t, db, routeID) {
+		out[member.ChannelID] = member
+	}
+	return out
+}
+
+func mustListMembers(t *testing.T, db *store.DB, routeID int64) []domain.RouteMember {
+	t.Helper()
 	members, err := db.RouteMember.ListByRoute(routeID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[int64]domain.RouteMember{}
-	for _, member := range members {
-		out[member.ChannelID] = member
-	}
-	return out
+	return members
 }
 
 func TestChannelsWithModel(t *testing.T) {
@@ -181,5 +186,117 @@ func TestCreateRouteWithAutoMatch(t *testing.T) {
 	}
 	if members := memberChannelIDs(t, db, bareID); len(members) != 0 {
 		t.Fatalf("bare members = %+v", members)
+	}
+}
+
+// TestAttachChannelsToRoute covers the console's "add every channel that serves
+// this model" action on a route that already exists.
+func TestAttachChannelsToRoute(t *testing.T) {
+	db := openTestDB(t)
+
+	first := newAutoMatchChannel(t, db, "ch-1", "deepseek-v4-flash", domain.StatusEnabled, domain.ModelSyncModeAuto)
+	second := newAutoMatchChannel(t, db, "ch-2", "deepseek-v4-flash,gpt-4o", domain.StatusEnabled, domain.ModelSyncModeManual)
+	offline := newAutoMatchChannel(t, db, "ch-off", "deepseek-v4-flash", domain.StatusDisabled, domain.ModelSyncModeAuto)
+
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "deepseek-v4-flash", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// An unknown id is not a match, and a disabled channel is not a match: both
+	// are counted as skipped rather than silently worked around.
+	added, skipped, err := db.AttachChannelsToRoute(routeID, "deepseek-v4-flash", []int64{first, second, offline, 99999}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 2 || skipped != 2 {
+		t.Fatalf("attach = (added %d, skipped %d), want (2, 2)", added, skipped)
+	}
+	members := memberChannelIDs(t, db, routeID)
+	if len(members) != 2 {
+		t.Fatalf("members = %+v, want the two enabled channels", members)
+	}
+	for _, id := range []int64{first, second} {
+		member, ok := members[id]
+		if !ok {
+			t.Fatalf("channel %d not attached", id)
+		}
+		if !member.Enabled || !member.Auto || member.GroupName != domain.DefaultRouteGroup {
+			t.Fatalf("member = %+v, want an enabled auto member in the default group", member)
+		}
+	}
+	if _, ok := members[offline]; ok {
+		t.Fatal("disabled channel must not be attached")
+	}
+
+	// Idempotent: they are already in the default group, so a second run is a
+	// plain no-op — not a "skip", which is reserved for ids the match set
+	// refused (disabled, unknown, or no longer serving the model).
+	added, skipped, err = db.AttachChannelsToRoute(routeID, "deepseek-v4-flash", []int64{first, second}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 0 || skipped != 0 {
+		t.Fatalf("re-attach = (added %d, skipped %d), want (0, 0)", added, skipped)
+	}
+
+	// A channel that only lives in another group still gets the default
+	// membership: groups are additive, so an API key bound to `default` must
+	// not silently miss a channel that another group already reaches.
+	grouped := newAutoMatchChannel(t, db, "ch-grouped", "deepseek-v4-flash", domain.StatusEnabled, domain.ModelSyncModeAuto)
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: grouped, GroupName: "blue", Enabled: true, Weight: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	added, skipped, err = db.AttachChannelsToRoute(routeID, "deepseek-v4-flash", []int64{grouped}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 1 || skipped != 0 {
+		t.Fatalf("grouped attach = (added %d, skipped %d), want (1, 0)", added, skipped)
+	}
+
+	// The target group is a parameter: attaching the same channels into `blue`
+	// is the same routes, one group over, and must create a second membership
+	// rather than being absorbed by the default-group hit. (`grouped` already
+	// lives in blue from the manual insert above, so it is now the no-op case.)
+	added, skipped, err = db.AttachChannelsToRoute(routeID, "deepseek-v4-flash", []int64{first, second, grouped}, "blue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 2 || skipped != 0 {
+		t.Fatalf("blue attach = (added %d, skipped %d), want (2, 0)", added, skipped)
+	}
+	blueMembers := 0
+	for _, member := range mustListMembers(t, db, routeID) {
+		if member.GroupName == "blue" {
+			blueMembers++
+		}
+	}
+	if blueMembers != 3 {
+		t.Fatalf("blue members = %d, want all three channels", blueMembers)
+	}
+	added, skipped, err = db.AttachChannelsToRoute(routeID, "deepseek-v4-flash", []int64{first, second, grouped}, "blue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 0 || skipped != 0 {
+		t.Fatalf("blue re-attach = (added %d, skipped %d), want (0, 0)", added, skipped)
+	}
+	// Adding to blue does not disturb default: each channel now has one row per
+	// group it belongs to, so six in total.
+	if rows := mustListMembers(t, db, routeID); len(rows) != 6 {
+		t.Fatalf("member rows = %d, want one per (channel, group) pair", len(rows))
+	}
+
+	// An empty request is a no-op, not an "attach everything" — the caller
+	// decides whether an empty selection means all.
+	added, skipped, err = db.AttachChannelsToRoute(routeID, "deepseek-v4-flash", nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 0 || skipped != 0 {
+		t.Fatalf("empty attach = (added %d, skipped %d), want (0, 0)", added, skipped)
 	}
 }

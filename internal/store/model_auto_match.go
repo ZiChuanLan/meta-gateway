@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -122,37 +124,9 @@ func (s *DB) CreateRouteWithAutoMatch(rt *domain.Route, matchChannelIDs []int64)
 		if err != nil {
 			return 0, 0, err
 		}
-		selected := make(map[int64]struct{}, len(matchChannelIDs))
-		for _, id := range matchChannelIDs {
-			selected[id] = struct{}{}
-		}
-		// Skip channels the route already serves in the default group.
-		current, err := (&RouteMemberStore{db: s.DB}).ListByRouteTx(tx, routeID)
+		attached, _, err = s.attachMatchesTx(tx, routeID, matchChannelIDs, matches, domain.DefaultRouteGroup)
 		if err != nil {
 			return 0, 0, err
-		}
-		for _, member := range current {
-			if NormalizeMemberGroup(member.GroupName) == domain.DefaultRouteGroup {
-				delete(selected, member.ChannelID)
-			}
-		}
-		members := &RouteMemberStore{db: s.DB}
-		for _, match := range matches {
-			if _, ok := selected[match.ChannelID]; !ok {
-				continue
-			}
-			_, err := members.CreateTx(tx, &domain.RouteMember{
-				RouteID:   routeID,
-				ChannelID: match.ChannelID,
-				Priority:  0,
-				Weight:    100,
-				Enabled:   true,
-				Auto:      true,
-			})
-			if err != nil {
-				return 0, 0, err
-			}
-			attached++
 		}
 	}
 
@@ -160,4 +134,88 @@ func (s *DB) CreateRouteWithAutoMatch(rt *domain.Route, matchChannelIDs []int64)
 		return 0, 0, fmt.Errorf("route auto match commit: %w", err)
 	}
 	return routeID, attached, nil
+}
+
+// AttachChannelsToRoute wires channels into one of an existing route's member
+// groups ('default' when the name is empty). It is the console's "add every
+// channel that serves this model" action, and it applies the same intersection
+// as CreateRouteWithAutoMatch — only channels that are enabled and verifiably
+// serve the pattern are attached — so a stale console selection can never
+// invent a member. Channels already in the target group are left alone; a
+// channel that only exists in another group is still attached, because groups
+// are additive (a key bound to one group must not silently miss a channel the
+// operator explicitly attached elsewhere).
+//
+// Returns how many members were created and how many requested channels the
+// intersection rejected (disabled, unknown, or no longer serving the model).
+// Channels the route already serves in the target group are neither attached
+// nor counted as skipped — re-running is a plain no-op, so a double click
+// cannot double-attach or look like a failure. An empty request writes nothing.
+func (s *DB) AttachChannelsToRoute(routeID int64, pattern string, channelIDs []int64, group string) (int, int, error) {
+	if routeID <= 0 {
+		return 0, 0, errors.New("route id required")
+	}
+	if len(channelIDs) == 0 {
+		return 0, 0, nil
+	}
+	matches, err := s.ChannelsWithModel(pattern)
+	if err != nil {
+		return 0, 0, err
+	}
+	tx, err := s.Begin()
+	if err != nil {
+		return 0, 0, fmt.Errorf("attach channels begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	attached, skipped, err := s.attachMatchesTx(tx, routeID, channelIDs, matches, group)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, fmt.Errorf("attach channels commit: %w", err)
+	}
+	return attached, skipped, nil
+}
+
+// attachMatchesTx creates members in one group for the requested channels that
+// both appear in matches and are not already in that group. Route creation and
+// the console's attach action share it so the two can never drift on what
+// counts as a match.
+func (s *DB) attachMatchesTx(tx *sql.Tx, routeID int64, matchChannelIDs []int64, matches []ModelChannelMatch, group string) (attached, skipped int, err error) {
+	group = NormalizeMemberGroup(group)
+	selected := make(map[int64]struct{}, len(matchChannelIDs))
+	for _, id := range matchChannelIDs {
+		selected[id] = struct{}{}
+	}
+	// Skip channels the route already serves in the target group.
+	current, err := (&RouteMemberStore{db: s.DB}).ListByRouteTx(tx, routeID)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, member := range current {
+		if NormalizeMemberGroup(member.GroupName) == group {
+			delete(selected, member.ChannelID)
+		}
+	}
+	requested := len(selected)
+	members := &RouteMemberStore{db: s.DB}
+	for _, match := range matches {
+		if _, ok := selected[match.ChannelID]; !ok {
+			continue
+		}
+		if _, err := members.CreateTx(tx, &domain.RouteMember{
+			RouteID:   routeID,
+			ChannelID: match.ChannelID,
+			Priority:  0,
+			Weight:    100,
+			Enabled:   true,
+			Auto:      true,
+			GroupName: group,
+		}); err != nil {
+			return 0, 0, err
+		}
+		attached++
+	}
+	return attached, requested - attached, nil
 }

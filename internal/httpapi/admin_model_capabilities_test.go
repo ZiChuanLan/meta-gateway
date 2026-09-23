@@ -12,8 +12,13 @@ func TestModelCapabilityEndpoints(t *testing.T) {
 	defer upstream.Close()
 	serverURL, _, _ := setupRelay(t, upstream.URL, "openai-compatible")
 
-	// Fresh registry is empty, but the kind vocabulary is always returned so
-	// the console can render a picker without hardcoding the list.
+	// A fresh install carries no operator-authored row, and the kind
+	// vocabulary is always returned so the console can render a picker without
+	// hardcoding the list.
+	//
+	// It is not an *empty* registry: creating a route is what tells the
+	// gateway to fill a model's row in, and the relay setup routes
+	// gemini-2.5-flash — so the assertion is on provenance, not on the count.
 	body := get(t, serverURL+"/admin/model-capabilities")
 	var list struct {
 		Items []map[string]any `json:"items"`
@@ -22,11 +27,16 @@ func TestModelCapabilityEndpoints(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Items) != 0 {
-		t.Fatalf("fresh registry = %d", len(list.Items))
-	}
 	if len(list.Kinds) == 0 {
 		t.Fatal("expected kind vocabulary")
+	}
+	for _, item := range list.Items {
+		if item["source"] == "manual" {
+			t.Fatalf("fresh registry carries an operator row: %v", item)
+		}
+	}
+	if item := capabilityRow(t, list.Items, "gemini-2.5-flash"); item["source"] != "discovery" {
+		t.Fatalf("routing a model must bootstrap its capability row: %v", list.Items)
 	}
 
 	// Create.
@@ -44,11 +54,9 @@ func TestModelCapabilityEndpoints(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Items) != 1 {
-		t.Fatalf("after create = %d", len(list.Items))
-	}
-	if list.Items[0]["source"] != "manual" {
-		t.Errorf("explicit edits mark the row manual, got %v", list.Items[0]["source"])
+	created := capabilityRow(t, list.Items, "grok-imagine-image-edit")
+	if created["source"] != "manual" {
+		t.Errorf("explicit edits mark the row manual, got %v", created["source"])
 	}
 
 	// Partial update keeps untouched fields.
@@ -59,14 +67,15 @@ func TestModelCapabilityEndpoints(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatal(err)
 	}
-	if list.Items[0]["max_input_images"].(float64) != 4 {
-		t.Fatalf("max_input_images = %v", list.Items[0]["max_input_images"])
+	created = capabilityRow(t, list.Items, "grok-imagine-image-edit")
+	if created["max_input_images"].(float64) != 4 {
+		t.Fatalf("max_input_images = %v", created["max_input_images"])
 	}
-	if list.Items[0]["notes"] != "grok2api: json only" {
-		t.Fatalf("notes lost on partial update: %v", list.Items[0]["notes"])
+	if created["notes"] != "grok2api: json only" {
+		t.Fatalf("notes lost on partial update: %v", created["notes"])
 	}
-	if list.Items[0]["kind"] != "image_edit" {
-		t.Fatalf("kind lost on partial update: %v", list.Items[0]["kind"])
+	if created["kind"] != "image_edit" {
+		t.Fatalf("kind lost on partial update: %v", created["kind"])
 	}
 
 	// Delete returns the model to classifier fallback.
@@ -81,6 +90,19 @@ func TestModelCapabilityEndpoints(t *testing.T) {
 	if delResp.StatusCode != http.StatusOK {
 		t.Fatalf("delete = %d", delResp.StatusCode)
 	}
+}
+
+// capabilityRow finds one registry row, so an assertion never silently reads a
+// different model's row just because it happens to be first in the list.
+func capabilityRow(t *testing.T, items []map[string]any, model string) map[string]any {
+	t.Helper()
+	for _, item := range items {
+		if item["model"] == model {
+			return item
+		}
+	}
+	t.Fatalf("%s has no capability row: %v", model, items)
+	return nil
 }
 
 func TestModelCapabilityResolveEndpoint(t *testing.T) {

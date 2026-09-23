@@ -181,6 +181,31 @@ reconciles automatic route members. Missing models disable only automatic,
 non-overridden members. Existing routes and manual routing decisions remain
 operator-owned. A transport, status, size, or payload error changes no state.
 
+### Routing a model fills in what the gateway already knows
+
+Creating a route is the moment a model name becomes callable, so it is also the
+moment the gateway can answer the questions that name raises — how to call it
+and which channels reach it — without asking the operator to run a second step:
+
+- **Capabilities.** The built-in classifier is run inline (`AutoTag` is local and
+  idempotent, and skips any row a manual entry or a curated catalog already
+  owns). The external indexes are consulted for that one model *in the
+  background* — a bounded queue (32) drained by `runModelBootstraps`, which
+  logs and drops a failed sync because the periodic sweep is the safety net. A
+  save must never wait on a download, and a full queue defers to the sweep
+  rather than blocking. Wildcard patterns are skipped: `gpt-*` is a matcher, not
+  a model id, and no catalog lists it.
+- **Route members.** `POST /admin/routes/{id}/auto-match` attaches the enabled
+  channels that verifiably serve the pattern (`ChannelsWithModel`) into a named
+  member group, using the same intersection route creation uses, so a stale
+  console selection can never invent a member. Inside that intersection,
+  disabled / unknown / no-longer-serving ids are reported as `skipped`, while a
+  channel already present in the target group is neither attached nor counted —
+  re-running is a plain no-op. An *empty* `channel_ids` means "every current
+  match" to the handler, whereas the store treats an empty request as no
+  operation; the console therefore never posts an empty selection, because on
+  the wire it reads as the opposite of "none".
+
 ## Check-in And Scheduling
 
 P5 treats check-in as a credential-scoped capability independent from model
@@ -330,6 +355,44 @@ non-matching mapping forwards the original bytes and logs one line. The admin AP
 validates the grammar on save (`proxy.ValidateUpstreamMap`) because the runtime
 failure mode of a typo is a silent no-op, which is indistinguishable from "the
 upstream rejected it" to an operator.
+
+### Provider profiles
+
+The mapping of a non-OpenAI provider is a property of the provider, so it ships
+with the provider (`internal/proxy/provider_profile.go`) instead of as a console
+preset button the operator has to click and then verify by hand. Saving a channel
+whose type resolves to a profile fills the four mapping columns in, and only
+where the operator left them empty — a channel already carrying a request or
+response map is treated as hand-built and left alone. The console's mapping
+fields therefore act as an override and an inspection surface.
+
+The console provider list carries the documented endpoint for each preset
+(`web/src/connectionTypes.ts`), and `SplitEndpointBaseURL` peels a pasted
+endpoint back to a root plus an override at save time, so a provider whose
+`/models` and chat endpoint live at different depths (TypeSafe: `GET /v1/models`,
+`POST /v1/systemone`) is reachable in both directions.
+
+TypeSafe is the worked example, and every detail of it was measured against the
+live API rather than inferred:
+
+- `questions` is a map keyed by question id, not an array;
+- a typed answer comes back as a number (`answers.<id>.noul`), so it needs a
+  `template` entry to reach OpenAI's string `content`;
+- its request model is strict — a body carrying one extra key (even
+  `temperature`) is answered `400 api_usage_error`. An OpenAI-shaped body always
+  brings `messages`, so the request map uses the `keep` form (a top-level body
+  allowlist) to reduce the envelope to `{model, state, questions}`.
+
+`keep` is a general primitive, not a TypeSafe special case: any upstream that
+validates its own request model strictly needs it, and deletion alone cannot
+express it because the set to delete depends on the client. Entries apply in
+array order, which is why a profile reads `messages.0.content` before keeping —
+the read has to happen while the node still exists.
+
+Scope limit worth stating: this maps *one* question onto the call. System One
+scores a state against a question, so a multi-turn conversation is not
+expressible through this mapping, and a client that sends a leading system
+message has that message become the state.
 
 ### Custom paths and per-request endpoints
 

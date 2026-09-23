@@ -179,3 +179,45 @@ func TestConnectionCreateSplitsEndpointBaseURL(t *testing.T) {
 		t.Fatalf("version-root base URL was split: site=%q override=%q", ark.Site.BaseURL, ark.Channel.UpstreamPathOverride)
 	}
 }
+
+// Picking "TypeSafe" as the provider must be enough: the connection comes out
+// already carrying the endpoint and field mapping that provider's wire contract
+// needs, so the operator never writes a mapping by hand and never has to know
+// that `questions` is a map. The documented URL the console pre-fills is the
+// pasted-endpoint form, so both entry shapes are asserted here.
+func TestConnectionCreateAppliesTheProviderProfile(t *testing.T) {
+	base, _, _ := setupServer(t, "http://127.0.0.1:1")
+
+	for _, baseURL := range []string{
+		"https://api.typesafe.ai",
+		"https://api.typesafe.ai/v1/systemone",
+	} {
+		status, conn := postConnection(t, base, "admin-secret", map[string]any{
+			"name":      "typesafe",
+			"base_url":  baseURL,
+			"secret":    "sk-live",
+			"type_hint": "typesafe",
+		})
+		if status != http.StatusCreated {
+			t.Fatalf("%s: status = %d, want 201", baseURL, status)
+		}
+		if conn.Channel.UpstreamPathOverride != "v1/systemone" {
+			t.Fatalf("%s: override = %q, want v1/systemone", baseURL, conn.Channel.UpstreamPathOverride)
+		}
+		if conn.Channel.UpstreamRequestMap == "" || conn.Channel.UpstreamResponseMap == "" {
+			t.Fatalf("%s: provider profile did not fill the field maps", baseURL)
+		}
+	}
+
+	// A plain OpenAI-compatible channel must stay mapping-free: the profile is
+	// keyed on the provider, not on the shape of the URL.
+	_, plain := postConnection(t, base, "admin-secret", map[string]any{
+		"name":      "plain",
+		"base_url":  "https://api.example.com/v1",
+		"secret":    "sk-plain",
+		"type_hint": "openai-compatible",
+	})
+	if plain.Channel.UpstreamRequestMap != "" || plain.Channel.UpstreamPathOverride != "" {
+		t.Fatalf("openai-compatible channel got a mapping: %+v", plain.Channel)
+	}
+}

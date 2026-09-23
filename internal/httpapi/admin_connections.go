@@ -7,6 +7,7 @@ import (
 
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/proxy"
 )
 
 type createConnectionRequest struct {
@@ -129,7 +130,7 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 	if groupName == "" {
 		groupName = "default"
 	}
-	channelID, err := h.db.Channel.Create(&domain.Channel{
+	draft := &domain.Channel{
 		SiteID:               &siteID,
 		CredentialID:         &credID,
 		Name:                 name,
@@ -141,7 +142,13 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		ModelsCSV:            strings.TrimSpace(req.ModelsCSV),
 		ModelSyncMode:        syncMode,
 		UpstreamPathOverride: endpointOverride,
-	})
+	}
+	// A provider whose wire contract is not OpenAI chat ships its endpoint and
+	// field mapping with the provider itself (see proxy.ProviderProfile), so
+	// picking it is enough — the connection is created already able to talk to
+	// the upstream, without the operator writing a mapping by hand.
+	proxy.ApplyProviderProfile(draft, platform)
+	channelID, err := h.db.Channel.Create(draft)
 	if err != nil {
 		_ = h.db.Credential.Delete(credID)
 		rollbackSite()

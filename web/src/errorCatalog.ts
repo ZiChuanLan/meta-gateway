@@ -11,6 +11,7 @@ export type ErrorClass =
 	| "network"
 	| "auth"
 	| "config"
+	| "upstream_shape"
 	| "missing_key"
 	| "missing_user_token"
 	| "rate_limited"
@@ -61,13 +62,21 @@ const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
 	credential_disabled: "config",
 	unsupported_adapter: "config",
 	invalid_metadata: "config",
-	invalid_payload: "config",
 	validation_error: "config",
 	invalid_channel_id: "config",
 	invalid_id: "config",
 	identity_conflict: "config",
 	unsupported_format: "config",
 	config_incomplete: "config",
+
+	// — The upstream answered, but not in a shape we can read —
+	// `invalid_payload` is an adapter-level verdict on a 2xx body (the model
+	// list, an account probe). It used to sit in "config", so a perfectly
+	// configured channel whose upstream simply does not speak OpenAI was told
+	// to "check Base URL, connection type and credentials" — sending the
+	// operator off to re-type a URL that was already right. The body shape is
+	// the upstream's, so it gets its own class.
+	invalid_payload: "upstream_shape",
 
 	// — Missing / masked API key —
 	no_credential: "missing_key",

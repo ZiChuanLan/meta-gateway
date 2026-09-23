@@ -6,6 +6,99 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **非 OpenAI 上游的模型清单拉不回来，且报错指向完全无关的方向**（`adapters.OpenAIModelAdapter` +
+  `web/src/errorCatalog.ts`）。用户按 new-api 习惯把完整端点粘进 base URL
+  （`https://api.typesafe.ai/v1/systemone`），拆分与选路都是对的——`GET /v1/models` 用它的 Key
+  实测返回 **200** `{"models":[{"name":"jev-latest"},{"name":"jev-preview"}]}`。但解析器只认 OpenAI 的
+  `{"data":[{"id":…}]}`，于是判为 `invalid_payload`；而 `invalid_payload` 被归进「配置类」错误，
+  控制台因此显示**「配置错误 — 检查 Base URL、连接类型和凭据状态」**，把排查引向一个已经正确的
+  URL 与凭据。两处都已修：
+  - `parseModelList` 接受 `data` / `models` 两种容器、`id` / `name` 两种字段名，以及扁平名字数组；
+    只有「两种容器都没有」或「条目里读不出任何名字」（如 `{"data":[{"id":123}]}`）才算 payload 错误，
+    空列表仍是成功（凭据可能本就没有模型）。
+  - 新增 `upstream_shape` 错误类（`invalid_payload` 从 `config` 移入），文案改为「上游响应无法识别」，
+    修复建议指向字段映射 / 供应商类型，不再指向 Base URL 与凭据。
+- **把 TypeSafe 这类上游从「一键预设按钮」升级为内置供应商**：映射是供应商的属性，不是操作员要点击
+  并手工核对的一份协议契约，而且另外两条渠道来源（导入、API 创建）根本看不到那个按钮。
+  - 新增 `internal/proxy/provider_profile.go`：按 `type_hint` / `platform` 匹配内置 profile，
+    在保存渠道时**只填空位**（已手写 request/response map 的渠道完全不动），并走同一套
+    `ValidateUpstreamMap` 校验，因此 profile 自身不可能存进一份非法映射。
+  - 前端供应商列表新增 `TypeSafe (System One)`，默认 Base URL 为它文档里的端点
+    `https://api.typesafe.ai/v1/systemone`；保存时的端点拆分让它落回根地址，所以
+    **`/v1/models`（模型清单）与 `/v1/systemone`（对话）能同时可达**——这正是旧预设做不到的地方。
+- **新增请求体白名单 `keep`**（`upstream_map` 的第五种写法，如 `{"keep":["model","state"]}`）：
+  TypeSafe 的请求模型是严格的，**多一个字段就 400**（实测连 `temperature` 都不行），而 OpenAI 形态的
+  请求体必然带 `messages`。只靠删除无法表达这件事（要删的集合取决于客户端），所以要保留的集合才是
+  操作员知道的那个。条目按数组顺序生效，所以 profile 先读 `messages.0.content` 再 `keep`。
+- **「Custom」类型选完就再也拉不到模型**（`adapters.CanonicalType` / `OpenAICompatibleBrands`）：
+  `type_hint="custom"` 既不在别名表里、也不在 OpenAI 兼容品牌列表里，`Registry.Resolve` 因此解析不到
+  任何适配器，`discovery` 直接返回 `unsupported_adapter`。而它恰恰是操作员要**自己接端点**时唯一该选的
+  类型——「选 Custom 才能手填映射」与「选 Custom 就拉不到模型」是同一件事的两面。现在 `custom` 归入
+  OpenAI 兼容家族：模型清单按 `GET /v1/models` 探测，转发走 passthrough，剩下的交给字段映射。
+  （未收录的**手工 id** 仍然照旧报 `unsupported_adapter`——那是有意的，见
+  `TestRegistryAliasesAndPrecedence`。`custom` 是唯一一个「已知的未知」。）
+
+### Verified
+
+- 对真实上游跑过端到端：`GET /v1/models` 拿到 `[jev-latest jev-preview]`（**不需要碰任何映射字段**）；
+  经 profile 映射后的请求体被 `POST /v1/systemone` 接受（200），响应映射回
+  `choices[0].message.content="0.44"`、`usage=273/20`。测试固化在
+  `TestTypeSafeProfileProducesAnAllowedBody` / `TestRequestMapKeepReducesTheBodyToAnAllowlist`。
+- 边界如实记录：System One 是「给一个 state 就一个问题打分」，多轮对话在这套映射里表达不出来；
+  客户端若带前置 system 消息，它会成为 `state`（测试断言了这一行为，避免静默漂移）。
+
+### Changed
+
+- 控制台的「自定义端点与字段映射」不再有一键预设按钮行，整块默认折叠（已配置映射的渠道默认展开），
+  折叠时用读数胶囊显示当前配置了哪几项；该区块此前**完全没有 CSS**（`.endpoint-presets*` 在任何
+  样式表里都不存在），所以预设按钮与说明文字是裸文本混排——这是它「看着很丑」的直接原因。
+- **映射区只对「自己接的端点」出现**：普通供应商渠道（含内置了 profile 的 TypeSafe）不再展开成四个
+  JSON 编辑器——映射是随供应商走的协议契约，不是每个渠道都要看的表单。判定为
+  `isCustomChannelType(typeHint) || 该行已有映射`：前者覆盖 `custom` 类型与手输的 id，后者保证
+  **已经存在的映射永远看得见、清得掉**（保存时落下的 profile、从 base URL 拆出来的端点覆盖都属于
+  这一类；把它们藏起来就等于不可逆）。新增前端测试三条，其中「普通渠道不渲染」那条会先断言高级区
+  确实展开了，避免用「没点到按钮」冒充通过。
+- 供应商下拉里的「Custom…」与输入框底部的自由文本「Custom…」此前**同名同处**，现把前者改名为
+  `Custom (endpoint mapping)`，让「有映射要写」和「我要手打一个 id」两件事不再长得一样。
+
+### Added
+
+- **新建模型自动补齐能力与元数据**（`internal/httpapi/admin_model_bootstrap.go`）。以前新模型要手工去
+  「从外部目录同步」按一次。现在保存路由后自动分两半做，且都不占用请求：
+  - 内置分类器 `AutoTag` **同步**跑（本地、幂等，跳过 manual / catalog 已拥有的行），所以保存一返回
+    注册表里就有这一行；
+  - 外部目录**后台**只同步这一个模型（容量 32 的通道 + 常驻 worker）。队列满或没配目录就静默丢弃，
+    defer 到下一次计划扫描——**保存绝不能等一个下载，也绝不能因为它失败**。
+  - 通配符（`*` / `?`）跳过：`gpt-*` 是匹配器不是模型名，没有目录会收录它。
+- **一键挂载所有提供此模型的渠道**（`POST /admin/routes/{id}/auto-match`）。成员区「添加通道」旁边
+  新增按钮，先预览再挂：列出 `GET /admin/discovery/model-channels` 的启用渠道，默认全选，已在本分组的
+  渠道只做展示、不提供勾选（重复挂载在服务端本就是空操作，给一个能点的勾选框等于谎报按钮的作用）。
+  目标分组 = 当前正在看的分组 tab，和「添加通道」一致。失效/停用/已不再提供该模型的 id 会被服务端
+  交集挡下并回报 `skipped`。
+- 新增模型详情页的「模型工具 → 模型能力注册表」入口，注册表带筛选框。
+
+### Changed
+
+- **模型能力注册表从工作台搬进「模型」页**（`web/src/features/models/CapabilityRegistry.tsx`）。
+  它描述的是模型清单里的协议数据，却和「跑一次」的图像/对话放在一起，于是「登记能力」和「这个模型能不能
+  被规划」要跨页对照。现在它是一个弹窗，和工作台只剩「图像 / 文字」两个 tab。
+  - 列表从 7 列表格改为卡片行、端点单独一行：宽表格塞进 700px 的弹窗只会永远横向滚动。
+  - 相关文案（「没有检测到图像模型」、等待出图提示）已改为指向新位置。
+- **模型详情页工具栏重排**：以前是「试调 · 路由模式标签 ⓘ 选择框 ⋯ ⓘ」五个松散控件，末尾那个游离的
+  ⓘ 是主要噪声源。现在收成两组——左侧主操作（试调）、右侧设置组（路由模式 + ⋯），中间用
+  `.bar-spacer` 撑开；两个说明图标各自附着到它解释的元素上（模式说明在模式控件上，作用域说明在
+  标题下的摘要行）。成员区同一套路：「添加通道 / 一键挂载」在左，「批量选择」在右。
+
+### Fixed
+
+- **挂载成员现在可以指定分组**：`store.AttachChannelsToRoute` 增加 `group` 参数。此前它只写 `default`
+  组，而「添加通道」写的是当前分组——同一个「把渠道挂上去」的动作，两个入口落到不同分组。
+  分组内判定沿用同一把尺：已在**目标分组**的渠道不计增、不计跳过（连点两次既不会重复挂载，也不会
+  看起来像失败），只在别的分组里的渠道仍会被挂进来（分组是可叠加的，绑定某分组的 API Key 不该因此
+  少看到一个渠道）。
+
 ## [v3.4.3] — 2026-09-22
 
 ### Fixed

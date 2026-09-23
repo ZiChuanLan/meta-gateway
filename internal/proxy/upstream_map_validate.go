@@ -99,6 +99,26 @@ func validateFieldMaps(column, raw string) (string, error) {
 	for i, entry := range entries {
 		from := strings.TrimSpace(entry.From)
 		to := strings.TrimSpace(entry.To)
+		if len(entry.Keep) > 0 {
+			if from != "" || to != "" || entry.Value != nil || entry.Template != "" || entry.Move {
+				return "", fmt.Errorf("%s[%d]: keep is mutually exclusive with from / to / value / template / move", column, i)
+			}
+			usable := false
+			for _, key := range entry.Keep {
+				trimmed := strings.TrimSpace(key)
+				if trimmed == "" {
+					continue
+				}
+				if strings.ContainsAny(trimmed, ".[") {
+					return "", fmt.Errorf("%s[%d].keep: %q is not a top-level key", column, i, key)
+				}
+				usable = true
+			}
+			if !usable {
+				return "", fmt.Errorf("%s[%d].keep: needs at least one key", column, i)
+			}
+			continue
+		}
 		switch {
 		case from == "" && entry.Value == nil && entry.Template == "":
 			return "", fmt.Errorf("%s[%d]: needs a from path, a value or a template", column, i)

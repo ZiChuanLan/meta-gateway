@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -172,6 +173,17 @@ func TestRegistryAliasesAndPrecedence(t *testing.T) {
 	if adapters.CanonicalType("AxonHub") != "openai-compatible" {
 		t.Fatal("CanonicalType axonhub")
 	}
+	// The picker's "Custom (endpoint mapping)" type is bespoke wiring, so the
+	// OpenAI-shaped passthrough is the only honest default: before this entry
+	// existed, picking Custom… resolved to no adapter at all and discovery
+	// failed with `unsupported_adapter`, i.e. the type could never list models.
+	if adapters.CanonicalType("custom") != "openai-compatible" {
+		t.Fatal("CanonicalType custom")
+	}
+	got, ok := registry.Resolve("Custom", "")
+	if !ok || got.Name() != "openai-compatible" {
+		t.Fatalf("custom type did not resolve to the OpenAI-compatible adapter: ok=%v", ok)
+	}
 }
 
 func TestOpenAIModelAdapterRejectsInvalidResponsesWithRedactedErrors(t *testing.T) {
@@ -203,6 +215,65 @@ func TestOpenAIModelAdapterRejectsInvalidResponsesWithRedactedErrors(t *testing.
 			}
 			if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), server.URL) || strings.Contains(err.Error(), tt.body) {
 				t.Fatalf("error leaked sensitive upstream data: %v", err)
+			}
+		})
+	}
+}
+
+// The model-list shapes actually served in the wild. TypeSafe's body is the
+// literal response of https://api.typesafe.ai/v1/models captured on 2026-09-23;
+// before it was accepted, a working upstream reported `invalid_payload`, which
+// the console rendered as "check Base URL and credentials".
+func TestOpenAIModelAdapterAcceptsEveryModelListShape(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "openai data/id",
+			body: `{"object":"list","data":[{"id":"gpt-4","object":"model"},{"id":"gpt-3.5"}]}`,
+			want: []string{"gpt-3.5", "gpt-4"},
+		},
+		{
+			name: "fastapi data/name",
+			body: `{"data":[{"name":"llama-3","description":"x"}]}`,
+			want: []string{"llama-3"},
+		},
+		{
+			name: "typesafe models/name",
+			body: `{"models":[{"name":"jev-latest","description":"The latest iteration","release_date":"2026-09-10T18:38:01Z"},{"name":"jev-preview","description":"A preview version","release_date":"2026-09-10T18:39:06Z"}]}`,
+			want: []string{"jev-latest", "jev-preview"},
+		},
+		{
+			name: "flat name list",
+			body: `{"models":["a","b","a"]}`,
+			want: []string{"a", "b"},
+		},
+		{
+			name: "id wins over a display name",
+			body: `{"data":[{"id":"model-key","name":"Pretty Label"}]}`,
+			want: []string{"model-key"},
+		},
+		{
+			name: "empty but well-formed list is success",
+			body: `{"data":[]}`,
+			want: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, tt.body)
+			}))
+			defer server.Close()
+			adapter := adapters.NewOpenAIModelAdapter("openai-compatible", server.Client())
+			got, err := adapter.ListModels(t.Context(), server.URL, "secret")
+			if err != nil {
+				t.Fatalf("ListModels: %v", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("models = %v, want %v", got, tt.want)
 			}
 		})
 	}

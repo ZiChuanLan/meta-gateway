@@ -390,6 +390,20 @@ export const api = (client: ApiClient) => ({
   updateRoute: (id: number, body: Partial<Route>) =>
     client.put<Route>(`/admin/routes/${id}`, body),
   deleteRoute: (id: number) => client.delete(`/admin/routes/${id}`),
+  // "Add every channel that serves this model" on an existing route. The list
+  // is intersected server-side with the enabled matches, so a stale console
+  // selection can never invent a member; group_name empty = the default group.
+  // The server treats an *empty list* as "all current matches", so a console
+  // that means "none" must not send the request at all.
+  autoMatchRouteMembers: (
+    routeId: number,
+    channelIds: number[],
+    groupName?: string,
+  ) =>
+    client.post<{ added: number; skipped: number }>(
+      `/admin/routes/${routeId}/auto-match`,
+      { channel_ids: channelIds, group_name: groupName ?? "" },
+    ),
   createMember: (routeId: number, body: Partial<RouteMember>) =>
     client.post<RouteMember>(`/admin/routes/${routeId}/members`, body),
   updateMember: (id: number, body: Partial<RouteMember>) =>
