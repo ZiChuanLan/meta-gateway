@@ -76,6 +76,7 @@ import type {
   ModelHealth,
   ProbeStartRequest,
   ChannelModelTestResult,
+  PluginHookStatus,
 } from "./types";
 
 export class ApiError extends Error {
@@ -1066,6 +1067,13 @@ export const api = (client: ApiClient) => ({
   },
   pluginsStatus: (signal?: AbortSignal) =>
     client.getList<ModuleStatus>("/admin/plugins/status", signal),
+  /**
+   * Intercept hooks currently loaded, keyed by plugin. A hook is how a plugin
+   * takes part in routing or rewrites requests and answers, so the console
+   * must be able to say which plugin sees which models.
+   */
+  pluginHooks: (signal?: AbortSignal) =>
+    client.get<{ hooks: PluginHookStatus[] }>("/admin/plugins/hooks", signal),
   plugins: (signal?: AbortSignal) =>
     client.getList<PluginRecord>("/admin/plugins", signal),
   activatePlugin: (id: string) =>

@@ -259,7 +259,7 @@ func listModelChanges(q sqlExecutor) (ModelChanges, error) {
 			return false
 		}
 		return member.UpstreamModel == model ||
-			(member.UpstreamModel == "" && matchModelPattern(member.ModelPattern, model))
+			(member.UpstreamModel == "" && MatchModelPattern(member.ModelPattern, model))
 	}
 	for i := range out.Items {
 		x := &out.Items[i]
@@ -376,7 +376,7 @@ func (s *DB) ResolveAdoptedModelChanges() (int64, error) {
 				continue
 			}
 			if m.UpstreamModel == c.model ||
-				(m.UpstreamModel == "" && matchModelPattern(m.ModelPattern, c.model)) {
+				(m.UpstreamModel == "" && MatchModelPattern(m.ModelPattern, c.model)) {
 				adopted = true
 				break
 			}
@@ -465,7 +465,7 @@ func (s *DB) AutoIgnoreHarmlessModelChanges(maxAgeDays int) (int64, error) {
 			if m.ChannelID != c.channel {
 				continue
 			}
-			if m.UpstreamModel == c.model || (m.UpstreamModel == "" && matchModelPattern(m.ModelPattern, c.model)) {
+			if m.UpstreamModel == c.model || (m.UpstreamModel == "" && MatchModelPattern(m.ModelPattern, c.model)) {
 				harmless = false
 				break
 			}

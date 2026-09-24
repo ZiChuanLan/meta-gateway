@@ -208,6 +208,35 @@ function ModelCatalog({
     queryFn: ({ signal }) => service.modelMetadata(signal),
     refetchInterval: 60_000,
   });
+  // Models a plugin answers for. They have no route of their own — a route hook
+  // rewrites the request before selection — so they never appear in the route
+  // list above, and without this the console gives no sign that a model the
+  // downstream catalogue advertises exists at all.
+  const pluginHooks = useQuery({
+    queryKey: ["plugins-hooks"],
+    queryFn: ({ signal }) => service.pluginHooks(signal),
+    refetchInterval: 60_000,
+  });
+  const virtualModels = useMemo(() => {
+    const hooks = pluginHooks.data?.hooks ?? [];
+    const out: Array<{ model: string; pluginId: string; pluginName: string }> = [];
+    const seen = new Set<string>();
+    for (const hook of hooks) {
+      if (hook.point !== "route") continue;
+      for (const pattern of hook.match_models ?? []) {
+        // A wildcard is a matcher, not a callable model name: same rule the
+        // gateway applies when it builds the downstream catalogue.
+        if (!pattern || /[*?]/.test(pattern) || seen.has(pattern)) continue;
+        seen.add(pattern);
+        out.push({
+          model: pattern,
+          pluginId: hook.plugin_id,
+          pluginName: hook.plugin_name || hook.plugin_id,
+        });
+      }
+    }
+    return out.sort((a, b) => a.model.localeCompare(b.model));
+  }, [pluginHooks.data]);
   const metaByModel = useMemo(() => {
     const map = new Map<string, ModelMetadata>();
     for (const item of metadata.data?.items ?? []) {
@@ -1345,6 +1374,45 @@ function ModelCatalog({
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Plugin-answered models have no route and no members, so
+                        they cannot be selected or opened like a route. They
+                        are still real callable names — the downstream
+                        catalogue advertises them — so they belong in this list
+                        with the plugin named as their owner. */}
+                    {(query.trim()
+                      ? virtualModels.filter((item) =>
+                          item.model.toLowerCase().includes(query.trim().toLowerCase()),
+                        )
+                      : virtualModels
+                    ).map((item) => (
+                      <tr key={`plugin-model-${item.model}`} className="is-plugin-model">
+                        {bulkMode ? <td className="bulk-cell" /> : null}
+                        <td className="model-row-name">
+                          <strong className="mono" title={item.model}>
+                            {item.model}
+                          </strong>
+                          <span className="model-meta-badge is-group">
+                            {t("modelsPage.pluginModel")}
+                          </span>
+                        </td>
+                        <td className="model-row-upstream">
+                          <span className="plugin-model-owner">{item.pluginName}</span>
+                        </td>
+                        <td className="status-col model-row-status">
+                          <StatusBadge value="enabled" />
+                        </td>
+                        <td className="actions">
+                          <Button
+                            variant="quiet"
+                            onClick={() =>
+                              navigate(`/console/plugins/${encodeURIComponent(item.pluginId)}`)
+                            }
+                          >
+                            {t("modelsPage.pluginModelOpen")}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
                     {pageRows.map((item) => {
                       const active = item.route.id === selected;
                       const meta = metaByModel.get(item.route.model_pattern);

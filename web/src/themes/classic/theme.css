@@ -13521,22 +13521,17 @@
   box-shadow: 0 6px 16px var(--accent-glow);
 }
 
-/* Settings page: semantic group sections */
+/* Settings page: semantic group sections. Collapsible rows sit tighter than
+   the old always-open sections did — the toggle header carries the spacing. */
 :root[data-appearance="classic"] .runtime-group {
-  margin-bottom: 26px;
+  margin-bottom: 8px;
 }
 
-/* Terminal region for irreversible actions. It reads as a different KIND of
-   surface, not a louder settings card: a hairline danger rule above it and a
-   tinted well behind it, so the eye registers the boundary before the label.
-   Extra top margin makes the seam deliberate rather than continuous with the
-   settings flow above. */
+/* Terminal region for irreversible actions. Deliberately not a framed box:
+   the collapsible toggle below carries a quiet danger tint on its border —
+   a danger zone reads stronger as the only tinted row, not a red rectangle. */
 :root[data-appearance="classic"] .runtime-group.is-danger {
   margin-top: 34px;
-  padding: 18px 18px 4px;
-  border: 1px solid var(--danger-soft);
-  border-top: 2px solid var(--danger);
-  background: var(--danger-soft);
 }
 :root[data-appearance="classic"] .runtime-group.is-danger > .runtime-group-header {
   border-bottom-color: var(--danger-soft);

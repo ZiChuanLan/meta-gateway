@@ -39,7 +39,7 @@ func (s *DB) ChannelsWithModel(pattern string) ([]ModelChannelMatch, error) {
 
 	matchedDiscovered := map[int64]struct{}{}
 	for _, model := range discovered {
-		if matchModelPattern(pattern, model.ModelName) {
+		if MatchModelPattern(pattern, model.ModelName) {
 			matchedDiscovered[model.ChannelID] = struct{}{}
 		}
 	}
@@ -51,7 +51,7 @@ func (s *DB) ChannelsWithModel(pattern string) ([]ModelChannelMatch, error) {
 		}
 		source := ""
 		for _, model := range splitCSV(channel.ModelsCSV) {
-			if matchModelPattern(pattern, model) {
+			if MatchModelPattern(pattern, model) {
 				source = "models_csv"
 				break
 			}

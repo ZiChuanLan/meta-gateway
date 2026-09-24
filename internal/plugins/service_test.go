@@ -552,3 +552,36 @@ func TestRegisterSidecarManualManifestFallback(t *testing.T) {
 		t.Fatalf("restarted prefix forwarders = %+v", forwarders)
 	}
 }
+
+// TestSidecarTransportIgnoresAmbientProxy pins the transport decision: plugin
+// traffic must never inherit HTTP_PROXY.
+//
+// A behavioural test would be hostage to http.ProxyFromEnvironment's
+// process-wide cache — it reads the environment once, on first use — so it
+// would pass in a test binary that never set the variable and prove nothing.
+// The assertion is therefore structural, on the transport itself.
+//
+// Measured failure this prevents (2026-09-24): a container started with
+// HTTP_PROXY=http://127.0.0.1:7897 (inherited from the host) and
+// NO_PROXY=127.0.0.1,localhost could not register a plugin running on
+// host.docker.internal — every manifest fetch became
+// "plugin_manifest_unreachable" — while `curl` inside the same container
+// reached that plugin fine, because curl does not read the uppercase variable.
+func TestSidecarTransportIgnoresAmbientProxy(t *testing.T) {
+	db := openPluginTestDB(t)
+	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	transport := svc.SidecarTransport()
+	if transport == nil {
+		t.Fatal("SidecarTransport() = nil, want the plugin round tripper")
+	}
+	httpTransport, ok := transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", transport)
+	}
+	if httpTransport.Proxy != nil {
+		t.Fatal("plugin transport carries a proxy function: plugin calls would follow HTTP_PROXY")
+	}
+}

@@ -124,6 +124,16 @@ const (
 	ConfigSelect ConfigFieldType = "select"
 	// ConfigSecret values are masked on read and never echoed back.
 	ConfigSecret ConfigFieldType = "secret"
+	// ConfigModelGroups is a list of named model groups. Each entry carries a
+	// name, an optional description of what the group is for, and the models in
+	// it; the stored value is JSON. The console renders it as an editor with a
+	// picker fed by the gateway's own model list, because a field whose value is
+	// a structured list has no business being hand-written into a textarea.
+	ConfigModelGroups ConfigFieldType = "model_groups"
+	// ConfigModel picks ONE model from the gateway's routable list. Unlike
+	// ConfigString it cannot be set to a name nothing serves — which is the
+	// whole point: "the fallback model" is a choice, not a piece of prose.
+	ConfigModel ConfigFieldType = "model"
 )
 
 // ConfigField declares one configuration input a sidecar plugin accepts.
@@ -138,6 +148,10 @@ type ConfigField struct {
 	Secret      bool            `json:"secret,omitempty"` // implied by Type=secret
 	Default     any             `json:"default,omitempty"`
 	Options     []string        `json:"options,omitempty"` // for select
+	// Advanced fields are tucked into a collapsed group by the console: they
+	// matter to someone specific and are noise to everyone else. The plugin's
+	// own manifest decides which is which.
+	Advanced bool `json:"advanced,omitempty"`
 }
 
 // CatalogEntry is one store-listed module. Embedded official entries, remote
@@ -154,6 +168,9 @@ type CatalogEntry struct {
 	ConfigFields []ConfigField `json:"config_fields,omitempty"`
 	Source       string        `json:"source,omitempty"`
 	Checksum     string        `json:"checksum,omitempty"`
+	// Hooks carries the sidecar's declared intercept points from its manifest
+	// through install, so the persisted plugin record keeps them.
+	Hooks *HookSet `json:"hooks,omitempty"`
 	// Sidecar is set for third-party plugins: an external HTTP service that
 	// meta-gateway embeds (iframe) and reverse-proxies. Nil for built-ins.
 	Sidecar *SidecarSpec `json:"sidecar,omitempty"`
@@ -228,6 +245,9 @@ type Manifest struct {
 	Admin        map[string]string `json:"admin,omitempty"`
 	Permissions  []string          `json:"permissions,omitempty"`
 	ConfigFields []ConfigField     `json:"config_fields,omitempty"`
+	// Hooks declares the intercept points this plugin serves. Loading them
+	// additionally requires the relay:intercept permission.
+	Hooks *HookSet `json:"hooks,omitempty"`
 	// Sidecar carries the embedded sidecar spec for third-party plugins.
 	Sidecar *SidecarSpec `json:"sidecar,omitempty"`
 }
@@ -242,6 +262,13 @@ type Service struct {
 	// Root-path proxy requests read this snapshot without fetching a remote
 	// catalog or querying SQLite on every unmatched request.
 	prefixForwarders []PrefixForwarder
+	// hookEntries holds the enabled intercept declarations grouped by point and
+	// already priority-ordered. Rebuilt with enabled state, so the forward hot
+	// path never parses a manifest.
+	hookEntries map[string][]hookEntry
+	// hookHealth trips a hook that keeps failing. It lives outside s.mu so a
+	// slow plugin can never block an enablement reload.
+	hookHealth hookBreaker
 	// configs caches persisted plugin config JSON keyed by plugin id.
 	configs map[string]string
 	// onChange listeners fire after enablement map reloads (Enable/Disable/Uninstall/Activate).
@@ -265,6 +292,38 @@ type Service struct {
 	remoteCatalog []CatalogEntry
 }
 
+// newSidecarClient builds the dedicated client for plugin traffic: manifest
+// fetches, health checks, hook calls, and the reverse proxy.
+//
+// It deliberately does NOT inherit the ambient HTTP_PROXY. A sidecar runs next
+// to the gateway (host.docker.internal, a LAN address, a sibling container),
+// and an operator's outbound proxy exists to reach the internet — not the host
+// the gateway is already on. Inheriting it broke plugin registration outright
+// in a container whose proxy came from the host environment: measured with
+// HTTP_PROXY=http://127.0.0.1:7897 and NO_PROXY=127.0.0.1,localhost, every
+// manifest fetch became "plugin_manifest_unreachable" while curl reached the
+// very same plugin — curl simply does not read the uppercase variable.
+func newSidecarClient(timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// nil means "never proxy". An empty func would fall back to the
+	// environment, which is exactly the inheritance being avoided.
+	transport.Proxy = nil
+	return &http.Client{Timeout: timeout, Transport: transport}
+}
+
+// SidecarTransport returns the round tripper every plugin request uses.
+//
+// The reverse proxy shares it so a plugin PAGE is reached exactly the way a
+// health check is: directly, never through the operator's outbound proxy. A
+// proxy that only affects some plugin traffic is the worst kind — the plugin
+// registers fine and its page hangs.
+func (s *Service) SidecarTransport() http.RoundTripper {
+	if s.sidecarClient == nil {
+		return newSidecarClient(10 * time.Second).Transport
+	}
+	return s.sidecarClient.Transport
+}
+
 func NewService(dir string, pluginStore *store.PluginStore) (*Service, error) {
 	return NewServiceWithOptions(dir, pluginStore, "", nil)
 }
@@ -284,8 +343,9 @@ func NewServiceWithOptions(dir string, pluginStore *store.PluginStore, catalogUR
 		configs:       make(map[string]string),
 		catalogURL:    strings.TrimSpace(catalogURL),
 		httpClient:    client,
-		sidecarClient: &http.Client{Timeout: 10 * time.Second},
+		sidecarClient: newSidecarClient(10 * time.Second),
 		processes:     make(map[string]*managedProcess),
+		hookEntries:   make(map[string][]hookEntry),
 	}
 	if err := s.reloadEnabled(); err != nil {
 		return nil, err
@@ -771,6 +831,14 @@ func (s *Service) RegisterSidecar(baseURL, apiKey string, manual *SidecarManifes
 	if err := validatePermissions(manifest.Permissions); err != nil {
 		return nil, fmt.Errorf("plugin_manifest_invalid_permissions: %w", err)
 	}
+	if err := ValidateHookSet(manifest.Hooks); err != nil {
+		// A declaration the gateway cannot call safely is rejected at
+		// registration rather than silently dropped at load time.
+		return nil, fmt.Errorf("plugin_manifest_invalid_hooks: %w", err)
+	}
+	if !hasInterceptPermission(manifest.Permissions) && !manifest.Hooks.Empty() {
+		return nil, fmt.Errorf("plugin_manifest_hooks_require_permission: %s", InterceptPermission)
+	}
 	spec := &SidecarSpec{
 		URL:         baseURL,
 		PagePath:    strings.TrimPrefix(strings.TrimSpace(manifest.SidecarPagePath()), "/"),
@@ -810,9 +878,11 @@ func (s *Service) RegisterSidecar(baseURL, apiKey string, manual *SidecarManifes
 		Description:  manifest.Description,
 		Kind:         KindAddon,
 		Capabilities: manifest.Capabilities,
+		Permissions:  manifest.Permissions,
 		ConfigFields: manifest.ConfigFields,
 		Source:       "sidecar",
 		Sidecar:      spec,
+		Hooks:        manifest.Hooks,
 	}
 	s.mu.Lock()
 	found := false
@@ -918,7 +988,8 @@ func (s *Service) UpdateSidecar(id, name string, spec *SidecarSpec) (*store.Plug
 			"route":     "/" + id,
 			"nav_label": entry.Name,
 		},
-		Permissions: []string{"admin_api:" + id},
+		Permissions: append([]string{"admin_api:" + id}, entry.Permissions...),
+		Hooks:       entry.Hooks,
 		Sidecar:     spec,
 	}
 	body, err := json.MarshalIndent(manifest, "", "  ")
@@ -951,6 +1022,7 @@ type SidecarManifest struct {
 	ChannelPath  string        `json:"channel_path,omitempty"`
 	Entrypoint   string        `json:"entrypoint,omitempty"`
 	RunArgs      []string      `json:"run_args,omitempty"`
+	Hooks        *HookSet      `json:"hooks,omitempty"`
 }
 
 // SidecarPagePath returns the plugin's embeddable page path (default "/").
@@ -1179,7 +1251,8 @@ func (s *Service) Install(id string) (*store.PluginRecord, error) {
 			"route":     "/" + entry.ID,
 			"nav_label": entry.Name,
 		},
-		Permissions: []string{"admin_api:" + entry.ID},
+		Permissions: append([]string{"admin_api:" + entry.ID}, entry.Permissions...),
+		Hooks:       entry.Hooks,
 		Sidecar:     entry.Sidecar,
 	}
 	body, err := json.MarshalIndent(manifest, "", "  ")
@@ -1396,6 +1469,7 @@ func (s *Service) reloadEnabled() error {
 	s.enabled = ids
 	s.configs = configs
 	s.prefixForwarders = forwarders
+	s.rebuildHookEntriesLocked(records, ids)
 	s.mu.Unlock()
 	return nil
 }
@@ -1567,7 +1641,7 @@ func validateConfigFields(fields []ConfigField) error {
 			fieldType = ConfigString
 		}
 		switch fieldType {
-		case ConfigString, ConfigText, ConfigNumber, ConfigBool, ConfigSelect, ConfigSecret:
+		case ConfigString, ConfigText, ConfigNumber, ConfigBool, ConfigSelect, ConfigSecret, ConfigModelGroups, ConfigModel:
 		default:
 			return fmt.Errorf("config_fields[%d]: unsupported type %q", i, fieldType)
 		}

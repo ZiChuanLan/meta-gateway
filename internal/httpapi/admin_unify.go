@@ -100,16 +100,21 @@ func looseUnifyKey(name string) string {
 //
 // Merging across owners can conflate genuinely different models, so these
 // groups stay unconfirmed and the UI must ask.
-// stripVendorPrefix drops a leading owner segment, the "vendor/" prefix that
-// aggregator channels add (deepseek-ai/deepseek-v4-flash →
-// deepseek-v4-flash). This is the most common source of duplicate names in
-// practice — prefix stripping alone never reconciles it, because as far as
-// that rule is concerned the slash is just another character in the name.
+// stripVendorPrefix drops a leading owner segment — the "vendor" prefix an
+// aggregator channel adds. Two separators are in use in the wild and both mean
+// the same thing to an operator: a slash (deepseek-ai/deepseek-v4-flash →
+// deepseek-v4-flash) and a colon (cn:deepseek-v4.1-flash →
+// deepseek-v4.1-flash). Without the colon, a channel that namespaces with one
+// keeps producing duplicates nothing else can reconcile: to every other rule
+// the separator is just another character in the name.
+//
+// The LAST separator wins, so a mixed name (openrouter:deepseek/deepseek-v4)
+// loses everything before its deepest prefix.
 //
 // Merging across owners can conflate genuinely different models, so this step
 // stays opt-in.
 func stripVendorPrefix(key string) string {
-	if idx := strings.LastIndex(key, "/"); idx > 0 && idx < len(key)-1 {
+	if idx := strings.LastIndexAny(key, "/:"); idx > 0 && idx < len(key)-1 {
 		return key[idx+1:]
 	}
 	return key

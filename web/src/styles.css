@@ -5397,6 +5397,71 @@ td.actions {
   flex-direction: column;
   gap: 10px;
 }
+
+/* Intercept hooks: which plugin steps into which forward stage, and for which
+   models. This is the one place a plugin can see traffic it does not own, so
+   the readout has to be scannable rather than buried in a config dialog. */
+.hook-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hook-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+}
+.hook-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hook-point {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  opacity: 0.85;
+}
+.hook-point.is-route {
+  font-weight: 600;
+  opacity: 1;
+}
+.hook-plugin {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.hook-row-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.hook-row-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+.hook-tripped {
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.9;
+}
+.hook-warning {
+  margin: 10px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.5;
+  opacity: 0.8;
+}
 .market-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
@@ -9852,17 +9917,12 @@ label.check input[type="checkbox"] {
   margin-bottom: 26px;
 }
 
-/* Terminal region for irreversible actions. It reads as a different KIND of
-   surface, not a louder settings card: a hairline danger rule above it and a
-   tinted well behind it, so the eye registers the boundary before the label.
-   Extra top margin makes the seam deliberate rather than continuous with the
-   settings flow above. */
+/* Terminal region for irreversible actions. A hairline danger rule above it
+   and a quiet tint behind the label — deliberately not a framed box: a danger
+   zone reads stronger when it is the only tinted row on the page, not when it
+   is a loud red rectangle. */
 .runtime-group.is-danger {
   margin-top: 34px;
-  padding: 18px 18px 4px;
-  border: 1px solid var(--danger-soft);
-  border-top: 2px solid var(--danger);
-  background: var(--danger-soft);
 }
 .runtime-group.is-danger > .runtime-group-header {
   border-bottom-color: var(--danger-soft);
@@ -9895,6 +9955,105 @@ label.check input[type="checkbox"] {
   margin: 2px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Collapsible settings groups. The header IS the toggle: a full-width row
+   with chevron, title block and a card count. Open groups restore the old
+   section look (hairline under the header); closed ones are a quiet one-line
+   row, so the page opens as a table of contents instead of ~20 cards. */
+.runtime-group.is-collapsible {
+  margin-bottom: 8px;
+}
+.runtime-group.is-collapsible.is-danger {
+  margin-top: 18px;
+}
+.runtime-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+.runtime-group-toggle:hover {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+.runtime-group.is-open .runtime-group-toggle {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+.runtime-group.is-danger .runtime-group-toggle {
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
+  background: var(--surface);
+}
+.runtime-group.is-danger .runtime-group-toggle:hover {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+  background: var(--surface-hover);
+}
+.runtime-group.is-danger .runtime-group-toggle strong {
+  color: var(--danger);
+}
+.runtime-group.is-danger .runtime-group-chevron {
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
+  color: var(--danger);
+}
+.runtime-group-chevron {
+  display: grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+.runtime-group.is-open .runtime-group-chevron {
+  transform: rotate(90deg);
+}
+.runtime-group-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title strong {
+  font-size: 14px;
+}
+.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title p {
+  margin-top: 1px;
+}
+.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title strong,
+.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title p {
+  min-width: 0;
+}
+.runtime-group-body {
+  padding: 16px 14px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface);
+}
+.runtime-group.is-danger .runtime-group-body {
+  padding: 16px 14px;
+  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
+  border-top: 0;
+  background: var(--surface);
 }
 
 /* Update-check row in the server card */

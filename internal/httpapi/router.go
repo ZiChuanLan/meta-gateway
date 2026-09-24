@@ -383,6 +383,11 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// enabled to expose their Admin surfaces. Core audit/backup stay always-on.
 	pluginService := dependencies.PluginService
 	if pluginService != nil {
+		// Plugin intercept hooks: the plugin host implements
+		// proxy.Interceptor, so a plugin can take part in routing and
+		// request/response rewriting without internal/proxy importing any
+		// plugin machinery (same seam as LiveTraceObserver).
+		proxyService.SetInterceptor(pluginService)
 		pluginHandler := NewPluginHandler(pluginService)
 		pluginHandler.SetTokenVerifier(func(token string) bool {
 			return auth.ValidateAdminToken(token, cfg.AdminTokenList(), func(s string) bool {
@@ -559,6 +564,11 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 
 	// Relay routes (v1)
 	relayHandler := NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst), newGroupRateLimiter(), modelsCache)
+	if pluginService != nil {
+		// A router plugin's match_models make a model name reachable that has
+		// no route of its own ("auto"): list it so clients can discover it.
+		relayHandler.SetVirtualModels(pluginService.VirtualModels)
+	}
 	// Live-trace registry: in-memory request states for the admin console's
 	// live view + manual interrupt. Wired into both the proxy (round updates)
 	// and the relay handler (begin/finish + interrupt context).

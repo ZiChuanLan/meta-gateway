@@ -1,0 +1,18 @@
+{
+  "id": "jev-router",
+  "name": "Jev 自动选路",
+  "description": "用 TypeSafe Jev（System One）为 auto-jev 的请求选模型：先判场景，再在该场景自己的候选里选。",
+  "author": "REPLACE-WITH-YOUR-GITHUB-HANDLE",
+  "homepage": "REPLACE-WITH-YOUR-REPO-URL",
+  "repository": "REPLACE-WITH-YOUR-GITHUB-HANDLE/meta-gateway-plugins",
+  "version": "1.0.0",
+  "permissions": ["relay:intercept"],
+  "tags": ["routing", "typesafe", "jev"],
+  "install": {
+    "type": "github-release",
+    "artifacts": [
+      { "goos": "linux", "goarch": "amd64" },
+      { "goos": "linux", "goarch": "arm64" }
+    ]
+  }
+}

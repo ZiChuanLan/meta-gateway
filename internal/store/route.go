@@ -990,7 +990,7 @@ func findBestWildcardRoute(db *sql.DB, model string) (*domain.Route, error) {
 		if err := scanRoute(rows, &route); err != nil {
 			return nil, fmt.Errorf("route wildcard scan: %w", err)
 		}
-		if matchModelPattern(route.ModelPattern, model) {
+		if MatchModelPattern(route.ModelPattern, model) {
 			matches = append(matches, route)
 		}
 	}
@@ -1011,8 +1011,11 @@ func findBestWildcardRoute(db *sql.DB, model string) (*domain.Route, error) {
 	return &best, nil
 }
 
-// matchModelPattern supports '*' (any run of runes) and '?' (single rune).
-func matchModelPattern(pattern, model string) bool {
+// MatchModelPattern supports '*' (any run of runes) and '?' (single rune).
+// Exported because plugin hook declarations match models with the same
+// semantics as route patterns do: two matchers would eventually disagree, and
+// an operator would have no way to tell which one an entry obeyed.
+func MatchModelPattern(pattern, model string) bool {
 	pattern = strings.TrimSpace(pattern)
 	model = strings.TrimSpace(model)
 	if pattern == "" || (!strings.Contains(pattern, "*") && !strings.Contains(pattern, "?")) {

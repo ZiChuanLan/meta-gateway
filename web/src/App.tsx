@@ -49,6 +49,7 @@ import { KatanaCanvas } from "./components/KatanaCanvas";
 import { GatewayTransition } from "./components/GatewayTransition";
 import { createEdgeSparkHost } from "./lib/katanafx";
 import { ENTRANCE_CHARGE_MS, ENTRANCE_EXIT_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
+import { useHiddenPlugins } from "./lib/pluginNav";
 import { AppearanceProvider, useAppearance } from "./appearance";
 
 const Channels = lazy(() =>
@@ -567,6 +568,9 @@ function AuthenticatedShell({
 }) {
 	const { t } = useI18n();
 	const { checkinEnabled, exchangeEnabled, addons } = useModules();
+	// Plugin entries the operator hid from the sidebar (a display preference,
+	// stored per browser like the theme).
+	const hiddenPlugins = useHiddenPlugins();
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const { client } = useSession();
 	// Real telemetry: channel health drives the deck readout instead of a static ONLINE.
@@ -661,7 +665,10 @@ function AuthenticatedShell({
 					m.source === "sidecar" &&
 					m.installed &&
 					m.enabled &&
-					!!m.open_path,
+					!!m.open_path &&
+					// A plugin whose entry the operator hid keeps working (its hooks
+					// still run); only the sidebar row goes away.
+					!hiddenPlugins.has(m.id),
 			)
 			.map((m) => ({ to: m.open_path!, label: m.name, icon: Puzzle }))),
 		{ to: "/store", label: t("app.nav.store"), icon: Package },

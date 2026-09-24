@@ -4,7 +4,93 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [Unreleased]
+## [v3.6.0] — 2026-09-24
+
+### Added
+
+- **顶栏的版本更新从「跳转 GitHub」改为「一键更新」**（`web/src/features/UpdateDialog.tsx`、`internal/updatecheck/updatecheck.go`）。点顶栏的版本 pill 现在打开更新弹窗：
+  - **先看后点**：弹窗里是 release notes 原文（GitHub release body，随 `/admin/update-check` 新增的 `notes` 字段下发），更新前能知道这次改了什么；发布页链接保留为次要入口。
+  - **一键更新**：按钮调 `POST /admin/self-update/apply {target}`（既有能力，设置页先用），后端拉取新镜像并启动后继容器（handoff）；目标 tag 必须与检查到的最新版本一致——按钮装的是控制台展示的那个版本，不是任意 tag。
+  - **中断期不误报**：handoff 会拆掉当前容器，管理 API 不可信；前端轮询**公开**的 `/healthz`，等它报出目标版本即认为完成并自动刷新页面（3 秒间隔、3 分钟预算，与设置页同源，抽成 `useOneClickUpdate` 共享）。更新进行中弹窗不可关闭，显示旋转进度与「请勿停止宿主机 Docker」。
+  两个主题的顶栏 pill 都改为按钮（`<a target=_blank>` → `<button>`）；验收用 Playwright 拦截 `/admin/update-check` 注入真实数据形状，确认弹窗渲染与按钮文案（本机容器访问 GitHub 超时，真实 `has_update` 需在生产网络验证）。
+
+- **插件可以介入转发链路：路由、请求、响应三类拦截钩子**（`internal/proxy/hooks.go`、`internal/plugins/hooks.go`）。
+  此前插件只有四个接入面，且全都是「插件作为一个独立端点或上游」——它能管好自己，但看不见也改不了网关对**别的**请求的处理。现在 sidecar 插件可以在 manifest 里声明 `hooks`，在三个环节被调用：
+
+  | 钩子 | 时机 | 能做什么 |
+  | --- | --- | --- |
+  | `route` | 选路之前，每请求一次 | 改写要路由的模型名、拒绝请求 |
+  | `request` | 上游 body 与端点定型后，每渠道一次 | 改写上游请求体与请求头 |
+  | `response` | 非流式应答转换完成、交给客户端之前 | 改写响应体、状态码与响应头 |
+
+  例子：只声明 `{"route": {"match_models": ["auto"]}}` 的插件，让客户端可以发 `model: "auto"`，由插件（例如 TypeSafe Jev）在网关**当前真正能路由**的模型里选一个。`auto` 随即出现在 `/v1/models` 里——客户端只会发它看得见的名字。
+
+  四条不可动摇的性质：
+  - **未被匹配的模型完全不碰插件**：`match_models` 是内存里的 glob 匹配，与路由通配符共用同一套语义（`store.MatchModelPattern` 因此导出），未命中的请求不产生任何网络调用——这是能在热路径上启用它的前提。
+  - **全程 fail-open**：超时、连接失败、非 200、非法 JSON、panic 一律视为「没有意见」，请求按原逻辑继续；同一钩子连续失败 5 次熔断 30 秒（冷却后放一次试探）。网关永远不会因为插件坏了而变错。
+  - **插件不会拦截自己的嵌套调用**：网关调用钩子时带 `X-Meta-Hook-Origin` / `X-Meta-Hook-Depth`，插件回调 `/v1/*` 时原样转发，网关据此跳过该插件自身（其他插件仍可介入）；深度 ≥3 时全部跳过，即使插件丢掉了标记。
+  - **需要显式权限**：声明了 `hooks` 的插件必须同时声明 `relay:intercept`，否则注册阶段就被拒绝。拦截意味着插件能看到匹配到的提示词与回复，这是信任等级的实质跃升，不能靠「manifest 里恰好有个 hooks 块」默认授予。
+
+  观测：改写写进 `decision_snapshots` 的 `hook_decisions` 键（与选路解释放在一起，新键，旧读取方不受影响）、成功响应带 `X-Meta-Hook-Decision` 头（形如 `claude-sonnet-4 (0.87) via jev-router`）；控制台「插件」页新增「拦截钩子」区块，显示哪个插件在哪个环节匹配哪些模型。
+
+- **插件可以被打包成市场安装包**（`tools/plugins/jev-router/build-release.ps1` + 插件读 `META_GATEWAY_PLUGIN_ADDR`）。
+  插件一直是「手动起一个进程、填地址注册」，而市场支持的是**托管安装**：网关自己预留端口、拉起进程、健康检查。两个硬缺口已补：
+  - 插件现在默认从 `$META_GATEWAY_PLUGIN_ADDR` 取监听地址——写死端口时网关会在另一个地址上做健康检查，**永远装不上**；
+  - 发布脚本交叉编译多平台、按 `{id}_{version}_{goos}_{goarch}.zip` 约定打包并附 `checksums.txt`（网关按自己的 GOOS/GOARCH 挑）。zip 里的 `plugin.json` 由二进制 `-dump-manifest` 输出，不会与运行时不一致。
+  - 实测：解出 `linux_amd64` 包，在 alpine 容器里跑起来——`/healthz` 回 ok、`/plugin.json` 回 200。
+
+- **插件导航项可以隐藏**（`web/src/lib/pluginNav.ts` + 插件页顶部开关）。隐藏是**显示偏好**而非插件状态（钩子照常跑），与主题/语言一样存在浏览器本地，所以重装插件不会把它丢掉；侧栏无需刷新即可响应（`storage` 事件只在其他标签触发，同标签要自己发一个）。
+
+- **插件的「高级设置」可折叠 + 模型类字段从手打改成下拉**。`ConfigField` 新增 `Advanced` 标记与 `model` 类型：常用项（API Key / 场景 / 兜底模型 / 置信度）留在前面，其余 7 项收进「高级设置（7 项）」。兜底模型、场景内的模型都从网关**当前真正可路由**的列表里选——通配符不作为可选项，那是匹配器不是可调用名。
+
+
+- **插件配置搬进插件页，且能选的东西都是选出来的**（`web/src/features/plugins/`）。
+  以前插件声明的 `config_fields` 只能在一个弹窗里手填，而其中最容易填错的字段（候选模型、场景列表）长得像一坨自由文本——操作员得学会一套语法，而没有任何东西会在他写错时告诉他。现在：
+  - **配置卡片就在插件自己的页面顶部**（iframe 之上，由控制台渲染）。iframe 是沙箱且没有 same-origin，插件自己无法写回配置；而人已经站在这页上了，改一个字段要跳到另一页——这正是插件永远停在默认值的真正原因。默认展开、可折叠，折叠状态按插件记住。
+  - **新增 `model_groups` 字段类型**：一份「有名字的模型分组」列表，控制台渲染成场景卡片（名字 / 说明 / 模型 chips + 选择器），模型选项来自网关**当前真正可路由**的模型（通配符不作为可选项——那是匹配器，不是可调用名）。存 JSON，插件直接解析；手写的行格式仍兼容。
+  - 商店里的「配置」入口保留（同一个表单组件、两个宿主：插件页内嵌 + 商店抽屉）。
+- **插件配置从弹窗改为右侧抽屉**（`web/src/features/Store.tsx`）。插件的配置是一根纵向长表单（核心字段、可折叠的高级组、宽幅场景编辑器），弹窗把它拉得又宽又扁；抽屉与控制台所有其他编辑面（渠道编辑、API Keys）同一套交互，密文掩码说明移到 footer 小字。
+
+- **设置页改为折叠分组**（`web/src/features/ops/RuntimeSettingsPanel.tsx`）。六个分组默认全部收起，页面打开是目录而不是 ~20 张表单卡片：分组头即折叠开关（箭头 + 名称 + 描述 + 设置项数），锚点导航点击先展开对应组再平滑滚动——跳到一张看不见的卡片上不算导航。危险操作区同样折叠，保留白底细红线与红字标题的克制警示（同时修掉 classic 主题包里残留的双层红框副本：基础样式与主题副本必须同步改，这是主题包的第 N 次双改教训）。
+- **场景路由预设**：`model_groups` 编辑器空状态提供「用推荐场景开始」——生成 code-simple / code-complex / thinking / bugfix / chat 五个骨架场景（名称 + 给 Jev 的判定说明），模型刻意不预填：哪个模型擅长什么是操作员的判断，空场景离正确只差一次「添加模型」。
+  - 实测中发现并修掉的三个真问题：manifest 的 `default` 本身已是 JSON 字符串却又被 `JSON.stringify` 一次（编辑器打开就空）；场景默认值里预填的是示例模型名，在真实网关上根本不存在（改为空起步，从活列表里选）；`formatModelGroups` 与 `parseModelGroups` 两边都在丢空条目，导致「添加场景」点下去那一行当场消失。受控组件里 parse 与 format 必须互逆，现在有一条往返不变量测试钉住。
+
+- **钩子声明的虚拟模型会自动出现在 `/v1/models` 与模型页**：route 钩子 `match_models` 里的字面量（如 `auto-jev`）会被下游目录收录，并作为模型目录顶部的一行显示（「插件提供」++ 插件名 + 「查看插件」按钮），行样式在两个主题下都表明它是另一种行；通配符不列，搜索框会过滤这些行。
+- **`tools/plugins/jev-router`：用 TypeSafe Jev 自动选路的示例插件**（虚拟模型名 **`auto-jev`**）。把客户端请求交给 System One 的 `choice` 原语去选一个真正回答的模型。
+  两种形状：**场景路由**（推荐）先判这条请求属于哪类工作（code / simple / complex…），再在该场景**自己的候选**里选——写代码的请求只在写代码的模型之间比较，而不是把全部模型拉进同一个问题；某场景只剩一个可路由模型时**省掉第二次判断**。没配场景时退回平铺候选，一次判断直接选模型。
+  名字带插件前缀而不是裸 `auto`：每个路由插件都想接管 `auto`，客户端得能说清指的是哪一个。
+  官方数字：端到端 70–500ms、$0.042/MTok（output 免费）——**成本可忽略（1 美元 ≈ 1.6 万次决策），延迟才是约束**，所以它只在 `auto-jev` 上生效。
+  降级阶梯：置信度低于阈值 → 配置的兜底模型；Jev 429/超时/不可用 → 兜底模型；兜底也不可路由 → 拒绝本次钩子，让网关自己的错误说话。候选集与网关下发的 `available_models` 取交集（场景与场景内两级都取），**绝不会**选出一个没有渠道的模型。
+  状态页新增「场景」列，记下每次判断的场景、选中模型、依据与置信度。
+
+- `GET /admin/plugins/hooks`：列出当前加载的全部拦截钩子（插件、环节、匹配模型、超时、是否熔断），供控制台展示。
+
+### Fixed
+
+- **容器里注册不了同在宿主机的插件**（`internal/plugins/service.go` 的 `newSidecarClient`、`internal/httpapi/plugins.go` 两处反代）。
+  宿主机环境里的 `HTTP_PROXY` 经 compose 透传进容器，而 `NO_PROXY` 默认只有 `127.0.0.1,localhost`——Go 的插件客户端据此把清单请求发给了**容器内根本不存在**的代理，注册直接以 `plugin_manifest_unreachable` 失败。插件页面的反代走同一个 `http.DefaultTransport`，所以即使注册成功，iframe 也会卡死。
+  最误导的一点：从**同一个容器**里 `curl` 访问同一个插件是通的——因为 curl 不读大写的 `HTTP_PROXY`。这个差异把排查引向网络与 URL，而两者都是对的。
+  修：插件流量（清单、健康检查、拦截钩子、反代）统一走一个**永不走代理**的 transport。sidecar 就在网关旁边（`host.docker.internal`、局域网地址、同级容器），操作员的出网代理是为了访问互联网，不是访问网关已经在的那台机器。
+  `TestSidecarTransportIgnoresAmbientProxy` 断言 transport 本身（`http.ProxyFromEnvironment` 有进程级缓存，行为测试会假绿）。
+
+- **经典主题的顶部导航溢出后用鼠标够不到右边的项**（`web/src/themes/classic/Chrome.tsx`、`web/src/hooks/useHorizontalWheel.ts`）。
+  导航条本来就是 `overflow-x: auto`，但两个原因让鼠标用户用不了：容器不响应**垂直滚轮**（`overflow-x: auto` 只接触摸板的横向手势或 Shift+滚轮），而滚动条被 `scrollbar-width: none` 藏掉了，连一个可拖的抓手都没有。插件装多以后（每个插件都会往导航里加一项）右侧的「商店 / 设置」就真的点不到。
+  现在鼠标悬停在导航上滚轮即可横向滚动。三个条件保证它不抢手势：**没有溢出就不接管**（页面正常滚）、**横向手势不接管**（触摸板的两指滑动仍然是最好用的方式）、**滚到端点后释放**（继续滚是滚页面，而不是卡死在尽头）。
+  另补上「导航到边缘项时自动滚入视野」：否则从插件页回来，高亮停在屏幕外，看不出自己在哪。
+  监听器用原生 `addEventListener(..., { passive: false })` 注册，因为 React 的 `onWheel` 是被动的、无法 `preventDefault`，不拦的话页面会在导航横滚的同时跟着竖滚。`scrollRailByWheel` 抽成纯函数单独测（jsdom 没有布局引擎，事件驱动的测试只会断言自己造的 mock）；真实浏览器实测：760px 视口下 `scrollLeft` 0 → 178 → 0，导航到最右项时自动 178。
+
+- **插件的自定义配置在控制台里根本没有入口**（`web/src/features/Store.tsx`）。`PluginRow` 支持 `onConfig`、按钮与图标都写好了、`PluginConfigDialog` 也完整渲染着——但**没有任何调用点传过 `onConfig`**：`setConfigFor` 在全文件里只有一句 `setConfigFor(null)`，从来没有被 `setConfigFor(row)` 触发过。于是插件声明的 `config_fields`（TypeSafe API Key、场景列表这类东西）在整个控制台里无路可走，只能通过 API 手写。这个断链从 `8c3b9ce`（plugin store v2）就存在，与本次钩子工作无关。
+  修：插件行在 `sidecar` 插件声明了字段、或已保存过配置时显示「配置」按钮（两边都没有的插件不显示——打开一个空对话框不教会任何人任何事）。
+
+- **`auto-jev` 这类插件模型在下游目录里存在、在控制台里看不见**（`web/src/features/Models.tsx`）。路由钩子声明的字面量模型会自动进 `/v1/models`（客户端能发），但模型页读的是 `routes` 表——它没有路由，所以操作员在控制台里没有任何地方能发现它存在。
+  修：模型目录顶部列出钩子声明的字面量模型，标注「插件提供」、把插件名填在上游列、状态置为已启用，操作列的按钮跳到该插件页。通配符（`*` / `?`）不列——那是匹配器，不是可调用模型名，与网关构建下游目录时的规则一致；搜索框也会过滤这些行。
+  两个主题各自表达「这是另一种行」：经典用左侧竖条，现代用虚线描边（卡片布局里竖条会卡在圆角里）。
+
+- **模型工作台的文字对话模型选择器只显示模型名**（`web/src/features/workbench/Playground.tsx`）。选项标签曾带「· 站点名」，但那是个猜测——主选成员不一定是这次请求实际落点的渠道；选「用什么模型思考」时连接名是噪声。指定渠道走下方的「上游连接」选择器。
+
+- **「去掉厂商前缀」只认斜杠，`cn:xxx` 这类名字归并不到一起**（`internal/httpapi/admin_unify.go` 的 `stripVendorPrefix`）。模型名带命名空间有两种写法，操作员看它们是同一回事：`deepseek-ai/deepseek-v4-flash` 与 `cn:deepseek-v4.1-flash`。旧实现只按 `/` 切，所以用冒号做前缀的渠道（`cn:deepseek-v4.1-flash` 与其裸名）**永远进不了同一组**——其他规则也救不了，因为在它们眼里 `:` 只是名字里的一个普通字符。
+  现在 `/` 与 `:` 都作为分隔符，取**最后一个**（所以 `openrouter:deepseek/deepseek-v4` 会剥到最深的那层前缀）。前端卡片上「去掉厂商前缀 {prefix}」的读数同步支持两种分隔符，示例文案也改成 `（如 deepseek-ai/ 或 cn:）`。
+  端到端证据：`TestBuildUnifyPreviewVendorGroupsWithColonPrefix` 用 `cn:deepseek-v4.1-flash` + `deepseek-v4.1-flash` 跑完整预览，断言归为同一组且 `vendor_prefix` 规则出现在 group 上。
 
 ## [v3.5.1] — 2026-09-24
 

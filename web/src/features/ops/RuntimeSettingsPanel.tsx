@@ -6,6 +6,7 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
 } from "react";
+import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
 import type { RuntimeEditableSettings } from "../../api/types";
@@ -124,6 +125,13 @@ const RUNTIME_SECTION_GROUPS = [
   },
 ] as const;
 
+/** Which collapsible group each section-nav anchor belongs to. */
+const ANCHOR_GROUP: Record<string, string> = Object.fromEntries(
+  RUNTIME_SECTION_GROUPS.flatMap((group) =>
+    group.anchors.map(([anchor, _]) => [anchor, group.key]),
+  ),
+);
+
 function SettingLabel({ label, hint }: { label: string; hint: string }) {
   return (
     <span className="setting-label">
@@ -208,6 +216,69 @@ function RuntimeSettingsColumns({ children }: { children: ReactNode }) {
   return <div className="runtime-settings-grid">{children}</div>;
 }
 
+/**
+ * One collapsible settings group. The page renders every group collapsed by
+ * default — the old always-open layout was ~20 cards of form controls in one
+ * scroll, and the section nav was the only way to make sense of it. A group's
+ * header is the toggle: chevron, title, description, and how many cards live
+ * inside, so a collapsed row still says what it is hiding. Which groups are
+ * open is page state, not per-group state, so the section nav can open a
+ * group from anywhere.
+ */
+function CollapsibleGroup({
+  id,
+  title,
+  description,
+  cardCount,
+  open,
+  onToggle,
+  children,
+  danger = false,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  cardCount?: number;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  danger?: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <section
+      className={`runtime-group is-collapsible${open ? " is-open" : ""}${danger ? " is-danger" : ""}`}
+      id={id}
+    >
+      <button
+        type="button"
+        className="runtime-group-toggle"
+        aria-expanded={open}
+        aria-controls={`${id}-body`}
+        onClick={onToggle}
+      >
+        <span className="runtime-group-chevron" aria-hidden="true">
+          <ChevronRight size={15} />
+        </span>
+        <span className="runtime-group-title">
+          <strong>{title}</strong>
+          <p>{description}</p>
+        </span>
+        {cardCount != null && cardCount > 0 ? (
+          <span className="runtime-group-count">
+            {t("ops.runtime.groupCount", { count: cardCount })}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="runtime-group-body" id={`${id}-body`}>
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 /** Admin-writable runtime parameters with hot reload. */
 export function RuntimeSettingsPanel() {
   const { client } = useSession();
@@ -250,6 +321,35 @@ export function RuntimeSettingsPanel() {
   const [confirmUpdateTarget, setConfirmUpdateTarget] = useState<string | null>(
     null,
   );
+  // Which groups are expanded. Everything starts collapsed: the page reads as
+  // six one-line rows instead of ~20 open cards, and a section becomes part of
+  // the page only when someone asks for it. The security group (self-saving
+  // tools) and the danger zone fold the same way.
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set());
+  const toggleGroup = (key: string) => {
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  // Section nav = open the anchor's group, then scroll. Opening first is what
+  // makes the nav honest: scrolling to a hidden card would do nothing.
+  const navToAnchor = (anchorKey: string) => {
+    const groupKey = ANCHOR_GROUP[anchorKey];
+    if (groupKey) {
+      setOpenGroups((current) =>
+        current.has(groupKey) ? current : new Set(current).add(groupKey),
+      );
+    }
+    // The element exists after the group renders, so scroll on the next frame.
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`runtime-${anchorKey}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
   const [updateWatch, setUpdateWatch] = useState<{
     target: string;
     startedAt: number;
@@ -392,29 +492,26 @@ export function RuntimeSettingsPanel() {
         {RUNTIME_SECTION_GROUPS.map((group) => (
           <div key={group.key} className="runtime-nav-group">
             <span className="runtime-nav-group-label">{t(group.label)}</span>
-            {group.anchors.map(([key, i18nKey]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() =>
-                  document
-                    .getElementById(`runtime-${key}`)
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-              >
-                {t(i18nKey)}
-              </button>
-            ))}
+        {group.anchors.map(([key, i18nKey]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => navToAnchor(key)}
+          >
+            {t(i18nKey)}
+          </button>
+        ))}
           </div>
         ))}
       </nav>
-      <section className="runtime-group" id="runtime-group-traffic">
-        <header className="runtime-group-header">
-          <div className="runtime-group-title">
-            <strong>{t("ops.runtime.navGroup.routing")}</strong>
-            <p>{t("ops.runtime.group.routingDesc")}</p>
-          </div>
-        </header>
+      <CollapsibleGroup
+        id="runtime-group-traffic"
+        title={t("ops.runtime.navGroup.routing")}
+        description={t("ops.runtime.group.routingDesc")}
+        cardCount={RUNTIME_SECTION_GROUPS[0].anchors.length}
+        open={openGroups.has("traffic")}
+        onToggle={() => toggleGroup("traffic")}
+      >
         <RuntimeSettingsColumns>
         <Panel className="runtime-card runtime-card-relay" id="runtime-relay">
           <div className="panel-header">
@@ -640,14 +737,15 @@ export function RuntimeSettingsPanel() {
         </Panel>
 
         </RuntimeSettingsColumns>
-      </section>
-      <section className="runtime-group" id="runtime-group-health">
-        <header className="runtime-group-header">
-          <div className="runtime-group-title">
-            <strong>{t("ops.runtime.navGroup.health")}</strong>
-            <p>{t("ops.runtime.group.healthDesc")}</p>
-          </div>
-        </header>
+      </CollapsibleGroup>
+      <CollapsibleGroup
+        id="runtime-group-health"
+        title={t("ops.runtime.navGroup.health")}
+        description={t("ops.runtime.group.healthDesc")}
+        cardCount={RUNTIME_SECTION_GROUPS[1].anchors.length}
+        open={openGroups.has("health")}
+        onToggle={() => toggleGroup("health")}
+      >
         <RuntimeSettingsColumns>
         <Panel
           className="runtime-card runtime-card-cooldown"
@@ -982,14 +1080,15 @@ export function RuntimeSettingsPanel() {
         </Panel>
 
         </RuntimeSettingsColumns>
-      </section>
-      <section className="runtime-group" id="runtime-group-governance">
-        <header className="runtime-group-header">
-          <div className="runtime-group-title">
-            <strong>{t("ops.runtime.navGroup.governance")}</strong>
-            <p>{t("ops.runtime.group.governanceDesc")}</p>
-          </div>
-        </header>
+      </CollapsibleGroup>
+      <CollapsibleGroup
+        id="runtime-group-governance"
+        title={t("ops.runtime.navGroup.governance")}
+        description={t("ops.runtime.group.governanceDesc")}
+        cardCount={RUNTIME_SECTION_GROUPS[2].anchors.length}
+        open={openGroups.has("governance")}
+        onToggle={() => toggleGroup("governance")}
+      >
         <RuntimeSettingsColumns>
         <Panel className="runtime-card runtime-card-limits" id="runtime-limits">
           <div className="panel-header">
@@ -1135,14 +1234,15 @@ export function RuntimeSettingsPanel() {
         <ErrorRulesPanel />
         <PromptGuardPanel />
         </RuntimeSettingsColumns>
-      </section>
-      <section className="runtime-group" id="runtime-group-ops">
-        <header className="runtime-group-header">
-          <div className="runtime-group-title">
-            <strong>{t("ops.runtime.navGroup.ops")}</strong>
-            <p>{t("ops.runtime.group.opsDesc")}</p>
-          </div>
-        </header>
+      </CollapsibleGroup>
+      <CollapsibleGroup
+        id="runtime-group-ops"
+        title={t("ops.runtime.navGroup.ops")}
+        description={t("ops.runtime.group.opsDesc")}
+        cardCount={RUNTIME_SECTION_GROUPS[3].anchors.length}
+        open={openGroups.has("ops")}
+        onToggle={() => toggleGroup("ops")}
+      >
         <RuntimeSettingsColumns>
         <Panel className="runtime-card runtime-card-alerts" id="runtime-alerts">
           <div className="panel-header">
@@ -1450,36 +1550,38 @@ export function RuntimeSettingsPanel() {
         />
         ) : null}
         </RuntimeSettingsColumns>
-      </section>
+      </CollapsibleGroup>
 
       {/* Account security and database upkeep save themselves — neither is part
           of the runtime draft this page's Save button commits. Keeping them in
           the same grid as traffic policy blurred that boundary. */}
-      <section className="runtime-group" id="runtime-group-security">
-        <header className="runtime-group-header">
-          <div className="runtime-group-title">
-            <strong>{t("ops.runtime.group.security")}</strong>
-            <p>{t("ops.runtime.group.securityDesc")}</p>
-          </div>
-        </header>
+      <CollapsibleGroup
+        id="runtime-group-security"
+        title={t("ops.runtime.group.security")}
+        description={t("ops.runtime.group.securityDesc")}
+        cardCount={2}
+        open={openGroups.has("security")}
+        onToggle={() => toggleGroup("security")}
+      >
         <div className="runtime-tools-grid">
           <TOTPPanel />
           <MaintenancePanel />
         </div>
-      </section>
+      </CollapsibleGroup>
 
       {/* An irreversible wipe must not be a peer card in a settings grid. It
           gets its own terminal region, last on the page, reached by deliberate
           scroll rather than brushed past en route to something else. */}
-      <section className="runtime-group is-danger" id="runtime-group-danger">
-        <header className="runtime-group-header">
-          <div className="runtime-group-title">
-            <strong>{t("ops.runtime.group.danger")}</strong>
-            <p>{t("ops.runtime.group.dangerDesc")}</p>
-          </div>
-        </header>
+      <CollapsibleGroup
+        id="runtime-group-danger"
+        title={t("ops.runtime.group.danger")}
+        description={t("ops.runtime.group.dangerDesc")}
+        open={openGroups.has("danger")}
+        onToggle={() => toggleGroup("danger")}
+        danger
+      >
         <FactoryResetPanel />
-      </section>
+      </CollapsibleGroup>
 
       <div className="runtime-settings-actions">
         <Button

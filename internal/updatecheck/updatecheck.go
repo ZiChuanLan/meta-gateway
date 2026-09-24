@@ -29,10 +29,14 @@ const (
 
 // Status is the cached outcome of the most recent comparison.
 type Status struct {
-	Current   string    `json:"current_version"`
-	Latest    string    `json:"latest_version"`
-	HasUpdate bool      `json:"has_update"`
-	URL       string    `json:"release_url"`
+	Current   string `json:"current_version"`
+	Latest    string `json:"latest_version"`
+	HasUpdate bool   `json:"has_update"`
+	URL       string `json:"release_url"`
+	// Notes is the release body as published on GitHub (markdown). The
+	// console's update dialog shows it so an operator can decide what an update
+	// changes BEFORE clicking apply, instead of trusting a version number.
+	Notes     string    `json:"notes,omitempty"`
 	CheckedAt time.Time `json:"checked_at"`
 	// Err carries the last refresh failure; the prior comparison is kept.
 	Err string `json:"error,omitempty"`
@@ -41,6 +45,7 @@ type Status struct {
 type releaseResponse struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
+	Body    string `json:"body"`
 }
 
 // Service caches the latest release comparison and refreshes it on a
@@ -138,6 +143,7 @@ func (s *Service) fetch(ctx context.Context) Status {
 		Latest:    tag,
 		HasUpdate: IsNewer(tag, buildinfo.Version),
 		URL:       release.HTMLURL,
+		Notes:     release.Body,
 		CheckedAt: time.Now().UTC(),
 	}
 }

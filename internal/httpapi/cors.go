@@ -7,9 +7,9 @@ import (
 
 // corsExposedHeaders lists the response headers a browser caller may read.
 // None of them are CORS-safelisted, so without this a JS client cannot see the
-// rate-limit backoff, the request id it needs for a support ticket, or the
-// image-shim marker.
-const corsExposedHeaders = "retry-after, x-request-id, x-meta-image-shim"
+// rate-limit backoff, the request id it needs for a support ticket, the
+// image-shim marker, or the plugin decision that rewrote its model.
+const corsExposedHeaders = "retry-after, x-request-id, x-meta-image-shim, x-meta-hook-decision"
 
 // corsFallbackAllowHeaders answers a preflight that did not state which request
 // headers it intends to send.

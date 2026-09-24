@@ -291,3 +291,220 @@
 .auto-match-attached > .ops-panel-context { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 4px; }
 .auto-match-attached ul { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; padding: 0; }
 .auto-match-attached li { font-size: 11px; color: var(--muted); }
+
+/* Plugin-answered model row (model directory).
+   The name is callable by clients — the downstream catalogue advertises it —
+   but it owns no route and no members, so it has to read as a different kind
+   of row instead of looking like a route someone forgot to configure. */
+.is-plugin-model td:first-child {
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+.plugin-model-owner {
+  font-size: 12px;
+  color: var(--muted-strong);
+}
+/* Modern dresses rows as cards, so the marker is a dashed outline rather than
+   the inset bar: the bar would sit inside the card's rounded corner. */
+.theme-modern .model-directory-table tr.is-plugin-model {
+  border-color: var(--line-strong);
+  border-style: dashed;
+}
+.theme-modern .is-plugin-model td:first-child {
+  box-shadow: none;
+}
+.theme-modern .plugin-model-owner {
+  color: var(--muted);
+}
+
+/* Plugin config form, shared by the Store's configure dialog. The plugin
+   itself cannot host it: its iframe is sandboxed without same-origin, so it
+   has no way to reach the admin API that stores config. Deliberately a form,
+   not a JSON box: the fields a plugin declares are choices, and a choice
+   rendered as free text is a syntax the operator has to learn and nothing
+   validates. */
+.plugin-page { display: flex; flex-direction: column; gap: 16px; }
+.plugin-config-form { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+.plugin-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+.plugin-config-saved { font-size: 12px; color: var(--muted-strong); }
+.field.is-wide { grid-column: 1 / -1; }
+
+/* Scenario editor (the model_groups field). One card per scenario: name,
+   description for the deciding model, and the models that may answer in it. */
+.model-groups { display: flex; flex-direction: column; gap: 9px; }
+.model-groups-empty {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.model-group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  background: var(--surface-subtle);
+}
+.model-group-head { display: flex; align-items: center; gap: 8px; }
+.model-group-name { flex: 0 0 150px; font-family: var(--mono); }
+.model-group-hint { flex: 1 1 auto; min-width: 0; }
+.model-group-remove {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.model-group-remove:hover { color: var(--ink); border-color: var(--line-strong); }
+.model-group-models { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 11.5px;
+}
+.model-chip button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.model-chip button:hover { background: var(--surface-hover); color: var(--ink); }
+/* The "add a model" control.
+   Three things made this look broken:
+     1. the class was named .model-group-picker, which the model page already
+        uses for a vertical flex container (hence the misaligned text);
+     2. .field select { width: 100% } stretched it across the whole row; and
+     3. the classic theme's `.field select { max-width: 100% }` out-ranks any
+        two-class selector, so the width had to be raised past it.
+   The four-class form below is deliberate: it is the shortest selector that
+   beats :root[data-appearance="classic"] .field select. */
+.field .model-groups .model-group-models select.model-group-add {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 220px;
+  min-width: 140px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 8px;
+  align-self: center;
+  font-size: 12px;
+  border-style: dashed;
+}
+
+/* Collapsed group for fields the manifest marked advanced. */
+.config-advanced { display: flex; flex-direction: column; gap: 8px; }
+.config-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 6px 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 12px;
+  cursor: pointer;
+}
+.config-advanced-toggle:hover {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+
+/* Plugin page toolbar: the plugin's name and the sidebar-visibility switch.
+   Hiding the entry is a display preference (the plugin keeps working), so it
+   lives here rather than in the plugin's own settings. */
+.plugin-page-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.plugin-page-bar strong { font-size: 15px; font-weight: 650; }
+.plugin-nav-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+.plugin-nav-switch:hover { color: var(--ink); }
+
+/* One-click update dialog (opened from the top-bar version pill).
+   The notes are the release body verbatim — a pre block because it is
+   upstream-authored markdown, and pretending we re-typeset it reliably would
+   mean shipping a markdown renderer for one dialog. */
+.update-dialog-body { display: flex; flex-direction: column; gap: 10px; }
+.update-notes {
+  margin: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  font: 12px/1.7 var(--font);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.update-restart-hint { margin: 0; font-size: 12px; }
+.update-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.update-progress strong { display: block; margin-bottom: 4px; font-size: 13.5px; }
+.update-progress p { margin: 0; font-size: 12px; color: var(--muted-strong); }
+.is-spinning { animation: update-spin 1.1s linear infinite; }
+@keyframes update-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning { animation: none; }
+}
+.update-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding-top: 6px;
+}
+.update-release-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: auto;
+  font-size: 12.5px;
+  color: var(--muted-strong);
+}
+.update-release-link:hover { color: var(--ink); }

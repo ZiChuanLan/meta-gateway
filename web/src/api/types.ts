@@ -828,6 +828,8 @@ export interface UpdateCheckStatus {
   latest: string;
   has_update: boolean;
   release_url: string;
+  /** Release body (markdown) from GitHub, shown in the update dialog. */
+  notes?: string;
   checked_at?: string;
   error?: string;
 }
@@ -1079,13 +1081,33 @@ export interface ModuleStatus {
 /** One manifest-declared plugin configuration input. */
 export interface PluginConfigField {
   key: string;
-  type?: "string" | "text" | "number" | "bool" | "select" | "secret" | string;
+  type?: "string" | "text" | "number" | "bool" | "select" | "secret" | "model" | "model_groups" | string;
   label?: string;
   description?: string;
   required?: boolean;
   secret?: boolean;
   default?: unknown;
   options?: string[];
+  /** Tucked into a collapsed group by the console; the plugin's manifest decides. */
+  advanced?: boolean;
+}
+
+/**
+ * One intercept hook a plugin currently serves. A hook lets a plugin see and
+ * rewrite traffic the gateway would otherwise handle on its own: which model a
+ * request routes to, the request body sent upstream, or the answer returned.
+ */
+export interface PluginHookStatus {
+  plugin_id: string;
+  plugin_name?: string;
+  /** route | request | response */
+  point: string;
+  path: string;
+  match_models: string[];
+  timeout_ms: number;
+  priority: number;
+  /** The circuit breaker is open; the hook is being skipped. */
+  tripped?: boolean;
 }
 
 /** GET /admin/plugins/{id}/config response. */

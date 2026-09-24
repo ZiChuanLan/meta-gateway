@@ -1,0 +1,107 @@
+{
+  "capabilities": [
+    "admin_page"
+  ],
+  "config_fields": [
+    {
+      "description": "api.typesafe.ai 的密钥，只保存在网关侧并以请求头下发给插件。",
+      "key": "api_key",
+      "label": "TypeSafe API Key",
+      "required": true,
+      "type": "secret"
+    },
+    {
+      "default": "[]",
+      "description": "先用一次判断选场景，再在该场景的模型里选；场景只剩一个可路由模型时省掉第二次判断。模型列表来自本网关实际可路由的模型。",
+      "key": "scenarios",
+      "label": "场景路由（推荐）",
+      "type": "model_groups"
+    },
+    {
+      "description": "Jev 不确定或不可用时交给它；留空则拒绝本次钩子，让网关按原逻辑报错。",
+      "key": "default_model",
+      "label": "兜底模型",
+      "type": "model"
+    },
+    {
+      "default": 0.5,
+      "description": "低于该值改用兜底模型。0 = 永远相信 Jev 的选择。",
+      "key": "min_confidence",
+      "label": "最低置信度",
+      "type": "number"
+    },
+    {
+      "advanced": true,
+      "default": "https://api.typesafe.ai",
+      "key": "base_url",
+      "label": "API 根地址",
+      "type": "string"
+    },
+    {
+      "advanced": true,
+      "default": "jev-latest",
+      "description": "用哪个 System One 模型做判断，默认 jev-latest。这是 TypeSafe 侧的模型名，不是网关的。",
+      "key": "model",
+      "label": "裁判模型",
+      "type": "string"
+    },
+    {
+      "advanced": true,
+      "default": "Which kind of work is this request asking for?",
+      "key": "scenario_instructions",
+      "label": "场景判断指令",
+      "type": "string"
+    },
+    {
+      "advanced": true,
+      "default": "Which model should answer this request?",
+      "key": "instructions",
+      "label": "判断指令（未配场景时）",
+      "type": "string"
+    },
+    {
+      "advanced": true,
+      "default": "claude-sonnet-4: 长上下文代码生成与重构\ngpt-5: 复杂推理、数学与长链条分析\ndeepseek-chat: 简单问答，成本最低",
+      "description": "仅当场景为空时生效。每行一个：模型名: 它擅长什么；描述会作为 Jev 的选择依据。都留空则用网关当前可路由的全部模型。",
+      "key": "candidates",
+      "label": "候选模型（未配场景时）",
+      "type": "text"
+    },
+    {
+      "advanced": true,
+      "default": 1200,
+      "description": "单次判断的超时。必须小于钩子声明的 2000ms，因为网关的计时还包含到本插件的往返。",
+      "key": "jev_timeout_ms",
+      "label": "判断超时(毫秒)",
+      "type": "number"
+    },
+    {
+      "advanced": true,
+      "default": 2000,
+      "description": "发给 Jev 的上下文长度。只发最后一条用户消息：判断是关于最新请求的。",
+      "key": "summary_runes",
+      "label": "上下文截断(字符)",
+      "type": "number"
+    }
+  ],
+  "description": "用 TypeSafe Jev 为 auto-jev 的请求选模型：先判场景，再在该场景自己的候选里选。",
+  "entrypoint": "jev-router",
+  "health_path": "/healthz",
+  "hooks": {
+    "route": {
+      "match_models": [
+        "auto-jev"
+      ],
+      "path": "/hooks/route",
+      "priority": 10,
+      "timeout_ms": 2000
+    }
+  },
+  "id": "jev-router",
+  "name": "Jev 自动选路",
+  "page_path": "/",
+  "permissions": [
+    "relay:intercept"
+  ],
+  "version": "1.0.0"
+}

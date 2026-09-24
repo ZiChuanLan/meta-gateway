@@ -69,7 +69,7 @@ Operations
 | **Ops & integrations** | |
 | `internal/alerts` | Configurable alert-rule evaluation (60s tick) |
 | `internal/financesweep` | Proactive balance/token sweeps + daily summary through the notifier |
-| `internal/plugins` | Plugin catalog, market, sidecars, module enable gates |
+| `internal/plugins` | Plugin catalog, market, sidecars, module enable gates, intercept hooks (route/request/response) |
 | `internal/runtimeconfig` | Persisted admin overrides applied live to running services |
 | `internal/webdavsync` | Encrypted WebDAV backup pull sync + scheduler |
 | `internal/exchange` | Versioned AAH/New API import/export incl. secret round-trip |
@@ -289,6 +289,44 @@ headers, bodies, keys, ciphertext, and database or crypto details.
 and usable SQLite connection. Server `WriteTimeout` remains zero so established
 SSE streams survive until cancellation or upstream closure. Shutdown marks
 readiness false before draining.
+
+## Plugin Intercept Hooks
+
+A sidecar plugin may declare `hooks` in its manifest and take part in the
+forward path. `internal/proxy/hooks.go` owns the contract (the `Interceptor`
+seam); `internal/plugins/hooks.go` owns the host side (declarations, model
+matching, the HTTP call, the circuit breaker). The proxy never imports plugin
+machinery — the same shape as `LiveTraceObserver`.
+
+| Point | Runs | May change |
+| --- | --- | --- |
+| `route` | once per request, before selection | the model being routed, or reject the request |
+| `request` | once per channel attempt, after the upstream body and endpoint are final | the upstream body and headers |
+| `response` | on a successful non-streaming answer, before the client sees it | the answer body, status, and headers |
+
+Streaming answers are deliberately not offered: an SSE body is copied chunk by
+chunk, so there is no complete document to rewrite and buffering one would
+destroy the latency streaming exists for.
+
+Four properties hold on every path, and each one is load-bearing:
+
+1. **Unmatched models never reach a plugin.** `match_models` is an in-memory
+glob match using the route-pattern semantics (`store.MatchModelPattern`), so
+ordinary traffic pays nothing.
+2. **Fail-open.** Timeout, transport error, non-200, malformed JSON, panic — all
+mean "no opinion" and the request continues untouched. A tripped breaker (five
+consecutive failures) opens for 30s, then lets one probe through.
+3. **No self-interception.** The gateway stamps `X-Meta-Hook-Origin` and
+`X-Meta-Hook-Depth` on the hook call; a plugin that forwards them on a nested
+gateway call keeps its own hook out of that request. Depth ≥3 skips every hook.
+4. **Explicit permission.** A manifest declaring `hooks` must also declare
+`relay:intercept`; registration is rejected without it. Interception exposes
+matched prompts and answers to the plugin process.
+
+A `route` decision rewrites the model in both the routing key and the request
+body, and is recorded in the decision snapshot (`hook_decisions`), the
+`X-Meta-Hook-Decision` response header, and (for a virtual model name) the
+`/v1/models` catalogue.
 
 ## Current Scope
 

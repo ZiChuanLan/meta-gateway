@@ -121,7 +121,20 @@ func (s *Service) ChatCompletionsWithMeta(ctx context.Context, req Request) (*re
 }
 
 // ForwardWithMeta selects a channel, resolves credentials, and forwards to the OpenAI-compatible path.
-func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Result, *AttemptMeta) {
+func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult *relay.Result, finalMeta *AttemptMeta) {
+	// Named results plus one defer carry the plugin decision trail out of every
+	// return path — including the early error returns that have no attempt meta
+	// of their own. Without it the trail would die here: req is a value copy, so
+	// the caller's Request never sees the decisions taken on its behalf.
+	defer func() {
+		if len(req.HookDecisions) == 0 {
+			return
+		}
+		if finalMeta == nil {
+			finalMeta = &AttemptMeta{}
+		}
+		finalMeta.HookDecisions = req.HookDecisions
+	}()
 	req.Model = strings.TrimSpace(req.Model)
 	if len([]byte(req.Model)) > 256 {
 		return &relay.Result{StatusCode: http.StatusBadRequest, Err: ErrModelTooLong}, nil
@@ -219,12 +232,35 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		// when the translated retry succeeds.
 		responsesFallbackTried := false
 		responsesFallbackCategory := ""
+		// Plugin route hook: the one place a request may change WHICH model is
+		// routed. Evaluated on the first round only — re-running it on a failover
+		// round could silently move the client onto a different model than the
+		// one already chosen for its request.
+		if attempt == 0 {
+			if interceptor := s.hookEnabled(); interceptor != nil {
+				if rejected := s.applyRouteHook(ctx, &req, interceptor); rejected != nil {
+					return rejected, nil
+				}
+			}
+		}
 		decision, err := s.selector.SelectSticky(ctx, req.Model, excludedChannels, sessionKey, constraint)
 		// Persist a decision snapshot for audit: the full explanation
 		// (candidates, scores, reasons, sticky/stable-first state) survives
 		// even when the request later fails or the UI is long gone. Errors
 		// carry whatever partial explanation the selector produced.
-		if payload, marshalErr := json.Marshal(decision.Explanation); marshalErr == nil && len(payload) > 0 {
+		//
+		// Plugin decisions ride along in the same payload: a model rewritten by
+		// a hook is the reason this selection happened at all, and splitting
+		// the two across tables would leave the snapshot unable to explain
+		// itself. The extra key is additive, so older readers keep working.
+		snapshot := struct {
+			routing.Explanation
+			HookDecisions []HookDecision `json:"hook_decisions,omitempty"`
+		}{Explanation: decision.Explanation}
+		if len(req.HookDecisions) > 0 {
+			snapshot.HookDecisions = req.HookDecisions
+		}
+		if payload, marshalErr := json.Marshal(snapshot); marshalErr == nil && len(payload) > 0 {
 			selectedID := int64(0)
 			if decision.Selected.Channel.ID > 0 {
 				selectedID = decision.Selected.Channel.ID
@@ -621,6 +657,29 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				requestBody = mapped
 			}
 		}
+		// Plugin request hook: the upstream body and endpoint are final here, so a
+		// rewrite applies to this channel's whole key/retry sequence. Channel
+		// scoped by construction — a different channel speaks a different
+		// upstream shape, so the plugin must see the body that will be sent.
+		hookHeaders := map[string]string(nil)
+		if interceptor := s.hookEnabled(); interceptor != nil {
+			outcome := s.applyRequestHook(ctx, &req, &candidate, upstreamURL, effectiveModel, attempt+1, requestBody, interceptor)
+			if outcome != nil {
+				if outcome.hasDecision {
+					recordHookDecision(&req, outcome.decision)
+				}
+				if outcome.rejected != nil {
+					// A plugin rejection is a deliberate local decision, not an
+					// upstream fault: return it instead of failing over.
+					s.recordAttempt(req, candidate, attempt+1, outcome.rejected, "plugin_reject", "")
+					return outcome.rejected, meta
+				}
+				if outcome.body != nil {
+					requestBody = outcome.body
+				}
+				hookHeaders = outcome.headers
+			}
+		}
 		// Aggregate all enabled site API keys; failover keys before leaving the channel.
 		// Key-pool selection keys on the EFFECTIVE upstream name: a key's
 		// recorded model set contains real names, so an alias/unified/renamed
@@ -669,6 +728,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					result = &relay.Result{Err: fmt.Errorf("proxy: header override: %w", overrideErr)}
 					category, retryable = classifyForChannel(result, domain.ParseRetryConfig(candidate.Channel.RetryConfig))
 					break
+				}
+				if len(hookHeaders) > 0 {
+					// Plugin headers ride next to the channel's own overrides; the
+					// credential and transport framing stay the gateway's.
+					mergePluginHeaders(headers, hookHeaders)
 				}
 				if idempotencyKey := requestHeader(req.Headers, "Idempotency-Key"); idempotencyKey != "" {
 					headers.Set("Idempotency-Key", idempotencyKey)
@@ -862,6 +926,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 							}
 						}
 					}
+				}
+				// Plugin response hook: a complete, non-streaming answer may be
+				// rewritten before the client sees it. Streaming answers keep their
+				// body as an open reader and are not offered (see HookResponse).
+				if interceptor := s.hookEnabled(); interceptor != nil {
+					result = s.applyResponseHook(ctx, &req, &candidate, effectiveModel, attempt+1, result, interceptor)
 				}
 				streamInterrupted := false
 				if req.Stream && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {

@@ -266,14 +266,18 @@ describe("image workbench", () => {
     renderWorkbench();
     fireEvent.click(await screen.findByText("Playground"));
     const picker = await screen.findByRole("button", { name: "Model" });
-    // The trigger reports which model is selected and which connection serves
-    // it, so the answer to "which site is this on?" needs no extra step.
-    expect(picker).toHaveTextContent("gpt-5.1 · chat-up");
+    // The trigger reports the selected model by name alone: the chat picker is
+    // read while choosing what to think with, and the serving connection is
+    // noise there (it is also a guess — the primary member is not necessarily
+    // the one a given request lands on). The upstream picker below is where a
+    // specific connection is chosen deliberately.
+    expect(picker).toHaveTextContent("gpt-5.1");
+    expect(picker).not.toHaveTextContent("chat-up");
     // The image model is routed but answers on /v1/images/*, so it is not a
     // candidate for a chat turn — opening the list proves it is not offered.
     fireEvent.click(picker);
     expect(within(screen.getByRole("listbox", { name: "Model" })).getAllByRole("option")
-      .map((option) => option.textContent)).toEqual(["gpt-5.1 · chat-up"]);
+      .map((option) => option.textContent)).toEqual(["gpt-5.1"]);
     // Close the list again — it portals to <body>, so leaving it up would keep
     // its option buttons in every later role query.
     fireEvent.click(picker);

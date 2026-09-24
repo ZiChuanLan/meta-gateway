@@ -37,7 +37,7 @@ func (s *DB) MissingModels() ([]MissingModel, error) {
 
 	covered := func(model string) bool {
 		for _, pattern := range routes {
-			if matchModelPattern(pattern, model) {
+			if MatchModelPattern(pattern, model) {
 				return true
 			}
 		}

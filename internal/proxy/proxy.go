@@ -40,6 +40,10 @@ var (
 	// upstream answered, so the failure is variant-scoped, and the request
 	// fails over instead of handing the client an empty reply.
 	ErrEmptyCompletion = errors.New("proxy: upstream answered 200 with an empty completion")
+	// ErrPluginRejected marks a request a sidecar plugin's hook refused before
+	// it reached an upstream. It is a deliberate local decision, not an
+	// upstream fault: the request must not fail over to another channel.
+	ErrPluginRejected = errors.New("proxy: request rejected by plugin")
 )
 
 type Selector interface {
@@ -127,6 +131,13 @@ type Service struct {
 	nonStreamTimeout time.Duration
 	// liveTraceObserver receives per-round attempt callbacks (optional).
 	liveTraceObserver atomic.Pointer[LiveTraceObserver]
+	// interceptor is the optional plugin hook host (nil disables plugin hooks).
+	interceptor atomic.Pointer[Interceptor]
+	// hookModels caches the HookRoute model catalogue briefly, so the route
+	// hook's own pre-check never puts a route listing on the hot path.
+	hookModelsMu    sync.Mutex
+	hookModelsAt    time.Time
+	hookModelsCache []string
 }
 
 // channelModel scopes adaptive latency/error EWMA to one channel on one model,
@@ -171,6 +182,16 @@ type Request struct {
 	Probe bool
 	// DownstreamKeyID is the authenticated client key, used for usage metering.
 	DownstreamKeyID int64
+	// RequestedModel is the model name the client asked for, preserved when a
+	// plugin's route hook rewrites it. Empty means Model was never rewritten.
+	// Routing, billing, and the log row follow Model; this field exists so the
+	// original request stays attributable.
+	RequestedModel string
+	// ModelRewrittenBy is the id of the plugin whose route hook chose Model.
+	ModelRewrittenBy string
+	// HookDecisions is the audit trail of plugin decisions taken for this
+	// request, in order. Never re-read to change behavior.
+	HookDecisions []HookDecision
 	// ContentType preserves client Content-Type for multipart passthrough.
 	ContentType string
 	// SessionKey is an explicit sticky-session identifier from the client
@@ -232,6 +253,10 @@ type AttemptMeta struct {
 	// shared by several upstream names looks identical in the channel name, so
 	// the console needs this to say WHAT it just tested.
 	UpstreamModel string `json:"upstream_model,omitempty"`
+	// HookDecisions is the plugin decision trail for the whole request, in
+	// order (route, then per-attempt request/response decisions). Empty when no
+	// plugin was involved.
+	HookDecisions []HookDecision `json:"hook_decisions,omitempty"`
 }
 
 func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter, retryTimes int, cooldown time.Duration) *Service {

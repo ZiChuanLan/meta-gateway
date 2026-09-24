@@ -46,6 +46,8 @@ func (h *PluginHandler) Register(r chi.Router) {
 	r.Get("/plugins/catalog", h.catalog)
 	r.Get("/plugins/status", h.status)
 	r.Get("/plugins", h.list)
+	// Static segment before the {id} routes, matching the other plugin routes.
+	r.Get("/plugins/hooks", h.hooksDeclarations)
 	r.Get("/plugins/market", h.marketList)
 	r.Post("/plugins/market/{id}/install", h.marketInstall)
 	r.Post("/plugins/register", h.registerSidecar)
@@ -117,6 +119,17 @@ func (h *PluginHandler) RegisterPublic(r chi.Router) {
 
 func (h *PluginHandler) catalog(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.service.Catalog())
+}
+
+// hooksDeclarations lists every loaded intercept hook: which plugin sees which
+// models at which point. The console shows this so an operator can tell that a
+// virtual model ("auto") is answered by a plugin rather than a route.
+func (h *PluginHandler) hooksDeclarations(w http.ResponseWriter, _ *http.Request) {
+	hooks := h.service.HookStatuses()
+	if hooks == nil {
+		hooks = []plugins.HookStatus{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"hooks": hooks})
 }
 
 func (h *PluginHandler) list(w http.ResponseWriter, _ *http.Request) {
@@ -400,6 +413,12 @@ func (h *PluginHandler) proxySidecar(w http.ResponseWriter, r *http.Request) {
 	}
 	target.Path = strings.TrimRight(target.Path, "/") + "/" + strings.TrimLeft(requestPath, "/")
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	// Same transport as every other plugin request: the plugin page must be
+	// reached directly, not through the operator's outbound proxy (see
+	// plugins.newSidecarClient for the failure this prevents).
+	if transport := h.service.SidecarTransport(); transport != nil {
+		proxy.Transport = transport
+	}
 	// NewSingleHostReverseProxy only rewrites scheme/host; the path must be
 	// set explicitly or the plugin receives /admin/plugins/{id}/proxy/… and
 	// 404s. Query params are preserved (the admin ?t= token is stripped).
@@ -468,6 +487,10 @@ func (h *PluginHandler) forwardAPIPrefix(w http.ResponseWriter, r *http.Request)
 	rest := strings.TrimPrefix(r.URL.Path, owner.Prefix)
 	target.Path = strings.TrimRight(target.Path, "/") + owner.Prefix + rest
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	// Same transport as every other plugin request: see plugins.newSidecarClient.
+	if transport := h.service.SidecarTransport(); transport != nil {
+		proxy.Transport = transport
+	}
 	proxy.Director = func(req *http.Request) {
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host

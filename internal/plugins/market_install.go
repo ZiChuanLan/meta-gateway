@@ -158,6 +158,7 @@ func (s *Service) installPackagedMarket(ctx context.Context, entry MarketEntry, 
 			"route":     "/" + entry.ID,
 			"nav_label": manifest.Name,
 		},
+		Hooks:   manifest.Hooks,
 		Sidecar: spec,
 	}
 	manifestBody, err := json.MarshalIndent(hostManifest, "", "  ")

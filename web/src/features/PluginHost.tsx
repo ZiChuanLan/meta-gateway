@@ -1,5 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useState } from "react";
+import { useModules } from "../hooks/useModules";
+import { setPluginNavHidden, useHiddenPlugins } from "../lib/pluginNav";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 
@@ -17,12 +19,27 @@ export function PluginHost() {
 	const { client } = useSession();
 	const [error, setError] = useState(false);
 	const token = client?.getToken() ?? "";
+	const modules = useModules();
+	const hiddenPlugins = useHiddenPlugins();
+	const pluginName = modules.modules.find((item) => item.id === id)?.name ?? id;
+	const navHidden = id ? hiddenPlugins.has(id) : false;
 
 	if (!id) return null;
 	const src = `/admin/plugins/${encodeURIComponent(id)}/proxy/?t=${encodeURIComponent(token)}`;
 
 	return (
 		<main className="page plugin-page">
+			<div className="plugin-page-bar">
+				<strong>{pluginName}</strong>
+				<label className="plugin-nav-switch">
+					<input
+						type="checkbox"
+						checked={!navHidden}
+						onChange={(event) => setPluginNavHidden(id, !event.target.checked)}
+					/>
+					<span>{t("plugins.showInNav")}</span>
+				</label>
+			</div>
 			<div className="plugin-host">
 				{error ? (
 					<p className="is-quiet" style={{ fontSize: 13 }}>

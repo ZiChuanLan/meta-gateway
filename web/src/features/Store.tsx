@@ -16,7 +16,7 @@ import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type { ModuleStatus, PluginConfigField, PluginRecord } from "../api/types";
+import type { ModuleStatus, PluginRecord } from "../api/types";
 import { EntityState } from "../components/EntityState";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import {
@@ -27,7 +27,11 @@ import {
 } from "../hooks/useModules";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import { Button, Dialog, ErrorState, Loading, Page, StatusBadge } from "../components/ui";
+import { HookSection } from "./store/HookSection";
+import { PluginConfigForm } from "./plugins/PluginConfigForm";
+import { useGatewayModels } from "./plugins/useGatewayModels";
+import { Drawer } from "../components/Drawer";
+import { Button, Dialog, Page, StatusBadge } from "../components/ui";
 
 // Only invalidate always-safe keys here. Gated add-on queries (checkin-logs,
 // webdav-*) are owned by their panels with enabled: moduleOn — invalidating them
@@ -170,6 +174,15 @@ function StoreExtensions() {
 		queryFn: ({ signal }) => service.plugins(signal),
 		staleTime: 30_000,
 	});
+	// Intercept hooks are the one thing that lets a plugin see and rewrite
+	// traffic the gateway would otherwise handle alone, so they get their own
+	// readout instead of being buried in a plugin's config dialog.
+	const { data: hookData } = useQuery({
+		queryKey: ["plugins-hooks"],
+		queryFn: ({ signal }) => service.pluginHooks(signal),
+		staleTime: 15_000,
+	});
+	const hooks = hookData?.hooks ?? [];
 	const sidecarOfId = (id: string) =>
 		sidecarOf(pluginRecords?.find((rec) => rec.id === id));
 	const [channelFor, setChannelFor] = useState<ModuleStatus | null>(null);
@@ -383,7 +396,19 @@ function StoreExtensions() {
 											sidecarOfId(row.id)?.channel_path
 												? () => setChannelFor(row)
 												: undefined
-											}
+										}
+										// The config dialog existed but nothing ever opened it: the
+										// row supports onConfig, the button is wired… and no caller
+										// passed it, so a plugin's declared settings had no reachable
+										// entry point anywhere in the console. Shown when the plugin
+										// declares fields OR already has stored config — a dialog
+										// that opens empty teaches nothing.
+										onConfig={
+											row.source === "sidecar" &&
+											(row.has_config || (row.config_fields?.length ?? 0) > 0)
+												? () => setConfigFor(row)
+												: undefined
+										}
 										onDisable={() => disable.mutate(row.id)}
 									onUninstall={
 										row.source === "sidecar" || row.source?.startsWith("market:")
@@ -396,6 +421,8 @@ function StoreExtensions() {
 								</div>
 							)}
 						</section>
+
+						<HookSection hooks={hooks} />
 
 						{orphans.length > 0 ? (
 							<section className="store-section">
@@ -436,7 +463,7 @@ function StoreExtensions() {
 				/>
 			) : null}
 			{configFor ? (
-				<PluginConfigDialog
+				<PluginConfigDrawer
 					row={configFor}
 					service={service}
 					onClose={() => setConfigFor(null)}
@@ -548,7 +575,12 @@ function PluginRow({
 	);
 }
 
-function PluginConfigDialog({
+// The config surface is a drawer, not a dialog: a plugin's settings are a
+// vertical stack (core fields, an advanced group, a wide scenario editor), and
+// a dialog stretches them across the page. The drawer slides over the store,
+// matches every other editing surface in the console, and keeps the row list
+// visually anchored behind it.
+function PluginConfigDrawer({
 	row,
 	service,
 	onClose,
@@ -558,193 +590,29 @@ function PluginConfigDialog({
 	onClose: () => void;
 }) {
 	const { t } = useI18n();
-	type FieldValue = string | number | boolean;
-	const [values, setValues] = useState<Record<string, FieldValue> | null>(null);
-	const [raw, setRaw] = useState("");
-	const [error, setError] = useState("");
-	const info = useQuery({
-		queryKey: ["plugin-config", row.id],
-		queryFn: ({ signal }) => service.pluginConfig(row.id, signal),
-	});
-	const fields = useMemo(() => info.data?.fields ?? [], [info.data]);
-	useEffect(() => {
-		if (!info.data || values !== null) return;
-		let stored: Record<string, unknown> = {};
-		try {
-			stored = JSON.parse(info.data.config || "{}") as Record<
-				string,
-				unknown
-			>;
-		} catch {
-			stored = {};
-		}
-		const parsed: Record<string, FieldValue> = {};
-		for (const f of fields) {
-			const value = stored[f.key];
-			if (f.type === "number") {
-				parsed[f.key] =
-					typeof value === "number" ? value : ((f.default as number) ?? 0);
-			} else if (f.type === "bool") {
-				parsed[f.key] =
-					typeof value === "boolean" ? value : Boolean(f.default ?? false);
-			} else if (f.type === "select") {
-				parsed[f.key] =
-					typeof value === "string"
-						? value
-						: ((f.default as string) ?? f.options?.[0] ?? "");
-			} else {
-				parsed[f.key] =
-					typeof value === "string" ? value : ((f.default as string) ?? "");
-			}
-		}
-		setValues(parsed);
-		if (fields.length === 0) setRaw(info.data.config || "{}");
-	}, [info.data, values, fields]);
-
-	const save = useAdminMutation({
-		mutationFn: () => {
-			if (fields.length > 0) {
-				return service.savePluginConfig(row.id, JSON.stringify(values ?? {}));
-			}
-			let parsed: unknown;
-			try {
-				parsed = JSON.parse(raw);
-			} catch {
-				throw new Error(t("plugins.configInvalidJson"));
-			}
-			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-				throw new Error(t("plugins.configInvalidJson"));
-			}
-			return service.savePluginConfig(row.id, raw);
-		},
-		invalidateKeys: [...STORE_INVALIDATE, ["plugin-config", row.id]],
-		toastOnError: false,
-		onSuccess: onClose,
-		onError: (err: unknown) => {
-			setError(err instanceof Error ? err.message : String(err));
-		},
-	});
-
-	const set = (key: string, value: FieldValue) =>
-		setValues((current) => ({ ...(current ?? {}), [key]: value }));
-	const inputFor = (f: PluginConfigField) => {
-		const value = values?.[f.key];
-		switch (f.type) {
-			case "text":
-				return (
-					<textarea
-						rows={4}
-						className="mono"
-						value={String(value ?? "")}
-						onChange={(e) => set(f.key, e.target.value)}
-					/>
-				);
-			case "number":
-				return (
-					<input
-						type="number"
-						value={String(value ?? 0)}
-						onChange={(e) =>
-							set(f.key, e.target.value === "" ? 0 : Number(e.target.value))
-						}
-					/>
-				);
-			case "bool":
-				return (
-					<label className="check">
-						<input
-							type="checkbox"
-							checked={Boolean(value)}
-							onChange={(e) => set(f.key, e.target.checked)}
-						/>
-						<span>{t("plugins.configEnabled")}</span>
-					</label>
-				);
-			case "select":
-				return (
-					<select
-						value={String(value ?? "")}
-						onChange={(e) => set(f.key, e.target.value)}
-					>
-						{(f.options ?? []).map((option) => (
-							<option key={option} value={option}>
-								{option}
-							</option>
-						))}
-					</select>
-				);
-			default:
-				return (
-					<input
-						type={f.type === "secret" ? "password" : "text"}
-						className="mono"
-						value={String(value ?? "")}
-						onChange={(e) => set(f.key, e.target.value)}
-					/>
-				);
-		}
-	};
-
+	// Model names for fields that pick models: the hook is the one honest source,
+	// so a scenario can never be built around a name nothing routes.
+	const models = useGatewayModels(service);
 	return (
-		<Dialog
+		<Drawer
 			title={`${t("plugins.configTitle")} — ${row.name}`}
+			width={640}
 			onClose={onClose}
-			actions={
-				<>
-					<Button variant="secondary" onClick={onClose}>
-						{t("common.cancel")}
-					</Button>
-					<Button
-						disabled={save.isPending || !info.data}
-						onClick={() => save.mutate(undefined)}
-					>
-						{save.isPending ? t("common.working") : t("plugins.saveBtn")}
-					</Button>
-				</>
+			footer={
+				<p className="muted" style={{ fontSize: 12, margin: 0 }}>
+					{t("plugins.configHint")}
+				</p>
 			}
 		>
-			<p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-				{t("plugins.configHint")}
-			</p>
-			{info.isPending ? (
-				<Loading />
-			) : info.isError ? (
-				<ErrorState error={info.error} />
-			) : fields.length > 0 ? (
-				<div className="form-stack">
-					{fields.map((f) => (
-						<label className="field" key={f.key}>
-							<span>
-								{f.label || f.key}
-								{f.required ? " *" : ""}
-							</span>
-							{inputFor(f)}
-							{f.description ? (
-								<small className="muted">{f.description}</small>
-							) : null}
-							{f.type === "secret" ? (
-								<small className="muted">{t("plugins.configSecretHint")}</small>
-							) : null}
-						</label>
-					))}
-				</div>
-			) : (
-				<label className="field">
-					<span>{t("plugins.configJsonLabel")}</span>
-					<textarea
-						className="mono"
-						rows={8}
-						value={raw}
-						onChange={(e) => setRaw(e.target.value)}
-					/>
-					<small className="muted">{t("plugins.configJsonHint")}</small>
-				</label>
-			)}
-			{error ? <ErrorState error={error} /> : null}
-		</Dialog>
+			<PluginConfigForm
+				pluginId={row.id}
+				service={service}
+				onSaved={onClose}
+				models={models}
+			/>
+		</Drawer>
 	);
 }
-
 function EditPluginDialog({
 	row,
 	service,

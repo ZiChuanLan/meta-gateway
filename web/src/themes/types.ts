@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import type { UpdateCheckStatus } from "../api/types";
 
 export type UIThemeId = "classic" | "modern";
 export type ThemeNavItem = { to: string; label: string; icon: LucideIcon };
@@ -13,7 +14,7 @@ export type ThemeChromeProps = {
   onDisconnect: () => void;
   health: { healthy: number; total: number; loading: boolean };
   tone: "idle" | "ok" | "down" | "warn";
-  update?: { latest: string; release_url?: string };
+  update?: UpdateCheckStatus;
   collapsed: boolean;
   onCollapse: () => void;
   onOpenNav: () => void;

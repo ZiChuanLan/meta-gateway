@@ -1,0 +1,4 @@
+cdbe29fae018dc098b2a30067ef936f87c85f3eb380db65fdae44bcf16bbf5fe  jev-router_1.0.0_linux_amd64.zip
+2cbbf52fc8e2aa5f80620d1e8fd7cb7c4d096fc54c50fa97d09f9dc6c488a650  jev-router_1.0.0_linux_arm64.zip
+56f673ced01e69fceb3f1e0ddec1ae50b131e3e7c78814eb06313e56143168a1  jev-router_1.0.0_windows_amd64.zip
+1b6a0f7051db4601269fe8848f14b7ade8e5c7d70730a26d023566350de96ae1  jev-router_1.0.0_darwin_arm64.zip

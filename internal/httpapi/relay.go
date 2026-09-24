@@ -24,6 +24,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/auth"
+	"github.com/lan/meta-gateway/internal/plugins"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/routing"
@@ -61,6 +62,10 @@ type RelayHandler struct {
 	// liveTrace is the optional in-memory request-state hub for the admin
 	// live view and manual interrupt (nil disables).
 	liveTrace *livetrace.Registry
+	// virtualModels supplies model names that have no route of their own but
+	// are answered by a plugin hook (the "auto" a router plugin intercepts).
+	// Nil when no plugin host is wired.
+	virtualModels func() []string
 }
 
 func NewRelayHandler(db *store.DB, service RelayProxy, modelLimiter *ratelimit.Limiter, groupLimiter *groupRateLimiter, modelsCache *modelsCache) *RelayHandler {
@@ -70,6 +75,66 @@ func NewRelayHandler(db *store.DB, service RelayProxy, modelLimiter *ratelimit.L
 // SetLiveTrace installs the live-trace registry (nil disables).
 func (h *RelayHandler) SetLiveTrace(registry *livetrace.Registry) {
 	h.liveTrace = registry
+}
+
+// SetVirtualModels installs the provider of plugin-answered model names, so
+// /v1/models lists a virtual model ("auto") a router plugin intercepts. Without
+// it a client has no way to discover the name it is supposed to send.
+func (h *RelayHandler) SetVirtualModels(fn func() []string) {
+	h.virtualModels = fn
+}
+
+// withHookOrigin carries a plugin's hook-recursion marker into the request
+// context, so the plugin host skips that plugin's own hooks for a nested call
+// the plugin made back into the gateway while serving a hook.
+func withHookOrigin(ctx context.Context, header http.Header) context.Context {
+	origin := plugins.HookOriginFromHeaders(header)
+	if origin.PluginID == "" && origin.Depth == 0 {
+		return ctx
+	}
+	return plugins.WithHookOrigin(ctx, origin)
+}
+
+// HookDecisionEchoHeader reports the plugin decision that changed what the
+// client asked for (a route hook turning "auto" into a real model), so a caller
+// can tell what happened without opening the console. Only decisions that
+// actually rewrote something are reported; observations would be noise.
+const HookDecisionEchoHeader = "X-Meta-Hook-Decision"
+
+// hookDecisionHeader renders the rewrite trail for the response header.
+func hookDecisionHeader(decisions []proxy.HookDecision) string {
+	parts := make([]string, 0, len(decisions))
+	for _, decision := range decisions {
+		if decision.Point != proxy.HookRoute || decision.Fallback || decision.Error != "" {
+			continue
+		}
+		if decision.Model == "" {
+			continue
+		}
+		part := decision.Model
+		if decision.Confidence != nil {
+			part += fmt.Sprintf(" (%.2f)", *decision.Confidence)
+		}
+		if decision.PluginID != "" {
+			part += " via " + decision.PluginID
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ", ")
+}
+
+// setHookDecisionHeader publishes the plugin decision trail before the response
+// is committed (writeUpstreamResult writes the status, so this must run first).
+func setHookDecisionHeader(header http.Header, meta *proxy.AttemptMeta) {
+	if header == nil || meta == nil || len(meta.HookDecisions) == 0 {
+		return
+	}
+	if value := hookDecisionHeader(meta.HookDecisions); value != "" {
+		header.Set(HookDecisionEchoHeader, value)
+	}
 }
 
 func (h *RelayHandler) Register(r chi.Router) {
@@ -206,6 +271,14 @@ func (h *RelayHandler) computeRawModels() []string {
 					add(model)
 				}
 			}
+		}
+	}
+	// Virtual models: names a plugin's route hook answers for. They have no
+	// route of their own — the hook rewrites the request before selection — but
+	// a client can only send what /v1/models lists.
+	if h.virtualModels != nil {
+		for _, model := range h.virtualModels() {
+			add(model)
 		}
 	}
 	return raw
@@ -418,6 +491,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		finishTrace = func() {}
 	}
 	defer finishTrace()
+	watchCtx = withHookOrigin(watchCtx, r.Header)
 
 	proxyReq := proxy.Request{
 		RequestID:       requestID,
@@ -434,6 +508,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		RouteGroup:      downstreamRouteGroup(r),
 	}
 	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
+	setHookDecisionHeader(w.Header(), meta)
 	if h.liveTrace != nil && requestID != "" {
 		switch {
 		case result == nil:
@@ -683,6 +758,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		finishTrace = func() {}
 	}
 	defer finishTrace()
+	watchCtx = withHookOrigin(watchCtx, r.Header)
 
 	proxyReq := proxy.Request{
 		RequestID:          requestID,
@@ -704,6 +780,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
+	setHookDecisionHeader(w.Header(), meta)
 	var imageTokens usage.Tokens
 	if imageEditShim {
 		w.Header().Set("X-Meta-Image-Shim", proxyReq.OpenAIPath)

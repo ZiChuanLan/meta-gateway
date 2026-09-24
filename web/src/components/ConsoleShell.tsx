@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import type { UpdateCheckStatus } from "../api/types";
 import { useI18n } from "../i18n";
 import { Drawer } from "./Drawer";
 import { UI_THEMES } from "../themes/registry";
@@ -19,7 +20,7 @@ export function ConsoleShell({ children, sections, version, theme, onThemeChange
   onSearch: () => void;
   onDisconnect: () => void;
   health: { healthy: number; total: number; loading: boolean };
-  update?: { latest: string; release_url?: string };
+  update?: UpdateCheckStatus;
   background?: string;
   entering?: boolean;
 }) {

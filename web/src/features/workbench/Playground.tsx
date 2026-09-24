@@ -23,7 +23,7 @@ import {
 import { useI18n } from "../../i18n";
 import { parseSseJson, splitSseFrames } from "../../lib/sse";
 import { upstreamMessage } from "../../lib/upstreamError";
-import { primaryChannelName, upstreamChoices } from "../models/routingPolicy";
+import { upstreamChoices } from "../models/routingPolicy";
 import { useSession } from "../../session";
 
 /**
@@ -147,24 +147,15 @@ export default function Playground({ active }: { active: boolean }) {
 		[modelNames, capabilities.data],
 	);
 	const activeModel = chatModels.includes(model) ? model : (chatModels[0] ?? "");
-	const modelSites = useMemo(() => {
-		const map = new Map<string, string>();
-		for (const overview of routes.data ?? []) {
-			const site = primaryChannelName(overview);
-			if (site) map.set(overview.route.model_pattern, site);
-		}
-		return map;
-	}, [routes.data]);
-	// The option label carries the serving connection, and the picker searches
-	// labels — so "which site is this model on?" is answerable without leaving
-	// the workbench, and typing a site name filters down to its models.
+	// The label is the model name alone. It used to carry the serving connection
+	// (`model · site`) so the picker could answer "which site is this on?" — but
+	// a chat picker is read while choosing what to THINK with, and the connection
+	// is noise there (it is also a guess: the primary member is not necessarily
+	// the one a given request lands on). The 上游连接 picker below is where a
+	// specific connection is chosen deliberately.
 	const modelOptions = useMemo(
-		() =>
-			chatModels.map((name) => {
-				const site = modelSites.get(name);
-				return { value: name, label: site ? `${name} · ${site}` : name };
-			}),
-		[chatModels, modelSites],
+		() => chatModels.map((name) => ({ value: name, label: name })),
+		[chatModels],
 	);
 	// The rows a 上游连接 picker can offer for the selected model. They are
 	// route MEMBERS: a unified alias holds one per upstream 原模型 name, so the

@@ -366,6 +366,15 @@ export const en: Dict = {
   "app.themeDark": "Switch to dark mode",
   "app.themeLight": "Switch to light mode",
   "app.updateAvailable": "New version {version}",
+  "app.updateDialogTitle": "Update to {version}",
+  "app.updateApply": "Update to {version}",
+  "app.updateReleasePage": "Release page",
+  "app.updateNoNotes": "This release has no notes.",
+  "app.updateRestartHint":
+    "Updating pulls the new image and restarts the container; expect a short interruption (usually under a minute). The page reloads itself when the new version is live.",
+  "app.updateRunning": "Updating…",
+  "app.updateRunningHint":
+    "Pulling the image and switching to the new container. This page reconnects automatically and reloads once the new version answers. Do not stop Docker on the gateway host while this runs.",
   "app.console": "Admin Console",
   "dashboard.kicker": "Gateway status",
   "dashboard.title": "Overview",
@@ -1027,7 +1036,7 @@ export const en: Dict = {
     "Rules run in the listed order against the same name and compose. Turn one off to keep that suffix.",
   "modelsPage.unify.rule.account_prefix": "Strip account prefix [A] / 【次】",
   "modelsPage.unify.rule.vendor_prefix":
-    "Strip owner prefix (e.g. deepseek-ai/)",
+    "Strip owner prefix (e.g. deepseek-ai/ or cn:)",
   "modelsPage.unify.rule.date_suffix": "Strip snapshot date -0731 / -20250514",
   "modelsPage.unify.rule.index_suffix": "Strip account index -1 / -2",
   "modelsPage.unify.ruleBadge.vendor_prefix": "Strip owner prefix {prefix}",
@@ -1107,6 +1116,8 @@ export const en: Dict = {
   "modelsPage.bulkRouteDone": "Updated {ok}/{total} routes",
   "modelsPage.bulkDeleteDone": "Deleted {ok}/{total} routes",
   "modelsPage.col.upstream": "Upstream",
+  "modelsPage.pluginModel": "Plugin",
+  "modelsPage.pluginModelOpen": "Open plugin",
   "modelsPage.noUpstream": "No upstream",
   "modelsPage.openChannelHint": "Open this channel's model settings",
   "modelsPage.servedBy": "Leading member: {name}",
@@ -1543,6 +1554,16 @@ export const en: Dict = {
   "store.section.enabled": "Enabled add-ons",
   "store.section.enabledHint":
     "These extensions are active and unlock extra Admin surfaces.",
+  "store.hooks": "Intercept hooks",
+  "store.hooksHint":
+    "Plugins that step into a live forward stage: choosing the routed model, rewriting the upstream request, or rewriting the answer. Models a hook does not match never reach the plugin.",
+  "store.hooksWarning":
+    "An intercept hook can read the requests it matches — prompts and answers included — and rewrite them with the plugin process's privileges. Keep only plugins you trust.",
+  "store.hook.point.route": "Routing",
+  "store.hook.point.request": "Request rewrite",
+  "store.hook.point.response": "Response rewrite",
+  "store.hookTripped": "Tripped",
+  "store.hookTimeout": "{ms}ms timeout",
   "store.section.available": "Available add-ons",
   "store.section.availableHint":
     "Turn on only what you need. Nothing here gates core operations.",
@@ -1615,6 +1636,23 @@ export const en: Dict = {
   "plugins.edit": "Edit",
   "plugins.config": "Configure",
   "plugins.configTitle": "Plugin configuration",
+  "plugins.showInNav": "Show in sidebar",
+  "plugins.configSaved": "Saved",
+  "plugins.modelNone": "Not set",
+  "plugins.advancedFields": "Advanced ({count})",
+  "plugins.modelGroups.empty": "No scenarios yet — add one below.",
+  "plugins.modelGroups.namePlaceholder": "Scenario name, e.g. code",
+  "plugins.modelGroups.hintPlaceholder":
+    "What this scenario covers (optional; makes the judgment sharper)",
+  "plugins.modelGroups.remove": "Remove scenario",
+  "plugins.modelGroups.removeModel": "Remove {model}",
+  "plugins.modelGroups.pickModel": "Add model",
+  "plugins.modelGroups.addModel": "+ Add a model",
+  "plugins.modelGroups.allPicked": "All picked",
+  "plugins.modelGroups.addScenario": "Add scenario",
+  "plugins.modelGroups.usePresets": "Start with suggested scenarios",
+  "plugins.modelGroups.noModels":
+    "No routable models yet: add a channel under Connections and a route under Models first.",
   "plugins.configHint":
     "Values are stored by the gateway and injected into every proxied request as the X-Plugin-Config header (base64 JSON). Secret fields are masked: keep the mask to keep the stored value, type a new one to replace it, leave empty to clear.",
   "plugins.configSecretHint":
@@ -2137,6 +2175,7 @@ export const en: Dict = {
   "ops.runtime.group.governanceDesc": "Rate limits and audit log retention",
   "ops.runtime.group.opsDesc":
     "Alerting, maintenance, scheduled check-ins, and service info",
+  "ops.runtime.groupCount": "{count} settings",
   "ops.runtime.group.security": "Account & data upkeep",
   "ops.runtime.group.securityDesc":
     "Two-factor auth and database cleanup \u2014 each saves on its own, not with the Save button above",

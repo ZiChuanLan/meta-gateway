@@ -241,22 +241,23 @@ function GroupCard({
   const pendingVariants = group.variants.filter((variant) => !variant.mapped);
   const coveredVariants = group.variants.filter((variant) => variant.mapped);
   // The "strip owner prefix" badge names what this group actually loses, not a
-  // hardcoded example: collect the distinct "vendor/" prefixes present in the
-  // variants (deepseek-ai/, meta/, …) so a meta/* group never reads as a
-  // deepseek one. Mirrors the backend's stripVendorPrefix (everything up to
-  // the last slash).
+  // hardcoded example: collect the distinct prefixes present in the variants
+  // (deepseek-ai/, cn:, …) so a "cn:" group never reads as a deepseek one.
+  // Mirrors the backend's stripVendorPrefix: the LAST "/" or ":" wins.
   const vendorPrefixes =
     group.rules?.includes("vendor_prefix")
       ? [
           ...new Set(
             group.variants
-              .filter((variant) => variant.model_name.includes("/"))
-              .map((variant) =>
-                variant.model_name.slice(
-                  0,
-                  variant.model_name.lastIndexOf("/") + 1,
-                ),
-              )
+              .filter((variant) => /[/:]/.test(variant.model_name))
+              .map((variant) => {
+                const name = variant.model_name;
+                const idx = Math.max(
+                  name.lastIndexOf("/"),
+                  name.lastIndexOf(":"),
+                );
+                return name.slice(0, idx + 1);
+              })
               .filter((prefix) => prefix !== ""),
           ),
         ]
