@@ -4,6 +4,15 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.6.1] — 2026-09-24
+
+### Fixed
+
+- **市场安装的插件没有「配置」按钮、也不出现在侧栏**（`web/src/features/Store.tsx`、`web/src/App.tsx`）。
+  插件记录的 `source` 标记安装来源：手动注册是 `sidecar`，市场安装是 `market:{source-id}`。而控制台两处 UI 把来源字符串当成了能力门槛：配置按钮与侧栏导航项都硬编码 `source === "sidecar"`，于是从插件市场一键安装的插件——**整个配置面板不可达、侧栏导航项永远不出现**（插件页里的「显示在导航栏」开关看着像坏了，实际是导航渲染条件把这个插件拒了）。
+  修：来源是记账信息，不是能力开关。凡「已安装 + 已启用」的插件，配置入口（声明了字段或已有配置时）与侧栏项一视同仁；「编辑」仍只属于手动注册——托管安装的服务地址归网关管，那是唯一真正属于手动场景的能力。
+  Playwright 实测：市场安装 jev-router → 侧栏出现导航项 → 「配置」打开抽屉（密文掩码、场景预设、高级设置、保存全链路正常）。
+
 ## [v3.6.0] — 2026-09-24
 
 ### Added
