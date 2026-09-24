@@ -633,6 +633,40 @@ func TestBuildUnifyPreviewKeepsGroupWithExposedOriginal(t *testing.T) {
 	}
 }
 
+// A parked (disabled) leftover is the other way an original survives: batches
+// applied before originals were deleted simply switched them off. It is still a
+// duplicate name in the model list, so the group must stay visible for the next
+// apply to remove it.
+func TestBuildUnifyPreviewKeepsGroupWithParkedOriginal(t *testing.T) {
+	channels := []domain.Channel{
+		{ID: 1, Name: "C1", Status: domain.StatusEnabled},
+		{ID: 2, Name: "C2", Status: domain.StatusEnabled},
+	}
+	models := []domain.DiscoveredModel{
+		{ChannelID: 1, ModelName: "[A]GEMINI", Available: true},
+		{ChannelID: 2, ModelName: "GEMINI", Available: true},
+	}
+	parked := overview(11, "[A]GEMINI", domain.RouteMember{ID: 3, ChannelID: 1, Enabled: true})
+	parked.Route.Enabled = false
+	overviews := []domain.RouteOverview{
+		overview(10, "gemini",
+			domain.RouteMember{ID: 1, ChannelID: 1, Enabled: true, MappingJSON: `{"real":"[A]GEMINI"}`},
+			domain.RouteMember{ID: 2, ChannelID: 2, Enabled: true, MappingJSON: `{"real":"GEMINI"}`}),
+		parked,
+	}
+	preview := buildUnifyPreview(channels, models, overviews, allRules())
+
+	if len(preview.Groups) != 1 {
+		t.Fatalf("a parked original must keep its group visible, got %+v", preview.Groups)
+	}
+	if got := preview.Groups[0].ExposedOriginals; got != 1 {
+		t.Fatalf("exposed_originals = %d, want 1", got)
+	}
+	if preview.Groups[0].MappedCount != 2 {
+		t.Fatalf("mapped_count = %d, want 2", preview.Groups[0].MappedCount)
+	}
+}
+
 // Without an exposed original, a fully-mapped group is omitted as before.
 func TestBuildUnifyPreviewOmitsFullyMappedGroup(t *testing.T) {
 	channels := []domain.Channel{

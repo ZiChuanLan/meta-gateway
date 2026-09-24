@@ -161,11 +161,8 @@ type Appliers struct {
 	RelayLimiter *ratelimit.Limiter
 	AdminLimiter *ratelimit.Limiter
 	CheckinSched *checkin.Scheduler
-	// CheckinAllowed reports whether the check-in module may run (plugin gate).
-	// When nil, check-in enablement follows the editable flag alone.
-	CheckinAllowed func() bool
-	SetAudit       func(days, rows int)
-	SetAuditLoop   func(days, rows int)
+	SetAudit     func(days, rows int)
+	SetAuditLoop func(days, rows int)
 	// SetSticky hot-applies sticky-session routing. enabled is only the default
 	// that routes inherit — the store is installed either way so a route can
 	// force affinity on for one model (routes.sticky_session) without a second
@@ -457,8 +454,9 @@ func (c *Controller) applyLocked(values Editable) {
 	_ = c.applyWithError(values)
 }
 
-// ResyncCheckin re-applies the current check-in schedule using the latest editable
-// settings and CheckinAllowed gate. Call when the checkin add-on is toggled.
+// ResyncCheckin re-applies the current check-in schedule from the latest
+// editable settings. Called after a settings change so the scheduler follows
+// the checkbox without a restart.
 func (c *Controller) ResyncCheckin() error {
 	c.mu.RLock()
 	values := c.current
@@ -466,11 +464,7 @@ func (c *Controller) ResyncCheckin() error {
 	if c.appliers.CheckinSched == nil {
 		return nil
 	}
-	enabled := values.CheckinEnabled
-	if c.appliers.CheckinAllowed != nil && !c.appliers.CheckinAllowed() {
-		enabled = false
-	}
-	return c.appliers.CheckinSched.SetSchedule(values.CheckinCron, enabled)
+	return c.appliers.CheckinSched.SetSchedule(values.CheckinCron, values.CheckinEnabled)
 }
 
 func (c *Controller) applyWithError(values Editable) error {
@@ -519,11 +513,7 @@ func (c *Controller) applyWithError(values Editable) error {
 		c.appliers.SetAuditLoop(values.AuditRetentionDays, values.AuditRetentionRows)
 	}
 	if c.appliers.CheckinSched != nil {
-		enabled := values.CheckinEnabled
-		if c.appliers.CheckinAllowed != nil && !c.appliers.CheckinAllowed() {
-			enabled = false
-		}
-		if err := c.appliers.CheckinSched.SetSchedule(values.CheckinCron, enabled); err != nil {
+		if err := c.appliers.CheckinSched.SetSchedule(values.CheckinCron, values.CheckinEnabled); err != nil {
 			return err
 		}
 	}

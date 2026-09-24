@@ -400,18 +400,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		pluginHandler.RegisterPublic(r)
 	}
 
-	adminGroup.Group(func(module chi.Router) {
-		if pluginService != nil {
-			module.Use(requirePluginEnabled(pluginService, "checkin"))
-		}
-		NewCheckinHandler(db, checkinService, enc).Register(module)
-	})
-	adminGroup.Group(func(module chi.Router) {
-		if pluginService != nil {
-			module.Use(requirePluginEnabled(pluginService, "exchange"))
-		}
-		NewExchangeHandler(exchangeService, cfg.ExchangeAllowSecretExport).Register(module)
-	})
+	// Check-in and exchange are built-in surfaces, not store-gated extensions:
+	// their handlers are always registered.
+	NewCheckinHandler(db, checkinService, enc).Register(adminGroup)
+	NewExchangeHandler(exchangeService, cfg.ExchangeAllowSecretExport).Register(adminGroup)
 	webdavService := dependencies.WebDAVService
 	if webdavService == nil {
 		maxBytes := cfg.WebDAVMaxBytes
@@ -431,9 +423,6 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		webdavService.SetExporter(exchangeService)
 	}
 	adminGroup.Group(func(module chi.Router) {
-		if pluginService != nil {
-			module.Use(requirePluginEnabled(pluginService, "exchange"))
-		}
 		NewWebDAVHandler(webdavService).Register(module)
 	})
 	auditHandler := NewAuditHandler(db, cfg.AuditRetentionDays, cfg.AuditRetentionRows)
@@ -475,9 +464,6 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 				})
 			},
 			CheckinSched: dependencies.CheckinScheduler,
-			CheckinAllowed: func() bool {
-				return pluginService == nil || pluginService.IsEnabled("checkin")
-			},
 			SetAudit:     auditHandler.SetRetention,
 			SetAuditLoop: dependencies.SetAuditRetention,
 			// Sticky hot-swap: rewire selector + proxy + admin handler so an
@@ -547,18 +533,9 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	recoveryCtx, recoveryCancel := context.WithCancel(context.Background())
 	RegisterStopper(recoveryCancel)
 	go discoveryService.RunRecoveryLoop(recoveryCtx)
-	// Re-apply check-in schedule from effective runtime settings when the add-on is toggled.
-	if pluginService != nil && runtimeController != nil {
-		ctrl := runtimeController
-		pluginService.SetOnChange(func(id string, _enabled bool) {
-			if id != "checkin" {
-				return
-			}
-			if err := ctrl.ResyncCheckin(); err != nil {
-				logger.Error("check-in resync after module toggle failed", "category", "scheduler", "err", err.Error())
-			}
-		})
-	}
+	// Re-apply the check-in schedule from effective runtime settings whenever the
+	// settings change; the check-in surface itself is always on now, so there is
+	// no module toggle left to react to.
 	NewRuntimeSettingsHandler(runtimeController).Register(adminGroup)
 	r.Mount("/admin", adminGroup)
 

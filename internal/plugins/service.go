@@ -54,32 +54,14 @@ const (
 )
 
 // Official catalog entries embedded for v1.
-// Only optional add-ons appear here. Core platform features (audit, backups,
-// connections, relay, …) are always on and are not store-gated.
-var officialCatalog = []CatalogEntry{
-	{
-		ID:           "exchange",
-		Name:         "Exchange",
-		Version:      "1.0.0",
-		Description:  "Import and export channel assets, plus optional WebDAV backup pull.",
-		Kind:         KindAddon,
-		Unlocks:      []string{"settings.exchange", "settings.webdav", "admin.exchange", "admin.webdav"},
-		Capabilities: []string{"admin_page"},
-		Source:       "official",
-		Checksum:     "embedded:exchange:1.0.0",
-	},
-	{
-		ID:           "checkin",
-		Name:         "Check-in",
-		Version:      "1.0.0",
-		Description:  "Credential check-in runs, logs, and scheduled jobs for supported platforms.",
-		Kind:         KindAddon,
-		Unlocks:      []string{"settings.checkins", "connections.checkin", "admin.checkin"},
-		Capabilities: []string{"admin_page", "job"},
-		Source:       "official",
-		Checksum:     "embedded:checkin:1.0.0",
-	},
-}
+//
+// Deliberately empty: the two official add-ons that used to live here
+// (exchange, checkin) are built-in platform features — they ship with the
+// gateway, are always on, and have no meaningful off switch to offer. Listing
+// them as store extensions produced a toggle that the boot bootstrap kept
+// putting back, which is decoration, not capability. Installable plugins come
+// from the market registry or the catalog URL instead.
+var officialCatalog = []CatalogEntry{}
 
 // CoreFeatureCards describes always-on platform capabilities shown in the store
 // for orientation only (not installable / not disableable).
@@ -421,34 +403,26 @@ func (s *Service) SetOnChange(fn func(id string, enabled bool)) {
 	s.onChange = append(s.onChange, fn)
 }
 
-// EnsureOfficialModulesInstalled activates every official add-on that is missing.
-// Core platform features are not catalog modules and are never gated here.
-// Safe to call on every boot; already-installed add-ons are left as-is so
-// operators can still disable individual extensions.
-func (s *Service) EnsureOfficialModulesInstalled() error {
+// RetireLegacyModules drops plugin records left behind by store-gated
+// features that are built into the gateway today (exchange, check-in) or were
+// removed outright (operations, the built-in cliproxyapi add-on). None of them
+// has anything to install or enable any more: keeping the record would keep a
+// phantom "extension" row in the store that only pretends to gate a feature.
+// Safe to call on every boot.
+func (s *Service) RetireLegacyModules() error {
 	installed, err := s.store.List()
 	if err != nil {
 		return err
 	}
 	for _, rec := range installed {
-		// Legacy: operations was briefly a store-gated module; core audit/backups
-		// are always on now. Drop the leftover row so the store stays clean.
-		if rec.ID == "operations" {
-			if err := s.Uninstall("operations"); err != nil && err != ErrNotInstalled {
-				return fmt.Errorf("plugins: retire legacy operations: %w", err)
+		switch rec.ID {
+		case "operations", "cliproxyapi", "exchange", "checkin":
+			if err := s.Uninstall(rec.ID); err != nil && err != ErrNotInstalled {
+				return fmt.Errorf("plugins: retire legacy module %s: %w", rec.ID, err)
 			}
-			continue
-		}
-		// Legacy: the CPA surface moved to the sidecar plugin (cpa-console);
-		// the built-in cliproxyapi add-on is retired. Drop the leftover row.
-		if rec.ID == "cliproxyapi" {
-			if err := s.Uninstall("cliproxyapi"); err != nil && err != ErrNotInstalled {
-				return fmt.Errorf("plugins: retire legacy cliproxyapi: %w", err)
-			}
-			continue
 		}
 	}
-	// Re-list after possible legacy cleanup.
+	// Re-list after the cleanup.
 	installed, err = s.store.List()
 	if err != nil {
 		return err
@@ -621,14 +595,7 @@ func openPathFor(id string, sidecar bool) string {
 	if sidecar {
 		return "/plugins/" + id
 	}
-	switch id {
-	case "exchange":
-		return "/settings?tab=exchange"
-	case "checkin":
-		return "/checkins"
-	default:
-		return ""
-	}
+	return ""
 }
 
 // fetchRemoteCatalog downloads additional catalog entries from catalogURL.

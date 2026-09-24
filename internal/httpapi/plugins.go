@@ -621,16 +621,3 @@ func writePluginError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, "internal_error")
 	}
 }
-
-// requirePluginEnabled returns middleware that 404s unless plugin id is enabled.
-func requirePluginEnabled(service *plugins.Service, id string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if service == nil || !service.IsEnabled(id) {
-				writeError(w, http.StatusNotFound, "plugin_disabled")
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}

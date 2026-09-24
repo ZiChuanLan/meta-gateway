@@ -5,9 +5,11 @@
 //
 // Applying a group is recorded as a batch (see internal/store/unify.go) so it
 // can be reverted exactly: routes and members the batch created are deleted,
-// routes it archived are restored. Originals are archived — disabled, not
-// deleted — because a superseded name still carries its members and every
-// model-level override, and an operator may well want it back.
+// routes it removed are rebuilt from the snapshot taken just before the row
+// went away. The superseded originals are deleted rather than parked disabled:
+// a disabled route keeps showing up in the model list as a dead name, and the
+// alias already answers for it. The snapshot is what keeps that recoverable —
+// route-level overrides and member prices included.
 package httpapi
 
 import (
@@ -341,8 +343,9 @@ type UnifyPreview struct {
 	// Groups are every merge the currently enabled rules can produce, simplest
 	// form first. A group is omitted when it has nothing left to unify.
 	Groups []UnifyGroup `json:"groups"`
-	// Archived originals currently hidden by an applied group.
-	Archived []domain.ArchivedRoute `json:"archived"`
+	// Deleted originals that an applied group removed and that have not been
+	// rebuilt since.
+	Deleted []domain.DeletedRoute `json:"deleted"`
 }
 
 func mappingRealName(mappingJSON string) string {
@@ -502,13 +505,15 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 		return group
 	}
 
-	// exposedOriginals counts enabled routes whose name folds onto a
-	// canonical form without being it. A restored original is the usual
-	// source: the alias and the original then both serve, and the group must
-	// stay visible so the duplicate can be hidden again.
+	// exposedOriginals counts every other route whose name folds onto a
+	// canonical form without being it. Merging them away is the normal case:
+	// they either come back from history or were parked (disabled) by an
+	// earlier apply. Being parked is not a reason to hide the group — the
+	// leftover route is exactly what the operator wants gone, and apply deletes
+	// it whether it was serving or not.
 	exposedOriginals := make(map[string]int)
 	for _, overview := range overviews {
-		if !overview.Route.Enabled || overview.Route.ID <= 0 {
+		if overview.Route.ID <= 0 {
 			continue
 		}
 		pattern := strings.TrimSpace(overview.Route.ModelPattern)
@@ -538,8 +543,8 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 		group.ExposedOriginals = exposed
 		// Nothing to unify: a single variant that already carries the
 		// canonical name needs no assistant action — unless an original with
-		// a variant name is exposed again (restored from history), which the
-		// apply pass can hide once more.
+		// a variant name is still around (rebuilt from history, or parked
+		// disabled by an older apply), which the apply pass removes.
 		if len(acc.variants) == 1 && acc.original && exposed == 0 {
 			continue
 		}
@@ -554,8 +559,8 @@ func buildUnifyPreview(channels []domain.Channel, models []domain.DiscoveredMode
 				group.Risky = true
 			}
 		}
-		// Fully unified already: nothing applying would change — except when
-		// an exposed original still needs hiding, which apply handles.
+		// Fully unified already: nothing applying would change — except when a
+		// leftover original still exists, which apply deletes.
 		if group.RouteID > 0 && group.MappedCount == len(group.Variants) && exposed == 0 {
 			continue
 		}
@@ -621,22 +626,22 @@ func (h *AdminHandler) unifyPreview(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	archived, err := h.db.UnifyArchivedRoutes()
+	archived, err := h.db.UnifyDeletedRoutes()
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	preview := buildUnifyPreview(channels, models, overviews, unifyRulesFromRequest(req.Rules))
-	// The preview's archived note counts names currently hidden; restored
-	// entries are history, not hidden names, so they are left out here. The
-	// history dialog uses the unfiltered batch list instead.
-	hidden := make([]domain.ArchivedRoute, 0, len(archived))
+	// The preview's removed note counts names that are gone; rebuilt entries
+	// are history, not current removals, so they are left out here. The history
+	// dialog uses the unfiltered batch list instead.
+	hidden := make([]domain.DeletedRoute, 0, len(archived))
 	for _, entry := range archived {
-		if !entry.Restored {
+		if !entry.Rebuilt {
 			hidden = append(hidden, entry)
 		}
 	}
-	preview.Archived = hidden
+	preview.Deleted = hidden
 	writeJSON(w, http.StatusOK, preview)
 }
 
@@ -656,17 +661,17 @@ type UnifyApplyGroup struct {
 
 type UnifyApplyRequest struct {
 	Groups []UnifyApplyGroup `json:"groups"`
-	// ArchiveOriginals hides the original routes a group fully supersedes.
+	// DeleteOriginals removes the original routes a group fully supersedes.
 	// Defaults to true: an alias that leaves its originals exposed has not
 	// actually unified anything.
-	ArchiveOriginals *bool `json:"archive_originals,omitempty"`
+	DeleteOriginals *bool `json:"delete_originals,omitempty"`
 }
 
 type UnifyApplyResult struct {
 	RoutesCreated  int `json:"routes_created"`
 	MembersCreated int `json:"members_created"`
 	MembersSkipped int `json:"members_skipped"`
-	RoutesArchived int `json:"routes_archived"`
+	RoutesDeleted  int `json:"routes_deleted"`
 	BatchCount     int `json:"batch_count"`
 }
 
@@ -676,9 +681,9 @@ func (h *AdminHandler) unifyApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	archive := true
-	if req.ArchiveOriginals != nil {
-		archive = *req.ArchiveOriginals
+	remove := true
+	if req.DeleteOriginals != nil {
+		remove = *req.DeleteOriginals
 	}
 
 	// Safety net for stale or hand-crafted payloads: only variants the channel
@@ -715,7 +720,7 @@ func (h *AdminHandler) unifyApply(w http.ResponseWriter, r *http.Request) {
 			Variants:  variants,
 		})
 	}
-	outcome, err := h.db.ApplyUnify(groups, archive)
+	outcome, err := h.db.ApplyUnify(groups, remove)
 	if err != nil {
 		var validation *store.UnifyValidationError
 		if errors.As(err, &validation) {
@@ -730,7 +735,7 @@ func (h *AdminHandler) unifyApply(w http.ResponseWriter, r *http.Request) {
 		RoutesCreated:  outcome.RoutesCreated,
 		MembersCreated: outcome.MembersCreated,
 		MembersSkipped: outcome.MembersSkipped + dropped,
-		RoutesArchived: outcome.RoutesArchived,
+		RoutesDeleted:  outcome.RoutesDeleted,
 		BatchCount:     len(outcome.Batches),
 	})
 }
@@ -745,19 +750,19 @@ func (h *AdminHandler) unifyBatches(w http.ResponseWriter, _ *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	archived, err := h.db.UnifyArchivedRoutes()
+	deleted, err := h.db.UnifyDeletedRoutes()
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Batches  []domain.UnifyBatch    `json:"batches"`
-		Archived []domain.ArchivedRoute `json:"archived"`
-	}{Batches: batches, Archived: archived})
+		Batches []domain.UnifyBatch   `json:"batches"`
+		Deleted []domain.DeletedRoute `json:"deleted"`
+	}{Batches: batches, Deleted: deleted})
 }
 
 // unifyUndo reverts one batch: everything it created is deleted, everything it
-// archived is restored.
+// removed is rebuilt.
 func (h *AdminHandler) unifyUndo(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
@@ -776,14 +781,14 @@ func (h *AdminHandler) unifyUndo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "undone"})
 }
 
-// unifyRestoreRoute re-enables a single archived original, leaving the alias
-// and the rest of its batch in place.
+// unifyRestoreRoute rebuilds a single removed original, leaving the alias and
+// the rest of its batch in place.
 func (h *AdminHandler) unifyRestoreRoute(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
 		return
 	}
-	if err := h.db.RestoreArchivedRoute(id); err != nil {
+	if err := h.db.RestoreDeletedRoute(id); err != nil {
 		var validation *store.UnifyValidationError
 		if errors.As(err, &validation) {
 			writeError(w, http.StatusBadRequest, validation.Message)

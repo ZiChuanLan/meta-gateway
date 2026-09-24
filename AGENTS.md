@@ -231,11 +231,19 @@ AAH 版本号是字符串且当前为 `"4.0"`，段可能嵌在 `data` 下，别
 ### 3.5 统一名称（unify）是批次 + op 回放状态机
 
 `model_unify_batches` / `model_unify_ops` 记录 `route_created` / `member_created` /
-`route_archived` / `route_enabled`，Undo 逆序回放并跳过已 undone 的 op。三条不变量：
+`route_deleted` / `route_enabled`（`route_archived` 是删除语义之前的旧 op，仍可回放），
+Undo 逆序回放并跳过已 undone 的 op。四条不变量：
 
-1. 归档只 disable 不 delete，单条还原 = 把 op 置为 undone；
+1. 被合并的原名路由**直接删除**（连同它的成员），不再 disable：留一个 `enabled=0` 的旧名仍会
+   在模型目录里显示成一行死名。删除前必须 `snapshotRouteRows` 快照整行（含全部成员列），
+   重建 = `restoreRouteRows` 按原 id 原样插回，单条重建 = 把 op 置为 undone；
 2. 撤销 `route_created` 前必须确认路由上没有手工成员或其他活跃批次的成员（`ensureRouteUndoable`），否则会级联删光；
-3. 预览组只有在"全 mapped 且无 exposed originals（已启用的变体名路由）"时才可省略，否则还原过的原名永远无法再隐藏。
+3. 只在「该路由的每个成员所属渠道都被本组绑定到统一名」时才删（`deleteSupersededRoutes`），通配符与部分覆盖一律跳过；
+4. 预览组只有在"全 mapped 且无 exposed originals（已启用的变体名路由）"时才可省略，否则重建过的原名永远无法再删除。
+
+> 快照用 `PRAGMA table_info` 动态取列，所以以后给 `routes`/`route_members` 加列不需要改快照代码；
+> 恢复时显式写回原 id（SQLite AUTOINCREMENT 不复用被删的 id），`routes.single_member_id`
+> 与成员自带的 `route_id` 因此无需重映射。同名路由已存在时拒绝重建（`cannot rebuild`）。
 
 ### 3.6 零信任日志
 
@@ -419,6 +427,15 @@ curl -s -H "Authorization: Bearer <session_token>" \
 
 - 视觉与工作区设计见 `docs/visual-redesign.md`。前端样式位于 `web/src/styles/`：颜色/字号/材质改 `tokens.css`，共享控件改 `system.css`，导航改 `shell.css`，工作区布局改 `workspaces.css`，登录布局改 `login.css`，入场/品牌动效改 `motion.css`；不要把新主题继续堆进旧 `web/src/styles.css`。入场时长集中在 `lib/entranceMotion.ts`，重播不能触碰认证状态；动效须支持跳过、减少动态效果和隐藏页面暂停。
 - 业务子组件的主要操作通过 `PageActions` 放入页头。导航与页面框架复用 `ConsoleShell`；手机导航使用共享 Drawer。
+- **顶部栏可配置**（`web/src/lib/topBar.ts` + 设置 → 外观 →「自定义顶部栏」）：`TOP_BAR_ITEMS`
+  枚举可显隐的入口（签到、更新提醒、明暗、语言），preference 存 localStorage，两个主题包的
+  `Chrome.tsx` 各自读同一个 hook。新增顶栏入口时三处同步：`TOP_BAR_ITEMS` + 两个 Chrome +
+  双语 `appearance.topbar.*` 文案；退出登录不参与开关（它是控制台唯一一处登出）。
+- **注册表/商店页叫「拓展」（`/console/store`）**：签到与交换已是内置功能，**不是可开关的扩展**
+  （`internal/plugins/service.go` 的 `officialCatalog` 为空，`RetireLegacyModules` 启动时清掉
+  `exchange` / `checkin` / `operations` / `cliproxyapi` 的旧记录，路由里也不再挂 `requirePluginEnabled`）。
+  拓展页只做三件事：注册 sidecar、浏览插件市场、管理已安装插件。别再为签到/交换加回
+  「扩展开关」或 store 门控——那个开关反复被启动引导撤销，本来就是装饰。
 - **「模型能力注册表」是模型页「模型工具」里的弹窗**（`web/src/features/models/CapabilityRegistry.tsx`），
   不是工作台 tab —— 它描述的是模型清单里的协议数据，工作台只保留「图像 / 文字」两个跑测 tab。
   移动这类入口时，顺手 `grep` 一遍提到旧位置的文案（`workbench.image.noModels` 这类 hint 也是入口）。

@@ -116,7 +116,7 @@ func main() {
 		os.Exit(1)
 	}
 	pluginService.SetMarketURLs(cfg.PluginMarketURLs)
-	if err := pluginService.EnsureOfficialModulesInstalled(); err != nil {
+	if err := pluginService.RetireLegacyModules(); err != nil {
 		logger.Error("plugin bootstrap failed", "category", "plugins")
 		os.Exit(1)
 	}
@@ -199,10 +199,8 @@ func main() {
 	switch {
 	case scheduler.Started():
 		logger.Info("check-in scheduler enabled")
-	case cfg.CheckinEnabled && pluginService.IsEnabled("checkin"):
-		logger.Info("check-in scheduler idle: disabled via Admin Settings (override wins over CHECKIN_ENABLED)")
 	case cfg.CheckinEnabled:
-		logger.Info("check-in scheduler idle: activate checkin module or enable via Settings")
+		logger.Info("check-in scheduler idle: disabled via Admin Settings (override wins over CHECKIN_ENABLED)")
 	default:
 		logger.Info("check-in scheduler constructed but not started (CHECKIN_ENABLED=false); Settings can enable without restart")
 	}

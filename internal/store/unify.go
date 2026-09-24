@@ -27,7 +27,7 @@ type UnifyApplyOutcome struct {
 	RoutesCreated  int                 `json:"routes_created"`
 	MembersCreated int                 `json:"members_created"`
 	MembersSkipped int                 `json:"members_skipped"`
-	RoutesArchived int                 `json:"routes_archived"`
+	RoutesDeleted  int                 `json:"routes_deleted"`
 	Batches        []domain.UnifyBatch `json:"batches"`
 }
 
@@ -38,21 +38,21 @@ type UnifyValidationError struct{ Message string }
 func (e *UnifyValidationError) Error() string { return e.Message }
 
 // ApplyUnify creates the alias routes and per-channel mappings for every group
-// in a single transaction, optionally archiving the original routes each group
+// in a single transaction, optionally removing the original routes each group
 // supersedes.
 //
 // Everything is recorded per group as a batch so UndoBatch can reverse it:
-// routes and members created here are deleted, routes archived here are
-// restored to the state they had before. Without those records an operator
-// would have to guess which members came from unification — the old
+// routes and members created here are deleted, routes removed here are rebuilt
+// from the snapshot taken just before they went away. Without those records an
+// operator would have to guess which members came from unification — the old
 // (auto=1 AND manual_override=1) fingerprint is indistinguishable from a
 // manually pinned member.
 //
-// A route is only archived when the group provably covers it: the route must
+// A route is only removed when the group provably covers it: the route must
 // not be a wildcard and every one of its members must belong to a channel that
 // this group binds to the canonical name. Anything else is left alone rather
-// than risk hiding a binding nobody asked to retire.
-func (db *DB) ApplyUnify(groups []UnifyApplyGroup, archiveOriginals bool) (*UnifyApplyOutcome, error) {
+// than risk deleting a binding nobody asked to retire.
+func (db *DB) ApplyUnify(groups []UnifyApplyGroup, deleteOriginals bool) (*UnifyApplyOutcome, error) {
 	out := &UnifyApplyOutcome{}
 	tx, err := db.Begin()
 	if err != nil {
@@ -177,19 +177,19 @@ func (db *DB) ApplyUnify(groups []UnifyApplyGroup, archiveOriginals bool) (*Unif
 			out.MembersCreated++
 		}
 
-		if archiveOriginals {
-			archived, err := archiveSupersededRoutes(tx, routes, members, batchID, &seq, canonical, routeID, group.Variants)
+		if deleteOriginals {
+			deleted, err := deleteSupersededRoutes(tx, routes, members, batchID, &seq, canonical, routeID, group.Variants)
 			if err != nil {
 				return nil, err
 			}
-			out.RoutesArchived += archived
+			out.RoutesDeleted += deleted
 		}
 
 		batch := domain.UnifyBatch{
-			ID:             batchID,
-			Canonical:      canonical,
-			RouteID:        routeID,
-			RoutesArchived: archivedCount(tx, batchID),
+			ID:            batchID,
+			Canonical:     canonical,
+			RouteID:       routeID,
+			RoutesDeleted: removalCount(tx, batchID),
 		}
 		if route == nil {
 			batch.RoutesCreated = 1
@@ -207,9 +207,10 @@ func (db *DB) ApplyUnify(groups []UnifyApplyGroup, archiveOriginals bool) (*Unif
 	return out, nil
 }
 
-// archiveSupersededRoutes disables the original routes that this group fully
-// covers, recording each one so undo can bring it back.
-func archiveSupersededRoutes(tx *sql.Tx, routes *RouteStore, members *RouteMemberStore, batchID int64, seq *int, canonical string, routeID int64, variants []UnifyApplyVariant) (int, error) {
+// deleteSupersededRoutes removes the original routes that this group fully
+// covers. Each removal is snapshotted first, so undo (or a single rebuild from
+// the history) can put the route and its members back exactly as they were.
+func deleteSupersededRoutes(tx *sql.Tx, routes *RouteStore, members *RouteMemberStore, batchID int64, seq *int, canonical string, routeID int64, variants []UnifyApplyVariant) (int, error) {
 	// Channels bound to each original name by this group.
 	covered := make(map[string]map[int64]struct{})
 	for _, v := range variants {
@@ -221,7 +222,7 @@ func archiveSupersededRoutes(tx *sql.Tx, routes *RouteStore, members *RouteMembe
 	}
 
 	done := make(map[int64]struct{})
-	archived := 0
+	deleted := 0
 	for name, channels := range covered {
 		if name == canonical || strings.ContainsAny(name, "*?") {
 			continue
@@ -235,10 +236,10 @@ func archiveSupersededRoutes(tx *sql.Tx, routes *RouteStore, members *RouteMembe
 		}
 		done[original.ID] = struct{}{}
 
-		// Only archive when every member of the original is covered.
+		// Only remove a route when every member of it is covered.
 		existing, err := members.ListByRouteTx(tx, original.ID)
 		if err != nil {
-			return archived, err
+			return deleted, err
 		}
 		uncovered := false
 		for _, member := range existing {
@@ -250,30 +251,38 @@ func archiveSupersededRoutes(tx *sql.Tx, routes *RouteStore, members *RouteMembe
 		if uncovered || len(existing) == 0 {
 			continue
 		}
-		if !original.Enabled {
-			// Already hidden; nothing to restore later.
-			continue
+		// Snapshot before deleting: the row (and every member on it) is gone
+		// afterwards, and the batch is the only thing that can describe it.
+		snapshot, err := snapshotRouteRows(tx, original.ID)
+		if err != nil {
+			return deleted, err
 		}
-		prev := original.Enabled
-		if err := routes.SetEnabledTx(tx, original.ID, false); err != nil {
-			return archived, err
+		encoded, err := json.Marshal(snapshot)
+		if err != nil {
+			return deleted, fmt.Errorf("unify snapshot encode: %w", err)
+		}
+		// Deleting the route cascades its members (route_members.route_id is
+		// ON DELETE CASCADE).
+		if err := routes.DeleteTx(tx, original.ID); err != nil {
+			return deleted, err
 		}
 		if err := addUnifyOp(tx, batchID, seq, &domain.UnifyOp{
-			Op:          domain.UnifyOpRouteArchived,
-			RouteID:     original.ID,
-			PrevEnabled: &prev,
+			Op:        domain.UnifyOpRouteDeleted,
+			RouteID:   original.ID,
+			ModelName: original.ModelPattern,
+			Snapshot:  string(encoded),
 		}); err != nil {
-			return archived, err
+			return deleted, err
 		}
-		archived++
+		deleted++
 	}
-	return archived, nil
+	return deleted, nil
 }
 
 // UndoBatch reverses a batch: members and routes it created are deleted again,
-// routes it archived are restored. Operations already undone, or whose target
-// has since been deleted by hand, are skipped rather than aborting — a partial
-// revert still beats none.
+// routes it removed are rebuilt from their snapshots. Operations already
+// undone, or whose target has since disappeared, are skipped rather than
+// aborting — a partial revert still beats none.
 func (db *DB) UndoBatch(batchID int64) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -323,6 +332,10 @@ func (db *DB) UndoBatch(batchID int64) error {
 			if err := members.DeleteTx(tx, *op.MemberID); err != nil {
 				return err
 			}
+		case domain.UnifyOpRouteDeleted:
+			if _, err := restoreRouteRows(tx, op.Snapshot); err != nil {
+				return err
+			}
 		case domain.UnifyOpRouteArchived:
 			if op.PrevEnabled == nil {
 				break
@@ -350,30 +363,50 @@ func (db *DB) UndoBatch(batchID int64) error {
 	return tx.Commit()
 }
 
-// RestoreArchivedRoute re-enables one route a batch archived and marks that
-// single operation undone, leaving the rest of the batch in place. Use this to
-// bring one original name back without discarding the whole alias.
-func (db *DB) RestoreArchivedRoute(routeID int64) error {
+// RestoreDeletedRoute brings one original back and marks that single operation
+// undone, leaving the rest of the batch in place. A route removed by the
+// current scheme is rebuilt from its snapshot; one parked disabled by a batch
+// applied before that scheme existed is simply switched back on.
+func (db *DB) RestoreDeletedRoute(routeID int64) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("unify restore begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var opID int64
-	var prev int
-	err = tx.QueryRow(`SELECT id, prev_enabled FROM model_unify_ops
-		WHERE op = ? AND route_id = ? AND undone = 0 ORDER BY seq LIMIT 1`,
-		domain.UnifyOpRouteArchived, routeID).Scan(&opID, &prev)
+	var (
+		opID      int64
+		op        string
+		prev      sql.NullInt64
+		snapshot  string
+		modelName string
+	)
+	err = tx.QueryRow(`SELECT id, op, prev_enabled, snapshot, model_name FROM model_unify_ops
+		WHERE op IN (?, ?) AND route_id = ? AND undone = 0 ORDER BY seq LIMIT 1`,
+		domain.UnifyOpRouteDeleted, domain.UnifyOpRouteArchived, routeID).
+		Scan(&opID, &op, &prev, &snapshot, &modelName)
 	if err == sql.ErrNoRows {
-		return &UnifyValidationError{Message: "archived route not found"}
+		return &UnifyValidationError{Message: "deleted route not found"}
 	}
 	if err != nil {
 		return fmt.Errorf("unify restore lookup: %w", err)
 	}
-	routes := &RouteStore{db: db.DB}
-	if err := routes.SetEnabledTx(tx, routeID, prev != 0); err != nil {
-		return err
+	if op == domain.UnifyOpRouteDeleted {
+		if _, err := restoreRouteRows(tx, snapshot); err != nil {
+			return err
+		}
+	} else {
+		present, err := routeExistsByID(tx, routeID)
+		if err != nil {
+			return err
+		}
+		if !present {
+			return &UnifyValidationError{Message: "cannot restore: the route no longer exists"}
+		}
+		routes := &RouteStore{db: db.DB}
+		if err := routes.SetEnabledTx(tx, routeID, prev.Valid && prev.Int64 != 0); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(`UPDATE model_unify_ops SET undone = 1 WHERE id = ?`, opID); err != nil {
 		return fmt.Errorf("unify restore mark undone: %w", err)
@@ -386,7 +419,7 @@ func (db *DB) ListUnifyBatches(limit int) ([]domain.UnifyBatch, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := db.Query(`SELECT id, canonical, route_id, routes_created, members_created, routes_archived, created_at, undone_at
+	rows, err := db.Query(`SELECT id, canonical, route_id, routes_created, members_created, routes_deleted, created_at, undone_at
 		FROM model_unify_batches ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("unify batch list: %w", err)
@@ -396,7 +429,7 @@ func (db *DB) ListUnifyBatches(limit int) ([]domain.UnifyBatch, error) {
 	for rows.Next() {
 		var b domain.UnifyBatch
 		if err := rows.Scan(&b.ID, &b.Canonical, &b.RouteID, &b.RoutesCreated, &b.MembersCreated,
-			&b.RoutesArchived, scanTime(&b.CreatedAt), scanNullTime(&b.UndoneAt)); err != nil {
+			&b.RoutesDeleted, scanTime(&b.CreatedAt), scanNullTime(&b.UndoneAt)); err != nil {
 			return nil, fmt.Errorf("unify batch scan: %w", err)
 		}
 		result = append(result, b)
@@ -409,30 +442,34 @@ func (db *DB) UnifyBatchOps(batchID int64) ([]domain.UnifyOp, error) {
 	return listUnifyOps(db.DB, batchID)
 }
 
-// UnifyArchivedRoutes lists every archive operation belonging to an active
-// (not undone) batch, newest first. Entries with Restored set have been brought
-// back by a single restore — they stay listed so the history shows what
-// happened to them, while entries without it are currently hidden names an
-// operator can bring back.
-func (db *DB) UnifyArchivedRoutes() ([]domain.ArchivedRoute, error) {
-	rows, err := db.Query(`SELECT o.batch_id, b.canonical, o.route_id, r.model_pattern, b.created_at, o.undone
+// UnifyDeletedRoutes lists every removal operation belonging to an active (not
+// undone) batch, newest first. Entries with Rebuilt set have been brought back
+// by a single rebuild — they stay listed so the history shows what happened to
+// them, while entries without it are names an operator can rebuild. The last
+// batch's own model name lives on the op, since a deleted route row can no
+// longer be joined for it.
+func (db *DB) UnifyDeletedRoutes() ([]domain.DeletedRoute, error) {
+	rows, err := db.Query(`SELECT o.batch_id, b.canonical, o.route_id,
+			COALESCE(NULLIF(o.model_name, ''), r.model_pattern, ''), b.created_at, o.op, o.undone
 		FROM model_unify_ops o
 		JOIN model_unify_batches b ON b.id = o.batch_id
-		JOIN routes r ON r.id = o.route_id
-		WHERE o.op = ? AND b.undone_at IS NULL
-		ORDER BY b.id DESC, o.seq`, domain.UnifyOpRouteArchived)
+		LEFT JOIN routes r ON r.id = o.route_id
+		WHERE o.op IN (?, ?) AND b.undone_at IS NULL
+		ORDER BY b.id DESC, o.seq`, domain.UnifyOpRouteDeleted, domain.UnifyOpRouteArchived)
 	if err != nil {
-		return nil, fmt.Errorf("unify archived list: %w", err)
+		return nil, fmt.Errorf("unify deleted list: %w", err)
 	}
 	defer rows.Close()
-	var result []domain.ArchivedRoute
+	var result []domain.DeletedRoute
 	for rows.Next() {
-		var a domain.ArchivedRoute
+		var a domain.DeletedRoute
+		var op string
 		var undone int
-		if err := rows.Scan(&a.BatchID, &a.Canonical, &a.RouteID, &a.ModelName, scanTime(&a.ArchivedAt), &undone); err != nil {
-			return nil, fmt.Errorf("unify archived scan: %w", err)
+		if err := rows.Scan(&a.BatchID, &a.Canonical, &a.RouteID, &a.ModelName, scanTime(&a.DeletedAt), &op, &undone); err != nil {
+			return nil, fmt.Errorf("unify deleted scan: %w", err)
 		}
-		a.Restored = undone != 0
+		a.Parked = op == domain.UnifyOpRouteArchived
+		a.Rebuilt = undone != 0
 		result = append(result, a)
 	}
 	return result, rows.Err()
@@ -515,8 +552,8 @@ func createUnifyBatch(tx *sql.Tx, canonical string, routeID int64) (int64, error
 }
 
 func finalizeUnifyBatch(tx *sql.Tx, b *domain.UnifyBatch) error {
-	if _, err := tx.Exec(`UPDATE model_unify_batches SET routes_created = ?, members_created = ?, routes_archived = ? WHERE id = ?`,
-		b.RoutesCreated, b.MembersCreated, b.RoutesArchived, b.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE model_unify_batches SET routes_created = ?, members_created = ?, routes_deleted = ? WHERE id = ?`,
+		b.RoutesCreated, b.MembersCreated, b.RoutesDeleted, b.ID); err != nil {
 		return fmt.Errorf("unify batch finalize: %w", err)
 	}
 	return nil
@@ -532,15 +569,15 @@ func addUnifyOp(tx *sql.Tx, batchID int64, seq *int, op *domain.UnifyOp) error {
 	if op.PrevEnabled != nil {
 		prev = boolInt(*op.PrevEnabled)
 	}
-	if _, err := tx.Exec(`INSERT INTO model_unify_ops (batch_id, seq, op, route_id, member_id, prev_enabled) VALUES (?, ?, ?, ?, ?, ?)`,
-		batchID, *seq, op.Op, op.RouteID, memberID, prev); err != nil {
+	if _, err := tx.Exec(`INSERT INTO model_unify_ops (batch_id, seq, op, route_id, member_id, prev_enabled, model_name, snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		batchID, *seq, op.Op, op.RouteID, memberID, prev, op.ModelName, op.Snapshot); err != nil {
 		return fmt.Errorf("unify op record: %w", err)
 	}
 	return nil
 }
 
 func listUnifyOps(ex sqlExecutor, batchID int64) ([]domain.UnifyOp, error) {
-	rows, err := ex.Query(`SELECT id, batch_id, seq, op, route_id, member_id, prev_enabled, undone
+	rows, err := ex.Query(`SELECT id, batch_id, seq, op, route_id, member_id, prev_enabled, model_name, snapshot, undone
 		FROM model_unify_ops WHERE batch_id = ? ORDER BY seq`, batchID)
 	if err != nil {
 		return nil, fmt.Errorf("unify op list: %w", err)
@@ -551,7 +588,7 @@ func listUnifyOps(ex sqlExecutor, batchID int64) ([]domain.UnifyOp, error) {
 		var op domain.UnifyOp
 		var memberID, prev sql.NullInt64
 		var undone int
-		if err := rows.Scan(&op.ID, &op.BatchID, &op.Seq, &op.Op, &op.RouteID, &memberID, &prev, &undone); err != nil {
+		if err := rows.Scan(&op.ID, &op.BatchID, &op.Seq, &op.Op, &op.RouteID, &memberID, &prev, &op.ModelName, &op.Snapshot, &undone); err != nil {
 			return nil, fmt.Errorf("unify op scan: %w", err)
 		}
 		if memberID.Valid {
@@ -570,10 +607,10 @@ func listUnifyOps(ex sqlExecutor, batchID int64) ([]domain.UnifyOp, error) {
 
 func getUnifyBatch(ex sqlExecutor, id int64) (*domain.UnifyBatch, error) {
 	var b domain.UnifyBatch
-	err := ex.QueryRow(`SELECT id, canonical, route_id, routes_created, members_created, routes_archived, created_at, undone_at
+	err := ex.QueryRow(`SELECT id, canonical, route_id, routes_created, members_created, routes_deleted, created_at, undone_at
 		FROM model_unify_batches WHERE id = ?`, id).
 		Scan(&b.ID, &b.Canonical, &b.RouteID, &b.RoutesCreated, &b.MembersCreated,
-			&b.RoutesArchived, scanTime(&b.CreatedAt), scanNullTime(&b.UndoneAt))
+			&b.RoutesDeleted, scanTime(&b.CreatedAt), scanNullTime(&b.UndoneAt))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -589,8 +626,10 @@ func countOps(ex sqlExecutor, batchID int64, op string) int {
 	return n
 }
 
-func archivedCount(ex sqlExecutor, batchID int64) int {
-	return countOps(ex, batchID, domain.UnifyOpRouteArchived)
+// removalCount counts the originals a batch removed, whichever scheme removed
+// them: deleted outright, or parked disabled before deletion existed.
+func removalCount(ex sqlExecutor, batchID int64) int {
+	return countOps(ex, batchID, domain.UnifyOpRouteDeleted) + countOps(ex, batchID, domain.UnifyOpRouteArchived)
 }
 
 // mappingRealName extracts {"real": "..."} from a member's mapping JSON. An

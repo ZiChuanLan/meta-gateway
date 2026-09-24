@@ -30,10 +30,21 @@ func routeEnabled(t *testing.T, db *store.DB, id int64) bool {
 	return route.Enabled
 }
 
-// Archiving — rather than deleting — is what makes an alias reversible: the
-// original keeps its members and every model-level override, and comes back
-// with a single flag flip.
-func TestUnifyApplyArchivesSupersededRoutes(t *testing.T) {
+// routePresent reports whether a route row still exists at all — after a
+// unification pass the superseded originals are gone, not parked.
+func routePresent(t *testing.T, db *store.DB, id int64) bool {
+	t.Helper()
+	route, err := db.Route.GetByID(id)
+	if err != nil {
+		t.Fatalf("get route %d: %v", id, err)
+	}
+	return route != nil
+}
+
+// Deleting — rather than parking — is what leaves one callable name per model:
+// a disabled original still shows as a dead row in the model list. The batch
+// snapshot is what keeps the removal reversible.
+func TestUnifyApplyDeletesSupersededRoutes(t *testing.T) {
 	db := openTestDB(t)
 	c1 := newUnifyChannel(t, db, "C1")
 	c2 := newUnifyChannel(t, db, "C2")
@@ -66,24 +77,38 @@ func TestUnifyApplyArchivesSupersededRoutes(t *testing.T) {
 	if outcome.RoutesCreated != 1 || outcome.MembersCreated != 2 {
 		t.Fatalf("unexpected outcome: %+v", outcome)
 	}
-	if outcome.RoutesArchived != 2 {
-		t.Fatalf("expected 2 archived routes, got %d", outcome.RoutesArchived)
+	if outcome.RoutesDeleted != 2 {
+		t.Fatalf("expected 2 deleted routes, got %d", outcome.RoutesDeleted)
 	}
-	if routeEnabled(t, db, originalA) || routeEnabled(t, db, originalB) {
-		t.Fatal("original routes should be disabled after archiving")
+	if routePresent(t, db, originalA) || routePresent(t, db, originalB) {
+		t.Fatal("original routes should be gone after apply")
+	}
+	// The members went with them: nothing may stay attached to a dead route.
+	if members, err := db.RouteMember.ListByRoute(originalA); err != nil || len(members) != 0 {
+		t.Fatalf("members of a deleted route must be gone: %+v %v", members, err)
 	}
 
-	archived, err := db.UnifyArchivedRoutes()
+	deleted, err := db.UnifyDeletedRoutes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(archived) != 2 {
-		t.Fatalf("expected 2 archived entries, got %+v", archived)
+	if len(deleted) != 2 {
+		t.Fatalf("expected 2 removal entries, got %+v", deleted)
+	}
+	// The removed rows are gone, so the op itself has to carry the name the
+	// history lists — a join back to routes cannot supply it any more.
+	names := map[string]bool{}
+	for _, entry := range deleted {
+		names[entry.ModelName] = true
+	}
+	if !names["[A]GEMINI"] || !names["GEMINI"] {
+		t.Fatalf("removal entries should name the deleted models: %+v", deleted)
 	}
 }
 
 // Undo walks the recorded operations backwards: members and routes created by
-// the batch are deleted, routes it archived come back enabled.
+// the batch are deleted, routes it removed are rebuilt from their snapshots —
+// with the members and settings they had when they went away.
 func TestUnifyUndoRestoresEverything(t *testing.T) {
 	db := openTestDB(t)
 	c1 := newUnifyChannel(t, db, "C1")
@@ -131,15 +156,26 @@ func TestUnifyUndoRestoresEverything(t *testing.T) {
 	if remaining, err := db.Route.GetByModelAny("gemini-flash"); err != nil || remaining != nil {
 		t.Fatalf("alias route should be gone after undo: %v %v", remaining, err)
 	}
-	if !routeEnabled(t, db, originalA) {
-		t.Fatal("original route should be re-enabled after undo")
+	restored, err := db.Route.GetByModelAny("[A]GEMINI")
+	if err != nil || restored == nil {
+		t.Fatalf("undo should rebuild the original route: %v %v", restored, err)
 	}
-	archived, err := db.UnifyArchivedRoutes()
+	if !restored.Enabled {
+		t.Fatal("rebuilt original should be enabled again")
+	}
+	restoredMembers, err := db.RouteMember.ListByRoute(restored.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(archived) != 0 {
-		t.Fatalf("expected no archived routes after undo, got %+v", archived)
+	if len(restoredMembers) != 1 || restoredMembers[0].ChannelID != c1 {
+		t.Fatalf("rebuilt original should carry its member again, got %+v", restoredMembers)
+	}
+	deleted, err := db.UnifyDeletedRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("expected no removed routes after undo, got %+v", deleted)
 	}
 
 	batches, err := db.ListUnifyBatches(10)
@@ -205,8 +241,8 @@ func TestUnifyApplyLeavesRiskyRoutesAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outcome.RoutesArchived != 0 {
-		t.Fatalf("expected nothing to be archived, got %d", outcome.RoutesArchived)
+	if outcome.RoutesDeleted != 0 {
+		t.Fatalf("expected nothing to be removed, got %d", outcome.RoutesDeleted)
 	}
 	if !routeEnabled(t, db, wildcard) {
 		t.Error("wildcard route must stay enabled")
@@ -216,13 +252,15 @@ func TestUnifyApplyLeavesRiskyRoutesAlone(t *testing.T) {
 	}
 }
 
-// Restoring one original keeps the alias and the rest of the batch intact.
-func TestUnifyRestoreSingleArchivedRoute(t *testing.T) {
+// Rebuilding one original keeps the alias and the rest of the batch intact,
+// and brings the row back with the settings it had — member priorities and
+// prices included, not just the bare model name.
+func TestUnifyRebuildSingleDeletedRoute(t *testing.T) {
 	db := openTestDB(t)
 	c1 := newUnifyChannel(t, db, "C1")
 	c2 := newUnifyChannel(t, db, "C2")
 
-	originalA, err := db.Route.Create(&domain.Route{ModelPattern: "[A]GEMINI", Enabled: true})
+	originalA, err := db.Route.Create(&domain.Route{ModelPattern: "[A]GEMINI", Enabled: true, ModelGroup: "gemini"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +268,23 @@ func TestUnifyRestoreSingleArchivedRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: originalA, ChannelID: c1, Enabled: true, Weight: 100}); err != nil {
+	memberA, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: originalA, ChannelID: c1, Enabled: true, Weight: 42, Priority: 3,
+		PricePromptPer1k: 0.51, PriceCompletionPer1k: 1.25,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pin the route to that member (routing_mode=single): the pin is a foreign
+	// key back into route_members, so a rebuild has to write it after the
+	// member rows are back, not with the route row.
+	pinnedRoute, err := db.Route.GetByID(originalA)
+	if err != nil || pinnedRoute == nil {
+		t.Fatalf("reload route: %v %v", pinnedRoute, err)
+	}
+	pinnedRoute.RoutingMode = "single"
+	pinnedRoute.SingleMemberID = &memberA
+	if err := db.Route.Update(pinnedRoute); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: originalB, ChannelID: c2, Enabled: true, Weight: 100}); err != nil {
@@ -247,25 +301,50 @@ func TestUnifyRestoreSingleArchivedRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := db.RestoreArchivedRoute(originalA); err != nil {
+	if err := db.RestoreDeletedRoute(originalA); err != nil {
 		t.Fatal(err)
 	}
-	if !routeEnabled(t, db, originalA) {
-		t.Fatal("[A]GEMINI should be back")
+	restored, err := db.Route.GetByModelAny("[A]GEMINI")
+	if err != nil || restored == nil {
+		t.Fatalf("[A]GEMINI should be back: %v %v", restored, err)
 	}
-	if routeEnabled(t, db, originalB) {
-		t.Fatal("GEMINI should still be archived")
+	if restored.ModelGroup != "gemini" {
+		t.Fatalf("rebuilt route lost its model group: %+v", restored)
 	}
-	alias, err := db.Route.GetByModel("gemini-flash")
-	if err != nil || alias == nil {
-		t.Fatalf("alias must survive a single restore: %v %v", alias, err)
+	if restored.SingleMemberID == nil || *restored.SingleMemberID != memberA {
+		t.Fatalf("rebuilt route lost its pinned member: %+v", restored.SingleMemberID)
 	}
-	members, err := db.RouteMember.ListByRoute(alias.ID)
+	members, err := db.RouteMember.ListByRoute(restored.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(members) != 2 {
-		t.Fatalf("alias should keep both members, got %d", len(members))
+	if len(members) != 1 {
+		t.Fatalf("rebuilt route should carry its own member, got %+v", members)
+	}
+	if members[0].ID != memberA {
+		t.Fatalf("rebuilt member should keep its original id %d, got %d", memberA, members[0].ID)
+	}
+	if members[0].Weight != 42 || members[0].Priority != 3 || members[0].PricePromptPer1k != 0.51 || members[0].PriceCompletionPer1k != 1.25 {
+		t.Fatalf("rebuilt member lost its settings: %+v", members[0])
+	}
+	if remaining, err := db.Route.GetByModelAny("GEMINI"); err != nil || remaining != nil {
+		t.Fatalf("GEMINI should still be removed: %v %v", remaining, err)
+	}
+	alias, err := db.Route.GetByModel("gemini-flash")
+	if err != nil || alias == nil {
+		t.Fatalf("alias must survive a single rebuild: %v %v", alias, err)
+	}
+	aliasMembers, err := db.RouteMember.ListByRoute(alias.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(aliasMembers) != 2 {
+		t.Fatalf("alias should keep both members, got %d", len(aliasMembers))
+	}
+
+	// Rebuilding the same name twice is refused instead of minting a duplicate.
+	if err := db.RestoreDeletedRoute(originalA); err == nil {
+		t.Fatal("expected a second rebuild of the same route to be refused")
 	}
 }
 
@@ -297,18 +376,18 @@ func TestUnifyRejectsInvalidGroups(t *testing.T) {
 	}
 }
 
-// Restoring a route that was never archived is a clean error, not a panic.
+// Rebuilding a route that was never removed is a clean error, not a panic.
 func TestUnifyRestoreUnknownRoute(t *testing.T) {
 	db := openTestDB(t)
-	if err := db.RestoreArchivedRoute(9999); err == nil {
+	if err := db.RestoreDeletedRoute(9999); err == nil {
 		t.Fatal("expected an error for an unknown route")
 	}
 }
 
-// Restoring an original must not dead-end the assistant: re-applying the same
-// group hides the exposed original again, and the history keeps a trace of
-// both the restore and the re-archive.
-func TestUnifyRestoreThenReapplyRearchives(t *testing.T) {
+// Rebuilding an original must not dead-end the assistant: re-applying the same
+// group removes the exposed original again, and the history keeps a trace of
+// both the rebuild and the second removal.
+func TestUnifyRebuildThenReapplyDeletesAgain(t *testing.T) {
 	db := openTestDB(t)
 	c1 := newUnifyChannel(t, db, "C1")
 	c2 := newUnifyChannel(t, db, "C2")
@@ -338,41 +417,41 @@ func TestUnifyRestoreThenReapplyRearchives(t *testing.T) {
 	if _, err := db.ApplyUnify(group, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.RestoreArchivedRoute(originalA); err != nil {
+	if err := db.RestoreDeletedRoute(originalA); err != nil {
 		t.Fatal(err)
 	}
-	if !routeEnabled(t, db, originalA) {
-		t.Fatal("[A]GEMINI should be back after restore")
+	if !routePresent(t, db, originalA) {
+		t.Fatal("[A]GEMINI should exist again after a rebuild")
 	}
 
-	// The history must still show the restored entry next to the hidden one.
-	archived, err := db.UnifyArchivedRoutes()
+	// The history must still show the rebuilt entry next to the removed one.
+	deleted, err := db.UnifyDeletedRoutes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	restoredCount, activeCount := 0, 0
-	for _, entry := range archived {
-		if entry.RouteID == originalA && entry.Restored {
-			restoredCount++
+	rebuiltCount, removedCount := 0, 0
+	for _, entry := range deleted {
+		if entry.RouteID == originalA && entry.Rebuilt {
+			rebuiltCount++
 		}
-		if entry.RouteID == originalB && !entry.Restored {
-			activeCount++
+		if entry.RouteID == originalB && !entry.Rebuilt {
+			removedCount++
 		}
 	}
-	if restoredCount != 1 || activeCount != 1 {
-		t.Fatalf("expected 1 restored + 1 active entry, got %+v", archived)
+	if rebuiltCount != 1 || removedCount != 1 {
+		t.Fatalf("expected 1 rebuilt + 1 removed entry, got %+v", deleted)
 	}
 
-	// Re-applying the same group must hide the restored original again.
+	// Re-applying the same group must remove the rebuilt original again.
 	second, err := db.ApplyUnify(group, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.RoutesArchived != 1 || second.MembersCreated != 0 || second.MembersSkipped != 2 {
+	if second.RoutesDeleted != 1 || second.MembersCreated != 0 || second.MembersSkipped != 2 {
 		t.Fatalf("unexpected re-apply outcome: %+v", second)
 	}
-	if routeEnabled(t, db, originalA) {
-		t.Fatal("[A]GEMINI should be hidden again after re-apply")
+	if routePresent(t, db, originalA) {
+		t.Fatal("[A]GEMINI should be gone again after re-apply")
 	}
 }
 

@@ -178,8 +178,8 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Get("/models/unify/batches", h.unifyBatches)
 	r.Get("/models/unify/batches/{id}/ops", h.unifyBatchOps)
 	r.Post("/models/unify/batches/{id}/undo", h.unifyUndo)
-	// Bring a single archived original back without discarding the alias.
-	r.Post("/models/unify/archived/{id}/restore", h.unifyRestoreRoute)
+	// Rebuild a single removed original without discarding the alias.
+	r.Post("/models/unify/deleted/{id}/restore", h.unifyRestoreRoute)
 
 	// Downstream keys
 	r.Get("/downstream-keys", h.listDownstreamKeys)

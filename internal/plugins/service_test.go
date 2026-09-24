@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -39,7 +38,7 @@ func TestValidateSidecarPath(t *testing.T) {
 	}
 }
 
-func TestActivateEnableDisableUninstall(t *testing.T) {
+func TestSidecarLifecycleEnableDisableUninstall(t *testing.T) {
 	db := openPluginTestDB(t)
 	dir := filepath.Join(t.TempDir(), "plugins")
 	svc, err := NewService(dir, db.Plugin)
@@ -47,42 +46,39 @@ func TestActivateEnableDisableUninstall(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	if len(svc.Catalog()) == 0 {
-		t.Fatal("expected official catalog")
-	}
-
-	rec, err := svc.Activate("exchange")
+	base := fakeSidecar(t, "lifecycle-plugin", "Lifecycle", false)
+	rec, err := svc.RegisterSidecar(base, "", nil)
 	if err != nil {
-		t.Fatalf("Activate: %v", err)
+		t.Fatalf("RegisterSidecar: %v", err)
 	}
 	if rec == nil || !rec.Enabled || rec.Status != StatusInstalled {
-		t.Fatalf("activate record = %+v", rec)
+		t.Fatalf("register record = %+v", rec)
 	}
-	if !svc.IsEnabled("exchange") {
-		t.Fatal("expected exchange enabled")
-	}
-	if _, err := os.Stat(filepath.Join(dir, "exchange", "plugin.json")); err != nil {
-		t.Fatalf("manifest missing: %v", err)
+	if !svc.IsEnabled("lifecycle-plugin") {
+		t.Fatal("expected the plugin enabled after registering")
 	}
 
-	// Second activate should stay enabled (idempotent install path).
-	if _, err := svc.Activate("exchange"); err != nil {
-		t.Fatalf("Activate again: %v", err)
-	}
-
-	rec, err = svc.Disable("exchange")
+	rec, err = svc.Disable("lifecycle-plugin")
 	if err != nil {
 		t.Fatalf("Disable: %v", err)
 	}
-	if rec.Enabled || svc.IsEnabled("exchange") {
-		t.Fatal("expected exchange disabled")
+	if rec.Enabled || svc.IsEnabled("lifecycle-plugin") {
+		t.Fatal("expected the plugin disabled")
 	}
 
-	if err := svc.Uninstall("exchange"); err != nil {
+	// Re-enabling keeps the record; a disabled plugin is still installed.
+	if _, err := svc.Enable("lifecycle-plugin"); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if !svc.IsEnabled("lifecycle-plugin") {
+		t.Fatal("expected the plugin enabled again")
+	}
+
+	if err := svc.Uninstall("lifecycle-plugin"); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "exchange")); !os.IsNotExist(err) {
-		t.Fatalf("plugin dir still present: %v", err)
+	if svc.IsEnabled("lifecycle-plugin") {
+		t.Fatal("an uninstalled plugin must not stay enabled")
 	}
 	items, err := svc.ListInstalled()
 	if err != nil {
@@ -138,58 +134,56 @@ func TestInstallRejectsUnknown(t *testing.T) {
 	}
 }
 
-func TestOfficialCatalogIsAddonsOnly(t *testing.T) {
+func TestOfficialCatalogIsCoreOnly(t *testing.T) {
 	db := openPluginTestDB(t)
 	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range svc.Catalog() {
-		if entry.ID == "operations" {
-			t.Fatal("operations must not be a store-gated catalog module")
-		}
-		if entry.Kind != KindAddon {
-			t.Fatalf("%s kind=%q want addon", entry.ID, entry.Kind)
-		}
-	}
 	status, err := svc.Status()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sawCore, sawExchange bool
+	var sawCore bool
 	for _, item := range status {
+		// Check-in and exchange are built-in surfaces: a store row for either
+		// would be a toggle the boot bootstrap keeps putting back.
+		if item.ID == "exchange" || item.ID == "checkin" {
+			t.Fatalf("%s must not be a store-managed extension any more", item.ID)
+		}
 		if item.Kind == KindCore {
 			sawCore = true
 			if item.CanToggle {
 				t.Fatalf("core %s should not toggle", item.ID)
 			}
 		}
-		if item.ID == "exchange" {
-			sawExchange = true
-			if !item.CanToggle {
-				t.Fatal("exchange should toggle")
-			}
-		}
 	}
-	if !sawCore || !sawExchange {
-		t.Fatalf("status incomplete core=%v exchange=%v", sawCore, sawExchange)
+	if !sawCore {
+		t.Fatal("status should still list the always-on core capabilities")
 	}
 }
 
-func TestEnsureOfficialBootstrapsAddons(t *testing.T) {
+func TestRetireLegacyModulesDropsStoreGatedRows(t *testing.T) {
 	db := openPluginTestDB(t)
 	svc, err := NewService(filepath.Join(t.TempDir(), "plugins"), db.Plugin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.EnsureOfficialModulesInstalled(); err != nil {
+	for _, id := range []string{"exchange", "checkin", "operations", "cliproxyapi"} {
+		if err := svc.store.Upsert(&store.PluginRecord{ID: id, Version: "1.0.0", Status: StatusInstalled, Enabled: true, Source: "official"}); err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	if err := svc.RetireLegacyModules(); err != nil {
 		t.Fatal(err)
 	}
-	if !svc.IsEnabled("exchange") || !svc.IsEnabled("checkin") {
-		t.Fatal("expected addons enabled after bootstrap")
-	}
-	if svc.IsEnabled("operations") {
-		t.Fatal("operations should not be an enabled plugin gate")
+	for _, id := range []string{"exchange", "checkin", "operations", "cliproxyapi"} {
+		if svc.IsEnabled(id) {
+			t.Fatalf("%s should no longer gate anything", id)
+		}
+		if rec, err := svc.store.Get(id); err == nil && rec != nil {
+			t.Fatalf("%s record should be gone", id)
+		}
 	}
 }
 
@@ -199,6 +193,7 @@ func TestMultiOnChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Listeners first: registering a plugin is itself a state change.
 	var calls []string
 	svc.SetOnChange(func(id string, enabled bool) {
 		calls = append(calls, id+":a")
@@ -206,7 +201,7 @@ func TestMultiOnChange(t *testing.T) {
 	svc.SetOnChange(func(id string, enabled bool) {
 		calls = append(calls, id+":b")
 	})
-	if _, err := svc.Activate("checkin"); err != nil {
+	if _, err := svc.RegisterSidecar(fakeSidecar(t, "multi-listener", "Multi", false), "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) < 2 {

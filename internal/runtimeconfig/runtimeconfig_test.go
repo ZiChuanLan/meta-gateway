@@ -1,30 +1,26 @@
 package runtimeconfig
 
 import (
+	"context"
 	"errors"
+	"io"
+	"log"
 	"testing"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
-type fakeSched struct {
-	cron    string
-	enabled bool
-	calls   int
-}
+// stubRunner satisfies checkin.BatchRunner so a real scheduler can be driven
+// from a test without touching any upstream.
+type stubRunner struct{ calls int }
 
-func (f *fakeSched) SetSchedule(expr string, enabled bool) error {
-	f.calls++
-	f.cron = expr
-	f.enabled = enabled
-	return nil
+func (r *stubRunner) RunAll(context.Context, string) (*checkin.RunSummary, error) {
+	r.calls++
+	return &checkin.RunSummary{}, nil
 }
-
-// schedulerAdapter satisfies the concrete *checkin.Scheduler slot via a thin wrapper in tests
-// by using Appliers.CheckinAllowed only — schedule applier needs real type. We test Validate
-// and CheckinAllowed gating through a custom apply path with nil CheckinSched plus allowed flag.
 
 func TestValidateBoundsAndCron(t *testing.T) {
 	if err := Validate(Editable{RetryTimes: 1, CooldownSeconds: 1, CheckinCron: "0 8 * * *", StableFirstDenominator: 25, StableFirstPromoteRequests: 100, RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300, DefaultModelSyncMode: "manual"}); err != nil {
@@ -272,21 +268,37 @@ func TestUpdateAndClearOverride(t *testing.T) {
 	}
 }
 
-func TestCheckinAllowedGatesEnablement(t *testing.T) {
-	// Exercise the gate branch used by applyWithError without a real scheduler.
-	allowed := false
-	appliers := Appliers{
-		CheckinAllowed: func() bool { return allowed },
-	}
-	// Directly call applyWithError through a controller with nil scheduler.
+// The check-in surface is built in, so the only thing standing between the
+// settings checkbox and a live schedule is the applier: it must arm and disarm
+// the real scheduler as the flag moves.
+func TestCheckinScheduleFollowsEditableFlag(t *testing.T) {
 	cfg := &config.Config{CheckinCron: "0 8 * * *", HTTPAddr: ":0", DataDir: "."}
 	db, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	controller := New(cfg, db.RuntimeSettings, appliers)
-	if err := controller.applyWithError(Editable{CheckinEnabled: true, CheckinCron: "0 8 * * *"}); err != nil {
+
+	scheduler, err := checkin.NewScheduler(&stubRunner{}, "0 8 * * *", log.New(io.Discard, "", 0), time.UTC)
+	if err != nil {
 		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = scheduler.Stop(context.Background()) })
+
+	controller := New(cfg, db.RuntimeSettings, Appliers{CheckinSched: scheduler})
+	if err := controller.applyWithError(Editable{CheckinEnabled: true, CheckinCron: "0 9 * * *"}); err != nil {
+		t.Fatal(err)
+	}
+	if !scheduler.Started() {
+		t.Fatal("enabling check-in must arm the scheduler")
+	}
+	if got := scheduler.Expression(); got != "0 9 * * *" {
+		t.Fatalf("scheduler expression = %q, want the edited cron", got)
+	}
+	if err := controller.applyWithError(Editable{CheckinEnabled: false, CheckinCron: "0 9 * * *"}); err != nil {
+		t.Fatal(err)
+	}
+	if scheduler.Started() {
+		t.Fatal("clearing the check-in flag must disarm the scheduler")
 	}
 }
