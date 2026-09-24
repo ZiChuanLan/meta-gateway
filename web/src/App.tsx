@@ -662,10 +662,15 @@ function AuthenticatedShell({
 		...(addons
 			.filter(
 				(m) =>
-					m.source === "sidecar" &&
+					// Every enabled sidecar plugin gets a nav entry, whatever brought
+					// it here — hand-registered ("sidecar") or market-installed
+					// ("market:…"). Gating on the source string made market installs
+					// invisible in the sidebar no matter what the plugin's own page
+					// toggle said.
 					m.installed &&
 					m.enabled &&
 					!!m.open_path &&
+					(m.source === "sidecar" || m.source?.startsWith("market:")) &&
 					// A plugin whose entry the operator hid keeps working (its hooks
 					// still run); only the sidebar row goes away.
 					!hiddenPlugins.has(m.id),

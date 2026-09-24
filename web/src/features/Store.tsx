@@ -387,34 +387,30 @@ function StoreExtensions() {
 										row={row}
 										busy={busyId === row.id}
 										onEdit={
-											row.source === "sidecar"
-												? () => setEditing(row)
-												: undefined
-											}
+										// Editing the connection (URL, health path) is the one ability
+										// that really belongs to a hand-registered service: a managed
+										// install's address is owned by the gateway, not the operator.
+										row.source === "sidecar"
+											? () => setEditing(row)
+											: undefined
+										}
 										onChannel={
-											row.source === "sidecar" &&
 											sidecarOfId(row.id)?.channel_path
 												? () => setChannelFor(row)
 												: undefined
 										}
-										// The config dialog existed but nothing ever opened it: the
-										// row supports onConfig, the button is wired… and no caller
-										// passed it, so a plugin's declared settings had no reachable
-										// entry point anywhere in the console. Shown when the plugin
-										// declares fields OR already has stored config — a dialog
-										// that opens empty teaches nothing.
+										// Every installed plugin gets Configure, whatever brought it
+										// here: a manifest either declares fields or it doesn't. The
+										// install source (hand-registered vs market) is bookkeeping,
+										// not a capability — gating the button on "sidecar" silently
+										// erased every market-installed plugin's settings surface.
 										onConfig={
-											row.source === "sidecar" &&
-											(row.has_config || (row.config_fields?.length ?? 0) > 0)
+											row.has_config || (row.config_fields?.length ?? 0) > 0
 												? () => setConfigFor(row)
 												: undefined
 										}
 										onDisable={() => disable.mutate(row.id)}
-									onUninstall={
-										row.source === "sidecar" || row.source?.startsWith("market:")
-											? () => uninstall.mutate(row.id)
-											: undefined
-										}
+										onUninstall={() => uninstall.mutate(row.id)}
 										t={t}
 									/>
 									))}
