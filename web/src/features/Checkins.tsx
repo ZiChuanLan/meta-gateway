@@ -1,17 +1,15 @@
-import { Link } from "react-router-dom";
 import { useI18n } from "../i18n";
-import { Page, Panel } from "../components/ui";
+import { Page } from "../components/ui";
 import { CheckinsPanel } from "./ops";
 import { ExternalCheckinsPanel } from "./ops/ExternalCheckinsPanel";
-import { useModules } from "../hooks/useModules";
 
 /**
- * Top-level Check-in surface (optional Store add-on).
- * Settings no longer hosts this tab.
+ * Top-level check-in surface. The check-in feature is built into the gateway,
+ * so this page is always reachable — the schedule itself is the only switch,
+ * and it lives in the panel below.
  */
 export function Checkins() {
 	const { t } = useI18n();
-	const { checkinEnabled, ready } = useModules();
 
 	return (
 		<Page
@@ -20,20 +18,9 @@ export function Checkins() {
 			description={t("checkinsPage.description")}
 		>
 			<div className="ops-canvas">
-				{ready && !checkinEnabled ? (
-					<Panel>
-						<p className="detail-empty">{t("ops.checkinModuleOff")}</p>
-						<Link className="button button-primary" to="/store">
-							{t("maintain.openStore")}
-						</Link>
-					</Panel>
-				) : (
-					<>
-						<CheckinsPanel>
-							<ExternalCheckinsPanel />
-						</CheckinsPanel>
-					</>
-				)}
+				<CheckinsPanel>
+					<ExternalCheckinsPanel />
+				</CheckinsPanel>
 			</div>
 		</Page>
 	);

@@ -3,7 +3,6 @@ import "driver.js/dist/driver.css";
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../i18n";
-import { useModules } from "../hooks/useModules";
 
 const DISMISS_KEY = "mg.guided-tour.done";
 
@@ -44,7 +43,6 @@ export function GuidedTour({ enabled = true }: { enabled?: boolean } = {}) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
-  const { checkinEnabled } = useModules();
   const launched = useRef(false);
 
   useEffect(() => {
@@ -64,10 +62,10 @@ export function GuidedTour({ enabled = true }: { enabled?: boolean } = {}) {
     // Give the first page a beat to mount so its boxes measure correctly.
     const timer = window.setTimeout(() => {
       launched.current = true;
-      start(t, navigate, checkinEnabled);
+      start(t, navigate);
     }, 600);
     return () => window.clearTimeout(timer);
-  }, [enabled, location.pathname, t, navigate, checkinEnabled]);
+  }, [enabled, location.pathname, t, navigate]);
 
   return null;
 }
@@ -75,7 +73,6 @@ export function GuidedTour({ enabled = true }: { enabled?: boolean } = {}) {
 function start(
   t: (key: string, vars?: Record<string, string | number>) => string,
   navigate: (to: string) => void,
-  checkinEnabled: boolean,
 ) {
   const textButton = (label: string): Element | null =>
     [...document.querySelectorAll("button")].find(
@@ -143,9 +140,7 @@ function start(
           (panel) => panel.getBoundingClientRect().width > 0,
         ) ?? null,
       title: t("tour.checkinsTitle"),
-      description: checkinEnabled
-        ? t("tour.checkinsDesc")
-        : t("tour.checkinsOffDesc"),
+      description: t("tour.checkinsDesc"),
     },
     {
       route: "/settings",

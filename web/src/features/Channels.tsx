@@ -47,7 +47,7 @@ import { useI18n } from "../i18n";
 import { useToast } from "../toast";
 import { formatErrorMessage } from "../formatError";
 import { useSession } from "../session";
-import { useModules } from "../hooks/useModules";
+
 import { channelNeedsAttention, isChannelReady } from "./channelHealth";
 import { AddChannelDialog } from "./channels/AddChannelDialog";
 import { CreateKeyDialog } from "./channels/CreateKeyDialog";
@@ -99,7 +99,6 @@ function writeChannelTab<T>(key: string, value: T) {
 
 export function Channels() {
   const { client } = useSession();
-  const { checkinEnabled } = useModules();
   const { t } = useI18n();
   const toast = useToast();
   const service = api(client!);
@@ -1112,7 +1111,6 @@ export function Channels() {
         },
       },
       ...(() => {
-        if (!checkinEnabled) return [];
         // Label must follow overview badge (site-level schedule), not an arbitrary first token.
         const scheduleOn = Boolean(overview.checkin_enabled);
         const checkinCred = userCredentialFor(overview);
@@ -1887,7 +1885,6 @@ export function Channels() {
               ) ?? null;
             return overview?.checkin_supported ?? false;
           })()}
-          checkinModuleOn={checkinEnabled}
           pending={
             saveEdit.isPending ||
             setCredentialStatus.isPending ||

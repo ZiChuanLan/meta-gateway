@@ -41,4 +41,19 @@
 .appearance-modes > button[aria-pressed=true] { border-color: var(--primary-active); background: var(--primary-soft); }
 .appearance-modes > button svg:last-child:not(:first-child) { margin-left: auto; }
 .appearance-local-note { margin: 24px 0 0; color: var(--muted); font: 12px/1.9 var(--font); }
-@media (max-width: 760px) { .appearance-cards { grid-template-columns: 1fr; gap: 20px; } .appearance-panel { padding-top: 22px; } .appearance-preview { min-height: 200px; } }
+
+/* Top-bar picker: the appearance page's own miniature of the bar it configures,
+   one tile per entry, in the order the bar shows them. */
+.appearance-topbar-section { margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--line); }
+.topbar-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.topbar-toggle { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; transition: border-color 160ms, background 160ms; }
+.topbar-toggle:hover { border-color: var(--primary-hairline); }
+.topbar-toggle[aria-pressed=true] { border-color: var(--primary-active); background: var(--primary-soft); }
+.topbar-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.topbar-toggle-icon { display: inline-flex; color: var(--muted); }
+.topbar-toggle[aria-pressed=true] .topbar-toggle-icon { color: var(--primary-active); }
+.topbar-toggle-copy { display: grid; gap: 3px; min-width: 0; }
+.topbar-toggle-copy strong { color: var(--ink); font: 550 13px var(--font); }
+.topbar-toggle-copy small { color: var(--muted); font: 11px/1.6 var(--font); }
+.topbar-toggle-state { margin-left: auto; display: inline-flex; color: var(--primary-active); }
+@media (max-width: 760px) { .appearance-cards { grid-template-columns: 1fr; gap: 20px; } .appearance-panel { padding-top: 22px; } .appearance-preview { min-height: 200px; } .topbar-picker { grid-template-columns: 1fr; } }

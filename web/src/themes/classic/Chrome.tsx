@@ -1,14 +1,16 @@
-import { LogOut, Menu, Moon, Search, Sun } from "lucide-react";
+import { CalendarCheck, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrandMark } from "../../components/BrandMark";
 import { NavLink, useLocation } from "react-router-dom";
 import { LanguageSwitcher, useI18n } from "../../i18n";
 import { useHorizontalWheel } from "../../hooks/useHorizontalWheel";
+import { useTopBarPrefs } from "../../lib/topBar";
 import { UpdateDialog } from "../../features/UpdateDialog";
 import type { ThemeChromeProps } from "../types";
 
 export function ClassicChrome({ sections, version, theme, onThemeChange, onSearch, onDisconnect, health, tone, update, onOpenNav }: ThemeChromeProps) {
   const { t } = useI18n();
+  const topBar = useTopBarPrefs();
   const railRef = useHorizontalWheel<HTMLElement>();
   const { pathname } = useLocation();
   // The pill opens the one-click update dialog instead of linking out to
@@ -31,10 +33,11 @@ export function ClassicChrome({ sections, version, theme, onThemeChange, onSearc
     <div className="deck-status-cluster">
       <div className={`deck-telemetry is-${tone}`} title={t("dashboard.healthyChannelsHint")}><span className="deck-telemetry-dot" /><span className="deck-telemetry-read">{health.loading ? "···" : `${health.healthy}/${health.total}`}</span><span className="deck-telemetry-label">{t("dashboard.healthyChannels")}</span></div>
       <span className="deck-divider" />
-      {update ? <button type="button" className="deck-update-pill" onClick={() => setUpdateOpen(true)}>{t("app.updateAvailable", { version: update.latest })}</button> : null}
+      {topBar.update && update ? <button type="button" className="deck-update-pill" onClick={() => setUpdateOpen(true)}>{t("app.updateAvailable", { version: update.latest })}</button> : null}
       <button type="button" className="deck-palette-btn" onClick={onSearch} aria-label={t("command.placeholder")}><Search size={13} /><span>{t("shell.search")}</span><kbd className="deck-kbd">⌘K</kbd></button>
-      <button type="button" className="deck-theme-btn" onClick={onThemeChange} aria-label={t(theme === "dark" ? "app.themeLight" : "app.themeDark")}>{theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}</button>
-      <LanguageSwitcher className="deck-lang" />
+      {topBar.checkin ? <NavLink to="/checkins" className="deck-checkin-btn" aria-label={t("app.nav.checkins")} title={t("app.nav.checkins")}><CalendarCheck size={14} /><span className="deck-checkin-label">{t("app.nav.checkins")}</span></NavLink> : null}
+      {topBar.theme ? <button type="button" className="deck-theme-btn" onClick={onThemeChange} aria-label={t(theme === "dark" ? "app.themeLight" : "app.themeDark")}>{theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}</button> : null}
+      {topBar.language ? <LanguageSwitcher className="deck-lang" /> : null}
       <button type="button" className="deck-exit-btn" onClick={onDisconnect} aria-label={t("app.disconnect")}><LogOut size={14} /></button>
     </div>
     {updateOpen && update ? <UpdateDialog update={update} onClose={() => setUpdateOpen(false)} /> : null}

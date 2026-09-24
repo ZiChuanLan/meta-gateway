@@ -62,7 +62,7 @@ const Checkins = lazy(() =>
 	import("./features/Checkins").then((module) => ({ default: module.Checkins })),
 );
 const ExchangePage = lazy(() =>
-	import("./features/ExchangePage").then((module) => ({ default: module.ExchangePage })),
+	import("./features/Exchange").then((module) => ({ default: module.Exchange })),
 );
 const Keys = lazy(() =>
 	import("./features/Keys").then((module) => ({ default: module.Keys })),
@@ -567,7 +567,7 @@ function AuthenticatedShell({
 	entranceActive: boolean;
 }) {
 	const { t } = useI18n();
-	const { checkinEnabled, exchangeEnabled, addons } = useModules();
+	const { addons } = useModules();
 	// Plugin entries the operator hid from the sidebar (a display preference,
 	// stored per browser like the theme).
 	const hiddenPlugins = useHiddenPlugins();
@@ -653,12 +653,10 @@ function AuthenticatedShell({
 		{ to: "/keys", label: t("app.nav.keys"), icon: KeyRound },
 		{ to: "/workbench", label: t("app.nav.workbench"), icon: Wand2 },
 		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
-		...(checkinEnabled
-			? [{ to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck }]
-			: []),
-		...(exchangeEnabled
-			? [{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight }]
-			: []),
+		// Check-in and Exchange are built-in surfaces: they are always in the
+		// sidebar, whatever the store lists.
+		{ to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck },
+		{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight },
 		...(addons
 			.filter(
 				(m) =>

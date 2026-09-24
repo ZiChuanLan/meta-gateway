@@ -1,4 +1,4 @@
-import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useMemo } from "react";
 import { useI18n } from "../i18n";
 import { Page, Tabs } from "../components/ui";
@@ -54,13 +54,6 @@ export function Maintain() {
 			description={t("maintain.description")}
 		>
 			<div className="ops-canvas">
-				{active !== "appearance" ? <div className="system-banner">
-					<strong>{t("maintain.bannerTitle")}</strong>
-					<p>
-						{t("maintain.bannerBody")}{" "}
-						<Link to="/store">{t("maintain.openStore")}</Link>
-					</p>
-				</div> : null}
 				<Tabs items={items} active={active} onChange={changeTab} />
 				{active === "runtime" ? <RuntimeSettingsPanel /> : null}
 				{active === "appearance" ? <AppearancePanel /> : null}

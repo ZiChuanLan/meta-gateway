@@ -6,14 +6,12 @@ import { useSession } from "../session";
 
 export const MODULES_QUERY_KEY = ["plugins-status"] as const;
 
-/** Official optional add-ons managed by the store. */
-export const ADDON_EXCHANGE = "exchange";
-export const ADDON_CHECKIN = "checkin";
-
 /**
  * Loads module status for Admin UI gating.
- * Core features are always on; only add-ons are toggleable.
- * Unknown/missing add-ons are treated as disabled (never optimistically "on").
+ *
+ * Everything the gateway ships with is always on: the two former store add-ons
+ * (check-in, exchange) are built-in surfaces now, so the only things left here
+ * are installable plugins — and they gate their own pages, not core screens.
  */
 export function useModules() {
 	const { client } = useSession();
@@ -63,7 +61,5 @@ export function useModules() {
 		isAddonEnabled,
 		/** True only after we have a successful status payload at least once. */
 		ready: Boolean(query.data),
-		exchangeEnabled: isAddonEnabled(ADDON_EXCHANGE),
-		checkinEnabled: isAddonEnabled(ADDON_CHECKIN),
 	};
 }

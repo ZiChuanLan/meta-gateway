@@ -387,8 +387,8 @@ export interface UnifyGroup {
   risky: boolean;
   /**
    * Enabled routes whose name folds onto this canonical form but is not the
-   * canonical name itself — usually an original restored from history. The
-   * group stays listed so re-applying can hide those duplicates again.
+   * canonical name itself — usually an original rebuilt from history. The
+   * group stays listed so re-applying can delete those duplicates again.
    */
   exposed_originals?: number;
 }
@@ -396,8 +396,8 @@ export interface UnifyGroup {
 export interface UnifyPreview {
   /** Every merge the enabled rules produce, canonical form already applied. */
   groups: UnifyGroup[];
-  /** Originals currently hidden by an applied group. */
-  archived: ArchivedRoute[];
+  /** Originals removed by an applied group and not rebuilt since. */
+  deleted: DeletedRoute[];
 }
 
 /** One probe run over a selection of (channel, model) pairs. */
@@ -474,7 +474,7 @@ export interface UnifyApplyResult {
   routes_created: number;
   members_created: number;
   members_skipped: number;
-  routes_archived: number;
+  routes_deleted: number;
   batch_count: number;
 }
 
@@ -485,31 +485,39 @@ export interface UnifyBatch {
   route_id: number;
   routes_created: number;
   members_created: number;
-  routes_archived: number;
+  routes_deleted: number;
   created_at: string;
   /** Set once the batch has been reverted. */
   undone_at?: string;
 }
 
-/** An original model name hidden by an applied group, restorable on its own. */
-export interface ArchivedRoute {
+/** An original model name removed by an applied group, rebuildable on its own. */
+export interface DeletedRoute {
   batch_id: number;
   canonical: string;
   route_id: number;
   model_name: string;
-  archived_at: string;
-  /** True once this archive has been reverted (single restore or batch undo). */
-  restored: boolean;
+  deleted_at: string;
+  /** True for the older scheme: the batch parked the route (disabled) instead of deleting it. */
+  parked?: boolean;
+  /** True once this removal has been reverted (single rebuild or batch undo). */
+  rebuilt: boolean;
 }
 
 export interface UnifyOp {
   id: number;
   batch_id: number;
   seq: number;
-  op: "route_created" | "member_created" | "route_archived" | "route_enabled";
+  op:
+    | "route_created"
+    | "member_created"
+    | "route_archived"
+    | "route_deleted"
+    | "route_enabled";
   route_id: number;
   member_id?: number;
   prev_enabled?: boolean;
+  model_name?: string;
   undone: boolean;
 }
 

@@ -1,6 +1,6 @@
 # 完整界面主题包
 
-入口：**设置 → 外观**（`/console/settings?tab=appearance`），完整主题选择与明暗偏好集中在同一页。主题在当前浏览器生效，明暗模式继续使用原来的独立开关。旧的 `/console/store?tab=themes` 链接自动跳转到外观设置，商店仅展示功能扩展。
+入口：**设置 → 外观**（`/console/settings?tab=appearance`），完整主题选择、明暗偏好与顶部栏自定义集中在同一页。主题在当前浏览器生效，明暗模式继续使用原来的独立开关。旧的 `/console/store?tab=themes` 链接自动跳转到外观设置。
 
 ## 两套界面
 

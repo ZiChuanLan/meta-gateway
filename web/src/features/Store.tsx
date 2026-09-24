@@ -20,8 +20,6 @@ import type { ModuleStatus, PluginRecord } from "../api/types";
 import { EntityState } from "../components/EntityState";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import {
-	ADDON_CHECKIN,
-	ADDON_EXCHANGE,
 	MODULES_QUERY_KEY,
 	useModules,
 } from "../hooks/useModules";
@@ -202,9 +200,7 @@ function StoreExtensions() {
 				(item) =>
 					item.kind !== "core" &&
 					item.installed &&
-					!item.can_toggle &&
-					item.id !== ADDON_EXCHANGE &&
-					item.id !== ADDON_CHECKIN,
+					!item.can_toggle,
 			),
 		[modules.modules],
 	);
@@ -312,14 +308,12 @@ function StoreExtensions() {
 						{addError ? <div className="inline-error">{addError}</div> : null}
 					</section>
 
-						<section className="store-section">
-							<header className="store-section-head">
-								<h2>{t("store.section.available")}</h2>
-								<p>{t("store.section.availableHint")}</p>
-							</header>
-							{availableAddons.length === 0 ? (
-								<p className="detail-empty">{t("store.emptyAvailable")}</p>
-							) : (
+						{availableAddons.length > 0 ? (
+							<section className="store-section">
+								<header className="store-section-head">
+									<h2>{t("store.section.available")}</h2>
+									<p>{t("store.section.availableHint")}</p>
+								</header>
 								<div className="module-grid">
 									{availableAddons.map((row) => (
 										<ModuleCard
@@ -331,8 +325,8 @@ function StoreExtensions() {
 										/>
 									))}
 								</div>
-							)}
-						</section>
+							</section>
+						) : null}
 
 						<section className="store-section">
 							<header className="store-section-head">

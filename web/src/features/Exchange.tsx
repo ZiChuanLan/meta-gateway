@@ -19,7 +19,6 @@ import type {
 } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import { useModules } from "../hooks/useModules";
 import {
 	Button,
 	Dialog,
@@ -48,7 +47,6 @@ const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const { client } = useSession();
 	const { t } = useI18n();
-	const { exchangeEnabled, ready: modulesReady } = useModules();
 	const s = api(client!);
 	const qc = useQueryClient();
 	const channels = useQuery({
@@ -186,7 +184,6 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const webdavStatus = useQuery({
 		queryKey: ["webdav-status"],
 		queryFn: ({ signal }) => s.webdavStatus(signal),
-		enabled: modulesReady && exchangeEnabled,
 		retry: (n, err) => {
 			const status = (err as { status?: number } | null)?.status;
 			if (status === 404) return false;
@@ -196,7 +193,6 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
 	const webdavSettings = useQuery({
 		queryKey: ["webdav-settings"],
 		queryFn: ({ signal }) => s.webdavSettings(signal),
-		enabled: modulesReady && exchangeEnabled,
 		retry: (n, err) => {
 			const status = (err as { status?: number } | null)?.status;
 			if (status === 404) return false;

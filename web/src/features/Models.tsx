@@ -252,7 +252,7 @@ function ModelCatalog({
     query: initialModel || readTabState("query", ""),
     channel: channelIdFromUrl ?? readTabState("channel", 0),
     group: initialGroup || readTabState("group", ""),
-    status: readTabState<"enabled" | "disabled" | "all">("status", "enabled"),
+    status: readTabState<"enabled" | "disabled" | "all">("status", "all"),
   }));
   const [selected, setSelected] = useState<number | null>(() =>
     readTabState<number | null>("selected", null),
@@ -1247,9 +1247,9 @@ function ModelCatalog({
                 setSearchParams(nextParams, { replace: true });
               }}
             >
+              <option value="all">{t("modelsPage.statusAll")}</option>
               <option value="enabled">{t("common.enabled")}</option>
               <option value="disabled">{t("common.disabled")}</option>
-              <option value="all">{t("modelsPage.statusAll")}</option>
             </select>
             </div>
           </div>

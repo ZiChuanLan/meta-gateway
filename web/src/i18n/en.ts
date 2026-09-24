@@ -290,6 +290,17 @@ export const en: Dict = {
   "appearance.palette.ember": "Ember",
   "appearance.palette.graphite": "Graphite",
   "appearance.palette.sakura": "Sakura",
+  "appearance.topbar": "Top bar",
+  "appearance.topbarHint":
+    "Pick which entries the top bar carries. Everything switched off stays reachable on its own page and can be turned back on here.",
+  "appearance.topbar.checkin": "Check-in",
+  "appearance.topbar.checkinHint": "Jump straight into today's check-in runs.",
+  "appearance.topbar.update": "Update notice",
+  "appearance.topbar.updateHint": "Shows up when a newer gateway image is published.",
+  "appearance.topbar.theme": "Light / dark switch",
+  "appearance.topbar.themeHint": "One-click toggle between light and dark.",
+  "appearance.topbar.language": "Language switch",
+  "appearance.topbar.languageHint": "Chinese / English for the console itself.",
   "appearance.localHint":
     "Theme and brightness preferences are saved in this browser and do not affect other administrators. Switching keeps your current page and form input.",
   "login.titleFirst": "One gateway.",
@@ -484,7 +495,7 @@ export const en: Dict = {
   "app.nav.logs": "Logs",
   "app.nav.checkins": "Check-in",
   "app.nav.exchange": "Exchange",
-  "app.nav.store": "Store",
+  "app.nav.store": "Extensions",
   "app.nav.open": "Open navigation",
   "app.nav.close": "Close navigation",
   "app.nav.settings": "Settings",
@@ -788,8 +799,6 @@ export const en: Dict = {
   "channels.checkinRun": "Check in now",
   "channels.checkinSection": "Check-in",
   "channels.checkinLogs": "Logs",
-  "channels.checkinModuleOff":
-    "The Check-in add-on is not enabled. Turn it on in the Store to schedule daily check-ins.",
   "channels.checkinNeedsUserCredential":
     "Fill in an Access Token or Cookie above to enable daily check-in for this connection.",
   "channels.checkinScheduledHint":
@@ -1030,7 +1039,7 @@ export const en: Dict = {
     "Scan channel models for per-account variants of one model and expose a single shared name",
   "modelsPage.unify.title": "Unify model names",
   "modelsPage.unify.description":
-    "Folds variants of one model ([A]/[B] account prefixes, deepseek-ai/ owner prefixes, -0731 snapshot dates, -1 account indexes) onto the simplest name in a single pass. Original routes are hidden rather than deleted, so you can bring any of them back from Unify history.",
+    "Folds variants of one model ([A]/[B] account prefixes, deepseek-ai/ owner prefixes, -0731 snapshot dates, -1 account indexes) onto the simplest name in a single pass. The original routes are deleted rather than parked disabled — a parked name still shows up as a dead model row — and every removed route is snapshotted first, so any of them can be rebuilt from Unify history.",
   "modelsPage.unify.rulesSection": "Normalization rules",
   "modelsPage.unify.rulesHint":
     "Rules run in the listed order against the same name and compose. Turn one off to keep that suffix.",
@@ -1046,10 +1055,10 @@ export const en: Dict = {
   "modelsPage.unify.riskyHint":
     "These groups only merge because of an owner prefix, a snapshot date or an index suffix. Different owners can publish different models under the same short name, and different snapshots can be different versions, so confirm before checking one.",
   "modelsPage.unify.archivedNote":
-    "{count} original name(s) are currently hidden. Restore them from Unify history.",
-  "modelsPage.unify.exposedOriginals": "{count} original(s) restored",
+    "{count} original name(s) were removed. Rebuild — or restore one an older apply only parked — from Unify history.",
+  "modelsPage.unify.exposedOriginals": "{count} original route(s) left over",
   "modelsPage.unify.exposedOriginalsHint":
-    "An original route with a variant name is enabled again (usually restored from Unify history). Applying this group hides it once more.",
+    "These original-name routes still exist — rebuilt from history, or parked disabled by an earlier apply. Applying this group deletes them.",
   "modelsPage.unify.empty":
     "Nothing to unify — no duplicate model names found across channels.",
   "modelsPage.unify.routeExists": "route exists",
@@ -1065,27 +1074,31 @@ export const en: Dict = {
   "modelsPage.unify.selectAll": "Select all",
   "modelsPage.unify.deselectAll": "Deselect all",
   "modelsPage.unify.result":
-    "Created {routes} route(s) and {members} member(s); {skipped} already present; hid {archived} original name(s).",
+    "Created {routes} route(s) and {members} member(s); {skipped} already present; deleted {deleted} original name(s).",
   "modelsPage.unify.showCovered": "Show {count} covered channel(s)",
   "modelsPage.unify.collapseCovered": "Collapse covered",
   "modelsPage.unify.history.action": "Unify history",
   "modelsPage.unify.history.actionHint":
-    "Review applied unifications — revert a whole group or restore a single hidden name",
+    "Review applied unifications — revert a whole group or rebuild a single deleted name",
   "modelsPage.unify.history.title": "Unify history",
   "modelsPage.unify.history.description":
-    "Every apply is recorded as a batch. Reverting one deletes the alias route and members it created and restores the originals it hid. You can also restore a single original and keep the alias.",
+    "Every apply is recorded as a batch. Reverting one deletes the alias route and members it created and rebuilds the originals it removed from their snapshots, member settings included. You can also rebuild a single original and keep the alias.",
   "modelsPage.unify.history.empty": "Nothing has been unified yet.",
-  "modelsPage.unify.history.archivedSection": "Hidden originals",
+  "modelsPage.unify.history.archivedSection": "Removed originals",
   "modelsPage.unify.history.archivedHint":
-    "Restoring one original leaves the alias itself untouched; the others stay hidden.",
+    "Rebuilding or restoring one original leaves the alias itself untouched; the others stay removed.",
   "modelsPage.unify.history.batchSection": "Applied batches",
+  "modelsPage.unify.history.rebuild": "Rebuild",
   "modelsPage.unify.history.restore": "Restore",
+  "modelsPage.unify.history.parked": "parked by an older apply",
+  "modelsPage.unify.history.parkedHint":
+    "An older apply only switched this original off, so it is still in the model list as a disabled route. Restore turns it back on; applying the group again deletes it.",
   "modelsPage.unify.history.undo": "Revert",
   "modelsPage.unify.history.undone": "reverted",
-  "modelsPage.unify.history.restored": "restored",
+  "modelsPage.unify.history.reverted": "reverted",
   "modelsPage.unify.history.active": "active",
   "modelsPage.unify.history.summary":
-    "{members} member(s) · {archived} original(s) hidden",
+    "{members} member(s) · {deleted} original(s) removed",
 
   "sticky.title": "Sticky sessions",
   "sticky.hint":
@@ -1369,9 +1382,6 @@ export const en: Dict = {
   "logsLive.emptyBody":
     "Send a /v1 request and its routing and channel choice appear here in real time; in-flight requests can be interrupted.",
   "maintain.kicker": "Settings",
-  "maintain.bannerTitle": "Setup & maintenance",
-  "maintain.bannerBody":
-    "Runtime add-ons (check-in, exchange) are managed in the Store.",
 
   "try.open": "Try",
   "try.title": "Try chat completion",
@@ -1547,13 +1557,13 @@ export const en: Dict = {
   "keys.rotatedWarning":
     "The old token has been invalidated. Copy the new token now — it is stored encrypted and can be re-viewed later.",
 
-  "store.title": "Store",
+  "store.title": "Extensions",
 
-  "store.kicker": "Extensions",
+  "store.kicker": "Plugins",
 
-  "store.section.enabled": "Enabled add-ons",
+  "store.section.enabled": "Enabled plugins",
   "store.section.enabledHint":
-    "These extensions are active and unlock extra Admin surfaces.",
+    "Registered or installed and in effect — configure, disable or remove them here.",
   "store.hooks": "Intercept hooks",
   "store.hooksHint":
     "Plugins that step into a live forward stage: choosing the routed model, rewriting the upstream request, or rewriting the answer. Models a hook does not match never reach the plugin.",
@@ -1564,14 +1574,13 @@ export const en: Dict = {
   "store.hook.point.response": "Response rewrite",
   "store.hookTripped": "Tripped",
   "store.hookTimeout": "{ms}ms timeout",
-  "store.section.available": "Available add-ons",
+  "store.section.available": "Inactive & installable",
   "store.section.availableHint":
-    "Turn on only what you need. Nothing here gates core operations.",
+    "Installed but switched off, plus catalog entries that are not installed yet.",
   "store.section.core": "Built-in core",
   "store.section.coreHint":
     "Always on. Shown for clarity — not store switches.",
-  "store.emptyEnabled": "No add-ons enabled yet. Activate one below.",
-  "store.emptyAvailable": "All catalog add-ons are already enabled.",
+  "store.emptyEnabled": "No plugins enabled yet.",
   "store.openFeature": "Open",
   "store.builtIn": "Built-in",
   "store.module.exchange":
@@ -1602,14 +1611,11 @@ export const en: Dict = {
   "store.unlock.admin.backups": "Backups Admin API",
   "store.unlock.settings.runtime": "Settings → Runtime",
   "store.unlock.settings.discovery": "Settings → Discovery",
-  "maintain.openStore": "Manage add-ons in Store",
   "checkinsPage.kicker": "Upstream jobs",
   "checkinsPage.title": "Check-in",
   "checkinsPage.description":
-    "Run and review credential check-ins for supported platforms. Enable or disable this add-on in Store.",
-  "maintain.addonDisabled":
-    "This add-on is turned off. Enable it in Store to use this page.",
-  "store.description": "Choose extensions to add the capabilities you need.",
+    "Run and review credential check-ins for supported platforms.",
+  "store.description": "Install plugins and register sidecars; check-in and exchange ship built in.",
   "store.orphans": "Unknown leftovers",
   "store.activate": "Activate",
   "store.deactivate": "Deactivate",
@@ -1933,8 +1939,6 @@ export const en: Dict = {
     "Runs check-in only for credentials with schedule enabled and a session/access token. API keys are skipped. Decrypt failures usually mean re-enter secrets after MASTER_KEY change.",
   "ops.checkinHint":
     "This table is history. Many failures mean undecryptable secrets or non-session credentials — not that the Store add-on is broken.",
-  "ops.checkinModuleOff":
-    "Check-in add-on is off. Enable it in Store to view logs and run jobs.",
   "ops.running": "Running...",
   "ops.checkinSummary":
     "{success} succeeded · {failure} failed · {skipped} skipped",
@@ -2389,8 +2393,6 @@ export const en: Dict = {
   "tour.checkinsTitle": "Automated check-in",
   "tour.checkinsDesc":
     "Turn it on and the gateway checks in to upstream sites on a schedule; logs and external check-ins live here too.",
-  "tour.checkinsOffDesc":
-    "The check-in module is off — enable it in the Store and this page will schedule automatic check-ins for you.",
   "tour.settingsRelayTitle": "Relay failover",
   "tour.settingsRelayDesc":
     "Automatic channel failover, key pool rotation and retry counts — relay resilience lives in this card.",

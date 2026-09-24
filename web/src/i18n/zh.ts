@@ -272,6 +272,17 @@ export const zh: Dict = {
   "appearance.palette.ember": "落日",
   "appearance.palette.graphite": "石墨",
   "appearance.palette.sakura": "樱",
+  "appearance.topbar": "自定义顶部栏",
+  "appearance.topbarHint":
+    "选择顶部栏里显示哪些入口。关掉的入口仍可在对应页面使用，也能随时在这里重新打开。",
+  "appearance.topbar.checkin": "签到",
+  "appearance.topbar.checkinHint": "直接从顶部栏进入今天的签到。",
+  "appearance.topbar.update": "更新提醒",
+  "appearance.topbar.updateHint": "有新版本镜像时在顶部栏提示。",
+  "appearance.topbar.theme": "明暗切换",
+  "appearance.topbar.themeHint": "一键在浅色与深色之间切换。",
+  "appearance.topbar.language": "语言切换",
+  "appearance.topbar.languageHint": "控制台自身的中文 / English 切换。",
   "appearance.localHint":
     "主题与明暗偏好保存在当前浏览器，不影响其他管理员。切换主题会保留当前页面和填写内容。",
   "login.titleFirst": "一个入口，",
@@ -456,7 +467,7 @@ export const zh: Dict = {
   "app.nav.logs": "日志",
   "app.nav.checkins": "签到",
   "app.nav.exchange": "交换",
-  "app.nav.store": "商店",
+  "app.nav.store": "拓展",
   "app.nav.open": "打开导航",
   "app.nav.close": "关闭导航",
   "app.nav.settings": "设置",
@@ -738,8 +749,6 @@ export const zh: Dict = {
   "channels.checkinRun": "立即签到",
   "channels.checkinSection": "签到",
   "channels.checkinLogs": "日志",
-  "channels.checkinModuleOff":
-    "签到组件未启用。请在商店中开启后即可安排每日签到。",
   "channels.checkinNeedsUserCredential":
     "在上方填写 Access Token 或 Cookie 后，即可启用该连接的每日签到。",
   "channels.checkinScheduledHint": "该凭据将按签到页设置的日程每日签到。",
@@ -1038,8 +1047,6 @@ export const zh: Dict = {
   "logsPage.stat.total": "样本量",
   "logsPage.stat.slow": "慢请求",
   "maintain.kicker": "设置",
-  "maintain.bannerTitle": "设置与维护",
-  "maintain.bannerBody": "扩展（签到、交换）在商店中统一管理。",
   "modelsPage.title": "模型",
 
   "modelsPage.listTitle": "模型目录",
@@ -1145,7 +1152,7 @@ export const zh: Dict = {
     "扫描各渠道中同一模型的不同命名，一键统一为单个模型名",
   "modelsPage.unify.title": "统一模型名称",
   "modelsPage.unify.description":
-    "把各渠道同一模型的不同命名（[A]/[B] 账号前缀、deepseek-ai/ 厂商前缀、-0731 日期快照、-1 序号后缀）按规则依次归一，一步合并到最简名称。原路由不会被删除，只会被隐藏，随时可在「统一历史」里还原。",
+    "把各渠道同一模型的不同命名（[A]/[B] 账号前缀、deepseek-ai/ 厂商前缀、-0731 日期快照、-1 序号后缀）按规则依次归一，一步合并到最简名称。被合并的原名路由会被直接删除（不再留一个已禁用的死名），删除前会按快照保留全部配置，需要时可在「统一历史」里重建。",
   "modelsPage.unify.rulesSection": "归一化规则",
   "modelsPage.unify.rulesHint":
     "规则按列出的顺序依次作用到同一个名字上，可以叠加。关掉某条，就保留对应的那段后缀。",
@@ -1159,10 +1166,10 @@ export const zh: Dict = {
   "modelsPage.unify.riskyHint":
     "这些组是靠厂商前缀、日期快照或序号后缀才归到一起的。不同厂商可能用同一个短名发布不同模型，不同日期快照也可能是不同版本，请确认后再勾选。",
   "modelsPage.unify.archivedNote":
-    "当前有 {count} 个原名被隐藏，可在「统一历史」中还原。",
-  "modelsPage.unify.exposedOriginals": "{count} 个原名已还原",
+    "当前有 {count} 个原名已被移除，可在「统一历史」中重建（旧批次只是停用的可以还原）。",
+  "modelsPage.unify.exposedOriginals": "{count} 个旧名路由仍在",
   "modelsPage.unify.exposedOriginalsHint":
-    "同名原名路由当前处于启用状态（通常是从统一历史还原的）。再次应用本组会把它们重新隐藏。",
+    "这些原名路由还留在模型清单里（从历史重建过，或早期应用只是把它们停用了）。再次应用本组会把它们删掉。",
   "modelsPage.unify.empty": "没有可统一的名称 —— 未发现跨渠道重复的模型名。",
   "modelsPage.unify.routeExists": "路由已存在",
   "modelsPage.unify.canonicalPrefix": "统一为",
@@ -1177,27 +1184,31 @@ export const zh: Dict = {
   "modelsPage.unify.selectAll": "全选",
   "modelsPage.unify.deselectAll": "全不选",
   "modelsPage.unify.result":
-    "已创建 {routes} 个路由、{members} 个成员；{skipped} 个已存在被跳过；{archived} 个原名已隐藏。",
+    "已创建 {routes} 个路由、{members} 个成员；{skipped} 个已存在被跳过；{deleted} 个原名已删除。",
   "modelsPage.unify.showCovered": "展开 {count} 个已覆盖渠道",
   "modelsPage.unify.collapseCovered": "收起已覆盖渠道",
   "modelsPage.unify.history.action": "统一历史",
   "modelsPage.unify.history.actionHint":
-    "查看已应用的统一，可撤销整组或单独还原被隐藏的原名",
+    "查看已应用的统一，可撤销整组或单独重建被删除的原名",
   "modelsPage.unify.history.title": "统一历史",
   "modelsPage.unify.history.description":
-    "每次应用都会记录为一个批次。撤销会删除由它创建的别名路由与成员，并把被它隐藏的原名恢复原状；也可以只还原某一个原名，保留别名本身。",
+    "每次应用都会记录为一个批次。撤销会删除由它创建的别名路由与成员，并按快照把被它删除的原名（连同成员配置）重建回来；也可以只重建某一个原名，保留别名本身。",
   "modelsPage.unify.history.empty": "还没有应用过任何统一。",
-  "modelsPage.unify.history.archivedSection": "被隐藏的原名",
+  "modelsPage.unify.history.archivedSection": "已移除的原名",
   "modelsPage.unify.history.archivedHint":
-    "还原单个原名不会影响别名本身，其余原名保持隐藏。",
+    "重建或还原单条不会影响别名本身，其余保持已移除状态。",
   "modelsPage.unify.history.batchSection": "已应用的批次",
+  "modelsPage.unify.history.rebuild": "重建",
   "modelsPage.unify.history.restore": "还原",
+  "modelsPage.unify.history.parked": "旧批次仅停用",
+  "modelsPage.unify.history.parkedHint":
+    "早期的应用只把这条原名停用了，所以它还在模型目录里显示为“已禁用”。「还原」把它重新启用；再次应用该组会把它删掉。",
   "modelsPage.unify.history.undo": "撤销",
   "modelsPage.unify.history.undone": "已撤销",
-  "modelsPage.unify.history.restored": "已还原",
+  "modelsPage.unify.history.reverted": "已还原",
   "modelsPage.unify.history.active": "生效中",
   "modelsPage.unify.history.summary":
-    "{members} 个成员 · 隐藏 {archived} 个原名",
+    "{members} 个成员 · 移除 {deleted} 个原名",
 
   "sticky.title": "粘性会话",
   "sticky.hint":
@@ -1423,12 +1434,12 @@ export const zh: Dict = {
   "keys.rotatedWarning":
     "旧令牌已失效。请立即复制新令牌——它已加密存储，之后仍可重新查看。",
 
-  "store.title": "商店",
+  "store.title": "拓展",
 
-  "store.kicker": "扩展能力",
+  "store.kicker": "插件",
 
-	"store.section.enabled": "已启用扩展",
-	"store.section.enabledHint": "这些扩展已激活，并解锁对应管理界面。",
+	"store.section.enabled": "已启用的插件",
+	"store.section.enabledHint": "已注册或安装且正在生效，可在此配置、停用或移除。",
 	"store.hooks": "拦截钩子",
 	"store.hooksHint":
 		"插件在当前生效的转发环节上介入：改写选路目标、上游请求或返回内容。未匹配到的模型不会调用插件。",
@@ -1439,12 +1450,11 @@ export const zh: Dict = {
 	"store.hook.point.response": "响应改写",
 	"store.hookTripped": "已熔断",
 	"store.hookTimeout": "{ms} 毫秒超时",
-  "store.section.available": "可添加扩展",
-  "store.section.availableHint": "只开你需要的。这里不会关停核心运维能力。",
+  "store.section.available": "未启用 / 可安装",
+  "store.section.availableHint": "已安装但停用的插件，以及插件源中尚未安装的条目。",
   "store.section.core": "内置核心",
   "store.section.coreHint": "始终开启，仅作说明，不是商店开关。",
-  "store.emptyEnabled": "尚未启用扩展，可在下方开启。",
-  "store.emptyAvailable": "目录中的扩展均已启用。",
+  "store.emptyEnabled": "还没有启用的插件。",
   "store.openFeature": "打开功能",
   "store.builtIn": "内置",
   "store.module.exchange": "导入导出连接资产，以及可选的 WebDAV 备份拉取。",
@@ -1470,13 +1480,11 @@ export const zh: Dict = {
   "store.unlock.admin.backups": "备份管理 API",
   "store.unlock.settings.runtime": "设置 → 运行参数",
   "store.unlock.settings.discovery": "设置 → 发现",
-  "maintain.openStore": "在商店管理扩展",
   "checkinsPage.kicker": "上游任务",
   "checkinsPage.title": "签到",
   "checkinsPage.description":
-    "对支持的平台执行并查看凭证签到。可在商店开关此扩展。",
-  "maintain.addonDisabled": "该扩展已关闭。请到商店启用后再使用此页。",
-  "store.description": "选择功能扩展，补充你需要的能力。",
+    "对支持的平台执行并查看凭证签到。",
+  "store.description": "安装插件、注册 sidecar 服务；签到与交换是内置功能，不在这里开关。",
   "store.orphans": "未知残留",
   "store.activate": "激活",
   "store.deactivate": "停用",
@@ -1781,7 +1789,6 @@ export const zh: Dict = {
     "只会跑「已开启定时」且类型为 session/access_token 的凭证。API Key 会跳过。解密失败通常要在更换 MASTER_KEY 后重新录入。",
   "ops.checkinHint":
     "此表是历史运行记录。大量失败多半是密文解不开或不是登录态凭证，不是商店开关坏了。",
-  "ops.checkinModuleOff": "签到扩展已关闭。请到商店启用后再查看日志或运行。",
   "ops.checkinCategory.credential_decrypt_failed":
     "密文无法解密——更换 MASTER_KEY 后请重新录入",
   "ops.checkinCategory.credential_empty": "凭证密文为空",
@@ -2240,8 +2247,6 @@ export const zh: Dict = {
   "tour.checkinsTitle": "签到自动化",
   "tour.checkinsDesc":
     "开启后网关按计划替你签到上游站点；签到记录和外部签到都在这一页。",
-  "tour.checkinsOffDesc":
-    "签到模块还没开启——在商店启用后，这里就能按计划替你自动签到。",
   "tour.settingsRelayTitle": "中继故障转移",
   "tour.settingsRelayDesc":
     "渠道挂了自动切下一个、Key 池轮换、重试次数——中继的容错都在这张卡片。",

@@ -91,6 +91,42 @@ describe("api.proxyLogs filters", () => {
 	});
 });
 
+describe("api.unifyApply", () => {
+	it("sends covered variants too, so a leftover original is still deleted", async () => {
+		// Dropping `mapped` variants used to look harmless — the server skips
+		// duplicate members anyway — but it emptied the very groups whose only
+		// remaining work is deleting an original an earlier apply left behind.
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+		const { api } = await import("./client");
+		await api(new ApiClient("token")).unifyApply([
+			{
+				canonical: "gemini",
+				risky: false,
+				variants: [
+					{ channel_id: 1, channel_name: "C1", model_name: "[A]GEMINI", mapped: true },
+					{ channel_id: 2, channel_name: "C2", model_name: "GEMINI", mapped: false },
+				],
+			},
+		]);
+		const [path, init] = fetchMock.mock.calls[0]!;
+		expect(path).toBe("/admin/models/unify/apply");
+		expect(JSON.parse(String(init?.body))).toEqual({
+			delete_originals: true,
+			groups: [
+				{
+					canonical: "gemini",
+					variants: [
+						{ channel_id: 1, model_name: "[A]GEMINI" },
+						{ channel_id: 2, model_name: "GEMINI" },
+					],
+				},
+			],
+		});
+	});
+});
+
 describe("api connection and usage contracts", () => {
 	it("creates a connection through the transactional endpoint", async () => {
 		const fetchMock = vi

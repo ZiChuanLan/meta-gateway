@@ -70,7 +70,7 @@ import type {
   UnifyBatch,
   UnifyOp,
   UnifyRule,
-  ArchivedRoute,
+  DeletedRoute,
   ProbeTask,
   ModelProbeResult,
   ModelHealth,
@@ -630,31 +630,32 @@ export const api = (client: ApiClient) => ({
     client.post<{ status: string }>(`/admin/probes/${id}/cancel`, {}),
   modelHealth: (signal?: AbortSignal) =>
     client.get<ModelHealth[]>("/admin/model-health", signal),
-  unifyApply: (groups: UnifyGroup[], archiveOriginals = true) =>
+  unifyApply: (groups: UnifyGroup[], deleteOriginals = true) =>
     client.post<UnifyApplyResult>("/admin/models/unify/apply", {
-      // Hiding the originals is what actually unifies a name; the server
-      // archives only routes the group provably covers.
-      archive_originals: archiveOriginals,
-      // Mapped variants already reach the canonical name — drop them so a
-      // stale preview never creates duplicate members. A group where every
-      // variant is mapped is skipped entirely, which also means it archives
-      // nothing (it was already archived on the first pass).
+      // Removing the originals is what actually unifies a name: a parked
+      // (disabled) duplicate still shows up as a dead model row. The server
+      // deletes only routes the group provably covers, and snapshots each one
+      // so a batch undo can rebuild it.
+      delete_originals: deleteOriginals,
+      // Every variant travels, covered or not: the server skips the ones that
+      // already reach the canonical name (matching on the real upstream model),
+      // and a group whose variants are all covered is still the only way to
+      // delete an original that an earlier apply left behind. Filtering mapped
+      // variants out here made exactly that cleanup impossible.
       groups: groups
         .map((group) => ({
           canonical: group.canonical,
-          variants: group.variants
-            .filter((variant) => !variant.mapped)
-            .map((variant) => ({
-              channel_id: variant.channel_id,
-              model_name: variant.model_name,
-            })),
+          variants: group.variants.map((variant) => ({
+            channel_id: variant.channel_id,
+            model_name: variant.model_name,
+          })),
         }))
         .filter((group) => group.variants.length > 0),
     }),
   unifyBatches: (signal?: AbortSignal) =>
     client.get<{
       batches: UnifyBatch[];
-      archived: ArchivedRoute[];
+      deleted: DeletedRoute[];
     }>("/admin/models/unify/batches", signal),
   unifyBatchOps: (id: number, signal?: AbortSignal) =>
     client.get<UnifyOp[]>(`/admin/models/unify/batches/${id}/ops`, signal),
@@ -662,7 +663,7 @@ export const api = (client: ApiClient) => ({
     client.post<{ status: string }>(`/admin/models/unify/batches/${id}/undo`),
   unifyRestoreRoute: (id: number) =>
     client.post<{ status: string }>(
-      `/admin/models/unify/archived/${id}/restore`,
+      `/admin/models/unify/deleted/${id}/restore`,
     ),
   probeChannel: (id: number) =>
     client.post<ProbeResult>(`/admin/discovery/channels/${id}/probe`),

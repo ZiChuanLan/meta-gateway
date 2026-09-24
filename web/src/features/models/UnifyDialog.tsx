@@ -58,7 +58,7 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
   });
 
   const groups = preview.data?.groups ?? [];
-  const archived = preview.data?.archived ?? [];
+  const removed = preview.data?.deleted ?? [];
   // One list, split by whether the merge needed a rule that can conflate
   // genuinely different models.
   const safeGroups = groups.filter((group) => !group.risky);
@@ -90,8 +90,9 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
     });
 
   const apply = useAdminMutation({
-    // Hiding the superseded originals is what an alias means — the server
-    // archives every route the group provably covers and skips the rest.
+    // Deleting the superseded originals is what an alias means — the server
+    // removes every route the group provably covers (snapshotting it first)
+    // and skips the rest.
     mutationFn: (input: UnifyGroup[]) => service.unifyApply(input),
     invalidateKeys: [...UNIFY_INVALIDATE_KEYS],
     toastOnError: false,
@@ -111,7 +112,7 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
             routes: result.routes_created,
             members: result.members_created,
             skipped: result.members_skipped,
-            archived: result.routes_archived,
+            deleted: result.routes_deleted,
           })}
         </div>
       ) : null}
@@ -198,9 +199,9 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {empty && archived.length > 0 ? (
+      {empty && removed.length > 0 ? (
         <p className="unify-section-hint">
-          {t("modelsPage.unify.archivedNote", { count: archived.length })}
+          {t("modelsPage.unify.archivedNote", { count: removed.length })}
         </p>
       ) : null}
       {apply.error ? (

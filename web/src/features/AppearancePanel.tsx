@@ -1,12 +1,29 @@
-import { Check, Moon, Sun } from "lucide-react";
+import { CalendarCheck, Check, Download, Languages, Moon, Sun } from "lucide-react";
+import type { ReactNode } from "react";
 import { APPEARANCES, useAppearance } from "../appearance";
 import { useI18n } from "../i18n";
 import { PALETTES } from "../palettes";
 import { UI_THEMES } from "../themes/registry";
+import {
+  TOP_BAR_ITEMS,
+  setTopBarItem,
+  useTopBarPrefs,
+  type TopBarItemId,
+} from "../lib/topBar";
+
+// One glyph per top-bar entry, so the picker reads as a picture of the bar it
+// is configuring rather than a list of ids.
+const TOP_BAR_ICONS: Record<TopBarItemId, ReactNode> = {
+  checkin: <CalendarCheck size={16} />,
+  update: <Download size={16} />,
+  theme: <Moon size={16} />,
+  language: <Languages size={16} />,
+};
 
 export function AppearancePanel() {
   const { t } = useI18n();
   const { appearance, scheme, palette, setAppearance, setScheme, setPalette } = useAppearance();
+  const topBar = useTopBarPrefs();
   return <section className="appearance-panel">
     <fieldset className="appearance-section">
       <legend>{t("appearance.styles")}</legend>
@@ -40,6 +57,30 @@ export function AppearancePanel() {
           <span className="palette-swatch-name">{t(option.nameKey)}</span>
           {palette === option.id ? <Check size={14} /> : null}
         </button>)}
+      </div>
+    </fieldset>
+    <fieldset className="appearance-section appearance-topbar-section">
+      <legend>{t("appearance.topbar")}</legend>
+      <p className="appearance-description">{t("appearance.topbarHint")}</p>
+      <div className="topbar-picker">
+        {TOP_BAR_ITEMS.map((id) => (
+          <button
+            key={id}
+            type="button"
+            className="topbar-toggle"
+            aria-pressed={topBar[id]}
+            onClick={() => setTopBarItem(id, !topBar[id])}
+          >
+            <span className="topbar-toggle-icon" aria-hidden="true">{TOP_BAR_ICONS[id]}</span>
+            <span className="topbar-toggle-copy">
+              <strong>{t(`appearance.topbar.${id}`)}</strong>
+              <small>{t(`appearance.topbar.${id}Hint`)}</small>
+            </span>
+            <span className="topbar-toggle-state" aria-hidden="true">
+              {topBar[id] ? <Check size={14} /> : null}
+            </span>
+          </button>
+        ))}
       </div>
     </fieldset>
     <p className="appearance-local-note">{t("appearance.localHint")}</p>

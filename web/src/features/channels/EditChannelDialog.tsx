@@ -36,7 +36,6 @@ export function EditChannelDialog({
   credential,
   userCredential,
   checkinSupported,
-  checkinModuleOn,
   pending,
   error,
   onClose,
@@ -78,7 +77,6 @@ export function EditChannelDialog({
     meta_json?: string;
   };
   checkinSupported?: boolean;
-  checkinModuleOn?: boolean;
   pending: boolean;
   error: unknown;
   onClose: () => void;
@@ -747,11 +745,7 @@ export function EditChannelDialog({
                     {t("channels.checkinLogs")}
                   </Link>
                 </div>
-                {!checkinModuleOn ? (
-                  <p className="detail-section-empty is-quiet">
-                    {t("channels.checkinModuleOff")}
-                  </p>
-                ) : !userCredential?.id ? (
+                {!userCredential?.id ? (
                   <p className="detail-section-empty is-quiet">
                     {t("channels.checkinNeedsUserCredential")}
                   </p>
