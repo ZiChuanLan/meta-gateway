@@ -228,6 +228,52 @@ describe("channel-first shell", () => {
 		expect(screen.queryByRole("tab", { name: "Capabilities" })).not.toBeInTheDocument();
 	});
 
+	it("hides the check-in entry everywhere the chrome shows it", async () => {
+		// The switch lives in Settings → Appearance. In the classic console the
+		// nav rail is inside the top bar, so hiding only the right-hand icon left
+		// an identical "Check-in" label in the same bar — reported as a broken
+		// switch. Both go, and the page stays reachable.
+		localStorage.setItem("meta-gateway.admin-token", "nav-token");
+		vi.stubGlobal("fetch", stubAdminFetch());
+
+		renderApp(["/models"]);
+		expect(
+			await screen.findByRole("heading", { level: 1, name: "Models" }),
+		).toBeInTheDocument();
+		// Baseline: the entry is there until the operator says otherwise. The nav
+		// label is read off the navigation itself rather than by role, because the
+		// top-bar shortcut carries the same accessible name — and both theme
+		// packages render navigation of their own (classic deck rail / sidebar).
+		const navLabels = () =>
+			[
+				...document.querySelectorAll(
+					".console-navigation .console-nav-link, .deck-sector .deck-sector-label",
+				),
+			].map((element) => element.textContent?.trim());
+		expect(navLabels()).toContain("Check-in");
+		expect(document.querySelector(".console-checkin, .deck-checkin-btn")).not.toBeNull();
+
+		cleanup();
+		localStorage.setItem(
+			"meta-gateway.topbar-items",
+			JSON.stringify({ checkin: false }),
+		);
+		renderApp(["/models"]);
+		expect(
+			await screen.findByRole("heading", { level: 1, name: "Models" }),
+		).toBeInTheDocument();
+		expect(navLabels()).not.toContain("Check-in");
+		expect(document.querySelector(".console-checkin, .deck-checkin-btn")).toBeNull();
+
+		// Hiding an entry is a display choice: the page itself still mounts, and
+		// the command palette keeps offering it.
+		cleanup();
+		renderApp(["/checkins"]);
+		expect(
+			await screen.findByRole("heading", { level: 1, name: "Check-in" }),
+		).toBeInTheDocument();
+	});
+
 	it("opens models, logs, and maintain from the product nav", async () => {
 		localStorage.setItem("meta-gateway.admin-token", "nav-token");
 		vi.stubGlobal("fetch", stubAdminFetch());

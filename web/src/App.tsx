@@ -50,6 +50,7 @@ import { GatewayTransition } from "./components/GatewayTransition";
 import { createEdgeSparkHost } from "./lib/katanafx";
 import { ENTRANCE_CHARGE_MS, ENTRANCE_EXIT_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
 import { useHiddenPlugins } from "./lib/pluginNav";
+import { useTopBarPrefs } from "./lib/topBar";
 import { AppearanceProvider, useAppearance } from "./appearance";
 
 const Channels = lazy(() =>
@@ -568,6 +569,9 @@ function AuthenticatedShell({
 }) {
 	const { t } = useI18n();
 	const { addons } = useModules();
+	// Which chrome entries the operator keeps (Settings → Appearance: top bar and
+	// the check-in navigation entry). Display only — see lib/topBar.ts.
+	const topBar = useTopBarPrefs();
 	// Plugin entries the operator hid from the sidebar (a display preference,
 	// stored per browser like the theme).
 	const hiddenPlugins = useHiddenPlugins();
@@ -646,6 +650,11 @@ function AuthenticatedShell({
 		}
 	});
 
+	// The check-in entry is switchable from Settings → Appearance. In the classic
+	// console the nav rail IS the top bar, so a switch that left the identical nav
+	// label in place two centimetres away from the icon it removed read as broken;
+	// it governs both, and the page stays reachable by URL and from the palette.
+	const checkinEntry = { to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck };
 	const primaryNav = [
 		{ to: "/", label: t("app.nav.overview"), icon: Activity },
 		{ to: "/channels", label: t("app.nav.channels"), icon: Cable },
@@ -653,9 +662,11 @@ function AuthenticatedShell({
 		{ to: "/keys", label: t("app.nav.keys"), icon: KeyRound },
 		{ to: "/workbench", label: t("app.nav.workbench"), icon: Wand2 },
 		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
-		// Check-in and Exchange are built-in surfaces: they are always in the
-		// sidebar, whatever the store lists.
-		{ to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck },
+		// Check-in and Exchange are built-in surfaces: they are in the navigation
+		// whatever the store lists. Check-in alone is switchable (it is also a
+		// top-bar shortcut — see checkinEntry above); Exchange has no shortcut to
+		// switch it off with.
+		...(topBar.checkin ? [checkinEntry] : []),
 		{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight },
 		...(addons
 			.filter(
@@ -683,7 +694,13 @@ function AuthenticatedShell({
 		icon: Settings,
 	};
 
-	const paletteNav = [...primaryNav, settingsNav];
+	// The command palette lists every page, hidden entries included: hiding an
+	// entry is a display choice, never a way to make a page unreachable.
+	const paletteNav = [
+		...primaryNav,
+		...(topBar.checkin ? [] : [checkinEntry]),
+		settingsNav,
+	];
 
 	const corePaths = ["/", "/channels", "/models", "/keys"];
 	const activityPaths = ["/workbench", "/logs", "/checkins"];

@@ -6,12 +6,18 @@ const STORAGE_KEY = "meta-gateway.topbar-items";
 const CHANGE_EVENT = "meta-gateway:topbar-changed";
 
 /**
- * Which entries the console puts in its top bar.
+ * Which entries the console puts in its chrome — the top bar's controls and,
+ * for check-in, the navigation entry as well.
  *
- * Everything the top bar carries is a display choice, so this is a browser
- * preference like the theme, the palette or the hidden plugin rows — not
- * gateway state. The logout button is deliberately not part of the set: the
- * top bar is the only place the console offers it.
+ * Everything here is a display choice, so this is a browser preference like the
+ * theme, the palette or the hidden plugin rows — not gateway state. The logout
+ * button is deliberately not part of the set: the top bar is the only place the
+ * console offers it.
+ *
+ * Check-in covers both surfaces on purpose. In the classic console the nav rail
+ * lives inside the top bar, so hiding only the shortcut left an identical
+ * "签到" two centimetres away and the switch looked broken. The page itself
+ * stays reachable — the command palette keeps listing it either way.
  */
 export const TOP_BAR_ITEMS = ["checkin", "update", "theme", "language"] as const;
 export type TopBarItemId = (typeof TOP_BAR_ITEMS)[number];

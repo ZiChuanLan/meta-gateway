@@ -433,6 +433,9 @@ curl -s -H "Authorization: Bearer <session_token>" \
   枚举可显隐的入口（签到、更新提醒、明暗、语言），preference 存 localStorage，两个主题包的
   `Chrome.tsx` 各自读同一个 hook。新增顶栏入口时三处同步：`TOP_BAR_ITEMS` + 两个 Chrome +
   双语 `appearance.topbar.*` 文案；退出登录不参与开关（它是控制台唯一一处登出）。
+  ⚠️ **「签到」这一项还兼管导航项**（`App.tsx` 的 `checkinEntry`）：经典控制台的导航条就在顶栏里，
+  只藏右侧图标会留下一个同一个词写在两厘米外的「签到」，用户会当成开关坏了（实测反馈就是这个）。
+  该页**永远可达**：路由照旧挂载，命令面板 `paletteNav` 始终列出它。别再把它拆成两个开关而不改文案。
 - **注册表/商店页叫「拓展」（`/console/store`）**：签到与交换已是内置功能，**不是可开关的扩展**
   （`internal/plugins/service.go` 的 `officialCatalog` 为空，`RetireLegacyModules` 启动时清掉
   `exchange` / `checkin` / `operations` / `cliproxyapi` 的旧记录，路由里也不再挂 `requirePluginEnabled`）。

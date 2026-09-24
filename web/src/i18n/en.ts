@@ -292,9 +292,10 @@ export const en: Dict = {
   "appearance.palette.sakura": "Sakura",
   "appearance.topbar": "Top bar",
   "appearance.topbarHint":
-    "Pick which entries the top bar carries. Everything switched off stays reachable on its own page and can be turned back on here.",
+    "Pick which entries the console shows. Switched-off entries stay reachable from the command palette (⌘K) or by URL, and can be turned back on here.",
   "appearance.topbar.checkin": "Check-in",
-  "appearance.topbar.checkinHint": "Jump straight into today's check-in runs.",
+  "appearance.topbar.checkinHint":
+    "Hides the check-in entry in the top bar and in the navigation; the page itself stays available.",
   "appearance.topbar.update": "Update notice",
   "appearance.topbar.updateHint": "Shows up when a newer gateway image is published.",
   "appearance.topbar.theme": "Light / dark switch",

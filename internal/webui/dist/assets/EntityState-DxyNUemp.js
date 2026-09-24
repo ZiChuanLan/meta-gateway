@@ -1,1 +1,0 @@
-import{j as t,X as x,E as f,ab as j}from"./index-CSfz5AZZ.js";function E({isLoading:r,isError:s,error:a,isEmpty:e,empty:i,retry:n,children:o}){return r?t.jsx(x,{}):s?t.jsx(f,{error:a,retry:n}):e?t.jsx(j,{children:i}):t.jsx("div",{className:"entity-state-fill",children:o})}export{E};

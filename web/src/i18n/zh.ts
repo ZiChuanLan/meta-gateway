@@ -274,9 +274,10 @@ export const zh: Dict = {
   "appearance.palette.sakura": "樱",
   "appearance.topbar": "自定义顶部栏",
   "appearance.topbarHint":
-    "选择顶部栏里显示哪些入口。关掉的入口仍可在对应页面使用，也能随时在这里重新打开。",
+    "选择界面上显示哪些入口。关掉的入口仍可从命令面板（⌘K）或地址进入，也能随时在这里重新打开。",
   "appearance.topbar.checkin": "签到",
-  "appearance.topbar.checkinHint": "直接从顶部栏进入今天的签到。",
+  "appearance.topbar.checkinHint":
+    "顶部栏图标与导航里的「签到」一并隐藏；签到页本身仍可用。",
   "appearance.topbar.update": "更新提醒",
   "appearance.topbar.updateHint": "有新版本镜像时在顶部栏提示。",
   "appearance.topbar.theme": "明暗切换",
