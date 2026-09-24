@@ -423,3 +423,58 @@ func TestChannelStoreRoundTripsUpstreamMap(t *testing.T) {
 		t.Fatalf("clearing did not persist: %+v", cleared)
 	}
 }
+
+// A client asking for `max` used to reach System One verbatim and come back as
+// `400 field ReasoningEffort invalid, should be one of: low, medium, high,
+// xhigh, none` (the API's own words, 2026-09-25). The provider's rung set is
+// known from the resolved endpoint, so the request is rewritten before it
+// leaves — and the attempt log records the rewrite.
+func TestForwardClampsReasoningEffortToProviderVocabulary(t *testing.T) {
+	upstream := &capturingRelay{
+		response: `{"model":"jev-1.13.0","answers":{"ask":{"type":"choice","choice":"billing"}},"usage":{"input_tokens":12,"output_tokens":3}}`,
+	}
+	// No type hint: the endpoint is the only thing naming the protocol, which is
+	// exactly how a channel hand-pointed at `…/v1/systemone` looks.
+	service, db, channelID := mappingService(t, upstream, "https://api.typesafe.ai")
+
+	channel, err := db.Channel.GetByID(channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel.UpstreamPathOverride = "systemone"
+	channel.UpstreamRequestMap = `[
+		{"from":"messages.0.content","to":"state"},
+		{"to":"model","value":{"str":"jev-latest"}}
+	]`
+	if err := db.Channel.Update(channel); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct{ sent, want string }{
+		{"max", "xhigh"},
+		{"minimal", "none"},
+		{"high", "high"},
+	} {
+		t.Run(tc.sent, func(t *testing.T) {
+			result := service.ChatCompletions(context.Background(), Request{
+				RequestID: "typesafe-reasoning-" + tc.sent, Model: "model",
+				Body:   []byte(`{"model":"model","reasoning_effort":"` + tc.sent + `","messages":[{"role":"user","content":"hi"}]}`),
+				Method: http.MethodPost, OpenAIPath: "chat/completions",
+			})
+			if result.Err != nil {
+				t.Fatalf("relay: %v", result.Err)
+			}
+			defer result.Body.Close()
+			if len(upstream.bodies) == 0 {
+				t.Fatal("upstream saw no request")
+			}
+			var sent map[string]any
+			if err := json.Unmarshal([]byte(upstream.bodies[len(upstream.bodies)-1]), &sent); err != nil {
+				t.Fatalf("sent body is not JSON: %v (%s)", err, upstream.bodies[len(upstream.bodies)-1])
+			}
+			if sent["reasoning_effort"] != tc.want {
+				t.Fatalf("reasoning_effort = %v, want %v (body %s)", sent["reasoning_effort"], tc.want, upstream.bodies[len(upstream.bodies)-1])
+			}
+		})
+	}
+}

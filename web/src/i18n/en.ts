@@ -690,7 +690,7 @@ export const en: Dict = {
   "channels.maxReasoningEffort": "Max reasoning effort",
   "channels.maxReasoningEffortNone": "Passthrough (unrestricted)",
   "channels.maxReasoningEffortHint":
-    "Highest reasoning_effort this upstream accepts. Requests asking for more are downgraded at forward time instead of failing over (e.g. gateways rejecting max).",
+    "Highest reasoning_effort this upstream accepts: a request asking for more is downgraded at forward time instead of failing over. Leaving it empty (or on max) means no downgrade — pick the highest rung the upstream really supports (xhigh for a gateway that rejects max). Known providers (TypeSafe and friends) have their rungs matched automatically from the provider or the endpoint.",
   "channels.payloadRules": "Payload rules (body rewrite)",
   "channels.maxConcurrent": "Max concurrent",
   "channels.streamPolicy": "Stream policy",

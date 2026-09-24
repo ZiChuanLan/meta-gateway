@@ -514,14 +514,19 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				requestSource = injectSystemPrompt(requestSource, prompt)
 			}
 		}
-		// Channel capability-aware reasoning effort downgrade: when the channel
-		// declares a max_reasoning_effort and the client asked for more, rewrite
-		// the body so the request succeeds instead of burning a failover round
-		// (e.g. gateways that reject reasoning_effort=max). The original value is
-		// kept in the log; the mapping is recorded as "max→high".
+		// Channel capability-aware reasoning effort rewrite: the operator's
+		// declared ceiling and the provider's own accepted rungs both apply (see
+		// downgradeReasoningEffort), so a request the upstream would have
+		// rejected with a 400 comes back as an answer instead of burning a
+		// failover round. The original value is kept in the log; the mapping is
+		// recorded as "max→xhigh".
 		mappedReasoning := ""
-		if maxEffort := strings.TrimSpace(candidate.Channel.MaxReasoningEffort); maxEffort != "" {
-			if downgraded, note := downgradeReasoningEffort(requestSource, maxEffort); downgraded != nil {
+		maxEffort := strings.TrimSpace(candidate.Channel.MaxReasoningEffort)
+		// The endpoint decides too: a channel pointed straight at System One
+		// carries the provider's vocabulary even when its type says New API.
+		acceptedEffort := AcceptedReasoningLevels(candidate.Channel.TypeHint, channelMap.ResolvePath(effectivePath, req.Model))
+		if maxEffort != "" || len(acceptedEffort) > 0 {
+			if downgraded, note := downgradeReasoningEffort(requestSource, maxEffort, acceptedEffort); downgraded != nil {
 				requestSource = downgraded
 				mappedReasoning = note
 			}

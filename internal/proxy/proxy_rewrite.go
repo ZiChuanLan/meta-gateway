@@ -9,6 +9,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -112,16 +113,58 @@ func realModelFromMapping(mappingJSON string) string {
 
 // reasoningEffortLevels is the ordered set of OpenAI-style reasoning effort
 // values understood by the gateway. A client-requested effort beyond a
-// channel's declared max is downgraded to the max at forward time.
+// channel's declared max is downgraded to the max at forward time, and one the
+// provider does not accept is snapped to the nearest rung it does.
 var reasoningEffortLevels = []string{
 	"none", "minimal", "low", "medium", "high", "xhigh", "max",
 }
 
-// downgradeReasoningEffort rewrites a request body's reasoning_effort when it
-// exceeds the channel's declared maximum. Returns the rewritten body and a
-// "from→to" note, or (nil, "") when no downgrade applies (missing field,
-// unknown values, or already at/below the max).
-func downgradeReasoningEffort(body []byte, maxEffort string) ([]byte, string) {
+// reasoningEffortIndex returns the rung's position in the ladder, -1 when the
+// value is not a ladder rung at all.
+func reasoningEffortIndex(effort string) int {
+	for i, level := range reasoningEffortLevels {
+		if level == effort {
+			return i
+		}
+	}
+	return -1
+}
+
+// nearestAcceptedEffort picks the highest accepted rung at or below the
+// requested one. Nothing accepted at that depth means no answer from here:
+// bumping the effort UP would add reasoning the client did not ask for, which
+// is worse than letting the upstream say no.
+func nearestAcceptedEffort(effort string, allowed []string) string {
+	limit := reasoningEffortIndex(effort)
+	if limit < 0 {
+		return ""
+	}
+	best := ""
+	bestIndex := -1
+	for _, candidate := range allowed {
+		index := reasoningEffortIndex(strings.ToLower(strings.TrimSpace(candidate)))
+		if index < 0 || index > limit || index <= bestIndex {
+			continue
+		}
+		best, bestIndex = reasoningEffortLevels[index], index
+	}
+	return best
+}
+
+// downgradeReasoningEffort rewrites a request body's reasoning_effort so the
+// upstream can actually answer it. Two independent constraints apply:
+//
+//   - maxEffort — what the operator declared this channel (or route) accepts;
+//     anything above it comes down to it;
+//   - allowed — the rungs the provider itself understands (see
+//     AcceptedReasoningLevels); a value outside the set snaps to the nearest
+//     accepted rung at or below it. TypeSafe, for one, rejects `max` and
+//     `minimal` outright.
+//
+// Returns the rewritten body and a "from→to" note, or (nil, "") when nothing
+// applies: a missing field, a value outside the ladder (never guessed at), or
+// one that already satisfies both constraints.
+func downgradeReasoningEffort(body []byte, maxEffort string, allowed []string) ([]byte, string) {
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, ""
@@ -136,29 +179,33 @@ func downgradeReasoningEffort(body []byte, maxEffort string) ([]byte, string) {
 	}
 	effort = strings.ToLower(strings.TrimSpace(effort))
 	maxEffort = strings.ToLower(strings.TrimSpace(maxEffort))
-	if effort == "" || maxEffort == "" || effort == maxEffort {
+	if effort == "" || reasoningEffortIndex(effort) < 0 {
 		return nil, ""
 	}
-	effortIndex, maxIndex := -1, -1
-	for i, level := range reasoningEffortLevels {
-		if level == effort {
-			effortIndex = i
-		}
-		if level == maxEffort {
-			maxIndex = i
+	target := effort
+	if effort != maxEffort {
+		if maxIndex := reasoningEffortIndex(maxEffort); maxIndex >= 0 && reasoningEffortIndex(effort) > maxIndex {
+			target = maxEffort
 		}
 	}
-	// Unknown values pass through untouched (never guess); already-at/below max
-	// needs no rewrite.
-	if effortIndex < 0 || maxIndex < 0 || effortIndex <= maxIndex {
+	if len(allowed) > 0 && !slices.Contains(allowed, target) {
+		snapped := nearestAcceptedEffort(target, allowed)
+		// `none` is a real rung and the zero-ish case: an empty snap means
+		// nothing accepted sits below the request.
+		if snapped == "" {
+			return nil, ""
+		}
+		target = snapped
+	}
+	if target == effort {
 		return nil, ""
 	}
-	payload["reasoning_effort"] = json.RawMessage(fmt.Sprintf("%q", maxEffort))
+	payload["reasoning_effort"] = json.RawMessage(fmt.Sprintf("%q", target))
 	rewritten, err := json.Marshal(payload)
 	if err != nil {
 		return nil, ""
 	}
-	return rewritten, effort + "→" + maxEffort
+	return rewritten, effort + "→" + target
 }
 
 // injectSystemPrompt prepends a system message to an OpenAI chat/completions

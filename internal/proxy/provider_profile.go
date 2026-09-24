@@ -34,6 +34,17 @@ type ProviderProfile struct {
 	// upstream's own shape (see UpstreamFieldMap).
 	RequestMap  string
 	ResponseMap string
+	// MatchPaths are endpoint paths that identify this provider even when the
+	// operator typed something else — a channel pointed straight at
+	// `…/v1/systemone` while carrying the New API type, say. Only runtime
+	// capabilities (ReasoningLevels) are matched this way; the save-time field
+	// maps are not, because an operator who wrote their own map keeps it.
+	MatchPaths []string
+	// ReasoningLevels, when non-empty, is the subset of the gateway's effort
+	// ladder this provider accepts. A request asking for a rung outside the set
+	// is rewritten to the nearest accepted rung at or below it before
+	// forwarding, instead of coming back as a 400.
+	ReasoningLevels []string
 }
 
 // TypeSafe System One is not an OpenAI surface at all: `POST /v1/systemone`
@@ -86,6 +97,13 @@ var providerProfiles = []ProviderProfile{
 		PathOverride: "v1/systemone",
 		RequestMap:   typesafeRequestMap,
 		ResponseMap:  typesafeResponseMap,
+		// The System One surface validates reasoning_effort against this exact
+		// list and rejects everything else: "field ReasoningEffort invalid,
+		// should be one of: low, medium, high, xhigh, none" (live API,
+		// 2026-09-25). `minimal` and `max` are gateway-ladder rungs it does not
+		// know, so they are clamped to `none` and `xhigh` respectively.
+		ReasoningLevels: []string{"none", "low", "medium", "high", "xhigh"},
+		MatchPaths:      []string{"v1/systemone"},
 	},
 }
 
@@ -106,6 +124,37 @@ func LookupProviderProfile(providerType string) (ProviderProfile, bool) {
 		}
 	}
 	return ProviderProfile{}, false
+}
+
+// AcceptedReasoningLevels reports the effort rungs the upstream behind this
+// channel understands.
+//
+// The channel's declared provider decides; when that names no profile, the
+// resolved endpoint path does — the protocol lives at the endpoint, and an
+// operator who pointed a New API channel at `…/v1/systemone` still needs the
+// System One vocabulary. An empty result means "no opinion": values pass
+// through untouched, which stays the default for every unknown provider.
+func AcceptedReasoningLevels(providerType, endpointPath string) []string {
+	if profile, ok := LookupProviderProfile(providerType); ok && len(profile.ReasoningLevels) > 0 {
+		return profile.ReasoningLevels
+	}
+	normalized := NormalizeEndpointPath(endpointPath)
+	if normalized == "" {
+		return nil
+	}
+	for _, profile := range providerProfiles {
+		for _, match := range profile.MatchPaths {
+			pattern := NormalizeEndpointPath(match)
+			// Suffix match: NormalizeEndpointPath keeps the leading slash, so a
+			// pattern already ends on a segment boundary. `v1/systemone` also
+			// describes the endpoint of a gateway that mounts it deeper
+			// (`…/api/v1/systemone`) — the last segments identify a protocol.
+			if pattern != "" && strings.HasSuffix(normalized, pattern) {
+				return profile.ReasoningLevels
+			}
+		}
+	}
+	return nil
 }
 
 // ApplyProviderProfile fills a channel's endpoint / field mapping from the

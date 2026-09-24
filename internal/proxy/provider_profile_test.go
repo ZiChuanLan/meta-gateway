@@ -118,6 +118,43 @@ func TestApplyProviderProfileKeepsGoingAfterAURLSplit(t *testing.T) {
 	}
 }
 
+// The reasoning vocabulary is a runtime capability, so it must be reachable
+// even when the save-time mapping is the operator's own: a channel pointed at
+// System One with the New API type still gets the provider's rung set, which is
+// what stops `reasoning_effort=max` from reaching an API that only knows
+// low/medium/high/xhigh/none.
+func TestAcceptedReasoningLevelsMatchTypeAndEndpoint(t *testing.T) {
+	want := "none,low,medium,high,xhigh"
+	for _, tc := range []struct{ name, providerType, path string }{
+		{"declared provider", "typesafe", ""},
+		{"provider alias", "Typesafe-SystemOne", ""},
+		{"endpoint path", "new-api", "v1/systemone"},
+		{"endpoint path with leading slash", "new-api", "/v1/systemone"},
+		{"endpoint path from the map", "custom", "/api/v1/systemone"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := proxy.AcceptedReasoningLevels(tc.providerType, tc.path)
+			if strings.Join(got, ",") != want {
+				t.Fatalf("levels = %v, want %s", got, want)
+			}
+		})
+	}
+
+	// Everything else keeps the transparent default: no opinion, values pass
+	// through exactly as the client wrote them.
+	for _, tc := range []struct{ name, providerType, path string }{
+		{"plain openai", "openai-compatible", "chat/completions"},
+		{"unknown endpoint", "new-api", "v1/chat/completions"},
+		{"nothing to go on", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := proxy.AcceptedReasoningLevels(tc.providerType, tc.path); len(got) != 0 {
+				t.Fatalf("levels = %v, want none", got)
+			}
+		})
+	}
+}
+
 func TestApplyProviderProfileLeavesHandWrittenMappingsAlone(t *testing.T) {
 	ch := &domain.Channel{
 		TypeHint:           "typesafe",

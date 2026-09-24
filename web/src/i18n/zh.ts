@@ -647,7 +647,7 @@ export const zh: Dict = {
   "channels.maxReasoningEffort": "最大推理档位",
   "channels.maxReasoningEffortNone": "透传（不限制）",
   "channels.maxReasoningEffortHint":
-    "该上游接受的最大 reasoning_effort。请求超过此档位时在转发前自动降级（不再 failover 重试，例如拒绝 max 的网关）。",
+    "该上游接受的最大 reasoning_effort：请求超过这一档时，网关在转发前自动降档（不触发 failover 重试）。留空或选 max 表示不降档——上游本身就拒绝 max 时，请选它实际支持的最高档（如 xhigh）。已知供应商（TypeSafe 等）的可用档位由网关按供应商或端点自动匹配，无需手填。",
   "channels.payloadRules": "Payload 规则（body 改写）",
   "channels.maxConcurrent": "最大并发",
   "channels.streamPolicy": "流式策略",

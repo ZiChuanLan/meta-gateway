@@ -66,7 +66,7 @@ func TestDowngradeReasoningEffort(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, note := downgradeReasoningEffort([]byte(tc.body), tc.max)
+			out, note := downgradeReasoningEffort([]byte(tc.body), tc.max, nil)
 			if tc.wantApply {
 				if out == nil {
 					t.Fatalf("expected rewrite, got nil (note=%q)", note)
@@ -91,7 +91,7 @@ func TestDowngradeReasoningEffort(t *testing.T) {
 
 func TestDowngradeReasoningEffortPreservesOtherFields(t *testing.T) {
 	body := `{"model":"alias","reasoning_effort":"max","messages":[{"role":"user","content":"hi"}],"stream":true,"temperature":0.7}`
-	out, note := downgradeReasoningEffort([]byte(body), "xhigh")
+	out, note := downgradeReasoningEffort([]byte(body), "xhigh", nil)
 	if out == nil || note != "max→xhigh" {
 		t.Fatalf("unexpected: out=%s note=%q", out, note)
 	}
@@ -106,5 +106,64 @@ func TestDowngradeReasoningEffortPreservesOtherFields(t *testing.T) {
 	var stream bool
 	if err := json.Unmarshal(parsed["stream"], &stream); err != nil || !stream {
 		t.Fatalf("stream lost: %s", parsed["stream"])
+	}
+}
+
+// TypeSafe answers `reasoning_effort` with `field ReasoningEffort invalid,
+// should be one of: low, medium, high, xhigh, none` — its own words, measured
+// 2026-09-25. The gateway's ladder is wider (`minimal`, `max`), so a client
+// asking for either must be snapped into the provider's set instead of being
+// forwarded into a 400.
+func TestDowngradeReasoningEffortSnapsToProviderLevels(t *testing.T) {
+	typesafe := []string{"none", "low", "medium", "high", "xhigh"}
+	cases := []struct {
+		name     string
+		effort   string
+		max      string
+		want     string
+		wantNote string
+	}{
+		{name: "max is unknown upstream", effort: "max", want: "xhigh", wantNote: "max→xhigh"},
+		{name: "minimal is unknown upstream", effort: "minimal", want: "none", wantNote: "minimal→none"},
+		{name: "accepted rung untouched", effort: "high", want: ""},
+		{name: "none is accepted", effort: "none", want: ""},
+		{name: "operator ceiling applies first", effort: "max", max: "medium", want: "medium", wantNote: "max→medium"},
+		{name: "off-ladder value still passes through", effort: "turbo", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"model":"m","reasoning_effort":"` + tc.effort + `"}`
+			out, note := downgradeReasoningEffort([]byte(body), tc.max, typesafe)
+			if tc.want == "" {
+				if out != nil {
+					t.Fatalf("expected no rewrite, got %s (note=%q)", out, note)
+				}
+				return
+			}
+			if out == nil {
+				t.Fatalf("expected rewrite to %s, got nil", tc.want)
+			}
+			if !strings.Contains(string(out), `"reasoning_effort":"`+tc.want+`"`) {
+				t.Fatalf("body = %s, want reasoning_effort=%s", out, tc.want)
+			}
+			if note != tc.wantNote {
+				t.Fatalf("note = %q, want %q", note, tc.wantNote)
+			}
+		})
+	}
+}
+
+// A provider that accepts a rung below the request but nothing at or above it
+// is left alone: bumping the effort UP would add reasoning the client never
+// asked for.
+func TestNearestAcceptedEffortNeverRoundsUp(t *testing.T) {
+	if got := nearestAcceptedEffort("minimal", []string{"low", "medium"}); got != "" {
+		t.Fatalf("expected no snap, got %q", got)
+	}
+	if got := nearestAcceptedEffort("max", []string{"low", "medium"}); got != "medium" {
+		t.Fatalf("snap = %q, want medium", got)
+	}
+	if got := nearestAcceptedEffort("turbo", []string{"low"}); got != "" {
+		t.Fatalf("off-ladder request must not snap, got %q", got)
 	}
 }
