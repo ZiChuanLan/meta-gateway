@@ -6,6 +6,53 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v3.5.1] — 2026-09-24
+
+### Fixed
+
+- **「上游连接」选择器分不清成员，选谁都等于没选，也看不出原模型**
+  （`internal/proxy/proxy_forward.go`、`web/src/features/models/routingPolicy.tsx`）。
+  试调里「上游连接」下拉的每一行都长一样——都只写渠道名——而且选哪一行结果都相同。
+  根因不是文案，是**粒度**：选择器列的是 **channel**、键是 `channel_id`。而 `077_shared_alias_members.sql`
+  **刻意**把唯一索引放宽成部分索引（`route_members(route_id, channel_id) WHERE mapping_json = ''`），
+  正是为了让「同一个上游把多个真实模型统一成一个别名」时**同一渠道可以挂多个成员**，每个成员带
+  `mapping_json={"real":"上游模型名"}`。于是同一渠道多成员时键冲突（选哪行都落到同一渠道），
+  标签又只有渠道名 + p/w（行与行完全同文）。**渠道不是可以指定的上游，成员才是。**
+  - 后端新增**成员级钉选**：`proxy.Request.PreferMemberID`（优先于 `PreferChannelID`），
+    `pickPreferred` 在成员不在候选里时**拒绝钉选**而不是静默退化；「是否钉死」统一走新谓词
+    `pinnedUpstream(req)`，替换掉原先散在四处的 `req.PreferChannelID > 0`（跨渠道重试闸、pin 选择、
+    粘性 Bind、失败提前返回）——漏一处就会「指定了成员却还跨渠道漂移、甚至留下一条粘性绑定」。
+  - 前端 `upstreamChoices()` 一处构造选择器行（试调 / 工作台文字 / 工作台图像共用）：
+    键 = `member_id`，标签 = `渠道名 · 原模型 x · p{}/w{}`；仍同文的行才依次补 `#渠道id`、分组名。
+  - 端到端取证（本地容器重建 + 真机浏览器）：同一渠道 `dav` 下播三个成员
+    （`{"real":"jev-latest-alt"}` / `alt2` / `jev-preview`），下拉渲染成五个可区分选项；
+    钉 `jev-preview` → `HTTP 200 · 4374 毫秒 · jev-latest · 经 dav（#1） · 原模型 jev-preview`；
+    钉 `jev-latest-alt` → 上游回 `Unknown model: jev-latest-alt`，**反证请求确实带着该成员的原模型发出**。
+    播种的数据验完即删除还原。
+
+- **模型页的筛选会「隐形生效」**（`web/src/features/models/modelFilters.ts`、`Models.tsx`）。
+  分组 / 通道 / 状态三个下拉会自己记住（sessionStorage）却藏在「筛选」折叠区里，切页回来列表被缩短，
+  而屏幕上没有任何东西说明原因——模型看起来像凭空消失了。现在面板的默认开合与触发器上的读数
+  **同源**于 `countActiveModelFilters()`（打开 ⟺ 计数 > 0，搜索框不计入：它永远在屏幕上且内容可见），
+  触发器显示「筛选 · N」，清空后自动收起。
+
+### Added
+
+- **图像工作台新增「上游连接」选择器**（`workbench/ImageStudio.tsx`）：此前只能走网关自动选路，
+  没法单独验某一条出图路径。与文字工作台同款，含同一条成员级语义。
+- **试调结果显示本次实际发上游的原模型**（`internal/proxy/proxy.go` 的 `AttemptMeta.UpstreamModel`）：
+  `/admin/try/chat`（含流式）与 `/admin/try/image` 新增响应字段 `upstream_model`，
+  结果条在它 ≠ 路由名时追加 `· 原模型 xxx`。渠道名在别名场景下不足以说明上游，这是唯一能回答
+  「刚才那一行到底打到了哪个模型」的来源。
+
+### Changed
+
+- **工作台的模型选择器从原生 `<select>` 换成可搜索下拉，选项标签带上提供该模型的连接名**
+  （`模型 · 站点`，取自 `primaryChannelName()`）。下拉是按标签搜索的，于是「这个模型在哪条线上？」
+  不必再跳回模型页，直接输入连接名就能筛出它提供的模型。
+- `SearchableSelect` 新增 `ariaLabel`：此前触发器的可访问名就是它的当前值，
+  `Backend · OpenAI` 这种读出来完全不说明它在选模型。
+
 ## [v3.5.0] — 2026-09-24
 
 > 版本号说明：3.4.3 曾按「Anthropic 端点重复 `/v1` 修复」准备好 CHANGELOG 段（`936f707`），
