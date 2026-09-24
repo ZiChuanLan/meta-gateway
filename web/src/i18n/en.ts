@@ -311,6 +311,7 @@ export const en: Dict = {
   "channels.details": "Connection details",
   "channels.listHint": "Select a connection to inspect",
   "modelsPage.filters": "Filters",
+  "modelsPage.filtersActive": "Filters · {n}",
   "modelsPage.members": "Route members",
   "logsPage.moreFilters": "Exact filters",
   "logsPage.histogramScope": "Latest {n} requests across the gateway",
@@ -2501,6 +2502,11 @@ export const en: Dict = {
   "workbench.image.model": "Model",
   "workbench.image.modelHint":
     "Only routes with an image-capable model are listed",
+  "workbench.image.upstream": "Upstream connection",
+  "workbench.image.upstreamAuto": "Auto (gateway routing)",
+  "workbench.image.upstreamHint":
+    "Pin one connection to test it on its own. Auto uses the same rules as live /v1 traffic.",
+  "workbench.image.upstreamHintOne": "Only one connection serves this model.",
   "workbench.image.mode": "Mode",
   "workbench.image.modeAuto": "Auto",
   "workbench.image.modeGenerate": "Generate",

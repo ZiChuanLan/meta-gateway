@@ -21,7 +21,10 @@ import (
 
 // TryHandler lets the admin console probe chat completions without a downstream key.
 // Auth is the admin Bearer; upstream selection uses the same routing/proxy path as /v1.
-// Optional channel_id pins a specific upstream when multiple members share the model name.
+// Optional member_id (or channel_id) pins a specific upstream when multiple
+// members share the model name. member_id is the precise one: a unified alias
+// holds one member per upstream 原模型 name, several of them on the same
+// channel, so channel_id alone cannot address the row the operator picked.
 //
 // /try/channel-model is the exception: it answers "does this channel serve this
 // model at all", so it deliberately bypasses route selection (see
@@ -74,6 +77,12 @@ type tryChatRequest struct {
 	MaxTokens   int      `json:"max_tokens"`
 	Stream      bool     `json:"stream"`
 	ChannelID   int64    `json:"channel_id"`
+	// MemberID pins one ROUTE MEMBER instead of a whole channel. A unified
+	// alias can carry several members on the SAME channel — one per upstream
+	// {"real":"…"} name — and channel_id can only ever reach the first of
+	// them, so the console pins the row it actually listed. Wins over
+	// ChannelID; zero means "pin by channel / normal routing" as before.
+	MemberID int64 `json:"member_id"`
 }
 
 const (
@@ -195,6 +204,7 @@ func (h *TryHandler) tryChat(w http.ResponseWriter, r *http.Request) {
 		Body:            body,
 		Stream:          request.Stream,
 		PreferChannelID: request.ChannelID,
+		PreferMemberID:  request.MemberID,
 	})
 	latency := int(time.Since(started).Milliseconds())
 	if latency < 0 {
@@ -247,6 +257,7 @@ func (h *TryHandler) tryChat(w http.ResponseWriter, r *http.Request) {
 		payloadOut["member_id"] = meta.MemberID
 		payloadOut["priority"] = meta.Priority
 		payloadOut["weight"] = meta.Weight
+		payloadOut["upstream_model"] = meta.UpstreamModel
 	}
 	writeJSON(w, http.StatusOK, payloadOut)
 }
@@ -407,6 +418,7 @@ func streamTryChat(w http.ResponseWriter, r *http.Request, result *relay.Result,
 		head["member_id"] = meta.MemberID
 		head["priority"] = meta.Priority
 		head["weight"] = meta.Weight
+		head["upstream_model"] = meta.UpstreamModel
 	}
 	if encoded, err := json.Marshal(head); err == nil {
 		if !writeFrame("meta", encoded) {
@@ -496,6 +508,8 @@ func (h *TryHandler) tryImage(w http.ResponseWriter, r *http.Request) {
 			Name    string `json:"name"`
 		} `json:"images"`
 		ChannelID int64 `json:"channel_id"`
+		// MemberID pins one route member (channel × 原模型); see tryChatRequest.
+		MemberID int64 `json:"member_id"`
 	}
 	if err := decodeJSON(w, r, &request, maxImageRequestBytes, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -568,6 +582,7 @@ func (h *TryHandler) tryImage(w http.ResponseWriter, r *http.Request) {
 		OpenAIPath:      plan.Endpoint,
 		ContentType:     contentType,
 		PreferChannelID: request.ChannelID,
+		PreferMemberID:  request.MemberID,
 	})
 	latency := int(time.Since(started).Milliseconds())
 	if latency < 0 {
@@ -618,6 +633,7 @@ func (h *TryHandler) tryImage(w http.ResponseWriter, r *http.Request) {
 		payload["channel_id"] = meta.ChannelID
 		payload["channel_name"] = meta.ChannelName
 		payload["member_id"] = meta.MemberID
+		payload["upstream_model"] = meta.UpstreamModel
 	}
 	writeJSON(w, http.StatusOK, payload)
 }

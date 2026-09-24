@@ -1,29 +1,31 @@
 import { useMemo, useState } from "react";
 import { api } from "../api/client";
+import type { Route, RoutingCandidate } from "../api/types";
 import { Button, Field, ErrorState } from "../components/ui";
 import { useI18n } from "../i18n";
+import { upstreamChoices } from "./models/routingPolicy";
 import { useSession } from "../session";
-
-export type TryUpstreamOption = {
-  id: number;
-  name: string;
-  priority?: number;
-  weight?: number;
-};
 
 /**
  * Admin console probe: no downstream API key required.
  * Uses admin Bearer → POST /admin/try/chat.
  * Same model name on multiple channels: pick upstream, or leave "auto" for gateway routing.
+ *
+ * The picker lists MEMBERS, not channels: a unified alias can hold several
+ * upstream 原模型 names on one channel, and only a member pin can test the row
+ * the operator picked.
  */
 export function TryPanel({
   defaultModel,
-  upstreams = [],
+  members = [],
+  route,
   onClose,
 }: {
   defaultModel: string;
-  /** Members serving this model (multi-channel same name). */
-  upstreams?: TryUpstreamOption[];
+  /** Members serving this model (multi-channel / multi-原模型 same name). */
+  members?: RoutingCandidate[];
+  /** The route those members belong to; carries the legacy alias mapping. */
+  route?: Route;
   onClose?: () => void;
 }) {
   const { t } = useI18n();
@@ -31,25 +33,18 @@ export function TryPanel({
   const service = api(client!);
   const [model, setModel] = useState(defaultModel);
   const [prompt, setPrompt] = useState("Say hello in one short sentence.");
-  const [channelId, setChannelId] = useState<number>(0);
+  const [memberId, setMemberId] = useState<number>(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState("");
   const [meta, setMeta] = useState("");
 
-  const orderedUpstreams = useMemo(() => {
-    return [...upstreams].sort((a, b) => {
-      const pa = a.priority ?? 0;
-      const pb = b.priority ?? 0;
-      if (pb !== pa) return pb - pa;
-      const wa = a.weight ?? 0;
-      const wb = b.weight ?? 0;
-      if (wb !== wa) return wb - wa;
-      return a.name.localeCompare(b.name);
-    });
-  }, [upstreams]);
+  const upstreams = useMemo(
+    () => upstreamChoices(members, route, t),
+    [members, route, t],
+  );
 
-  const multiUpstream = orderedUpstreams.length > 1;
+  const multiUpstream = upstreams.length > 1;
 
   async function run() {
     if (!model.trim()) return;
@@ -61,8 +56,11 @@ export function TryPanel({
       const response = await service.tryChat({
         model: model.trim(),
         prompt,
-        channel_id: channelId > 0 ? channelId : undefined,
+        member_id: memberId > 0 ? memberId : undefined,
       });
+      // The channel name does not identify the upstream when an alias maps to
+      // several 原模型 on one channel, so the result names the model that was
+      // actually sent — the only way to see what a pinned row really tested.
       const via =
         response.channel_name != null
           ? t("try.viaChannel", {
@@ -70,13 +68,22 @@ export function TryPanel({
               id: response.channel_id ?? "—",
             })
           : t("try.viaAuto");
+      const origin =
+        response.upstream_model && response.upstream_model !== response.model
+          ? t("routing.memberOrigin", { model: response.upstream_model })
+          : "";
       setMeta(
-        t("try.meta", {
-          status: response.status,
-          latency: response.latency_ms,
-          model: response.model,
-          via,
-        }),
+        [
+          t("try.meta", {
+            status: response.status,
+            latency: response.latency_ms,
+            model: response.model,
+            via,
+          }),
+          origin,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       );
       setResult(JSON.stringify(response.body, null, 2));
       if (response.status < 200 || response.status >= 300) {
@@ -103,7 +110,7 @@ export function TryPanel({
           className="mono"
         />
       </Field>
-      {orderedUpstreams.length > 0 ? (
+      {upstreams.length > 0 ? (
         <Field
           label={t("try.upstream")}
           hint={
@@ -114,16 +121,13 @@ export function TryPanel({
         >
           <select
             aria-label={t("try.upstream")}
-            value={channelId}
-            onChange={(e) => setChannelId(Number(e.target.value) || 0)}
+            value={memberId}
+            onChange={(e) => setMemberId(Number(e.target.value) || 0)}
           >
             <option value={0}>{t("try.upstreamAuto")}</option>
-            {orderedUpstreams.map((upstream) => (
-              <option key={upstream.id} value={upstream.id}>
-                {upstream.name}
-                {upstream.priority != null
-                  ? ` · p${upstream.priority}/w${upstream.weight ?? 0}`
-                  : ""}
+            {upstreams.map((upstream) => (
+              <option key={upstream.memberId} value={upstream.memberId}>
+                {upstream.label}
               </option>
             ))}
           </select>

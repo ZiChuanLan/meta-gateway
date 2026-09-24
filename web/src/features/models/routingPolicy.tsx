@@ -2,6 +2,7 @@ import type {
   FinanceItem,
   Route,
   RouteMember,
+  RouteOverview,
   RoutingCandidate,
 } from "../../api/types";
 
@@ -12,6 +13,16 @@ export function primaryMember(members: RoutingCandidate[], route?: Pick<Route, "
     if (pinned) return pinned;
   }
   return sortMembers(members)[0] ?? null;
+}
+
+/**
+ * primaryChannelName names the connection routing would try first for a route,
+ * so a model picker can answer "which site serves this?" without sending the
+ * operator to the Models page. Empty when the route has no usable member.
+ */
+export function primaryChannelName(overview?: RouteOverview) {
+  const head = primaryMember(overview?.members ?? [], overview?.route);
+  return head?.channel.name ?? "";
 }
 
 export function sortMembers(members: RoutingCandidate[]) {
@@ -29,7 +40,7 @@ export function sortMembers(members: RoutingCandidate[]) {
 // originModelOf resolves the upstream real model a member rewrites to when it
 // (or its route, the legacy alias form) carries a {"real":"…"} mapping. Empty
 // means the member forwards the route name unchanged.
-export function originModelOf(member: RouteMember, route?: Route): string {
+export function originModelOf(member: RouteMember, route?: Pick<Route, "mapping_json">): string {
   const raw = member.mapping_json || route?.mapping_json || "";
   if (!raw) return "";
   try {
@@ -38,6 +49,82 @@ export function originModelOf(member: RouteMember, route?: Route): string {
   } catch {
     return "";
   }
+}
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * One row of a 试调 "上游连接" picker. It identifies a route MEMBER, not a
+ * channel: a unified alias holds one member per upstream 原模型 name, and
+ * several of those can sit on the SAME channel — so a channel is not a
+ * selectable upstream, a member is.
+ */
+export type UpstreamChoice = {
+  memberId: number;
+  channelId: number;
+  name: string;
+  /** The upstream name this member rewrites to; "" = forwarded unchanged. */
+  origin: string;
+  /** Member group ("default" when unset); narrows which keys can reach it. */
+  group: string;
+  priority: number;
+  weight: number;
+  label: string;
+};
+
+/**
+ * upstreamChoices builds the 上游连接 picker rows for one route.
+ *
+ * The label leads with the channel and then names the 原模型, because those are
+ * the two facts that tell two rows apart: a channel name alone repeats once the
+ * alias form has put several upstream names behind it, which made every row of
+ * the list look — and behave — identical.
+ */
+export function upstreamChoices(
+  members: RoutingCandidate[],
+  route: Pick<Route, "mapping_json"> | undefined,
+  t: Translate,
+): UpstreamChoice[] {
+  const choices = sortMembers(members).map((candidate) => {
+    const origin = originModelOf(candidate.member, route);
+    const name = candidate.channel.name;
+    const head = origin
+      ? `${name} · ${t("routing.memberOrigin", { model: origin })}`
+      : name;
+    return {
+      memberId: candidate.member.id,
+      channelId: candidate.channel.id,
+      name,
+      origin,
+      group: (candidate.member.group_name || "").trim() || "default",
+      priority: candidate.member.priority,
+      weight: candidate.member.weight,
+      label: `${head} · p${candidate.member.priority}/w${candidate.member.weight}`,
+    };
+  });
+  // Rows that print identically cannot be told apart, let alone chosen, so grow
+  // the label until they can — using the smallest fact that does the job: the
+  // channel id (the console keys the channel-models page by it) and then the
+  // group, which is what separates two members that only differ that way. A
+  // collision surviving both is one upstream by every displayed fact, and the
+  // picker has nothing left to say about it.
+  return separate(separate(choices, (choice) => `#${choice.channelId}`), (choice) => choice.group);
+}
+
+/** separate appends a suffix to every choice whose label is still ambiguous. */
+function separate(
+  choices: UpstreamChoice[],
+  suffix: (choice: UpstreamChoice) => string,
+): UpstreamChoice[] {
+  const counts = new Map<string, number>();
+  for (const choice of choices) {
+    counts.set(choice.label, (counts.get(choice.label) ?? 0) + 1);
+  }
+  return choices.map((choice) =>
+    (counts.get(choice.label) ?? 0) > 1
+      ? { ...choice, label: `${choice.label} · ${suffix(choice)}` }
+      : choice,
+  );
 }
 
 export function isActiveCooldown(member: Pick<RouteMember, "cooldown_until">) {

@@ -154,7 +154,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 	// channel_retry_times) but cannot re-enable cross-channel failover when
 	// the process default is off, bypass an admin channel pin, or skip the
 	// non-idempotent-write safety gate.
-	allowCrossChannelRetries := s.crossChannelFailoverEnabled.Load() && req.PreferChannelID <= 0 && retrySafe
+	allowCrossChannelRetries := s.crossChannelFailoverEnabled.Load() && !pinnedUpstream(req) && retrySafe
 	maxAttempts := int(s.retryTimes.Load())
 	if !allowCrossChannelRetries {
 		maxAttempts = 0
@@ -254,8 +254,8 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		candidate := decision.Selected
 		req.RouteID = decision.RouteID
-		if req.PreferChannelID > 0 {
-			pinned, ok := pickPreferred(decision, req.PreferChannelID)
+		if pinnedUpstream(req) {
+			pinned, ok := pickPreferred(decision, req.PreferChannelID, req.PreferMemberID)
 			if !ok {
 				return &relay.Result{Err: ErrPreferredChannel}, nil
 			}
@@ -311,11 +311,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			}
 			last = preserve(&relay.Result{StatusCode: http.StatusServiceUnavailable, Err: fmt.Errorf("%w: model %s on channel %d", ErrModelBlacklisted, effectiveModel, candidate.Channel.ID)})
 			lastMeta = &AttemptMeta{
-				ChannelID:   candidate.Channel.ID,
-				ChannelName: candidate.Channel.Name,
-				MemberID:    candidate.Member.ID,
-				Priority:    candidate.Member.Priority,
-				Weight:      candidate.Member.Weight,
+				ChannelID:     candidate.Channel.ID,
+				ChannelName:   candidate.Channel.Name,
+				MemberID:      candidate.Member.ID,
+				Priority:      candidate.Member.Priority,
+				Weight:        candidate.Member.Weight,
+				UpstreamModel: effectiveModel,
 			}
 			continue
 		}
@@ -333,13 +334,14 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 		}
 		defer releaseAttempt()
 		meta := &AttemptMeta{
-			RouteID:     decision.RouteID,
-			GrayAttempt: req.GrayAttempt,
-			ChannelID:   candidate.Channel.ID,
-			ChannelName: candidate.Channel.Name,
-			MemberID:    candidate.Member.ID,
-			Priority:    candidate.Member.Priority,
-			Weight:      candidate.Member.Weight,
+			RouteID:       decision.RouteID,
+			GrayAttempt:   req.GrayAttempt,
+			ChannelID:     candidate.Channel.ID,
+			ChannelName:   candidate.Channel.Name,
+			MemberID:      candidate.Member.ID,
+			Priority:      candidate.Member.Priority,
+			Weight:        candidate.Member.Weight,
+			UpstreamModel: effectiveModel,
 		}
 		if observer := s.liveTraceObserver.Load(); observer != nil && req.RequestID != "" {
 			(*observer).Attempt(req.RequestID, attempt+1, candidate.Channel.Name, req.DownstreamProtocol, "")
@@ -1036,7 +1038,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 			// route that opted out of affinity (routes.sticky_session=false,
 			// or the global default off with no override) must not leave a
 			// binding behind for when it opts back in.
-			if stickyStore != nil && decision.StickyActive && sessionKey != "" && req.PreferChannelID == 0 {
+			if stickyStore != nil && decision.StickyActive && sessionKey != "" && !pinnedUpstream(req) {
 				stickyStore.Bind(sessionKey, candidate.Channel.ID, s.now())
 			}
 			// Hand the gate slot to the response body: the hard ceiling now
@@ -1126,7 +1128,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 				result.StatusCode != http.StatusUnauthorized && result.StatusCode != http.StatusForbidden:
 				memberScopedFailure = true
 			}
-			if req.PreferChannelID > 0 {
+			if pinnedUpstream(req) {
 				return result, meta
 			}
 		} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
@@ -1170,7 +1172,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (*relay.Resu
 					s.observeError(candidate.Channel.ID, req.Model)
 				}
 			}
-			if req.PreferChannelID > 0 {
+			if pinnedUpstream(req) {
 				return result, meta
 			}
 			goto nextCandidate
@@ -1238,7 +1240,23 @@ func (s *Service) refreshCredentialAndReplay(ctx context.Context, candidate *dom
 	return true
 }
 
-func pickPreferred(decision routing.Decision, channelID int64) (domain.RoutingCandidate, bool) {
+// pinnedUpstream reports whether the caller pinned an exact upstream — the
+// admin console's 试调, or a probe. Pinned traffic is a diagnostic: it never
+// fails over to another channel, and it never binds a sticky session (a route
+// that did not choose the channel must not inherit the affinity).
+func pinnedUpstream(req Request) bool {
+	return req.PreferChannelID > 0 || req.PreferMemberID > 0
+}
+
+func pickPreferred(decision routing.Decision, channelID, memberID int64) (domain.RoutingCandidate, bool) {
+	if memberID > 0 {
+		for _, evaluation := range decision.Candidates {
+			if evaluation.Eligible && evaluation.Candidate.Member.ID == memberID {
+				return evaluation.Candidate, true
+			}
+		}
+		return domain.RoutingCandidate{}, false
+	}
 	for _, evaluation := range decision.Candidates {
 		if evaluation.Eligible && evaluation.Candidate.Channel.ID == channelID {
 			return evaluation.Candidate, true

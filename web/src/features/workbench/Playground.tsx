@@ -10,6 +10,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { api } from "../../api/client";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import {
 	Button,
 	Empty,
@@ -22,6 +23,7 @@ import {
 import { useI18n } from "../../i18n";
 import { parseSseJson, splitSseFrames } from "../../lib/sse";
 import { upstreamMessage } from "../../lib/upstreamError";
+import { primaryChannelName, upstreamChoices } from "../models/routingPolicy";
 import { useSession } from "../../session";
 
 /**
@@ -96,7 +98,7 @@ export default function Playground({ active }: { active: boolean }) {
 	const service = api(client!);
 
 	const [model, setModel] = useState("");
-	const [channelId, setChannelId] = useState(0);
+	const [memberId, setMemberId] = useState(0);
 	const [turns, setTurns] = useState<Turn[]>([]);
 	const [draft, setDraft] = useState("");
 	const [busy, setBusy] = useState(false);
@@ -145,19 +147,36 @@ export default function Playground({ active }: { active: boolean }) {
 		[modelNames, capabilities.data],
 	);
 	const activeModel = chatModels.includes(model) ? model : (chatModels[0] ?? "");
+	const modelSites = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const overview of routes.data ?? []) {
+			const site = primaryChannelName(overview);
+			if (site) map.set(overview.route.model_pattern, site);
+		}
+		return map;
+	}, [routes.data]);
+	// The option label carries the serving connection, and the picker searches
+	// labels — so "which site is this model on?" is answerable without leaving
+	// the workbench, and typing a site name filters down to its models.
+	const modelOptions = useMemo(
+		() =>
+			chatModels.map((name) => {
+				const site = modelSites.get(name);
+				return { value: name, label: site ? `${name} · ${site}` : name };
+			}),
+		[chatModels, modelSites],
+	);
+	// The rows a 上游连接 picker can offer for the selected model. They are
+	// route MEMBERS: a unified alias holds one per upstream 原模型 name, so the
+	// labels have to carry it — see upstreamChoices.
 	const upstreams = useMemo(() => {
 		const overview = (routes.data ?? []).find(
 			({ route }) => route.model_pattern === activeModel,
 		);
-		return (overview?.members ?? [])
-			.map((candidate) => ({
-				id: candidate.channel.id,
-				name: candidate.channel.name,
-				priority: candidate.member.priority,
-				weight: candidate.member.weight,
-			}))
-			.sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0));
-	}, [routes.data, activeModel]);
+		return overview
+			? upstreamChoices(overview.members ?? [], overview.route, t)
+			: [];
+	}, [routes.data, activeModel, t]);
 
 	useEffect(() => {
 		const node = scroller.current;
@@ -186,7 +205,7 @@ export default function Playground({ active }: { active: boolean }) {
 			max_tokens: maxTokens,
 			temperature: temperatureOn ? temperature : undefined,
 			top_p: topPOn ? topP : undefined,
-			channel_id: channelId > 0 ? channelId : undefined,
+			member_id: memberId > 0 ? memberId : undefined,
 		};
 
 		try {
@@ -462,21 +481,17 @@ export default function Playground({ active }: { active: boolean }) {
 			<p className="panel-hint">{t("playground.desc")}</p>
 			<div className="meta-form pg-pickers">
 				<Field label={t("playground.model")} hint={t("playground.modelHint")}>
-					<select
-						aria-label={t("playground.model")}
+					<SearchableSelect
+						ariaLabel={t("playground.model")}
+						options={modelOptions}
 						value={activeModel}
-						onChange={(event) => {
-							setModel(event.target.value);
+						placeholder={t("playground.model")}
+						onChange={(next) => {
+							setModel(next);
 							// Pinned upstreams belong to the previous model's members.
-							setChannelId(0);
+							setMemberId(0);
 						}}
-					>
-						{chatModels.map((name) => (
-							<option key={name} value={name}>
-								{name}
-							</option>
-						))}
-					</select>
+					/>
 				</Field>
 				<Field
 					label={t("playground.upstream")}
@@ -488,13 +503,13 @@ export default function Playground({ active }: { active: boolean }) {
 				>
 					<select
 						aria-label={t("playground.upstream")}
-						value={channelId}
-						onChange={(event) => setChannelId(Number(event.target.value) || 0)}
+						value={memberId}
+						onChange={(event) => setMemberId(Number(event.target.value) || 0)}
 					>
 						<option value={0}>{t("playground.upstreamAuto")}</option>
 						{upstreams.map((upstream) => (
-							<option key={upstream.id} value={upstream.id}>
-								{upstream.name} · p{upstream.priority ?? 0}/w{upstream.weight ?? 0}
+							<option key={upstream.memberId} value={upstream.memberId}>
+								{upstream.label}
 							</option>
 						))}
 					</select>

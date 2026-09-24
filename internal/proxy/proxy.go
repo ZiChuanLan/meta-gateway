@@ -155,6 +155,14 @@ type Request struct {
 	Headers map[string]string
 	// PreferChannelID pins upstream selection (admin try). Zero means normal routing.
 	PreferChannelID int64
+	// PreferMemberID pins one ROUTE MEMBER (admin try). A route may hold
+	// several members on the SAME channel — the alias form unifies N upstream
+	// names into one callable model, one member per {"real":"…"} — and a
+	// channel pin can only ever address the first of them. Member pins win
+	// over PreferChannelID and, like a channel pin, are never silently
+	// redirected: an unavailable member stays a visible failure rather than
+	// turning the probe into a test of something else.
+	PreferMemberID int64
 	// Probe marks a synthetic availability check (model probing). Probe traffic
 	// must not look like real traffic to the health bookkeeping: a probe that
 	// fails is information, not a fault, so member cooldowns and the channel
@@ -220,6 +228,10 @@ type AttemptMeta struct {
 	MemberID    int64  `json:"member_id"`
 	Priority    int    `json:"priority"`
 	Weight      int    `json:"weight"`
+	// UpstreamModel is the name this attempt actually sent upstream. An alias
+	// shared by several upstream names looks identical in the channel name, so
+	// the console needs this to say WHAT it just tested.
+	UpstreamModel string `json:"upstream_model,omitempty"`
 }
 
 func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter, retryTimes int, cooldown time.Duration) *Service {

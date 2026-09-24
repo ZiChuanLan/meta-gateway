@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -322,5 +323,89 @@ func TestTryChatRejectsRolesItCannotForward(t *testing.T) {
 	}
 	if captured.body != nil {
 		t.Errorf("a rejected conversation still reached the upstream: %s", captured.body)
+	}
+}
+
+// A unified alias holds one member per upstream 原模型 name, and several of
+// those members can sit on the SAME channel — which is exactly what the
+// console's 上游连接 picker lists. A channel pin could only ever resolve to the
+// first of them, so every row of that picker tested the same upstream; the
+// member pin is what makes a listed row actually addressable.
+func TestTryChatPinsOneMemberOfAChannel(t *testing.T) {
+	captured := &chatUpstream{}
+	upstream := newChatUpstream(t, captured, "json")
+	defer upstream.Close()
+	serverURL, _, routeID, db := setupImageRelayWithStore(t, upstream.URL, "alias-model")
+
+	seed, err := db.RouteMember.ListByRoute(routeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seed) != 1 {
+		t.Fatalf("fixture produced %d members, want 1", len(seed))
+	}
+	channelID := seed[0].ChannelID
+
+	// The same channel also reaches a differently named model, which is how the
+	// alias form spells "one callable model, N upstream names".
+	var mapped struct {
+		ID int64 `json:"id"`
+	}
+	json.Unmarshal(post(t, fmt.Sprintf("%s/admin/routes/%d/members", serverURL, routeID), map[string]any{
+		"channel_id": channelID, "priority": 0, "weight": 100, "enabled": true,
+		"mapping_json": `{"real":"upstream-x"}`,
+	}), &mapped)
+	if mapped.ID == 0 {
+		t.Fatal("the mapped member was not created")
+	}
+
+	// A channel pin resolves to the first eligible member, whatever the caller
+	// meant. Recorded here as the limitation member_id exists to remove.
+	status, raw, _ := postTryChat(t, serverURL, map[string]any{
+		"model": "alias-model", "prompt": "hi", "channel_id": channelID,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("channel-pinned status = %d body=%s", status, raw)
+	}
+	if got := upstreamPayload(t, captured)["model"]; got != "alias-model" {
+		t.Fatalf("channel pin reached %v; the fixture assumes the plain member is picked first", got)
+	}
+
+	// The member pin reaches the row that was listed — body rewritten included,
+	// so the operator really is testing that upstream name — and the meta frame
+	// names it, so the console can say which member it hit.
+	captured.body = nil
+	status, raw, _ = postTryChat(t, serverURL, map[string]any{
+		"model": "alias-model", "prompt": "hi", "member_id": mapped.ID,
+	})
+	if status != http.StatusOK {
+		t.Fatalf("member-pinned status = %d body=%s", status, raw)
+	}
+	if got := upstreamPayload(t, captured)["model"]; got != "upstream-x" {
+		t.Fatalf("upstream model = %v, want the pinned member's real name", got)
+	}
+	var out struct {
+		MemberID  int64 `json:"member_id"`
+		ChannelID int64 `json:"channel_id"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.MemberID != mapped.ID || out.ChannelID != channelID {
+		t.Errorf("meta = %+v, want member %d on channel %d", out, mapped.ID, channelID)
+	}
+
+	// An unavailable pin fails visibly instead of quietly testing another
+	// member: a probe that reports on something other than what was asked for
+	// is worse than a probe that reports nothing.
+	captured.body = nil
+	status, raw, _ = postTryChat(t, serverURL, map[string]any{
+		"model": "alias-model", "prompt": "hi", "member_id": mapped.ID + 1000,
+	})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown-member status = %d body=%s", status, raw)
+	}
+	if captured.body != nil {
+		t.Errorf("a failed pin still reached the upstream: %s", captured.body)
 	}
 }

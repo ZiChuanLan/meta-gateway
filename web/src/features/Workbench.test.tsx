@@ -67,6 +67,8 @@ function mockBackend(options: {
   resolve?: () => Promise<Response> | Response;
   image?: (request: Record<string, unknown>) => Promise<Response> | Response;
   chat?: (request: Record<string, unknown>) => Promise<Response> | Response;
+  /** Replaces the /admin/routes/overview payload (member shapes matter here). */
+  overview?: unknown[];
 } = {}) {
   const model = options.capability ?? capability();
   const chatModel = chatCapability();
@@ -88,11 +90,12 @@ function mockBackend(options: {
         })));
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input), "http://localhost").pathname;
-    if (path === "/admin/routes/overview") return json([
-      { route: { id: 1, model_pattern: model.model, enabled: true }, members: [{ channel: { id: 7, name: "image-up" }, member: { priority: 9, weight: 1 } }] },
-      { route: { id: 2, model_pattern: chatModel.model, enabled: true }, members: [{ channel: { id: 8, name: "chat-up" }, member: { priority: 5, weight: 2 } }] },
-      { route: { id: 3, model_pattern: "disabled-image", enabled: false }, members: [] },
-    ]);
+    if (path === "/admin/routes/overview")
+      return json(options.overview ?? [
+        { route: { id: 1, model_pattern: model.model, enabled: true }, members: [{ channel: { id: 7, name: "image-up" }, member: { id: 71, channel_id: 7, priority: 9, weight: 1 } }] },
+        { route: { id: 2, model_pattern: chatModel.model, enabled: true }, members: [{ channel: { id: 8, name: "chat-up" }, member: { id: 81, channel_id: 8, priority: 5, weight: 2 } }] },
+        { route: { id: 3, model_pattern: "disabled-image", enabled: false }, members: [] },
+      ]);
     if (path === "/admin/model-capabilities/resolve") return resolve();
     if (path === "/admin/model-capabilities") return json({ items: [model, chatModel] });
     if (path === "/admin/model-capabilities/catalog") return json({
@@ -132,7 +135,12 @@ describe("image workbench", () => {
     expect(screen.queryByRole("button", { name: "Generate image" })).not.toBeInTheDocument();
     await act(async () => pending.resolve(json({ items: { "gpt-image-2": capability() } })));
     expect(await screen.findByRole("button", { name: "Generate image" })).toBeDisabled();
-    expect(screen.queryByRole("option", { name: "disabled-image" })).not.toBeInTheDocument();
+    // Opening the picker is what materializes the options, and the label
+    // carries the connection serving the model. A disabled route is not a
+    // candidate even though it is present in the overview payload.
+    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    expect(within(screen.getByRole("listbox", { name: "Model" })).getAllByRole("option")
+      .map((option) => option.textContent)).toEqual(["gpt-image-2 · image-up"]);
   });
 
   it("shows capability lookup failures as errors instead of an empty model list", async () => {
@@ -240,7 +248,7 @@ describe("image workbench", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "a purple cube" } });
     fireEvent.click(submit);
     await waitFor(() => expect(backend.image).toHaveBeenCalledOnce());
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Model" })).toBeDisabled();
     fireEvent.click(screen.getByText("Playground"));
     await act(async () => pending.resolve(json({
       status: 200, latency_ms: 12, model: "gpt-image-2",
@@ -257,12 +265,19 @@ describe("image workbench", () => {
     const backend = mockBackend();
     renderWorkbench();
     fireEvent.click(await screen.findByText("Playground"));
-    const picker = await screen.findByRole("combobox", { name: "Model" });
-    expect(picker).toHaveValue("gpt-5.1");
+    const picker = await screen.findByRole("button", { name: "Model" });
+    // The trigger reports which model is selected and which connection serves
+    // it, so the answer to "which site is this on?" needs no extra step.
+    expect(picker).toHaveTextContent("gpt-5.1 · chat-up");
     // The image model is routed but answers on /v1/images/*, so it is not a
-    // candidate for a chat turn.
-    expect(within(picker).getAllByRole("option").map((option) => option.textContent))
-      .toEqual(["gpt-5.1"]);
+    // candidate for a chat turn — opening the list proves it is not offered.
+    fireEvent.click(picker);
+    expect(within(screen.getByRole("listbox", { name: "Model" })).getAllByRole("option")
+      .map((option) => option.textContent)).toEqual(["gpt-5.1 · chat-up"]);
+    // Close the list again — it portals to <body>, so leaving it up would keep
+    // its option buttons in every later role query.
+    fireEvent.click(picker);
+    expect(screen.queryByRole("listbox", { name: "Model" })).not.toBeInTheDocument();
     // Members of the selected model become the pinnable upstreams.
     expect(within(screen.getByRole("combobox", { name: "Upstream connection" })).getAllByRole("option")
       .map((option) => option.textContent)).toEqual(["Auto (gateway routing)", "chat-up · p5/w2"]);
@@ -291,6 +306,42 @@ describe("image workbench", () => {
         { role: "user", content: "again" },
       ],
     });
+  });
+
+  it("lists one row per member with its 原模型, and pins that member", async () => {
+    // A shared alias: ONE channel reaches two differently named upstream models.
+    // Both rows used to print "sensenova · p0/w100" and both sent the same
+    // channel id, so the second upstream was neither visible nor reachable.
+    const backend = mockBackend({
+      overview: [
+        {
+          route: { id: 1, model_pattern: "alias", enabled: true },
+          members: [
+            { channel: { id: 7, name: "sensenova" }, member: { id: 41, channel_id: 7, priority: 0, weight: 100 } },
+            { channel: { id: 7, name: "sensenova" }, member: { id: 42, channel_id: 7, priority: 0, weight: 100, mapping_json: '{"real":"SenseNova-V6"}' } },
+          ],
+        },
+      ],
+      resolve: () => json({ items: { alias: chatCapability("alias") } }),
+      chat: () => streamedReply("pong"),
+    });
+    renderWorkbench();
+    fireEvent.click(await screen.findByText("Playground"));
+    const picker = await screen.findByRole("combobox", { name: "Upstream connection" });
+    expect(within(picker).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Auto (gateway routing)",
+      "sensenova · p0/w100",
+      "sensenova · origin SenseNova-V6 · p0/w100",
+    ]);
+
+    // Choosing the second row pins the MEMBER: both rows share channel 7, so a
+    // channel pin could only ever have reached the first of them.
+    fireEvent.change(picker, { target: { value: "42" } });
+    const composer = screen.getByPlaceholderText("Type a message — ⌘/Ctrl + Enter to send…");
+    fireEvent.change(composer, { target: { value: "ping" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(backend.chat).toHaveBeenCalledOnce());
+    expect(backend.chat.mock.calls[0]?.[0]).toMatchObject({ model: "alias", member_id: 42 });
   });
 
   it("surfaces an upstream refusal frame as a turn error instead of an empty answer", async () => {

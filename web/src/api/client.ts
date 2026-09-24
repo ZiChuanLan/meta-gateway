@@ -206,6 +206,12 @@ export class ApiClient {
       temperature?: number;
       top_p?: number;
       channel_id?: number;
+      /**
+       * Pins one route MEMBER, not a channel: a unified alias can hold several
+       * upstream 原模型 names on a single channel, and only a member pin reaches
+       * the row the picker listed. Wins over channel_id.
+       */
+      member_id?: number;
     },
     signal?: AbortSignal,
   ): Promise<Response> {
@@ -668,6 +674,8 @@ export const api = (client: ApiClient) => ({
     temperature?: number;
     top_p?: number;
     channel_id?: number;
+    /** Pins one route member (channel × 原模型); see the client method above. */
+    member_id?: number;
   }) =>
     client.post<{
       status: number;
@@ -679,6 +687,8 @@ export const api = (client: ApiClient) => ({
       member_id?: number;
       priority?: number;
       weight?: number;
+      /** The upstream name this attempt actually sent; "" when unchanged. */
+      upstream_model?: string;
     }>("/admin/try/chat", body),
   /**
    * Route-free single-model check: "does this channel serve this model at
@@ -716,6 +726,12 @@ export const api = (client: ApiClient) => ({
       temperature?: number;
       top_p?: number;
       channel_id?: number;
+      /**
+       * Pins one route MEMBER, not a channel: a unified alias can hold several
+       * upstream 原模型 names on a single channel, and only a member pin reaches
+       * the row the picker listed. Wins over channel_id.
+       */
+      member_id?: number;
     },
     signal?: AbortSignal,
   ) => client.streamTryChat(body, signal),
@@ -728,6 +744,8 @@ export const api = (client: ApiClient) => ({
     n?: number;
     images?: Array<{ data_url: string; name?: string }>;
     channel_id?: number;
+    /** Pins one route member (channel × 原模型); wins over channel_id. */
+    member_id?: number;
     include_raw_response?: boolean;
   }) =>
     client.post<{
@@ -747,6 +765,9 @@ export const api = (client: ApiClient) => ({
       body?: unknown;
       channel_id?: number;
       channel_name?: string;
+      member_id?: number;
+      /** The upstream name this attempt actually sent; "" when unchanged. */
+      upstream_model?: string;
     }>("/admin/try/image", body),
   probeAccount: (id: number) =>
     client.post<AccountProbeResult>(`/admin/channels/${id}/account/probe`),

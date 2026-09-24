@@ -105,6 +105,7 @@ function writeTabState<T>(key: string, value: T) {
   }
 }
 import { CooldownHint } from "./models/CooldownHint";
+import { countActiveModelFilters } from "./models/modelFilters";
 import {
   primaryMember,
   sortMembers,
@@ -216,25 +217,42 @@ function ModelCatalog({
   }, [metadata.data]);
 
   // URL wins over tab-scoped state on first mount; tab state survives the
-  // bare-path sidebar navigation that drops the query string.
+  // bare-path sidebar navigation that drops the query string. Read once, so the
+  // states and the filter panel's default-open decision cannot disagree.
+  const [initialFilters] = useState(() => ({
+    query: initialModel || readTabState("query", ""),
+    channel: channelIdFromUrl ?? readTabState("channel", 0),
+    group: initialGroup || readTabState("group", ""),
+    status: readTabState<"enabled" | "disabled" | "all">("status", "enabled"),
+  }));
   const [selected, setSelected] = useState<number | null>(() =>
     readTabState<number | null>("selected", null),
   );
-  const [query, setQuery] = useState(
-    () => initialModel || readTabState("query", ""),
-  );
-  const [channelFilter, setChannelFilter] = useState(
-    () => channelIdFromUrl ?? readTabState("channel", 0),
-  );
-  const [groupFilter, setGroupFilter] = useState(
-    () => initialGroup || readTabState("group", ""),
-  );
+  const [query, setQuery] = useState(initialFilters.query);
+  const [channelFilter, setChannelFilter] = useState(initialFilters.channel);
+  const [groupFilter, setGroupFilter] = useState(initialFilters.group);
   const [statusFilter, setStatusFilter] = useState<"enabled" | "disabled" | "all">(
-    () => readTabState("status", "enabled"),
+    initialFilters.status,
   );
   const [showAdvanced, setShowAdvanced] = useState(true);
   const [changesOpenRequest, setChangesOpenRequest] = useState(0);
-  const [showModelFilters, setShowModelFilters] = useState(Boolean(initialGroup || channelIdFromUrl));
+  /**
+   * These three filters remember themselves across navigation but live behind a
+   * disclosure, so a restored filter used to narrow the list with nothing on
+   * screen saying so — the model just looked missing. The panel therefore opens
+   * when (and only when) a non-default filter is in force, which makes it
+   * self-healing: clearing the filters closes it again on the next visit.
+   */
+  const [showModelFilters, setShowModelFilters] = useState(
+    () => countActiveModelFilters(initialFilters) > 0,
+  );
+  /** Shown on the trigger so a collapsed panel still reports that the list is
+   *  narrowed — see `countActiveModelFilters` for what counts. */
+  const activeFilterCount = countActiveModelFilters({
+    group: groupFilter,
+    channel: channelFilter,
+    status: statusFilter,
+  });
   const [edit, setEdit] = useState<Partial<Route> | null>(null);
   const [editMeta, setEditMeta] = useState<ModelMetadata | null>(null);
   const [remove, setRemove] = useState<Route | null>(null);
@@ -1143,7 +1161,11 @@ function ModelCatalog({
                 aria-label={t("routing.searchPlaceholder")}
               />
             </label>
-            <Button variant="quiet" aria-expanded={showModelFilters} onClick={() => setShowModelFilters(!showModelFilters)}>{t("modelsPage.filters")}</Button>
+            <Button variant="quiet" aria-expanded={showModelFilters} onClick={() => setShowModelFilters(!showModelFilters)}>
+              {activeFilterCount > 0
+                ? t("modelsPage.filtersActive", { n: activeFilterCount })
+                : t("modelsPage.filters")}
+            </Button>
             <div className="models-filter-options" hidden={!showModelFilters}>
             <select
               aria-label={t("modelsPage.groupFilter")}
@@ -2453,12 +2475,8 @@ function ModelCatalog({
         <Dialog title={t("try.title")} onClose={() => setTryOpen(false)}>
           <TryPanel
             defaultModel={selectedRoute.model_pattern}
-            upstreams={selectedMembers.map((candidate) => ({
-              id: candidate.channel.id,
-              name: candidate.channel.name,
-              priority: candidate.member.priority,
-              weight: candidate.member.weight,
-            }))}
+            members={selectedMembers}
+            route={selectedRoute}
             onClose={() => setTryOpen(false)}
           />
         </Dialog>

@@ -31,6 +31,7 @@ export function SearchableSelect({
 	allowCustom,
 	disabled,
 	groups,
+	ariaLabel,
 }: {
 	options: SelectOption[];
 	value: string;
@@ -41,6 +42,12 @@ export function SearchableSelect({
 	disabled?: boolean;
 	/** Order of group ids to render, with a "*" for ungroupped options. */
 	groups?: string[];
+	/**
+	 * Names the control. Without it the trigger reads as its current value,
+	 * which is fine for a screen reader walking the options but useless for
+	 * a labelled form field ("Backend · OpenAI" never says it picks a model).
+	 */
+	ariaLabel?: string;
 }) {
 	const { t } = useI18n();
 	const listId = useId();
@@ -221,6 +228,7 @@ export function SearchableSelect({
 					aria-haspopup="listbox"
 					aria-expanded={open}
 					aria-controls={open ? listId : undefined}
+					aria-label={ariaLabel}
 				>
 					<span className="truncate">
 						{triggerValue || <em className="is-quiet">{placeholder}</em>}
@@ -273,7 +281,7 @@ export function SearchableSelect({
 							/>
 						</div>
 					) : null}
-					<div className="searchable-select-list" id={listId} role="listbox" aria-label={placeholder ?? t("select.search")}>
+					<div className="searchable-select-list" id={listId} role="listbox" aria-label={ariaLabel ?? placeholder ?? t("select.search")}>
 						{byGroup.map(({ key, options: groupOptions }) => (
 							<div key={key} className="searchable-select-group">
 								{key !== "*" && byGroup.length > 1 ? (

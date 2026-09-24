@@ -2,9 +2,11 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Sparkles, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
+import { SearchableSelect } from "../../components/SearchableSelect";
 import { Button, Empty, ErrorState, Field, Panel, formatDate } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { upstreamMessage } from "../../lib/upstreamError";
+import { primaryChannelName, upstreamChoices } from "../models/routingPolicy";
 import { useSession } from "../../session";
 
 const IMAGE_KINDS = new Set(["image_gen", "image_edit"]);
@@ -46,6 +48,7 @@ export default function ImageStudio({ active }: { active: boolean }) {
   const readingFiles = useRef(false);
   const [reading, setReading] = useState(false);
   const [model, setModel] = useState("");
+  const [memberId, setMemberId] = useState(0);
   const [mode, setMode] = useState<"auto" | "generate" | "edit">("auto");
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState("");
@@ -73,6 +76,36 @@ export default function ImageStudio({ active }: { active: boolean }) {
     return capability && IMAGE_KINDS.has(capability.kind);
   }), [modelNames, capabilities.data]);
   const activeModel = imageModels.includes(model) ? model : imageModels[0] ?? "";
+  const modelSites = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const overview of routes.data ?? []) {
+      const site = primaryChannelName(overview);
+      if (site) map.set(overview.route.model_pattern, site);
+    }
+    return map;
+  }, [routes.data]);
+  // The option label carries the serving connection, and the picker searches
+  // labels — so "which site serves this model?" is answerable here, and typing
+  // a site name filters down to the models it serves.
+  const modelOptions = useMemo(
+    () => imageModels.map((name) => {
+      const site = modelSites.get(name);
+      return { value: name, label: site ? `${name} · ${site}` : name };
+    }),
+    [imageModels, modelSites],
+  );
+  // Image upstreams charge per plane, so pinning one is the way to test that
+  // specific path; mirror the Playground's connection picker — including the
+  // 原模型 in the label, since one channel can serve the alias under several
+  // upstream names.
+  const upstreams = useMemo(() => {
+    const overview = (routes.data ?? []).find(
+      ({ route }) => route.model_pattern === activeModel,
+    );
+    return overview
+      ? upstreamChoices(overview.members ?? [], overview.route, t)
+      : [];
+  }, [routes.data, activeModel, t]);
   const capability = capabilities.data?.items[activeModel];
   const endpoints = capability?.endpoints ?? [];
   const chatImages = endpoints.includes("/v1/chat/completions");
@@ -195,10 +228,35 @@ export default function ImageStudio({ active }: { active: boolean }) {
         <fieldset className="workbench-form" disabled={busy}>
           <div className="meta-form">
             <Field label={t("workbench.image.model")} hint={t("workbench.image.modelHint")}>
-              <select aria-label={t("workbench.image.model")} value={activeModel} onChange={(event) => {
-                setModel(event.target.value); setSize(""); setMode("auto"); setError(null); setFeedback("");
-              }}>
-                {imageModels.map((name) => <option key={name} value={name}>{name}</option>)}
+              <SearchableSelect
+                ariaLabel={t("workbench.image.model")}
+                options={modelOptions}
+                value={activeModel}
+                placeholder={t("workbench.image.model")}
+                onChange={(next) => {
+                  setModel(next); setSize(""); setMode("auto"); setError(null); setFeedback("");
+                  // Pinned connections belong to the previous model's members.
+                  setMemberId(0);
+                }}
+              />
+            </Field>
+            <Field
+              label={t("workbench.image.upstream")}
+              hint={upstreams.length > 1
+                ? t("workbench.image.upstreamHint")
+                : t("workbench.image.upstreamHintOne")}
+            >
+              <select
+                aria-label={t("workbench.image.upstream")}
+                value={memberId}
+                onChange={(event) => { setMemberId(Number(event.target.value) || 0); setError(null); setFeedback(""); }}
+              >
+                <option value={0}>{t("workbench.image.upstreamAuto")}</option>
+                {upstreams.map((upstream) => (
+                  <option key={upstream.memberId} value={upstream.memberId}>
+                    {upstream.label}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label={t("workbench.image.mode")}>
@@ -253,6 +311,7 @@ export default function ImageStudio({ active }: { active: boolean }) {
             <span className="flex-spacer" />
             <Button disabled={busy || !activeModel || !prompt.trim() || !!inputIssue} onClick={() => run.mutate({
               model: activeModel, prompt, mode, size: size || undefined,
+              member_id: memberId > 0 ? memberId : undefined,
               images: refs.map((image) => ({ data_url: image.dataUrl, name: image.name })),
             })}>
               <Sparkles size={13} />
