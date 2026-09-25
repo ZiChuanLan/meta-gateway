@@ -4,6 +4,40 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.7.0] — 2026-09-25
+
+### Added
+
+- **设置 → 外观 →「自定义界面入口」：控制台的入口可以逐个开关**（`web/src/lib/topBar.ts`、`web/src/lib/chromeNav.ts`）。
+  一个面板两组开关，按它们出现的位置分：
+
+  | 顶部栏 | 搜索与命令 · 更新提醒 · 明暗切换 · 语言切换 |
+  | --- | --- |
+  | **导航** | 总览 · 连接 · 模型 · 令牌 · 工作台 · 日志 · 签到 · 交换 · 拓展 · 设置 |
+
+  - 导航标签与图标**与导航本身同源**（`lib/chromeNav.ts`，App 与面板共用一份）：改文案只改 i18n，不会两处漂移；
+  - **隐藏不等于删除**：路由照旧挂载，⌘K 命令面板始终列出全部页面，底部还有「恢复默认」一键全开——藏错了不会丢功能；
+  - **旧设置自动继承**：早期存的是扁平 `{checkin,update,theme,language}`，读取时把 `checkin:false` 升级成 `hiddenNav:["/checkins"]`，不会因为升级把操作员隐藏过的入口又弹回来。
+
+- **模型一键命名（unify）改为直接删除原名，并可按快照重建**（`internal/store/unify.go`、`internal/store/route_snapshot.go`、迁移 `105`）。
+  以前只是把被合并的原名**停用**，而停用的死名依旧占着模型目录一行——正是归一化想要清掉的东西。现在：
+  - 原名路由连同成员**直接删除**；
+  - 删除前按 `PRAGMA table_info` **快照整行**（路由 + 全部成员列，含单价、分组、优先级、覆盖），存进批次 op；「统一历史」可**单独重建**某一条，或撤销整批；
+  - 重建显式写回原 id（SQLite 不复用被删的 id，成员自带的 `route_id` 因此无需重映射），`single_member_id` 在成员之后回写（它是外键，且连接上 `foreign_keys=1`）；
+  - 顺带修掉两个让残名“清不掉”的坑：预览原来只统计**启用中**的原名，旧批次停用的残留永远不会列出来；前端提交前会滤掉 `mapped` 变体，让「只差清理残名」的组变成空组被服务端跳过。
+
+### Changed
+
+- **「商店」改名「拓展」，签到与交换不再是可开关的扩展**（`internal/plugins/service.go`、`internal/httpapi/router.go`、`web/src/features/Store.tsx`）。两者随网关一起发布、始终可用，而启动引导每次都把它们装回来——那个开关本来就是装饰。官方目录清空、旧记录在启动时退休，`requirePluginEnabled` 中间件、签到调度门控（`CheckinAllowed`）与 onChange 重同步钩子一并删除；拓展页现在只做三件事：注册 sidecar、浏览插件市场、管理已安装插件。
+- **模型目录默认筛选回到「全部」**（`web/src/features/models/modelFilters.ts`）：刚被合并、或本来就被停用的路由，不该在操作员开口之前就被藏起来。
+- **顶栏不再有「签到」快捷按钮**（两个主题包的 `Chrome.tsx`）：它和导航里的「签到」指向同一页，两个副本反而各自需要一个开关才不含糊；签到只剩导航项一个入口（该开关仍可隐藏它）。
+
+### Fixed
+
+- **`reasoning_effort` 按上游自己的词表收敛**（`internal/proxy/provider_profile.go`、`internal/proxy/proxy_rewrite.go`）。
+  TypeSafe 对 `low/medium/high/xhigh/none` 之外的档位直接回 `400 field ReasoningEffort invalid`（上游原话，2026-09-25 实测），而网关的阶梯更宽（多 `minimal` 与 `max`）——客户端要 `max` 就被原样转发、被上游拒绝；把 `max_reasoning_effort` 填成 `max`（或留空）等于「不降档」，也救不了。现在供应商词表是 profile 的运行时能力，**两个约束独立生效**：操作员声明的天花板，与上游真正接受的档位；后者按 `type_hint` 或**解析后的端点**匹配（`…/v1/systemone` → TypeSafe），所以「手填映射 + 类型写着 new-api」的渠道也会命中。`max → xhigh`、`minimal → none`，**绝不向上取整**（低于全部可接受档位就放行，不替客户端加推理）。保存期的字段映射刻意不按端点匹配：手写映射的主人是操作员，运行时只借能力，不碰映射。
+- **「签到」开关看起来没反应**（`web/src/App.tsx`）。开关只关掉了顶栏图标，而经典控制台的**导航条就在顶栏里**——同一个词写在两厘米外，用户会直接判定开关坏了（实测反馈即如此）。现在导航项与顶栏图标一起隐藏；签到页本身仍可达，路由照挂载、命令面板始终列出。
+
 ## [v3.6.1] — 2026-09-24
 
 ### Fixed
