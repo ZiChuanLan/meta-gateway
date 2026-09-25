@@ -264,7 +264,7 @@ export function Channels() {
           kind: "created_and_verified",
           name,
           channelId,
-          models: refreshResult.models.length,
+          models: (refreshResult.models ?? []).length,
         });
       },
       onError: () => {
@@ -1362,7 +1362,7 @@ export function Channels() {
           <ResultStrip status="success">
             {t("channels.refreshResult", {
               id: refresh.data.channel_id,
-              models: refresh.data.models.length,
+              models: (refresh.data.models ?? []).length,
             })}
           </ResultStrip>
         ) : null}
@@ -1370,7 +1370,7 @@ export function Channels() {
           <ResultStrip status="success">
             {t("channels.probeResult", {
               id: probe.data.channel_id,
-              models: probe.data.models.length,
+              models: (probe.data.models ?? []).length,
               latency: probe.data.latency_ms,
             })}
           </ResultStrip>

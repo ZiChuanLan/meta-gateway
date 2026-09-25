@@ -6,6 +6,7 @@ import { I18nProvider } from "./i18n";
 import { SessionProvider } from "./session";
 import { ToastProvider } from "./toast";
 import { App } from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./styles.css";
 import "./themes/modern/theme.css";
 import "./themes/classic/theme.css";
@@ -29,7 +30,9 @@ createRoot(document.getElementById("root")!).render(
 				<ToastProvider>
 					<SessionProvider>
 						<BrowserRouter basename="/console">
-							<App />
+							<ErrorBoundary>
+								<App />
+							</ErrorBoundary>
 						</BrowserRouter>
 					</SessionProvider>
 				</ToastProvider>

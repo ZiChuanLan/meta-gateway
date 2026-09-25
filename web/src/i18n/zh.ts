@@ -97,6 +97,12 @@ export const zh: Dict = {
   "lang.en": "English",
   "lang.zh": "中文",
   "lang.switch": "语言",
+  "crash.kicker": "界面异常",
+  "crash.title": "控制台遇到了意外错误",
+  "crash.body":
+    "这个页面没能渲染出来。先重新加载——触发它的状态通常是一次性的；若反复出现，请把下面的信息交给网关维护者。",
+  "crash.reload": "重新加载",
+  "crash.copy": "复制错误详情",
 
   "pagination.range": "第 {start}–{end} 条，共 {total} 条",
   "pagination.pageOf": "{page} / {total}",

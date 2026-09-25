@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/discovery"
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
@@ -118,6 +119,11 @@ func (h *DiscoveryHandler) listModels(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list discovered models")
 		return
+	}
+	if models == nil {
+		// Same contract as the refresh payload: a channel with no discovered
+		// models answers with an empty array, never JSON null.
+		models = []domain.DiscoveredModel{}
 	}
 	writeJSON(w, http.StatusOK, models)
 }

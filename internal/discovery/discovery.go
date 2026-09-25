@@ -312,7 +312,12 @@ func (s *Service) probeModels(ctx context.Context, adapter adapters.ModelAdapter
 		sort.Strings(perKey[credential.ID])
 	}
 	if len(merged) == 0 {
-		return nil, perKey, lastErr, lastCredential, nil
+		// An upstream that lists nothing is a healthy channel with an empty
+		// catalogue, and this slice goes straight into the refresh payload where
+		// the console reads `.models.length`. A nil slice marshals to
+		// `"models": null` and blanked the whole page there, so the empty case
+		// must still be an array.
+		return []string{}, perKey, lastErr, lastCredential, nil
 	}
 	models = make([]string, 0, len(merged))
 	for model := range merged {

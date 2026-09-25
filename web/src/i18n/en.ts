@@ -103,6 +103,12 @@ export const en: Dict = {
   "lang.en": "English",
   "lang.zh": "中文",
   "lang.switch": "Language",
+  "crash.kicker": "Console error",
+  "crash.title": "The console hit an unexpected error",
+  "crash.body":
+    "This view could not render. Reload first — whatever caused it is usually transient. If it keeps happening, pass the details below to whoever maintains this gateway.",
+  "crash.reload": "Reload",
+  "crash.copy": "Copy details",
 
   "pagination.range": "{start}–{end} of {total}",
   "pagination.pageOf": "{page} / {total}",

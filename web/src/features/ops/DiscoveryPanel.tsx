@@ -115,7 +115,7 @@ export function DiscoveryPanel() {
           <span>
             {t("ops.refreshChannelResult", {
               id: refreshOne.data.channel_id,
-              models: refreshOne.data.models.length,
+              models: (refreshOne.data.models ?? []).length,
               routes: refreshOne.data.created_routes,
             })}
           </span>

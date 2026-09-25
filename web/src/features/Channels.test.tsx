@@ -180,6 +180,102 @@ describe("Channels two-phase create", () => {
   });
 });
 
+describe("Channels model sync payload", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  // Regression: refreshChannel answers through a bare post<RefreshResult>, so a
+  // `"models": null` payload (an upstream that lists nothing) reached
+  // `.models.length` during render and took the whole page down to a blank
+  // screen. The array now always comes back, and the read is defensive too.
+  it("survives a refresh result that carries no models array", async () => {
+    const overviews = [
+      {
+        channel: {
+          id: 21,
+          name: "empty-upstream",
+          site_id: 1,
+          credential_id: 11,
+          base_url: "",
+          models_csv: "",
+          group_name: "default",
+          priority: 0,
+          weight: 100,
+          status: "enabled",
+          type_hint: "openai-compatible",
+          created_at: "",
+          updated_at: "",
+        },
+        credential_kind: "api_key",
+        checkin_enabled: false,
+        has_user_credential: false,
+        has_platform_user_id: false,
+        has_api_key: true,
+        site_usable: true,
+        credential_usable: true,
+        model_count: 0,
+        discovered_model_count: 0,
+        cooling_member_count: 0,
+        failure_count: 0,
+        checkin_supported: true,
+        account_supported: true,
+        last_error: "",
+        last_checked_at: null,
+        last_latency_ms: 0,
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input).split("?")[0];
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (path === "/admin/channels/overview" && method === "GET") {
+          return jsonResponse(overviews);
+        }
+        if (path === "/admin/sites" && method === "GET") {
+          return jsonResponse([]);
+        }
+        if (path === "/admin/discovery/channels/21/refresh" && method === "POST") {
+          return jsonResponse({
+            channel_id: 21,
+            adapter: "openai-compatible",
+            models: null,
+            latency_ms: 4,
+            checked_at: "2026-09-25T00:00:00Z",
+            created_routes: 0,
+            created_members: 0,
+            deleted_members: 0,
+            deleted_routes: 0,
+          });
+        }
+        return jsonResponse([]);
+      }),
+    );
+
+    renderChannels();
+    await screen.findByRole("heading", { name: "Connections" });
+    await screen.findByText("empty-upstream");
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "More actions" })[0]!,
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Sync models" }),
+    );
+    expect(
+      await screen.findByText(/Connection #21: fetched 0 models/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("capabilityFlags", () => {
   it("marks access-token-only connections as check-in ready and missing API key", () => {
     const flags = capabilityFlags({
