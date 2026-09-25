@@ -4,6 +4,22 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.7.2] — 2026-09-25
+
+### Fixed
+
+- **令牌的模型白名单/黑名单只列「已接入路由的模型名」**（`web/src/components/ModelPicker.tsx`、`web/src/features/Keys.tsx`）。
+  候选原来取自 discovery 快照（上游原始模型名），于是**渠道里重命名过的模型（别名）根本搜不到**——白名单是字面匹配，令牌一旦存过白名单就会永久挡住那个对外名；反过来，一堆没有路由、下游根本调不通的上游名却全在列表里。现在：
+  - 候选 = 路由名（精确名直接用，通配路由展开成它应答的具体名），每条带**可达渠道**、别名上游名与「路由已禁用」标记；
+  - 搜索同时匹配渠道名、可按渠道筛选、按厂商分组折叠，并能一键全选当前筛选结果；
+  - **已选但当前没有路由的名字会标红提示**（可能被重命名或删除），配一个「移除失效项」的补救入口——这正是「模型改名后令牌就用不了」的现场。
+- **上游没有模型时，同步会让控制台白屏**（`internal/discovery/discovery.go`、`internal/httpapi/discovery.go`、`web/src/features/Channels.tsx`）。
+  空模型集在 Go 里是 nil slice，序列化成 `"models": null`，而控制台直接读 `.models.length`——渲染期抛错会卸载整棵树，页面变空白（后端此时返回 200，看起来像「同步成功了却白屏」）。现在 refresh / probe / 模型清单三处一律序列化成 `[]`，前端读取也做了兜底。
+
+### Added
+
+- **渲染异常不再白屏**（`web/src/components/ErrorBoundary.tsx`）：整站包了一层错误边界，出错时显示可复制的错误详情与「重新加载」按钮，而不是一片空白。
+
 ## [v3.7.1] — 2026-09-25
 
 ### Added
