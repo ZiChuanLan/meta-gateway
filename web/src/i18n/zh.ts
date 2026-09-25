@@ -150,6 +150,16 @@ export const zh: Dict = {
   "error.importInvalidCause": "文档结构不完整，或必要字段缺失、类型不对。",
   "error.importInvalidFix":
     "重新导出一次；若文件被手工编辑过，请换回原始文件。",
+  "error.pluginMarketUnavailable": "插件市场不可用",
+  "error.pluginMarketUnavailableCause":
+    "没有任何一个插件源能返回注册表，所以市场里看不到任何插件。",
+  "error.pluginMarketUnavailableFix":
+    "检查网络与 PLUGIN_MARKET_URLS 配置；网关出网不走系统代理（HTTP_PROXY/HTTPS_PROXY），需代理才能访问 GitHub 时请改用可直达的镜像。网关日志里会列出每个源地址与它的错误。",
+  "error.pluginDownloadFailed": "插件安装失败：取不到安装包",
+  "error.pluginDownloadFailedCause":
+    "注册表、GitHub Release 或下载链接失败了，也可能是下载到的包与注册表里钉的 sha256/大小 不符。",
+  "error.pluginDownloadFailedFix":
+    "确认该插件源可直达（网关不走系统代理），再看网关日志中 plugin_* 的原始错误；自建源在私网/本机时需配置 OUTBOUND_ALLOW_CIDRS。",
   "error.decryptFailed": "无法解密备份",
   "error.decryptFailedCause": "解锁密码不正确，或备份文件已损坏。",
   "error.decryptFailedFix":

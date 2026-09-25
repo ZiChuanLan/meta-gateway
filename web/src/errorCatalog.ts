@@ -121,6 +121,35 @@ const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
 	decrypt_failed: "server",
 	response_too_large: "server",
 
+	// — Plugin market: registry, release lookup, package download —
+	// These used to arrive as "internal_error" (→ "server") with nothing logged,
+	// which made an unreachable registry look like a broken gateway. Codes that
+	// end in _status_NNN (an artifact host answering 403, say) are classified by
+	// the status heuristics below; the rest are named here.
+	plugin_market_unavailable: "network",
+	plugin_release_fetch: "network",
+	plugin_release_asset_unavailable: "network",
+	plugin_release_version_invalid: "config",
+	plugin_artifact_download: "network",
+	plugin_artifact_read: "network",
+	plugin_artifact_checksum_mismatch: "config",
+	plugin_artifact_size_mismatch: "config",
+	plugin_artifact_too_large: "config",
+	plugin_manifest_entrypoint_missing: "config",
+	plugin_manifest_entrypoint_invalid: "config",
+	plugin_manifest_missing_entrypoint: "config",
+	plugin_manifest_invalid_id: "config",
+	plugin_manifest_invalid_config: "config",
+	plugin_manifest_invalid_permissions: "config",
+	plugin_archive_path_invalid: "config",
+	plugin_archive_path_escape: "config",
+	plugin_archive_symlink_rejected: "config",
+	plugin_health_check_failed: "network",
+	plugin_stage_create: "server",
+	plugin_stage_write: "server",
+	plugin_replace_failed: "server",
+	plugin_entrypoint_unavailable: "server",
+
 	// — Client cancelled / gateway attempt timeout: no retry happens because
 	// the caller is gone (or the attempt budget was consumed) — surfacing
 	// these as "network error" made the no-retry behavior look like a bug.

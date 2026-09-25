@@ -39,14 +39,36 @@ func TestMarketListAndValidation(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	// An invalid entry invalidates the whole document, and with no other source
+	// the market is unavailable — not empty. Answering "no plugins" here is what
+	// made an unreachable or broken registry look like a plugin that simply is
+	// not published.
 	m := newMarket(&http.Client{Timeout: 5 * time.Second}, []string{srv.URL})
+	entries, err := m.List(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "plugin_market_unavailable") {
+		t.Fatalf("expected plugin_market_unavailable, got entries=%d err=%v", len(entries), err)
+	}
+}
+
+// The invariant the per-source skip exists for: one broken registry must not
+// remove what a healthy one served.
+func TestMarketKeepsEntriesWhenAnotherSourceFails(t *testing.T) {
+	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"schema_version":1,"plugins":[{"id":"demo","name":"Demo","url":"http://127.0.0.1:9100"}]}`))
+	}))
+	defer good.Close()
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer broken.Close()
+
+	m := newMarket(&http.Client{Timeout: 5 * time.Second}, []string{broken.URL, good.URL})
 	entries, err := m.List(context.Background())
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	// The invalid second entry makes the whole source fail validation.
-	if len(entries) != 0 {
-		t.Fatalf("expected invalid source to be skipped, got %d entries", len(entries))
+	if len(entries) != 1 || entries[0].ID != "demo" {
+		t.Fatalf("entries = %+v, want the healthy source's demo entry", entries)
 	}
 }
 

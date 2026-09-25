@@ -348,14 +348,12 @@ func (s *Service) MarketSources() []MarketSource {
 }
 
 // MarketPlugins lists all installable plugins from all market sources,
-// deduplicated by ID (first source wins). A failed source is skipped so one
-// bad registry does not empty the market.
-func (s *Service) MarketPlugins(ctx context.Context) []MarketEntry {
-	entries, err := s.market.List(ctx)
-	if err != nil {
-		return nil
-	}
-	return entries
+// deduplicated by ID (first source wins). An individual failed source is
+// skipped (and logged) so one bad registry cannot empty the market; an error is
+// returned only when no source answered at all, which the caller must report as
+// an unreachable market rather than an empty one.
+func (s *Service) MarketPlugins(ctx context.Context) ([]MarketEntry, error) {
+	return s.market.List(ctx)
 }
 
 // InstallMarket installs a market entry. Legacy sidecar entries register an

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -232,14 +233,26 @@ func (m *market) listAll(ctx context.Context) ([]MarketEntry, error) {
 	m.mu.Unlock()
 
 	var out []MarketEntry
+	failed := 0
 	for _, src := range sources {
 		entries, err := m.fetch(ctx, src)
 		if err != nil {
 			// One bad source must not kill the whole market; keep stale
-			// cache if present, otherwise skip.
+			// cache if present, otherwise skip — but say so. Swallowing this
+			// made an unreachable registry look exactly like a registry that
+			// simply does not carry the plugin (2026-09-25).
+			failed++
+			slog.Warn("plugin market source unavailable", "source", src.URL, "error", err)
 			continue
 		}
 		out = append(out, entries...)
+	}
+	// No source answered at all: that is an unreachable market, not an empty
+	// one. Callers distinguish the two (the console renders "market failed"
+	// instead of "no plugins", and installs report plugin_market_unavailable
+	// instead of plugin_not_found).
+	if len(sources) > 0 && failed == len(sources) {
+		return nil, fmt.Errorf("plugin_market_unavailable")
 	}
 	return out, nil
 }

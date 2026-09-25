@@ -157,6 +157,16 @@ export const en: Dict = {
     "The document structure is incomplete, or a required field is missing or has the wrong type.",
   "error.importInvalidFix":
     "Export the backup again; if the file was edited by hand, restore the original.",
+  "error.pluginMarketUnavailable": "Plugin market unavailable",
+  "error.pluginMarketUnavailableCause":
+    "No registry source answered, so the market lists nothing at all.",
+  "error.pluginMarketUnavailableFix":
+    "Check the network and PLUGIN_MARKET_URLS; the gateway deliberately ignores the system proxy (HTTP_PROXY/HTTPS_PROXY), so a host that needs one to reach GitHub needs a mirror instead. The gateway log names every source and its error.",
+  "error.pluginDownloadFailed": "Plugin install failed: no package",
+  "error.pluginDownloadFailedCause":
+    "The registry, the GitHub release, or the artifact URL failed — or the downloaded package does not match the sha256/size pinned in the registry.",
+  "error.pluginDownloadFailedFix":
+    "Confirm the source is directly reachable (the gateway does not use the system proxy), then read the raw plugin_* error in the gateway log; a source on localhost/private addresses needs OUTBOUND_ALLOW_CIDRS.",
   "error.decryptFailed": "Could not decrypt the backup",
   "error.decryptFailedCause":
     "The unlock password is wrong, or the backup file is damaged.",

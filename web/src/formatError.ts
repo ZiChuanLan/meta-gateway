@@ -141,6 +141,36 @@ export function formatErrorObject(error: unknown, t: Translate): FormattedError 
 			class: "missing_key",
 		};
 	}
+	// A market install fails outside the gateway: the registry, the GitHub
+	// release, or the artifact host. The generic classes sent the operator to a
+	// channel's Base URL that is not involved at all, and "server" hid the one
+	// fact that matters here — the gateway deliberately ignores the system proxy
+	// when a plugin needs one to reach GitHub (2026-09-25). A code that carries an
+	// HTTP status (_status_403) keeps the generic path so the status is not lost.
+	if (!categorizeError(raw).status) {
+		if (lower === "plugin_market_unavailable") {
+			return {
+				title: t("error.pluginMarketUnavailable"),
+				cause: t("error.pluginMarketUnavailableCause"),
+				fix: t("error.pluginMarketUnavailableFix"),
+				raw,
+				class: "network",
+			};
+		}
+		if (
+			lower.startsWith("plugin_release_") ||
+			lower.startsWith("plugin_artifact_") ||
+			lower.startsWith("plugin_download_")
+		) {
+			return {
+				title: t("error.pluginDownloadFailed"),
+				cause: t("error.pluginDownloadFailedCause"),
+				fix: t("error.pluginDownloadFailedFix"),
+				raw,
+				class: "network",
+			};
+		}
+	}
 
 	const classified = categorizeError(raw);
 	const cls = classified.class;

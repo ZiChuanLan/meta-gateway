@@ -4,6 +4,27 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [Unreleased]
+
+### Changed
+
+- **插件源码迁出主仓**：`tools/plugins/` → [`ZiChuanLan/meta-gateway-plugins`](https://github.com/ZiChuanLan/meta-gateway-plugins)
+  （commit `f3fb892`）。`demo-plugin` 与 `jev-router` 现在是插件仓里各自独立的 module（各自
+  `go.mod` 与 CI），主仓只保留协议本身：`internal/plugins`（清单、钩子、托管进程）与
+  `internal/proxy/hooks.go`（拦截契约）。顺带清掉随源码提交的 ~27 MB 构建产物（4 个已发布的 zip、
+  verify 二进制、`.exe~`）与一个未跟踪的 9.7 MB 可执行文件；`docs/architecture.md` 现在写明
+  第三方插件只需一个注册表条目，不必合并进本仓。
+
+### Fixed
+
+- **插件市场失败不再无声**（`internal/plugins/market.go`、`internal/httpapi/plugins.go`、
+  `web/src/formatError.ts`）。以前注册表拉不动时市场只是一个"空列表"（`listAll` 静默跳过失败的源），
+  安装失败的原因（超时 / 上游 403 / 校验不符 / 解压失败）一律变成 `500 {"error":"internal_error"}`，
+  而且**服务端没有任何日志** —— 排查时无法区分"这个插件没发布"与"注册表拉不到"。现在：每个失败的源
+  都记一条 `WARN`（含源地址与错误），全部源失败时报 502 `plugin_market_unavailable`（控制台显示
+  「插件市场不可用」，而不是「市场为空」），安装失败把 `plugin_*` 原始码回传并记 `ERROR`（含完整
+  错误链），前端为注册表/下载失败给出专门文案（包括"网关出网不走系统代理"这一条）。
+
 ## [v3.7.2] — 2026-09-25
 
 ### Fixed

@@ -5,10 +5,12 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	pathpkg "path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -66,9 +68,18 @@ func (h *PluginHandler) Register(r chi.Router) {
 func (h *PluginHandler) marketList(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	entries, err := h.service.MarketPlugins(ctx)
+	if err != nil {
+		// No registry answered. Reporting an empty market here sent operators
+		// looking for a plugin that "is not published" while the real problem
+		// was a registry the gateway could not reach (2026-09-25).
+		slog.Warn("plugin market unavailable", "error", err)
+		writeError(w, http.StatusBadGateway, "plugin_market_unavailable")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sources": h.service.MarketSources(),
-		"plugins": h.service.MarketPlugins(ctx),
+		"plugins": entries,
 	})
 }
 
@@ -605,7 +616,23 @@ func equalSecret(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// pluginErrorCodePattern pulls the machine-readable code out of a wrapped
+// plugin error ("plugin_artifact_download: Get \"https://…\": …").
+var pluginErrorCodePattern = regexp.MustCompile(`plugin_[a-z0-9_]+`)
+
+// writePluginError maps a plugin error onto a response.
+//
+// The default branch used to answer a bare "internal_error" with no log line,
+// which made a registry timeout indistinguishable from a corrupt archive and
+// left nothing to diagnose (2026-09-25). Now the code travels to the console
+// (the frontend catalog turns it into a sentence) and the full chain goes to
+// the log; upstream-shaped failures — registry, release API, artifact host —
+// answer 502 because the operator's configuration is not what failed.
 func writePluginError(w http.ResponseWriter, err error) {
+	code := pluginErrorCodePattern.FindString(err.Error())
+	if code == "" {
+		code = "internal_error"
+	}
 	switch {
 	case errors.Is(err, plugins.ErrNotFound):
 		writeError(w, http.StatusNotFound, "plugin_not_found")
@@ -617,7 +644,26 @@ func writePluginError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "plugin_invalid_id")
 	case errors.Is(err, plugins.ErrCoreImmutable):
 		writeError(w, http.StatusBadRequest, "plugin_core_immutable")
+	case isUpstreamPluginFailure(code):
+		slog.Error("plugin install failed", "code", code, "error", err)
+		writeError(w, http.StatusBadGateway, code)
 	default:
-		writeError(w, http.StatusInternalServerError, "internal_error")
+		slog.Error("plugin request failed", "code", code, "error", err)
+		writeError(w, http.StatusInternalServerError, code)
 	}
+}
+
+// isUpstreamPluginFailure reports whether the failure happened outside the
+// gateway: an unreachable registry, a GitHub release that cannot be resolved,
+// or an artifact host that answered with an error or the wrong bytes.
+func isUpstreamPluginFailure(code string) bool {
+	switch {
+	case code == "plugin_market_unavailable":
+		return true
+	case strings.HasPrefix(code, "plugin_release_"):
+		return true
+	case strings.HasPrefix(code, "plugin_artifact_"):
+		return true
+	}
+	return false
 }
