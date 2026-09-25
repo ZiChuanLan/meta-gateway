@@ -122,7 +122,7 @@ function renderDrawer(keys: unknown[] = [GEMINI_KEY]) {
 
 /** Candidate model names currently offered by the (single) open picker. */
 function candidateModels(): string[] {
-	return Array.from(document.querySelectorAll(".model-picker-item")).map(
+	return Array.from(document.querySelectorAll(".model-picker-name")).map(
 		(row) => row.textContent?.trim() ?? "",
 	);
 }

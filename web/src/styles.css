@@ -5872,22 +5872,58 @@ td.actions {
   line-height: 1.4;
 }
 
+/* —— Model picker: token model allow/deny candidate chooser ——
+   Candidates are route names (what a client can actually send), so every row
+   reports the channels that reach it, flags aliases and wildcard expansions,
+   and selected names that lost their route are called out instead of quietly
+   blocking every request. */
 .model-picker {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.model-picker-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.model-picker-selected-count {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.model-picker-clear {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  transition: color var(--dur-hover) var(--ease-hover);
+}
+.model-picker-clear:hover {
+  color: var(--danger);
 }
 .model-picker-selected {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  max-height: 96px;
+  max-height: 108px;
   overflow-y: auto;
 }
 .model-picker-selected .capability-chip {
   gap: 5px;
   max-width: 100%;
+}
+.model-picker-selected .capability-chip.is-missing {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 .model-picker-remove {
   display: inline-flex;
@@ -5904,10 +5940,48 @@ td.actions {
 .model-picker-remove:hover {
   opacity: 1;
 }
+.model-picker-missing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.model-picker-missing-copy {
+  min-width: 0;
+}
+.model-picker-missing-clear {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-hover) var(--ease-hover);
+}
+.model-picker-missing-clear:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.model-picker-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 .model-picker-search {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1 1 150px;
   border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
   border-radius: var(--radius);
   padding: 6px 10px;
@@ -5923,15 +5997,99 @@ td.actions {
   padding: 0;
   font-size: 13px;
 }
+.model-picker-toolbar .model-picker-channel-filter {
+  /* .field select would stretch this to the full row. */
+  width: auto;
+  max-width: 168px;
+}
+.model-picker-channel-filter {
+  flex: none;
+  height: 30px;
+  max-width: 168px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+.model-picker-selectall {
+  flex: none;
+  margin-left: auto;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--primary-hairline);
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-hover) var(--ease-hover);
+}
+.model-picker-selectall:hover {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
 .model-picker-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 168px;
+  max-height: 232px;
   overflow-y: auto;
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 5px;
+}
+.model-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.model-picker-group + .model-picker-group {
+  margin-top: 4px;
+}
+.model-picker-group-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 6px 3px;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--dur-hover) var(--ease-hover);
+}
+.model-picker-group-head svg {
+  flex: none;
+  transition: transform var(--dur-hover) var(--ease-hover);
+}
+.model-picker-group-head.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+.model-picker-group-head:hover {
+  color: var(--ink);
+}
+.model-picker-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.model-picker-group-count {
+  flex: none;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
 }
 .model-picker-item {
   display: flex;
@@ -5946,10 +6104,69 @@ td.actions {
   background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 .model-picker-item input {
+  flex: none;
   width: auto;
   min-height: 0;
   margin: 0;
   accent-color: var(--primary);
+}
+.model-picker-item.is-unroutable {
+  opacity: 0.62;
+}
+.model-picker-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.model-picker-badge {
+  flex: none;
+  padding: 0 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.model-picker-badge.is-alias {
+  border-color: var(--primary-hairline);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.model-picker-badge.is-pattern {
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
+  background: var(--info-soft);
+  color: var(--info);
+}
+.model-picker-badge.is-off {
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.model-picker-channels {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 46%;
+  overflow: hidden;
+}
+.model-picker-channel {
+  max-width: 96px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-picker-channel.is-more {
+  border-style: dashed;
 }
 .model-picker-empty {
   padding: 8px;

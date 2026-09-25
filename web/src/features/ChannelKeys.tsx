@@ -347,7 +347,7 @@ export function ChannelKeysDrawer({
                           </p>
                         ) : null}
                         <ModelPicker
-                          allModels={candidateModels}
+                          options={candidateModels.map((name) => ({ name }))}
                           selected={selectedModels}
                           onChange={(selected) => {
                             const next = selected.join(",");

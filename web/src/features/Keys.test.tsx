@@ -262,6 +262,118 @@ describe("Keys page", () => {
 		).toBeInTheDocument();
 	});
 
+	it("offers routed model names, so a renamed model is pickable", async () => {
+		const fetchMock = vi.fn(
+			async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = String(input);
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (path.endsWith("/admin/downstream-keys") && method === "GET") {
+					return jsonResponse([]);
+				}
+				if (path.includes("/admin/discovery/models")) {
+					return jsonResponse([
+						{
+							id: 1,
+							channel_id: 1,
+							model_name: "deepseek-v4-flash",
+							available: true,
+							source: "sync",
+							latency_ms: 12,
+							checked_at: "2026-07-17T00:00:00Z",
+						},
+						{
+							id: 2,
+							channel_id: 1,
+							model_name: "never-routed-upstream",
+							available: true,
+							source: "sync",
+							latency_ms: 12,
+							checked_at: "2026-07-17T00:00:00Z",
+						},
+					]);
+				}
+				if (path.endsWith("/admin/routes/overview")) {
+					return jsonResponse([
+						{
+							route: {
+								id: 4,
+								model_pattern: "deepseek-flash",
+								enabled: true,
+								routing_mode: "priority",
+								created_at: "2026-07-17T00:00:00Z",
+								updated_at: "2026-07-17T00:00:00Z",
+							},
+							members: [
+								{
+									member: {
+										id: 9,
+										route_id: 4,
+										channel_id: 1,
+										priority: 0,
+										weight: 100,
+										enabled: true,
+										auto: true,
+										manual_override: true,
+										mapping_json: JSON.stringify({ real: "deepseek-v4-flash" }),
+										fail_count: 0,
+										created_at: "2026-07-17T00:00:00Z",
+										updated_at: "2026-07-17T00:00:00Z",
+									},
+									channel: { id: 1, name: "Site One" },
+									credential_usable: true,
+								},
+							],
+						},
+					]);
+				}
+				if (path.endsWith("/admin/model-metadata")) {
+					return jsonResponse({ items: [] });
+				}
+				if (path.endsWith("/admin/route-groups")) {
+					return jsonResponse({ groups: [] });
+				}
+				if (path.includes("/admin/usage/summary")) {
+					return jsonResponse({
+						request_count: 0,
+						prompt_tokens: 0,
+						completion_tokens: 0,
+						total_tokens: 0,
+					});
+				}
+				return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+			},
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		renderKeys();
+
+		await screen.findByText(/No downstream tokens yet/i);
+		fireEvent.click(firstCreateKeyButton());
+		fireEvent.click(screen.getByRole("button", { name: /^Model access/ }));
+
+		const names = () =>
+			Array.from(document.querySelectorAll(".model-picker-name")).map(
+				(node) => node.textContent?.trim() ?? "",
+			);
+		await waitFor(() => expect(names()).toContain("deepseek-flash"));
+		// The upstream spelling is not callable — the route answers under the
+		// alias — and a discovered model with no route is not offered at all.
+		expect(names()).not.toContain("deepseek-v4-flash");
+		expect(names()).not.toContain("never-routed-upstream");
+		const row = Array.from(
+			document.querySelectorAll(".model-picker-item"),
+		).find(
+			(item) =>
+				item.querySelector(".model-picker-name")?.textContent ===
+				"deepseek-flash",
+		);
+		expect(row?.textContent).toContain("Site One");
+		expect(
+			row
+				?.querySelector(".model-picker-badge.is-alias")
+				?.getAttribute("title"),
+		).toContain("deepseek-v4-flash");
+	});
+
 	it("re-views a stored plaintext token and rotates it", async () => {
 		const fetchMock = vi.fn(
 			async (input: RequestInfo | URL, init?: RequestInit) => {

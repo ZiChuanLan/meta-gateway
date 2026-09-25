@@ -14,14 +14,18 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { CreatedDownstreamKey, DownstreamKey } from "../api/types";
+import type {
+  CreatedDownstreamKey,
+  DownstreamKey,
+  RouteOverview,
+} from "../api/types";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
 import { rowContextPoint, rowKeyboardContextPoint } from "../components/contextMenu";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
-import { ModelPicker } from "../components/ModelPicker";
+import { ModelPicker, type ModelOption } from "../components/ModelPicker";
 import { ScopePicker } from "../components/ScopePicker";
-import { modelGroup, modelPatternMatches } from "./models/modelGroups";
+import { autoModelGroup, modelGroup, modelPatternMatches } from "./models/modelGroups";
 import { PaginationBar } from "../components/PaginationBar";
 import { SecretRevealDialog } from "../components/SecretRevealDialog";
 import { EntityState } from "../components/EntityState";
@@ -169,6 +173,32 @@ function formatCost(value?: number) {
   return value.toFixed(4);
 }
 
+/**
+ * Upstream model names behind a route's {"real": …} alias mapping.
+ *
+ * Aliases are written on the member (one per channel) with a legacy
+ * route-level form for older rows; to the picker both mean the same thing:
+ * this route name is the name a client sends for that upstream model.
+ */
+function aliasReals(overview: RouteOverview): string[] {
+  const out = new Set<string>();
+  const collect = (raw?: string) => {
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { real?: string };
+      const real = parsed.real?.trim();
+      if (real) out.add(real);
+    } catch {
+      // Malformed mapping: the proxy fails open on those, and so does the UI.
+    }
+  };
+  collect(overview.route.mapping_json);
+  for (const candidate of overview.members ?? []) {
+    collect(candidate.member.mapping_json);
+  }
+  return [...out];
+}
+
 export function Keys() {
   const { client } = useSession();
   const { t } = useI18n();
@@ -182,7 +212,11 @@ export function Keys() {
     queryKey: ["discovered-models"],
     queryFn: ({ signal }) => service.discoveredModels(undefined, signal),
   });
-  const allModels = useMemo(() => {
+  // Upstream names reported by discovery: used only to expand wildcard
+  // routes into the concrete names a client can ask for. They are NOT the
+  // candidate list — the only names a token filter can match are route
+  // names (see modelOptions below).
+  const discoveredNames = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
     for (const model of discovered.data ?? []) {
@@ -216,41 +250,69 @@ export function Keys() {
     }
     return map;
   }, [metadata.data]);
+  // The allow/deny filter compares the name a client sends, and clients can
+  // only send route names — so routes (with their channel bindings) are the
+  // candidate set. Discovery snapshots used to feed this list instead, which
+  // hid every renamed model: an alias is a route, and never appears in an
+  // upstream snapshot. Wildcard routes are expanded into the concrete names
+  // they answer for; a pattern with nothing to expand stays visible as-is.
+  const modelOptions = useMemo<ModelOption[]>(() => {
+    const out: ModelOption[] = [];
+    for (const overview of modelRoutes.data ?? []) {
+      const pattern = overview.route.model_pattern.trim();
+      if (!pattern) continue;
+      const channels = new Map<number, string>();
+      for (const candidate of overview.members ?? []) {
+        channels.set(candidate.member.channel_id, candidate.channel.name);
+      }
+      const channelList = [...channels]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.id - b.id);
+      const group = modelGroup(
+        pattern,
+        overview.route.model_group,
+        metaByModel.get(pattern),
+      );
+      const disabled = !overview.route.enabled;
+      if (/[?*]/.test(pattern)) {
+        const matched = discoveredNames.filter((name) =>
+          modelPatternMatches(pattern, name),
+        );
+        if (matched.length === 0) {
+          out.push({ name: pattern, channels: channelList, group, disabled, pattern });
+        }
+        for (const name of matched) {
+          out.push({ name, channels: channelList, group, disabled, pattern });
+        }
+        continue;
+      }
+      out.push({
+        name: pattern,
+        channels: channelList,
+        group,
+        disabled,
+        aliasOf: aliasReals(overview),
+      });
+    }
+    return out;
+  }, [discoveredNames, metaByModel, modelRoutes.data]);
   const modelGroupOptions = useMemo(() => {
     const groups = new Set<string>();
-    for (const overview of modelRoutes.data ?? []) {
-      groups.add(
-        modelGroup(
-          overview.route.model_pattern,
-          overview.route.model_group,
-          metaByModel.get(overview.route.model_pattern),
-        ),
-      );
+    for (const option of modelOptions) {
+      groups.add(option.group?.trim() || autoModelGroup(option.name));
     }
     return [...groups].sort((a, b) => a.localeCompare(b));
-  }, [metaByModel, modelRoutes.data]);
+  }, [modelOptions]);
   const modelsByGroup = useMemo(() => {
     const grouped = new Map<string, Set<string>>();
-    for (const overview of modelRoutes.data ?? []) {
-      const group = modelGroup(
-        overview.route.model_pattern,
-        overview.route.model_group,
-        metaByModel.get(overview.route.model_pattern),
-      );
+    for (const option of modelOptions) {
+      const group = option.group?.trim() || autoModelGroup(option.name);
       const models = grouped.get(group) ?? new Set<string>();
-      const pattern = overview.route.model_pattern.trim();
-      if (pattern && !/[?*]/.test(pattern)) {
-        models.add(pattern);
-      }
-      for (const model of allModels) {
-        if (modelPatternMatches(pattern, model)) {
-          models.add(model);
-        }
-      }
+      models.add(option.name);
       grouped.set(group, models);
     }
     return grouped;
-  }, [allModels, metaByModel, modelRoutes.data]);
+  }, [modelOptions]);
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState<DownstreamKey | null>(null);
   const [redemption, setRedemption] = useState(false);
@@ -589,7 +651,7 @@ export function Keys() {
           error={create.error}
           onClose={() => setAdd(false)}
           onSave={(v) => create.mutate(v)}
-          allModels={allModels}
+          modelOptions={modelOptions}
           modelGroupOptions={modelGroupOptions}
           modelsByGroup={modelsByGroup}
           routeGroupNames={routeGroups.data?.groups ?? []}
@@ -617,7 +679,7 @@ export function Keys() {
               },
             })
           }
-          allModels={allModels}
+          modelOptions={modelOptions}
           modelGroupOptions={modelGroupOptions}
           modelsByGroup={modelsByGroup}
           routeGroupNames={routeGroups.data?.groups ?? []}
@@ -719,7 +781,7 @@ function KeyDialog({
   error,
   onClose,
   onSave,
-  allModels,
+  modelOptions,
   modelGroupOptions,
   modelsByGroup,
   routeGroupNames,
@@ -730,7 +792,7 @@ function KeyDialog({
   error: unknown;
   onClose: () => void;
   onSave: (v: KeyFormValues) => void;
-  allModels: string[];
+  modelOptions: ModelOption[];
   modelGroupOptions: string[];
   modelsByGroup: Map<string, Set<string>>;
   routeGroupNames: string[];
@@ -930,20 +992,22 @@ function KeyDialog({
                 <span className="field-hint">{t("keys.modelGroupHint")}</span>
               </div>
               <ModelPicker
-                allModels={allModels}
+                options={modelOptions}
                 selected={allowlist}
                 onChange={setAllowlist}
-                placeholder={t("keys.modelPickerPlaceholder")}
+                placeholder={t("modelPicker.search")}
                 emptyLabel={t("keys.modelPickerEmpty")}
+                flagMissing
               />
             </Field>
             <Field label={t("keys.modelDenylist")} hint={t("keys.modelDenylistHint")}>
               <ModelPicker
-                allModels={allModels}
+                options={modelOptions}
                 selected={denylist}
                 onChange={setDenylist}
-                placeholder={t("keys.modelPickerPlaceholder")}
+                placeholder={t("modelPicker.search")}
                 emptyLabel={t("keys.modelPickerEmpty")}
+                flagMissing
               />
             </Field>
           </div>
