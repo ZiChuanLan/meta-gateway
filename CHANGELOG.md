@@ -4,6 +4,34 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.7.1] — 2026-09-25
+
+### Added
+
+- **上游模型变化：疑似移除可以直接「删除绑定」，不必先找替身模型**（`internal/store/model_changes.go`、`internal/httpapi/admin_model_changes.go`、`web/src/features/models/ModelChangesPanel.tsx`）。
+  行内与批量都走和「替换」同一条纪律：**服务端预览 → 确认 → 带 preview_token 应用**（`POST /admin/models/changes/discard-preview` / `discard-apply`）。语义是「上游已经没有这个模型，别再把请求指向它」：
+  - 删除选中的路由成员；**路由若因此失去最后一个成员，路由本身一并删除**——否则会留下一个还能被调用、却没有上游的死名字；
+  - **通配符绑定删不掉**：模式含 `*?[` 且没有固定 `real` 改写的成员一个服务多个模型名，删它会连带打死别的模型（新增 `ModelChangeMember.deletable`，预览与服务端都会拒绝，按钮禁用并说明原因）；
+  - preview token 里包含该路由的**完整成员表**，所以预览后又给这条路由加了成员，删除会以 409 失效，不会被旧预览误删。
+- **工作台的生成历史不再随刷新消失**（`web/src/lib/consoleStore.ts`、`web/src/features/workbench/workbenchState.ts`、`ImageStudio.tsx`、`Playground.tsx`）。
+  图片是 base64、体积远超 localStorage，所以主存用 **IndexedDB**（`meta-gateway-console/state`），不可用时回落 localStorage，再兜底内存；上限 12 条 / 48MB，裁剪永远从最旧的开始，最新一次不会因为存不下而被丢掉。
+  - 图像 tab：「最近生成」常显（缩略图 + 提示词 + 模型 + 张数/耗时/时间），可回看、**复用这次的参数**、删单条、清空；请求表单（模型/模式/尺寸/提示词）也一起记住；
+  - 文字 tab：整段对话与参数一起续上（刷新时正在流式输出的那条，按已到达的内容记完成为止）；
+  - 图片大到连兜底存储都放不下时，列表上方**如实提示**「未能持久保存，刷新后会丢失」，不假装存好了。
+
+### Changed
+
+- **定时签到面板现在告诉你这个计划来自哪里**（`web/src/features/ops/CheckinsPanel.tsx`）：显示「定时设置来源：环境变量 / 管理端覆盖」，跟随环境变量时明确提示「按 compose 重建会重新读 .env（默认 `CHECKIN_ENABLED=false`），会变回关闭；在这里保存一次即固定为管理端覆盖」。原来的说明还写着「需先开启商店中的签到插件」——v3.7.0 已经把商店门控删掉（签到/交换是内置功能），这句话会把人引去找一个不存在的开关。
+- **`model_changes.status` 的 `applied` 文案由「已替换 / Replaced」改为「已处理 / Handled」**：完成这个移除的两种方式（替换映射、删除绑定）共用同一状态，旧文案只描述了其中一种。
+
+### Fixed
+
+- **定时同步/导入会把每个凭证的「定时签到」开关改回去**（`internal/store/exchange.go`、`internal/exchange/*`）。定时任务（WebDAV 拉取、手动导入、向导恢复）在合并连接时会把自己那份备份里的签到标记写回本地——而网关自己的导出一开始根本没带这个字段（`Item.CheckinEnabled` 是 `json:"-"`），AAH 备份里 API Key 的 `checkIn.autoCheckInEnabled` 通常也是缺的。结果是**每次同步都把操作员在控制台开的签到关掉几个**，看起来就像「更新之后定时签到全没了」。现在：
+  - **增量合并不再动这个开关**：它是控制台的决定，不是凭据本身的属性（即使备份带不带它都一样；已有凭据的开关保持原样，新建的凭据才采用文件里的值）；
+  - **导出会带上这个字段**（`checkin_enabled`，`parse` 侧同步接受，旧文件缺字段＝关），所以「替换导入／新机器恢复」能把签到开关恢复回来，不再无声丢掉；
+  - 领养（adopt）路径同样不碰它。
+- **拓展页把「已安装但已停用」的插件当成没装**（`web/src/features/Store.tsx`）：市场卡片原来只按「启用中」判定已安装，停用一个插件后卡片又变回「安装」。现在按全部已安装模块判定，显示「Installed · vX」+「Disabled」徽标与去处提示；真正没装的插件照旧给安装按钮，有更新仍给更新。
+
 ## [v3.7.0] — 2026-09-25
 
 ### Added
