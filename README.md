@@ -534,6 +534,9 @@ npm run lint && npm run typecheck && npm test -- --run && npm run build
 
 仓库本身不附带任何上游密钥或用户数据；实例内的凭证均由 `MASTER_KEY` 加密后存放在本地 SQLite 中。
 
+致谢：
+[LinuxDo](https://linux.do)、Metapi、Axonhub、allapihub、cc-switch、CPA、newapi、sub2api
+
 ---
 
 <div align="center">
