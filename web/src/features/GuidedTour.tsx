@@ -201,7 +201,7 @@ function start(
       while (nextIndex >= 0 && nextIndex < steps.length) {
         const step = steps[nextIndex];
         if (!step) break;
-        if (window.location.pathname !== step.route) navigate(step.route);
+        if (location.pathname !== step.route) navigate(step.route);
         step.prepare?.();
         index = nextIndex;
         driverObj.drive(nextIndex);

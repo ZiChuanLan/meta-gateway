@@ -50,6 +50,7 @@ import {
   StatusBadge,
 } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
+import { useModules } from "../hooks/useModules";
 import { useToast } from "../toast";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
@@ -166,6 +167,7 @@ function ModelCatalog({
   const service = api(client!);
   const toast = useToast();
   const navigate = useNavigate();
+  const modules = useModules();
   const [params, setSearchParams] = useSearchParams();
 
   const overviews = useQuery({
@@ -244,6 +246,18 @@ function ModelCatalog({
     }
     return map;
   }, [metadata.data]);
+
+  /**
+   * Where a plugin-answered model row links to. The console router mounts under
+   * basename="/console", so an in-app target is route-relative —
+   * "/plugins/<id>". Writing "/console/plugins/<id>" resolves to
+   * /console/console/plugins/<id>, matches no route, and silently bounces back
+   * to the overview through the catch-all redirect. The backend already answers
+   * with the right path (`open_path`, plugins/service.go openPathFor); the
+   * literal is the fallback for a plugin whose status record has not loaded.
+   */
+  const pluginPageOf = (pluginId: string) =>
+    modules.byId.get(pluginId)?.open_path || `/plugins/${encodeURIComponent(pluginId)}`;
 
   // URL wins over tab-scoped state on first mount; tab state survives the
   // bare-path sidebar navigation that drops the query string. Read once, so the
@@ -1404,9 +1418,7 @@ function ModelCatalog({
                         <td className="actions">
                           <Button
                             variant="quiet"
-                            onClick={() =>
-                              navigate(`/console/plugins/${encodeURIComponent(item.pluginId)}`)
-                            }
+                            onClick={() => navigate(pluginPageOf(item.pluginId))}
                           >
                             {t("modelsPage.pluginModelOpen")}
                           </Button>

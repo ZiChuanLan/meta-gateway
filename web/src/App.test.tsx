@@ -5,8 +5,9 @@ import {
 	fireEvent,
 	render,
 	screen,
+	waitFor,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ENTRANCE_CHARGE_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
@@ -23,14 +24,31 @@ function renderApp(initialEntries: string[] = ["/"]) {
 			<I18nProvider>
 				<ToastProvider>
 					<SessionProvider>
-						<MemoryRouter initialEntries={initialEntries}>
+						{/* basename is production's (main.tsx). A test router mounted at "/"
+						    cannot see the difference between a route-relative target
+						    ("/plugins/x") and a mistaken full-path one ("{BASENAME}/plugins/x"),
+						    which is exactly how a link can pass here and bounce off the
+						    catch-all in production. */}
+						<MemoryRouter
+							basename={BASENAME}
+							initialEntries={initialEntries.map((entry) => `${BASENAME}${entry}`)}
+						>
 							<App />
+							<LocationProbe />
 						</MemoryRouter>
 					</SessionProvider>
 				</ToastProvider>
 			</I18nProvider>
 		</QueryClientProvider>,
 	);
+}
+
+/** Mirrors `basename` in main.tsx — the console is served under /console. */
+const BASENAME = "/console";
+
+function LocationProbe() {
+	const location = useLocation();
+	return <span data-testid="location">{location.pathname}</span>;
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -48,7 +66,11 @@ async function flushAsyncWork() {
 	});
 }
 
-function stubAdminFetch() {
+function stubAdminFetch(overrides: {
+	modules?: unknown[];
+	hooks?: unknown[];
+	routes?: unknown[];
+} = {}) {
 	return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 		const path = String(input).split("?")[0];
 		const method = init?.method ?? "GET";
@@ -57,17 +79,22 @@ function stubAdminFetch() {
 		}
 		if (path === "/readyz") return new Response(null, { status: 200 });
 		if (path === "/admin/plugins/status") {
-			return jsonResponse([
-				{
-					id: "exchange",
-					name: "Exchange",
-					version: "0.0.0",
-					kind: "addon",
-					installed: true,
-					enabled: true,
-					can_toggle: true,
-				},
-			]);
+			return jsonResponse(
+				overrides.modules ?? [
+					{
+						id: "exchange",
+						name: "Exchange",
+						version: "0.0.0",
+						kind: "addon",
+						installed: true,
+						enabled: true,
+						can_toggle: true,
+					},
+				],
+			);
+		}
+		if (path === "/admin/plugins/hooks") {
+			return jsonResponse({ hooks: overrides.hooks ?? [] });
 		}
 		if (
 			path === "/admin/sites" ||
@@ -76,10 +103,12 @@ function stubAdminFetch() {
 			path === "/admin/discovery/models" ||
 			path === "/admin/downstream-keys" ||
 			path === "/admin/proxy-logs" ||
-			path === "/admin/routes/overview" ||
 			path === "/admin/model-capabilities"
 		) {
 			return jsonResponse([]);
+		}
+		if (path === "/admin/routes/overview") {
+			return jsonResponse(overrides.routes ?? []);
 		}
 		return jsonResponse({ error: `unexpected GET ${path}` }, 500);
 	});
@@ -351,5 +380,82 @@ describe("channel-first shell", () => {
 		expect(
 			document.querySelector(".gateway-transition"),
 		).not.toBeInTheDocument();
+	});
+
+	// A plugin-answered model ("auto-jev" is answered by jev-router's route hook)
+	// has no route and no members, so its row in the catalog is the only way to
+	// reach the plugin from there. The console router mounts under /console
+	// (main.tsx), so that target has to stay route-relative: a
+	// "/console/plugins/…" href resolves to /console/console/plugins/…, matches
+	// no route, and quietly lands in the catch-all redirect back to the overview
+	// — reported from production as "查看插件 jumps to the home page".
+	it("opens the plugin page from a plugin-answered model row", async () => {
+		localStorage.setItem("meta-gateway.admin-token", "nav-token");
+		vi.stubGlobal(
+			"fetch",
+			stubAdminFetch({
+				// One real route, because the catalog renders its plugin rows inside the
+				// table: with nothing routable the page shows the empty state instead.
+				routes: [
+					{
+						route: {
+							id: 1,
+							model_pattern: "gpt-5.2",
+							enabled: true,
+							routing_mode: "priority",
+							model_group: "default",
+							created_at: "2026-01-01T00:00:00Z",
+							updated_at: "2026-01-01T00:00:00Z",
+						},
+						members: [],
+					},
+				],
+				modules: [
+					{
+						id: "jev-router",
+						name: "Jev auto routing",
+						version: "1.0.0",
+						kind: "addon",
+						source: "sidecar",
+						installed: true,
+						enabled: true,
+						can_toggle: true,
+						open_path: "/plugins/jev-router",
+					},
+				],
+				hooks: [
+					{
+						plugin_id: "jev-router",
+						plugin_name: "Jev auto routing",
+						point: "route",
+						path: "/route",
+						match_models: ["auto-jev", "auto-*"],
+					},
+				],
+			}),
+		);
+
+		renderApp(["/models"]);
+		await screen.findByRole("heading", { level: 1, name: "Models" });
+
+		// The plugin's model is a row of its own, owned by the plugin — and only the
+		// literal name: a wildcard is a matcher, not something a client can call.
+		const pluginModel = await screen.findByText("auto-jev");
+		expect(pluginModel.closest("tr")).toHaveTextContent("Jev auto routing");
+		expect(screen.queryByText("auto-*")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "Open plugin" }));
+
+		// Destination is the plugin's own page: the router resolves it after the
+		// /console basename, not into a doubled prefix that matches nothing.
+		// (Router navigation is a transition in v7, so it lands a tick later.)
+		await waitFor(() =>
+			expect(screen.getByTestId("location")).toHaveTextContent(
+				/^\/plugins\/jev-router$/,
+			),
+		);
+		expect(
+			document.querySelector("iframe.plugin-host-frame")?.getAttribute("src"),
+		).toContain("/admin/plugins/jev-router/proxy/");
 	});
 });
