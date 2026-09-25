@@ -328,6 +328,16 @@ body, and is recorded in the decision snapshot (`hook_decisions`), the
 `X-Meta-Hook-Decision` response header, and (for a virtual model name) the
 `/v1/models` catalogue.
 
+Plugin *code* is not part of this repository. The official registry and the
+first-party plugin sources — `demo-plugin` as the protocol reference,
+`jev-router` as a working `route` hook — live in
+[`ZiChuanLan/meta-gateway-plugins`](https://github.com/ZiChuanLan/meta-gateway-plugins).
+Third-party plugins live in their own repositories and reach a gateway through a
+single registry entry (or a self-hosted registry via `PLUGIN_MARKET_URLS`), so no
+plugin source has to be merged here. What stays here is the protocol itself: the
+manifest shape (`internal/plugins/service.go`), the host side
+(`internal/plugins/hooks.go`), and the contract (`internal/proxy/hooks.go`).
+
 ## Current Scope
 
 P0-P7 cover repository bootstrap, Admin CRUD, encrypted credentials,
