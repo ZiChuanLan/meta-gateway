@@ -429,13 +429,17 @@ curl -s -H "Authorization: Bearer <session_token>" \
 
 - 视觉与工作区设计见 `docs/visual-redesign.md`。前端样式位于 `web/src/styles/`：颜色/字号/材质改 `tokens.css`，共享控件改 `system.css`，导航改 `shell.css`，工作区布局改 `workspaces.css`，登录布局改 `login.css`，入场/品牌动效改 `motion.css`；不要把新主题继续堆进旧 `web/src/styles.css`。入场时长集中在 `lib/entranceMotion.ts`，重播不能触碰认证状态；动效须支持跳过、减少动态效果和隐藏页面暂停。
 - 业务子组件的主要操作通过 `PageActions` 放入页头。导航与页面框架复用 `ConsoleShell`；手机导航使用共享 Drawer。
-- **顶部栏可配置**（`web/src/lib/topBar.ts` + 设置 → 外观 →「自定义顶部栏」）：`TOP_BAR_ITEMS`
-  枚举可显隐的入口（签到、更新提醒、明暗、语言），preference 存 localStorage，两个主题包的
-  `Chrome.tsx` 各自读同一个 hook。新增顶栏入口时三处同步：`TOP_BAR_ITEMS` + 两个 Chrome +
-  双语 `appearance.topbar.*` 文案；退出登录不参与开关（它是控制台唯一一处登出）。
-  ⚠️ **「签到」这一项还兼管导航项**（`App.tsx` 的 `checkinEntry`）：经典控制台的导航条就在顶栏里，
-  只藏右侧图标会留下一个同一个词写在两厘米外的「签到」，用户会当成开关坏了（实测反馈就是这个）。
-  该页**永远可达**：路由照旧挂载，命令面板 `paletteNav` 始终列出它。别再把它拆成两个开关而不改文案。
+- **界面入口可配置**（`web/src/lib/topBar.ts` + 设置 → 外观 →「自定义界面入口」）：两类——
+  顶栏控件 `TOP_BAR_CONTROLS`（search / update / theme / language，两个主题包的 `Chrome.tsx` 各自读
+  `useTopBarControls()`）与**导航项**（按 path 记录在 `hiddenNav`，`App.tsx` 用它过滤渲染的导航）。
+  preference 存 localStorage（`meta-gateway.topbar-items`），带**旧格式迁移**：早期存的是扁平
+  `{checkin,update,theme,language}`，读取时把 `checkin` 映射成 `hiddenNav:["/checkins"]`，其余键仍是控件。
+  顶栏的入口图标与导航标签**同源**（导航项来自 `web/src/lib/chromeNav.ts`，App 与面板共用一份），
+  改标签只改 i18n，不在两处重复写死。退出登录不参与开关（它是控制台唯一一处登出）。
+  ⚠️ **一个页面只有一个入口**：签到的顶栏快捷按钮已删除——它和导航里的「签到」指向同一页，
+  两个副本反而各自需要一个开关才不含糊。别再为某个页面另加顶栏按钮；要入口换位置就改导航/控件。
+  隐藏永远不等于删除：路由照旧挂载，`paletteNav` 始终列全部页面，面板还有「恢复默认」。新增入口时
+  三处同步：`TOP_BAR_CONTROLS` / `CHROME_NAV_ITEMS` + 两个 Chrome + 双语 `appearance.chrome.*` 文案。
 - **注册表/商店页叫「拓展」（`/console/store`）**：签到与交换已是内置功能，**不是可开关的扩展**
   （`internal/plugins/service.go` 的 `officialCatalog` 为空，`RetireLegacyModules` 启动时清掉
   `exchange` / `checkin` / `operations` / `cliproxyapi` 的旧记录，路由里也不再挂 `requirePluginEnabled`）。

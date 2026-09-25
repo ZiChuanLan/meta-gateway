@@ -44,11 +44,6 @@
 .console-global-actions { display: flex; align-items: center; gap: 8px; }
 .console-global-actions .icon-button { color: var(--muted); border: 0; background: transparent; width: 32px; height: 32px; border-radius: 9px; }
 .console-global-actions .icon-button:hover { color: var(--ink); background: var(--surface-hover); }
-/* The check-in entry is a link, not a button: going there is the whole action.
-   Same box as the icon buttons it sits between. */
-.console-global-actions a.icon-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
-.console-global-actions a.icon-button:hover { color: var(--ink); background: var(--surface-hover); }
-.console-global-actions a.icon-button.active { color: var(--primary-active); background: var(--primary-soft); }
 .console-language span { display: none; }
 .console-language select { height: 30px; width: 83px; border: 0; background: transparent; font-size: 11px; color: var(--ink-soft); padding: 0 6px; }
 .console-action-divider { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }

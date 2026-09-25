@@ -46,6 +46,14 @@
    one tile per entry, in the order the bar shows them. */
 .appearance-topbar-section { margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--line); }
 .topbar-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+/* One heading per surface (top bar / navigation) inside the same panel: the
+   entries belong to different places on screen, so they are not one list. */
+.chrome-pref-group + .chrome-pref-group { margin-top: 18px; }
+.chrome-pref-heading { margin: 0 0 8px; color: var(--muted); font: 600 11px/1 var(--font); letter-spacing: 0.08em; text-transform: uppercase; }
+.chrome-pref-hint { margin: -2px 0 10px; color: var(--muted); font: 11px/1.6 var(--font); }
+.chrome-pref-reset { margin-top: 14px; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: transparent; color: var(--muted); font: 12px var(--font); cursor: pointer; transition: border-color 160ms, color 160ms; }
+.chrome-pref-reset:hover { border-color: var(--primary-hairline); color: var(--ink); }
+.chrome-pref-reset:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .topbar-toggle { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); text-align: left; cursor: pointer; transition: border-color 160ms, background 160ms; }
 .topbar-toggle:hover { border-color: var(--primary-hairline); }
 .topbar-toggle[aria-pressed=true] { border-color: var(--primary-active); background: var(--primary-soft); }

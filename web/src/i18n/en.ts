@@ -290,18 +290,22 @@ export const en: Dict = {
   "appearance.palette.ember": "Ember",
   "appearance.palette.graphite": "Graphite",
   "appearance.palette.sakura": "Sakura",
-  "appearance.topbar": "Top bar",
-  "appearance.topbarHint":
+  "appearance.chrome.title": "Console entries",
+  "appearance.chrome.hint":
     "Pick which entries the console shows. Switched-off entries stay reachable from the command palette (⌘K) or by URL, and can be turned back on here.",
-  "appearance.topbar.checkin": "Check-in",
-  "appearance.topbar.checkinHint":
-    "Hides the check-in entry in the top bar and in the navigation; the page itself stays available.",
-  "appearance.topbar.update": "Update notice",
-  "appearance.topbar.updateHint": "Shows up when a newer gateway image is published.",
-  "appearance.topbar.theme": "Light / dark switch",
-  "appearance.topbar.themeHint": "One-click toggle between light and dark.",
-  "appearance.topbar.language": "Language switch",
-  "appearance.topbar.languageHint": "Chinese / English for the console itself.",
+  "appearance.chrome.groupBar": "Top bar",
+  "appearance.chrome.groupNav": "Navigation",
+  "appearance.chrome.navHint":
+    "Which pages the navigation carries (inside the top bar on the classic console, in the sidebar on the modern workspace, in the drawer on phones).",
+  "appearance.chrome.search": "Search & commands",
+  "appearance.chrome.searchHint": "The top bar's search button; ⌘K still opens the palette when hidden.",
+  "appearance.chrome.update": "Update notice",
+  "appearance.chrome.updateHint": "Shows up when a newer gateway image is published.",
+  "appearance.chrome.theme": "Light / dark switch",
+  "appearance.chrome.themeHint": "One-click toggle between light and dark.",
+  "appearance.chrome.language": "Language switch",
+  "appearance.chrome.languageHint": "Chinese / English for the console itself.",
+  "appearance.chrome.reset": "Reset to defaults",
   "appearance.localHint":
     "Theme and brightness preferences are saved in this browser and do not affect other administrators. Switching keeps your current page and form input.",
   "login.titleFirst": "One gateway.",

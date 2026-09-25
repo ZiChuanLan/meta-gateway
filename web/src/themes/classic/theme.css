@@ -12904,11 +12904,10 @@
   :root[data-appearance="classic"] .gate-console-viewport {
     padding: 14px 12px 40px;
   }
-  :root[data-appearance="classic"] .deck-telemetry-label,
-  :root[data-appearance="classic"] .deck-palette-btn span,
-  :root[data-appearance="classic"] .deck-checkin-label {
-    display: none;
-  }
+	:root[data-appearance="classic"] .deck-telemetry-label,
+	:root[data-appearance="classic"] .deck-palette-btn span {
+		display: none;
+	}
 }
 
 /* ============================================================
@@ -13479,29 +13478,7 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
-/* Check-in entry in the deck status cluster */
-:root[data-appearance="classic"] .deck-checkin-btn {
-  height: 28px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: all var(--dur-hover) var(--ease-hover);
-}
-:root[data-appearance="classic"] .deck-checkin-btn:hover,
-:root[data-appearance="classic"] .deck-checkin-btn.active {
-  color: var(--ink);
-  background: var(--surface-subtle);
-  border-color: var(--line);
-}
+
 
 /* Dark-mode toggle in the deck status cluster */
 :root[data-appearance="classic"] .deck-theme-btn {

@@ -108,3 +108,29 @@ it("falls back from an unavailable palette and follows preference changes in ano
   });
   expect(document.documentElement.dataset.palette).toBe("sakura");
 });
+
+// The panel is the only way to switch entries off, so it must drive the chrome
+// it describes: a toggle that writes storage but leaves the bar alone is the
+// exact failure this replaced.
+it("switches chrome entries from the panel and restores them together", () => {
+	mount();
+	const search = screen.getByRole("button", { name: /Search & commands/ });
+	const checkin = screen.getByRole("button", { name: "Check-in" });
+	expect(search).toHaveAttribute("aria-pressed", "true");
+	expect(checkin).toHaveAttribute("aria-pressed", "true");
+
+	fireEvent.click(search);
+	expect(search).toHaveAttribute("aria-pressed", "false");
+	expect(document.querySelector(".deck-palette-btn")).not.toBeInTheDocument();
+
+	// The navigation entries are switched in the same panel, one per page.
+	fireEvent.click(checkin);
+	expect(checkin).toHaveAttribute("aria-pressed", "false");
+
+	fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
+	expect(screen.getByRole("button", { name: /Search & commands/ })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	expect(document.querySelector(".deck-palette-btn")).toBeInTheDocument();
+});

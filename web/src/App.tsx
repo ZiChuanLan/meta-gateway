@@ -1,16 +1,6 @@
 import {
-	Activity,
-	ArrowLeftRight,
-	Boxes,
-	Cable,
-	CalendarCheck,
-	KeyRound,
-	Package,
-	Puzzle,
-	ScrollText,
-	Settings,
-	Wand2,
 	ArrowRight,
+	Puzzle,
 	ShieldCheck,
 	Image,
 	Moon,
@@ -50,7 +40,8 @@ import { GatewayTransition } from "./components/GatewayTransition";
 import { createEdgeSparkHost } from "./lib/katanafx";
 import { ENTRANCE_CHARGE_MS, ENTRANCE_EXIT_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
 import { useHiddenPlugins } from "./lib/pluginNav";
-import { useTopBarPrefs } from "./lib/topBar";
+import { CHROME_NAV_ITEMS } from "./lib/chromeNav";
+import { useChromePrefs } from "./lib/topBar";
 import { AppearanceProvider, useAppearance } from "./appearance";
 
 const Channels = lazy(() =>
@@ -569,9 +560,9 @@ function AuthenticatedShell({
 }) {
 	const { t } = useI18n();
 	const { addons } = useModules();
-	// Which chrome entries the operator keeps (Settings → Appearance: top bar and
-	// the check-in navigation entry). Display only — see lib/topBar.ts.
-	const topBar = useTopBarPrefs();
+	// Which chrome entries the operator keeps (Settings → Appearance: the top
+	// bar's controls and the navigation rows). Display only — see lib/topBar.ts.
+	const chrome = useChromePrefs();
 	// Plugin entries the operator hid from the sidebar (a display preference,
 	// stored per browser like the theme).
 	const hiddenPlugins = useHiddenPlugins();
@@ -650,57 +641,49 @@ function AuthenticatedShell({
 		}
 	});
 
-	// The check-in entry is switchable from Settings → Appearance. In the classic
-	// console the nav rail IS the top bar, so a switch that left the identical nav
-	// label in place two centimetres away from the icon it removed read as broken;
-	// it governs both, and the page stays reachable by URL and from the palette.
-	const checkinEntry = { to: "/checkins", label: t("app.nav.checkins"), icon: CalendarCheck };
-	const primaryNav = [
-		{ to: "/", label: t("app.nav.overview"), icon: Activity },
-		{ to: "/channels", label: t("app.nav.channels"), icon: Cable },
-		{ to: "/models", label: t("app.nav.models"), icon: Boxes },
-		{ to: "/keys", label: t("app.nav.keys"), icon: KeyRound },
-		{ to: "/workbench", label: t("app.nav.workbench"), icon: Wand2 },
-		{ to: "/logs", label: t("app.nav.logs"), icon: ScrollText },
-		// Check-in and Exchange are built-in surfaces: they are in the navigation
-		// whatever the store lists. Check-in alone is switchable (it is also a
-		// top-bar shortcut — see checkinEntry above); Exchange has no shortcut to
-		// switch it off with.
-		...(topBar.checkin ? [checkinEntry] : []),
-		{ to: "/exchange", label: t("app.nav.exchange"), icon: ArrowLeftRight },
-		...(addons
-			.filter(
-				(m) =>
-					// Every enabled sidecar plugin gets a nav entry, whatever brought
-					// it here — hand-registered ("sidecar") or market-installed
-					// ("market:…"). Gating on the source string made market installs
-					// invisible in the sidebar no matter what the plugin's own page
-					// toggle said.
-					m.installed &&
-					m.enabled &&
-					!!m.open_path &&
-					(m.source === "sidecar" || m.source?.startsWith("market:")) &&
-					// A plugin whose entry the operator hid keeps working (its hooks
-					// still run); only the sidebar row goes away.
-					!hiddenPlugins.has(m.id),
-			)
-			.map((m) => ({ to: m.open_path!, label: m.name, icon: Puzzle }))),
-		{ to: "/store", label: t("app.nav.store"), icon: Package },
-	];
+	// The navigation is built from the shared catalogue (lib/chromeNav.ts), which
+	// the appearance panel switches entry by entry. Plugin rows are appended from
+	// runtime data and keep their own per-plugin hide switch.
+	const enabledPlugins = addons
+		.filter(
+			(m) =>
+				// Every enabled sidecar plugin gets a nav entry, whatever brought
+				// it here — hand-registered ("sidecar") or market-installed
+				// ("market:…"). Gating on the source string made market installs
+				// invisible in the sidebar no matter what the plugin's own page
+				// toggle said.
+				m.installed &&
+				m.enabled &&
+				!!m.open_path &&
+				(m.source === "sidecar" || m.source?.startsWith("market:")) &&
+				// A plugin whose entry the operator hid keeps working (its hooks
+				// still run); only the sidebar row goes away.
+				!hiddenPlugins.has(m.id),
+		)
+		.map((m) => ({ to: m.open_path!, label: m.name, icon: Puzzle }));
 
-	const settingsNav = {
-		to: "/settings",
-		label: t("app.nav.settings"),
-		icon: Settings,
-	};
+	const mainNav = [
+		...CHROME_NAV_ITEMS.filter((item) => item.group === "primary").map((item) => ({
+			to: item.path,
+			label: t(item.labelKey),
+			icon: item.icon,
+		})),
+		...enabledPlugins,
+	];
+	const settingsNav = (() => {
+		const item = CHROME_NAV_ITEMS.find((entry) => entry.group === "settings")!;
+		return { to: item.path, label: t(item.labelKey), icon: item.icon };
+	})();
 
 	// The command palette lists every page, hidden entries included: hiding an
 	// entry is a display choice, never a way to make a page unreachable.
-	const paletteNav = [
-		...primaryNav,
-		...(topBar.checkin ? [] : [checkinEntry]),
-		settingsNav,
-	];
+	const paletteNav = [...mainNav, settingsNav];
+
+	// What the chrome renders: the same entries minus the ones switched off in
+	// Settings → Appearance. Routes stay mounted either way, so a hidden page is
+	// still one ⌘K away — and one click from the panel.
+	const hidden = new Set(chrome.hiddenNav);
+	const primaryNav = mainNav.filter((item) => !hidden.has(item.to));
 
 	const corePaths = ["/", "/channels", "/models", "/keys"];
 	const activityPaths = ["/workbench", "/logs", "/checkins"];
