@@ -1,37 +1,33 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Sparkles, Trash2 } from "lucide-react";
+import { RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { SearchableSelect } from "../../components/SearchableSelect";
-import { Button, Empty, ErrorState, Field, Panel, formatDate } from "../../components/ui";
+import { Button, Empty, ErrorState, Field, IconButton, Panel, formatDate } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { upstreamMessage } from "../../lib/upstreamError";
 import { primaryChannelName, upstreamChoices } from "../models/routingPolicy";
 import { useSession } from "../../session";
+import {
+  MAX_RUNS,
+  loadImageForm,
+  loadRuns,
+  saveImageForm,
+  saveRuns,
+  type WorkbenchImage,
+  type WorkbenchRun,
+} from "./workbenchState";
 
 const IMAGE_KINDS = new Set(["image_gen", "image_edit"]);
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-const MAX_HISTORY_BYTES = 48 * 1024 * 1024;
 
 type ReferenceImage = { name: string; dataUrl: string; size: number };
-type ImageResult = { data_url?: string; url?: string; revised_prompt?: string };
-type RunResult = {
-  at: string;
-  model: string;
-  status: number;
-  latencyMs: number;
-  channelName?: string;
-  endpoint: string;
-  format: string;
-  images: ImageResult[];
-  /**
-   * What the upstream actually said when it refused. Image upstreams spend
-   * real quota and rate limits per plane, so "429" alone is not actionable —
-   * the provider's own message is what tells an operator whether to wait.
-   */
-  upstreamError?: string;
-};
+type ImageResult = WorkbenchImage;
+type RunResult = WorkbenchRun;
 type ImageRequest = Parameters<ReturnType<typeof api>["tryImage"]>[0];
+
+let runSeq = 0;
+const runID = () => `run-${Date.now().toString(36)}-${++runSeq}`;
 
 function imageSource(image?: ImageResult) {
   const source = (image?.data_url || image?.url || "").trim();
@@ -57,6 +53,43 @@ export default function ImageStudio({ active }: { active: boolean }) {
   const [feedback, setFeedback] = useState("");
   const [latest, setLatest] = useState<RunResult | null>(null);
   const [history, setHistory] = useState<RunResult[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [persistWarning, setPersistWarning] = useState("");
+  // The save callback needs the newest list, not the one captured when the
+  // mutation was created.
+  const historyRef = useRef<RunResult[]>([]);
+
+  // The workbench is a workspace, not a one-shot form: the last generation and
+  // the request form come back on the next visit. The panel keeps working while
+  // the store is still opening (it is asynchronous), and a stored value never
+  // overwrites something the operator already typed.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [runs, form] = await Promise.all([loadRuns(), loadImageForm()]);
+      if (cancelled) return;
+      if (runs.length) {
+        setHistory(runs);
+        setLatest((current) => current ?? runs[0]!);
+      }
+      if (form) {
+        setModel((current) => current || form.model);
+        setMode((current) => (current === "auto" && form.mode ? (form.mode as typeof current) : current));
+        setSize((current) => current || form.size);
+        setPrompt((current) => current || form.prompt);
+      }
+      setHistoryLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!historyLoaded) return;
+    const timer = window.setTimeout(() => {
+      void saveImageForm({ model, mode, size, prompt });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [historyLoaded, model, mode, size, prompt]);
+  useEffect(() => { historyRef.current = history; }, [history]);
 
   const routes = useQuery({
     queryKey: ["route-overviews"],
@@ -141,9 +174,11 @@ export default function ImageStudio({ active }: { active: boolean }) {
         ? upstreamMessage(data.body)
         : "";
       const result: RunResult = {
+        id: runID(),
         at: new Date().toISOString(), model: data.model || request.model,
         status: data.status, latencyMs: data.latency_ms, channelName: data.channel_name,
         endpoint: data.plan?.endpoint ?? "", format: data.plan?.format ?? "",
+        prompt: request.prompt ?? "", mode: request.mode ?? "auto", size: request.size,
         images: (data.images ?? []).filter((image) => imageSource(image)),
         upstreamError: detail || undefined,
       };
@@ -156,27 +191,51 @@ export default function ImageStudio({ active }: { active: boolean }) {
         setFeedback(detail || t("workbench.image.upstreamStatus", { status: data.status }));
         return;
       }
-      setHistory((current) => {
-        const retained: RunResult[] = [];
-        let bytes = 0;
-        for (const item of [result, ...current]) {
-          const itemBytes = item.images.reduce((total, image) => total + imageSource(image).length, 0);
-          if (retained.length >= 6 || (retained.length > 0 && bytes + itemBytes > MAX_HISTORY_BYTES)) break;
-          retained.push(item);
-          bytes += itemBytes;
-        }
-        return retained;
+      // Only a run that produced an image belongs in the history strip; that
+      // is what the thumbnails show. The store trims by its own budget and
+      // reports back, so an oversized image is never silently "saved".
+      const next = [result, ...historyRef.current];
+      setHistory(next.slice(0, MAX_RUNS));
+      void saveRuns(next).then((kept) => {
+        setPersistWarning(kept[0]?.id === result.id ? "" : t("workbench.image.historyTruncated"));
       });
     },
     onError: setError,
   });
   const busy = run.isPending || reading;
-  // A failed attempt still becomes the newest result, and it carries no image.
-  // Keeping the strip hidden with a single entry would leave the one earlier
-  // image unreachable at exactly the moment the panel goes blank, so show it
-  // whenever it holds something the panel is not already showing.
-  const showingImage = (latest?.images.length ?? 0) > 0;
-  const showHistory = history.length > 1 || (history.length === 1 && !showingImage);
+  // The history is the workbench's memory: every generation that produced an
+  // image stays listed (and survives a reload), with the one on screen marked.
+  // It used to hide itself with a single entry, which made the feature look
+  // like it did not exist at all.
+  const showHistory = history.length > 0;
+
+  /** Puts a past run back into the panel and its request back into the form. */
+  function reuse(run: RunResult, restore: boolean) {
+    setLatest(run);
+    setError(null);
+    setFeedback("");
+    if (!restore) return;
+    setModel(run.model);
+    setMode((run.mode as typeof mode) || "auto");
+    setSize(run.size ?? "");
+    setPrompt(run.prompt ?? "");
+  }
+
+  function forget(id: string) {
+    const next = historyRef.current.filter((item) => item.id !== id);
+    historyRef.current = next;
+    setHistory(next);
+    setLatest((current) => (current && current.id === id ? next[0] ?? null : current));
+    void saveRuns(next).then((kept) => { if (!kept.length) setPersistWarning(""); });
+  }
+
+  function forgetAll() {
+    historyRef.current = [];
+    setHistory([]);
+    setLatest(null);
+    setPersistWarning("");
+    void saveRuns([]);
+  }
 
   async function addFiles(files: File[]) {
     if (!files.length || readingFiles.current || run.isPending) return;
@@ -348,12 +407,32 @@ export default function ImageStudio({ active }: { active: boolean }) {
           </div>
         </> : null}
         {showHistory ? <div className="workbench-history">
-          <strong>{t("workbench.image.history")}</strong>
-          <ul>{history.map((item, index) => <li key={`${item.at}-${index}`}>
-            <button type="button" className="workbench-history-item" aria-pressed={latest === item} onClick={() => setLatest(item)}>
+          <div className="workbench-history-head">
+            <strong>{t("workbench.image.history")}</strong>
+            <span className="muted">{t("workbench.image.historyCount", { count: history.length })}</span>
+            <span className="flex-spacer" />
+            <Button variant="quiet" icon={<Trash2 size={14} />} onClick={forgetAll}>{t("workbench.image.historyClear")}</Button>
+          </div>
+          {persistWarning ? <p className="panel-hint" role="status">{persistWarning}</p> : null}
+          <ul>{history.map((item) => <li key={item.id} className={item.id === latest?.id ? "is-current" : undefined}>
+            <button
+              type="button"
+              className="workbench-history-item"
+              aria-pressed={item.id === latest?.id}
+              aria-label={t("workbench.image.historyOpen", { model: item.model, time: formatDate(item.at) })}
+              onClick={() => reuse(item, false)}
+            >
               <img src={imageSource(item.images[0])} alt="" loading="lazy" referrerPolicy="no-referrer" />
-              <span><span className="mono">{item.model}</span><span className="muted">{item.images.length} · {item.latencyMs}ms · {formatDate(item.at)}</span></span>
+              <span>
+                <span className="workbench-history-prompt">{item.prompt || t("workbench.image.historyNoPrompt")}</span>
+                <span className="mono">{item.model}</span>
+                <span className="muted">{t("workbench.image.historyMeta", { n: item.images.length, ms: item.latencyMs, time: formatDate(item.at) })}</span>
+              </span>
             </button>
+            <span className="workbench-history-actions">
+              <IconButton label={t("workbench.image.historyReuse")} onClick={() => reuse(item, true)}><RotateCcw size={13} /></IconButton>
+              <IconButton label={t("workbench.image.historyDelete")} onClick={() => forget(item.id)}><Trash2 size={13} /></IconButton>
+            </span>
           </li>)}</ul>
         </div> : null}
       </Panel>

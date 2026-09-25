@@ -350,3 +350,49 @@ func TestExchangeReplaceOverwritesLocalCredential(t *testing.T) {
 		t.Fatalf("replace reimport channels count=%d err=%v", count, err)
 	}
 }
+
+// A scheduled (incremental) import merges connections on a timer, so it must
+// not flip the operator's per-credential check-in switch: the switch is a
+// console decision, while the backup either carries no check-in information at
+// all or another app's. Letting the file win turned scheduled check-in off
+// every few hours, which reads exactly like "my check-in settings vanished".
+func TestExchangeIncrementalImportPreservesCheckinSwitch(t *testing.T) {
+	db := openTestDB(t)
+	first, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{exchangeItem("conn", "fp-checkin")})
+	if err != nil || len(first.CreatedChannelIDs) != 1 {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	channel, err := db.Channel.GetByID(first.CreatedChannelIDs[0])
+	if err != nil || channel == nil || channel.CredentialID == nil {
+		t.Fatalf("channel=%+v err=%v", channel, err)
+	}
+	credentialID := *channel.CredentialID
+	if err := db.Credential.SetCheckinEnabled(credentialID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same connection comes back from the backup, which carries no flag.
+	if _, err := db.Exchange.Import(t.Context(), []store.ExchangeImportItem{exchangeItem("conn", "fp-checkin")}); err != nil {
+		t.Fatal(err)
+	}
+	credential, err := db.Credential.GetByID(credentialID)
+	if err != nil || credential == nil {
+		t.Fatalf("credential=%+v err=%v", credential, err)
+	}
+	if !credential.CheckinEnabled {
+		t.Fatal("an incremental import turned the check-in switch off")
+	}
+
+	// Replace mode is a restore rather than a merge: the file is the source of
+	// truth there, so the same item does write the flag.
+	if _, err := db.Exchange.ImportReplacing(t.Context(), []store.ExchangeImportItem{exchangeItem("conn", "fp-checkin")}, true); err != nil {
+		t.Fatal(err)
+	}
+	var replaced int
+	if err := db.QueryRow(`SELECT checkin_enabled FROM credentials`).Scan(&replaced); err != nil {
+		t.Fatal(err)
+	}
+	if replaced != 0 {
+		t.Fatalf("replace import did not apply the file's flag: %d", replaced)
+	}
+}

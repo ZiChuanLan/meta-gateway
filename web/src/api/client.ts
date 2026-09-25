@@ -30,6 +30,8 @@ import type {
   ModelMetadata,
   ModelCapability,
   ModelChangesResponse,
+  ModelDiscardPreview,
+  ModelDiscardRequest,
   ModelReplacementRequest,
   ModelReplacementPreview,
   ErrorPassRule,
@@ -597,6 +599,13 @@ export const api = (client: ApiClient) => ({
     client.post<ModelReplacementPreview>("/admin/models/changes/preview", input),
   applyModelReplacement: (input: ModelReplacementRequest) =>
     client.post<{ updated: number }>("/admin/models/changes/apply", input),
+  previewModelDiscard: (input: ModelDiscardRequest) =>
+    client.post<ModelDiscardPreview>("/admin/models/changes/discard-preview", input),
+  applyModelDiscard: (input: ModelDiscardRequest) =>
+    client.post<{ removed: number; routes: number }>(
+      "/admin/models/changes/discard-apply",
+      input,
+    ),
   missingModels: (signal?: AbortSignal) =>
     client.get<{
       items: Array<{

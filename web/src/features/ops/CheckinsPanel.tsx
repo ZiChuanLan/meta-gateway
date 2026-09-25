@@ -247,6 +247,24 @@ export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
               : t("ops.checkin.scheduleSave")}
 			</Button>
 		</div>
+        {/* Where the schedule comes from decides whether a container rebuild
+            keeps it: an admin override lives in the database, the environment
+            does not. Showing it here is the difference between "the update
+            erased my setting" and "it was never saved here". */}
+        {runtime.data ? (
+          <p className="detail-section-empty is-quiet">
+            {t("ops.checkin.scheduleSource", {
+              source: t(
+                runtime.data.source === "admin_override"
+                  ? "ops.runtime.sourceAdmin"
+                  : "ops.runtime.sourceEnvironment",
+              ),
+            })}
+            {runtime.data.has_override
+              ? null
+              : ` — ${t("ops.checkin.scheduleEnvHint")}`}
+          </p>
+        ) : null}
       </Panel>
 
       {children}

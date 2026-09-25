@@ -57,8 +57,10 @@ type Item struct {
 	CredentialKind string `json:"-"`
 	// MetaJSON is stored on credentials.meta_json (e.g. platform_user_id for New API check-in).
 	MetaJSON string `json:"-"`
-	// CheckinEnabled is stored on credentials.checkin_enabled.
-	CheckinEnabled bool `json:"-"`
+	// CheckinEnabled is stored on credentials.checkin_enabled. It is part of the
+	// document so a restore brings the operator's scheduled check-in back; the
+	// field is additive and older files simply have no opinion about it.
+	CheckinEnabled bool `json:"checkin_enabled,omitempty"`
 }
 
 type ErrorKind string

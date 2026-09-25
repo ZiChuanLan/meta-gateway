@@ -194,6 +194,17 @@ function StoreExtensions() {
 		() => modules.addons.filter((item) => !item.enabled || !item.installed),
 		[modules.addons],
 	);
+	// Installed plugins by id regardless of whether they are currently on. A
+	// plugin you installed and then switched off is still installed: the market
+	// card has to say so instead of offering 安装 again (and the badge has to
+	// say 已禁用, not 已启用).
+	const installedById = useMemo(() => {
+		const map = new Map<string, ModuleStatus>();
+		for (const item of modules.modules) {
+			if (item.installed) map.set(item.id, item);
+		}
+		return map;
+	}, [modules.modules]);
 	const orphans = useMemo(
 		() =>
 			modules.modules.filter(
@@ -347,7 +358,7 @@ function StoreExtensions() {
 										<MarketCard
 											key={`${p.source.id}:${p.id}`}
 											plugin={p}
-											installedVersion={enabledAddons.find((m) => m.id === p.id)?.version}
+											installed={installedById.get(p.id)}
 											busy={installMarket.pendingId === p.id}
 											onInstall={() => installMarket.mutate({ id: p.id, source: p.source.id })}
 											t={t}
@@ -851,20 +862,21 @@ function CreateChannelDialog({
 
 function MarketCard({
 	plugin,
-	installedVersion,
+	installed,
 	busy,
 	onInstall,
 	t,
 }: {
 	plugin: MarketPlugin;
-	installedVersion?: string;
+	/** The installed module record, whatever its on/off state. */
+	installed?: ModuleStatus;
 	busy: boolean;
 	onInstall: () => void;
 	t: (key: string, vars?: Record<string, string | number>) => string;
 }) {
-	const installed = installedVersion !== undefined;
+	const installedVersion = installed?.version;
 	const updateAvailable =
-		installed &&
+		installed !== undefined &&
 		plugin.version !== undefined &&
 		plugin.version !== "" &&
 		plugin.version !== installedVersion;
@@ -895,10 +907,13 @@ function MarketCard({
 						{plugin.version ? ` · v${plugin.version}` : ""}
 					</small>
 				</div>
-				{installed ? <StatusBadge value="enabled" /> : null}
+				{installed ? <StatusBadge value={installed.enabled ? "enabled" : "disabled"} /> : null}
 			</div>
 			{plugin.description ? (
 				<p className="module-card-body">{plugin.description}</p>
+			) : null}
+			{installed && !installed.enabled ? (
+				<p className="module-card-body muted">{t("store.installedDisabled")}</p>
 			) : null}
 			{plugin.tags && plugin.tags.length > 0 ? (
 				<div className="market-card-tags">

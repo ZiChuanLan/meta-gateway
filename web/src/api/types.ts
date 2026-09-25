@@ -1250,6 +1250,9 @@ export interface ModelChangeMember {
   channel_id: number;
   upstream_model: string;
   group_name: string;
+  /** False for a wildcard binding with no constant rewrite: it answers for
+   *  every model the pattern matches, so deleting it takes those down too. */
+  deletable: boolean;
 }
 export interface ModelChange {
   id: number;
@@ -1303,4 +1306,28 @@ export interface ModelReplacementPreview {
     target_channel_id: number;
     target_model: string;
   }>;
+}
+export interface ModelDiscardRequest {
+  change_ids: number[];
+  member_ids: number[];
+  preview_token?: string;
+}
+export interface ModelDiscardItem {
+  member_id: number;
+  route_id: number;
+  route_name: string;
+  model_pattern: string;
+  group_name: string;
+  channel_id: number;
+  upstream_model: string;
+  /** The route's total member count, the discarded one included. */
+  route_members: number;
+  /** True when this binding is one of the route's last: the route goes too. */
+  route_deleted: boolean;
+}
+export interface ModelDiscardPreview {
+  preview_token: string;
+  /** Route rows deleted because every member of theirs is discarded. */
+  routes: number;
+  items: ModelDiscardItem[];
 }

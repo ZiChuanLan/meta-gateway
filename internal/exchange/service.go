@@ -129,7 +129,8 @@ func (s *Service) Export(ctx context.Context, request ExportRequest) (*Envelope,
 		}
 		item := Item{Name: strings.TrimSpace(row.Name), BaseURL: baseURL,
 			Models: normalizeList([]string{row.ModelsCSV}), Group: normalizeGroup(row.GroupName),
-			Priority: row.Priority, Weight: row.Weight, SiteTypeHint: normalizeType(typeHint)}
+			Priority: row.Priority, Weight: row.Weight, SiteTypeHint: normalizeType(typeHint),
+			CheckinEnabled: row.CheckinEnabled}
 		if request.IncludeSecrets {
 			plaintext, decryptErr := s.enc.Decrypt(row.SecretEnc)
 			if decryptErr != nil {

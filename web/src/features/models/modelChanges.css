@@ -26,6 +26,9 @@
 .model-replacement-fields p { margin: 0; font-size: 13px; }
 .model-replacement-members { max-height: 240px; overflow: auto; display: grid; gap: 12px; }
 .model-replacement-members .check { align-items: start; }
+/* A wildcard binding with no constant rewrite cannot be deleted (it answers
+   for every model its pattern matches), so its row stays listed but locked. */
+.model-replacement-members .check.is-disabled { cursor: not-allowed; opacity: .72; }
 .model-replacement-members small { display: block; margin-top: 4px; color: var(--muted); }
 .model-replacement-members strong { overflow-wrap: anywhere; }
 .model-change-preview { max-height: 400px; overflow: auto; }

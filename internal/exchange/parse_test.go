@@ -230,3 +230,27 @@ func TestParseNestedDataAahSnapshot(t *testing.T) {
 		t.Fatalf("item=%+v", items[0])
 	}
 }
+
+// The check-in switch is part of our own document now: it must read back, and a
+// file written before the field existed must still parse (absent = off).
+func TestParseCanonicalCarriesCheckinFlag(t *testing.T) {
+	body := `{"format":"meta-gateway-aah-exchange","version":1,"exported_at":"2026-07-14T00:00:00Z","importable":true,` +
+		`"items":[{"name":"main","base_url":"https://api.example.com","api_key":"secret","models":[],"group":"default",` +
+		`"priority":0,"weight":100,"site_type_hint":"openai-compatible","checkin_enabled":true}]}`
+	items, err := Parse([]byte(body))
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	if !items[0].CheckinEnabled {
+		t.Fatal("checkin_enabled was dropped")
+	}
+
+	legacy := strings.Replace(body, `,"checkin_enabled":true`, "", 1)
+	items, err = Parse([]byte(legacy))
+	if err != nil || len(items) != 1 {
+		t.Fatalf("legacy items=%+v err=%v", items, err)
+	}
+	if items[0].CheckinEnabled {
+		t.Fatal("an absent checkin_enabled must mean off")
+	}
+}

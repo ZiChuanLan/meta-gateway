@@ -191,6 +191,9 @@ func parseCanonical(data []byte) ([]Item, []SkippedItem, error) {
 		Priority     *int      `json:"priority"`
 		Weight       *int      `json:"weight"`
 		SiteTypeHint *string   `json:"site_type_hint"`
+		// CheckinEnabled is optional: our own export writes it when true, and
+		// backups made before the field existed simply do not have it.
+		CheckinEnabled *bool `json:"checkin_enabled"`
 	}
 	type canonicalEnvelope struct {
 		Format     *string          `json:"format"`
@@ -233,7 +236,8 @@ func parseCanonical(data []byte) ([]Item, []SkippedItem, error) {
 		}
 		items = append(items, Item{Name: *raw.Name, BaseURL: *raw.BaseURL, APIKey: *raw.APIKey,
 			Models: *raw.Models, Group: *raw.Group, Priority: *raw.Priority,
-			Weight: *raw.Weight, SiteTypeHint: *raw.SiteTypeHint})
+			Weight: *raw.Weight, SiteTypeHint: *raw.SiteTypeHint,
+			CheckinEnabled: raw.CheckinEnabled != nil && *raw.CheckinEnabled})
 	}
 	return items, skipped, nil
 }

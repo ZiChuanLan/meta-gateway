@@ -226,17 +226,18 @@ describe("image workbench", () => {
     const submit = screen.getByRole("button", { name: "Generate image" });
     fireEvent.click(submit);
     expect(await screen.findByAltText("purple cube")).toBeVisible();
-    // Only one result and it is already on screen, so the strip stays out of the way.
-    expect(screen.queryByText("This session")).not.toBeInTheDocument();
+    // The generation is listed from the start: the strip is the workbench's
+    // memory, not a fallback for a blank panel.
+    expect(await screen.findByText("Recent generations")).toBeInTheDocument();
 
     fireEvent.click(submit);
     await waitFor(() => expect(backend.image).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole("alert")).toHaveTextContent("cooling down");
     // The failed attempt blanks the panel, so the earlier image has to stay
-    // reachable — with a single entry the strip used to hide itself here.
-    const strip = (await screen.findByText("This session")).closest(".workbench-history");
+    // reachable.
+    const strip = screen.getByText("Recent generations").closest(".workbench-history");
     expect(strip).not.toBeNull();
-    fireEvent.click(within(strip as HTMLElement).getByRole("button"));
+    fireEvent.click(within(strip as HTMLElement).getByRole("button", { name: /Open the gpt-image-2 generation/ }));
     expect(await screen.findByAltText("purple cube")).toBeVisible();
   });
 
@@ -381,5 +382,56 @@ describe("image workbench", () => {
     await waitFor(() => expect(backend.chat).toHaveBeenCalledOnce());
     expect(await screen.findByText("buffered")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  // A generation costs real upstream quota, so the workbench keeps both the
+  // images and the request that produced them: closing the tab is not a way to
+  // lose the only copy of what an upstream charged for.
+  it("restores the last generation and its request after a remount", async () => {
+    mockBackend();
+    const first = renderWorkbench();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), { target: { value: "a purple cube" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
+    expect(await screen.findByAltText("purple cube")).toBeVisible();
+    await waitFor(() => expect(localStorage.getItem("meta-gateway.state.workbench.runs") ?? "").toContain("data:image/png"));
+    await waitFor(() => expect(localStorage.getItem("meta-gateway.state.workbench.image-form") ?? "").toContain("a purple cube"));
+    first.unmount();
+    renderWorkbench();
+    expect(await screen.findByAltText("purple cube")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("a purple cube");
+    expect(await screen.findByText("Recent generations")).toBeInTheDocument();
+  });
+
+  it("reuses a past run's request from the history strip", async () => {
+    mockBackend();
+    renderWorkbench();
+    const prompt = await screen.findByRole("textbox", { name: "Prompt" });
+    fireEvent.change(prompt, { target: { value: "first scene" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
+    await screen.findByAltText("purple cube");
+    fireEvent.change(prompt, { target: { value: "second scene" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Reuse these settings" })).toHaveLength(2));
+    // Newest first, so entry 1 is the first run — and it carries its prompt.
+    fireEvent.click(screen.getAllByRole("button", { name: "Reuse these settings" })[1]!);
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("first scene");
+  });
+
+  it("resumes the playground conversation after a remount", async () => {
+    mockBackend();
+    const first = renderWorkbench();
+    fireEvent.click(await screen.findByText("Playground"));
+    const composer = await screen.findByPlaceholderText("Type a message — ⌘/Ctrl + Enter to send…");
+    fireEvent.change(composer, { target: { value: "ping" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("pong")).toBeInTheDocument();
+    await waitFor(
+      () => expect(localStorage.getItem("meta-gateway.state.workbench.playground") ?? "").toContain("pong"),
+      { timeout: 3000 },
+    );
+    first.unmount();
+    renderWorkbench();
+    fireEvent.click(await screen.findByText("Playground"));
+    expect(await screen.findByText("pong")).toBeInTheDocument();
   });
 });

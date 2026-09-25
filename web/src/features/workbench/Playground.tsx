@@ -25,6 +25,11 @@ import { parseSseJson, splitSseFrames } from "../../lib/sse";
 import { upstreamMessage } from "../../lib/upstreamError";
 import { upstreamChoices } from "../models/routingPolicy";
 import { useSession } from "../../session";
+import {
+	loadPlayground,
+	savePlayground,
+	type StoredTurn,
+} from "./workbenchState";
 
 /**
  * The workbench's chat playground. It talks to the same admin probe the Models
@@ -35,29 +40,14 @@ import { useSession } from "../../session";
 const CHAT_ENDPOINT = "/v1/chat/completions";
 const SUGGESTIONS = ["playground.suggest1", "playground.suggest2", "playground.suggest3"];
 
-type Role = "user" | "assistant";
-type TurnStatus = "streaming" | "complete" | "error";
-
-type Turn = {
-	key: string;
-	role: Role;
-	content: string;
-	reasoning: string;
-	status: TurnStatus;
-	at: string;
-	error?: string;
-	stopped?: boolean;
-	editDraft?: string;
-	latencyMs?: number;
-	upstreamStatus?: number;
-	channelName?: string;
-	tokens?: number;
-};
+type Turn = StoredTurn & { editDraft?: string };
 
 type ChatTurn = { role: string; content: string };
 
+// Keys have to survive a reload — a resumed transcript already holds turn-N
+// keys, and a restarted counter would collide with them.
 let turnSeq = 0;
-const uid = () => `turn-${++turnSeq}`;
+const uid = () => `turn-${Date.now().toString(36)}-${++turnSeq}`;
 
 function textOf(value: unknown): string {
 	if (typeof value === "string") return value;
@@ -112,6 +102,39 @@ export default function Playground({ active }: { active: boolean }) {
 	const [stream, setStream] = useState(true);
 	const abortRef = useRef<AbortController | null>(null);
 	const scroller = useRef<HTMLDivElement>(null);
+	const [sessionLoaded, setSessionLoaded] = useState(false);
+
+	// The conversation outlives the tab. A reload cannot resume a stream, so a
+	// turn stored mid-flight comes back as whatever had already arrived.
+	useEffect(() => {
+		let cancelled = false;
+		void loadPlayground().then((session) => {
+			if (cancelled) return;
+			if (session) {
+				setModel(session.model ?? "");
+				setMemberId(session.memberId ?? 0);
+				setSystem(session.system ?? "");
+				setMaxTokens(session.maxTokens || 4096);
+				setTemperature(session.temperature ?? 0.7);
+				setTemperatureOn(session.temperatureOn ?? true);
+				setTopP(session.topP ?? 1);
+				setTopPOn(session.topPOn ?? false);
+				setStream(session.stream ?? true);
+				setTurns(session.turns);
+			}
+			setSessionLoaded(true);
+		});
+		return () => { cancelled = true; };
+	}, []);
+	useEffect(() => {
+		if (!sessionLoaded) return;
+		// Debounced: a streaming answer patches the transcript on every delta,
+		// and rewriting the whole record per chunk is pure churn.
+		const timer = window.setTimeout(() => {
+			void savePlayground({ model, memberId, system, maxTokens, temperature, temperatureOn, topP, topPOn, stream, turns });
+		}, 500);
+		return () => window.clearTimeout(timer);
+	}, [sessionLoaded, model, memberId, system, maxTokens, temperature, temperatureOn, topP, topPOn, stream, turns]);
 
 	const routes = useQuery({
 		queryKey: ["route-overviews"],

@@ -16,7 +16,7 @@ export const zh: Dict = {
   "modelChanges.removed": "疑似移除",
   "modelChanges.pending": "待处理",
   "modelChanges.ignored": "已忽略",
-  "modelChanges.applied": "已替换",
+  "modelChanges.applied": "已处理",
   "modelChanges.resolved": "已恢复或失效",
   "modelChanges.kind": "变化类型",
   "modelChanges.status": "处理状态",
@@ -27,11 +27,21 @@ export const zh: Dict = {
   "modelChanges.noCandidates":
     "同次同步没有新增模型，仍可从现有清单选择替代模型。",
   "modelChanges.replace": "选择替换",
+  "modelChanges.discard": "删除绑定",
+  "modelChanges.discardHint":
+    "删除该渠道在受影响路由上的绑定；路由失去最后一个成员时会一并删除。",
+  "modelChanges.discardNoBinding":
+    "该移除当前没有绑定的路由成员，也就没有可删除的绑定。",
+  "modelChanges.discardWildcard":
+    "通配符绑定服务于多个模型名，删除会连带影响它们，需先为它指定固定上游模型。",
   "modelChanges.ignore": "忽略",
   "modelChanges.ignoreConfirm":
     "忽略选中的 {count} 条变更？这只关闭提醒，不会修复或修改路由。",
   "modelChanges.select": "选择变更 {model} / {channel}",
   "modelChanges.bulk": "替换选中变更（{count}）",
+  "modelChanges.bulkDiscard": "删除选中绑定（{count}）",
+  "modelChanges.bulkDiscardHint":
+    "批量删除需要所选变更都是「有可删绑定」的待处理移除记录。",
   "modelChanges.sameChannel": "批量替换请只选择同一渠道的待处理移除记录。",
   "modelChanges.replaceTitle": "更换上游映射",
   "modelChanges.preserve":
@@ -50,6 +60,20 @@ export const zh: Dict = {
   "modelChanges.back": "返回修改",
   "modelChanges.done": "已更新 {count} 个成员的上游映射。",
   "modelChanges.stale": "预览已失效或应用失败，请返回核对并重新预览。",
+  "modelChanges.discardTitle": "删除失效绑定",
+  "modelChanges.discardPreserve":
+    "只删除选中的绑定；对外模型名、其它渠道的成员与路由设置保持不变。路由失去最后一个成员时会一并删除，不会留下一个还能被调用、却没有上游的名字。",
+  "modelChanges.discardPreview": "预览删除",
+  "modelChanges.discardPreviewTitle": "确认以下删除",
+  "modelChanges.discardImpact":
+    "将删除 {members} 个绑定，其中 {routes} 个路由会一并删除。",
+  "modelChanges.discardRouteDeleted":
+    "该路由的最后一个成员（共 {count} 个），路由一并删除",
+  "modelChanges.discardRouteKept": "该路由共 {count} 个成员，其余绑定保留",
+  "modelChanges.discardConfirm": "确认删除（{count} 个绑定）",
+  "modelChanges.discardDone": "已删除 {members} 个绑定，{routes} 个路由一并删除。",
+  "modelChanges.discardStale":
+    "预览已失效或删除失败，请返回核对并重新预览。",
   "modelChanges.noTargets": "该渠道尚无可选模型，请先成功同步模型清单。",
   "modelChanges.summaryConfirmed": "已确认 {count}",
   "modelChanges.confirmedBadge": "已确认缺失",
@@ -1562,6 +1586,7 @@ export const zh: Dict = {
   "plugins.channelFailed": "创建渠道失败",
   "store.orphanHint": "该记录不在官方目录中，只能移除。",
   "store.installed": "已安装",
+  "store.installedDisabled": "已安装，当前已停用；激活入口在上方「未启用 / 可安装」里。",
   "store.install": "安装",
   "store.update": "更新",
   "store.installKind.legacy": "直连",
@@ -1746,7 +1771,10 @@ export const zh: Dict = {
   "ops.runEnabled": "运行已启用项",
   "ops.checkin.scheduleTitle": "定时签到",
   "ops.checkin.scheduleHint":
-    "按计划自动对已启用站点执行签到。需先开启商店中的签到插件。",
+    "按计划自动对已启用站点的登录态凭证执行签到。定时任务保存在数据库里：在这里保存一次就写入管理端覆盖，以后重建容器（含一键更新）也不会被环境变量改回去。",
+  "ops.checkin.scheduleSource": "定时设置来源：{source}",
+  "ops.checkin.scheduleEnvHint":
+    "当前跟随环境变量（CHECKIN_ENABLED / CHECKIN_CRON）。若容器是按 compose 重建的（会重新读 .env，compose 里默认 CHECKIN_ENABLED=false），这里就会变回关闭——在这里保存一次即改为管理端覆盖，不再受环境影响。",
   "ops.checkin.scheduleEnabled": "启用定时签到",
   "ops.checkin.schedulePreset": "频率",
   "ops.checkin.scheduleCron": "Cron 表达式",
@@ -2428,7 +2456,16 @@ export const zh: Dict = {
   "workbench.image.upstreamStatus": "上游返回 HTTP {status}，没有解析出图片",
   "workbench.image.upstreamError": "上游返回 HTTP {status}",
   "workbench.image.download": "下载",
-  "workbench.image.history": "本次会话",
+  "workbench.image.history": "最近生成",
+  "workbench.image.historyCount": "{count} 次生成",
+  "workbench.image.historyClear": "清空历史",
+  "workbench.image.historyOpen": "查看 {time} 的 {model} 生成结果",
+  "workbench.image.historyReuse": "复用这次的参数",
+  "workbench.image.historyDelete": "删除这条记录",
+  "workbench.image.historyMeta": "{n} 张 · {ms} ms · {time}",
+  "workbench.image.historyNoPrompt": "（未记录提示词）",
+  "workbench.image.historyTruncated":
+    "图片体积超出浏览器存储限额，这条记录未能持久保存，刷新后会丢失。",
   "workbench.image.noModels":
     "没有检测到图像模型：在「模型」页建一条图像模型的路由，或在同一页的「模型工具 → 模型能力注册表」里手工登记。",
   "workbench.cap.title": "模型能力注册表",

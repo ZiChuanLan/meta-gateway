@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
-import type { ModelChange, ModelReplacementPreview, ModelReplacementRequest } from "../../api/types";
+import type { ModelChange, ModelDiscardPreview, ModelDiscardRequest, ModelReplacementPreview, ModelReplacementRequest } from "../../api/types";
 import { Button, ConfirmDialog, Dialog, Empty } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
@@ -26,6 +26,13 @@ function harmless(item: ModelChange): boolean {
     (item.kind === "added" || item.members.length === 0);
 }
 
+// Bindings a removal may delete outright: a wildcard pattern with no constant
+// rewrite answers for every model it matches, so dropping it would take
+// unrelated models down too.
+function discardableMembers(item: ModelChange) {
+  return item.members.filter((member) => member.deletable);
+}
+
 // Whole days a pending removal has gone unhandled, from first detection.
 function missingDays(item: ModelChange): number {
   const detected = Date.parse(item.detected_at);
@@ -46,6 +53,7 @@ export function ModelChangesPanel({ openRequest = 0, hideWhenQuiet = false }: { 
   }, [openRequest]);
   const [selected, setSelected] = useState<number[]>([]);
   const [replacement, setReplacement] = useState<ModelChange[] | null>(null);
+  const [discard, setDiscard] = useState<ModelChange[] | null>(null);
   const [ignoreIds, setIgnoreIds] = useState<number[] | null>(null);
   const [message, setMessage] = useState("");
   useEffect(() => {
@@ -63,6 +71,14 @@ export function ModelChangesPanel({ openRequest = 0, hideWhenQuiet = false }: { 
     && `${item.model_name} ${item.channel_name}`.toLowerCase().includes(filters.query.trim().toLowerCase()));
   const chosen = visible.filter(item => selected.includes(item.id) && item.status === "pending");
   const replaceable = chosen.length > 0 && chosen.every(item => item.kind === "removed" && item.members.length > 0 && item.channel_id === chosen[0]!.channel_id);
+  const discardable = chosen.length > 0 && chosen.every(item => item.kind === "removed" && discardableMembers(item).length > 0);
+  // Why the delete button is off, in the operator's own terms: nothing bound to
+  // delete, or a wildcard the route has not pinned to one upstream model.
+  const discardHint = (item: ModelChange) => !item.members.length
+    ? t("modelChanges.discardNoBinding")
+    : discardableMembers(item).length
+      ? t("modelChanges.discardHint")
+      : t("modelChanges.discardWildcard");
   const harmlessVisible = visible.filter(harmless);
   const channels = [...new Map(items.map(item => [item.channel_id, item.channel_name])).entries()];
   const setFilter = (patch: Partial<Filters>) => { setFilters(current => ({ ...current, ...patch })); setSelected([]); };
@@ -95,6 +111,7 @@ export function ModelChangesPanel({ openRequest = 0, hideWhenQuiet = false }: { 
       </div>
       {chosen.length ? <div className="model-change-bulk">
         <Button disabled={!replaceable} onClick={() => setReplacement(chosen)}>{t("modelChanges.bulk", { count: chosen.length })}</Button>
+        <Button variant="secondary" disabled={!discardable} title={discardable ? undefined : t("modelChanges.bulkDiscardHint")} onClick={() => setDiscard(chosen)}>{t("modelChanges.bulkDiscard", { count: chosen.length })}</Button>
         <Button variant="secondary" onClick={() => { ignore.reset(); setIgnoreIds(chosen.map(item => item.id)); }}>{t("modelChanges.ignore")}</Button>
         {!replaceable ? <span className="muted">{t("modelChanges.sameChannel")}</span> : null}
       </div> : null}
@@ -144,7 +161,17 @@ export function ModelChangesPanel({ openRequest = 0, hideWhenQuiet = false }: { 
             {item.candidates.length ? <div className="model-change-candidates">{item.candidates.map(name => <code key={name}>{name}</code>)}</div> : null}
           </> : null}
           {item.status === "pending" ? <div className="model-change-actions">
-            {item.kind === "removed" ? <Button variant="secondary" disabled={!item.members.length} onClick={() => setReplacement([item])}>{t("modelChanges.replace")}</Button> : null}
+            {item.kind === "removed" ? <>
+              <Button variant="secondary" disabled={!item.members.length} onClick={() => setReplacement([item])}>{t("modelChanges.replace")}</Button>
+              <Button
+                variant="secondary"
+                disabled={!discardableMembers(item).length}
+                title={discardHint(item)}
+                onClick={() => setDiscard([item])}
+              >
+                {t("modelChanges.discard")}
+              </Button>
+            </> : null}
             {item.kind === "added" && !item.adopted ? (
               <Button
                 variant="secondary"
@@ -159,6 +186,7 @@ export function ModelChangesPanel({ openRequest = 0, hideWhenQuiet = false }: { 
       </div>}
     </div> : null}
     {replacement ? <ReplacementDialog changes={replacement} onClose={() => setReplacement(null)} onDone={count => { setReplacement(null); setSelected([]); setMessage(t("modelChanges.done", { count })); }} /> : null}
+    {discard ? <DiscardDialog changes={discard} onClose={() => setDiscard(null)} onDone={result => { setDiscard(null); setSelected([]); setMessage(t("modelChanges.discardDone", { members: result.removed, routes: result.routes })); }} /> : null}
     {ignoreIds ? <ConfirmDialog title={t("modelChanges.ignore")} confirmLabel={t("modelChanges.ignore")} message={t("modelChanges.ignoreConfirm", { count: ignoreIds.length })} onClose={() => { if (!ignore.isPending) setIgnoreIds(null); }} onConfirm={() => ignore.mutate(ignoreIds)} pending={ignore.isPending} error={ignore.error} /> : null}
   </section>;
 }
@@ -222,6 +250,57 @@ function ReplacementDialog({ changes, onClose, onDone }: { changes: ModelChange[
       </fieldset>
       {prepare.error ? <div className="inline-error" role="alert">{String(prepare.error)}</div> : null}
       <div className="dialog-actions"><Button variant="secondary" disabled={busy} onClick={onClose}>{t("common.cancel")}</Button><Button disabled={busy || !memberIds.length || !models.includes(targetModel) || inventory.isError} onClick={() => prepare.mutate({ change_ids: changes.map(change => change.id), member_ids: memberIds, target_channel_id: targetChannel, target_model: targetModel })}>{busy ? t("common.working") : t("modelChanges.preview")}</Button></div>
+    </>}
+  </Dialog>;
+}
+
+/**
+ * Handling a removal by deletion rather than by repointing: the upstream
+ * retired the model, so the binding is dead weight — and the public route name
+ * it sits on is a name nobody should keep calling. Two steps, like the
+ * replacement dialog: the server previews exactly which members go and which
+ * routes vanish with them (their LAST member), then apply carries the preview
+ * token, so a route that gained a member in between is never wiped by a stale
+ * click. A wildcard binding only answers for the models its pattern matches,
+ * so it cannot be discarded until the route pins the upstream name.
+ */
+function DiscardDialog({ changes, onClose, onDone }: { changes: ModelChange[]; onClose: () => void; onDone: (result: { removed: number; routes: number }) => void }) {
+  const { client } = useSession();
+  const { t } = useI18n();
+  const service = api(client!);
+  const members = [...new Map(changes.flatMap(change => change.members).map(member => [member.member_id, member])).values()];
+  const [memberIds, setMemberIds] = useState(members.filter(member => member.deletable).map(member => member.member_id));
+  const [preview, setPreview] = useState<{ result: ModelDiscardPreview; request: ModelDiscardRequest } | null>(null);
+  const previewHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (preview) previewHeading.current?.focus();
+  }, [preview]);
+  const prepare = useAdminMutation({ mutationFn: service.previewModelDiscard, toastOnError: false, onSuccess: (result, request) => setPreview({ result, request }) });
+  const apply = useAdminMutation({ mutationFn: service.applyModelDiscard, toastOnError: false, invalidateKeys: INVALIDATE, onSuccess: data => onDone(data) });
+  const busy = prepare.isPending || apply.isPending;
+  return <Dialog title={t("modelChanges.discardTitle")} onClose={() => { if (!busy) onClose(); }}>
+    <p className="model-change-preserve">{t("modelChanges.discardPreserve")}</p>
+    {preview ? <>
+      <h3 ref={previewHeading} tabIndex={-1}>{t("modelChanges.discardPreviewTitle")}</h3>
+      <p className="muted">{t("modelChanges.discardImpact", { members: preview.result.items.length, routes: preview.result.routes })}</p>
+      <div className="model-change-preview">{preview.result.items.map(item => <div key={item.member_id}>
+        <strong className="mono">{item.model_pattern}</strong><span className="muted">{item.route_name} · #{item.member_id} · {item.group_name || "default"}</span>
+        <div className="model-change-mapping"><span><code>{item.upstream_model}</code></span>
+          <span className={item.route_deleted ? "model-change-warning" : "muted"}>{t(item.route_deleted ? "modelChanges.discardRouteDeleted" : "modelChanges.discardRouteKept", { count: item.route_members })}</span>
+        </div>
+      </div>)}</div>
+      {apply.error ? <div role="alert" className="inline-error">{t("modelChanges.discardStale")} {String(apply.error)}</div> : null}
+      <div className="dialog-actions"><Button variant="secondary" disabled={busy} onClick={() => { setPreview(null); prepare.reset(); apply.reset(); }}>{t("modelChanges.back")}</Button><Button disabled={busy || !!apply.error || !preview.result.items.length} onClick={() => apply.mutate({ ...preview.request, preview_token: preview.result.preview_token })}>{busy ? t("common.working") : t("modelChanges.discardConfirm", { count: preview.result.items.length })}</Button></div>
+    </> : <>
+      <fieldset disabled={busy} className="model-replacement-fields">
+        <h3>{t("modelChanges.members")}</h3>
+        <div className="model-replacement-members">{members.map(member => <label className={`check${member.deletable ? "" : " is-disabled"}`} key={member.member_id}>
+          <input type="checkbox" disabled={!member.deletable} checked={memberIds.includes(member.member_id)} onChange={e => { setMemberIds(ids => e.target.checked ? [...ids, member.member_id] : ids.filter(id => id !== member.member_id)); prepare.reset(); }} />
+          <span><strong className="mono">{member.model_pattern}</strong><small>{member.route_name} · {t("modelChanges.member", { id: member.member_id, group: member.group_name || "default" })}</small>{member.deletable ? null : <small className="model-change-warning">{t("modelChanges.discardWildcard")}</small>}</span>
+        </label>)}</div>
+      </fieldset>
+      {prepare.error ? <div className="inline-error" role="alert">{String(prepare.error)}</div> : null}
+      <div className="dialog-actions"><Button variant="secondary" disabled={busy} onClick={onClose}>{t("common.cancel")}</Button><Button disabled={busy || !memberIds.length} onClick={() => prepare.mutate({ change_ids: changes.map(change => change.id), member_ids: memberIds })}>{busy ? t("common.working") : t("modelChanges.discardPreview")}</Button></div>
     </>}
   </Dialog>;
 }

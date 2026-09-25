@@ -142,8 +142,13 @@ type ModelChangeMember struct {
 	ChannelID     int64  `json:"channel_id"`
 	UpstreamModel string `json:"upstream_model"`
 	GroupName     string `json:"group_name"`
-	mapping       string
-	routeMapping  string
+	// Deletable is false for a wildcard binding without a constant rewrite:
+	// it answers for every model the pattern matches, so deleting it would
+	// take unrelated models down as well. Such a member cannot be discarded
+	// until the route pins the upstream name.
+	Deletable    bool `json:"deletable"`
+	mapping      string
+	routeMapping string
 }
 type ModelChange struct {
 	ID          int64               `json:"id"`
@@ -210,6 +215,7 @@ func changeMembers(q sqlExecutor) ([]ModelChangeMember, error) {
 		if m.UpstreamModel == "" && !strings.ContainsAny(m.ModelPattern, "*?[") {
 			m.UpstreamModel = m.ModelPattern
 		}
+		m.Deletable = !strings.ContainsAny(m.ModelPattern, "*?[") || alias.Real != ""
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -556,6 +562,53 @@ type ModelChangePreview struct {
 	PreviewToken string                   `json:"preview_token"`
 }
 
+// rowSnapshot serializes one whole row without depending on schema column
+// order. It is what lets a preview token catch edits made in the window
+// between preview and apply (route pins, credentials, member prices).
+func rowSnapshot(q sqlExecutor, table string, id int64) ([]any, error) {
+	rows, err := q.Query(`SELECT * FROM `+table+` WHERE id=?`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	values := make([]any, len(columns))
+	ptrs := make([]any, len(columns))
+	for i := range values {
+		ptrs[i] = &values[i]
+	}
+	if !rows.Next() {
+		return nil, ErrModelChangeConflict
+	}
+	if err := rows.Scan(ptrs...); err != nil {
+		return nil, err
+	}
+	return values, rows.Err()
+}
+
+// routeMemberIDs lists a route's members. Discarding decides whether the route
+// row itself goes away, so the full membership is part of the preview token:
+// a member added between preview and apply would otherwise be deleted silently.
+func routeMemberIDs(q sqlExecutor, routeID int64) ([]int64, error) {
+	rows, err := q.Query(`SELECT id FROM route_members WHERE route_id=? ORDER BY id`, routeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func previewModelChanges(q sqlExecutor, req ModelChangeRequest) (ModelChangePreview, error) {
 	out := ModelChangePreview{Items: []ModelChangePreviewItem{}}
 	if !validChangeIDs(req.ChangeIDs) || !validChangeIDs(req.MemberIDs) || req.TargetChannelID <= 0 || strings.TrimSpace(req.TargetModel) == "" {
@@ -664,26 +717,7 @@ func previewModelChanges(q sqlExecutor, req ModelChangeRequest) (ModelChangePrev
 			table string
 			id    int64
 		}{{"route_members", id}, {"routes", m.RouteID}, {"channels", m.ChannelID}, {"channels", req.TargetChannelID}} {
-			rows, err := q.Query(`SELECT * FROM `+tableID.table+` WHERE id=?`, tableID.id)
-			if err != nil {
-				return out, err
-			}
-			columns, err := rows.Columns()
-			if err != nil {
-				rows.Close()
-				return out, err
-			}
-			values := make([]any, len(columns))
-			ptrs := make([]any, len(columns))
-			for i := range values {
-				ptrs[i] = &values[i]
-			}
-			if !rows.Next() {
-				rows.Close()
-				return out, ErrModelChangeConflict
-			}
-			err = rows.Scan(ptrs...)
-			rows.Close()
+			values, err := rowSnapshot(q, tableID.table, tableID.id)
 			if err != nil {
 				return out, err
 			}
@@ -762,4 +796,198 @@ func (s *DB) ApplyModelChanges(req ModelChangeRequest) (int, error) {
 		return 0, err
 	}
 	return len(preview.Items), nil
+}
+
+// A removed model can also be resolved by deleting its binding instead of
+// repointing it: the upstream retired the model, so the member is dead weight
+// and the public route name is one nobody should keep calling. Deleting the
+// route's LAST member deletes the route row too — a route with no members is
+// still a callable name, which is exactly the dead entry the console is meant
+// not to accumulate.
+type ModelChangeDiscardRequest struct {
+	ChangeIDs    []int64 `json:"change_ids"`
+	MemberIDs    []int64 `json:"member_ids"`
+	PreviewToken string  `json:"preview_token,omitempty"`
+}
+
+type ModelChangeDiscardItem struct {
+	MemberID     int64  `json:"member_id"`
+	RouteID      int64  `json:"route_id"`
+	RouteName    string `json:"route_name"`
+	ModelPattern string `json:"model_pattern"`
+	GroupName    string `json:"group_name"`
+	ChannelID    int64  `json:"channel_id"`
+	// UpstreamModel is the name this binding actually asks the upstream for.
+	UpstreamModel string `json:"upstream_model"`
+	// RouteMembers is the route's total member count, this one included.
+	RouteMembers int `json:"route_members"`
+	// RouteDeleted marks this member as one of the route's last ones, so the
+	// route row disappears with it.
+	RouteDeleted bool `json:"route_deleted"`
+}
+
+type ModelChangeDiscardPreview struct {
+	Items []ModelChangeDiscardItem `json:"items"`
+	// Routes counts the route rows that go away because every one of their
+	// members is being discarded.
+	Routes       int    `json:"routes"`
+	PreviewToken string `json:"preview_token"`
+}
+
+// DiscardResult reports what an applied discard actually removed.
+type ModelChangeDiscardResult struct {
+	Removed int `json:"removed"`
+	Routes  int `json:"routes"`
+}
+
+func previewModelDiscard(q sqlExecutor, req ModelChangeDiscardRequest) (ModelChangeDiscardPreview, error) {
+	out := ModelChangeDiscardPreview{Items: []ModelChangeDiscardItem{}}
+	if !validChangeIDs(req.ChangeIDs) || !validChangeIDs(req.MemberIDs) {
+		return out, ErrModelChangeInvalid
+	}
+	changes, err := listModelChanges(q)
+	if err != nil {
+		return out, err
+	}
+	selected := map[int64]bool{}
+	for _, id := range req.ChangeIDs {
+		selected[id] = true
+	}
+	eligible := map[int64]ModelChangeMember{}
+	found := 0
+	for _, x := range changes.Items {
+		if !selected[x.ID] {
+			continue
+		}
+		found++
+		if x.Status != "pending" || x.Kind != "removed" {
+			return out, ErrModelChangeConflict
+		}
+		for _, m := range x.Members {
+			eligible[m.MemberID] = m
+		}
+	}
+	if found != len(selected) {
+		return out, ErrModelChangeConflict
+	}
+	ids := append([]int64(nil), req.MemberIDs...)
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	changeIDs := append([]int64(nil), req.ChangeIDs...)
+	sort.Slice(changeIDs, func(i, j int) bool { return changeIDs[i] < changeIDs[j] })
+	perRoute := map[int64]int{}
+	for _, id := range ids {
+		m, ok := eligible[id]
+		if !ok {
+			return out, ErrModelChangeConflict
+		}
+		if !m.Deletable {
+			return out, ErrModelChangeConflict
+		}
+		perRoute[m.RouteID]++
+	}
+	fingerprint := []any{changeIDs}
+	for _, id := range ids {
+		m := eligible[id]
+		memberRow, err := rowSnapshot(q, "route_members", id)
+		if err != nil {
+			return out, err
+		}
+		routeRow, err := rowSnapshot(q, "routes", m.RouteID)
+		if err != nil {
+			return out, err
+		}
+		siblings, err := routeMemberIDs(q, m.RouteID)
+		if err != nil {
+			return out, err
+		}
+		item := ModelChangeDiscardItem{
+			MemberID: id, RouteID: m.RouteID, RouteName: m.RouteName, ModelPattern: m.ModelPattern,
+			GroupName: m.GroupName, ChannelID: m.ChannelID, UpstreamModel: m.UpstreamModel,
+			RouteMembers: len(siblings), RouteDeleted: len(siblings) == perRoute[m.RouteID],
+		}
+		out.Items = append(out.Items, item)
+		fingerprint = append(fingerprint, item, memberRow, routeRow, siblings)
+	}
+	routes := map[int64]bool{}
+	for _, item := range out.Items {
+		if item.RouteDeleted {
+			routes[item.RouteID] = true
+		}
+	}
+	out.Routes = len(routes)
+	raw, err := json.Marshal(fingerprint)
+	if err != nil {
+		return out, err
+	}
+	sum := sha256.Sum256(raw)
+	out.PreviewToken = hex.EncodeToString(sum[:])
+	return out, nil
+}
+
+func (s *DB) PreviewModelDiscard(req ModelChangeDiscardRequest) (ModelChangeDiscardPreview, error) {
+	tx, err := s.Begin()
+	if err != nil {
+		return ModelChangeDiscardPreview{}, err
+	}
+	defer tx.Rollback()
+	return previewModelDiscard(tx, req)
+}
+
+func (s *DB) ApplyModelDiscard(req ModelChangeDiscardRequest) (ModelChangeDiscardResult, error) {
+	out := ModelChangeDiscardResult{}
+	if req.PreviewToken == "" {
+		return out, ErrModelChangeConflict
+	}
+	tx, err := s.Begin()
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	preview, err := previewModelDiscard(tx, req)
+	if err != nil {
+		return out, err
+	}
+	if preview.PreviewToken != req.PreviewToken {
+		return out, ErrModelChangeConflict
+	}
+	affected := map[int64]bool{}
+	for _, item := range preview.Items {
+		if err := deleteRouteMember(tx, item.MemberID); err != nil {
+			return out, err
+		}
+		affected[item.RouteID] = true
+	}
+	for routeID := range affected {
+		var remaining int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM route_members WHERE route_id=?`, routeID).Scan(&remaining); err != nil {
+			return out, err
+		}
+		if remaining > 0 {
+			continue
+		}
+		if err := deleteRoute(tx, routeID); err != nil {
+			return out, err
+		}
+		out.Routes++
+	}
+	remaining, err := listModelChanges(tx)
+	if err != nil {
+		return out, err
+	}
+	// The removal stops being pending once nothing is bound to the vanished
+	// model any more — the same rule the replacement path applies.
+	for _, id := range req.ChangeIDs {
+		for _, x := range remaining.Items {
+			if x.ID == id && len(x.Members) == 0 {
+				if _, err := tx.Exec(`UPDATE model_changes SET status='applied' WHERE id=? AND status='pending'`, id); err != nil {
+					return out, err
+				}
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return out, err
+	}
+	out.Removed = len(preview.Items)
+	return out, nil
 }

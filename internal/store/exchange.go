@@ -24,6 +24,9 @@ type ExchangeExportRow struct {
 	SecretEnc    string
 	SiteBaseURL  string
 	Platform     string
+	// CheckinEnabled mirrors credentials.checkin_enabled so a backup can carry
+	// the operator's scheduled check-in decision instead of silently dropping it.
+	CheckinEnabled bool
 }
 
 type ExchangeLegacyCandidate struct {
@@ -74,7 +77,7 @@ type ExchangeStore struct {
 func (s *ExchangeStore) Export(ctx context.Context, channelIDs []int64) ([]ExchangeExportRow, error) {
 	query := `SELECT c.id, COALESCE(c.credential_id, 0), c.name, c.base_url, c.models_csv, c.group_name,
 		c.priority, c.weight, c.status, c.type_hint, COALESCE(cr.secret_enc, ''),
-        COALESCE(si.base_url, ''), COALESCE(si.platform, '')
+        COALESCE(si.base_url, ''), COALESCE(si.platform, ''), COALESCE(cr.checkin_enabled, 0)
         FROM channels c
 		LEFT JOIN credentials cr ON cr.id = c.credential_id
         LEFT JOIN sites si ON si.id = c.site_id
@@ -98,7 +101,7 @@ func (s *ExchangeStore) Export(ctx context.Context, channelIDs []int64) ([]Excha
 		var row ExchangeExportRow
 		if err := rows.Scan(&row.ChannelID, &row.CredentialID, &row.Name, &row.BaseURL, &row.ModelsCSV,
 			&row.GroupName, &row.Priority, &row.Weight, &row.Status, &row.TypeHint,
-			&row.SecretEnc, &row.SiteBaseURL, &row.Platform); err != nil {
+			&row.SecretEnc, &row.SiteBaseURL, &row.Platform, &row.CheckinEnabled); err != nil {
 			return nil, fmt.Errorf("exchange export scan: %w", err)
 		}
 		result = append(result, row)
@@ -402,24 +405,32 @@ func updateExchangeAsset(ctx context.Context, tx *sql.Tx, credentialID, channelI
 	// fingerprint) keep their rotation/refresh semantics, and credentials with no
 	// stored secret are backfilled from the backup.
 	skipCredential := false
+	// The check-in switch is an operator decision made in the console, not part
+	// of the credential a backup describes: a file either carries no check-in
+	// information at all or somebody else's. An incremental import merges on a
+	// timer (the WebDAV pull), so letting the file win turned scheduled check-in
+	// off every few hours. The merge therefore keeps whatever the console
+	// decided; a replace-mode restore is a different thing and still writes the
+	// file's value.
+	checkinEnabled := 0
 	if preserveSecret {
 		var localFP, localEnc string
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(import_fingerprint, ''), COALESCE(secret_enc, '') FROM credentials WHERE id = ?`, credentialID).Scan(&localFP, &localEnc); err != nil {
+		var localCheckin int
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(import_fingerprint, ''), COALESCE(secret_enc, ''), checkin_enabled FROM credentials WHERE id = ?`, credentialID).Scan(&localFP, &localEnc, &localCheckin); err != nil {
 			return fmt.Errorf("exchange credential ownership read: %w", err)
 		}
 		if localEnc != "" && localFP == "" {
 			skipCredential = true
 		}
+		checkinEnabled = localCheckin
+	} else if item.CheckinEnabled {
+		checkinEnabled = 1
 	}
 
 	if !skipCredential {
 		kind := item.CredentialKind
 		if kind == "" {
 			kind = "api_key"
-		}
-		checkinEnabled := 0
-		if item.CheckinEnabled {
-			checkinEnabled = 1
 		}
 		// Always refresh import_fingerprint so re-import with a rotated secret still
 		// hits the fingerprint path next time (and secondary-match updates stick).
@@ -452,13 +463,12 @@ func adoptExchangeAsset(ctx context.Context, tx *sql.Tx, item ExchangeImportItem
 	if kind == "" {
 		kind = "api_key"
 	}
-	checkinEnabled := 0
-	if item.CheckinEnabled {
-		checkinEnabled = 1
-	}
-	result, err := tx.ExecContext(ctx, `UPDATE credentials SET import_fingerprint = ?, kind = ?, secret_enc = ?, meta_json = ?, status = ?, checkin_enabled = ?, updated_at = datetime('now')
+	// Adoption claims a credential that already exists locally, and the check-in
+	// switch on it belongs to the console — the statement leaves the column
+	// alone for the same reason the merge above preserves it.
+	result, err := tx.ExecContext(ctx, `UPDATE credentials SET import_fingerprint = ?, kind = ?, secret_enc = ?, meta_json = ?, status = ?, updated_at = datetime('now')
         WHERE id = ? AND (import_fingerprint IS NULL OR import_fingerprint = '')`,
-		item.Fingerprint, kind, item.SecretEnc, item.MetaJSON, item.Status, checkinEnabled, item.AdoptCredentialID)
+		item.Fingerprint, kind, item.SecretEnc, item.MetaJSON, item.Status, item.AdoptCredentialID)
 	if err != nil {
 		return fmt.Errorf("exchange adoption credential: %w", err)
 	}

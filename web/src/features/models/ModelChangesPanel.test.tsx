@@ -12,7 +12,7 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname}{location.search}</div>;
 }
 
-const member = { member_id: 11, route_id: 7, route_name: "Public route", model_pattern: "public-model", channel_id: 1, upstream_model: "old-model", group_name: "default" };
+const member = { member_id: 11, route_id: 7, route_name: "Public route", model_pattern: "public-model", channel_id: 1, upstream_model: "old-model", group_name: "default", deletable: true };
 const removed = { id: 1, channel_id: 1, channel_name: "Channel A", model_name: "old-model", kind: "removed", status: "pending", detected_at: "2026-08-20T00:00:00Z", candidates: ["new-model"], members: [member, { ...member, member_id: 12 }] };
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 function setup(options: { applyError?: boolean; empty?: boolean } = {}) {
@@ -24,6 +24,17 @@ function setup(options: { applyError?: boolean; empty?: boolean } = {}) {
       calls.push({ path, body });
       if (path.endsWith("/preview")) return response({ preview_token: "server-preview", items: [{ ...member, source_channel_id: 1, source_model: "old-model", target_channel_id: body.target_channel_id, target_model: body.target_model }] });
       if (path.endsWith("/apply")) return options.applyError ? response({ error: "snapshot changed" }, 409) : response({ updated: 1 });
+      if (path.endsWith("/discard-preview"))
+        return response({
+          preview_token: "discard-preview",
+          // Both members sit on the same route, so the route goes with them.
+          routes: 1,
+          items: (body.member_ids as number[]).map((memberId) => ({
+            member_id: memberId, route_id: 7, route_name: "Public route", model_pattern: "public-model",
+            group_name: "default", channel_id: 1, upstream_model: "old-model", route_members: body.member_ids.length, route_deleted: true,
+          })),
+        });
+      if (path.endsWith("/discard-apply")) return response({ removed: (body.member_ids as number[]).length, routes: 1 });
       if (path.endsWith("/ignore")) return response({ updated: 1 });
     }
     if (path.endsWith("/models/changes")) return response({ items: options.empty ? [] : [removed, { ...removed, id: 2, channel_id: 2, channel_name: "Channel B", members: [{ ...member, member_id: 21, channel_id: 2 }] }], summary: options.empty ? { added: 0, removed: 0, affected_routes: 0 } : { added: 0, removed: 2, affected_routes: 1 } });
@@ -105,6 +116,44 @@ describe("upstream model maintenance", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Ignore" }).at(-1)!);
     await waitFor(() => expect(calls).toEqual([{ path: "/admin/models/changes/ignore", body: { ids: [1] } }]));
   });
+  it("deletes the dead bindings through the preview token instead of repointing them", async () => {
+    const { calls } = setup();
+    fireEvent.click(await screen.findByRole("button", { name: "View changes" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete binding" })[0]!);
+    // Nothing reaches the server before the operator previews the deletion.
+    expect(calls).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Preview deletion" }));
+    expect(await screen.findByText("Deletes 2 bindings; 1 routes go with them.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Last member of this route/)).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Delete (2 bindings)" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Deleted 2 bindings; 1 routes went with them.");
+    expect(calls.map((call) => call.path)).toEqual([
+      "/admin/models/changes/discard-preview",
+      "/admin/models/changes/discard-apply",
+    ]);
+    expect(calls[0]?.body).toEqual({ change_ids: [1], member_ids: [11, 12] });
+    expect(calls[1]?.body).toEqual({ ...calls[0]!.body, preview_token: "discard-preview" });
+  });
+  it("refuses to delete a wildcard binding that serves other models too", async () => {
+    // A pattern is a matcher, not a model: deleting its member would take
+    // every other model it answers for down with it.
+    const wildcard = {
+      ...removed,
+      members: [{ ...member, model_pattern: "*", upstream_model: "", deletable: false }],
+    };
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/models/changes")) return response({ items: [wildcard], summary: { added: 0, removed: 1, affected_routes: 1 } });
+      return response({ error: `unexpected ${path}` }, 500);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><I18nProvider><ToastProvider><SessionProvider><MemoryRouter initialEntries={["/models"]}><ModelChangesPanel /></MemoryRouter></SessionProvider></ToastProvider></I18nProvider></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole("button", { name: "View changes" }));
+    const button = screen.getByRole("button", { name: "Delete binding" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", expect.stringContaining("wildcard"));
+  });
 });
 
 // Confidence signals, bulk-ignore of harmless removals, and the adopt
@@ -114,7 +163,7 @@ describe("upstream model maintenance signals", () => {
     localStorage.setItem("meta-gateway.locale", "zh-CN");
   });
 
-  const signalMember = { member_id: 31, route_id: 9, route_name: "impacted-model", model_pattern: "impacted-model", channel_id: 7, upstream_model: "impacted-model", group_name: "default" };
+  const signalMember = { member_id: 31, route_id: 9, route_name: "impacted-model", model_pattern: "impacted-model", channel_id: 7, upstream_model: "impacted-model", group_name: "default", deletable: true };
   const signalItems = [
     {
       id: 21, channel_id: 7, channel_name: "WONG", model_name: "gone-model", kind: "removed", status: "pending",
@@ -179,6 +228,20 @@ describe("upstream model maintenance signals", () => {
     // is the row title.
     const impacted = screen.getAllByText("impacted-model")[0]!.closest("article")!;
     expect(within(impacted).queryByText("已确认缺失")).not.toBeInTheDocument();
+  });
+
+  // The delete action has to explain itself in both directions: a removal with
+  // nothing bound has nothing to delete, and one with a binding gets the
+  // preview-token flow it deserves.
+  it("tells a removal with no binding apart from one with a deletable binding", async () => {
+    setupWithRouter();
+    fireEvent.click(await screen.findByRole("button", { name: "查看变更" }));
+    const empty = (await screen.findByText("gone-model")).closest("article")!;
+    const disabled = within(empty).getByRole("button", { name: "删除绑定" });
+    expect(disabled).toBeDisabled();
+    expect(disabled).toHaveAttribute("title", "该移除当前没有绑定的路由成员，也就没有可删除的绑定。");
+    const impacted = screen.getAllByText("impacted-model")[0]!.closest("article")!;
+    expect(within(impacted).getByRole("button", { name: "删除绑定" })).toBeEnabled();
   });
 
   it("deep-links a pending addition to the channel models page", async () => {

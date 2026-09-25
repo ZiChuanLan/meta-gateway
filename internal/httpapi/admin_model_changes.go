@@ -66,3 +66,35 @@ func (h *AdminHandler) applyModelChanges(w http.ResponseWriter, r *http.Request)
 	h.modelsCache.Invalidate()
 	writeJSON(w, http.StatusOK, map[string]int{"updated": updated})
 }
+
+// Discarding is the other half of handling a removal: instead of repointing the
+// member, the operator deletes the dead binding (and the route with it when it
+// had no other member).
+func (h *AdminHandler) previewModelDiscard(w http.ResponseWriter, r *http.Request) {
+	var req store.ModelChangeDiscardRequest
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	result, err := h.db.PreviewModelDiscard(req)
+	if err != nil {
+		writeModelChangeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *AdminHandler) applyModelDiscard(w http.ResponseWriter, r *http.Request) {
+	var req store.ModelChangeDiscardRequest
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	result, err := h.db.ApplyModelDiscard(req)
+	if err != nil {
+		writeModelChangeError(w, err)
+		return
+	}
+	h.modelsCache.Invalidate()
+	writeJSON(w, http.StatusOK, result)
+}

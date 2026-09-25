@@ -16,7 +16,7 @@ export const en: Dict = {
   "modelChanges.removed": "Possibly removed",
   "modelChanges.pending": "Pending",
   "modelChanges.ignored": "Ignored",
-  "modelChanges.applied": "Replaced",
+  "modelChanges.applied": "Handled",
   "modelChanges.resolved": "Restored or superseded",
   "modelChanges.kind": "Change type",
   "modelChanges.status": "Handling status",
@@ -28,11 +28,21 @@ export const en: Dict = {
   "modelChanges.noCandidates":
     "No models were added in that sync. You can still choose from the current inventory.",
   "modelChanges.replace": "Choose replacement",
+  "modelChanges.discard": "Delete binding",
+  "modelChanges.discardHint":
+    "Deletes this channel's binding on the affected routes; a route left with no member is deleted with it.",
+  "modelChanges.discardNoBinding":
+    "Nothing is bound to this removal right now, so there is no binding to delete.",
+  "modelChanges.discardWildcard":
+    "This wildcard binding answers for many model names, so deleting it would take them down too. Pin its upstream model first.",
   "modelChanges.ignore": "Ignore",
   "modelChanges.ignoreConfirm":
     "Ignore {count} selected changes? This only dismisses the reminder; it does not repair or modify routes.",
   "modelChanges.select": "Select change {model} / {channel}",
   "modelChanges.bulk": "Replace selected changes ({count})",
+  "modelChanges.bulkDiscard": "Delete selected bindings ({count})",
+  "modelChanges.bulkDiscardHint":
+    "Bulk deletion needs every selected change to be a pending removal with a deletable binding.",
   "modelChanges.sameChannel":
     "For bulk replacement, select pending removals from one channel only.",
   "modelChanges.replaceTitle": "Replace upstream mapping",
@@ -53,6 +63,21 @@ export const en: Dict = {
   "modelChanges.done": "Updated upstream mappings for {count} members.",
   "modelChanges.stale":
     "The preview expired or applying failed. Go back, check the selection and preview again.",
+  "modelChanges.discardTitle": "Delete dead bindings",
+  "modelChanges.discardPreserve":
+    "Only the selected bindings are deleted. Public model names, other channels' members and route settings stay intact. A route that loses its last member goes with it, so no callable name is left without an upstream.",
+  "modelChanges.discardPreview": "Preview deletion",
+  "modelChanges.discardPreviewTitle": "Confirm these deletions",
+  "modelChanges.discardImpact":
+    "Deletes {members} bindings; {routes} routes go with them.",
+  "modelChanges.discardRouteDeleted":
+    "Last member of this route ({count} in total) — the route is deleted too",
+  "modelChanges.discardRouteKept":
+    "The route keeps its other bindings ({count} members in total)",
+  "modelChanges.discardConfirm": "Delete ({count} bindings)",
+  "modelChanges.discardDone": "Deleted {members} bindings; {routes} routes went with them.",
+  "modelChanges.discardStale":
+    "The preview expired or deleting failed. Go back, check the selection and preview again.",
   "modelChanges.noTargets":
     "No models available on this channel. Successfully sync its inventory first.",
   "modelChanges.summaryConfirmed": "{count} confirmed",
@@ -1698,6 +1723,8 @@ export const en: Dict = {
   "store.orphanHint":
     "This record is not in the official catalog. You can only remove it.",
   "store.installed": "Installed",
+  "store.installedDisabled":
+    "Installed but currently off — its activate button sits under “Inactive & installable” above.",
   "store.install": "Install",
   "store.update": "Update",
   "store.installKind.legacy": "direct",
@@ -1892,7 +1919,10 @@ export const en: Dict = {
   "ops.runEnabled": "Run enabled",
   "ops.checkin.scheduleTitle": "Scheduled check-in",
   "ops.checkin.scheduleHint":
-    "Automatically run check-in for enabled sites on a schedule. The Store add-on must be on.",
+    "Runs check-in for enabled sites' session credentials on a schedule. The schedule lives in the database: saving here writes an admin override, so a container rebuild (including the one-click update) can no longer change it back with an environment variable.",
+  "ops.checkin.scheduleSource": "Schedule source: {source}",
+  "ops.checkin.scheduleEnvHint":
+    "This currently follows the environment (CHECKIN_ENABLED / CHECKIN_CRON). A container recreated from compose re-reads .env — where the default is CHECKIN_ENABLED=false — and the schedule goes back to off. Saving here pins it as an admin override instead.",
   "ops.checkin.scheduleEnabled": "Enable scheduled check-in",
   "ops.checkin.schedulePreset": "Frequency",
   "ops.checkin.scheduleCron": "Cron expression",
@@ -2598,7 +2628,16 @@ export const en: Dict = {
     "Upstream returned HTTP {status} with no image in the body",
   "workbench.image.upstreamError": "Upstream returned HTTP {status}",
   "workbench.image.download": "Download",
-  "workbench.image.history": "This session",
+  "workbench.image.history": "Recent generations",
+  "workbench.image.historyCount": "{count} generations",
+  "workbench.image.historyClear": "Clear history",
+  "workbench.image.historyOpen": "Open the {model} generation from {time}",
+  "workbench.image.historyReuse": "Reuse these settings",
+  "workbench.image.historyDelete": "Delete this entry",
+  "workbench.image.historyMeta": "{n} · {ms} ms · {time}",
+  "workbench.image.historyNoPrompt": "(no prompt recorded)",
+  "workbench.image.historyTruncated":
+    "This image exceeded the browser's storage quota, so the entry was not saved and will be gone after a reload.",
   "workbench.image.noModels":
     "No image model detected: create a route for one on the Models page, or register it under Model tools → Model capability registry there.",
   "workbench.cap.title": "Model capability registry",

@@ -2,7 +2,9 @@ package exchange_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -245,5 +247,52 @@ func TestServiceIncrementalImportKeepsLocallySavedKey(t *testing.T) {
 	}
 	if got != localSecret {
 		t.Fatalf("incremental sync overwrote local secret: got %q want %q", got, localSecret)
+	}
+}
+
+// The operator's check-in switch has to survive the round trip: the restore
+// path (replace mode) has no other source for it, so an export that dropped it
+// meant every restored credential came back with scheduled check-in off.
+func TestServiceExportAndRestoreCarryCheckinSwitch(t *testing.T) {
+	db, _, _, service := openExchangeService(t)
+	if _, err := service.Import(t.Context(), []byte(`[{"name":"conn","base_url":"https://ok.example.com","key":"ok-key"}]`)); err != nil {
+		t.Fatal(err)
+	}
+	var credentialID int64
+	if err := db.QueryRow(`SELECT credential_id FROM channels WHERE name = 'conn'`).Scan(&credentialID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Credential.SetCheckinEnabled(credentialID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := service.Export(t.Context(), exchange.ExportRequest{IncludeSecrets: true})
+	if err != nil || len(env.Items) != 1 {
+		t.Fatalf("export=%+v err=%v", env, err)
+	}
+	if !env.Items[0].CheckinEnabled {
+		t.Fatal("export dropped the check-in switch")
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"checkin_enabled":true`) {
+		t.Fatalf("document carries no check-in flag: %s", data)
+	}
+
+	// A restore on a machine that has the switch off must bring it back.
+	if err := db.Credential.SetCheckinEnabled(credentialID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ImportWithOptions(t.Context(), data, exchange.ImportOptions{Mode: exchange.ImportModeReplace}); err != nil {
+		t.Fatal(err)
+	}
+	var restored int
+	if err := db.QueryRow(`SELECT checkin_enabled FROM credentials`).Scan(&restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored != 1 {
+		t.Fatalf("restore dropped the check-in switch: %d", restored)
 	}
 }

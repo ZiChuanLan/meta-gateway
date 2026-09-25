@@ -10872,6 +10872,8 @@ label.check input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   padding: 8px;
   border: 1px solid transparent;
@@ -11036,20 +11038,65 @@ label.check input[type="checkbox"] {
   font-size: 12px;
 }
 
+/* The history is the panel's memory: a head with the count and the one
+   destructive action, then one row per generation carrying its prompt, the
+   model, what it cost in time, and the two per-row actions. */
+.workbench-history-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
 .workbench-history ul {
   list-style: none;
-  margin: 6px 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 320px;
+  overflow: auto;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 .workbench-history li {
   display: flex;
-  gap: 10px;
-  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
   color: var(--ink-soft);
+}
+
+.workbench-history li.is-current .workbench-history-item {
+  border-color: color-mix(in srgb, var(--primary-active) 45%, transparent);
+  background: var(--surface-subtle);
+}
+
+.workbench-history-prompt {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.workbench-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-hover);
+}
+
+.workbench-history li:hover .workbench-history-actions,
+.workbench-history li:focus-within .workbench-history-actions,
+.workbench-history li.is-current .workbench-history-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .workbench-history-actions { opacity: 1; }
 }
 
 .panel-hint {

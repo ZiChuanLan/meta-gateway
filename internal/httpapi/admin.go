@@ -171,6 +171,8 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Post("/models/changes/ignore", h.ignoreModelChanges)
 	r.Post("/models/changes/preview", h.previewModelChanges)
 	r.Post("/models/changes/apply", h.applyModelChanges)
+	r.Post("/models/changes/discard-preview", h.previewModelDiscard)
+	r.Post("/models/changes/discard-apply", h.applyModelDiscard)
 
 	// Model-name unification assistant
 	r.Post("/models/unify/preview", h.unifyPreview)

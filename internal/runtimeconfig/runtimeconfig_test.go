@@ -302,3 +302,68 @@ func TestCheckinScheduleFollowsEditableFlag(t *testing.T) {
 		t.Fatal("clearing the check-in flag must disarm the scheduler")
 	}
 }
+
+// The console's schedule write must outlive the process that made it: an
+// update is exactly a container swap, and compose defaults CHECKIN_ENABLED to
+// false, so a schedule that only lived in memory (or only in the environment)
+// would come back off. Pinning a restart here is what separates "the update
+// erased my check-in" from a schedule that was never stored in the first place.
+func TestCheckinScheduleSurvivesRestart(t *testing.T) {
+	cfg := &config.Config{
+		HTTPAddr:                    ":4100",
+		DataDir:                     "./data",
+		RetryTimes:                  2,
+		CrossChannelFailoverEnabled: true,
+		Cooldown:                    30 * time.Second,
+		CheckinEnabled:              false,
+		CheckinCron:                 "0 8 * * *",
+		StableFirstDenominator:      25,
+		StableFirstPromoteRequests:  100,
+		RoutingConcurrencyLimit:     64,
+		WebhookThrottleSeconds:      300,
+	}
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	newScheduler := func() *checkin.Scheduler {
+		t.Helper()
+		scheduler, err := checkin.NewScheduler(&stubRunner{}, cfg.CheckinCron, log.New(io.Discard, "", 0), time.UTC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = scheduler.Stop(context.Background()) })
+		return scheduler
+	}
+
+	first := newScheduler()
+	controller := New(cfg, db.RuntimeSettings, Appliers{CheckinSched: first})
+	if err := controller.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if first.Started() {
+		t.Fatal("the environment default must not arm the scheduler")
+	}
+	next := controller.Snapshot().Editable
+	next.CheckinEnabled = true
+	next.CheckinCron = "0 9 * * *"
+	if _, err := controller.Update(next); err != nil {
+		t.Fatal(err)
+	}
+
+	// The process stops here — a container swap replaces it with a new one that
+	// reads the same database.
+	second := newScheduler()
+	restarted := New(cfg, db.RuntimeSettings, Appliers{CheckinSched: second})
+	if err := restarted.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if !second.Started() || second.Expression() != "0 9 * * *" {
+		t.Fatalf("schedule lost across restart: started=%v cron=%q", second.Started(), second.Expression())
+	}
+	snapshot := restarted.Snapshot()
+	if snapshot.Source != "admin_override" || !snapshot.HasOverride || !snapshot.Editable.CheckinEnabled || snapshot.Editable.CheckinCron != "0 9 * * *" {
+		t.Fatalf("restart did not restore the override: %+v", snapshot)
+	}
+}
