@@ -311,8 +311,10 @@ destroy the latency streaming exists for.
 Four properties hold on every path, and each one is load-bearing:
 
 1. **Unmatched models never reach a plugin.** `match_models` is an in-memory
-glob match using the route-pattern semantics (`store.MatchModelPattern`), so
-ordinary traffic pays nothing.
+   glob match using the route-pattern semantics (`store.MatchModelPattern`), so
+   ordinary traffic pays nothing. A hook may instead declare `models_path`, a
+   plugin endpoint whose reported names replace the declared matchers — still
+   in memory only (see below).
 2. **Fail-open.** Timeout, transport error, non-200, malformed JSON, panic — all
 mean "no opinion" and the request continues untouched. A tripped breaker (five
 consecutive failures) opens for 30s, then lets one probe through.
@@ -327,6 +329,28 @@ A `route` decision rewrites the model in both the routing key and the request
 body, and is recorded in the decision snapshot (`hook_decisions`), the
 `X-Meta-Hook-Decision` response header, and (for a virtual model name) the
 `/v1/models` catalogue.
+
+### Plugin model discovery (models_path)
+
+A hook may declare `models_path`: a plugin-relative GET endpoint answering
+`{"models":[…]]` (the OpenAI-shaped `{"data":[{"id":…}]}` is accepted too).
+The gateway asks it — with the same credentials hook calls carry, including
+`X-Plugin-Config` — at registration, on enable, on config saves, when a managed
+plugin process is started, at gateway startup and on a slow 30s timer. The
+reported names replace the declared `match_models` for that route hook and are
+what `/v1/models` advertises, so a plugin can rename its virtual models from
+its own configuration and the gateway simply discovers the answer. The
+substitution happens once, in `rebuildHookEntriesLocked` — the single place the
+hot path, the catalogue and the console read from.
+
+Failure degrades silently: an unreachable endpoint or an unusable answer (not
+JSON, empty, wildcard names, more than `maxDiscoveredModels` entries) keeps the
+last known list, or the declared `match_models` for a first discovery. A hook
+that declares `models_path` may omit `match_models` entirely — the reported
+list is the match list, and the omission never means "match nothing". Discovery
+can make a rename slower; it can never widen what a hook intercepts or empty
+it. jev-router uses this so the operator can name its virtual model
+(`model_name`) instead of living with `auto-jev`.
 
 Plugin *code* is not part of this repository. The official registry and the
 first-party plugin sources — `demo-plugin` as the protocol reference,

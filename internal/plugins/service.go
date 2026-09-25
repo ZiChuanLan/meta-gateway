@@ -248,6 +248,13 @@ type Service struct {
 	// already priority-ordered. Rebuilt with enabled state, so the forward hot
 	// path never parses a manifest.
 	hookEntries map[string][]hookEntry
+	// dynamicModels holds the model names a plugin last reported through its
+	// declared models endpoint, keyed by plugin id. A route hook that declares
+	// models_path is matched against this instead of the manifest's frozen
+	// match_models. Populated by model discovery (model_discovery.go) and kept
+	// across config saves and restarts of the gateway process (the source of
+	// truth is the plugin, so it is re-asked, not persisted).
+	dynamicModels map[string][]string
 	// hookHealth trips a hook that keeps failing. It lives outside s.mu so a
 	// slow plugin can never block an enablement reload.
 	hookHealth hookBreaker
@@ -323,6 +330,7 @@ func NewServiceWithOptions(dir string, pluginStore *store.PluginStore, catalogUR
 		store:         pluginStore,
 		enabled:       make(map[string]bool),
 		configs:       make(map[string]string),
+		dynamicModels: make(map[string][]string),
 		catalogURL:    strings.TrimSpace(catalogURL),
 		httpClient:    client,
 		sidecarClient: newSidecarClient(10 * time.Second),
@@ -708,6 +716,12 @@ func (s *Service) SetPluginConfig(id string, raw string) error {
 	s.mu.Lock()
 	s.configs[id] = raw
 	s.mu.Unlock()
+	// The plugin reads this config on every hook call, and its published model
+	// names may be derived from it. Re-ask rather than guess: discovery is
+	// fail-open, so a plugin that cannot answer keeps its previous names.
+	if s.modelsPathPluginIDsHas(id) {
+		s.refreshPluginModels(id)
+	}
 	return nil
 }
 
@@ -1320,6 +1334,11 @@ func (s *Service) Enable(id string) (*store.PluginRecord, error) {
 	if err := s.reloadEnabled(); err != nil {
 		return nil, err
 	}
+	// The plugin is freshly enabled (or its process was just started): ask it
+	// for its model names before the first request relies on them.
+	if s.modelsPathPluginIDsHas(id) {
+		s.refreshPluginModels(id)
+	}
 	s.notifyChange(id, true)
 	return rec, nil
 }
@@ -1346,6 +1365,11 @@ func (s *Service) Disable(id string) (*store.PluginRecord, error) {
 	if err := s.reloadEnabled(); err != nil {
 		return nil, err
 	}
+	// A disabled plugin must not keep advertising names it can no longer answer
+	// for; drop the cached list with it.
+	s.mu.Lock()
+	delete(s.dynamicModels, id)
+	s.mu.Unlock()
 	s.notifyChange(id, false)
 	return rec, nil
 }
@@ -1381,6 +1405,9 @@ func (s *Service) Uninstall(id string) error {
 	if err := s.reloadEnabled(); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	delete(s.dynamicModels, id)
+	s.mu.Unlock()
 	s.notifyChange(id, false)
 	pluginDir, err := s.safePluginDir(id)
 	if err != nil {

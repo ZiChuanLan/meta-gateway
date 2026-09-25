@@ -4,7 +4,20 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [Unreleased]
+## [v3.8.0] — 2026-09-25
+
+### Added
+
+- **插件可以发布自己的模型名（模型发现协议）**（`internal/plugins/model_discovery.go`、
+  `internal/plugins/hooks.go`、`internal/plugins/service.go`）。钩子声明新增 `models_path`：
+  指向插件侧一个 GET 端点，返回 `{"models":[…]}`（也接受 OpenAI 形状的 `{"data":[{"id":…}]}`）。
+  网关在**注册、启用、保存配置、托管插件启动、网关启动与每 30 秒**向该端点拉取当前名单，
+  用它替代 manifest 里冻结的 `match_models` 作为钩子匹配与 `/v1/models` 发布的依据——
+  所以插件可以用自己的配置决定自己叫什么（改名即保存，无需重新注册、无需网关适配任何
+  具体插件），网关与插件各归各位。拉取失败/名单非法（空、含通配符、超量）时 fail-open：
+  保留上次已知名单或清单里的声明列表，钩子永远不会被配宽或配空；声明了 `models_path`
+  的钩子其 `match_models` 变为可选的兑底。jev-router 1.1.0 据此把虚拟模型名开放为配置项
+  `model_name`（默认仍 `auto-jev`）：配置、页面、状态 API、`/v1/models` 四处名字永远一致。
 
 ### Changed
 

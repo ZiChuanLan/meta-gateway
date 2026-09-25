@@ -84,9 +84,21 @@ type HookDeclaration struct {
 	Path string `json:"path"`
 	// MatchModels narrows the point to matching model names: '*' matches any
 	// run of runes, '?' exactly one, and a name without wildcards matches
-	// exactly (the same matcher route patterns use). An empty list matches
-	// nothing — a plugin that names no model never intercepts traffic.
+	// exactly (the same matcher route patterns use). For a hook that declares
+	// ModelsPath this list is optional — it is the fallback used while the
+	// plugin cannot be asked; otherwise an empty list matches nothing and a
+	// plugin that names no model never intercepts traffic.
 	MatchModels []string `json:"match_models,omitempty"`
+	// ModelsPath is a plugin-relative GET endpoint that reports the model
+	// names this hook currently answers for ({"models":[…]}). It is the
+	// generic discovery half of the plugin protocol: a plugin whose model
+	// names follow its own config declares this instead of freezing names in
+	// the manifest, and the gateway asks it at registration, on config saves,
+	// on enable, for managed starts, and on a slow refresh timer. The gateway
+	// is still what matches and advertises the names — the plugin never
+	// receives traffic for a model it did not report, and the declared
+	// MatchModels stay the fallback while the endpoint is unreachable.
+	ModelsPath string `json:"models_path,omitempty"`
 	// TimeoutMs bounds one call (default 800; clamped to 50..10000).
 	TimeoutMs int `json:"timeout_ms,omitempty"`
 	// Priority orders plugins inside a point (higher first). Equal priorities
@@ -158,24 +170,35 @@ func validateHookDeclaration(point string, decl *HookDeclaration) error {
 	if decl.TimeoutMs != 0 && (decl.TimeoutMs < minHookTimeoutMs || decl.TimeoutMs > maxHookTimeoutMs) {
 		return fmt.Errorf("hook_%s_timeout_invalid", point)
 	}
-	if len(decl.MatchModels) == 0 {
+	if len(decl.MatchModels) == 0 && strings.TrimSpace(decl.ModelsPath) == "" {
 		// Nothing to match means nothing to intercept. Rejecting this is
 		// deliberate: an omitted match list must not become "every model".
+		// A plugin that publishes its names over ModelsPath is exempt — the
+		// reported list takes over before any traffic is served.
 		return fmt.Errorf("hook_%s_match_models_required", point)
 	}
 	for _, pattern := range decl.MatchModels {
-		trimmed := strings.TrimSpace(pattern)
-		if trimmed == "" {
-			return fmt.Errorf("hook_%s_match_models_invalid", point)
-		}
-		if len([]byte(trimmed)) > 256 {
-			return fmt.Errorf("hook_%s_match_models_invalid", point)
-		}
-		if strings.ContainsAny(trimmed, " \t\r\n") {
+		if !validMatchPattern(pattern) {
 			return fmt.Errorf("hook_%s_match_models_invalid", point)
 		}
 	}
+	if path := strings.TrimSpace(decl.ModelsPath); path != "" {
+		if !strings.HasPrefix(path, "/") || validateSidecarPath(path) != nil {
+			return fmt.Errorf("hook_%s_models_path_invalid", point)
+		}
+	}
 	return nil
+}
+
+// validMatchPattern reports whether one matcher is safe to put in the hot
+// path: non-empty, bounded, and free of the whitespace that would make a
+// "model name" several of them.
+func validMatchPattern(pattern string) bool {
+	trimmed := strings.TrimSpace(pattern)
+	if trimmed == "" || len([]byte(trimmed)) > 256 {
+		return false
+	}
+	return !strings.ContainsAny(trimmed, " \t\r\n")
 }
 
 // ValidateHookSet validates every declared point on a manifest. Exported so the
@@ -347,12 +370,20 @@ func (s *Service) rebuildHookEntriesLocked(records []store.PluginRecord, enabled
 		}
 		for _, entry := range manifest.Hooks.declarations() {
 			spec := *manifest.Sidecar
+			decl := *entry.Decl
+			// A plugin that publishes its own model names (ModelsPath) is matched
+			// against the last reported list instead of the manifest's frozen
+			// one — this is the single place the hot path, /v1/models and the
+			// console's hook list all read from.
+			if reported := s.dynamicModels[record.ID]; reported != nil && entry.Point == HookPointRoute && decl.ModelsPath != "" {
+				decl.MatchModels = reported
+			}
 			entries[entry.Point] = append(entries[entry.Point], hookEntry{
 				pluginID: record.ID,
 				name:     manifest.Name,
 				spec:     &spec,
 				point:    entry.Point,
-				decl:     *entry.Decl,
+				decl:     decl,
 				order:    order,
 			})
 			order++
@@ -370,6 +401,22 @@ func (s *Service) rebuildHookEntriesLocked(records []store.PluginRecord, enabled
 		entries[point] = list
 	}
 	s.hookEntries = entries
+}
+
+// refreshHookEntries recomputes the enabled hook declarations from the
+// persisted records and the current config cache. It is the cheap reload for a
+// change that can reach the entries themselves (a saved config), not for one
+// that changes which plugins are enabled — that path goes through
+// reloadEnabled.
+func (s *Service) refreshHookEntries() {
+	records, err := s.store.List()
+	if err != nil {
+		log.Printf("plugins: hook refresh skipped: %v", err)
+		return
+	}
+	s.mu.Lock()
+	s.rebuildHookEntriesLocked(records, s.enabled)
+	s.mu.Unlock()
 }
 
 // hasInterceptPermission reports whether a manifest declared the intercept

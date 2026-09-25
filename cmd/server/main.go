@@ -125,6 +125,17 @@ func main() {
 		// core API. The Store exposes the plugin log and allows disabling it.
 		logger.Error("managed plugin startup failed", "category", "plugins", "error", err)
 	}
+	// Plugin model discovery: plugins that publish their own model names are
+	// re-asked on a slow timer (renames made through the console are picked up
+	// immediately by the config/enable paths, so this only covers plugins that
+	// changed on their own while the gateway runs). Core serving continues if
+	// the loop is cancelled at shutdown.
+	modelDiscoveryCtx, modelDiscoveryCancel := context.WithCancel(context.Background())
+	stopModelDiscovery := pluginService.StartModelDiscovery(modelDiscoveryCtx)
+	defer func() {
+		modelDiscoveryCancel()
+		stopModelDiscovery()
+	}()
 	metrics := observability.NewRegistry()
 	state := observability.NewState()
 	discoveryService := discovery.New(db, enc, registry)
@@ -301,6 +312,8 @@ func main() {
 	if err := pluginService.StopManaged(shutdownCtx); err != nil {
 		logger.Error("managed plugin shutdown failed", "category", "plugins", "error", err)
 	}
+	modelDiscoveryCancel()
+	stopModelDiscovery()
 	if serverFailed {
 		// A bind/listen failure must be visible to the supervisor; returning
 		// normally would produce a misleading zero exit status.
