@@ -7,11 +7,12 @@
 </picture>
 
 <p>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ZiChuanLan/meta-gateway/ci.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=CI&labelColor=2F3646"></a>
-  <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=for-the-badge&logo=docker&logoColor=white&label=Docker%20Pulls&labelColor=2F3646&color=2496ED"></a>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&logoColor=white&label=Release&labelColor=2F3646&color=4F6BF0"></a>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=for-the-badge&logo=github&logoColor=white&label=Stars&labelColor=2F3646&color=E8B93E"></a>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/ZiChuanLan/meta-gateway?style=for-the-badge&logo=opensourceinitiative&logoColor=white&label=License&labelColor=2F3646&color=3DA639"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ZiChuanLan/meta-gateway/ci.yml?branch=master&style=flat-square&labelColor=2F3646"></a>
+  <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=flat-square&labelColor=2F3646&color=2496ED"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=4F6BF0"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=E8B93E"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=3DA639"></a>
+  <a href="https://linux.do"><img alt="linux.do" src="https://img.shields.io/badge/linux.do-Community-F97316?style=flat-square&labelColor=2F3646"></a>
 </p>
 
 <p>
