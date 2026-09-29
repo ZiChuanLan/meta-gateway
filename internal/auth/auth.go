@@ -344,12 +344,12 @@ func NewDownstreamAuth(s *store.DownstreamKeyStore) *DownstreamAuth {
 	return &DownstreamAuth{store: s}
 }
 
-// Authenticate extracts the Bearer token, hashes it, and looks up in the DB.
+// Authenticate extracts the presented credential, hashes it, and looks up in the DB.
 // Returns key id, normalized scopes, model filter, the authenticated key
 // (cached snapshot, never nil on success), and nil if valid.
 // The model filter is nil when the key has no model restriction.
 func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, []string, *ModelFilter, *domain.DownstreamKey, error) {
-	token, err := extractBearer(r)
+	token, err := downstreamToken(r)
 	if err != nil {
 		return 0, nil, nil, nil, fmt.Errorf("auth: %w", err)
 	}
@@ -422,6 +422,29 @@ func NewToken() (hash, raw string, err error) {
 	raw = "mg-" + hex.EncodeToString(b)
 	hash = hashToken(raw)
 	return hash, raw, nil
+}
+
+// downstreamToken returns the presented downstream credential.
+//
+// `Authorization: Bearer <key>` is the canonical form, but the /v1 surface also
+// implements the protocol-native endpoints, and the clients built for those
+// endpoints authenticate the native way: the Anthropic SDK (and Claude Code with
+// ANTHROPIC_API_KEY) sends `x-api-key`, Gemini clients send `x-goog-api-key`.
+// Without these fallbacks a request to /v1/messages 401s before it can ever be
+// translated — the shape of the request would not matter. Bearer wins when both
+// are present so a caller can always override an ambient native header.
+func downstreamToken(r *http.Request) (string, error) {
+	if token, err := extractBearer(r); err == nil {
+		return token, nil
+	}
+	if r != nil {
+		for _, header := range []string{"x-api-key", "x-goog-api-key"} {
+			if token := strings.TrimSpace(r.Header.Get(header)); token != "" {
+				return token, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("missing downstream credentials")
 }
 
 func hashToken(token string) string {

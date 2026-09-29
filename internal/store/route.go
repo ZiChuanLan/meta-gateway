@@ -719,7 +719,9 @@ func createRouteMember(ex sqlExecutor, r *domain.RouteMember) (int64, error) {
 	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.PricePromptPer1k, r.PriceCompletionPer1k, r.PriceCachePer1k)
 	if err != nil {
-		return 0, fmt.Errorf("route member create: %w", err)
+		// Name the pair that failed: a bare constraint error leaves the caller
+		// guessing which route/channel the store tried to wire.
+		return 0, fmt.Errorf("route member create: route=%d channel=%d group=%q: %w", r.RouteID, r.ChannelID, NormalizeMemberGroup(r.GroupName), err)
 	}
 	return res.LastInsertId()
 }

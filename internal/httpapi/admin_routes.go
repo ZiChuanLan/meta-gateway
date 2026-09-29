@@ -244,6 +244,22 @@ func (h *AdminHandler) createRouteMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rm.RouteID = routeID
+	if rm.ChannelID <= 0 {
+		writeError(w, http.StatusBadRequest, "channel_id is required")
+		return
+	}
+	channel, err := h.db.Channel.GetByID(rm.ChannelID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if channel == nil {
+		// Without this the insert hits the foreign key and surfaces as an opaque
+		// 500, which reads like a database fault rather than the stale or
+		// missing channel id it actually is.
+		writeError(w, http.StatusBadRequest, "unknown channel")
+		return
+	}
 	if rm.Weight < 0 {
 		writeError(w, http.StatusBadRequest, "weight must be non-negative")
 		return

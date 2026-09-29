@@ -30,6 +30,15 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ### Fixed（Anthropic Messages / `/v1/messages`）
 
+- **Anthropic 客户端认证：`x-api-key` / `x-goog-api-key` 现在也认**（`internal/auth/auth.go`）。下游密钥此前只从
+  `Authorization: Bearer` 读取，而官方 Anthropic SDK（以及用 `ANTHROPIC_API_KEY` 配置的 Claude Code）发的是
+  `x-api-key`、Gemini 客户端发的是 `x-goog-api-key` —— 未改配置的客户端在 `/v1/messages` 直接 401，
+  流格式再正确也用不上。现在 Bearer 仍是主形式，缺省时回退到这两个原生头（两者同时存在时 Bearer 优先）。
+- **500 现在有服务端记录**（`internal/httpapi/admin.go`）：`writeStoreError` 把底层错误写进日志，此前控制台只看到
+  `database operation failed`，日志里连状态码之外的线索都没有；路由成员创建失败的错误也带上了 route/channel id。
+- **手工成员接口的入参校验**（`internal/httpapi/admin_routes.go`）：`POST /admin/routes/{id}/members` 未带
+  `channel_id` 或渠道不存在时返回 400，而不是撞上外键限制返回一个形似数据库故障的 500。
+
 - **流事件本身不合法：payload 缺 `type`，且从不发 `content_block_start`**（`internal/adapters/anthropic_downstream.go`）。
   官方 SDK（`MessageStream.js`，Claude Code 内置同一份）从 **data payload** 里读 `type` —— 只靠 `event:` 行命名不够：
   旧实现每个事件的 payload 都没有 `type` 字段，于是**第一个事件**就被 SDK 判成 `type=undefined` 并抛

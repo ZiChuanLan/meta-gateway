@@ -268,6 +268,10 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "resource already exists")
 		return
 	}
+	// The console only ever sees the generic message below, so without this line
+	// a 500 here has no server-side record at all and cannot be diagnosed from
+	// the outside (the request log carries the status, not the cause).
+	log.Printf("httpapi: store error: %v", err)
 	writeError(w, http.StatusInternalServerError, "database operation failed")
 }
 

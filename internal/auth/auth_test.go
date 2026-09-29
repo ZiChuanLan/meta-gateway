@@ -163,6 +163,64 @@ func TestDownstreamAuthAttachesScopes(t *testing.T) {
 	}
 }
 
+// TestDownstreamAuthAcceptsNativeCredentialHeaders pins the client-facing
+// contract of the protocol-native surfaces: an unmodified Anthropic SDK sends
+// x-api-key and a Gemini client sends x-goog-api-key, so both must authenticate
+// against downstream_keys exactly like a Bearer token does.
+func TestDownstreamAuthAcceptsNativeCredentialHeaders(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	hash, raw, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DownstreamKey.Create(&domain.DownstreamKey{
+		TokenHash: hash,
+		Name:      "native-headers",
+		Enabled:   true,
+		Scopes:    "relay",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	authn := NewDownstreamAuth(db.DownstreamKey)
+
+	cases := []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{name: "bearer", headers: map[string]string{"Authorization": "Bearer " + raw}, want: http.StatusNoContent},
+		{name: "anthropic x-api-key", headers: map[string]string{"x-api-key": raw}, want: http.StatusNoContent},
+		{name: "gemini x-goog-api-key", headers: map[string]string{"x-goog-api-key": raw}, want: http.StatusNoContent},
+		{name: "bearer overrides a bad native header", headers: map[string]string{"Authorization": "Bearer " + raw, "x-api-key": "mg-wrong"}, want: http.StatusNoContent},
+		{name: "no credentials", headers: nil, want: http.StatusUnauthorized},
+		{name: "wrong native header", headers: map[string]string{"x-api-key": "mg-wrong"}, want: http.StatusUnauthorized},
+		{name: "empty native header", headers: map[string]string{"x-api-key": "  "}, want: http.StatusUnauthorized},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := authn.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if DownstreamKey(r) == nil {
+					t.Fatalf("authenticated request has no key snapshot")
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			for key, value := range tc.headers {
+				req.Header.Set(key, value)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status=%d want=%d", rec.Code, tc.want)
+			}
+		})
+	}
+}
+
 func TestCheckKeyExpiry(t *testing.T) {
 	if err := checkKeyExpiry(""); err != nil {
 		t.Fatalf("empty expiry must pass, got %v", err)
