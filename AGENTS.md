@@ -380,17 +380,37 @@ query/fragment/userinfo 全剔。成功响应头 `X-Meta-Upstream-URL`（`proxy.
 > 2026-09-29 实测修正：`Resolve-DnsName mg.zichuanlan.top` → `43.108.52.153`，
 > 公网响应带 `Via: 1.1 Caddy`，而该机 Caddyfile 把该域名反代到 EasyTier 内网 `10.144.144.6:4100`。
 > **排查“网关行为”类问题时注意**：阿里云本机 `127.0.0.1:4100` 那个容器几乎无流量
-> （`proxy_logs` 当天可能只有 4 行），真正的日志在 RN 上；两台都跑 watchtower，
-> 所以推 `latest` 镜像后两个容器都会被自动更新（无需手动 comose pull）。
+> （`proxy_logs` 当天可能只有 4 行），真正的日志在 RN 上。
 
-更新：
+### 6.1 部署更新：watchtower 是 **HTTP API 模式**，不会自己轮询
+
+2026-09-29 实测纠正（上一版写“推 latest 就自动更新”）：两台 watchtower 的配置里只有
+`WATCHTOWER_HTTP_API_UPDATE=true` + `WATCHTOWER_HTTP_API_TOKEN`，**既没有 `--interval` 也没有 `--schedule`**，
+而且 compose 未映射 8080 端口。所以推完镜像**不会自動上线**，必须显式触发（无端口映射 → 只能从宿主机打容器 IP）：
+
+```bash
+cd /opt/meta-gateway
+TOKEN=$(grep -m1 '^WATCHTOWER_TOKEN=' .env | cut -d= -f2-); TOKEN=${TOKEN:-meta-gateway-local-update}
+IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' meta-gateway-watchtower)
+curl -H "Authorization: Bearer $TOKEN" http://$IP:8080/v1/update
+curl -s http://127.0.0.1:4100/healthz   # 等到 version 变成新 tag
+```
+
+取版本用 `/healthz` 的 `version`/`commit` 字段（例：`{"commit":"aad5039…","status":"ok","version":"v3.8.0"}`）——
+这是判断“哪台跑的是哪个构建”最快的单一信号。
+
+**主机的可达性**（2026-09-29 实测）：RN 从本机经 EasyTier 可达（`ssh -i ~/.ssh/mg_prod_ed25519 root@10.144.144.6`，
+公网 22 不可达）；阿里云从本机 `ssh -i ~/.ssh/mg-aliyun root@43.108.52.153` 可达，但**阿里云上没有 RN 的 SSH key**
+（`Permission denied (publickey)`），所以两台要分别从对应入口操作（阿里云那边只能碰它自己那台容器）。
+
+### 6.2 手工更新（不经 watchtower）
 
 ```bash
 # RN（真正的生产网关），从本机经 EasyTier 直连
 ssh -i ~/.ssh/mg_prod_ed25519 root@10.144.144.6
-git pull --ff-only && \
-docker compose pull <svc> && \
-docker compose up -d --no-build --force-recreate <svc>
+cd /opt/meta-gateway && git pull --ff-only && \
+  docker compose pull <svc> && \
+  docker compose up -d --no-build --force-recreate <svc>
 ```
 
 （compose 同时有 `build:` 和 `image:`，加 `--no-build` 就用拉取的镜像，不必本地构建。）
