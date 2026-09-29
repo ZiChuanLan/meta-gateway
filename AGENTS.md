@@ -365,19 +365,29 @@ query/fragment/userinfo 全剔。成功响应头 `X-Meta-Upstream-URL`（`proxy.
 
 ---
 
-## 6. 线上部署拓扑（2026-09-13 之后）
+## 6. 线上部署拓扑（2026-09-29 核对）
 
-| | RN `192.129.128.178`（生产） | 阿里云 `43.108.52.153`（demo） |
+| | RN `192.129.128.178`（= EasyTier `10.144.144.6`，宿主名 `racknerd-3088ede`） | 阿里云 `43.108.52.153` |
 |---|---|---|
+| 角色 | **真正在服务的网关**（`mg.zichuanlan.top` 的流量终点） | 公网入口 + 一台**闲置**的自己的网关容器 |
 | 目录 | `/opt/meta-gateway` | `/opt/meta-gateway` |
-| 容器 | `meta-gateway-meta-gateway-1` :4100 + watchtower | 同左 |
+| 容器 | `meta-gateway-meta-gateway-1` :4100 + `meta-gateway-watchtower` | `meta-gateway-meta-gateway-1` :4100 + `meta-gateway-watchtower` |
 | 数据卷 | `meta-gateway_meta-gateway-data` | `meta-gateway_meta-gateway-data` |
-| 反代 | 宝塔 nginx（`/www/server/panel/vhost/nginx/*.conf`） | Caddy（`/opt/caddy/Caddyfile`） |
-| 域名 | `mg.zichuanlan.top` | `mg.015201314.xyz` |
+| 反代 | 无（公网 22 端口今日不可达，改走 EasyTier `ssh root@10.144.144.6`，密钥 `~/.ssh/mg_prod_ed25519`） | Caddy `/opt/caddy/Caddyfile`：`mg.zichuanlan.top { reverse_proxy 10.144.144.6:4100 }` |
+| 域名 | 无（只作后置集群） | `mg.zichuanlan.top`（DNS 解析到此），另有 `mg.015201314.xyz` |
+
+> 上一版的表格把两台的“反代/域名”反过来写了（把 nginx+mg.zichuanlan.top 记在 RN 上）。
+> 2026-09-29 实测修正：`Resolve-DnsName mg.zichuanlan.top` → `43.108.52.153`，
+> 公网响应带 `Via: 1.1 Caddy`，而该机 Caddyfile 把该域名反代到 EasyTier 内网 `10.144.144.6:4100`。
+> **排查“网关行为”类问题时注意**：阿里云本机 `127.0.0.1:4100` 那个容器几乎无流量
+> （`proxy_logs` 当天可能只有 4 行），真正的日志在 RN 上；两台都跑 watchtower，
+> 所以推 `latest` 镜像后两个容器都会被自动更新（无需手动 comose pull）。
 
 更新：
 
 ```bash
+# RN（真正的生产网关），从本机经 EasyTier 直连
+ssh -i ~/.ssh/mg_prod_ed25519 root@10.144.144.6
 git pull --ff-only && \
 docker compose pull <svc> && \
 docker compose up -d --no-build --force-recreate <svc>
