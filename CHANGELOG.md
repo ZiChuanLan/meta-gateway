@@ -71,6 +71,21 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 > 本次仍未覆盖的 Anthropic 能力（有意留给后续，不是遗漏）：`thinking`/`reasoning` 块、
 > `cache_control` 断点、`/v1/messages/count_tokens` 的本地计数（当前直接转给上游，OpenAI 兼容上游会 404）。
 
+### Console（连接控件）
+
+- **端点/字段映射从裸 JSON 换成结构化编辑器**（`web/src/features/channels/EndpointMapEditor.tsx` + `endpointMap.ts`）。
+  可视化模式按行编辑「客户端路径 → 上游路径」与请求/响应字段操作（复制 / 搬运 / 模板 / 固定值 / keep 白名单），
+  带行级校验提示（与后端 `upstream_map_validate.go` 同一套规则：空段、多余括号、keep 非顶层键、重复键、query），
+  头部徒标显示「N 条路径映射 / 请求 N 条 / 响应 N 条 / keep N / N 处待修正」并提供三个预设；
+  序列化输出与后端存储的规范形式逐字节一致（路径映射键排序）。JSON 模式保留，某一列解析失败时原文不丢。
+- **高级区不再「看不见已配置的东西」**（`EditChannelDialog` + `advancedPrefs.ts`）：折叠按钮带「已配置 N 项」徒标
+  （title 列出具体项），已配置的渠道首次打开时自动展开；展开状态记在 localStorage，失败时不阻塞对话框。
+- **密钥粘贴去重与格式提示**（`ChannelKeys.tsx` + `lib/apiKeyPaste.ts`）：密钥框改成 textarea（`<input>` 会抹掉换行，
+  多密钥粘贴根本进不来），提交时按行/逗号/分号拆分、去重并反馈「待添加 N 个 / 已去掉 M 个重复」；
+  按连接类型给出密钥格式提示（仅收录文档明确的厂商），前缀明显不符时提示但不阻断保存。
+- 未做（有意）：揭示明文密钥前的**逐次**二次验证。会话在开启 TOTP 时已经过验证，逐次重验证需要后端签发短期
+  grant（新 API），不在本轮纯前端范围内。
+
 ## [v3.8.0] — 2026-09-25
 
 ### Added

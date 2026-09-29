@@ -12,6 +12,7 @@ import {
 } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { PROVIDER_BASE_URLS } from "../../connectionTypes";
+import { apiKeyLooksWrong, keyHintFor } from "../../lib/apiKeyPaste";
 import { useSession } from "../../session";
 import { TYPE_OPTIONS } from "./helpers";
 import { TYPE_GROUPS, type CreateConnectionInput } from "./helpers";
@@ -49,7 +50,11 @@ export function AddChannelDialog({
   // which is what used to push operators into hand-written endpoint overrides.
   // Showing the resolved URL in the dialog makes a wrong join obvious up front.
   const [endpointPreview, setEndpointPreview] = useState<string | null>(null);
-  const canSubmit = Boolean(baseUrl.trim() && secret.trim());
+	const canSubmit = Boolean(baseUrl.trim() && secret.trim());
+	// A hint, not a rule: relay sites issue whatever token they like, so a
+	// mismatch only ever earns a note next to the field.
+	const secretHint = keyHintFor(typeHint);
+	const secretLooksWrong = apiKeyLooksWrong(typeHint, secret);
 
   // The sync mode is a per-channel decision with a real operational cost, so
   // it is asked up front instead of being silently inherited. The system
@@ -185,16 +190,27 @@ export function AddChannelDialog({
             disabled={pending}
           />
         </Field>
-        <Field label={t("common.secret")}>
-          <input
-            type="password"
-            autoComplete="new-password"
-            required
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            disabled={pending}
-          />
-        </Field>
+		<Field
+		  label={t("common.secret")}
+		  hint={secretHint || undefined}
+		>
+		  <input
+			type="password"
+			autoComplete="new-password"
+			required
+			value={secret}
+			onChange={(e) => setSecret(e.target.value)}
+			disabled={pending}
+		  />
+		  {secretLooksWrong ? (
+			<p className="map-row-error">
+			  {t("channels.keyFormatMismatch", {
+				type: typeHint,
+				hint: secretHint,
+			  })}
+			</p>
+		  ) : null}
+		</Field>
       </div>
 
       <section

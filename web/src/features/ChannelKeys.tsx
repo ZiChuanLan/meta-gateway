@@ -9,6 +9,7 @@ import { Button, ConfirmDialog, Field, InfoTip } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { Drawer } from "../components/Drawer";
 import { useI18n } from "../i18n";
+import { apiKeyLooksWrong, keyHintFor, splitApiKeys } from "../lib/apiKeyPaste";
 import { useSession } from "../session";
 import { parseCredentialMeta } from "./credentialMeta";
 
@@ -82,6 +83,13 @@ export function ChannelKeysDrawer({
   const service = api(client!);
   const [apiKeyName, setApiKeyName] = useState("");
   const [apiKey, setApiKey] = useState("");
+  // What the last paste added, so a multi-key submit cannot look like a no-op.
+  const [pasteSummary, setPasteSummary] = useState<{ added: number; duplicates: number } | null>(null);
+  const pendingPaste = splitApiKeys(apiKey);
+  const keyHint = keyHintFor(channel.type_hint ?? "");
+  // Only meaningful for a single key: a pasted blob is not one token.
+  const keyWarning =
+    pendingPaste.keys.length === 1 && apiKeyLooksWrong(channel.type_hint ?? "", apiKey);
   const [keyModelsDraft, setKeyModelsDraft] = useState<
     Record<number, string>
   >({});
@@ -120,10 +128,18 @@ export function ChannelKeysDrawer({
   };
 
   const submitAdd = () => {
-    const secret = apiKey.trim();
-    if (!secret || pending || addApiKeyPending) return;
-    // First key becomes the relay key; later keys just join the pool.
-    onAddApiKey(secret, apiKeyName.trim() || undefined);
+    if (pending || addApiKeyPending) return;
+    // A pending multi-line paste is normalized on submit: every unique key is
+    // added, duplicates are reported instead of silently dropped. The name is
+    // only applied when a single key is submitted — labelling three different
+    // keys the same would be a lie.
+    const { keys, duplicates } = splitApiKeys(apiKey);
+    if (keys.length === 0) return;
+    const label = keys.length === 1 ? apiKeyName.trim() || undefined : undefined;
+    keys.forEach((secret, index) => onAddApiKey(secret, index === 0 ? label : undefined));
+    setPasteSummary(
+      keys.length > 1 || duplicates > 0 ? { added: keys.length, duplicates } : null,
+    );
     setApiKey("");
     setApiKeyName("");
   };
@@ -388,24 +404,31 @@ export function ChannelKeysDrawer({
                 }
               }}
             />
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={t("channels.apiKeyPlaceholder")}
-              disabled={pending || Boolean(addApiKeyPending)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submitAdd();
-                }
-              }}
-            />
+			<textarea
+			  className="credential-key-secret-input"
+			  rows={2}
+			  spellCheck={false}
+			  autoComplete="off"
+			  value={apiKey}
+			  onChange={(e) => {
+				setApiKey(e.target.value);
+				setPasteSummary(null);
+			  }}
+			  placeholder={t("channels.apiKeyPlaceholder")}
+			  disabled={pending || Boolean(addApiKeyPending)}
+			  onKeyDown={(e) => {
+				// A newline is part of a multi-key paste, so Enter submits only when
+				// the value is a single key (Ctrl/Cmd+Enter always submits).
+				if (e.key === "Enter" && (e.ctrlKey || e.metaKey || !apiKey.includes("\n"))) {
+				  e.preventDefault();
+				  submitAdd();
+				}
+			  }}
+			/>
             <Button
               variant="secondary"
               disabled={
-                pending || Boolean(addApiKeyPending) || !apiKey.trim()
+                pending || Boolean(addApiKeyPending) || pendingPaste.keys.length === 0
               }
               onClick={submitAdd}
             >
@@ -414,6 +437,30 @@ export function ChannelKeysDrawer({
                 : t("channels.apiKeyAddSave")}
             </Button>
           </div>
+          {keyHint ? (
+            <p className="map-section-hint">
+              {t("channels.keyFormatHint", { hint: keyHint })}
+            </p>
+          ) : null}
+          {keyWarning ? (
+            <p className="map-row-error">
+              {t("channels.keyFormatMismatch", {
+                type: channel.type_hint || channel.name,
+                hint: keyHint || "-",
+              })}
+            </p>
+          ) : null}
+          {pendingPaste.keys.length > 1 || pasteSummary ? (
+            <p className="map-section-hint">
+              {t("channels.apiKeyPasteCount", { n: pendingPaste.keys.length })}
+              {pendingPaste.duplicates > 0
+                ? ` · ${t("channels.apiKeyPasteDuplicates", { n: pendingPaste.duplicates })}`
+                : pasteSummary && pasteSummary.duplicates > 0
+                  ? ` · ${t("channels.apiKeyPasteDuplicates", { n: pasteSummary.duplicates })}`
+                  : ""}
+              {pasteSummary ? ` · ${t("channels.apiKeyPasteAdded", { n: pasteSummary.added })}` : ""}
+            </p>
+          ) : null}
         </Field>
       </section>
       {revealing && (

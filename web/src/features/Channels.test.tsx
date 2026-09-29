@@ -1344,9 +1344,13 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
       screen.getByRole("menuitem", { name: /^edit$/i }).click();
     });
 
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Show advanced" }));
-    return dialog;
+		const dialog = await screen.findByRole("dialog");
+		// A channel that already carries advanced values opens the section on view,
+		// so the toggle only exists in the collapsed state. Either way the helper's
+		// contract is "the advanced block is open when this returns".
+		const toggle = within(dialog).queryByRole("button", { name: /^Show advanced/ });
+		if (toggle) fireEvent.click(toggle);
+		return dialog;
   }
 
   it("stays out of the way for an ordinary provider with nothing mapped", async () => {

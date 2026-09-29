@@ -27,6 +27,8 @@ import {
 } from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
 import { ChannelModelTestDialog } from "./ChannelModelTestDialog";
+import { EndpointMapEditor } from "./EndpointMapEditor";
+import { readAdvancedOpen, writeAdvancedOpen } from "./advancedPrefs";
 
 export function EditChannelDialog({
   value,
@@ -276,7 +278,43 @@ export function EditChannelDialog({
   // user credential but no user id cannot check in, and the badge that says so
   // must lead somewhere visible: open the section automatically. Only once —
   // an operator who collapses it again keeps it collapsed.
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  //
+  // The section holds what actually changes forwarding (payload rules, header
+  // overrides, retry, the endpoint mapping), so "collapsed" must not read as
+  // "nothing configured": the toggle carries a configured-count badge, and a
+  // channel that already has such values opens the section on first view.
+  const advancedConfigured = [
+    priority !== 0 || weight !== 100 ? t("channels.advRouting") : "",
+    maxReasoningEffort ? t("channels.maxReasoningEffort") : "",
+    maxConcurrent > 0 ? t("channels.maxConcurrent") : "",
+    nonStreamTimeout > 0 ? t("channels.nonStreamTimeout") : "",
+    streamPolicy ? t("channels.streamPolicy") : "",
+    proxyUrl.trim() ? t("channels.proxyUrl") : "",
+    headerOverride.trim() ? t("channels.headerOverride") : "",
+    systemPrompt.trim() ? t("channels.systemPrompt") : "",
+    retryConfig.trim() && !["{}", "[]"].includes(retryConfig.trim())
+      ? t("channels.retryConfig")
+      : "",
+    stableFirst ? t("channels.stableFirst") : "",
+    payloadRules.trim() && payloadRules.trim() !== "[]"
+      ? t("channels.payloadRules")
+      : "",
+    endpointMapParts.length > 0 ? t("channels.endpointMap") : "",
+    userCredential?.has_secret ||
+    userCredential?.has_cookie ||
+    userCredential?.id
+      ? t("channels.advUserCredential")
+      : "",
+    checkinOn ? t("channels.checkinSection") : "",
+  ].filter(Boolean);
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(
+    () => readAdvancedOpen() ?? advancedConfigured.length > 0,
+  );
+  const toggleAdvanced = () =>
+    setShowAdvanced((open) => {
+      writeAdvancedOpen(!open);
+      return !open;
+    });
   const [testOpen, setTestOpen] = useState(false);
   const userIDInvalid = userID !== "" && !/^[0-9]+$/.test(userID);
   const userIDMissing = Boolean(userCredential?.id) && userID === "";
@@ -634,12 +672,15 @@ export function EditChannelDialog({
           <button
             type="button"
             className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
-            onClick={() => setShowAdvanced((v) => !v)}
+            onClick={toggleAdvanced}
+            title={advancedConfigured.join(" · ") || undefined}
           >
             <ChevronDown size={13} />
             {showAdvanced
               ? t("channels.hideAdvanced")
-              : t("channels.showAdvanced")}
+              : advancedConfigured.length > 0
+                ? t("channels.showAdvancedWithCount", { n: advancedConfigured.length })
+                : t("channels.showAdvanced")}
           </button>
         </div>
         {showAdvanced ? (
@@ -1038,83 +1079,18 @@ export function EditChannelDialog({
                     ? t("channels.endpointMapCollapse")
                     : t("channels.endpointMapConfigure")}
                 </button>
-                {showEndpointMap ? (
-                <div className="form-grid form-grid-single">
-                <Field
-                  label={t("channels.pathOverride")}
-                  hint={t("channels.pathOverrideHint")}
-                >
-                  <input
-                    value={pathOverride}
-                    onChange={(e) => setPathOverride(e.target.value)}
-                    disabled={pending}
-                    placeholder="systemone"
-                    className="mono"
-                  />
-                </Field>
-                <Field label={t("channels.pathMap")} hint={t("channels.pathMapHint")}>
-                  <textarea
-                    className="mono textarea-md"
-                    value={pathMap}
-                    onChange={(e) => setPathMap(e.target.value)}
-                    disabled={pending}
-                    placeholder={JSON.stringify(
-                      {
-                        models: "models",
-                        "chat/completions": "chat/completions",
-                      },
-                      null,
-                      2,
-                    )}
-                  />
-                </Field>
-                <Field
-                  label={t("channels.requestMap")}
-                  hint={t("channels.requestMapHint")}
-                >
-                  <textarea
-                    className="mono textarea-lg"
-                    value={requestMap}
-                    onChange={(e) => setRequestMap(e.target.value)}
-                    disabled={pending}
-                    placeholder={JSON.stringify(
-                      [
-                        { from: "messages.0.content", to: "state" },
-                        { to: "model", move: false },
-                        {
-                          to: "questions.ask",
-                          value: { str: "Is the request about billing?" },
-                        },
-                      ],
-                      null,
-                      2,
-                    )}
-                  />
-                </Field>
-                <Field
-                  label={t("channels.responseMap")}
-                  hint={t("channels.responseMapHint")}
-                >
-                  <textarea
-                    className="mono textarea-lg"
-                    value={responseMap}
-                    onChange={(e) => setResponseMap(e.target.value)}
-                    disabled={pending}
-                    placeholder={JSON.stringify(
-                      [
-                        { from: "choices.0.message.content", to: "state" },
-                        {
-                          to: "choices.0.message.content",
-                          template: "{answers.ask.choice}",
-                        },
-                      ],
-                      null,
-                      2,
-                    )}
-                  />
-                </Field>
-                </div>
-                ) : null}
+				{showEndpointMap ? (
+				<EndpointMapEditor
+					value={{ pathOverride, pathMap, requestMap, responseMap }}
+					onChange={(next) => {
+						setPathOverride(next.pathOverride);
+						setPathMap(next.pathMap);
+						setRequestMap(next.requestMap);
+						setResponseMap(next.responseMap);
+					}}
+					disabled={pending}
+				/>
+				) : null}
               </div>
               ) : null}
             </section>

@@ -24,6 +24,7 @@ const CHANNEL = {
 	weight: 100,
 	status: "enabled",
 	model_sync_mode: "auto",
+	type_hint: "gemini",
 };
 
 // The channel listed three models; the gemini key only synced two of them.
@@ -87,7 +88,10 @@ function stubEndpoints(keys: unknown[]) {
 /** Records the tier the drawer reports. The drawer only emits the intent --
  *  Channels.tsx owns the credential PUT -- so the component test pins the
  *  callback contract and the wire body is covered in api/client.test.ts. */
-function renderDrawer(keys: unknown[] = [GEMINI_KEY]) {
+function renderDrawer(
+	keys: unknown[] = [GEMINI_KEY],
+	onAddApiKey: (secret: string, name?: string) => void = () => {},
+) {
 	const puts = stubEndpoints(keys);
 	const priorityWrites: { id: number; priority: number }[] = [];
 	const queryClient = new QueryClient({
@@ -108,7 +112,7 @@ function renderDrawer(keys: unknown[] = [GEMINI_KEY]) {
 								priorityWrites.push({ id, priority });
 							}}
 							onDeleteKey={() => {}}
-							onAddApiKey={() => {}}
+							onAddApiKey={onAddApiKey}
 							onSyncKeys={() => {}}
 							onClose={() => {}}
 						/>
@@ -207,5 +211,31 @@ describe("ChannelKeysDrawer model allowlist", () => {
 		renderDrawer();
 		await screen.findByRole("button", { name: "展开模型白名单" });
 		expect(screen.getByText(/本渠道绑定/)).toBeTruthy();
+	});
+
+	// A key panel is pasted from, not typed into: three keys with one repeat must
+	// become two submissions, and the drawer has to say so instead of quietly
+	// keeping the first line.
+	it("adds every key of a multi-line paste exactly once", async () => {
+		const added: string[] = [];
+		renderDrawer([GEMINI_KEY], (secret) => added.push(secret));
+		const input = await screen.findByPlaceholderText("可选，填写 sk-… 用于同步模型");
+		fireEvent.change(input, { target: { value: "sk-a\nsk-b\nsk-a" } });
+		expect(await screen.findByText(/待添加 2 个密钥/)).toBeTruthy();
+		expect(await screen.findByText(/已去掉 1 个重复/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "添加" }));
+		await waitFor(() => expect(added).toEqual(["sk-a", "sk-b"]));
+		expect(await screen.findByText(/本次已提交 2 个/)).toBeTruthy();
+	});
+
+	it("notes the type's key shape but never blocks a submit", async () => {
+		const added: string[] = [];
+		renderDrawer([{ ...GEMINI_KEY }], (secret) => added.push(secret));
+		const input = await screen.findByPlaceholderText("可选，填写 sk-… 用于同步模型");
+		expect(await screen.findByText(/该类型的密钥格式：AIza…/)).toBeTruthy();
+		fireEvent.change(input, { target: { value: "unrelated-token" } });
+		expect(await screen.findByText(/看起来不像 gemini 的密钥/)).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", { name: "添加" }));
+		await waitFor(() => expect(added).toEqual(["unrelated-token"]));
 	});
 });

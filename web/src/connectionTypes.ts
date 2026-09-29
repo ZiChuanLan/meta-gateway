@@ -102,3 +102,45 @@ export const PROVIDER_BASE_URLS: Record<string, string> = {
 	// list models.
 	typesafe: "https://api.typesafe.ai/v1/systemone",
 };
+
+/**
+ * Documented key shape per provider, shown as a field hint.
+ *
+ * Only providers whose docs state a prefix are listed; an unlisted type gets no
+ * hint rather than a guess. Relay and self-hosted types are deliberately absent:
+ * their tokens are whatever the operator's site hands out.
+ */
+export const KEY_HINTS: Record<string, string> = {
+  "openai-compatible": "sk-…",
+  anthropic: "sk-ant-…",
+  gemini: "AIza…",
+  deepseek: "sk-…",
+  moonshot: "sk-…",
+  zhipu: "id.secret",
+  qwen: "sk-…",
+  siliconflow: "sk-…",
+  openrouter: "sk-or-v1-…",
+  groq: "gsk_…",
+  xai: "xai-…",
+  mistral: "32+ chars",
+  perplexity: "pplx-…",
+};
+
+/**
+ * The fixed prefixes a wrong-key warning is derived from. Kept separate from
+ * KEY_HINTS because a hint may describe a non-prefix shape ("id.secret",
+ * "32+ chars") that must not produce a prefix complaint.
+ */
+export const KEY_PREFIXES: Record<string, string> = {
+  "openai-compatible": "sk-",
+  anthropic: "sk-ant-",
+  gemini: "AIza",
+  deepseek: "sk-",
+  moonshot: "sk-",
+  qwen: "sk-",
+  siliconflow: "sk-",
+  openrouter: "sk-or-",
+  groq: "gsk_",
+  xai: "xai-",
+  perplexity: "pplx-",
+};

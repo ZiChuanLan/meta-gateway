@@ -185,3 +185,50 @@ input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-hei
 @media (prefers-reduced-transparency: reduce) { .action-menu-panel, .searchable-select-panel { backdrop-filter: none; background: var(--surface); } }
 @media (prefers-contrast: more) { :root, :root.dark { --line: color-mix(in srgb, var(--ink) 35%, transparent); --line-strong: color-mix(in srgb, var(--ink) 55%, transparent); } .action-menu-panel, .searchable-select-panel { background: var(--surface); } }
 @supports not (backdrop-filter: blur(1px)) { .console-sidebar, .console-topbar, .action-menu-panel, .searchable-select-panel, .login-card { background: var(--surface); } }
+
+/* ---- endpoint / field mapping editor (channels) ---------------------------- */
+/* The four mapping columns are edited as rows here; the JSON form stays one
+   click away, and a column that does not parse keeps its raw text. */
+.map-editor { display: grid; gap: 14px; }
+.map-editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.map-editor-modes { display: inline-flex; gap: 4px; }
+.map-editor-mode { padding: 3px 10px; font: 11px/1.6 var(--font); color: var(--muted); background: transparent; border: 1px solid var(--line); cursor: pointer; }
+.map-editor-mode.is-active { color: var(--ink); border-color: var(--line-strong); background: var(--surface); font-weight: 600; }
+.map-editor-mode:disabled { cursor: not-allowed; opacity: .6; }
+.map-editor-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.map-badge { padding: 1px 6px; font: 10.5px/1.7 var(--mono, var(--font)); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+.map-badge.is-key { color: var(--accent, var(--ink)); border-color: var(--line-strong); }
+.map-badge.is-invalid { color: var(--danger, #b4453a); border-color: currentColor; }
+.map-badge.is-quiet { opacity: .7; }
+.map-editor-preset { position: relative; margin-left: auto; }
+.map-preset-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 220px; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 10px 24px rgb(0 0 0 / 8%); }
+.map-preset-list button { display: block; width: 100%; padding: 7px 9px; text-align: left; font: 12px/1.5 var(--font); color: var(--ink); background: transparent; border: 0; cursor: pointer; }
+.map-preset-list button:hover { background: var(--surface-2, rgb(0 0 0 / 4%)); }
+
+.map-section { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.map-section:first-of-type { border-top: 0; padding-top: 0; }
+.map-section-head { display: flex; align-items: center; gap: 8px; }
+.map-section-head h4 { margin: 0; font: 600 12px/1.6 var(--font); letter-spacing: .01em; }
+.map-row-add { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 3px 8px; font: 11px/1.6 var(--font); color: var(--muted); background: transparent; border: 1px solid var(--line); cursor: pointer; }
+.map-row-add:hover { color: var(--ink); border-color: var(--line-strong); }
+.map-row-add:disabled { cursor: not-allowed; opacity: .55; }
+
+.map-rows { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.map-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); background: var(--surface); }
+.map-row.is-invalid { border-color: var(--danger, #b4453a); }
+.map-row input, .map-row select { min-width: 0; font: 12px/1.5 var(--font); }
+.map-row input { flex: 1 1 32%; padding: 5px 7px; color: var(--ink); background: var(--bg, transparent); border: 1px solid var(--line); }
+.map-row input.map-row-grow { flex: 1 1 60%; }
+.map-row select.map-row-mode { flex: 0 0 auto; width: 132px; padding: 5px 7px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
+.map-row-arrow { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+.map-row-remove { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; color: var(--muted); background: transparent; border: 1px solid transparent; cursor: pointer; }
+.map-row-remove:hover { color: var(--danger, #b4453a); border-color: var(--line); }
+.map-row-error { flex: 1 1 100%; margin: 0; font: 11px/1.6 var(--font); color: var(--danger, #b4453a); }
+.map-section-hint, .map-section-empty { margin: 0; font: 11px/1.6 var(--font); color: var(--muted); }
+.map-section-empty { padding: 8px 0; }
+
+@media (max-width: 760px) {
+  .map-editor-preset { margin-left: 0; }
+  .map-row input, .map-row input.map-row-grow, .map-row select.map-row-mode { flex: 1 1 100%; width: 100%; }
+  .map-row-arrow { display: none; }
+}

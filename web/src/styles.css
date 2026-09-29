@@ -4317,6 +4317,16 @@ td.actions {
   flex: 0 0 auto;
   white-space: nowrap;
 }
+/* The secret field is a textarea on purpose: a key pool is pasted, and an
+   <input> strips the newlines a multi-key paste depends on. */
+.credential-key-add-row textarea.credential-key-secret-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 9px;
+  font: 12px/1.5 var(--mono, var(--font));
+  resize: vertical;
+}
 
 /* —— Runtime settings (read-only env snapshot) —— */
 .runtime-settings-context {
