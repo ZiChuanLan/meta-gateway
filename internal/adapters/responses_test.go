@@ -258,4 +258,202 @@ func TestChatStreamToResponsesStream(t *testing.T) {
 	if !strings.Contains(events, "\"total_tokens\":5") {
 		t.Fatalf("usage missing from completed event:\n%s", events)
 	}
+	// The terminal events are authoritative for Responses clients: they carry
+	// the whole answer, and a client that sees an empty final text discards
+	// everything it streamed (Codex/ChatGPT blank out the message).
+	if got := eventText(t, events, "response.output_text.done"); got != "Hello world" {
+		t.Fatalf("output_text.done text = %q, want %q", got, "Hello world")
+	}
+	if got := eventPartText(t, events, "response.content_part.done"); got != "Hello world" {
+		t.Fatalf("content_part.done text = %q, want %q", got, "Hello world")
+	}
+	if got := eventItemText(t, events, "response.output_item.done"); got != "Hello world" {
+		t.Fatalf("output_item.done text = %q, want %q", got, "Hello world")
+	}
+	if got := completedOutputText(t, events); got != "Hello world" {
+		t.Fatalf("response.completed output text = %q, want %q", got, "Hello world")
+	}
+}
+
+// sseData returns the decoded data payload of the last event with the given
+// name from a rendered Responses SSE body.
+func sseData(t *testing.T, events, name string) map[string]any {
+	t.Helper()
+	var payload map[string]any
+	found := false
+	for _, frame := range strings.Split(events, "\n\n") {
+		lines := strings.Split(strings.TrimSpace(frame), "\n")
+		if len(lines) == 0 || strings.TrimSpace(lines[0]) != "event: "+name {
+			continue
+		}
+		for _, line := range lines[1:] {
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			payload = map[string]any{}
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &payload); err != nil {
+				t.Fatalf("decode %s payload: %v", name, err)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("event %s missing in:\n%s", name, events)
+	}
+	return payload
+}
+
+func eventText(t *testing.T, events, name string) string {
+	t.Helper()
+	text, _ := sseData(t, events, name)["text"].(string)
+	return text
+}
+
+func eventPartText(t *testing.T, events, name string) string {
+	t.Helper()
+	part, _ := sseData(t, events, name)["part"].(map[string]any)
+	text, _ := part["text"].(string)
+	return text
+}
+
+func eventItemText(t *testing.T, events, name string) string {
+	t.Helper()
+	item, _ := sseData(t, events, name)["item"].(map[string]any)
+	return itemContentText(item)
+}
+
+// completedOutputText reads response.output[0]'s text out of the terminal
+// response.completed event — the value the client keeps after streaming.
+func completedOutputText(t *testing.T, events string) string {
+	t.Helper()
+	items := completedOutputItems(t, events)
+	if len(items) == 0 {
+		t.Fatalf("response.completed carries no output items:\n%s", events)
+	}
+	return itemContentText(items[0])
+}
+
+// completedOutputItems returns the output array of the terminal
+// response.completed event in order.
+func completedOutputItems(t *testing.T, events string) []map[string]any {
+	t.Helper()
+	response, _ := sseData(t, events, "response.completed")["response"].(map[string]any)
+	raw, _ := response["output"].([]any)
+	items := make([]map[string]any, 0, len(raw))
+	for _, entry := range raw {
+		item, _ := entry.(map[string]any)
+		items = append(items, item)
+	}
+	return items
+}
+
+// TestChatStreamToResponsesStreamToolCalls covers function-call streaming: the
+// chat tool_call deltas assemble into a function_call output item instead of
+// being dropped (an agentic client would otherwise get an empty answer and no
+// call to execute).
+func TestChatStreamToResponsesStreamToolCalls(t *testing.T) {
+	source := `data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{"role":"assistant"}}]}` + "\n\n" +
+		`data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\"cmd\":"}}]}}]}` + "\n\n" +
+		`data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"ls\"}"}}]}}]}` + "\n\n" +
+		`data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}` + "\n\n" +
+		`data: [DONE]` + "\n\n"
+	wrapped := NewChatStreamToResponsesStream(io.NopCloser(strings.NewReader(source)))
+	defer wrapped.Close()
+
+	events := drainStream(t, wrapped)
+	added := sseData(t, events, "response.output_item.added")
+	item, _ := added["item"].(map[string]any)
+	if item["type"] != "function_call" || item["name"] != "shell" || item["call_id"] != "call_1" {
+		t.Fatalf("function_call item not announced: %+v", item)
+	}
+	argumentsDone, _ := sseData(t, events, "response.function_call_arguments.done")["arguments"].(string)
+	if argumentsDone != `{"cmd":"ls"}` {
+		t.Fatalf("arguments assembled = %q, want %q", argumentsDone, `{"cmd":"ls"}`)
+	}
+	if !strings.Contains(events, `"delta":"{\"cmd\":"`) || !strings.Contains(events, `"delta":"\"ls\"}"`) {
+		t.Fatalf("argument deltas missing:\n%s", events)
+	}
+	items := completedOutputItems(t, events)
+	if len(items) != 1 {
+		t.Fatalf("tool-call-only turn must carry exactly one item, got %d:\n%s", len(items), events)
+	}
+	if items[0]["type"] != "function_call" || items[0]["name"] != "shell" || items[0]["arguments"] != `{"cmd":"ls"}` {
+		t.Fatalf("completed function_call wrong: %+v", items[0])
+	}
+}
+
+// TestChatStreamToResponsesStreamTextAndToolCall keeps both output kinds in
+// first-seen order: text opens the message item, the later call follows it.
+func TestChatStreamToResponsesStreamTextAndToolCall(t *testing.T) {
+	source := `data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{"content":"let me check"}}]}` + "\n\n" +
+		`data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_9","type":"function","function":{"name":"shell","arguments":"{}"}}]}}]}` + "\n\n" +
+		`data: [DONE]` + "\n\n"
+	wrapped := NewChatStreamToResponsesStream(io.NopCloser(strings.NewReader(source)))
+	defer wrapped.Close()
+
+	events := drainStream(t, wrapped)
+	items := completedOutputItems(t, events)
+	if len(items) != 2 {
+		t.Fatalf("expected message + function_call, got %d:\n%s", len(items), events)
+	}
+	if items[0]["type"] != "message" || itemContentText(items[0]) != "let me check" {
+		t.Fatalf("message item wrong: %+v", items[0])
+	}
+	if items[1]["type"] != "function_call" || items[1]["arguments"] != "{}" {
+		t.Fatalf("function_call item wrong: %+v", items[1])
+	}
+}
+
+// TestChatStreamToResponsesStreamToolCallBeforeText pins the index allocation
+// when the call shows up first: output items keep first-seen order rather than
+// assuming the message always owns index 0.
+func TestChatStreamToResponsesStreamToolCallBeforeText(t *testing.T) {
+	source := `data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_3","type":"function","function":{"name":"shell","arguments":"{}"}}]}}]}` + "\n\n" +
+		`data: {"id":"cmpl-1","model":"gpt","choices":[{"index":0,"delta":{"content":"done"}}]}` + "\n\n" +
+		`data: [DONE]` + "\n\n"
+	wrapped := NewChatStreamToResponsesStream(io.NopCloser(strings.NewReader(source)))
+	defer wrapped.Close()
+
+	events := drainStream(t, wrapped)
+	items := completedOutputItems(t, events)
+	if len(items) != 2 {
+		t.Fatalf("expected function_call + message, got %d:\n%s", len(items), events)
+	}
+	if items[0]["type"] != "function_call" || items[1]["type"] != "message" {
+		t.Fatalf("items must follow first-seen order, got %s then %s", items[0]["type"], items[1]["type"])
+	}
+	if itemContentText(items[1]) != "done" {
+		t.Fatalf("message item must keep its text: %+v", items[1])
+	}
+}
+
+// drainStream renders the whole reshaped body.
+func drainStream(t *testing.T, wrapped *ChatStreamToResponsesStream) string {
+	t.Helper()
+	var out strings.Builder
+	buf := make([]byte, 4096)
+	for {
+		n, err := wrapped.Read(buf)
+		if n > 0 {
+			out.Write(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+	}
+	return out.String()
+}
+
+func itemContentText(item map[string]any) string {
+	content, _ := item["content"].([]any)
+	var builder strings.Builder
+	for _, raw := range content {
+		part, _ := raw.(map[string]any)
+		if part["type"] != "output_text" {
+			continue
+		}
+		text, _ := part["text"].(string)
+		builder.WriteString(text)
+	}
+	return builder.String()
 }

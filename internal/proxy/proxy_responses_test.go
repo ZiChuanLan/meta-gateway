@@ -10,6 +10,7 @@ import (
 
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/relay"
+	"github.com/lan/meta-gateway/internal/store"
 )
 
 // responsesBody is a minimal Responses API request document.
@@ -100,6 +101,18 @@ func TestResponsesFallbackTranslatesOn404(t *testing.T) {
 	}
 	if !strings.HasSuffix(upstream.calls[1], "/chat/completions") {
 		t.Fatalf("fallback must hit /chat/completions, calls=%v", upstream.calls)
+	}
+	// The pivoted replay is the endpoint that answered, so the echoed url and
+	// the log row must name it — not the /responses endpoint that 404'd.
+	if echoed := result.Header.Get(UpstreamURLEchoHeader); !strings.HasSuffix(echoed, "/chat/completions") {
+		t.Fatalf("echoed upstream url = %q, want the translated replay", echoed)
+	}
+	logs, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Model: "model", Limit: 10})
+	if err != nil {
+		t.Fatalf("proxy logs: %v", err)
+	}
+	if len(logs) == 0 || !strings.HasSuffix(logs[0].UpstreamURL, "/chat/completions") {
+		t.Fatalf("log row must record the translated replay url, got %+v", logs)
 	}
 	var chat struct {
 		Messages []struct {
@@ -209,6 +222,16 @@ func TestResponsesStreamFallbackReshapes(t *testing.T) {
 		if !strings.Contains(string(body), want) {
 			t.Fatalf("stream reshape missing %q in:\n%s", want, body)
 		}
+	}
+	// The terminal answer must repeat what was streamed: Responses clients
+	// replace the rendered message with response.completed's output, so an
+	// empty text there wipes the reply the user just watched arrive.
+	if !strings.Contains(string(body), `"text":"streamed"`) {
+		t.Fatalf("response.completed must carry the streamed text in:\n%s", body)
+	}
+	completed := string(body[strings.Index(string(body), "event: response.completed"):])
+	if !strings.Contains(completed, `"output":[{"content":[{"annotations":[],"text":"streamed","type":"output_text"}`) {
+		t.Fatalf("response.completed output item wrong in:\n%s", completed)
 	}
 }
 

@@ -4,6 +4,30 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.8.1] — 2026-09-29
+
+### Fixed
+
+- **Responses 流式回答在收尾时被客户端抹掉**（`internal/adapters/responses_stream.go`）。
+  chat/completions → Responses 的流式改写器**从不把已流出的正文写进收尾事件**：
+  `response.output_text.done`、`response.content_part.done`、`response.output_item.done` 与终局
+  `response.completed` 里的 `output[0].content[0].text` 一律是空串（`finish()` 里写死 `outText := ""`）。
+  而 Responses 客户端（Codex CLI / ChatGPT 桌面端，`wire_api = "responses"`）把终局事件当权威：
+  边流边渲染，收到 `response.completed` 后用其中的 `output` 替换整条消息——正文为空就等于把刚显示出来的
+  回答删掉，界面只剩下时间戳与「分支到新聊天」这类消息外壳（表现为「回复一闪就没」）。现在每个 delta 都
+  累计进终局文本，`response.completed` 与三个 done 事件携带完整正文。凡是不原生提供 `/v1/responses` 的上游
+  （只讲 chat/completions 的 OpenAI 兼容站，以及 Anthropic / Gemini 走 chat 转轴的渠道）都经过这条改写路径。
+- **流式 function_call 被整段丢弃**（同上）。改写器只读 `delta.content`，忽略 `delta.tool_calls`，于是带工具的
+  回合变成一条既没有正文、也没有调用可执行的空消息。非流式路径（`ChatToResponses`）本来就会把 tool_calls
+  映射成 `function_call` output item，现在流式路径与之对齐：新增 `response.output_item.added`（function_call）、
+  `response.function_call_arguments.delta` / `.done`，并在 `response.completed.output` 里带上 `function_call` 条目
+  （参数分片按 tool-call index 归并）。同时 assistant message item 改为**首个正文 delta 才分配**，纯工具回合不再
+  多出一个空的助手气泡。
+- **404 回退后的日志与回显地址指向打不通的那个端点**（`internal/proxy/proxy_forward.go`）。上游没有
+  `/v1/responses` 时网关会拿 404 再向 `chat/completions` 重放一次（`responses_translated`），但日志行与
+  `X-Meta-Upstream-URL` 用的仍是首次尝试的 `/responses` 地址，事后排查会看到一个从未应答过的端点。
+  现在重放的那一次会把实际端点写回记录。
+
 ## [v3.8.0] — 2026-09-25
 
 ### Added

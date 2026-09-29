@@ -797,6 +797,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 							responsesFallbackTried = true
 							registryTranslation = &fallbackTranslation
 							responsesFallbackCategory = "responses_translated"
+							// The pivoted replay is the endpoint that answers the client from
+							// here on: log and echo THAT url, not the /responses one that 404'd.
+							req.UpstreamURLActual = adapters.SafeURL(chatURL)
 							result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, chatURL, headers, translated)
 						} else {
 							log.Printf("proxy: responses fallback translation missing (request_id=%s)", req.RequestID)
