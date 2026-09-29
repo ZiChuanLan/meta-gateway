@@ -27,6 +27,12 @@ type AnthropicToOpenAIStream struct {
 	done      bool
 	closed    bool
 	sourceErr error
+
+	// tools maps an Anthropic content-block index onto the OpenAI tool_calls
+	// index its arguments belong to. Without the content_block_start that
+	// registers it, streamed tool input has nowhere to go.
+	tools         map[int]int
+	nextToolIndex int
 }
 
 // NewAnthropicToOpenAIStream wraps an Anthropic SSE body.
@@ -130,7 +136,7 @@ func (s *AnthropicToOpenAIStream) handleEvent(eventType, data string) {
 	case "message_start":
 		s.onMessageStart(payload)
 	case "content_block_start":
-		// no-op for text blocks; tool_use ignored in v1 reshape
+		s.onContentBlockStart(payload)
 	case "content_block_delta":
 		s.onContentBlockDelta(payload)
 	case "content_block_stop":
@@ -188,12 +194,72 @@ func (s *AnthropicToOpenAIStream) onMessageStart(payload map[string]any) {
 	}
 }
 
+// onContentBlockStart registers a tool_use block and opens its tool_calls
+// entry in the OpenAI stream. Text blocks need no opener: their deltas carry
+// the content directly.
+func (s *AnthropicToOpenAIStream) onContentBlockStart(payload map[string]any) {
+	block, _ := payload["content_block"].(map[string]any)
+	if block == nil {
+		return
+	}
+	if blockType, _ := block["type"].(string); blockType != "tool_use" {
+		return
+	}
+	index := intFromAny(payload["index"])
+	toolIndex := s.nextToolIndex
+	s.nextToolIndex++
+	if s.tools == nil {
+		s.tools = map[int]int{}
+	}
+	s.tools[index] = toolIndex
+	id, _ := block["id"].(string)
+	name, _ := block["name"].(string)
+	s.writeChunk(map[string]any{
+		"tool_calls": []any{map[string]any{
+			"index": toolIndex,
+			"id":    id,
+			"type":  "function",
+			"function": map[string]any{
+				"name":      name,
+				"arguments": "",
+			},
+		}},
+	}, nil, nil)
+}
+
+// onInputJSONDelta forwards streamed tool arguments as tool_calls fragments
+// (the mirror of Anthropic's input_json_delta).
+func (s *AnthropicToOpenAIStream) onInputJSONDelta(payload, delta map[string]any) {
+	partial, _ := delta["partial_json"].(string)
+	if partial == "" {
+		return
+	}
+	toolIndex, ok := s.tools[intFromAny(payload["index"])]
+	if !ok {
+		return
+	}
+	s.writeChunk(map[string]any{
+		"tool_calls": []any{map[string]any{
+			"index":    toolIndex,
+			"function": map[string]any{"arguments": partial},
+		}},
+	}, nil, nil)
+}
+
 func (s *AnthropicToOpenAIStream) onContentBlockDelta(payload map[string]any) {
 	delta, _ := payload["delta"].(map[string]any)
 	if delta == nil {
 		return
 	}
 	deltaType, _ := delta["type"].(string)
+	switch deltaType {
+	case "input_json_delta":
+		s.onInputJSONDelta(payload, delta)
+		return
+	case "thinking_delta", "signature_delta", "citations_delta":
+		// No OpenAI chat equivalent in this reshape.
+		return
+	}
 	if deltaType == "text_delta" || deltaType == "" {
 		text, _ := delta["text"].(string)
 		if text == "" {

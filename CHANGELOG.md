@@ -28,6 +28,40 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   `X-Meta-Upstream-URL` 用的仍是首次尝试的 `/responses` 地址，事后排查会看到一个从未应答过的端点。
   现在重放的那一次会把实际端点写回记录。
 
+### Fixed（Anthropic Messages / `/v1/messages`）
+
+- **流事件本身不合法：payload 缺 `type`，且从不发 `content_block_start`**（`internal/adapters/anthropic_downstream.go`）。
+  官方 SDK（`MessageStream.js`，Claude Code 内置同一份）从 **data payload** 里读 `type` —— 只靠 `event:` 行命名不够：
+  旧实现每个事件的 payload 都没有 `type` 字段，于是**第一个事件**就被 SDK 判成 `type=undefined` 并抛
+  `Unexpected event order, got undefined before "message_start"`。除此外它从不发 `content_block_start`/
+  `content_block_stop`，且只在上游首块带 `"role":"assistant"` 时才发 `message_start`；而 SDK 按 block index 累积：
+  只有 `content_block_start` 会让它登记一个块，未登记 index 上的 `text_delta` 被**静默丢弃**，最终 message 正文为空
+  （`.text` 直接抛 `stream ended without producing a content block with type=text`）；任何早于 `message_start` 的事件
+  同样会抛 `Unexpected event order`。现在每个 payload 都带 `type`，序列固定为
+  `message_start`（带 usage 占位，SDK 会把 `message_delta` 的 usage 合并进来）→ `content_block_start` →
+  deltas → `content_block_stop` → **恰好一个** `message_delta`（stop_reason + usage）→ `message_stop`，
+  即使上游一个帧都不发也保证这段序列完整。
+  (以磁盘上的官方 `@anthropic-ai/sdk` `MessageStream` 0.91.1 离线回放验证：旧序列抛错，新序列能拼出
+  `text="Hello world"`、`tool_use=call_1/shell/{"cmd":"ls"}`、`stop_reason=tool_use`、usage 9/7。)
+- **工具调用在 Anthropic 边界两侧都被整段丢弃**（同上，及 `anthropic.go` / `anthropic_stream.go`）。
+  - Anthropic 客户端 → OpenAI 上游：`delta.tool_calls` 以前被忽略 → 空回答且没有可执行的调用；现在转成
+    `tool_use` 块（`content_block_start` + `input_json_delta` 分片），非流式把 `message.tool_calls` 转成
+    `tool_use`（`input` 由 arguments 解析，非法则 `{}`），带 tool_use 的回合 stop_reason 固定为 `tool_use`。
+  - 请求方向：`tools` / `tool_choice` 根本不上送（上游不知道有工具），assistant 的 `tool_use` 与 user 的
+    `tool_result` 块被拍平成文本或丢弃；现在映射为 OpenAI `tools`（`input_schema` → `parameters`）、
+    `tool_calls`、`role:"tool"` + `tool_call_id`（→ `tool_result`）。
+  - 反向（OpenAI 客户端 ← Anthropic 渠道）：`AnthropicMessagesToChat` 只读 text 块、`AnthropicToOpenAIStream`
+    忽略 `content_block_start`(tool_use) 与 `input_json_delta`，客户端会拿到 `finish_reason:tool_calls` 却
+    没有任何可执行调用；现在 `tool_use` → `tool_calls`（流式落成 `tool_calls[].function.arguments` 分片），
+    `ChatToAnthropicMessages` 也会把 `tools`/`tool_choice`/`tool_calls`/`role:"tool"` 转过去。
+- **非流式响应内容为 part 数组时整条转换报错**：`message.content` 原来是 `string`，上游返回数组（多模态或
+  部分兼容站）会让 unmarshal 失败、客户端收到错误响应；现在字符串与 part 数组两种形状都接受，
+  并把 `cache_read_tokens` / `prompt_tokens_details.cached_tokens` 计入 Anthropic 的
+  `cache_read_input_tokens`。
+
+> 本次仍未覆盖的 Anthropic 能力（有意留给后续，不是遗漏）：`thinking`/`reasoning` 块、
+> `cache_control` 断点、`/v1/messages/count_tokens` 的本地计数（当前直接转给上游，OpenAI 兼容上游会 404）。
+
 ## [v3.8.0] — 2026-09-25
 
 ### Added

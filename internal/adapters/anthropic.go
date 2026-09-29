@@ -94,6 +94,8 @@ func ChatToAnthropicMessages(openaiBody []byte) ([]byte, error) {
 		Stream      bool            `json:"stream"`
 		Stop        json.RawMessage `json:"stop"`
 		System      json.RawMessage `json:"system"`
+		Tools       json.RawMessage `json:"tools"`
+		ToolChoice  json.RawMessage `json:"tool_choice"`
 	}
 	if err := json.Unmarshal(openaiBody, &incoming); err != nil {
 		return nil, fmt.Errorf("anthropic: decode chat body: %w", err)
@@ -122,9 +124,46 @@ func ChatToAnthropicMessages(openaiBody []byte) ([]byte, error) {
 				systemParts = append(systemParts, text)
 			}
 		case "assistant":
+			// A tool-less turn keeps the plain string form every
+			// Anthropic-compatible endpoint accepts; tool_calls force the block
+			// array, which is the only shape that can carry them.
+			if len(message.ToolCalls) == 0 {
+				messages = append(messages, map[string]any{"role": "assistant", "content": text})
+				continue
+			}
+			// OpenAI keeps an assistant turn's prose and its tool_calls in two
+			// fields; Anthropic interleaves them as content blocks.
+			blocks := make([]map[string]any, 0, len(message.ToolCalls)+1)
+			if text != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": text})
+			}
+			for _, call := range message.ToolCalls {
+				name := strings.TrimSpace(call.Function.Name)
+				if name == "" {
+					continue
+				}
+				id := strings.TrimSpace(call.ID)
+				if id == "" {
+					id = "toolu_" + name
+				}
+				blocks = append(blocks, map[string]any{
+					"type": "tool_use", "id": id, "name": name,
+					"input": json.RawMessage(jsonObjectOrEmpty(json.RawMessage(call.Function.Arguments))),
+				})
+			}
+			if len(blocks) == 0 {
+				blocks = append(blocks, map[string]any{"type": "text", "text": ""})
+			}
+			messages = append(messages, map[string]any{"role": "assistant", "content": blocks})
+		case "tool", "function":
+			// Anthropic carries a tool result as a tool_result block inside a
+			// user message; without the pairing the upstream never sees what its
+			// own tool call returned.
 			messages = append(messages, map[string]any{
-				"role":    "assistant",
-				"content": text,
+				"role": "user",
+				"content": []map[string]any{{
+					"type": "tool_result", "tool_use_id": message.ToolCallID, "content": text,
+				}},
 			})
 		case "user", "":
 			messages = append(messages, map[string]any{
@@ -132,7 +171,7 @@ func ChatToAnthropicMessages(openaiBody []byte) ([]byte, error) {
 				"content": text,
 			})
 		default:
-			// tool / function roles are not mapped in v1; keep as user text for best effort.
+			// Unknown roles keep their text for best effort.
 			messages = append(messages, map[string]any{
 				"role":    "user",
 				"content": text,
@@ -172,12 +211,92 @@ func ChatToAnthropicMessages(openaiBody []byte) ([]byte, error) {
 			outbound["stop_sequences"] = stopMany
 		}
 	}
+	// Tool declarations must reach the upstream, otherwise an Anthropic channel
+	// answers a tool-wielding OpenAI client with prose it cannot act on.
+	if tools := openAIToolsToAnthropic(incoming.Tools); len(tools) > 0 {
+		outbound["tools"] = tools
+		if choice := openAIToolChoiceToAnthropic(incoming.ToolChoice); choice != nil {
+			outbound["tool_choice"] = choice
+		}
+	}
 	return json.Marshal(outbound)
 }
 
+// openAIToolsToAnthropic maps OpenAI function tools onto Anthropic tool
+// declarations (parameters → input_schema).
+func openAIToolsToAnthropic(raw json.RawMessage) []map[string]any {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var tools []struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			Parameters  json.RawMessage `json:"parameters"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Function.Name)
+		if name == "" {
+			continue
+		}
+		schema := json.RawMessage(strings.TrimSpace(string(tool.Function.Parameters)))
+		if len(schema) == 0 || !strings.HasPrefix(string(schema), "{") {
+			schema = json.RawMessage(`{"type":"object","properties":{}}`)
+		}
+		entry := map[string]any{"name": name, "input_schema": schema}
+		if description := strings.TrimSpace(tool.Function.Description); description != "" {
+			entry["description"] = description
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// openAIToolChoiceToAnthropic maps the OpenAI tool_choice forms onto Anthropic's
+// (auto / any / tool / none).
+func openAIToolChoiceToAnthropic(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var named string
+	if err := json.Unmarshal(raw, &named); err == nil {
+		switch named {
+		case "auto":
+			return map[string]any{"type": "auto"}
+		case "required", "any":
+			return map[string]any{"type": "any"}
+		case "none":
+			return map[string]any{"type": "none"}
+		default:
+			return nil
+		}
+	}
+	var object struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil
+	}
+	if strings.TrimSpace(object.Function.Name) != "" {
+		return map[string]any{"type": "tool", "name": object.Function.Name}
+	}
+	return nil
+}
+
 type chatMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCalls  []chatConvCall  `json:"tool_calls"`
+	ToolCallID string          `json:"tool_call_id"`
 }
 
 func messageContentText(raw json.RawMessage) string {
@@ -209,8 +328,11 @@ func AnthropicMessagesToChat(anthropicBody []byte) ([]byte, error) {
 		Model   string `json:"model"`
 		Role    string `json:"role"`
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
 		} `json:"content"`
 		StopReason string `json:"stop_reason"`
 		Usage      struct {
@@ -224,12 +346,40 @@ func AnthropicMessagesToChat(anthropicBody []byte) ([]byte, error) {
 		return nil, fmt.Errorf("anthropic: decode messages response: %w", err)
 	}
 	var content strings.Builder
+	var toolCalls []map[string]any
 	for _, part := range incoming.Content {
-		if part.Type == "text" {
+		switch part.Type {
+		case "text", "":
 			content.WriteString(part.Text)
+		case "tool_use":
+			// A tool_use block is the OpenAI tool_calls entry; dropping it
+			// leaves the client with finish_reason=tool_calls and no call.
+			name := strings.TrimSpace(part.Name)
+			if name == "" {
+				continue
+			}
+			id := strings.TrimSpace(part.ID)
+			if id == "" {
+				id = "toolu_" + name
+			}
+			toolCalls = append(toolCalls, map[string]any{
+				"id": id, "type": "function",
+				"function": map[string]any{"name": name, "arguments": jsonObjectOrEmpty(part.Input)},
+			})
 		}
 	}
 	finishReason := mapAnthropicStopReason(incoming.StopReason)
+	if len(toolCalls) > 0 {
+		// The mirror of the Anthropic rule: a turn carrying calls must say so.
+		finishReason = "tool_calls"
+	}
+	message := map[string]any{"role": "assistant", "content": content.String()}
+	if len(toolCalls) > 0 {
+		message["tool_calls"] = toolCalls
+		if content.Len() == 0 {
+			message["content"] = nil
+		}
+	}
 	usage := map[string]any{
 		"prompt_tokens":     incoming.Usage.InputTokens,
 		"completion_tokens": incoming.Usage.OutputTokens,
@@ -247,11 +397,8 @@ func AnthropicMessagesToChat(anthropicBody []byte) ([]byte, error) {
 		"created": nowUnix(),
 		"model":   incoming.Model,
 		"choices": []map[string]any{{
-			"index": 0,
-			"message": map[string]any{
-				"role":    "assistant",
-				"content": content.String(),
-			},
+			"index":         0,
+			"message":       message,
 			"finish_reason": finishReason,
 		}},
 		"usage": usage,
