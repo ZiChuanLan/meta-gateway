@@ -4,6 +4,22 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.8.5] — 2026-10-01
+
+### Added
+
+- **日志链路新增「密钥」一环：这次到底用的是哪把上游 Key**（`internal/store/106_proxy_log_upstream_key.sql`、
+  `internal/proxy/proxy_keypool.go`、`internal/domain/models.go`、`internal/store/proxylog.go`、
+  `web/src/features/Logs.tsx`）。渠道启用多把 Key 时，此前只能看到 `key_fingerprint` 这个 sha256 前缀——
+  「9f2c… 是哪一把」无法回答。现在日志行直接存 `upstream_key_id`（`credentials.id`，**密钥本体依旧从不落库**），
+  列表接口再按 id JOIN 出 `upstream_key_name`（取 `meta_json.name`，重命名即时生效；Key 被删则名字变空、
+  指纹仍在）。链路渲染为 `密钥 metapi #1`，位于「通道」与「上游」之间，点击直达该渠道的密钥抽屉
+  （新增 `?keys=<渠道 id>` 深链，与已有的 `?channel=` 同套路，关闭时清参）。旧行没有 id 时回退显示指纹并
+  注明「仅留指纹（该行早于密钥记录）」，避免空白被读成「没用 Key」。
+  • 凭据池 `resolveAPIKeyPool` 现在返回 `{Secret, CredentialID}`，由真正发出的那把 Key 带上行号。
+  • 两把 Key 轮流分摊的真实验证：连发两次请求分别命中 `metapi #1` 与 `cc #2`，两行的指纹与各自密钥的
+  sha256 前缀**逐字节相符（本地重算对账）**，且行内任何字段都不含密钥明文。
+
 ## [v3.8.4] — 2026-10-01
 
 ### Fixed

@@ -23,6 +23,10 @@ type queuedRelay struct {
 	results []*relay.Result
 	calls   []string
 	bodies  [][]byte
+	// auths records the Authorization header of each forwarded call, so a test
+	// can check what the attempt log says against the key that actually went
+	// out (the relay's own key parameter is legacy and stays empty).
+	auths []string
 }
 
 type fixedClock struct{ now time.Time }
@@ -42,8 +46,9 @@ func (r *queuedRelay) ChatCompletionsContext(_ context.Context, upstreamURL, _ s
 	return result
 }
 
-func (r *queuedRelay) ForwardWithHeaders(_ context.Context, _, upstreamURL string, _ http.Header, body []byte) *relay.Result {
+func (r *queuedRelay) ForwardWithHeaders(_ context.Context, _, upstreamURL string, headers http.Header, body []byte) *relay.Result {
 	r.bodies = append(r.bodies, append([]byte(nil), body...))
+	r.auths = append(r.auths, headers.Get("Authorization"))
 	return r.ChatCompletionsContext(context.Background(), upstreamURL, "", nil, false)
 }
 
@@ -656,7 +661,7 @@ func TestResolveAPIKeyPoolModelAllowlist(t *testing.T) {
 	}
 	// claude: only key B (A's allowlist excludes it).
 	keys, _ = service.resolveAPIKeyPool(*channel, "claude-3-5-sonnet")
-	if len(keys) != 1 || keys[0] != "sk-allow-b" {
+	if len(keys) != 1 || keys[0].Secret != "sk-allow-b" {
 		t.Fatalf("claude pool=%v, want only sk-allow-b", keys)
 	}
 }
@@ -681,8 +686,13 @@ func TestKeyPoolRotationOffUsesBoundKeyOnly(t *testing.T) {
 
 	// Rotation off: only the bound key is returned, never the pool sibling.
 	keys, err := service.resolveAPIKeyPool(*channel, "")
-	if err != nil || len(keys) != 1 || keys[0] != "sk-rot-1" {
+	if err != nil || len(keys) != 1 || keys[0].Secret != "sk-rot-1" {
 		t.Fatalf("rotation-off pool=%v err=%v, want only bound key", keys, err)
+	}
+	// The bound key's own credential row, so the log names the key rather than
+	// describing it by hash.
+	if keys[0].CredentialID != cred1 {
+		t.Fatalf("rotation-off credential id = %d, want %d", keys[0].CredentialID, cred1)
 	}
 }
 

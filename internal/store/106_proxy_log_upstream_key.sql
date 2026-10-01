@@ -1,0 +1,14 @@
+-- Which upstream credential served the attempt, by id.
+--
+-- key_fingerprint (043) identifies the key material, but a hash cannot be
+-- matched to a row in the console: the operator asks "which of my four keys
+-- did this call use" and a truncated sha256 does not answer it. Storing the
+-- credentials.id answers it, and it stays answerable after the key is deleted
+-- (a fingerprint would too, but the row is the thing being pointed at).
+--
+-- The secret itself is still never stored: the id plus the fingerprint is the
+-- whole record.
+--
+-- 0 = attempt logged before this column existed, or one that never reached a
+-- key (routing/short-circuit failures).
+ALTER TABLE proxy_logs ADD COLUMN upstream_key_id INTEGER NOT NULL DEFAULT 0;

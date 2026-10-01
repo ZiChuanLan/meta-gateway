@@ -306,6 +306,18 @@ export interface ProxyLog {
    */
   key_fingerprint?: string;
   /**
+   * credentials.id of the key that served the attempt. The gateway stores the
+   * id, not the secret, so this is what turns "a key whose hash starts 9f2c"
+   * into "cc #141". 0/absent on rows written before the column existed.
+   */
+  upstream_key_id?: number;
+  /**
+   * The key's display name, resolved server-side from the credential's
+   * meta_json at read time (renames show through; a deleted key resolves
+   * empty). Present only in list responses.
+   */
+  upstream_key_name?: string;
+  /**
    * The model name this attempt actually sent upstream. Differs from `model`
    * when the route/member rewrote the alias via a `{"real":"…"}` mapping —
    * i.e. whenever one client-facing name is served by several real models.

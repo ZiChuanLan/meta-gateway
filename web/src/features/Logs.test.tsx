@@ -155,6 +155,7 @@ describe("log row drill-down", () => {
         upstream_url: "https://up.example.com/v1/chat/completions",
         upstream_model: "gpt-5-real", upstream_request_id: "up-777",
         key_fingerprint: "9f2c41ab77de0088", tokens_per_second: 42.5,
+        upstream_key_id: 141, upstream_key_name: "cc",
         prompt_tokens: 100, completion_tokens: 20, total_tokens: 120,
         reasoning_effort: "max", mapped_reasoning_effort: "high",
         created_at: "2026-09-30T10:00:00Z",
@@ -179,6 +180,14 @@ describe("log row drill-down", () => {
     // has the /v1 prefix it is mounted under.
     expect(within(chain).getByText("/v1/chat/completions")).toBeInTheDocument();
     expect(within(chain).getByText("https://up.example.com/v1/chat/completions")).toBeInTheDocument();
+    // Which upstream key served it: the id is stored, the name is joined in, and
+    // the hop goes straight to that channel's key list (?keys= deep-link).
+    expect(within(chain).getByText("cc")).toBeInTheDocument();
+    expect(within(chain).getByText("#141")).toBeInTheDocument();
+    expect(within(chain).getByRole("link", { name: "cc" })).toHaveAttribute(
+      "href",
+      "/channels?keys=3",
+    );
     // Details: what the upstream called it, what it cost, which key served it.
     expect(within(details).getByText("up-777")).toBeInTheDocument();
     expect(within(details).getByText("42.5 tok/s")).toBeInTheDocument();
@@ -196,6 +205,25 @@ describe("log row drill-down", () => {
     await screen.findByText("gpt-5");
     expect(
       screen.getByTitle("The bar scales 0–10s: this row is 1472 ms (15%). Amber past 1s, red past 5s."),
+    ).toBeInTheDocument();
+  });
+
+  // A row written before the id column existed still knows the key by hash.
+  // Showing a blank hop would read as "no key was used", so the fingerprint
+  // takes the value slot and the note says why.
+  it("falls back to the key fingerprint on a row with no key id", async () => {
+    renderLogs("/logs", [
+      {
+        id: 7, request_id: "req-legacy", model: "gpt-5", status: 200, latency_ms: 900,
+        attempt: 1, channel_id: 3, key_fingerprint: "9f2c41ab77de0088",
+      },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-5"));
+    await screen.findByText("Request chain");
+    const chain = document.querySelector(".log-chain") as HTMLElement;
+    expect(within(chain).getByText("9f2c41ab77de0088")).toBeInTheDocument();
+    expect(
+      within(chain).getByText("fingerprint only — this row predates key logging"),
     ).toBeInTheDocument();
   });
 

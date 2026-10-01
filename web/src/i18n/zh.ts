@@ -1151,6 +1151,8 @@ export const zh: Dict = {
   "logsPage.latencyBarHint":
     "延迟条按 0–10 秒刻度：本行 {n} 毫秒（占 {pct}%）。1 秒以上转橙，5 秒以上转红。",
   "logsPage.chainTitle": "链路",
+  "logsPage.chainKey": "密钥",
+  "logsPage.chainKeyFingerprintOnly": "仅留指纹（该行早于密钥记录）",
   "logsPage.chainIngress": "入口",
   "logsPage.chainUpstream": "上游",
   "logsPage.chainNoToken": "未记录令牌",

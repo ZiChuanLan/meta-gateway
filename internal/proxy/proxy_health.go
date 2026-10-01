@@ -110,7 +110,11 @@ func (s *Service) recordMemberSuccess(channelID int64) {
 	}
 }
 
-func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string) {
+// recordAttempt writes one attempt row. keyFP/keyID describe the upstream
+// credential that served it (empty/0 when the attempt failed before reaching a
+// key): the fingerprint identifies the key material, the id names the row the
+// console shows. The secret itself is never passed here.
+func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string, keyID int64) {
 	// Probes are synthetic; logging them would flood the proxy log with
 	// traffic no client asked for. Their outcome lives in probe_results.
 	if req.Probe {
@@ -148,6 +152,7 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 		ReasoningEffort:       req.ReasoningEffort,
 		MappedReasoningEffort: req.MappedReasoningEffort,
 		KeyFingerprint:        keyFP,
+		UpstreamKeyID:         keyID,
 		UpstreamRequestID:     upstreamRequestID(result),
 	})
 	if err != nil {

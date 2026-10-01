@@ -1441,6 +1441,9 @@ export const en: Dict = {
   "logsPage.latencyBarHint":
     "The bar scales 0–10s: this row is {n} ms ({pct}%). Amber past 1s, red past 5s.",
   "logsPage.chainTitle": "Request chain",
+  "logsPage.chainKey": "Upstream key",
+  "logsPage.chainKeyFingerprintOnly":
+    "fingerprint only — this row predates key logging",
   "logsPage.chainIngress": "Ingress",
   "logsPage.chainUpstream": "Upstream",
   "logsPage.chainNoToken": "Token not recorded",

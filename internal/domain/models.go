@@ -642,6 +642,16 @@ type ProxyLog struct {
 	// what a custom-path passthrough (/v1/<anything>) reached. Empty on rows
 	// written before the column existed.
 	UpstreamURL string `json:"upstream_url,omitempty"`
+	// UpstreamKeyID is the credentials.id of the key that served this attempt;
+	// 0 on rows written before the column existed, or on attempts that failed
+	// before reaching a key. The secret is never stored — this id plus
+	// KeyFingerprint is the whole record of which key it was.
+	UpstreamKeyID int64 `json:"upstream_key_id,omitempty"`
+	// UpstreamKeyName is the key's display name (credentials.meta_json .name),
+	// resolved at list time rather than stored, so a rename shows through and a
+	// key deleted afterwards simply resolves to empty. Populated only in admin
+	// list responses, like RoutePattern and Cost.
+	UpstreamKeyName string `json:"upstream_key_name,omitempty"`
 	// Cost is the persisted billing amount for this request, joined from
 	// usage_records by request_id. It is populated only in admin list
 	// responses; the proxy_logs table carries no cost column and inserts

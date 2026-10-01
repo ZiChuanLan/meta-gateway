@@ -14,6 +14,17 @@ import (
 	"github.com/lan/meta-gateway/internal/usage"
 )
 
+// secretsOf projects a resolved pool onto its secrets. The pool entries also
+// carry the credential id that served the attempt; ordering assertions are
+// about which key is tried when, so they read the secret field directly.
+func secretsOf(keys []upstreamKey) []string {
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key.Secret)
+	}
+	return out
+}
+
 // Routing must pick the key capable of serving the requested model. With two
 // group-scoped keys (one lists codex-* models, the other gemini-*), a request
 // for a codex model must only use the codex key, and a shared model may use
@@ -61,16 +72,24 @@ func TestKeyPoolServesModelFromDiscoveredSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(keys) != 1 || keys[0] != "codex-secret" {
+	if len(keys) != 1 || keys[0].Secret != "codex-secret" {
 		t.Fatalf("codex pool = %v, want [codex-secret]", keys)
+	}
+	// The pool entry carries the credential it came from, which is what the
+	// attempt log records as upstream_key_id.
+	if keys[0].CredentialID != codexID {
+		t.Fatalf("codex pool credential id = %d, want %d", keys[0].CredentialID, codexID)
 	}
 	// gemini model: only the gemini key.
 	keys, err = service.resolveAPIKeyPool(*fromDB, "gemini-y")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(keys) != 1 || keys[0] != "gemini-secret" {
+	if len(keys) != 1 || keys[0].Secret != "gemini-secret" {
 		t.Fatalf("gemini pool = %v, want [gemini-secret]", keys)
+	}
+	if keys[0].CredentialID != geminiID {
+		t.Fatalf("gemini pool credential id = %d, want %d", keys[0].CredentialID, geminiID)
 	}
 	// shared model: both keys qualify (rotation order: by id).
 	keys, err = service.resolveAPIKeyPool(*fromDB, "shared")
@@ -144,7 +163,7 @@ func TestKeyPoolManualAllowlistAndUnlearnedKey(t *testing.T) {
 	}
 	found := false
 	for _, key := range keys {
-		if key == "manual-secret" {
+		if key.Secret == "manual-secret" {
 			found = true
 		}
 	}
@@ -156,7 +175,7 @@ func TestKeyPoolManualAllowlistAndUnlearnedKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(keys) != 1 || keys[0] != "unlearned-secret" {
+	if len(keys) != 1 || keys[0].Secret != "unlearned-secret" {
 		t.Fatalf("gemini-new pool = %v, want [unlearned-secret]", keys)
 	}
 	_ = unlearnedID
@@ -231,7 +250,7 @@ func TestKeyPoolPriorityTiersAndRotation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pool at offset %d: %v", offset, err)
 		}
-		return keys
+		return secretsOf(keys)
 	}
 
 	assertPool("offset 0", poolAt(0), []string{"sk-first", "sk-second", "sk-balanced", "sk-backup"})

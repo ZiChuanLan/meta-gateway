@@ -10,6 +10,15 @@ import (
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
+// upstreamKey is one entry of a channel's key pool: the plaintext secret to
+// send, plus the credential row it came from. The id rides along so the attempt
+// log can name the key that served the request ("cc #141") without ever
+// storing the secret.
+type upstreamKey struct {
+	Secret       string
+	CredentialID int64
+}
+
 // resolveAPIKeyPool builds the ordered list of plaintext API keys for a channel.
 //
 // The pool is the site's enabled pool-capable credentials — bound credential
@@ -32,7 +41,7 @@ import (
 // the model-blind selection — the explicit models_csv allowlists still apply.
 // A wrong-group key just draws a missable 404 upstream and failover moves on;
 // a hard credential error would misreport a naming problem as an auth one.
-func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]string, error) {
+func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]upstreamKey, error) {
 	keys, err := s.filterAPIKeyPool(channel, model)
 	if len(keys) > 0 {
 		return keys, nil
@@ -50,7 +59,7 @@ func (s *Service) resolveAPIKeyPool(channel domain.Channel, model string) ([]str
 	return nil, err
 }
 
-func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]string, error) {
+func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]upstreamKey, error) {
 	seen := make(map[int64]struct{})
 	var usable []domain.Credential
 	// Per-credential discovered model sets for the channel's site. nil means
@@ -135,7 +144,7 @@ func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]stri
 // so equal-priority keys share the load. Credentials whose secret cannot be
 // decrypted are dropped silently — that is local key material, not an upstream
 // signal — and an empty result is reported as an unavailable credential.
-func (s *Service) orderAndDecryptPool(usable []domain.Credential) ([]string, error) {
+func (s *Service) orderAndDecryptPool(usable []domain.Credential) ([]upstreamKey, error) {
 	sort.SliceStable(usable, func(i, j int) bool {
 		if usable[i].Priority != usable[j].Priority {
 			return usable[i].Priority > usable[j].Priority
@@ -144,7 +153,7 @@ func (s *Service) orderAndDecryptPool(usable []domain.Credential) ([]string, err
 	})
 	// One advance per resolution; every tier of this pool shares the offset.
 	offset := s.keyPoolCursor.Add(1) - 1
-	keys := make([]string, 0, len(usable))
+	keys := make([]upstreamKey, 0, len(usable))
 	for start := 0; start < len(usable); {
 		end := start
 		for end < len(usable) && usable[end].Priority == usable[start].Priority {
@@ -161,7 +170,7 @@ func (s *Service) orderAndDecryptPool(usable []domain.Credential) ([]string, err
 			if err != nil || len(plaintext) == 0 {
 				continue
 			}
-			keys = append(keys, string(plaintext))
+			keys = append(keys, upstreamKey{Secret: string(plaintext), CredentialID: credential.ID})
 		}
 		start = end
 	}

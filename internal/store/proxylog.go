@@ -72,9 +72,9 @@ func (s *ProxyLogStore) Insert(log *domain.ProxyLog) (int64, error) {
 	if log.Stream {
 		stream = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, error_detail, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort, key_fingerprint, upstream_request_id, mapped_reasoning_effort, upstream_model, upstream_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := s.db.Exec(`INSERT INTO proxy_logs (request_id, channel_id, route_id, model, status, latency_ms, attempt, error_brief, error_detail, downstream_key_id, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_creation_tokens, stream, path, session_key, reasoning_effort, key_fingerprint, upstream_request_id, mapped_reasoning_effort, upstream_model, upstream_url, upstream_key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.RequestID, log.ChannelID, log.RouteID, log.Model, log.Status, log.LatencyMs, log.Attempt, log.ErrorBrief, log.ErrorDetail,
-		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort, log.KeyFingerprint, log.UpstreamRequestID, log.MappedReasoningEffort, log.UpstreamModel, log.UpstreamURL)
+		log.DownstreamKeyID, log.PromptTokens, log.CompletionTokens, log.TotalTokens, log.CacheReadTokens, log.CacheCreationTokens, stream, log.Path, log.SessionKey, log.ReasoningEffort, log.KeyFingerprint, log.UpstreamRequestID, log.MappedReasoningEffort, log.UpstreamModel, log.UpstreamURL, log.UpstreamKeyID)
 	if err != nil {
 		return 0, fmt.Errorf("proxylog insert: %w", err)
 	}
@@ -296,10 +296,15 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 	// Always LEFT JOIN routes so the route pattern (model_pattern) can be shown
 	// alongside each log row; route_id 0 / missing routes render as empty.
 	from += " LEFT JOIN routes rt ON rt.id = pl.route_id"
+	// Same for the upstream key: the id is stored, the display name lives in the
+	// credential's meta_json. Resolving it at read time keeps renames visible;
+	// a deleted key (or a row from before the column existed) resolves empty and
+	// the console falls back to the fingerprint.
+	from += " LEFT JOIN credentials kc ON kc.id = pl.upstream_key_id"
 
 	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.route_id, COALESCE(rt.model_pattern, ''), pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief, pl.error_detail,
 		pl.downstream_key_id, pl.prompt_tokens, pl.completion_tokens, pl.total_tokens,
-		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.mapped_reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.upstream_request_id, COALESCE(pl.upstream_model, ''), COALESCE(pl.upstream_url, ''), COALESCE(pl.key_fingerprint, ''), pl.created_at
+		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.mapped_reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.upstream_request_id, COALESCE(pl.upstream_model, ''), COALESCE(pl.upstream_url, ''), COALESCE(pl.key_fingerprint, ''), pl.upstream_key_id, COALESCE(NULLIF(CASE WHEN json_valid(kc.meta_json) THEN json_extract(kc.meta_json, '$.name') END, ''), ''), pl.created_at
 FROM ` + from + `
 WHERE ` + strings.Join(where, " AND ") + `
 ORDER BY pl.id DESC
@@ -318,7 +323,7 @@ LIMIT ?`
 		if err := rows.Scan(
 			&r.ID, &r.RequestID, &r.ChannelID, &r.RouteID, &r.RoutePattern, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief, &r.ErrorDetail,
 			&r.DownstreamKeyID, &r.PromptTokens, &r.CompletionTokens, &r.TotalTokens,
-			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.MappedReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, &r.UpstreamRequestID, &r.UpstreamModel, &r.UpstreamURL, &r.KeyFingerprint, scanTime(&r.CreatedAt),
+			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.MappedReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, &r.UpstreamRequestID, &r.UpstreamModel, &r.UpstreamURL, &r.KeyFingerprint, &r.UpstreamKeyID, &r.UpstreamKeyName, scanTime(&r.CreatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("proxylog scan: %w", err)
 		}

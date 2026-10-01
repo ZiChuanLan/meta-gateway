@@ -154,7 +154,7 @@ func (s *Service) DirectChatTest(ctx context.Context, channelID int64, model, pr
 	// Exactly one key, no rotation and no 401 refresh replay: this is a single
 	// synthetic check, and silently walking the pool would make the reported
 	// latency and verdict ambiguous.
-	headers := adapter.AuthHeaders(keys[0])
+	headers := adapter.AuthHeaders(keys[0].Secret)
 	if overrideErr := mergeHeaderOverrides(headers, channel.HeaderOverride); overrideErr != nil {
 		result.Error = "header override: " + overrideErr.Error()
 		return result

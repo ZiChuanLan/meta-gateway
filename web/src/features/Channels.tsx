@@ -139,6 +139,8 @@ export function Channels() {
   // after a close — without this marker it would re-open the drawer and the
   // user would have to close it twice.
   const deepLinkOpened = useRef<number | null>(null);
+  // Same one-shot guard for the ?keys= deep-link (log chain → this channel's keys).
+  const keysDeepLinkOpened = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     channelId: number;
     top: number;
@@ -200,14 +202,31 @@ export function Channels() {
   // below run in the same commit that opens the drawer and re-add the param
   // from the stale searchParams snapshot, and a surviving param would make the
   // deep-link effect re-open the drawer right after this close.
-  const closeModelsDrawer = () => {
-    setModelsChannel(null);
-    if (params.has("channel")) {
-      const next = new URLSearchParams(params);
-      next.delete("channel");
-      setParams(next, { replace: true });
-    }
-  };
+ 	const closeModelsDrawer = () => {
+		setModelsChannel(null);
+		if (params.has("channel")) {
+			const next = new URLSearchParams(params);
+			next.delete("channel");
+			setParams(next, { replace: true });
+		}
+	};
+	// Deep-link from the log page's request chain (?keys=<id>): the chain names
+	// the upstream key that served an attempt, and this is the list that owns it.
+	useEffect(() => {
+		const target = positiveId(params.get("keys"));
+		if (!target || keysChannel?.id === target) return;
+		if (keysDeepLinkOpened.current === target) return;
+		const overview = (overviews.data ?? []).find(
+			(entry) => entry.channel.id === target,
+		)?.channel;
+		if (overview) {
+			keysDeepLinkOpened.current = target;
+			setKeysChannel(overview);
+			const next = new URLSearchParams(params);
+			next.delete("keys");
+			setParams(next, { replace: true });
+		}
+	}, [params, overviews.data, keysChannel, setParams]);
   useEffect(() => {
     const next = params.get("health") as ConnectionHealthFilter | null;
     if (next === "ready" || next === "missing_key" || next === "attention") {
@@ -2027,7 +2046,16 @@ export function Channels() {
             syncKeys.reset();
             syncKeys.mutate(keysChannel.id);
           }}
-          onClose={() => setKeysChannel(null)}
+     					onClose={() => {
+						setKeysChannel(null);
+						// Strip the deep-link param, or the effect re-opens on the next
+						// render with the stale snapshot (same trap as ?channel=).
+						if (params.has("keys")) {
+							const next = new URLSearchParams(params);
+							next.delete("keys");
+							setParams(next, { replace: true });
+						}
+					}}
         />
       ) : null}
       {remove ? (

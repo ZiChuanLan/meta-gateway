@@ -222,6 +222,19 @@ function LogChain({ log, channelName, keyName }: {
 			? log.path
 			: `/v1/${log.path}`
 		: "—";
+	// The upstream key is stored as an id (the secret itself never is), so the
+	// display name comes from the server-side join. Rows written before that
+	// column existed carry only the fingerprint — say so rather than show a
+	// blank hop, which would read as "no key was used".
+	const keyID = log.upstream_key_id ?? 0;
+	const keyLabel = keyID
+		? log.upstream_key_name || `#${keyID}`
+		: log.key_fingerprint || "—";
+	const keyNote = keyID
+		? `#${keyID}`
+		: log.key_fingerprint
+			? t("logsPage.chainKeyFingerprintOnly")
+			: undefined;
 	const steps: Array<{
 		label: string;
 		value: ReactNode;
@@ -255,6 +268,14 @@ function LogChain({ log, channelName, keyName }: {
 			label: t("common.channel"),
 			value: channelName.get(log.channel_id) ?? `#${log.channel_id}`,
 			to: `/channels?id=${log.channel_id}`,
+		},
+		{
+			label: t("logsPage.chainKey"),
+			value: keyLabel,
+			note: keyNote,
+			// Straight to the key list this name came from (?keys= opens that
+			// channel's key drawer on the connections page).
+			to: keyID ? `/channels?keys=${log.channel_id}` : undefined,
 		},
 		{
 			label: t("logsPage.chainUpstream"),

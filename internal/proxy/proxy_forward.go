@@ -549,7 +549,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 					Err:        fmt.Errorf("%w: %s (rule %q)", ErrPayloadFiltered, filter.Reason, filter.Rule),
 				}
 				category = "payload_filter"
-				s.recordAttempt(req, candidate, attempt+1, result, category, "")
+				s.recordAttempt(req, candidate, attempt+1, result, category, "", 0)
 				return result, meta
 			} else {
 				requestSource = out
@@ -582,7 +582,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				Err:        fmt.Errorf("proxy: %s translate: %w", adapter.Name(), translateErr),
 			}
 			category = adapterErrorCategory(translateErr)
-			s.recordAttempt(req, candidate, attempt+1, result, category, "")
+			s.recordAttempt(req, candidate, attempt+1, result, category, "", 0)
 			return result, meta
 		}
 		// Registered N×M translation path: the (protocol → upstream family)
@@ -601,7 +601,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 					StatusCode: http.StatusBadRequest,
 					Err:        fmt.Errorf("proxy: %s translation: %w", translateProto, trErr),
 				}
-				s.recordAttempt(req, candidate, attempt+1, result, "translate", "")
+				s.recordAttempt(req, candidate, attempt+1, result, "translate", "", 0)
 				return result, meta
 			}
 			// Channel-level system prompt injection happens on the translated
@@ -622,7 +622,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			result = &relay.Result{Err: err}
 			category = "invalid_url"
 			result.Err = fmt.Errorf("proxy: %w: %v", adapters.ErrInvalidURL, result.Err)
-			s.recordAttempt(req, candidate, attempt+1, result, category, "")
+			s.recordAttempt(req, candidate, attempt+1, result, category, "", 0)
 			return result, meta
 		}
 		// One model, one upstream endpoint: the caller's own choice (body field or
@@ -633,14 +633,14 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		overridePath, overrideURL, fieldErr := upstreamFields(requestSource, req.Headers)
 		if fieldErr != nil {
 			result = &relay.Result{StatusCode: http.StatusBadRequest, Err: fmt.Errorf("proxy: %w", fieldErr)}
-			s.recordAttempt(req, candidate, attempt+1, result, "invalid_url", "")
+			s.recordAttempt(req, candidate, attempt+1, result, "invalid_url", "", 0)
 			return result, meta
 		}
 		if overridePath != "" || overrideURL != "" {
 			resolved, overrideErr := adapters.EndpointOverrideURL(upstreamURL, overridePath, overrideURL)
 			if overrideErr != nil {
 				result = &relay.Result{StatusCode: http.StatusBadRequest, Err: fmt.Errorf("proxy: %w", overrideErr)}
-				s.recordAttempt(req, candidate, attempt+1, result, "invalid_url", "")
+				s.recordAttempt(req, candidate, attempt+1, result, "invalid_url", "", 0)
 				return result, meta
 			}
 			upstreamURL = resolved
@@ -676,7 +676,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				if outcome.rejected != nil {
 					// A plugin rejection is a deliberate local decision, not an
 					// upstream fault: return it instead of failing over.
-					s.recordAttempt(req, candidate, attempt+1, outcome.rejected, "plugin_reject", "")
+					s.recordAttempt(req, candidate, attempt+1, outcome.rejected, "plugin_reject", "", 0)
 					return outcome.rejected, meta
 				}
 				if outcome.body != nil {
@@ -696,7 +696,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			result = &relay.Result{Err: ErrCredential}
 			category = "no_credential"
 			retryable = true
-			s.recordAttempt(req, candidate, attempt+1, result, category, "")
+			s.recordAttempt(req, candidate, attempt+1, result, category, "", 0)
 			s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
 
 			excludedChannels[candidate.Channel.ID] = struct{}{}
@@ -725,7 +725,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				keyRetries = 0
 			}
 			for keyAttempt := 0; ; keyAttempt++ {
-				headers := adapter.AuthHeaders(apiKey)
+				headers := adapter.AuthHeaders(apiKey.Secret)
 				if headers.Get("Content-Type") == "" && strings.TrimSpace(req.ContentType) != "" {
 					headers.Set("Content-Type", req.ContentType)
 				}
@@ -1069,7 +1069,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				category = "refresh_retry"
 			}
 			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
-				s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey))
+				s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey.Secret), apiKey.CredentialID)
 			}
 			if result.Err == nil && !retryable {
 				break
@@ -1165,7 +1165,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 						result.StatusCode = rule.RewriteTo
 					}
 					category = "error_rule_" + rule.Action
-					s.recordAttempt(req, candidate, attempt+1, result, category, "")
+					s.recordAttempt(req, candidate, attempt+1, result, category, "", 0)
 					log.Printf("proxy: error rule %q passthrough status=%d model=%s channel=%d (request_id=%s)", rule.Name, result.StatusCode, req.Model, candidate.Channel.ID, req.RequestID)
 					return result, meta
 				case store.ErrorRuleIgnoreMonitor:
@@ -1289,7 +1289,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 // credential (kind session/access_token) after an upstream 401, then
 // re-resolves the key pool so the replay uses the refreshed secret. Reports
 // whether the refresh succeeded AND the pool was replaced.
-func (s *Service) refreshCredentialAndReplay(ctx context.Context, candidate *domain.RoutingCandidate, apiKeys *[]string, model string) bool {
+func (s *Service) refreshCredentialAndReplay(ctx context.Context, candidate *domain.RoutingCandidate, apiKeys *[]upstreamKey, model string) bool {
 	if candidate == nil || candidate.Channel.CredentialID == nil || *candidate.Channel.CredentialID <= 0 {
 		return false
 	}

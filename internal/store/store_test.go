@@ -182,17 +182,20 @@ func TestDownstreamKeyByHash(t *testing.T) {
 
 func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	db := openTestDB(t)
+	// Keep this in step with the newest NNN_*.sql file: it is the tripwire that
+	// catches a migration that silently failed to apply (or applied twice).
+	const wantMigrations = 108
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 107 {
-		t.Fatalf("got %d applied migrations, want 107", count)
+	if count != wantMigrations {
+		t.Fatalf("got %d applied migrations, want %d", count, wantMigrations)
 	}
 	if err := store.Migrate(db.DB); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != 107 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil || count != wantMigrations {
 		t.Fatalf("migration history after rerun: count=%d err=%v", count, err)
 	}
 }
