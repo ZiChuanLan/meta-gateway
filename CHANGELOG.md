@@ -4,6 +4,17 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.8.4] — 2026-10-01
+
+### Fixed
+
+- **手机上日志展开区被屏幕截断**（`web/src/styles.css`）。展开行在表格单元格里，而该单元格是按内容撑宽的：
+  横向链路在手机上直接被屏幕边缘剪掉，明细卡也得左右拖动表格才看得全。现在 ≤720px 时链路改为**纵向堆叠**
+  （箭头转为向下）、各块按**视口宽度**封顶（不能用百分比：单元格是内容撑宽的，% 会把整张表继续撑大），
+  明细变单列左对齐。实测手机宽度下链路块 346px、明细 346px、路由决策 268px，均完整落在首屏可见区内。
+  顺手修两个层叠陷阱：媒体查询必须放在基础规则**之后**（同优先级后者胜，之前放在前面等于没生效）；
+  以及卡片在横排时的 `flex-basis: 340–380px` 在纵向容器里会变成**高度**，把明细卡与路由决策卡撑出大片空白。
+
 ## [v3.8.3] — 2026-10-01
 
 ### Fixed
