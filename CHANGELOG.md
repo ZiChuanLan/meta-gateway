@@ -4,6 +4,34 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.8.2] — 2026-10-01
+
+### Fixed
+
+- **日志页延迟列只剩一条无解释的灰线**（`web/src/styles.css`、`web/src/themes/classic/theme.css`）。延迟条的填充
+  span 是 `position:absolute` 而**没有 width**：绝对定位元素没有显式宽度就收缩成 0px，`transform: scaleX(…)`
+  缩放一个 0 宽的盒子永远是 0——填充从未被绘制，只剩下 44×4 的空轨道，看上去就是「延迟数字前面多出一横」。
+  现在填充显式 `width:100%`（基础样式与 classic 包各一处），并且条本身带悬停说明：0–10 秒刻度、本行毫秒与
+  占比、1 秒以上转橙、5 秒以上转红。实测填充宽度 403ms → 3×4px、1406ms → 6×4px（修复前恒为 0）。
+- **筛选无结果时谎称「还没有代理流量」**（`web/src/features/Logs.tsx`）。日志确实存在，只是不满足当前筛选；
+  现在区分「真没流量」与「筛选没命中」，后者说明原因并给出「清除筛选」。
+- **`proxy_logs` 列表不返回上游密钥指纹**（`internal/store/proxylog.go`）。`key_fingerprint` 一直在写库
+  （sha256 前缀，从不是密钥本身），但列表投影没带上它，排查「这次用的是哪个上游 Key」只能去数据库里翻。
+- **`web/src/api/types.ts` 缺 `mapped_reasoning_effort`**：后端已下发该字段（能力降档记录，如 `max→high`），
+  前端类型里没有，新代码一读就被 `tsc` 拦下。
+
+### Added
+
+- **日志页按令牌筛选**（`internal/store/proxylog.go`、`internal/httpapi/admin.go`、`web/src/features/Logs.tsx`）。
+  `store.ProxyLogFilter` 新增 `DownstreamKeyID`，接口新增 `GET /admin/proxy-logs?downstream_key_id=`，控制台
+  「精确筛选」里多一个令牌下拉（选项来自令牌列表，选中即写 URL，随「清除筛选」一起清空）。若 URL 指向已经不存在的
+  令牌，下拉会明确显示「已删除的令牌 #N」而不是静默回落成「全部」——否则列表看起来就是「全部令牌」却没有应有的行。
+- **日志展开区改为「链路 + 明细」**（`web/src/features/Logs.tsx`）。链路把一次请求从**令牌**（名称 + #id）→
+  **入口**（`/v1/…`，`proxy_logs.path` 存的是中继端点相对名，入口补回 `/v1/`）→ **路由** → **通道** →
+  **上游地址**（实际打到的 URL）逐跳排开，每跳链到对应对象；明细补上折叠行没地方放的字段：上游请求 ID、会话、
+  推理档改写、输入/输出、缓存读/写、首字节、吞吐（tok/s）、价格、上游密钥指纹。展开区三块（上游返回 / 明细 /
+  路由决策）现在同款卡片框，视觉同级；失败尝试不再显示「输入 / 输出 0 / 0」这种像「零 token 回答」的噪音。
+
 ## [v3.8.1] — 2026-09-29
 
 ### Fixed
