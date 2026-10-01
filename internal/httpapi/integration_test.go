@@ -697,20 +697,33 @@ func TestProxyLogsListFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Two tokens so the filter has something to separate: one that spent
+	// requests on site A, one that never appears in a log row.
+	clientKey, err := db.DownstreamKey.Create(&domain.DownstreamKey{Name: "cli", Enabled: true, TokenHash: "hash-cli"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idleKey, err := db.DownstreamKey.Create(&domain.DownstreamKey{Name: "idle", Enabled: true, TokenHash: "hash-idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = idleKey
 	seed := []struct {
 		req, model string
 		channel    int64
 		status     int
+		keyID      int64
 	}{
-		{"req-a-ok", "gpt-a", chA, 200},
-		{"req-a-fail", "gpt-a", chA, 502},
-		{"req-b-ok", "gpt-b", chB, 200},
-		{"req-b-fail", "gpt-other", chB, 500},
+		{"req-a-ok", "gpt-a", chA, 200, clientKey},
+		{"req-a-fail", "gpt-a", chA, 502, clientKey},
+		{"req-b-ok", "gpt-b", chB, 200, 0},
+		{"req-b-fail", "gpt-other", chB, 500, 0},
 	}
 	for _, row := range seed {
 		if _, err := db.ProxyLog.Insert(&domain.ProxyLog{
 			RequestID: row.req, ChannelID: row.channel, Model: row.model,
 			Status: row.status, LatencyMs: 5, Attempt: 1,
+			DownstreamKeyID: row.keyID,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -763,6 +776,28 @@ func TestProxyLogsListFilters(t *testing.T) {
 		t.Fatalf("channel filter got %v", got)
 	}
 
+	// A token filter must narrow to that token's rows only — rows with no key
+	// (0) must never ride along.
+	status, logs, body = getLogs(fmt.Sprintf("/admin/proxy-logs?downstream_key_id=%d", clientKey))
+	if status != http.StatusOK {
+		t.Fatalf("key filter status=%d body=%s", status, body)
+	}
+	if got := requestIDs(logs); strings.Join(got, ",") != "req-a-fail,req-a-ok" {
+		t.Fatalf("key filter got %v", got)
+	}
+	for _, entry := range logs {
+		if asInt64(t, entry["downstream_key_id"]) != clientKey {
+			t.Fatalf("key filter leaked row %#v", entry)
+		}
+	}
+	status, logs, body = getLogs(fmt.Sprintf("/admin/proxy-logs?downstream_key_id=%d", idleKey))
+	if status != http.StatusOK {
+		t.Fatalf("idle key filter status=%d body=%s", status, body)
+	}
+	if len(logs) != 0 {
+		t.Fatalf("idle key matched %v", requestIDs(logs))
+	}
+
 	status, logs, body = getLogs("/admin/proxy-logs?model=gpt-a")
 	if status != http.StatusOK {
 		t.Fatalf("model filter status=%d body=%s", status, body)
@@ -798,6 +833,8 @@ func TestProxyLogsListFilters(t *testing.T) {
 	for _, badPath := range []string{
 		"/admin/proxy-logs?site_id=0",
 		"/admin/proxy-logs?channel_id=abc",
+		"/admin/proxy-logs?downstream_key_id=abc",
+		"/admin/proxy-logs?downstream_key_id=0",
 		"/admin/proxy-logs?before_id=-1",
 		"/admin/proxy-logs?status=banana",
 		"/admin/proxy-logs?limit=0",

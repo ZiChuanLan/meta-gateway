@@ -64,7 +64,7 @@ describe("ApiClient", () => {
 });
 
 describe("api.proxyLogs filters", () => {
-	it("builds query string for site/channel/model/status filters", async () => {
+	it("builds query string for site/channel/key/model/status filters", async () => {
 		const fetchMock = vi
 			.spyOn(globalThis, "fetch")
 			.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
@@ -72,12 +72,13 @@ describe("api.proxyLogs filters", () => {
 		await api(new ApiClient("token")).proxyLogs({
 			site_id: 7,
 			channel_id: 42,
+			downstream_key_id: 9,
 			model: "gpt-test",
 			status: "failed",
 			limit: 50,
 		});
 		expect(String(fetchMock.mock.calls[0]![0])).toBe(
-			"/admin/proxy-logs?site_id=7&channel_id=42&model=gpt-test&status=failed&limit=50",
+			"/admin/proxy-logs?site_id=7&channel_id=42&downstream_key_id=9&model=gpt-test&status=failed&limit=50",
 		);
 	});
 

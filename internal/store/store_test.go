@@ -1589,6 +1589,39 @@ func TestProxyLogListFilter(t *testing.T) {
 		t.Fatalf("unrouted log got pattern %q, want empty", unrouted[0].RoutePattern)
 	}
 
+	// Client-token filter: the one dimension that answers "who spent this".
+	// The upstream key fingerprint rides along on the same row, because a
+	// token filter is usually the first step of "which credential served it".
+	keyID, err := db.DownstreamKey.Create(&domain.DownstreamKey{Name: "cli-token", Enabled: true})
+	if err != nil {
+		t.Fatalf("downstream key: %v", err)
+	}
+	idKey, err := db.ProxyLog.Insert(&domain.ProxyLog{
+		RequestID: "req-key", ChannelID: chA, Model: "gpt-a",
+		Status: 200, LatencyMs: 12, Attempt: 1,
+		DownstreamKeyID: keyID, KeyFingerprint: "9f2c41ab77de0088",
+	})
+	if err != nil {
+		t.Fatalf("key log insert: %v", err)
+	}
+	// Rows written without a token (0) must not be swept up by a key filter.
+	keyLogs, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{DownstreamKeyID: &keyID, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	containsOnly(mustIDs(keyLogs), idKey)
+	if keyLogs[0].DownstreamKeyID != keyID || keyLogs[0].KeyFingerprint != "9f2c41ab77de0088" {
+		t.Fatalf("key projection got id=%d fp=%q, want %d / 9f2c41ab77de0088", keyLogs[0].DownstreamKeyID, keyLogs[0].KeyFingerprint, keyID)
+	}
+	missingKey := keyID + 999
+	noneForKey, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{DownstreamKeyID: &missingKey, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(noneForKey) != 0 {
+		t.Fatalf("unknown key matched %v", mustIDs(noneForKey))
+	}
+
 	// Site + channel AND: channel on other site yields empty.
 	empty, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{SiteID: &siteA, ChannelID: &chB, Limit: 100})
 	if err != nil {

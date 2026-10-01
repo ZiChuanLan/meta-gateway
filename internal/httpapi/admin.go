@@ -326,6 +326,12 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Which client token made the call: the one dimension that answers "who
+	// spent this", and the only one that cannot be derived from the row.
+	downstreamKeyID, ok := optionalPositiveQueryID(w, query.Get("downstream_key_id"), "downstream_key_id")
+	if !ok {
+		return
+	}
 	model := strings.TrimSpace(query.Get("model"))
 	upstreamRequestID := strings.TrimSpace(query.Get("upstream_request_id"))
 	var status *int
@@ -349,6 +355,7 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 	logs, err := h.db.ProxyLog.ListFilter(store.ProxyLogFilter{
 		SiteID:            siteID,
 		ChannelID:         channelID,
+		DownstreamKeyID:   downstreamKeyID,
 		Model:             model,
 		Status:            status,
 		FailedOnly:        failedOnly,

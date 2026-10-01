@@ -5789,6 +5789,18 @@ td.actions {
   gap: 16px;
   flex-wrap: wrap;
 }
+/* Every block in the expansion is a card — the upstream excerpt, the detail
+   sheet and the routing decision read as peers, instead of two cards plus one
+   floating list. */
+.log-expand-grid > .log-decision {
+  flex: 1 1 340px;
+  min-width: 280px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  padding: 9px 12px;
+}
 .log-error-detail {
   flex: 0 1 420px;
   min-width: 260px;
@@ -9883,6 +9895,8 @@ label.check input[type="checkbox"] {
   height: 4px;
   margin-right: 8px;
   vertical-align: middle;
+  /* A scale, not a rule: without the fill below, all this track showed was a
+     grey dash in front of the number. */
   background: var(--surface-hover);
   overflow: hidden;
   position: relative;
@@ -9892,12 +9906,111 @@ label.check input[type="checkbox"] {
   left: 0;
   top: 0;
   bottom: 0;
+  /* Absolutely positioned with no width, the empty span measured 0px wide —
+     scaleX() then scaled nothing, so the fill never painted and the bar
+     degraded to its empty grey track. */
+  width: 100%;
   background: var(--primary-active);
   transform-origin: left;
   transition: transform var(--dur-hover) var(--ease-hover);
 }
 .log-latency-bar > span.is-warn { background: var(--warning); }
 .log-latency-bar > span.is-slow { background: var(--danger); }
+
+/* Expanded log row: the request chain (client token → ingress → route →
+   channel → upstream) sits above the forensics, because "who called and where
+   did it go" is asked before "how did it go". */
+.log-expand {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.log-chain {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  padding: 9px 12px;
+}
+.log-chain-head,
+.log-details-head {
+  font-size: 12px;
+}
+.log-chain-steps {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.log-chain-step {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  max-width: 300px;
+  padding: 5px 9px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+/* The upstream hop carries a full URL; it gets the widest slot. */
+.log-chain-step:last-child { max-width: 460px; }
+.log-chain-label {
+  font-size: 9px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.log-chain-value {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink);
+}
+.log-chain-value code { font-size: 11px; }
+a.log-chain-value { color: var(--primary-active); }
+a.log-chain-value:hover { text-decoration: underline; }
+.log-chain-note {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--muted);
+}
+.log-chain-arrow {
+  align-self: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.log-details {
+  flex: 0 1 380px;
+  min-width: 260px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  padding: 9px 12px;
+}
+.log-details-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 14px;
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.log-details-grid dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+.log-details-grid dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.log-details-grid code { font-size: 11px; }
 
 /* ============================================================
    V2 — External check-in site card matrix

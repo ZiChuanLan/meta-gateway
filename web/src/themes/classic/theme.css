@@ -8463,6 +8463,10 @@
   gap: 16px;
   flex-wrap: wrap;
 }
+/* Same card frame as the base rule; classic only owns the padding. */
+:root[data-appearance="classic"] .log-expand-grid > .log-decision {
+  padding: 9px 12px;
+}
 :root[data-appearance="classic"] .log-error-detail {
   flex: 0 1 420px;
   min-width: 260px;
@@ -13146,6 +13150,9 @@
   left: 0;
   top: 0;
   bottom: 0;
+  /* Same zero-width fill bug as the base rule: without an explicit width the
+     empty span scaled nothing and only the grey track remained. */
+  width: 100%;
   background: var(--primary-active);
   transform-origin: left;
   transition: transform var(--dur-hover) var(--ease-hover);

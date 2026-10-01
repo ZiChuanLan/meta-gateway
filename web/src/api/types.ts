@@ -288,11 +288,23 @@ export interface ProxyLog {
   first_byte_ms?: number;
   client_family?: string;
   reasoning_effort?: string;
+  /**
+   * Set when a capability downgrade rewrote the requested effort before
+   * forwarding (e.g. "high" for a client that asked for "max"). Empty when the
+   * request went upstream unchanged.
+   */
+  mapped_reasoning_effort?: string;
   tokens_per_second?: number;
   stream?: boolean;
   path?: string;
   session_key?: string;
   upstream_request_id?: string;
+  /**
+   * sha256 prefix of the upstream credential that served the attempt, never
+   * the key itself. Two attempts sharing it were served by the same upstream
+   * key, which is how a channel with a key pool is audited row by row.
+   */
+  key_fingerprint?: string;
   /**
    * The model name this attempt actually sent upstream. Differs from `model`
    * when the route/member rewrote the alias via a `{"real":"…"}` mapping —

@@ -21,8 +21,12 @@ type ProxyLogStore struct {
 // Status, when set, matches exactly. FailedOnly selects status >= 400
 // and is ignored when Status is set.
 type ProxyLogFilter struct {
-	SiteID            *int64
-	ChannelID         *int64
+	SiteID    *int64
+	ChannelID *int64
+	// DownstreamKeyID selects one client token. Rows written before the
+	// column existed (or rejected before authentication) carry 0 and are
+	// never matched by a key filter.
+	DownstreamKeyID   *int64
 	Model             string
 	Status            *int
 	FailedOnly        bool
@@ -240,6 +244,10 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 		where = append(where, "pl.channel_id = ?")
 		args = append(args, *f.ChannelID)
 	}
+	if f.DownstreamKeyID != nil {
+		where = append(where, "pl.downstream_key_id = ?")
+		args = append(args, *f.DownstreamKeyID)
+	}
 	if model := strings.TrimSpace(f.Model); model != "" {
 		where = append(where, "pl.model = ?")
 		args = append(args, model)
@@ -291,7 +299,7 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 
 	query := `SELECT pl.id, pl.request_id, pl.channel_id, pl.route_id, COALESCE(rt.model_pattern, ''), pl.model, pl.status, pl.latency_ms, pl.attempt, pl.error_brief, pl.error_detail,
 		pl.downstream_key_id, pl.prompt_tokens, pl.completion_tokens, pl.total_tokens,
-		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.mapped_reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.upstream_request_id, COALESCE(pl.upstream_model, ''), COALESCE(pl.upstream_url, ''), pl.created_at
+		pl.cache_read_tokens, pl.cache_creation_tokens, pl.first_byte_ms, pl.client_family, pl.reasoning_effort, pl.mapped_reasoning_effort, pl.tokens_per_second, pl.stream, pl.path, pl.session_key, pl.upstream_request_id, COALESCE(pl.upstream_model, ''), COALESCE(pl.upstream_url, ''), COALESCE(pl.key_fingerprint, ''), pl.created_at
 FROM ` + from + `
 WHERE ` + strings.Join(where, " AND ") + `
 ORDER BY pl.id DESC
@@ -310,7 +318,7 @@ LIMIT ?`
 		if err := rows.Scan(
 			&r.ID, &r.RequestID, &r.ChannelID, &r.RouteID, &r.RoutePattern, &r.Model, &r.Status, &r.LatencyMs, &r.Attempt, &r.ErrorBrief, &r.ErrorDetail,
 			&r.DownstreamKeyID, &r.PromptTokens, &r.CompletionTokens, &r.TotalTokens,
-			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.MappedReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, &r.UpstreamRequestID, &r.UpstreamModel, &r.UpstreamURL, scanTime(&r.CreatedAt),
+			&r.CacheReadTokens, &r.CacheCreationTokens, &r.FirstByteMs, &r.ClientFamily, &r.ReasoningEffort, &r.MappedReasoningEffort, &r.TokensPerSecond, &stream, &r.Path, &r.SessionKey, &r.UpstreamRequestID, &r.UpstreamModel, &r.UpstreamURL, &r.KeyFingerprint, scanTime(&r.CreatedAt),
 		); err != nil {
 			return nil, fmt.Errorf("proxylog scan: %w", err)
 		}

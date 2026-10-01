@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { I18nProvider } from "../i18n";
@@ -26,6 +26,13 @@ function renderLogs(initialEntry = "/logs", rows?: unknown[]) {
       body = rows ?? [
         { id: 2, request_id: "req-fast", model: "fast-model", status: 200, latency_ms: 100, attempt: 1 },
         { id: 1, request_id: "req-slow", model: "slow-model", status: 502, latency_ms: 6000, attempt: 1 },
+      ];
+    } else if (url.pathname === "/admin/downstream-keys") {
+      // The log page resolves downstream_key_id → name for both the token
+      // filter and the expanded row's chain.
+      body = [
+        { id: 9, name: "cli-token", enabled: true, created_at: "2026-09-01T00:00:00Z" },
+        { id: 4, name: "web-app", enabled: true, created_at: "2026-09-01T00:00:00Z" },
       ];
     } else if (url.pathname.endsWith("/latency-histogram")) {
       histogramRequests.push(url.searchParams);
@@ -96,6 +103,26 @@ describe("proxy log filters", () => {
     expect(screen.getByRole("button", { name: "Clear filters" })).toBeInTheDocument();
   });
 
+  // "Which token made this call" is the one dimension the row cannot imply:
+  // the id is logged, the name is not, so both the filter and the expanded row
+  // read it back from the token list.
+  it("filters the list by client token and clears it again", async () => {
+    const { requests } = renderLogs();
+    await screen.findByText("fast-model");
+    fireEvent.click(screen.getByRole("button", { name: "Exact filters" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Token" }), { target: { value: "9" } });
+    await waitFor(() => expect(requests.at(-1)!.get("downstream_key_id")).toBe("9"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(requests.at(-1)!.get("downstream_key_id")).toBeNull());
+    expect(screen.getByRole("combobox", { name: "Token" })).toHaveValue("0");
+  });
+
+  it("opens the exact filters when the URL already carries a token filter", async () => {
+    renderLogs("/logs?downstream_key_id=9");
+    await screen.findByText("fast-model");
+    expect(screen.getByRole("combobox", { name: "Token" })).toHaveValue("9");
+  });
+
   it("updates drafts when a link navigates to different log filters", async () => {
     renderLogs("/logs?model=old");
     await screen.findByText("fast-model");
@@ -103,6 +130,85 @@ describe("proxy log filters", () => {
     expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("gpt-image-2");
     expect(screen.getByRole("textbox", { name: "Search model, error, path, request ID" })).toHaveValue("req-image");
     expect(screen.getByRole("textbox", { name: "Upstream request ID" })).toHaveValue("up-image");
+  });
+});
+
+describe("log row drill-down", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  // A row answers "what happened"; the operator still has to ask "for whom,
+  // through what, and to which endpoint". The expansion carries that chain plus
+  // the forensics the collapsed row has no room for.
+  it("expands into the request chain and the row's details", async () => {
+    renderLogs("/logs", [
+      {
+        id: 5, request_id: "req-chain", model: "gpt-5", status: 200, latency_ms: 1472,
+        attempt: 2, channel_id: 3, route_id: 7, route_pattern: "gpt-*",
+        path: "chat/completions", client_family: "claude-cli", stream: true,
+        first_byte_ms: 300, downstream_key_id: 9, session_key: "sess-1",
+        upstream_url: "https://up.example.com/v1/chat/completions",
+        upstream_model: "gpt-5-real", upstream_request_id: "up-777",
+        key_fingerprint: "9f2c41ab77de0088", tokens_per_second: 42.5,
+        prompt_tokens: 100, completion_tokens: 20, total_tokens: 120,
+        reasoning_effort: "max", mapped_reasoning_effort: "high",
+        created_at: "2026-09-30T10:00:00Z",
+      },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-5"));
+
+    expect(await screen.findByText("Request chain")).toBeInTheDocument();
+    // Scoped to the chain: the token filter select carries the same name as an
+    // <option>, and the collapsed row is still on screen.
+    const chain = document.querySelector(".log-chain") as HTMLElement;
+    const details = document.querySelector(".log-details") as HTMLElement;
+    // Token id → name, read back from the token list.
+    expect(within(chain).getByText("cli-token")).toBeInTheDocument();
+    // The hop is a link to the token, through the Keys page's search box —
+    // that page has no per-row detail view to link to.
+    expect(within(chain).getByRole("link", { name: "cli-token" })).toHaveAttribute(
+      "href",
+      "/keys?search=cli-token",
+    );
+    // The stored path is the relay's endpoint name; the client's ingress path
+    // has the /v1 prefix it is mounted under.
+    expect(within(chain).getByText("/v1/chat/completions")).toBeInTheDocument();
+    expect(within(chain).getByText("https://up.example.com/v1/chat/completions")).toBeInTheDocument();
+    // Details: what the upstream called it, what it cost, which key served it.
+    expect(within(details).getByText("up-777")).toBeInTheDocument();
+    expect(within(details).getByText("42.5 tok/s")).toBeInTheDocument();
+    expect(within(details).getByText("9f2c41ab77de0088")).toBeInTheDocument();
+    expect(within(details).getByText("max → high")).toBeInTheDocument();
+    expect(within(details).getByText("100 / 20")).toBeInTheDocument();
+  });
+
+  // The bare grey bar in front of the number was an unreadable scale: the
+  // tooltip has to say what it measures and what the colours mean.
+  it("explains the latency bar on hover", async () => {
+    renderLogs("/logs", [
+      { id: 5, request_id: "req-bar", model: "gpt-5", status: 200, latency_ms: 1472, attempt: 1, channel_id: 3 },
+    ]);
+    await screen.findByText("gpt-5");
+    expect(
+      screen.getByTitle("The bar scales 0–10s: this row is 1472 ms (15%). Amber past 1s, red past 5s."),
+    ).toBeInTheDocument();
+  });
+
+  // A failed attempt meters no tokens: "0 / 0" would read like a model that
+  // answered with none, so the split stays out of the sheet.
+  it("omits the token split for an attempt that metered nothing", async () => {
+    renderLogs("/logs", [
+      { id: 6, request_id: "req-fail", model: "gpt-5", status: 503, latency_ms: 403, attempt: 1, channel_id: 3, error_detail: '{"error":"busy"}' },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-5"));
+    await screen.findByText("Details");
+    expect(screen.queryByText("0 / 0")).not.toBeInTheDocument();
+    expect(screen.getByText("{\"error\":\"busy\"}")).toBeInTheDocument();
   });
 });
 

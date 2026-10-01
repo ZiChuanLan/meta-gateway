@@ -6,10 +6,11 @@ import {
   Download,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useMemo, useEffect, useState } from "react";
+import { Fragment, useMemo, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuditPanel, DiscoveryPanel } from "./ops";
 import { api } from "../api/client";
+import type { ProxyLog } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -160,6 +161,218 @@ function DecisionSnapshotView({
 	);
 }
 
+/**
+ * Latency bar fill as a fraction of a 0–10s scale, floored at 6% so a fast
+ * attempt still draws a visible nub instead of an empty track.
+ */
+function latencyShare(latencyMs: number): number {
+	return Math.min(1, Math.max(0.06, latencyMs / 10000));
+}
+
+/** One hop of the chain; `to` turns the value into a link to its owner. */
+function ChainStep({ label, value, note, to }: {
+	label: string;
+	value: ReactNode;
+	note?: ReactNode;
+	to?: string;
+}) {
+	return (
+		<div className="log-chain-step">
+			<span className="log-chain-label">{label}</span>
+			{to ? (
+				<Link className="log-chain-value" to={to}>
+					{value}
+				</Link>
+			) : (
+				<span className="log-chain-value">{value}</span>
+			)}
+			{note ? <span className="log-chain-note">{note}</span> : null}
+		</div>
+	);
+}
+
+/**
+ * The request chain, reconstructed after the fact: client token → ingress path
+ * → route → channel → upstream URL. Every hop links to the object that owns it,
+ * because "which token was this and where did it go" is the first question
+ * about a row the operator does not recognise.
+ */
+function LogChain({ log, channelName, keyName }: {
+	log: ProxyLog;
+	channelName: Map<number, string>;
+	keyName: Map<number, string>;
+}) {
+	const { t } = useI18n();
+	const knownTokenName = log.downstream_key_id
+		? keyName.get(log.downstream_key_id)
+		: undefined;
+	const tokenLabel = knownTokenName ??
+		(log.downstream_key_id ? `#${log.downstream_key_id}` : null);
+	const ingressNote = [
+		log.client_family,
+		log.stream ? t("logsPage.chainStream") : null,
+	]
+		.filter(Boolean)
+		.join(" · ");
+	// proxy_logs.path stores the endpoint relative to the API root (the relay's
+	// own name for it, e.g. "chat/completions"); the client's ingress path has
+	// the /v1 prefix the relay is mounted under.
+	const ingressPath = log.path
+		? log.path.startsWith("/")
+			? log.path
+			: `/v1/${log.path}`
+		: "—";
+	const steps: Array<{
+		label: string;
+		value: ReactNode;
+		note?: ReactNode;
+		to?: string;
+	}> = [
+		{
+			label: t("logsPage.token"),
+			value: tokenLabel ?? t("logsPage.chainNoToken"),
+			note: log.downstream_key_id ? `#${log.downstream_key_id}` : undefined,
+			// The Keys page has no per-row detail view; its search box is the
+			// only way to land on one token, so the hop links there by name.
+			to: knownTokenName
+				? `/keys?search=${encodeURIComponent(knownTokenName)}`
+				: undefined,
+		},
+		{
+			label: t("logsPage.chainIngress"),
+			value: <code>{ingressPath}</code>,
+			note: ingressNote || undefined,
+		},
+		{
+			label: t("common.route"),
+			value: log.route_id ? `#${log.route_id}` : "—",
+			note: log.route_pattern || t("logsPage.chainUnrouted"),
+			to: log.route_id
+				? `/models?model=${encodeURIComponent(log.route_pattern ?? "")}`
+				: undefined,
+		},
+		{
+			label: t("common.channel"),
+			value: channelName.get(log.channel_id) ?? `#${log.channel_id}`,
+			to: `/channels?id=${log.channel_id}`,
+		},
+		{
+			label: t("logsPage.chainUpstream"),
+			value: (
+				<code title={log.upstream_url || undefined}>
+					{log.upstream_url || "—"}
+				</code>
+			),
+			note: t("logsPage.chainAttempt", { n: log.attempt }),
+		},
+	];
+	return (
+		<div className="log-chain">
+			<strong className="log-chain-head">{t("logsPage.chainTitle")}</strong>
+			<div className="log-chain-steps">
+				{steps.map((step, index) => (
+					<Fragment key={step.label}>
+						{index > 0 ? (
+							<span className="log-chain-arrow" aria-hidden="true">
+								→
+							</span>
+						) : null}
+						<ChainStep {...step} />
+					</Fragment>
+				))}
+			</div>
+		</div>
+	);
+}
+
+/**
+ * The rest of the row's forensics, in the order they get asked about: what the
+ * upstream called this (ids), what was sent (effort, session), and what it cost
+ * (token split, cache, speed, price, the credential that served it). Nothing
+ * already visible in the collapsed row is repeated.
+ */
+function LogDetails({ log }: { log: ProxyLog }) {
+	const { t } = useI18n();
+	const items: Array<{ label: string; value: ReactNode }> = [];
+	if (log.upstream_request_id) {
+		items.push({
+			label: t("logsPage.upstreamRequestId"),
+			value: <code>{log.upstream_request_id}</code>,
+		});
+	}
+	if (log.reasoning_effort) {
+		items.push({
+			label: t("logsPage.reasoningEffort"),
+			value: (
+				<code>
+					{log.reasoning_effort}
+					{log.mapped_reasoning_effort
+						? ` → ${log.mapped_reasoning_effort}`
+						: ""}
+				</code>
+			),
+		});
+	}
+	if (log.session_key) {
+		items.push({
+			label: t("logsPage.detail.session"),
+			value: <code>{log.session_key}</code>,
+		});
+	}
+	// A failed attempt meters nothing; "0 / 0" would read like a model that
+	// answered with no tokens, so the split only appears when it means something.
+	if (log.prompt_tokens || log.completion_tokens) {
+		items.push({
+			label: t("logsPage.detail.tokenSplit"),
+			value: `${log.prompt_tokens ?? 0} / ${log.completion_tokens ?? 0}`,
+		});
+	}
+	if (log.cache_read_tokens || log.cache_creation_tokens) {
+		items.push({
+			label: t("common.cacheTokens"),
+			value: `${log.cache_read_tokens ?? 0} / ${log.cache_creation_tokens ?? 0}`,
+		});
+	}
+	if (log.stream && log.first_byte_ms) {
+		items.push({
+			label: t("common.firstByte"),
+			value: t("common.ms", { n: log.first_byte_ms }),
+		});
+	}
+	if (log.tokens_per_second) {
+		items.push({
+			label: t("logsPage.throughput"),
+			value: `${log.tokens_per_second.toFixed(1)} tok/s`,
+		});
+	}
+	if (log.cost != null) {
+		items.push({ label: t("common.cost"), value: formatCost(log.cost) });
+	}
+	if (log.key_fingerprint) {
+		items.push({
+			label: t("logsPage.detail.keyFingerprint"),
+			value: (
+				<code title={t("logsPage.detail.keyFingerprintHint")}>
+					{log.key_fingerprint}
+				</code>
+			),
+		});
+	}
+	return (
+		<div className="log-details">
+			<strong className="log-details-head">{t("logsPage.detailTitle")}</strong>
+			<dl className="log-details-grid">
+				{items.map((item) => (
+					<Fragment key={item.label}>
+						<dt>{item.label}</dt>
+						<dd>{item.value}</dd>
+					</Fragment>
+				))}
+			</dl>
+		</div>
+	);
+}
+
 function ProxyLogsPanel() {
   const { client } = useSession();
   const { t } = useI18n();
@@ -169,23 +382,25 @@ function ProxyLogsPanel() {
 	const modelParam = params.get("model")?.trim() || "";
 	const failedOnly = params.get("status") === "failed";
 	const upstreamIdParam = params.get("upstream_request_id")?.trim() || "";
+	const keyIdParam = positiveId(params.get("downstream_key_id"));
 	const [modelDraft, setModelDraft] = useState(modelParam);
 	const [upstreamIdDraft, setUpstreamIdDraft] = useState(upstreamIdParam);
 	const queryParam = params.get("q")?.trim() || "";
 	const [queryDraft, setQueryDraft] = useState(queryParam);
 	const [slowOnly, setSlowOnly] = useState(false);
-  const [showExactFilters, setShowExactFilters] = useState(Boolean(modelParam || upstreamIdParam));
+  const [showExactFilters, setShowExactFilters] = useState(Boolean(modelParam || upstreamIdParam || keyIdParam));
 	const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
 	useEffect(() => setModelDraft(modelParam), [modelParam]);
 	useEffect(() => setUpstreamIdDraft(upstreamIdParam), [upstreamIdParam]);
 	useEffect(() => setQueryDraft(queryParam), [queryParam]);
-	const hasFilters = Boolean(channelId || modelParam || upstreamIdParam || queryParam || modelDraft || upstreamIdDraft || queryDraft || failedOnly || slowOnly);
+	const hasFilters = Boolean(channelId || keyIdParam || modelParam || upstreamIdParam || queryParam || modelDraft || upstreamIdDraft || queryDraft || failedOnly || slowOnly);
   const range = useUrlTimeRange(params, setParams);
   const sample = histogramSample(Boolean(range.since || range.until));
 
 	const filters = useMemo(
 		() => ({
 			channel_id: channelId,
+			downstream_key_id: keyIdParam,
 			model: modelParam || undefined,
 			status: failedOnly ? ("failed" as const) : undefined,
 			upstream_request_id: upstreamIdParam || undefined,
@@ -194,7 +409,7 @@ function ProxyLogsPanel() {
 			until: range.until,
 			limit: 100,
 		}),
-		[channelId, failedOnly, modelParam, upstreamIdParam, queryParam, range.since, range.until],
+		[channelId, keyIdParam, failedOnly, modelParam, upstreamIdParam, queryParam, range.since, range.until],
 	);
 
   const logs = useQuery({
@@ -222,6 +437,19 @@ function ProxyLogsPanel() {
     }
     return map;
   }, [channels.data]);
+  // Client tokens: a log row stores the id, so both the filter label and the
+  // expanded "which token was this" line need the name from the token list.
+  const keys = useQuery({
+    queryKey: ["keys"],
+    queryFn: ({ signal }) => service.keys(signal),
+  });
+  const keyName = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const key of keys.data ?? []) {
+      map.set(key.id, key.name);
+    }
+    return map;
+  }, [keys.data]);
 
   const rows = logs.data ?? [];
   const pagination = useClientPagination(
@@ -250,14 +478,31 @@ function ProxyLogsPanel() {
     return t(`logsPage.errorClass.${cls}`);
   };
 
-  const setFilter = (patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(params);
-    for (const [key, value] of Object.entries(patch)) {
-      if (value == null || value === "") next.delete(key);
-      else next.set(key, value);
-    }
-    setParams(next, { replace: true });
-  };
+ 	const setFilter = (patch: Record<string, string | null>) => {
+		const next = new URLSearchParams(params);
+		for (const [key, value] of Object.entries(patch)) {
+			if (value == null || value === "") next.delete(key);
+			else next.set(key, value);
+		}
+		setParams(next, { replace: true });
+	};
+
+	// One definition for both entry points (the Clear button and the
+	// filtered-empty state), so the two can never drift apart.
+	const clearFilters = () => {
+		setModelDraft("");
+		setUpstreamIdDraft("");
+		setQueryDraft("");
+		setSlowOnly(false);
+		setFilter({
+			channel_id: null,
+			downstream_key_id: null,
+			model: null,
+			status: null,
+			upstream_request_id: null,
+			q: null,
+		});
+	};
 
   const histogramData = histogram.data;
   const sampled = histogramData?.total ?? 0;
@@ -501,20 +746,8 @@ function ProxyLogsPanel() {
 			{hasFilters && (
 				<Button
 					variant="quiet"
-					onClick={() => {
-						setModelDraft("");
-						setUpstreamIdDraft("");
-						setQueryDraft("");
-						setSlowOnly(false);
-						setFilter({
-							channel_id: null,
-							model: null,
-							status: null,
-							upstream_request_id: null,
-							q: null,
-						});
-					}}
-              >
+					onClick={clearFilters}
+			  >
                 {t("common.clearFilters")}
               </Button>
             )}
@@ -531,6 +764,29 @@ function ProxyLogsPanel() {
 				placeholder={t("logsPage.upstreamRequestId")}
 				onChange={(e) => setUpstreamIdDraft(e.target.value)}
 			/>
+			<select
+				aria-label={t("logsPage.token")}
+				value={keyIdParam ?? 0}
+				onChange={(event) => {
+					const value = Number(event.target.value);
+					setFilter({ downstream_key_id: value > 0 ? String(value) : null });
+				}}
+			>
+				<option value={0}>{t("logsPage.filterAllTokens")}</option>
+				{/* A filter pointing at a token that no longer exists must stay
+				    visible: silently dropping it back to "all" would show other
+				    tokens' rows under a filter the user still sees in the URL. */}
+				{keyIdParam && !keyName.has(keyIdParam) ? (
+					<option value={keyIdParam}>
+						{t("logsPage.filterMissingToken", { id: keyIdParam })}
+					</option>
+				) : null}
+				{(keys.data ?? []).map((key) => (
+					<option key={key.id} value={key.id}>
+						{key.name}
+					</option>
+				))}
+			</select>
             </div>
           </form>
           <div className="log-quick-filters">
@@ -562,6 +818,20 @@ function ProxyLogsPanel() {
             error={logs.error}
             isEmpty={!rows.length}
             empty={
+              hasFilters ? (
+                // "No proxy traffic yet" would be a lie here: rows exist, they
+                // just do not match. Say which one it is, and offer the exit.
+                <EmptyHero
+                  kicker={t("logsPage.emptyFilteredKicker")}
+                  title={t("logsPage.emptyFilteredTitle")}
+                  body={t("logsPage.emptyFiltered")}
+                  actions={
+                    <Button variant="secondary" onClick={clearFilters}>
+                      {t("common.clearFilters")}
+                    </Button>
+                  }
+                />
+              ) : (
               <EmptyHero
                 kicker={t("logsPage.emptyKicker")}
                 title={t("logsPage.emptyTitle")}
@@ -580,6 +850,7 @@ function ProxyLogsPanel() {
                   </>
                 }
               />
+              )
             }
             retry={() => logs.refetch()}
           >
@@ -725,13 +996,20 @@ function ProxyLogsPanel() {
 										{/* A zero-latency attempt (a failure before any wait) drew
 										    the empty track as a stray grey line. */}
 										{log.latency_ms > 0 ? (
-											<span className="log-latency-bar" aria-hidden="true">
-												<span
-													className={log.latency_ms >= 5000 ? "is-slow" : log.latency_ms >= 1000 ? "is-warn" : ""}
-													style={{ transform: `scaleX(${Math.min(1, Math.max(0.06, log.latency_ms / 10000))})` }}
-												/>
-											</span>
-										) : null}
+										<span
+											className="log-latency-bar"
+											aria-hidden="true"
+											title={t("logsPage.latencyBarHint", {
+												n: log.latency_ms,
+												pct: Math.round(latencyShare(log.latency_ms) * 100),
+											})}
+										>
+											<span
+												className={log.latency_ms >= 5000 ? "is-slow" : log.latency_ms >= 1000 ? "is-warn" : ""}
+												style={{ transform: `scaleX(${latencyShare(log.latency_ms)})` }}
+											/>
+										</span>
+									) : null}
 										{t("common.ms", { n: log.latency_ms })}
 									</td>
 									<td className="log-ttfb-cell">
@@ -746,24 +1024,31 @@ function ProxyLogsPanel() {
 									</tr>
 										{expandedRequest === log.request_id ? (
 											<tr className="log-decision-row">
-												<td colSpan={12}>
+											<td colSpan={12}>
+												<div className="log-expand">
+													{/* Where the request came from and where it went, before the
+													    forensics: "who called, through what" is what an
+													    operator asks first about a row they do not recognise. */}
+													<LogChain log={log} channelName={channelName} keyName={keyName} />
 													<div className="log-expand-grid">
-														{log.error_detail ? (
-															<div className="log-error-detail">
-																<div className="log-error-detail-head">
-																	<strong>{t("logsPage.errorDetail")}</strong>
-																	<code>HTTP {log.status}</code>
-																</div>
-																<pre>{log.error_detail}</pre>
+													{log.error_detail ? (
+														<div className="log-error-detail">
+															<div className="log-error-detail-head">
+																<strong>{t("logsPage.errorDetail")}</strong>
+																<code>HTTP {log.status}</code>
 															</div>
-														) : null}
-														<DecisionSnapshotView
-															requestId={log.request_id}
-															attempt={log.attempt}
-														/>
+															<pre>{log.error_detail}</pre>
+														</div>
+													) : null}
+													<LogDetails log={log} />
+													<DecisionSnapshotView
+														requestId={log.request_id}
+														attempt={log.attempt}
+													/>
 													</div>
-												</td>
-											</tr>
+												</div>
+											</td>
+										</tr>
 										) : null}
 										</Fragment>
 									);

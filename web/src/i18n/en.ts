@@ -1435,11 +1435,33 @@ export const en: Dict = {
   "logsPage.errorClass.empty_response":
     "Empty reply (200 without content, failed over)",
   "logsPage.errorDetail": "Upstream returned",
+  "logsPage.token": "Token",
+  "logsPage.filterAllTokens": "All tokens",
+  "logsPage.filterMissingToken": "Removed token #{id}",
+  "logsPage.latencyBarHint":
+    "The bar scales 0–10s: this row is {n} ms ({pct}%). Amber past 1s, red past 5s.",
+  "logsPage.chainTitle": "Request chain",
+  "logsPage.chainIngress": "Ingress",
+  "logsPage.chainUpstream": "Upstream",
+  "logsPage.chainNoToken": "Token not recorded",
+  "logsPage.chainUnrouted": "No route",
+  "logsPage.chainStream": "stream",
+  "logsPage.chainAttempt": "attempt {n}",
+  "logsPage.detailTitle": "Details",
+  "logsPage.detail.session": "Session",
+  "logsPage.detail.tokenSplit": "Input / output",
+  "logsPage.detail.keyFingerprint": "Upstream key fingerprint",
+  "logsPage.detail.keyFingerprintHint":
+    "sha256 prefix of the upstream credential that served this attempt (never the key itself). Two rows sharing it were served by the same upstream key.",
   "logsPage.errorClass.unknown": "Unknown error",
   "logsPage.selectHint":
     "Select a request to inspect errors and jump to the connection.",
   "logsPage.emptyKicker": "Quiet so far",
   "logsPage.emptyTitle": "No proxy traffic yet",
+  "logsPage.emptyFilteredKicker": "No match",
+  "logsPage.emptyFilteredTitle": "No log rows match this filter",
+  "logsPage.emptyFiltered":
+    "Rows do exist — they just do not match. Try another token, model or time range, or clear the filters.",
   "logsPage.openConnection": "Open connection",
   "logsPage.openModel": "Open model",
   "logsPage.stat.shown": "Shown",

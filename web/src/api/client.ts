@@ -544,6 +544,8 @@ export const api = (client: ApiClient) => ({
     filters?: {
       site_id?: number;
       channel_id?: number;
+      /** Restrict to the rows one client token produced. */
+      downstream_key_id?: number;
       model?: string;
       status?: number | "failed";
       upstream_request_id?: string;
@@ -561,6 +563,8 @@ export const api = (client: ApiClient) => ({
     if (filters?.site_id != null) query.set("site_id", String(filters.site_id));
     if (filters?.channel_id != null)
       query.set("channel_id", String(filters.channel_id));
+    if (filters?.downstream_key_id != null)
+      query.set("downstream_key_id", String(filters.downstream_key_id));
     if (filters?.model) query.set("model", filters.model);
     if (filters?.status != null) query.set("status", String(filters.status));
     if (filters?.upstream_request_id)
