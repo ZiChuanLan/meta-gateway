@@ -82,9 +82,11 @@ export function SetupGuide() {
   ];
   const doneCount = steps.filter((step) => step.done).length;
   const allDone = doneCount === steps.length;
+  // Placeholder line for the first-call step: this gateway issues mg-… tokens
+  // and imposes no prefix of its own, so the example must not claim sk-.
   const curl = `curl ${window.location.origin}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer sk-..." \\
+  -H "Authorization: Bearer mg-…" \\
   -d '{"model":"<model>","messages":[{"role":"user","content":"hi"}]}'`;
 
   const copyCurl = async () => {

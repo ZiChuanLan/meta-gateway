@@ -130,7 +130,7 @@ export const en: Dict = {
   "common.error": "Something went wrong",
   "common.failed": "Failed",
   "error.upstream_status":
-    "Upstream rejected the request (HTTP error). For OpenAI-compatible model sync, use Base URL + API key (sk-…), not a New API user access_token.",
+    "Upstream rejected the request (HTTP error). For OpenAI-compatible model sync, use Base URL + API key, not a New API user access_token.",
   "error.identity_conflict":
     "Import identity conflict: this site/token already exists in a conflicting shape. Re-import after update, or delete the old connection and try again.",
   "error.user_token_not_for_models":
@@ -190,7 +190,7 @@ export const en: Dict = {
   "err.auth.title": "Authentication failed",
   "err.auth.cause": "The upstream rejected the access token or API key.",
   "err.auth.fix":
-    "Check the token / API key is valid and not expired; for model sync use an sk- key.",
+    "Check the token / API key is valid and not expired; model sync needs a key that may call /v1/models, not the site's user access_token.",
   "err.config.title": "Configuration error",
   "err.config.cause": "The connection or its credentials are misconfigured.",
   "err.config.fix":
@@ -202,12 +202,12 @@ export const en: Dict = {
     "Confirm the upstream really is OpenAI-shaped. If it is not (TypeSafe, custom APIs), configure the request / response field mapping under the channel's custom endpoint section, or set the channel's provider to the matching type.",
   "err.missingKey.title": "No API key",
   "err.missingKey.cause":
-    "This site has no usable sk- API key, or the key list is hidden / masked upstream.",
+    "This site has no usable API key, or the key list is hidden / masked upstream.",
   "err.missingKey.fix":
     "Add an API key manually, or create one with the access token.",
   "err.tokenMasked.title": "Key created, but masked",
   "err.tokenMasked.cause":
-    "The upstream created a token, but returned a masked secret (sk-xxxx****yyyy) and neither the list nor the reveal endpoint exposed the full key.",
+    "The upstream created a token, but returned a masked secret (for example sk-xxxx****yyyy) and neither the list nor the reveal endpoint exposed the full key.",
   "err.tokenMasked.fix":
     "The token already exists upstream. Run “Sync API keys” to import it — existing keys are never duplicated. Do not click “Create” again, or the upstream will accumulate duplicate keys.",
   "err.missingUserToken.title": "No user token",
@@ -882,7 +882,7 @@ export const en: Dict = {
   "channels.apiKeyNamePlaceholder": "Name (optional)",
   "channels.apiKeyAddSave": "Add",
   "channels.apiKeyAddHint": "Added keys join the site pool immediately.",
-	"channels.apiKeyPlaceholder": "sk-…",
+	"channels.apiKeyPlaceholder": "API key used for model sync (optional)",
 	"channels.keyFormatHint": "Keys for this type look like {hint}",
 	"channels.keyFormatMismatch": "This does not look like a {type} key (expected {hint}) — saving is still allowed; double-check before submitting.",
 	"channels.apiKeyPasteCount": "{n} key(s) ready to add",
@@ -917,7 +917,7 @@ export const en: Dict = {
   "channels.syncKeys": "Sync API keys",
   "channels.createKey": "Create API key",
   "channels.createKeyTitle": "Create API key",
-  "channels.createKeyHint": "Create a new sk- API key on",
+  "channels.createKeyHint": "Create a new API key on",
   "channels.createKeyGroup": "Token group",
   "channels.createKeyGroupHint":
     "Pick a group from the upstream account, or type a new one.",
@@ -985,7 +985,7 @@ export const en: Dict = {
   "channels.syncKeysEmpty":
     "Upstream returned no token list (not always expired — some sites hide keys or use another API).",
   "channels.syncKeysMasked":
-    "Tokens listed but secrets are masked; site will not reveal sk-. Paste key manually.",
+    "Tokens listed but secrets are masked; the site will not reveal them. Paste the key manually.",
 
   "channels.badge.checkinOn": "Check-in on",
   "channels.badge.checkinOff": "Check-in off",
@@ -1309,7 +1309,7 @@ export const en: Dict = {
   "keys.customToken": "Secret",
   "keys.customTokenHint":
     "At least 16 characters. Stored as a hash only — leave blank and uncheck to let the server generate mg-…",
-  "keys.customTokenPlaceholder": "sk-… or any secret ≥16 chars",
+  "keys.customTokenPlaceholder": "any secret ≥16 chars (mg-… by default)",
   "keys.autoTokenHint":
     "Default: gateway generates a random mg-… token. You can set your own secret above if you prefer.",
   "keys.modelAllowlist": "Model allowlist",

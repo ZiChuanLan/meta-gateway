@@ -130,7 +130,17 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			  AND pool_cred.secret_enc <> ''
 			  AND lower(pool_cred.kind) = 'api_key'
 		) THEN 1 ELSE 0 END,
-		(SELECT COUNT(DISTINCT rm.route_id) FROM route_members rm WHERE rm.channel_id = c.id),
+		-- Adopted models, not routes. Counting route_id collapsed every member a
+		-- channel contributes to one route into a single number, so a channel
+		-- serving four models under one (shared-alias) route read as "selected
+		-- 1". Mirrors how the edit drawer resolves adoption: member {"real":…}
+		-- wins, then the route's {"real":…}, then the route pattern.
+		(SELECT COUNT(DISTINCT COALESCE(
+			NULLIF(CASE WHEN json_valid(rm.mapping_json) THEN json_extract(rm.mapping_json, '$.real') END, ''),
+			NULLIF(CASE WHEN json_valid(r.mapping_json) THEN json_extract(r.mapping_json, '$.real') END, ''),
+			r.model_pattern))
+		   FROM route_members rm JOIN routes r ON r.id = rm.route_id
+		  WHERE rm.channel_id = c.id),
 		(SELECT COUNT(*) FROM discovered_models dm WHERE dm.channel_id = c.id AND dm.available = 1),
 		(SELECT dm.checked_at FROM discovered_models dm WHERE dm.channel_id = c.id ORDER BY dm.checked_at DESC, dm.id DESC LIMIT 1),
 		COALESCE((SELECT dm.latency_ms FROM discovered_models dm WHERE dm.channel_id = c.id ORDER BY dm.checked_at DESC, dm.id DESC LIMIT 1), 0),

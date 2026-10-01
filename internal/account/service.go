@@ -421,7 +421,7 @@ func (s *Service) SyncKeys(ctx context.Context, channelID int64, request SyncKey
 
 	if attachID == 0 && result.SkippedMasked > 0 && result.CreatedCredentials == 0 && result.ReusedCredentials == 0 {
 		result.Category = "keys_masked"
-		result.Message = "upstream listed tokens but secrets were masked and could not be revealed; paste an sk- manually or use a site that exposes full keys"
+		result.Message = "upstream listed tokens but secrets were masked and could not be revealed; paste the key manually or use a site that exposes full keys"
 	} else if attachID > 0 || result.DeletedCredentials > 0 {
 		result.Category = "keys_attached"
 		result.Message = "API key ready for relay"

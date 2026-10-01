@@ -230,9 +230,14 @@ export function SetupWizard() {
 		}
 	};
 
+	// The onboarding curl shows the token this very wizard just minted (a mg-…
+	// secret, since the gateway is not OpenAI and imposes no prefix of its own);
+	// before a key exists the line keeps a neutral placeholder rather than
+	// claiming an sk- shape no endpoint here requires.
+	const tokenForCurl = createdKey?.token ?? "mg-…";
 	const curl = `curl ${window.location.origin}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer sk-..." \\
+  -H "Authorization: Bearer ${tokenForCurl}" \\
   -d '{"model":"<model>","messages":[{"role":"user","content":"hi"}]}'`;
 
 	const copyCurl = async () => {

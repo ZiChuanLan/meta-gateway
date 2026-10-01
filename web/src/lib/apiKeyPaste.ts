@@ -55,7 +55,8 @@ export function keyHintFor(type: string): string {
 /**
  * apiKeyLooksWrong reports an obvious prefix mismatch for the vendor types
  * whose keys carry a fixed prefix. It is advisory only: relay sites hand out
- * arbitrary tokens, so a mismatch is a heads-up, never a blocked save.
+ * arbitrary tokens, and an OpenAI-compatible endpoint is a wire format rather
+ * than a vendor, so neither ever earns a complaint.
  */
 export function apiKeyLooksWrong(type: string, key: string): boolean {
   const prefix = KEY_PREFIXES[type];

@@ -107,11 +107,12 @@ export const PROVIDER_BASE_URLS: Record<string, string> = {
  * Documented key shape per provider, shown as a field hint.
  *
  * Only providers whose docs state a prefix are listed; an unlisted type gets no
- * hint rather than a guess. Relay and self-hosted types are deliberately absent:
- * their tokens are whatever the operator's site hands out.
+ * hint rather than a guess (OpenAI's own gateway, Azure) and neither is
+ * "openai-compatible": that is a wire format, not a vendor — the token is
+ * whatever the endpoint hands out, including this gateway's own mg-… tokens.
+ * Relay and self-hosted types are absent for the same reason.
  */
 export const KEY_HINTS: Record<string, string> = {
-  "openai-compatible": "sk-…",
   anthropic: "sk-ant-…",
   gemini: "AIza…",
   deepseek: "sk-…",
@@ -130,9 +131,13 @@ export const KEY_HINTS: Record<string, string> = {
  * The fixed prefixes a wrong-key warning is derived from. Kept separate from
  * KEY_HINTS because a hint may describe a non-prefix shape ("id.secret",
  * "32+ chars") that must not produce a prefix complaint.
+ *
+ * Vendor types only. "openai-compatible" used to be listed with "sk-", which
+ * made every legitimate key of a compatible endpoint — mg-… from this gateway,
+ * GitHub Models' ghp_…, Azure's bare hex — collect a bogus "this does not look
+ * like a key" note.
  */
 export const KEY_PREFIXES: Record<string, string> = {
-  "openai-compatible": "sk-",
   anthropic: "sk-ant-",
   gemini: "AIza",
   deepseek: "sk-",

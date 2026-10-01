@@ -49,4 +49,16 @@ describe("key hints", () => {
     expect(apiKeyLooksWrong("zhipu", "abc.def")).toBe(false);
     expect(apiKeyLooksWrong("anthropic", "")).toBe(false);
   });
+
+  // OpenAI-compatible is a wire format, not a vendor: the endpoint decides what
+  // its tokens look like, so there is no shape to state and none to complain
+  // about. Listing "sk-" here once made every mg-… token of this gateway — and
+  // GitHub Models' ghp_…, Azure's bare hex — collect a bogus mismatch note.
+  it("states no key shape for a protocol family", () => {
+    expect(keyHintFor("openai-compatible")).toBe("");
+    expect(keyHintFor("custom")).toBe("");
+    expect(apiKeyLooksWrong("openai-compatible", "mg-9f2c41ab77de0088")).toBe(false);
+    expect(apiKeyLooksWrong("openai-compatible", "ghp_0123456789abcdef")).toBe(false);
+    expect(apiKeyLooksWrong("custom", "anything-at-all")).toBe(false);
+  });
 });

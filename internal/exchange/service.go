@@ -19,7 +19,7 @@ type DiscoveryRefresher interface {
 	Refresh(context.Context, int64) (*discovery.RefreshResult, error)
 }
 
-// KeySyncer pulls upstream sk- keys using a site user token (best-effort).
+// KeySyncer pulls upstream relay keys using a site user token (best-effort).
 type KeySyncer interface {
 	SyncKeys(ctx context.Context, channelID int64) (created, reused, masked int, category string, err error)
 }

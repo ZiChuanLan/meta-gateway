@@ -152,6 +152,59 @@ func TestListOverviewsCarriesChannelOverrides(t *testing.T) {
 	}
 }
 
+// Adopted-model counting is per model, not per route. A channel can serve
+// several models through one route (shared aliases: one member row per real
+// model, each carrying {"real":"…"}), and collapsing them into "distinct
+// route_id" made four adopted models read as one in the connections table.
+func TestListOverviewsCountsAdoptedModelsNotRoutes(t *testing.T) {
+	db := openTestDB(t)
+	channelID := syncModeFixture(t, db, "shared-alias-ch", domain.ModelSyncModeManual)
+	otherChannelID := syncModeFixture(t, db, "other-ch", domain.ModelSyncModeManual)
+
+	// One route named after the alias, four members from this channel (one per
+	// real model), plus one member from another channel which must not count.
+	aliasID, err := db.Route.Create(&domain.Route{ModelPattern: "sensenova-u1", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, real := range []string{"kimi-k3", "sensenova-u1-fast", "sensenova-u1.5-lite", "sensenova-6.8-flash-lite"} {
+		if _, err := db.RouteMember.Create(&domain.RouteMember{
+			RouteID: aliasID, ChannelID: channelID, Enabled: true,
+			MappingJSON: `{"real":"` + real + `"}`, Priority: 10, Weight: 100,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: aliasID, ChannelID: otherChannelID, Enabled: true, Priority: 10, Weight: 100}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second route without an alias mapping: its pattern is the real name.
+	plainID, err := db.Route.Create(&domain.Route{ModelPattern: "gpt-5-nano", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{RouteID: plainID, ChannelID: channelID, Enabled: false, Priority: 10, Weight: 100}); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.Channel.ListOverviews(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[int64]int{}
+	for _, overview := range rows {
+		counts[overview.Channel.ID] = overview.ModelCount
+	}
+
+	if got := counts[channelID]; got != 5 {
+		t.Errorf("model_count = %d, want 5 (four alias-mapped reals + one plain pattern)", got)
+	}
+	if got := counts[otherChannelID]; got != 1 {
+		t.Errorf("other channel model_count = %d, want 1", got)
+	}
+}
+
 // Manual-sync discovery must only refresh the snapshot: no route or member may
 // appear, while models_csv still tracks the upstream list. An auto channel in
 // the same run keeps adopting everything.

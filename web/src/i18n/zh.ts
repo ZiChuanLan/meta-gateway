@@ -124,7 +124,7 @@ export const zh: Dict = {
   "common.error": "出错了",
   "common.failed": "操作失败",
   "error.upstream_status":
-    "上游拒绝了请求（HTTP 错误）。OpenAI 兼容的模型同步请使用 Base URL + API Key（sk-…），不要用 New API 的用户 access_token。",
+    "上游拒绝了请求（HTTP 错误）。OpenAI 兼容的模型同步请使用 Base URL + API Key，不要用 New API 的用户 access_token。",
   "error.identity_conflict":
     "Import identity conflict: this site/token already exists in a conflicting shape. Re-import after update, or delete the old connection and try again.",
   "error.user_token_not_for_models":
@@ -181,7 +181,7 @@ export const zh: Dict = {
   "err.auth.title": "认证失败",
   "err.auth.cause": "上游拒绝了访问令牌或 API Key。",
   "err.auth.fix":
-    "检查令牌 / API Key 是否有效且未过期；模型同步请使用 sk- 开头的 Key。",
+    "检查令牌 / API Key 是否有效且未过期；模型同步需要能调用 /v1/models 的 API Key，而不是站点的用户 access_token。",
   "err.config.title": "配置错误",
   "err.config.cause": "连接或凭据配置不正确。",
   "err.config.fix": "检查 Base URL、连接类型和凭据状态。",
@@ -192,11 +192,11 @@ export const zh: Dict = {
     "确认该上游确实是 OpenAI 兼容形态；若不是（如 TypeSafe、各类自研接口），请在渠道的「自定义端点与字段映射」里配置请求 / 响应字段映射，或把上游供应商改成对应类型。",
   "err.missingKey.title": "缺少 API Key",
   "err.missingKey.cause":
-    "该站点没有可用的 sk- API Key，或上游隐藏 / 掩码了密钥列表。",
+    "该站点没有可用的 API Key，或上游隐藏 / 掩码了密钥列表。",
   "err.missingKey.fix": "手动添加 API Key，或用访问令牌创建一个。",
   "err.tokenMasked.title": "API Key 已创建，但密钥被掩码",
   "err.tokenMasked.cause":
-    "上游已成功创建 Token，但返回的是掩码密钥（sk-xxxx****yyyy），且列表与揭密接口均无法取得完整 sk-。",
+    "上游已成功创建 Token，但返回的是掩码密钥（如 sk-xxxx****yyyy），且列表与揭密接口都无法取得完整密钥。",
   "err.tokenMasked.fix":
     "Token 已在上游创建。请先点「同步 API Key」导入（已存在的密钥不会重复导入）；请勿再次点「创建」，否则上游会产生多个相同密钥。",
   "err.missingUserToken.title": "缺少访问令牌",
@@ -831,7 +831,7 @@ export const zh: Dict = {
   "channels.apiKeyNamePlaceholder": "名称（可选）",
   "channels.apiKeyAddSave": "添加",
   "channels.apiKeyAddHint": "添加后立即加入本站密钥池。",
-	"channels.apiKeyPlaceholder": "可选，填写 sk-… 用于同步模型",
+	"channels.apiKeyPlaceholder": "可选，填写用于同步模型的 API Key",
 	"channels.keyFormatHint": "该类型的密钥格式：{hint}",
 	"channels.keyFormatMismatch": "看起来不像 {type} 的密钥（应为 {hint}）——不阻断保存，确认后再提交。",
 	"channels.apiKeyPasteCount": "待添加 {n} 个密钥",
@@ -865,7 +865,7 @@ export const zh: Dict = {
   "channels.syncKeys": "同步 API Key",
   "channels.createKey": "创建 API Key",
   "channels.createKeyTitle": "创建 API Key",
-  "channels.createKeyHint": "在以下站点创建新的 sk- API Key：",
+  "channels.createKeyHint": "在以下站点创建新的 API Key：",
   "channels.createKeyGroup": "令牌分组",
   "channels.createKeyGroupHint": "从上游账号已有的分组中选择，或输入新分组名。",
   "channels.createKeyGroupPlaceholder": "选择分组…",
@@ -922,7 +922,7 @@ export const zh: Dict = {
   "channels.syncKeysEmpty":
     "上游返回空令牌列表（不一定是过期：有的站不开放列表/密钥接口）。",
   "channels.syncKeysMasked":
-    "列表有 token 但密钥被掩码且无法揭密；请手动粘贴 sk-。",
+    "列表有 token 但密钥被掩码且无法揭密；请手动粘贴完整密钥。",
 
   "channels.badge.checkinOn": "签到已开",
   "channels.badge.checkinOff": "签到关闭",
@@ -1088,7 +1088,7 @@ export const zh: Dict = {
   "keys.customToken": "令牌内容",
   "keys.customTokenHint":
     "至少 16 位。只存哈希，无法回看。不勾选则由网关生成 mg-… 随机令牌。",
-  "keys.customTokenPlaceholder": "sk-… 或任意 ≥16 位令牌",
+  "keys.customTokenPlaceholder": "任意 ≥16 位自定义令牌（默认 mg-…）",
   "keys.autoTokenHint":
     "默认由网关生成随机 mg-… 令牌。若要自己指定，请勾选上方「自己设置令牌」。",
   "keys.modelAllowlist": "模型白名单",

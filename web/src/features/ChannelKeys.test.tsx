@@ -219,7 +219,7 @@ describe("ChannelKeysDrawer model allowlist", () => {
 	it("adds every key of a multi-line paste exactly once", async () => {
 		const added: string[] = [];
 		renderDrawer([GEMINI_KEY], (secret) => added.push(secret));
-		const input = await screen.findByPlaceholderText("可选，填写 sk-… 用于同步模型");
+		const input = await screen.findByPlaceholderText("可选，填写用于同步模型的 API Key");
 		fireEvent.change(input, { target: { value: "sk-a\nsk-b\nsk-a" } });
 		expect(await screen.findByText(/待添加 2 个密钥/)).toBeTruthy();
 		expect(await screen.findByText(/已去掉 1 个重复/)).toBeTruthy();
@@ -231,7 +231,7 @@ describe("ChannelKeysDrawer model allowlist", () => {
 	it("notes the type's key shape but never blocks a submit", async () => {
 		const added: string[] = [];
 		renderDrawer([{ ...GEMINI_KEY }], (secret) => added.push(secret));
-		const input = await screen.findByPlaceholderText("可选，填写 sk-… 用于同步模型");
+		const input = await screen.findByPlaceholderText("可选，填写用于同步模型的 API Key");
 		expect(await screen.findByText(/该类型的密钥格式：AIza…/)).toBeTruthy();
 		fireEvent.change(input, { target: { value: "unrelated-token" } });
 		expect(await screen.findByText(/看起来不像 gemini 的密钥/)).toBeTruthy();
