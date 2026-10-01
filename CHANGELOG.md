@@ -4,6 +4,26 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.8.3] — 2026-10-01
+
+### Fixed
+
+- **「请使用 sk- 开头的令牌」是错误提示**（`web/src/connectionTypes.ts`、`web/src/lib/apiKeyPaste.ts`、
+  `web/src/i18n/*.ts`、`web/src/features/Setup*.tsx`）。OpenAI 兼容是**协议形态**而不是厂商：密钥前缀由端点自己
+  决定（本网关自己签发的是 `mg-…`，GitHub Models 是 `ghp_…`，Azure 是裸十六进制，自研网关可以任意）。
+  而 `KEY_PREFIXES` 里写着 `"openai-compatible": "sk-"`，于是**任何合法密钥都会**在表单下方弹出
+  「看起来不像 openai-compatible 的密钥（应为 sk-…）——不阻断保存」。现在密钥形状提示与校验只覆盖真正有固定
+  前缀的厂商类型（Anthropic / Gemini / DeepSeek / Moonshot / 通义 / 硅基流动 / OpenRouter / Groq / xAI /
+  Perplexity），协议类型与中转站类型不再提示也不再误报；其余文案改为说明真实要求——**能调 `/v1/models` 的
+  API Key，而不是站点用户 access_token**（`err.auth.fix`、`err.missingKey.cause`、`channels.syncKeysMasked`、
+  `channels.createKeyHint`），自定义令牌占位符改为「任意 ≥16 位自定义令牌（默认 mg-…）」，新手指引与向导的
+  curl 示例改为展示网关自己签发的 `mg-…`（向导里直接显示刚生成的那一枚）。后端同类文案一并改正
+  （`internal/account/service.go`、`internal/exchange/service.go`）。
+- **连接列表「已选」数量偏小**（`internal/store/channel.go`）。该列是 `COUNT(DISTINCT route_id)`：同一个路由下挂了
+  多个模型（共享别名路由，一个真实模型一行成员）时，**不管挂几个都只算 1**。现在统计的是**已接入的模型名**去重数，
+  解析顺序与渠道抽屉一致（成员 `{"real":…}` → 路由 `{"real":…}` → 路由名）。实测：一个渠道通过共享别名路由挂
+  4 个模型 + 另 1 条普通路由 → 已选 5（修复前是 2）。
+
 ## [v3.8.2] — 2026-10-01
 
 ### Fixed
