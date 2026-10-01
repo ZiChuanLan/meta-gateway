@@ -10012,6 +10012,56 @@ a.log-chain-value:hover { text-decoration: underline; }
 }
 .log-details-grid code { font-size: 11px; }
 
+/* Phone: the expansion sits in a table cell sized by the table, so a horizontal
+   chain is clipped at the screen edge — and a %-based width would widen the
+   table further (the cell is content-sized). Stack the hops and cap every block
+   against the viewport, so the chain reads top-to-bottom without dragging the
+   table sideways. Must stay AFTER the base rules above: same specificity, and
+   the later rule wins. */
+@media (max-width: 720px) {
+  .log-chain {
+    max-width: calc(100vw - 44px);
+  }
+  .log-chain-steps {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .log-chain-step,
+  .log-chain-step:last-child {
+    max-width: min(300px, calc(100vw - 44px));
+  }
+  .log-chain-arrow {
+    transform: rotate(90deg);
+    text-align: center;
+  }
+  .log-chain-value,
+  .log-chain-note {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .log-expand-grid {
+    flex-direction: column;
+  }
+  .log-details,
+  .log-expand-grid > .log-decision {
+    /* In row mode these carry a flex-basis in the 340–380px range for width;
+       the grid turns into a column on phones, where that basis would become a
+       HEIGHT and leave the card half empty. */
+    flex: 0 0 auto;
+    min-width: min(260px, calc(100vw - 44px));
+    max-width: min(380px, calc(100vw - 44px));
+  }
+  .log-details-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .log-details-grid dd {
+    text-align: left;
+    margin-bottom: 6px;
+  }
+}
+
 /* ============================================================
    V2 — External check-in site card matrix
    ============================================================ */
