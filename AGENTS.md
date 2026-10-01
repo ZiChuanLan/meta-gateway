@@ -437,7 +437,16 @@ curl -s -X POST https://<host>/admin/session -H 'Content-Type: application/json'
 # 最近代理日志（排障第一现场）
 curl -s -H "Authorization: Bearer <session_token>" \
   "https://<host>/admin/proxy-logs?limit=50"
+
+# 按维度钻取：client token / 渠道 / 模型 / 仅失败 / 上游 request id
+curl -s -H "Authorization: Bearer <session_token>" \
+  "https://<host>/admin/proxy-logs?downstream_key_id=3&status=failed"
 ```
+
+日志行本身携带链路要素：`downstream_key_id`（客户令牌）、`path`（中继端点相对名，
+客户端入口 = `/v1/` + path）、`route_id` / `route_pattern`、`channel_id`、`upstream_url`
+（实际打到的地址）、`upstream_model`、`key_fingerprint`（服务本次尝试的上游密钥 sha256 前缀）——
+控制台日志行的展开区就是据此拼出的链路，排查时可直接按这些字段筛。
 
 排查"上游报错"类问题时，先看 `proxy_logs` 里的 upstream status 与 body ——
 本项目是透明网关，**多数"网关的 bug"其实是上游协议不匹配**（例如某上游的 `/v1/images/edits`
