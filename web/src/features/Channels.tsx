@@ -222,8 +222,14 @@ export function Channels() {
 		if (overview) {
 			keysDeepLinkOpened.current = target;
 			setKeysChannel(overview);
+			// Select the row the drawer belongs to as well. The linked channel
+			// arrives without ?id=, so the list ran its own auto-select and the
+			// page ended up pointing at two channels at once — drawer titled one,
+			// highlighted row another.
+			writeChannelTab("selected", target);
 			const next = new URLSearchParams(params);
 			next.delete("keys");
+			next.set("id", String(target));
 			setParams(next, { replace: true });
 		}
 	}, [params, overviews.data, keysChannel, setParams]);
@@ -246,18 +252,24 @@ export function Channels() {
   useEffect(() => writeChannelTab("health", healthFilter), [healthFilter]);
   useEffect(() => writeChannelTab("type", typeFilter), [typeFilter]);
   useEffect(() => writeChannelTab("group", groupFilter), [groupFilter]);
-  // Load site credentials for the channel being edited, selected, or opened via ⋯/context menu.
-  const credentialSiteId =
-    edit?.site_id ??
-    (selectedId != null
-      ? (overviews.data ?? []).find((row) => row.channel.id === selectedId)
-          ?.channel.site_id
-      : undefined) ??
-    (contextMenu != null
-      ? (overviews.data ?? []).find(
-          (row) => row.channel.id === contextMenu.channelId,
-        )?.channel.site_id
-      : undefined);
+  // Load site credentials for the surface that is about to render them. The
+  // keys drawer owns the pool it shows, so its channel decides the fetch:
+  // otherwise the pool follows the list selection, and a deep-link (?keys=<id>)
+  // listed one channel's keys under another channel's title.
+  const credentialSiteId = keysChannel
+    ? // A site-less channel has no pool at all — never borrow the selection's.
+      (keysChannel.site_id ?? undefined)
+    : (edit?.site_id ??
+      // The channel selected, or opened via ⋯/context menu.
+      (selectedId != null
+        ? (overviews.data ?? []).find((row) => row.channel.id === selectedId)
+            ?.channel.site_id
+        : undefined) ??
+      (contextMenu != null
+        ? (overviews.data ?? []).find(
+            (row) => row.channel.id === contextMenu.channelId,
+          )?.channel.site_id
+        : undefined));
   const credentials = useQuery({
     queryKey: ["credentials", credentialSiteId],
     queryFn: ({ signal }) =>
@@ -856,36 +868,31 @@ export function Channels() {
     />
   );
 
-  // Restore the previously selected channel from tab state when the URL has
-  // no id (bare sidebar navigation drops the query string).
+  // Selection for a URL that carries no usable ?id — in priority order: the
+  // channel a deep-link is landing on, the selection this tab had last (a bare
+  // sidebar navigation drops the query string), then the first row. This used
+  // to be two effects, and the first-row one ran second: it overwrote both the
+  // stored selection and the deep-link that opened the drawer.
   useEffect(() => {
     if (selectedId) return;
+    // The ?channel=/?keys= effects above own the selection while their target is
+    // still unread from the URL (they commit the id in this same render pass).
+    if (params.get("channel") || params.get("keys")) return;
     if (!rows.length) return;
     const saved = readChannelTab<number | null>("selected", null);
-    if (!saved || !rows.some((r) => r.channel.id === saved)) return;
+    const target =
+      saved != null && rows.some((r) => r.channel.id === saved)
+        ? saved
+        : rows[0]!.channel.id;
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.set("id", String(saved));
+        next.set("id", String(target));
         return next;
       },
       { replace: true },
     );
-  }, [rows, selectedId, setParams]);
-
-  useEffect(() => {
-    if (!rows.length) return;
-    if (selectedId && rows.some((r) => r.channel.id === selectedId)) return;
-    if (selectedId) return;
-    setParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("id", String(rows[0]!.channel.id));
-        return next;
-      },
-      { replace: true },
-    );
-  }, [rows, selectedId, setParams]);
+  }, [rows, selectedId, params, setParams]);
 
   const selected =
     rows.find((r) => r.channel.id === selectedId) ??

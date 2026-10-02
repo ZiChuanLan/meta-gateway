@@ -45,6 +45,28 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+/** Same page, mounted on a URL that already carries a deep-link query. */
+function renderChannelsAt(path: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <ToastProvider>
+          <SessionProvider>
+            <MemoryRouter initialEntries={[path]}>
+              <Routes>
+                <Route path="/" element={<Channels />} />
+              </Routes>
+            </MemoryRouter>
+          </SessionProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
+}
+
 describe("Channels two-phase create", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -1424,5 +1446,157 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
     expect(
       within(advanced as HTMLElement).getByRole("heading", { name: "Check-in" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Channels key-pool deep-link", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function overview(id: number, name: string, siteId: number) {
+    return {
+      channel: {
+        id,
+        name,
+        site_id: siteId,
+        credential_id: id * 10,
+        base_url: `https://${name.toLowerCase()}.example.com`,
+        models_csv: "",
+        group_name: "default",
+        priority: 0,
+        weight: 100,
+        status: "enabled",
+        type_hint: "new-api",
+        created_at: "",
+        updated_at: "",
+      },
+      credential_kind: "api_key",
+      checkin_enabled: false,
+      has_user_credential: false,
+      has_platform_user_id: false,
+      has_api_key: true,
+      site_usable: true,
+      credential_usable: true,
+      model_count: 0,
+      discovered_model_count: 0,
+      cooling_member_count: 0,
+      failure_count: 0,
+      checkin_supported: false,
+      account_supported: true,
+      last_error: "",
+      last_checked_at: null,
+      last_latency_ms: 0,
+    };
+  }
+
+  function site(id: number, name: string) {
+    return {
+      id,
+      name,
+      base_url: `https://${name.toLowerCase()}.example.com`,
+      platform: "new-api",
+      status: "enabled",
+      created_at: "",
+      updated_at: "",
+    };
+  }
+
+  function apiKey(id: number, siteId: number, name: string) {
+    return {
+      id,
+      site_id: siteId,
+      kind: "api_key",
+      auth_mode: "access_token",
+      has_secret: true,
+      has_cookie: false,
+      status: "enabled",
+      checkin_enabled: false,
+      meta_json: JSON.stringify({ name, group: "default" }),
+      model_count: 3,
+    };
+  }
+
+  function stubTwoSites() {
+    const credentialFetches: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input).split("?")[0] ?? "";
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (path === "/admin/channels/overview" && method === "GET") {
+          // WONG sorts first: without ?id= the list opens on its row.
+          return jsonResponse([overview(22, "WONG", 2), overview(21, "WorkBuddy", 1)]);
+        }
+        if (path === "/admin/sites" && method === "GET") {
+          return jsonResponse([site(1, "WorkBuddy"), site(2, "WONG")]);
+        }
+        if (path === "/admin/sites/1/credentials" && method === "GET") {
+          credentialFetches.push(path);
+          return jsonResponse([apiKey(187, 1, "wb-key")]);
+        }
+        if (path === "/admin/sites/2/credentials" && method === "GET") {
+          credentialFetches.push(path);
+          return jsonResponse([apiKey(140, 2, "metapi")]);
+        }
+        if (path === "/admin/routes/overview" && method === "GET") {
+          return jsonResponse([]);
+        }
+        if (path.startsWith("/admin/discovery/models")) {
+          return jsonResponse([]);
+        }
+        return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+      }),
+    );
+    return credentialFetches;
+  }
+
+  // The log chain's key hop links to /channels?keys=<channel>, and that channel
+  // owns the pool it names. The drawer used to render whatever pool the LIST
+  // selection pointed at, so a deep-link (which carries no ?id=) showed the
+  // first row's keys under the linked channel's title.
+  it("lists the deep-linked channel's pool, not the row the list happens to select", async () => {
+    const credentialFetches = stubTwoSites();
+
+    renderChannelsAt("/?keys=21");
+
+    const drawer = await screen.findByRole("dialog");
+    expect(
+      within(drawer).getByRole("heading", { name: "API keys · WorkBuddy" }),
+    ).toBeInTheDocument();
+    expect(await within(drawer).findByText("wb-key")).toBeInTheDocument();
+    expect(within(drawer).queryByText("metapi")).toBeNull();
+    expect(credentialFetches).toEqual(["/admin/sites/1/credentials"]);
+    // And the list behind the drawer names the same channel: the row the
+    // drawer belongs to is the selected one, not the row auto-select landed on.
+    const workBuddyRow = () =>
+      Array.from(document.querySelectorAll(".channels-directory tr")).find(
+        (row) => row.textContent?.includes("WorkBuddy"),
+      );
+    await waitFor(() => expect(workBuddyRow()).toHaveClass("is-selected"));
+  });
+
+  // Selection lives in the tab (sessionStorage), so returning to the page must
+  // land on the connection the operator was working on — not on the first row.
+  it("restores the stored selection instead of always landing on the first row", async () => {
+    stubTwoSites();
+    sessionStorage.setItem("channels.selected", "21");
+
+    renderChannelsAt("/");
+
+    await screen.findByText("WorkBuddy");
+    const workBuddyRow = () =>
+      Array.from(document.querySelectorAll(".channels-directory tr")).find(
+        (row) => row.textContent?.includes("WorkBuddy"),
+      );
+    await waitFor(() => expect(workBuddyRow()).toHaveClass("is-selected"));
   });
 });
