@@ -208,6 +208,25 @@ describe("log row drill-down", () => {
     ).toBeInTheDocument();
   });
 
+  // An UNNAMED key (most of the live DB: 41 of 78 credentials carry no name)
+  // falls back to its id — which must not then repeat itself in the note.
+  it("shows an unnamed upstream key as its id, without repeating the id", async () => {
+    renderLogs("/logs", [
+      {
+        id: 8, request_id: "req-unnamed", model: "gpt-5", status: 200, latency_ms: 700,
+        attempt: 1, channel_id: 3, upstream_key_id: 181,
+        key_fingerprint: "76cd89af5347720d",
+      },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-5"));
+    await screen.findByText("Request chain");
+    const chain = document.querySelector(".log-chain") as HTMLElement;
+    const hop = chain.querySelectorAll(".log-chain-step")[4] as HTMLElement;
+    expect(hop.querySelector(".log-chain-label")?.textContent).toBe("Upstream key");
+    expect(hop.querySelector(".log-chain-value")?.textContent).toBe("#181");
+    expect(hop.querySelector(".log-chain-note")).toBeNull();
+  });
+
   // A row written before the id column existed still knows the key by hash.
   // Showing a blank hop would read as "no key was used", so the fingerprint
   // takes the value slot and the note says why.

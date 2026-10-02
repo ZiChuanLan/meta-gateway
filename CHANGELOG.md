@@ -4,6 +4,18 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v3.8.6] — 2026-10-02
+
+### Fixed
+
+- **链路上无名的令牌/Key 会把 id 写两遍**（`web/src/features/Logs.tsx`、`web/src/features/Logs.test.tsx`）。
+  上一版用 `#id` 作为无名凭据的显示值，同时又把它当作注释再写一次（`#181` / `#181`），看起来像两条信息。
+  现在只有**带名字时**才用注释补 id（`metapi` + `#1`），无名时就是 `#181` 单个值。
+
+  > 这条是拿**线上库真实数据**复核出来的：线上 78 把上游凭据里有 **41 把没有 name**（`meta_json = {}`），
+  > 而真正在服务流量的那几把恰好都是无名 Key（如 #181、#187）——本地自测时用的是带名字的种子数据，
+  > 差一点就漏过去。现在无名 Key 的显示值与密钥抽屉里的叫法一致（那里同样回落到 `#id`）。
+
 ## [v3.8.5] — 2026-10-01
 
 ### Added

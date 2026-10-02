@@ -231,7 +231,9 @@ function LogChain({ log, channelName, keyName }: {
 		? log.upstream_key_name || `#${keyID}`
 		: log.key_fingerprint || "—";
 	const keyNote = keyID
-		? `#${keyID}`
+		? log.upstream_key_name
+			? `#${keyID}`
+			: undefined
 		: log.key_fingerprint
 			? t("logsPage.chainKeyFingerprintOnly")
 			: undefined;
@@ -244,7 +246,9 @@ function LogChain({ log, channelName, keyName }: {
 		{
 			label: t("logsPage.token"),
 			value: tokenLabel ?? t("logsPage.chainNoToken"),
-			note: log.downstream_key_id ? `#${log.downstream_key_id}` : undefined,
+			// The id only rides along when the name carried it; otherwise the value
+			// IS the id and repeating it in the note reads as two facts.
+			note: knownTokenName ? `#${log.downstream_key_id}` : undefined,
 			// The Keys page has no per-row detail view; its search box is the
 			// only way to land on one token, so the hop links there by name.
 			to: knownTokenName
