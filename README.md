@@ -10,7 +10,8 @@
   <a href="https://github.com/ZiChuanLan/meta-gateway/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ZiChuanLan/meta-gateway/ci.yml?branch=master&style=flat-square&labelColor=2F3646"></a>
   <a href="https://zichuanlan.github.io/meta-gateway/"><img alt="Docs" src="https://img.shields.io/github/deployments/ZiChuanLan/meta-gateway/github-pages?style=flat-square&label=docs&labelColor=2F3646"></a>
   <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=flat-square&labelColor=2F3646&color=2496ED"></a>
-  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=4F6BF0"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Stable release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=flat-square&label=stable&labelColor=2F3646&color=4F6BF0"></a>
+  <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Beta release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=flat-square&label=beta&include_prereleases&labelColor=2F3646&color=E8B93E"></a>
   <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=E8B93E"></a>
   <a href="https://github.com/ZiChuanLan/meta-gateway/blob/master/LICENSE"><img alt="License" src="https://img.shields.io/github/license/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=3DA639"></a>
   <a href="https://linux.do"><img alt="linux.do" src="https://img.shields.io/badge/linux.do-Community-F97316?style=flat-square&labelColor=2F3646"></a>
