@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
@@ -63,8 +64,38 @@ func (h *TeamHandler) patchMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if input.Mode == "team" && count == 0 {
-		teamFail(w, 409, "create_owner_first")
-		return
+		// The operator is already signed in as the deployment administrator, so
+		// take that identity instead of making them type a second account for
+		// themselves. If the deployment has no admin secret to derive a first
+		// password from, fall back to the explicit form.
+		username, password := "", ""
+		if h.deploymentAdmin != nil {
+			username, password = h.deploymentAdmin()
+		}
+		username = strings.ToLower(strings.TrimSpace(username))
+		if username == "" || password == "" || !teamUsername.MatchString(username) {
+			teamFail(w, 409, "create_owner_first")
+			return
+		}
+		hash, hashErr := hashTeamPassword(password)
+		if hashErr != nil {
+			teamFail(w, 409, "create_owner_first")
+			return
+		}
+		// The operator and the owner are now the same identity, so the
+		// reservation that keeps a team account from shadowing the operator
+		// credential has nothing left to guard — and it is exactly what would
+		// reject this insert, since the trigger fires while admin_username is
+		// set. Clearing it is the whole reason this is one account and not two.
+		if _, err = tx.Exec(`UPDATE operator_preferences SET admin_username='' WHERE id=1`); err != nil {
+			teamFail(w, 500, "save_failed")
+			return
+		}
+		if _, err = tx.Exec(`INSERT INTO team_users(username,name,password_hash,role,policy_id)
+			VALUES(?,?,?,'owner',1)`, username, username, hash); err != nil {
+			teamFail(w, 409, "username_taken")
+			return
+		}
 	}
 	_, err = tx.Exec(`UPDATE team_settings SET mode=? WHERE id=1`, input.Mode)
 	if err == nil && input.Mode == "personal" {

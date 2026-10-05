@@ -116,7 +116,6 @@ export function AcceptFlow({
             name="password"
             type="password"
             required
-            minLength={signingUp || recovery ? 10 : undefined}
             autoComplete={signingUp || recovery ? "new-password" : "current-password"}
           />
         </Field>

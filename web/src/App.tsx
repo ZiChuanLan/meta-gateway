@@ -1,8 +1,13 @@
 import { OperatorUpgradePrompt } from "./features/OperatorProfilePanel";
 import {
+	ArrowLeft,
 	ArrowRight,
+	ChevronRight,
+	HelpCircle,
+	LogIn,
 	Puzzle,
 	ShieldCheck,
+	Ticket,
 	Image,
 	Moon,
 	Sun,
@@ -45,7 +50,7 @@ import { useHiddenPlugins } from "./lib/pluginNav";
 import { CHROME_NAV_ITEMS, STAFF_ONLY_PATHS, canAccessNav, type ChromeNavItem } from "./lib/chromeNav";
 import { modeHiddenNav, useChromePrefs } from "./lib/topBar";
 import { isStaff, type ConsoleRole } from "./session";
-import { accountRequest, COOKIE_SESSION } from "./team/transport";
+import { accountRequest, COOKIE_SESSION, setTeamCSRF } from "./team/transport";
 import { teamText } from "./team/text";
 import { AcceptFlow } from "./features/AcceptFlow";
 import { AccountPage } from "./features/AccountPage";
@@ -289,6 +294,11 @@ function Connect({
 	const team = teamText(locale);
 	const [username, setUsername] = useState("");
 	const [upgradeHelp, setUpgradeHelp] = useState(false);
+	// The second layer of the sign-in card: registration, third-party sign-in and
+	// the upgrade guide. Collapsed by default so the form stays the only thing
+	// asking for attention.
+	const [otherOpen, setOtherOpen] = useState(false);
+	const [providers, setProviders] = useState<{ id: string; label: string }[]>([]);
 	const [password, setPassword] = useState("");
 	const [remember, setRemember] = useState(true);
 	const [error, setError] = useState("");
@@ -314,6 +324,27 @@ function Connect({
 		document.addEventListener("visibilitychange", stop);
 		return () => { sparks.dispose(); button.removeEventListener("pointerenter", start); button.removeEventListener("pointerleave", stop); reduced.removeEventListener("change", stop); document.removeEventListener("visibilitychange", stop); };
 	}, [appearance, scheme]);
+
+	// /auth/options is what mints the CSRF cookie the invitation, recovery and
+	// third-party flows post against, and it is the only source of the configured
+	// providers. Nothing used to call it, which left every one of those POSTs
+	// answering 403 csrf_failed and the sign-in page with no third-party buttons
+	// at all. A personal deployment answers 404 here; that simply means no
+	// providers, and the sign-in form carries on unchanged.
+	useEffect(() => {
+		const controller = new AbortController();
+		void fetch("/auth/options", { credentials: "same-origin", signal: controller.signal })
+			.then((response) => (response.ok ? response.json() : null))
+			.then((body: { csrf?: string; oauth?: { id: string; label: string }[] } | null) => {
+				if (!body) return;
+				if (body.csrf) setTeamCSRF(body.csrf);
+				if (body.oauth?.length) setProviders(body.oauth);
+			})
+			.catch(() => {
+				/* personal mode, offline, or aborted: the form still works */
+			});
+		return () => controller.abort();
+	}, []);
 
 	// Custom login background (persisted locally, per browser)
 	const [bgUrl, setBgUrl] = useState<string>(() => {
@@ -520,126 +551,161 @@ function Connect({
 							: null}
 					</>}
 		>
-			<section className={"login-card" + (isFocused ? " is-focused" : "")} aria-labelledby="login-card-title">
-					<div className="login-card-heading"><span className="login-card-mark"><ShieldCheck size={22} strokeWidth={1.4} /></span><h2 id="login-card-title">{accepting ? team(recoveryToken ? "recover" : "accept") : t("login.welcome")}</h2><p>{accepting ? team("loginHint") : t("login.hint")}</p></div>
-					{accepting ? (
-						<AcceptFlow
-							invite={inviteToken}
-							recovery={recoveryToken}
-							manual={manualCode}
-							t={team}
-							onDone={connectMember}
-							onBack={() => {
-								setManualCode(false);
-								history.replaceState(null, "", "/console");
-							}}
-						/>
-					) : (
-					<>
-					<form
-						onSubmit={submit}
-						aria-busy={pending || transitioning}
-					>
-						<>
-								<Field label={t("app.connect.username")}>
-									<input
-										autoFocus
-										type="text"
-										value={username}
-										onChange={(e) => setUsername(e.target.value)}
-										onFocus={() => setIsFocused(true)}
-										onBlur={() => setIsFocused(false)}
-										autoComplete="username"
-										disabled={pending || transitioning}
-										required
-									/>
-								</Field>
-								<Field label={t("app.connect.password")}>
-									<input
-										type="password"
-										value={password}
-										onChange={(e) => setPassword(e.target.value)}
-										onFocus={() => setIsFocused(true)}
-										onBlur={() => setIsFocused(false)}
-										autoComplete="current-password"
-										disabled={pending || transitioning}
-										required
-									/>
-								</Field>
-							</>
-						{needTOTP ? (
-							<Field label={t("app.connect.totp")}>
-								<input
-									type="text"
-									inputMode="numeric"
-									pattern="[0-9]{6}"
-									maxLength={6}
-									value={totpCode}
-									onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
-									onFocus={() => setIsFocused(true)}
-									onBlur={() => setIsFocused(false)}
-									autoComplete="one-time-code"
-									placeholder="123456"
-									disabled={pending || transitioning}
-									required
-								/>
-							</Field>
-						) : null}
-						<label className="check">
-								<input
-									type="checkbox"
-									checked={remember}
-									onChange={(e) => setRemember(e.target.checked)}
-									disabled={pending || transitioning}
-								/>
-								<span>{t("app.connect.remember")}</span>
-							</label>
-						{error && <div className="inline-error" role="alert">{error}</div>}
-						<Button
-							type="submit"
-							disabled={
-								pending ||
-								transitioning ||
-								!username.trim() || !password
-							}
-							className="login-submit"
-							ref={loginButtonRef}
+			<div className="login-card-stack" data-layer={accepting || otherOpen ? "other" : "signin"}>
+			{accepting ? (
+				<section className={"login-card" + (isFocused ? " is-focused" : "")} aria-labelledby="login-card-title">
+					<div className="login-card-heading"><span className="login-card-mark"><ShieldCheck size={22} strokeWidth={1.4} /></span><h2 id="login-card-title">{team(recoveryToken ? "recover" : "accept")}</h2><p>{team("loginHint")}</p></div>
+					<AcceptFlow
+						invite={inviteToken}
+						recovery={recoveryToken}
+						manual={manualCode}
+						t={team}
+						onDone={connectMember}
+						onBack={() => {
+							setManualCode(false);
+							history.replaceState(null, "", "/console");
+						}}
+					/>
+					<p className="login-private"><ShieldCheck size={13} />{t("login.private")}</p>
+				</section>
+			) : otherOpen ? (
+				<section className="login-card is-other" aria-labelledby="login-card-title">
+					<div className="login-card-heading"><span className="login-card-mark"><ShieldCheck size={22} strokeWidth={1.4} /></span><h2 id="login-card-title">{t("login.otherTitle")}</h2><p>{t("login.otherHint")}</p></div>
+					<div className="login-other-list">
+						{/* Registration is the same flow as arriving through an invite link:
+						    only where the code came from differs. */}
+						<button type="button" className="login-other-item" disabled={pending || transitioning} onClick={() => setManualCode(true)}>
+							<Ticket size={16} />
+							<span>{t("login.register")}</span>
+							<ChevronRight size={15} />
+						</button>
+						{providers.map((provider) => (
+							<a key={provider.id} className="login-other-item" href={"/auth/oauth/" + provider.id + "/start"}>
+								<LogIn size={16} />
+								<span>{t("login.viaProvider", { provider: provider.label })}</span>
+								<ChevronRight size={15} />
+							</a>
+						))}
+						<button type="button" className="login-other-item" disabled={pending || transitioning} onClick={() => setUpgradeHelp(true)}>
+							<HelpCircle size={16} />
+							<span>{t("login.upgradeHelp")}</span>
+							<ChevronRight size={15} />
+						</button>
+					</div>
+					<button type="button" className="login-back" disabled={pending || transitioning} onClick={() => setOtherOpen(false)}>
+						<ArrowLeft size={14} />{t("login.backToSignIn")}
+					</button>
+					<p className="login-private"><ShieldCheck size={13} />{t("login.private")}</p>
+				</section>
+			) : (
+				<>
+					<section className={"login-card" + (isFocused ? " is-focused" : "")} aria-labelledby="login-card-title">
+						<div className="login-card-heading"><span className="login-card-mark"><ShieldCheck size={22} strokeWidth={1.4} /></span><h2 id="login-card-title">{t("login.welcome")}</h2><p>{t("login.hint")}</p></div>
+						<form
+							onSubmit={submit}
+							aria-busy={pending || transitioning}
 						>
-							<span className="btn-content">
-								<ArrowRight size={16} />
-								{pending || transitioning
-									? t("app.connect.connecting")
-									: t("app.connect.submit")}
-							</span>
-						</Button>
-					</form>
-					{/* "I have a code" is the same flow as arriving through an invite
-					    link: only where the code came from differs. */}
+									<Field label={t("app.connect.username")}>
+										<input
+											autoFocus
+											type="text"
+											value={username}
+											onChange={(e) => setUsername(e.target.value)}
+											onFocus={() => setIsFocused(true)}
+											onBlur={() => setIsFocused(false)}
+											autoComplete="username"
+											disabled={pending || transitioning}
+											required
+										/>
+									</Field>
+									<Field label={t("app.connect.password")}>
+										<input
+											type="password"
+											value={password}
+											onChange={(e) => setPassword(e.target.value)}
+											onFocus={() => setIsFocused(true)}
+											onBlur={() => setIsFocused(false)}
+											autoComplete="current-password"
+											disabled={pending || transitioning}
+											required
+										/>
+									</Field>
+							{needTOTP ? (
+								<Field label={t("app.connect.totp")}>
+									<input
+										type="text"
+										inputMode="numeric"
+										pattern="[0-9]{6}"
+										maxLength={6}
+										value={totpCode}
+										onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+										onFocus={() => setIsFocused(true)}
+										onBlur={() => setIsFocused(false)}
+										autoComplete="one-time-code"
+										placeholder="123456"
+										disabled={pending || transitioning}
+										required
+									/>
+								</Field>
+							) : null}
+							<label className="check">
+									<input
+										type="checkbox"
+										checked={remember}
+										onChange={(e) => setRemember(e.target.checked)}
+										disabled={pending || transitioning}
+									/>
+									<span>{t("app.connect.remember")}</span>
+								</label>
+							{error && <div className="inline-error" role="alert">{error}</div>}
+							<Button
+								type="submit"
+								disabled={
+									pending ||
+									transitioning ||
+									!username.trim() || !password
+								}
+								className="login-submit"
+								ref={loginButtonRef}
+							>
+								<span className="btn-content">
+									<ArrowRight size={16} />
+									{pending || transitioning
+										? t("app.connect.connecting")
+										: t("app.connect.submit")}
+								</span>
+							</Button>
+						</form>
+						<p className="login-private"><ShieldCheck size={13} />{t("login.private")}</p>
+					</section>
+					{/* The layer behind: its exposed edge is the whole affordance, and
+					    clicking it turns the card over. Registration, third-party sign-in
+					    and the upgrade guide live back there instead of competing with the
+					    form as a row of links. */}
 					<button
 						type="button"
-						className="login-back"
+						className="login-card-peek"
 						disabled={pending || transitioning}
-						onClick={() => setManualCode(true)}
+						onClick={() => setOtherOpen(true)}
 					>
-						{team("haveCode")}
+						<span>{t("login.moreWays")}</span>
+						<ChevronRight size={14} />
 					</button>
-					</>
-					)}
-                    <button type="button" className="login-back" disabled={pending || transitioning} onClick={()=>setUpgradeHelp(true)}>{t("login.upgradeHelp")}</button>
-                    {upgradeHelp ? <Dialog title={t("login.upgradeHelp")} onClose={()=>setUpgradeHelp(false)}>
-                      <p>{t("login.upgradeCredentials")}</p>
-                      <p>{t("login.upgradeCollision")}</p>
-                      <p>{t("login.upgradeTeam")}</p>
-                      <p>{t("operator.legacyHint")}</p>
-                      <form onSubmit={(event)=>void submit(event,true)}>
-                        <Field label={t("operator.confirmToken")}><input type="password" autoComplete="current-password" value={password} onChange={(event)=>setPassword(event.target.value)} required disabled={pending||transitioning}/></Field>
-                        {needTOTP ? <Field label={t("app.connect.totp")}><input inputMode="numeric" pattern="[0-9]{6}" autoComplete="one-time-code" value={totpCode} onChange={(event)=>setTotpCode(event.target.value)} required disabled={pending||transitioning}/></Field> : null}
-                        {error ? <p role="alert">{error}</p> : null}
-                        <Button type="submit" disabled={!password||pending||transitioning}>{t("operator.legacyLogin")}</Button>
-                      </form>
-                    </Dialog> : null}
-					<p className="login-private"><ShieldCheck size={13} />{t("login.private")}</p>
-			</section>
+				</>
+			)}
+			</div>
+			{upgradeHelp ? <Dialog title={t("login.upgradeHelp")} onClose={()=>setUpgradeHelp(false)}>
+			  <p>{t("login.upgradeCredentials")}</p>
+			  <p>{t("login.upgradeCollision")}</p>
+			  <p>{t("login.upgradeTeam")}</p>
+			  <p>{t("operator.legacyHint")}</p>
+			  <form onSubmit={(event)=>void submit(event,true)}>
+			    <Field label={t("operator.confirmToken")}><input type="password" autoComplete="current-password" value={password} onChange={(event)=>setPassword(event.target.value)} required disabled={pending||transitioning}/></Field>
+			    {needTOTP ? <Field label={t("app.connect.totp")}><input inputMode="numeric" pattern="[0-9]{6}" autoComplete="one-time-code" value={totpCode} onChange={(event)=>setTotpCode(event.target.value)} required disabled={pending||transitioning}/></Field> : null}
+			    {error ? <p role="alert">{error}</p> : null}
+			    <Button type="submit" disabled={!password||pending||transitioning}>{t("operator.legacyLogin")}</Button>
+			  </form>
+			</Dialog> : null}
 		</LoginShell>
 	);
 }

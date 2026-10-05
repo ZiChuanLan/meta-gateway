@@ -401,7 +401,6 @@ export function SettingsPage({
               name="password"
               type="password"
               required
-              minLength={10}
               autoComplete="new-password"
             />
             <span className="field-hint">{t("passwordHint")}</span>

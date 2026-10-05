@@ -109,7 +109,7 @@ export function NewMemberDialog({
               <input name="name" required maxLength={80} />
             </Field>
             <Field label={`${t("password")} · ${t("passwordOptional")}`}>
-              <input name="password" type="password" minLength={10} autoComplete="new-password" />
+              <input name="password" type="password" autoComplete="new-password" />
             </Field>
             <Field label={t("policy")}>
               <select name="policy_id" defaultValue={policies[0]?.id ?? 1}>

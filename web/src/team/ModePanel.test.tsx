@@ -38,13 +38,21 @@ function setup(mode: "personal" | "team", hasOwner: boolean) {
 }
 
 describe("operating mode", () => {
-  it("requires an owner account before team mode can be selected", async () => {
+  it("lets team mode be selected with no owner yet, and says where the owner comes from", async () => {
     setup("personal", false);
+    // The switch is what creates the owner, so it must not be gated on one
+    // existing — that gate is what used to force a second account for the
+    // operator, under a name they could not even reuse.
+    const select = await screen.findByLabelText("Operating mode");
+    expect(select.querySelector('option[value="team"]')).not.toBeDisabled();
     expect(
-      await screen.findByRole("heading", { name: "Create owner account" }),
+      screen.getByText(/creates the owner from the deployment administrator/i),
     ).toBeInTheDocument();
-    const select = screen.getByLabelText("Operating mode");
-    expect(select.querySelector('option[value="team"]')).toBeDisabled();
+    // The manual form stays, but only as the fallback for a deployment with no
+    // admin secret to derive a first password from.
+    expect(
+      screen.getByRole("heading", { name: "Create owner account" }),
+    ).toBeInTheDocument();
   });
 
   it("switches the instance to team mode through the settings panel", async () => {

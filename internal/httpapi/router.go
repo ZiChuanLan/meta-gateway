@@ -573,6 +573,17 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		snapshot := runtimeController.Snapshot().Editable
 		return TeamRequestDefaults{FailoverEnabled: snapshot.CrossChannelFailoverEnabled, RetryTimes: snapshot.RetryTimes}
 	}
+	// Switching to team mode seeds the owner from this identity: the operator is
+	// already signed in as the deployment administrator, and the console's own
+	// admin username wins over ADMIN_USERNAME once it has been set. The password
+	// is the admin token, which is the only secret that authenticates it.
+	teamHandler.deploymentAdmin = func() (string, string) {
+		username, err := db.OperatorUsername(cfg.AdminUsername)
+		if err != nil {
+			return "", ""
+		}
+		return username, cfg.AdminToken
+	}
 	// Third-party sign-in calls the provider's token and userinfo endpoints from
 	// the server, so they follow the same proxy the operator configured for
 	// outbound traffic — not the container's HTTP_PROXY, which usually points at

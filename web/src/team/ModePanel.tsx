@@ -100,9 +100,7 @@ export function ModePanel({
                 }
               >
                 <option value="personal">{t("personal")}</option>
-                <option value="team" disabled={!query.data.has_owner}>
-                  {t("enabled")}
-                </option>
+            				<option value="team">{t("enabled")}</option>
               </select>
               <p className="muted panel-lede" style={{ marginTop: 12 }}>
                 {t("disableHint")}
@@ -117,8 +115,15 @@ export function ModePanel({
             </fieldset>
           </form>
           {!query.data.has_owner && owner && (
-            <form
-              style={{ marginTop: 22 }}
+            <>
+              {/* Switching is what creates the owner now, so the switch must not
+                  be gated on one existing. This note explains where the account
+                  comes from before the operator flips it. */}
+              <p className="muted panel-lede" style={{ marginTop: 22 }}>
+                {t("bootstrapAuto")}
+              </p>
+              <form
+                style={{ marginTop: 12 }}
               onSubmit={(event) => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
@@ -152,7 +157,6 @@ export function ModePanel({
                     <input
                       name="password"
                       type="password"
-                      minLength={10}
                       required
                       autoComplete="new-password"
                     />
@@ -169,7 +173,8 @@ export function ModePanel({
                   {busy ? t("saving") : t("bootstrap")}
                 </Button>
               </fieldset>
-            </form>
+              </form>
+            </>
           )}
         </>
       ) : null}

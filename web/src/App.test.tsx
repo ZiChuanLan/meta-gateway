@@ -71,10 +71,16 @@ function stubAdminFetch(overrides: {
 	hooks?: unknown[];
 	routes?: unknown[];
 	mode?: { mode: string; has_owner: boolean; role: string };
+	oauth?: { id: string; label: string }[];
 } = {}) {
 	return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 		const path = String(input).split("?")[0];
 		const method = init?.method ?? "GET";
+		// The public options document: the CSRF cookie the invitation and
+		// recovery POSTs post against, plus the configured providers.
+		if (path === "/auth/options") {
+			return jsonResponse({ csrf: "csrf-from-options", oauth: overrides.oauth ?? [] });
+		}
 		if (method === "POST" && path === "/admin/session") {
 			return jsonResponse({ session_token: "mg-sess.test" });
 		}
@@ -179,9 +185,28 @@ describe("channel-first shell", () => {
     expect(fetcher.mock.calls.some(([path])=>String(path)==="/me")).toBe(false);
   });
 
+	it("lists the configured third-party providers on the second layer", async () => {
+    const fetcher = stubAdminFetch({ oauth: [{ id: "linuxdo", label: "Linux.do" }] });
+    vi.stubGlobal("fetch", fetcher);
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: "More sign-in options" }));
+    // The backend has always exposed the configured providers; nothing used to
+    // render them, so a member had no button to sign in with one.
+    expect(
+      await screen.findByRole("link", { name: /Continue with Linux\.do/ }),
+    ).toHaveAttribute("href", "/auth/oauth/linuxdo/start");
+    // And asking for that document is what mints the CSRF cookie the invitation
+    // and recovery POSTs depend on — without it every one of them answered 403.
+    expect(
+      fetcher.mock.calls.some(([p]) => String(p).split("?")[0] === "/auth/options"),
+    ).toBe(true);
+  });
+
 	it("offers upgrade sign-in guidance without sending credentials", async () => {
     const fetcher=stubAdminFetch();vi.stubGlobal("fetch",fetcher);
     renderApp();
+    // The guide lives on the second layer of the card now.
+    fireEvent.click(screen.getByRole("button",{name:"More sign-in options"}));
     fireEvent.click(screen.getByRole("button",{name:"Upgrading? Sign-in guide"}));
     expect(screen.getByRole("dialog")).toHaveTextContent("ADMIN_USERNAME");
     expect(screen.getByRole("dialog")).toHaveTextContent("ADMIN_TOKEN");
@@ -190,6 +215,7 @@ describe("channel-first shell", () => {
 
 	it("accepts a legacy token through upgrade help without guessing a username", async () => {
     const fetcher=stubAdminFetch();vi.stubGlobal("fetch",fetcher);renderApp();
+    fireEvent.click(screen.getByRole("button",{name:"More sign-in options"}));
     fireEvent.click(screen.getByRole("button",{name:"Upgrading? Sign-in guide"}));
     fireEvent.change(screen.getByLabelText("Confirm deployment token (ADMIN_TOKEN)"),{target:{value:"old-token"}});
     fireEvent.click(screen.getByRole("button",{name:"Sign in with deployment token"}));

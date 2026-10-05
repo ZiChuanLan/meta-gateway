@@ -98,6 +98,11 @@ type TeamHandler struct {
 	requestDefaults    func() TeamRequestDefaults
 	// outboundProxy reports the operator's outbound proxy. Empty means direct.
 	outboundProxy func() string
+	// deploymentAdmin reports the configured deployment administrator — the
+	// username it signs in with and the secret that authenticates it. Switching
+	// to team mode seeds the owner account from it, so the operator does not have
+	// to invent a second identity for themselves.
+	deploymentAdmin func() (username, password string)
 }
 
 func NewTeamHandler(db *store.DB, enc *crypto.Encrypter) *TeamHandler {
@@ -475,8 +480,13 @@ func (h *TeamHandler) putSettings(w http.ResponseWriter, r *http.Request) {
 
 var teamUsername = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$`)
 
+// hashTeamPassword hashes a member password. There is deliberately no minimum
+// length: the operator decides what strength their own deployment needs, and a
+// deployment administrator's existing secret must be usable as the owner's
+// first password when team mode is switched on. An empty password is still
+// refused, and the upper bound keeps a hash from becoming a denial of service.
 func hashTeamPassword(password string) (string, error) {
-	if len([]rune(password)) < 10 || len(password) > 1024 {
+	if len(password) == 0 || len(password) > 1024 {
 		return "", errors.New("password_length")
 	}
 	sum := sha256.Sum256([]byte(password))

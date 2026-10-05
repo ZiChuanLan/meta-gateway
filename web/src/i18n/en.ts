@@ -435,6 +435,13 @@ export const en: Dict = {
   "wizard.editionTitle": "Choose how you use the gateway",
   "wizard.editionHint": "Personal mode is for your own access. Team mode adds members, grants and quotas; create an owner account before enabling it. This choice is separate from model synchronization below.",
   "login.upgradeHelp": "Upgrading? Sign-in guide",
+  "login.moreWays": "More sign-in options",
+  "login.otherTitle": "Other sign-in options",
+  "login.otherHint":
+    "Register a new account, sign in with a linked provider, or read the upgrade guide.",
+  "login.register": "Register with a code",
+  "login.viaProvider": "Continue with {provider}",
+  "login.backToSignIn": "Back to sign-in",
   "login.upgradeCredentials": "The deployment username is ADMIN_USERNAME (admin by default). Its password remains your existing ADMIN_TOKEN. Upgrading does not change it. After signing in, set a username under Settings → Administrator sign-in by confirming your existing token. Saved values override the environment and require no restart.",
   "login.upgradeCollision": "An existing team account owns its username; a failed password never falls back to the deployment token. Choose a distinct ADMIN_USERNAME, such as gateway-admin, if names conflict.",
   "login.upgradeTeam": "Personal use does not require a team account. For multiple users, sign in and create an owner in setup or User management, then enable team mode. All accounts sign in at /console.",

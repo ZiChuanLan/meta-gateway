@@ -43,7 +43,7 @@ const zh = {
   username: "用户名",
   password: "密码",
   currentPassword: "当前密码",
-  passwordHint: "至少 10 个字符",
+  passwordHint: "长度不限",
   userHint: "3–64 位字母、数字、下划线、点或短横线",
   owner: "站长",
   admin: "管理员",
@@ -55,7 +55,10 @@ const zh = {
   pause: "暂停",
   restore: "恢复",
   bootstrap: "创建站长账户",
-  bootstrapHint: "先创建团队站长，再启用团队模式。原管理口令继续保留。",
+  bootstrapAuto:
+    "切换到团队模式时会自动用部署管理员创建站长（用户名与口令沿用当前管理员），无需另外填写。",
+  bootstrapHint:
+    "仅当部署没有可用的管理员口令时，才需要在这里手动创建站长。",
   totp: "原控制台两步验证码（如已开启）",
   ownerReady: "站长账户已创建",
   invite: "邀请用户",
@@ -296,7 +299,7 @@ const zh = {
   "importReason.username_taken": "用户名已被占用",
   "importReason.invalid_quota": "额度格式不正确",
   "importReason.invalid_request": "该行内容不完整",
-  "importReason.password_length": "密码至少 10 位",
+  "importReason.password_length": "密码不能为空",
   "importReason.invalid_policy": "策略不存在",
   "importReason.save_failed": "写入失败，请重试",
 
@@ -409,7 +412,7 @@ const en: Record<keyof typeof zh, string> = {
   username: "Username",
   password: "Password",
   currentPassword: "Current password",
-  passwordHint: "At least 10 characters",
+  passwordHint: "No length limit",
   userHint: "3–64 letters, digits, underscores, dots or hyphens",
   owner: "Owner",
   admin: "Administrator",
@@ -421,8 +424,10 @@ const en: Record<keyof typeof zh, string> = {
   pause: "Pause",
   restore: "Restore",
   bootstrap: "Create owner account",
+  bootstrapAuto:
+    "Switching to team mode creates the owner from the deployment administrator automatically, reusing the admin username and secret — nothing to fill in.",
   bootstrapHint:
-    "Create the team owner before enabling team mode. The original admin credential remains available.",
+    "Only needed when the deployment has no admin secret to derive a password from.",
   totp: "Console two-factor code (if enabled)",
   ownerReady: "Owner account created",
   invite: "Invite member",
@@ -686,7 +691,7 @@ const en: Record<keyof typeof zh, string> = {
   "importReason.username_taken": "Username already taken",
   "importReason.invalid_quota": "Unreadable quota",
   "importReason.invalid_request": "Incomplete line",
-  "importReason.password_length": "Password must be at least 10 characters",
+  "importReason.password_length": "Password must not be empty",
   "importReason.invalid_policy": "Policy does not exist",
   "importReason.save_failed": "Write failed, retry",
 
@@ -785,8 +790,8 @@ export const teamError = (error: unknown, locale: string) => {
     team_disabled: ["团队服务未开启", "Team service is not enabled"],
     invalid_credentials: ["用户名或密码不正确", "Invalid credentials"],
     password_length: [
-      "密码至少 10 个字符，最多 1024 字节",
-      "Password must be at least 10 characters and at most 1024 bytes",
+      "密码不能为空，最多 1024 字节",
+      "Password must not be empty, and at most 1024 bytes",
     ],
     invalid_username: [
       "用户名格式或显示名称不正确",
