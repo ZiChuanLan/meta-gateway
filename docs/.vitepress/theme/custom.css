@@ -1,0 +1,330 @@
+/*
+ * 站点配色 = 仓库自己的 Paper / Cobalt 令牌（web/src/styles/tokens.css）。
+ * 只映射变量，不重写 VitePress 的组件样式，升级时不会分叉。
+ */
+
+:root {
+	--vp-font-family-base: 'Inter', 'PingFang SC', 'Microsoft YaHei UI', -apple-system,
+		BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	--vp-font-family-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	/* 背景与分层 */
+	--vp-c-bg: #f8f9fb;
+	--vp-c-bg-alt: #eef0f4;
+	--vp-c-bg-soft: #f3f4f6;
+	--vp-c-bg-elv: #ffffff;
+
+	/* 描边 */
+	--vp-c-border: rgba(29, 35, 52, 0.17);
+	--vp-c-divider: rgba(29, 35, 52, 0.085);
+	--vp-c-gutter: rgba(29, 35, 52, 0.055);
+
+	/* 文本 */
+	--vp-c-text-1: #14161c;
+	--vp-c-text-2: #464b58;
+	--vp-c-text-3: #707683;
+
+	--vp-c-default-1: #464b58;
+	--vp-c-default-2: #707683;
+	--vp-c-default-3: #9298a4;
+	--vp-c-default-soft: rgba(29, 35, 52, 0.055);
+
+	/* 品牌 = Cobalt */
+	--vp-c-brand-1: #3357e8;
+	--vp-c-brand-2: #294bd5;
+	--vp-c-brand-3: #294bc8;
+	--vp-c-brand-soft: rgba(51, 87, 232, 0.13);
+
+	/* 自定义块 */
+	--vp-c-tip-1: #267655;
+	--vp-c-tip-2: #2f8562;
+	--vp-c-tip-3: #267655;
+	--vp-c-tip-soft: #edf5ef;
+
+	--vp-c-warning-1: #956200;
+	--vp-c-warning-2: #a56d00;
+	--vp-c-warning-3: #956200;
+	--vp-c-warning-soft: #fff7e7;
+
+	--vp-c-danger-1: #bc3443;
+	--vp-c-danger-2: #c94352;
+	--vp-c-danger-3: #bc3443;
+	--vp-c-danger-soft: #faf0f0;
+
+	--vp-c-important-1: #3e62a4;
+	--vp-c-important-2: #4a6fb3;
+	--vp-c-important-3: #3e62a4;
+	--vp-c-important-soft: #eff3f8;
+
+	--vp-custom-block-tip-border: transparent;
+	--vp-custom-block-tip-text: var(--vp-c-text-1);
+	--vp-custom-block-tip-bg: var(--vp-c-tip-soft);
+	--vp-custom-block-tip-code-bg: rgba(38, 118, 85, 0.08);
+
+	--vp-custom-block-warning-border: transparent;
+	--vp-custom-block-warning-text: var(--vp-c-text-1);
+	--vp-custom-block-warning-bg: var(--vp-c-warning-soft);
+	--vp-custom-block-warning-code-bg: rgba(149, 98, 0, 0.08);
+
+	--vp-custom-block-danger-border: transparent;
+	--vp-custom-block-danger-text: var(--vp-c-text-1);
+	--vp-custom-block-danger-bg: var(--vp-c-danger-soft);
+	--vp-custom-block-danger-code-bg: rgba(188, 52, 67, 0.08);
+
+	--vp-custom-block-important-border: transparent;
+	--vp-custom-block-important-text: var(--vp-c-text-1);
+	--vp-custom-block-important-bg: var(--vp-c-important-soft);
+	--vp-custom-block-important-code-bg: rgba(62, 98, 164, 0.08);
+
+	/* 按钮 */
+	--vp-button-brand-bg: #3357e8;
+	--vp-button-brand-hover-bg: #294bd5;
+	--vp-button-brand-active-bg: #294bc8;
+	--vp-button-brand-border: transparent;
+	--vp-button-brand-hover-border: transparent;
+	--vp-button-brand-active-border: transparent;
+	--vp-button-brand-text: #ffffff;
+
+	--vp-button-alt-bg: #ffffff;
+	--vp-button-alt-hover-bg: #f3f4f6;
+	--vp-button-alt-active-bg: #eef0f4;
+	--vp-button-alt-border: rgba(29, 35, 52, 0.17);
+	--vp-button-alt-hover-border: rgba(51, 87, 232, 0.26);
+	--vp-button-alt-text: #252730;
+	--vp-button-alt-hover-text: #14161c;
+
+	/* 代码 */
+	--vp-code-block-bg: #f3f4f6;
+	--vp-code-line-highlight-color: rgba(51, 87, 232, 0.07);
+	--vp-code-copy-code-bg: rgba(29, 35, 52, 0.05);
+	--vp-code-copy-code-hover-bg: rgba(29, 35, 52, 0.09);
+	--vp-code-copy-code-active-text: #14161c;
+	--vp-code-tab-divider: rgba(29, 35, 52, 0.085);
+	--vp-code-tab-text-color: #707683;
+	--vp-code-tab-hover-text-color: #14161c;
+	--vp-code-tab-active-text-color: #14161c;
+	--vp-code-tab-active-bar-color: #3357e8;
+
+	/* 输入与搜索 */
+	--vp-input-border-color: rgba(29, 35, 52, 0.17);
+	--vp-input-bg-color: #ffffff;
+	--vp-input-switch-bg-color: #e8eaee;
+
+	--vp-local-search-bg: #ffffff;
+	--vp-local-search-result-bg: #ffffff;
+	--vp-local-search-result-border: rgba(29, 35, 52, 0.085);
+	--vp-local-search-result-selected-bg: #edf0ff;
+	--vp-local-search-result-selected-border: rgba(51, 87, 232, 0.26);
+	--vp-local-search-highlight-bg: rgba(51, 87, 232, 0.18);
+	--vp-local-search-highlight-text: #14161c;
+
+	/* 布局 */
+	--vp-layout-max-width: 1480px;
+	--vp-sidebar-width: 244px;
+
+	--vp-home-hero-name-color: #14161c;
+}
+
+.dark {
+	--vp-c-bg: #111216;
+	--vp-c-bg-alt: #0d0e11;
+	--vp-c-bg-soft: #1b1d24;
+	--vp-c-bg-elv: #1b1d24;
+
+	--vp-c-border: rgba(223, 230, 255, 0.16);
+	--vp-c-divider: rgba(223, 230, 255, 0.075);
+	--vp-c-gutter: rgba(223, 230, 255, 0.045);
+
+	--vp-c-text-1: #e9eaf0;
+	--vp-c-text-2: #c6cad6;
+	--vp-c-text-3: #a0a7b8;
+
+	--vp-c-default-1: #c6cad6;
+	--vp-c-default-2: #a0a7b8;
+	--vp-c-default-3: #747e93;
+	--vp-c-default-soft: rgba(223, 230, 255, 0.075);
+
+	--vp-c-brand-1: #8fa4ff;
+	--vp-c-brand-2: #a7b7ff;
+	--vp-c-brand-3: #a7b7ff;
+	--vp-c-brand-soft: rgba(143, 164, 255, 0.16);
+
+	--vp-c-tip-1: #7ad6aa;
+	--vp-c-tip-2: #8fe0b8;
+	--vp-c-tip-3: #7ad6aa;
+	--vp-c-tip-soft: #20362f;
+
+	--vp-c-warning-1: #f0be67;
+	--vp-c-warning-2: #f6cd84;
+	--vp-c-warning-3: #f0be67;
+	--vp-c-warning-soft: #3a3020;
+
+	--vp-c-danger-1: #f18b99;
+	--vp-c-danger-2: #ffa3ae;
+	--vp-c-danger-3: #f18b99;
+	--vp-c-danger-soft: #3c252e;
+
+	--vp-c-important-1: #a5bfff;
+	--vp-c-important-2: #b8cdff;
+	--vp-c-important-3: #a5bfff;
+	--vp-c-important-soft: #28344c;
+
+	--vp-custom-block-tip-code-bg: rgba(122, 214, 170, 0.1);
+	--vp-custom-block-warning-code-bg: rgba(240, 190, 103, 0.1);
+	--vp-custom-block-danger-code-bg: rgba(241, 139, 153, 0.1);
+	--vp-custom-block-important-code-bg: rgba(165, 191, 255, 0.1);
+
+	--vp-button-brand-bg: #3357e8;
+	--vp-button-brand-hover-bg: #4a68ea;
+	--vp-button-brand-active-bg: #294bd5;
+	--vp-button-brand-text: #ffffff;
+
+	--vp-button-alt-bg: #22252e;
+	--vp-button-alt-hover-bg: #2b2f3b;
+	--vp-button-alt-active-bg: #333a4e;
+	--vp-button-alt-border: rgba(223, 230, 255, 0.16);
+	--vp-button-alt-hover-border: rgba(143, 164, 255, 0.3);
+	--vp-button-alt-text: #e9eaf0;
+	--vp-button-alt-hover-text: #f6f7fb;
+
+	--vp-code-block-bg: #16181e;
+	--vp-code-line-highlight-color: rgba(143, 164, 255, 0.08);
+	--vp-code-copy-code-bg: rgba(223, 230, 255, 0.06);
+	--vp-code-copy-code-hover-bg: rgba(223, 230, 255, 0.1);
+	--vp-code-copy-code-active-text: #f6f7fb;
+
+	--vp-input-border-color: rgba(223, 230, 255, 0.16);
+	--vp-input-bg-color: #1b1d24;
+	--vp-input-switch-bg-color: #2b2f3b;
+
+	--vp-local-search-bg: #1b1d24;
+	--vp-local-search-result-bg: #1b1d24;
+	--vp-local-search-result-border: rgba(223, 230, 255, 0.075);
+	--vp-local-search-result-selected-bg: #252e4c;
+	--vp-local-search-result-selected-border: rgba(143, 164, 255, 0.3);
+	--vp-local-search-highlight-bg: rgba(143, 164, 255, 0.24);
+	--vp-local-search-highlight-text: #f6f7fb;
+
+	--vp-home-hero-name-color: #f6f7fb;
+}
+
+/* 顶栏：与门面一致的半透明材质，而不是纯色块。 */
+:root {
+	--vp-nav-bg-color: rgba(250, 251, 253, 0.87);
+}
+
+.dark {
+	--vp-nav-bg-color: rgba(20, 22, 28, 0.85);
+}
+
+.VPNav {
+	backdrop-filter: saturate(180%) blur(12px);
+}
+
+/* 首页 hero：把装饰换成领域相关的路由网格，不是泛化的渐变球。 */
+.VPHero .image-bg {
+	background-image: radial-gradient(closest-side, rgba(51, 87, 232, 0.14), transparent) !important;
+}
+
+.dark .VPHero .image-bg {
+	background-image: radial-gradient(closest-side, rgba(143, 164, 255, 0.14), transparent) !important;
+}
+
+.VPHero {
+	position: relative;
+}
+
+.VPHero::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background-image: linear-gradient(var(--vp-c-divider) 1px, transparent 1px),
+		linear-gradient(90deg, var(--vp-c-divider) 1px, transparent 1px);
+	background-size: 48px 48px;
+	mask-image: radial-gradient(70% 60% at 50% 0%, #000 0%, transparent 75%);
+	opacity: 0.55;
+}
+
+.VPHero .container,
+.VPHero .main {
+	position: relative;
+}
+
+/* 首页特性卡：平面描边、统一间距，与工作台卡片同一种语汇。 */
+.VPFeatures .VPFeature {
+	border: 1px solid var(--vp-c-divider);
+	border-radius: 10px;
+	background: var(--vp-c-bg-elv);
+	box-shadow: none;
+	transition: border-color 180ms cubic-bezier(0.2, 0.7, 0.3, 1),
+		transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.VPFeatures .VPFeature:hover {
+	border-color: var(--vp-c-brand-soft);
+	transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.VPFeatures .VPFeature,
+	.VPFeatures .VPFeature:hover {
+		transition: none;
+		transform: none;
+	}
+}
+
+/* 正文表格：中文文档里表格很密，给它一点呼吸和更清晰的表头。 */
+.vp-doc table {
+	display: table;
+	width: 100%;
+	border-collapse: collapse;
+	margin: 16px 0;
+}
+
+.vp-doc tr {
+	border-top: 1px solid var(--vp-c-divider);
+	background: transparent;
+}
+
+.vp-doc th {
+	background: var(--vp-c-bg-soft);
+	font-size: 13px;
+	letter-spacing: 0.01em;
+}
+
+.vp-doc th,
+.vp-doc td {
+	padding: 9px 12px;
+	border: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc td {
+	font-size: 13.5px;
+}
+
+/* 长表格（生成的参考表）允许横向滚动而不是压扁列宽。 */
+.vp-doc .table-scroll,
+.vp-doc div[class*='language-'] {
+	overflow-x: auto;
+}
+
+.vp-doc h2 {
+	border-top: 1px solid var(--vp-c-divider);
+	padding-top: 22px;
+}
+
+/* 生成的参考表：顶部徽标。 */
+.generated-note {
+	margin: 16px 0;
+	padding: 10px 14px;
+	border-left: 3px solid var(--vp-c-brand-1);
+	background: var(--vp-c-brand-soft);
+	border-radius: 0 6px 6px 0;
+	font-size: 13px;
+	color: var(--vp-c-text-2);
+}
+
+.generated-note code {
+	font-size: 12px;
+}

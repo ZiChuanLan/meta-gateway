@@ -42,6 +42,17 @@ jobs:
           npm run build
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
+      - name: Verify generated docs are current
+        # docs/reference is generated FROM the code, so the drift it is meant to
+        # catch appears when internal/ changes — not when docs/ does. That is why
+        # the gate lives here and not in the Docs workflow, which only runs on
+        # docs/** paths and would therefore miss it entirely.
+        run: |
+          go run ./tools/docsgen
+          if ! git diff --exit-code -- docs/reference; then
+            echo "::error::docs/reference 与代码不一致。请在本地运行 'go run ./tools/docsgen' 并提交结果。"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
       - name: Test

@@ -39,11 +39,17 @@ npm run build          # tsc -b && vite build
 **`npm run build` 的产物写入 `internal/webui/dist`，由 `go:embed` 编译进二进制。**
 改了 `web/src` 却没重建 dist，Go 侧跑的仍是旧 UI —— 这是本项目最高频的"改了没生效"原因。
 
+**当前为统一控制台产物**：成员与管理员均从 `/console` 登录，`/app` 为兼容跳转，
+`npm run build` 只构建 `internal/webui/dist`。成员复用共享页面与主题，由服务端账号角色隔离权限，
+成员数据源只调用 `/me/*`，不得将管理接口权限下放给成员。`ADMIN_USERNAME` 默认 `admin`，
+部署管理员密码沿用 `ADMIN_TOKEN`；网页保存的管理员用户名优先于 `ADMIN_USERNAME`，保存在 `operator_preferences`。未配置时环境变量仍为初始默认值；现有团队账号重名时优先，失败不得回退到部署管理员。网页改名需原管理口令/TOTP，禁止与团队账号冲突。
+
 ### 完整交付前的质量门（全绿才算完成，少跑一项就可能被 CI 挡下）
 
 ```bash
-cd web && npm run lint && npx tsc -b && npx vitest run && npx vite build && cd ..
+cd web && npm run lint && npx tsc -b && npx vitest run && npm run build && cd ..
 gofmt -l . && go vet ./... && go build ./... && go test ./...
+go run ./tools/docsgen && git diff --exit-code docs/reference   # 文档与代码一致
 ```
 
 > **`npm run lint` 别省。** CI 的 Verify 步骤是 `npm run lint && npm run typecheck && npm test -- --run
@@ -73,13 +79,20 @@ gofmt -l . && go vet ./... && go build ./... && go test ./...
 
 CI 的 race 步骤是 `go test -race -timeout 20m ./...`（**per-package** 20 分钟），不要调回默认的
 10 分钟：`-race` 会给纯 Go 版 SQLite（`modernc.org/sqlite`）插桩，而每个开新库的测试都要重放全部
-101 个迁移 —— 实测 **0.14s → 3.4s（25×）**。所以 `internal/store` 单包约 500s、`internal/httpapi`
+118 个迁移 —— 实测 **0.14s → 3.4s（25×）**。所以 `internal/store` 单包约 500s、`internal/httpapi`
 约 700s，默认 600s 上限正好压在悬崖上（09-17 那次 httpapi 504.9s 惊险通过，之后 store 599.8s
-只差 0.2s 就红）。race 步骤失败时先分清是 `DATA RACE` 还是 `test timed out`：后者是预算问题，
+只差 0.2s 就红）；2026-10-04 在 Windows 上重测 httpapi **956.8s**（20m 预算只剩 1.25×）、siteprobe 59.6s。
+race 步骤失败时先分清是 `DATA RACE` 还是 `test timed out`：后者是预算问题，
 不是代码问题。想真正砍掉这笔开销，方向是「每包迁移一次模板库、各测试拷贝」，可省掉每测试的固定成本。
 
+**Windows 本地跑 `-race` 要先给 C 编译器**：本机默认 `CGO_ENABLED=0`，且 bash 工具的环境 PATH 里
+没有 WinGet 装的 MinGW-W64（只有 powershell 工具的环境能 `Get-Command gcc`），不设就直接
+`cgo: C compiler "gcc" not found`（48s 就退，看着像代码错）。可用写法：
+`$mingw="$env:LOCALAPPDATA\Microsoft\WinGet\Packages\*WinLibs*\mingw64\bin"` →
+`$env:PATH="$mingw;$env:PATH"; $env:CC="$mingw\gcc.exe"; $env:CGO_ENABLED='1'` 再跑。
+
 后台调度器（alert / balance / health sweep、alert rules、daily summary、model catalog、DB GC、
-probe、update check、discovery recovery loop）都由 `NewWithDependencies` 启动，各自往
+probe、**site probe**、update check、discovery recovery loop）都由 `NewWithDependencies` 启动，各自往
 `RegisterStopper` 注册停止回调。**测试里建 router 必须用 `NewTestRouter(t, cfg, db, enc)`**
 （`httpapi_test` 里写 `httpapi.NewTestRouter`），它在该测试结束时 `StopBackground`；直接用 `New`
 会让调度器活到进程退出（实测 44 个泄漏 router ≈ 458 个常驻 goroutine）。
@@ -102,7 +115,9 @@ internal/
   outbound/         # 出网策略（代理、超时、TLS）
   relay/            # 裸转发通道（尽量零加工）
   discovery/        # 上游模型发现与采纳（model_sync_mode: auto|manual）
-  probe/            # 渠道健康探测与候选评估
+  probe/            # 渠道健康探测与候选评估（发真实 chat completion，消耗 token）
+  siteprobe/        # 站点自公开探针数据源（Uptime Kuma 状态页 / New-API 价格表，零 token；
+                    # 判定后走 route_members 的 auto_disable 动作，设计见 docs/site-probe-source.md）
   healthsweep/      # 健康度清扫
   usage/            # 用量与账单聚合
   financesweep/     # 余额/成本扫描
@@ -119,8 +134,10 @@ internal/
   selfupdate/ updatecheck/   # 容器自更新
   config/ runtimeconfig/     # 配置读取与运行时设置
   webui/            # go:embed 前端产物（dist），不要手改
+  spa/              # 控制台 SPA 文件服务、缓存与路径处理（独立测试）
 web/                # 前端源码（React 19 + Vite + TS）
-docs/               # 设计文档
+docs/               # 文档站源码（VitePress）+ 由 tools/docsgen 生成的参考层
+tools/              # 仓库工具：docsgen（生成 docs/reference）、landing（启动页）、market-registry
 ```
 
 前端结构要点：
@@ -167,21 +184,41 @@ docs/               # 设计文档
 
 ### 3.2 计费单价：两层「整层替换」优先级链
 
-实现在 `internal/proxy/proxy_health.go` 的 `billingCost`（key 级单价已于 2026-09-13 移除）：
+实现在 `internal/proxy/proxy_health.go` 的 `billingCost` 与 `priceLayer`（key 级单价已于 2026-09-13 移除）：
 
-1. `route_members.price_*_per_1k`（最具体：该路由 × 该渠道）
-2. `model_metadata.price_*_per_1k`（按模型名）
+1. `route_members` 的单价列 + `price_tiers` / `price_schedule`（最具体：该路由 × 该渠道）
+2. `model_metadata` 的单价列 + `price_tiers` / `price_schedule`（按模型名）
 
-**命中判定**：该层 `prompt > 0 || completion > 0`，命中即停止下探；两层都全 0 → cost = 0（免费）。
+**命中判定看 `domain.PriceLayer.Priced()`，不是看扁平列是否非 0**：
+`prompt > 0 || completion > 0 || per_request > 0 || 配了阶梯`。命中即停止下探；两层都不命中 → cost = 0（免费）。
 
-> **坑：层内不逐字段回退。** 只填了 completion 而 prompt 留 0 的那一层，prompt 会按 0 计（免费），
+> **坑一：层内不逐字段回退。** 只填了 completion 而 prompt 留 0 的那一层，prompt 会按 0 计（免费），
 > 不会再去找下一层的 prompt 价。
+>
+> **坑二：只配了阶梯的层也是「已定价」。** 扁平列全 0 但有 `price_tiers` 时这一层算命中；
+> 只检查扁平列的代码会把这笔请求当成免费（`price_tiers_test.go` 钉死这条）。
 
-最后乘 `model_ratios.ratio`（控制台"计费倍率"，默认 1.0，可 0~1000），倍率不参与层选择。
-cache-read 按 cache 单价（未设则按 prompt 价）；cache-creation 按 prompt 价。
+**层内取价**：配了阶梯时**阶梯压过扁平列**（`EffectivePrices`）。档位由
+`inputTokens = promptTokens + cacheCreationTokens` 选出（缓存**读**不计入，它单独按 cache 价计），
+与计费口径同一个量，所以档位与账单不可能对不上。请求超过所有显式上限时落到最后一档（最贵那档），不是免费。
 
-**配额与计价正交**：`quota_total_tokens` / `quota_used_tokens` 按 **token 数**扣，与单价无关；
-单价只影响 `usage_records.cost`。
+**成本公式**（`billingCost`）：
+
+```
+成本 = ( input/1000 × pricePrompt
+       + completion/1000 × priceCompletion
+       + cacheRead/1000 × priceCache
+       + pricePerRequest ) × ratio × multiplier
+```
+
+- `priceCache <= 0` 时回退到该层的 `pricePrompt`。
+- `ratio` = `model_ratios`（控制台「计费倍率」，默认 1.0，可 0~1000），**不参与层选择**。
+- `multiplier` = 时段倍率（`PriceWindow`），无匹配时段时为 1。**第一个匹配的时段生效**，不与后续时段相乘。
+- 阶梯与时段都存在层自己的 JSON 列里（迁移 120），畸形值会被记录并丢弃后回退到扁平价，绝不让转发卡住。
+
+**配额与计价正交，且有两套单位并行**：`quota_total_tokens` / `quota_used_tokens` 按 **token 数**扣；
+`quota_total_cost` / `quota_used_cost` 按**金额**扣（迁移 113）。两者**同时生效，谁先耗尽谁拒绝请求**，
+不是二选一。三处都有：`downstream_keys`、`key_groups`、`team_users`。
 
 **成本展示一律读真实账单**：
 - Keys 页 cost 列 = `UsageStore.CostByKey()`（按 key 求和）
@@ -277,9 +314,57 @@ Undo 逆序回放并跳过已 undone 的 op。四条不变量：
   （`ChannelsWithModel`）：disabled / 未知 / 已不再提供该模型的 id 计入 `skipped`；**已在目标分组的
   渠道既不算 added 也不算 skipped**（纯空操作，连点两次不会重复挂载、也不会看起来像失败）；只在别的
   分组里的渠道仍会被挂进来（分组可叠加）。
+- **匹配范围 `exact` / `related`**（2026-10-03 新增）：`ChannelsWithModel(pattern)` 保持原语义（普通名字
+  精确匹配，`*` 由操作员自己写）；`ChannelsMatchingModel(pattern, ModelMatchRelated)` 额外接受「以 pattern
+  开头的其他模型」（`pattern*`），并为命中的变体成员写 `mapping_json={"real":"<命中名>"}`——不改路由名、
+  只改成员的转发名，否则挂上去的成员会把基础名发给根本不认它的上游（挂了个只会报错的成员）。
+  三处参数：`POST /admin/routes/{id}/auto-match` 的 `match`、创建路由的 `auto_match_mode`、
+  预览 `GET /admin/discovery/model-channels?match=related`。预览行会显示「命中 <模型名>」，
+  所以宽松匹配的结果是可核对、可取消勾选的。
+
+### 3.7.3 团队码与账户额度：哈希、占位列与双重限额
+
+**码表就是 `team_invites`（一张表三种用途）**，`kind` = `invite|credit|recovery`：
+
+- 短码 `XXXX-XXXX-XXXX-XXXX`（16 位， 80 bit）**哈希存的是去掉分组符、大写化后的原文**
+  （`stripTeamCode`），所以去横线/小写/空格都能命中；旧的长 token 存原样哈希，继续兼容。
+  **改码格式前先看 `teamCodeCandidates` 与 `stripTeamCode`**：只对“看起来像短码”（16 位且字符集属于
+  `teamCodeAlphabet`）的值做宽松匹配，否则会把 base64url 的长 token 错误归一化。
+- `credit` 码与策略无关，但 `policy_id` 是 NOT NULL + 外键，所以插入时填一个**占位列**（站点第一条策略，
+  见 `createCodes` 注释）；不要因为“这列对 credit 无意义”就传 0。
+- 同一账号重复兑同一个额度码由 `team_code_redemptions` 的 `(code_id,user_id)` 唯一索引拦；
+  码的总次数由 `used_count < max_uses` 拦。两者都在同一个事务里，先过再入账。
+
+**账户额度是第二重限额**（`team_users.quota_total_tokens/quota_used_tokens`，0 = 不限），新增或改动额度链路时两个点都要改：
+
+1. 准入：`internal/httpapi/relay.go` 的 `ensureQuota`（额度随 `key.TeamAccess` 快照带出，不额外查库）；
+2. 计费：`internal/store/usage.go` 的 `RecordUsage`（与 Key 配额**同一事务**累加）。
+
+### 3.7.4 第三方登录：端点会分裂成两个视角
+
+团队成员的 GitHub / Linux.do 登录实现在 `internal/httpapi/team_oauth.go`（流程）与 `team_oauth_admin.go`（配置）。改动前必读：
+
+- **三个端点不是一个视角**：`authorize_url` 由**浏览器**访问，`token_url` / `userinfo_url` 由**网关**访问。
+  验收时把 authorize 指向 `127.0.0.1:4501`、把 token/userinfo 指向 `host.docker.internal:4501`
+  才能同时成立（这是实测踩过的坑：全都写 host.docker.internal → 浏览器报 502）。
+- **忽略容器环境代理**：`oauthHTTPClient()` 显式 `transport.Proxy = nil`，只跟随运行设置的全局代理。
+  容器里的 `HTTP_PROXY=127.0.0.1:7897` 指向宿主，用它去访问 GitHub 会 `connection refused`
+  （日志里的 `proxyconnect tcp`）。这与 `internal/outbound` 的 SSRF 契约一致（已有测试
+  `TestClientIgnoresEnvironmentProxy` 守着同一件事）。
+- **state + PKCE 存签名 cookie**（`meta-team-oauth`，HMAC 用 `enc.KeyMaterial()`），不依赖内存也不依赖会话；
+  回调要求 state 匹配。
+- **`/auth/oauth/{provider}/start` 与 callback 用 `publicAuthNavigate`（只校验 Origin + 限流，不要求 CSRF header）**：
+  它们是顶层导航/重定向入口，浏览器不会带自定义 header；而且没有“把已有账户绑到别人会话”的路径
+  （自动注册只会创建/复用**自己**的账户）。不要为了“更安全”给它们加回 CSRF cookie 检查，
+  那只会把登录页逼回 JS 中转。
+- **限流**：两个端点共用登录限流（burst 5 / 15 rpm / IP），所以一个用例里连续 start+callback 不要超过 5 次，
+  否则测试会撞 429 —— 拆成独立测试环境。
+- **密钥约定**：`client_secret` 空 = 保留已存的（与其它凭据字段一致）；
+  **`client_id` 空 = 移除该 provider（密钥一并清除）**，这是控制台唯一的删除路径。
+- `team_identities` 靠唯一索引 `(provider, subject)` 防并发双建；自动建号时若撞唯一索引，
+  回退去读已存在的那条（不要报错给用户）。
 
 ### 3.8 自定义端点映射（`upstream_*` 列）
-
 `channels` 上的四列让一个渠道可以脱离 OpenAI 形态：
 
 | 列 | 作用 |
@@ -340,9 +425,50 @@ query/fragment/userinfo 全剔。成功响应头 `X-Meta-Upstream-URL`（`proxy.
 > `upstream_url`，缺列就 drop 表 + 触发器再重建。不做这一步的话，新触发器引用不存在的列会让
 > **每一次 proxy_logs 写入失败**（日志静默丢失），且 FTS5 是编译期选项、失败不能中断启动。
 
+### 3.11 文档站：参考层由代码生成，不手写
+
+`docs/` 既是仓库里的 Markdown，也是 VitePress 站点的源（`docs/.vitepress/`）。站点发布到 GitHub Pages，
+由 `.github/workflows/docs.yml` 负责；它与镜像发布完全解耦，改文档不会碰 release 流程。
+
+**铁律：`docs/reference/*.md` 是生成物，绝不手改。**
+
+```bash
+go run ./tools/docsgen     # 重新生成 docs/reference
+```
+
+CI 会跑一遍生成器再 `git diff --exit-code docs/reference`。所以：
+
+> **改了任何被参考层覆盖的事实时，必须跑一遍 `tools/docsgen` 并提交结果。**
+> 环境变量（`internal/config/config.go`）、运行设置（`internal/runtimeconfig`）、
+> 管理面与公开端点（`internal/httpapi` 的 chi 注册）、错误分类（`internal/proxy/proxy_classify.go`
+> ∪ `web/src/errorCatalog.ts`）、数据表（**实际迁移一个临时库后读回 schema**，不是解析 SQL）、
+> 连接类型（`adapters.OpenAICompatibleBrands()` ∪ `web/src/connectionTypes.ts`）、
+> 供应商 profile（`proxy.Profiles()`）——全部在内。
+
+几个维护要点：
+
+- **新增供应商 profile 时**：`providerProfiles` 是私有注册表，生成器走 `proxy.Profiles()` 这个只读枚举器。
+  不要为了文档去解析源码副本——那正是本仓库反复被咬的「第二份真相」。
+- **两张表之间的差集是要暴露的缺陷，不是噪音。** 生成器首次运行就报出转发层产出的
+  `adapter_request` / `content_blocked` / `unsupported_feature` / `unsupported_path` 四个分类
+  在控制台分类表里没有对应项。遇到这类差集应当**修代码**（补分类），不是把差集删掉。
+- **内链死链会让构建失败**（`markdown.deadLink: 'error'`）。指向不存在页面的链接进不了主干。
+- **新增一页要同时改 `docs/.vitepress/docTree.ts`**：nav 与 sidebar 都从它派生，
+  不允许在 `config.ts` 里另写一份页面清单。
+- **前端构建链与文档站隔离**：vitepress 只在 `docs/package.json`，不进 `web/`，
+  否则它会进入应用的 lint / tsc / vite 质量门。
+
 ---
 
 ## 4. 数据库与迁移
+
+**2026-10-02：旧的单 Key 门户已撤销。** `/portal` 和 `PORTAL_*` 不再使用。
+新的团队模式使用独立用户账户，`/me` 已变成用户主体 API，不能恢复旧的 Key 登录契约。
+运行设置在 `team_settings`，默认 personal；切回 personal 撤销团队会话并拒绝团队 Key，
+不得让 `user_id>0` 的 Key 降级成个人无限制凭据。使用说明见 `docs/team-mode.md`。
+`107_portal_credentials.sql` 仅为历史迁移兼容而保留，禁止复用编号或为了清理 UI 删除旧库数据。
+`108_team.sql` 引入团队模型。路由授权必须在最终候选、插件改选及故障转移上生效；
+用户方案不得写回公共 route_members。修改后跑 `go test ./internal/httpapi ./internal/proxy -run TestTeam`。
 
 - 引擎 SQLite，迁移是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 - **加列**：新增一个 `NNN_描述.sql`，用 `ALTER TABLE ... ADD COLUMN ...`（SQLite 不支持

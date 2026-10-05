@@ -30,17 +30,33 @@ ADMIN_TOKEN=test MASTER_KEY=test-key-32-chars-long!!!!!!! METRICS_TOKEN=test ./b
 
 ## 测试
 
+提交前请把下面这一整套跑一遍（CI 会逐条卡住，少跑一项就可能被挡下）：
+
 ```bash
-# 后端测试
-go test ./internal/...
+# 后端
+gofmt -l .              # 应无输出
+go vet ./...
+go build ./...
+go test ./...           # CI 另跑一遍 go test -race -timeout 20m ./...
 
-# 前端测试
-cd web && npm test
+# 文档与代码一致性（改了代码里被参考层覆盖的事实时必跑）
+go run ./tools/docsgen
+git diff --exit-code docs/reference
 
-# 格式化
-gofmt -w .
-cd web && npm run typecheck
+# 前端
+cd web && npm run lint && npm run typecheck && npm test -- --run && npm run build && cd ..
+
+# 文档站
+cd docs && npm ci && npm run build && cd ..
 ```
+
+几个容易踩的点：
+
+- **`npm run lint` 不要省。** 一条 eslint error（例如测试文件里没被用到的导入）就能让 CI 全红，而 `tsc` 与 `vitest` 都不会报未使用的导入。
+- **构建顺序必须是前端 → 后端。** `web/` 的产物写入 `internal/webui/dist` 并由 `go:embed` 编进二进制；先 `go build` 再 `npm run build`，二进制里嵌的是旧界面。产物更新后要一起提交。
+- **本地跑 `-race` 需要 C 编译器**（`CGO_ENABLED=1` 加可用的 `gcc`），否则会以 `cgo: C compiler "gcc" not found` 退出——那看着像代码错，其实是环境问题。
+- **`docs/reference/*.md` 是生成物，不要手改。** 环境变量、运行设置、管理面与公开端点、错误分类、数据表、连接类型、供应商 profile 全部在内；改了其中任何一项就要重跑生成器并提交结果。
+- **新增一页文档要同时改 `docs/.vitepress/docTree.ts`**，nav 与 sidebar 都从它派生。内链死链会让文档站构建失败。
 
 ## Pull Request
 
@@ -54,7 +70,7 @@ cd web && npm run typecheck
 - 测试全部通过
 - 代码通过 `gofmt` 和 `tsc` 检查
 - 新功能附带测试用例
-- 文档已同步更新（如适用）
+- 文档已同步更新（如适用）；改了 `docs/reference` 覆盖的事实时跑过 `go run ./tools/docsgen`
 
 ## 报告 Issue
 

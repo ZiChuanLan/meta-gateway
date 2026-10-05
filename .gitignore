@@ -7,6 +7,12 @@ web/node_modules/
 web/src/node_modules/
 web/coverage/
 
+# Docs site (VitePress). Content lives in docs/, the build chain is isolated
+# from web/ so the app's lint/tsc/vite gates never see vitepress.
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Local binaries / agent scratch
 /server
 .pi-subagents/

@@ -1,0 +1,15 @@
+{
+  "name": "meta-gateway-docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Meta Gateway 文档站（VitePress）。与 web/ 的应用构建链完全隔离。",
+  "scripts": {
+    "dev": "vitepress dev .",
+    "build": "vitepress build .",
+    "preview": "vitepress preview ."
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}

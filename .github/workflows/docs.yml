@@ -1,0 +1,64 @@
+name: Docs
+
+# 文档站发布到 GitHub Pages。
+#
+# 这个 workflow 只负责「把仓库里已提交的 docs/ 构建成站点」——它不重新生成参考层，
+# 所以线上站点永远等于仓库内容。docs/reference 与代码是否一致由 ci.yml 把关：
+# 漂移是 internal/ 改动引起的，而这里的 paths 过滤根本看不到那些改动。
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个 Pages 部署；排队中的旧任务让位给新提交。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install docs dependencies
+        run: npm ci
+        working-directory: docs
+
+      # 内链死链会让构建失败（markdown.deadLink: 'error'），
+      # 所以这一步同时是「站点能建」和「没有指错的链接」两道检查。
+      - name: Build site
+        run: npm run build
+        working-directory: docs
+        env:
+          DOCS_BASE: /meta-gateway/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

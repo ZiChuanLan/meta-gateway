@@ -107,6 +107,17 @@ var providerProfiles = []ProviderProfile{
 	},
 }
 
+// Profiles returns the registered provider profiles in registry order.
+//
+// It exists so the documentation generator (tools/docsgen) can enumerate the
+// real registry instead of parsing a copy of it — a parsed copy is exactly the
+// kind of second source of truth this repository keeps getting bitten by.
+func Profiles() []ProviderProfile {
+	out := make([]ProviderProfile, len(providerProfiles))
+	copy(out, providerProfiles)
+	return out
+}
+
 // LookupProviderProfile finds the profile for a provider value.
 func LookupProviderProfile(providerType string) (ProviderProfile, bool) {
 	key := strings.ToLower(strings.TrimSpace(providerType))
