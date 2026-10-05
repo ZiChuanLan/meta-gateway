@@ -67,11 +67,12 @@ func newFakeDocker(t *testing.T) *fakeDocker {
 			}`))
 		case r.URL.Path == "/containers/next-id/json":
 			if f.successorDead {
-				w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {}, "NetworkSettings": {}, "State": {"Running": false, "ExitCode": 1, "Error": ""}}`))
+				w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {"GroupAdd": ["988"]}, "NetworkSettings": {}, "State": {"Running": false, "ExitCode": 1, "Error": ""}}`))
 				return
 			}
-			// Running: the watchdog must not declare a live successor dead.
-			w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {}, "NetworkSettings": {}, "State": {"Running": true}}`))
+			// Running: the watchdog must not declare a live successor dead. It also
+			// carries the supplementary groups the swap needs.
+			w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {"GroupAdd": ["988"]}, "NetworkSettings": {}, "State": {"Running": true}}`))
 		case r.URL.Path == "/images/create":
 			w.Write([]byte("{\"status\":\"Pulling from zichuanlan/meta-gateway\"}\n{\"status\":\"Download complete\"}\n"))
 		case strings.HasPrefix(r.URL.Path, "/containers/create"):
@@ -217,6 +218,16 @@ func TestSwapRecreatesFinalAndRollsBack(t *testing.T) {
 	policy := hostConfig["RestartPolicy"].(map[string]any)
 	if policy["Name"] != "unless-stopped" {
 		t.Fatalf("restart policy: %v", policy)
+	}
+	// The final container is the one that has to run a handoff NEXT time. Losing
+	// the supplementary groups here produces the worst shape of this bug: the
+	// update succeeds, and the deployment can never update again. It shipped
+	// exactly once, on a real instance, because the successor carried the group
+	// (so the swap worked) and the final container did not (so the next handoff
+	// could not open the socket).
+	groups, _ := hostConfig["GroupAdd"].([]any)
+	if len(groups) != 1 || groups[0] != "988" {
+		t.Fatalf("final container GroupAdd: %v, want [988]", hostConfig["GroupAdd"])
 	}
 }
 

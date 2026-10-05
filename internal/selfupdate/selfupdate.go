@@ -428,6 +428,12 @@ func runSwap(ctx context.Context, client *Client, oldName, image, portsJSON, pol
 			"PortBindings":  portBindings,
 			"RestartPolicy": map[string]any{"Name": restartPolicyOrDefault(policyName)},
 			"NetworkMode":   networkMode(self),
+			// Carried for the same reason the successor carries it, and this is
+			// the half that matters afterwards: the FINAL container is the one
+			// that has to run a handoff next time. Dropping it here leaves a
+			// deployment that updated successfully once and can never update
+			// again — the next attempt cannot open the socket it needs.
+			"GroupAdd": self.HostConfig.GroupAdd,
 		},
 		"NetworkingConfig": networksConfig(self),
 	}
