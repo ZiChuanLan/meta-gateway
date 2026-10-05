@@ -52,40 +52,47 @@
 .login-private { display: flex; align-items: center; justify-content: center; gap: 6px; padding-top: 22px; margin: 22px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .login-footer { position: relative; padding: 22px 5vw; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
 @keyframes sculpture-arrive { from { opacity: 0; translate: 0 15px; } to { opacity: 1; translate: 0 0; } }
-@media (max-width: 760px) { .login-header { padding: 22px; } .login-stage { grid-template-columns: 1fr; padding: 25px 24px 40px; gap: 30px; max-width: 490px; } .login-introduction h1 { font-size: 35px; } .login-introduction > p { max-width: none; margin-top: 15px; font-size: 12px; } .login-edition { margin-bottom: 15px; } .login-sculpture { display: none; } .login-card { padding: 28px; } .login-tools { gap: 6px; } .login-tools select { width: 78px; } .login-brand strong { font-size: 15px; } .login-footer { font-size: 9px; padding: 20px 24px; } .login-card input[type=password], .login-card input[type=text] { font-size: 16px; } }
+@media (max-width: 760px) { .login-header { padding: 22px; } .login-stage { grid-template-columns: 1fr; padding: 25px 24px 40px; gap: 30px; max-width: 490px; } .login-introduction h1 { font-size: 35px; } .login-introduction > p { max-width: none; margin-top: 15px; font-size: 12px; } .login-edition { margin-bottom: 15px; } .login-sculpture { display: none; } .login-card { padding: 28px; } /* The second layer's tab hangs past the card's right edge; give the slot room
+     for it so the page's own overflow:hidden does not clip it. */
+  .login-card-slot { padding-right: 34px; }
+  .login-tools { gap: 6px; } .login-tools select { width: 78px; } .login-brand strong { font-size: 15px; } .login-footer { font-size: 9px; padding: 20px 24px; } .login-card input[type=password], .login-card input[type=text] { font-size: 16px; } }
 @media (prefers-reduced-motion: reduce) { .login-tile { animation: none; } }
 @media (prefers-reduced-transparency: reduce) { .login-card, .login-tile { background: var(--surface); backdrop-filter: none; } }
 
 /* Two layers, not two links. The sign-in form is the front card; the "other
-   ways" layer sits behind it with only its bottom edge exposed, and clicking
-   that edge turns the stack over. Registration, third-party sign-in and the
+   ways" layer sits behind it with only its right edge exposed, and clicking
+   that edge swings the stack over. Registration, third-party sign-in and the
    upgrade guide used to be a row of underlined links competing with the form
    for the same attention, and the third-party buttons were never rendered at
    all — the backend exposed them and nothing consumed the list. */
-.login-card-stack { display: flex; flex-direction: column; min-width: 0; }
+.login-card-stack { position: relative; min-width: 0; }
 .login-card-stack > .login-card { position: relative; z-index: 1; }
 .login-card-stack > .login-card.is-other {
   animation: login-layer-turn var(--dur-slow) cubic-bezier(.22, .7, .24, 1) both;
-  transform-origin: 50% 100%;
+  transform-origin: 100% 50%;
 }
 @keyframes login-layer-turn {
-  from { opacity: 0; transform: translateY(18px) rotateX(-10deg) scale(.97); }
+  from { opacity: 0; transform: perspective(900px) translateX(24px) rotateY(12deg) scale(.97); }
   to { opacity: 1; transform: none; }
 }
 
-/* The exposed edge of the layer behind. It is wider than the card and tucks
-   under its bottom corners, so the stack reads as two cards and not as a
-   button with a border. */
+/* The exposed edge of the layer behind: a vertical tab at the card's right,
+   overlapping it so only the outer strip shows. It is inset top and bottom so
+   the card's rounded corners do not cut through it. */
 .login-card-peek {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: calc(100% + 18px); margin: -14px -9px 0; padding: 20px 12px 11px;
-  border: 1px solid var(--surface-glass-border); border-top: 0;
-  border-radius: 0 0 24px 24px; background: var(--surface-glass);
+  position: absolute; top: 14px; bottom: 14px; left: calc(100% - 14px); width: 46px; z-index: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 16px 0;
+  border: 1px solid var(--surface-glass-border); border-left: 0;
+  border-radius: 0 16px 16px 0; background: var(--surface-glass);
   backdrop-filter: blur(18px) saturate(1.05);
   color: var(--muted); font: 500 11.5px var(--font); cursor: pointer;
   transition: transform var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast), border-color var(--dur-fast);
 }
-.login-card-peek:hover:not(:disabled) { transform: translateY(3px); color: var(--ink); box-shadow: var(--shadow-md); border-color: var(--line); }
+/* The label is vertical, the button is not: writing-mode on the flex container
+   would turn its main axis sideways and move the chevron with it. */
+.login-card-peek > span { writing-mode: vertical-rl; letter-spacing: .08em; }
+.login-card-peek:hover:not(:disabled) { transform: translateX(3px); color: var(--ink); box-shadow: var(--shadow-md); border-color: var(--line); }
 .login-card-peek:disabled { cursor: not-allowed; opacity: .6; }
 .login-card-peek svg { transition: transform var(--dur-fast); }
 .login-card-peek:hover:not(:disabled) svg { transform: translateX(2px); }
