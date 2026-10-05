@@ -405,7 +405,7 @@ export const zh: Dict = {
   "pricing.ruleLayer": "成员价优先于模型价，整层替换，不逐字段补齐。平价全 0 且无阶梯表示继承下一层；两层均无价按 0 计。",
   "pricing.ruleFactors": "先按计价输入量选择阶梯，再乘命中的首个时段倍率与模型倍率。每次调用费可与 token 费叠加；倍率 0 会使费用为 0。",
   "pricing.ruleCache": "缓存读取单价为 0 时沿用输入单价；缓存写入按输入价计。不提供用量时不得伪造 token。",
-  "pricing.ruleQuota": "令牌、分组和账户额度分别限制请求；token 与金额上限独立生效，任一达到上限均会拒绝后续调用。",
+  "pricing.ruleQuota": "令牌、租户分组和成员额度分别限制请求；token 与金额上限独立生效，任一达到上限均会拒绝后续调用。",
   "logsPage.memberHistogramScope": "当前账号最近 {n} 次请求",
   "wizard.editionTitle": "先选择使用方式",
   "wizard.editionHint": "个人模式用于自己调用；团队模式用于管理成员、授权与额度。团队模式需先创建 owner 账号，再启用。此选择与下方模型同步方式独立。",
@@ -431,6 +431,7 @@ export const zh: Dict = {
   "updates.timeout": "未在等待时间内确认更新完成。请检查容器状态和日志，勿连续重复更新。",
   "updates.channel": "更新渠道",
   "updates.stable": "稳定版",
+  "updates.beta": "Beta 渠道",
   "updates.channelHint": "稳定版不接收 Beta；Beta 渠道接收预发布及后续正式版。只检查，不会自动安装；不支持自动降级。",
   "updates.betaWarning": "Beta 可能不稳定，升级前请备份数据库。",
   "updates.watchtowerHint": "当前 Watchtower 跟踪标签：{tag}。它不会切换镜像标签；跨渠道需设置部署 IMAGE_TAG=beta 或 latest 并重建容器，网页设置不能替代这一步。",
@@ -438,6 +439,14 @@ export const zh: Dict = {
   "updates.failed": "无法保存渠道或检查更新，请稍后重试。",
   "updates.applyFailed": "更新未启动。请检查更新服务、版本和镜像渠道；Watchtower 需 IMAGE_TAG 与所选渠道匹配。",
   "updates.noUpgrade": "当前没有可升级版本（也可能关闭了更新检查，或当前为开发构建）。",
+  "updates.dialogTitle": "软件更新",
+  "updates.nothingToInstall": "无可安装版本",
+  "updates.currentVersion": "当前运行 {version}",
+  "updates.channelIsNewer":
+    "你运行的是 {current}，它比「{channel}」渠道的最新版（{latest}）更新。切渠道不会降级，所以这里没有可安装的版本。",
+  "updates.failedReason": "更新未完成：",
+  "updates.socketPermission":
+    "容器打不开 Docker 套接字（权限不足）。它需要宿主机 docker 组的附加组：用 stat -c '%g' /var/run/docker.sock 取 GID，给服务加 group_add: [\"<GID>\"] 后重建容器。",
   "login.hint": "使用用户名与密码登录，按账号权限进入工作空间。",
   "login.private": "权限由账号决定，数据彼此隔离",
   "login.foundation": "自托管 · 多上游 · 透明转发",
@@ -2467,7 +2476,7 @@ export const zh: Dict = {
   "ops.runtime.updateCheckHint":
     "定期向 GitHub 查询最新 Release，有新版本时在顶栏提示。关闭后不做任何外呼。环境变量：UPDATE_CHECK_ENABLED。",
   "ops.runtime.multiUserHint":
-    "成员账户、他们的额度、以及独立的 /app 用户端都在这里管理。开关本身放在该区域的「概览」里，所以一个人自用时不占用任何位置。",
+    "成员账户、他们的额度、登录方式与成员界面都在这里管理。开关本身放在该区域的「概览」里，所以一个人自用时不占用任何位置。",
   "ops.runtime.openUsers": "打开用户管理",
   "ops.runtime.group.routingDesc":
     "故障转移与重试、路由策略、灰度发布、会话粘性",

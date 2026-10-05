@@ -430,7 +430,8 @@ export const en: Dict = {
   "pricing.ruleLayer": "Member pricing overrides model pricing as a whole, not field by field. Zero flat prices without tiers inherit the next layer; no price in either layer bills at zero.",
   "pricing.ruleFactors": "Select the input tier, then multiply by the first matching time window and model ratio. Per-call charges add to token charges; a zero ratio makes the cost zero.",
   "pricing.ruleCache": "A zero cache-read price inherits input pricing. Cache creation bills as input. Missing usage must not be fabricated.",
-  "pricing.ruleQuota": "Key, group and account quotas independently limit access. Token and money limits are separate; reaching either blocks subsequent calls.",
+  "pricing.ruleQuota":
+    "Key, tenant group and member quotas independently limit access. Token and money limits are separate; reaching either blocks subsequent calls.",
   "logsPage.memberHistogramScope": "Latest {n} requests for your account",
   "wizard.editionTitle": "Choose how you use the gateway",
   "wizard.editionHint": "Personal mode is for your own access. Team mode adds members, grants and quotas; create an owner account before enabling it. This choice is separate from model synchronization below.",
@@ -457,13 +458,23 @@ export const en: Dict = {
   "updates.timeout": "Update completion was not confirmed in time. Check container health and logs before retrying.",
   "updates.channel": "Update channel",
   "updates.stable": "Stable",
+  "updates.beta": "Beta channel",
   "updates.channelHint": "Stable excludes beta. Beta includes prereleases and subsequent stable releases. Checking does not install updates. Automatic downgrades are not supported.",
   "updates.betaWarning": "Beta may be unstable. Back up the database before upgrading.",
   "updates.watchtowerHint": "Watchtower tracks: {tag}. It cannot switch image tags. Set deployment IMAGE_TAG to beta or latest and recreate the container to change tracks; the web preference cannot replace this step.",
   "updates.check": "Check for updates",
   "updates.failed": "Unable to save the channel or check for updates. Please retry.",
   "updates.applyFailed": "Update did not start. Check the service, version and image track. Watchtower requires IMAGE_TAG to match the selected track.",
-  "updates.noUpgrade": "No upgrade is available, update checks are disabled, or this is a development build.",
+  "updates.noUpgrade":
+    "No upgrade is available, update checks are disabled, or this is a development build.",
+  "updates.dialogTitle": "Software update",
+  "updates.nothingToInstall": "Nothing to install",
+  "updates.currentVersion": "Running {version}",
+  "updates.channelIsNewer":
+    "You are running {current}, which is newer than the latest release on the {channel} channel ({latest}). Switching channels does not downgrade, so there is nothing to install here.",
+  "updates.failedReason": "Update did not complete:",
+  "updates.socketPermission":
+    "The container cannot open the Docker socket (permission denied). It needs the host's docker group as a supplementary group: read the GID with stat -c '%g' /var/run/docker.sock, add group_add: [\"<GID>\"] to the service, and recreate the container.",
   "login.hint": "Sign in with your username and password. Your account determines access.",
   "login.private": "Account-based access. Your data stays isolated.",
   "login.foundation": "Self-hosted · Multi-provider · Transparent relay",
@@ -2637,7 +2648,7 @@ export const en: Dict = {
   "ops.runtime.updateCheckHint":
     "Periodically query GitHub for the latest release and flag new versions in the top bar. Off = no outbound calls at all. Env: UPDATE_CHECK_ENABLED.",
   "ops.runtime.multiUserHint":
-    "Member accounts, their credit and the separate /app user frontend are managed in this area. Its switch lives on its own overview board, so a one-person gateway never has to look at it.",
+    "Member accounts, their credit, their sign-in methods and the member interface are managed in this area. Its switch lives on its own overview board, so a one-person gateway never has to look at it.",
   "ops.runtime.openUsers": "Open user management",
   "ops.runtime.group.routingDesc":
     "Failover and retries, routing strategy, gray release, session stickiness",

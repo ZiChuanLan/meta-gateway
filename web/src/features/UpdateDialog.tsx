@@ -29,7 +29,7 @@ export function UpdateDialog({
 	const { t } = useI18n();
 	const { client } = useSession();
 	const service = client ? api(client) : null;
-	const { watch, apply, failedTarget } = useOneClickUpdate();
+	const { watch, apply, failure } = useOneClickUpdate();
  const [applyError,setApplyError]=useState(false);
  const [pending,setPending]=useState(false);
  const qc=useQueryClient();
@@ -51,6 +51,18 @@ export function UpdateDialog({
 	});
 	const status = fresh.data ?? update;
 	const notes = (status.notes ?? "").trim();
+	// A failed handoff says why. "Permission denied" on the Docker socket is the
+	// one that actually happens, and the raw message names neither the cause nor
+	// the fix.
+	const permissionFailure = /permission denied/i.test(failure?.reason ?? "");
+	// Running a build that is NEWER than the selected channel's latest is the
+	// trap: the dialog used to say "no upgrade available" and nothing else, so an
+	// operator who had just switched to stable read that as "I am on stable".
+	const aheadOfChannel =
+		!status.has_update &&
+		Boolean(status.current) &&
+		Boolean(status.latest) &&
+		status.current !== status.latest;
 
 	// While the handoff is running this dialog IS the progress display: the
 	// container will stop answering mid-poll, which reads as "restarting", not
@@ -80,7 +92,11 @@ export function UpdateDialog({
 
 	return (
 		<Dialog
-			title={t("app.updateDialogTitle", { version: status.latest })}
+			title={
+				status.has_update
+					? t("app.updateDialogTitle", { version: status.latest })
+					: t("updates.dialogTitle")
+			}
             busy={Boolean(watch) || pending || changeChannel.isPending}
 			onClose={() => {
 				// The dialog cannot close mid-handoff: the container is being torn
@@ -107,17 +123,46 @@ export function UpdateDialog({
 					</div>
 				) : (
 					<>
+						<p className="muted update-current">
+							{t("updates.currentVersion", { version: status.current || "—" })}
+						</p>
 						{notes ? (
 							<pre className="update-notes">{notes}</pre>
 						) : (
 							<p className="muted">{t("app.updateNoNotes")}</p>
 						)}
-						{!status.has_update ? <p className="muted">{t("updates.noUpgrade")}</p> : null}
+						{aheadOfChannel ? (
+							<p className="field-hint" role="status">
+								{t("updates.channelIsNewer", {
+									current: status.current,
+									channel: t(status.channel === "beta" ? "updates.beta" : "updates.stable"),
+									latest: status.latest,
+								})}
+							</p>
+						) : !status.has_update ? (
+							<p className="muted">{t("updates.noUpgrade")}</p>
+						) : null}
  <p className="muted update-restart-hint">{t("app.updateRestartHint")}</p>
 					</>
 				)}
 			</div>
-			{failedTarget ? <p role="alert">{t("updates.timeout")}</p> : null}
+			{failure ? (
+				<div role="alert" className="inline-error">
+					{/* No reason means the watch ran out of time without the updater ever
+					    reporting a failure — a different situation from one it diagnosed. */}
+					{failure.reason ? (
+						<>
+							<strong>{t("updates.failedReason")}</strong>
+							<span> {failure.reason}</span>
+						</>
+					) : (
+						<span>{t("updates.timeout")}</span>
+					)}
+					{permissionFailure ? (
+						<p className="field-hint">{t("updates.socketPermission")}</p>
+					) : null}
+				</div>
+			) : null}
  {applyError ? <p role="alert">{t("updates.applyFailed")}</p> : null}
  <div className="update-dialog-actions">
 				{status.release_url ? (
@@ -136,7 +181,11 @@ export function UpdateDialog({
 					disabled={Boolean(watch) || pending || changeChannel.isPending || changeChannel.isError || fresh.isFetching || !channel.data || (status.channel !== undefined && channel.data.channel !== status.channel) || !status.enabled || !status.has_update || Boolean(status.error)}
 					onClick={async () => {setPending(true);setApplyError(false);try{await apply(status.latest);}catch{setApplyError(true);}finally{setPending(false);}}}
 				>
-					{watch ? t("app.updateRunning") : t("app.updateApply", { version: status.latest })}
+					{watch
+						? t("app.updateRunning")
+						: status.has_update
+							? t("app.updateApply", { version: status.latest })
+							: t("updates.nothingToInstall")}
 				</Button>
 			</div>
 		</Dialog>

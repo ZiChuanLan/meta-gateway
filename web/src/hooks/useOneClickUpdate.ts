@@ -7,6 +7,15 @@ export interface UpdateWatch {
 	startedAt: number;
 }
 
+export interface UpdateFailure {
+	target: string;
+	/**
+	 * The updater's own reason, verbatim, when it reported one. Empty means the
+	 * watch simply ran out of time and nothing was ever confirmed.
+	 */
+	reason: string;
+}
+
 /**
  * Drives the one-click container update: apply, then watch the PUBLIC health
  * endpoint until it reports the target version.
@@ -20,13 +29,24 @@ export interface UpdateWatch {
  * The 3s poll and the 3-minute budget match the ops settings panel, which used
  * this flow first; both panels now share this hook so their behavior cannot
  * drift.
+ *
+ * The admin status is polled too, but for the opposite reason: a handoff that
+ * fails fails FAST (a socket it cannot open, an image it cannot pull) and
+ * /admin/self-update is the only place that says why. Waiting the full three
+ * minutes and then reporting "not confirmed in time" hid a permission error
+ * behind a timeout for an operator who had simply not been told.
  */
 export function useOneClickUpdate() {
 	const { client } = useSession();
 	const service = client ? api(client) : null;
-	const [failedTarget, setFailedTarget] = useState<string | null>(null);
+	const [failure, setFailure] = useState<UpdateFailure | null>(null);
 	const [watch, setWatch] = useState<UpdateWatch | null>(null);
 	const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
+	// `api(client)` builds a fresh object every render, so it must not be an effect
+	// dependency: that would tear down and restart the 3s poll on every render and
+	// the tick would never land.
+	const serviceRef = useRef(service);
+	serviceRef.current = service;
 	// onDone/onError are stable per mount; refs keep the polling effect from
 	// restarting when the caller passes inline closures.
 	const onDoneRef = useRef<(() => void) | null>(null);
@@ -35,7 +55,7 @@ export function useOneClickUpdate() {
 	const apply = useCallback(
 		async (target: string) => {
 			if (!service) return;
-            setFailedTarget(null);
+			setFailure(null);
 			await service.applySelfUpdate(target);
 			setConfirmTarget(null);
 			setWatch({ target, startedAt: Date.now() });
@@ -54,8 +74,24 @@ export function useOneClickUpdate() {
 
 	useEffect(() => {
 		if (!watch) return;
+		const service = serviceRef.current;
+		if (!service) return;
 		const started = Date.now();
 		const timer = window.setInterval(async () => {
+			// A failed handoff reports itself; take that over the timeout, because
+			// it is the difference between "unknown" and "here is what to fix".
+			try {
+				const status = await service.selfUpdateStatus();
+				if (status.phase === "failed" && status.error) {
+					setWatch(null);
+					setFailure({ target: watch.target, reason: status.error });
+					onErrorRef.current?.(watch.target);
+					return;
+				}
+			} catch {
+				// Mid-handoff the admin API is legitimately unreachable; the public
+				// endpoint below is what decides success.
+			}
 			try {
 				const res = await fetch("/healthz");
 				const body = (await res.json()) as { version?: string };
@@ -68,10 +104,9 @@ export function useOneClickUpdate() {
 				// Container restarting — keep polling.
 			}
 			if (Date.now() - started > 180_000) {
-				const target = watch.target;
 				setWatch(null);
-                setFailedTarget(target);
-				onErrorRef.current?.(target);
+				setFailure({ target: watch.target, reason: "" });
+				onErrorRef.current?.(watch.target);
 			}
 		}, 3000);
 		return () => window.clearInterval(timer);
@@ -79,7 +114,9 @@ export function useOneClickUpdate() {
 
 	return {
 		watch,
-        failedTarget,
+		failure,
+		// Kept for callers that only need "which target failed".
+		failedTarget: failure?.target ?? null,
 		confirmTarget,
 		setConfirmTarget,
 		apply,

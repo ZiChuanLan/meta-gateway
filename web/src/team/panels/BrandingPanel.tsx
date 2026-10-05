@@ -6,8 +6,8 @@ import { useUsers } from "../UsersLayout";
 import type { TeamSettings } from "../types";
 
 /**
- * What a member sees when they open the user frontend: its title, accent, logo,
- * the API address shown in the connect dialog, and which boards they get.
+ * What a member sees when they sign in: the console's title, accent, logo, the
+ * API address shown in the connect dialog, and which boards they get.
  *
  * This is the branding half of the team settings record — the operating mode
  * lives on its own board (OverviewPanel). Both write the same document, so the

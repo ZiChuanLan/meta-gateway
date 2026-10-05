@@ -142,7 +142,7 @@ describe("user management module", () => {
       "Pricing",
       "Codes",
       "Third-party sign-in",
-      "User frontend",
+      "Member interface",
     ])
       expect(await screen.findByRole("link", { name: label })).toBeInTheDocument();
   });
@@ -154,7 +154,7 @@ describe("user management module", () => {
     expect(
       await screen.findByRole("link", { name: "Members & invitations" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "User frontend" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Member interface" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Access & routing" }),
     ).not.toBeInTheDocument();
@@ -172,7 +172,7 @@ describe("user management module", () => {
   it("saves both budgets from the member's own page", async () => {
     const calls = renderUsers();
     fireEvent.click(await screen.findByRole("button", { name: /Manage/ }));
-    const tokens = await screen.findByLabelText("Credit limit");
+    const tokens = await screen.findByLabelText("Token credit limit");
     const spend = screen.getByLabelText("Spend allowance");
     fireEvent.change(tokens, { target: { value: "5000" } });
     fireEvent.change(spend, { target: { value: "25" } });
@@ -192,7 +192,7 @@ describe("user management module", () => {
     expect(await screen.findByText("Tenant group quotas")).toBeInTheDocument();
     // The group row arrives with the query, so the button is awaited too.
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
-    fireEvent.change(await screen.findByLabelText("Credit limit"), {
+    fireEvent.change(await screen.findByLabelText("Token credit limit"), {
       target: { value: "2000000" },
     });
     fireEvent.change(screen.getByLabelText("Spend allowance"), {

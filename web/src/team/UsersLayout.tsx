@@ -56,8 +56,8 @@ const SECTIONS: Section[] = [
 
 export function UsersLayout({ request }: { request: TeamRequest }) {
   // The transport is handed in rather than taken from the console session:
-  // this module is shared with the standalone user frontend and must not reach
-  // for the admin client (an ESLint boundary enforces it).
+  // these boards are also reachable by a member-scoped session and must not
+  // reach for the admin client (an ESLint boundary enforces it).
   const { locale } = useI18n();
   const t = teamText(locale);
   // `/admin/mode` answers on either gateway and is what tells this shell which
@@ -115,16 +115,6 @@ export function UsersLayout({ request }: { request: TeamRequest }) {
           <h1>{t("team")}</h1>
           <p className="team-muted">{t("teamDescription")}</p>
         </div>
-        {enabled && (
-          <a
-            className="team-button"
-            href="/app"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t("userEntry")} ↗
-          </a>
-        )}
       </div>
       <nav className="team-subnav" aria-label={t("team")}>
         {sections.map((section) => (

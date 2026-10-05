@@ -1,5 +1,5 @@
 const zh = {
-  teamDescription: "管理成员、授权、额度与用户前端。个人／多用户模式在「概览」里切换。",
+  teamDescription: "管理成员、授权与额度。个人／多用户模式在「概览」里切换；成员统一从 /console 登录。",
   personalSettings: "个人设置", personalSettingsHint: "只调整自己的调用偏好和界面，不改变站点或其他用户。",
   requestControls: "调用偏好", requestControlsHint: "已获站长授权。偏好只作用于自己的 Key，且不能突破站点与模型规则。",
   allowRequestControls: "允许用户调整故障转移与重试上限", managedByOwner: "调用策略由站长管理；当前只读。",
@@ -19,12 +19,12 @@ const zh = {
   currentMode: "当前模式",
   personal: "个人模式",
   enabled: "团队模式",
-  modeHint: "个人模式保持原控制台；团队模式启用独立用户前端。",
+  modeHint: "个人模式保持原控制台；团队模式启用成员账户，成员统一从 /console 登录。",
   disableHint:
     "切回个人模式会退出所有团队会话，阻止团队 Key 后续调用；用户、配置和历史保留。原个人 Key 不受影响。",
   members: "成员与邀请",
   policies: "权限与路由",
-  branding: "用户前端",
+  branding: "成员界面",
   save: "保存",
   saving: "保存中…",
   cancel: "取消",
@@ -82,15 +82,18 @@ const zh = {
   protectedOwner: "站长账户不可停用或降级",
   userChangeHint:
     "变更会撤销该用户的现有登录会话。暂停与恢复不会覆盖 Key 自身的启停状态。",
-  policiesHint: "授权公共路由成员。默认策略不授予任何渠道，请先配置。",
+  policiesHint:
+    "这里决定成员能用什么：模型名，以及这些模型能由哪些渠道承接。额度与限速不在这一页，在「额度」板块。默认策略不授予任何渠道，请先配置。",
   newPolicy: "新增策略",
-  allModels: "允许所有模型名称",
-  modelList: "模型名称（每行一个；空列表且未选全部时不允许任何模型）",
+  allModels: "允许调用所有模型",
+  modelList:
+    "按模型名授权（每行一个；空列表且未勾选上一项时，这个策略下没有任何模型可调）",
   maxKeys: "每人最多 Key 数",
   rpm: "每人每分钟请求数",
   routing: "允许个人路由",
-  candidates: "授权公共候选",
-  candidatesHint: "只勾选允许调用的公共路由成员。未授权的候选不会参与回退。",
+  candidates: "按渠道授权（公共候选）",
+  candidatesHint:
+    "决定上面授权到的模型能由哪些渠道承接，也决定故障转移范围。勾选一个候选会同时把它的模型名加进上面的列表（取消勾选不会移除已加的模型名）。",
   none: "暂无数据",
   noCandidates: "还没有公共路由成员。请先在模型页配置路由。",
   publicName: "站点名称",
@@ -101,7 +104,6 @@ const zh = {
   apiURL: "公开 API Base URL（包含 /v1，可留空）",
   showUsage: "开放用量记录",
   showRouting: "开放个人路由页面",
-  userEntry: "打开用户前端",
   console: "管理控制台",
   logout: "退出登录",
   account: "账户",
@@ -195,8 +197,8 @@ const zh = {
   codeKind: "码类型",
   codeKindInvite: "注册码",
   codeKindCredit: "额度码",
-  codeKindInviteHint: "凭码在 /app 注册新账户",
-  codeKindCreditHint: "登录后在个人设置里充入账户额度",
+  codeKindInviteHint: "凭码在 /console 注册新账户",
+  codeKindCreditHint: "登录后在个人设置里充入 Token 额度",
   codeMint: "生成码",
   codeCount: "数量",
   codeMaxUses: "每个码可用次数",
@@ -224,12 +226,12 @@ const zh = {
   importSummary: "成功创建 {n} 个账户，密码仅显示这一次：",
   importFailures: "{n} 行未能导入：",
   copyCredentials: "复制账号与密码",
-  quota: "账户额度",
+  quota: "Token 额度",
   quotaHint:
     "单位 token，0 表示不限。它与令牌、租户分组各自的限额同时生效，任一先耗尽即拒绝请求。",
   quotaUsed: "已用 {used}，总额 {total}",
   quotaEditSemantics: "留空或 0 表示不限额；Token 上限必须为整数，金额按 USD 账本单位填写。降低上限不会清零已用量，只有勾选重置才会清零。",
-  quotaTotal: "额度上限",
+  quotaTotal: "Token 额度上限",
   quotaCostTotal: "金额额度",
   quotaCostHint:
     "按站点货币计价；与 Token 额度同时生效，先用尽者拒绝请求。",
@@ -272,7 +274,7 @@ const zh = {
   oauthNoBindings: "未绑定任何第三方账号。",
   oauthUnlink: "解绑",
   oauthUnlinkWarning: "解绑后该成员将无法再用这个账号登录。确认解绑？",
-  credit: "账户额度",
+  credit: "Token 额度",
   creditHint: "额度由站长分配或兑换码充入；与每个 Key 自身的配额是两重限制，先到者生效。",
   creditRemaining: "剩余",
   creditUsed: "已用",
@@ -310,12 +312,12 @@ const zh = {
   overviewHint:
     "这里是多用户能力的开关。开启后，控制台会多出成员、权限、额度与计价板块，成员统一从 /console 登录。",
   moduleMap:
-    "成员决定谁能用；权限决定能调什么模型；额度决定能用多少；兑换码用于开户与充值；登录与用户前端决定成员怎么进来、看到什么。",
+    "成员决定谁能用；权限决定能调什么模型；额度决定能用多少；兑换码用于开户与充值；登录方式与成员界面决定成员怎么进来、看到什么。",
   quotasIntro:
     "一次中继请求要同时通过三层额度：令牌、它绑定的租户分组、以及令牌所属账户。每层都有 token 与金额两个独立预算，任一耗尽即拒绝该请求。",
   groupQuotas: "租户分组额度",
   groupQuotasHint:
-    "分组的额度与限速。把令牌绑到某个分组（在令牌编辑里）后生效；未绑定的令牌走默认分组。",
+    "分组的额度与限速。把令牌绑到某个分组（在令牌编辑里）后生效；未绑定的令牌走默认分组。注意它与「访问策略」是两件事：策略决定成员能用什么模型，分组决定能用多少、多快。",
   newGroup: "新建分组",
   quotaGroupTitle: "分组 · {name}",
   groupDeleteWarning: "删除分组「{name}」？已绑定该分组的令牌会退回默认分组。",
@@ -367,7 +369,8 @@ const zh = {
   imgEmpty: "还没有生成过图片。",
 };
 const en: Record<keyof typeof zh, string> = {
-  teamDescription: "Manage members, access, credit and the user frontend. The personal / multi-user mode switches on the Overview board.",
+  teamDescription:
+    "Manage members, access and credit. The personal / multi-user mode switches on the Overview board; members sign in at /console like everyone else.",
   personalSettings:"Personal settings",personalSettingsHint:"Change only your own request preferences and interface, never the site or other users.",
   requestControls:"Request preferences",requestControlsHint:"Enabled by your owner. These preferences only affect your keys and cannot override site or model rules.",
   allowRequestControls:"Allow user failover and retry preferences",managedByOwner:"Request policy is managed by the owner. These controls are read-only.",
@@ -393,7 +396,7 @@ const en: Record<keyof typeof zh, string> = {
     "Switching to personal revokes team sessions and blocks team keys. Accounts, settings and history remain. Existing personal keys are unaffected.",
   members: "Members & invitations",
   policies: "Access & routing",
-  branding: "User frontend",
+  branding: "Member interface",
   save: "Save",
   saving: "Saving…",
   cancel: "Cancel",
@@ -452,17 +455,17 @@ const en: Record<keyof typeof zh, string> = {
   userChangeHint:
     "Changes revoke existing login sessions. Pausing or restoring does not override individual key states.",
   policiesHint:
-    "Grant public route members. The default policy grants none until configured.",
+    "This page decides what a member may use: model names, and which channels may serve them. Quotas and rate limits live on the Quotas board, not here. The default policy grants no channel until configured.",
   newPolicy: "New policy",
-  allModels: "Allow all model names",
+  allModels: "Allow every model",
   modelList:
-    "Model names (one per line; an empty list without allow-all denies every model)",
+    "Authorize by model name (one per line; an empty list with the box above unchecked denies every model)",
   maxKeys: "Maximum keys per user",
   rpm: "Requests per minute per user",
   routing: "Allow personal routing",
-  candidates: "Authorized public candidates",
+  candidates: "Authorize by channel (public candidates)",
   candidatesHint:
-    "Only selected route members may be used, including during failover.",
+    "Decides which channels may serve the models authorized above, and therefore how far failover can go. Selecting a candidate also adds its model name to the list above (clearing the box does not remove a name already added).",
   none: "No data yet",
   noCandidates:
     "No public route members. Configure routes on the Models page first.",
@@ -474,7 +477,6 @@ const en: Record<keyof typeof zh, string> = {
   apiURL: "Public API base URL (including /v1, optional)",
   showUsage: "Enable usage records",
   showRouting: "Enable personal routing page",
-  userEntry: "Open user frontend",
   console: "Management console",
   logout: "Sign out",
   account: "Account",
@@ -574,7 +576,7 @@ const en: Record<keyof typeof zh, string> = {
   codeKind: "Kind",
   codeKindInvite: "Signup code",
   codeKindCredit: "Credit code",
-  codeKindInviteHint: "Registers a new account at /app",
+  codeKindInviteHint: "Registers a new account at /console",
   codeKindCreditHint: "Redeemed in Personal settings to top up the account",
   codeMint: "Generate codes",
   codeCount: "Count",
@@ -608,12 +610,12 @@ const en: Record<keyof typeof zh, string> = {
   importSummary: "{n} accounts created. Passwords are shown once:",
   importFailures: "{n} lines could not be imported:",
   copyCredentials: "Copy credentials",
-  quota: "Account credit",
+  quota: "Token credit",
   quotaHint:
     "In tokens; 0 means unlimited. It applies together with the token's own quota and its tenant group's — whichever runs out first refuses the request.",
   quotaUsed: "Used {used} of {total}",
   quotaEditSemantics: "Blank or 0 means unlimited. Token limits must be integers; money limits use ledger USD. Lowering a limit does not clear usage; only Reset clears counters.",
-  quotaTotal: "Credit limit",
+  quotaTotal: "Token credit limit",
   quotaCostTotal: "Spend allowance",
   quotaCostHint:
     "Priced in the site's currency and enforced beside the token allowance — whichever runs out first refuses the request.",
@@ -662,7 +664,7 @@ const en: Record<keyof typeof zh, string> = {
   oauthUnlink: "Unlink",
   oauthUnlinkWarning:
     "After unlinking this member can no longer sign in with that account. Continue?",
-  credit: "Account credit",
+  credit: "Token credit",
   creditHint:
     "Granted by the operator or topped up with a code. It sits on top of each key's own quota — whichever runs out first applies.",
   creditRemaining: "Remaining",
@@ -702,12 +704,12 @@ const en: Record<keyof typeof zh, string> = {
   overviewHint:
     "The switch for multi-user mode. Once it is on, the console gains boards for members, access, credit and pricing, and members sign in through the same /console page.",
   moduleMap:
-    "Members decide who may call; access policies decide which models they may call; credit decides how much; codes open accounts and top them up; sign-in and the user frontend decide how they get in and what they see.",
+    "Members decide who may call; access policies decide which models they may call; credit decides how much; codes open accounts and top them up; sign-in decides how they get in and what they see.",
   quotasIntro:
     "Every relay request must clear three budgets: the client token, the tenant group that token is bound to, and the account behind it. Each of the three holds two independent budgets — tokens and money — and whichever runs out first refuses the request.",
   groupQuotas: "Tenant group quotas",
   groupQuotasHint:
-    "Quotas and rate limits per group. They apply once a client token is bound to the group (in the token editor); unbound tokens use the default group.",
+    "Quotas and rate limits per group. They apply once a client token is bound to the group (in the token editor); unbound tokens use the default group. This is a different axis from an access policy: the policy decides which models a member may use, a group decides how much and how fast.",
   newGroup: "New group",
   quotaGroupTitle: "Group · {name}",
   groupDeleteWarning: "Delete group \"{name}\"? Tokens bound to it fall back to the default group.",

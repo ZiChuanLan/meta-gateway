@@ -101,7 +101,13 @@ services:
       - meta-gateway-data:/data
       # 一键更新（可选，默认关闭）：取消注释后控制台出现「一键更新」按钮。
       # 注意：Docker 套接字约等于宿主机 root 权限，仅在可信环境启用。
+      #
+      # 取消注释后**还必须同时配 group_add**（见下方），否则套接字挂进来了也打不开：
+      # 容器以 uid 10001 运行，而 socket 属于宿主机的 docker 组，不在该组就是 EACCES，
+      # 表现为「一键更新点下去就没了」、而 /admin/self-update 里写着 permission denied。
+      # GID 用 stat -c '%g' /var/run/docker.sock 取（常见 998/999/988）。
       # - /var/run/docker.sock:/var/run/docker.sock
+    # group_add: ["${DOCKER_GID:-999}"]  # 仅在启用 socket 一键更新时打开
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
