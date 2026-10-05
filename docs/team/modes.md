@@ -1,6 +1,6 @@
 # 个人与团队模式使用说明
 
-## 已实现的入口
+## 登录入口
 
 - **统一登录入口：`/console`**。管理员与成员在同一个登录页填用户名与密码，角色由服务端识别。
 - 旧的 `/app` 地址保留为**兼容跳转**，会重定向到 `/console`。
@@ -171,23 +171,27 @@
 
 ## 构建与部署
 
-```powershell
+```bash
 cd web
 npm run lint
 npm run typecheck
 npm test -- --run
 npm run build
 cd ..
-go build -o bin/meta-gateway-team.exe ./cmd/server
+go build -o bin/meta-gateway ./cmd/server
 ```
 
-`npm run build` 同时构建控制台与用户前端，分别输出到
-`internal/webui/dist`、`internal/userui/dist`，两份均随 Go 二进制/同一镜像交付。
-只启动用户前端开发服务器可用 `npm run dev:user`（4174，代理 `/auth`、`/me` 到 4100）。
+`npm run build` 产出**单一**控制台产物到 `internal/webui/dist`，由 `go:embed` 编进二进制。**成员与管理员用的是同一份构建**——角色由服务端按账号判定，前端不做第二套产物。
 
-本版采用 **邀请制 + 账户密码**，并支持 GitHub / Linux.do 第三方登录（可在登录页自助注册，
-由站长开关控制）。未提供公开的邮箱注册、用户级 TOTP 与支付/订阅，界面上也没有对应的占位按钮；
-它们不影响当前成员、Key、授权与个人路由的完整使用流程。
+**顺序不能颠倒：先 Node 再 Go。** 改了 `web/src` 却没重新构建，Go 侧跑的还是旧界面。
+
+本地开发用 `npm run dev`（4173，base 为 `/console/`），需要网关后端在 `:4100` 上跑着才有数据。
+
+## 注册与账号策略
+
+采用**邀请制 + 账户密码**，并支持 GitHub / Linux.do 第三方登录（登录页可自助注册，由站长开关控制）。
+
+**没有**公开邮箱注册、用户级 TOTP、支付/订阅，界面上也没有对应的占位按钮——它们不影响成员、Key、授权与个人路由的完整使用流程。
 
 ## 相关
 
