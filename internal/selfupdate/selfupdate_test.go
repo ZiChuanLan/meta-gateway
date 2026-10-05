@@ -156,10 +156,14 @@ func TestHandoffReportsDeadSuccessor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := 200
-	for svc.Status().Phase != PhaseFailed && deadline > 0 {
-		deadline--
-		sleepBriefly()
+	// A wall-clock budget, not an iteration count. The watchdog needs at least
+	// one tick plus its settle wait (~3s), and an iteration count silently
+	// encodes how slow Status() happens to be on this machine: it is slow on
+	// Windows (a DNS probe that times out) and instant on Linux, so a fixed
+	// count passed locally and expired before the watchdog acted on CI.
+	deadline := time.Now().Add(20 * time.Second)
+	for svc.Status().Phase != PhaseFailed && time.Now().Before(deadline) {
+		time.Sleep(25 * time.Millisecond)
 	}
 	status := svc.Status()
 	if status.Phase != PhaseFailed {
