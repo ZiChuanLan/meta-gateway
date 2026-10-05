@@ -119,7 +119,7 @@ func TestModelFilterEmpty(t *testing.T) {
 }
 
 func TestDownstreamAuthAttachesScopes(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestDownstreamAuthAttachesScopes(t *testing.T) {
 // x-api-key and a Gemini client sends x-goog-api-key, so both must authenticate
 // against downstream_keys exactly like a Bearer token does.
 func TestDownstreamAuthAcceptsNativeCredentialHeaders(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

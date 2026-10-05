@@ -67,7 +67,7 @@ func TestValidateRule(t *testing.T) {
 // TestTickFiresAfterSustained: rule fires only after sustained ticks and
 // respects the cooldown.
 func TestTickFiresAfterSustained(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

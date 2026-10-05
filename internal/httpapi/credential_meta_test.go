@@ -19,7 +19,7 @@ import (
 func credentialMetaTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := store.Open(dir)
+	db, err := store.OpenTest(dir)
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}

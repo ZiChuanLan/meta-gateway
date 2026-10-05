@@ -495,7 +495,7 @@ func TestBuildUnifyPreviewDisabledBindingsNotAdopted(t *testing.T) {
 }
 
 func TestApplyUnifyIdempotent(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +551,7 @@ func TestApplyUnifyIdempotent(t *testing.T) {
 // Re-applying must not create a second route for a name that already exists,
 // even when that route was disabled — GetByModel only sees enabled rows.
 func TestApplyUnifyReusesDisabledRoute(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

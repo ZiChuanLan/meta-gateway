@@ -15,7 +15,7 @@ import (
 // catalog endpoints, so the plan/apply logic is exercised without the network.
 func newTestService(t *testing.T) (*Service, *store.DB) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestSyncRecordsStateAndSurvivesAMissingModel(t *testing.T) {
 }
 
 func TestFetchKeepsWorkingWhenOneSourceIsDown(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestFetchKeepsWorkingWhenOneSourceIsDown(t *testing.T) {
 }
 
 func TestFetchReportsSkippedRowsWithoutFailingTheSource(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

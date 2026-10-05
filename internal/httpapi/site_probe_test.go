@@ -127,7 +127,7 @@ type siteProbeApplyResponse struct {
 // watch the verdict need consecutive rounds, and only then park the member.
 func TestSiteProbeCollectAndApply(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
@@ -256,7 +256,7 @@ func TestSiteProbeCollectAndApply(t *testing.T) {
 // is fail-open, and a broken page is not evidence of a broken upstream.
 func TestSiteProbeFailedCollectionIsInert(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
@@ -341,7 +341,7 @@ func deleteStatus(t *testing.T, url string) int {
 // round lands.
 func TestSiteProbeAutoApplyActsOnItsOwn(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
@@ -424,7 +424,7 @@ func adoptStatus(t *testing.T, url string, payload any) int {
 // from the collected sample of the row the member belongs to.
 func TestSiteProbeAdoptPriceWritesTheBillingColumns(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
@@ -512,7 +512,7 @@ func TestSiteProbeAdoptPriceWritesTheBillingColumns(t *testing.T) {
 // screen, so creating them would leave debris nobody could remove).
 func TestSiteProbeCatalogImportMatchesExistingSitesOnly(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
@@ -607,7 +607,7 @@ func TestSiteProbeCatalogImportMatchesExistingSitesOnly(t *testing.T) {
 // only sites with neither a channel nor a credential are removed.
 func TestSiteProbeCatalogPruneKeepsSitesInUse(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
@@ -655,7 +655,7 @@ func TestSiteProbeCatalogPruneKeepsSitesInUse(t *testing.T) {
 // erroring every round.
 func TestSiteProbeAutoSourceCollects(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}

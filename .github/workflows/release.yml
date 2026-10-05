@@ -23,11 +23,11 @@ jobs:
   # commit, via the API, and fails the release when that run is not green.
   wait-for-ci:
     runs-on: ubuntu-latest
-    # Must stay comfortably above CI's own wall time. CI's race step alone now
-    # measures 1,300-1,720s (see ci.yml), so a full CI run is ~30-35 minutes;
-    # 45 minutes left too little room and this job would fail on a green CI that
-    # merely finished late, which reads as "the release is broken" when it is not.
-    timeout-minutes: 75
+    # Must stay comfortably above CI's own wall time. After store.OpenTest the
+    # race step is the long pole at ~8 minutes locally, so a full CI run is well
+    # under 20 minutes; 45 minutes leaves room for a slow runner without letting
+    # this job outlive a genuinely stuck CI.
+    timeout-minutes: 45
     steps:
       - name: Require a green CI run for this commit
         env:
@@ -65,9 +65,9 @@ jobs:
 
           # Poll the conclusion rather than using `gh run watch --exit-status`,
           # which needs a newer gh than every runner image ships.
-          # 120 x 30s = 60 minutes of polling, matching the timeout above: the
+          # 80 x 30s = 40 minutes of polling, matching the timeout above: the
           # window has to outlast CI, not just the median CI run.
-          for _ in $(seq 1 120); do
+          for _ in $(seq 1 80); do
             status="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.status')"
             if [ "$status" = "completed" ]; then
               conclusion="$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.conclusion')"

@@ -39,7 +39,7 @@ func (f *fakeProber) callCount() int {
 
 func openSweepTestDB(t *testing.T) *store.DB {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

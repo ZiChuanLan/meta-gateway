@@ -26,7 +26,7 @@ func TestCheckinAdminWorkflow(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestExternalCheckinAdminWorkflow(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}

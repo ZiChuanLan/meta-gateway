@@ -13,7 +13,7 @@ import (
 func TestOnlineBackupAndOfflineRestore(t *testing.T) {
 	dataDir := t.TempDir()
 	backupDir := filepath.Join(t.TempDir(), "backups")
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +53,8 @@ func TestOnlineBackupAndOfflineRestore(t *testing.T) {
 	if err != nil || rollback != "" {
 		t.Fatalf("restore rollback=%q err=%v", rollback, err)
 	}
+	// Open, not OpenTest: Restore has just written a database into restoreDir,
+	// and OpenTest refuses a populated directory by design.
 	restored, err := store.Open(restoreDir)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +91,7 @@ func TestRestoreRejectsUnsafeOrCorruptBackup(t *testing.T) {
 }
 
 func TestBackupRetentionPrunesFilesAndHistory(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +126,7 @@ func TestBackupRetentionPrunesFilesAndHistory(t *testing.T) {
 }
 
 func TestBackupRetentionDoesNotEvictRestorableRecordsForNewerFailures(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +164,7 @@ func TestBackupRetentionDoesNotEvictRestorableRecordsForNewerFailures(t *testing
 func TestRestoreMovesActiveWALAlongsideRollback(t *testing.T) {
 	sourceDir := t.TempDir()
 	dataDir := t.TempDir()
-	db, err := store.Open(sourceDir)
+	db, err := store.OpenTest(sourceDir)
 	if err != nil {
 		t.Fatal(err)
 	}

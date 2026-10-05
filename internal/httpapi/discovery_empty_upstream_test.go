@@ -32,7 +32,7 @@ func TestRefreshAndProbeKeepModelsArrayWhenUpstreamListsNothing(t *testing.T) {
 	defer upstream.Close()
 
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("empty-refresh-master-key-32-chars!")
 	cfg := &config.Config{

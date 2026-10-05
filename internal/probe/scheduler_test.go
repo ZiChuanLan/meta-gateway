@@ -44,7 +44,7 @@ func newTestScheduler(t *testing.T, db *store.DB, relay Relay, schedule Schedule
 // default one: the whole point of configuring a schedule is that it probes the
 // way the operator asked.
 func TestSchedulerRunUsesConfiguredPrompt(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSchedulerRunUsesConfiguredPrompt(t *testing.T) {
 // Two overlapping runs would double the upstream load for no extra
 // information, so a firing that finds a run in progress must stand down.
 func TestSchedulerSkipsWhileRunInProgress(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestSchedulerSkipsWhileRunInProgress(t *testing.T) {
 // A bad cron expression must surface as an error at configuration time, not as
 // a schedule that silently never fires.
 func TestSchedulerRejectsInvalidCron(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestSchedulerRejectsInvalidCron(t *testing.T) {
 
 // An empty expression is the documented way to turn the schedule off.
 func TestSchedulerEmptyCronDisables(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

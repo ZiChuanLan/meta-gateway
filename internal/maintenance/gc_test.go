@@ -10,7 +10,7 @@ import (
 // TestSetScheduleInvalidRejected verifies a bad cron expression is rejected
 // without touching an existing schedule.
 func TestSetScheduleInvalidRejected(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestSetScheduleInvalidRejected(t *testing.T) {
 }
 
 func TestGCDelayedPassIsCancelledOnStop(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestGCDelayedPassIsCancelledOnStop(t *testing.T) {
 // TestRunOnceAndLast verifies the manual pass runs synchronously and records
 // the result for the status endpoint.
 func TestRunOnceAndLast(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestRunOnceAndLast(t *testing.T) {
 
 // TestScheduleRunsOnCron verifies a real cron tick fires the pass.
 func TestScheduleRunsOnCron(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

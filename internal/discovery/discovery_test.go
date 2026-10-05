@@ -158,7 +158,7 @@ func TestRefreshAllContinuesAndOrdersByChannelID(t *testing.T) {
 
 func setupService(t *testing.T, upstreamURL, platform string) (*store.DB, *discovery.Service, int64) {
 	t.Helper()
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -59,7 +59,7 @@ func (r *capturingRelay) ForwardWithHeaders(_ context.Context, _, upstreamURL st
 // upstream root, so a test can assert the exact URL the adapter built.
 func mappingService(t *testing.T, upstream Relay, baseURL string) (*Service, *store.DB, int64) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestUpstreamMapMalformedFailsOpen(t *testing.T) {
 // admin overview projection (AGENTS 3.1: a column missing from ListOverviews
 // silently round-trips as its zero value and the edit form would wipe it).
 func TestChannelStoreRoundTripsUpstreamMap(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

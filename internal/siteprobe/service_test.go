@@ -41,7 +41,7 @@ type fixture struct {
 // which a site's own probe data can move a routing decision.
 func newFixture(t *testing.T, source *ratioSource, monitor, route string) *fixture {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestFailedCollectionProducesNoVerdictAndNoAction(t *testing.T) {
 
 func newMatchResolver(t *testing.T) *Resolver {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestMatchKinds(t *testing.T) {
 // none — which is every New-API price source. Without this the operator sees a
 // table full of "no samples" for sites their gateway demonstrably serves.
 func TestTrafficAvailabilityDrivesTheVerdictWhenTheSitePublishesNone(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -711,7 +711,7 @@ func closeEnough(got, want float64) bool {
 // A price source has no availability data at all: its samples must carry no
 // sample count, so they can inform the operator without ever parking a member.
 func TestPriceSourceStoresPricesWithoutAvailability(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

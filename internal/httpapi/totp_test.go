@@ -19,7 +19,7 @@ import (
 func setupTOTPServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

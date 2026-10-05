@@ -57,7 +57,7 @@ func setupGeminiRelay(t *testing.T, baseURL string) (string, string, int64) {
 func setupRelay(t *testing.T, baseURL, typeHint string) (string, string, int64) {
 	t.Helper()
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func setupRelay(t *testing.T, baseURL, typeHint string) (string, string, int64) 
 func setupRelayPair(t *testing.T, baseURLA, baseURLB string) (string, string, int64) {
 	t.Helper()
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -761,7 +761,7 @@ func TestStableFirstGraySplitAndPromotion(t *testing.T) {
 
 	// Wire site / credential / two channels / route / members / key.
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -967,7 +967,7 @@ func TestConcurrencyGuardSpreadsBurst(t *testing.T) {
 	defer slow.Close()
 
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1094,7 +1094,7 @@ func TestWebhookNotifiesDisableAndRecovery(t *testing.T) {
 	defer upstream.Close()
 
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

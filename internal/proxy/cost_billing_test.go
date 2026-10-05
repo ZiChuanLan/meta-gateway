@@ -14,7 +14,7 @@ import (
 // same two-step fallback and multiplied by the same billing ratio, so a call
 // priced per request needs no separate rule anywhere else.
 func TestBillingPerRequestPrice(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 func TestAdminModelChangesHTTP(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestAdminModelChangesHTTP(t *testing.T) {
 }
 
 func TestAdminModelDiscardHTTP(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

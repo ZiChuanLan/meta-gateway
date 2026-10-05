@@ -263,7 +263,7 @@ func (u *echoUpstream) lastModel() string {
 func setupPluginGateway(t *testing.T, upstreamURL string, plugin *hookPluginServer) (string, string) {
 	t.Helper()
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +573,7 @@ func TestPluginHooksRequireInterceptPermission(t *testing.T) {
 		Permissions: []string{"admin_api:hook-unpermitted"},
 	})
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

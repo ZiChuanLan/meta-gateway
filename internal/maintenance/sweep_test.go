@@ -27,7 +27,7 @@ func (fakeAccount) PruneBalanceHistory(context.Context, int) (int, error) { retu
 // per round). A dropped call here would let it grow without bound while every
 // store-level test still passed.
 func TestBalanceSweeperPrunesSiteProbe(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

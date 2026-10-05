@@ -25,7 +25,7 @@ func TestAttemptLogNamesTheServingUpstreamKey(t *testing.T) {
 		response(http.StatusOK, `{"ok":true}`),
 		response(http.StatusOK, `{"ok":true}`),
 	}}
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestAttemptLogNamesTheServingUpstreamKey(t *testing.T) {
 // A key deleted after the request keeps its id in the row; the name simply
 // resolves to empty and the console falls back to the fingerprint.
 func TestAttemptLogKeyNameVanishesWithTheCredential(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

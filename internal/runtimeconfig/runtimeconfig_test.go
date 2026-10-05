@@ -76,7 +76,7 @@ func TestValidateSiteProbeCadence(t *testing.T) {
 }
 
 func TestBootstrapUsesEnvironmentWithoutOverride(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestBootstrapUsesEnvironmentWithoutOverride(t *testing.T) {
 }
 
 func TestBootstrapRestoresProxyURLOverride(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestBootstrapRestoresProxyURLOverride(t *testing.T) {
 }
 
 func TestUpdateRollsBackDurableAndRuntimeStateWhenApplyFails(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestUpdateRollsBackDurableAndRuntimeStateWhenApplyFails(t *testing.T) {
 }
 
 func TestUpdateAndClearOverride(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestUpdateAndClearOverride(t *testing.T) {
 // the real scheduler as the flag moves.
 func TestCheckinScheduleFollowsEditableFlag(t *testing.T) {
 	cfg := &config.Config{CheckinCron: "0 8 * * *", HTTPAddr: ":0", DataDir: "."}
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +374,7 @@ func TestCheckinScheduleSurvivesRestart(t *testing.T) {
 		RoutingConcurrencyLimit:     64,
 		WebhookThrottleSeconds:      300,
 	}
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

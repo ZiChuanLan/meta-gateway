@@ -60,6 +60,12 @@ func Open(dataDir string) (*DB, error) {
 // and runs migrations with an explicit connection-pool ceiling. The pool must
 // be at least 1; values outside 1..16 are clamped defensively.
 func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
+	return openWithMaxConns(dataDir, maxOpenConns, true)
+}
+
+// openWithMaxConns is the shared body of Open and OpenTest. migrate=false is
+// only ever passed by OpenTest, whose database is already migrated.
+func openWithMaxConns(dataDir string, maxOpenConns int, migrate bool) (*DB, error) {
 	if maxOpenConns < 1 {
 		maxOpenConns = 1
 	}
@@ -87,8 +93,10 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 	if err := sqldb.Ping(); err != nil {
 		return nil, fmt.Errorf("store: ping: %w", err)
 	}
-	if err := Migrate(sqldb); err != nil {
-		return nil, fmt.Errorf("store: migrate: %w", err)
+	if migrate {
+		if err := Migrate(sqldb); err != nil {
+			return nil, fmt.Errorf("store: migrate: %w", err)
+		}
 	}
 
 	siteStore := newSiteStore(sqldb)
@@ -135,7 +143,7 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 // names are silently ignored. URI construction also matters on Windows (and
 // for paths containing spaces, '#', or '?').
 func sqliteDSN(dataDir string) (string, error) {
-	path, err := filepath.Abs(filepath.Join(dataDir, "meta-gateway.db"))
+	path, err := filepath.Abs(filepath.Join(dataDir, databaseFileName))
 	if err != nil {
 		return "", err
 	}

@@ -14,7 +14,7 @@ import (
 func openPluginTestDB(t *testing.T) *store.DB {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := store.Open(dir)
+	db, err := store.OpenTest(dir)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

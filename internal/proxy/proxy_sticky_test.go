@@ -33,7 +33,7 @@ func (r *seqRandom) Float64() float64 { return 0 }
 // weighted pick is the only differentiator between them.
 func setupStickyProxy(t *testing.T, upstream Relay) (*Service, *routing.StickyStore, time.Time) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func setupStickyProxy(t *testing.T, upstream Relay) (*Service, *routing.StickySt
 // budget (for failover scenarios).
 func setupStickyProxyWithRetries(t *testing.T, upstream Relay, retryTimes int) (*Service, *routing.StickyStore, time.Time) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

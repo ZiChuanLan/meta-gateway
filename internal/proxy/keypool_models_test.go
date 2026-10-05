@@ -30,7 +30,7 @@ func secretsOf(keys []upstreamKey) []string {
 // for a codex model must only use the codex key, and a shared model may use
 // either. Keys without any recorded set stay usable (pool fallback).
 func TestKeyPoolServesModelFromDiscoveredSet(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestKeyPoolServesModelFromDiscoveredSet(t *testing.T) {
 // A key with an explicit models_csv allowlist keeps manual filtering; a key
 // without any discovered set remains usable for any model (backwards compat).
 func TestKeyPoolManualAllowlistAndUnlearnedKey(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestKeyPoolManualAllowlistAndUnlearnedKey(t *testing.T) {
 // longer privileged by binding alone — an existing deployment keeps "bound
 // first" because the migration promotes those keys to the preferred tier.
 func TestKeyPoolPriorityTiersAndRotation(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestKeyPoolPriorityTiersAndRotation(t *testing.T) {
 // End-to-end: a request for a model only served by one group-scoped key must
 // travel upstream with THAT key's Authorization header, not the other key.
 func TestRelayUsesKeyThatServesModel(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func TestRelayUsesKeyThatServesModel(t *testing.T) {
 // starved the pool into a bogus "credential unavailable" 502 even though
 // model listing worked fine.
 func TestRelayResolvesKeysForAliasedModel(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func buildPoolService(db *store.DB, enc *crypto.Encrypter) (*Service, error) {
 // actually served the request, then the model's metadata prices. A model
 // priced at neither layer bills at zero.
 func TestBillingCostModelPricePrecedence(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

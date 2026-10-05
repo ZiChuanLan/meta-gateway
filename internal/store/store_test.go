@@ -11,16 +11,22 @@ import (
 	"github.com/lan/meta-gateway/internal/store"
 )
 
+// openTestDB returns a migrated database for a test.
+//
+// It copies the once-per-process template (see store.OpenTest) instead of
+// migrating from scratch: replaying every migration per test is what made the
+// race suite take ~20 minutes, because -race instruments pure-Go SQLite and
+// turns ~0.14s of migration into ~3.4s.
+//
+// Tests that assert migration behaviour — a replayed migration, an upgrade from
+// an older schema — must call store.Open directly, since OpenTest skips Migrate.
 func openTestDB(t *testing.T) *store.DB {
 	t.Helper()
-	dir := t.TempDir()
-	db, err := store.Open(dir)
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	// ensure file path is under temp
-	_ = filepath.Join(dir, "meta-gateway.db")
 	return db
 }
 

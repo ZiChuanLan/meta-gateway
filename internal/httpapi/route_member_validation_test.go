@@ -21,7 +21,7 @@ import (
 
 func TestCreateRouteMemberValidatesChannel(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("route-member-test-master-key-32char")
 	cfg := &config.Config{

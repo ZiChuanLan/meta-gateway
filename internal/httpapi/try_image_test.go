@@ -52,7 +52,7 @@ func setupImageRelay(t *testing.T, baseURL, model string) (string, string, int64
 func setupImageRelayWithStore(t *testing.T, baseURL, model string) (string, string, int64, *store.DB) {
 	t.Helper()
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

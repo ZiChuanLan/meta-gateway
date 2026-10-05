@@ -75,21 +75,55 @@ go run ./tools/docsgen && git diff --exit-code docs/reference   # 文档与代�
 > `pattern dist: open ...\dist\assets: The process cannot access the file because it is being used by
 > another process.` —— 这是文件锁不是代码错，等构建结束后重跑即可。
 
-### race 预算与测试后台资源（2026-09-20）
+### 测试开库：用 `store.OpenTest`，不要重放迁移（2026-10-05 重写）
 
-CI 的 race 步骤是 `go test -race -timeout 20m ./...`（**per-package** 20 分钟），不要调回默认的
-10 分钟：`-race` 会给纯 Go 版 SQLite（`modernc.org/sqlite`）插桩，而每个开新库的测试都要重放全部
-118 个迁移 —— 实测 **0.14s → 3.4s（25×）**。所以 `internal/store` 单包约 500s、`internal/httpapi`
-约 700s，默认 600s 上限正好压在悬崖上（09-17 那次 httpapi 504.9s 惊险通过，之后 store 599.8s
-只差 0.2s 就红）；2026-10-04 在 Windows 上重测 httpapi **956.8s**（20m 预算只剩 1.25×）、siteprobe 59.6s。
-race 步骤失败时先分清是 `DATA RACE` 还是 `test timed out`：后者是预算问题，
-不是代码问题。想真正砍掉这笔开销，方向是「每包迁移一次模板库、各测试拷贝」，可省掉每测试的固定成本。
+**测试里开库一律用 `store.OpenTest(t.TempDir())`。** 它拷贝一份「每进程只迁移一次」的模板库
+（`internal/store/template.go`：`sync.Once` 建模板 → 每测试文件拷贝，拷贝时**跳过 `Migrate`**）。
+
+**只有断言迁移行为的测试才用 `store.Open`**：重开一个已经写入的目录、从旧 schema 升级、
+断言某个迁移会重放。目前必须保留 `Open` 的位置：`internal/store/store_test.go` 的
+`TestP0P2DatabaseUpgradesWithoutDataLoss` / `TestP0P4DatabaseUpgradesToCheckin…`、
+`portal_retirement_test.go` 的重开测试，以及 `internal/backup/{service_test.go,team_restore_test.go}`
+（`Restore` 写完库后重开）。
+
+> `OpenTest` 遇到 dataDir 里**已有** `meta-gateway.db` 会直接报错（**不覆盖**）。这条守卫是刻意的：
+> 这个改动最容易犯的错就是把「重开」误转成 `OpenTest`，而拷贝模板盖掉 fixture 会让测试
+> **静默变样**。有守卫就只会大声失败——实测已抓到两处。
+
+为什么必须这样：`-race` 会给纯 Go 版 SQLite（`modernc.org/sqlite`）插桩，而每个开新库的测试都要
+重放全部迁移 —— 实测 **0.14s → 3.4s（25×）**。全仓约 **300 个开库点**，这笔固定成本就是 race 步骤的
+绝大部分耗时，也是它长期压在超时悬崖上的原因：
+
+| 时间 | race 步骤墙钟 | 结果 |
+| :--- | :--- | :--- |
+| 2026-10-05 前（每测试重放迁移） | 基线 863–1,112s；V4 提交 **1,304s / 1,720s** | 基线勉强过，V4 越过 per-package 20m 而红 |
+| 只把预算加到 30m（未改测试） | **1,959s** | 仍然红 —— **加预算治不了成本** |
+| 切模板库后（本地 Windows 实测） | **全量 472s**；httpapi 单包 **1,201.559s → 413.2s**，store 335.2s | 全绿 |
+
+那次红直接挡住了发布：`release.yml` 的 `wait-for-ci` 拒绝为红的 CI 构建镜像（v4.0.0-beta.1 两次
+都没发出镜像）。**race 步骤失败时先分清 `DATA RACE` 还是 `test timed out`**：后者是预算/成本问题，
+不是代码问题。本地实测 httpapi 在 `-race` 下 **1201.559s**，以 1.6 秒之差撞上旧的 1,200s 上限——
+耗时而非 race 报告，就是超时的签名。
+
+**当前预算**：`-timeout 20m`（per-package）、job `timeout-minutes: 45`、`wait-for-ci` 轮询 80×30s。
+注意**超时不消耗墙钟**——墙钟由实际测试时间决定，预算只是安全网，所以宁松勿紧；但也不要松到
+掩盖真死锁。要砍的是成本，不是把上限抬高。
 
 **Windows 本地跑 `-race` 要先给 C 编译器**：本机默认 `CGO_ENABLED=0`，且 bash 工具的环境 PATH 里
-没有 WinGet 装的 MinGW-W64（只有 powershell 工具的环境能 `Get-Command gcc`），不设就直接
-`cgo: C compiler "gcc" not found`（48s 就退，看着像代码错）。可用写法：
-`$mingw="$env:LOCALAPPDATA\Microsoft\WinGet\Packages\*WinLibs*\mingw64\bin"` →
-`$env:PATH="$mingw;$env:PATH"; $env:CC="$mingw\gcc.exe"; $env:CGO_ENABLED='1'` 再跑。
+没有 WinGet 装的 MinGW-W64，不设就直接 `cgo: C compiler "gcc" not found`（几秒就退，看着像代码错）。
+
+> 本文件早先给的写法是**坏的**：`$env:CC="$mingw\gcc.exe"` 里的通配符**不会展开**，`$env:CC` 会变成
+> 一个字面含 `*WinLibs*` 的路径，报 `file does not exist`。必须先把真实路径解析出来：
+
+```powershell
+$gcc = (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\*WinLibs*\mingw64\bin\gcc.exe" |
+        Select-Object -First 1).FullName
+$env:CC = $gcc
+$env:PATH = "$(Split-Path $gcc);$env:PATH"
+$env:CGO_ENABLED = '1'
+go test -race -timeout 30m ./...
+```
+
 
 后台调度器（alert / balance / health sweep、alert rules、daily summary、model catalog、DB GC、
 probe、**site probe**、update check、discovery recovery loop）都由 `NewWithDependencies` 启动，各自往

@@ -95,7 +95,7 @@ func TestVerdictPrefersFirstHandEvidenceOverTheDirectory(t *testing.T) {
 // The whole point of storing a third-party snapshot: a New-API price source has
 // no health of its own, so without it every row reads "no samples".
 func TestReportUsesDirectoryReadingsWhenNothingElseExists(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestDirectoryReadingsMustBeFresh(t *testing.T) {
 // would charge anyway, so it is shown — and never adopted per member, because
 // that would only duplicate the same global value.
 func TestCatalogPriceFillsTheGapTheSiteLeaves(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

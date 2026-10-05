@@ -64,7 +64,7 @@ func setupRelayWithModelLimit(t *testing.T, baseURL string) (string, string, int
 	// Reuse setupRelay for the entity wiring, then patch the limiter is not
 	// possible post-construction — so build a second gateway manually.
 	dataDir := t.TempDir()
-	db, err := store.Open(dataDir)
+	db, err := store.OpenTest(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

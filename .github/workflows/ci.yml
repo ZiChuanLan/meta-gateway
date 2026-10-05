@@ -11,23 +11,28 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     # `-race` is the long pole, not the frontend or the E2E job. It instruments
-    # pure-Go SQLite, and every test that opens a fresh database replays every
-    # migration: ~3.4s under -race versus ~0.14s without (measured). That makes
-    # internal/store ~500s and internal/httpapi ~700s on their own.
+    # pure-Go SQLite (modernc.org/sqlite), so every SQLite call is instrumented.
     #
-    # Both budgets have now been hit for real, so they are sized against
+    # Both budgets have been hit for real, so they are sized against
     # measurements rather than guesses:
     #
-    #   step `go test -race` wall time, 12 consecutive CI runs
+    #   step `go test -race` wall time
     #     baseline (754afa1 and earlier)   863s - 1,112s   all green
     #     1cb754b (the V4 commit)         1,304s / 1,720s  both RED
+    #     budget raised to 30m, no other   1,959s          still RED
+    #     change
+    #     after store.OpenTest (local)        472s          green
     #
-    # The per-package `-timeout` was 20m (1,200s), which the baseline was already
-    # eating 72%-93% of. The V4 commit pushed one package past it, and because a
-    # package timeout is reported as a plain failure, the step went red on a
-    # suite that reported no DATA RACE. Budget for the step instead of gambling
-    # on it.
-    timeout-minutes: 60
+    # The old per-package `-timeout` was 20m (1,200s), which the baseline was
+    # already eating 72%-93% of; the V4 commit pushed one package past it. A
+    # package timeout is reported as a plain failure, so the step went red on a
+    # suite that reported no DATA RACE — a real race fails in seconds.
+    #
+    # Raising the limit did not help, and that is the lesson: the cost was
+    # per-test migration replay (~300 tests x 3.4s under -race), and the fix was
+    # to remove it (store.OpenTest copies a once-per-process template). The
+    # budget is now a safety net again, not a workaround.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -67,17 +72,15 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Race test
-        # -timeout applies per package. 30m is a real margin over the slowest
-        # package rather than a coin flip: the whole step now measures up to
-        # 1,720s, and the previous 20m limit is exactly what turned the V4
-        # commit red (see the job comment above for the numbers). It still
-        # bounds a genuine deadlock, and a DATA RACE still fails in seconds.
+        # -timeout applies per package. 20m is roughly 3x the slowest package
+        # measured after store.OpenTest (internal/httpapi, 413s locally), which
+        # absorbs run-to-run variance on shared runners while still bounding a
+        # genuine deadlock. It is a ceiling, not a cost: wall time is decided by
+        # the tests, so the number only matters when something hangs.
         #
-        # The actual fix is to stop paying the per-test migration replay: migrate
-        # one template database per package and copy it for each test. That would
-        # take the suite from ~20 minutes to a couple, and this budget back to
-        # something honest.
-        run: go test -race -timeout 30m ./...
+        # Keep tests off the per-test migration replay (store.OpenTest); that is
+        # what turned this step into a 30-minute one and then into a red one.
+        run: go test -race -timeout 20m ./...
       - name: Build
         run: go build -trimpath ./cmd/server
       - name: Validate Compose

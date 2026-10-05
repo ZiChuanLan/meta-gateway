@@ -14,7 +14,7 @@ import (
 // same path as every other price, so these tests drive billingCost itself
 // rather than the parser: what matters is the amount the relay persists.
 func TestBillingContextLadder(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestBillingContextLadder(t *testing.T) {
 // is built around the clock on purpose: a fixed "22:00–06:00" would make this
 // test pass or fail depending on when the suite runs.
 func TestBillingTimeWindow(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestBillingTimeWindow(t *testing.T) {
 // The model layer carries the same two features, so a gateway that prices by
 // model rather than by channel behaves identically.
 func TestBillingModelLayerLadder(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

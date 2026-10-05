@@ -36,7 +36,7 @@ type teamTestBrowser struct {
 
 func newTeamTestEnv(t *testing.T) *teamTestEnv {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

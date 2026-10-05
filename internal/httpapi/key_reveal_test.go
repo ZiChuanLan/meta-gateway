@@ -23,7 +23,7 @@ import (
 func revealTestServer(t *testing.T) (*httptest.Server, *store.DB, *crypto.Encrypter) {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := store.Open(dir)
+	db, err := store.OpenTest(dir)
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}

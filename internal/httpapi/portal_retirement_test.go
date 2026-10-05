@@ -11,7 +11,7 @@ import (
 )
 
 func TestRetiredKeyPortalRoutesAreAbsent(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

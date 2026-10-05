@@ -16,7 +16,7 @@ import (
 
 func sidecarPluginHandler(t *testing.T) (http.Handler, *plugins.Service) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

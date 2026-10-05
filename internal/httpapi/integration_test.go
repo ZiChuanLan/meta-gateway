@@ -22,7 +22,7 @@ func setupServer(t *testing.T, upstreamURL string) (string, string, *store.DB) {
 	t.Helper()
 
 	dir := t.TempDir()
-	db, err := store.Open(dir)
+	db, err := store.OpenTest(dir)
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}
@@ -653,7 +653,7 @@ func TestRouteRoutingModeRoundTripAndValidation(t *testing.T) {
 
 func TestProxyLogsListFilters(t *testing.T) {
 	dir := t.TempDir()
-	db, err := store.Open(dir)
+	db, err := store.OpenTest(dir)
 	if err != nil {
 		t.Fatalf("store: %v", err)
 	}

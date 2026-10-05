@@ -113,7 +113,7 @@ func waitForTask(t *testing.T, db *store.DB, id int64) *store.ProbeTask {
 // A run must mark the probe flag, tally both outcomes, and persist a row per
 // pair — the tally is what the UI shows, the rows are what routing reads.
 func TestProbeRunRecordsResultsAndHealth(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestProbeRunRecordsResultsAndHealth(t *testing.T) {
 
 // An empty selection must be rejected rather than silently starting nothing.
 func TestProbeRejectsEmptySelection(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestProbeRejectsEmptySelection(t *testing.T) {
 // Cancelling must stop issuing new probes; the task ends as cancelled, not done,
 // so the UI can tell "stopped" apart from "finished everything".
 func TestProbeCancelStopsDispatching(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestProbeCancelStopsDispatching(t *testing.T) {
 // that used "hi" and one that used a long prompt do not measure the same
 // thing, and the history has to say which was which.
 func TestProbeSendsConfiguredPrompt(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestProbeSendsConfiguredPrompt(t *testing.T) {
 // An empty prompt must still send something, and it must be the documented
 // default rather than an empty user message.
 func TestProbeFallsBackToDefaultPrompt(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,7 +331,7 @@ func memberEnabled(t *testing.T, db *store.DB, channelID int64, model string) bo
 // Automatic disabling is preventive, so a single failure must not be enough —
 // only a consecutive run reaching the threshold takes a member out of rotation.
 func TestProbeAutoDisableNeedsConsecutiveFailures(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +367,7 @@ func TestProbeAutoDisableNeedsConsecutiveFailures(t *testing.T) {
 // With the threshold at 0 the feature is off, and failing pairs leave routing
 // untouched.
 func TestProbeAutoDisableOffByDefault(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestProbeAutoDisableOffByDefault(t *testing.T) {
 // A successful probe restores what probing disabled, and must never resurrect
 // a member an operator switched off by hand.
 func TestProbeRecoveryNeverOverridesManualDisable(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestProbeRecoveryNeverOverridesManualDisable(t *testing.T) {
 // The flip side of the guard: a member disabled by probing does come back once
 // the upstream answers again.
 func TestProbeRecoversSelfDisabledMember(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

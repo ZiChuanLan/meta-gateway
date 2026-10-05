@@ -97,7 +97,7 @@ func NewTestRouter(t *testing.T, cfg *config.Config, db *store.DB, enc *crypto.E
 func TestRouterShutdownReclaimsBackgroundGoroutines(t *testing.T) {
 	before := runtime.NumGoroutine()
 
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

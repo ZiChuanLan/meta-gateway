@@ -11,7 +11,7 @@ import (
 // fill-only-empty rule can be checked against a priced and an unpriced member.
 func adoptFixture(t *testing.T) (*store.DB, int64, int64, int64) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

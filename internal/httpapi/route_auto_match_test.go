@@ -39,7 +39,7 @@ func postExpectStatus(t *testing.T, url string, payload any) int {
 // create-time directive rather than stored route state.
 func TestRouteAutoMatch(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("auto-match-test-master-key-32-char!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, Cooldown: time.Second}
@@ -117,7 +117,7 @@ func listMembers(t *testing.T, base string, routeID int64) []struct {
 // through the same intersection as creation.
 func TestRouteAutoMatchExistingRoute(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("auto-match-attach-master-key-32c!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, Cooldown: time.Second}
@@ -214,7 +214,7 @@ func TestRouteAutoMatchExistingRoute(t *testing.T) {
 // upstream receives a name it actually serves.
 func TestRouteAutoMatchRelatedScope(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("auto-match-related-master-key-32c!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, Cooldown: time.Second}
@@ -288,7 +288,7 @@ func TestRouteAutoMatchRelatedScope(t *testing.T) {
 // create, so a deployment without catalogs behaves exactly like this.
 func TestCreateRouteBootstrapsCapabilities(t *testing.T) {
 	dataDir := t.TempDir()
-	db, _ := store.Open(dataDir)
+	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
 	enc, _ := crypto.New("bootstrap-capability-master-key-32!")
 	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, Cooldown: time.Second}

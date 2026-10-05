@@ -38,7 +38,7 @@ func (r *recordingDiscovery) Refresh(_ context.Context, channelID int64) (*disco
 
 func openExchangeService(t *testing.T) (*store.DB, *crypto.Encrypter, *recordingDiscovery, *exchange.Service) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

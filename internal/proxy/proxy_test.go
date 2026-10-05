@@ -62,7 +62,7 @@ func response(status int, body string) *relay.Result {
 
 func setupProxy(t *testing.T, upstream Relay) (*Service, *store.DB, int64, int64) {
 	t.Helper()
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +395,7 @@ func TestKeyPoolFailsOverBeforeNextChannel(t *testing.T) {
 		response(http.StatusServiceUnavailable, `{"error":"key1 busy"}`),
 		response(http.StatusOK, `{"ok":true}`),
 	}}
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestKeyPoolFailsOverBeforeNextChannel(t *testing.T) {
 
 func TestChatUsesSiteBaseWhenChannelBaseEmpty(t *testing.T) {
 	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusOK, `{"ok":true}`)}}
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,7 +632,7 @@ func TestChannelRetryConfigAddsCustomStatusCodes(t *testing.T) {
 }
 
 func TestResolveAPIKeyPoolModelAllowlist(t *testing.T) {
-	db, err := store.Open(t.TempDir())
+	db, err := store.OpenTest(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

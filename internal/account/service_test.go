@@ -98,7 +98,7 @@ func TestPricingNormalizesAAHFormula(t *testing.T) {
 	}
 
 	// Service-level normalization (financeForChannel path).
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestProbeAndSyncKeys(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestCreateKeyFallsBackToRevealWhenCreateResponseMasked(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestCreateKeyFallsBackToListWhenRevealUnavailable(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +386,7 @@ func TestCreateKeyFallsBackToRevealWhenListMasked(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestCreateKeyFallsBackToSyncWhenCreateResponseHasNoID(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +530,7 @@ func TestListTokenGroupsPrefersUserGroupsEndpoint(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +593,7 @@ func TestListTokenGroupsFallsBackToTokenList(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +654,7 @@ func TestProbeRetriesTransientTransportFailure(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,7 +716,7 @@ func TestProbeDoesNotRetryAuthRejection(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -771,7 +771,7 @@ func TestSyncKeysPrunesOrphanedAPIKeys(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -869,7 +869,7 @@ func TestSyncKeysAggregatesByDefault(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -935,7 +935,7 @@ func TestSyncKeysSplitsChannelsByGroup(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	db, err := store.Open(filepath.Join(t.TempDir()))
+	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)
 	}
