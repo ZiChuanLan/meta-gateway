@@ -156,6 +156,8 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 		Method:             http.MethodPost,
 		OpenAIPath:         path,
 		DownstreamKeyID:    keyID,
+		UserID:             downstreamUser(r),
+		TeamAccess:         downstreamTeam(r),
 		DownstreamProtocol: "openai",
 		ContentType:        r.Header.Get("Content-Type"),
 		SessionKey:         r.Header.Get("X-Meta-Session-Id"),

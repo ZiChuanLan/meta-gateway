@@ -1,4 +1,4 @@
-import { ApiError } from "./api/client";
+import { ApiError } from "./lib/apiError";
 import { categorizeError, type ErrorClass } from "./errorCatalog";
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
@@ -13,11 +13,28 @@ const CLASS_KEY: Record<ErrorClass, string> = {
 	missing_user_token: "err.missingUserToken.title",
 	rate_limited: "err.rateLimited.title",
 	upstream_reject: "err.upstreamReject.title",
+	pinned_upstream: "err.pinnedUpstream.title",
 	not_found: "err.notFound.title",
 	server: "err.server.title",
 	cancelled: "err.cancelled.title",
 	empty_response: "err.emptyResponse.title",
 	unknown: "err.unknown.title",
+};
+
+/**
+ * Reason sentences for a pinned upstream. The backend answers with a code per
+ * cause, so the console can name the fault instead of repeating one generic
+ * "unavailable" for four different fixes.
+ */
+const PINNED_CAUSE: Record<string, string> = {
+	pinned_upstream_not_member: "err.pinnedUpstream.notMember",
+	pinned_upstream_member_disabled: "err.pinnedUpstream.memberDisabled",
+	pinned_upstream_channel_disabled: "err.pinnedUpstream.channelDisabled",
+	pinned_upstream_no_credential: "err.pinnedUpstream.noCredential",
+	pinned_upstream_cooling_down: "err.pinnedUpstream.coolingDown",
+	pinned_upstream_invalid_weight: "err.pinnedUpstream.invalidWeight",
+	no_eligible_upstream: "err.pinnedUpstream.noEligible",
+	preferred_channel_unavailable: "err.pinnedUpstream.generic",
 };
 
 export interface FormattedError {
@@ -172,10 +189,16 @@ export function formatErrorObject(error: unknown, t: Translate): FormattedError 
 		}
 	}
 
-	const classified = categorizeError(raw);
+const classified = categorizeError(raw);
 	const cls = classified.class;
 	const title = t(CLASS_KEY[cls]);
-	const cause = t(`err.${clsKey(cls)}.cause`);
+	// A pinned upstream reports WHICH way it is unusable; the four answers send
+	// the operator to four different places, so they get their own sentences
+	// instead of one shared "unavailable".
+	const pinnedCause = PINNED_CAUSE[raw.toLowerCase()];
+	const cause = pinnedCause
+		? t(pinnedCause)
+		: t(`err.${clsKey(cls)}.cause`);
 	const fix = t(`err.${clsKey(cls)}.fix`);
 	// When nothing matched, the raw backend phrase is usually the most
 	// informative thing we have — surface it instead of a second generic line.
@@ -208,6 +231,8 @@ function clsKey(cls: ErrorClass): string {
 			return "rateLimited";
 		case "upstream_reject":
 			return "upstreamReject";
+		case "pinned_upstream":
+			return "pinnedUpstream";
 		case "not_found":
 			return "notFound";
 		case "server":

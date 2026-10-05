@@ -70,12 +70,18 @@ function stubAdminFetch(overrides: {
 	modules?: unknown[];
 	hooks?: unknown[];
 	routes?: unknown[];
+	mode?: { mode: string; has_owner: boolean; role: string };
 } = {}) {
 	return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 		const path = String(input).split("?")[0];
 		const method = init?.method ?? "GET";
 		if (method === "POST" && path === "/admin/session") {
 			return jsonResponse({ session_token: "mg-sess.test" });
+		}
+		if (path === "/admin/mode") {
+			return jsonResponse(
+				overrides.mode ?? { mode: "personal", has_owner: false, role: "owner" },
+			);
 		}
 		if (path === "/readyz") return new Response(null, { status: 200 });
 		if (path === "/admin/plugins/status") {
@@ -140,12 +146,65 @@ describe("channel-first shell", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it("uses one account form and the same entrance animation for members", async () => {
+    vi.useFakeTimers();
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input); requests.push(path);
+      if (path === "/admin/session") return jsonResponse({ user: { role: "member" }, csrf: "test-csrf" });
+      if (path.includes("display-settings")) return jsonResponse({ symbol: "$", rate: 1 });
+      return jsonResponse([]);
+    }));
+    renderApp(["/logs"]);
+    expect(screen.queryByRole("tab", { name: "Administrator" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Admin token")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "member" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "member-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await flushAsyncWork();
+    expect(document.querySelector(".gateway-transition.is-sealing")).toBeInTheDocument();
+    await act(async () => { vi.advanceTimersByTime(ENTRANCE_CHARGE_MS); });
+    expect(document.querySelector(".gateway-transition.is-revealing")).toBeInTheDocument();
+    expect(requests.filter((path) => path.startsWith("/admin/") && path !== "/admin/session")).toEqual([]);
+    expect(localStorage.getItem("meta-gateway.admin-token")).toBeNull();
+    expect(document.querySelector(".deck-telemetry, .console-health")).toBeNull();
+  });
+
+	it("hides account navigation for deployment admins and redirects account bookmarks", async () => {
+    localStorage.setItem("meta-gateway.admin-token", "deployment-token");
+    const fetcher = stubAdminFetch(); vi.stubGlobal("fetch", fetcher);
+    renderApp(["/account"]);
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/settings"));
+    expect(document.querySelector('a[href="/console/account"]')).toBeNull();
+    expect(fetcher.mock.calls.some(([path])=>String(path)==="/me")).toBe(false);
+  });
+
+	it("offers upgrade sign-in guidance without sending credentials", async () => {
+    const fetcher=stubAdminFetch();vi.stubGlobal("fetch",fetcher);
+    renderApp();
+    fireEvent.click(screen.getByRole("button",{name:"Upgrading? Sign-in guide"}));
+    expect(screen.getByRole("dialog")).toHaveTextContent("ADMIN_USERNAME");
+    expect(screen.getByRole("dialog")).toHaveTextContent("ADMIN_TOKEN");
+    expect(fetcher.mock.calls.some(([path])=>String(path)==="/admin/session")).toBe(false);
+  });
+
+	it("accepts a legacy token through upgrade help without guessing a username", async () => {
+    const fetcher=stubAdminFetch();vi.stubGlobal("fetch",fetcher);renderApp();
+    fireEvent.click(screen.getByRole("button",{name:"Upgrading? Sign-in guide"}));
+    fireEvent.change(screen.getByLabelText("Confirm deployment token (ADMIN_TOKEN)"),{target:{value:"old-token"}});
+    fireEvent.click(screen.getByRole("button",{name:"Sign in with deployment token"}));
+    await waitFor(()=>expect(fetcher.mock.calls.some(([path])=>String(path)==="/admin/session")).toBe(true));
+    const call=fetcher.mock.calls.find(([path])=>String(path)==="/admin/session")!;
+    expect(JSON.parse(String(call[1]?.body))).toEqual({token:"old-token",totp_code:""});
+  });
+
 	it("seals the request before mounting and revealing the channel workspace", async () => {
 		vi.useFakeTimers();
 		vi.stubGlobal("fetch", stubAdminFetch());
 
 		renderApp();
-		fireEvent.change(screen.getByLabelText("Admin token"), {
+		fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+		fireEvent.change(screen.getByLabelText("Password"), {
 			target: { value: "transition-token" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -200,7 +259,8 @@ describe("channel-first shell", () => {
 		);
 
 		renderApp();
-		fireEvent.change(screen.getByLabelText("Admin token"), {
+		fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+		fireEvent.change(screen.getByLabelText("Password"), {
 			target: { value: "bad-token" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -218,7 +278,8 @@ describe("channel-first shell", () => {
 		const fetch = stubAdminFetch();
 		vi.stubGlobal("fetch", fetch);
 		renderApp();
-		fireEvent.change(screen.getByLabelText("Admin token"), { target: { value: "skip-token" } });
+		fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+		fireEvent.change(screen.getByLabelText("Password"), { target: { value: "skip-token" } });
 		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
 		await flushAsyncWork();
 		fireEvent.click(screen.getByRole("button", { name: /Skip animation/ }));
@@ -305,8 +366,38 @@ describe("channel-first shell", () => {
 	// The top bar used to carry a check-in shortcut next to the navigation entry
 	// pointing at the same page, and needed a switch of its own just to get out
 	// of the way. There is one entry per page now.
-	it("has no check-in shortcut in the chrome", async () => {
+	// The mode switch is a server-side capability change and now lives in the
+	// multi-user area itself; that area's navigation entry appears and
+	// disappears with the mode (see lib/topBar.ts for the pinning override).
+	it("shows user management in the navigation only in team mode", async () => {
 		localStorage.setItem("meta-gateway.admin-token", "nav-token");
+		const navLabels = () =>
+			[
+				...document.querySelectorAll(
+					".console-navigation .console-nav-link, .deck-sector .deck-sector-label",
+				),
+			].map((element) => element.textContent?.trim());
+
+		vi.stubGlobal(
+			"fetch",
+			stubAdminFetch({ mode: { mode: "team", has_owner: true, role: "owner" } }),
+		);
+		renderApp(["/models"]);
+		expect(
+			await screen.findByRole("heading", { level: 1, name: "Models" }),
+		).toBeInTheDocument();
+		await waitFor(() => expect(navLabels()).toContain("User management"));
+
+		cleanup();
+		vi.stubGlobal("fetch", stubAdminFetch());
+		renderApp(["/models"]);
+		expect(
+			await screen.findByRole("heading", { level: 1, name: "Models" }),
+		).toBeInTheDocument();
+		await waitFor(() => expect(navLabels()).not.toContain("User management"));
+	});
+
+	it("has no check-in shortcut in the chrome", async () => {		localStorage.setItem("meta-gateway.admin-token", "nav-token");
 		vi.stubGlobal("fetch", stubAdminFetch());
 		renderApp(["/models"]);
 		expect(
@@ -357,7 +448,8 @@ describe("channel-first shell", () => {
 		vi.stubGlobal("fetch", stubAdminFetch());
 
 		renderApp();
-		fireEvent.change(screen.getByLabelText("Admin token"), {
+		fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
+		fireEvent.change(screen.getByLabelText("Password"), {
 			target: { value: "reduced-token" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -389,6 +481,20 @@ describe("channel-first shell", () => {
 	// "/console/plugins/…" href resolves to /console/console/plugins/…, matches
 	// no route, and quietly lands in the catch-all redirect back to the overview
 	// — reported from production as "查看插件 jumps to the home page".
+	it("keeps administrator route details free of capability and price display panels", async () => {
+    localStorage.setItem("meta-gateway.admin-token", "admin-layout-token");
+    const fetcher = stubAdminFetch({ routes: [{
+      route: { id: 1, model_pattern: "admin-route", enabled: true, routing_mode: "auto", model_group: "default" }, members: [],
+    }] });
+    vi.stubGlobal("fetch", fetcher);
+    renderApp(["/models?route=1"]);
+    await screen.findByRole("heading", { level: 2, name: "admin-route" });
+    expect(document.querySelector(".models-split .ops-detail-card")).toBeInTheDocument();
+    expect(document.querySelector(".model-facts")).toBeNull();
+    expect(document.querySelector(".model-price-summary")).toBeNull();
+    expect(fetcher.mock.calls.some(([path]) => String(path).includes("/model-pricing"))).toBe(false);
+  });
+
 	it("opens the plugin page from a plugin-answered model row", async () => {
 		localStorage.setItem("meta-gateway.admin-token", "nav-token");
 		vi.stubGlobal(

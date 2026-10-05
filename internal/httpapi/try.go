@@ -205,6 +205,10 @@ func (h *TryHandler) tryChat(w http.ResponseWriter, r *http.Request) {
 		Stream:          request.Stream,
 		PreferChannelID: request.ChannelID,
 		PreferMemberID:  request.MemberID,
+		// 试调 is a diagnostic: it must not cool the channel down (which would
+		// turn "did this work?" into a production outage) nor lock the operator
+		// out of retrying the same row.
+		Diagnostic: true,
 	})
 	latency := int(time.Since(started).Milliseconds())
 	if latency < 0 {
@@ -277,7 +281,14 @@ func (h *TryHandler) writeTryChatError(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 	if errors.Is(result.Err, proxy.ErrPreferredChannel) {
-		writeError(w, http.StatusUnprocessableEntity, "preferred_channel_unavailable")
+		code := "preferred_channel_unavailable"
+		var pin *proxy.PinFailure
+		if errors.As(result.Err, &pin) && pin.Code != "" {
+			// Name the actual fault: a member switched off, an empty key pool and
+			// a cooling channel are three different fixes.
+			code = pin.Code
+		}
+		writeError(w, http.StatusUnprocessableEntity, code)
 		return
 	}
 	if errors.Is(result.Err, proxy.ErrCredential) {
@@ -583,6 +594,7 @@ func (h *TryHandler) tryImage(w http.ResponseWriter, r *http.Request) {
 		ContentType:     contentType,
 		PreferChannelID: request.ChannelID,
 		PreferMemberID:  request.MemberID,
+		Diagnostic:      true,
 	})
 	latency := int(time.Since(started).Milliseconds())
 	if latency < 0 {

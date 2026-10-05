@@ -49,6 +49,19 @@ func downstreamRouteGroup(r *http.Request) string {
 	return ""
 }
 
+func downstreamTeam(r *http.Request) *domain.TeamAccess {
+	if key := auth.DownstreamKey(r); key != nil {
+		return key.TeamAccess
+	}
+	return nil
+}
+func downstreamUser(r *http.Request) int64 {
+	if key := auth.DownstreamKey(r); key != nil {
+		return key.UserID
+	}
+	return 0
+}
+
 // RelayHandler serves public /v1/* endpoints.
 type RelayHandler struct {
 	db    *store.DB
@@ -171,6 +184,10 @@ func (h *RelayHandler) creditSummary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	// The downstream key's own quota is the first limit; the account pool is the
+	// second. Both carry a token budget and a money budget, and an exhausted one
+	// in EITHER unit is enough to refuse the request — a customer who bought 100
+	// dollars must not stay served because tokens are unlimited, and vice versa.
 	total := key.QuotaTotalTokens
 	used := key.QuotaUsedTokens
 	if used < 0 {
@@ -179,6 +196,10 @@ func (h *RelayHandler) creditSummary(w http.ResponseWriter, r *http.Request) {
 	available := total - used
 	if available < 0 {
 		available = 0
+	}
+	costAvailable := key.QuotaTotalCost - key.QuotaUsedCost
+	if costAvailable < 0 {
+		costAvailable = 0
 	}
 	expiresAt := int64(0)
 	if key.ExpiresAt != "" {
@@ -192,6 +213,11 @@ func (h *RelayHandler) creditSummary(w http.ResponseWriter, r *http.Request) {
 		"total_used":      used,
 		"total_available": available,
 		"expires_at":      expiresAt,
+		// The money budget travels beside the standard token fields; clients that
+		// only know the OpenAI shape simply ignore them.
+		"cost_granted":   key.QuotaTotalCost,
+		"cost_used":      key.QuotaUsedCost,
+		"cost_available": costAvailable,
 	})
 }
 
@@ -213,6 +239,21 @@ func (h *RelayHandler) getModels(w http.ResponseWriter, r *http.Request) {
 		}
 		if modelFilter != nil && !modelFilter.Allows(id) {
 			return
+		}
+		if access := downstreamTeam(r); access != nil {
+			_, candidates, err := h.db.RouteMember.RoutingCandidates(id, downstreamRouteGroup(r))
+			allowed := false
+			if err == nil {
+				for _, c := range candidates {
+					if access.AllowsMember(id, c.Member.ID) {
+						allowed = true
+						break
+					}
+				}
+			}
+			if !allowed {
+				return
+			}
 		}
 		if _, ok := seen[id]; ok {
 			return
@@ -501,6 +542,8 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 		Method:          http.MethodPost,
 		OpenAIPath:      openAIPath,
 		DownstreamKeyID: keyID,
+		UserID:          downstreamUser(r),
+		TeamAccess:      downstreamTeam(r),
 		ContentType:     contentType,
 		SessionKey:      r.Header.Get("X-Meta-Session-Id"),
 		ReasoningEffort: reasoningEffort,
@@ -649,6 +692,19 @@ func extractMultipartRequest(body []byte, contentType string) (string, bool, err
 	return model, stream, nil
 }
 
+// groupQuotaExceeded reports whether a tenant group has spent either of its
+// budgets. Both units count: an operator who set only a spend budget must not
+// have it ignored because the token budget is unlimited.
+func groupQuotaExceeded(g *domain.KeyGroup) bool {
+	if g == nil {
+		return false
+	}
+	if g.QuotaTotalTokens > 0 && g.QuotaUsedTokens >= g.QuotaTotalTokens {
+		return true
+	}
+	return g.QuotaTotalCost > 0 && g.QuotaUsedCost >= g.QuotaTotalCost
+}
+
 func (h *RelayHandler) ensureQuota(w http.ResponseWriter, r *http.Request) bool {
 	// The authenticated key snapshot rides in the request context, so quota
 	// checks reuse the auth lookup instead of a second DB read.
@@ -664,10 +720,17 @@ func (h *RelayHandler) ensureQuota(w http.ResponseWriter, r *http.Request) bool 
 	// unlimited (Group.Get returns a zero-quota group for unknown names).
 	if groupName := key.GroupName; groupName != "" && h.db.Group != nil {
 		group, err := h.db.Group.Get(groupName)
-		if err == nil && group != nil && group.QuotaTotalTokens > 0 && group.QuotaUsedTokens >= group.QuotaTotalTokens {
+		if err == nil && groupQuotaExceeded(group) {
 			writeError(w, http.StatusPaymentRequired, "group quota exceeded")
 			return false
 		}
+	}
+	// Account pool: the third limit, and the one a credit code tops up. It
+	// rides along on the already-resolved access snapshot, so enforcing it
+	// costs no extra query.
+	if key.TeamAccess.QuotaExceeded() {
+		writeError(w, http.StatusPaymentRequired, "account quota exceeded")
+		return false
 	}
 	return true
 }
@@ -768,6 +831,8 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		Method:             http.MethodPost,
 		OpenAIPath:         openAIPath,
 		DownstreamKeyID:    keyID,
+		UserID:             downstreamUser(r),
+		TeamAccess:         downstreamTeam(r),
 		DownstreamProtocol: downstream,
 		SessionKey:         r.Header.Get("X-Meta-Session-Id"),
 		ReasoningEffort:    reasoningEffort,
@@ -994,11 +1059,15 @@ func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requ
 func clientHeaders(h http.Header) map[string]string {
 	out := make(map[string]string, 8)
 	for key, values := range h {
-		if key == "Authorization" || key == "Host" {
+		canonical := http.CanonicalHeaderKey(key)
+		switch canonical {
+		case "Authorization", "Host", "Cookie", "Proxy-Authorization", "X-Meta-Csrf", "X-Api-Key", "X-Goog-Api-Key":
+			// Gateway authentication is not upstream request metadata. In
+			// particular HttpOnly team cookies must not reach hooks/rules.
 			continue
 		}
 		if len(values) > 0 && values[0] != "" {
-			out[http.CanonicalHeaderKey(key)] = values[0]
+			out[canonical] = values[0]
 		}
 	}
 	return out

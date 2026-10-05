@@ -1,4 +1,11 @@
 /* Shared component anatomy, density and elevation. Feature CSS owns business layouts. */
+
+/* Base layer: the shared box model and page skeleton.
+   The values match the reset that used to live only in the console feature
+   sheet, so this is a no-op where that sheet is already loaded. */
+* { box-sizing: border-box; }
+html, body, #root { min-height: 100%; }
+body { margin: 0; }
 body { background: var(--bg); font-family: var(--font); line-height: 1.5; }
 button, input, select, textarea { font-family: inherit; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
@@ -65,12 +72,332 @@ tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size
 .list-shell-footer .pagination-bar { margin: 0; padding: 0; border: 0; background: transparent; font: 10px var(--font); }
 .list-shell-footer .pagination-bar p, .list-shell-footer .pagination-range { font: 10px var(--font); color: var(--muted); }
 .list-shell-footer .pagination-bar select { height: 30px; font: 10px var(--font); border-color: var(--line); }
+/* List footer and first-run surface. Hoisted from the console feature sheet so
+   the second front end (the team user app, which imports only this layer) gets
+   the same anatomy instead of a third copy; every value is unchanged, so the
+   console — which still loads that sheet afterwards — renders identically. */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--surface-subtle);
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.pagination-summary {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pagination-size select {
+  height: 32px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-family: var(--font);
+}
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pagination-page-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding: 0 4px;
+}
+.pagination-nav {
+  height: 32px;
+  width: 32px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-light);
+  background: var(--surface);
+}
+/* The console's compact pagination layer, moved here verbatim: it used to sit
+   later in the same sheet and win on source order, so folding it into this
+   layer is what keeps the rendered result identical for the console while the
+   user app gets the same bar. */
+.pagination-bar {
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.pagination-bar.is-compact {
+  gap: 8px;
+}
+.pagination-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+.pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pagination-size select {
+  height: 32px;
+  min-width: 104px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+.pagination-pages {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.pagination-page-label {
+  min-width: 56px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.pagination-nav.button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  min-width: 32px;
+  justify-content: center;
+}
+.empty-hero {
+  position: relative;
+  overflow: hidden;
+  margin: 12px 0;
+  padding: 48px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-raised) 100%);
+  box-shadow: var(--shadow-sm);
+}
+.empty-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--primary) 50%, transparent 100%);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+.empty-hero-glow {
+  position: absolute;
+  inset: -40% auto auto 50%;
+  width: 320px;
+  height: 200px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%);
+  pointer-events: none;
+}
+.empty-hero-kicker {
+  position: relative;
+  margin: 0;
+  color: var(--primary);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.empty-hero-title {
+  position: relative;
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.empty-hero-body {
+  position: relative;
+  margin: 0;
+  max-width: 46ch;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.empty-hero-actions {
+  position: relative;
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
 .badge { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 5px; min-height: 22px; height: auto; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; font: 500 10px/1.35 var(--font); letter-spacing: 0; box-shadow: none; white-space: nowrap; }
 .badge::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; opacity: .7; box-shadow: none; }
+/* Status tints for every `StatusBadge` value. Also hoisted from the console
+   feature sheet: the user app renders the same badges (an enabled key, a
+   successful request) and must not invent its own palette. */
+.badge-enabled,
+.badge-ready,
+.badge-healthy,
+.badge-success,
+.badge-eligible,
+.badge-true,
+.badge-reachable {
+  color: var(--success);
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 32%, var(--line));
+}
+.badge-disabled,
+.badge-false,
+.badge-ineligible {
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border-color: var(--line);
+}
+.badge-disabled::before,
+.badge-false::before,
+.badge-ineligible::before {
+  opacity: 0.4;
+}
+.badge-auto-disabled {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  box-shadow: inset 3px 0 0 var(--danger);
+  font-weight: 800;
+}
+.badge-failed,
+.badge-unhealthy,
+.badge-blocked,
+.badge-token-invalid,
+.badge-danger,
+.badge-unreachable {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+}
+.badge-partial,
+.badge-cooling-down,
+.badge-circuit-open,
+.badge-degraded,
+.badge-warning,
+.badge-unverified,
+.badge-unknown,
+.badge-no-credential,
+.badge-missing-key {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--line));
+}
+/* Alerts shared by the team-facing surfaces: the console's Team management
+   panel and the member app. Both class names are older than this layer, so
+   they are kept as-is; only the colours moved to tokens. */
+.team-error {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.team-notice {
+  margin-bottom: 18px;
+  padding: 12px 15px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+/* Loading / empty / error bodies (`Loading`, `Empty`, `ErrorState`). */
+.state {
+  padding: 36px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.state-error {
+  color: var(--danger);
+  flex-wrap: wrap;
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
+  border-radius: var(--radius);
+}
+.error-state-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+.error-state-body strong {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.error-state-body span {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.error-state-body .error-state-fix {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.state-empty {
+  flex-direction: column;
+  text-align: center;
+}
+/* Chart gradient stops.
+   Declarations, not SVG presentation attributes: browsers resolve var() in an
+   attribute on a different path and, when force-darkening a page, repainted
+   this fill solid black while every computed style still reported the right
+   colour. Stating them in CSS keeps the chart on the theme's own tokens. */
+.chart-area-stop-top { stop-color: var(--accent); stop-opacity: .22; }
+.chart-area-stop-bottom { stop-color: var(--accent); stop-opacity: .02; }
 .tabs { display: flex; align-items: center; gap: 4px; width: fit-content; max-width: 100%; padding: 4px; margin: 0 0 20px; border: 1px solid var(--line); border-radius: 11px; background: color-mix(in srgb, var(--surface-subtle) 90%, transparent); overflow-x: auto; }
 .tabs button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 7px 15px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--muted); font: 500 12px/1.4 var(--font); white-space: nowrap; cursor: pointer; transition: background var(--dur-base), color var(--dur-base), box-shadow var(--dur-base); }
 .tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink-primary); border-color: var(--line-light); box-shadow: 0 1px 4px #14182e10; font-weight: 600; }
 .tabs button:hover:not([aria-selected="true"]) { color: var(--ink); background: var(--surface-hover); }
+/* A status badge the operator can act on (a token's on/off switch). Same
+   anatomy as the read-only badge, so the column keeps one visual language. */
+.key-toggle { border: 0; font: inherit; cursor: pointer; }
+.key-toggle:hover:not(:disabled) { filter: brightness(0.96); }
+.key-toggle:disabled { cursor: progress; opacity: 0.6; }
 input, select, textarea { color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font: 12px/1.5 var(--font); box-shadow: inset 0 1px 2px #171d2e05; transition: border-color var(--dur-base), box-shadow var(--dur-base); }
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { min-height: 36px; padding: 8px 11px; }
 textarea { padding: 11px 13px; resize: vertical; }
@@ -159,6 +486,8 @@ input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-hei
 @keyframes surface-arrive { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes drawer-arrive { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
 @keyframes menu-arrive { from { opacity: 0; transform: translateY(-3px) scale(.985); } to { opacity: 1; transform: none; } }
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .page-header { align-items: stretch; gap: 18px; margin-bottom: 24px; }
   .page-header > .toolbar { width: 100%; justify-content: flex-start; }
@@ -180,6 +509,12 @@ input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-hei
   .drawer.is-left { right: 12px !important; left: auto !important; }
   .tabs button { padding-left: 12px; padding-right: 12px; }
   .list-shell-footer { padding: 12px; }
+}
+/* Phone layout for the pagination bar, moved with the rest of it: it used to sit
+   in a later 600px block of the console sheet, where source order let it win. */
+@media (max-width: 600px) {
+  .pagination-bar { align-items: stretch; }
+  .pagination-controls { width: 100%; justify-content: space-between; }
 }
 @media (prefers-reduced-motion: reduce) { .dialog, .drawer, .dialog-backdrop, .drawer-backdrop, .action-menu-panel { animation: none; } }
 @media (prefers-reduced-transparency: reduce) { .action-menu-panel, .searchable-select-panel { backdrop-filter: none; background: var(--surface); } }
@@ -231,4 +566,118 @@ input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-hei
   .map-editor-preset { margin-left: 0; }
   .map-row input, .map-row input.map-row-grow, .map-row select.map-row-mode { flex: 1 1 100%; width: 100%; }
   .map-row-arrow { display: none; }
+}
+
+/* Utilities and primitives that belong to no single feature. Moved here from the
+   console feature sheet: `.language-switcher` styles the shared i18n component
+   (src/i18n/index.tsx), and `.sr-only` is used by it for the visually-hidden
+   label — a second surface that imports only this layer must get both.
+   Console-side variants keep working: `.console-language select` (shell.css) and
+   the classic `.deck-lang select` both load after this file. */
+.language-switcher { display: inline-flex; align-items: center; }
+.language-switcher select {
+  min-width: 104px;
+  min-height: 31px;
+  padding: 4px 8px;
+  color: var(--ink);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-size: 11px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 阶梯价与峰谷时段的编辑器。
+   两张价格对话框共用：一行一档 / 一行一个时段，窄屏折成单列。 */
+.pricing-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.pricing-editor legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  color: var(--muted);
+  font: 600 12px/1 var(--font);
+}
+.pricing-row {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+}
+.pricing-row-tier {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+}
+.pricing-row-window {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+.pricing-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: 500 11px/1.4 var(--font);
+  color: var(--muted);
+}
+.pricing-window {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--line);
+}
+.pricing-window:last-of-type {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.pricing-days {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font: 500 11px/1.4 var(--font);
+  color: var(--muted);
+}
+.pricing-day {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.pricing-day[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.pricing-remove {
+  align-self: end;
+  padding: 6px;
+}
+.pricing-days-note {
+  color: var(--muted);
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  .pricing-row-tier,
+  .pricing-row-window {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }

@@ -26,6 +26,22 @@ const CHANGE_EVENT = "meta-gateway:topbar-changed";
  * what keeps the panel safe to experiment with — and what the reset button
  * restores.
  */
+/**
+ * Navigation entries whose visibility follows the gateway's operating mode
+ * rather than an operator preference.
+ *
+ * The multi-user area only exists once a gateway serves more than one person,
+ * so a personal instance hides its entry — and shows it again by itself when
+ * the mode changes. An operator who wants the door before switching modes pins
+ * it in the appearance panel (see ChromePrefs.pinnedNav).
+ */
+export const MODE_GATED_NAV = ["/users"];
+
+/** The mode-gated entries that are currently hidden from the chrome. */
+export function modeHiddenNav(mode: string | undefined): string[] {
+	return mode === "team" ? [] : [...MODE_GATED_NAV];
+}
+
 export const TOP_BAR_CONTROLS = ["search", "update", "theme", "language"] as const;
 export type TopBarControlId = (typeof TOP_BAR_CONTROLS)[number];
 
@@ -34,6 +50,17 @@ export interface ChromePrefs {
 	controls: Record<TopBarControlId, boolean>;
 	/** Navigation paths the operator hid. Absent means shown. */
 	hiddenNav: string[];
+	/**
+	 * Navigation paths the operator pinned back on.
+	 *
+	 * Needed because a few entries are hidden by *state* rather than by
+	 * preference: the multi-user area is absent while the gateway runs in
+	 * personal mode, because a one-person gateway has no members to manage. An
+	 * operator who wants that door visible anyway (they are about to switch
+	 * modes, say) pins it here, and `hiddenNav` stays what it always was — a
+	 * list of things the operator switched *off*.
+	 */
+	pinnedNav: string[];
 }
 
 const DEFAULT_CONTROLS: Record<TopBarControlId, boolean> = {
@@ -44,7 +71,7 @@ const DEFAULT_CONTROLS: Record<TopBarControlId, boolean> = {
 };
 
 export function defaultChromePrefs(): ChromePrefs {
-	return { controls: { ...DEFAULT_CONTROLS }, hiddenNav: [] };
+	return { controls: { ...DEFAULT_CONTROLS }, hiddenNav: [], pinnedNav: [] };
 }
 
 function isControlId(value: unknown): value is TopBarControlId {
@@ -83,6 +110,11 @@ export function readChromePrefs(): ChromePrefs {
 		if (Array.isArray(record.hiddenNav)) {
 			prefs.hiddenNav = record.hiddenNav.filter((path): path is string => typeof path === "string");
 		}
+		// Absent in preferences written before pinning existed; an empty list is
+		// the right reading (nothing was pinned).
+		if (Array.isArray(record.pinnedNav)) {
+			prefs.pinnedNav = record.pinnedNav.filter((path): path is string => typeof path === "string");
+		}
 		return prefs;
 	}
 
@@ -114,12 +146,23 @@ export function setTopBarControl(id: TopBarControlId, on: boolean): void {
 	write(prefs);
 }
 
-export function setNavVisible(path: string, visible: boolean): void {
+export function setNavVisible(path: string, visible: boolean, defaultHidden = false): void {
 	const prefs = readChromePrefs();
 	const hidden = new Set(prefs.hiddenNav);
-	if (visible) hidden.delete(path);
-	else hidden.add(path);
+	const pinned = new Set(prefs.pinnedNav);
+	if (visible) {
+		hidden.delete(path);
+		// Pinning is only meaningful for an entry the state hides; otherwise
+		// "shown" is already the default and a stale pin would outlive the mode
+		// it was meant to override.
+		if (defaultHidden) pinned.add(path);
+		else pinned.delete(path);
+	} else {
+		hidden.add(path);
+		pinned.delete(path);
+	}
 	prefs.hiddenNav = [...hidden];
+	prefs.pinnedNav = [...pinned];
 	write(prefs);
 }
 

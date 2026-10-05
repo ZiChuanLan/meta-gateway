@@ -51,9 +51,17 @@ const (
 //     Empty preserves the legacy pool across all groups; an explicit 'default'
 //     requests the default group with the repository's usual fallback.
 type SelectionConstraint struct {
+	TeamAccess      *domain.TeamAccess
 	ExcludedMembers map[int64]struct{}
 	PreferChannel   int64
 	RouteGroup      string
+	// PinnedMemberID / PinnedChannelID name one upstream the caller chose
+	// explicitly — the console's 试调, or a health probe. That pin is more
+	// specific than the route's own single-mode pin, so the named row stays
+	// selectable on a single-mode route instead of the caller being told
+	// "preferred channel unavailable" about the row it just picked.
+	PinnedMemberID  int64
+	PinnedChannelID int64
 }
 
 type Evaluation struct {
@@ -464,6 +472,21 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 	if route == nil {
 		return Explanation{}, ErrRouteNotFound
 	}
+	if constraint != nil && constraint.TeamAccess != nil {
+		access := constraint.TeamAccess
+		filtered := make([]domain.RoutingCandidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			if !access.AllowsModel(model) || !access.AllowsMember(model, candidate.Member.ID) {
+				continue
+			}
+			if override, ok := access.Plan[candidate.Member.ID]; ok {
+				candidate.Member.Priority = override.Priority
+				candidate.Member.Weight = override.Weight
+			}
+			filtered = append(filtered, candidate)
+		}
+		candidates = filtered
+	}
 	mappingJSON := route.MappingJSON
 	now := s.clock.Now().UTC()
 	// Single mode: routing_mode=single pins the route to one member. When the
@@ -505,7 +528,7 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		if candidate.Member.Weight < 0 {
 			reasons = append(reasons, ReasonInvalidWeight)
 		}
-		if singlePin != nil && candidate.Member.ID != *singlePin {
+		if singlePin != nil && candidate.Member.ID != *singlePin && !pinnedBy(constraint, candidate) {
 			reasons = append(reasons, ReasonSingleMode)
 		}
 		score := s.scoreFor(candidate, route.RoutingMode)
@@ -557,6 +580,22 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		StableFirstDenominatorOverride: route.StableFirstDenominator,
 		StickySessionOverride:          route.StickySession,
 	}, nil
+}
+
+// pinnedBy reports whether the caller named this candidate explicitly. A
+// member pin wins over a channel pin because it addresses one row of a route
+// that may hold several rows on the same channel (the alias form).
+func pinnedBy(constraint *SelectionConstraint, candidate domain.RoutingCandidate) bool {
+	if constraint == nil {
+		return false
+	}
+	if constraint.PinnedMemberID > 0 {
+		return candidate.Member.ID == constraint.PinnedMemberID
+	}
+	if constraint.PinnedChannelID > 0 {
+		return candidate.Channel.ID == constraint.PinnedChannelID
+	}
+	return false
 }
 
 // evaluateWithSession runs the plain evaluation and annotates the sticky
@@ -632,7 +671,10 @@ func (s *Selector) pickWithGray(candidates []domain.RoutingCandidate, mode strin
 }
 
 // scoreFor computes the stable policy score for one candidate under the given
-// route mode: base weight × latency factor × error factor. It deliberately
+// route mode: base weight × latency factor × error factor. Latency and error
+// lookups are keyed by the candidate's UPSTREAM model name (see
+// upstreamModelName), not the route pattern — one route may reach several
+// differently named models and they must be scored separately. It deliberately
 // excludes the concurrency guard so the admin UI shows a stable, explainable
 // effective weight instead of a number that flaps with in-flight requests.
 func (s *Selector) scoreFor(candidate domain.RoutingCandidate, mode string) float64 {
@@ -655,12 +697,12 @@ func (s *Selector) scoreFor(candidate domain.RoutingCandidate, mode string) floa
 	}
 	score := weight
 	if latencyAware && cfg.latency != nil {
-		if latency, ok := cfg.latency(candidate.Channel.ID, candidate.ModelPattern); ok && latency > 0 {
+		if latency, ok := cfg.latency(candidate.Channel.ID, upstreamModelName(candidate)); ok && latency > 0 {
 			score = weight * (baseLatencyMs / (baseLatencyMs + latency))
 		}
 	}
 	if errorAware && cfg.errorRate != nil {
-		if propensity, ok := cfg.errorRate(candidate.Channel.ID, candidate.ModelPattern); ok && propensity > 0 {
+		if propensity, ok := cfg.errorRate(candidate.Channel.ID, upstreamModelName(candidate)); ok && propensity > 0 {
 			factor := 1 - propensity
 			if factor < 0.05 {
 				factor = 0.05
@@ -754,12 +796,12 @@ func (s *Selector) pickLatencyAware(candidates []domain.RoutingCandidate, errorA
 		}
 		score := weight
 		if cfg.latency != nil {
-			if latency, ok := cfg.latency(candidate.Channel.ID, candidate.ModelPattern); ok && latency > 0 {
+			if latency, ok := cfg.latency(candidate.Channel.ID, upstreamModelName(candidate)); ok && latency > 0 {
 				score = weight * (baseLatencyMs / (baseLatencyMs + latency))
 			}
 		}
 		if errorAware && cfg.errorRate != nil {
-			if propensity, ok := cfg.errorRate(candidate.Channel.ID, candidate.ModelPattern); ok && propensity > 0 {
+			if propensity, ok := cfg.errorRate(candidate.Channel.ID, upstreamModelName(candidate)); ok && propensity > 0 {
 				factor := 1 - propensity
 				if factor < 0.05 {
 					factor = 0.05 // floor: an unhealthy channel keeps a small chance
@@ -824,6 +866,14 @@ func (s *Selector) pickErrorAware(candidates []domain.RoutingCandidate) domain.R
 		value -= entry.score
 	}
 	return scoredList[len(scoredList)-1].candidate
+}
+
+// upstreamModelName is the health-record key for a candidate: the name it
+// actually sends upstream. An alias member ("cn:x") and a plain member of the
+// same route therefore keep separate latency and error records, instead of
+// sharing one sample that made them always score identically.
+func upstreamModelName(candidate domain.RoutingCandidate) string {
+	return domain.UpstreamModelName(candidate)
 }
 
 func (s *Selector) pickWeighted(candidates []domain.RoutingCandidate) domain.RoutingCandidate {

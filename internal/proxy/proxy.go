@@ -81,7 +81,6 @@ type Service struct {
 	retryTimes                  atomic.Int64
 	channelRetryTimes           atomic.Int64
 	crossChannelFailoverEnabled atomic.Bool
-	keyPoolRotation             atomic.Bool
 	// keyPoolCursor advances once per pool resolution and picks the starting
 	// key inside a priority tier, so equal-priority keys rotate instead of
 	// pinning every request on the first one. Process-wide and monotonic: a
@@ -179,9 +178,17 @@ type Request struct {
 	// fails is information, not a fault, so member cooldowns and the channel
 	// consecutive-failure counter are left untouched. Probes are also never
 	// metered (no DownstreamKeyID), so they cost nothing but upstream tokens.
+	// They are not logged either — their outcome lives in probe_results.
 	Probe bool
+	// Diagnostic marks the console's 试调: a synthetic call the operator pressed
+	// the button for. It shares Probe's exemption from the health bookkeeping
+	// (see recordMemberFailure) but KEEPS its proxy_logs row, because "what did
+	// that 试调 do" is a question the log page has to be able to answer.
+	Diagnostic bool
 	// DownstreamKeyID is the authenticated client key, used for usage metering.
 	DownstreamKeyID int64
+	UserID          int64
+	TeamAccess      *domain.TeamAccess
 	// RequestedModel is the model name the client asked for, preserved when a
 	// plugin's route hook rewrites it. Empty means Model was never rewritten.
 	// Routing, billing, and the log row follow Model; this field exists so the
@@ -270,7 +277,6 @@ func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter,
 	service.retryTimes.Store(int64(retryTimes))
 	service.channelRetryTimes.Store(1)
 	service.crossChannelFailoverEnabled.Store(true)
-	service.keyPoolRotation.Store(true)
 	service.faultProtectionEnabled.Store(true)
 	service.cooldownNs.Store(int64(cooldown))
 	service.gate = NewChannelGate()
@@ -500,11 +506,4 @@ func (s *Service) SetChannelRetryTimes(times int) {
 		times = 0
 	}
 	s.channelRetryTimes.Store(int64(times))
-}
-
-// SetKeyPoolRotation hot-applies whether the site key pool is rotated through
-// on failure. Off = only the channel's bound key (or the first pool key) is
-// used; the pool is never rotated.
-func (s *Service) SetKeyPoolRotation(enabled bool) {
-	s.keyPoolRotation.Store(enabled)
 }

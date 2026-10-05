@@ -12,20 +12,18 @@ import (
 )
 
 type Config struct {
-	HTTPAddr    string
-	DataDir     string
-	AdminToken  string
-	AdminTokens []string
-	MasterKey   string
-	RetryTimes  int
+	HTTPAddr      string
+	DataDir       string
+	AdminToken    string
+	AdminUsername string
+	AdminTokens   []string
+	MasterKey     string
+	RetryTimes    int
 	// ChannelRetryTimes is how many times the same upstream key is re-sent
 	// after a retryable failure before moving to the next key/channel.
 	// Network errors (transport) fail fast after these retries instead of
 	// fanning out across every channel.
 	ChannelRetryTimes int
-	// KeyPoolRotation enables rotating through the site key pool on failure.
-	// Disabled = only the channel's bound key is used.
-	KeyPoolRotation bool
 	// UpdateCheckEnabled lets the gateway query GitHub for newer releases to
 	// power the console update badge.
 	UpdateCheckEnabled          bool
@@ -140,10 +138,20 @@ type Config struct {
 	// route impact after that many days (0 = off by default).
 	ModelChangeRetentionDays  int
 	ModelChangeAutoIgnoreDays int
-	BackupRetentionCount      int
-	BackupDir                 string
-	PluginsDir                string
-	PluginCatalogURL          string
+	// SiteProbeRetentionDays bounds external site-probe rounds and their
+	// samples (default 7): one row per monitored model per site per round.
+	SiteProbeRetentionDays int
+	// SiteProbeIntervalSeconds / SiteProbeJitterSeconds are the external
+	// site-probe collection cadence (defaults 900 + 120). They are the env
+	// bootstrap for a hot-reloadable runtime setting, so an operator can speed
+	// the round up for sites that publish heartbeats every minute without a
+	// restart.
+	SiteProbeIntervalSeconds int
+	SiteProbeJitterSeconds   int
+	BackupRetentionCount     int
+	BackupDir                string
+	PluginsDir               string
+	PluginCatalogURL         string
 	// PluginMarketURLs appends extra plugin market registry URLs
 	// (comma-separated; the built-in official registry is always included).
 	PluginMarketURLs []string
@@ -184,10 +192,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	keyPoolRotation, err := envBool("KEY_POOL_ROTATION", true)
-	if err != nil {
-		return nil, err
-	}
+
 	updateCheckEnabled, err := envBool("UPDATE_CHECK_ENABLED", true)
 	if err != nil {
 		return nil, err
@@ -416,6 +421,18 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	siteProbeRetentionDays, err := envInt("SITE_PROBE_RETENTION_DAYS", 7, 0, 36500)
+	if err != nil {
+		return nil, err
+	}
+	siteProbeIntervalSeconds, err := envInt("SITE_PROBE_INTERVAL_SECONDS", 900, 60, 86400)
+	if err != nil {
+		return nil, err
+	}
+	siteProbeJitterSeconds, err := envInt("SITE_PROBE_JITTER_SECONDS", 120, 0, 3600)
+	if err != nil {
+		return nil, err
+	}
 	modelChangeAutoIgnoreDays, err := envInt("MODEL_CHANGE_AUTO_IGNORE_DAYS", 0, 0, 36500)
 	if err != nil {
 		return nil, err
@@ -481,11 +498,11 @@ func Load() (*Config, error) {
 		HTTPAddr:                    envStr("HTTP_ADDR", ":4100"),
 		DataDir:                     dataDir,
 		AdminToken:                  firstNonEmpty(adminTokens),
+		AdminUsername:               envStr("ADMIN_USERNAME", "admin"),
 		AdminTokens:                 adminTokens,
 		MasterKey:                   envStr("MASTER_KEY", ""),
 		RetryTimes:                  retryTimes,
 		ChannelRetryTimes:           channelRetryTimes,
-		KeyPoolRotation:             keyPoolRotation,
 		UpdateCheckEnabled:          updateCheckEnabled,
 		CrossChannelFailoverEnabled: crossChannelFailover,
 		Cooldown:                    time.Duration(cooldownSeconds) * time.Second,
@@ -547,6 +564,9 @@ func Load() (*Config, error) {
 		BalanceHistoryRetentionDays: balanceHistoryDays, DecisionSnapshotRetentionDays: decisionSnapshotDays,
 		ModelChangeRetentionDays:   modelChangeRetentionDays,
 		ModelChangeAutoIgnoreDays:  modelChangeAutoIgnoreDays,
+		SiteProbeRetentionDays:     siteProbeRetentionDays,
+		SiteProbeIntervalSeconds:   siteProbeIntervalSeconds,
+		SiteProbeJitterSeconds:     siteProbeJitterSeconds,
 		BackupRetentionCount:       backupRetentionCount,
 		BackupDir:                  envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
 		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),

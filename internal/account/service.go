@@ -690,46 +690,41 @@ func (s *Service) financeForChannel(ctx context.Context, resolved *resolvedTarge
 	}
 	priceMap := make(map[string]adapters.ModelPrice, len(prices))
 	for _, p := range prices {
-		// Convert every pricing shape to USD following the All API Hub
-		// modelPricing.ts normalization:
-		//   - direct USD/1M (token_price_usd_per_million) wins when present;
-		//   - token: inputUSD = ratio × 1e6 / quota_per_unit × group_ratio;
-		//   - per-call: model_price × group_ratio;
-		//   - legacy map: quota-per-1M ÷ quota_per_unit.
-		mode := p.Mode
-		inputUSD := p.PriceUSD
-		gr := p.GroupRatio
-		if gr <= 0 {
-			gr = 1
-		}
-		switch {
-		case p.TokenUSD != nil && p.TokenUSD.Input > 0:
-			inputUSD = p.TokenUSD.Input // direct USD, no ratio semantics
-			mode = "token"
-		case p.Ratio > 0:
-			inputUSD = p.Ratio * 1_000_000 / float64(quotaPerUnit) * gr
-			mode = "token"
-		case p.QuotaPer1M > 0:
-			inputUSD = p.QuotaPer1M / float64(quotaPerUnit)
-			mode = "token"
-		case p.ModelPrice > 0:
-			inputUSD = p.ModelPrice * gr
-			mode = "fixed"
-		}
-		if inputUSD <= 0 {
+		// One shared normalizer (internal/adapters/pricing.go) owns every
+		// published shape: a tiered billing expression, a direct USD/1M quote, a
+		// token ratio, a legacy quota-per-1M map, or a per-call price. The
+		// site-probe collector calls the same function, so the two views of a
+		// site's prices can never drift apart.
+		quote, ok := adapters.NormalizePrice(p, quotaPerUnit)
+		if !ok {
 			continue
 		}
-		outputUSD := inputUSD
-		if p.CompletionRatio > 0 && mode == "token" {
-			outputUSD = inputUSD * p.CompletionRatio
+		price := adapters.ModelPrice{
+			Model:       quote.Model,
+			Currency:    quote.Currency,
+			Mode:        quote.Mode,
+			BillingExpr: quote.Raw,
 		}
-		priceMap[p.Model] = adapters.ModelPrice{
-			Model:     p.Model,
-			Currency:  p.Currency,
-			PriceUSD:  inputUSD,
-			OutputUSD: outputUSD,
-			Mode:      mode,
+		if quote.Unparsed {
+			// The site prices this model with a tiered expression we cannot
+			// evaluate. Leave the numbers at zero so nothing shows a guessed
+			// price; BillingExpr carries the raw expression for display.
+			priceMap[quote.Model] = price
+			continue
 		}
+		if quote.Mode == "fixed" {
+			if quote.PerRequest <= 0 {
+				continue
+			}
+			price.PriceUSD = quote.PerRequest
+		} else {
+			if quote.InputPerMillion <= 0 {
+				continue
+			}
+			price.PriceUSD = quote.InputPerMillion
+			price.OutputUSD = quote.OutputPerMillion
+		}
+		priceMap[quote.Model] = price
 	}
 	return &FinanceItem{
 		ChannelID:    resolved.channel.ID,

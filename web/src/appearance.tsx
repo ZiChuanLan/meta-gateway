@@ -13,6 +13,22 @@ const SCHEME_KEY = "meta-gateway.theme";
 const PALETTE_KEY = "meta-gateway.palette";
 const validStyle = (value: string | null): Appearance => APPEARANCES.find((style) => style === value) ?? "classic";
 const validScheme = (value: string | null): ColorScheme => value === "dark" ? "dark" : "light";
+/**
+ * The colour scheme to start in.
+ *
+ * An explicit choice wins; with none, the system decides. Defaulting to
+ * "light" regardless is what made the member app look broken on a dark
+ * desktop: the page declared `color-scheme: light` while the browser sat in
+ * dark mode, and Chromium's forced darkening repainted the charts solid black.
+ * Computed styles stayed correct throughout — the damage happened at paint
+ * time, which is why no style assertion caught it. Following the system gives
+ * a real dark theme instead of a light one being repainted.
+ */
+function preferredScheme(): ColorScheme {
+  const stored = read(SCHEME_KEY);
+  if (stored === "dark" || stored === "light") return stored;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 function read(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
 function persist(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Appearance still works without browser storage. */ } }
 
@@ -37,7 +53,7 @@ function transition(apply: () => void) {
 
 export function AppearanceProvider({ children }: { children: ReactNode }) {
   const [appearance, updateAppearance] = useState<Appearance>(() => validStyle(read(STYLE_KEY)));
-  const [scheme, updateScheme] = useState<ColorScheme>(() => validScheme(read(SCHEME_KEY)));
+  const [scheme, updateScheme] = useState<ColorScheme>(preferredScheme);
   const [palette, updatePalette] = useState<PaletteId>(() => normalizePalette(read(PALETTE_KEY)));
   useLayoutEffect(() => {
     document.documentElement.dataset.appearance = appearance;
@@ -62,14 +78,30 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       persist(STYLE_KEY, value);
     });
   }, [appearance]);
-  const setScheme = useCallback((value: ColorScheme) => {
-    if (value === scheme) return;
+  // `remember` distinguishes "the operator picked this" from "the system
+  // changed"; only the former is written to storage, so a system-driven scheme
+  // keeps following the system afterwards.
+  const applyScheme = useCallback((value: ColorScheme, remember: boolean) => {
     transition(() => {
       document.documentElement.classList.toggle("dark", value === "dark");
       updateScheme(value);
-      persist(SCHEME_KEY, value);
+      if (remember) persist(SCHEME_KEY, value);
     });
-  }, [scheme]);
+  }, []);
+  const setScheme = useCallback((value: ColorScheme) => {
+    if (value === scheme) return;
+    applyScheme(value, true);
+  }, [scheme, applyScheme]);
+  // Follow the desktop while the operator has not chosen a scheme themselves.
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const follow = (event: MediaQueryListEvent) => {
+      if (read(SCHEME_KEY)) return;
+      applyScheme(event.matches ? "dark" : "light", false);
+    };
+    media.addEventListener("change", follow);
+    return () => media.removeEventListener("change", follow);
+  }, [applyScheme]);
   const toggleScheme = useCallback(() => setScheme(scheme === "dark" ? "light" : "dark"), [scheme, setScheme]);
   // Swapping palettes is colour tuning rather than a mode change, so it skips
   // the clip-path wipe that setAppearance/setScheme use.

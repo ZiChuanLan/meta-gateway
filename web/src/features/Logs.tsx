@@ -21,6 +21,7 @@ import { categorizeError } from "../errorCatalog";
 import {
   Button,
   DataTable,
+  ErrorState,
   Page,
   Panel,
   StatusBadge,
@@ -30,6 +31,13 @@ import {
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
+import {
+  ADMIN_LOG_CAPS,
+  MEMBER_LOG_CAPS,
+  type LogsCapabilities,
+  type LogsSource,
+} from "./logs/LogsSource";
+import { memberLogsSource } from "../member/MemberLogsSource";
 import { formatCost } from "../lib/format";
 import { positiveId } from "../lib/positiveId"
 import { downloadText, timestampedName, toCSV } from "../lib/csv";
@@ -398,15 +406,19 @@ function LogDetails({ log }: { log: ProxyLog }) {
 	);
 }
 
-function ProxyLogsPanel() {
-  const { client } = useSession();
+export function LogsView({
+  source,
+  caps,
+}: {
+  source: LogsSource;
+  caps: LogsCapabilities;
+}) {
   const { t } = useI18n();
-  const service = api(client!);
   const [params, setParams] = useSearchParams();
-	const channelId = positiveId(params.get("channel_id"));
+	const channelId = caps.upstream ? positiveId(params.get("channel_id")) : undefined;
 	const modelParam = params.get("model")?.trim() || "";
 	const failedOnly = params.get("status") === "failed";
-	const upstreamIdParam = params.get("upstream_request_id")?.trim() || "";
+	const upstreamIdParam = caps.upstream ? params.get("upstream_request_id")?.trim() || "" : "";
 	const keyIdParam = positiveId(params.get("downstream_key_id"));
 	const [modelDraft, setModelDraft] = useState(modelParam);
 	const [upstreamIdDraft, setUpstreamIdDraft] = useState(upstreamIdParam);
@@ -438,22 +450,29 @@ function ProxyLogsPanel() {
 	);
 
   const logs = useQuery({
-    queryKey: ["proxy-logs", filters],
-    queryFn: ({ signal }) => service.proxyLogs(filters, signal),
+    queryKey: ["proxy-logs", filters, caps.upstream ? "admin" : "member"],
+    queryFn: ({ signal }) => source.logs(filters, signal),
   });
   // The distribution follows the same window as the list, so "what happened
   // just now" and "what is slow" can never disagree about the time span.
   const histogram = useQuery({
-    queryKey: ["proxy-log-histogram", { since: range.since, until: range.until, sample }],
+    queryKey: [
+      "proxy-log-histogram",
+      { since: range.since, until: range.until, sample, scope: caps.upstream ? "admin" : "member" },
+    ],
+    // Sources provide the same histogram contract. A source without it
+    // retains time filters, but must not fabricate a distribution.
+    enabled: Boolean(source.latencyHistogram),
     queryFn: ({ signal }) =>
-      service.proxyLogLatencyHistogram(sample, signal, {
+      source.latencyHistogram!(sample, signal, {
         since: range.since,
         until: range.until,
       }),
   });
   const channels = useQuery({
-    queryKey: ["channels"],
-    queryFn: ({ signal }) => service.channels(signal),
+    queryKey: ["channels", caps.upstream ? "admin" : "member"],
+    queryFn: ({ signal }) =>
+      source.channels ? source.channels(signal) : Promise.resolve([]),
   });
   const channelName = useMemo(() => {
     const map = new Map<number, string>();
@@ -465,8 +484,8 @@ function ProxyLogsPanel() {
   // Client tokens: a log row stores the id, so both the filter label and the
   // expanded "which token was this" line need the name from the token list.
   const keys = useQuery({
-    queryKey: ["keys"],
-    queryFn: ({ signal }) => service.keys(signal),
+    queryKey: ["keys", caps.upstream ? "admin" : "member"],
+    queryFn: ({ signal }) => source.keys(signal),
   });
   const keyName = useMemo(() => {
     const map = new Map<number, string>();
@@ -477,12 +496,13 @@ function ProxyLogsPanel() {
   }, [keys.data]);
 
   const rows = logs.data ?? [];
+  const visibleRows = slowOnly ? rows.filter((log) => log.latency_ms >= 5000) : rows;
   const pagination = useClientPagination(
-    slowOnly ? rows.filter((log) => log.latency_ms >= 5000) : rows,
+    visibleRows,
     20,
   );
   const pageRows = pagination.pageItems;
-  const failedCount = rows.filter((log) => log.status >= 400).length;
+  const failedCount = visibleRows.filter((log) => log.status >= 400).length;
 
   // Rows are newest-first; a row was retried when a newer row of the same
   // request carries a higher attempt number.
@@ -548,8 +568,7 @@ function ProxyLogsPanel() {
     const header = [
       t("common.time"),
       t("common.model"),
-      t("common.route"),
-      t("common.channel"),
+      ...(caps.upstream ? [t("common.route"), t("common.channel")] : []),
       t("common.status"),
       t("logsPage.reasoningEffort"),
       t("common.tokens"),
@@ -558,15 +577,14 @@ function ProxyLogsPanel() {
       t("common.firstByte"),
       t("common.cost"),
       t("common.clientFamily"),
-      t("logsPage.upstreamRequestId"),
+      ...(caps.upstream ? [t("logsPage.upstreamRequestId")] : []),
       "request_id",
-      t("logsPage.errorDetail"),
+      ...(caps.upstream ? [t("logsPage.errorDetail")] : []),
     ];
-    const body = rows.map((log) => [
+    const body = visibleRows.map((log) => [
       log.created_at,
       log.model,
-      log.route_pattern || "",
-      channelName.get(log.channel_id) ?? `#${log.channel_id}`,
+      ...(caps.upstream ? [log.route_pattern || "", channelName.get(log.channel_id) ?? `#${log.channel_id}`] : []),
       log.status,
       log.reasoning_effort ?? "",
       log.total_tokens ?? 0,
@@ -575,9 +593,9 @@ function ProxyLogsPanel() {
       log.first_byte_ms ?? "",
       log.cost ?? "",
       log.client_family ?? "",
-      log.upstream_request_id ?? "",
+      ...(caps.upstream ? [log.upstream_request_id ?? ""] : []),
       log.request_id,
-      log.error_detail ?? log.error_brief ?? "",
+      ...(caps.upstream ? [log.error_detail ?? log.error_brief ?? ""] : []),
     ]);
     downloadText(
       timestampedName("meta-gateway-logs", "csv"),
@@ -593,7 +611,7 @@ function ProxyLogsPanel() {
           items={[
             {
               label: t("logsPage.stat.shown"),
-              value: logs.isPending ? "—" : rows.length,
+              value: logs.isPending ? "—" : visibleRows.length,
               tone: "primary",
             },
             {
@@ -604,10 +622,10 @@ function ProxyLogsPanel() {
             {
               label: t("logsPage.stat.failRate"),
               value:
-                logs.isPending || rows.length === 0
+                logs.isPending || visibleRows.length === 0
                   ? "—"
-                  : `${Math.round((failedCount / rows.length) * 100)}%`,
-              tone: rows.length === 0 || failedCount / Math.max(1, rows.length) < 0.05 ? "success" : "warning",
+                  : `${Math.round((failedCount / visibleRows.length) * 100)}%`,
+              tone: visibleRows.length === 0 || failedCount / Math.max(1, visibleRows.length) < 0.05 ? "success" : "warning",
             },
           ]}
         />
@@ -615,7 +633,7 @@ function ProxyLogsPanel() {
           <Button
             variant="secondary"
             icon={<Download size={15} />}
-            disabled={rows.length === 0}
+            disabled={visibleRows.length === 0}
             onClick={exportCSV}
           >
             {t("logsPage.export")}
@@ -625,7 +643,7 @@ function ProxyLogsPanel() {
             icon={<RefreshCw size={16} />}
             onClick={() => {
               void logs.refetch();
-              void histogram.refetch();
+              if (source.latencyHistogram) void histogram.refetch();
             }}
           >
             {t("common.refresh")}
@@ -638,19 +656,21 @@ function ProxyLogsPanel() {
         <div className="panel-header latency-panel-header">
           <div className="cockpit-panel-title">
             <Timer size={14} />
-            <strong>{t("logsPage.histogram")}</strong>
+            <strong>{t(source.latencyHistogram ? "logsPage.histogram" : "logsPage.timeWindow")}</strong>
           </div>
           <span className="panel-muted latency-panel-scope">
             {/* A bounded window is already spelled out by the picker's own
                 caption; only the unbounded case needs a sample note. */}
-            {range.since || range.until
+            {!source.latencyHistogram || range.since || range.until
               ? null
-              : t("logsPage.histogramScope", { n: sample.toLocaleString() })}
+              : t(caps.upstream ? "logsPage.histogramScope" : "logsPage.memberHistogramScope", { n: sample.toLocaleString() })}
           </span>
-          <TimeRangePicker range={range} compact onRefresh={() => void histogram.refetch()} />
+          <TimeRangePicker range={range} compact onRefresh={() => { void logs.refetch(); if (source.latencyHistogram) void histogram.refetch(); }} />
         </div>
-        {histogram.isPending ? (
+        {!source.latencyHistogram ? null : histogram.isPending ? (
           <p className="dashboard-empty">{t("common.working")}</p>
+        ) : histogram.isError ? (
+          <ErrorState error={histogram.error} retry={() => void histogram.refetch()} />
         ) : !histogramData || histogramData.total === 0 ? (
           <p className="dashboard-empty">{t("logsPage.histogramEmpty")}</p>
         ) : (
@@ -735,6 +755,7 @@ function ProxyLogsPanel() {
             event.preventDefault();
             setFilter({ model: modelDraft.trim() || null, q: queryDraft.trim() || null, upstream_request_id: upstreamIdDraft.trim() || null });
           }}>
+            {caps.upstream ? (
             <select
               aria-label={t("ops.filterChannel")}
               value={channelId ?? 0}
@@ -752,6 +773,7 @@ function ProxyLogsPanel() {
                 </option>
               ))}
             </select>
+            ) : null}
 			<input
 				className="log-search-input"
 				aria-label={t("logsPage.search")}
@@ -783,12 +805,14 @@ function ProxyLogsPanel() {
 				placeholder={t("common.model")}
 				onChange={(e) => setModelDraft(e.target.value)}
 			/>
+            {caps.upstream ? (
 			<input
 				value={upstreamIdDraft}
 				aria-label={t("logsPage.upstreamRequestId")}
 				placeholder={t("logsPage.upstreamRequestId")}
 				onChange={(e) => setUpstreamIdDraft(e.target.value)}
 			/>
+            ) : null}
 			<select
 				aria-label={t("logsPage.token")}
 				value={keyIdParam ?? 0}
@@ -900,14 +924,16 @@ function ProxyLogsPanel() {
 									t("common.time"),
 									t("common.model"),
 									t("logsPage.reasoningEffort"),
-									t("common.route"),
-									t("common.channel"),
+									// The operator's view of a row: which route and which
+									// channel served it, and what it cost. A member sees their
+									// own requests — the same table without the site's internals.
+									...(caps.upstream ? [t("common.route"), t("common.channel")] : []),
 									t("common.status"),
 									t("common.tokens"),
 									t("common.cacheTokens"),
 									t("common.latency"),
 									t("common.firstByte"),
-									t("common.cost"),
+									...(caps.pricing ? [t("common.cost")] : []),
 									t("common.clientFamily"),
 								]}
 							>
@@ -926,7 +952,7 @@ function ProxyLogsPanel() {
 									<td>{formatDate(log.created_at)}</td>
 									<td>
 										<strong className="log-model-name" title={log.model}>{log.model}</strong>
-										{log.upstream_model && log.upstream_model !== log.model ? (
+										{log.upstream_model && log.upstream_model !== log.model && caps.upstream ? (
 											// Shared aliases: one client-facing name served by
 											// several real upstream models. Without this the row
 											// cannot be attributed after the fact.
@@ -950,6 +976,7 @@ function ProxyLogsPanel() {
 											"—"
 										)}
 									</td>
+									{caps.upstream ? (
 									<td>
 										{log.route_id ? (
 											<Link
@@ -964,6 +991,8 @@ function ProxyLogsPanel() {
 											"—"
 										)}
 									</td>
+									) : null}
+									{caps.upstream ? (
 									<td>
 										<Link
 											to={`/channels?id=${log.channel_id}`}
@@ -985,6 +1014,7 @@ function ProxyLogsPanel() {
 											</small>
 										) : null}
 									</td>
+									) : null}
 									<td className="log-status-cell">
 										<span className="log-status-line">
 											<span className={`log-status-light${log.status >= 400 ? " is-bad" : log.status >= 300 ? " is-warn" : " is-ok"}`} aria-hidden="true" />
@@ -1042,19 +1072,21 @@ function ProxyLogsPanel() {
 											? t("common.ms", { n: log.first_byte_ms })
 											: "—"}
 									</td>
+									{caps.pricing ? (
 									<td className="log-cost">
 										{log.cost != null ? formatCost(log.cost) : "—"}
 									</td>
+									) : null}
 									<td>{log.client_family || "—"}</td>
 									</tr>
 										{expandedRequest === log.request_id ? (
 											<tr className="log-decision-row">
-											<td colSpan={12}>
+											<td colSpan={caps.upstream ? 12 : caps.pricing ? 11 : 10}>
 												<div className="log-expand">
 													{/* Where the request came from and where it went, before the
 													    forensics: "who called, through what" is what an
 													    operator asks first about a row they do not recognise. */}
-													<LogChain log={log} channelName={channelName} keyName={keyName} />
+													{caps.upstream ? <LogChain log={log} channelName={channelName} keyName={keyName} /> : null}
 													<div className="log-expand-grid">
 													{log.error_detail ? (
 														<div className="log-error-detail">
@@ -1066,10 +1098,12 @@ function ProxyLogsPanel() {
 														</div>
 													) : null}
 													<LogDetails log={log} />
+													{caps.decision ? (
 													<DecisionSnapshotView
 														requestId={log.request_id}
 														attempt={log.attempt}
 													/>
+													) : null}
 													</div>
 												</div>
 											</td>
@@ -1088,14 +1122,39 @@ function ProxyLogsPanel() {
 }
 
 export function Logs() {
+  const { client, role } = useSession();
   const { t } = useI18n();
+  const member = role === "member";
+  const service = useMemo(() => api(client!), [client]);
+  // One binding per role: staff see every upstream view, a member sees their
+  // own requests through the member source. The tab list below is filtered to
+  // match, because the discovery and audit panels are the gateway's business.
+  const source = useMemo<LogsSource>(
+    () =>
+      member
+        ? memberLogsSource
+        : {
+            logs: (filters, signal) => service.proxyLogs(filters, signal),
+            latencyHistogram: (sample, signal, window) =>
+              service.proxyLogLatencyHistogram(sample, signal, window),
+            channels: (signal) => service.channels(signal),
+            keys: (signal) => service.keys(signal) as never,
+            decisionSnapshot: (requestId, attempt, signal) =>
+              service.decisionSnapshot(requestId, attempt, signal),
+          },
+    [member, service],
+  );
   const [params, setParams] = useSearchParams();
   const rawTab = params.get("tab");
   const tabItems = [
     { value: "proxy", label: t("logsPage.tab.proxy") },
-    { value: "live", label: t("logsPage.tab.live"), icon: <MessagesSquare size={14} /> },
-    { value: "discovery", label: t("logsPage.tab.discovery") },
-    { value: "audit", label: t("logsPage.tab.audit") },
+    ...(member
+      ? []
+      : [
+          { value: "live", label: t("logsPage.tab.live"), icon: <MessagesSquare size={14} /> },
+          { value: "discovery", label: t("logsPage.tab.discovery") },
+          { value: "audit", label: t("logsPage.tab.audit") },
+        ]),
   ];
   const active = tabItems.some((item) => item.value === rawTab)
     ? (rawTab as string)
@@ -1118,11 +1177,16 @@ export function Logs() {
     <Page
       kicker={t("logsPage.kicker")}
       title={t("logsPage.title")}
-      description={t("logsPage.hubDescription")}
+      description={t(member ? "logsPage.memberDescription" : "logsPage.hubDescription")}
     >
       <div className="ops-canvas">
         <Tabs items={tabItems} active={active} onChange={changeTab} />
-        {active === "proxy" ? <ProxyLogsPanel /> : null}
+        {active === "proxy" ? (
+          <LogsView
+            source={source}
+            caps={member ? MEMBER_LOG_CAPS : ADMIN_LOG_CAPS}
+          />
+        ) : null}
         {active === "live" ? <LiveTracePanel /> : null}
         {active === "discovery" ? <DiscoveryPanel /> : null}
         {active === "audit" ? <AuditPanel /> : null}

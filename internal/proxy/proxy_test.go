@@ -647,7 +647,6 @@ func TestResolveAPIKeyPoolModelAllowlist(t *testing.T) {
 	channel, _ := db.Channel.GetByID(channelID)
 
 	service := &Service{db: db, enc: enc}
-	service.SetKeyPoolRotation(true)
 
 	// gpt-4o: matches key A (wildcard) and key B (empty = all).
 	keys, err := service.resolveAPIKeyPool(*channel, "gpt-4o")
@@ -663,36 +662,6 @@ func TestResolveAPIKeyPoolModelAllowlist(t *testing.T) {
 	keys, _ = service.resolveAPIKeyPool(*channel, "claude-3-5-sonnet")
 	if len(keys) != 1 || keys[0].Secret != "sk-allow-b" {
 		t.Fatalf("claude pool=%v, want only sk-allow-b", keys)
-	}
-}
-
-func TestKeyPoolRotationOffUsesBoundKeyOnly(t *testing.T) {
-	db, err := store.Open(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	enc, _ := crypto.New("rotation-off-test-master")
-	siteID, _ := db.Site.Create(&domain.Site{Name: "s", Status: domain.StatusEnabled})
-	key1, _ := enc.Encrypt([]byte("sk-rot-1"))
-	key2, _ := enc.Encrypt([]byte("sk-rot-2"))
-	cred1, _ := db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(key1), Status: domain.StatusEnabled})
-	_, _ = db.Credential.Create(&domain.Credential{SiteID: siteID, Kind: "api_key", SecretEnc: []byte(key2), Status: domain.StatusEnabled})
-	channelID, _ := db.Channel.Create(&domain.Channel{SiteID: &siteID, CredentialID: &cred1, Name: "c", Status: domain.StatusEnabled})
-	channel, _ := db.Channel.GetByID(channelID)
-
-	service := &Service{db: db, enc: enc}
-	service.SetKeyPoolRotation(false)
-
-	// Rotation off: only the bound key is returned, never the pool sibling.
-	keys, err := service.resolveAPIKeyPool(*channel, "")
-	if err != nil || len(keys) != 1 || keys[0].Secret != "sk-rot-1" {
-		t.Fatalf("rotation-off pool=%v err=%v, want only bound key", keys, err)
-	}
-	// The bound key's own credential row, so the log names the key rather than
-	// describing it by hash.
-	if keys[0].CredentialID != cred1 {
-		t.Fatalf("rotation-off credential id = %d, want %d", keys[0].CredentialID, cred1)
 	}
 }
 

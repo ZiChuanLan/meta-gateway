@@ -39,6 +39,8 @@ type DB struct {
 	Usage           *UsageStore
 	ModelRatio      *ModelRatioStore
 	Group           *GroupStore
+	// Display holds the site's money presentation (symbol + rate).
+	Display *DisplaySettingsStore
 }
 
 // DefaultMaxOpenConns is the SQLite connection-pool ceiling used when no
@@ -123,6 +125,7 @@ func OpenWithMaxConns(dataDir string, maxOpenConns int) (*DB, error) {
 	// Exchange needs the full DB handle to clear the site/credential caches
 	// after direct-SQL imports.
 	db.Exchange = &ExchangeStore{db: db}
+	db.Display = &DisplaySettingsStore{db: db}
 	initialized = true
 	return db, nil
 }

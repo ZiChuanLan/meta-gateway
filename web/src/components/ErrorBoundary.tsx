@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useI18n } from "../i18n";
 import { Button } from "./ui";
+import { recentPreloadFailure } from "../lib/preloadRecovery";
 
 /**
  * Whole-app render guard.
@@ -11,6 +12,48 @@ import { Button } from "./ui";
  * The payloads are fixed at the source; this keeps the *next* surprise from
  * being a white screen.
  */
+/**
+ * A lazily imported chunk that no longer exists — the signature of a tab that
+ * outlived a deploy, not of a bug in this build. Vite words this differently
+ * across browsers and versions, hence the three spellings.
+ */
+export function isStaleChunkError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error ?? "");
+	if (
+		/Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(
+			message,
+		)
+	) {
+		return true;
+	}
+	// The browser does not always keep the original wording: when a lazy chunk
+	// never arrives, React surfaces its own error, so the reliable signal is the
+	// stamp the preload handler just wrote.
+	return recentPreloadFailure();
+}
+
+/**
+ * The stale-bundle face of the boundary: it says what happened and offers the
+ * one action that helps, instead of a stack trace the user cannot use.
+ */
+function StaleBundleFallback({ onReload }: { onReload: () => void }) {
+	const { t } = useI18n();
+	return (
+		<div className="crash-screen" role="alert">
+			<div className="crash-card">
+				<p className="crash-kicker">{t("app.staleKicker")}</p>
+				<h1>{t("app.staleTitle")}</h1>
+				<p className="crash-body">{t("app.staleBundle")}</p>
+				<div className="crash-actions">
+					<Button variant="secondary" onClick={onReload}>
+						{t("crash.reload")}
+					</Button>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 function BoundaryFallback({
 	error,
 	onReload,
@@ -63,7 +106,15 @@ class RenderBoundary extends Component<
 	};
 
 	render() {
-		if (this.state.error) return this.props.fallback(this.state.error, this.reload);
+		if (this.state.error) {
+			// A stale chunk is recovered by reloading, which the preload handler
+			// already tried once: landing here means the reload did not help, so
+			// the honest answer is "refresh", not a stack trace.
+			if (isStaleChunkError(this.state.error)) {
+				return <StaleBundleFallback onReload={this.reload} />;
+			}
+			return this.props.fallback(this.state.error, this.reload);
+		}
 		return this.props.children;
 	}
 }

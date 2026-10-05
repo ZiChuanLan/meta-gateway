@@ -1,0 +1,529 @@
+.team-surface {
+  --team-bg: var(--surface, #fff);
+  --team-ink: var(--ink, #1c3043);
+  --team-muted: var(--muted, #627487);
+  --team-line: var(--line, #e1e8ef);
+  --team-soft: var(--surface-subtle, #f5f8fb);
+  /* The team panel sits inside the console, whose accent is the primary
+     colour — `--accent` is the secondary (warm) accent of the palette and made
+     every button here look like a different product. */
+  --team-accent: var(--primary, #275b85);
+  color: var(--team-ink);
+  font:
+    400 14px/1.6 Inter,
+    "Segoe UI",
+    "Microsoft YaHei",
+    sans-serif;
+  min-width: 0;
+}
+.team-surface *,
+.team-modal * {
+  box-sizing: border-box;
+}
+.team-surface h1 {
+  font-size: 26px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.6px;
+}
+.team-surface h2,
+.team-modal h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.team-surface h3 {
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+.team-surface p {
+  margin: 8px 0 16px;
+}
+.team-surface button,
+.team-surface input,
+.team-surface select,
+.team-surface textarea,
+.team-modal button,
+.team-modal input,
+.team-modal select {
+  font: inherit;
+}
+.team-surface button,
+.team-modal button {
+  cursor: pointer;
+}
+.team-surface button:disabled,
+.team-modal button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.team-surface :focus-visible,
+.team-modal :focus-visible {
+  outline: 2px solid var(--team-accent, #275b85);
+  outline-offset: 3px;
+}
+.team-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.team-muted {
+  color: var(--team-muted, #627487);
+  font-size: 12px;
+}
+/* The module's secondary navigation.
+   One link per board, because every board is a real route: it can be linked to,
+   reloaded, and hidden on its own from the appearance panel. This replaced the
+   old in-page tab strip, whose state lived in component state and was lost on
+   reload. */
+.team-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  border-bottom: 1px solid var(--team-line);
+  margin-bottom: 24px;
+}
+.team-subnav a {
+  padding: 11px 0;
+  border-bottom: 2px solid transparent;
+  color: var(--team-muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+.team-subnav a:hover {
+  color: var(--team-ink);
+}
+.team-subnav a.is-active {
+  color: var(--team-accent);
+  border-bottom-color: var(--team-accent);
+  font-weight: 600;
+}
+/* A board container: boards lay out their own headings, tables and actions, so
+   this only supplies the width context (the old tab panels did the same — the
+   card look belongs to forms, not to a whole board). */
+.team-board {
+  min-width: 0;
+}
+/* Field explanations, e.g. "0 means unlimited" — small print under a control. */
+.team-hint {
+  color: var(--team-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+/* Counts on the overview board. */
+.team-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  margin: 20px 0;
+  padding: 0;
+  background: var(--team-line);
+  border: 1px solid var(--team-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.team-summary div {
+  padding: 14px 16px;
+  background: var(--team-bg);
+}
+.team-summary dt {
+  color: var(--team-muted);
+  font-size: 11px;
+}
+.team-summary dd {
+  margin: 5px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+/* The mode card keeps the shared Panel anatomy but sits in the module's own
+   column, so it needs the board's rhythm rather than the settings grid's. */
+.team-mode-card {
+  margin-bottom: 4px;
+}
+.team-mode-card .panel-header {
+  border-bottom: 1px solid var(--team-line);
+}
+.team-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border: 1px solid var(--team-line, #dde5ed);
+  border-radius: 5px;
+  background: var(--team-bg, #fff);
+  color: var(--team-ink, #1c3043);
+  text-decoration: none;
+  font-size: 12px;
+  min-height: 36px;
+}
+.team-button:hover {
+  background: var(--team-soft, #f4f7fa);
+}
+.team-button.primary {
+  color: white;
+  background: var(--team-accent, #275b85);
+  border-color: var(--team-accent, #275b85);
+}
+.team-button.danger {
+  color: #b44b50;
+}
+.team-button.quiet {
+  border-color: transparent;
+  background: transparent;
+}
+.team-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.team-section {
+  padding: 21px;
+  background: var(--team-bg);
+  border: 1px solid var(--team-line);
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+.team-field {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 18px;
+  font-size: 12px;
+  color: var(--team-ink, #1c3043);
+}
+.team-field input:not([type="checkbox"]),
+.team-field select,
+.team-field textarea,
+.team-search {
+  width: 100%;
+  min-height: 39px;
+  border: 1px solid var(--team-line, #dde5ed);
+  background: var(--team-bg, #fff);
+  color: var(--team-ink, #1c3043);
+  border-radius: 5px;
+  padding: 9px 11px;
+}
+.team-field textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+.team-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 12px 0;
+}
+.team-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.team-search {
+  max-width: 300px;
+  margin-bottom: 16px;
+}
+.team-table-wrap {
+  overflow-x: auto;
+}
+.team-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+.team-table th {
+  font-weight: 400;
+  color: var(--team-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.team-table th,
+.team-table td {
+  padding: 14px 10px;
+  border-bottom: 1px solid var(--team-line);
+  vertical-align: middle;
+}
+.team-table th:first-child,
+.team-table td:first-child {
+  padding-left: 0;
+}
+.team-table small {
+  display: block;
+  font-size: 11px;
+  color: var(--team-muted);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.team-table td code {
+  font-size: 11px;
+}
+.team-actions {
+  display: flex;
+  gap: 7px;
+  justify-content: flex-end;
+}
+.team-status {
+  color: var(--team-muted);
+  white-space: nowrap;
+}
+.team-status.active {
+  color: #2b856a;
+}
+.team-empty {
+  padding: 38px 20px;
+  color: var(--team-muted);
+  text-align: center;
+  border: 1px dashed var(--team-line);
+  border-radius: 6px;
+}
+.team-code {
+  padding: 16px;
+  border: 1px solid var(--team-line);
+  background: var(--team-soft);
+  border-radius: 5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    12px/1.85 "Cascadia Code",
+    Consolas,
+    monospace;
+}
+.team-modal {
+  width: min(660px, calc(100vw - 28px));
+  max-height: 88vh;
+  overflow-y: auto;
+  border: 1px solid var(--line, #dfe6ee);
+  border-radius: 9px;
+  padding: 23px;
+  background: var(--surface, #fff);
+  color: var(--ink, #1c3043);
+  box-shadow: 0 18px 80px #10203030;
+}
+.team-modal::backdrop {
+  background: #10203070;
+}
+.team-modal-content {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+.team-modal > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  gap: 10px;
+}
+.team-modal > header button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font-size: 24px;
+}
+.team-candidates {
+  max-height: 290px;
+  overflow-y: auto;
+  border: 1px solid var(--team-line);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.team-candidates label {
+  padding: 7px;
+  border-bottom: 1px solid var(--team-line);
+}
+.team-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 75px 75px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+.team-plan-row input[type="number"] {
+  width: 100%;
+  padding: 7px;
+  border: 1px solid var(--team-line);
+  background: var(--team-bg);
+  color: inherit;
+}
+@media (max-width: 650px) {
+  .team-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .team-head {
+    flex-wrap: wrap;
+  }
+  .team-tabs {
+    gap: 15px;
+  }
+  .team-tabs button {
+    font-size: 12px;
+  }
+  .team-section {
+    padding: 15px;
+  }
+  .team-table th,
+  .team-table td {
+    padding: 12px 7px;
+  }
+  .team-hide-mobile {
+    display: none;
+  }
+  .team-actions {
+    flex-wrap: wrap;
+  }
+  .team-modal {
+    padding: 18px;
+  }
+  .team-plan-row {
+    grid-template-columns: minmax(0, 1fr) 62px 62px;
+  }
+}
+@media (pointer: coarse) {
+  .team-button {
+    min-height: 44px;
+  }
+  .team-field input,
+  .team-field select,
+  .team-search {
+    font-size: 16px;
+  }
+}
+
+/* ---- Bulk member actions ---- */
+/* The bar only exists while something is selected, and it sits directly above
+   the table it acts on so there is never a doubt which rows are affected. */
+.team-bulkbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--team-line, #e1e8ef);
+  border-left: 3px solid var(--team-accent, #275b85);
+  border-radius: 6px;
+  background: var(--team-soft, #f5f8fb);
+}
+.team-bulkbar strong { font-size: 12.5px; }
+.team-select-cell { width: 34px; }
+.team-select-cell input { cursor: pointer; }
+/* The quota cell doubles as the edit trigger for owners. */
+.team-quota {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.team-quota:hover { color: var(--team-accent, #275b85); }
+
+/* ---- Code board ---- */
+.team-codes { margin-top: 28px; }
+.team-minted {
+  margin: 12px 0;
+  max-height: 320px;
+  overflow: auto;
+}
+.team-minted-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.team-minted-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.team-minted-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.team-minted-list code {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+.team-secret {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--team-line, #e1e8ef);
+  border-radius: 5px;
+  background: var(--team-soft, #f5f8fb);
+}
+.team-secret code { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.team-import-failures {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.team-import-failures li {
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: #bd46520c;
+  overflow-wrap: anywhere;
+}
+.team-import-failures small { display: block; color: #ad404b; }
+
+/* ---- Third-party sign-in ---- */
+.team-oauth { margin-top: 8px; }
+.team-oauth-card { position: relative; }
+/* The callback URL is meant to be copied verbatim into the provider's form, so
+   it is selectable text with its own copy button rather than a hint. */
+.team-callback {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--team-line, #e1e8ef);
+  border-radius: 5px;
+  background: var(--team-soft, #f5f8fb);
+}
+.team-callback code {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.team-oauth-advanced {
+  margin: 12px 0 4px;
+  font-size: 12px;
+}
+.team-oauth-advanced summary {
+  cursor: pointer;
+  color: var(--team-muted, #627487);
+}
+.team-oauth-advanced summary:hover { color: var(--team-accent, #275b85); }
+.team-oauth-advanced .team-grid { margin-top: 10px; }

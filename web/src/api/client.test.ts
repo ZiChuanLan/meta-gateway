@@ -1,9 +1,16 @@
+import { setTeamCSRF } from "../team/transport";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiClient, ApiError } from "./client";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("ApiClient", () => {
+	it("does not infer cookie authentication from the contents of an admin token", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+		await new ApiClient("@team-cookie").get("/admin/team/settings");
+		expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Authorization")).toBe("Bearer @team-cookie");
+	});
+
 	it("sends the admin token only in authorization", async () => {
 		const fetchMock = vi
 			.spyOn(globalThis, "fetch")
@@ -185,4 +192,44 @@ describe("api connection and usage contracts", () => {
 			priority: 0,
 		});
 	});
+});
+
+describe("cookie administrator transport",()=>{
+ it("uses cookie and CSRF for streams rather than a placeholder bearer",async()=>{
+  setTeamCSRF("csrf-value");
+  const fetcher=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response("data: test\n\n"));
+  const client=new ApiClient("@team-cookie",undefined,"cookie");
+  await client.openLiveTrace();
+  const headers=new Headers(fetcher.mock.calls[0]?.[1]?.headers);
+  expect(headers.has("Authorization")).toBe(false);
+  expect(fetcher.mock.calls[0]?.[1]?.credentials).toBe("same-origin");
+ });
+ it("does not expire a new cookie session on a stale 401",async()=>{
+  let finish!:(response:Response)=>void;
+  vi.spyOn(globalThis,"fetch").mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  const expired=vi.fn();setTeamCSRF("old");
+  const pending=new ApiClient("cookie",expired,"cookie").get("/admin/sites");
+  setTeamCSRF("new");finish(new Response('{}',{status:401}));
+  await expect(pending).rejects.toMatchObject({name:"AbortError"});expect(expired).not.toHaveBeenCalled();
+ });
+ it("does not return stale cookie data",async()=>{
+  let finish!:(response:Response)=>void;
+  vi.spyOn(globalThis,"fetch").mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  setTeamCSRF("old");const pending=new ApiClient("cookie",undefined,"cookie").get("/admin/sites");
+  setTeamCSRF("new");finish(new Response('[{"name":"old"}]'));
+  await expect(pending).rejects.toMatchObject({name:"AbortError"});
+ });
+ it("preserves aborted requests and streams",async()=>{
+  const error=new DOMException("cancelled","AbortError");vi.spyOn(globalThis,"fetch").mockRejectedValue(error);
+  const client=new ApiClient("bearer");
+  await expect(client.get("/admin/sites")).rejects.toBe(error);
+  await expect(client.openLiveTrace()).rejects.toBe(error);
+ });
+});
+
+it("sends CSRF on a cookie-authenticated streaming write",async()=>{
+ setTeamCSRF("write-csrf");const fetcher=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response("data: ok\n\n"));
+ await new ApiClient("cookie",undefined,"cookie").streamTryChat({model:"demo"});
+ const headers=new Headers(fetcher.mock.calls[0]?.[1]?.headers);
+ expect(headers.get("X-Meta-CSRF")).toBe("write-csrf");expect(headers.has("Authorization")).toBe(false);
 });

@@ -49,14 +49,15 @@ func (h *DiscoveryHandler) missingModels(w http.ResponseWriter, r *http.Request)
 }
 
 // modelChannels lists the enabled channels serving a route pattern — the live
-// preview behind the add-route dialog's auto-match option.
+// preview behind the add-route dialog's auto-match option. `match=related`
+// widens the check to the pattern's -sibling models as well.
 func (h *DiscoveryHandler) modelChannels(w http.ResponseWriter, r *http.Request) {
 	pattern := strings.TrimSpace(r.URL.Query().Get("model"))
 	if pattern == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
-	matches, err := h.db.ChannelsWithModel(pattern)
+	matches, err := h.db.ChannelsMatchingModel(pattern, store.ParseModelMatchMode(r.URL.Query().Get("match")))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to match channels")
 		return

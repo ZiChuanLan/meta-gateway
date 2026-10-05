@@ -1,18 +1,25 @@
+import { OperatorProfilePanel } from "./OperatorProfilePanel";
+import { UpdateChannelPanel } from "./UpdateChannelPanel";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useMemo } from "react";
 import { useI18n } from "../i18n";
 import { Page, Tabs } from "../components/ui";
 import { BackupsPanel, RuntimeSettingsPanel } from "./ops";
 import { AppearancePanel } from "./AppearancePanel";
+import { useOperatingMode } from "../hooks/useOperatingMode";
+import { modeHiddenNav } from "../lib/topBar";
 
-type SystemTab = "runtime" | "appearance" | "backups";
+type SystemTab = "runtime" | "appearance" | "backups" | "operator" | "updates";
 
 /**
- * Settings: runtime, appearance, and backups. Discovery + Audit live under Logs;
- * Check-in and Exchange are top-level nav items.
+ * Settings: runtime parameters, appearance, and backups. The multi-user area
+ * owns its own switch (Users → Overview), so this page only links to it.
+ * Discovery + Audit live under Logs; Check-in and Exchange are top-level nav
+ * items.
  */
 export function Maintain() {
 	const { t } = useI18n();
+	const operatingMode = useOperatingMode();
 	const [params, setParams] = useSearchParams();
 	const requested = params.get("tab");
 
@@ -20,9 +27,14 @@ export function Maintain() {
 		{ value: "runtime", label: t("ops.tab.runtime") },
 		{ value: "appearance", label: t("appearance.title") },
 		{ value: "backups", label: t("ops.tab.backups") },
+ {value:"operator",label:t("operator.title")},
+ {value:"updates",label:t("updates.channel")},
 	], [t]);
 
 	// Legacy deep-links (after hooks).
+	if (requested === "mode") {
+		return <Navigate to="/settings?tab=runtime" replace />;
+	}
 	if (requested === "discovery") {
 		return <Navigate to="/logs?tab=discovery" replace />;
 	}
@@ -56,8 +68,12 @@ export function Maintain() {
 			<div className="ops-canvas">
 				<Tabs items={items} active={active} onChange={changeTab} />
 				{active === "runtime" ? <RuntimeSettingsPanel /> : null}
-				{active === "appearance" ? <AppearancePanel /> : null}
+				{active === "appearance" ? (
+					<AppearancePanel modeHiddenNav={modeHiddenNav(operatingMode.data?.mode)} />
+				) : null}
 				{active === "backups" ? <BackupsPanel /> : null}
+ {active === "operator" ? <OperatorProfilePanel/> : null}
+ {active === "updates" ? <UpdateChannelPanel/> : null}
 			</div>
 		</Page>
 	);

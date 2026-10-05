@@ -60,7 +60,9 @@ func (s *SiteStore) invalidate(id int64) {
 }
 
 func (s *SiteStore) List() ([]domain.Site, error) {
-	rows, err := s.db.Query(`SELECT id, name, base_url, platform, status, created_at, updated_at FROM sites ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id, name, base_url, platform, status,
+			probe_source_kind, probe_source_url, probe_auto, probe_source_config, probe_source_enabled, probe_last_run_at, probe_last_error,
+			created_at, updated_at FROM sites ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("site list: %w", err)
 	}
@@ -69,9 +71,14 @@ func (s *SiteStore) List() ([]domain.Site, error) {
 	var result []domain.Site
 	for rows.Next() {
 		var r domain.Site
-		if err := rows.Scan(&r.ID, &r.Name, &r.BaseURL, &r.Platform, &r.Status, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+		var probeEnabled, probeAuto sql.NullInt64
+		if err := rows.Scan(&r.ID, &r.Name, &r.BaseURL, &r.Platform, &r.Status,
+			&r.ProbeSourceKind, &r.ProbeSourceURL, &probeAuto, &r.ProbeSourceConfig, &probeEnabled, scanNullTime(&r.ProbeLastRunAt), &r.ProbeLastError,
+			scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("site list scan: %w", err)
 		}
+		r.ProbeSourceEnabled = probeEnabled.Int64 != 0
+		r.ProbeAuto = probeAuto.Int64 != 0
 		result = append(result, r)
 	}
 	return result, rows.Err()
@@ -89,19 +96,28 @@ func (s *SiteStore) GetByID(id int64) (*domain.Site, error) {
 			return &cloned, nil
 		}
 	}
-	row := s.db.QueryRow(`SELECT id, name, base_url, platform, status, created_at, updated_at FROM sites WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, name, base_url, platform, status,
+			probe_source_kind, probe_source_url, probe_auto, probe_source_config, probe_source_enabled, probe_last_run_at, probe_last_error,
+			created_at, updated_at FROM sites WHERE id = ?`, id)
 	var r domain.Site
-	if err := row.Scan(&r.ID, &r.Name, &r.BaseURL, &r.Platform, &r.Status, scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
+	var probeEnabled, probeAuto sql.NullInt64
+	if err := row.Scan(&r.ID, &r.Name, &r.BaseURL, &r.Platform, &r.Status,
+		&r.ProbeSourceKind, &r.ProbeSourceURL, &probeAuto, &r.ProbeSourceConfig, &probeEnabled, scanNullTime(&r.ProbeLastRunAt), &r.ProbeLastError,
+		scanTime(&r.CreatedAt), scanTime(&r.UpdatedAt)); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("site get: %w", err)
 	}
+	r.ProbeSourceEnabled = probeEnabled.Int64 != 0
+	r.ProbeAuto = probeAuto.Int64 != 0
 	s.cachePutIfGeneration(&r, generation)
 	return &r, nil
 }
 
 func (s *SiteStore) Create(site *domain.Site) (int64, error) {
+	// The probe-source columns are written by UpdateSiteProbeSource only: a site
+	// row edited through this form must not be able to blank them.
 	res, err := s.db.Exec(`INSERT INTO sites (name, base_url, platform, status) VALUES (?, ?, ?, ?)`,
 		site.Name, site.BaseURL, site.Platform, site.Status)
 	if err != nil {

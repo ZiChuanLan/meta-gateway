@@ -8,7 +8,10 @@ export type CsvValue = string | number | boolean | null | undefined;
 
 function cell(value: CsvValue): string {
   if (value == null) return "";
-  const text = String(value);
+  // Exported names/errors are untrusted text. Quoting alone does not stop
+  // spreadsheets from interpreting a formula. Numeric cells stay numeric.
+  const raw = String(value);
+  const text = typeof value === "string" && /^[\s\uFEFF]*[=+@-]/u.test(raw) ? "'" + raw : raw;
   if (!/[",\r\n]/.test(text)) return text;
   return `"${text.replace(/"/g, '""')}"`;
 }

@@ -102,15 +102,23 @@ func TestUsageCacheSyncIsAbsoluteOrderedAndResetSafe(t *testing.T) {
 	db.DownstreamKey.mu.Lock()
 	db.DownstreamKey.byID[id].QuotaUsedTokens = 10
 	db.DownstreamKey.mu.Unlock()
-	db.DownstreamKey.setCachedUsageIfEpoch(id, 10, epoch)
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 10, 0, epoch)
 	if got := db.DownstreamKey.byID[id].QuotaUsedTokens; got != 10 {
 		t.Fatalf("duplicate callback double-counted usage: %d", got)
 	}
 
+	// The spend budget is published the same way, and a lower absolute cost
+	// from an out-of-order callback must not regress it either.
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 10, 0.5, epoch)
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 10, 0.2, epoch)
+	if got := db.DownstreamKey.byID[id].QuotaUsedCost; got != 0.5 {
+		t.Fatalf("out-of-order callback regressed the spend counter: %v", got)
+	}
+
 	// Commit callbacks can be scheduled out of order; a lower absolute value
 	// must not overwrite a newer one.
-	db.DownstreamKey.setCachedUsageIfEpoch(id, 30, epoch)
-	db.DownstreamKey.setCachedUsageIfEpoch(id, 20, epoch)
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 30, 0, epoch)
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 20, 0, epoch)
 	if got := db.DownstreamKey.byID[id].QuotaUsedTokens; got != 30 {
 		t.Fatalf("out-of-order callback regressed usage: %d", got)
 	}
@@ -121,7 +129,7 @@ func TestUsageCacheSyncIsAbsoluteOrderedAndResetSafe(t *testing.T) {
 	if _, err := db.DownstreamKey.GetByHash(key.TokenHash); err != nil {
 		t.Fatal(err)
 	}
-	db.DownstreamKey.setCachedUsageIfEpoch(id, 40, epoch)
+	db.DownstreamKey.setCachedUsageIfEpoch(id, 40, 0, epoch)
 	if got := db.DownstreamKey.byID[id].QuotaUsedTokens; got != 0 {
 		t.Fatalf("callback from before reset restored old usage: %d", got)
 	}
@@ -187,7 +195,7 @@ func TestGroupGetReturnsCopy(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	if err := db.Group.Upsert("shared", 500, 0, 0); err != nil {
+	if err := db.Group.Upsert("shared", 500, 10, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	first, err := db.Group.Get("shared")

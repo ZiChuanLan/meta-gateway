@@ -49,7 +49,7 @@ func (h *AdminHandler) usageSummary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	summary, err := h.db.Usage.SummaryRange(keyID, since, until)
+	summary, err := h.db.Usage.SummaryRange(store.UsageScope{DownstreamKeyID: keyID}, since, until)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -62,12 +62,14 @@ func (h *AdminHandler) usageSummary(w http.ResponseWriter, r *http.Request) {
 // usageSeries returns a bucketed request/token/cost series over an inclusive
 // window. Aggregating in SQL keeps the overview chart honest for windows that
 // hold far more rows than the newest-500 list endpoint can return.
-func (h *AdminHandler) usageSeries(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	since, until, ok := parseTimeRange(w, query)
-	if !ok {
-		return
-	}
+// seriesWindow resolves a chart window from an already-parsed range.
+//
+// Shared by the console overview and the member app's, so both read
+// window_minutes and buckets the same way: an absent `since` means "the last
+// N minutes" (window_minutes, default one hour). Unparseable or out-of-range
+// values keep their defaults rather than failing the request — a chart drawn on
+// a slightly different window still answers the question.
+func seriesWindow(query url.Values, since, until *time.Time) (start, end time.Time, buckets int) {
 	if since == nil {
 		window := time.Hour
 		if raw := strings.TrimSpace(query.Get("window_minutes")); raw != "" {
@@ -75,20 +77,31 @@ func (h *AdminHandler) usageSeries(w http.ResponseWriter, r *http.Request) {
 				window = time.Duration(parsed) * time.Minute
 			}
 		}
-		start := time.Now().Add(-window)
-		since = &start
+		start = time.Now().Add(-window)
+	} else {
+		start = *since
 	}
-	end := time.Now()
+	end = time.Now()
 	if until != nil {
 		end = *until
 	}
-	buckets := 24
+	buckets = 24
 	if raw := strings.TrimSpace(query.Get("buckets")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 1500 {
 			buckets = parsed
 		}
 	}
-	series, err := h.db.Usage.Series(*since, end, buckets)
+	return start, end, buckets
+}
+
+func (h *AdminHandler) usageSeries(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	since, until, ok := parseTimeRange(w, query)
+	if !ok {
+		return
+	}
+	start, end, buckets := seriesWindow(query, since, until)
+	series, err := h.db.Usage.Series(store.UsageScope{}, start, end, buckets)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -109,7 +122,13 @@ func (h *AdminHandler) listModelRatios(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ratios)
 }
 
-// setModelRatio upserts a model's billing ratio (ratio < 0 deletes it).
+// setModelRatio upserts a model's billing ratio.
+//
+// A negative ratio removes the row instead of storing it: that is what the
+// store does (`ModelRatioStore.SetRatio` treats < 0 as "no markup, delete"),
+// and it is the only way back to the 1× default once a multiplier has been set
+// — without it a markup could be raised but never taken off. The previous check
+// rejected every negative value, which left the delete path unreachable.
 func (h *AdminHandler) setModelRatio(w http.ResponseWriter, r *http.Request) {
 	model := strings.TrimSpace(chi.URLParam(r, "model"))
 	if model == "" {
@@ -123,12 +142,16 @@ func (h *AdminHandler) setModelRatio(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	if body.Ratio < 0 || body.Ratio > 1000 {
+	if body.Ratio > 1000 {
 		writeError(w, http.StatusBadRequest, "ratio must be between 0 and 1000")
 		return
 	}
 	if err := h.db.ModelRatio.SetRatio(model, body.Ratio); err != nil {
 		writeStoreError(w, err)
+		return
+	}
+	if body.Ratio < 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"model": model, "deleted": true})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"model": model, "ratio": body.Ratio})
@@ -188,7 +211,7 @@ func (h *AdminHandler) usageTopModels(w http.ResponseWriter, r *http.Request) {
 			limit = parsed
 		}
 	}
-	rows, err := h.db.Usage.TopModels(since, until, limit)
+	rows, err := h.db.Usage.TopModels(store.UsageScope{}, since, until, limit)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -227,9 +250,10 @@ func (h *AdminHandler) upsertGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		QuotaTotalTokens *int64 `json:"quota_total_tokens"`
-		RatePerMinute    *int   `json:"rate_per_minute"`
-		RateBurst        *int   `json:"rate_burst"`
+		QuotaTotalTokens *int64   `json:"quota_total_tokens"`
+		QuotaTotalCost   *float64 `json:"quota_total_cost"`
+		RatePerMinute    *int     `json:"rate_per_minute"`
+		RateBurst        *int     `json:"rate_burst"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -243,6 +267,17 @@ func (h *AdminHandler) upsertGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		quota = *req.QuotaTotalTokens
 	}
+	// The spend budget is optional and independent of the token quota; both are
+	// enforced, so a group with only money configured must survive a save that
+	// does not mention tokens.
+	quotaCost := 0.0
+	if req.QuotaTotalCost != nil {
+		if *req.QuotaTotalCost < 0 {
+			writeError(w, http.StatusBadRequest, "quota_total_cost must be >= 0")
+			return
+		}
+		quotaCost = *req.QuotaTotalCost
+	}
 	rpm, burst := 0, 0
 	if req.RatePerMinute != nil {
 		rpm = *req.RatePerMinute
@@ -254,11 +289,11 @@ func (h *AdminHandler) upsertGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "rate limits must be >= 0")
 		return
 	}
-	if err := h.db.Group.Upsert(name, quota, rpm, burst); err != nil {
+	if err := h.db.Group.Upsert(name, quota, quotaCost, rpm, burst); err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"name": name, "quota_total_tokens": quota, "rate_per_minute": rpm, "rate_burst": burst})
+	writeJSON(w, http.StatusOK, map[string]any{"name": name, "quota_total_tokens": quota, "quota_total_cost": quotaCost, "rate_per_minute": rpm, "rate_burst": burst})
 }
 
 // deleteGroup removes a tenant group (default is protected).

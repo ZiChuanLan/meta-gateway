@@ -3,6 +3,13 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AppearanceProvider, useAppearance } from "./appearance";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+/** The appearance panel now hosts the currency settings, which are a server
+ *  query: the mount needs a client, and it must not retry in tests. */
+function queryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
 import { ConsoleShell } from "./components/ConsoleShell";
 import { AppearancePanel } from "./features/AppearancePanel";
 import { I18nProvider } from "./i18n";
@@ -10,7 +17,20 @@ import { I18nProvider } from "./i18n";
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("meta-gateway.locale", "en");
-  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+  // Query-aware, and complete enough for the appearance layer, which
+  // subscribes to both queries: these tests want reduced motion (nothing waits
+  // on an animation) but a LIGHT desktop, because the scheme now falls back to
+  // the system when nothing is stored. A stub carrying only `matches` throws
+  // on addEventListener and took out every test in this file.
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: String(query).includes("prefers-reduced-motion"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
 });
 afterEach(() => { cleanup(); localStorage.clear(); document.documentElement.classList.remove("dark"); delete document.documentElement.dataset.appearance; delete document.documentElement.dataset.palette; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -23,7 +43,7 @@ function Fixture() {
   const { appearance, scheme, toggleScheme } = useAppearance();
   return <ConsoleShell appearance={appearance} sections={[]} version="test" theme={scheme} onThemeChange={toggleScheme} onSearch={() => {}} onDisconnect={() => {}} health={{ healthy: 0, total: 0, loading: false }}><PreviewState /><AppearancePanel /></ConsoleShell>;
 }
-function mount() { return render(<AppearanceProvider><I18nProvider><MemoryRouter initialEntries={["/settings?tab=appearance"]}><Fixture /></MemoryRouter></I18nProvider></AppearanceProvider>); }
+function mount() { return render(<AppearanceProvider><QueryClientProvider client={queryClient()}><I18nProvider><MemoryRouter initialEntries={["/settings?tab=appearance"]}><Fixture /></MemoryRouter></I18nProvider></QueryClientProvider></AppearanceProvider>); }
 
 it("switches complete navigation themes independently of the existing dark preference and route", () => {
   localStorage.setItem("meta-gateway.theme", "dark");
@@ -70,6 +90,45 @@ it("still applies a theme when storage is unavailable", () => {
   fireEvent.click(screen.getByRole("radio", { name: /Modern workspace/ }));
   expect(screen.getByLabelText("Preferences")).toHaveTextContent("modern/light/");
   expect(document.documentElement.dataset.appearance).toBe("modern");
+});
+
+// The desktop decides the scheme while the operator has never chosen one.
+// Defaulting to light on a dark machine is what let Chromium force-darken the
+// page and repaint the overview's charts solid black — the styles were right,
+// the paint was not.
+it("starts in the desktop's colour scheme while no preference is stored", () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: String(query).includes("prefers-color-scheme"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+  mount();
+  expect(screen.getByLabelText("Preferences")).toHaveTextContent("classic/dark/");
+  expect(document.documentElement.classList.contains("dark")).toBe(true);
+  // Following the desktop is not the same as choosing: nothing is remembered,
+  // so the page keeps tracking the system.
+  expect(localStorage.getItem("meta-gateway.theme")).toBeNull();
+});
+
+// …and a choice the operator made outlives the desktop's preference.
+it("keeps an explicit colour scheme against the desktop", () => {
+  localStorage.setItem("meta-gateway.theme", "light");
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: String(query).includes("prefers-color-scheme"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+  mount();
+  expect(screen.getByLabelText("Preferences")).toHaveTextContent("classic/light/");
+  expect(localStorage.getItem("meta-gateway.theme")).toBe("light");
 });
 
 it("applies a preset palette without touching the theme or the colour scheme", () => {

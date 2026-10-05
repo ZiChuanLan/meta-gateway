@@ -125,8 +125,6 @@ type Editable struct {
 	// ChannelRetryTimes is how many times the same upstream key is re-sent
 	// after a retryable failure before moving to the next key/channel (0-5).
 	ChannelRetryTimes int `json:"channel_retry_times"`
-	// KeyPoolRotation enables rotating through the site key pool on failure.
-	KeyPoolRotation bool `json:"key_pool_rotation"`
 	// UpdateCheckEnabled lets the gateway query GitHub for a newer release to
 	// power the console update badge. Off means no outbound calls at all.
 	UpdateCheckEnabled bool `json:"update_check_enabled"`
@@ -134,6 +132,13 @@ type Editable struct {
 	// get when the create request omits model_sync_mode. Existing channels
 	// keep their own mode.
 	DefaultModelSyncMode string `json:"default_model_sync_mode"`
+	// SiteProbeIntervalSeconds / SiteProbeJitterSeconds drive the external
+	// site-probe collection loop. The cadence has to be configurable because
+	// sites publish their own probe data at wildly different rates: a status
+	// page that polls every 60s is useless at the 15-minute default, while one
+	// that polls every 15 minutes gains nothing from a faster round.
+	SiteProbeIntervalSeconds int `json:"site_probe_interval_seconds"`
+	SiteProbeJitterSeconds   int `json:"site_probe_jitter_seconds"`
 }
 
 // Snapshot is the effective runtime view returned to Admin UI.
@@ -195,10 +200,13 @@ type Appliers struct {
 	// SetHealthSweep hot-applies the periodic channel health sweep (enabled +
 	// interval/jitter/degraded threshold/concurrency/timeout).
 	SetHealthSweep func(cfg healthsweep.Config)
+	// SetSiteProbeSchedule hot-applies the external site-probe collection
+	// cadence. Unlike the model probe there is nothing to enable or scope: the
+	// loop only reads pages the sites publish themselves, so the only knobs are
+	// how often to read them.
+	SetSiteProbeSchedule func(interval, jitter time.Duration)
 	// SetChannelRetryTimes hot-applies the same-key re-send count.
 	SetChannelRetryTimes func(times int)
-	// SetKeyPoolRotation hot-applies whether the site key pool is rotated.
-	SetKeyPoolRotation func(enabled bool)
 }
 
 // Controller loads, validates, persists, and applies runtime settings.
@@ -252,12 +260,15 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		HealthSweepConcurrency:           cfg.HealthSweepConcurrency,
 		HealthSweepTimeoutSeconds:        cfg.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                cfg.ChannelRetryTimes,
-		KeyPoolRotation:                  cfg.KeyPoolRotation,
 		UpdateCheckEnabled:               cfg.UpdateCheckEnabled,
 		// No env knob: the bootstrap default for new channels is manual
 		// (discovery only fills the candidate snapshot until models are
 		// explicitly adopted); Admin can override it here.
 		DefaultModelSyncMode: "manual",
+		// External site-probe cadence: env bootstrap for a hot-reloadable
+		// setting, so an operator can speed the round up without a restart.
+		SiteProbeIntervalSeconds: cfg.SiteProbeIntervalSeconds,
+		SiteProbeJitterSeconds:   cfg.SiteProbeJitterSeconds,
 	}
 	c := &Controller{
 		env:      env,
@@ -389,9 +400,10 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		HealthSweepConcurrency:           next.HealthSweepConcurrency,
 		HealthSweepTimeoutSeconds:        next.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                next.ChannelRetryTimes,
-		KeyPoolRotation:                  boolInt(next.KeyPoolRotation),
 		UpdateCheckEnabled:               boolInt(next.UpdateCheckEnabled),
 		DefaultModelSyncMode:             next.DefaultModelSyncMode,
+		SiteProbeIntervalSeconds:         unsetIfZero(next.SiteProbeIntervalSeconds),
+		SiteProbeJitterSeconds:           next.SiteProbeJitterSeconds,
 	}
 	previousRow, err := c.store.Get()
 	if err != nil {
@@ -586,9 +598,13 @@ func (c *Controller) applyWithError(values Editable) error {
 	if c.appliers.SetChannelRetryTimes != nil {
 		c.appliers.SetChannelRetryTimes(values.ChannelRetryTimes)
 	}
-	// Key-pool rotation hot reload.
-	if c.appliers.SetKeyPoolRotation != nil {
-		c.appliers.SetKeyPoolRotation(values.KeyPoolRotation)
+	// External site-probe cadence hot reload. The loop re-reads this at every
+	// round, so a change lands on the next one rather than after a restart.
+	if c.appliers.SetSiteProbeSchedule != nil {
+		c.appliers.SetSiteProbeSchedule(
+			time.Duration(values.SiteProbeIntervalSeconds)*time.Second,
+			time.Duration(values.SiteProbeJitterSeconds)*time.Second,
+		)
 	}
 	return nil
 }
@@ -599,6 +615,16 @@ func boolInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+// unsetIfZero encodes "0 means the caller did not say" as the -1 sentinel the
+// nullable runtime-settings columns use, so the env bootstrap still wins. Only
+// for fields where 0 is not a meaningful value.
+func unsetIfZero(value int) int {
+	if value == 0 {
+		return -1
+	}
+	return value
 }
 
 func rowToEditable(row *store.RuntimeSettingsRow) Editable {
@@ -647,9 +673,10 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		HealthSweepConcurrency:           row.HealthSweepConcurrency,
 		HealthSweepTimeoutSeconds:        row.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                row.ChannelRetryTimes,
-		KeyPoolRotation:                  row.KeyPoolRotation == 1,
 		UpdateCheckEnabled:               row.UpdateCheckEnabled == 1,
 		DefaultModelSyncMode:             row.DefaultModelSyncMode,
+		SiteProbeIntervalSeconds:         row.SiteProbeIntervalSeconds,
+		SiteProbeJitterSeconds:           row.SiteProbeJitterSeconds,
 	}
 }
 
@@ -735,14 +762,18 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	if editable.ChannelRetryTimes < 0 {
 		editable.ChannelRetryTimes = c.env.ChannelRetryTimes
 	}
-	if editable.KeyPoolRotation == false && row.KeyPoolRotation == -1 {
-		editable.KeyPoolRotation = c.env.KeyPoolRotation
-	}
+
 	if editable.UpdateCheckEnabled == false && row.UpdateCheckEnabled == -1 {
 		editable.UpdateCheckEnabled = c.env.UpdateCheckEnabled
 	}
 	if editable.DefaultModelSyncMode == "" {
 		editable.DefaultModelSyncMode = c.env.DefaultModelSyncMode
+	}
+	if editable.SiteProbeIntervalSeconds < 0 {
+		editable.SiteProbeIntervalSeconds = c.env.SiteProbeIntervalSeconds
+	}
+	if editable.SiteProbeJitterSeconds < 0 {
+		editable.SiteProbeJitterSeconds = c.env.SiteProbeJitterSeconds
 	}
 	return editable
 }
@@ -864,6 +895,20 @@ func Validate(values Editable) error {
 	}
 	if values.DefaultModelSyncMode != "auto" && values.DefaultModelSyncMode != "manual" {
 		return fmt.Errorf("default_model_sync_mode must be auto or manual")
+	}
+	// Site-probe cadence: the floor is a minute (faster would hammer a public
+	// page for no new data) and the jitter may not exceed the interval. Zero is
+	// accepted as "unset" — an older console build that does not know these
+	// fields would otherwise fail the whole settings save — and the store turns
+	// it back into the unset sentinel so the env bootstrap still applies.
+	if values.SiteProbeIntervalSeconds != 0 && (values.SiteProbeIntervalSeconds < 60 || values.SiteProbeIntervalSeconds > 86400) {
+		return fmt.Errorf("site_probe_interval_seconds must be between 60 and 86400")
+	}
+	if values.SiteProbeJitterSeconds < 0 || values.SiteProbeJitterSeconds > 3600 {
+		return fmt.Errorf("site_probe_jitter_seconds must be between 0 and 3600")
+	}
+	if values.SiteProbeIntervalSeconds > 0 && values.SiteProbeJitterSeconds > values.SiteProbeIntervalSeconds {
+		return fmt.Errorf("site_probe_jitter_seconds must not exceed site_probe_interval_seconds")
 	}
 	return nil
 }

@@ -31,8 +31,10 @@ export function ClassicChrome({ sections, version, theme, onThemeChange, onSearc
     <button type="button" className="classic-mobile-trigger" onClick={onOpenNav} aria-label={t("app.nav.open")}><Menu size={19} /></button>
     <nav ref={railRef} className="deck-sector-rail" aria-label={t("app.nav.open")}>{sections.flatMap((section) => section.items).map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `deck-sector${isActive ? " active" : ""}`}><span className="deck-sector-icon"><Icon size={15} /></span><span className="deck-sector-label">{label}</span><span className="deck-sector-blade" aria-hidden="true" /></NavLink>)}</nav>
     <div className="deck-status-cluster">
+      {health.available !== false ? <>
       <div className={`deck-telemetry is-${tone}`} title={t("dashboard.healthyChannelsHint")}><span className="deck-telemetry-dot" /><span className="deck-telemetry-read">{health.loading ? "···" : `${health.healthy}/${health.total}`}</span><span className="deck-telemetry-label">{t("dashboard.healthyChannels")}</span></div>
       <span className="deck-divider" />
+      </> : null}
       {topBar.update && update ? <button type="button" className="deck-update-pill" onClick={() => setUpdateOpen(true)}>{t("app.updateAvailable", { version: update.latest })}</button> : null}
       {topBar.search ? <button type="button" className="deck-palette-btn" onClick={onSearch} aria-label={t("command.placeholder")}><Search size={13} /><span>{t("shell.search")}</span><kbd className="deck-kbd">⌘K</kbd></button> : null}
       {topBar.theme ? <button type="button" className="deck-theme-btn" onClick={onThemeChange} aria-label={t(theme === "dark" ? "app.themeLight" : "app.themeDark")}>{theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}</button> : null}

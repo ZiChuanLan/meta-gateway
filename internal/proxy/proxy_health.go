@@ -20,11 +20,14 @@ import (
 // consecutive counter) and auto-disables the channel once the channel-level
 // consecutive failures reach the configured threshold.
 //
-// Probe traffic is excluded: a failing probe is the answer the operator asked
-// for, not a fault, so it must not cool a member down, bump the channel
-// consecutive counter, or nudge the error rate.
+// Synthetic traffic (probes, the console's 试调) is excluded: a failed check is
+// the answer the operator asked for, not a fault, so it must not cool a member
+// down, bump the channel consecutive counter, or nudge the error rate. Cooling
+// a production channel because someone pressed 试调 would be a self-inflicted
+// outage, and it would lock the operator out of retrying that same row for the
+// length of the cooldown.
 func (s *Service) recordMemberFailure(req Request, memberID, channelID int64, model string, cooldown time.Duration, category string) {
-	if req.Probe {
+	if req.Probe || req.Diagnostic {
 		return
 	}
 	if !s.faultProtectionEnabled.Load() {
@@ -239,6 +242,7 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 	// Billing: cost = key unit prices × model ratio, computed and persisted at
 	// record time so bills are stable even if prices are edited later.
 	record := &domain.UsageRecord{
+		UserID:              req.UserID,
 		RequestID:           req.RequestID,
 		DownstreamKeyID:     req.DownstreamKeyID,
 		ChannelID:           channelID,
@@ -267,14 +271,27 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 	}
 }
 
-// billingCost computes the persisted cost for a usage record. Prices resolve
-// from the most specific layer that has one: the route member that actually
-// served the request (upstreams price the same model differently), then the
-// model's metadata prices. A request whose model has no price at either layer
-// bills at zero. The result is multiplied by the model's billing ratio.
-// Cache-read tokens are billed at the cache price when one is set, else at the
-// prompt rate. Failures are never fatal; a price lookup error degrades to 0
-// cost rather than dropping the record.
+// billingCost computes the persisted cost for a usage record.
+//
+// Prices resolve from the most specific layer that HAS one: the route member
+// that actually served the request (upstreams price the same model
+// differently), then the model's metadata. "Has one" is answered by
+// PriceLayer.Priced, which counts a context-length ladder as a price even when
+// the flat columns are zero — an operator who configured a ladder and left the
+// flat fields empty means "price by rung", not "give it away".
+//
+// Three factors multiply into the final amount, and they answer three different
+// questions:
+//
+//   - the rung, chosen by how many prompt tokens the request carried;
+//   - the time window, chosen by when the request finished (the gateway's own
+//     local time — an operator sets a night band in their own clock);
+//   - the model's billing ratio, a blunt markup across every account.
+//
+// Cache-read tokens bill at the cache price (the prompt price when none is
+// set); cache-creation tokens bill at the prompt price. A request whose model
+// has no price at any layer bills at zero, and failures are never fatal — a
+// lookup error degrades to 0 cost rather than dropping the record.
 func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 	if s.db == nil {
 		return 0
@@ -287,45 +304,65 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 			log.Printf("proxy: billing ratio model=%s: %v", req.Model, err)
 		}
 	}
-	// Route-member prices are the most specific layer: they belong to the
-	// channel that served the request. Without them the model's metadata
-	// prices apply (keyed by the requested model name, with a dedicated
-	// cache-read price). Cache-read/creation tokens bill at the prompt rate
-	// when no dedicated cache price is set.
-	pricePrompt, priceCompletion, priceCache := 0.0, 0.0, 0.0
-	modelPriced := false
-	if req.MemberID > 0 && s.db.RouteMember != nil {
-		if prompt, completion, cache, found, err := s.db.RouteMember.MemberPrices(req.MemberID); err == nil && found &&
-			(prompt > 0 || completion > 0) {
-			pricePrompt, priceCompletion, priceCache = prompt, completion, cache
-			modelPriced = true
-		}
+	layer, priced := s.priceLayer(req)
+	if !priced {
+		return 0
 	}
-	if !modelPriced && s.db.ModelMetadata != nil {
-		if meta, err := s.db.ModelMetadata.Get(req.Model); err == nil && meta != nil &&
-			(meta.PricePromptPer1k > 0 || meta.PriceCompletionPer1k > 0) {
-			pricePrompt = meta.PricePromptPer1k
-			priceCompletion = meta.PriceCompletionPer1k
-			priceCache = meta.PriceCachePer1k
-			modelPriced = true
-		}
-	}
-	if modelPriced {
-		// Cache-read tokens bill at the cache price (prompt price when unset);
-		// cache-creation tokens bill at the prompt price.
-		prompt := float64(tokens.PromptTokens + tokens.CacheCreationTokens)
-		completion := float64(tokens.CompletionTokens)
-		cacheRead := float64(tokens.CacheReadTokens)
-		cachePrice := priceCache
-		if cachePrice <= 0 {
-			cachePrice = pricePrompt
-		}
-		return (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion +
-			cacheRead/1000.0*cachePrice) * ratio
-	}
-	prompt := float64(tokens.PromptTokens + tokens.CacheReadTokens + tokens.CacheCreationTokens)
+	// The rung is chosen by how much input the request carried, which is the
+	// same quantity the prompt tokens are billed on: prompt tokens plus whatever
+	// was written to cache. Cache READS are excluded on purpose — they reuse
+	// context that was already counted once, and they bill at the cache price.
+	inputTokens := tokens.PromptTokens + tokens.CacheCreationTokens
+	pricePrompt, priceCompletion, priceCache, pricePerRequest := layer.EffectivePrices(inputTokens)
+	multiplier := layer.TimeMultiplier(time.Now())
+	prompt := float64(inputTokens)
 	completion := float64(tokens.CompletionTokens)
-	return (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion) * ratio
+	cacheRead := float64(tokens.CacheReadTokens)
+	if priceCache <= 0 {
+		priceCache = pricePrompt
+	}
+	return (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion +
+		cacheRead/1000.0*priceCache + pricePerRequest) * ratio * multiplier
+}
+
+// priceLayer resolves the price layer in force for a request: the member that
+// served it, else the model's own metadata.
+//
+// A layer that cannot be read is logged and skipped rather than fatal. The
+// second return value answers "is anything priced here", which is deliberately
+// NOT the same as "are the flat columns non-zero" — see billingCost.
+func (s *Service) priceLayer(req Request) (domain.PriceLayer, bool) {
+	if req.MemberID > 0 && s.db.RouteMember != nil {
+		layer, found, err := s.db.RouteMember.MemberPricing(req.MemberID)
+		if err != nil {
+			log.Printf("proxy: member prices member=%d: %v", req.MemberID, err)
+		}
+		if found && layer.Priced() {
+			return layer, true
+		}
+	}
+	if s.db.ModelMetadata == nil {
+		return domain.PriceLayer{}, false
+	}
+	meta, err := s.db.ModelMetadata.Get(req.Model)
+	if err != nil {
+		log.Printf("proxy: model prices model=%s: %v", req.Model, err)
+		return domain.PriceLayer{}, false
+	}
+	if meta == nil {
+		return domain.PriceLayer{}, false
+	}
+	layer, resolveErr := domain.ResolvePriceLayer(
+		meta.PricePromptPer1k, meta.PriceCompletionPer1k, meta.PriceCachePer1k,
+		meta.PricePerRequest, meta.PriceTiers, meta.PriceSchedule,
+	)
+	if resolveErr != nil {
+		log.Printf("proxy: model prices model=%s: %v", req.Model, resolveErr)
+	}
+	if !layer.Priced() {
+		return domain.PriceLayer{}, false
+	}
+	return layer, true
 }
 
 // RecordStreamFailure marks the member that served a stream as failed after the

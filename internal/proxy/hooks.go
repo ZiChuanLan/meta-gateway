@@ -270,6 +270,15 @@ func (s *Service) applyRouteHook(ctx context.Context, req *Request, interceptor 
 		Attempt:         1,
 		AvailableModels: s.availableModels(),
 	}
+	if req.TeamAccess != nil {
+		allowed := make([]string, 0, len(hookReq.AvailableModels))
+		for _, model := range hookReq.AvailableModels {
+			if req.TeamAccess.AllowsModel(model) {
+				allowed = append(allowed, model)
+			}
+		}
+		hookReq.AvailableModels = allowed
+	}
 	result := interceptor.Decide(ctx, hookReq)
 	if result == nil {
 		return nil

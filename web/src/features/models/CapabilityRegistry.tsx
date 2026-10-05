@@ -103,7 +103,7 @@ export function CapabilityRegistryDialog({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const items = list.data?.items ?? [];
+  const items = useMemo(() => list.data?.items ?? [], [list.data]);
   const visible = useMemo(() => {
     const term = filter.trim().toLowerCase();
     if (!term) return items;

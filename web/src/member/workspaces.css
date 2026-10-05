@@ -1,0 +1,522 @@
+/* Team user app — list workspaces.
+   The console's shared layer (styles/tokens.css + styles/system.css +
+   styles/workspaces.css) supplies the anatomy: page header, panels, tables,
+   telemetry band, pagination and empty hero. This sheet owns only what the
+   user app adds on top — the API base strip, the filter row, the model-group
+   tabs, the row status readouts and the request-detail grid — so a page here
+   and the same page in the console stay visually the same object. */
+
+/* ---- API base strip ---------------------------------------------------- */
+/* One line the user copies into a client. It sits above the list because it is
+   the first thing a new account needs, not a footnote under the table. */
+.user-base {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  margin: 0 0 20px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.workspace-caption {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font: 600 10px/1.5 var(--font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.user-base code {
+  flex: 1 1 240px;
+  min-width: 0;
+  color: var(--ink-soft);
+  font: 12px/1.6 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Filter row -------------------------------------------------------- */
+.workspace-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.workspace-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 340px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: inset 0 1px 2px #171d2e05;
+  transition: border-color var(--dur-base), box-shadow var(--dur-base);
+}
+.workspace-search:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.workspace-search svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.workspace-search input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.workspace-search input:focus {
+  outline: none;
+  box-shadow: none;
+}
+.workspace-filterbar select {
+  max-width: 220px;
+}
+.workspace-filterbar > .button {
+  margin-left: auto;
+}
+
+/* ---- Model group tabs -------------------------------------------------- */
+.workspace-group-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.workspace-group-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted-strong);
+  font: 550 11px/1.4 var(--font);
+  cursor: pointer;
+  transition: border-color var(--dur-base), background var(--dur-base), color var(--dur-base);
+}
+.workspace-group-tabs button:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.workspace-group-tabs button[aria-pressed="true"] {
+  border-color: var(--primary-hairline);
+  background: var(--primary-soft);
+  color: var(--primary-active);
+}
+.workspace-group-tabs button small {
+  color: var(--muted-dark);
+  font: 500 10px/1 var(--mono);
+}
+.workspace-group-tabs button[aria-pressed="true"] small {
+  color: var(--primary-active);
+}
+
+/* ---- Row additions ----------------------------------------------------- */
+.workspace-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.workspace-tags span {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-subtle);
+  color: var(--muted-strong);
+  font: 500 9px/1.7 var(--font);
+}
+.workspace-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.workspace-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-strong);
+  font: 600 11px/1.4 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.workspace-status.is-ok {
+  color: var(--success);
+}
+.workspace-status.is-error {
+  color: var(--danger);
+}
+/* Latency as a bar plus the number: the bar ranks rows at a glance, the number
+   is what gets copied into a bug report. */
+.workspace-latency {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 92px;
+}
+.workspace-latency > span {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--primary) 0%, var(--primary-hover) 100%);
+}
+.workspace-latency small {
+  color: var(--muted);
+  font: 10px/1.3 var(--mono);
+}
+
+/* ---- Expanded request detail ------------------------------------------- */
+.workspace-detail-row > td {
+  padding: 0;
+  background: var(--surface-subtle);
+}
+.workspace-request-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px 20px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+}
+.workspace-request-detail > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.workspace-request-detail span {
+  color: var(--muted);
+  font: 500 10px/1.4 var(--font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.workspace-request-detail strong,
+.workspace-request-detail code {
+  color: var(--ink);
+  font: 550 12px/1.5 var(--font);
+  overflow-wrap: anywhere;
+}
+.workspace-request-detail code {
+  font-family: var(--mono);
+}
+
+/* ---- Notes and effective-value readouts -------------------------------- */
+.user-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  font: 550 12px/1.5 var(--font);
+  cursor: pointer;
+}
+.user-check input {
+  width: 14px;
+  height: 14px;
+  min-height: 0;
+  margin: 0;
+}
+.workspace-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.user-setting-effective {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-light);
+  color: var(--muted);
+  font: 11px/1.7 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Secrets and client config ----------------------------------------- */
+/* A revealed key is shown once, in a strip that keeps the copy button next to
+   the value — the plaintext never goes to the clipboard by itself. */
+.user-secret {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.user-secret code {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--ink);
+  font: 12px/1.6 var(--mono);
+  overflow-wrap: anywhere;
+}
+.user-code {
+  max-height: 300px;
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--ink-soft);
+  font: 11.5px/1.75 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Personal routing plan editor -------------------------------------- */
+/* Three columns: the candidate (checkbox + caption), its priority and its
+   weight. The header row uses the same grid so the numbers line up under the
+   captions. */
+.user-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 75px 75px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.user-plan-row input[type="number"] {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  font: 12px var(--mono);
+}
+.user-plan-row input[type="number"]:disabled {
+  opacity: 0.45;
+}
+.user-candidates {
+  max-height: 300px;
+  margin-bottom: 16px;
+  padding: 12px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.user-candidates .user-plan-row + .user-plan-row {
+  padding-top: 8px;
+  border-top: 1px solid var(--line-light);
+}
+
+/* ---- Lists ------------------------------------------------------------- */
+/* The user app's lists are cards: there is no fixed viewport pane to scroll,
+   the page itself scrolls. */
+.user-keys-list,
+.user-logs-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+@media (max-width: 760px) {
+  .workspace-filterbar {
+    align-items: stretch;
+  }
+  .workspace-search {
+    max-width: none;
+    flex: 1 1 100%;
+  }
+  .workspace-filterbar select {
+    flex: 1 1 140px;
+    width: auto;
+    max-width: none;
+  }
+  .workspace-filterbar > .button {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .workspace-row-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .workspace-request-detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 14px;
+  }
+  .user-base code {
+    flex: 1 1 100%;
+  }
+}
+
+/* ---- Upstream arrangement (the model page's editor) --------------------- */
+/* The list IS the order, so the rows are the control: a grip to drag, a rank
+   that says where the row currently sits, the weight the member set next to the
+   site's own value, and a switch that keeps the row visible while taking it out
+   of routing. */
+.route-order-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.route-order-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: grab;
+  transition: border-color var(--dur-base), box-shadow var(--dur-base);
+}
+.route-order-row.is-off {
+  opacity: 0.55;
+}
+.route-order-row.is-drop-target {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+.route-order-handle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--muted-dark);
+  cursor: grab;
+}
+.route-order-rank {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: right;
+  color: var(--muted);
+  font: 600 11px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.route-order-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.route-order-name strong {
+  color: var(--ink);
+  font: 600 12.5px/1.4 var(--font);
+  overflow-wrap: anywhere;
+}
+.route-order-name small {
+  color: var(--muted);
+  font: 10.5px/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+.route-order-weight {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.route-order-weight input {
+  width: 76px;
+  height: 30px;
+  padding: 0 8px;
+  font: 12px var(--mono);
+  text-align: right;
+}
+.route-order-weight small {
+  color: var(--muted-dark);
+  font: 9.5px/1.3 var(--font);
+  white-space: nowrap;
+}
+.route-order-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-strong);
+  font: 11.5px/1.4 var(--font);
+  white-space: nowrap;
+}
+.route-order-moves {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+}
+/* Plan picker: which arrangement the editor is writing to. */
+.models-plan-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.models-plan-picker select {
+  max-width: 200px;
+}
+
+@media (max-width: 760px) {
+  .route-order-row {
+    flex-wrap: wrap;
+  }
+  .route-order-name {
+    flex: 1 1 100%;
+  }
+  .route-order-weight,
+  .route-order-toggle {
+    flex: 1 1 40%;
+  }
+  .route-order-moves {
+    margin-left: auto;
+  }
+  .models-plan-picker {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+  .models-plan-picker select {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+}
+
+/* ---- Account credit ---- */
+/* Three readouts and a redeem box: the pool is the first thing a member wants
+   to see, and the only write they can make to it themselves. */
+.user-credit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 34px;
+}
+.user-credit > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.user-credit strong {
+  color: var(--ink);
+  font: 600 18px/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.user-redeem {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-light);
+}
+.user-redeem .field { flex: 1 1 260px; min-width: 0; }
+

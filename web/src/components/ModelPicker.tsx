@@ -1,7 +1,7 @@
 import { ChevronDown, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "../i18n";
-import { MODEL_GROUP_ORDER, autoModelGroup } from "../features/models/modelGroups";
+import { MODEL_GROUP_ORDER, autoModelGroup } from "../lib/modelGroups";
 
 /** One channel that can serve a candidate model name. */
 export type ModelPickerChannel = { id: number; name: string };

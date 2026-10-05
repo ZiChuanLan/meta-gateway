@@ -79,9 +79,8 @@ func TestAttemptLogNamesTheServingUpstreamKey(t *testing.T) {
 	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, firstRandom{})
 	service := New(selector, upstream, db, enc, 2, time.Minute)
 	service.now = func() time.Time { return now }
-	// Rotation on: the pool holds BOTH keys, so the row has to name the one that
-	// actually went out rather than the one the channel is bound to.
-	service.SetKeyPoolRotation(true)
+	// The pool holds BOTH keys, so the row has to name the one that actually
+	// went out rather than the one the channel is bound to.
 
 	// Two requests: rotation advances the pool cursor, so the second call goes
 	// out on the OTHER key. Both rows must name the key that served them — that

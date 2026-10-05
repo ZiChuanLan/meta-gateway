@@ -39,8 +39,10 @@ import (
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/runtimeconfig"
 	"github.com/lan/meta-gateway/internal/selfupdate"
+	"github.com/lan/meta-gateway/internal/siteprobe"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/updatecheck"
+
 	"github.com/lan/meta-gateway/internal/webdavsync"
 	"github.com/lan/meta-gateway/internal/webhook"
 	"github.com/lan/meta-gateway/internal/webui"
@@ -190,32 +192,65 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		}
 		http.Redirect(w, request, target, http.StatusPermanentRedirect)
 	}))
-	r.Get("/", handleLanding)
+	teamHandler := NewTeamHandler(db, enc)
+	// One front door. There is a single console now, so the root goes straight
+	// to it in either mode: a personal gateway's only user is the operator, and
+	// a team gateway's members sign in at the same door as everyone else. The
+	// old landing page is still served at /landing for anyone who wants a
+	// public brand surface.
+	r.Get("/", func(w http.ResponseWriter, request *http.Request) {
+		http.Redirect(w, request, "/console", http.StatusTemporaryRedirect)
+	})
+	r.Get("/landing", handleLanding)
 
 	// Admin routes
 	adminGroup := chi.NewRouter()
+	adminGroup.Use(teamHandler.PrincipalSlot)
 	adminGroup.Use(auditAdmin(logger, db.AuditEvent))
 	// Session-token verification uses the master-key-derived HMAC key (with a
 	// fallback to the raw key material when the encrypter is unavailable).
 	sessionKey := auth.SessionSigningKey(enc.KeyMaterial(), cfg.AdminTokenList())
 	sessionHandler := &sessionHandler{
-		db:          db,
-		adminTokens: cfg.AdminTokenList(),
-		sessionKey:  sessionKey,
-		enc:         enc,
+		db:            db,
+		adminTokens:   cfg.AdminTokenList(),
+		adminUsername: cfg.AdminUsername,
+		team:          teamHandler,
+		sessionKey:    sessionKey,
+		enc:           enc,
 		// Keep the public TOTP exchange independently bounded from the admin
 		// limiter, which does not cover this route.
 		globalLoginLimiter: ratelimit.New(30, 5),
 		loginLimiter:       ratelimit.New(30, 5),
 	}
 	sessionHandler.RegisterPublic(r)
-	adminGroup.Use(auth.AdminMiddlewareWithSession(cfg.AdminTokenList(), func(token string) bool {
-		return auth.VerifySessionToken(sessionKey, token)
+	adminGroup.Use(teamHandler.AdminAuth(func(token string) bool {
+		return auth.ValidateAdminToken(token, cfg.AdminTokenList(), func(value string) bool { return auth.VerifySessionToken(sessionKey, value) })
 	}))
 	adminLimiter := ratelimit.New(cfg.AdminRatePerMinute, cfg.AdminRateBurst)
 	relayLimiter := ratelimit.New(cfg.RelayRatePerMinute, cfg.RelayRateBurst)
 	adminGroup.Use(rateLimitMiddleware(adminLimiter, func(*http.Request) int64 { return 0 }, "admin", metrics))
 	adminGroup.Use(withAdminBodyLimit(cfg.MaxAdminBodyBytes))
+	teamHandler.RegisterAdmin(adminGroup)
+	teamHandler.RegisterPublic(r)
+	// /app was the member app's own SPA. There is one console now, so these
+	// links land there instead — the path and query are carried over, because
+	// invitation and recovery links are query-carrying deep links that must
+	// keep working (an /app?invite=… link now opens the console's sign-in page
+	// with the invitation already in hand).
+	r.Get("/app", func(w http.ResponseWriter, request *http.Request) {
+		target := "/console"
+		if request.URL.RawQuery != "" {
+			target += "?" + request.URL.RawQuery
+		}
+		http.Redirect(w, request, target, http.StatusTemporaryRedirect)
+	})
+	r.Get("/app/*", func(w http.ResponseWriter, request *http.Request) {
+		target := "/console" + strings.TrimPrefix(request.URL.Path, "/app")
+		if request.URL.RawQuery != "" {
+			target += "?" + request.URL.RawQuery
+		}
+		http.Redirect(w, request, target, http.StatusTemporaryRedirect)
+	})
 	selector := routing.New(db.RouteMember)
 	// The affinity store is installed unconditionally, and StickyEnabled only
 	// decides what routes INHERIT: a route may force affinity on for one model
@@ -233,7 +268,6 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	proxyService.SetAdapterRegistry(registry)
 	proxyService.SetCredentialRefresher(checkinService)
 	proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)
-	proxyService.SetKeyPoolRotation(cfg.KeyPoolRotation)
 	proxyService.SetAutoDisableThreshold(cfg.ChannelAutoDisableThreshold)
 	if cfg.FaultProtectionConfigured {
 		proxyService.SetFaultProtection(cfg.FaultProtectionEnabled)
@@ -356,6 +390,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		HealthHistoryDays:         cfg.HealthHistoryRetentionDays,
 		ModelChangeDays:           cfg.ModelChangeRetentionDays,
 		ModelChangeAutoIgnoreDays: cfg.ModelChangeAutoIgnoreDays,
+		SiteProbeDays:             cfg.SiteProbeRetentionDays,
 	}, logger)
 	balanceSweeper.Start()
 	RegisterStopper(balanceSweeper.Stop)
@@ -378,6 +413,24 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// never be in flight at once.
 	probeScheduler := probe.NewScheduler(db, probeService, probe.Schedule{}, logger, nil)
 	RegisterStopper(probeScheduler.Stop)
+
+	// External site probe sources: read the probe data a public-benefit site
+	// publishes itself (Uptime Kuma status page / New-API price table) so
+	// availability can be judged without spending upstream tokens. Collection is
+	// read-only against public endpoints; the routing changes it proposes only
+	// happen when an operator applies them from the model page tool.
+	// The hook binds the SSRF policy once, the way the outbound client above
+	// does, so probe requests follow the console-configured global proxy
+	// without ever inheriting the environment's.
+	siteProbeService := siteprobe.NewService(db, logger, func(req *http.Request) (*url.URL, error) {
+		return globalProxy.ForRequest(req, outboundPolicy)
+	})
+	siteProbeScheduler := siteprobe.NewScheduler(siteProbeService,
+		time.Duration(cfg.SiteProbeIntervalSeconds)*time.Second,
+		time.Duration(cfg.SiteProbeJitterSeconds)*time.Second, logger)
+	siteProbeScheduler.Start()
+	RegisterStopper(siteProbeScheduler.Stop)
+	NewSiteProbeHandler(db, siteProbeService, siteProbeScheduler).Register(adminGroup)
 
 	// Plugin catalog + add-on gates. Optional modules (exchange, checkin) must be
 	// enabled to expose their Admin surfaces. Core audit/backup stay always-on.
@@ -503,8 +556,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			SetChannelRetryTimes: func(times int) {
 				proxyService.SetChannelRetryTimes(times)
 			},
-			SetKeyPoolRotation: func(enabled bool) {
-				proxyService.SetKeyPoolRotation(enabled)
+			// External site-probe cadence: the loop re-reads it every round, so a
+			// settings change takes effect on the next one.
+			SetSiteProbeSchedule: func(interval, jitter time.Duration) {
+				siteProbeScheduler.SetSchedule(interval, jitter)
 			},
 		})
 	}
@@ -514,6 +569,17 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	if err := runtimeController.Bootstrap(); err != nil {
 		logger.Error("runtime settings bootstrap failed", "category", "configuration", "err", err.Error())
 	}
+	teamHandler.requestDefaults = func() TeamRequestDefaults {
+		snapshot := runtimeController.Snapshot().Editable
+		return TeamRequestDefaults{FailoverEnabled: snapshot.CrossChannelFailoverEnabled, RetryTimes: snapshot.RetryTimes}
+	}
+	// Third-party sign-in calls the provider's token and userinfo endpoints from
+	// the server, so they follow the same proxy the operator configured for
+	// outbound traffic — not the container's HTTP_PROXY, which usually points at
+	// the host and cannot reach GitHub.
+	teamHandler.outboundProxy = func() string {
+		return runtimeController.Snapshot().Editable.ProxyURL
+	}
 	// Update check: periodic GitHub latest-release comparison for the console
 	// badge. The admin toggle (read live from runtime settings) gates every
 	// outbound call.
@@ -521,6 +587,13 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	RegisterStopper(updateCancel)
 	updateService := updatecheck.New(func() bool {
 		return runtimeController.Snapshot().Editable.UpdateCheckEnabled
+	})
+	updateService.SetChannelSource(func() string {
+		prefs, err := db.OperatorPreferences()
+		if err != nil {
+			return "stable"
+		}
+		return prefs.UpdateChannel
 	})
 	go updateService.Run(updateCtx)
 	NewUpdateCheckHandler(updateService, runtimeController).Register(adminGroup)
@@ -555,6 +628,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	newLiveTraceHandler(liveRegistry).Register(adminGroup)
 	v1Group := chi.NewRouter()
 	v1Group.Use(auth.NewDownstreamAuth(db.DownstreamKey).Middleware())
+	v1Group.Use(teamHandler.RelayMiddleware)
 	v1Group.Use(rateLimitMiddleware(relayLimiter, downstreamRateKey, "relay", metrics))
 	relayHandler.Register(v1Group)
 	r.Mount("/v1", v1Group)

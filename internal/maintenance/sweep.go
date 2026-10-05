@@ -30,6 +30,7 @@ type BalanceSweeper struct {
 	healthRetentionDays       int
 	modelChangeRetentionDays  int
 	modelChangeAutoIgnoreDays int
+	siteProbeRetentionDays    int
 	logger                    *slog.Logger
 
 	lifecycleMu sync.Mutex
@@ -51,6 +52,11 @@ type RetentionConfig struct {
 	// ModelChangeAutoIgnoreDays auto-ignores pending removals with no route
 	// impact after that many days (0 = off — the operator decides).
 	ModelChangeAutoIgnoreDays int
+	// SiteProbeDays bounds the external site-probe rounds and their samples.
+	// This is the highest-volume pruner: one row per monitored model per site
+	// per round (every 15 minutes), so a mid-sized install writes hundreds of
+	// rows on each pass.
+	SiteProbeDays int
 }
 
 const (
@@ -58,6 +64,10 @@ const (
 	DefaultDecisionSnapshotRetentionDays = 7
 	DefaultHealthHistoryRetentionDays    = 90
 	DefaultModelChangeRetentionDays      = 90
+	// DefaultSiteProbeRetentionDays is a week: the verdict only needs the last
+	// couple of rounds, and the model page shows recent readings rather than a
+	// chart. Raise it deliberately before anyone builds a trend view on top.
+	DefaultSiteProbeRetentionDays = 7
 )
 
 // NewBalanceSweeper preserves the historical constructor defaults.
@@ -88,6 +98,9 @@ func NewBalanceSweeperWithRetention(account BalanceAccount, db *store.DB, retent
 	if retention.ModelChangeDays < 0 {
 		retention.ModelChangeDays = DefaultModelChangeRetentionDays
 	}
+	if retention.SiteProbeDays < 0 {
+		retention.SiteProbeDays = DefaultSiteProbeRetentionDays
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -99,6 +112,7 @@ func NewBalanceSweeperWithRetention(account BalanceAccount, db *store.DB, retent
 		healthRetentionDays:       retention.HealthHistoryDays,
 		modelChangeRetentionDays:  retention.ModelChangeDays,
 		modelChangeAutoIgnoreDays: retention.ModelChangeAutoIgnoreDays,
+		siteProbeRetentionDays:    retention.SiteProbeDays,
 		logger:                    logger,
 		done:                      make(chan struct{}),
 	}
@@ -204,6 +218,11 @@ func (s *BalanceSweeper) run(parent context.Context) {
 	if s.modelChangeAutoIgnoreDays > 0 {
 		if _, err := s.db.AutoIgnoreHarmlessModelChanges(s.modelChangeAutoIgnoreDays); err != nil {
 			s.logger.Warn("model change auto-ignore failed", "error", err)
+		}
+	}
+	if s.siteProbeRetentionDays > 0 {
+		if _, _, err := s.db.PruneSiteProbe(s.siteProbeRetentionDays); err != nil {
+			s.logger.Warn("site probe prune failed", "error", err)
 		}
 	}
 	// Adopted additions resolved their own reminder; always run, no knob.

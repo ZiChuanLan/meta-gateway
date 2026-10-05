@@ -19,7 +19,7 @@ export function ConsoleShell({ children, sections, version, theme, onThemeChange
   onThemeChange: () => void;
   onSearch: () => void;
   onDisconnect: () => void;
-  health: { healthy: number; total: number; loading: boolean };
+  health: { healthy: number; total: number; loading: boolean; available?: boolean };
   update?: UpdateCheckStatus;
   background?: string;
   entering?: boolean;

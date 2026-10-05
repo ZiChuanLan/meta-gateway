@@ -145,6 +145,27 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 	if strings.TrimSpace(req.Method) == "" {
 		req.Method = http.MethodPost
 	}
+	if req.TeamAccess != nil {
+		// A public channel grant delegates inference, not arbitrary use of
+		// its credential. Operator profiles and payload rules run later.
+		standard := map[string]bool{
+			"chat/completions": true, "completions": true, "embeddings": true, "responses": true,
+			"messages": true, "messages/count_tokens": true, "images/generations": true,
+			"images/edits": true, "images/variations": true, "audio/speech": true,
+			"audio/transcriptions": true, "audio/translations": true, "moderations": true,
+		}
+		pinned := false
+		for name, value := range req.Headers {
+			if strings.EqualFold(name, "X-Meta-Upstream-Path") && strings.TrimSpace(value) != "" {
+				pinned = true
+			}
+		}
+		if !standard[req.OpenAIPath] || pinned ||
+			upstreamFieldValue(req.Body, req.Headers, "upstream_path") != "" ||
+			upstreamFieldValue(req.Body, req.Headers, "upstream_url") != "" {
+			return &relay.Result{StatusCode: http.StatusForbidden, Err: errors.New("team endpoint override not allowed")}, nil
+		}
+	}
 	// Failover state for one relay request: channels retired entirely
 	// (channel-wide failure), individual alias variants retired (the upstream
 	// name failed while its channel siblings may be healthy), and the two-layer
@@ -153,11 +174,24 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 	// round's selector call and mutated as attempts fail.
 	excludedChannels := make(map[int64]struct{})
 	excludedMembers := make(map[int64]struct{})
-	constraint := &routing.SelectionConstraint{ExcludedMembers: excludedMembers, RouteGroup: req.RouteGroup}
+	constraint := &routing.SelectionConstraint{
+		ExcludedMembers: excludedMembers,
+		RouteGroup:      req.RouteGroup,
+		TeamAccess:      req.TeamAccess,
+		// The admin 试调 and a health probe name one upstream. Telling the
+		// selector about that pin keeps a single-mode route from reporting its
+		// non-pinned rows as ineligible — the pin is the more specific choice,
+		// and pickPreferred below needs the row to still be selectable.
+		PinnedMemberID:  req.PreferMemberID,
+		PinnedChannelID: req.PreferChannelID,
+	}
 	// Resolve the sticky session key: an explicit client header wins;
 	// otherwise derive a content digest from the request body (stateless
 	// clients get affinity through their conversation content).
 	sessionKey := routing.SessionKeyFromRequest(req.Body, req.SessionKey)
+	if req.TeamAccess != nil && sessionKey != "" {
+		sessionKey = fmt.Sprintf("team:%d:key:%d:%s", req.TeamAccess.UserID, req.DownstreamKeyID, sessionKey)
+	}
 	req.SessionKey = sessionKey
 	stickyStore := s.sticky.Load()
 	var last *relay.Result
@@ -168,6 +202,9 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 	// the process default is off, bypass an admin channel pin, or skip the
 	// non-idempotent-write safety gate.
 	allowCrossChannelRetries := s.crossChannelFailoverEnabled.Load() && !pinnedUpstream(req) && retrySafe
+	if req.TeamAccess != nil && req.TeamAccess.DisableFailover {
+		allowCrossChannelRetries = false
+	}
 	maxAttempts := int(s.retryTimes.Load())
 	if !allowCrossChannelRetries {
 		maxAttempts = 0
@@ -179,6 +216,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		// idempotency key that the upstream can honor.
 		maxAttempts = 0
 	}
+	maxAttempts = req.TeamAccess.LimitRetries(maxAttempts)
 	// Evaluate prompt guards once per request. Re-running them for every
 	// channel retry caused repeated DB reads and could apply masking/exclusion
 	// differently after the first attempt.
@@ -243,7 +281,13 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				}
 			}
 		}
+		if !req.TeamAccess.AllowsModel(req.Model) {
+			return &relay.Result{StatusCode: http.StatusForbidden, Err: errors.New("model not authorized")}, nil
+		}
 		decision, err := s.selector.SelectSticky(ctx, req.Model, excludedChannels, sessionKey, constraint)
+		if err == nil && !req.TeamAccess.AllowsMember(req.Model, decision.Selected.Member.ID) {
+			return &relay.Result{StatusCode: http.StatusForbidden, Err: errors.New("route member not authorized")}, nil
+		}
 		// Persist a decision snapshot for audit: the full explanation
 		// (candidates, scores, reasons, sticky/stable-first state) survives
 		// even when the request later fails or the UI is long gone. Errors
@@ -282,7 +326,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			if allowCrossChannelRetries {
 				// Route rows are validated by the Admin API, but clamp here as a
 				// last line of defence for old/corrupt rows and non-HTTP callers.
-				maxAttempts = clampInt(*retryOverride, 0, 100)
+				maxAttempts = req.TeamAccess.LimitRetries(clampInt(*retryOverride, 0, 100))
 			}
 		}
 		if channelRetryOverride == nil && decision.ChannelRetryTimesOverride != nil {
@@ -293,7 +337,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		if pinnedUpstream(req) {
 			pinned, ok := pickPreferred(decision, req.PreferChannelID, req.PreferMemberID)
 			if !ok {
-				return &relay.Result{Err: ErrPreferredChannel}, nil
+				return &relay.Result{Err: pinFailure(decision, req)}, nil
 			}
 			candidate = pinned
 		}
@@ -697,7 +741,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			category = "no_credential"
 			retryable = true
 			s.recordAttempt(req, candidate, attempt+1, result, category, "", 0)
-			s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.Model, cooldown, category)
+			// Health bookkeeping keys on the name the upstream actually saw
+			// (req.UpstreamModel), not the client-facing alias: an alias route
+			// reaching "cn:x" and "global:x" must keep two records, or a fast
+			// variant's failures would cool the slow one and vice versa.
+			s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.UpstreamModel, cooldown, category)
 
 			excludedChannels[candidate.Channel.ID] = struct{}{}
 			constraint.PreferChannel = 0
@@ -1098,16 +1146,17 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			// A probe success is the answer the operator asked for, not a health
 			// signal: member cooldown reset, channel counter, error decay, and
 			// latency sampling stay untouched so probe traffic never looks like
-			// real traffic to the bookkeeping.
-			if !req.Probe {
+			// real traffic to the bookkeeping. The console's 试调 is the same
+			// kind of call and is exempted the same way.
+			if !req.Probe && !req.Diagnostic {
 				if err := s.db.RouteMember.RecordSuccess(candidate.Member.ID, s.now()); err != nil {
 					log.Printf("proxy: record success member_id=%d: %v", candidate.Member.ID, err)
 				}
-				s.decayError(candidate.Channel.ID, req.Model)
+				s.decayError(candidate.Channel.ID, req.UpstreamModel)
 				s.recordMemberSuccess(candidate.Channel.ID)
 				s.resetTransportFails(candidate.Member.ID)
 				if s.latencyAware.Load() && result.LatencyMs > 0 {
-					s.observeLatency(candidate.Channel.ID, req.Model, result.LatencyMs)
+					s.observeLatency(candidate.Channel.ID, req.UpstreamModel, result.LatencyMs)
 				}
 			}
 			// Bind the successful relay to its session key so the next request
@@ -1181,13 +1230,13 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			// cooldown, a repeat does — the channel never silently keeps
 			// eating full timeouts on every request. ignore_monitor rules
 			// skip bookkeeping entirely.
-			if !monitorSkipped && !req.Probe {
+			if !monitorSkipped && !req.Probe && !req.Diagnostic {
 				penalty := retryAfterCooldown(result.Header, s.now(), cooldown)
 				if category == "transport" {
 					penalty = s.transportPenalty(candidate.Member.ID, cooldown)
 					s.observeTransportFailure(candidate.Member.ID)
 				}
-				s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.Model, penalty, category)
+				s.recordMemberFailure(req, candidate.Member.ID, candidate.Channel.ID, req.UpstreamModel, penalty, category)
 			}
 			// Two-layer fallback scope: an upstream that ANSWERED (any status,
 			// or a stream that died mid-flight — surfaced as the
@@ -1237,17 +1286,17 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 					}
 					log.Printf("proxy: model %s not found on channel %d — blacklisted (request_id=%s)", effectiveModel, candidate.Channel.ID, req.RequestID)
 				}
-				// Probes are pinned synthetic traffic: a 4xx here is information,
-				// not a fault, so member cooldown and error bookkeeping stay
-				// untouched (recordMemberFailure guards the same way on the
-				// retryable path).
-				if !req.Probe {
+				// Probes (and the console's 试调) are pinned synthetic traffic: a
+				// 4xx here is information, not a fault, so member cooldown and
+				// error bookkeeping stay untouched (recordMemberFailure guards the
+				// same way on the retryable path).
+				if !req.Probe && !req.Diagnostic {
 					if s.faultProtectionEnabled.Load() {
 						if err := s.db.RouteMember.RecordFailure(candidate.Member.ID, s.now(), cooldown, category); err != nil {
 							log.Printf("proxy: record 4xx member failure member_id=%d: %v", candidate.Member.ID, err)
 						}
 					}
-					s.observeError(candidate.Channel.ID, req.Model)
+					s.observeError(candidate.Channel.ID, req.UpstreamModel)
 				}
 			}
 			if pinnedUpstream(req) {
@@ -1341,6 +1390,55 @@ func pickPreferred(decision routing.Decision, channelID, memberID int64) (domain
 		}
 	}
 	return domain.RoutingCandidate{}, false
+}
+
+// PinFailure carries the reason an explicitly chosen upstream could not be
+// used. It wraps ErrPreferredChannel so every existing errors.Is check keeps
+// working while the console gets a code it can translate.
+type PinFailure struct{ Code string }
+
+func (e *PinFailure) Error() string { return "proxy: preferred upstream unusable (" + e.Code + ")" }
+
+func (e *PinFailure) Unwrap() error { return ErrPreferredChannel }
+
+// pinFailure explains WHY the upstream the caller named cannot be used. The
+// console's 试调 and the health probes both pin a row, and a single generic
+// "preferred channel unavailable" made a disabled member, an empty key pool and
+// a cooling channel look like one and the same fault.
+func pinFailure(decision routing.Decision, req Request) error {
+	reasons := map[routing.Reason]bool{}
+	found := false
+	for _, evaluation := range decision.Candidates {
+		if req.PreferMemberID > 0 {
+			if evaluation.Candidate.Member.ID != req.PreferMemberID {
+				continue
+			}
+		} else if evaluation.Candidate.Channel.ID != req.PreferChannelID {
+			continue
+		}
+		found = true
+		for _, reason := range evaluation.Reasons {
+			reasons[reason] = true
+		}
+	}
+	code := "preferred_channel_unavailable"
+	switch {
+	case !found:
+		// The route does not hold that upstream at all: the row was deleted, or
+		// the pin belongs to a different model.
+		code = "pinned_upstream_not_member"
+	case reasons[routing.ReasonMemberDisabled]:
+		code = "pinned_upstream_member_disabled"
+	case reasons[routing.ReasonChannelDisabled]:
+		code = "pinned_upstream_channel_disabled"
+	case reasons[routing.ReasonCredentialAbsent]:
+		code = "pinned_upstream_no_credential"
+	case reasons[routing.ReasonCoolingDown]:
+		code = "pinned_upstream_cooling_down"
+	case reasons[routing.ReasonInvalidWeight]:
+		code = "pinned_upstream_invalid_weight"
+	}
+	return &PinFailure{Code: code}
 }
 
 func isBinaryResponsePath(path string) bool {

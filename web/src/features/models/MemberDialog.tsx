@@ -1,8 +1,19 @@
+import { PriceFields, PricingRules } from "./PriceFields";
 import { useState } from "react"
 import type { RouteMember } from "../../api/types"
 import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui"
 import { useI18n } from "../../i18n"
 import { memberRealName, serializeMemberMapping } from "../../lib/alias"
+import {
+  PriceTiersEditor,
+  PriceWindowsEditor,
+  encodeTiers,
+  encodeWindows,
+  parseTiers,
+  parseWindows,
+  validTiers,
+  validWindows,
+} from "./PricingEditors"
 
 export function MemberDialog({
   value,
@@ -22,6 +33,7 @@ export function MemberDialog({
   onSave: (value: Partial<RouteMember>) => void;
 }) {
   const { t } = useI18n();
+  const [pricesValid, setPricesValid] = useState(true);
   const [form, setForm] = useState(value);
   // The upstream model this member rewrites to. Unified aliases depend on it,
   // and without an editor the redirect was invisible in the UI.
@@ -32,6 +44,12 @@ export function MemberDialog({
   // values preserves the previous state.
   const [valuesTouched, setValuesTouched] = useState(false);
   const markTouched = () => setValuesTouched(true);
+  // This member's ladder and schedule. Arrays while editing, JSON text on the
+  // wire — the conversion belongs to the editors, not to every keystroke here.
+  const [tiersEdited, setTiersEdited] = useState(false);
+  const [windowsEdited, setWindowsEdited] = useState(false);
+  const [tiers, setTiers] = useState(() => parseTiers(value.price_tiers));
+  const [windows, setWindows] = useState(() => parseWindows(value.price_schedule));
   return (
     <Dialog
       title={value.id ? t("routing.editMember") : t("routing.addMember")}
@@ -43,10 +61,12 @@ export function MemberDialog({
             {t("common.cancel")}
           </Button>
           <Button
-            disabled={pending || !form.channel_id}
+            disabled={pending || !form.channel_id || !pricesValid || !validTiers(tiers) || !validWindows(windows)}
             onClick={() =>
               onSave({
                 ...form,
+                price_tiers: tiersEdited ? encodeTiers(tiers) : (value.price_tiers ?? ""),
+                price_schedule: windowsEdited ? encodeWindows(windows) : (value.price_schedule ?? ""),
                 manual_override: (form.manual_override ?? false) || valuesTouched,
               })
             }
@@ -103,42 +123,10 @@ export function MemberDialog({
           />
           <InfoTip label={t("routing.weightHint")} />
         </Field>
-        <Field label={t("routing.memberPricePrompt")} hint={t("routing.memberPriceHint")}>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={form.price_prompt_per_1k ?? 0}
-            onChange={(event) => {
-              markTouched();
-              setForm({ ...form, price_prompt_per_1k: Math.max(0, Number(event.target.value) || 0) });
-            }}
-          />
-        </Field>
-        <Field label={t("routing.memberPriceCompletion")}>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={form.price_completion_per_1k ?? 0}
-            onChange={(event) => {
-              markTouched();
-              setForm({ ...form, price_completion_per_1k: Math.max(0, Number(event.target.value) || 0) });
-            }}
-          />
-        </Field>
-        <Field label={t("routing.memberPriceCache")}>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={form.price_cache_per_1k ?? 0}
-            onChange={(event) => {
-              markTouched();
-              setForm({ ...form, price_cache_per_1k: Math.max(0, Number(event.target.value) || 0) });
-            }}
-          />
-        </Field>
+        <PriceFields value={form} onChange={(partial) => { markTouched(); setForm({ ...form, ...partial }); }} onValidityChange={setPricesValid} disabled={pending} />
+        <PricingRules />
+        <PriceTiersEditor value={tiers} onChange={(next) => { setTiersEdited(true); setTiers(next); }} disabled={pending} />
+        <PriceWindowsEditor value={windows} onChange={(next) => { setWindowsEdited(true); setWindows(next); }} disabled={pending} />
       </div>
       <Field label={t("routing.memberGroupLabel")}>
         <select

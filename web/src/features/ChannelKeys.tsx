@@ -177,7 +177,6 @@ export function ChannelKeysDrawer({
             {apiKeys.map((item) => {
               const meta = parseCredentialMeta(item.meta_json);
               const enabled = item.status === "enabled";
-              const usedByThisConnection = channel.credential_id === item.id;
               const label =
                 meta.name?.trim() ||
                 t("channels.apiKeyUnnamed", { id: item.id });
@@ -211,7 +210,6 @@ export function ChannelKeysDrawer({
                   key={item.id}
                   className={[
                     "credential-key-row",
-                    usedByThisConnection ? "is-bound" : "",
                     !enabled ? "is-disabled" : "",
                   ]
                     .filter(Boolean)
@@ -222,9 +220,6 @@ export function ChannelKeysDrawer({
                       <strong>{label}</strong>
                       <small>
                         {`${groupLabel} · #${item.id}`}
-                        {usedByThisConnection
-                          ? ` · ${t("channels.apiKeyUsedByConnection")}`
-                          : ""}
                         {!item.has_secret
                           ? ` · ${t("channels.apiKeyNoSecret")}`
                           : ""}

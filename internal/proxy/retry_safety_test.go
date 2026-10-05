@@ -16,7 +16,6 @@ func TestNonIdempotentWriteDoesNotRotateAPIKeys(t *testing.T) {
 	}}
 	service, db, highMemberID, _ := setupProxy(t, upstream)
 	service.SetChannelRetryTimes(3)
-	service.SetKeyPoolRotation(true)
 	member, err := db.RouteMember.GetByID(highMemberID)
 	if err != nil {
 		t.Fatal(err)

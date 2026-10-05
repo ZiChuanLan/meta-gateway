@@ -93,3 +93,58 @@ func TestFetchFailureKeepsError(t *testing.T) {
 		t.Fatalf("status = %+v, want empty latest with error", status)
 	}
 }
+
+func TestBetaOrderingAndFinalRelease(t *testing.T) {
+	for _, tc := range []struct {
+		next, current string
+		want          bool
+	}{
+		{"v1.2.3-beta.2", "v1.2.3-beta.1", true}, {"v1.2.3-beta.10", "v1.2.3-beta.2", true},
+		{"v1.2.3", "v1.2.3-beta.10", true}, {"v1.2.3-beta.10", "v1.2.3", false},
+		{"v1.2.2", "v1.2.3-beta.1", false}, {"v1.2.3-beta.1", "v1.2.3-beta.1", false},
+	} {
+		if got := IsNewer(tc.next, tc.current); got != tc.want {
+			t.Errorf("%s > %s = %v", tc.next, tc.current, got)
+		}
+	}
+}
+func TestBetaSelectionAndChannelCache(t *testing.T) {
+	original := buildinfo.Version
+	buildinfo.Version = "v1.2.3-beta.1"
+	t.Cleanup(func() { buildinfo.Version = original })
+	hits := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.URL.Path)
+		if r.URL.Path == "/repos/"+Repo+"/releases/latest" {
+			json.NewEncoder(w).Encode(releaseResponse{TagName: "v1.2.2"})
+			return
+		}
+		json.NewEncoder(w).Encode([]releaseResponse{{TagName: "v1.2.3-beta.2", Prerelease: true}, {TagName: "v1.2.3-beta.10", Prerelease: true}, {TagName: "v2.0.0-beta.1", Prerelease: true, Draft: true}, {TagName: "v8.0.0-rc.1", Prerelease: true}, {TagName: "v1.2.2"}})
+	}))
+	defer server.Close()
+	channel := "stable"
+	s := New(func() bool { return true })
+	s.baseURL = server.URL
+	s.SetChannelSource(func() string { return channel })
+	if got := s.Refresh(context.Background()); got.Latest != "v1.2.2" || got.HasUpdate {
+		t.Fatalf("stable: %+v", got)
+	}
+	channel = "beta"
+	if s.Status().Latest != "" {
+		t.Fatal("stale stable result reused")
+	}
+	got := s.RefreshIfStale(context.Background(), time.Hour)
+	if got.Latest != "v1.2.3-beta.10" || !got.HasUpdate || got.Channel != "beta" {
+		t.Fatalf("beta: %+v", got)
+	}
+	if len(hits) != 2 {
+		t.Fatal(hits)
+	}
+}
+func TestDisabledRefreshNeverFetches(t *testing.T) {
+	s := New(func() bool { return false })
+	s.baseURL = "http://127.0.0.1:1"
+	if got := s.Refresh(context.Background()); got.Err != "" || got.Latest != "" {
+		t.Fatal(got)
+	}
+}

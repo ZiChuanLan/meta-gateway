@@ -103,6 +103,17 @@ func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Reques
 		PricePrompt      *float64 `json:"price_prompt_per_1k"`
 		PriceCompletion  *float64 `json:"price_completion_per_1k"`
 		PriceCache       *float64 `json:"price_cache_per_1k"`
+		// A flat charge per call, for upstreams that sell calls rather than
+		// tokens. It was already a column the billing path reads and the store
+		// round-trips — but this handler never accepted it, so the field could
+		// be set by a test and by nothing else.
+		PricePerRequest *float64 `json:"price_per_request"`
+		// The context-length ladder and time-of-day windows travel as JSON text,
+		// the shape the columns store — the same convention mapping_json and
+		// payload_rules follow. Absent leaves them alone; an empty string clears
+		// them.
+		PriceTiers    *string `json:"price_tiers"`
+		PriceSchedule *string `json:"price_schedule"`
 	}
 	if err := decodeJSON(w, r, &req, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")
@@ -143,7 +154,8 @@ func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Reques
 	if req.Notes != nil {
 		meta.Notes = *req.Notes
 	}
-	// Self-set per-model unit prices: 0 keeps the per-key fallback billing.
+	// Self-set per-model unit prices: 0 means "no model-level price", so the
+	// layer below (a route member's own price) applies instead.
 	for _, price := range []struct {
 		name  string
 		value *float64
@@ -151,6 +163,7 @@ func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Reques
 		{"price_prompt_per_1k", req.PricePrompt},
 		{"price_completion_per_1k", req.PriceCompletion},
 		{"price_cache_per_1k", req.PriceCache},
+		{"price_per_request", req.PricePerRequest},
 	} {
 		if price.value == nil {
 			continue
@@ -168,6 +181,19 @@ func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Reques
 	}
 	if req.PriceCache != nil {
 		meta.PriceCachePer1k = *req.PriceCache
+	}
+	if req.PricePerRequest != nil {
+		meta.PricePerRequest = *req.PricePerRequest
+	}
+	if req.PriceTiers != nil {
+		meta.PriceTiers = *req.PriceTiers
+	}
+	if req.PriceSchedule != nil {
+		meta.PriceSchedule = *req.PriceSchedule
+	}
+	if err := validateModelPricing(&meta); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if err := h.db.ModelMetadata.Upsert(&meta); err != nil {
 		writeStoreError(w, err)

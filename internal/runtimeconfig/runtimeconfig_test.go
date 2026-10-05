@@ -45,6 +45,36 @@ func TestValidateBoundsAndCron(t *testing.T) {
 	}
 }
 
+func TestValidateSiteProbeCadence(t *testing.T) {
+	base := func(interval, jitter int) Editable {
+		return Editable{
+			RetryTimes: 1, CooldownSeconds: 1, CheckinCron: "0 8 * * *",
+			StableFirstDenominator: 25, StableFirstPromoteRequests: 100,
+			RoutingConcurrencyLimit: 64, WebhookThrottleSeconds: 300,
+			DefaultModelSyncMode:     "manual",
+			SiteProbeIntervalSeconds: interval, SiteProbeJitterSeconds: jitter,
+		}
+	}
+	if err := Validate(base(300, 30)); err != nil {
+		t.Fatalf("valid cadence rejected: %v", err)
+	}
+	// Zero means "unset": an older console build that does not know these fields
+	// would otherwise fail the whole settings save.
+	if err := Validate(base(0, 0)); err != nil {
+		t.Fatalf("unset cadence rejected: %v", err)
+	}
+	// Below a minute would hammer a public page for data it has not published.
+	if err := Validate(base(30, 0)); err == nil {
+		t.Fatal("expected the interval floor to be enforced")
+	}
+	if err := Validate(base(900, 4000)); err == nil {
+		t.Fatal("expected the jitter ceiling to be enforced")
+	}
+	if err := Validate(base(300, 600)); err == nil {
+		t.Fatal("expected jitter > interval to be rejected")
+	}
+}
+
 func TestBootstrapUsesEnvironmentWithoutOverride(t *testing.T) {
 	db, err := store.Open(t.TempDir())
 	if err != nil {
@@ -196,11 +226,17 @@ func TestUpdateAndClearOverride(t *testing.T) {
 		AdminRateBurst:              50,
 		AuditRetentionDays:          90,
 		AuditRetentionRows:          100000,
+		SiteProbeIntervalSeconds:    900,
+		SiteProbeJitterSeconds:      120,
 	}
 	var auditDays, auditRows int
+	var probeInterval, probeJitter time.Duration
 	controller := New(cfg, db.RuntimeSettings, Appliers{
 		SetAudit: func(days, rows int) {
 			auditDays, auditRows = days, rows
+		},
+		SetSiteProbeSchedule: func(interval, jitter time.Duration) {
+			probeInterval, probeJitter = interval, jitter
 		},
 	})
 	if err := controller.Bootstrap(); err != nil {
@@ -231,8 +267,11 @@ func TestUpdateAndClearOverride(t *testing.T) {
 		HealthSweepConcurrency:      2,
 		HealthSweepTimeoutSeconds:   10,
 		ChannelRetryTimes:           3,
-		KeyPoolRotation:             false,
 		DefaultModelSyncMode:        "auto",
+		// A site-probe cadence change is the point of this setting: the loop must
+		// receive it (applier) and survive a restart (store row).
+		SiteProbeIntervalSeconds: 300,
+		SiteProbeJitterSeconds:   15,
 	}
 	snap, err := controller.Update(next)
 	if err != nil {
@@ -244,6 +283,9 @@ func TestUpdateAndClearOverride(t *testing.T) {
 	if auditDays != 7 || auditRows != 500 {
 		t.Fatalf("audit not applied days=%d rows=%d", auditDays, auditRows)
 	}
+	if probeInterval != 300*time.Second || probeJitter != 15*time.Second {
+		t.Fatalf("site probe cadence not applied: %v/%v", probeInterval, probeJitter)
+	}
 	persisted, err := db.RuntimeSettings.Get()
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +295,8 @@ func TestUpdateAndClearOverride(t *testing.T) {
 		persisted.HealthSweepJitterSeconds != 5 || persisted.HealthSweepDegradedMs != 1000 ||
 		persisted.HealthSweepConcurrency != 2 || persisted.HealthSweepTimeoutSeconds != 10 ||
 		persisted.ChannelRetryTimes != 3 || persisted.KeyPoolRotation != 0 ||
-		persisted.DefaultModelSyncMode != "auto" {
+		persisted.DefaultModelSyncMode != "auto" ||
+		persisted.SiteProbeIntervalSeconds != 300 || persisted.SiteProbeJitterSeconds != 15 {
 		t.Fatalf("runtime policy persistence mismatch: %+v", persisted)
 	}
 	cleared, err := controller.ClearOverride()
@@ -265,6 +308,15 @@ func TestUpdateAndClearOverride(t *testing.T) {
 	}
 	if cleared.Editable.DefaultModelSyncMode != "manual" {
 		t.Fatalf("cleared default_model_sync_mode = %q, want manual", cleared.Editable.DefaultModelSyncMode)
+	}
+	// Clearing the override must hand the cadence back to the env bootstrap, not
+	// leave the loop on the override value.
+	if cleared.Editable.SiteProbeIntervalSeconds != 900 || cleared.Editable.SiteProbeJitterSeconds != 120 {
+		t.Fatalf("cleared site probe cadence = %d/%d, want 900/120",
+			cleared.Editable.SiteProbeIntervalSeconds, cleared.Editable.SiteProbeJitterSeconds)
+	}
+	if probeInterval != 900*time.Second || probeJitter != 120*time.Second {
+		t.Fatalf("cadence after clear = %v/%v, want 15m/2m", probeInterval, probeJitter)
 	}
 }
 

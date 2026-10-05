@@ -49,9 +49,9 @@ func (s *GroupStore) Get(name string) (*domain.KeyGroup, error) {
 		clone := *cached
 		return &clone, nil
 	}
-	row := s.db.QueryRow(`SELECT name, quota_total_tokens, quota_used_tokens, rate_per_minute, rate_burst, created_at, updated_at FROM key_groups WHERE name = ?`, name)
+	row := s.db.QueryRow(`SELECT name, quota_total_tokens, quota_used_tokens, quota_total_cost, quota_used_cost, rate_per_minute, rate_burst, created_at, updated_at FROM key_groups WHERE name = ?`, name)
 	var g domain.KeyGroup
-	if err := row.Scan(&g.Name, &g.QuotaTotalTokens, &g.QuotaUsedTokens, &g.RatePerMinute, &g.RateBurst, scanTime(&g.CreatedAt), scanTime(&g.UpdatedAt)); err != nil {
+	if err := row.Scan(&g.Name, &g.QuotaTotalTokens, &g.QuotaUsedTokens, &g.QuotaTotalCost, &g.QuotaUsedCost, &g.RatePerMinute, &g.RateBurst, scanTime(&g.CreatedAt), scanTime(&g.UpdatedAt)); err != nil {
 		if err == sql.ErrNoRows {
 			// Absent group = unlimited, no rate limit.
 			def := &domain.KeyGroup{Name: name}
@@ -66,7 +66,7 @@ func (s *GroupStore) Get(name string) (*domain.KeyGroup, error) {
 
 // List returns every group ordered by name.
 func (s *GroupStore) List() ([]domain.KeyGroup, error) {
-	rows, err := s.db.Query(`SELECT name, quota_total_tokens, quota_used_tokens, rate_per_minute, rate_burst, created_at, updated_at FROM key_groups ORDER BY name`)
+	rows, err := s.db.Query(`SELECT name, quota_total_tokens, quota_used_tokens, quota_total_cost, quota_used_cost, rate_per_minute, rate_burst, created_at, updated_at FROM key_groups ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("group list: %w", err)
 	}
@@ -74,7 +74,7 @@ func (s *GroupStore) List() ([]domain.KeyGroup, error) {
 	var result []domain.KeyGroup
 	for rows.Next() {
 		var g domain.KeyGroup
-		if err := rows.Scan(&g.Name, &g.QuotaTotalTokens, &g.QuotaUsedTokens, &g.RatePerMinute, &g.RateBurst, scanTime(&g.CreatedAt), scanTime(&g.UpdatedAt)); err != nil {
+		if err := rows.Scan(&g.Name, &g.QuotaTotalTokens, &g.QuotaUsedTokens, &g.QuotaTotalCost, &g.QuotaUsedCost, &g.RatePerMinute, &g.RateBurst, scanTime(&g.CreatedAt), scanTime(&g.UpdatedAt)); err != nil {
 			return nil, fmt.Errorf("group scan: %w", err)
 		}
 		result = append(result, g)
@@ -82,21 +82,24 @@ func (s *GroupStore) List() ([]domain.KeyGroup, error) {
 	return result, rows.Err()
 }
 
-// Upsert creates or updates a group's quota/rate limits.
-func (s *GroupStore) Upsert(name string, quotaTotal int64, ratePerMinute, rateBurst int) error {
+// Upsert creates or updates a group's quota/rate limits. quotaTotalCost is the
+// group's spend budget in the ledger's unit (0 = unlimited); it lives beside
+// the token quota and is enforced at the same time.
+func (s *GroupStore) Upsert(name string, quotaTotal int64, quotaTotalCost float64, ratePerMinute, rateBurst int) error {
 	name = normalizeGroupName(name)
 	if name == "" {
 		return fmt.Errorf("group upsert: empty name")
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO key_groups (name, quota_total_tokens, quota_used_tokens, rate_per_minute, rate_burst, created_at, updated_at)
-		 VALUES (?, ?, 0, ?, ?, datetime('now'), datetime('now'))
+		`INSERT INTO key_groups (name, quota_total_tokens, quota_used_tokens, quota_total_cost, quota_used_cost, rate_per_minute, rate_burst, created_at, updated_at)
+		 VALUES (?, ?, 0, ?, 0, ?, ?, datetime('now'), datetime('now'))
 		 ON CONFLICT(name) DO UPDATE SET
 		   quota_total_tokens = excluded.quota_total_tokens,
+		   quota_total_cost = excluded.quota_total_cost,
 		   rate_per_minute = excluded.rate_per_minute,
 		   rate_burst = excluded.rate_burst,
 		   updated_at = datetime('now')`,
-		name, quotaTotal, ratePerMinute, rateBurst,
+		name, quotaTotal, quotaTotalCost, ratePerMinute, rateBurst,
 	); err != nil {
 		return fmt.Errorf("group upsert: %w", err)
 	}
@@ -132,7 +135,11 @@ func (s *GroupStore) mutationEpochSnapshot() uint64 {
 	return s.mutationEpoch
 }
 
-func (s *GroupStore) setCachedUsageIfEpoch(name string, used int64, epoch uint64) {
+// setCachedUsageIfEpoch publishes the committed counters into the cached group.
+// Money is published exactly like tokens: the relay reads this cached object
+// for its group-quota check, so syncing only the token counter would leave a
+// group's spend budget frozen at whatever it was when the row was cached.
+func (s *GroupStore) setCachedUsageIfEpoch(name string, used int64, usedCost float64, epoch uint64) {
 	name = normalizeGroupName(name)
 	if name == "" || used < 0 {
 		return
@@ -143,8 +150,13 @@ func (s *GroupStore) setCachedUsageIfEpoch(name string, used int64, epoch uint64
 		return
 	}
 	s.generation++
-	if cached, ok := s.cache[name]; ok && used > cached.QuotaUsedTokens {
-		cached.QuotaUsedTokens = used
+	if cached, ok := s.cache[name]; ok {
+		if used > cached.QuotaUsedTokens {
+			cached.QuotaUsedTokens = used
+		}
+		if usedCost > cached.QuotaUsedCost {
+			cached.QuotaUsedCost = usedCost
+		}
 	}
 }
 

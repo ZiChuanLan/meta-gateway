@@ -23,16 +23,18 @@ function json(body: unknown, status = 200) {
 }
 
 function mockBackend(options: {
-  items?: Array<{ channel_id: number; channel_name: string; source: string }>;
+  items?: Array<{ channel_id: number; channel_name: string; source: string; model?: string }>;
 } = {}) {
   const attach = vi.fn((body: Record<string, unknown>) => json({
     // The server reports what it actually did; the dialog surfaces both counts.
     added: (body.channel_ids as number[]).length,
     skipped: 0,
   }));
+  const previews: URL[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const path = new URL(String(input), "http://localhost").pathname;
-    if (path === "/admin/discovery/model-channels") {
+    const url = new URL(String(input), "http://localhost");
+    if (url.pathname === "/admin/discovery/model-channels") {
+      previews.push(url);
       return json({
         items: options.items ?? [
           { channel_id: 11, channel_name: "serving", source: "models_csv" },
@@ -40,12 +42,12 @@ function mockBackend(options: {
         ],
       });
     }
-    if (path === "/admin/routes/1/auto-match") {
+    if (url.pathname === "/admin/routes/1/auto-match") {
       return attach(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
     }
     return json({});
   }));
-  return { attach };
+  return { attach, previews };
 }
 
 function renderDialog({
@@ -99,6 +101,7 @@ describe("auto-match members dialog", () => {
     expect(backend.attach.mock.calls[0]?.[0]).toEqual({
       channel_ids: [11, 12],
       group_name: "default",
+      match: "exact",
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
@@ -116,6 +119,41 @@ describe("auto-match members dialog", () => {
     expect(backend.attach.mock.calls[0]?.[0]).toEqual({
       channel_ids: [11],
       group_name: "blue",
+      match: "exact",
+    });
+  });
+
+  // A route named after the base model usually needs the channels that list a
+  // -variant instead: they serve the model in practice while the bare name
+  // never appears in their list. The dialog must ask for that scope AND show
+  // which name the member will forward as, since the two differ.
+  it("widens to the related scope and names the matched variant", async () => {
+    const backend = mockBackend({
+      items: [
+        { channel_id: 11, channel_name: "serving", source: "models_csv" },
+        {
+          channel_id: 13,
+          channel_name: "variant-only",
+          source: "models_csv",
+          model: "deepseek-v4-flash-free",
+        },
+      ],
+    });
+    renderDialog();
+    await screen.findByText("serving");
+
+    fireEvent.click(screen.getByRole("radio", { name: /Related:/ }));
+    expect(await screen.findByText("matched deepseek-v4-flash-free")).toBeInTheDocument();
+    // The scope reaches the server on the preview request, not only on attach.
+    await waitFor(() =>
+      expect(backend.previews.at(-1)?.searchParams.get("match")).toBe("related"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Attach 2 channel(s)" }));
+    await waitFor(() => expect(backend.attach).toHaveBeenCalledOnce());
+    expect(backend.attach.mock.calls[0]?.[0]).toMatchObject({
+      channel_ids: [11, 13],
+      match: "related",
     });
   });
 

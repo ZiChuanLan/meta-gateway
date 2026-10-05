@@ -12,7 +12,7 @@ export type ThemeChromeProps = {
   onThemeChange: () => void;
   onSearch: () => void;
   onDisconnect: () => void;
-  health: { healthy: number; total: number; loading: boolean };
+  health: { healthy: number; total: number; loading: boolean; available?: boolean };
   tone: "idle" | "ok" | "down" | "warn";
   update?: UpdateCheckStatus;
   collapsed: boolean;

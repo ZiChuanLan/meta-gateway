@@ -1,3 +1,5 @@
+import { ModelWorkspaceLayout } from "./models/ModelWorkspaceLayout";
+import { ModelDirectoryToolbar } from "../components/ModelDirectoryToolbar";
 import {
   ListChecks,
   Activity,
@@ -12,7 +14,6 @@ import {
   Plus,
   Power,
   RotateCcw,
-  Search,
   Shield,
   SlidersHorizontal,
   Sparkles,
@@ -26,6 +27,7 @@ import { useEffect, useMemo, useState, type FocusEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
+  ModelMatchMode,
   ModelMetadata,
   Route,
   RouteMember,
@@ -56,8 +58,8 @@ import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { TryPanel } from "./TryPanel";
+import { MemberModelsPage as MemberModels } from "./MemberModelsPage";
 import { positiveId } from "../lib/positiveId";
-import { formatTokens } from "../lib/format";
 import { useCooldownExpiry } from "../lib/cooldownClock";
 import { modelGroup } from "./models/modelGroups";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
@@ -66,9 +68,11 @@ import { MemberDialog } from "./models/MemberDialog";
 import { UnifyDialog } from "./models/UnifyDialog";
 import { UnifyHistory } from "./models/UnifyHistory";
 import { ProbeDialog } from "./models/ProbeDialog";
+import { SiteProbeDialog } from "./models/SiteProbeDialog";
 import { ModelChangesPanel } from "./models/ModelChangesPanel";
 import { AutoMatchMembersDialog } from "./models/AutoMatchMembersDialog";
 import { CapabilityRegistryDialog } from "./models/CapabilityRegistry";
+import { ModelDirectoryTable } from "./models/ModelDirectoryTable";
 
 function readMissingDismissed() {
   try {
@@ -124,6 +128,7 @@ const ROUTING_INVALIDATE_KEYS = [
   ["channel-overviews"],
   ["models"],
   ["explain"],
+  ["model-pricing"],
 ] as const;
 
 /**
@@ -131,7 +136,23 @@ const ROUTING_INVALIDATE_KEYS = [
  * Default: which models are available and which upstream serves them.
  * Advanced routing (priority/weight/explain) stays behind one toggle.
  */
+/**
+ * The models page, split by role.
+ *
+ * Data containers remain separate to enforce scoped requests. Both share the
+ * directory/detail layout, catalogue table, search and pricing presentation.
+ * Staff edit the gateway's
+ * routes and members, while a member reads the catalogue they may call and
+ * arranges their own order. Separate components on purpose — a member runs no
+ * queries against the admin endpoints, so there is nothing to guard at request
+ * time and no hooks that would differ between the two branches.
+ */
 export function Models() {
+  const { role } = useSession();
+  return role === "member" ? <MemberModels /> : <AdminModels />;
+}
+
+function AdminModels() {
   const { t } = useI18n();
   const [params] = useSearchParams();
   const modelParam = params.get("model")?.trim() ?? "";
@@ -305,6 +326,7 @@ function ModelCatalog({
   const [unifyOpen, setUnifyOpen] = useState(false);
   const [unifyHistoryOpen, setUnifyHistoryOpen] = useState(false);
   const [probeOpen, setProbeOpen] = useState(false);
+  const [siteProbeOpen, setSiteProbeOpen] = useState(false);
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   /** Route whose "attach every channel serving this model" preview is open. */
   const [autoMatchRoute, setAutoMatchRoute] = useState<Route | null>(null);
@@ -620,7 +642,12 @@ function ModelCatalog({
   const editingMembers = editingOverview?.members ?? [];
 
   const save = useAdminMutation({
-    mutationFn: (value: Partial<Route>) =>
+    mutationFn: (
+      value: Partial<Route> & {
+        auto_match_channel_ids?: number[];
+        auto_match_mode?: ModelMatchMode;
+      },
+    ) =>
       value.id
         ? service.updateRoute(value.id, value)
         : service.createRoute(value),
@@ -897,14 +924,16 @@ function ModelCatalog({
 
   const delMeta = useAdminMutation({
     mutationFn: (name: string) => service.deleteModelMetadata(name),
-    invalidateKeys: [["model-metadata"]],
+    invalidateKeys: [["model-metadata"], ["model-pricing"]],
     toastOnError: false,
+    onSuccess: () => setEditMeta(null),
   });
   const saveMeta = useAdminMutation({
     mutationFn: (value: ModelMetadata) =>
       service.upsertModelMetadata(value.model_name, value),
-    invalidateKeys: [["model-metadata"]],
+    invalidateKeys: [["model-metadata"], ["model-pricing"]],
     toastOnError: false,
+    onSuccess: () => setEditMeta(null),
   });
 
   const modelActions = (
@@ -1166,6 +1195,7 @@ function ModelCatalog({
               </Button>
               <ActionMenu label={t("modelsPage.tools")} items={[
                 { key: "capabilities", label: t("workbench.cap.title"), icon: <SlidersHorizontal size={14} />, onSelect: () => setCapabilitiesOpen(true) },
+                { key: "site-probe", label: t("modelsPage.siteProbe.title"), icon: <Activity size={14} />, onSelect: () => setSiteProbeOpen(true) },
                 { key: "unify", label: t("modelsPage.unify.action"), icon: <Combine size={14} />, onSelect: () => setUnifyOpen(true) },
                 { key: "history", label: t("modelsPage.unify.history.action"), icon: <History size={14} />, onSelect: () => setUnifyHistoryOpen(true) },
                 { key: "upstream-changes", label: t("modelChanges.title"), icon: <RefreshCw size={14} />, onSelect: () => setChangesOpenRequest((value) => value + 1) },
@@ -1181,29 +1211,19 @@ function ModelCatalog({
                 {t("routing.addRoute")}
               </Button>
       </PageActions>
-      <div className="split models-split">
+      <ModelWorkspaceLayout directory={
         <Panel
           className="ops-list-panel model-directory"
           title={t("modelsPage.listTitle")}
         >
-          <div className="models-simple-toolbar">
-            <label className="directory-search models-search">
-              <Search size={14} aria-hidden="true" />
-              <input
-                value={query}
-                onChange={(event) => {
-                  const nextQuery = event.target.value;
-                  setQuery(nextQuery);
-                  const next = new URLSearchParams(params);
-                  if (nextQuery) next.set("model", nextQuery);
-                  else next.delete("model");
-                  next.delete("route");
-                  setSearchParams(next, { replace: true });
-                }}
-                placeholder={t("routing.searchPlaceholder")}
-                aria-label={t("routing.searchPlaceholder")}
-              />
-            </label>
+          <ModelDirectoryToolbar value={query} label={t("routing.searchPlaceholder")} onChange={(nextQuery) => {
+            setQuery(nextQuery);
+            const next = new URLSearchParams(params);
+            if (nextQuery) next.set("model", nextQuery);
+            else next.delete("model");
+            next.delete("route");
+            setSearchParams(next, { replace: true });
+          }}>
             <Button variant="quiet" aria-expanded={showModelFilters} onClick={() => setShowModelFilters(!showModelFilters)}>
               {activeFilterCount > 0
                 ? t("modelsPage.filtersActive", { n: activeFilterCount })
@@ -1266,7 +1286,7 @@ function ModelCatalog({
               <option value="disabled">{t("common.disabled")}</option>
             </select>
             </div>
-          </div>
+          </ModelDirectoryToolbar>
 
           <EntityState
             isLoading={overviews.isPending}
@@ -1368,64 +1388,50 @@ function ModelCatalog({
                 </div>
               ) : null}
               <div className="table-wrap model-directory-wrap">
-                <table className={bulkMode ? "model-directory-table is-bulk" : "model-directory-table"}>
-                  <thead>
-                    <tr>
-                      {bulkMode ? (
-                        <th className="bulk-cell">
-                          <input
-                            type="checkbox"
-                            aria-label={t("modelsPage.bulkSelectPage")}
-                            checked={pageAllSelected}
-                            onChange={selectAllPage}
-                          />
-                        </th>
-                      ) : null}
-                      <th>{t("common.model")}</th>
-                      <th className="model-upstream-header">{t("modelsPage.col.upstream")}</th>
-                      <th className="status-col">{t("common.status")}</th>
-                      <th className="actions">{t("common.actions")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Plugin-answered models have no route and no members, so
-                        they cannot be selected or opened like a route. They
-                        are still real callable names — the downstream
-                        catalogue advertises them — so they belong in this list
-                        with the plugin named as their owner. */}
-                    {(query.trim()
+                {/* The directory rows themselves are shared with the member
+                    app's catalogue (ModelDirectoryTable): same name cell, same
+                    badges, same column semantics. The console supplies the
+                    operator cells — upstream links, per-route menus, bulk
+                    checkboxes — through the row slots. */}
+                <ModelDirectoryTable
+                  className={bulkMode ? "model-directory-table is-bulk" : "model-directory-table"}
+                  showUpstream
+                  bulkMode={bulkMode}
+                  bulkHeader={
+                    <input
+                      type="checkbox"
+                      aria-label={t("modelsPage.bulkSelectPage")}
+                      checked={pageAllSelected}
+                      onChange={selectAllPage}
+                    />
+                  }
+                  onBulkCellClick={(event) => event.stopPropagation()}
+                  rows={[
+                    // Plugin-answered models have no route and no members, so
+                    // they cannot be selected or opened like a route. They are
+                    // still real callable names — the downstream catalogue
+                    // advertises them — so they belong in this list with the
+                    // plugin named as their owner.
+                    ...(query.trim()
                       ? virtualModels.filter((item) =>
                           item.model.toLowerCase().includes(query.trim().toLowerCase()),
                         )
                       : virtualModels
-                    ).map((item) => (
-                      <tr key={`plugin-model-${item.model}`} className="is-plugin-model">
-                        {bulkMode ? <td className="bulk-cell" /> : null}
-                        <td className="model-row-name">
-                          <strong className="mono" title={item.model}>
-                            {item.model}
-                          </strong>
-                          <span className="model-meta-badge is-group">
-                            {t("modelsPage.pluginModel")}
-                          </span>
-                        </td>
-                        <td className="model-row-upstream">
-                          <span className="plugin-model-owner">{item.pluginName}</span>
-                        </td>
-                        <td className="status-col model-row-status">
-                          <StatusBadge value="enabled" />
-                        </td>
-                        <td className="actions">
-                          <Button
-                            variant="quiet"
-                            onClick={() => navigate(pluginPageOf(item.pluginId))}
-                          >
-                            {t("modelsPage.pluginModelOpen")}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                    {pageRows.map((item) => {
+                    ).map((item) => ({
+                      name: item.model,
+                      group: t("modelsPage.pluginModel"),
+                      upstream: <span className="plugin-model-owner">{item.pluginName}</span>,
+                      status: "enabled" as const,
+                      actions: (
+                        <Button
+                          variant="quiet"
+                          onClick={() => navigate(pluginPageOf(item.pluginId))}
+                        >
+                          {t("modelsPage.pluginModelOpen")}
+                        </Button>
+                      ),
+                    })),
+                    ...pageRows.map((item) => {
                       const active = item.route.id === selected;
                       const meta = metaByModel.get(item.route.model_pattern);
                       const group = modelGroup(
@@ -1440,145 +1446,93 @@ function ModelCatalog({
                       const rowBusy =
                         toggleRoute.pendingId === item.route.id ||
                         del.isPending;
-                      return (
-                        <tr
-                          key={item.route.id}
-                          tabIndex={0}
-                          className={`is-clickable${active ? " is-selected" : ""}`}
-                          onClick={() => selectRow(item.route.id)}
-                          onContextMenu={(event) => {
-                            const point = rowContextPoint(event);
-                            if (!point) return;
-                            selectRow(item.route.id);
-                            setContextMenu({
-                              routeId: item.route.id,
-                              ...point,
-                            });
-                          }}
-                          onKeyDown={(event) => {
-                            const point = rowKeyboardContextPoint(event);
-                            if (point) { selectRow(item.route.id); setContextMenu({ routeId: item.route.id, ...point }); }
-                          }}
-                        >
-                          {bulkMode ? (
-                            <td
-                              className="bulk-cell"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              <input
-                                type="checkbox"
-                                aria-label={t("modelsPage.bulkSelectOne", {
-                                  model: item.route.model_pattern,
-                                })}
-                                checked={bulkSelected.has(item.route.id)}
-                                onChange={() => toggleBulkSelected(item.route.id)}
-                              />
-                            </td>
-                          ) : null}
-                          <td className="model-row-name">
-                            <strong className="mono" title={item.route.model_pattern}>
-                              {item.route.model_pattern}
-                            </strong>
-                            <small className="model-nav-provider">{head ? head.channel.name : t("modelsPage.noUpstream")}</small>
-                            <span className="model-meta-badge is-group">
-                              {group}
-                            </span>
-                            {item.route.image_edit_shim ? (
-                              // Only meaningful on routes whose model has no
-                              // images endpoint of its own, so it stays a hint
-                              // rather than a status.
-                              <span
-                                className="model-meta-badge is-shim"
-                                title={t("routing.imageEditShimHint")}
-                              >
-                                {t("modelsPage.metaImageEdit")}
-                              </span>
-                            ) : null}
-                            {(() => {
-                              if (!meta) return null;
-                              return (
-                                <span className="model-meta-badges">
-                                  {meta.context_window > 0 ? (
-                                    <span
-                                      className="model-meta-badge"
-                                      title={t("modelsPage.metaCtx")}
-                                    >
-                                      {formatTokens(meta.context_window)}
-                                    </span>
-                                  ) : null}
-                                  {meta.supports_thinking > 0 ? (
-                                    <span
-                                      className="model-meta-badge is-thinking"
-                                      title={t("modelsPage.metaThinking")}
-                                    >
-                                      {t("modelsPage.metaThinkingShort")}
-                                    </span>
-                                  ) : null}
-                                  {meta.vendor ? (
-                                    <span
-                                      className="model-meta-badge"
-                                      title={t("modelsPage.metaVendor")}
-                                    >
-                                      {meta.vendor}
-                                    </span>
-                                  ) : null}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="model-row-upstream">
-                            {head ? (
-                              <>
-                                <Link
-                                  to={`/channels?channel=${head.channel.id}`}
-                                  className="upstream-link"
-                                  title={t("modelsPage.openChannelHint")}
-                                  onClick={(event) => {
-                                    // Don't trigger the row's selectRow when
-                                    // jumping straight to the channel editor.
-                                    event.stopPropagation();
-                                  }}
-                                >
-                                  {head.channel.name}
-                                </Link>
-                                {item.members.length > 1
-                                  ? ` +${item.members.length - 1}`
-                                  : ""}
-                              </>
-                            ) : (
-                              <span className="muted">
-                                {t("modelsPage.noUpstream")}
-                              </span>
-                            )}
-                          </td>
-                          <td className="status-col model-row-status">
-                            <StatusBadge
-                              value={
-                                !item.route.enabled
-                                  ? "disabled"
-                                  : ready > 0
-                                    ? "ready"
-                                    : "unverified"
-                              }
-                            />
-                          </td>
-                          <td
-                            className="actions row-actions"
-                            onClick={(event) => event.stopPropagation()}
+                      return {
+                        name: item.route.model_pattern,
+                        group,
+                        provider: (
+                          <small className="model-nav-provider">
+                            {head ? head.channel.name : t("modelsPage.noUpstream")}
+                          </small>
+                        ),
+                        badges: item.route.image_edit_shim ? (
+                          // Only meaningful on routes whose model has no
+                          // images endpoint of its own, so it stays a hint
+                          // rather than a status.
+                          <span
+                            className="model-meta-badge is-shim"
+                            title={t("routing.imageEditShimHint")}
                           >
-                            <ActionMenu
-                              compact
-                              label={t("common.moreActions")}
-                              title={item.route.model_pattern}
-                              disabled={rowBusy}
-                              items={modelActions(item.route)}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            {t("modelsPage.metaImageEdit")}
+                          </span>
+                        ) : undefined,
+                        contextWindow: meta?.context_window,
+                        supportsThinking: (meta?.supports_thinking ?? 0) > 0,
+                        vendor: meta?.vendor || undefined,
+                        upstream: head ? (
+                          <>
+                            <Link
+                              to={`/channels?channel=${head.channel.id}`}
+                              className="upstream-link"
+                              title={t("modelsPage.openChannelHint")}
+                              onClick={(event) => {
+                                // Don't trigger the row's selectRow when
+                                // jumping straight to the channel editor.
+                                event.stopPropagation();
+                              }}
+                            >
+                              {head.channel.name}
+                            </Link>
+                            {item.members.length > 1
+                              ? ` +${item.members.length - 1}`
+                              : ""}
+                          </>
+                        ) : (
+                          <span className="muted">{t("modelsPage.noUpstream")}</span>
+                        ),
+                        status: !item.route.enabled
+                          ? ("disabled" as const)
+                          : ready > 0
+                            ? ("ready" as const)
+                            : ("unverified" as const),
+                        actions: (
+                          <ActionMenu
+                            compact
+                            label={t("common.moreActions")}
+                            title={item.route.model_pattern}
+                            disabled={rowBusy}
+                            items={modelActions(item.route)}
+                          />
+                        ),
+                        tabIndex: 0,
+                        className: `is-clickable${active ? " is-selected" : ""}`,
+                        bulkCell: bulkMode ? (
+                          <input
+                            type="checkbox"
+                            aria-label={t("modelsPage.bulkSelectOne", {
+                              model: item.route.model_pattern,
+                            })}
+                            checked={bulkSelected.has(item.route.id)}
+                            onChange={() => toggleBulkSelected(item.route.id)}
+                          />
+                        ) : null,
+                        onClick: () => selectRow(item.route.id),
+                        onContextMenu: (event: React.MouseEvent<HTMLElement>) => {
+                          const point = rowContextPoint(event);
+                          if (!point) return;
+                          selectRow(item.route.id);
+                          setContextMenu({
+                            routeId: item.route.id,
+                            ...point,
+                          });
+                        },
+                        onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+                          const point = rowKeyboardContextPoint(event);
+                          if (point) { selectRow(item.route.id); setContextMenu({ routeId: item.route.id, ...point }); }
+                        },
+                      };
+                    }),
+                  ]}
+                />
               </div>
             </ListShell>
             {contextMenu
@@ -1611,9 +1565,8 @@ function ModelCatalog({
               : null}
           </EntityState>
         </Panel>
-
-        <div className="detail-card ops-detail-card is-compact">
-          {!selectedRoute || !selectedOverview ? (
+        } detail={
+          !selectedRoute || !selectedOverview ? (
             <div className="detail-empty">{t("modelsPage.selectHint")}</div>
           ) : (
             <>
@@ -1821,15 +1774,15 @@ function ModelCatalog({
                       </Button>
                     </div>
                   ) : null}
-				  {reorderMembers.isPending ? (
-				    <div className="routing-reorder-hint">
-				      <span>
-				        {reorderMembers.isPending
-				          ? t("routing.savingOrder")
-				          : t("routing.reorderHint")}
-				      </span>
-				    </div>
-				  ) : null}
+          {reorderMembers.isPending ? (
+            <div className="routing-reorder-hint">
+              <span>
+                {reorderMembers.isPending
+                  ? t("routing.savingOrder")
+                  : t("routing.reorderHint")}
+              </span>
+            </div>
+          ) : null}
                   <div className="member-group-tabs">
                     <div
                       className="member-group-tablist"
@@ -1844,12 +1797,17 @@ function ModelCatalog({
                             key={name}
                             className={`member-group-tab${active ? " is-active" : ""}`}
                           >
-                            <button
-                              type="button"
-                              role="tab"
-                              aria-selected={active}
-                              onClick={() => setActiveGroup(name)}
-                            >
+                                  <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                title={
+                  count === 0
+                    ? t("routing.groupEmptyHint")
+                    : undefined
+                }
+                onClick={() => setActiveGroup(name)}
+              >
                               <span className="member-group-tab-main">
                                 {name === "default"
                                   ? t("routing.groupDefault")
@@ -2172,11 +2130,11 @@ function ModelCatalog({
                                           : t("routing.financeCalls", {
                                               calls: info.calls,
                                             })}
-										{info.fixed
-										  ? t("routing.financeUnitCalls")
-										  : t("routing.financeUnitM")}
-									  </span>
-									</>
+                    {info.fixed
+                      ? t("routing.financeUnitCalls")
+                      : t("routing.financeUnitM")}
+                    </span>
+                  </>
                                   );
                                 })()
                               ) : (
@@ -2446,15 +2404,17 @@ function ModelCatalog({
               </div>
               </details>
             </>
-          )}
-        </div>
-      </div>
+          )
+        } />
 
       {unifyOpen ? <UnifyDialog onClose={() => setUnifyOpen(false)} /> : null}
       {unifyHistoryOpen ? (
         <UnifyHistory onClose={() => setUnifyHistoryOpen(false)} />
       ) : null}
       {probeOpen ? <ProbeDialog onClose={() => setProbeOpen(false)} /> : null}
+      {siteProbeOpen ? (
+        <SiteProbeDialog onClose={() => setSiteProbeOpen(false)} />
+      ) : null}
       {capabilitiesOpen ? (
         <CapabilityRegistryDialog onClose={() => setCapabilitiesOpen(false)} />
       ) : null}
@@ -2491,8 +2451,8 @@ function ModelCatalog({
       {editMeta ? (
         <ModelMetadataDialog
           value={editMeta}
-          pending={saveMeta.isPending}
-          error={saveMeta.error}
+          pending={saveMeta.isPending || delMeta.isPending}
+          error={saveMeta.error ?? delMeta.error}
           onClose={() => setEditMeta(null)}
           onSave={(value) => saveMeta.mutate(value)}
           onDelete={

@@ -40,7 +40,7 @@ func TestMemberPricesResolvesTheExactMember(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prompt, completion, _, found, err := db.RouteMember.MemberPrices(cheapID)
+	prompt, completion, _, _, found, err := db.RouteMember.MemberPrices(cheapID)
 	if err != nil || !found {
 		t.Fatalf("cheap lookup: found=%v err=%v", found, err)
 	}
@@ -48,7 +48,7 @@ func TestMemberPricesResolvesTheExactMember(t *testing.T) {
 		t.Fatalf("default-group member billed %v/%v, want 1/1 (sibling group leaked in)", prompt, completion)
 	}
 
-	prompt, completion, _, found, err = db.RouteMember.MemberPrices(vipID)
+	prompt, completion, _, _, found, err = db.RouteMember.MemberPrices(vipID)
 	if err != nil || !found {
 		t.Fatalf("vip lookup: found=%v err=%v", found, err)
 	}
@@ -57,7 +57,7 @@ func TestMemberPricesResolvesTheExactMember(t *testing.T) {
 	}
 
 	// An unknown member reports found=false (fall through to the next layer).
-	if _, _, _, found, err = db.RouteMember.MemberPrices(cheapID + vipID + 999); err != nil || found {
+	if _, _, _, _, found, err = db.RouteMember.MemberPrices(cheapID + vipID + 999); err != nil || found {
 		t.Fatalf("unknown member: found=%v err=%v", found, err)
 	}
 }

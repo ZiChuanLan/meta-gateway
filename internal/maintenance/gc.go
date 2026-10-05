@@ -176,8 +176,9 @@ func (s *GCService) run() {
 		log.Printf("maintenance: gc pass failed: %v", err)
 		return
 	}
-	log.Printf("maintenance: gc pass deleted route_members=%d proxy_logs=%d discovered=%d checkin_logs=%d usage=%d balance=%d decision=%d health=%d blocks=%d redemptions=%d error_rules=%d vacuumed=%v freed_bytes=%d",
+	log.Printf("maintenance: gc pass deleted route_members=%d proxy_logs=%d discovered=%d checkin_logs=%d usage=%d balance=%d decision=%d health=%d blocks=%d redemptions=%d error_rules=%d site_probe_runs=%d site_probe_samples=%d vacuumed=%v freed_bytes=%d",
 		res.RouteMembers, res.ProxyLogs, res.Discovered, res.CheckinLogs, res.UsageRecords,
 		res.BalanceHistory, res.DecisionSnaps, res.HealthHistory,
-		res.ModelBlocks, res.Redemptions, res.ErrorRules, res.Vacuumed, res.VacuumFreedBytes)
+		res.ModelBlocks, res.Redemptions, res.ErrorRules, res.SiteProbeRuns, res.SiteProbeSamples,
+		res.Vacuumed, res.VacuumFreedBytes)
 }

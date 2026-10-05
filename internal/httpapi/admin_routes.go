@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/domain"
+	"github.com/lan/meta-gateway/internal/store"
 )
 
 // maxRouteGroupNameLen caps route member group names (trimmed).
@@ -41,9 +42,13 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 	// auto_match_channel_ids is a create-time directive, not route state: it
 	// attaches one member per listed channel that verifiably serves the model,
 	// then disappears. The store intersects the ids with the current match set.
+	// auto_match_mode widens that check from "serves this exact name" to "serves
+	// this name or one of its -sibling variants", rewriting the member's
+	// upstream name to whichever it found.
 	var body struct {
 		domain.Route
 		AutoMatchChannelIDs []int64 `json:"auto_match_channel_ids"`
+		AutoMatchMode       string  `json:"auto_match_mode"`
 	}
 	if err := decodeJSON(w, r, &body, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -64,7 +69,7 @@ func (h *AdminHandler) createRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	// Pins are only meaningful on an existing route (members exist first), so
 	// creating a route in single mode without a pin is accepted as auto-fall-back.
-	id, _, err := h.db.CreateRouteWithAutoMatch(&rt, body.AutoMatchChannelIDs)
+	id, _, err := h.db.CreateRouteWithAutoMatch(&rt, body.AutoMatchChannelIDs, store.ParseModelMatchMode(body.AutoMatchMode))
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -114,14 +119,19 @@ func (h *AdminHandler) autoMatchRouteMembers(w http.ResponseWriter, r *http.Requ
 		// Empty is the 'default' group, matching how members are named
 		// everywhere else.
 		GroupName string `json:"group_name"`
+		// Match widens (or keeps) the model check: "related" also accepts the
+		// pattern's -sibling models, and rewrites the upstream name to whatever
+		// the channel actually serves.
+		Match string `json:"match"`
 	}
 	if err := decodeJSON(w, r, &body, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
+	mode := store.ParseModelMatchMode(body.Match)
 	ids := body.ChannelIDs
 	if len(ids) == 0 {
-		matches, err := h.db.ChannelsWithModel(rt.ModelPattern)
+		matches, err := h.db.ChannelsMatchingModel(rt.ModelPattern, mode)
 		if err != nil {
 			writeStoreError(w, err)
 			return
@@ -131,7 +141,7 @@ func (h *AdminHandler) autoMatchRouteMembers(w http.ResponseWriter, r *http.Requ
 			ids = append(ids, match.ChannelID)
 		}
 	}
-	added, skipped, err := h.db.AttachChannelsToRoute(id, rt.ModelPattern, ids, body.GroupName)
+	added, skipped, err := h.db.AttachChannelsToRoute(id, rt.ModelPattern, mode, ids, body.GroupName)
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -268,6 +278,10 @@ func (h *AdminHandler) createRouteMember(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "group name too long")
 		return
 	}
+	if err := validateMemberPricing(&rm); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	id, err := h.db.RouteMember.Create(&rm)
 	if err != nil {
 		writeStoreError(w, err)
@@ -302,6 +316,10 @@ func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request)
 	}
 	if _, ok := validateRouteGroup(rm.GroupName); !ok {
 		writeError(w, http.StatusBadRequest, "group name too long")
+		return
+	}
+	if err := validateMemberPricing(&rm); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := h.db.RouteMember.Update(&rm); err != nil {

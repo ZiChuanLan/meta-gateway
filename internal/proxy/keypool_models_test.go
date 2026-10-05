@@ -313,7 +313,6 @@ func TestRelayUsesKeyThatServesModel(t *testing.T) {
 	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
 	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, firstRandom{})
 	service := New(selector, recorder, db, enc, 2, time.Minute)
-	service.SetKeyPoolRotation(true)
 	service.now = func() time.Time { return now }
 
 	result := service.ChatCompletions(context.Background(), Request{
@@ -385,7 +384,6 @@ func TestRelayResolvesKeysForAliasedModel(t *testing.T) {
 	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
 	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, firstRandom{})
 	service := New(selector, relay, db, enc, 2, time.Minute)
-	service.SetKeyPoolRotation(true)
 	service.now = func() time.Time { return now }
 
 	result := service.ChatCompletions(context.Background(), Request{
@@ -457,7 +455,6 @@ func buildPoolService(db *store.DB, enc *crypto.Encrypter) (*Service, error) {
 	now := time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)
 	selector := routing.NewWithDependencies(db.RouteMember, fixedClock{now: now}, firstRandom{})
 	service := New(selector, &queuedRelay{}, db, enc, 2, time.Minute)
-	service.SetKeyPoolRotation(true)
 	return service, nil
 }
 

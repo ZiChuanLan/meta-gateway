@@ -25,8 +25,7 @@ type upstreamKey struct {
 // included — ordered by priority: keys sharing a priority form a tier, tiers
 // are exhausted top-down, and inside a tier the starting key rotates
 // (round-robin) so equal-priority keys share the traffic instead of pinning it
-// on the first one. With key-pool rotation disabled, only the bound key (or the
-// first pool key) is used.
+// on the first one.
 //
 // Credentials that cannot serve the requested model are skipped: a models_csv
 // allowlist that does not cover it, or — when no explicit allowlist exists — a
@@ -102,23 +101,6 @@ func (s *Service) filterAPIKeyPool(channel domain.Channel, model string) ([]upst
 		}
 		seen[credential.ID] = struct{}{}
 		usable = append(usable, *credential)
-	}
-
-	if !s.keyPoolRotation.Load() {
-		// Rotation off: never rotate through the pool — bound key first, or
-		// the first enabled pool key as a fallback.
-		if channel.CredentialID != nil {
-			bound, err := s.db.Credential.GetByID(*channel.CredentialID)
-			if err == nil {
-				appendCredential(bound)
-			}
-		} else if channel.SiteID != nil {
-			pool, err := s.db.Credential.ListEnabledAPIKeysBySite(*channel.SiteID)
-			if err == nil && len(pool) > 0 {
-				appendCredential(&pool[0])
-			}
-		}
-		return s.orderAndDecryptPool(usable)
 	}
 
 	if channel.CredentialID != nil {

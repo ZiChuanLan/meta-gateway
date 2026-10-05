@@ -184,7 +184,7 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	// Keep this in step with the newest NNN_*.sql file: it is the tripwire that
 	// catches a migration that silently failed to apply (or applied twice).
-	const wantMigrations = 108
+	const wantMigrations = 123
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -876,6 +876,15 @@ func TestCopyMemberGroupAndListNames(t *testing.T) {
 	want := []string{"X", "default"}
 	if fmt.Sprint(names) != fmt.Sprint(want) {
 		t.Fatalf("group names = %v, want %v", names, want)
+	}
+	// A member carrying no group at all belongs to 'default'. Returning it as an
+	// empty name would put a nameless entry next to the "no group" option in
+	// every pick list, which reads as a different group while meaning default.
+	if _, err := db.Exec(`UPDATE route_members SET group_name = '' WHERE id = ?`, xCh2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if names, err = db.RouteMember.ListRouteGroupNames(); err != nil || fmt.Sprint(names) != fmt.Sprint(want) {
+		t.Fatalf("group names with a blank member = %v err=%v, want %v", names, err, want)
 	}
 }
 
@@ -1785,5 +1794,41 @@ func TestChannelStableFirstNonGrayNoop(t *testing.T) {
 	promoted, err := db.Channel.RecordGraySuccess(id, 3)
 	if err != nil || promoted {
 		t.Fatalf("non-gray channel must no-op: promoted=%v err=%v", promoted, err)
+	}
+}
+
+// The site-probe cadence is the one setting an operator is most likely to want
+// to change (sites publish their probe data at very different rates), so the two
+// columns are covered the same way the health-sweep columns are: a real
+// round-trip, and an unset row that must fall back to the env bootstrap instead
+// of zeroing the loop.
+func TestRuntimeSettingsSiteProbeScheduleRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	row := &store.RuntimeSettingsRow{
+		HasOverride:              true,
+		SiteProbeIntervalSeconds: 300,
+		SiteProbeJitterSeconds:   30,
+	}
+	if err := db.RuntimeSettings.Save(row); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasOverride || got.SiteProbeIntervalSeconds != 300 || got.SiteProbeJitterSeconds != 30 {
+		t.Fatalf("site probe schedule round trip mismatch: %+v", got)
+	}
+	// A row written before these columns existed reads back as -1, which is what
+	// makes the env bootstrap win rather than the loop falling to zero.
+	if _, err := db.Exec(`INSERT OR REPLACE INTO runtime_settings (id, has_override, updated_at) VALUES (1, 1, datetime('now'))`); err != nil {
+		t.Fatal(err)
+	}
+	got, err = db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SiteProbeIntervalSeconds != -1 || got.SiteProbeJitterSeconds != -1 {
+		t.Fatalf("unset columns must read -1, got %d/%d", got.SiteProbeIntervalSeconds, got.SiteProbeJitterSeconds)
 	}
 }

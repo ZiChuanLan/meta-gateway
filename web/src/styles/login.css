@@ -22,7 +22,21 @@
 .login-orbit { position: absolute; left: 0; top: 52px; width: 340px; height: 110px; border: 1px solid var(--line-strong); border-radius: 50%; transform: rotate(-19deg); opacity: .55; }
 .login-orbit-point { position: absolute; right: 9px; top: 73px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); }
 .login-card { padding: 36px; background: var(--surface-glass); border: 1px solid var(--surface-glass-border); border-radius: 24px; box-shadow: var(--shadow-md); backdrop-filter: blur(24px) saturate(1.1); transition: box-shadow var(--dur-slow); }
-.login-card.is-focused { box-shadow: var(--shadow-lg); }
+.login-card.is-focused, .login-card-slot.is-focused .login-card { box-shadow: var(--shadow-lg); }
+/* The shell places the card in the stage's second column; the slot exists so a
+   host can mark the card as focused without owning the card element. */
+.login-card-slot { min-width: 0; }
+/* Two ways into the same console: the operator's admin token, or a member's
+   account. One page, one card, a switch at the top. */
+.login-mode-switch { display: flex; gap: 4px; margin-bottom: 20px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-subtle); }
+.login-mode-switch button { flex: 1; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: 500 11.5px var(--font); cursor: pointer; }
+.login-mode-switch button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+.login-mode-switch button:disabled { cursor: not-allowed; opacity: .6; }
+/* The way back out of an invitation or recovery form: quiet, so it never
+   competes with the primary action. */
+.login-back { width: 100%; margin-top: 4px; padding: 6px; border: 0; background: transparent; color: var(--muted); font: 500 11.5px var(--font); cursor: pointer; }
+.login-back:hover:not(:disabled) { color: var(--ink); }
+.login-back:disabled { cursor: not-allowed; opacity: .6; }
 .login-card-heading { margin-bottom: 28px; }
 .login-card-mark { display: inline-grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 13px; color: var(--primary); background: var(--surface); margin-bottom: 20px; }
 .login-card-heading h2 { font: 600 23px var(--font); letter-spacing: -.04em; margin: 0 0 10px; }

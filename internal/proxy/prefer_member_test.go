@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/lan/meta-gateway/internal/domain"
@@ -82,5 +83,50 @@ func TestPinnedUpstreamCoversEveryPinKind(t *testing.T) {
 	}
 	if !pinnedUpstream(Request{PreferMemberID: 9}) {
 		t.Error("a member pin is not reported as pinned")
+	}
+}
+
+// An unusable pinned upstream has to say WHICH way it is unusable: a member
+// switched off, a parked channel, an empty key pool, a cooling row and a row
+// that is not part of the route at all are four different fixes.
+func TestPinFailureNamesTheReason(t *testing.T) {
+	decision := routing.Decision{Explanation: routing.Explanation{
+		Candidates: []routing.Evaluation{
+			{
+				Candidate: domain.RoutingCandidate{
+					Member:  domain.RouteMember{ID: 11, ChannelID: 7},
+					Channel: domain.Channel{ID: 7, Name: "ch"},
+				},
+				Reasons: []routing.Reason{routing.ReasonMemberDisabled},
+			},
+			{
+				Candidate: domain.RoutingCandidate{
+					Member:  domain.RouteMember{ID: 13, ChannelID: 8},
+					Channel: domain.Channel{ID: 8, Name: "ch"},
+				},
+				Reasons: []routing.Reason{routing.ReasonCoolingDown},
+			},
+		},
+	}}
+	cases := []struct {
+		name string
+		req  Request
+		want string
+	}{
+		{"member switched off", Request{PreferMemberID: 11}, "pinned_upstream_member_disabled"},
+		{"cooling down", Request{PreferMemberID: 13}, "pinned_upstream_cooling_down"},
+		{"not part of the route", Request{PreferMemberID: 99}, "pinned_upstream_not_member"},
+		{"channel not part of the route", Request{PreferChannelID: 42}, "pinned_upstream_not_member"},
+	}
+	for _, tc := range cases {
+		err := pinFailure(decision, tc.req)
+		var pin *PinFailure
+		if !errors.As(err, &pin) || pin.Code != tc.want {
+			t.Fatalf("%s: got %v, want %s", tc.name, err, tc.want)
+		}
+		// The console and the probes both key off this sentinel.
+		if !errors.Is(err, ErrPreferredChannel) {
+			t.Fatalf("%s: pin failure no longer wraps ErrPreferredChannel", tc.name)
+		}
 	}
 }

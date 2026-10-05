@@ -19,11 +19,21 @@ import {
   Zap,
 } from "lucide-react";
 import { api } from "../api/client";
-import type { ProxyLog } from "../api/types";
+import type {
+  ChannelOverview,
+  ModelUsage,
+  ProxyLog,
+  UsageSeries,
+  UsageSummary,
+} from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { SetupGuide } from "./SetupGuide";
-import { TelemetrySecondary, TelemetryStrip } from "../components/TelemetryStrip";
+import {
+  TelemetrySecondary,
+  TelemetryStrip,
+  type TelemetryItem,
+} from "../components/TelemetryStrip";
 import { TimeRangePicker, describeRange, useUrlTimeRange } from "../components/TimeRangePicker";
 import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
@@ -183,10 +193,104 @@ function ResultDistribution({
 /** Drill-down target: a bucket of the main series. */
 type Zoom = { since: string; until: string; label: string };
 
+/**
+ * What the overview needs from its host.
+ *
+ * The console reads the whole gateway; a member reads their own account. Both
+ * render this same component, so the data access is injected rather than
+ * reached for — the split the keys and logs pages already use, and the reason
+ * the member app can mount a page this elaborate at all.
+ */
+export interface DashboardSource {
+  summary: (
+    query: { since?: string; until?: string },
+    signal?: AbortSignal,
+  ) => Promise<UsageSummary>;
+  series: (
+    query: { since?: string; until?: string; buckets: number },
+    signal?: AbortSignal,
+  ) => Promise<UsageSeries>;
+  topModels: (
+    query: { since?: string; until?: string; limit: number },
+    signal?: AbortSignal,
+  ) => Promise<ModelUsage[]>;
+  recent: (
+    query: { limit: number; since?: string; until?: string },
+    signal?: AbortSignal,
+  ) => Promise<ProxyLog[]>;
+  /** Channel health: the gateway's own internals, absent for a member. */
+  channels?: (signal?: AbortSignal) => Promise<ChannelOverview[]>;
+}
+
+export interface DashboardCapabilities {
+  /** The channel-health matrix. */
+  channels: boolean;
+  /** The first-run setup guide, which configures the gateway itself. */
+  setup: boolean;
+  /** Links into the console's own pages (connections, models). */
+  consoleLinks: boolean;
+}
+
+export const ADMIN_DASHBOARD_CAPS: DashboardCapabilities = {
+  channels: true,
+  setup: true,
+  consoleLinks: true,
+};
+
+/**
+ * The member's overview: same cards and chart, no site internals.
+ *
+ * There is deliberately no channel matrix here — a member buys model access,
+ * not insight into which upstreams the gateway runs — and no setup guide, which
+ * would be instructions for configuring somebody else's gateway.
+ */
+export const MEMBER_DASHBOARD_CAPS: DashboardCapabilities = {
+  channels: false,
+  setup: false,
+  consoleLinks: false,
+};
+
+/**
+ * The overview, for whoever is signed in.
+ *
+ * Staff read the gateway (every endpoint, channel-health matrix included); a
+ * member reads their own account through /me/usage/*, which the member source
+ * owns. One page, one component — the difference is which source it is handed,
+ * exactly as on the token and log pages.
+ */
 export function Dashboard() {
+  const { client, role } = useSession();
+  const member = role === "member";
+  const source = useMemo<DashboardSource>(() => {
+    if (member) return memberDashboardSource;
+    const s = api(client!);
+    return {
+      summary: (query, signal) =>
+        s.usageSummary(undefined, signal, query.since, query.until),
+      series: (query, signal) => s.usageSeries(query, signal),
+      topModels: (query, signal) => s.usageTopModels(query, signal),
+      recent: (query, signal) => s.proxyLogs(query, signal),
+      channels: (signal) => s.channelOverviews(signal),
+    };
+  }, [client, member]);
+  return (
+    <DashboardView
+      source={source}
+      caps={member ? MEMBER_DASHBOARD_CAPS : ADMIN_DASHBOARD_CAPS}
+    />
+  );
+}
+
+import { memberDashboardSource } from "../member/MemberDashboardSource";
+
+export function DashboardView({
+  source,
+  caps,
+}: {
+  source: DashboardSource;
+  caps: DashboardCapabilities;
+}) {
   const [replayEntrance, setReplayEntrance] = useState(false);
-  const { client } = useSession();
-  const s = api(client!);
   const { t } = useI18n();
   const [params, setParams] = useSearchParams();
   const range = useUrlTimeRange(params, setParams);
@@ -196,14 +300,14 @@ export function Dashboard() {
   // served" does not depend on the selected window.
   const allTime = useQuery({
     queryKey: ["usage-summary", "all"],
-    queryFn: ({ signal }) => s.usageSummary(undefined, signal),
+    queryFn: ({ signal }) => source.summary({}, signal),
     refetchInterval: 30_000,
   });
   // Everything else is windowed: the cards, the matrix, the chart, the ranking.
   const rangeSummary = useQuery({
     queryKey: ["usage-summary", "range", { since: range.since, until: range.until }],
     queryFn: ({ signal }) =>
-      s.usageSummary(undefined, signal, range.since, range.until),
+      source.summary({ since: range.since, until: range.until }, signal),
     refetchInterval: 30_000,
   });
   // The equal-length window immediately before, for an honest trend badge.
@@ -213,11 +317,9 @@ export function Dashboard() {
     queryFn: ({ signal }) => {
       const from = new Date(range.since!).getTime();
       const span = new Date(range.until!).getTime() - from;
-      return s.usageSummary(
-        undefined,
+      return source.summary(
+        { since: new Date(from - span).toISOString(), until: range.since },
         signal,
-        new Date(from - span).toISOString(),
-        range.since,
       );
     },
     refetchInterval: 60_000,
@@ -225,7 +327,8 @@ export function Dashboard() {
   const zoomSummary = useQuery({
     queryKey: ["usage-summary", "range", { since: zoom?.since, until: zoom?.until }],
     enabled: zoom != null,
-    queryFn: ({ signal }) => s.usageSummary(undefined, signal, zoom!.since, zoom!.until),
+    queryFn: ({ signal }) =>
+      source.summary({ since: zoom!.since, until: zoom!.until }, signal),
   });
   const series = useQuery({
     queryKey: [
@@ -234,25 +337,28 @@ export function Dashboard() {
     ],
     queryFn: ({ signal }) =>
       zoom
-        ? s.usageSeries({ since: zoom.since, until: zoom.until, buckets: 12 }, signal)
-        : s.usageSeries({ since: range.since, until: range.until, buckets: 48 }, signal),
+        ? source.series({ since: zoom.since, until: zoom.until, buckets: 12 }, signal)
+        : source.series({ since: range.since, until: range.until, buckets: 48 }, signal),
     refetchInterval: zoom ? false : 30_000,
   });
   const topModels = useQuery({
     queryKey: ["usage-top-models", { since: range.since, until: range.until }],
     queryFn: ({ signal }) =>
-      s.usageTopModels({ since: range.since, until: range.until, limit: 6 }, signal),
+      source.topModels({ since: range.since, until: range.until, limit: 6 }, signal),
     refetchInterval: 30_000,
   });
   const channels = useQuery({
     queryKey: ["channel-overviews"],
-    queryFn: ({ signal }) => s.channelOverviews(signal),
+    queryFn: ({ signal }) => source.channels!(signal),
+    // A host without channel data (the member app) must not fire the query at
+    // all — there is no endpoint behind it.
+    enabled: caps.channels && !!source.channels,
     refetchInterval: 30_000,
   });
   const logs = useQuery({
     queryKey: ["proxy-logs", { limit: 8, since: range.since, until: range.until }],
     queryFn: ({ signal }) =>
-      s.proxyLogs({ limit: 8, since: range.since, until: range.until }, signal),
+      source.recent({ limit: 8, since: range.since, until: range.until }, signal),
     refetchInterval: 15_000,
   });
 
@@ -344,13 +450,19 @@ export function Dashboard() {
       className="dashboard-page"
       kicker={t("dashboard.kicker")}
       title={t("dashboard.title")}
-      description={t("dashboard.description")}
+      // A host without the channel matrix gets a description that does not
+      // promise it: the panel is not its to show (see DashboardCapabilities).
+      description={
+        caps.channels
+          ? t("dashboard.description")
+          : t("dashboard.descriptionMember")
+      }
       actions={<Button variant="quiet" icon={<Play size={14} />} onClick={() => setReplayEntrance(true)}>{t("motion.replay")}</Button>}
     >
       <DashboardAura />
       {replayEntrance ? <GatewayPreview onClose={() => setReplayEntrance(false)} /> : null}
       <div className="cockpit-stack">
-        <SetupGuide />
+        {caps.setup ? <SetupGuide /> : null}
 
         {/* 1. 终端接入端点条 (Gateway Endpoint Strip) */}
         <EndpointStrip />
@@ -374,15 +486,21 @@ export function Dashboard() {
                 tone: "success",
                 trend: requestTrend,
               },
-              {
-                label: t("dashboard.healthyChannels"),
-                value: channels.isPending
-                  ? "—"
-                  : `${channelCounts.healthy}/${channelCounts.total}`,
-                hint: t("dashboard.healthyChannelsHint"),
-                icon: <HeartPulse size={13} />,
-                tone: healthTone,
-              },
+              // Only a host that can read channel health shows the readout;
+              // "0/0" would be a worse answer than no card at all.
+              ...(caps.channels
+                ? ([
+                    {
+                      label: t("dashboard.healthyChannels"),
+                      value: channels.isPending
+                        ? "—"
+                        : `${channelCounts.healthy}/${channelCounts.total}`,
+                      hint: t("dashboard.healthyChannelsHint"),
+                      icon: <HeartPulse size={13} />,
+                      tone: healthTone,
+                    },
+                  ] satisfies TelemetryItem[])
+                : []),
               {
                 label: t("dashboard.successRate"),
                 value:
@@ -489,8 +607,11 @@ export function Dashboard() {
         </Panel>
 
         {/* 4. 双轨联动作战区：渠道健康状态阵列 + 实时遥测日志流 */}
-        <div className="cockpit-dual-grid">
-          {/* 左轨：渠道健康雷达点阵 */}
+        {/* Single column when the host has no channel matrix, so the request
+            stream keeps the panel's own width instead of half a grid. */}
+        <div className={`cockpit-dual-grid${caps.channels ? "" : " is-single"}`}>
+          {/* 左轨：渠道健康雷达点阵（只有宿主能看到渠道时才渲染） */}
+          {caps.channels ? (
           <Panel className="cockpit-panel cockpit-health-panel">
             <div className="panel-header">
               <div className="cockpit-panel-title">
@@ -517,13 +638,19 @@ export function Dashboard() {
                         : "warn";
                 return (
                   <li key={c.channel.id} className={`cockpit-channel-item is-${tone}`}>
-                    <Link
-                      className="cockpit-channel-name"
-                      to={`/channels?id=${c.channel.id}`}
-                      title={c.channel.name}
-                    >
-                      {c.channel.name}
-                    </Link>
+                    {caps.consoleLinks ? (
+                      <Link
+                        className="cockpit-channel-name"
+                        to={`/channels?id=${c.channel.id}`}
+                        title={c.channel.name}
+                      >
+                        {c.channel.name}
+                      </Link>
+                    ) : (
+                      <span className="cockpit-channel-name" title={c.channel.name}>
+                        {c.channel.name}
+                      </span>
+                    )}
                     <span className="cockpit-channel-meta">
                       {health === "healthy" ? (
                         <span className="badge badge-ok">
@@ -547,6 +674,7 @@ export function Dashboard() {
               })}
             </ul>
           </Panel>
+          ) : null}
 
           {/* 右轨：最近代理请求流（跟随所选区间） */}
           <Panel className="cockpit-panel cockpit-logs-panel">
@@ -566,13 +694,19 @@ export function Dashboard() {
                   return (
                     <li key={log.id} className="cockpit-log-item">
                       <span className={`cockpit-log-status is-${tone}`} aria-hidden="true" />
-                      <Link
-                        className="cockpit-log-model"
-                        to={`/models?model=${encodeURIComponent(log.model)}`}
-                      >
-                        {log.model}
-                        {log.route_id ? ` #${log.route_id}` : ""}
-                      </Link>
+                      {caps.consoleLinks ? (
+                        <Link
+                          className="cockpit-log-model"
+                          to={`/models?model=${encodeURIComponent(log.model)}`}
+                        >
+                          {log.model}
+                          {log.route_id ? ` #${log.route_id}` : ""}
+                        </Link>
+                      ) : (
+                        // The route id is the gateway's internal handle for a
+                        // model; a member gets the model name and nothing more.
+                        <span className="cockpit-log-model">{log.model}</span>
+                      )}
                       <div className="cockpit-log-right">
                         {(log.total_tokens ?? 0) > 0 ? (
                           <span className="mono-value">
@@ -614,13 +748,19 @@ export function Dashboard() {
                 <ul className="model-rank">
                   {ranked.map((m) => (
                     <li key={m.model}>
-                      <Link
-                        className="model-rank-name"
-                        to={`/models?model=${encodeURIComponent(m.model)}`}
-                        title={m.model}
-                      >
-                        {m.model}
-                      </Link>
+                      {caps.consoleLinks ? (
+                        <Link
+                          className="model-rank-name"
+                          to={`/models?model=${encodeURIComponent(m.model)}`}
+                          title={m.model}
+                        >
+                          {m.model}
+                        </Link>
+                      ) : (
+                        <span className="model-rank-name" title={m.model}>
+                          {m.model}
+                        </span>
+                      )}
                       <span className="model-rank-track">
                         <span
                           className="model-rank-fill"

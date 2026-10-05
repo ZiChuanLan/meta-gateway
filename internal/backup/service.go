@@ -312,6 +312,9 @@ func Restore(dataDir, backupDir, name string) (string, error) {
 	if err := Verify(temporary); err != nil {
 		return "", errors.New("restore validation failed")
 	}
+	if err := invalidateRestoredTeamCredentials(temporary); err != nil {
+		return "", errors.New("restore credential invalidation failed")
+	}
 	hadActive, err := moveActiveAside(active, rollback)
 	if err != nil {
 		return "", errors.New("restore install failed")
@@ -348,6 +351,45 @@ func Restore(dataDir, backupDir, name string) (string, error) {
 		rollback = ""
 	}
 	return rollback, nil
+}
+
+// Restoring a snapshot must not resurrect sessions or one-time links revoked
+// since it was made. The source backup stays untouched.
+func invalidateRestoredTeamCredentials(path string) error {
+	dsn, err := sqliteFileDSN(path, url.Values{"mode": []string{"rw"}})
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	// The temporary copy is offline. DELETE journaling ensures the mutations
+	// are in the main file before that file is moved into place.
+	if _, err := db.Exec(`PRAGMA journal_mode=DELETE`); err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, operation := range []struct{ table, sql string }{
+		{"team_sessions", "DELETE FROM team_sessions"},
+		{"team_invites", "UPDATE team_invites SET revoked=1"},
+	} {
+		var count int
+		if err := tx.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, operation.table).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			if _, err := tx.Exec(operation.sql); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 // moveActiveAside moves the database and any WAL/SHM sidecars together. A

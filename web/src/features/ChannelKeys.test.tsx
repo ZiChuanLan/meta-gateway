@@ -207,11 +207,6 @@ describe("ChannelKeysDrawer model allowlist", () => {
 		expect(priorityWrites).toEqual([]);
 	});
 
-	it("marks the channel's bound key without calling it preferred", async () => {
-		renderDrawer();
-		await screen.findByRole("button", { name: "展开模型白名单" });
-		expect(screen.getByText(/本渠道绑定/)).toBeTruthy();
-	});
 
 	// A key panel is pasted from, not typed into: three keys with one repeat must
 	// become two submissions, and the drawer has to say so instead of quietly

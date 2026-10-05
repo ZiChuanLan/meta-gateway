@@ -49,7 +49,7 @@ func TestUsageSummaryRangeExcludesOutsideWindow(t *testing.T) {
 
 	since := now.Add(-time.Hour)
 	until := now.Add(-10 * time.Minute)
-	summary, err := db.Usage.SummaryRange(nil, &since, &until)
+	summary, err := db.Usage.SummaryRange(store.UsageScope{}, &since, &until)
 	if err != nil {
 		t.Fatalf("summary range: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestUsageSummaryRangeExcludesOutsideWindow(t *testing.T) {
 		t.Fatalf("range cost = %v, want 0.2", summary.Cost)
 	}
 
-	all, err := db.Usage.SummaryRange(nil, nil, nil)
+	all, err := db.Usage.SummaryRange(store.UsageScope{}, nil, nil)
 	if err != nil {
 		t.Fatalf("summary all: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestUsageSummaryRangeExcludesOutsideWindow(t *testing.T) {
 	}
 
 	// SummarySince keeps working as the open-ended special case.
-	recent, err := db.Usage.SummarySince(nil, &since)
+	recent, err := db.Usage.SummarySince(store.UsageScope{}, &since)
 	if err != nil {
 		t.Fatalf("summary since: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestUsageSeriesBucketsAndAlignment(t *testing.T) {
 	seedUsage(t, db, "s2", "gpt-a", 20, 500, 0.02, base.Add(10*time.Minute))
 	seedUsage(t, db, "s3", "gpt-b", 30, 200, 0.03, base.Add(2*time.Hour+5*time.Minute))
 
-	series, err := db.Usage.Series(base, base.Add(4*time.Hour), 4)
+	series, err := db.Usage.Series(store.UsageScope{}, base, base.Add(4*time.Hour), 4)
 	if err != nil {
 		t.Fatalf("series: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestUsageTopModelsRanksInsideWindow(t *testing.T) {
 	seedUsage(t, db, "m4", "gpt-ancient", 99999, 200, 0, now.Add(-48*time.Hour))
 
 	since := now.Add(-time.Hour)
-	rows, err := db.Usage.TopModels(&since, nil, 8)
+	rows, err := db.Usage.TopModels(store.UsageScope{}, &since, nil, 8)
 	if err != nil {
 		t.Fatalf("top models: %v", err)
 	}

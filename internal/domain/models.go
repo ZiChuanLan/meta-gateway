@@ -81,6 +81,22 @@ type Site struct {
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// External probe source: the site's own public probe data (an Uptime Kuma
+	// status page) and/or its public price table (New-API /api/pricing), so
+	// availability can be observed without spending upstream tokens.
+	// Kind is "uptime_kuma" | "newapi"; empty means "not probed".
+	// Config carries source-specific JSON (slug, excluded monitors, price unit).
+	ProbeSourceKind string `json:"probe_source_kind,omitempty"`
+	ProbeSourceURL  string `json:"probe_source_url,omitempty"`
+	// ProbeAuto marks a site that wants its source derived from the platform
+	// (new-api -> /api/pricing, sub2api -> the public-transit discovery) instead
+	// of a hand-typed URL. A custom ProbeSourceURL always wins when present.
+	ProbeAuto          bool       `json:"probe_auto"`
+	ProbeSourceConfig  string     `json:"probe_source_config,omitempty"`
+	ProbeSourceEnabled bool       `json:"probe_source_enabled"`
+	ProbeLastRunAt     *time.Time `json:"probe_last_run_at,omitempty"`
+	ProbeLastError     string     `json:"probe_last_error,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -406,7 +422,15 @@ type ModelMetadata struct {
 	PricePromptPer1k     float64 `json:"price_prompt_per_1k"`
 	PriceCompletionPer1k float64 `json:"price_completion_per_1k"`
 	PriceCachePer1k      float64 `json:"price_cache_per_1k"`
-	UpdatedAt            string  `json:"updated_at"`
+	// PricePerRequest bills a flat amount per call, for upstreams that sell
+	// calls rather than tokens. It is added to the token-derived amount.
+	PricePerRequest float64 `json:"price_per_request"`
+	// PriceTiers is a context-length ladder and PriceSchedule a set of
+	// time-of-day windows, both JSON. Empty means flat pricing — the behaviour
+	// of every row written before they existed. See pricing_tiers.go.
+	PriceTiers    string `json:"price_tiers,omitempty"`
+	PriceSchedule string `json:"price_schedule,omitempty"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -525,6 +549,12 @@ type RouteMember struct {
 	PricePromptPer1k     float64 `json:"price_prompt_per_1k,omitempty"`
 	PriceCompletionPer1k float64 `json:"price_completion_per_1k,omitempty"`
 	PriceCachePer1k      float64 `json:"price_cache_per_1k,omitempty"`
+	// Flat amount charged per call, added to the token-derived cost.
+	PricePerRequest float64 `json:"price_per_request,omitempty"`
+	// This member's own context-length ladder and time-of-day windows, JSON;
+	// empty means flat pricing. See pricing_tiers.go.
+	PriceTiers    string `json:"price_tiers,omitempty"`
+	PriceSchedule string `json:"price_schedule,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -533,8 +563,13 @@ type RouteMember struct {
 
 // DownstreamKey authenticates downstream clients.
 type DownstreamKey struct {
-	ID        int64  `json:"id"`
-	TokenHash string `json:"-"` // never serialized
+	ID            int64       `json:"id"`
+	UserID        int64       `json:"user_id,omitempty"`
+	TeamPlanID    int64       `json:"team_plan_id,omitempty"`
+	TeamHint      string      `json:"team_hint,omitempty"`
+	TeamDeletedAt string      `json:"-"`
+	TeamAccess    *TeamAccess `json:"-"`
+	TokenHash     string      `json:"-"` // never serialized
 	// TokenEnc is the MASTER_KEY-encrypted plaintext token, kept so operators
 	// can re-view/copy a key after creation. Empty for keys created before
 	// plaintext storage existed. Never serialized in JSON.
@@ -546,6 +581,11 @@ type DownstreamKey struct {
 	QuotaTotalTokens int64 `json:"quota_total_tokens"`
 	// QuotaUsedTokens is the cumulative total tokens charged to this key.
 	QuotaUsedTokens int64 `json:"quota_used_tokens"`
+	// QuotaTotalCost/QuotaUsedCost are the same budget expressed in money, in
+	// the ledger's unit (USD). 0 total = unlimited. Both limits apply: whichever
+	// runs out first refuses the request.
+	QuotaTotalCost float64 `json:"quota_total_cost"`
+	QuotaUsedCost  float64 `json:"quota_used_cost"`
 	// ModelAllowlist, when non-empty, restricts this key to the listed models.
 	// ModelDenylist blocks the listed models even if they are allowlisted.
 	// Both are comma-separated model names.
@@ -568,13 +608,16 @@ type DownstreamKey struct {
 // KeyGroup is a multi-tenant token group with its own quota and rate limits.
 // QuotaTotalTokens 0 = unlimited; RatePerMinute 0 = no group-level limiting.
 type KeyGroup struct {
-	Name             string    `json:"name"`
-	QuotaTotalTokens int64     `json:"quota_total_tokens"`
-	QuotaUsedTokens  int64     `json:"quota_used_tokens"`
-	RatePerMinute    int       `json:"rate_per_minute"`
-	RateBurst        int       `json:"rate_burst"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	Name             string `json:"name"`
+	QuotaTotalTokens int64  `json:"quota_total_tokens"`
+	QuotaUsedTokens  int64  `json:"quota_used_tokens"`
+	// Money limits, enforced beside the token ones (0 = unlimited).
+	QuotaTotalCost float64   `json:"quota_total_cost"`
+	QuotaUsedCost  float64   `json:"quota_used_cost"`
+	RatePerMinute  int       `json:"rate_per_minute"`
+	RateBurst      int       `json:"rate_burst"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -661,6 +704,7 @@ type ProxyLog struct {
 
 // UsageRecord is one metered relay completion used for billing summaries.
 type UsageRecord struct {
+	UserID              int64  `json:"user_id,omitempty"`
 	ID                  int64  `json:"id"`
 	RequestID           string `json:"request_id"`
 	DownstreamKeyID     int64  `json:"downstream_key_id"`
@@ -713,9 +757,44 @@ type RoutingCandidate struct {
 	Member           RouteMember `json:"member"`
 	Channel          Channel     `json:"channel"`
 	CredentialUsable bool        `json:"credential_usable"`
-	// ModelPattern is the route's model_pattern, used to scope per-model
-	// adaptive scoring (latency/error EMA is tracked per channel × model).
+	// ModelPattern is the route's model_pattern. Adaptive scoring (latency and
+	// error EMA) is keyed per channel × UPSTREAM model — see UpstreamModelName,
+	// because one route may reach several differently-named models through its
+	// members and they must not share a health record.
 	ModelPattern string `json:"model_pattern,omitempty"`
+}
+
+// MemberRealModel returns the upstream name a member's {"real":"…"} alias
+// redirects to, or "" when the member serves the route's own name.
+func MemberRealModel(mappingJSON string) string {
+	trimmed := strings.TrimSpace(mappingJSON)
+	if trimmed == "" {
+		return ""
+	}
+	var mapping struct {
+		Real string `json:"real"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &mapping); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(mapping.Real)
+}
+
+// UpstreamModelName is the model name a candidate actually sends upstream: its
+// own alias when it carries one, else the route's pattern.
+//
+// This is the key every health record must use. Keying on the route pattern
+// conflates the variants a single route can reach — an alias route whose
+// members point at "cn:x" and "global:x" would share one latency sample, so a
+// fast variant's successes would keep the slow one looking healthy (and the
+// other way round), and both would always score identically no matter which
+// one served the traffic. The forward path already resolved this name for
+// blacklisting; the scoring path resolves it the same way now.
+func UpstreamModelName(candidate RoutingCandidate) string {
+	if real := MemberRealModel(candidate.Member.MappingJSON); real != "" {
+		return real
+	}
+	return candidate.ModelPattern
 }
 
 // RouteOverview is the admin-facing route matrix with enriched channel members.

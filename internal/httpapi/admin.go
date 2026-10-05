@@ -203,6 +203,10 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Put("/ratios/{model}", h.setModelRatio)
 	// Tenant groups (multi-tenant quotas / rate limits)
 	r.Get("/groups", h.listGroups)
+	// Money presentation (symbol + rate). Amounts stay stored in the ledger's
+	// unit; these two values decide how they are printed.
+	r.Get("/display-settings", h.displaySettings)
+	r.Put("/display-settings", h.saveDisplaySettings)
 	r.Put("/groups/{name}", h.upsertGroup)
 	r.Delete("/groups/{name}", h.deleteGroup)
 
@@ -254,6 +258,7 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Get("/db/gc", h.lastDBGC)
 	// Error passthrough rules (status/keyword → passthrough/rewrite/ignore).
 	r.Get("/error-rules", h.listErrorRules)
+	r.Get("/model-pricing", h.modelPricing)
 	r.Post("/error-rules", h.createErrorRule)
 	r.Put("/error-rules/{id}", h.updateErrorRule)
 	r.Delete("/error-rules/{id}", h.deleteErrorRule)

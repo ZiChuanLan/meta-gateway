@@ -757,6 +757,55 @@ func TestSingleModePinsMemberAndZeroesRetry(t *testing.T) {
 	}
 }
 
+// The console's 试调 and the health probes pin one upstream by hand. On a
+// single-mode route that pin must survive: the operator asked for THAT row, and
+// reporting it unavailable because the route pins a different member is how
+// "试调 channel B" ended up as an unexplained error.
+func TestPinnedMemberStaysEligibleOnSingleModeRoute(t *testing.T) {
+	pin := int64(2)
+	route := &domain.Route{
+		ID:             1,
+		RoutingMode:    domain.RoutingModeSingle,
+		SingleMemberID: &pin,
+	}
+	candidates := []domain.RoutingCandidate{
+		candidate(1, 20, 100),
+		candidate(2, 10, 100),
+		candidate(3, 10, 100),
+	}
+	selector := NewWithDependencies(fakeRepo{route: route, candidates: candidates}, fakeClock{time.Now()}, &fakeRandom{values: []int{0, 0}})
+
+	// Member 3 is NOT the single-mode pin, but the caller named it.
+	decision, err := selector.Select(context.Background(), "model", nil, &SelectionConstraint{PinnedMemberID: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eligible := map[int64]bool{}
+	for _, evaluation := range decision.Candidates {
+		eligible[evaluation.Candidate.Member.ID] = evaluation.Eligible
+	}
+	if !eligible[3] {
+		t.Fatal("the pinned member was still marked ineligible by single mode")
+	}
+	// The rows nobody asked for keep the single-mode verdict: only the pin is
+	// stronger than the route's own choice.
+	if eligible[1] {
+		t.Fatal("an unpinned member became eligible")
+	}
+
+	// A channel pin behaves the same way. The helper keys channel id to member
+	// id, so channel 1 is member 1 — which is not the single-mode pin either.
+	decision, err = selector.Select(context.Background(), "model", nil, &SelectionConstraint{PinnedChannelID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, evaluation := range decision.Candidates {
+		if evaluation.Candidate.Member.ID == 1 && !evaluation.Eligible {
+			t.Fatal("the pinned channel's member was still ineligible")
+		}
+	}
+}
+
 func TestSingleModeMissingPinFallsBackToAuto(t *testing.T) {
 	pin := int64(99)
 	route := &domain.Route{

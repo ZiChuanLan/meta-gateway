@@ -27,8 +27,8 @@ func (s *UsageStore) Insert(record *domain.UsageRecord) (int64, error) {
 		`INSERT INTO usage_records (
 			request_id, downstream_key_id, channel_id, model, path, stream,
 			prompt_tokens, completion_tokens, total_tokens,
-			cache_read_tokens, cache_creation_tokens, status, cost
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cache_read_tokens, cache_creation_tokens, status, cost, user_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID,
 		record.DownstreamKeyID,
 		record.ChannelID,
@@ -42,6 +42,7 @@ func (s *UsageStore) Insert(record *domain.UsageRecord) (int64, error) {
 		record.CacheCreationTokens,
 		record.Status,
 		record.Cost,
+		record.UserID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("usage insert: %w", err)
@@ -58,6 +59,33 @@ type UsageFilter struct {
 	// Since/Until bound created_at inclusively (nil = open-ended).
 	Since *time.Time
 	Until *time.Time
+}
+
+// UsageScope narrows an aggregate to one owner.
+//
+// The two dimensions are independent and either may be nil: the console reads a
+// single key's spend, the member app reads everything one account produced
+// across all of that account's keys. They live in one type so every aggregate
+// shares the same "whose rows" predicate instead of each spelling it out —
+// which is how the key and account views would otherwise drift apart.
+type UsageScope struct {
+	DownstreamKeyID *int64
+	UserID          *int64
+}
+
+// clauses renders the ownership predicates for this scope.
+func (s UsageScope) clauses() ([]string, []any) {
+	var where []string
+	var args []any
+	if s.DownstreamKeyID != nil {
+		where = append(where, "downstream_key_id = ?")
+		args = append(args, *s.DownstreamKeyID)
+	}
+	if s.UserID != nil {
+		where = append(where, "user_id = ?")
+		args = append(args, *s.UserID)
+	}
+	return where, args
 }
 
 // List returns newest usage records.
@@ -127,20 +155,20 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 	return result, rows.Err()
 }
 
-// Summary aggregates usage optionally filtered by downstream key.
-func (s *UsageStore) Summary(downstreamKeyID *int64) (domain.UsageSummary, error) {
-	return s.SummarySince(downstreamKeyID, nil)
+// Summary aggregates usage within a scope.
+func (s *UsageStore) Summary(scope UsageScope) (domain.UsageSummary, error) {
+	return s.SummarySince(scope, nil)
 }
 
 // SummarySince aggregates usage from the optional inclusive UTC timestamp.
-func (s *UsageStore) SummarySince(downstreamKeyID *int64, since *time.Time) (domain.UsageSummary, error) {
-	return s.SummaryRange(downstreamKeyID, since, nil)
+func (s *UsageStore) SummarySince(scope UsageScope, since *time.Time) (domain.UsageSummary, error) {
+	return s.SummaryRange(scope, since, nil)
 }
 
 // SummaryRange aggregates usage over an inclusive [since, until] window; nil
 // bounds are open-ended. The console uses it for arbitrary time selections,
 // which is why the window — not just a lower bound — is expressible.
-func (s *UsageStore) SummaryRange(downstreamKeyID *int64, since, until *time.Time) (domain.UsageSummary, error) {
+func (s *UsageStore) SummaryRange(scope UsageScope, since, until *time.Time) (domain.UsageSummary, error) {
 	query := `SELECT COUNT(*),
 		COALESCE(SUM(prompt_tokens),0),
 		COALESCE(SUM(completion_tokens),0),
@@ -155,9 +183,9 @@ func (s *UsageStore) SummaryRange(downstreamKeyID *int64, since, until *time.Tim
 		FROM usage_records`
 	where := []string{}
 	args := []any{}
-	if downstreamKeyID != nil {
-		where = append(where, "downstream_key_id = ?")
-		args = append(args, *downstreamKeyID)
+	if clauses, scopeArgs := scope.clauses(); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, scopeArgs...)
 	}
 	if clauses, rangeArgs := createdRange("created_at", since, until); len(clauses) > 0 {
 		where = append(where, clauses...)
@@ -209,7 +237,7 @@ type UsageSeries struct {
 // Series aggregates usage_records into at most `buckets` epoch-aligned slots.
 // Aggregation happens in SQL, so the chart reflects every row in the window
 // instead of the newest 500 the list endpoint can return.
-func (s *UsageStore) Series(since, until time.Time, buckets int) (*UsageSeries, error) {
+func (s *UsageStore) Series(scope UsageScope, since, until time.Time, buckets int) (*UsageSeries, error) {
 	if buckets <= 0 {
 		buckets = 24
 	}
@@ -261,6 +289,12 @@ func (s *UsageStore) Series(since, until time.Time, buckets int) (*UsageSeries, 
 		Cost:             make([]float64, count),
 	}
 
+	where := []string{"created_at >= ?", "created_at <= ?"}
+	args := []any{startUnix, int64(sec), sqliteUTC(start), sqliteUTC(until)}
+	if clauses, scopeArgs := scope.clauses(); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, scopeArgs...)
+	}
 	rows, err := s.db.Query(
 		`SELECT CAST((CAST(strftime('%s', created_at) AS INTEGER) - ?) / ? AS INTEGER) AS idx,
 			COUNT(*),
@@ -272,10 +306,9 @@ func (s *UsageStore) Series(since, until time.Time, buckets int) (*UsageSeries, 
 			COALESCE(SUM(cache_creation_tokens), 0),
 			COALESCE(SUM(cost), 0)
 		FROM usage_records
-		WHERE created_at >= ? AND created_at <= ?
+		WHERE `+strings.Join(where, " AND ")+`
 		GROUP BY idx`,
-		startUnix, int64(sec),
-		sqliteUTC(start), sqliteUTC(until),
+		args...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("usage series: %w", err)
@@ -318,7 +351,7 @@ type ModelUsage struct {
 
 // TopModels ranks models by token usage inside an inclusive window. Ranking in
 // SQL means a chart over a week is not biased by the list endpoint's row cap.
-func (s *UsageStore) TopModels(since, until *time.Time, limit int) ([]ModelUsage, error) {
+func (s *UsageStore) TopModels(scope UsageScope, since, until *time.Time, limit int) ([]ModelUsage, error) {
 	if limit <= 0 {
 		limit = 8
 	}
@@ -327,6 +360,10 @@ func (s *UsageStore) TopModels(since, until *time.Time, limit int) ([]ModelUsage
 	}
 	where := []string{"model <> ''"}
 	args := []any{}
+	if clauses, scopeArgs := scope.clauses(); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, scopeArgs...)
+	}
 	if clauses, rangeArgs := createdRange("created_at", since, until); len(clauses) > 0 {
 		where = append(where, clauses...)
 		args = append(args, rangeArgs...)
@@ -439,7 +476,7 @@ func (s *UsageStore) CostByRequestIDs(ids []string) (map[string]float64, error) 
 // not (or vice versa) and cuts the hot-path write round-trips from three
 // to one. Rows with no measurable tokens are a no-op.
 func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
-	if record == nil || record.TotalTokens <= 0 {
+	if record == nil || (record.TotalTokens <= 0 && record.Cost <= 0) {
 		return nil
 	}
 	keyEpoch := db.DownstreamKey.mutationEpochSnapshot()
@@ -459,8 +496,8 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 		`INSERT INTO usage_records (
 			request_id, downstream_key_id, channel_id, model, path, stream,
 			prompt_tokens, completion_tokens, total_tokens,
-			cache_read_tokens, cache_creation_tokens, status, cost
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cache_read_tokens, cache_creation_tokens, status, cost, user_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID,
 		record.DownstreamKeyID,
 		record.ChannelID,
@@ -474,30 +511,43 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 		record.CacheCreationTokens,
 		record.Status,
 		record.Cost,
+		record.UserID,
 	); err != nil {
 		return fmt.Errorf("usage record insert: %w", err)
 	}
 
 	var keyUsage int64
+	var keySpend float64
 	keyUsageUpdated := false
 	if keyID > 0 {
-		err := tx.QueryRow(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ? RETURNING quota_used_tokens`, record.TotalTokens, keyID).Scan(&keyUsage)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		// Both counters are written and returned in ONE statement: the spend
+		// budget accrues in the same row update as the token count, so the two
+		// units can never disagree about a request, and the cache sync below has
+		// the committed values to publish.
+		if err := tx.QueryRow(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ?, quota_used_cost = quota_used_cost + ? WHERE id = ? RETURNING quota_used_tokens, quota_used_cost`, record.TotalTokens, record.Cost, keyID).Scan(&keyUsage, &keySpend); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("usage record key quota: %w", err)
+		} else {
+			keyUsageUpdated = err == nil
 		}
-		keyUsageUpdated = err == nil
 	}
 
 	// Accrue the tenant group quota in the same transaction (no-op when the
 	// group row does not exist — absent groups are unlimited).
 	var groupUsage int64
+	var groupSpend float64
 	groupUsageUpdated := false
-	if groupName != "" {
-		err := tx.QueryRow(`UPDATE key_groups SET quota_used_tokens = quota_used_tokens + ?, updated_at = datetime('now') WHERE name = ? RETURNING quota_used_tokens`, record.TotalTokens, groupName).Scan(&groupUsage)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("usage record group quota: %w", err)
+	if err := tx.QueryRow(`UPDATE key_groups SET quota_used_tokens = quota_used_tokens + ?, quota_used_cost = quota_used_cost + ?, updated_at = datetime('now') WHERE name = ? RETURNING quota_used_tokens, quota_used_cost`, record.TotalTokens, record.Cost, groupName).Scan(&groupUsage, &groupSpend); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("usage record group quota: %w", err)
+	}
+	groupUsageUpdated = err == nil
+
+	// Account pool accrual: a team account carries its own credit pool, charged
+	// in the same transaction as the key quota so a crash can never spend
+	// without recording. Legacy keys have user_id = 0 and skip it.
+	if record.UserID > 0 {
+		if _, err := tx.Exec(`UPDATE team_users SET quota_used_tokens = quota_used_tokens + ?, quota_used_cost = quota_used_cost + ? WHERE id = ?`, record.TotalTokens, record.Cost, record.UserID); err != nil {
+			return fmt.Errorf("usage record account quota: %w", err)
 		}
-		groupUsageUpdated = err == nil
 	}
 
 	if strings.TrimSpace(record.RequestID) != "" {
@@ -526,10 +576,10 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 	// Keep hot caches in sync with the absolute committed values. The epoch
 	// check prevents an older callback from undoing a concurrent reset/update.
 	if keyUsageUpdated {
-		db.DownstreamKey.setCachedUsageIfEpoch(keyID, keyUsage, keyEpoch)
+		db.DownstreamKey.setCachedUsageIfEpoch(keyID, keyUsage, keySpend, keyEpoch)
 	}
 	if groupUsageUpdated {
-		db.Group.setCachedUsageIfEpoch(groupName, groupUsage, groupEpoch)
+		db.Group.setCachedUsageIfEpoch(groupName, groupUsage, groupSpend, groupEpoch)
 	}
 	return nil
 }

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Image as ImageIcon, MessageSquare } from "lucide-react";
 import { Page, Tabs } from "../components/ui";
 import { useI18n } from "../i18n";
+import { useSession } from "../session";
+import { WorkbenchPage as MemberWorkbench } from "../member/WorkbenchPage";
 import ImageStudio from "./workbench/ImageStudio";
 import Playground from "./workbench/Playground";
 
@@ -13,7 +15,21 @@ import Playground from "./workbench/Playground";
  */
 type TabValue = "images" | "text";
 
+/**
+ * The workbench, split by role.
+ *
+ * Staff probe with the admin's own path (/admin/try/*, which bypasses
+ * downstream tokens on purpose); a member probes with their own token against
+ * the real /v1, so metering, quota and the request log behave exactly as they
+ * will for the member's own code. Two different machines behind one page, so
+ * two components.
+ */
 export default function Workbench() {
+  const { role } = useSession();
+  return role === "member" ? <MemberWorkbench /> : <AdminWorkbench />;
+}
+
+function AdminWorkbench() {
   const { t } = useI18n();
   const [tab, setTab] = useState<TabValue>("images");
   return (

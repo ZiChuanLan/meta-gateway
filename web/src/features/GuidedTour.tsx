@@ -143,6 +143,12 @@ function start(
       description: t("tour.checkinsDesc"),
     },
     {
+      route: "/users/overview",
+      locate: () => document.getElementById("runtime-mode"),
+      title: t("wizard.editionTitle"),
+      description: t("wizard.editionHint"),
+    },
+    {
       route: "/settings",
       locate: () => document.getElementById("runtime-relay"),
       title: t("tour.settingsRelayTitle"),

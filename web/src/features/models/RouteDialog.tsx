@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Route, RoutingCandidate } from "../../api/types";
+import type { ModelMatchMode, Route, RoutingCandidate } from "../../api/types";
 import { api } from "../../api/client";
 import {
   Button,
@@ -46,6 +46,7 @@ export function RouteDialog({
     value: Partial<Route> & {
       pin_priority?: boolean;
       auto_match_channel_ids?: number[];
+      auto_match_mode?: ModelMatchMode;
     },
   ) => void;
 }) {
@@ -61,12 +62,15 @@ export function RouteDialog({
   // through the member list instead.
   const isCreate = value.id == null;
   const [autoMatch, setAutoMatch] = useState(true);
+  // Which channels the auto-match accepts: the exact name, or its -siblings
+  // too (the member then forwards the sibling name it found).
+  const [matchMode, setMatchMode] = useState<ModelMatchMode>("exact");
   const pattern = (form.model_pattern ?? "").trim();
   // Live candidates: enabled channels serving this pattern, so the checkbox
   // states its consequence before saving instead of surprising afterwards.
   const matches = useQuery({
-    queryKey: ["model-channels", pattern],
-    queryFn: ({ signal }) => service.modelChannels(pattern, signal),
+    queryKey: ["model-channels", pattern, matchMode],
+    queryFn: ({ signal }) => service.modelChannels(pattern, matchMode, signal),
     enabled: isCreate && autoMatch && pattern.length > 0,
     placeholderData: (previous) => previous,
   });
@@ -115,6 +119,8 @@ export function RouteDialog({
                 pin_priority: pinPriority,
                 auto_match_channel_ids:
                   isCreate && autoMatch ? [...selectedMatches] : undefined,
+                auto_match_mode:
+                  isCreate && autoMatch ? matchMode : undefined,
               })
             }
           >
@@ -159,6 +165,42 @@ export function RouteDialog({
             </span>
           </label>
           {autoMatch && pattern ? (
+            <fieldset className="match-mode">
+              <legend className="ops-panel-context">
+                {t("modelsPage.autoMatch.modeLabel")}
+              </legend>
+              <label className="check">
+                <input
+                  type="radio"
+                  name="route-match-mode"
+                  checked={matchMode === "exact"}
+                  onChange={() => {
+                    setMatchMode("exact");
+                    setSelection(null);
+                  }}
+                />
+                <span>{t("modelsPage.autoMatch.modeExact")}</span>
+              </label>
+              <label className="check">
+                <input
+                  type="radio"
+                  name="route-match-mode"
+                  checked={matchMode === "related"}
+                  onChange={() => {
+                    setMatchMode("related");
+                    setSelection(null);
+                  }}
+                />
+                <span>{t("modelsPage.autoMatch.modeRelated", { name: pattern })}</span>
+              </label>
+              {matchMode === "related" ? (
+                <p className="ops-panel-context">
+                  {t("modelsPage.autoMatch.modeRewriteHint", { name: pattern })}
+                </p>
+              ) : null}
+            </fieldset>
+          ) : null}
+          {autoMatch && pattern ? (
             matches.isPending ? (
               <p className="ops-panel-context" role="status">
                 {t("common.loading")}
@@ -186,6 +228,13 @@ export function RouteDialog({
                         onChange={() => toggleMatch(item.channel_id)}
                       />
                       <span>{item.channel_name}</span>
+                      {item.model && item.model !== pattern ? (
+                        <span className="pg-chip mono">
+                          {t("modelsPage.autoMatch.matchesModel", {
+                            model: item.model,
+                          })}
+                        </span>
+                      ) : null}
                     </label>
                   ))}
                 </div>

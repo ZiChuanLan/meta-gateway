@@ -1,10 +1,10 @@
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, ExternalLink, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
 import { useSession } from "../session";
 import { useI18n } from "../i18n";
-import { Button, Dialog } from "../components/ui";
+import { Button, Dialog, Field } from "../components/ui";
 import { useOneClickUpdate } from "../hooks/useOneClickUpdate";
 import type { UpdateCheckStatus } from "../api/types";
 
@@ -29,7 +29,17 @@ export function UpdateDialog({
 	const { t } = useI18n();
 	const { client } = useSession();
 	const service = client ? api(client) : null;
-	const { watch, apply } = useOneClickUpdate();
+	const { watch, apply, failedTarget } = useOneClickUpdate();
+ const [applyError,setApplyError]=useState(false);
+ const [pending,setPending]=useState(false);
+ const qc=useQueryClient();
+ const channel=useQuery({queryKey:["update-channel"],queryFn:({signal})=>client!.get<{channel:"stable"|"beta";mode:string;tracking_tag:string}>("/admin/update-channel",signal),enabled:Boolean(client)});
+ const changeChannel=useMutation({mutationFn:async(value:string)=>{
+  await client!.put("/admin/update-channel",{channel:value});
+  const checked=await service!.refreshUpdateCheck();
+  qc.setQueryData(["update-check-dialog"],checked);
+  qc.setQueryData(["update-check"],checked);
+ },onSuccess:()=>qc.invalidateQueries({queryKey:["update-channel"]})});
 
 	// Refetch on open: the pill may have been rendered from a cache that is
 	// hours old, and the notes shown here are the whole point of the dialog.
@@ -71,6 +81,7 @@ export function UpdateDialog({
 	return (
 		<Dialog
 			title={t("app.updateDialogTitle", { version: status.latest })}
+            busy={Boolean(watch) || pending || changeChannel.isPending}
 			onClose={() => {
 				// The dialog cannot close mid-handoff: the container is being torn
 				// down and the only way out is forward (or the 3-minute timeout).
@@ -78,6 +89,14 @@ export function UpdateDialog({
 			}}
 		>
 			<div className="update-dialog-body">
+                <Field label={t("updates.channel")}>
+                  <select value={channel.data?.channel ?? status.channel ?? "stable"} disabled={!channel.data||Boolean(watch)||pending||changeChannel.isPending} onChange={event=>{setApplyError(false);changeChannel.mutate(event.target.value);}}>
+                    <option value="stable">{t("updates.stable")}</option><option value="beta">Beta</option>
+                  </select>
+                </Field>
+                {channel.data?.channel==="beta" ? <p className="field-hint">{t("updates.betaWarning")}</p> : null}
+                {channel.data?.mode==="watchtower" ? <p className="field-hint">{t("updates.watchtowerHint",{tag:channel.data.tracking_tag||"—"})}</p> : null}
+                {changeChannel.isError ? <p role="alert">{t("updates.failed")}</p> : null}
 				{watch ? (
 					<div className="update-progress" role="status">
 						<RefreshCw size={16} className="is-spinning" />
@@ -93,11 +112,14 @@ export function UpdateDialog({
 						) : (
 							<p className="muted">{t("app.updateNoNotes")}</p>
 						)}
-						<p className="muted update-restart-hint">{t("app.updateRestartHint")}</p>
+						{!status.has_update ? <p className="muted">{t("updates.noUpgrade")}</p> : null}
+ <p className="muted update-restart-hint">{t("app.updateRestartHint")}</p>
 					</>
 				)}
 			</div>
-			<div className="update-dialog-actions">
+			{failedTarget ? <p role="alert">{t("updates.timeout")}</p> : null}
+ {applyError ? <p role="alert">{t("updates.applyFailed")}</p> : null}
+ <div className="update-dialog-actions">
 				{status.release_url ? (
 					<a
 						className="update-release-link"
@@ -111,8 +133,8 @@ export function UpdateDialog({
 				) : null}
 				<Button
 					icon={<Download size={14} />}
-					disabled={Boolean(watch) || fresh.isPending}
-					onClick={() => apply(status.latest)}
+					disabled={Boolean(watch) || pending || changeChannel.isPending || changeChannel.isError || fresh.isFetching || !channel.data || (status.channel !== undefined && channel.data.channel !== status.channel) || !status.enabled || !status.has_update || Boolean(status.error)}
+					onClick={async () => {setPending(true);setApplyError(false);try{await apply(status.latest);}catch{setApplyError(true);}finally{setPending(false);}}}
 				>
 					{watch ? t("app.updateRunning") : t("app.updateApply", { version: status.latest })}
 				</Button>

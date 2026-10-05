@@ -1,0 +1,30 @@
+package selfupdate
+
+import "testing"
+
+func TestWatchtowerTracksConfiguredImageOnly(t *testing.T) {
+	for _, tc := range []struct {
+		track, target string
+		want          bool
+	}{
+		{"latest", "v1.2.3", true}, {"latest", "v1.3.0-beta.1", false}, {"beta", "v1.3.0-beta.2", true},
+		{"beta", "v1.3.0", true}, {"1.2.3-beta.1", "v1.2.3-beta.2", false}, {"", "v1.2.3", false},
+	} {
+		t.Setenv("SELFUPDATE_TRACK_TAG", tc.track)
+		if got := WatchtowerTargetAllowed(tc.target); got != tc.want {
+			t.Errorf("%+v got %v", tc, got)
+		}
+	}
+}
+
+func TestHandoffUsesConfirmedBetaTag(t *testing.T) {
+	f := newFakeDocker(t)
+	t.Setenv("HOSTNAME", "self-id")
+	s := New(f.socket)
+	s.target = "v9.1.0-beta.2"
+	s.handoff()
+	body := f.bodies["/containers/create"]
+	if body["Image"] != "zichuanlan/meta-gateway:9.1.0-beta.2" {
+		t.Fatalf("image=%v", body["Image"])
+	}
+}

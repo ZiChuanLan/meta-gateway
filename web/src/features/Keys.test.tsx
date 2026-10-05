@@ -12,7 +12,8 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { I18nProvider } from "../i18n";
 import { SessionProvider } from "../session";
 import { ToastProvider } from "../toast";
-import { Keys } from "./Keys";
+import { Keys, KeysView } from "./Keys";
+import { MEMBER_KEY_CAPS, type KeysSource } from "./keys/KeysSource";
 
 function LocationProbe() {
 	const location = useLocation();
@@ -417,6 +418,11 @@ describe("Keys page", () => {
 
 		// Rotate confirms, then shows the fresh token.
 		fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+		// A key is a relay credential, not a user account. The retired
+		// key-bound portal must not leave a sign-in management action here.
+		expect(
+			screen.queryByRole("menuitem", { name: /Sign-in methods|keys\.portal/ }),
+		).not.toBeInTheDocument();
 		fireEvent.click(screen.getByRole("menuitem", { name: "Rotate token" }));
 		expect(
 			await screen.findByText(/A new token will be generated/i),
@@ -426,5 +432,133 @@ describe("Keys page", () => {
 			within(rotateDialog).getByRole("button", { name: "Rotate token" }),
 		);
 		expect(await screen.findByText("mg-rotated-new")).toBeInTheDocument();
+	});
+
+	it("sends the route group and spend limit when editing a key", async () => {
+		// Both controls collected a value the update never sent, and an omitted
+		// field means "keep what is stored": picking a route group or a spend
+		// limit looked saved and was not. Assert on the request body, because
+		// that is the layer where the value was being lost.
+		const fetchMock = vi.fn(
+			async (input: RequestInfo | URL, init?: RequestInit) => {
+				const path = String(input);
+				const method = (init?.method ?? "GET").toUpperCase();
+				if (path.endsWith("/admin/downstream-keys") && method === "GET") {
+					return jsonResponse([
+						{
+							id: 9,
+							name: "tiered",
+							enabled: true,
+							scopes: "relay",
+							quota_used_tokens: 0,
+							quota_total_tokens: 0,
+							quota_total_cost: 0,
+							cost: 0,
+							has_token: true,
+							created_at: "2026-07-17T00:00:00Z",
+						},
+					]);
+				}
+				if (path.endsWith("/admin/route-groups")) {
+					return jsonResponse({ groups: ["default", "vip"] });
+				}
+				if (path.endsWith("/admin/downstream-keys/9") && method === "PUT") {
+					return jsonResponse({ id: 9, name: "tiered" });
+				}
+				if (
+					path.includes("/admin/discovery/models") ||
+					path.endsWith("/admin/routes/overview")
+				) {
+					return jsonResponse([]);
+				}
+				return jsonResponse({ error: `unexpected ${method} ${path}` }, 500);
+			},
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		renderKeys();
+
+		expect(await screen.findByText("tiered")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+		fireEvent.click(screen.getByRole("menuitem", { name: "Edit quota" }));
+
+		const dialog = await screen.findByRole("dialog", {
+			name: /Edit token quota/,
+		});
+		fireEvent.click(within(dialog).getByText("Quota"));
+		fireEvent.change(within(dialog).getByLabelText("Spend limit"), {
+			target: { value: "25" },
+		});
+		fireEvent.click(within(dialog).getByText("Advanced"));
+		fireEvent.change(within(dialog).getByLabelText("Route group"), {
+			target: { value: "vip" },
+		});
+		fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+		await waitFor(() => {
+			const put = fetchMock.mock.calls.find(
+				([input, init]) =>
+					String(input).endsWith("/admin/downstream-keys/9") &&
+					(init?.method ?? "GET").toUpperCase() === "PUT",
+			);
+			expect(put).toBeTruthy();
+			const body = JSON.parse(String(put?.[1]?.body));
+			expect(body.route_group_name).toBe("vip");
+			expect(body.quota_total_cost).toBe(25);
+		});
+	});
+
+	it("renders for a member with no console session and no team vocabulary", async () => {
+		// The member app mounts this same renderer with its own source and
+		// WITHOUT a SessionProvider. An operator-only hook inside it (the
+		// operating-mode lookup) took the whole user page down, so this renders it
+		// the way the member app does — no SessionProvider anywhere in the tree.
+		const source: KeysSource = {
+			keys: async () =>
+				[
+					{
+						id: 1,
+						name: "my-token",
+						enabled: true,
+						quota_used_tokens: 10,
+						quota_total_tokens: 0,
+						cost: 0,
+						created_at: "2026-10-01",
+						has_token: true,
+						group_name: "vip",
+					} as never,
+				],
+			discoveredModels: async () => [],
+			usageSummary: async () =>
+				({
+					request_count: 0,
+					prompt_tokens: 0,
+					completion_tokens: 0,
+					total_tokens: 0,
+					total_cost: 0,
+				}) as never,
+			routeOverviews: async () => [],
+			routeGroups: async () => ({ groups: [] }),
+			keyGroups: async () => ({ groups: ["vip"] }),
+			modelMetadata: async () => ({ items: [] }),
+		};
+		render(
+			<QueryClientProvider
+				client={
+					new QueryClient({ defaultOptions: { queries: { retry: false } } })
+				}
+			>
+				<I18nProvider>
+					<ToastProvider>
+						<MemoryRouter>
+							<KeysView source={source} caps={MEMBER_KEY_CAPS} />
+						</MemoryRouter>
+					</ToastProvider>
+				</I18nProvider>
+			</QueryClientProvider>,
+		);
+		expect(await screen.findByText("my-token")).toBeInTheDocument();
+		// The tenant group is the multi-user module's vocabulary: a member is
+		// never shown which group their token is bound to.
+		expect(screen.queryByText("Tenant group")).not.toBeInTheDocument();
 	});
 });

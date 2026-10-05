@@ -26,6 +26,8 @@ func NewSelfUpdateHandler(updater *selfupdate.Service, updateCheck *updatecheck.
 }
 
 func (h *SelfUpdateHandler) Register(r chi.Router) {
+	r.Get("/update-channel", h.getChannel)
+	r.Put("/update-channel", h.saveChannel)
 	r.Get("/self-update", h.status)
 	r.Post("/self-update/apply", h.apply)
 }
@@ -52,18 +54,26 @@ func (h *SelfUpdateHandler) apply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "target must be a newer release than the running version")
 		return
 	}
-	if latest := h.updateCheck.Status().Latest; latest != "" && latest != target {
+	checked := h.updateCheck.Refresh(r.Context())
+	if checked.Err != "" || !checked.HasUpdate {
+		h.audit(r, target, "rejected")
+		writeError(w, 409, "no verified update available; check channel and update settings")
+		return
+	}
+	if latest := checked.Latest; latest == "" || latest != target {
 		h.audit(r, target, "rejected")
 		writeError(w, http.StatusConflict, "target does not match the latest release ("+latest+"); re-run the check first")
 		return
 	}
 
-	if err := h.updater.Start(); err != nil {
+	if err := h.updater.StartTarget(target); err != nil {
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, selfupdate.ErrUnavailable):
 			status = http.StatusConflict
 		case errors.Is(err, selfupdate.ErrAlreadyRuning):
+			status = http.StatusConflict
+		case errors.Is(err, selfupdate.ErrTrackMismatch):
 			status = http.StatusConflict
 		case errors.Is(err, selfupdate.ErrNoContainer):
 			status = http.StatusConflict
@@ -95,4 +105,42 @@ func (h *SelfUpdateHandler) audit(r *http.Request, target, outcome string) {
 		Category:   "target=" + target,
 		StatusCode: http.StatusOK,
 	})
+}
+
+func (h *SelfUpdateHandler) getChannel(w http.ResponseWriter, r *http.Request) {
+	if !teamOwner(w, r) {
+		return
+	}
+	p, err := h.db.OperatorPreferences()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	mode := h.updater.Mode()
+	writeJSON(w, 200, map[string]any{"channel": p.UpdateChannel, "mode": mode, "tracking_tag": selfupdate.TrackingTag()})
+}
+func (h *SelfUpdateHandler) saveChannel(w http.ResponseWriter, r *http.Request) {
+	if !teamOwner(w, r) {
+		return
+	}
+	var req struct {
+		Channel string `json:"channel"`
+	}
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		return
+	}
+	if req.Channel != "stable" && req.Channel != "beta" {
+		writeError(w, 400, "invalid update channel")
+		return
+	}
+	if h.updater.Status().Running {
+		writeError(w, 409, "update already running")
+		return
+	}
+	if _, err := h.db.Exec(`UPDATE operator_preferences SET update_channel=? WHERE id=1`, req.Channel); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.audit(r, req.Channel, "channel_changed")
+	h.getChannel(w, r)
 }

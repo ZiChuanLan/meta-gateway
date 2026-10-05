@@ -6,6 +6,8 @@ type ChannelConnectivityState = "unknown" | "reachable" | "unreachable";
 type ChannelAccountState =
   "unknown" | "ok" | "invalid" | "banned" | "rate_limited" | "failed";
 
+export type SiteProbeSourceKind = "uptime_kuma" | "newapi" | "sub2api_transit" | "";
+
 export interface Site {
   id: number;
   name: string;
@@ -14,6 +16,15 @@ export interface Site {
   status: Status;
   created_at: string;
   updated_at: string;
+  /** External probe source: the site's own public probe data. */
+  probe_source_kind?: SiteProbeSourceKind;
+  probe_source_url?: string;
+  /** Derive the source from the platform (no hand-typed URL needed). */
+  probe_auto?: boolean;
+  probe_source_config?: string;
+  probe_source_enabled: boolean;
+  probe_last_run_at?: string;
+  probe_last_error?: string;
 }
 export interface Credential {
   id: number;
@@ -167,18 +178,54 @@ export interface RouteMember {
   last_error?: string;
   created_at: string;
   updated_at: string;
-  /** Self-set unit prices per 1k tokens (0 = fall to model price, then key price). */
+  /** Self-set unit prices per 1k tokens (0 = fall to the model price). */
   price_prompt_per_1k?: number;
   price_completion_per_1k?: number;
   price_cache_per_1k?: number;
+  /** Flat charge per call, for upstreams that bill by call. */
+  price_per_request?: number;
+  /** Context-length ladder and time-of-day windows, as the API carries them:
+   *  JSON text, empty when unset. See api/pricingText.ts for the helpers. */
+  price_tiers?: string;
+  price_schedule?: string;
+}
+
+/**
+ * One rung of a context-length ladder. The rungs apply in ascending ceiling
+ * order and the first one the request fits under prices it; a ceiling of 0 is
+ * the open-ended rung.
+ */
+export interface PriceTier {
+  max_prompt_tokens: number;
+  prompt: number;
+  completion: number;
+  cache: number;
+  per_request: number;
+}
+
+/** A recurring window whose multiplier scales a layer's prices. */
+export interface PriceWindow {
+  /** ISO weekday numbers, 1 = Monday … 7 = Sunday. Empty = every day. */
+  days: number[];
+  /** Hours in the gateway's local time; equal values mean the whole day. */
+  from_hour: number;
+  to_hour: number;
+  multiplier: number;
 }
 export interface DownstreamKey {
+  user_id?: number;
   id: number;
   name: string;
   enabled: boolean;
   scopes?: string;
   quota_total_tokens?: number;
   quota_used_tokens?: number;
+  /**
+   * Spend budget in the ledger's unit (0 = unlimited). It is enforced beside
+   * the token quota: whichever runs out first refuses the request.
+   */
+  quota_total_cost?: number;
+  quota_used_cost?: number;
   model_allowlist?: string;
   model_denylist?: string;
   expires_at?: string;
@@ -382,7 +429,19 @@ export interface ModelChannelMatch {
   channel_id: number;
   channel_name: string;
   source: "models_csv" | "discovered";
+  /**
+   * The model name that matched. On a related match it is the sibling the
+   * member will forward as ("mimo-v2.5-flash" for a route named "mimo-v2.5").
+   */
+  model?: string;
 }
+
+/**
+ * How a route pattern is matched against a channel's model list.
+ * `related` also accepts the pattern's -sibling models and rewrites the
+ * upstream name to whichever the channel actually serves.
+ */
+export type ModelMatchMode = "exact" | "related";
 
 export interface UnifyVariant {
   channel_id: number;
@@ -479,6 +538,254 @@ export interface ModelHealth {
   consecutive_failures: number;
 }
 
+/**
+ * External site probe data: what a site publishes about its own models.
+ *
+ * Read from the site's public status page (Uptime Kuma) or its public price
+ * table, so availability can be judged without spending upstream tokens. It is
+ * evidence, not a measurement of our own keys: the tool shows it next to our
+ * routes and only the operator's apply turns it into routing changes.
+ */
+export interface SiteProbePolicy {
+  ratio_threshold: number;
+  min_samples: number;
+  low_rounds: number;
+  high_rounds: number;
+}
+
+/** How a site's model name was tied to one of our routes. */
+export type SiteProbeMatch =
+  | "exact"
+  | "pattern"
+  | "member"
+  | "normalized"
+  /** Matched after dropping the catalog namespace (cn:glm-5.2 -> glm-5.2). */
+  | "namespace"
+  | "";
+
+export type SiteProbeVerdict =
+  | "ok"
+  | "low"
+  | "pending"
+  | "insufficient"
+  | "stale"
+  | "no_data";
+
+/** A price the site publishes for one model, normalized to USD. */
+export interface SiteProbePrice {
+  mode?: "token" | "fixed";
+  /**
+   * The currency the site declares for its own price table. The amounts below
+   * are in THIS currency; the gateway never converts them.
+   */
+  currency?: string;
+  /** What the site prints ("$", "¥", "¤" for a custom symbol). */
+  currency_symbol?: string;
+  input_per_million?: number;
+  output_per_million?: number;
+  cache_read_per_million?: number;
+  per_request?: number;
+  group_ratio?: number;
+  /** The published expression, kept so an unparsed price can be shown as text. */
+  raw?: string;
+  unparsed?: boolean;
+}
+
+export interface SiteProbeRound {
+  run_id: number;
+  ratio: number;
+  samples: number;
+  up_count: number;
+  weak_evidence?: boolean;
+  avg_ping_ms?: number;
+  observed_at: string;
+  price?: SiteProbePrice;
+}
+
+export interface SiteProbeMemberState {
+  member_id: number;
+  channel_id: number;
+  channel_name: string;
+  group_name?: string;
+  enabled: boolean;
+  auto_disabled: boolean;
+  /** A route pinned to this member: the store refuses to auto-disable it. */
+  single_member?: boolean;
+  /** Already carries a price in the billing layer — adoption fills gaps only. */
+  has_price?: boolean;
+}
+
+export interface SiteProbeRow {
+  route: string;
+  match: SiteProbeMatch;
+  raw_model: string;
+  site_id: number;
+  site_name: string;
+  group_name?: string;
+  verdict: SiteProbeVerdict;
+  low_streak: number;
+  ok_streak: number;
+  rounds: SiteProbeRound[];
+  members: SiteProbeMemberState[];
+  /** No availability data at all — a price-only source. */
+  price_only?: boolean;
+  source_kind?: string;
+  /**
+   * Our own relay's record for this (route, site) pair, over the last day: the
+   * availability fallback for sites that publish no probe data of their own
+   * (which is every New-API price table).
+   */
+  traffic?: {
+    samples: number;
+    failures: number;
+    ratio: number;
+    avg_first_byte_ms?: number;
+    window_hours: number;
+  };
+  /** Where the verdict's evidence came from: the site, our own traffic, or a
+   * third-party monitoring directory (last resort, always labelled). */
+  availability_source?: "site" | "traffic" | "watchbot" | "";
+  /** A third-party directory's reading for the same pair. */
+  external?: {
+    source: string;
+    ratio: number;
+    avg_latency_ms?: number;
+    first_token_ms?: number;
+    tokens_per_second?: number;
+    service_state?: string;
+    acquisition_state?: string;
+    observed_at?: string;
+  };
+  /**
+   * The model catalog's reference price (USD per 1M), filled only when the site
+   * publishes none for this model. It is already the gateway's billing fallback,
+   * so it is display-only: adopting it per member would just duplicate it.
+   */
+  catalog_price?: {
+    mode?: "token" | "fixed";
+    currency?: string;
+    currency_symbol?: string;
+    input_per_million?: number;
+    output_per_million?: number;
+    cache_read_per_million?: number;
+    per_request?: number;
+    raw?: string;
+    unparsed?: boolean;
+  };
+  /**
+   * The newest price the site published for this model, normalized to USD.
+   * Evidence: it reaches the billing layer only when an operator adopts it.
+   */
+  observed_price?: SiteProbePrice;
+}
+
+export interface SiteProbeUnmatched {
+  site_id: number;
+  site_name: string;
+  raw_model: string;
+  group_name?: string;
+  ratio: number;
+  samples: number;
+  price?: SiteProbePrice;
+}
+
+export interface SiteProbeSiteStatus {
+  site_id: number;
+  site_name: string;
+  probe_source_kind?: string;
+  probe_source_url?: string;
+  probe_source_enabled: boolean;
+  probe_last_run_at?: string;
+  probe_last_error?: string;
+  last_run_status?: string;
+  monitor_count: number;
+  /** Stored settings blob (auto-apply + thresholds), echoed as stored. */
+  probe_source_config?: string;
+  /** This site applies its own verdicts every round. */
+  auto_apply: boolean;
+  policy: SiteProbePolicy;
+  /** The source is derived from the platform (no hand-typed URL). */
+  probe_auto?: boolean;
+}
+
+export interface SiteProbeReport {
+  policy: SiteProbePolicy;
+  rows: SiteProbeRow[];
+  unmatched: SiteProbeUnmatched[];
+  sites: SiteProbeSiteStatus[];
+  generated_at: string;
+}
+
+/** One routing change the site-probe policy proposes (or applied). */
+export interface SiteProbeAction {
+  route: string;
+  site_id: number;
+  site_name: string;
+  channel_id: number;
+  channel_name: string;
+  kind: "disable" | "recover";
+  reason: string;
+  members_moved: number;
+  /** Set when nothing moved: single_member, not_disableable, nothing_to_recover. */
+  skipped?: string;
+}
+
+/** What adopting an observed price wrote, per member. */
+export interface SiteProbeAdoptResult {
+  member_id: number;
+  adopted?: string[];
+  /** Set when nothing was written: no_price, already_priced. */
+  skipped?: string;
+}
+
+/** One site from a public monitoring directory, matched against our sites. */
+export interface SiteProbeCatalogEntry {
+  name: string;
+  url: string;
+  /** "" = pricing-shaped, the auto source derived from the platform covers it. */
+  kind: "uptime_kuma" | "newapi" | "sub2api_transit" | "auto" | "";
+  models?: number;
+  /** create | update | skip (a custom source already configured). */
+  action: string;
+  existing_site?: string;
+}
+
+/** What a pasted URL turned out to be, with a preview of its data. */
+export interface SiteProbeDetection {
+  kind: "uptime_kuma" | "newapi" | "sub2api_transit";
+  url: string;
+  base?: string;
+  slug?: string;
+  title?: string;
+  groups?: { id: number; name: string }[];
+  monitors?: {
+    id: string;
+    name: string;
+    type: string;
+    group_name: string;
+    samples: number;
+    up_count: number;
+    ratio: number;
+    avg_ping_ms?: number;
+    weak_evidence: boolean;
+  }[];
+  price_count?: number;
+  price_unparsed?: number;
+  /** Sub2API transit: which snapshot shape the site serves and what it reports. */
+  transit_mode?: "v1" | "v2";
+  transit_homepage?: string;
+  transit_readings?: {
+    name: string;
+    type: string;
+    group_name?: string;
+    samples: number;
+    up_count: number;
+    ratio: number;
+    avg_ping_ms?: number;
+    weak_evidence: boolean;
+  }[];
+}
+
 /** Probe scope. Empty arrays mean "everything". */
 export interface ProbeStartRequest {
   channel_ids?: number[];
@@ -554,10 +861,15 @@ export interface ModelMetadata {
   supports_thinking: number; // -1 unknown, 0 no, 1 yes
   vendor: string;
   notes: string;
-  /** Self-set unit prices per 1k tokens (0 = fall back to the key price). */
+  /** Self-set unit prices per 1k tokens (0 = no model-level price). */
   price_prompt_per_1k?: number;
   price_completion_per_1k?: number;
   price_cache_per_1k?: number;
+  /** Flat charge per call, for upstreams that bill by call. */
+  price_per_request?: number;
+  /** Context-length ladder and time-of-day windows as JSON text; empty = unset. */
+  price_tiers?: string;
+  price_schedule?: string;
   updated_at?: string;
 }
 
@@ -840,11 +1152,17 @@ export interface RuntimeEditableSettings {
   health_sweep_concurrency: number;
   health_sweep_timeout_seconds: number;
   channel_retry_times: number;
-  key_pool_rotation: boolean;
   /** Gateway may query GitHub for newer releases to power the update badge. */
   update_check_enabled: boolean;
   /** Sync mode newly created channels inherit when the request omits it. */
   default_model_sync_mode: "auto" | "manual";
+  /**
+   * External site-probe collection cadence. Sites publish their own probe data
+   * at very different rates, so how often the gateway reads those pages is a
+   * setting rather than a constant (defaults: 900s + 120s jitter).
+   */
+  site_probe_interval_seconds: number;
+  site_probe_jitter_seconds: number;
 }
 
 export interface SelfUpdateStatus {
@@ -855,6 +1173,7 @@ export interface SelfUpdateStatus {
 }
 
 export interface UpdateCheckStatus {
+  channel?: "stable" | "beta";
   enabled: boolean;
   current: string;
   latest: string;

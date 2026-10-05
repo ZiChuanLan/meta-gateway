@@ -1,3 +1,4 @@
+import { OperatorUpgradePrompt } from "./features/OperatorProfilePanel";
 import {
 	ArrowRight,
 	Puzzle,
@@ -6,7 +7,7 @@ import {
 	Moon,
 	Sun,
 } from "lucide-react";
-import { BrandMark } from "./components/BrandMark";
+
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Navigate,
@@ -15,16 +16,17 @@ import {
 	useLocation,
 	useNavigate,
 } from "react-router-dom";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ApiClient, ApiError, api } from "./api/client";
 import type { Site } from "./api/types";
 import { LanguageSwitcher, useI18n } from "./i18n";
-import { useSession } from "./session";
+import { useSession, type AccountSession } from "./session";
 import { useModules } from "./hooks/useModules";
 import {
 	Button,
 	ErrorState,
+	Dialog,
 	Field,
 	IconButton,
 	Loading,
@@ -40,9 +42,23 @@ import { GatewayTransition } from "./components/GatewayTransition";
 import { createEdgeSparkHost } from "./lib/katanafx";
 import { ENTRANCE_CHARGE_MS, ENTRANCE_EXIT_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
 import { useHiddenPlugins } from "./lib/pluginNav";
-import { CHROME_NAV_ITEMS } from "./lib/chromeNav";
-import { useChromePrefs } from "./lib/topBar";
+import { CHROME_NAV_ITEMS, STAFF_ONLY_PATHS, canAccessNav, type ChromeNavItem } from "./lib/chromeNav";
+import { modeHiddenNav, useChromePrefs } from "./lib/topBar";
+import { isStaff, type ConsoleRole } from "./session";
+import { accountRequest, COOKIE_SESSION } from "./team/transport";
+import { teamText } from "./team/text";
+import { AcceptFlow } from "./features/AcceptFlow";
+import { AccountPage } from "./features/AccountPage";
 import { AppearanceProvider, useAppearance } from "./appearance";
+import { LoginShell } from "./components/LoginShell";
+// The multi-user module (its own area of the console) and the sign-in screen a
+// team admin gets. Boards are loaded on demand — see team/panels/lazy.ts.
+import * as UsersBoards from "./team/panels/lazy";
+import { StandaloneAdmin } from "./team/StandaloneAdmin";
+import { useOperatingMode } from "./hooks/useOperatingMode";
+import { setCurrency, useCurrency } from "./lib/format";
+import { useToast } from "./toast";
+import { PRELOAD_EXHAUSTED_EVENT } from "./lib/preloadRecovery";
 
 const Channels = lazy(() =>
 	import("./features/Channels").then((module) => ({ default: module.Channels })),
@@ -77,6 +93,9 @@ const Store = lazy(() =>
 const Workbench = lazy(() =>
 	import("./features/Workbench").then((module) => ({ default: module.default })),
 );
+const UsersLayout = lazy(() =>
+	import("./team/UsersLayout").then((module) => ({ default: module.UsersLayout })),
+);
 
 type TransitionPhase = "idle" | "fading" | "sealing" | "revealing" | "sheathing";
 
@@ -84,6 +103,7 @@ type AuthorizedSession = {
 	token: string;
 	remember: boolean;
 	sites: Site[];
+	account?: AccountSession;
 };
 
 const SEAL_DURATION = ENTRANCE_CHARGE_MS;
@@ -97,9 +117,38 @@ export function App() {
 }
 
 function GatewayApp() {
+	useCurrency();
 	const { appearance } = useAppearance();
-	const { client, connect, disconnect } = useSession();
+	const { client, connect, connectMember, disconnect, role } = useSession();
+	// The standalone admin screen renders the shared user-management module, so
+	// it passes the transport in — the module deliberately does not know about
+	// the console's session (see team/UsersLayout.tsx).
+	const adminRequest = useCallback(
+		<T,>(path: string, init?: RequestInit) => client!.request<T>(path, init),
+		[client],
+	);
 	const queryClient = useQueryClient();
+	const toast = useToast();
+	const { t } = useI18n();
+	// Money is rendered through the site's currency everywhere, so it is read
+	// once here and applied to the shared formatter before any table paints.
+	const service = useMemo(() => (client ? api(client) : null), [client]);
+	const currencySettings = useQuery({
+		queryKey: ["display-settings", role ?? "staff"],
+		// The console's own endpoint is behind the admin gate; a member reads
+		// the same values from their own path, so both format money alike.
+		queryFn: ({ signal }) =>
+			role === "member"
+				? accountRequest<{ symbol: string; rate: number }>(
+						"/me/display-settings",
+						{ signal },
+					)
+				: service!.displaySettings(signal),
+		enabled: Boolean(service),
+	});
+	useEffect(() => {
+		if (currencySettings.data) setCurrency(currencySettings.data);
+	}, [currencySettings.data]);
 	const [transitionPhase, setTransitionPhase] =
 		useState<TransitionPhase>("idle");
 	const [bootstrapSites, setBootstrapSites] = useState<Site[]>();
@@ -119,17 +168,30 @@ function GatewayApp() {
 	}, []);
 
 	useEffect(() => clearTransitionTimers, [clearTransitionTimers]);
+	// The preload recovery reloads the tab once when a chunk went missing after
+	// a deploy. If that did not help, this tab is genuinely holding an old
+	// build: say so instead of leaving a blank page or a console error.
+	useEffect(() => {
+		const onStale = () => toast.push({ tone: "error", message: t("app.staleBundle") });
+		window.addEventListener(PRELOAD_EXHAUSTED_EVENT, onStale);
+		return () => window.removeEventListener(PRELOAD_EXHAUSTED_EVENT, onStale);
+	}, [toast, t]);
 	useEffect(() => {
 		if (!client) queryClient.clear();
 	}, [client, queryClient]);
 
+	const adoptSession = useCallback((session: AuthorizedSession) => {
+		if (session.account) connectMember(session.account);
+		else connect(session.token, session.remember);
+	}, [connect, connectMember]);
+
 	const authorize = useCallback(
-		(token: string, remember: boolean, sites: Site[]) => {
+		(token: string, remember: boolean, sites: Site[], account?: AccountSession) => {
 			if (transitionPhase !== "idle") return;
-			const authorized = { token: token.trim(), remember, sites };
+			const authorized = { token: token.trim(), remember, sites, account };
 			setBootstrapSites(sites);
 			if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-				connect(authorized.token, authorized.remember);
+				adoptSession(authorized);
 				setTransitionPhase("revealing");
 				schedule(() => setTransitionPhase("idle"), REDUCED_REVEAL_DURATION);
 				return;
@@ -140,7 +202,7 @@ function GatewayApp() {
 			schedule(() => {
 				const pending = pendingSession.current;
 				if (!pending) return;
-				connect(pending.token, pending.remember);
+				adoptSession(pending);
 				pendingSession.current = null;
 				setTransitionPhase("revealing");
 				schedule(() => {
@@ -149,7 +211,7 @@ function GatewayApp() {
 				}, REVEAL_DURATION);
 			}, SEAL_DURATION);
 		},
-		[connect, schedule, transitionPhase],
+		[adoptSession, schedule, transitionPhase],
 	);
 
 	const handleDisconnect = useCallback(() => {
@@ -172,13 +234,15 @@ function GatewayApp() {
 		pendingSession.current = null;
 		// Skip only completes a transition after authentication has succeeded.
 		if (transitionPhase === "sheathing") disconnect();
-		else if (pending) connect(pending.token, pending.remember);
+		else if (pending) adoptSession(pending);
 		setTransitionPhase("idle");
-	}, [clearTransitionTimers, connect, disconnect, transitionPhase]);
+	}, [clearTransitionTimers, adoptSession, disconnect, transitionPhase]);
 
 	return (
 		<>
-			{client ? (
+			{client && role === "admin" ? (
+				<div><header style={{padding:16,display:"flex",justifyContent:"space-between"}}><strong>Meta Gateway</strong><button type="button" onClick={handleDisconnect}>退出 / Sign out</button></header><StandaloneAdmin request={adminRequest}/></div>
+			) : client ? (
 				<div
 					className={`authenticated-stage${transitionPhase === "revealing" ? " is-revealing" : ""}`}
 					style={{ animationDuration: `${REVEAL_DURATION}ms` }}
@@ -207,12 +271,25 @@ function Connect({
 	transitioning,
 	transitionPhase,
 }: {
-	onAuthorized: (token: string, remember: boolean, sites: Site[]) => void;
+	onAuthorized: (token: string, remember: boolean, sites: Site[], account?: AccountSession) => void;
 	transitioning: boolean;
 	transitionPhase: TransitionPhase;
 }) {
-	const { t } = useI18n();
-	const [token, setToken] = useState("");
+	const { t, locale } = useI18n();
+	const { connectMember } = useSession();
+	// Invitation, recovery and code links all land here now: /app used to serve
+	// them, and the console is where those links point. The tokens ride in the
+	// query string, which is also what makes them survivable across a sign-in
+	// redirect.
+	const linkParams = new URLSearchParams(location.search);
+	const inviteToken = linkParams.get("invite") ?? "";
+	const recoveryToken = linkParams.get("recovery") ?? "";
+	const [manualCode, setManualCode] = useState(false);
+	const accepting = Boolean(inviteToken || recoveryToken || manualCode);
+	const team = teamText(locale);
+	const [username, setUsername] = useState("");
+	const [upgradeHelp, setUpgradeHelp] = useState(false);
+	const [password, setPassword] = useState("");
 	const [remember, setRemember] = useState(true);
 	const [error, setError] = useState("");
 	const [pending, setPending] = useState(false);
@@ -325,19 +402,19 @@ function Connect({
 	};
 
 
-	async function submit(e: React.FormEvent) {
+	async function submit(e: React.FormEvent, legacy = false) {
 		e.preventDefault();
-		if (!token.trim()) return;
+		if ((!legacy && !username.trim()) || !password) return;
 		setPending(true);
 		setError("");
 		try {
-			// Unified login exchange: raw token (+ TOTP code when enabled) is
-			// swapped for a short-lived signed session token server-side.
+			// The server selects the account and role; the client never guesses
+			// identity from a username or retries with elevated credentials.
 			const res = await fetch("/admin/session", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					token: token.trim(),
+					...(legacy ? {token:password} : {username: username.trim(), password}),
 					totp_code: needTOTP ? totpCode.trim() : "",
 				}),
 			});
@@ -347,12 +424,16 @@ function Connect({
 				setError(t("app.connect.totpRequired"));
 				return;
 			}
-			if (!res.ok || !body.session_token) {
+			if (!res.ok || (!body.session_token && !body.user)) {
 				setError(
 					typeof body.error === "string" && body.error
-						? body.error
+						? (body.error === "invalid_credentials" ? t("app.connect.invalidCredentials") : body.error)
 						: t("app.connect.failed"),
 				);
+				return;
+			}
+				if (body.user && body.csrf) {
+				onAuthorized(COOKIE_SESSION, false, [], { role: body.user.role, csrf: body.csrf, remember });
 				return;
 			}
 			const sessionToken = body.session_token as string;
@@ -374,13 +455,16 @@ function Connect({
 		}
 	}
 	return (
-		<div ref={loginRef} className={"login-page login-motion" + (transitionPhase === "sealing" ? " is-leaving" : "")}>
-			<div className="login-atmosphere" aria-hidden="true" style={bgUrl ? { backgroundImage: "url(" + JSON.stringify(bgUrl) + ")" } : undefined} />
-			<KatanaCanvas charging={isFocused || pending || transitioning} chargeProgress={pending || transitioning ? 1 : .65} motionTarget={loginRef} />
-			<div className="login-light-ribbons" aria-hidden="true"><i /><i /><i /></div>
-			<header className="login-header">
-				<div className="login-brand"><span className="console-brand-mark"><BrandMark size={23} /></span><strong>Meta Gateway</strong></div>
-					<div className="login-tools">
+		<LoginShell
+			rootRef={loginRef}
+			className={transitionPhase === "sealing" ? "is-leaving" : undefined}
+			atmosphereStyle={bgUrl ? { backgroundImage: "url(" + JSON.stringify(bgUrl) + ")" } : undefined}
+			effects={<KatanaCanvas charging={isFocused || pending || transitioning} chargeProgress={pending || transitioning ? 1 : .65} motionTarget={loginRef} />}
+			edition={t("shell.workspace")}
+			title={<>{t("login.titleFirst")}<br /><span>{t("login.titleSecond")}</span></>}
+			description={t("login.description")}
+			footerRight={t("login.foundation")}
+			tools={<>
 					<IconButton label={t(scheme === "dark" ? "app.themeLight" : "app.themeDark")} onClick={toggleScheme}>{scheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</IconButton>
 						<LanguageSwitcher />
 						<IconButton
@@ -434,32 +518,55 @@ function Connect({
 									document.body,
 								)
 							: null}
-					</div>
-
-			</header>
-			<main className="login-stage">
-				<section className="login-introduction">
-					<span className="login-edition">{t("shell.workspace")}</span>
-					<h1>{t("login.titleFirst")}<br /><span>{t("login.titleSecond")}</span></h1>
-					<p>{t("login.description")}</p>
-					<div className="login-sculpture" aria-hidden="true"><span className="login-poster-code">01 / CONNECT</span><span className="login-orbit" /><span className="login-tile is-back" /><span className="login-tile is-middle" /><span className="login-tile is-front"><BrandMark size={46} /></span><span className="login-orbit-point" /><span className="login-poster-axis">META / GATEWAY</span></div>
-				</section>
-				<section className={"login-card" + (isFocused ? " is-focused" : "")} aria-labelledby="login-card-title">
-					<div className="login-card-heading"><span className="login-card-mark"><ShieldCheck size={22} strokeWidth={1.4} /></span><h2 id="login-card-title">{t("login.welcome")}</h2><p>{t("login.hint")}</p></div>
-					<form onSubmit={submit} aria-busy={pending || transitioning}>
-						<Field label={t("app.connect.token")}>
-							<input
-								autoFocus
-								type="password"
-								value={token}
-								onChange={(e) => setToken(e.target.value)}
-								onFocus={() => setIsFocused(true)}
-								onBlur={() => setIsFocused(false)}
-								autoComplete="current-password"
-								disabled={pending || transitioning}
-								required
-							/>
-						</Field>
+					</>}
+		>
+			<section className={"login-card" + (isFocused ? " is-focused" : "")} aria-labelledby="login-card-title">
+					<div className="login-card-heading"><span className="login-card-mark"><ShieldCheck size={22} strokeWidth={1.4} /></span><h2 id="login-card-title">{accepting ? team(recoveryToken ? "recover" : "accept") : t("login.welcome")}</h2><p>{accepting ? team("loginHint") : t("login.hint")}</p></div>
+					{accepting ? (
+						<AcceptFlow
+							invite={inviteToken}
+							recovery={recoveryToken}
+							manual={manualCode}
+							t={team}
+							onDone={connectMember}
+							onBack={() => {
+								setManualCode(false);
+								history.replaceState(null, "", "/console");
+							}}
+						/>
+					) : (
+					<>
+					<form
+						onSubmit={submit}
+						aria-busy={pending || transitioning}
+					>
+						<>
+								<Field label={t("app.connect.username")}>
+									<input
+										autoFocus
+										type="text"
+										value={username}
+										onChange={(e) => setUsername(e.target.value)}
+										onFocus={() => setIsFocused(true)}
+										onBlur={() => setIsFocused(false)}
+										autoComplete="username"
+										disabled={pending || transitioning}
+										required
+									/>
+								</Field>
+								<Field label={t("app.connect.password")}>
+									<input
+										type="password"
+										value={password}
+										onChange={(e) => setPassword(e.target.value)}
+										onFocus={() => setIsFocused(true)}
+										onBlur={() => setIsFocused(false)}
+										autoComplete="current-password"
+										disabled={pending || transitioning}
+										required
+									/>
+								</Field>
+							</>
 						{needTOTP ? (
 							<Field label={t("app.connect.totp")}>
 								<input
@@ -479,18 +586,22 @@ function Connect({
 							</Field>
 						) : null}
 						<label className="check">
-							<input
-								type="checkbox"
-								checked={remember}
-								onChange={(e) => setRemember(e.target.checked)}
-								disabled={pending || transitioning}
-							/>
-							<span>{t("app.connect.remember")}</span>
-						</label>
+								<input
+									type="checkbox"
+									checked={remember}
+									onChange={(e) => setRemember(e.target.checked)}
+									disabled={pending || transitioning}
+								/>
+								<span>{t("app.connect.remember")}</span>
+							</label>
 						{error && <div className="inline-error" role="alert">{error}</div>}
 						<Button
 							type="submit"
-							disabled={pending || transitioning || !token.trim()}
+							disabled={
+								pending ||
+								transitioning ||
+								!username.trim() || !password
+							}
 							className="login-submit"
 							ref={loginButtonRef}
 						>
@@ -502,11 +613,34 @@ function Connect({
 							</span>
 						</Button>
 					</form>
+					{/* "I have a code" is the same flow as arriving through an invite
+					    link: only where the code came from differs. */}
+					<button
+						type="button"
+						className="login-back"
+						disabled={pending || transitioning}
+						onClick={() => setManualCode(true)}
+					>
+						{team("haveCode")}
+					</button>
+					</>
+					)}
+                    <button type="button" className="login-back" disabled={pending || transitioning} onClick={()=>setUpgradeHelp(true)}>{t("login.upgradeHelp")}</button>
+                    {upgradeHelp ? <Dialog title={t("login.upgradeHelp")} onClose={()=>setUpgradeHelp(false)}>
+                      <p>{t("login.upgradeCredentials")}</p>
+                      <p>{t("login.upgradeCollision")}</p>
+                      <p>{t("login.upgradeTeam")}</p>
+                      <p>{t("operator.legacyHint")}</p>
+                      <form onSubmit={(event)=>void submit(event,true)}>
+                        <Field label={t("operator.confirmToken")}><input type="password" autoComplete="current-password" value={password} onChange={(event)=>setPassword(event.target.value)} required disabled={pending||transitioning}/></Field>
+                        {needTOTP ? <Field label={t("app.connect.totp")}><input inputMode="numeric" pattern="[0-9]{6}" autoComplete="one-time-code" value={totpCode} onChange={(event)=>setTotpCode(event.target.value)} required disabled={pending||transitioning}/></Field> : null}
+                        {error ? <p role="alert">{error}</p> : null}
+                        <Button type="submit" disabled={!password||pending||transitioning}>{t("operator.legacyLogin")}</Button>
+                      </form>
+                    </Dialog> : null}
 					<p className="login-private"><ShieldCheck size={13} />{t("login.private")}</p>
-				</section>
-			</main>
-			<footer className="login-footer"><span>Meta Gateway</span><span>{t("login.foundation")}</span></footer>
-		</div>
+			</section>
+		</LoginShell>
 	);
 }
 
@@ -521,24 +655,29 @@ function Authenticated({
 	entranceActive: boolean;
 	onUnauthorized: () => void;
 }) {
-	const { client } = useSession();
+	const { client, role } = useSession();
 	const { t } = useI18n();
+	// The gateway's site list is staff-only, and the session a member holds was
+	// already proven by the /me call that established it — so a member skips
+	// the query entirely instead of being shown its 403 as a full-page error.
+	const staff = isStaff(role);
 	const auth = useQuery({
 		queryKey: ["auth", clientKey],
 		queryFn: ({ signal }) => api(client!).sites(signal),
 		initialData: initialSites,
+		enabled: staff,
 	});
 	useEffect(() => {
 		if (auth.error instanceof ApiError && auth.error.status === 401)
 			onUnauthorized();
 	}, [auth.error, onUnauthorized]);
-	if (auth.isPending)
+	if (staff && auth.isPending)
 		return (
 			<div className="fullscreen-state">
 				<Loading />
 			</div>
 		);
-	if (auth.isError)
+	if (staff && auth.isError)
 		return (
 			<div className="fullscreen-state">
 				<ErrorState error={auth.error} retry={() => auth.refetch()} />
@@ -551,6 +690,27 @@ function Authenticated({
 		<AuthenticatedShell onUnauthorized={onUnauthorized} entranceActive={entranceActive} />
 	);
 }
+/**
+ * Keeps a member out of the gateway's own pages.
+ *
+ * The API refuses those endpoints to a member regardless (the team principal
+ * gate), so this is not the security boundary — it is the difference between
+ * "you cannot do that" and walking into a page that will only error. A member
+ * who types one of these paths into the address bar lands back on the overview.
+ */
+function RouteGuard({ role, pathname }: { role: ConsoleRole; pathname: string }) {
+	const navigate = useNavigate();
+	const blocked =
+		!isStaff(role) &&
+		STAFF_ONLY_PATHS.some(
+			(path) => pathname === path || pathname.startsWith(path + "/"),
+		);
+	useEffect(() => {
+		if (blocked) navigate("/", { replace: true });
+	}, [blocked, navigate]);
+	return null;
+}
+
 function AuthenticatedShell({
 	onUnauthorized,
 	entranceActive,
@@ -563,15 +723,29 @@ function AuthenticatedShell({
 	// Which chrome entries the operator keeps (Settings → Appearance: the top
 	// bar's controls and the navigation rows). Display only — see lib/topBar.ts.
 	const chrome = useChromePrefs();
+	const operatingMode=useOperatingMode();
 	// Plugin entries the operator hid from the sidebar (a display preference,
 	// stored per browser like the theme).
 	const hiddenPlugins = useHiddenPlugins();
 	const [paletteOpen, setPaletteOpen] = useState(false);
-	const { client } = useSession();
-	// Real telemetry: channel health drives the deck readout instead of a static ONLINE.
+	const { client, role } = useSession();
+	// A raw admin token (role === null) is the operator themselves, so it ranks
+	// with an owner. Everything the console shows is then filtered by role:
+	// staff get the gateway's pages, a member gets the pages that are theirs.
+	const effectiveRole = role ?? "owner";
+	const allowedFor = (item: ChromeNavItem) =>
+		canAccessNav(item, role);
+	const usersRequest = useCallback(
+		<T,>(path: string, init?: RequestInit) => client!.request<T>(path, init),
+		[client],
+	);
+	// Real telemetry: channel health drives the deck readout instead of a static
+	// ONLINE. It is the gateway's own plumbing, so a member never asks for it —
+	// the readout simply reports nothing rather than an error.
 	const channelStats = useQuery({
 		queryKey: ["channel-overviews"],
 		queryFn: ({ signal }) => api(client!).channelOverviews(signal),
+		enabled: isStaff(role),
 		refetchInterval: 30_000,
 	});
 	const healthy = (channelStats.data ?? []).filter((o) =>
@@ -594,6 +768,8 @@ function AuthenticatedShell({
 	const updateCheck = useQuery({
 		queryKey: ["update-check"],
 		queryFn: ({ signal }) => api(client!).updateCheck(signal),
+		// Releasing the gateway's image is an operator's decision.
+		enabled: isStaff(role),
 		staleTime: 10 * 60_000,
 		refetchInterval: 30 * 60_000,
 	});
@@ -618,12 +794,13 @@ function AuthenticatedShell({
 	// wizard once; the completion/skip flag persists in localStorage.
 	useEffect(() => {
 		if (import.meta.env.VITEST) return;
-		if (location.pathname === "/setup") return;
+		if (location.pathname === "/setup" || location.pathname === "/team") return;
+		if (location.pathname === "/settings" && ["mode", "runtime"].includes(new URLSearchParams(location.search).get("tab") ?? "")) return;
 		if (!channelStats.isSuccess) return;
 		if ((channelStats.data?.length ?? 0) !== 0) return;
 		if (window.localStorage.getItem("mg.setup-wizard.done") === "1") return;
 		navigate("/setup", { replace: true });
-	}, [channelStats.isSuccess, channelStats.data, location.pathname, navigate]);
+	}, [channelStats.isSuccess, channelStats.data, location.pathname, location.search, navigate]);
 
 	const [routeAnim, setRouteAnim] = useState(0);
 	useEffect(() => {
@@ -662,8 +839,16 @@ function AuthenticatedShell({
 		)
 		.map((m) => ({ to: m.open_path!, label: m.name, icon: Puzzle }));
 
+	// The multi-user area is gated by the operating mode (see lib/topBar.ts):
+	// absence is the default on a personal gateway, and pinning the entry in the
+	// appearance panel keeps it for an operator who wants the door early.
+	const modeHidden = new Set(modeHiddenNav(operatingMode.data?.mode));
+	const pinnedNav = new Set(chrome.pinnedNav);
+	const modeHidesNav = (path: string) =>
+		modeHidden.has(path) && !pinnedNav.has(path);
+
 	const mainNav = [
-		...CHROME_NAV_ITEMS.filter((item) => item.group === "primary").map((item) => ({
+		...CHROME_NAV_ITEMS.filter((item) => item.group === "primary" && !modeHidesNav(item.path) && allowedFor(item)).map((item) => ({
 			to: item.path,
 			label: t(item.labelKey),
 			icon: item.icon,
@@ -671,13 +856,16 @@ function AuthenticatedShell({
 		...enabledPlugins,
 	];
 	const settingsNav = (() => {
-		const item = CHROME_NAV_ITEMS.find((entry) => entry.group === "settings")!;
+		const item = CHROME_NAV_ITEMS.find((entry) => entry.group === "settings");
+		// A member has no settings page to open; their own account page is in
+		// the main entries (/account), which is where their preferences live.
+		if (!item || !allowedFor(item)) return null;
 		return { to: item.path, label: t(item.labelKey), icon: item.icon };
 	})();
 
 	// The command palette lists every page, hidden entries included: hiding an
 	// entry is a display choice, never a way to make a page unreachable.
-	const paletteNav = [...mainNav, settingsNav];
+	const paletteNav = [...mainNav, ...(settingsNav ? [settingsNav] : [])];
 
 	// What the chrome renders: the same entries minus the ones switched off in
 	// Settings → Appearance. Routes stay mounted either way, so a hidden page is
@@ -690,14 +878,16 @@ function AuthenticatedShell({
 	const navSections = [
 		{ label: t("shell.section.gateway"), items: primaryNav.filter((item) => corePaths.includes(item.to)) },
 		{ label: t("shell.section.activity"), items: primaryNav.filter((item) => activityPaths.includes(item.to)) },
-		{ label: t("shell.section.manage"), items: [...primaryNav.filter((item) => !corePaths.includes(item.to) && !activityPaths.includes(item.to)), settingsNav] },
+		{ label: t("shell.section.manage"), items: [...primaryNav.filter((item) => !corePaths.includes(item.to) && !activityPaths.includes(item.to)), ...(settingsNav ? [settingsNav] : [])] },
 	];
 	return (
 		<>
+			<OperatorUpgradePrompt />
 			<ConsoleShell appearance={appearance} sections={navSections} version={gatewayVersion} theme={theme} onThemeChange={changeTheme}
 				onSearch={() => setPaletteOpen(true)} onDisconnect={onUnauthorized}
-				health={{ healthy, total, loading: channelStats.isPending }}
+				health={{ healthy, total, loading: channelStats.isPending, available: isStaff(role) }}
 				update={updateCheck.data?.has_update ? updateCheck.data : undefined} background={consoleBg} entering={Boolean(routeAnim)}>
+				<RouteGuard role={effectiveRole} pathname={location.pathname} />
 				<Suspense fallback={<Loading />}>
 					<Routes>
 						<Route index element={<Dashboard />} />
@@ -706,6 +896,23 @@ function AuthenticatedShell({
 						<Route path="models/channel/:channelId" element={<ChannelModels />} />
 						<Route path="models" element={<Models />} />
 						<Route path="keys" element={<Keys />} />
+						{/* A member's own account: credit, request preferences, the
+						    member app's former settings page, at the member's own path. */}
+						<Route path="account" element={role === null ? <Navigate to="/settings" replace /> : <AccountPage />} />
+						<Route path="users" element={<UsersLayout request={usersRequest} />}>
+							<Route index element={<Navigate to="overview" replace />} />
+							<Route path="overview" element={<UsersBoards.OverviewPanel />} />
+							<Route path="members" element={<UsersBoards.MembersPanel />} />
+							<Route path="policies" element={<UsersBoards.PoliciesPanel />} />
+							<Route path="quotas" element={<UsersBoards.QuotasPanel />} />
+							<Route path="pricing" element={<UsersBoards.PricingPanel />} />
+							<Route path="codes" element={<UsersBoards.CodesPanel />} />
+							<Route path="oauth" element={<UsersBoards.OAuthRoutePanel />} />
+							<Route path="branding" element={<UsersBoards.BrandingPanel />} />
+						</Route>
+						{/* /team was this module's first path. It stays a redirect so old links
+						    land on the module instead of the dashboard. */}
+						<Route path="team" element={<Navigate to="/users" replace />} />
 					<Route path="workbench" element={<Workbench />} />
 						<Route path="logs" element={<Logs />} />
 						<Route path="checkins" element={<Checkins />} />

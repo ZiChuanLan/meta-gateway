@@ -79,12 +79,14 @@ export function IconButton({
 }
 
 export function Page({
+  as: Tag = "main",
   title,
   description,
   actions,
   children,
   className = "",
 }: {
+  as?: "main" | "section";
   title: string;
   description: string;
   actions?: ReactNode;
@@ -96,7 +98,7 @@ export function Page({
   const [actionHost, setActionHost] = useState<HTMLDivElement | null>(null);
   return (
     <PageActionHost.Provider value={actionHost}>
-      <main className={`page ${className}`.trim()}>
+      <Tag className={`page ${className}`.trim()}>
         <header className="page-header">
           <div className="page-heading">
             <h1>{title}</h1>
@@ -105,7 +107,7 @@ export function Page({
           <div className="toolbar page-actions" ref={setActionHost}>{actions}</div>
         </header>
         {children}
-      </main>
+      </Tag>
     </PageActionHost.Provider>
   );
 }

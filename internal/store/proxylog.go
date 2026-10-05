@@ -149,6 +149,20 @@ func (s *ProxyLogStore) FailRate(since time.Time) (total, failed int) {
 // optionally restricted to an inclusive time window. A window makes the panel
 // answer "how slow was the last hour", not just "how slow is the tail".
 func (s *ProxyLogStore) LatencyHistogram(sampleSize int, since, until *time.Time) (*LatencyHistogram, error) {
+	return s.latencyHistogram("proxy_logs", "id", nil, sampleSize, since, until)
+}
+
+// MemberLatencyHistogram uses completed account requests rather than individual
+// upstream attempts. userID is mandatory: it can never widen into a global read.
+func (s *ProxyLogStore) MemberLatencyHistogram(userID int64, sampleSize int, since, until *time.Time) (*LatencyHistogram, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("member histogram requires a user")
+	}
+	return s.latencyHistogram("team_requests", "rowid", &userID, sampleSize, since, until)
+}
+
+// Table/order are private constants supplied only by the two wrappers above.
+func (s *ProxyLogStore) latencyHistogram(table, order string, userID *int64, sampleSize int, since, until *time.Time) (*LatencyHistogram, error) {
 	if sampleSize <= 0 {
 		sampleSize = 1000
 	}
@@ -156,6 +170,10 @@ func (s *ProxyLogStore) LatencyHistogram(sampleSize int, since, until *time.Time
 		sampleSize = 200000
 	}
 	where, args := createdRange("created_at", since, until)
+	if userID != nil {
+		where = append(where, "user_id = ?")
+		args = append(args, *userID)
+	}
 	scope := ""
 	if len(where) > 0 {
 		scope = " WHERE " + strings.Join(where, " AND ")
@@ -165,12 +183,12 @@ func (s *ProxyLogStore) LatencyHistogram(sampleSize int, since, until *time.Time
 		Buckets:    make([]int, len(LatencyBucketBounds)+1),
 		SampleSize: sampleSize,
 	}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM proxy_logs`+scope, args...).Scan(&hist.Matched); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM `+table+scope, args...).Scan(&hist.Matched); err != nil {
 		return nil, fmt.Errorf("proxylog histogram count: %w", err)
 	}
 
 	rows, err := s.db.Query(
-		`SELECT latency_ms FROM proxy_logs`+scope+` ORDER BY id DESC LIMIT ?`,
+		`SELECT latency_ms FROM `+table+scope+` ORDER BY `+order+` DESC LIMIT ?`,
 		append(append([]any{}, args...), sampleSize)...,
 	)
 	if err != nil {

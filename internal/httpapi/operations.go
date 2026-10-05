@@ -32,8 +32,12 @@ func requestTelemetry(logger *slog.Logger, metrics *observability.Registry) func
 			}
 			elapsed := time.Since(started)
 			metrics.ObserveHTTP(r.Method, route, status, elapsed)
+			requestID := chimw.GetReqID(r.Context())
+			if canonical := wrapped.Header().Get("X-Request-ID"); strings.HasPrefix(canonical, "team-") {
+				requestID = canonical
+			}
 			logger.InfoContext(r.Context(), "http request",
-				"request_id", chimw.GetReqID(r.Context()), "method", r.Method, "route", route,
+				"request_id", requestID, "method", r.Method, "route", route,
 				"status", status, "duration_ms", elapsed.Milliseconds(), "client_ip", ClientIP(r).String())
 		})
 	}
@@ -76,6 +80,10 @@ func auditAdmin(logger *slog.Logger, events *store.AuditEventStore) func(http.Ha
 			}
 			event := &store.AuditEvent{RequestID: chimw.GetReqID(r.Context()), ActorKind: "admin", Action: action,
 				ResourceKind: resourceKind, ResourceID: resourceID, Outcome: outcome, StatusCode: status, Category: category}
+			if principal := teamActor(r); principal != nil && principal.User != nil {
+				event.ActorKind = "user"
+				event.ActorID = &principal.User.ID
+			}
 			if err := events.Insert(event); err != nil {
 				logger.ErrorContext(r.Context(), "audit write failed", "category", "persistence")
 			}

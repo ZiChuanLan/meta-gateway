@@ -192,9 +192,14 @@ export function HourlyTrafficChart({
 						aria-label="hourly requests and tokens"
 					>
 						<defs>
+							{/* The stops carry classes rather than stop-color attributes: an
+							    attribute holding var() is resolved on a different path from a
+							    declaration, and it was precisely this fill that browsers
+							    repainted solid black when force-darkening a light page. As
+							    declarations the colours follow the theme. See system.css. */}
 							<linearGradient id="chart-area-fill" x1="0" y1="0" x2="0" y2="1">
-								<stop offset="0%" stopColor="var(--accent)" stopOpacity="0.22" />
-								<stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+								<stop offset="0%" className="chart-area-stop-top" />
+								<stop offset="100%" className="chart-area-stop-bottom" />
 							</linearGradient>
 						</defs>
 						{/* Y-axis labels */}

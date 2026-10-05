@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lan/meta-gateway/internal/updatecheck"
 	"log"
 	"os"
 	"strings"
@@ -30,6 +31,7 @@ var (
 	ErrAlreadyRuning = errors.New("self-update already in progress")
 	ErrNoContainer   = errors.New("self-update requires a Docker deployment (HOSTNAME unset)")
 	ErrBadTarget     = errors.New("self-update target must be a newer release tag")
+	ErrTrackMismatch = errors.New("watchtower_channel_mismatch: set IMAGE_TAG to beta or latest and recreate the container before switching tracks")
 )
 
 // Update mode: watchtower companion (preferred — no socket in the gateway),
@@ -60,6 +62,7 @@ type Service struct {
 	mu     sync.Mutex
 	phase  string
 	errStr string
+	target string
 }
 
 func New(socket string) *Service {
@@ -122,17 +125,41 @@ func (s *Service) setPhase(phase, errStr string) {
 // tag the console confirmed; the pulled image ref always comes from the
 // container's own configuration, so the update can never fetch a foreign
 // image.
-func (s *Service) Start() error {
-	if !s.socketAvailable() && s.Mode() != ModeWatchtower {
+func (s *Service) Start() error { return s.start("") }
+
+// TrackingTag is deployment-declared for Watchtower, which cannot change tags.
+func TrackingTag() string { return strings.TrimSpace(os.Getenv("SELFUPDATE_TRACK_TAG")) }
+func WatchtowerTargetAllowed(target string) bool {
+	tag := TrackingTag()
+	if tag == "beta" {
+		return updatecheck.IsReleaseTag(target)
+	}
+	return tag == "latest" && !strings.Contains(target, "-") && updatecheck.IsReleaseTag(target)
+}
+func (s *Service) StartTarget(target string) error {
+	if !updatecheck.IsReleaseTag(target) {
+		return ErrBadTarget
+	}
+	return s.start(target)
+}
+func (s *Service) start(target string) error {
+	mode := s.Mode()
+	if mode == ModeNone {
 		return ErrUnavailable
+	}
+	if target != "" && mode == ModeWatchtower && !WatchtowerTargetAllowed(target) {
+		return ErrTrackMismatch
 	}
 	s.mu.Lock()
 	if s.phase != PhaseIdle && s.phase != PhaseFailed {
 		s.mu.Unlock()
 		return ErrAlreadyRuning
 	}
+	s.phase = PhaseChecking
+	s.errStr = ""
+	s.target = target
 	s.mu.Unlock()
-	if s.Mode() == ModeWatchtower {
+	if mode == ModeWatchtower {
 		go func() {
 			s.setPhase(PhasePulling, "")
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -141,8 +168,6 @@ func (s *Service) Start() error {
 				s.fail(fmt.Errorf("watchtower trigger: %w", err))
 				return
 			}
-			// Watchtower recreates the container; this process stops when the
-			// companion tears it down. The console polls /healthz from here.
 			s.setPhase(PhaseHandoff, "")
 		}()
 		return nil
@@ -169,13 +194,20 @@ func (s *Service) handoff() {
 		s.fail(errors.New("inspect self: empty container name"))
 		return
 	}
-	if !strings.HasPrefix(self.Config.Image, "zichuanlan/meta-gateway") {
+	repository, _ := splitImageRef(self.Config.Image)
+	if repository != "zichuanlan/meta-gateway" && repository != "docker.io/zichuanlan/meta-gateway" {
 		s.fail(fmt.Errorf("refusing to update foreign image %q", self.Config.Image))
 		return
 	}
 
 	s.setPhase(PhasePulling, "")
 	image := self.Config.Image
+	s.mu.Lock()
+	target := s.target
+	s.mu.Unlock()
+	if target != "" {
+		image = repository + ":" + strings.TrimPrefix(target, "v")
+	}
 	if err := s.client.PullImage(ctx, image, func(line string) {
 		log.Printf("self-update: pull %s", line)
 	}); err != nil {
@@ -191,12 +223,18 @@ func (s *Service) handoff() {
 	portsJSON, _ := json.Marshal(self.HostConfig.PortBindings)
 	env := make([]string, 0, len(self.Config.Env)+3)
 	for _, entry := range self.Config.Env {
+		if target != "" && strings.HasPrefix(entry, "SELFUPDATE_TRACK_TAG=") {
+			continue
+		}
 		if strings.HasPrefix(entry, swapEnv+"=") ||
 			strings.HasPrefix(entry, portsEnv+"=") ||
 			strings.HasPrefix(entry, imageEnv+"=") {
 			continue
 		}
 		env = append(env, entry)
+	}
+	if target != "" {
+		env = append(env, "SELFUPDATE_TRACK_TAG="+strings.TrimPrefix(target, "v"))
 	}
 	env = append(env,
 		swapEnv+"="+self.Name,

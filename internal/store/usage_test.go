@@ -54,7 +54,7 @@ func TestUsageAndQuota(t *testing.T) {
 	if !store.QuotaExceeded(got) {
 		t.Fatal("expected quota exceeded")
 	}
-	summary, err := db.Usage.Summary(&id)
+	summary, err := db.Usage.Summary(store.UsageScope{DownstreamKeyID: &id})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestRecordRelayUsageAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	// All three writes landed.
-	summary, err := db.Usage.Summary(&keyID)
+	summary, err := db.Usage.Summary(store.UsageScope{DownstreamKeyID: &keyID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestRecordRelayUsageNoOpWithoutTokens(t *testing.T) {
 	if err := db.RecordRelayUsage(nil, 1); err != nil {
 		t.Fatalf("nil record must be a no-op, got %v", err)
 	}
-	summary, err := db.Usage.Summary(nil)
+	summary, err := db.Usage.Summary(store.UsageScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +377,7 @@ func TestUsageCostPersistedAndSummarized(t *testing.T) {
 	}, keyID); err != nil {
 		t.Fatal(err)
 	}
-	summary, err := db.Usage.Summary(&keyID)
+	summary, err := db.Usage.Summary(store.UsageScope{DownstreamKeyID: &keyID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,12 +395,12 @@ func TestUsageCostPersistedAndSummarized(t *testing.T) {
 		t.Fatalf("listed usage cost=%v, want 0.04", rows)
 	}
 	past := time.Now().Add(-time.Hour)
-	recent, err := db.Usage.SummarySince(&keyID, &past)
+	recent, err := db.Usage.SummarySince(store.UsageScope{DownstreamKeyID: &keyID}, &past)
 	if err != nil || recent.RequestCount != 1 {
 		t.Fatalf("recent summary=%+v err=%v", recent, err)
 	}
 	future := time.Now().Add(time.Hour)
-	recent, err = db.Usage.SummarySince(&keyID, &future)
+	recent, err = db.Usage.SummarySince(store.UsageScope{DownstreamKeyID: &keyID}, &future)
 	if err != nil || recent.RequestCount != 0 || recent.Cost != 0 {
 		t.Fatalf("future summary=%+v err=%v", recent, err)
 	}
@@ -468,7 +468,7 @@ func TestUsageCostAggregations(t *testing.T) {
 func TestGroupQuotaEnforcedAndAccrued(t *testing.T) {
 	db := openTestDB(t)
 	// Group with a 100-token quota.
-	if err := db.Group.Upsert("team-a", 100, 0, 0); err != nil {
+	if err := db.Group.Upsert("team-a", 100, 0, 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	// Key in the group.

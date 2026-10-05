@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "../api/client";
 import type { ModuleStatus } from "../api/types";
-import { useSession } from "../session";
+import { isStaff, useSession } from "../session";
 
 export const MODULES_QUERY_KEY = ["plugins-status"] as const;
 
@@ -14,12 +14,16 @@ export const MODULES_QUERY_KEY = ["plugins-status"] as const;
  * are installable plugins — and they gate their own pages, not core screens.
  */
 export function useModules() {
-	const { client } = useSession();
+	const { client, role } = useSession();
 	const service = client ? api(client) : null;
+	// Plugins are the gateway's; a member neither installs nor sees them. The
+	// status endpoint is staff-only, so asking on their behalf would only
+	// produce a 403 in the console.
 	const query = useQuery({
 		queryKey: MODULES_QUERY_KEY,
 		queryFn: ({ signal }) => service!.pluginsStatus(signal),
-		enabled: Boolean(service),
+		enabled: Boolean(service) && isStaff(role),
+		retry: false,
 		staleTime: 5_000,
 		// Keep last known status while refetching after toggle to avoid UI thrash,
 		// but first load must not pretend add-ons are enabled.

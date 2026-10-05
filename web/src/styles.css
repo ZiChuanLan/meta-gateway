@@ -1038,101 +1038,6 @@ td.status-col {
   background: var(--danger-soft);
 }
 
-/* —— Bioluminescent Neon Badges & Status —— */
-.badge-enabled,
-.badge-ready,
-.badge-healthy,
-.badge-success,
-.badge-eligible,
-.badge-true,
-.badge-reachable {
-  color: var(--success);
-  background: var(--success-soft);
-  border-color: color-mix(in srgb, var(--success) 32%, var(--line));
-}
-.badge-disabled,
-.badge-false,
-.badge-ineligible {
-  color: var(--muted);
-  background: var(--surface-subtle);
-  border-color: var(--line);
-}
-.badge-disabled::before,
-.badge-false::before,
-.badge-ineligible::before {
-  opacity: 0.4;
-}
-.badge-auto-disabled {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
-  box-shadow: inset 3px 0 0 var(--danger);
-  font-weight: 800;
-}
-.badge-failed,
-.badge-unhealthy,
-.badge-blocked,
-.badge-token-invalid,
-.badge-danger,
-.badge-unreachable {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
-}
-.badge-partial,
-.badge-cooling-down,
-.badge-circuit-open,
-.badge-degraded,
-.badge-warning,
-.badge-unverified,
-.badge-unknown,
-.badge-missing-key {
-  color: var(--warning);
-  background: var(--warning-soft);
-  border-color: color-mix(in srgb, var(--warning) 32%, var(--line));
-}
-.state {
-  padding: 36px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-.state-error {
-  color: var(--danger);
-  flex-wrap: wrap;
-  background: var(--danger-soft);
-  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--line));
-  border-radius: var(--radius);
-}
-.error-state-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-  text-align: left;
-}
-.error-state-body strong {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.error-state-body span {
-  color: var(--ink-soft);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.error-state-body .error-state-fix {
-  color: var(--muted);
-  font-family: var(--mono);
-}
-.state-empty {
-  flex-direction: column;
-  text-align: center;
-}
 .result-strip {
   margin-bottom: 16px;
   padding: 12px 16px;
@@ -1419,131 +1324,6 @@ label.directory-search input:focus {
   to { transform: translateX(0); }
 }
 
-/* —— Shared ops brand surfaces —— */
-/* —— Empty Hero (Artistic Empty State) —— */
-.empty-hero {
-  position: relative;
-  overflow: hidden;
-  margin: 12px 0;
-  padding: 48px 32px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-raised) 100%);
-  box-shadow: var(--shadow-sm);
-}
-.empty-hero::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 0%, var(--primary) 50%, transparent 100%);
-  box-shadow: 0 0 10px var(--primary-glow);
-}
-.empty-hero-glow {
-  position: absolute;
-  inset: -40% auto auto 50%;
-  width: 320px;
-  height: 200px;
-  transform: translateX(-50%);
-  background: radial-gradient(circle, var(--primary-soft) 0%, transparent 70%);
-  pointer-events: none;
-}
-.empty-hero-kicker {
-  position: relative;
-  margin: 0;
-  color: var(--primary);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-.empty-hero-title {
-  position: relative;
-  font-family: var(--font-serif);
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-}
-.empty-hero-body {
-  position: relative;
-  margin: 0;
-  max-width: 46ch;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-.empty-hero-actions {
-  position: relative;
-  margin-top: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-}
-
-/* —— Pagination Bar —— */
-.pagination-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  background: var(--surface-subtle);
-  border-top: 1px solid var(--line);
-  font-size: 13px;
-  flex-wrap: wrap;
-}
-.pagination-summary {
-  margin: 0;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 12px;
-}
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.pagination-size select {
-  height: 32px;
-  padding: 0 10px;
-  background: var(--surface);
-  border: 1px solid var(--line-light);
-  border-radius: var(--radius);
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-family: var(--font);
-}
-.pagination-pages {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.pagination-page-label {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--ink-soft);
-  padding: 0 4px;
-}
-.pagination-nav {
-  height: 32px;
-  width: 32px;
-  padding: 0;
-  display: inline-grid;
-  place-items: center;
-  border-radius: var(--radius);
-  border: 1px solid var(--line-light);
-  background: var(--surface);
-}
 /* —— Quick start (first-run onboarding) —— */
 .glossary {
   margin-bottom: 14px;
@@ -2929,14 +2709,6 @@ td.actions {
   overflow: auto;
 }
 
-.spin {
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 @keyframes page-enter {
   from {
     opacity: 0;
@@ -3023,21 +2795,6 @@ td.actions {
 /* 7. 输入框 focus：底部青色线平滑展开（spring 曲线），失焦收回 */
 
 /* Staggered content reveal — each line arrives in sequence. */
-.language-switcher {
-  display: inline-flex;
-  align-items: center;
-}
-.language-switcher select {
-  min-width: 104px;
-  min-height: 31px;
-  padding: 4px 8px;
-  color: var(--ink);
-  background: var(--surface-subtle);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  font-size: 11px;
-}
-
 .sidebar-lang {
   display: block;
   margin: 0 0 10px;
@@ -3052,17 +2809,6 @@ td.actions {
   min-width: 88px;
   min-height: 30px;
   font-size: 11px;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 .fullscreen-state {
   min-height: 100vh;
@@ -3622,63 +3368,6 @@ td.actions {
   .toast {
     animation: none;
   }
-}
-
-/* —— Pagination —— */
-.pagination-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.pagination-bar.is-compact {
-  gap: 8px;
-}
-.pagination-summary {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 550;
-}
-.pagination-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.pagination-size select {
-  height: 32px;
-  min-width: 104px;
-  padding: 0 8px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 12px;
-}
-.pagination-pages {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.pagination-page-label {
-  min-width: 56px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--ink-soft);
-  font-variant-numeric: tabular-nums;
-}
-.pagination-nav.button {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  min-width: 32px;
-  justify-content: center;
 }
 
 /* —— Compact master-detail —— */
@@ -5673,15 +5362,6 @@ td.actions {
 }
 
 /* ——— restored component styles (drawer / model picker / channel models / cooldown) ——— */
-.badge-partial,
-.badge-warning,
-.badge-unverified,
-.badge-no-credential,
-.badge-missing-key {
-  color: var(--warning);
-  background: var(--warning-soft);
-  border-color: #8a5d002e;
-}
 /* Phones: drawers take the full viewport — stacked/offset drawers and fixed
    widths are unusable at this size. !important overrides the inline widths
    set per-instance. */
@@ -8618,15 +8298,6 @@ label.check input[type="checkbox"] {
     justify-content: flex-start;
   }
 
-  .pagination-bar {
-    align-items: stretch;
-  }
-
-  .pagination-controls {
-    width: 100%;
-    justify-content: space-between;
-  }
-
   .mobile-header .badge {
     position: relative;
     width: 14px;
@@ -9324,6 +8995,11 @@ label.check input[type="checkbox"] {
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   gap: 16px;
   align-items: stretch;
+}
+/* One column when the host has no channel matrix (the member app): the second
+   track would otherwise stay reserved and leave the request stream half-width. */
+.cockpit-dual-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
 }
 /* .panel + .panel stacks vertical panels with an 18px top margin; inside this
    side-by-side grid the gap already spaces the columns, so the same rule

@@ -34,6 +34,11 @@ var businessTables = []string{
 	"alert_rules",
 	"prompt_guard_rules",
 	"audit_events",
+	"team_route_plans",
+	"team_requests",
+	// Redemptions reference a code and an account, so they go before neither:
+	// the table is wiped outright and the codes are revoked below.
+	"team_code_redemptions",
 }
 
 // FactoryReset wipes every business table in one transaction (configuration
@@ -54,6 +59,14 @@ func (db *DB) FactoryReset() (map[string]int64, error) {
 		}
 		n, _ := res.RowsAffected()
 		deleted[table] = n
+	}
+	// Member ids are reused after reset. Retaining numeric grants would grant
+	// access to unrelated channels subsequently assigned those ids.
+	if _, err := tx.Exec(`UPDATE team_policies SET members_json='[]',models_json='[]',all_models=0;
+		DELETE FROM team_sessions;
+		UPDATE team_invites SET revoked=1;
+		UPDATE team_users SET quota_used_tokens=0`); err != nil {
+		return nil, fmt.Errorf("factory reset team authorization: %w", err)
 	}
 	// Reset AUTOINCREMENT counters so fresh ids start at 1.
 	if _, err := tx.Exec(`DELETE FROM sqlite_sequence WHERE name IN (` + sequenceList() + `)`); err != nil {

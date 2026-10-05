@@ -24,6 +24,7 @@ export interface UpdateWatch {
 export function useOneClickUpdate() {
 	const { client } = useSession();
 	const service = client ? api(client) : null;
+	const [failedTarget, setFailedTarget] = useState<string | null>(null);
 	const [watch, setWatch] = useState<UpdateWatch | null>(null);
 	const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
 	// onDone/onError are stable per mount; refs keep the polling effect from
@@ -34,6 +35,7 @@ export function useOneClickUpdate() {
 	const apply = useCallback(
 		async (target: string) => {
 			if (!service) return;
+            setFailedTarget(null);
 			await service.applySelfUpdate(target);
 			setConfirmTarget(null);
 			setWatch({ target, startedAt: Date.now() });
@@ -68,6 +70,7 @@ export function useOneClickUpdate() {
 			if (Date.now() - started > 180_000) {
 				const target = watch.target;
 				setWatch(null);
+                setFailedTarget(target);
 				onErrorRef.current?.(target);
 			}
 		}, 3000);
@@ -76,6 +79,7 @@ export function useOneClickUpdate() {
 
 	return {
 		watch,
+        failedTarget,
 		confirmTarget,
 		setConfirmTarget,
 		apply,

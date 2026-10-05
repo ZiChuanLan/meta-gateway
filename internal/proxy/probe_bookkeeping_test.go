@@ -126,3 +126,54 @@ func TestProbeNotFoundBlacklistsModelWithoutCoolingMember(t *testing.T) {
 		t.Errorf("probe 404 cooled the member: fail_count=%d cooldown=%v", got.FailCount, got.CooldownUntil)
 	}
 }
+
+// diagnosticRequest pins a 试调 at the low-priority channel: the console's
+// button, not a scheduled probe.
+func diagnosticRequest(channelID int64) Request {
+	return Request{
+		RequestID:       "try-request",
+		Model:           "model",
+		Body:            []byte(`{"model":"model","messages":[{"role":"user","content":"hi"}]}`),
+		PreferChannelID: channelID,
+		Diagnostic:      true,
+	}
+}
+
+// A 试调 must not move the health bookkeeping: cooling a production channel
+// because an operator pressed the button would be a self-inflicted outage, and
+// the cooldown would lock them out of retrying the very row they are
+// diagnosing. Unlike a probe, the attempt still belongs in the request log —
+// "what did that 试调 do" is a question the log page has to answer.
+func TestDiagnosticTryLeavesBookkeepingButKeepsTheLog(t *testing.T) {
+	upstream := &queuedRelay{results: []*relay.Result{response(http.StatusBadRequest, `{"error":{"message":"bad request"}}`)}}
+	service, db, _, lowMemberID := setupProxy(t, upstream)
+	member, err := db.RouteMember.GetByID(lowMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before int
+	if err := db.QueryRow(`SELECT count(*) FROM proxy_logs`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+
+	result := service.ChatCompletions(context.Background(), diagnosticRequest(member.ChannelID))
+	if result.StatusCode != http.StatusBadRequest {
+		t.Fatalf("try result status = %d, want 400", result.StatusCode)
+	}
+
+	got, err := db.RouteMember.GetByID(lowMemberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FailCount != 0 || got.CooldownUntil != nil || got.LastError != "" {
+		t.Errorf("试调 polluted member bookkeeping: fail_count=%d cooldown=%v last_error=%q",
+			got.FailCount, got.CooldownUntil, got.LastError)
+	}
+	var after int
+	if err := db.QueryRow(`SELECT count(*) FROM proxy_logs`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before+1 {
+		t.Errorf("试调 logged %d rows, want exactly 1: the console's own probe must stay visible", after-before)
+	}
+}

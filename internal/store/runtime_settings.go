@@ -81,6 +81,11 @@ type RuntimeSettingsRow struct {
 	ProbeChannels    []int64
 	ProbeModels      []string
 
+	// External site-probe collection cadence. NULL (which reads back as -1)
+	// means "not overridden" and resolves to the env bootstrap.
+	SiteProbeIntervalSeconds int
+	SiteProbeJitterSeconds   int
+
 	UpdatedAt time.Time
 }
 
@@ -113,6 +118,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       default_model_sync_mode,
 		       probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 		       probe_auto_disable, probe_channels, probe_models,
+		       site_probe_interval_seconds, site_probe_jitter_seconds,
 		       updated_at
 		FROM runtime_settings WHERE id = 1`)
 	var (
@@ -137,6 +143,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		probeCron, probePrompt                                                             sql.NullString
 		probeMaxTokens, probeConcurrency, probeAutoDisable                                 sql.NullInt64
 		probeChannels, probeModels                                                         sql.NullString
+		siteProbeInterval, siteProbeJitter                                                 sql.NullInt64
 		cron, updated                                                                      sql.NullString
 	)
 	if err := row.Scan(
@@ -155,6 +162,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&defaultSyncMode,
 		&probeCron, &probePrompt, &probeMaxTokens, &probeConcurrency, &probeAutoDisable,
 		&probeChannels, &probeModels,
+		&siteProbeInterval, &siteProbeJitter,
 		&updated,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -367,6 +375,16 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	if probeModels.Valid {
 		out.ProbeModels = decodeStringList(probeModels.String)
 	}
+	if siteProbeInterval.Valid {
+		out.SiteProbeIntervalSeconds = int(siteProbeInterval.Int64)
+	} else {
+		out.SiteProbeIntervalSeconds = -1
+	}
+	if siteProbeJitter.Valid {
+		out.SiteProbeJitterSeconds = int(siteProbeJitter.Int64)
+	} else {
+		out.SiteProbeJitterSeconds = -1
+	}
 	if updated.Valid {
 		if parsed, err := time.Parse("2006-01-02 15:04:05", updated.String); err == nil {
 			out.UpdatedAt = parsed.UTC()
@@ -417,6 +435,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			default_model_sync_mode,
 			probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 			probe_auto_disable, probe_channels, probe_models,
+			site_probe_interval_seconds, site_probe_jitter_seconds,
 			updated_at
 		) VALUES (
 			1, ?, ?, ?, ?, ?, ?,
@@ -440,6 +459,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?,
 			?, ?, ?, ?,
 			?, ?, ?,
+			?, ?,
 			datetime('now')
 		)
 		ON CONFLICT(id) DO UPDATE SET
@@ -493,6 +513,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			probe_auto_disable = excluded.probe_auto_disable,
 			probe_channels = excluded.probe_channels,
 			probe_models = excluded.probe_models,
+			site_probe_interval_seconds = excluded.site_probe_interval_seconds,
+			site_probe_jitter_seconds = excluded.site_probe_jitter_seconds,
 			updated_at = datetime('now')`,
 		hasOverride,
 		settings.RetryTimes,
@@ -544,6 +566,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.ProbeAutoDisable,
 		encodeIntList(settings.ProbeChannels),
 		encodeStringList(settings.ProbeModels),
+		settings.SiteProbeIntervalSeconds,
+		settings.SiteProbeJitterSeconds,
 	)
 	if err != nil {
 		return fmt.Errorf("runtime settings save: %w", err)

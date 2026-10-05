@@ -17,6 +17,8 @@ type GCResult struct {
 	ModelBlocks      int64 `json:"channel_model_blocks"`
 	Redemptions      int64 `json:"redemption_codes"`
 	ErrorRules       int64 `json:"error_passthrough_rules"`
+	SiteProbeRuns    int64 `json:"site_probe_runs"`
+	SiteProbeSamples int64 `json:"site_probe_samples"`
 	FreelistPages    int64 `json:"freelist_pages"`
 	PageSize         int64 `json:"page_size"`
 	VacuumFreedBytes int64 `json:"vacuum_freed_bytes"`
@@ -57,6 +59,10 @@ func (db *DB) GC() (*GCResult, error) {
 		{"channel_model_blocks", `DELETE FROM channel_model_blocks WHERE channel_id NOT IN (SELECT id FROM channels)`, &res.ModelBlocks},
 		{"redemption_codes", `DELETE FROM redemption_codes WHERE redeemed_by_key_id != 0 AND redeemed_by_key_id NOT IN (SELECT id FROM downstream_keys)`, &res.Redemptions},
 		{"error_passthrough_rules", `DELETE FROM error_passthrough_rules WHERE channel_id != 0 AND channel_id NOT IN (SELECT id FROM channels)`, &res.ErrorRules},
+		// Probe samples first: they point at a run, and a sample whose round is
+		// gone can neither be shown nor attributed.
+		{"site_probe_samples", `DELETE FROM site_probe_samples WHERE run_id NOT IN (SELECT id FROM site_probe_runs) OR site_id NOT IN (SELECT id FROM sites)`, &res.SiteProbeSamples},
+		{"site_probe_runs", `DELETE FROM site_probe_runs WHERE site_id NOT IN (SELECT id FROM sites)`, &res.SiteProbeRuns},
 	}
 	for _, j := range jobs {
 		result, err := tx.Exec(j.sql)

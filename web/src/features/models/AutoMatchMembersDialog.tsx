@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCheck, ListChecks, Plus } from "lucide-react";
-import type { Route } from "../../api/types";
+import type { ModelMatchMode, Route } from "../../api/types";
 import { api } from "../../api/client";
 import { Button, Dialog, Empty, ErrorState } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
@@ -49,9 +49,18 @@ export function AutoMatchMembersDialog({
   const service = api(client!);
   const toast = useToast();
 
+  // The match mode decides which channels even qualify, so switching it drops
+  // the hand-picked selection rather than carrying ids across two match sets.
+  const [mode, setMode] = useState<ModelMatchMode>("exact");
+  const pickMode = (next: ModelMatchMode) => {
+    setMode(next);
+    setKept(null);
+  };
+
   const matches = useQuery({
-    queryKey: ["model-channels", route.model_pattern],
-    queryFn: ({ signal }) => service.modelChannels(route.model_pattern, signal),
+    queryKey: ["model-channels", route.model_pattern, mode],
+    queryFn: ({ signal }) =>
+      service.modelChannels(route.model_pattern, mode, signal),
   });
   const items = matches.data?.items ?? [];
   const alreadyAttached = new Set(attachedChannelIds);
@@ -73,7 +82,7 @@ export function AutoMatchMembersDialog({
 
   const attach = useAdminMutation({
     mutationFn: (ids: number[]) =>
-      service.autoMatchRouteMembers(route.id, ids, group),
+      service.autoMatchRouteMembers(route.id, ids, group, mode),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     toastOnError: false,
     onSuccess: ({ added, skipped }) => {
@@ -120,6 +129,36 @@ export function AutoMatchMembersDialog({
           name: group || t("routing.groupDefault"),
         })}
       </p>
+      <fieldset className="match-mode">
+        <legend className="ops-panel-context">
+          {t("modelsPage.autoMatch.modeLabel")}
+        </legend>
+        <label className="check">
+          <input
+            type="radio"
+            name="auto-match-mode"
+            checked={mode === "exact"}
+            onChange={() => pickMode("exact")}
+          />
+          <span>{t("modelsPage.autoMatch.modeExact")}</span>
+        </label>
+        <label className="check">
+          <input
+            type="radio"
+            name="auto-match-mode"
+            checked={mode === "related"}
+            onChange={() => pickMode("related")}
+          />
+          <span>{t("modelsPage.autoMatch.modeRelated", { name: route.model_pattern })}</span>
+        </label>
+        {mode === "related" ? (
+          <p className="ops-panel-context">
+            {t("modelsPage.autoMatch.modeRewriteHint", {
+              name: route.model_pattern,
+            })}
+          </p>
+        ) : null}
+      </fieldset>
       {matches.isPending ? (
         <p className="muted" role="status">
           {t("common.loading")}
@@ -168,7 +207,18 @@ export function AutoMatchMembersDialog({
                   onChange={() => toggle(item.channel_id)}
                 />
                 <span>{item.channel_name}</span>
-                <span className="pg-chip">{item.source}</span>
+                {/* A related match attaches the channel under the sibling name;
+                    showing it is the difference between "why is this channel
+                    here" and "that is exactly what I wanted". */}
+                {item.model && item.model !== route.model_pattern ? (
+                  <span className="pg-chip mono">
+                    {t("modelsPage.autoMatch.matchesModel", {
+                      model: item.model,
+                    })}
+                  </span>
+                ) : (
+                  <span className="pg-chip">{item.source}</span>
+                )}
               </label>
             ))}
           </div>

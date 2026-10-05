@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"hash/fnv"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lan/meta-gateway/internal/auth"
@@ -19,10 +22,12 @@ const sessionTTL = 12 * time.Hour
 // sessionHandler serves the public login/session exchange and the admin
 // TOTP management endpoints.
 type sessionHandler struct {
-	db          *store.DB
-	adminTokens []string
-	sessionKey  []byte // HMAC key for session tokens (master-key derived)
-	enc         encryptor
+	db            *store.DB
+	adminTokens   []string
+	adminUsername string
+	team          *TeamHandler
+	sessionKey    []byte // HMAC key for session tokens (master-key derived)
+	enc           encryptor
 	// Keep the deployment-wide and per-IP buckets in separate limiter maps.
 	// High-cardinality IP churn can evict per-IP buckets without ever resetting
 	// the global brute-force budget.
@@ -49,6 +54,8 @@ func (h *sessionHandler) RegisterAdmin(r interface {
 	Get(string, http.HandlerFunc)
 	Post(string, http.HandlerFunc)
 }) {
+	r.Get("/operator-profile", h.operatorProfile)
+	r.Post("/operator-profile", h.saveOperatorProfile)
 	r.Get("/totp/status", h.status)
 	r.Post("/totp/setup", h.setup)
 	r.Post("/totp/enable", h.enable)
@@ -60,8 +67,14 @@ func (h *sessionHandler) RegisterAdmin(r interface {
 // missing/wrong the response is 401 with {"error":"totp_required"} so the
 // client can show the second factor step.
 func (h *sessionHandler) login(w http.ResponseWriter, r *http.Request) {
+	if !teamOriginOK(r) {
+		writeError(w, http.StatusForbidden, "csrf_failed")
+		return
+	}
 	var req struct {
 		Token    string `json:"token"`
+		Username string `json:"username"`
+		Password string `json:"password"`
 		TOTPCode string `json:"totp_code"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
@@ -92,8 +105,40 @@ func (h *sessionHandler) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Username != "" || req.Password != "" {
+		username := strings.ToLower(strings.TrimSpace(req.Username))
+		// An existing account owns its name, even when disabled. Never fall
+		// back to the operator credential after an account password fails.
+		if h.team != nil && h.team.enabled() {
+			u, err := scanTeamUser(h.db.QueryRow(teamUserSelect+` WHERE u.username=?`, username))
+			if err == nil {
+				if !checkTeamPassword(u.PasswordHash, req.Password) || u.Status != "active" {
+					writeError(w, http.StatusUnauthorized, "invalid_credentials")
+					return
+				}
+				h.team.issueSession(w, r, u)
+				return
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusInternalServerError, "auth_unavailable")
+				return
+			}
+		}
+		// Equalize unknown-account password work with a normal account login.
+		checkTeamPassword(teamDummyHash, req.Password)
+		adminUsername, lookupErr := h.db.OperatorUsername(h.adminUsername)
+		if lookupErr != nil {
+			writeError(w, 500, "auth_unavailable")
+			return
+		}
+		if username != adminUsername {
+			writeError(w, http.StatusUnauthorized, "invalid_credentials")
+			return
+		}
+		req.Token = req.Password
+	}
 	if !auth.ValidAdminToken(req.Token, h.adminTokens) {
-		writeError(w, http.StatusUnauthorized, "invalid admin token")
+		writeError(w, http.StatusUnauthorized, "invalid_credentials")
 		return
 	}
 	state, err := h.db.AdminTOTP.Get()

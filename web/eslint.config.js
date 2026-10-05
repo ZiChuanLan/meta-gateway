@@ -19,4 +19,21 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
+  {
+    files: ['src/user/**/*.{ts,tsx}', 'src/team/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [
+        // The member app SHARES PAGES with the console on purpose: a list page
+        // (keys today, logs and models next) is written once as a renderer that
+        // takes an injected data source, so `features/**` is allowed here.
+        //
+        // What stays forbidden is what would drag the console's identity into
+        // the member app: the admin API client, the console session (its
+        // token lives in localStorage and it authenticates as an operator), the
+        // app shell, and the console-only stylesheet. Those are the things
+        // that made a shared page safe to share.
+        { group: ['**/api/client', '**/session', '**/App', '**/styles.css'], message: 'Team/user modules must not import the admin API client, console session or console stylesheet.' },
+      ] }],
+    },
+  },
 )

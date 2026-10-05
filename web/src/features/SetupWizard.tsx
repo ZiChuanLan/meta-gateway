@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Copy } from "lucide-react";
+import { ModePanel } from "../team/ModePanel";
 import { ApiError, api } from "../api/client";
 import type { CreatedDownstreamKey, ImportResult } from "../api/types";
 import { useI18n } from "../i18n";
@@ -27,7 +28,7 @@ const STEPS = ["wizard.stepWelcome", "wizard.stepConnection", "wizard.stepKey", 
 export function SetupWizard() {
 	const { client } = useSession();
 	const s = api(client!);
-	const { t } = useI18n();
+	const { t, locale } = useI18n();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 
@@ -272,7 +273,10 @@ export function SetupWizard() {
 					<section>
 						<h2>{t("wizard.welcomeTitle")}</h2>
 						<p className="setup-wizard-desc">{t("wizard.welcomeDesc")}</p>
-						<h3>{t("wizard.modeTitle")}</h3>
+						<h3>{t("wizard.editionTitle")}</h3>
+                        <p className="setup-wizard-desc">{t("wizard.editionHint")}</p>
+                        <ModePanel request={(path, init) => client!.request(path, init)} locale={locale} />
+                        <h3>{t("wizard.modeTitle")}</h3>
 						<p className="setup-wizard-desc">{t("wizard.modeDesc")}</p>
 						{(
 							[
@@ -316,7 +320,7 @@ export function SetupWizard() {
 								onClick={() => {
 									setError("");
 									saveMode.mutate(undefined, {
-										onSettled: () => setStep(1),
+										onSuccess: () => setStep(1),
 									});
 								}}
 							>

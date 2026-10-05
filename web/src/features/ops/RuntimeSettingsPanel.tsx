@@ -76,8 +76,8 @@ function CopyCommand({ command }: { command: string }) {
 
 /** Panel-level anchor order for the runtime settings section nav. */
 const RUNTIME_SECTION_GROUPS = [
-  {
-    key: "traffic",
+	{
+		key: "traffic",
     label: "ops.runtime.navGroup.routing",
     anchors: [
       ["relay", "ops.runtime.section.relay"],
@@ -94,6 +94,7 @@ const RUNTIME_SECTION_GROUPS = [
       ["health", "ops.runtime.section.healthSweep"],
       ["sync", "ops.runtime.section.sync"],
       ["probe", "ops.runtime.section.probe"],
+      ["site-probe", "ops.runtime.section.siteProbe"],
     ],
   },
   {
@@ -131,6 +132,10 @@ const ANCHOR_GROUP: Record<string, string> = Object.fromEntries(
     group.anchors.map(([anchor, _]) => [anchor, group.key]),
   ),
 );
+
+/** Card count of one group, looked up by key: the group list grows at the top. */
+const groupCardCount = (key: string) =>
+  RUNTIME_SECTION_GROUPS.find((group) => group.key === key)?.anchors.length ?? 0;
 
 function SettingLabel({ label, hint }: { label: string; hint: string }) {
   return (
@@ -504,11 +509,24 @@ export function RuntimeSettingsPanel() {
           </div>
         ))}
       </nav>
+      {/* The multi-user area owns its own switch now (Users → Overview), because
+          it turns a product capability on — not a tuning knob. What stays here
+          is the way in: a personal gateway hides the navigation entry, so
+          without this link the module would be unreachable from Settings. */}
+      <Panel className="runtime-card" id="runtime-multiuser">
+        <div className="panel-header">
+          <strong>{t("ops.tab.mode")}</strong>
+        </div>
+        <p className="muted panel-lede">{t("ops.runtime.multiUserHint")}</p>
+        <Link className="button" to="/users">
+          {t("ops.runtime.openUsers")}
+        </Link>
+      </Panel>
       <CollapsibleGroup
         id="runtime-group-traffic"
         title={t("ops.runtime.navGroup.routing")}
         description={t("ops.runtime.group.routingDesc")}
-        cardCount={RUNTIME_SECTION_GROUPS[0].anchors.length}
+        cardCount={groupCardCount("traffic")}
         open={openGroups.has("traffic")}
         onToggle={() => toggleGroup("traffic")}
       >
@@ -531,18 +549,7 @@ export function RuntimeSettingsPanel() {
               <InfoTip label={t("ops.runtime.crossChannelFailoverHint")} />
             </span>
           </label>
-          <label className="check is-stacked">
-            <input
-              type="checkbox"
-              disabled={busy}
-              checked={draft.key_pool_rotation}
-              onChange={(e) => patch("key_pool_rotation", e.target.checked)}
-            />
-            <span className="setting-check-label">
-              <span>{t("ops.runtime.keyPoolRotation")}</span>
-              <InfoTip label={t("ops.runtime.keyPoolRotationHint")} />
-            </span>
-          </label>
+
           <label className="field">
             <SettingLabel
               label={t("ops.runtime.retryTimes")}
@@ -1079,6 +1086,66 @@ export function RuntimeSettingsPanel() {
           </label>
         </Panel>
 
+        <Panel
+          className="runtime-card runtime-card-site-probe"
+          id="runtime-site-probe"
+        >
+          <div className="panel-header">
+            <strong>{t("ops.runtime.section.siteProbe")}</strong>
+          </div>
+          <p className="muted panel-lede">
+            {t("ops.runtime.siteProbeIntro")}
+          </p>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.siteProbeInterval")}
+              hint={t("ops.runtime.siteProbeIntervalHint")}
+            />
+            <ValidatedNumberInput
+              min={60}
+              max={86400}
+              disabled={busy}
+              value={draft.site_probe_interval_seconds}
+              onChange={(e) =>
+                patch(
+                  "site_probe_interval_seconds",
+                  numberOr(
+                    e.target.value,
+                    draft.site_probe_interval_seconds,
+                  ),
+                )
+              }
+            />
+          </label>
+          <label className="field">
+            <SettingLabel
+              label={t("ops.runtime.siteProbeJitter")}
+              hint={t("ops.runtime.siteProbeJitterHint")}
+            />
+            <ValidatedNumberInput
+              min={0}
+              max={3600}
+              disabled={busy}
+              customError={
+                draft.site_probe_interval_seconds >= 60 &&
+                draft.site_probe_jitter_seconds >
+                  draft.site_probe_interval_seconds
+                  ? t("ops.runtime.validation.jitterExceedsInterval", {
+                      interval: draft.site_probe_interval_seconds,
+                    })
+                  : undefined
+              }
+              value={draft.site_probe_jitter_seconds}
+              onChange={(e) =>
+                patch(
+                  "site_probe_jitter_seconds",
+                  numberOr(e.target.value, draft.site_probe_jitter_seconds),
+                )
+              }
+            />
+          </label>
+        </Panel>
+
         </RuntimeSettingsColumns>
       </CollapsibleGroup>
       <CollapsibleGroup
@@ -1239,7 +1306,7 @@ export function RuntimeSettingsPanel() {
         id="runtime-group-ops"
         title={t("ops.runtime.navGroup.ops")}
         description={t("ops.runtime.group.opsDesc")}
-        cardCount={RUNTIME_SECTION_GROUPS[3].anchors.length}
+        cardCount={groupCardCount("ops")}
         open={openGroups.has("ops")}
         onToggle={() => toggleGroup("ops")}
       >

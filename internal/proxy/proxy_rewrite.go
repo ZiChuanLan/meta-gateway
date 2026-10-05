@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+
+	"github.com/lan/meta-gateway/internal/domain"
 )
 
 // rewriteModelName rewrites the JSON "model" field of a request body from the
@@ -101,14 +103,12 @@ func rewriteMultipartModel(body []byte, requestedModel, realModel, contentType s
 // realModelFromMapping extracts {"real":"…"} from a member/route mapping so
 // health bookkeeping can key on the actual upstream name rather than the
 // client-facing alias. Empty when the mapping is absent or malformed.
+//
+// One implementation, in domain: the selector resolves the same name for its
+// scoring keys, and two parsers would eventually disagree about a malformed
+// mapping.
 func realModelFromMapping(mappingJSON string) string {
-	var mapping struct {
-		Real string `json:"real"`
-	}
-	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil || mapping.Real == "" {
-		return ""
-	}
-	return strings.TrimSpace(mapping.Real)
+	return domain.MemberRealModel(mappingJSON)
 }
 
 // reasoningEffortLevels is the ordered set of OpenAI-style reasoning effort

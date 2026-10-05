@@ -1,7 +1,18 @@
+import { PriceFields, PricingRules } from "./PriceFields";
 import { useState } from "react"
 import type { ModelMetadata } from "../../api/types"
 import { Button, Dialog, Field } from "../../components/ui"
 import { useI18n } from "../../i18n"
+import {
+  PriceTiersEditor,
+  PriceWindowsEditor,
+  encodeTiers,
+  encodeWindows,
+  parseTiers,
+  parseWindows,
+  validTiers,
+  validWindows,
+} from "./PricingEditors"
 
 export // Compact token-count rendering for metadata badges (128000 → 128K).
 // Capability annotation editor for one canonical model name (context window,
@@ -22,9 +33,23 @@ function ModelMetadataDialog({
   onDelete?: () => void;
 }) {
   const { t } = useI18n();
+  const [pricesValid, setPricesValid] = useState(true);
   const [form, setForm] = useState<ModelMetadata>(value);
   const patch = (partial: Partial<ModelMetadata>) =>
     setForm((current) => ({ ...current, ...partial }));
+  // The ladder and the schedule are arrays while editing and JSON text on the
+  // wire; keeping them in their own state is what lets the editors work on real
+  // objects instead of parsing on every keystroke.
+  const [tiersEdited, setTiersEdited] = useState(false);
+  const [windowsEdited, setWindowsEdited] = useState(false);
+  const [tiers, setTiers] = useState(() => parseTiers(value.price_tiers));
+  const [windows, setWindows] = useState(() => parseWindows(value.price_schedule));
+  const submit = () =>
+    onSave({
+      ...form,
+      price_tiers: tiersEdited ? encodeTiers(tiers) : (value.price_tiers ?? ""),
+      price_schedule: windowsEdited ? encodeWindows(windows) : (value.price_schedule ?? ""),
+    });
   const thinkingOptions = [
     { value: -1, label: t("modelsPage.metaThinkingUnknown") },
     { value: 1, label: t("modelsPage.metaThinkingYes") },
@@ -95,42 +120,10 @@ function ModelMetadataDialog({
             disabled={pending}
           />
         </Field>
-        <Field label={t("modelsPage.metaPricePrompt")} hint={t("modelsPage.metaPriceHint")}>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={form.price_prompt_per_1k ?? 0}
-            onChange={(e) =>
-              patch({ price_prompt_per_1k: Math.max(0, Number(e.target.value) || 0) })
-            }
-            disabled={pending}
-          />
-        </Field>
-        <Field label={t("modelsPage.metaPriceCompletion")}>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={form.price_completion_per_1k ?? 0}
-            onChange={(e) =>
-              patch({ price_completion_per_1k: Math.max(0, Number(e.target.value) || 0) })
-            }
-            disabled={pending}
-          />
-        </Field>
-        <Field label={t("modelsPage.metaPriceCache")}>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={form.price_cache_per_1k ?? 0}
-            onChange={(e) =>
-              patch({ price_cache_per_1k: Math.max(0, Number(e.target.value) || 0) })
-            }
-            disabled={pending}
-          />
-        </Field>
+        <PriceFields value={form} onChange={patch} onValidityChange={setPricesValid} disabled={pending} />
+        <PricingRules />
+        <PriceTiersEditor value={tiers} onChange={(next) => { setTiersEdited(true); setTiers(next); }} disabled={pending} />
+        <PriceWindowsEditor value={windows} onChange={(next) => { setWindowsEdited(true); setWindows(next); }} disabled={pending} />
       </div>
 	  {error ? <div className="inline-error">{String(error)}</div> : null}
       <div className="dialog-actions">
@@ -140,7 +133,6 @@ function ModelMetadataDialog({
             disabled={pending}
             onClick={() => {
               onDelete();
-              onClose();
             }}
           >
             {t("common.delete")}
@@ -150,7 +142,7 @@ function ModelMetadataDialog({
         <Button variant="secondary" disabled={pending} onClick={onClose}>
           {t("common.cancel")}
         </Button>
-        <Button disabled={pending} onClick={() => onSave(form)}>
+        <Button disabled={pending || !pricesValid || !validTiers(tiers) || !validWindows(windows)} onClick={submit}>
           {pending ? t("common.working") : t("common.save")}
         </Button>
       </div>

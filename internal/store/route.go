@@ -317,7 +317,8 @@ func scanRouteMember(scanner interface {
 		&r.LastError,
 		scanTime(&r.CreatedAt),
 		scanTime(&r.UpdatedAt),
-		&r.PricePromptPer1k, &r.PriceCompletionPer1k, &r.PriceCachePer1k,
+		&r.PricePromptPer1k, &r.PriceCompletionPer1k, &r.PriceCachePer1k, &r.PricePerRequest,
+		&r.PriceTiers, &r.PriceSchedule,
 	); err != nil {
 		return err
 	}
@@ -342,7 +343,11 @@ func (s *RouteMemberStore) ListByRouteTx(tx *sql.Tx, routeID int64) ([]domain.Ro
 }
 
 func listRouteMembers(ex sqlExecutor, routeID int64) ([]domain.RouteMember, error) {
-	rows, err := ex.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
+	// Column order must match scanRouteMember exactly: it is the shared scan for
+	// this table, so a SELECT that forgets a column fails at query time rather
+	// than silently mis-reading one. Adding a column to the table means adding
+	// it here AND in GetByID below.
+	rows, err := ex.Query(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request, price_tiers, price_schedule FROM route_members WHERE route_id = ? ORDER BY priority DESC, weight DESC, id`, routeID)
 	if err != nil {
 		return nil, fmt.Errorf("route member list: %w", err)
 	}
@@ -384,7 +389,8 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 	rows, err := s.db.Query(`SELECT
 			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
 			rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
-		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
+			rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k, rm.price_per_request,
+			rm.price_tiers, rm.price_schedule,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
 		c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests,
@@ -418,7 +424,8 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
 			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
-			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k,
+			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k, &candidate.Member.PricePerRequest,
+			&candidate.Member.PriceTiers, &candidate.Member.PriceSchedule,
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
@@ -510,7 +517,8 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 	rows, err := s.db.Query(`SELECT
 		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
 		rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
-		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k,
+		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k, rm.price_per_request,
+		rm.price_tiers, rm.price_schedule,
 		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
 		c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
 		c.stable_first, c.stable_first_requests,
@@ -547,7 +555,8 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
 			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
 			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
-			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k,
+			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k, &candidate.Member.PricePerRequest,
+			&candidate.Member.PriceTiers, &candidate.Member.PriceSchedule,
 			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
 			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
 			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
@@ -694,7 +703,7 @@ func (s *RouteMemberStore) RecoverExpired() error {
 }
 
 func (s *RouteMemberStore) GetByID(id int64) (*domain.RouteMember, error) {
-	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k FROM route_members WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, route_id, channel_id, priority, weight, enabled, auto, manual_override, auto_disabled, mapping_json, group_name, fail_count, cooldown_until, last_error, created_at, updated_at, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request, price_tiers, price_schedule FROM route_members WHERE id = ?`, id)
 	var r domain.RouteMember
 	if err := scanRouteMember(row, &r); err != nil {
 		if err == sql.ErrNoRows {
@@ -716,8 +725,8 @@ func (s *RouteMemberStore) CreateTx(tx *sql.Tx, r *domain.RouteMember) (int64, e
 
 func createRouteMember(ex sqlExecutor, r *domain.RouteMember) (int64, error) {
 	enabled, auto, manual := boolInt(r.Enabled), boolInt(r.Auto), boolInt(r.ManualOverride)
-	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.PricePromptPer1k, r.PriceCompletionPer1k, r.PriceCachePer1k)
+	res, err := ex.Exec(`INSERT INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request, price_tiers, price_schedule) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.RouteID, r.ChannelID, r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.PricePromptPer1k, r.PriceCompletionPer1k, r.PriceCachePer1k, r.PricePerRequest, r.PriceTiers, r.PriceSchedule)
 	if err != nil {
 		// Name the pair that failed: a bare constraint error leaves the caller
 		// guessing which route/channel the store tried to wire.
@@ -771,7 +780,7 @@ func (s *RouteMemberStore) CopyMemberGroup(routeID int64, from, to string) (int,
 	if from == to {
 		return 0, nil
 	}
-	res, err := s.db.Exec(`INSERT OR IGNORE INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, fail_count, cooldown_until, last_error, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, created_at, updated_at) SELECT route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, ?, 0, NULL, '', price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, datetime('now'), datetime('now') FROM route_members WHERE route_id = ? AND group_name = ? AND mapping_json = ''`,
+	res, err := s.db.Exec(`INSERT OR IGNORE INTO route_members (route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, group_name, fail_count, cooldown_until, last_error, price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request, price_tiers, price_schedule, created_at, updated_at) SELECT route_id, channel_id, priority, weight, enabled, auto, manual_override, mapping_json, ?, 0, NULL, '', price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request, price_tiers, price_schedule, datetime('now'), datetime('now') FROM route_members WHERE route_id = ? AND group_name = ? AND mapping_json = ''`,
 		to, routeID, from)
 	if err != nil {
 		return 0, fmt.Errorf("route member group copy: %w", err)
@@ -782,8 +791,13 @@ func (s *RouteMemberStore) CopyMemberGroup(routeID int64, from, to string) (int,
 
 // ListRouteGroupNames returns every distinct member group name across all
 // routes, sorted, so callers can offer a pick list.
+//
+// Blank group names are folded into 'default' because that is how the console
+// displays them everywhere else: a member with no group belongs to default.
+// Without the folding a pick list would offer a nameless entry beside the "no
+// group" option, which reads as a distinct group while meaning the opposite.
 func (s *RouteMemberStore) ListRouteGroupNames() ([]string, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT group_name FROM route_members ORDER BY group_name`)
+	rows, err := s.db.Query(`SELECT DISTINCT COALESCE(NULLIF(TRIM(group_name), ''), ?) AS group_name FROM route_members ORDER BY group_name`, domain.DefaultRouteGroup)
 	if err != nil {
 		return nil, fmt.Errorf("route member group names: %w", err)
 	}
@@ -807,18 +821,111 @@ func (s *RouteMemberStore) ListRouteGroupNames() ([]string, error) {
 // (route_id, channel_id, group_name) WHERE mapping_json = ”, so route groups
 // and alias members legitimately produce several rows for one route+channel.
 // Resolving by the pair could bill a request through a member it never used.
-func (s *RouteMemberStore) MemberPrices(memberID int64) (prompt, completion, cache float64, found bool, err error) {
+func (s *RouteMemberStore) MemberPrices(memberID int64) (prompt, completion, cache, perRequest float64, found bool, err error) {
 	row := s.db.QueryRow(
-		`SELECT price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k
+		`SELECT price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request
 		 FROM route_members WHERE id = ?`,
 		memberID)
-	if err := row.Scan(&prompt, &completion, &cache); err != nil {
+	if err := row.Scan(&prompt, &completion, &cache, &perRequest); err != nil {
 		if err == sql.ErrNoRows {
-			return 0, 0, 0, false, nil
+			return 0, 0, 0, 0, false, nil
 		}
-		return 0, 0, 0, false, fmt.Errorf("route member prices: %w", err)
+		return 0, 0, 0, 0, false, fmt.Errorf("route member prices: %w", err)
 	}
-	return prompt, completion, cache, true, nil
+	return prompt, completion, cache, perRequest, true, nil
+}
+
+// MemberPricing resolves everything the billing path needs from one member row:
+// the flat prices plus the context-length ladder and the time-of-day windows.
+//
+// One query rather than three because they are one decision — a member whose
+// flat columns are zero but whose ladder is set IS priced, and a caller reading
+// only the columns would bill the request as free.
+func (s *RouteMemberStore) MemberPricing(memberID int64) (domain.PriceLayer, bool, error) {
+	var layer domain.PriceLayer
+	var tiers, schedule string
+	row := s.db.QueryRow(
+		`SELECT price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request, price_tiers, price_schedule
+		 FROM route_members WHERE id = ?`, memberID)
+	if err := row.Scan(&layer.Prompt, &layer.Completion, &layer.Cache, &layer.PerRequest, &tiers, &schedule); err != nil {
+		if err == sql.ErrNoRows {
+			return domain.PriceLayer{}, false, nil
+		}
+		return domain.PriceLayer{}, false, fmt.Errorf("route member pricing: %w", err)
+	}
+	// The layer comes back even when its JSON could not be parsed: the caller
+	// logs that and bills on what was readable, rather than losing the row.
+	resolved, err := domain.ResolvePriceLayer(layer.Prompt, layer.Completion, layer.Cache, layer.PerRequest, tiers, schedule)
+	return resolved, true, err
+}
+
+// AdoptObservedPrices writes a site's published price onto one member, filling
+// only the fields that are still unpriced.
+//
+// Two rules make this safe to expose as a button:
+//
+//   - It never overwrites a price an operator typed. The billing layers are
+//     "most specific wins", so a value here silently outranks the model catalog
+//     and the observed price alike; an automatic overwrite would be invisible
+//     and would change what requests cost.
+//   - It never mixes modes: a per-call quote goes to price_per_request and a
+//     token quote to the per-1k columns, and each family is all-or-nothing, so a
+//     half-filled row cannot make one direction bill at zero.
+//
+// Returns the names of the fields it wrote (empty = nothing was missing).
+func (s *RouteMemberStore) AdoptObservedPrices(memberID int64, prompt, completion, cache, perRequest float64) ([]string, error) {
+	var current [4]float64
+	row := s.db.QueryRow(
+		`SELECT price_prompt_per_1k, price_completion_per_1k, price_cache_per_1k, price_per_request
+		 FROM route_members WHERE id = ?`, memberID)
+	if err := row.Scan(&current[0], &current[1], &current[2], &current[3]); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("route member prices: member %d not found", memberID)
+		}
+		return nil, fmt.Errorf("route member prices: %w", err)
+	}
+
+	next := current
+	var adopted []string
+	if perRequest > 0 {
+		if current[3] == 0 {
+			next[3] = perRequest
+			adopted = append(adopted, "price_per_request")
+		}
+	} else if prompt > 0 && (current[0] == 0 || current[1] == 0 || current[2] == 0) {
+		// Fill the whole token family together: a row with a prompt price and a
+		// zero completion price would bill completions as free.
+		if current[0] == 0 {
+			next[0] = prompt
+			adopted = append(adopted, "price_prompt_per_1k")
+		}
+		if current[1] == 0 {
+			next[1] = completion
+			adopted = append(adopted, "price_completion_per_1k")
+		}
+		if current[2] == 0 && cache > 0 {
+			next[2] = cache
+			adopted = append(adopted, "price_cache_per_1k")
+		}
+	}
+	// A member bills in exactly one mode. Once it carries a per-call price, a
+	// token quote must not be layered on top of it (and the other way around):
+	// the billing layers would add both together and the request would cost the
+	// sum of two incompatible prices.
+	if next[3] > 0 && perRequest == 0 {
+		return nil, nil
+	}
+	if next[3] == 0 && perRequest > 0 && (next[0] > 0 || next[1] > 0 || next[2] > 0) {
+		return nil, nil
+	}
+	if len(adopted) == 0 {
+		return nil, nil
+	}
+	if _, err := s.db.Exec(`UPDATE route_members SET price_prompt_per_1k=?, price_completion_per_1k=?, price_cache_per_1k=?, price_per_request=?, updated_at=datetime('now') WHERE id=?`,
+		next[0], next[1], next[2], next[3], memberID); err != nil {
+		return nil, fmt.Errorf("route member prices: adopt: %w", err)
+	}
+	return adopted, nil
 }
 
 func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
@@ -827,8 +934,8 @@ func (s *RouteMemberStore) Update(r *domain.RouteMember) error {
 	if r.CooldownUntil != nil {
 		cooldownUntil = r.CooldownUntil.UTC().Format(time.RFC3339Nano)
 	}
-	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, mapping_json=?, group_name=?, fail_count=?, cooldown_until=?, last_error=?, price_prompt_per_1k=?, price_completion_per_1k=?, price_cache_per_1k=?, updated_at=datetime('now') WHERE id=?`,
-		r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.FailCount, cooldownUntil, r.LastError, r.PricePromptPer1k, r.PriceCompletionPer1k, r.PriceCachePer1k, r.ID)
+	_, err := s.db.Exec(`UPDATE route_members SET priority=?, weight=?, enabled=?, auto=?, manual_override=?, mapping_json=?, group_name=?, fail_count=?, cooldown_until=?, last_error=?, price_prompt_per_1k=?, price_completion_per_1k=?, price_cache_per_1k=?, price_per_request=?, price_tiers=?, price_schedule=?, updated_at=datetime('now') WHERE id=?`,
+		r.Priority, r.Weight, enabled, auto, manual, r.MappingJSON, NormalizeMemberGroup(r.GroupName), r.FailCount, cooldownUntil, r.LastError, r.PricePromptPer1k, r.PriceCompletionPer1k, r.PriceCachePer1k, r.PricePerRequest, r.PriceTiers, r.PriceSchedule, r.ID)
 	if err != nil {
 		return fmt.Errorf("route member update: %w", err)
 	}

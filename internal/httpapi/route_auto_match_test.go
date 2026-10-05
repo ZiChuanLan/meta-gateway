@@ -208,6 +208,79 @@ func TestRouteAutoMatchExistingRoute(t *testing.T) {
 	}
 }
 
+// TestRouteAutoMatchRelatedScope covers the console's match-scope switch: a
+// route named after the base model can also adopt the channels that only list
+// a -variant of it, and those members carry a {"real": …} redirect so the
+// upstream receives a name it actually serves.
+func TestRouteAutoMatchRelatedScope(t *testing.T) {
+	dataDir := t.TempDir()
+	db, _ := store.Open(dataDir)
+	defer db.Close()
+	enc, _ := crypto.New("auto-match-related-master-key-32c!")
+	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true, OutboundAllowCIDRs: []string{"127.0.0.1/32"}, Cooldown: time.Second}
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
+	defer server.Close()
+
+	var site struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/sites", map[string]any{"name": "s", "base_url": "https://api.example.com", "platform": "openai-compatible", "status": "enabled"}), &site)
+	var cred struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/sites/"+itoa(site.ID)+"/credentials", map[string]any{"kind": "api_key", "secret": "sk-test", "status": "enabled"}), &cred)
+	newChannel := func(name, modelsCSV string) int64 {
+		var channel struct{ ID int64 }
+		json.Unmarshal(post(t, server.URL+"/admin/channels", map[string]any{"site_id": site.ID, "credential_id": cred.ID, "name": name, "base_url": "https://api.example.com", "type_hint": "openai-compatible", "status": "enabled", "models_csv": modelsCSV}), &channel)
+		return channel.ID
+	}
+	base := newChannel("base", "mimo-v2.5")
+	variant := newChannel("variant", "mimo-v2.5-flash")
+
+	// The preview answers for the requested scope, and names what matched.
+	var preview struct {
+		Items []struct {
+			ChannelID int64  `json:"channel_id"`
+			Model     string `json:"model"`
+		} `json:"items"`
+	}
+	json.Unmarshal(get(t, server.URL+"/admin/discovery/model-channels?model=mimo-v2.5"), &preview)
+	if len(preview.Items) != 1 || preview.Items[0].ChannelID != base {
+		t.Fatalf("exact preview = %+v, want only the base channel", preview)
+	}
+	json.Unmarshal(get(t, server.URL+"/admin/discovery/model-channels?model=mimo-v2.5&match=related"), &preview)
+	if len(preview.Items) != 2 {
+		t.Fatalf("related preview = %+v, want base + variant", preview)
+	}
+	for _, item := range preview.Items {
+		if item.ChannelID == variant && item.Model != "mimo-v2.5-flash" {
+			t.Fatalf("variant matched as %q", item.Model)
+		}
+	}
+
+	// Creating with the related scope attaches both, and the variant member
+	// rewrites its upstream name.
+	var route struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/routes", map[string]any{"model_pattern": "mimo-v2.5", "enabled": true, "auto_match_mode": "related", "auto_match_channel_ids": []int64{base, variant}}), &route)
+	members := listMembers(t, server.URL, route.ID)
+	if len(members) != 2 {
+		t.Fatalf("members = %+v, want both channels", members)
+	}
+	var detail []struct {
+		ChannelID   int64  `json:"channel_id"`
+		MappingJSON string `json:"mapping_json"`
+	}
+	json.Unmarshal(get(t, fmt.Sprintf("%s/admin/routes/%d/members", server.URL, route.ID)), &detail)
+	for _, member := range detail {
+		switch member.ChannelID {
+		case base:
+			if member.MappingJSON != "" {
+				t.Fatalf("exact member must not rewrite: %+v", member)
+			}
+		case variant:
+			if member.MappingJSON != `{"real":"mimo-v2.5-flash"}` {
+				t.Fatalf("variant member mapping = %q", member.MappingJSON)
+			}
+		}
+	}
+}
+
 // TestCreateRouteBootstrapsCapabilities covers the half of the auto-sync that
 // has to happen inside the request: a model that was just routed gets its
 // built-in classification row without anyone pressing a button. The external

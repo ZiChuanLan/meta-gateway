@@ -85,6 +85,7 @@ func DownstreamScopes(r *http.Request) []string {
 // A nil filter (or one with an empty Allowlist and empty Denylist) means
 // "no model restriction".
 type ModelFilter struct {
+	Team *domain.TeamAccess
 	// Allowlist, when non-empty, is the only set of models the key may use.
 	Allowlist []string
 	// Denylist, when non-empty, blocks these models even if allowlisted.
@@ -106,6 +107,9 @@ func (f *ModelFilter) Allows(model string) bool {
 	if f == nil {
 		return true
 	}
+	if !f.Team.AllowsModel(model) {
+		return false
+	}
 	model = strings.TrimSpace(model)
 	if model == "" {
 		return true
@@ -121,7 +125,7 @@ func (f *ModelFilter) Allows(model string) bool {
 
 // Empty reports whether the filter imposes no restriction at all.
 func (f *ModelFilter) Empty() bool {
-	return f == nil || (len(f.Allowlist) == 0 && len(f.Denylist) == 0)
+	return f == nil || (f.Team == nil && len(f.Allowlist) == 0 && len(f.Denylist) == 0)
 }
 
 // DownstreamModelFilter returns the model filter attached by DownstreamAuth.
@@ -358,7 +362,7 @@ func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, []string, *Model
 	if err != nil {
 		return 0, nil, nil, nil, fmt.Errorf("auth: lookup: %w", err)
 	}
-	if key == nil || !key.Enabled {
+	if key == nil || !key.Enabled || key.TeamDeletedAt != "" {
 		return 0, nil, nil, nil, fmt.Errorf("auth: invalid or disabled key")
 	}
 	if expiryErr := checkKeyExpiry(key.ExpiresAt); expiryErr != nil {
@@ -369,10 +373,19 @@ func (da *DownstreamAuth) Authenticate(r *http.Request) (int64, []string, *Model
 	}
 	scopes, err := NormalizeScopes(key.Scopes)
 	if err != nil {
+		if key.UserID != 0 {
+			return 0, nil, nil, nil, err
+		}
 		// Corrupt historical scopes still allow full relay so ops can fix the row.
 		scopes = []string{ScopeRelay}
 	}
 	filter := ParseModelFilter(key.ModelAllowlist, key.ModelDenylist)
+	access, accessErr := da.store.ResolveTeamAccess(key)
+	if accessErr != nil {
+		return 0, nil, nil, nil, accessErr
+	}
+	key.TeamAccess = access
+	filter.Team = access
 	if filter.Empty() {
 		filter = nil
 	}

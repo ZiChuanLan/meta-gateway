@@ -9,7 +9,7 @@ services:
       args:
         VERSION: ${VERSION:-dev}
         COMMIT: ${COMMIT:-unknown}
-    image: zichuanlan/meta-gateway:latest
+    image: zichuanlan/meta-gateway:${IMAGE_TAG:-latest}
     init: true
     ports:
       - "4100:4100"
@@ -22,6 +22,8 @@ services:
       HTTP_PROXY: "${HTTP_PROXY:-}"
       HTTPS_PROXY: "${HTTPS_PROXY:-}"
       NO_PROXY: "${NO_PROXY:-127.0.0.1,localhost}"
+      SELFUPDATE_TRACK_TAG: "${IMAGE_TAG:-latest}"
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_TOKEN: "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
       ADMIN_TOKENS: "${ADMIN_TOKENS:-}"
       MASTER_KEY: "${MASTER_KEY:?MASTER_KEY is required}"
@@ -54,9 +56,13 @@ services:
       # auto-ignored after N days (0 = keep reminding until handled manually).
       MODEL_CHANGE_RETENTION_DAYS: "${MODEL_CHANGE_RETENTION_DAYS:-90}"
       MODEL_CHANGE_AUTO_IGNORE_DAYS: "${MODEL_CHANGE_AUTO_IGNORE_DAYS:-0}"
+      # External site-probe history (one row per monitored model per site per
+      # round) is pruned daily; 0 disables the pruner.
+      SITE_PROBE_RETENTION_DAYS: "${SITE_PROBE_RETENTION_DAYS:-7}"
+      SITE_PROBE_INTERVAL_SECONDS: "${SITE_PROBE_INTERVAL_SECONDS:-900}"
+      SITE_PROBE_JITTER_SECONDS: "${SITE_PROBE_JITTER_SECONDS:-120}"
       RETRY_TIMES: "${RETRY_TIMES:-2}"
       CHANNEL_RETRY_TIMES: "${CHANNEL_RETRY_TIMES:-1}"
-      KEY_POOL_ROTATION: "${KEY_POOL_ROTATION:-true}"
       CROSS_CHANNEL_FAILOVER_ENABLED: "${CROSS_CHANNEL_FAILOVER_ENABLED:-true}"
       COOLDOWN_SECONDS: "${COOLDOWN_SECONDS:-30}"
       FAULT_PROTECTION_ENABLED: "${FAULT_PROTECTION_ENABLED:-true}"

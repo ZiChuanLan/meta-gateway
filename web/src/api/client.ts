@@ -1,3 +1,5 @@
+import { ApiError } from "../lib/apiError";
+export { ApiError } from "../lib/apiError";
 import type {
   AuditEvent,
   BackupRecord,
@@ -27,6 +29,12 @@ import type {
   AccountProbeResult,
   ChannelPingResult,
   FinanceItem,
+  SiteProbeAction,
+  SiteProbeAdoptResult,
+  SiteProbeCatalogEntry,
+  SiteProbeDetection,
+  SiteProbePolicy,
+  SiteProbeReport,
   ModelMetadata,
   ModelCapability,
   ModelChangesResponse,
@@ -58,6 +66,7 @@ import type {
   RouteMember,
   RouteOverview,
   ModelChannelMatch,
+  ModelMatchMode,
   RunResult,
   RunSummary,
   StickySnapshot,
@@ -81,40 +90,42 @@ import type {
   PluginHookStatus,
 } from "./types";
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly retryAfter?: number,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+import { teamCSRF, teamSessionGeneration } from "../team/transport";
 
 export class ApiClient {
   constructor(
     private readonly token: string,
     private readonly onUnauthorized?: () => void,
+    private readonly authMode: "bearer" | "cookie" = "bearer",
   ) {}
+
+  private checkSession(generation: number) {
+    if (this.authMode === "cookie" && generation !== teamSessionGeneration()) {
+      throw new DOMException("Session changed", "AbortError");
+    }
+  }
 
   /** Raw bearer token, needed for iframe plugin embedding (?t=). */
   getToken(): string {
-    return this.token;
+    return this.authMode === "cookie" ? "" : this.token;
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const generation = teamSessionGeneration();
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
-    headers.set("Authorization", `Bearer ${this.token}`);
+    if (this.authMode === "bearer") headers.set("Authorization", `Bearer ${this.token}`);
+    else if (init.method && !["GET", "HEAD"].includes(init.method)) headers.set("X-Meta-CSRF", teamCSRF());
     if (init.body && !headers.has("Content-Type"))
       headers.set("Content-Type", "application/json");
     let response: Response;
     try {
-      response = await fetch(path, { ...init, headers });
-    } catch {
+      response = await fetch(path, { ...init, headers, credentials: "same-origin" });
+    } catch (error) {
+      if (init.signal?.aborted || (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError")) throw error;
       throw new ApiError(0, "Unable to reach Meta Gateway");
     }
+    this.checkSession(generation);
     if (!response.ok) {
       if (response.status === 401) this.onUnauthorized?.();
       let message = `Request failed (${response.status})`;
@@ -145,7 +156,9 @@ export class ApiClient {
       );
     }
     if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+    const data = await response.json() as T;
+    this.checkSession(generation);
+    return data;
   }
 
   get<T>(path: string, signal?: AbortSignal) {
@@ -163,19 +176,27 @@ export class ApiClient {
     init: RequestInit,
     signal?: AbortSignal,
   ): Promise<Response> {
+    const generation = teamSessionGeneration();
+    const headers = new Headers(init.headers);
+    headers.set("Accept", "text/event-stream");
+    if (this.authMode === "bearer") headers.set("Authorization", `Bearer ${this.token}`);
+    else if (init.method && !["GET", "HEAD"].includes(init.method)) headers.set("X-Meta-CSRF", teamCSRF());
+    if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     let response: Response;
     try {
       response = await fetch(path, {
         ...init,
         signal,
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${this.token}`,
-          ...(init.body ? { "Content-Type": "application/json" } : {}),
-        },
+        headers,
+        credentials: "same-origin",
       });
-    } catch {
+    } catch (error) {
+      if (signal?.aborted || (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError")) throw error;
       throw new ApiError(0, "Unable to reach Meta Gateway");
+    }
+    if (this.authMode === "cookie" && generation !== teamSessionGeneration()) {
+      void response.body?.cancel().catch(() => {});
+      this.checkSession(generation);
     }
     if (!response.ok) {
       if (response.status === 401) this.onUnauthorized?.();
@@ -393,9 +414,15 @@ export const api = (client: ApiClient) => ({
     client.getList<RouteOverview>("/admin/routes/overview", signal),
   // auto_match_channel_ids is create-only: the server attaches one member per
   // listed channel that verifiably serves the pattern (intersection), then
-  // drops the flag (not route state).
-  createRoute: (body: Partial<Route> & { auto_match_channel_ids?: number[] }) =>
-    client.post<Route>("/admin/routes", body),
+  // drops the flag (not route state). auto_match_mode "related" widens the
+  // check to the pattern's -sibling models and rewrites the member's upstream
+  // name to whichever of them the channel actually serves.
+  createRoute: (
+    body: Partial<Route> & {
+      auto_match_channel_ids?: number[];
+      auto_match_mode?: ModelMatchMode;
+    },
+  ) => client.post<Route>("/admin/routes", body),
   updateRoute: (id: number, body: Partial<Route>) =>
     client.put<Route>(`/admin/routes/${id}`, body),
   deleteRoute: (id: number) => client.delete(`/admin/routes/${id}`),
@@ -408,10 +435,11 @@ export const api = (client: ApiClient) => ({
     routeId: number,
     channelIds: number[],
     groupName?: string,
+    match?: ModelMatchMode,
   ) =>
     client.post<{ added: number; skipped: number }>(
       `/admin/routes/${routeId}/auto-match`,
-      { channel_ids: channelIds, group_name: groupName ?? "" },
+      { channel_ids: channelIds, group_name: groupName ?? "", match },
     ),
   createMember: (routeId: number, body: Partial<RouteMember>) =>
     client.post<RouteMember>(`/admin/routes/${routeId}/members`, body),
@@ -432,6 +460,11 @@ export const api = (client: ApiClient) => ({
     ),
   routeGroups: (signal?: AbortSignal) =>
     client.get<{ groups: string[] }>("/admin/route-groups", signal),
+  // Tenant groups — the quota/rate-limit container a client token can be bound
+  // to. Distinct from routeGroups above, which name model groups inside a
+  // route; the two are unrelated despite the shared word.
+  keyGroups: (signal?: AbortSignal) =>
+    client.get<Array<{ name: string }>>("/admin/groups", signal),
   deleteMemberGroup: (routeId: number, name: string) =>
     client.delete(
       `/admin/routes/${routeId}/groups/${encodeURIComponent(name)}`,
@@ -450,10 +483,14 @@ export const api = (client: ApiClient) => ({
     scopes?: string;
     token?: string;
     quota_total_tokens?: number;
+    /** Spend budget in the ledger's unit; 0 = unlimited. */
+    quota_total_cost?: number;
     model_allowlist?: string;
     model_denylist?: string;
     expires_at?: string;
     allowed_ips?: string;
+    /** Bound route group; empty means the key is not bound to one. */
+    route_group_name?: string;
   }) => client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
   updateKey: (
     id: number,
@@ -462,10 +499,13 @@ export const api = (client: ApiClient) => ({
       enabled?: boolean;
       scopes?: string;
       quota_total_tokens?: number;
+      quota_total_cost?: number;
       model_allowlist?: string;
       model_denylist?: string;
       expires_at?: string;
       allowed_ips?: string;
+      /** Bound route group; "" moves the key back to no route group. */
+      route_group_name?: string;
       reset_used?: boolean;
     },
   ) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
@@ -620,10 +660,11 @@ export const api = (client: ApiClient) => ({
       }>;
     }>("/admin/discovery/missing-models", signal),
   // Live preview for the add-route dialog's auto-match: enabled channels whose
-  // models.csv or discovery snapshot matches the pattern.
-  modelChannels: (model: string, signal?: AbortSignal) =>
+  // models.csv or discovery snapshot matches the pattern. "related" also
+  // accepts the pattern's -sibling models.
+  modelChannels: (model: string, match: ModelMatchMode = "exact", signal?: AbortSignal) =>
     client.get<{ items: ModelChannelMatch[] }>(
-      `/admin/discovery/model-channels?model=${encodeURIComponent(model)}`,
+      `/admin/discovery/model-channels?model=${encodeURIComponent(model)}&match=${match}`,
       signal,
     ),
   // Omitting rules asks the server for every rule, which yields the simplest
@@ -643,6 +684,102 @@ export const api = (client: ApiClient) => ({
     client.post<{ status: string }>(`/admin/probes/${id}/cancel`, {}),
   modelHealth: (signal?: AbortSignal) =>
     client.get<ModelHealth[]>("/admin/model-health", signal),
+  /**
+   * External site probe data joined with our routes. The policy travels as
+   * query parameters so the dialog can preview a different threshold before
+   * anything is saved or applied.
+   */
+  siteProbeReport: (policy: SiteProbePolicy, signal?: AbortSignal) => {
+    const query = new URLSearchParams({
+      ratio_threshold: String(policy.ratio_threshold),
+      min_samples: String(policy.min_samples),
+      low_rounds: String(policy.low_rounds),
+      high_rounds: String(policy.high_rounds),
+    });
+    return client.get<SiteProbeReport>(
+      `/admin/site-probe/report?${query}`,
+      signal,
+    );
+  },
+  /** Collect now: one site when ids are given, every enabled site otherwise. */
+  siteProbeCollect: (siteIds?: number[]) =>
+    client.post<{ collected?: number; failed: number }>(
+      "/admin/site-probe/collect",
+      siteIds && siteIds.length > 0 ? { site_ids: siteIds } : {},
+    ),
+  /** dry_run lists what would change; the caller confirms before applying. */
+  siteProbeApply: (body: {
+    routes?: string[];
+    site_ids?: number[];
+    policy: SiteProbePolicy;
+    dry_run: boolean;
+  }) =>
+    client.post<{ actions: SiteProbeAction[]; dry_run: boolean }>(
+      "/admin/site-probe/apply",
+      body,
+    ),
+  /**
+   * Write a site's published price into the members' billing columns. The
+   * quote comes from the collected sample, never from the request; the store
+   * fills only fields that are still empty.
+   */
+  siteProbeAdoptPrice: (memberIds: number[]) =>
+    client.post<{ results: SiteProbeAdoptResult[] }>(
+      "/admin/site-probe/adopt-price",
+      { member_ids: memberIds },
+    ),
+  siteProbeDetect: (url: string) =>
+    client.post<SiteProbeDetection>("/admin/site-probe/detect", { url }),
+  /**
+   * Read a public monitoring directory and match every entry against our
+   * sites. Preview only — nothing is written until catalogImport.
+   */
+  siteProbeCatalogPreview: (catalogUrl?: string) => {
+    const query = catalogUrl ? `?url=${encodeURIComponent(catalogUrl)}` : "";
+    return client.get<{
+      entries: SiteProbeCatalogEntry[];
+      catalog_url: string;
+    }>(`/admin/site-probe/catalog/preview${query}`);
+  },
+  /**
+   * Apply the previewed plan. The catalog url is required on POST: an import
+   * must never silently fall back to the real directory the preview did not
+   * use.
+   */
+  siteProbeCatalogImport: (body: {
+    url: string;
+    names?: string[];
+    collect_now?: boolean;
+    create_missing?: boolean;
+  }) =>
+    client.post<{
+      /** Sites that now have a probe source. */
+      matched: number;
+      /** Sites left alone because they already carry a custom source. */
+      skipped: number;
+      /** Directory entries we route nothing through (not imported). */
+      unmatched: number;
+      created: number;
+      collected?: number;
+      failed?: number;
+    }>("/admin/site-probe/catalog/import", body),
+  /**
+   * Remove the sites nothing routes through — cleanup for the debris an import
+   * that created missing sites leaves behind. Sites with a channel or a
+   * credential are never touched.
+   */
+  siteProbeCatalogPrune: () =>
+    client.post<{ removed: number }>("/admin/site-probe/catalog/prune", {}),
+  saveSiteProbeSource: (body: {
+    site_id: number;
+    kind: string;
+    url: string;
+    auto?: boolean;
+    enabled: boolean;
+    config?: string;
+  }) => client.put<Site>("/admin/site-probe/source", body),
+  clearSiteProbeSource: (siteId: number) =>
+    client.delete(`/admin/site-probe/source/${siteId}`),
   unifyApply: (groups: UnifyGroup[], deleteOriginals = true) =>
     client.post<UnifyApplyResult>("/admin/models/unify/apply", {
       // Removing the originals is what actually unifies a name: a parked
@@ -1007,6 +1144,11 @@ export const api = (client: ApiClient) => ({
   createBackup: () => client.post<BackupRecord>("/admin/backups"),
   runtimeSettings: (signal?: AbortSignal) =>
     client.get<RuntimeSettings>("/admin/runtime-settings", signal),
+  /** The site's money presentation: symbol + rate applied to every amount. */
+  displaySettings: (signal?: AbortSignal) =>
+    client.get<{ symbol: string; rate: number }>("/admin/display-settings", signal),
+  saveDisplaySettings: (body: { symbol: string; rate: number }) =>
+    client.put<{ symbol: string; rate: number }>("/admin/display-settings", body),
   updateCheck: (signal?: AbortSignal) =>
     client.get<UpdateCheckStatus>("/admin/update-check", signal),
   refreshUpdateCheck: () =>

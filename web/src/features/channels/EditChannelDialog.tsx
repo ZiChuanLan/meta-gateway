@@ -545,13 +545,11 @@ export function EditChannelDialog({
                 const label =
                   meta.name?.trim() ||
                   t("channels.apiKeyUnnamed", { id: item.id });
-                const usedByThisConnection = value.credential_id === item.id;
                 return (
                   <li
                     key={item.id}
                     className={[
                       "credential-key-row",
-                      usedByThisConnection ? "is-bound" : "",
                       item.status !== "enabled" ? "is-disabled" : "",
                     ]
                       .filter(Boolean)
@@ -561,9 +559,6 @@ export function EditChannelDialog({
                       <strong>{label}</strong>
                       <small>
                         {`#${item.id}`}
-                        {usedByThisConnection
-                          ? ` · ${t("channels.apiKeyUsedByConnection")}`
-                          : ""}
                       </small>
                     </div>
                     <span

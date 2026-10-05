@@ -97,6 +97,10 @@ type ModelPrice struct {
 	GroupRatio float64 `json:"group_ratio,omitempty"`
 	// QuotaPer1M is the raw quota price per 1M tokens (legacy map format).
 	QuotaPer1M float64 `json:"quota_per_1m,omitempty"`
+	// BillingExpr is the raw tiered billing expression some forks publish
+	// (billing_mode=tiered_expr). When present it is the authoritative price and
+	// the plain ratios beside it are placeholders; NormalizePrice parses it.
+	BillingExpr string `json:"billing_expr,omitempty"`
 }
 
 // TokenUSDPerMillion is a direct USD-per-1M-token price for sites without
@@ -184,6 +188,13 @@ func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) 
 	if status < 200 || status >= 300 {
 		return nil, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
 	}
+	return ParsePricingPayload(body)
+}
+
+// ParsePricingPayload parses a New-API /api/pricing body into per-model price
+// items. Exported because the site-probe collector reads the very same public
+// endpoint without credentials, and a second parser would be a second truth.
+func ParsePricingPayload(body []byte) ([]ModelPrice, error) {
 	var envelope struct {
 		Success *bool           `json:"success"`
 		Data    json.RawMessage `json:"data"`
@@ -247,6 +258,7 @@ func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) 
 		CompletionRatio         float64 `json:"completion_ratio"`
 		QuotaType               int     `json:"quota_type"`
 		Currency                string  `json:"currency"`
+		BillingExpr             string  `json:"billing_expr"`
 		TokenPriceUSDPerMillion *struct {
 			Input      float64 `json:"input"`
 			Output     float64 `json:"output"`
@@ -291,6 +303,7 @@ func (a *NewAPIAccountAdapter) Pricing(ctx context.Context, input AccountInput) 
 			TokenUSD:        direct,
 			GroupRatio:      groupRatio,
 			Mode:            mode,
+			BillingExpr:     strings.TrimSpace(item.BillingExpr),
 		})
 	}
 	return out, nil

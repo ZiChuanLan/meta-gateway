@@ -110,6 +110,8 @@ func scanDownstreamKey(scanner interface {
 		&r.Scopes,
 		&r.QuotaTotalTokens,
 		&r.QuotaUsedTokens,
+		&r.QuotaTotalCost,
+		&r.QuotaUsedCost,
 		&r.ModelAllowlist,
 		&r.ModelDenylist,
 		&r.ExpiresAt,
@@ -117,6 +119,10 @@ func scanDownstreamKey(scanner interface {
 		&r.GroupName,
 		&r.RouteGroupName,
 		scanTime(&r.CreatedAt),
+		&r.UserID,
+		&r.TeamPlanID,
+		&r.TeamHint,
+		&r.TeamDeletedAt,
 	); err != nil {
 		return err
 	}
@@ -125,10 +131,10 @@ func scanDownstreamKey(scanner interface {
 	return nil
 }
 
-const downstreamKeySelect = `SELECT id, token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name, created_at FROM downstream_keys`
+const downstreamKeySelect = `SELECT id, token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, quota_total_cost, quota_used_cost, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name, created_at, COALESCE(user_id,0), team_plan_id, team_hint, team_deleted_at FROM downstream_keys`
 
 func (s *DownstreamKeyStore) List() ([]domain.DownstreamKey, error) {
-	rows, err := s.db.Query(downstreamKeySelect + ` ORDER BY id`)
+	rows, err := s.db.Query(downstreamKeySelect + ` WHERE team_deleted_at = '' ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("downstream key list: %w", err)
 	}
@@ -195,8 +201,8 @@ func (s *DownstreamKeyStore) GetByHash(hash string) (*domain.DownstreamKey, erro
 
 func (s *DownstreamKeyStore) Create(k *domain.DownstreamKey) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO downstream_keys (token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		k.TokenHash, string(k.TokenEnc), k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName),
+		`INSERT INTO downstream_keys (token_hash, token_enc, name, enabled, scopes, quota_total_tokens, quota_used_tokens, quota_total_cost, quota_used_cost, model_allowlist, model_denylist, expires_at, allowed_ips, group_name, route_group_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		k.TokenHash, string(k.TokenEnc), k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaUsedTokens, k.QuotaTotalCost, k.QuotaUsedCost, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("downstream key create: %w", err)
@@ -221,8 +227,8 @@ func (s *DownstreamKeyStore) Delete(id int64) error {
 
 func (s *DownstreamKeyStore) Update(k *domain.DownstreamKey) error {
 	_, err := s.db.Exec(
-		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, model_allowlist=?, model_denylist=?, expires_at=?, allowed_ips=?, group_name=?, route_group_name=? WHERE id=?`,
-		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName), k.ID,
+		`UPDATE downstream_keys SET name=?, enabled=?, scopes=?, quota_total_tokens=?, quota_total_cost=?, model_allowlist=?, model_denylist=?, expires_at=?, allowed_ips=?, group_name=?, route_group_name=? WHERE id=?`,
+		k.Name, boolInt(k.Enabled), k.Scopes, k.QuotaTotalTokens, k.QuotaTotalCost, k.ModelAllowlist, k.ModelDenylist, k.ExpiresAt, k.AllowedIPs, normalizeGroupName(k.GroupName), strings.TrimSpace(k.RouteGroupName), k.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("downstream key update: %w", err)
@@ -261,8 +267,10 @@ func (s *DownstreamKeyStore) RotateToken(id int64, hash string, tokenEnc string)
 
 // ResetUsage zeroes the key's used quota in the database and drops the cached
 // entry so the next read observes the reset.
+// ResetUsage clears BOTH counters: "reset the usage" means the key is fresh
+// again, and clearing only tokens would leave a spent spend-budget behind.
 func (s *DownstreamKeyStore) ResetUsage(id int64) error {
-	_, err := s.db.Exec(`UPDATE downstream_keys SET quota_used_tokens = 0 WHERE id = ?`, id)
+	_, err := s.db.Exec(`UPDATE downstream_keys SET quota_used_tokens = 0, quota_used_cost = 0 WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("downstream key reset usage: %w", err)
 	}
@@ -280,7 +288,12 @@ func (s *DownstreamKeyStore) mutationEpochSnapshot() uint64 {
 // SQL update. Absolute/max assignment avoids double-counting when a cache miss
 // reloads the new database value before this callback runs; the epoch blocks
 // callbacks that predate a reset or administrative mutation.
-func (s *DownstreamKeyStore) setCachedUsageIfEpoch(id, used int64, epoch uint64) {
+// setCachedUsageIfEpoch syncs the committed absolute counters into the cache.
+// Money counts here exactly like tokens: the relay reads this cached object for
+// its quota check, so syncing only the token counter would leave a key's spend
+// budget frozen at whatever it was when the row was first cached — a capped key
+// would keep being served.
+func (s *DownstreamKeyStore) setCachedUsageIfEpoch(id, used int64, usedCost float64, epoch uint64) {
 	if id <= 0 || used < 0 {
 		return
 	}
@@ -290,8 +303,13 @@ func (s *DownstreamKeyStore) setCachedUsageIfEpoch(id, used int64, epoch uint64)
 		return
 	}
 	s.generation++
-	if cached, ok := s.byID[id]; ok && used > cached.QuotaUsedTokens {
-		cached.QuotaUsedTokens = used
+	if cached, ok := s.byID[id]; ok {
+		if used > cached.QuotaUsedTokens {
+			cached.QuotaUsedTokens = used
+		}
+		if usedCost > cached.QuotaUsedCost {
+			cached.QuotaUsedCost = usedCost
+		}
 	}
 }
 
@@ -303,24 +321,30 @@ func (s *DownstreamKeyStore) AddUsage(id int64, totalTokens int) error {
 	}
 	epoch := s.mutationEpochSnapshot()
 	var used int64
-	err := s.db.QueryRow(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ? RETURNING quota_used_tokens`, totalTokens, id).Scan(&used)
+	var spend float64
+	// Returning the spend beside the count keeps the cached key consistent: this
+	// path only ever adds tokens, so the money counter is carried through
+	// unchanged rather than being reset to zero in the cache.
+	err := s.db.QueryRow(`UPDATE downstream_keys SET quota_used_tokens = quota_used_tokens + ? WHERE id = ? RETURNING quota_used_tokens, quota_used_cost`, totalTokens, id).Scan(&used, &spend)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("downstream key add usage: %w", err)
 	}
-	s.setCachedUsageIfEpoch(id, used, epoch)
+	s.setCachedUsageIfEpoch(id, used, spend, epoch)
 	return nil
 }
 
-// QuotaExceeded reports whether the key has exhausted a finite quota.
+// QuotaExceeded reports whether the key has exhausted a finite quota. Both
+// units count: a key with a spend budget and a key with a token budget are the
+// same thing to the relay, and whichever runs out first refuses the request.
 func QuotaExceeded(key *domain.DownstreamKey) bool {
 	if key == nil {
 		return true
 	}
-	if key.QuotaTotalTokens <= 0 {
-		return false
+	if key.QuotaTotalTokens > 0 && key.QuotaUsedTokens >= key.QuotaTotalTokens {
+		return true
 	}
-	return key.QuotaUsedTokens >= key.QuotaTotalTokens
+	return key.QuotaTotalCost > 0 && key.QuotaUsedCost >= key.QuotaTotalCost
 }

@@ -16,6 +16,7 @@ export type ErrorClass =
 	| "missing_user_token"
 	| "rate_limited"
 	| "upstream_reject"
+	| "pinned_upstream"
 	| "not_found"
 	| "server"
 	| "cancelled"
@@ -69,6 +70,22 @@ const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
 	unsupported_format: "config",
 	config_incomplete: "config",
 
+	// — Request conversion failed on our side (still the operator's config) —
+	// These four come from `proxy_classify.go`'s `adapterErrorCategory`, which
+	// runs when an adapter cannot turn the client request into an upstream one.
+	// The proxy returns them directly and never retries another channel
+	// ("request conversion is local validation, not an upstream health signal"),
+	// so they must NOT read as a network fault: the fix is the channel's type,
+	// endpoint mapping or payload rules, not its reachability.
+	//
+	// `unsupported_path` / `unsupported_feature` are raised by the adapters
+	// themselves (an Anthropic or Gemini channel asked for a path or a feature it
+	// cannot express); both answer 501. `adapter_request` is the catch-all for
+	// every other translation failure and answers 400.
+	unsupported_path: "config",
+	unsupported_feature: "config",
+	adapter_request: "config",
+
 	// — The upstream answered, but not in a shape we can read —
 	// `invalid_payload` is an adapter-level verdict on a 2xx body (the model
 	// list, an account probe). It used to sit in "config", so a perfectly
@@ -105,6 +122,27 @@ const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
 	upstream_status_502: "upstream_reject",
 	upstream_status_503: "upstream_reject",
 	upstream_status_504: "upstream_reject",
+	// The native provider itself refused the prompt or the answer (Gemini's
+	// `promptFeedback.blockReason`, for instance). The request never reached the
+	// model, but the decision is the upstream's, so it belongs here and not in
+	// "config": re-typing the Base URL would not help.
+	content_blocked: "upstream_reject",
+
+	// — The upstream the caller named is not usable —
+	// The console's 试调 and the health probes pin one row. Every one of these
+	// codes means "that row", not "some routing failure": a member switched off,
+	// a parked channel, an empty key pool, a cooling row, or a row that is not
+	// part of the route at all. They used to fall through to "unknown error",
+	// which told the operator nothing about the channel they had just clicked.
+	preferred_channel_unavailable: "pinned_upstream",
+	pinned_upstream_not_member: "pinned_upstream",
+	pinned_upstream_member_disabled: "pinned_upstream",
+	pinned_upstream_channel_disabled: "pinned_upstream",
+	pinned_upstream_no_credential: "pinned_upstream",
+	pinned_upstream_cooling_down: "pinned_upstream",
+	pinned_upstream_invalid_weight: "pinned_upstream",
+	// The route itself has nothing usable left.
+	no_eligible_upstream: "pinned_upstream",
 
 	// — Not found —
 	channel_not_found: "not_found",
