@@ -6,7 +6,7 @@
 # docker-compose.yml
 services:
   meta-gateway:
-    image: zichuanlan/meta-gateway:latest
+    image: zichuanlan/meta-gateway:${IMAGE_TAG:-latest}
     container_name: meta-gateway
     restart: unless-stopped
     ports:
@@ -18,6 +18,8 @@ services:
       MASTER_KEY: ${MASTER_KEY:?MASTER_KEY 32-char required}
       METRICS_TOKEN: ${METRICS_TOKEN:-mg-metrics-secret}
 ```
+
+`IMAGE_TAG` 默认 `latest`，也就是 **v3 稳定版**；V4 预发布用 `beta`。
 
 ## 生成密钥并启动
 
@@ -70,5 +72,6 @@ curl --fail http://127.0.0.1:4100/readyz
 ## 下一步
 
 - [源码构建运行](./quickstart-source)
+- [升级与更新渠道](./upgrade) —— 稳定版与 V4 预发布的区别，以及怎么切
 - [基础 URL 与端点规则](/upstream/base-url-rules) —— 开始接上游
 - [配置全表](/reference/env-vars) —— 所有环境变量

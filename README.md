@@ -38,32 +38,6 @@
 >
 > 公开演示环境，请勿存放生产敏感密钥。控制台内置 **经典 / 现代** 双外观与明暗主题，登录后即可切换体验。
 
-## 版本渠道：稳定版与 V4 预发布
-
-本仓库同时维护两条并行渠道，**镜像标签与 tag 形状都是分开的**：
-
-| | 稳定版（v3） | V4 预发布 |
-| :--- | :--- | :--- |
-| 镜像 | `zichuanlan/meta-gateway:latest` | `zichuanlan/meta-gateway:beta` |
-| tag 形状 | `vX.Y.Z` | `vX.Y.Z-beta.N` |
-| GitHub Release | 正式发布，标记 Latest | 标记 Pre-release，**不占 Latest** |
-| 主要区别 | 单人使用：一个部署管理员 + 一批下游令牌 | 团队账户、统一登录、成员模型卡片、计费配置与更新渠道 |
-
-**`latest` 永远是稳定版。** 上面「快速开始」里的 `:latest` 拉的是稳定版；想试 V4 需要显式换标签：
-
-```bash
-export IMAGE_TAG=beta
-docker compose pull meta-gateway
-docker compose up -d --no-build --no-deps --force-recreate meta-gateway
-```
-
-> [!WARNING]
-> **首次切 Beta 必须改 `IMAGE_TAG` 并重建。** Watchtower 只更新当前镜像标签，不能通过网页替换部署标签；网页更新弹窗可以直接选择检查渠道，但**不支持自动降级**。
->
-> 切渠道前先备份数据库，并确认 `MASTER_KEY` 已单独保存——换一个 `MASTER_KEY` 打开同一个库，所有已存凭据都解不开。
-
-完整的切换方式、已知限制与升级检查清单见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
-
 ## 它是什么
 
 下游工具越接越多（Cursor、Claude Code、Cherry Studio、Open WebUI），而上游分散在各类站点（New API、One API、官方接口与各路代理）。各站模型命名各异、额度分散、容易单点故障。
@@ -135,6 +109,16 @@ curl --fail http://127.0.0.1:4100/readyz
 
 > [!IMPORTANT]
 > **`MASTER_KEY` 必须随数据库一起备份、一起迁移。** 换一个 `MASTER_KEY` 打开同一个库，所有已存凭据都解不开。
+
+> [!NOTE]
+> **`:latest` 是稳定版（v3）；V4 预发布用 `:beta`。** 切换要改 `IMAGE_TAG` 并重建容器——Watchtower 只更新当前标签，**不能**通过网页换部署标签，也**不支持自动降级**：
+>
+> ```bash
+> export IMAGE_TAG=beta
+> docker compose pull meta-gateway && docker compose up -d --no-build --force-recreate meta-gateway
+> ```
+>
+> 详见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
 
 单行 `docker run`、源码构建、AI 一键部署提示词、升级到 V4 Beta —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。
 
