@@ -1482,6 +1482,23 @@ func requestHeader(headers map[string]string, name string) string {
 	return ""
 }
 
+// retrySafeRequest reports whether a failed attempt may be replayed on another
+// channel or upstream key.
+//
+// The matrix it encodes is a safety contract, not a tuning knob:
+//
+//	path                default   with Idempotency-Key
+//	images/*            no        no   (a header cannot dedupe across channels)
+//	audio/*             no        yes
+//	videos/*, video/*   no        yes
+//	music/*             no        yes
+//	responses           no        yes
+//	everything else     yes       yes
+//
+// Anything that generates and bills an artifact defaults to no: the upstream
+// may have accepted and charged it before the failure reached us. Read-like
+// calls (chat, completions, embeddings, moderations, and custom paths such as
+// TypeSafe's /v1/systemone) keep their retries.
 func retrySafeRequest(req Request) bool {
 	method := strings.ToUpper(strings.TrimSpace(req.Method))
 	if method != http.MethodPost && method != http.MethodPut && method != http.MethodPatch {
@@ -1499,10 +1516,34 @@ func retrySafeRequest(req Request) bool {
 	if strings.HasPrefix(path, "audio/") {
 		return false
 	}
+	// Video and music generation produce a billable artifact and are charged on
+	// acceptance, so a replay is a second charge. They are not registered
+	// endpoints: they arrive through the /v1/* passthrough, which means nothing
+	// else in the relay knows about them and they would otherwise inherit
+	// retries by falling through to the line below.
+	//
+	// Named explicitly rather than "anything unregistered", because an unknown
+	// custom path is usually a read-like call (TypeSafe's /v1/systemone is the
+	// reference case) and those should keep their retries.
+	if hasPathPrefix(path, "videos/", "video/", "music/") {
+		return false
+	}
 	if path == "responses" || strings.HasPrefix(path, "responses/") {
 		return false
 	}
 	return true
+}
+
+// hasPathPrefix reports whether path starts with any of prefixes. It exists so
+// the non-idempotent families read as one list instead of a chain of HasPrefix
+// calls, which is how a new family gets forgotten.
+func hasPathPrefix(path string, prefixes ...string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // UpstreamURLEchoHeader names the response header carrying the URL the gateway
