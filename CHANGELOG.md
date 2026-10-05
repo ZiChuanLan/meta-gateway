@@ -6,6 +6,12 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v4.0.0-beta.5]
+
+### Fixed
+
+- **`/admin/self-update` 的状态查询不再把网络探测放在锁里。** `Status()` 原来持着锁调用 `Mode()`，而 `Mode()` 会去 dial watchtower 伴生容器。在一台解析不了该主机名的机器上，每次轮询都会持锁等一次 DNS 超时（本机实测约 400ms），而**继承者看门狗要记录失败时正好排在这个锁后面**——也就是说，状态查询越频繁，失败越晚被发现。现在探测在取锁之前完成。
+
 ## [v4.0.0-beta.4]
 
 > **预发布，请先备份数据库。** 一键更新交接的两个缺陷（socket 模式下根本走不通）。

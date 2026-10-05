@@ -94,9 +94,14 @@ func (s *Service) Mode() Mode {
 
 // Status snapshots the current update state.
 func (s *Service) Status() Status {
+	// Mode() dials the watchtower companion, so it is resolved before taking the
+	// lock: holding the lock across a network probe makes every other caller —
+	// including the successor watchdog trying to record a failure — queue behind
+	// it. On a host where the companion's name does not resolve, that is a DNS
+	// timeout per poll.
+	mode := s.Mode()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	mode := s.Mode()
 	available := mode != ModeNone
 	if s.phase == PhaseHandoff {
 		available = true
