@@ -8,6 +8,7 @@
 
 <p>
   <a href="https://github.com/ZiChuanLan/meta-gateway/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ZiChuanLan/meta-gateway/ci.yml?branch=master&style=flat-square&labelColor=2F3646"></a>
+  <a href="https://zichuanlan.github.io/meta-gateway/"><img alt="Docs" src="https://img.shields.io/github/deployments/ZiChuanLan/meta-gateway/github-pages?style=flat-square&label=docs&labelColor=2F3646"></a>
   <a href="https://hub.docker.com/r/zichuanlan/meta-gateway"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/zichuanlan/meta-gateway?style=flat-square&labelColor=2F3646&color=2496ED"></a>
   <a href="https://github.com/ZiChuanLan/meta-gateway/releases"><img alt="Release" src="https://img.shields.io/github/v/release/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=4F6BF0"></a>
   <a href="https://github.com/ZiChuanLan/meta-gateway/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/ZiChuanLan/meta-gateway?style=flat-square&labelColor=2F3646&color=E8B93E"></a>

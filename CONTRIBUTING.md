@@ -58,6 +58,27 @@ cd docs && npm ci && npm run build && cd ..
 - **`docs/reference/*.md` 是生成物，不要手改。** 环境变量、运行设置、管理面与公开端点、错误分类、数据表、连接类型、供应商 profile 全部在内；改了其中任何一项就要重跑生成器并提交结果。
 - **新增一页文档要同时改 `docs/.vitepress/docTree.ts`**，nav 与 sidebar 都从它派生。内链死链会让文档站构建失败。
 
+## 文档
+
+完整文档在 <https://zichuanlan.github.io/meta-gateway/>，源码就在本仓库的 `docs/`：
+
+| 目录 | 内容 |
+| :--- | :--- |
+| `docs/.vitepress/` | 站点配置与主题；`docTree.ts` 是导航的**单一真相源** |
+| `docs/reference/` | **由 `tools/docsgen` 生成**，不要手改 |
+| `docs/{guide,clients,upstream,routing,billing,team,console,operations,plugins}/` | 手写正文 |
+
+改文档的完整流程：
+
+```bash
+cd docs && npm ci
+
+npm run dev     # http://localhost:5173/meta-gateway/  ← 注意 base 前缀，不带它会 404
+npm run build   # 构建（内链死链会让它失败）
+```
+
+写作基线是**中文**；`config.ts` 里预留了 `/en/` 位置，但**不建空页面**（导航里挂着点进去是空的，比没有英文更糟）。
+
 ## Pull Request
 
 1. Fork 本仓库
