@@ -250,11 +250,21 @@ func (s *Service) handoff() {
 		"HostConfig": map[string]any{
 			// No host ports here: the old container still holds them. The
 			// successor orchestrates and never serves traffic itself.
-			// AutoRemove keeps the exited successor from piling up.
-			"AutoRemove":    true,
+			//
+			// AutoRemove stays off on purpose. With it on, a successor that dies
+			// without finishing the swap is deleted the moment it exits — taking
+			// its logs with it — and the only observable left is "the update never
+			// finished". Leaving it lets the watchdog read why; the next attempt
+			// removes any leftover by name (above).
+			"AutoRemove":    false,
 			"RestartPolicy": map[string]any{"Name": "no"},
 			"NetworkMode":   networkMode(self),
 			"Binds":         self.HostConfig.Binds,
+			// Carried deliberately: the successor completes the swap over the
+			// Docker socket. A deployment that grants socket access through the
+			// host's docker group (compose group_add) loses it here otherwise,
+			// and the successor then cannot open the socket it needs.
+			"GroupAdd": self.HostConfig.GroupAdd,
 		},
 		"Healthcheck": map[string]any{"Test": []string{"NONE"}},
 	}
@@ -289,6 +299,62 @@ func (s *Service) handoff() {
 	// Handoff complete. This process (and its container) stops when the
 	// successor tears the old container down.
 	s.setPhase(PhaseHandoff, "")
+	go s.watchSuccessor(nextID)
+}
+
+// watchSuccessor reports a successor that dies without taking over.
+//
+// Nothing else can: the old container is still serving, so the console sees a
+// spinner at phase=handoff forever and an update that has already failed looks
+// like one that is still running. This is what a missing group_add looks like
+// from the outside — the successor loses socket access, exits, and says nothing.
+func (s *Service) watchSuccessor(nextID string) {
+	// Its own context, not the handoff's: that one is cancelled by the deferred
+	// cancel the moment handoff() returns, which is immediately — the watchdog
+	// would see ctx.Done() on its first select and exit without ever looking.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		next, err := s.client.InspectContainer(ctx, nextID)
+		if err == nil && next.State.Running {
+			continue
+		}
+		// Either it exited, or it is gone (a leftover successor removed by the
+		// next attempt). Confirm the swap really did not happen: the successor
+		// stops THIS container first, so if we are still running it never got
+		// that far. The short wait covers the moment between the stop and the
+		// daemon reporting it.
+		time.Sleep(2 * time.Second)
+		if own, ownErr := s.client.InspectContainer(ctx, OwnContainerID()); ownErr == nil && !own.State.Running {
+			return // the swap is under way; this process is about to die
+		}
+		detail := ""
+		if err == nil {
+			detail = fmt.Sprintf("exit code %d", next.State.ExitCode)
+			if next.State.Error != "" {
+				detail += ", " + next.State.Error
+			}
+		}
+		if logs, logErr := s.client.Logs(ctx, nextID, 20); logErr == nil {
+			if tail := strings.TrimSpace(logs); tail != "" {
+				detail += "; last output: " + tail
+			}
+		}
+		_ = s.client.RemoveContainer(ctx, nextID)
+		if detail != "" {
+			s.fail(fmt.Errorf("successor exited without completing the swap (%s)", detail))
+			return
+		}
+		s.fail(errors.New("successor exited without completing the swap"))
+		return
+	}
 }
 
 // SwapIfRequested runs inside the SUCCESSOR container: it tears the old

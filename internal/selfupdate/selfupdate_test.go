@@ -21,6 +21,9 @@ type fakeDocker struct {
 	bodies  map[string]map[string]any // path → last decoded body
 	failOn  map[string]int            // path → status to force
 	inspect map[string]string         // container id → name
+	// successorDead makes the successor report an exited state, which is what a
+	// handoff that cannot reach the Docker socket looks like from outside.
+	successorDead bool
 }
 
 func newFakeDocker(t *testing.T) *fakeDocker {
@@ -58,11 +61,17 @@ func newFakeDocker(t *testing.T) *fakeDocker {
 			w.Write([]byte(`{
 				"Id": "self-id", "Name": "/gw",
 				"Config": {"Image": "zichuanlan/meta-gateway:latest", "Env": ["ADMIN_TOKEN=x"], "Labels": {"app": "meta-gateway"}},
-				"HostConfig": {"Binds": ["meta-gateway-data:/data"], "PortBindings": {"4100/tcp": [{"HostPort": "4100"}]}, "RestartPolicy": {"Name": "unless-stopped"}, "NetworkMode": "default"},
-				"NetworkSettings": {"Networks": {"meta-gateway_default": {"Aliases": []}}}
+				"HostConfig": {"Binds": ["meta-gateway-data:/data"], "PortBindings": {"4100/tcp": [{"HostPort": "4100"}]}, "RestartPolicy": {"Name": "unless-stopped"}, "NetworkMode": "default", "GroupAdd": ["988"]},
+				"NetworkSettings": {"Networks": {"meta-gateway_default": {"Aliases": []}}},
+				"State": {"Running": true}
 			}`))
 		case r.URL.Path == "/containers/next-id/json":
-			w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {}, "NetworkSettings": {}}`))
+			if f.successorDead {
+				w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {}, "NetworkSettings": {}, "State": {"Running": false, "ExitCode": 1, "Error": ""}}`))
+				return
+			}
+			// Running: the watchdog must not declare a live successor dead.
+			w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {}, "NetworkSettings": {}, "State": {"Running": true}}`))
 		case r.URL.Path == "/images/create":
 			w.Write([]byte("{\"status\":\"Pulling from zichuanlan/meta-gateway\"}\n{\"status\":\"Download complete\"}\n"))
 		case strings.HasPrefix(r.URL.Path, "/containers/create"):
@@ -110,8 +119,16 @@ func TestHandoffCreatesSuccessorWithoutPorts(t *testing.T) {
 	if _, has := hostConfig["PortBindings"]; has && hostConfig["PortBindings"] != nil {
 		t.Fatalf("successor must not bind host ports: %v", hostConfig["PortBindings"])
 	}
-	if hostConfig["AutoRemove"] != true {
-		t.Fatalf("successor AutoRemove: %v", hostConfig["AutoRemove"])
+	if hostConfig["AutoRemove"] != false {
+		t.Fatalf("successor AutoRemove: %v (a removed successor takes its failure logs with it)", hostConfig["AutoRemove"])
+	}
+	// The successor completes the swap over the Docker socket. A deployment that
+	// grants access through the host's docker group loses it here if the group is
+	// not carried, and the successor then exits without doing anything — which is
+	// exactly what happened on a real deployment whose compose sets group_add.
+	groups, _ := hostConfig["GroupAdd"].([]any)
+	if len(groups) != 1 || groups[0] != "988" {
+		t.Fatalf("successor GroupAdd: %v, want [988]", hostConfig["GroupAdd"])
 	}
 	env := decodeStrings(createBody["Env"])
 	if !contains(env, swapEnv+"=gw") || !contains(env, imageEnv+"=zichuanlan/meta-gateway:latest") {
@@ -122,6 +139,41 @@ func TestHandoffCreatesSuccessorWithoutPorts(t *testing.T) {
 	}
 	if !callsInclude(f.calls, "POST", "/images/create") {
 		t.Fatal("image was not pulled")
+	}
+}
+
+// A successor that exits without swapping leaves the old container serving and
+// the console showing a spinner at phase=handoff forever. Nothing else can
+// notice: the old container is healthy, the update check is satisfied, and the
+// successor is gone. This is what a successor without the docker group looks
+// like from the outside, so the phase has to say so.
+func TestHandoffReportsDeadSuccessor(t *testing.T) {
+	f := newFakeDocker(t)
+	f.successorDead = true
+	t.Setenv("HOSTNAME", "self-id")
+	svc := New(f.socket)
+	if err := svc.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := 200
+	for svc.Status().Phase != PhaseFailed && deadline > 0 {
+		deadline--
+		sleepBriefly()
+	}
+	status := svc.Status()
+	if status.Phase != PhaseFailed {
+		t.Fatalf("phase=%s, want %s: a dead successor must not look like a running update", status.Phase, PhaseFailed)
+	}
+	if !strings.Contains(status.Error, "successor exited without completing the swap") {
+		t.Fatalf("error=%q, want it to name the successor", status.Error)
+	}
+	if !strings.Contains(status.Error, "exit code 1") {
+		t.Fatalf("error=%q, want the successor's exit code", status.Error)
+	}
+	// And the evidence is cleaned up rather than left to accumulate.
+	if !callsInclude(f.calls, "DELETE", "/containers/next-id") {
+		t.Fatalf("dead successor was not removed: %v", f.calls)
 	}
 }
 

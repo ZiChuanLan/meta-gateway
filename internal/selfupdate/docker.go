@@ -180,7 +180,18 @@ type Container struct {
 		NetworkMode string `json:"NetworkMode"`
 		AutoRemove  bool   `json:"AutoRemove"`
 		Init        *bool  `json:"Init"`
+		// GroupAdd is the supplementary groups the container runs with. It has to
+		// be carried into the successor: the successor completes the swap over the
+		// Docker socket, and on a deployment that grants socket access through the
+		// host's docker group, dropping it leaves the successor unable to open the
+		// socket it needs.
+		GroupAdd []string `json:"GroupAdd"`
 	} `json:"HostConfig"`
+	State struct {
+		Running  bool   `json:"Running"`
+		ExitCode int    `json:"ExitCode"`
+		Error    string `json:"Error"`
+	} `json:"State"`
 	NetworkSettings struct {
 		Networks map[string]struct {
 			Aliases []string `json:"Aliases"`
@@ -270,6 +281,50 @@ func (c *Client) RemoveContainer(ctx context.Context, id string) error {
 		return fmt.Errorf("docker remove %s: status %d: %s", id, resp.StatusCode, body)
 	}
 	return nil
+}
+
+// Logs returns the tail of a container's combined stdout and stderr. It exists
+// so a successor that dies without completing the swap can say why: without it
+// the only observable is "the update never finished".
+func (c *Client) Logs(ctx context.Context, id string, tail int) (string, error) {
+	if tail <= 0 {
+		tail = 20
+	}
+	resp, err := c.do(ctx, http.MethodGet,
+		fmt.Sprintf("/containers/%s/logs?stdout=1&stderr=1&tail=%d", id, tail), nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return "", fmt.Errorf("docker logs %s: status %d: %s", id, resp.StatusCode, body)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return "", err
+	}
+	return demuxLogs(raw), nil
+}
+
+// demuxLogs flattens Docker's multiplexed log stream. When a container has no
+// TTY the daemon frames each write as an 8-byte header (stream, padding, then a
+// big-endian length) followed by the payload; a plain-text body means the
+// container had a TTY and needs no decoding.
+func demuxLogs(raw []byte) string {
+	var out strings.Builder
+	for len(raw) >= 8 {
+		length := int(raw[4])<<24 | int(raw[5])<<16 | int(raw[6])<<8 | int(raw[7])
+		if raw[0] > 2 || length < 0 || 8+length > len(raw) {
+			return string(raw) // not a framed stream; hand back what we got
+		}
+		out.Write(raw[8 : 8+length])
+		raw = raw[8+length:]
+	}
+	if len(raw) > 0 && out.Len() == 0 {
+		return string(raw)
+	}
+	return out.String()
 }
 
 // SocketAvailable reports whether the Docker socket exists and is a socket.
