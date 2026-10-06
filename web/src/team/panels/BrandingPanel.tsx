@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { TeamField as Field } from "../ui";
+import { Button, Field, Panel } from "../../components/ui";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
 import { useUsers } from "../UsersContext";
@@ -52,79 +52,83 @@ function BrandingForm({
     onSave(draft);
   };
   return (
-    <form className="team-section" onSubmit={submit}>
-      <fieldset className="team-modal-content" disabled={busy}>
-        <div className="team-grid">
-          <Field label={t("publicName")}>
-            <input
-              value={b.name}
-              maxLength={80}
-              required
-              onChange={(e) => patch({ name: e.target.value })}
+    <form onSubmit={submit}>
+      <Panel title={t("branding")}>
+        <fieldset className="overlay-fields" disabled={busy}>
+          <div className="meta-form">
+            <Field label={t("publicName")}>
+              <input
+                value={b.name}
+                maxLength={80}
+                required
+                onChange={(e) => patch({ name: e.target.value })}
+              />
+            </Field>
+            <Field label={t("accent")}>
+              <input
+                type="color"
+                value={b.accent}
+                onChange={(e) => patch({ accent: e.target.value })}
+              />
+            </Field>
+            <Field label={t("logo")}>
+              <input
+                type="url"
+                value={b.logo_url}
+                onChange={(e) => patch({ logo_url: e.target.value })}
+              />
+            </Field>
+            <Field label={t("apiURL")}>
+              <input
+                type="url"
+                value={b.api_base_url}
+                placeholder="https://gateway.example/v1"
+                onChange={(e) => patch({ api_base_url: e.target.value })}
+              />
+            </Field>
+          </div>
+          <Field label={t("loginDescription")}>
+            <textarea
+              value={b.login_description}
+              maxLength={1000}
+              onChange={(e) => patch({ login_description: e.target.value })}
             />
           </Field>
-          <Field label={t("accent")}>
-            <input
-              type="color"
-              value={b.accent}
-              onChange={(e) => patch({ accent: e.target.value })}
+          <Field label={t("notice")}>
+            <textarea
+              value={b.notice}
+              maxLength={2000}
+              onChange={(e) => patch({ notice: e.target.value })}
             />
           </Field>
-          <Field label={t("logo")}>
+          <label className="check marginless">
             <input
-              type="url"
-              value={b.logo_url}
-              onChange={(e) => patch({ logo_url: e.target.value })}
+              type="checkbox"
+              checked={b.show_usage}
+              onChange={(e) => patch({ show_usage: e.target.checked })}
             />
-          </Field>
-          <Field label={t("apiURL")}>
+            <span>{t("showUsage")}</span>
+          </label>
+          <label className="check marginless">
             <input
-              type="url"
-              value={b.api_base_url}
-              placeholder="https://gateway.example/v1"
-              onChange={(e) => patch({ api_base_url: e.target.value })}
+              type="checkbox"
+              checked={b.show_routing}
+              onChange={(e) => patch({ show_routing: e.target.checked })}
             />
-          </Field>
+            <span>{t("showRouting")}</span>
+          </label>
+        </fieldset>
+        {error ? (
+          <p role="alert" className="inline-error">
+            {teamError(error, locale)}
+          </p>
+        ) : null}
+        <div className="form-actions">
+          <Button type="submit" loading={busy}>
+            {t("save")}
+          </Button>
         </div>
-        <Field label={t("loginDescription")}>
-          <textarea
-            value={b.login_description}
-            maxLength={1000}
-            onChange={(e) => patch({ login_description: e.target.value })}
-          />
-        </Field>
-        <Field label={t("notice")}>
-          <textarea
-            value={b.notice}
-            maxLength={2000}
-            onChange={(e) => patch({ notice: e.target.value })}
-          />
-        </Field>
-        <label className="team-check">
-          <input
-            type="checkbox"
-            checked={b.show_usage}
-            onChange={(e) => patch({ show_usage: e.target.checked })}
-          />
-          {t("showUsage")}
-        </label>
-        <label className="team-check">
-          <input
-            type="checkbox"
-            checked={b.show_routing}
-            onChange={(e) => patch({ show_routing: e.target.checked })}
-          />
-          {t("showRouting")}
-        </label>
-      </fieldset>
-      {error ? (
-        <div role="alert" className="team-error">
-          {teamError(error, locale)}
-        </div>
-      ) : null}
-      <button className="team-button primary" disabled={busy}>
-        {busy ? t("saving") : t("save")}
-      </button>
+      </Panel>
     </form>
   );
 }
