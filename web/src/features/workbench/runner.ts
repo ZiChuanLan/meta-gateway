@@ -108,6 +108,12 @@ export type WorkbenchRunner = {
    * admin instruction is advice they cannot act on.
    */
   emptyKeys: { image: string; chat: string };
+  /**
+   * The panel's own explanation of what a probe does. It differs by role because
+   * the truth differs: staff bypass downstream keys, a member spends one — so the
+   * admin copy ("no downstream key needed") is exactly wrong for them.
+   */
+  descKeys: { desc: string; help: string };
   /** Everything the model and connection pickers need, in one round trip. */
   catalogue: (signal?: AbortSignal) => Promise<WorkbenchModel[]>;
   chat: (body: ChatBody) => Promise<{
@@ -137,6 +143,7 @@ export function adminRunner(client: ReturnType<typeof api>, t: Translate): Workb
     pickLabelKey: "playground.upstream",
     autoLabelKey: "playground.upstreamAuto",
     emptyKeys: { image: "workbench.image.noModels", chat: "playground.noModels" },
+    descKeys: { desc: "playground.desc", help: "playground.help" },
     catalogue: async (signal) => {
       const overview = await client.routeOverviews(signal);
       const routes = overview
@@ -223,6 +230,7 @@ export function memberRunner(): WorkbenchRunner {
       image: "workbench.image.noModelsMember",
       chat: "playground.noModelsMember",
     },
+    descKeys: { desc: "playground.descMember", help: "playground.helpMember" },
     catalogue: async (signal) => {
       const [catalogue, keys] = await Promise.all([
         accountRequest<UserModel[]>("/me/model-catalog", { signal }),

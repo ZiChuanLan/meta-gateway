@@ -2911,6 +2911,10 @@ export const en: Dict = {
   "playground.noModels": "No chat-capable model is currently routed.",
   "playground.noModelsMember":
     "No chat model is available to this account yet. Ask an administrator to grant one to your policy.",
+  "playground.descMember":
+    "Probe a model with one of your own tokens. Requests take the gateway's real forwarding path, so they count against your own usage and cost and show up in your request log.",
+  "playground.helpMember":
+    "Hits the real /v1 with your own downstream token, so billing, quota, failover and the request log behave exactly as they do for your code.",
   "playground.empty": "Send a message to start — replies stream in as they arrive.",
   "playground.suggest1": "Introduce yourself in one sentence.",
   "playground.suggest2": "Translate this into Chinese: probing the model gateway.",

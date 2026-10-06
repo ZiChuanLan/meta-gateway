@@ -466,7 +466,7 @@ export default function Playground({
   return (
     <Panel
       title={t("playground.title")}
-      titleHelp={t("playground.help")}
+      titleHelp={t(runner.descKeys.help)}
       actions={
         <Button
           variant="secondary"
@@ -478,7 +478,7 @@ export default function Playground({
         </Button>
       }
     >
-      <p className="panel-hint">{t("playground.desc")}</p>
+      <p className="panel-hint">{t(runner.descKeys.desc)}</p>
       <div className="meta-form pg-pickers">
         <Field label={t("playground.model")} hint={t("playground.modelHint")}>
           <SearchableSelect

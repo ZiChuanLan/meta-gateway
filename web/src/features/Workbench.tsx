@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Image as ImageIcon, MessageSquare } from "lucide-react";
 import { api } from "../api/client";
 import { Page, Tabs } from "../components/ui";
@@ -29,11 +29,14 @@ export default function Workbench() {
   const { client, role } = useSession();
   const { t } = useI18n();
   const [tab, setTab] = useState<TabValue>("images");
-  const runner: WorkbenchRunner = client
-    ? role === "member"
-      ? memberRunner()
-      : adminRunner(api(client), t)
-    : memberRunner();
+  // Built once per session, not per render: the member runner caches the key it
+  // remembered from the catalogue and the plaintext tokens it revealed, and a
+  // fresh instance every render threw both away — the probe then reported "no
+  // usable token" the moment anything re-rendered between catalogue and send.
+  const runner: WorkbenchRunner = useMemo(
+    () => (client && role !== "member" ? adminRunner(api(client), t) : memberRunner()),
+    [client, role, t],
+  );
   return (
     <Page title={t("workbench.title")} description={t("workbench.desc")}>
       <Tabs

@@ -2699,6 +2699,10 @@ export const zh: Dict = {
     "列出路由中可走 /v1/chat/completions 的模型。每一轮请求都复用与线上 /v1 相同的选路、计费与取消逻辑，无需下游密钥。",
   "playground.noModels": "当前路由里没有可用于对话的模型。",
   "playground.noModelsMember": "这个账号还没有可用的对话模型。请联系管理员为你的方案授权模型。",
+  "playground.descMember":
+    "用自己的令牌试调模型。请求走网关的真实转发路径，因此会计入你自己的用量与费用，也会出现在请求日志里。",
+  "playground.helpMember":
+    "用你自己的下游令牌打真实 /v1；计费、配额、故障转移与请求日志都与你的代码一致。",
   "playground.empty": "发一句话就开始，回复会逐字流式返回。",
   "playground.suggest1": "用一句话介绍你自己。",
   "playground.suggest2": "把这句翻译成英文：正在调试模型网关。",
