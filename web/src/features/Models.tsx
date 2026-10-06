@@ -58,6 +58,7 @@ import { useSession } from "../session";
 import { TryPanel } from "./TryPanel";
 import { MemberModelsPage as MemberModels } from "./MemberModelsPage";
 import { positiveId } from "../lib/positiveId";
+import { readScopedTabState, writeScopedTabState } from "../lib/tabState";
 import { useCooldownExpiry } from "../lib/cooldownClock";
 import { modelGroup } from "./models/modelGroups";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
@@ -89,25 +90,12 @@ function storeMissingDismissed() {
   }
 }
 
-// Tab-scoped persistence for the models workspace. The sidebar navigates to
-// bare /models (no query params), so URL-only state is lost on page switches;
-// these helpers keep the current tab's search/selection across navigation.
-function readTabState<T>(key: string, fallback: T): T {
-  try {
-    const raw = sessionStorage.getItem(`models.${key}`);
-    return raw != null ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeTabState<T>(key: string, value: T) {
-  try {
-    sessionStorage.setItem(`models.${key}`, JSON.stringify(value));
-  } catch {
-    // Storage unavailable; state stays in memory for this render.
-  }
-}
+// Tab-scoped persistence for the models workspace, namespaced and shared: see
+// lib/tabState.ts. The wrappers keep every call site in this file unchanged.
+const readTabState = <T,>(key: string, fallback: T): T =>
+  readScopedTabState("models", key, fallback);
+const writeTabState = <T,>(key: string, value: T): void =>
+  writeScopedTabState("models", key, value);
 import { CooldownHint } from "./models/CooldownHint";
 import { countActiveModelFilters } from "./models/modelFilters";
 import {
