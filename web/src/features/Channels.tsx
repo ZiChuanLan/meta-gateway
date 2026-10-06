@@ -39,6 +39,10 @@ import {
   type CreateConnectionInput,
 } from "./channels/helpers";
 import { channelActions, type ChannelActionDeps } from "./channels/channelActions";
+import {
+  relayCredentialFor as pickRelayCredential,
+  userCredentialFor as pickUserCredential,
+} from "./channels/channelCredentials";
 import { positiveId } from "../lib/positiveId";
 import { runBatch } from "../lib/batch";
 import { parseCredentialMeta, withCredentialMetaValue } from "./credentialMeta";
@@ -832,40 +836,11 @@ export function Channels() {
     setParams(next, { replace: true });
   };
 
-  /** User token for check-in on a site. Prefer the scheduled credential when overview says on. */
-  const userCredentialFor = (overview?: ChannelOverview) => {
-    const list = credentials.data ?? [];
-    const siteId = overview?.channel.site_id;
-    const onSite = list.filter((item) => {
-      if (siteId != null && item.site_id !== siteId) return false;
-      return (item.kind === "access_token" || item.kind === "session") && item.status === "enabled";
-    });
-    if (!onSite.length) return undefined;
-    // Match backend pickUserCredential: prefer the credential this channel is bound to,
-    // so editing/deleting the token operates on the same credential that checks use.
-    const boundId = overview?.channel.credential_id;
-    if (boundId) {
-      const bound = onSite.find((item) => item.id === boundId);
-      if (bound) return bound;
-    }
-    // Match badge: when schedule is on, operate on a credential that is actually scheduled.
-    if (overview?.checkin_enabled) {
-      const scheduled = onSite.find((item) => item.checkin_enabled);
-      if (scheduled) return scheduled;
-    }
-    // When schedule is off, prefer a token that is not scheduled yet (first off, else any).
-    const notScheduled = onSite.find((item) => !item.checkin_enabled);
-    return notScheduled ?? onSite[0];
-  };
-  const relayCredentialFor = (overview: ChannelOverview) => {
-    const list = credentials.data ?? [];
-    const id = overview.channel.credential_id;
-    if (id) {
-      const hit = list.find((item) => item.id === id);
-      if (hit && hit.kind === "api_key") return hit;
-    }
-    return list.find((item) => item.kind === "api_key" && item.status === "enabled");
-  };
+  /** User token for check-in on a site; see channels/channelCredentials.ts. */
+  const userCredentialFor = (overview?: ChannelOverview) =>
+    pickUserCredential(overview, credentials.data ?? []);
+  const relayCredentialFor = (overview: ChannelOverview) =>
+    pickRelayCredential(overview, credentials.data ?? []);
 
   // Everything the action menu needs, in one explicit hand-off: the menu itself
   // lives in channels/channelActions.tsx (pure mapping, unit-testable), and this
