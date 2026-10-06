@@ -45,7 +45,7 @@ import {
 } from "./channels/channelCredentials";
 import { positiveId } from "../lib/positiveId";
 import { useListSelection } from "../lib/useListSelection";
-import { runBatch } from "../lib/batch";
+import { useChannelBulk } from "./channels/useChannelBulk";
 import { parseCredentialMeta } from "./credentialMeta";
 export { channelReadiness } from "./channelHealth";
 
@@ -279,48 +279,20 @@ export function Channels() {
   const setBulkMode = selection.setMode;
   const exitBulkMode = selection.exit;
   const toggleBulkSelected = selection.toggle;
-  const [bulkFailures, setBulkFailures] = useState<{ item: number; error: unknown }[]>([]);
-  const bulkSync = useAdminMutation({
-    mutationFn: async (ids: number[]) => {
-      return runBatch(ids, (id) => service.refreshChannel(id));
-    },
-    invalidateKeys: [...INVALIDATE],
-    onSuccess: ({ ok, total, failures }) => {
-      toast.push({
-        tone: ok === total ? "success" : "error",
-        message: t("channels.bulkSyncDone", { ok, total }),
-      });
-      setBulkSelected(new Set(failures.map((failure) => failure.item)));
-      setBulkFailures(failures);
-    },
+  // Bulk operations: owned by channels/useChannelBulk (both share one rule — after
+  // a run the selection is exactly the failures). Local names kept.
+  const bulk = useChannelBulk({
+    service,
+    overviews: overviews.data ?? [],
+    invalidateKeys: INVALIDATE,
+    toast,
+    t,
+    setSelected: selection.setSelected,
   });
-  const bulkStatus = useAdminMutation({
-    mutationFn: async (input: { ids: number[]; status: "enabled" | "disabled" }) => {
-      return runBatch(input.ids, (id) => {
-        const overview = (overviews.data ?? []).find((o) => o.channel.id === id);
-        // A selected row whose overview is gone (deleted between the
-        // selection and this click) was NOT updated. Reject so it counts as
-        // a failure instead of silently inflating the success tally.
-        if (!overview) {
-          return Promise.reject(new Error(`channel ${id} is no longer available`));
-        }
-        return service.updateChannel(id, {
-          ...overview.channel,
-          status: input.status,
-        });
-      });
-    },
-    invalidateKeys: [...INVALIDATE],
-    onSuccess: ({ ok, total, failures }) => {
-      toast.push({
-        tone: ok === total ? "success" : "error",
-        message: t("channels.bulkStatusDone", { ok, total }),
-      });
-      setBulkSelected(new Set(failures.map((failure) => failure.item)));
-      setBulkFailures(failures);
-    },
-  });
-  const bulkBusy = bulkSync.isPending || bulkStatus.isPending;
+  const bulkFailures = bulk.failures;
+  const bulkSync = bulk.sync;
+  const bulkStatus = bulk.status;
+  const bulkBusy = bulk.busy;
 
   const probe = useAdminMutation({
     mutationFn: (id: number) => service.probeChannel(id),
