@@ -1,0 +1,1 @@
+import{j as t,Y as x,p as f,ah as j}from"./index-fE4oQGpk.js";function m({isLoading:r,isError:s,error:a,isEmpty:e,empty:i,retry:n,children:o}){return r?t.jsx(x,{}):s?t.jsx(f,{error:a,retry:n}):e?t.jsx(j,{children:i}):t.jsx("div",{className:"entity-state-fill",children:o})}export{m as E};

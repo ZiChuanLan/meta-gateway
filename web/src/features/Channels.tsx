@@ -1,19 +1,14 @@
-import { Plus, RefreshCw, Search, UserCheck } from "lucide-react";
+import { Plus, RefreshCw, UserCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Channel, ChannelOverview, Site } from "../api/types";
-import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
-import { rowContextPoint, rowKeyboardContextPoint } from "../components/contextMenu";
+import type { ActionMenuItem } from "../components/ActionMenu";
 import { ThemeDetails } from "../themes/ThemeDetails";
-import { EmptyHero } from "../components/EmptyHero";
-import { ListShell } from "../components/ListShell";
-import { PaginationBar } from "../components/PaginationBar";
-import { EntityState } from "../components/EntityState";
 import { ResultStrip } from "../components/ResultStrip";
 import { TelemetryStrip } from "../components/TelemetryStrip";
-import { Button, DataTable, Page, Panel } from "../components/ui";
+import { Button, Page } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
@@ -23,9 +18,7 @@ import { useSession } from "../session";
 
 import { channelNeedsAttention, isChannelReady } from "./channelHealth";
 import { ChannelDetail } from "./channels/ChannelDetail";
-import { ChannelStatusBadges } from "./channels/badges";
 import {
-  capabilityFlags,
   isMissingAPIKey,
   normalizeBase,
   SECRET_MASK,
@@ -46,6 +39,7 @@ import {
 import { positiveId } from "../lib/positiveId";
 import { useListSelection } from "../lib/useListSelection";
 import { useChannelBulk } from "./channels/useChannelBulk";
+import { ChannelDirectory } from "./channels/ChannelDirectory";
 import { parseCredentialMeta } from "./credentialMeta";
 export { channelReadiness } from "./channelHealth";
 
@@ -974,346 +968,43 @@ export function Channels() {
         ) : null}
 
         <div className="channels-workspace">
-          <Panel className="ops-list-panel channels-directory">
-            <div className="workspace-filter-row">
-              {" "}
-              <label className="directory-search">
-                <Search size={14} aria-hidden="true" />
-                <input
-                  value={query}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setQuery(value);
-                    const next = new URLSearchParams(params);
-                    if (value) next.set("search", value);
-                    else next.delete("search");
-                    next.delete("id");
-                    setParams(next, { replace: true });
-                  }}
-                  placeholder={t("channels.searchPlaceholder")}
-                  aria-label={t("channels.searchPlaceholder")}
-                />
-              </label>
-              <select
-                aria-label={t("channels.filterType")}
-                value={typeFilter}
-                onChange={(event) => {
-                  const v = event.target.value;
-                  setTypeFilter(v);
-                  updateFilterParam("type", v);
-                }}
-              >
-                <option value="all">{t("channels.allTypes")}</option>
-                {filterOptions.types.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label={t("channels.filterGroup")}
-                value={groupFilter}
-                onChange={(event) => {
-                  const v = event.target.value;
-                  setGroupFilter(v);
-                  updateFilterParam("group", v);
-                }}
-              >
-                <option value="all">{t("channels.allGroups")}</option>
-                {filterOptions.groups.map((group) => (
-                  <option key={group} value={group}>
-                    {group}
-                  </option>
-                ))}
-              </select>
-              <span className="workspace-list-caption">{t("channels.listHint")}</span>
-            </div>
-            <EntityState
-              isLoading={overviews.isPending}
-              isError={overviews.isError}
-              error={overviews.error}
-              isEmpty={!rows.length}
-              empty={
-                <EmptyHero
-                  kicker={
-                    healthFilter === "missing_key"
-                      ? t("channels.filter.missingKeyKicker")
-                      : t("channels.emptyKicker")
-                  }
-                  title={
-                    healthFilter === "missing_key"
-                      ? t("channels.filter.missingKeyTitle")
-                      : healthFilter === "attention"
-                        ? t("channels.filter.attentionTitle")
-                        : healthFilter === "ready"
-                          ? t("channels.filter.readyTitle")
-                          : t("channels.emptyTitle")
-                  }
-                  body={
-                    healthFilter === "all" ? t("channels.empty") : t("channels.filter.clearHint")
-                  }
-                  actions={
-                    healthFilter === "all" ? (
-                      <Button icon={<Plus size={16} />} onClick={openAdd}>
-                        {t("channels.add")}
-                      </Button>
-                    ) : (
-                      <Button variant="secondary" onClick={() => setHealthFilter("all")}>
-                        {t("common.clearFilters")}
-                      </Button>
-                    )
-                  }
-                />
-              }
-              retry={() => overviews.refetch()}
-            >
-              {bulkMode && bulkSelected.size > 0 ? (
-                <div className="toolbar bulk-bar">
-                  <span className="live-trace-count">
-                    {t("channels.bulkSelected", { n: bulkSelected.size })}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    disabled={bulkBusy}
-                    onClick={() => bulkSync.mutate([...bulkSelected])}
-                  >
-                    {t("channels.bulkSyncModels")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={bulkBusy}
-                    onClick={() =>
-                      bulkStatus.mutate({
-                        ids: [...bulkSelected],
-                        status: "enabled",
-                      })
-                    }
-                  >
-                    {t("common.enableAction")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={bulkBusy}
-                    onClick={() =>
-                      bulkStatus.mutate({
-                        ids: [...bulkSelected],
-                        status: "disabled",
-                      })
-                    }
-                  >
-                    {t("common.disableAction")}
-                  </Button>
-                  <Button variant="quiet" onClick={() => setBulkSelected(new Set())}>
-                    {t("channels.bulkClear")}
-                  </Button>
-                  <Button variant="quiet" onClick={exitBulkMode}>
-                    {t("channels.bulkDone")}
-                  </Button>
-                </div>
-              ) : null}
-              <ListShell
-                footer={
-                  <PaginationBar
-                    page={pagination.page}
-                    totalPages={pagination.totalPages}
-                    total={pagination.total}
-                    pageSize={pagination.pageSize}
-                    rangeStart={pagination.rangeStart}
-                    rangeEnd={pagination.rangeEnd}
-                    hasPrev={pagination.hasPrev}
-                    hasNext={pagination.hasNext}
-                    onPageChange={pagination.setPage}
-                    onPageSizeChange={pagination.setPageSize}
-                  />
-                }
-              >
-                <DataTable
-                  headers={[
-                    ...(bulkMode ? [bulkHeader] : []),
-                    t("common.name"),
-                    t("common.status"),
-                    t("common.models"),
-                    t("channels.modelsSelectedCol"),
-                    t("common.latency"),
-                    t("common.actions"),
-                  ]}
-                >
-                  {pageRows.map((overview) => {
-                    const ch = overview.channel;
-                    const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
-                    const displayBase = ch.base_url || site?.base_url || "";
-                    const caps = capabilityFlags(overview);
-                    const active = selected?.channel.id === ch.id;
-                    const rowBusy =
-                      refresh.pendingId === ch.id ||
-                      probe.pendingId === ch.id ||
-                      accountProbe.pendingId === ch.id ||
-                      syncKeys.pendingId === ch.id ||
-                      toggle.pendingId === ch.id ||
-                      del.pendingId === ch.id;
-                    return (
-                      <tr
-                        key={ch.id}
-                        tabIndex={0}
-                        className={`is-clickable${active ? " is-selected" : ""}`}
-                        onClick={() => {
-                          selectRow(ch.id);
-                          setInspectorOpen(true);
-                        }}
-                        onContextMenu={(event) => {
-                          const point = rowContextPoint(event);
-                          if (!point) return;
-                          selectRow(ch.id);
-                          setContextMenu({
-                            channelId: ch.id,
-                            ...point,
-                          });
-                        }}
-                        onKeyDown={(event) => {
-                          const point = rowKeyboardContextPoint(event);
-                          if (point) {
-                            selectRow(ch.id);
-                            setContextMenu({ channelId: ch.id, ...point });
-                          }
-                        }}
-                      >
-                        {bulkMode ? (
-                          <td className="bulk-cell" onClick={(event) => event.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              aria-label={t("channels.bulkSelectOne", {
-                                name: ch.name,
-                              })}
-                              checked={bulkSelected.has(ch.id)}
-                              onChange={() => toggleBulkSelected(ch.id)}
-                            />
-                          </td>
-                        ) : null}
-                        <td>
-                          <strong>{ch.name}</strong>
-                          {ch.group_name ? (
-                            <span className="capability-chip is-group">{ch.group_name}</span>
-                          ) : null}
-                          {displayBase ? (
-                            <a
-                              className="mono truncate base-url-link"
-                              href={displayBase}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title={displayBase}
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {displayBase}
-                            </a>
-                          ) : (
-                            <small className="mono truncate">{t("channels.inheritsSite")}</small>
-                          )}
-                        </td>
-                        <td className="status-col">
-                          <div className="capability-stack is-compact">
-                            <ChannelStatusBadges overview={overview} />
-                            {caps.tokenProblem ? (
-                              <span className="capability-chip is-warn">
-                                {t("channels.badge.tokenProblem")}
-                              </span>
-                            ) : null}
-                            {caps.checkinScheduled ? (
-                              <span className="capability-chip is-checkin">
-                                {t("channels.badge.checkinOn")}
-                              </span>
-                            ) : caps.checkinNeedsUserID ? (
-                              <span className="capability-chip is-warn">
-                                {t("channels.badge.needsUserId")}
-                              </span>
-                            ) : null}
-                            {caps.modelsReady ? (
-                              <span className="capability-chip is-models">
-                                {t("channels.badge.models")}
-                              </span>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td title={t("channels.modelsTotalHint")}>
-                          {overview.last_checked_at ? (
-                            overview.discovered_model_count > 0 ? (
-                              <strong>{overview.discovered_model_count}</strong>
-                            ) : (
-                              <span className="muted">0</span>
-                            )
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                        <td
-                          title={
-                            overview.model_count > 0
-                              ? t("channels.modelsAdoptedHint")
-                              : t("channels.modelsNoneAdoptedHint")
-                          }
-                        >
-                          {overview.model_count > 0 ? (
-                            <strong>{overview.model_count}</strong>
-                          ) : (
-                            <span className="muted">0</span>
-                          )}
-                        </td>
-                        <td>
-                          {overview.last_checked_at
-                            ? t("common.ms", { n: overview.last_latency_ms })
-                            : "—"}
-                        </td>
-                        <td
-                          className="actions row-actions"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <ActionMenu
-                            compact
-                            label={t("common.moreActions")}
-                            title={ch.name}
-                            disabled={rowBusy}
-                            onOpenChange={(open) => {
-                              // Ensure credentials for this row's site are loaded so check-in
-                              // toggle label matches the overview badge.
-                              if (open) selectRow(ch.id);
-                            }}
-                            items={connectionActions(overview)}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </DataTable>
-              </ListShell>
-              {contextMenu
-                ? (() => {
-                    const overview =
-                      rows.find((row) => row.channel.id === contextMenu.channelId) ??
-                      (overviews.data ?? []).find(
-                        (row) => row.channel.id === contextMenu.channelId,
-                      );
-                    if (!overview) return null;
-                    return (
-                      <ActionMenu
-                        key={overview.channel.id}
-                        label={t("common.moreActions")}
-                        title={overview.channel.name}
-                        open
-                        onOpenChange={(open) => {
-                          if (!open) setContextMenu(null);
-                        }}
-                        position={{
-                          top: contextMenu.top,
-                          left: contextMenu.left,
-                        }}
-                        items={connectionActions(overview, {
-                          closeContext: true,
-                        })}
-                      />
-                    );
-                  })()
-                : null}
-            </EntityState>
-          </Panel>
+          <ChannelDirectory
+            t={t}
+            query={query}
+            setQuery={setQuery}
+            params={params}
+            setParams={setParams}
+            typeFilter={typeFilter}
+            setTypeFilter={setTypeFilter}
+            groupFilter={groupFilter}
+            setGroupFilter={setGroupFilter}
+            updateFilterParam={updateFilterParam}
+            filterOptions={filterOptions}
+            healthFilter={healthFilter}
+            setHealthFilter={setHealthFilter}
+            overviews={overviews}
+            rows={rows}
+            pageRows={pageRows}
+            siteById={siteById}
+            selected={selected}
+            pagination={pagination}
+            bulkMode={bulkMode}
+            bulkSelected={bulkSelected}
+            toggleBulkSelected={toggleBulkSelected}
+            setBulkSelected={setBulkSelected}
+            exitBulkMode={exitBulkMode}
+            bulkBusy={bulkBusy}
+            bulkSync={bulkSync}
+            bulkStatus={bulkStatus}
+            bulkHeader={bulkHeader}
+            openAdd={openAdd}
+            selectRow={selectRow}
+            setInspectorOpen={setInspectorOpen}
+            setContextMenu={setContextMenu}
+            contextMenu={contextMenu}
+            connectionActions={connectionActions}
+            pending={{ refresh, probe, accountProbe, syncKeys, toggle, del }}
+          />
 
           <ThemeDetails
             open={inspectorOpen}
