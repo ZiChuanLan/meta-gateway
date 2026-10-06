@@ -34,8 +34,8 @@ import { MemberModelsPage as MemberModels } from "./MemberModelsPage";
 import { positiveId } from "../lib/positiveId";
 import { readScopedTabState, writeScopedTabState } from "../lib/tabState";
 import { useListSelection } from "../lib/useListSelection";
+import { useModelFilters } from "./models/useModelFilters";
 import { useCooldownExpiry } from "../lib/cooldownClock";
-import { modelGroup } from "./models/modelGroups";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
 import { modelActions as routeActions, type ModelActionDeps } from "./models/modelActions";
 import { RouteDirectory } from "./models/RouteDirectory";
@@ -66,7 +66,6 @@ const readTabState = <T,>(key: string, fallback: T): T =>
   readScopedTabState("models", key, fallback);
 const writeTabState = <T,>(key: string, value: T): void =>
   writeScopedTabState("models", key, value);
-import { countActiveModelFilters } from "./models/modelFilters";
 import { primaryMember, sortMembers, getEffectiveRoutingPolicy } from "./models/routingPolicy";
 
 const ROUTING_INVALIDATE_KEYS = [
@@ -223,39 +222,36 @@ function ModelCatalog({
   // URL wins over tab-scoped state on first mount; tab state survives the
   // bare-path sidebar navigation that drops the query string. Read once, so the
   // states and the filter panel's default-open decision cannot disagree.
-  const [initialFilters] = useState(() => ({
-    query: initialModel || readTabState("query", ""),
-    channel: channelIdFromUrl ?? readTabState("channel", 0),
-    group: initialGroup || readTabState("group", ""),
-    status: readTabState<"enabled" | "disabled" | "all">("status", "all"),
-  }));
+  // Search, the three filters, the group list and the rows they narrow: owned by
+  // models/useModelFilters. Local names kept so the rest of the page reads as
+  // before; pagination stays here (a view choice about those rows).
+  const filters = useModelFilters({
+    overviews: overviews.data ?? [],
+    metaByModel,
+    initial: { model: initialModel, group: initialGroup, channel: channelIdFromUrl },
+  });
+  const {
+    query,
+    setQuery,
+    channelFilter,
+    setChannelFilter,
+    groupFilter,
+    setGroupFilter,
+    statusFilter,
+    setStatusFilter,
+    showModelFilters,
+    setShowModelFilters,
+    activeFilterCount,
+    modelGroups,
+    rows,
+  } = filters;
+  // The selected route and the members disclosure are the page's own (the URL and
+  // the tab remember the first); the filter hook deliberately owns neither.
   const [selected, setSelected] = useState<number | null>(() =>
     readTabState<number | null>("selected", null),
   );
-  const [query, setQuery] = useState(initialFilters.query);
-  const [channelFilter, setChannelFilter] = useState(initialFilters.channel);
-  const [groupFilter, setGroupFilter] = useState(initialFilters.group);
-  const [statusFilter, setStatusFilter] = useState<"enabled" | "disabled" | "all">(
-    initialFilters.status,
-  );
   const [showAdvanced, setShowAdvanced] = useState(true);
-  /**
-   * These three filters remember themselves across navigation but live behind a
-   * disclosure, so a restored filter used to narrow the list with nothing on
-   * screen saying so — the model just looked missing. The panel therefore opens
-   * when (and only when) a non-default filter is in force, which makes it
-   * self-healing: clearing the filters closes it again on the next visit.
-   */
-  const [showModelFilters, setShowModelFilters] = useState(
-    () => countActiveModelFilters(initialFilters) > 0,
-  );
-  /** Shown on the trigger so a collapsed panel still reports that the list is
-   *  narrowed — see `countActiveModelFilters` for what counts. */
-  const activeFilterCount = countActiveModelFilters({
-    group: groupFilter,
-    channel: channelFilter,
-    status: statusFilter,
-  });
+  useEffect(() => writeTabState("selected", selected), [selected]);
   const [edit, setEdit] = useState<Partial<Route> | null>(null);
   const [editMeta, setEditMeta] = useState<ModelMetadata | null>(null);
   const [remove, setRemove] = useState<Route | null>(null);
@@ -293,48 +289,6 @@ function ModelCatalog({
     top: number;
     left: number;
   } | null>(null);
-
-  useEffect(() => {
-    if (channelIdFromUrl) setChannelFilter(channelIdFromUrl);
-  }, [channelIdFromUrl]);
-
-  useEffect(() => writeTabState("query", query), [query]);
-  useEffect(() => writeTabState("channel", channelFilter), [channelFilter]);
-  useEffect(() => writeTabState("group", groupFilter), [groupFilter]);
-  useEffect(() => writeTabState("status", statusFilter), [statusFilter]);
-  useEffect(() => writeTabState("selected", selected), [selected]);
-
-  const modelGroups = useMemo(() => {
-    const groups = new Set<string>();
-    for (const item of overviews.data ?? []) {
-      const meta = metaByModel.get(item.route.model_pattern);
-      groups.add(modelGroup(item.route.model_pattern, item.route.model_group, meta?.vendor));
-    }
-    return [...groups].sort();
-  }, [metaByModel, overviews.data]);
-
-  const rows = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return (overviews.data ?? []).filter((item) => {
-      const meta = metaByModel.get(item.route.model_pattern);
-      if (
-        groupFilter &&
-        modelGroup(item.route.model_pattern, item.route.model_group, meta?.vendor) !== groupFilter
-      )
-        return false;
-      if (statusFilter === "enabled" && !item.route.enabled) return false;
-      if (statusFilter === "disabled" && item.route.enabled) return false;
-      const members = item.members ?? [];
-      if (channelFilter > 0) {
-        if (!members.some((m) => m.channel.id === channelFilter)) {
-          return false;
-        }
-      }
-      if (!term) return true;
-      if (item.route.model_pattern.toLowerCase().includes(term)) return true;
-      return members.some((m) => m.channel.name.toLowerCase().includes(term));
-    });
-  }, [channelFilter, groupFilter, metaByModel, overviews.data, query, statusFilter]);
 
   const pagination = useClientPagination(rows, 20, "models");
   const pageRows = pagination.pageItems;
@@ -456,7 +410,7 @@ function ModelCatalog({
       setSelected(match.route.id);
       setQuery(initialModel);
     }
-  }, [initialModel, overviews.data]);
+  }, [initialModel, overviews.data, setQuery]);
 
   const selectedOverview = overviews.data?.find((item) => item.route.id === selected) ?? null;
   const selectedRoute = selectedOverview?.route ?? null;
