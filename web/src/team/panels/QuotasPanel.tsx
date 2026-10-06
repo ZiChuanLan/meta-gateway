@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TeamField as Field, TeamModal } from "../ui";
+import { Plus } from "lucide-react";
+import { ActionMenu } from "../../components/ActionMenu";
+import { Button, DataTable, ErrorState, Field, Panel } from "../../components/ui";
+import { QuotaMeters } from "../QuotaMeters";
+import { TeamModal } from "../ui";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
 import { useUsers } from "../UsersContext";
@@ -16,9 +20,13 @@ import type { KeyGroup, TeamUser } from "../types";
  * explain none of them; this board is where the model itself is stated, and
  * where the two pools that had no interface at all (tenant groups) finally have
  * one.
+ *
+ * It reads as two panels — the groups an operator can create, and the roster's
+ * own ceilings — instead of four headings stacked on one column, and every
+ * budget renders through the same meter the member table uses.
  */
 export function QuotasPanel() {
-  const { request, locale, t } = useUsers();
+  const { request, t } = useUsers();
   const { busy, error, run } = useTeamMutation(request, t);
   const [editing, setEditing] = useState<KeyGroup | null>(null);
   const groups = useQuery({
@@ -29,117 +37,110 @@ export function QuotasPanel() {
     queryKey: ["team", "users"],
     queryFn: ({ signal }) => request<TeamUser[]>("/admin/team/users", { signal }),
   });
+  const failure = error || groups.error || members.error;
 
   return (
     <div className="team-board">
-      <p className="team-muted">{t("quotasIntro")}</p>
-      <h3>{t("groupQuotas")}</h3>
-      <p className="team-muted">{t("groupQuotasHint")}</p>
-      {Boolean(error || groups.error) && (
-        <div role="alert" className="team-error">
-          {teamError(error || groups.error, locale)}
-        </div>
-      )}
-      <div className="team-head">
-        <span />
-        <button
-          className="team-button primary"
-          onClick={() =>
-            setEditing({
-              name: "",
-              quota_total_tokens: 0,
-              quota_used_tokens: 0,
-              quota_total_cost: 0,
-              quota_used_cost: 0,
-              rate_per_minute: 0,
-              rate_burst: 0,
-            })
-          }
-        >
-          {t("newGroup")}
-        </button>
-      </div>
-      <div className="team-table-wrap">
-        <table className="team-table">
-          <thead>
-            <tr>
-              <th>{t("name")}</th>
-              <th>{t("quotaTokensShort")}</th>
-              <th>{t("quotaCostShort")}</th>
-              <th className="team-hide-mobile">{t("rpm")}</th>
-              <th />
+      <p className="panel-hint">{t("quotasIntro")}</p>
+      {failure ? <ErrorState error={failure} /> : null}
+      <Panel
+        title={t("groupQuotas")}
+        titleHelp={t("groupQuotasHint")}
+        actions={
+          <Button
+            icon={<Plus size={14} />}
+            onClick={() =>
+              setEditing({
+                name: "",
+                quota_total_tokens: 0,
+                quota_used_tokens: 0,
+                quota_total_cost: 0,
+                quota_used_cost: 0,
+                rate_per_minute: 0,
+                rate_burst: 0,
+              })
+            }
+          >
+            {t("newGroup")}
+          </Button>
+        }
+      >
+        <DataTable headers={[t("name"), t("quota"), t("rpm"), ""]} empty={!groups.data?.length}>
+          {groups.data?.map((g) => (
+            <tr key={g.name}>
+              <td>{g.name}</td>
+              <td>
+                <QuotaMeters
+                  usedTokens={g.quota_used_tokens}
+                  totalTokens={g.quota_total_tokens}
+                  usedCost={g.quota_used_cost}
+                  totalCost={g.quota_total_cost}
+                  onEdit={() => setEditing(structuredClone(g))}
+                />
+              </td>
+              <td>{g.rate_per_minute || "—"}</td>
+              <td className="row-actions">
+                <ActionMenu
+                  compact
+                  label={t("moreActions")}
+                  items={[
+                    {
+                      key: "edit",
+                      label: t("edit"),
+                      onSelect: () => setEditing(structuredClone(g)),
+                    },
+                    ...(g.name === "default"
+                      ? []
+                      : [
+                          {
+                            key: "delete",
+                            group: t("dangerZone"),
+                            label: t("delete"),
+                            danger: true,
+                            disabled: busy,
+                            onSelect: () => {
+                              if (confirm(t("groupDeleteWarning", { name: g.name })))
+                                void run(`/admin/groups/${encodeURIComponent(g.name)}`, "DELETE");
+                            },
+                          },
+                        ]),
+                  ]}
+                />
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {groups.data?.map((g) => (
-              <tr key={g.name}>
-                <td>{g.name}</td>
-                <td>{formatPool(g.quota_used_tokens, g.quota_total_tokens, t)}</td>
-                <td>{formatCostPool(g.quota_used_cost, g.quota_total_cost, t)}</td>
-                <td className="team-hide-mobile">{g.rate_per_minute || "—"}</td>
-                <td>
-                  <div className="team-actions">
-                    <button className="team-button" onClick={() => setEditing(structuredClone(g))}>
-                      {t("edit")}
-                    </button>
-                    {g.name !== "default" && (
-                      <button
-                        className="team-button danger"
-                        disabled={busy}
-                        onClick={() => {
-                          if (confirm(t("groupDeleteWarning", { name: g.name })))
-                            void run(`/admin/groups/${encodeURIComponent(g.name)}`, "DELETE");
-                        }}
-                      >
-                        {t("delete")}
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <h3>{t("memberQuotas")}</h3>
-      <p className="team-muted">{t("memberQuotasHint")}</p>
-      <div className="team-table-wrap">
-        <table className="team-table">
-          <thead>
-            <tr>
-              <th>{t("name")}</th>
-              <th>{t("quotaTokensShort")}</th>
-              <th>{t("quotaCostShort")}</th>
+          ))}
+        </DataTable>
+      </Panel>
+      <Panel title={t("memberQuotas")} titleHelp={t("memberQuotasHint")}>
+        <DataTable headers={[t("name"), t("quota")]} empty={!members.data?.length}>
+          {members.data?.map((u) => (
+            <tr key={u.id}>
+              <td>
+                <span className="member-ident">
+                  <span className="member-avatar" aria-hidden="true">
+                    {(u.name || u.username || "?").trim().slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="member-ident-text">
+                    <strong>{u.name}</strong>
+                    <small>{u.username}</small>
+                  </span>
+                </span>
+              </td>
+              <td>
+                <QuotaMeters
+                  usedTokens={u.quota_used_tokens}
+                  totalTokens={u.quota_total_tokens}
+                  usedCost={u.quota_used_cost}
+                  totalCost={u.quota_total_cost}
+                />
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {members.data?.map((u) => (
-              <tr key={u.id}>
-                <td>
-                  {u.name}
-                  <small>{u.username}</small>
-                </td>
-                <td>{formatPool(u.quota_used_tokens, u.quota_total_tokens, t)}</td>
-                <td>{formatCostPool(u.quota_used_cost, u.quota_total_cost, t)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </DataTable>
+      </Panel>
       {editing && <GroupDialog group={editing} onClose={() => setEditing(null)} />}
     </div>
   );
-}
-
-/** `used / total`, or the unlimited word when the pool has no ceiling. */
-function formatPool(used: number, total: number, t: (k: "unlimited") => string) {
-  if (total <= 0) return t("unlimited");
-  return `${used.toLocaleString()} / ${total.toLocaleString()}`;
-}
-
-function formatCostPool(used: number, total: number, t: (k: "unlimited") => string) {
-  if (total <= 0) return t("unlimited");
-  return `$${used.toFixed(2)} / $${total.toFixed(2)}`;
 }
 
 /**
@@ -187,7 +188,7 @@ function GroupDialog({ group, onClose }: { group: KeyGroup; onClose: () => void 
             onChange={(e) => patch({ name: e.target.value })}
           />
         </Field>
-        <div className="team-grid">
+        <div className="meta-form">
           <Field label={t("quotaTotal")} hint={t("quotaHint")}>
             <input
               type="number"
@@ -223,17 +224,17 @@ function GroupDialog({ group, onClose }: { group: KeyGroup; onClose: () => void 
           </Field>
         </div>
         {error ? (
-          <div role="alert" className="team-error">
+          <p role="alert" className="inline-error">
             {teamError(error, locale)}
-          </div>
+          </p>
         ) : null}
-        <div className="team-actions">
-          <button className="team-button quiet" type="button" onClick={onClose}>
+        <div className="form-actions">
+          <Button variant="quiet" type="button" onClick={onClose}>
             {t("close")}
-          </button>
-          <button className="team-button primary" disabled={busy}>
-            {busy ? t("saving") : t("save")}
-          </button>
+          </Button>
+          <Button type="submit" loading={busy}>
+            {t("save")}
+          </Button>
         </div>
       </form>
     </TeamModal>

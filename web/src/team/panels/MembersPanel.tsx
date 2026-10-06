@@ -4,6 +4,7 @@ import { TeamField as Field } from "../ui";
 import { ActionMenu } from "../../components/ActionMenu";
 import { Drawer } from "../../components/Drawer";
 import { ModelDirectoryToolbar } from "../../components/ModelDirectoryToolbar";
+import { QuotaMeters } from "../QuotaMeters";
 import {
   Button,
   DataTable,
@@ -308,16 +309,8 @@ export function MembersPanel() {
 }
 
 /**
- * The quota cell shows both budgets a member is limited by.
- *
- * The pool holds tokens and money, and either one running out stops the relay
- * (domain/team.go). Showing only the token figure is what made "how much is
- * left" unanswerable: the money side is what a prepaid member actually runs out
- * of first.
- *
- * Both were previously printed as one line of figures — "0 / 100,000 · $0.00 /
- * $5.00" — which answers the question only if you read every digit. They are now
- * two meters, so "almost out" is visible before the member hits it.
+ * The member table's credit cell: the same meters every other pool uses, made
+ * clickable for an operator who may change the ceiling.
  */
 function QuotaCell({
   user,
@@ -328,63 +321,14 @@ function QuotaCell({
   owner: boolean;
   onEdit: () => void;
 }) {
-  const { t } = useUsers();
-  const budgets = [
-    {
-      key: "tokens",
-      total: user.quota_total_tokens,
-      used: user.quota_used_tokens,
-      format: (value: number) => value.toLocaleString(),
-    },
-    {
-      key: "cost",
-      total: user.quota_total_cost,
-      used: user.quota_used_cost,
-      format: (value: number) => `$${value.toFixed(2)}`,
-    },
-  ].filter((budget) => budget.total > 0);
-  const body = (
-    <span className="quota-meters">
-      {budgets.length === 0 ? (
-        <span className="quota-unlimited">{t("unlimited")}</span>
-      ) : (
-        budgets.map((budget) => {
-          const percent = Math.max(
-            0,
-            Math.min(100, Math.round((budget.used / budget.total) * 100)),
-          );
-          return (
-            <span className="quota-meter" key={budget.key}>
-              <span className="quota-meter-head">
-                <span className="quota-meter-figures">
-                  {budget.format(budget.used)} / {budget.format(budget.total)}
-                </span>
-                <span className="quota-meter-percent">{percent}%</span>
-              </span>
-              <span
-                className="quota-meter-track"
-                role="img"
-                aria-label={t("quotaUsedPercent", { percent })}
-              >
-                <span
-                  className={
-                    "quota-meter-fill" +
-                    (percent >= 90 ? " is-critical" : percent >= 70 ? " is-high" : "")
-                  }
-                  style={{ width: `${percent}%` }}
-                />
-              </span>
-            </span>
-          );
-        })
-      )}
-    </span>
-  );
-  if (!owner) return body;
   return (
-    <button className="quota-meters-button" onClick={onEdit} title={t("editQuota")}>
-      {body}
-    </button>
+    <QuotaMeters
+      usedTokens={user.quota_used_tokens}
+      totalTokens={user.quota_total_tokens}
+      usedCost={user.quota_used_cost}
+      totalCost={user.quota_total_cost}
+      onEdit={owner ? onEdit : undefined}
+    />
   );
 }
 

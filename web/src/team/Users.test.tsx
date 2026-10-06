@@ -188,8 +188,10 @@ describe("user management module", () => {
   it("saves a tenant group's quotas in one request", async () => {
     const calls = renderUsers({ entry: "/quotas" });
     expect(await screen.findByText("Tenant group quotas")).toBeInTheDocument();
-    // The group row arrives with the query, so the button is awaited too.
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    // The group row's actions live behind the row menu, and the row arrives with
+    // the query, so the trigger is awaited too.
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
     fireEvent.change(await screen.findByLabelText("Token credit limit"), {
       target: { value: "2000000" },
     });
