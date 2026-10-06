@@ -1,0 +1,1 @@
+import{j as e,s as i}from"./index-DKtRG1SC.js";function c({value:s,onChange:a,label:r,children:o}){return e.jsxs("div",{className:"models-simple-toolbar",children:[e.jsxs("label",{className:"directory-search models-search",children:[e.jsx(i,{size:14,"aria-hidden":"true"}),e.jsx("input",{value:s,onChange:l=>a(l.target.value),placeholder:r,"aria-label":r})]}),o]})}export{c as M};
