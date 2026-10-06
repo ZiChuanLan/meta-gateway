@@ -1,6 +1,5 @@
 import { Plus, RefreshCw, UserCheck } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Channel, ChannelOverview, Site } from "../api/types";
@@ -32,11 +31,11 @@ import {
   credentialShouldBeRemoved,
 } from "./channels/credentialPatch";
 import { ChannelDialogs } from "./channels/ChannelDialogs";
+import { useChannelBoard } from "./channels/useChannelBoard";
 import {
   relayCredentialFor as pickRelayCredential,
   userCredentialFor as pickUserCredential,
 } from "./channels/channelCredentials";
-import { positiveId } from "../lib/positiveId";
 import { useListSelection } from "../lib/useListSelection";
 import { useChannelBulk } from "./channels/useChannelBulk";
 import { ChannelDirectory } from "./channels/ChannelDirectory";
@@ -59,45 +58,37 @@ export function Channels() {
   const service = api(client!);
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
-  // Cooldown counters (`cooling_member_count`, `failure_count`) are computed
-  // live by the backend from `route_members.cooldown_until`, and the degraded
-  // verdict + reason tooltip hang off them. Without an interval of our own the
-  // page only refreshed on the shell's 30s tick, so a channel entering or
-  // leaving cooldown looked stuck until the operator switched pages.
-  const overviews = useQuery({
-    queryKey: ["channel-overviews"],
-    queryFn: ({ signal }) => service.channelOverviews(signal),
-    refetchInterval: 15_000,
-  });
-  const sites = useQuery({
-    queryKey: ["sites"],
-    queryFn: ({ signal }) => service.sites(signal),
-  });
-  const routeOverviewsQuery = useQuery({
-    queryKey: ["route-overviews"],
-    queryFn: ({ signal }) => service.routeOverviews(signal),
-  });
-  const [addOpen, setAddOpen] = useState(false);
-  const [remove, setRemove] = useState<Channel | null>(null);
-  const [edit, setEdit] = useState<Channel | null>(null);
-  const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
-  const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
-  const [createKeyChannel, setCreateKeyChannel] = useState<Channel | null>(null);
-  // Synchronous lock for the create-key dialog (see onCreate re-entry guard).
-  const createKeyLocked = useRef(false);
-  // Channel id the deep-link effect already popped the models drawer for.
-  // setModelsChannel(null) commits before the router's transition-wrapped
-  // param updates, so the effect re-runs with the stale ?channel= URL right
-  // after a close — without this marker it would re-open the drawer and the
-  // user would have to close it twice.
-  const deepLinkOpened = useRef<number | null>(null);
-  // Same one-shot guard for the ?keys= deep-link (log chain → this channel's keys).
-  const keysDeepLinkOpened = useRef<number | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    channelId: number;
-    top: number;
-    left: number;
-  } | null>(null);
+  // The board's own state (queries, dialogs, deep links, selection) lives in
+  // channels/useChannelBoard; local names are destructured to keep the rest of the
+  // page reading as before.
+  const board = useChannelBoard({ service, params, setParams });
+  const {
+    overviews,
+    sites,
+    routeOverviewsQuery,
+    credentials,
+    addOpen,
+    setAddOpen,
+    remove,
+    setRemove,
+    edit,
+    setEdit,
+    modelsChannel,
+    setModelsChannel,
+    keysChannel,
+    setKeysChannel,
+    createKeyChannel,
+    setCreateKeyChannel,
+    createKeyLocked,
+    closeModelsDrawer,
+    selectedId,
+    inspectorOpen,
+    setInspectorOpen,
+    contextMenu,
+    setContextMenu,
+    stageMessage,
+    setStageMessage,
+  } = board;
   const filters = useChannelFilters(params, setParams);
   const {
     query,
@@ -111,85 +102,6 @@ export function Channels() {
     updateFilterParam,
     toggleHealthFilter,
   } = filters;
-  const [stageMessage, setStageMessage] = useState<{
-    kind: "created" | "created_and_verified" | "verify_failed";
-    name: string;
-    channelId: number;
-    models?: number;
-  } | null>(null);
-  const selectedId = positiveId(params.get("id"));
-  const [inspectorOpen, setInspectorOpen] = useState(Boolean(selectedId));
-  // Deep-link from the models page (?channel=<id>): pop that channel's model
-  // management drawer open so the user lands directly on the right tab.
-  useEffect(() => {
-    const target = positiveId(params.get("channel"));
-    if (!target || modelsChannel?.id === target) return;
-    // One-shot per navigation: re-running with the same target (a close
-    // committing before the router's param transition) must not re-open.
-    if (deepLinkOpened.current === target) return;
-    const overview = (overviews.data ?? []).find((entry) => entry.channel.id === target)?.channel;
-    if (overview) {
-      deepLinkOpened.current = target;
-      setModelsChannel(overview);
-      const next = new URLSearchParams(params);
-      next.delete("channel");
-      setParams(next, { replace: true });
-    }
-  }, [params, overviews.data, modelsChannel, setParams]);
-  // Closing strips the deep-link ?channel= param too: the auto-select effects
-  // below run in the same commit that opens the drawer and re-add the param
-  // from the stale searchParams snapshot, and a surviving param would make the
-  // deep-link effect re-open the drawer right after this close.
-  const closeModelsDrawer = () => {
-    setModelsChannel(null);
-    if (params.has("channel")) {
-      const next = new URLSearchParams(params);
-      next.delete("channel");
-      setParams(next, { replace: true });
-    }
-  };
-  // Deep-link from the log page's request chain (?keys=<id>): the chain names
-  // the upstream key that served an attempt, and this is the list that owns it.
-  useEffect(() => {
-    const target = positiveId(params.get("keys"));
-    if (!target || keysChannel?.id === target) return;
-    if (keysDeepLinkOpened.current === target) return;
-    const overview = (overviews.data ?? []).find((entry) => entry.channel.id === target)?.channel;
-    if (overview) {
-      keysDeepLinkOpened.current = target;
-      setKeysChannel(overview);
-      // Select the row the drawer belongs to as well. The linked channel
-      // arrives without ?id=, so the list ran its own auto-select and the
-      // page ended up pointing at two channels at once — drawer titled one,
-      // highlighted row another.
-      writeChannelTab("selected", target);
-      const next = new URLSearchParams(params);
-      next.delete("keys");
-      next.set("id", String(target));
-      setParams(next, { replace: true });
-    }
-  }, [params, overviews.data, keysChannel, setParams]);
-  // Load site credentials for the surface that is about to render them. The
-  // keys drawer owns the pool it shows, so its channel decides the fetch:
-  // otherwise the pool follows the list selection, and a deep-link (?keys=<id>)
-  // listed one channel's keys under another channel's title.
-  const credentialSiteId = keysChannel
-    ? // A site-less channel has no pool at all — never borrow the selection's.
-      (keysChannel.site_id ?? undefined)
-    : (edit?.site_id ??
-      // The channel selected, or opened via ⋯/context menu.
-      (selectedId != null
-        ? (overviews.data ?? []).find((row) => row.channel.id === selectedId)?.channel.site_id
-        : undefined) ??
-      (contextMenu != null
-        ? (overviews.data ?? []).find((row) => row.channel.id === contextMenu.channelId)?.channel
-            .site_id
-        : undefined));
-  const credentials = useQuery({
-    queryKey: ["credentials", credentialSiteId],
-    queryFn: ({ signal }) => service.credentials(credentialSiteId as number, signal),
-    enabled: typeof credentialSiteId === "number" && credentialSiteId > 0,
-  });
   const verifyAfterCreate = useRef(false);
   const runVerifyRef = useRef<(channelId: number, name: string) => void>(() => undefined);
 
