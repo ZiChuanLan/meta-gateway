@@ -61,13 +61,7 @@ import { modelActions as routeActions, type ModelActionDeps } from "./models/mod
 import { RouteDirectory } from "./models/RouteDirectory";
 import { RouteDialog } from "./models/RouteDialog";
 import { MemberDialog } from "./models/MemberDialog";
-import { UnifyDialog } from "./models/UnifyDialog";
-import { UnifyHistory } from "./models/UnifyHistory";
-import { ProbeDialog } from "./models/ProbeDialog";
-import { SiteProbeDialog } from "./models/SiteProbeDialog";
-import { ModelChangesPanel } from "./models/ModelChangesPanel";
-import { AutoMatchMembersDialog } from "./models/AutoMatchMembersDialog";
-import { CapabilityRegistryDialog } from "./models/CapabilityRegistry";
+import { ModelToolDialogs, useModelTools } from "./models/ModelTools";
 
 function readMissingDismissed() {
   try {
@@ -273,7 +267,6 @@ function ModelCatalog({
     initialFilters.status,
   );
   const [showAdvanced, setShowAdvanced] = useState(true);
-  const [changesOpenRequest, setChangesOpenRequest] = useState(0);
   /**
    * These three filters remember themselves across navigation but live behind a
    * disclosure, so a restored filter used to narrow the list with nothing on
@@ -297,11 +290,17 @@ function ModelCatalog({
   const [member, setMember] = useState<Partial<RouteMember> | null>(null);
   const [removeMember, setRemoveMember] = useState<RouteMember | null>(null);
   const [tryOpen, setTryOpen] = useState(false);
-  const [unifyOpen, setUnifyOpen] = useState(false);
-  const [unifyHistoryOpen, setUnifyHistoryOpen] = useState(false);
-  const [probeOpen, setProbeOpen] = useState(false);
-  const [siteProbeOpen, setSiteProbeOpen] = useState(false);
-  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
+  // The tools' own panels (capabilities / site probe / unify / unify history /
+  // upstream changes) own their open state; this page only opens them.
+  const tools = useModelTools();
+  const {
+    setProbeOpen,
+    setSiteProbeOpen,
+    setCapabilitiesOpen,
+    setUnifyOpen,
+    setUnifyHistoryOpen,
+    openChanges,
+  } = tools;
   /** Route whose "attach every channel serving this model" preview is open. */
   const [autoMatchRoute, setAutoMatchRoute] = useState<Route | null>(null);
   const [bulkSelect, setBulkSelect] = useState(false);
@@ -878,7 +877,6 @@ function ModelCatalog({
 
   return (
     <div className="ops-canvas models-catalog">
-      <ModelChangesPanel openRequest={changesOpenRequest} hideWhenQuiet />
       <TelemetryStrip
         items={[
           {
@@ -1049,7 +1047,7 @@ function ModelCatalog({
               key: "upstream-changes",
               label: t("modelChanges.title"),
               icon: <RefreshCw size={14} />,
-              onSelect: () => setChangesOpenRequest((value) => value + 1),
+              onSelect: () => openChanges(),
             },
           ]}
         />
@@ -1877,21 +1875,14 @@ function ModelCatalog({
         }
       />
 
-      {unifyOpen ? <UnifyDialog onClose={() => setUnifyOpen(false)} /> : null}
-      {unifyHistoryOpen ? <UnifyHistory onClose={() => setUnifyHistoryOpen(false)} /> : null}
-      {probeOpen ? <ProbeDialog onClose={() => setProbeOpen(false)} /> : null}
-      {siteProbeOpen ? <SiteProbeDialog onClose={() => setSiteProbeOpen(false)} /> : null}
-      {capabilitiesOpen ? (
-        <CapabilityRegistryDialog onClose={() => setCapabilitiesOpen(false)} />
-      ) : null}
-      {autoMatchRoute && selectedRoute ? (
-        <AutoMatchMembersDialog
-          route={autoMatchRoute}
-          group={activeGroup}
-          attachedChannelIds={visibleMembers.map((candidate) => candidate.channel.id)}
-          onClose={() => setAutoMatchRoute(null)}
-        />
-      ) : null}
+      <ModelToolDialogs
+        tools={tools}
+        autoMatchRoute={autoMatchRoute}
+        setAutoMatchRoute={setAutoMatchRoute}
+        selectedRoute={selectedRoute}
+        activeGroup={activeGroup}
+        visibleMembers={visibleMembers}
+      />
       {edit ? (
         <RouteDialog
           value={edit}
