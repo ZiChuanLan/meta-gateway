@@ -44,6 +44,7 @@ import {
   userCredentialFor as pickUserCredential,
 } from "./channels/channelCredentials";
 import { positiveId } from "../lib/positiveId";
+import { useListSelection } from "../lib/useListSelection";
 import { runBatch } from "../lib/batch";
 import { parseCredentialMeta } from "./credentialMeta";
 export { channelReadiness } from "./channelHealth";
@@ -269,21 +270,16 @@ export function Channels() {
   });
 
   // Bulk selection over the connections table (current-page checkboxes).
-  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  // Owned by lib/useListSelection (shared with the models board); the local names
+  // stay so the rest of this page reads as before.
+  const selection = useListSelection();
+  const bulkSelected = selection.selected;
+  const bulkMode = selection.mode;
+  const setBulkSelected = selection.setSelected;
+  const setBulkMode = selection.setMode;
+  const exitBulkMode = selection.exit;
+  const toggleBulkSelected = selection.toggle;
   const [bulkFailures, setBulkFailures] = useState<{ item: number; error: unknown }[]>([]);
-  const [bulkMode, setBulkMode] = useState(false);
-  const exitBulkMode = () => {
-    setBulkMode(false);
-    setBulkSelected(new Set());
-  };
-  const toggleBulkSelected = (id: number) => {
-    setBulkSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
   const bulkSync = useAdminMutation({
     mutationFn: async (ids: number[]) => {
       return runBatch(ids, (id) => service.refreshChannel(id));
