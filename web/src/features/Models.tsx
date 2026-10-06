@@ -63,6 +63,7 @@ import { RouteDialog } from "./models/RouteDialog";
 import { MemberDialog } from "./models/MemberDialog";
 import { ModelToolDialogs, useModelTools } from "./models/ModelTools";
 import { RoutePolicyCard } from "./models/RoutePolicyCard";
+import { memberActions } from "./models/memberActions";
 
 function readMissingDismissed() {
   try {
@@ -1727,75 +1728,16 @@ function ModelCatalog({
                               compact
                               label={t("common.moreActions")}
                               disabled={busy || bulkSelect}
-                              items={[
-                                {
-                                  key: "toggle",
-                                  icon: <Power size={14} />,
-                                  label: entry.enabled
-                                    ? t("common.disableAction")
-                                    : t("common.enableAction"),
-                                  onSelect: () => toggleMember.mutate(entry),
-                                },
-                                ...(orderedMembers.length > 1
-                                  ? [
-                                      {
-                                        key: "solo",
-                                        icon: <Target size={14} />,
-                                        label:
-                                          selectedRoute?.routing_mode === "single" &&
-                                          selectedRoute.single_member_id === entry.id
-                                            ? t("routing.unsoloMember")
-                                            : t("routing.soloMember"),
-                                        disabled: pinMember.isPending,
-                                        onSelect: () => {
-                                          if (
-                                            selectedRoute?.routing_mode === "single" &&
-                                            selectedRoute.single_member_id === entry.id
-                                          ) {
-                                            pinMember.mutate({
-                                              route: selectedRoute,
-                                              memberId: null,
-                                            });
-                                          } else if (selectedRoute) {
-                                            pinMember.mutate({
-                                              route: selectedRoute,
-                                              memberId: entry.id,
-                                            });
-                                          }
-                                        },
-                                      },
-                                    ]
-                                  : []),
-                                ...(canResetMemberHealth
-                                  ? [
-                                      {
-                                        key: "clear",
-                                        label: t(
-                                          resetActionIsCooldown
-                                            ? "routing.clearHealth"
-                                            : "routing.recoverMember",
-                                        ),
-                                        onSelect: () => clearHealth.mutate(entry.id),
-                                      },
-                                    ]
-                                  : []),
-                                {
-                                  key: "edit",
-                                  label: t("common.edit"),
-                                  icon: <Pencil size={14} />,
-                                  onSelect: () => {
-                                    saveMember.reset();
-                                    setMember(entry);
-                                  },
-                                },
-                                {
-                                  key: "delete",
-                                  label: t("common.delete"),
-                                  icon: <Trash2 size={14} />,
-                                  danger: true,
-                                  onSelect: () => setRemoveMember(entry),
-                                },
-                              ]}
+                              items={memberActions(entry, {
+                                t,
+                                route: selectedRoute ?? null,
+                                memberCount: orderedMembers.length,
+                                canResetHealth: canResetMemberHealth,
+                                resetIsCooldown: resetActionIsCooldown,
+                                mutations: { toggleMember, pinMember, clearHealth, saveMember },
+                                setMember,
+                                setRemoveMember,
+                              })}
                             />
                           </div>
                         </div>
