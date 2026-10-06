@@ -165,7 +165,11 @@ describe("user management module", () => {
 
   it("saves both budgets from the member's own page", async () => {
     const calls = renderUsers();
-    fireEvent.click(await screen.findByRole("button", { name: /Manage/ }));
+    // Each row now carries an action menu instead of an inline "Manage →" link:
+    // the row's own actions (details, credit, danger) live behind one control,
+    // which is also what made room for the identity and credit columns.
+    fireEvent.click(await screen.findByRole("button", { name: /More actions/ }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Manage" }));
     const tokens = await screen.findByLabelText("Token credit limit");
     const spend = screen.getByLabelText("Spend allowance");
     fireEvent.change(tokens, { target: { value: "5000" } });

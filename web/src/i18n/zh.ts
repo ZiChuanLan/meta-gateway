@@ -489,6 +489,7 @@ export const zh: Dict = {
   "common.clearFilters": "清除筛选",
 
   "status.enabled": "已启用",
+  "status.active": "正常",
   "status.disabled": "已禁用",
   "status.auto_disabled": "已自动禁用",
   "status.ready": "就绪",

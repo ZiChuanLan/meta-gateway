@@ -537,6 +537,7 @@ export const en: Dict = {
   "common.clearFilters": "Clear filters",
 
   "status.enabled": "Enabled",
+  "status.active": "Active",
   "status.disabled": "Disabled",
   "status.auto_disabled": "Auto-disabled",
   "status.ready": "Ready",

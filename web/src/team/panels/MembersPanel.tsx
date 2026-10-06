@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TeamField as Field } from "../ui";
+import { ActionMenu } from "../../components/ActionMenu";
+import { ModelDirectoryToolbar } from "../../components/ModelDirectoryToolbar";
+import { Button, DataTable, PageActions, StatusBadge } from "../../components/ui";
 import { ImportMembersDialog, NewMemberDialog, QuotaDialog } from "../MemberForms";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
@@ -136,31 +139,15 @@ export function MembersPanel() {
         />
       ) : (
         <>
-          <div className="team-head">
-            <input
-              className="team-search"
-              placeholder={t("search")}
-              aria-label={t("search")}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <div className="team-actions">
-              <button
-                className="team-button"
-                disabled={!enabled}
-                onClick={() => setImporting(true)}
-              >
-                {t("importMembers")}
-              </button>
-              <button
-                className="team-button primary"
-                disabled={!enabled}
-                onClick={() => setNewMember(true)}
-              >
-                ＋ {t("newMember")}
-              </button>
-            </div>
-          </div>
+          <PageActions>
+            <Button variant="secondary" disabled={!enabled} onClick={() => setImporting(true)}>
+              {t("importMembers")}
+            </Button>
+            <Button disabled={!enabled} onClick={() => setNewMember(true)}>
+              ＋ {t("newMember")}
+            </Button>
+          </PageActions>
+          <ModelDirectoryToolbar value={search} onChange={setSearch} label={t("search")} />
           {checked.size > 0 && (
             <BulkBar
               count={checked.size}
@@ -176,77 +163,105 @@ export function MembersPanel() {
           {users.isPending ? (
             <p>{t("load")}</p>
           ) : (
-            <div className="team-table-wrap">
-              <table className="team-table">
-                <thead>
-                  <tr>
-                    <th className="team-select-cell">
-                      <input
-                        type="checkbox"
-                        aria-label={t("selectAll")}
-                        checked={
-                          visibleUsers.length > 0 && visibleUsers.every((u) => checked.has(u.id))
-                        }
-                        onChange={(e) =>
-                          setChecked(
-                            e.target.checked
-                              ? new Set(
-                                  visibleUsers.filter((u) => u.role !== "owner").map((u) => u.id),
-                                )
-                              : new Set(),
-                          )
-                        }
-                      />
-                    </th>
-                    <th>{t("name")}</th>
-                    <th className="team-hide-mobile">{t("role")}</th>
-                    <th className="team-hide-mobile">{t("policy")}</th>
-                    <th>{t("status")}</th>
-                    <th className="team-hide-mobile">{t("quota")}</th>
-                    <th className="team-hide-mobile">{t("keyCount")}</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleUsers.map((u) => (
-                    <tr key={u.id}>
-                      <td className="team-select-cell">
-                        <input
-                          type="checkbox"
-                          aria-label={t("selectMember", { name: u.name })}
-                          disabled={u.role === "owner"}
-                          checked={checked.has(u.id)}
-                          onChange={(e) => {
-                            const next = new Set(checked);
-                            if (e.target.checked) next.add(u.id);
-                            else next.delete(u.id);
-                            setChecked(next);
-                          }}
-                        />
-                      </td>
-                      <td>
-                        {u.name}
+            <DataTable
+              headers={[
+                <input
+                  key="all"
+                  type="checkbox"
+                  aria-label={t("selectAll")}
+                  checked={visibleUsers.length > 0 && visibleUsers.every((u) => checked.has(u.id))}
+                  onChange={(e) =>
+                    setChecked(
+                      e.target.checked
+                        ? new Set(visibleUsers.filter((u) => u.role !== "owner").map((u) => u.id))
+                        : new Set(),
+                    )
+                  }
+                />,
+                t("name"),
+                t("role"),
+                t("policy"),
+                t("status"),
+                t("quota"),
+                t("keyCount"),
+                "",
+              ]}
+              empty={visibleUsers.length === 0}
+            >
+              {visibleUsers.map((u) => (
+                <tr key={u.id} className={checked.has(u.id) ? "is-selected" : undefined}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      aria-label={t("selectMember", { name: u.name })}
+                      disabled={u.role === "owner"}
+                      checked={checked.has(u.id)}
+                      onChange={(e) => {
+                        const next = new Set(checked);
+                        if (e.target.checked) next.add(u.id);
+                        else next.delete(u.id);
+                        setChecked(next);
+                      }}
+                    />
+                  </td>
+                  <td>
+                    {/* The name is what an operator says out loud; the login is
+                        how the account actually signs in. Both belong here. */}
+                    <span className="member-ident">
+                      <span className="member-avatar" aria-hidden="true">
+                        {(u.name || u.username || "?").trim().slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="member-ident-text">
+                        <strong>{u.name}</strong>
                         <small>{u.username}</small>
-                      </td>
-                      <td className="team-hide-mobile">{t(u.role)}</td>
-                      <td className="team-hide-mobile">{policyName(u.policy_id)}</td>
-                      <td>
-                        <span className={`team-status ${u.status}`}>{t(u.status)}</span>
-                      </td>
-                      <td className="team-hide-mobile">
-                        <QuotaCell user={u} owner={owner} onEdit={() => setQuotaFor(u)} />
-                      </td>
-                      <td className="team-hide-mobile">{u.key_count}</td>
-                      <td>
-                        <button className="team-button quiet" onClick={() => setSelected(u)}>
-                          {t("details")} →
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </span>
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`badge badge-role-${u.role}`}>{t(u.role)}</span>
+                  </td>
+                  <td>{policyName(u.policy_id)}</td>
+                  <td>
+                    <StatusBadge value={u.status} />
+                  </td>
+                  <td>
+                    <QuotaCell user={u} owner={owner} onEdit={() => setQuotaFor(u)} />
+                  </td>
+                  <td>{u.key_count}</td>
+                  <td className="row-actions">
+                    <ActionMenu
+                      label={t("moreActions")}
+                      items={[
+                        { key: "details", label: t("details"), onSelect: () => setSelected(u) },
+                        ...(owner
+                          ? [
+                              {
+                                key: "quota",
+                                label: t("editQuota"),
+                                onSelect: () => setQuotaFor(u),
+                              },
+                              {
+                                key: "revoke",
+                                group: t("dangerZone"),
+                                label: t("revokeSessions"),
+                                danger: true,
+                                onSelect: () => {
+                                  if (confirm(t("revokeSessions")))
+                                    void run(
+                                      `/admin/team/users/${u.id}/revoke-sessions`,
+                                      "POST",
+                                      {},
+                                    );
+                                },
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
           )}
         </>
       )}

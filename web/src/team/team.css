@@ -527,3 +527,75 @@
 }
 .team-oauth-advanced summary:hover { color: var(--team-accent, #275b85); }
 .team-oauth-advanced .team-grid { margin-top: 10px; }
+
+/* ---- Member rows ------------------------------------------------------- */
+/* The row identity the console uses everywhere else: a monogram, the display
+   name, and the login underneath. It replaced a bare "name / username" pair,
+   which read as one wrapped cell that happened to have small text in it. */
+.member-ident {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.member-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  color: var(--ink-soft);
+  font: 650 11px/1 var(--font);
+}
+.member-ident-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+.member-ident-text strong {
+  color: var(--ink);
+  font: 550 12.5px/1.35 var(--font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-ident-text small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Role is a label, not a health signal: a quiet chip that still separates the
+   three levels at a glance, with the owner reading as the privileged one. */
+.badge-role-owner {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--primary);
+}
+.badge-role-admin {
+  border-color: color-mix(in srgb, var(--ink) 22%, transparent);
+  background: var(--surface-hover);
+  color: var(--ink-soft);
+}
+.badge-role-member {
+  border-color: var(--line-light);
+  background: var(--surface);
+  color: var(--muted-strong);
+}
+
+/* A row the operator has ticked has to look ticked. */
+table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.row-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
