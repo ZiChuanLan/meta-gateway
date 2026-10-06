@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TeamField as Field } from "../ui";
 import { ActionMenu } from "../../components/ActionMenu";
+import { Drawer } from "../../components/Drawer";
 import { ModelDirectoryToolbar } from "../../components/ModelDirectoryToolbar";
-import { Button, DataTable, PageActions, StatusBadge } from "../../components/ui";
+import {
+  Button,
+  DataTable,
+  ErrorState,
+  Loading,
+  PageActions,
+  StatusBadge,
+} from "../../components/ui";
 import { ImportMembersDialog, NewMemberDialog, QuotaDialog } from "../MemberForms";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
@@ -105,6 +113,133 @@ export function MembersPanel() {
           )}
         </div>
       )}
+      {/* The roster stays mounted: the drawer edits one member beside the list
+          they were found in, instead of replacing the page they were on. */}
+      <>
+        <PageActions>
+          <Button variant="secondary" disabled={!enabled} onClick={() => setImporting(true)}>
+            {t("importMembers")}
+          </Button>
+          <Button disabled={!enabled} onClick={() => setNewMember(true)}>
+            ＋ {t("newMember")}
+          </Button>
+        </PageActions>
+        <div className="team-toolbar">
+          <ModelDirectoryToolbar value={search} onChange={setSearch} label={t("search")} />
+        </div>
+        {checked.size > 0 && (
+          <BulkBar
+            count={checked.size}
+            policies={policies.data ?? []}
+            owner={owner}
+            busy={busy}
+            policy={bulkPolicy}
+            onPolicy={setBulkPolicy}
+            onRun={bulk}
+            onClear={() => setChecked(new Set())}
+          />
+        )}
+        {users.isPending ? (
+          <p>{t("load")}</p>
+        ) : (
+          <DataTable
+            headers={[
+              <input
+                key="all"
+                type="checkbox"
+                aria-label={t("selectAll")}
+                checked={visibleUsers.length > 0 && visibleUsers.every((u) => checked.has(u.id))}
+                onChange={(e) =>
+                  setChecked(
+                    e.target.checked
+                      ? new Set(visibleUsers.filter((u) => u.role !== "owner").map((u) => u.id))
+                      : new Set(),
+                  )
+                }
+              />,
+              t("name"),
+              t("role"),
+              t("policy"),
+              t("status"),
+              t("quota"),
+              t("keyCount"),
+              "",
+            ]}
+            empty={visibleUsers.length === 0}
+          >
+            {visibleUsers.map((u) => (
+              <tr key={u.id} className={checked.has(u.id) ? "is-selected" : undefined}>
+                <td>
+                  <input
+                    type="checkbox"
+                    aria-label={t("selectMember", { name: u.name })}
+                    disabled={u.role === "owner"}
+                    checked={checked.has(u.id)}
+                    onChange={(e) => {
+                      const next = new Set(checked);
+                      if (e.target.checked) next.add(u.id);
+                      else next.delete(u.id);
+                      setChecked(next);
+                    }}
+                  />
+                </td>
+                <td>
+                  {/* The name is what an operator says out loud; the login is
+                        how the account actually signs in. Both belong here. */}
+                  <span className="member-ident">
+                    <span className="member-avatar" aria-hidden="true">
+                      {(u.name || u.username || "?").trim().slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="member-ident-text">
+                      <strong>{u.name}</strong>
+                      <small>{u.username}</small>
+                    </span>
+                  </span>
+                </td>
+                <td>
+                  <span className={`badge badge-role-${u.role}`}>{t(u.role)}</span>
+                </td>
+                <td>{policyName(u.policy_id)}</td>
+                <td>
+                  <StatusBadge value={u.status} />
+                </td>
+                <td>
+                  <QuotaCell user={u} owner={owner} onEdit={() => setQuotaFor(u)} />
+                </td>
+                <td>{u.key_count}</td>
+                <td className="row-actions">
+                  <ActionMenu
+                    compact
+                    label={t("moreActions")}
+                    items={[
+                      { key: "details", label: t("details"), onSelect: () => setSelected(u) },
+                      ...(owner
+                        ? [
+                            {
+                              key: "quota",
+                              label: t("editQuota"),
+                              onSelect: () => setQuotaFor(u),
+                            },
+                            {
+                              key: "revoke",
+                              group: t("dangerZone"),
+                              label: t("revokeSessions"),
+                              danger: true,
+                              onSelect: () => {
+                                if (confirm(t("revokeSessions")))
+                                  void run(`/admin/team/users/${u.id}/revoke-sessions`, "POST", {});
+                              },
+                            },
+                          ]
+                        : []),
+                    ]}
+                  />
+                </td>
+              </tr>
+            ))}
+          </DataTable>
+        )}
+      </>
       {selected ? (
         <MemberDetail
           user={selected}
@@ -115,7 +250,6 @@ export function MembersPanel() {
           bindings={bindings.data}
           owner={owner}
           busy={busy}
-          locale={locale}
           onBack={() => setSelected(null)}
           onSave={(body) =>
             void run(`/admin/team/users/${selected.id}`, "PATCH", body, () => setSelected(null))
@@ -137,137 +271,7 @@ export function MembersPanel() {
               void run(`/admin/team/users/${selected.id}/identities/${bindingID}`, "DELETE");
           }}
         />
-      ) : (
-        <>
-          <PageActions>
-            <Button variant="secondary" disabled={!enabled} onClick={() => setImporting(true)}>
-              {t("importMembers")}
-            </Button>
-            <Button disabled={!enabled} onClick={() => setNewMember(true)}>
-              ＋ {t("newMember")}
-            </Button>
-          </PageActions>
-          <div className="team-toolbar">
-            <ModelDirectoryToolbar value={search} onChange={setSearch} label={t("search")} />
-          </div>
-          {checked.size > 0 && (
-            <BulkBar
-              count={checked.size}
-              policies={policies.data ?? []}
-              owner={owner}
-              busy={busy}
-              policy={bulkPolicy}
-              onPolicy={setBulkPolicy}
-              onRun={bulk}
-              onClear={() => setChecked(new Set())}
-            />
-          )}
-          {users.isPending ? (
-            <p>{t("load")}</p>
-          ) : (
-            <DataTable
-              headers={[
-                <input
-                  key="all"
-                  type="checkbox"
-                  aria-label={t("selectAll")}
-                  checked={visibleUsers.length > 0 && visibleUsers.every((u) => checked.has(u.id))}
-                  onChange={(e) =>
-                    setChecked(
-                      e.target.checked
-                        ? new Set(visibleUsers.filter((u) => u.role !== "owner").map((u) => u.id))
-                        : new Set(),
-                    )
-                  }
-                />,
-                t("name"),
-                t("role"),
-                t("policy"),
-                t("status"),
-                t("quota"),
-                t("keyCount"),
-                "",
-              ]}
-              empty={visibleUsers.length === 0}
-            >
-              {visibleUsers.map((u) => (
-                <tr key={u.id} className={checked.has(u.id) ? "is-selected" : undefined}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      aria-label={t("selectMember", { name: u.name })}
-                      disabled={u.role === "owner"}
-                      checked={checked.has(u.id)}
-                      onChange={(e) => {
-                        const next = new Set(checked);
-                        if (e.target.checked) next.add(u.id);
-                        else next.delete(u.id);
-                        setChecked(next);
-                      }}
-                    />
-                  </td>
-                  <td>
-                    {/* The name is what an operator says out loud; the login is
-                        how the account actually signs in. Both belong here. */}
-                    <span className="member-ident">
-                      <span className="member-avatar" aria-hidden="true">
-                        {(u.name || u.username || "?").trim().slice(0, 1).toUpperCase()}
-                      </span>
-                      <span className="member-ident-text">
-                        <strong>{u.name}</strong>
-                        <small>{u.username}</small>
-                      </span>
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge badge-role-${u.role}`}>{t(u.role)}</span>
-                  </td>
-                  <td>{policyName(u.policy_id)}</td>
-                  <td>
-                    <StatusBadge value={u.status} />
-                  </td>
-                  <td>
-                    <QuotaCell user={u} owner={owner} onEdit={() => setQuotaFor(u)} />
-                  </td>
-                  <td>{u.key_count}</td>
-                  <td className="row-actions">
-                    <ActionMenu
-                      compact
-                      label={t("moreActions")}
-                      items={[
-                        { key: "details", label: t("details"), onSelect: () => setSelected(u) },
-                        ...(owner
-                          ? [
-                              {
-                                key: "quota",
-                                label: t("editQuota"),
-                                onSelect: () => setQuotaFor(u),
-                              },
-                              {
-                                key: "revoke",
-                                group: t("dangerZone"),
-                                label: t("revokeSessions"),
-                                danger: true,
-                                onSelect: () => {
-                                  if (confirm(t("revokeSessions")))
-                                    void run(
-                                      `/admin/team/users/${u.id}/revoke-sessions`,
-                                      "POST",
-                                      {},
-                                    );
-                                },
-                              },
-                            ]
-                          : []),
-                      ]}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </DataTable>
-          )}
-        </>
-      )}
+      ) : null}
       {newMember && (
         <NewMemberDialog
           request={request}
@@ -475,6 +479,15 @@ function BulkBar({
  * only reachable from a small button back on the list, which is why operators
  * reported that quotas could not be changed from user management at all.
  */
+/**
+ * One member's whole record, opened beside the roster rather than instead of it.
+ *
+ * This used to replace the list: click a row and the page became a form with a
+ * "← members" link, so the operator lost the list they were working from (and on
+ * a phone the identity of the page they were on). A right-hand Drawer is how
+ * every other entity in this console is edited, and it keeps the roster — and the
+ * search that found the row — in view.
+ */
 function MemberDetail({
   user,
   policies,
@@ -484,7 +497,6 @@ function MemberDetail({
   bindings,
   owner,
   busy,
-  locale,
   onBack,
   onSave,
   onRevoke,
@@ -499,7 +511,6 @@ function MemberDetail({
   bindings?: OAuthBinding[];
   owner: boolean;
   busy: boolean;
-  locale: string;
   onBack: () => void;
   onSave: (body: Record<string, unknown>) => void;
   onRevoke: () => void;
@@ -510,22 +521,41 @@ function MemberDetail({
   const [quotaTokens, setQuotaTokens] = useState(String(user.quota_total_tokens));
   const [quotaCost, setQuotaCost] = useState(String(user.quota_total_cost));
   const [resetUsed, setResetUsed] = useState(false);
+  // The save button lives in the drawer's footer, outside the form element, so
+  // the two have to be tied together explicitly.
+  const formID = useId();
   return (
-    <div>
-      <button className="team-button quiet" onClick={onBack}>
-        ← {t("members")}
-      </button>
-      <div className="team-head">
-        <div>
-          <h2>{user.name}</h2>
-          <p className="team-muted">
-            {user.username} · {t(user.role)}
-          </p>
-        </div>
-        <span className={`team-status ${user.status}`}>{t(user.status)}</span>
-      </div>
+    <Drawer
+      title={user.name}
+      busy={busy}
+      onClose={onBack}
+      footer={
+        <>
+          {user.role !== "owner" && (
+            <Button variant="secondary" disabled={busy} onClick={onRevoke}>
+              {t("revokeSessions")}
+            </Button>
+          )}
+          {owner && (
+            <Button variant="secondary" disabled={busy} onClick={onRecovery}>
+              {t("recovery")}
+            </Button>
+          )}
+          <span className="flex-spacer" />
+          <Button variant="quiet" disabled={busy} onClick={onBack}>
+            {t("cancel")}
+          </Button>
+          <Button type="submit" form={formID} loading={busy}>
+            {t("save")}
+          </Button>
+        </>
+      }
+    >
+      <p className="drawer-subtitle">
+        {user.username} · {t(user.role)} · <StatusBadge value={user.status} />
+      </p>
       <form
-        className="team-section"
+        id={formID}
         onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
@@ -544,7 +574,7 @@ function MemberDetail({
           });
         }}
       >
-        <div className="team-grid">
+        <div className="meta-form">
           <Field label={t("name")}>
             <input name="name" defaultValue={user.name} required maxLength={80} />
           </Field>
@@ -574,10 +604,10 @@ function MemberDetail({
           )}
         </div>
         {owner && (
-          <>
+          <section className="drawer-section">
             <h3>{t("credit")}</h3>
-            <p className="team-muted">{t("creditHint")}</p>
-            <div className="team-grid">
+            <p className="panel-hint">{t("creditHint")}</p>
+            <div className="meta-form">
               <Field label={t("quotaTotal")} hint={t("quotaHint")}>
                 <input
                   type="number"
@@ -596,103 +626,67 @@ function MemberDetail({
                 />
               </Field>
             </div>
-            <label className="team-check">
+            <label className="check marginless">
               <input
                 type="checkbox"
                 checked={resetUsed}
                 onChange={(e) => setResetUsed(e.target.checked)}
               />
-              {t("quotaResetLabel")}
+              <span>{t("quotaResetLabel")}</span>
             </label>
-          </>
+            <p className="panel-hint">
+              {user.role === "owner" ? t("protectedOwner") : t("userChangeHint")}
+            </p>
+          </section>
         )}
-        <p className="team-muted">
-          {user.role === "owner" ? t("protectedOwner") : t("userChangeHint")}
-        </p>
-        <button className="team-button primary" disabled={busy}>
-          {busy ? t("saving") : t("save")}
-        </button>
       </form>
-      <div className="team-row">
-        {user.role !== "owner" && (
-          <button className="team-button" disabled={busy} onClick={onRevoke}>
-            {t("revokeSessions")}
-          </button>
-        )}
-        {owner && (
-          <button className="team-button" disabled={busy} onClick={onRecovery}>
-            {t("recovery")}
-          </button>
-        )}
-      </div>
-      <h3 style={{ marginTop: 24 }}>{t("keys")}</h3>
-      {keysPending ? (
-        <p>{t("load")}</p>
-      ) : keysError ? (
-        <div role="alert">{teamError(keysError, locale)}</div>
-      ) : (
-        <div className="team-table-wrap">
-          <table className="team-table">
-            <thead>
-              <tr>
-                <th>{t("name")}</th>
-                <th>Key</th>
-                <th>{t("status")}</th>
+      <section className="drawer-section">
+        <h3>{t("keys")}</h3>
+        {keysPending ? (
+          <Loading />
+        ) : keysError ? (
+          <ErrorState error={keysError} />
+        ) : (
+          <DataTable headers={[t("name"), "Key", t("status")]} empty={!keys?.length}>
+            {keys?.map((k) => (
+              <tr key={k.id}>
+                <td>{k.name}</td>
+                <td>
+                  <code>mg-···{k.hint}</code>
+                </td>
+                <td>
+                  <StatusBadge value={k.enabled} />
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {keys?.map((k) => (
-                <tr key={k.id}>
-                  <td>{k.name}</td>
-                  <td>
-                    <code>mg-···{k.hint}</code>
-                  </td>
-                  <td>{k.enabled ? t("on") : t("off")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <h3 style={{ marginTop: 24, fontSize: 13 }}>{t("oauthBindings")}</h3>
-      <p className="team-muted">{t("oauthBindingsHint")}</p>
-      {bindings && bindings.length > 0 ? (
-        <div className="team-table-wrap">
-          <table className="team-table">
-            <thead>
-              <tr>
-                <th>{t("oauth")}</th>
-                <th>{t("name")}</th>
-                <th className="team-hide-mobile">{t("lastUsed")}</th>
-                <th />
+            ))}
+          </DataTable>
+        )}
+      </section>
+      <section className="drawer-section">
+        <h3>{t("oauthBindings")}</h3>
+        <p className="panel-hint">{t("oauthBindingsHint")}</p>
+        {bindings && bindings.length > 0 ? (
+          <DataTable headers={[t("oauth"), t("name"), t("lastUsed"), ""]}>
+            {bindings.map((binding) => (
+              <tr key={binding.id}>
+                <td>{binding.label}</td>
+                <td>
+                  {binding.name || binding.email || "—"}
+                  {binding.email ? <small>{binding.email}</small> : null}
+                </td>
+                <td>{binding.last_login_at}</td>
+                <td className="row-actions">
+                  <Button variant="danger" disabled={busy} onClick={() => onUnlink(binding.id)}>
+                    {t("oauthUnlink")}
+                  </Button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {bindings.map((binding) => (
-                <tr key={binding.id}>
-                  <td>{binding.label}</td>
-                  <td>
-                    {binding.name || binding.email || "—"}
-                    {binding.email ? <small>{binding.email}</small> : null}
-                  </td>
-                  <td className="team-hide-mobile">{binding.last_login_at}</td>
-                  <td>
-                    <button
-                      className="team-button danger"
-                      disabled={busy}
-                      onClick={() => onUnlink(binding.id)}
-                    >
-                      {t("oauthUnlink")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="team-muted">{t("oauthNoBindings")}</p>
-      )}
-    </div>
+            ))}
+          </DataTable>
+        ) : (
+          <p className="panel-hint">{t("oauthNoBindings")}</p>
+        )}
+      </section>
+    </Drawer>
   );
 }
