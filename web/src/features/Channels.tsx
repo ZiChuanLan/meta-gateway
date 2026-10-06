@@ -4,11 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Channel, ChannelOverview, Site } from "../api/types";
-import { ChannelModelsPanel } from "./ChannelModels";
-import { ChannelKeysDrawer } from "./ChannelKeys";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
 import { rowContextPoint, rowKeyboardContextPoint } from "../components/contextMenu";
-import { Drawer } from "../components/Drawer";
 import { ThemeDetails } from "../themes/ThemeDetails";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
@@ -16,7 +13,7 @@ import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
 import { ResultStrip } from "../components/ResultStrip";
 import { TelemetryStrip } from "../components/TelemetryStrip";
-import { Button, ConfirmDialog, DataTable, Page, Panel } from "../components/ui";
+import { Button, DataTable, Page, Panel } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
@@ -25,9 +22,6 @@ import { formatErrorMessage } from "../formatError";
 import { useSession } from "../session";
 
 import { channelNeedsAttention, isChannelReady } from "./channelHealth";
-import { AddChannelDialog } from "./channels/AddChannelDialog";
-import { CreateKeyDialog } from "./channels/CreateKeyDialog";
-import { EditChannelDialog } from "./channels/EditChannelDialog";
 import { ChannelDetail } from "./channels/ChannelDetail";
 import { ChannelStatusBadges } from "./channels/badges";
 import {
@@ -39,6 +33,7 @@ import {
   type CreateConnectionInput,
 } from "./channels/helpers";
 import { channelActions, type ChannelActionDeps } from "./channels/channelActions";
+import { ChannelDialogs } from "./channels/ChannelDialogs";
 import {
   relayCredentialFor as pickRelayCredential,
   userCredentialFor as pickUserCredential,
@@ -1472,196 +1467,46 @@ export function Channels() {
         </div>
       </div>
 
-      {addOpen ? (
-        <AddChannelDialog
-          pending={createConnection.isPending}
-          error={createConnection.error}
-          onClose={() => {
-            if (createConnection.isPending) return;
-            setAddOpen(false);
-          }}
-          onSave={(value, options) => submitCreate(value, options)}
-        />
-      ) : null}
-      {edit ? (
-        <EditChannelDialog
-          // Remount per channel: every field seeds from `value`, so reusing
-          // the instance across rows would leave the previous channel's
-          // values (notably the sync mode radio) in the form.
-          key={edit.id}
-          value={edit}
-          routeOverviews={routeOverviewsQuery.data}
-          site={edit.site_id != null ? siteById.get(edit.site_id) : undefined}
-          credentials={credentials.data ?? []}
-          credential={(() => {
-            const overview =
-              (overviews.data ?? []).find((row) => row.channel.id === edit.id) ?? null;
-            return overview ? relayCredentialFor(overview) : undefined;
-          })()}
-          userCredential={(() => {
-            const overview =
-              (overviews.data ?? []).find((row) => row.channel.id === edit.id) ?? null;
-            return overview ? userCredentialFor(overview) : undefined;
-          })()}
-          checkinSupported={(() => {
-            const overview =
-              (overviews.data ?? []).find((row) => row.channel.id === edit.id) ?? null;
-            return overview?.checkin_supported ?? false;
-          })()}
-          pending={
-            saveEdit.isPending ||
-            setCredentialStatus.isPending ||
-            addApiKeyCredential.isPending ||
-            deleteApiKeyCredential.isPending
-          }
-          error={
-            saveEdit.error ??
-            setCredentialStatus.error ??
-            addApiKeyCredential.error ??
-            deleteApiKeyCredential.error
-          }
-          onClose={() => {
-            setEdit(null);
-            setModelsChannel(null);
-            setKeysChannel(null);
-          }}
-          onSave={(value) => saveEdit.mutate(value)}
-          onManageModels={() => {
-            setKeysChannel(null);
-            setModelsChannel(edit);
-          }}
-          onManageKeys={() => {
-            setModelsChannel(null);
-            setKeysChannel(edit);
-          }}
-          onRefreshModels={() => {
-            refresh.reset();
-            refresh.mutate(edit.id);
-          }}
-          refreshingModels={refresh.pendingId === edit.id}
-        />
-      ) : null}
-      {createKeyChannel ? (
-        <CreateKeyDialog
-          channelName={createKeyChannel.name}
-          channelId={createKeyChannel.id}
-          pending={createUpstreamKey.isPending}
-          error={createUpstreamKey.error}
-          onClose={() => {
-            if (createUpstreamKey.isPending) return;
-            createUpstreamKey.reset();
-            setCreateKeyChannel(null);
-          }}
-          onCreate={(group) => {
-            // Synchronous re-entry guard: the disabled={pending} button only
-            // takes effect after re-render, so rapid double-clicks could
-            // otherwise create several upstream tokens.
-            if (createKeyLocked.current) return;
-            createKeyLocked.current = true;
-            const input = {
-              id: createKeyChannel.id,
-              name: `gateway-${group || "default"}`,
-              group,
-            };
-            createUpstreamKey.mutate(input, {
-              onSuccess: () => {
-                // Close immediately so the operator cannot click again;
-                // the toast is the success signal.
-                createUpstreamKey.reset();
-                setCreateKeyChannel(null);
-                toast.push({
-                  tone: "success",
-                  message: t("channels.createKeySuccess", {
-                    name: createKeyChannel.name,
-                  }),
-                });
-              },
-              onSettled: () => {
-                createKeyLocked.current = false;
-              },
-            });
-          }}
-          // If the upstream masks the fresh key, offer a one-click sync
-          // import inside the dialog instead of forcing a manual paste.
-          syncPending={syncKeys.isPending}
-          onSync={() => {
-            createUpstreamKey.reset();
-            syncKeys.reset();
-            syncKeys.mutate(createKeyChannel.id);
-          }}
-        />
-      ) : null}
-      {modelsChannel ? (
-        <Drawer
-          title={t("channels.modelsSection")}
-          width={780}
-          onClose={closeModelsDrawer}
-          footer={
-            <Button variant="secondary" onClick={closeModelsDrawer}>
-              {t("common.close")}
-            </Button>
-          }
-        >
-          <ChannelModelsPanel
-            channelId={modelsChannel.id}
-            header={
-              <div className="channel-models-panel-head">
-                <div>
-                  <p className="page-kicker">{modelsChannel.name}</p>
-                  <p className="detail-section-empty is-quiet">{t("channels.modelsManageHint")}</p>
-                </div>
-              </div>
-            }
-          />
-        </Drawer>
-      ) : null}
-      {keysChannel ? (
-        <ChannelKeysDrawer
-          channel={keysChannel}
-          apiKeys={(credentials.data ?? []).filter((item) => item.kind === "api_key")}
-          pending={setCredentialStatus.isPending || deleteApiKeyCredential.isPending}
-          addApiKeyPending={addApiKeyCredential.isPending}
-          syncKeysPending={syncKeys.isPending}
-          onToggleKey={(id, enabled) =>
-            setCredentialStatus.mutate({
-              id,
-              status: enabled ? "enabled" : "disabled",
-            })
-          }
-          onUpdateKeyModels={(id, modelsCsv) => updateKeyModels.mutate({ id, modelsCsv })}
-          onUpdateKeyPriority={(id, priority) => updateKeyPriority.mutate({ id, priority })}
-          onDeleteKey={(id) => deleteApiKeyCredential.mutate(id)}
-          onAddApiKey={(secret, name) => {
-            const siteId = keysChannel.site_id;
-            if (!siteId) return;
-            addApiKeyCredential.mutate({ siteId, secret, name });
-          }}
-          onSyncKeys={() => {
-            syncKeys.reset();
-            syncKeys.mutate(keysChannel.id);
-          }}
-          onClose={() => {
-            setKeysChannel(null);
-            // Strip the deep-link param, or the effect re-opens on the next
-            // render with the stale snapshot (same trap as ?channel=).
-            if (params.has("keys")) {
-              const next = new URLSearchParams(params);
-              next.delete("keys");
-              setParams(next, { replace: true });
-            }
-          }}
-        />
-      ) : null}
-      {remove ? (
-        <ConfirmDialog
-          title={t("channels.deleteTitle")}
-          message={t("channels.deleteMsg", { name: remove.name })}
-          pending={del.isPending}
-          error={del.error}
-          onClose={() => setRemove(null)}
-          onConfirm={() => del.mutate(remove.id)}
-        />
-      ) : null}
+      <ChannelDialogs
+        t={t}
+        toast={toast}
+        params={params}
+        setParams={setParams}
+        siteById={siteById}
+        overviews={overviews.data ?? []}
+        routeOverviews={routeOverviewsQuery.data}
+        credentials={credentials.data ?? []}
+        userCredentialFor={userCredentialFor}
+        relayCredentialFor={relayCredentialFor}
+        addOpen={addOpen}
+        setAddOpen={setAddOpen}
+        edit={edit}
+        setEdit={setEdit}
+        modelsChannel={modelsChannel}
+        setModelsChannel={setModelsChannel}
+        keysChannel={keysChannel}
+        setKeysChannel={setKeysChannel}
+        createKeyChannel={createKeyChannel}
+        setCreateKeyChannel={setCreateKeyChannel}
+        remove={remove}
+        setRemove={setRemove}
+        createKeyLocked={createKeyLocked}
+        closeModelsDrawer={closeModelsDrawer}
+        submitCreate={submitCreate}
+        mutations={{
+          createConnection,
+          saveEdit,
+          setCredentialStatus,
+          addApiKeyCredential,
+          deleteApiKeyCredential,
+          createUpstreamKey,
+          syncKeys,
+          updateKeyModels,
+          updateKeyPriority,
+          refresh,
+          del,
+        }}
+      />
     </Page>
   );
 }

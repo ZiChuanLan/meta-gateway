@@ -18,6 +18,7 @@ export type PickableCredential = {
   id: number;
   site_id: number;
   kind: string;
+  /** The stored status as the API reports it ("enabled" / "disabled" / "auto_disabled"). */
   status: string;
   auth_mode?: string;
   has_secret: boolean;
