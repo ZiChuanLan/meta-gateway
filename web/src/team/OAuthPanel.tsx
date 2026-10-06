@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button, ErrorState, Field, Panel } from "../components/ui";
 import { teamError, type TeamText } from "./text";
 import type { OAuthSettings, Policy, TeamRequest } from "./types";
 
@@ -9,6 +10,11 @@ import type { OAuthSettings, Policy, TeamRequest } from "./types";
  * A provider is only offered on the login page once it is enabled AND has a
  * client id + secret — the console says so explicitly, because a half-filled
  * card is the most likely reason a button does not appear.
+ *
+ * The board is a Panel whose header carries the save action, so the operator does
+ * not have to scroll back to the top to commit a change made in the last card;
+ * the provider cards stay fieldsets, because that is what they are (a named group
+ * of settings), but every control inside them is the shared one.
  */
 export function OAuthPanel({
   request,
@@ -43,13 +49,9 @@ export function OAuthPanel({
   }, [request]);
 
   if (error && !draft) {
-    return (
-      <div className="team-error" role="alert">
-        {teamError(error, locale)}
-      </div>
-    );
+    return <ErrorState error={error} />;
   }
-  if (!draft) return <p>{t("load")}</p>;
+  if (!draft) return <p className="panel-hint">{t("load")}</p>;
 
   const patch = (providerId: string, values: Partial<OAuthSettings["providers"][number]>) =>
     setDraft({
@@ -94,159 +96,153 @@ export function OAuthPanel({
   }
 
   return (
-    <section className="team-oauth">
-      <div className="team-head">
-        <div>
-          <h3 style={{ margin: 0 }}>{t("oauth")}</h3>
-          <p className="team-muted" style={{ margin: "4px 0 0" }}>
-            {t("oauthHint")}
+    <div className="team-board">
+      <Panel
+        title={t("oauth")}
+        titleHelp={t("oauthHint")}
+        actions={
+          <Button loading={busy} disabled={busy} onClick={() => void save()}>
+            {t("save")}
+          </Button>
+        }
+      >
+        {error ? (
+          <p className="inline-error" role="alert">
+            {teamError(error, locale)}
           </p>
-        </div>
-        <button className="team-button primary" disabled={busy} onClick={() => void save()}>
-          {busy ? t("saving") : t("save")}
-        </button>
-      </div>
+        ) : null}
+        {notice ? (
+          <p className="notice" role="status">
+            {notice}
+          </p>
+        ) : null}
 
-      {error ? (
-        <div className="team-error" role="alert">
-          {teamError(error, locale)}
-        </div>
-      ) : null}
-      {notice ? (
-        <div className="team-notice" role="status">
-          {notice}
-        </div>
-      ) : null}
+        <fieldset className="team-section">
+          <legend>{t("oauthRegistration")}</legend>
+          <label className="check marginless">
+            <input
+              type="checkbox"
+              checked={draft.auto_register}
+              onChange={(e) => setDraft({ ...draft, auto_register: e.target.checked })}
+            />
+            <span>{t("oauthAutoRegister")}</span>
+          </label>
+          <p className="panel-hint">{t("oauthAutoRegisterHint")}</p>
+          <Field label={t("oauthDefaultPolicy")}>
+            <select
+              value={draft.default_policy_id}
+              disabled={!draft.auto_register}
+              onChange={(e) => setDraft({ ...draft, default_policy_id: Number(e.target.value) })}
+            >
+              <option value={0}>{t("oauthFirstPolicy")}</option>
+              {policies.map((policy) => (
+                <option key={policy.id} value={policy.id}>
+                  {policy.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </fieldset>
 
-      <fieldset className="team-section">
-        <legend>{t("oauthRegistration")}</legend>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={draft.auto_register}
-            onChange={(e) => setDraft({ ...draft, auto_register: e.target.checked })}
-          />
-          <span>{t("oauthAutoRegister")}</span>
-        </label>
-        <p className="team-muted">{t("oauthAutoRegisterHint")}</p>
-        <label className="team-field">
-          <span>{t("oauthDefaultPolicy")}</span>
-          <select
-            value={draft.default_policy_id}
-            disabled={!draft.auto_register}
-            onChange={(e) => setDraft({ ...draft, default_policy_id: Number(e.target.value) })}
-          >
-            <option value={0}>{t("oauthFirstPolicy")}</option>
-            {policies.map((policy) => (
-              <option key={policy.id} value={policy.id}>
-                {policy.name}
-              </option>
-            ))}
-          </select>
-        </label>
-      </fieldset>
-
-      {draft.providers.map((provider) => {
-        const ready = provider.enabled && provider.client_id && provider.has_secret;
-        return (
-          <fieldset className="team-section team-oauth-card" key={provider.id}>
-            <legend>{provider.label}</legend>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={provider.enabled}
-                onChange={(e) => patch(provider.id, { enabled: e.target.checked })}
-              />
-              <span>{t("oauthEnable", { name: provider.label })}</span>
-            </label>
-
-            <div className="team-callback">
-              <code>{provider.callback_url}</code>
-              <button
-                className="team-button quiet"
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(provider.callback_url)
-                    .then(() => {
-                      setCopied(provider.id);
-                      window.setTimeout(() => setCopied(""), 1600);
-                    })
-                    .catch(() => setCopied(""));
-                }}
-              >
-                {copied === provider.id ? t("copied") : t("copy")}
-              </button>
-            </div>
-            <p className="team-muted">{t("oauthCallbackHint")}</p>
-
-            <div className="team-grid">
-              <label className="team-field">
-                <span>{t("oauthClientID")}</span>
+        {draft.providers.map((provider) => {
+          const ready = provider.enabled && provider.client_id && provider.has_secret;
+          return (
+            <fieldset className="team-section team-oauth-card" key={provider.id}>
+              <legend>{provider.label}</legend>
+              <label className="check marginless">
                 <input
-                  value={provider.client_id}
-                  maxLength={200}
-                  autoComplete="off"
-                  onChange={(e) => patch(provider.id, { client_id: e.target.value })}
+                  type="checkbox"
+                  checked={provider.enabled}
+                  onChange={(e) => patch(provider.id, { enabled: e.target.checked })}
                 />
+                <span>{t("oauthEnable", { name: provider.label })}</span>
               </label>
-              <label className="team-field">
-                <span>
-                  {t("oauthClientSecret")}
-                  {provider.has_secret ? ` · ${t("oauthSecretStored")}` : ""}
-                </span>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder={provider.has_secret ? t("oauthSecretKeep") : ""}
-                  value={secrets[provider.id] ?? ""}
-                  onChange={(e) => setSecrets({ ...secrets, [provider.id]: e.target.value })}
-                />
-              </label>
-              <label className="team-field">
-                <span>{t("oauthScopes")}</span>
-                <input
-                  value={provider.scopes}
-                  placeholder={provider.default_scopes}
-                  onChange={(e) => patch(provider.id, { scopes: e.target.value })}
-                />
-              </label>
-            </div>
 
-            <details className="team-oauth-advanced">
-              <summary>{t("oauthAdvanced")}</summary>
-              <p className="team-muted">{t("oauthAdvancedHint")}</p>
-              <div className="team-grid">
-                <label className="team-field">
-                  <span>{t("oauthAuthorizeURL")}</span>
-                  <input
-                    value={provider.authorize_url}
-                    placeholder={provider.default_authorize_url}
-                    onChange={(e) => patch(provider.id, { authorize_url: e.target.value })}
-                  />
-                </label>
-                <label className="team-field">
-                  <span>{t("oauthTokenURL")}</span>
-                  <input
-                    value={provider.token_url}
-                    placeholder={provider.default_token_url}
-                    onChange={(e) => patch(provider.id, { token_url: e.target.value })}
-                  />
-                </label>
-                <label className="team-field">
-                  <span>{t("oauthUserInfoURL")}</span>
-                  <input
-                    value={provider.userinfo_url}
-                    placeholder={provider.default_userinfo_url}
-                    onChange={(e) => patch(provider.id, { userinfo_url: e.target.value })}
-                  />
-                </label>
+              <div className="team-callback">
+                <code>{provider.callback_url}</code>
+                <Button
+                  variant="quiet"
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(provider.callback_url)
+                      .then(() => {
+                        setCopied(provider.id);
+                        window.setTimeout(() => setCopied(""), 1600);
+                      })
+                      .catch(() => setCopied(""));
+                  }}
+                >
+                  {copied === provider.id ? t("copied") : t("copy")}
+                </Button>
               </div>
-            </details>
+              <p className="panel-hint">{t("oauthCallbackHint")}</p>
 
-            <p className="team-muted">{ready ? t("oauthReady") : t("oauthNotReady")}</p>
-          </fieldset>
-        );
-      })}
-    </section>
+              <div className="meta-form">
+                <Field label={t("oauthClientID")}>
+                  <input
+                    value={provider.client_id}
+                    maxLength={200}
+                    autoComplete="off"
+                    onChange={(e) => patch(provider.id, { client_id: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label={
+                    provider.has_secret
+                      ? `${t("oauthClientSecret")} · ${t("oauthSecretStored")}`
+                      : t("oauthClientSecret")
+                  }
+                >
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder={provider.has_secret ? t("oauthSecretKeep") : ""}
+                    value={secrets[provider.id] ?? ""}
+                    onChange={(e) => setSecrets({ ...secrets, [provider.id]: e.target.value })}
+                  />
+                </Field>
+                <Field label={t("oauthScopes")}>
+                  <input
+                    value={provider.scopes}
+                    placeholder={provider.default_scopes}
+                    onChange={(e) => patch(provider.id, { scopes: e.target.value })}
+                  />
+                </Field>
+              </div>
+
+              <details className="team-oauth-advanced">
+                <summary>{t("oauthAdvanced")}</summary>
+                <p className="panel-hint">{t("oauthAdvancedHint")}</p>
+                <div className="meta-form">
+                  <Field label={t("oauthAuthorizeURL")}>
+                    <input
+                      value={provider.authorize_url}
+                      placeholder={provider.default_authorize_url}
+                      onChange={(e) => patch(provider.id, { authorize_url: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={t("oauthTokenURL")}>
+                    <input
+                      value={provider.token_url}
+                      placeholder={provider.default_token_url}
+                      onChange={(e) => patch(provider.id, { token_url: e.target.value })}
+                    />
+                  </Field>
+                  <Field label={t("oauthUserInfoURL")}>
+                    <input
+                      value={provider.userinfo_url}
+                      placeholder={provider.default_userinfo_url}
+                      onChange={(e) => patch(provider.id, { userinfo_url: e.target.value })}
+                    />
+                  </Field>
+                </div>
+              </details>
+
+              <p className="panel-hint">{ready ? t("oauthReady") : t("oauthNotReady")}</p>
+            </fieldset>
+          );
+        })}
+      </Panel>
+    </div>
   );
 }

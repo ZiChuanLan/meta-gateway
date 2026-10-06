@@ -710,3 +710,37 @@ input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-hei
   background: color-mix(in srgb, var(--danger, #c0392b) 10%, var(--surface));
   color: var(--danger, #c0392b);
 }
+
+/* The shared footer of a form — dialog, drawer or inline editor: the buttons sit
+   together at the trailing edge, in one place, so every surface that saves
+   something ends the same way. */
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 18px 0 0;
+}
+/* A short confirmation line inside a panel (saved, copied, applied). Quiet on
+   purpose: it reports success, it should not shout. */
+.notice {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  color: var(--ink-soft);
+  font: 12px/1.6 var(--font);
+}
+/* A titled block inside a drawer or a dialog: the record's own sub-sections
+   (credit, tokens, sign-ins) read as one column with hairline separators. */
+.drawer-section {
+  margin: 18px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line-light);
+}
+.drawer-section h3 {
+  margin: 0 0 8px;
+  color: var(--ink-primary);
+  font: 600 13px/1.4 var(--font);
+}
