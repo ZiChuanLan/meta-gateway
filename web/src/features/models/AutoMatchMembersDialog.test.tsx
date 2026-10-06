@@ -19,34 +19,44 @@ function route(): Route {
 }
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
-function mockBackend(options: {
-  items?: Array<{ channel_id: number; channel_name: string; source: string; model?: string }>;
-} = {}) {
-  const attach = vi.fn((body: Record<string, unknown>) => json({
-    // The server reports what it actually did; the dialog surfaces both counts.
-    added: (body.channel_ids as number[]).length,
-    skipped: 0,
-  }));
+function mockBackend(
+  options: {
+    items?: Array<{ channel_id: number; channel_name: string; source: string; model?: string }>;
+  } = {},
+) {
+  const attach = vi.fn((body: Record<string, unknown>) =>
+    json({
+      // The server reports what it actually did; the dialog surfaces both counts.
+      added: (body.channel_ids as number[]).length,
+      skipped: 0,
+    }),
+  );
   const previews: URL[] = [];
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(String(input), "http://localhost");
-    if (url.pathname === "/admin/discovery/model-channels") {
-      previews.push(url);
-      return json({
-        items: options.items ?? [
-          { channel_id: 11, channel_name: "serving", source: "models_csv" },
-          { channel_id: 12, channel_name: "also-serving", source: "discovered" },
-        ],
-      });
-    }
-    if (url.pathname === "/admin/routes/1/auto-match") {
-      return attach(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-    }
-    return json({});
-  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/admin/discovery/model-channels") {
+        previews.push(url);
+        return json({
+          items: options.items ?? [
+            { channel_id: 11, channel_name: "serving", source: "models_csv" },
+            { channel_id: 12, channel_name: "also-serving", source: "discovered" },
+          ],
+        });
+      }
+      if (url.pathname === "/admin/routes/1/auto-match") {
+        return attach(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      }
+      return json({});
+    }),
+  );
   return { attach, previews };
 }
 
@@ -55,7 +65,9 @@ function renderDialog({
   attachedChannelIds = [] as number[],
   onClose = () => {},
 } = {}) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   clients.push(client);
   return render(
     <QueryClientProvider client={client}>
@@ -77,12 +89,15 @@ function renderDialog({
 
 describe("auto-match members dialog", () => {
   beforeEach(() => {
-    localStorage.clear(); sessionStorage.clear();
+    localStorage.clear();
+    sessionStorage.clear();
     localStorage.setItem("meta-gateway.locale", "en");
     localStorage.setItem("meta-gateway.admin-token", "test-token");
   });
   afterEach(() => {
-    cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.unstubAllGlobals();
+    cleanup();
+    clients.splice(0).forEach((client) => client.clear());
+    vi.unstubAllGlobals();
   });
 
   it("previews every serving channel, pre-ticked, and attaches only on confirm", async () => {
@@ -145,9 +160,7 @@ describe("auto-match members dialog", () => {
     fireEvent.click(screen.getByRole("radio", { name: /Related:/ }));
     expect(await screen.findByText("matched deepseek-v4-flash-free")).toBeInTheDocument();
     // The scope reaches the server on the preview request, not only on attach.
-    await waitFor(() =>
-      expect(backend.previews.at(-1)?.searchParams.get("match")).toBe("related"),
-    );
+    await waitFor(() => expect(backend.previews.at(-1)?.searchParams.get("match")).toBe("related"));
 
     fireEvent.click(screen.getByRole("button", { name: "Attach 2 channel(s)" }));
     await waitFor(() => expect(backend.attach).toHaveBeenCalledOnce());
@@ -187,13 +200,16 @@ describe("auto-match members dialog", () => {
   });
 
   it("surfaces a match lookup failure instead of an empty list", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = new URL(String(input), "http://localhost").pathname;
-      if (path === "/admin/discovery/model-channels") {
-        return json({ error: "discovery unavailable" }, 503);
-      }
-      return json({});
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = new URL(String(input), "http://localhost").pathname;
+        if (path === "/admin/discovery/model-channels") {
+          return json({ error: "discovery unavailable" }, 503);
+        }
+        return json({});
+      }),
+    );
     renderDialog();
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.queryByText(/No enabled channel serves this model/)).not.toBeInTheDocument();

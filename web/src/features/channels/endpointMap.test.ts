@@ -29,7 +29,13 @@ const fieldRow = (partial: Partial<FieldMapRow>): FieldMapRow => ({
 
 describe("validateJSONPath", () => {
   it("accepts the paths the engine resolves", () => {
-    for (const path of ["messages.0.content", "choices[0].message", "messages.#.image_url", "a[0]", "model"]) {
+    for (const path of [
+      "messages.0.content",
+      "choices[0].message",
+      "messages.#.image_url",
+      "a[0]",
+      "model",
+    ]) {
       expect(validateJSONPath(path)).toBeNull();
     }
   });
@@ -54,7 +60,7 @@ describe("path map", () => {
       { from: "/chat/completions", to: "v1/systemone" },
     ]);
     expect(json).toBe(
-      JSON.stringify({ "chat/completions": "v1/systemone", models: "v1/models" }, null, 2)
+      JSON.stringify({ "chat/completions": "v1/systemone", models: "v1/models" }, null, 2),
     );
   });
 
@@ -103,14 +109,24 @@ describe("field maps", () => {
     ]);
     const parsed = parseFieldMap(raw);
     expect(parsed.error).toBeNull();
-		expect(parsed.rows.map((row) => row.mode)).toEqual(["copy", "move", "template", "value", "keep"]);
-		expect(parsed.rows.map((row) => row.valueType)[3]).toBe("num");
-		expect(parsed.rows.map((row) => row.keep)[4]).toBe("model, state");
+    expect(parsed.rows.map((row) => row.mode)).toEqual([
+      "copy",
+      "move",
+      "template",
+      "value",
+      "keep",
+    ]);
+    expect(parsed.rows.map((row) => row.valueType)[3]).toBe("num");
+    expect(parsed.rows.map((row) => row.keep)[4]).toBe("model, state");
   });
 
   it("remembers the literal type of a value node", () => {
     const parsed = parseFieldMap(
-      JSON.stringify([{ to: "a", value: { str: "x" } }, { to: "b", value: { bool: false } }, { to: "c", value: { null: true } }])
+      JSON.stringify([
+        { to: "a", value: { str: "x" } },
+        { to: "b", value: { bool: false } },
+        { to: "c", value: { null: true } },
+      ]),
     );
     expect(parsed.rows.map((row) => row.valueType)).toEqual(["str", "bool", "null"]);
   });
@@ -138,7 +154,7 @@ describe("field maps", () => {
     expect(serializeFieldMap([fieldRow({})])).toBe("");
     expect(serializeFieldMap([fieldRow({ mode: "keep", keep: " , " })])).toBe("");
     expect(serializeFieldMap([fieldRow({ mode: "copy", from: "a" })])).toBe(
-      JSON.stringify([{ from: "a" }], null, 2)
+      JSON.stringify([{ from: "a" }], null, 2),
     );
   });
 
@@ -160,7 +176,7 @@ describe("field maps", () => {
       validateFieldMapRows([
         fieldRow({ mode: "copy", from: "messages.0.content", to: "state" }),
         fieldRow({ mode: "keep", keep: "model, state" }),
-      ])
+      ]),
     ).toEqual([]);
   });
 });
@@ -190,13 +206,21 @@ describe("summarizeEndpoints", () => {
 
   it("counts issues from every column, including the override", () => {
     expect(
-      summarizeEndpoints({ ...value, pathOverride: "bad path", pathMap: "{oops" }).issues
+      summarizeEndpoints({ ...value, pathOverride: "bad path", pathMap: "{oops" }).issues,
     ).toBe(2);
   });
 
   it("treats an empty mapping as no mapping", () => {
-    const summary = summarizeEndpoints({ pathOverride: "", pathMap: "", requestMap: "", responseMap: "" });
+    const summary = summarizeEndpoints({
+      pathOverride: "",
+      pathMap: "",
+      requestMap: "",
+      responseMap: "",
+    });
     expect(summary).toMatchObject({ pathCount: 0, requestCount: 0, responseCount: 0, issues: 0 });
-    expect(parseEndpointMap({ pathOverride: "", pathMap: "", requestMap: "", responseMap: "" }).pathMapError).toBeNull();
+    expect(
+      parseEndpointMap({ pathOverride: "", pathMap: "", requestMap: "", responseMap: "" })
+        .pathMapError,
+    ).toBeNull();
   });
 });

@@ -58,10 +58,7 @@ export function ModelsWorkspace({
   const arranged = useQuery({
     queryKey: ["user", userID, "routes", planId],
     queryFn: ({ signal }) =>
-      accountRequest<RouteList>(
-        `/me/routes${planId ? `?plan_id=${planId}` : ""}`,
-        { signal },
-      ),
+      accountRequest<RouteList>(`/me/routes${planId ? `?plan_id=${planId}` : ""}`, { signal }),
     enabled: canRoute,
   });
   const [search, setSearch] = useState("");
@@ -70,21 +67,16 @@ export function ModelsWorkspace({
   const [selection, setSelection] = useState("");
 
   const items = useMemo(() => query.data ?? [], [query.data]);
-  const arrangedModels = useMemo(
-    () => new Set(arranged.data?.models ?? []),
-    [arranged.data],
-  );
+  const arrangedModels = useMemo(() => new Set(arranged.data?.models ?? []), [arranged.data]);
   const groups = useMemo(
-    () =>
-      [...new Set(items.map((model) => autoModelGroup(model.name, model.vendor)))].sort(),
+    () => [...new Set(items.map((model) => autoModelGroup(model.name, model.vendor)))].sort(),
     [items],
   );
   const filtered = useMemo(
     () =>
       items.filter(
         (model) =>
-          (group === "all" ||
-            autoModelGroup(model.name, model.vendor) === group) &&
+          (group === "all" || autoModelGroup(model.name, model.vendor) === group) &&
           `${model.name} ${model.vendor} ${model.kind}`
             .toLowerCase()
             .includes(search.toLowerCase()),
@@ -92,7 +84,7 @@ export function ModelsWorkspace({
     [items, group, search],
   );
   const pagination = useClientPagination(filtered);
-  const selected = filtered.find((model)=>model.name===selection) ?? filtered[0];
+  const selected = filtered.find((model) => model.name === selection) ?? filtered[0];
 
   return (
     <Page
@@ -126,125 +118,208 @@ export function ModelsWorkspace({
             label: t("authorizedCandidates"),
             value: items.reduce((sum, model) => sum + model.candidates, 0),
           },
-          ...(canRoute
-            ? [{ label: t("arrangedBadge"), value: arrangedModels.size }]
-            : []),
+          ...(canRoute ? [{ label: t("arrangedBadge"), value: arrangedModels.size }] : []),
         ]}
       />
-      <ModelWorkspaceLayout variant="cards" directory={
-      <Panel className="ops-list-panel model-directory" title={ui("modelsPage.listTitle")}>
-      <ModelFamilyFilters groups={groups} value={group === "all" ? "" : group} onChange={(value)=>{setGroup(value || "all");pagination.setPage(1);}} />
-      <ModelDirectoryToolbar value={search} label={ui("routing.searchPlaceholder")} onChange={(value) => {
-        setSearch(value);
-        pagination.setPage(1);
-      }}>
-        {canRoute ? (
-          <label className="models-plan-picker">
-            <span className="workspace-caption">{t("planScope")}</span>
-            <select
-              value={planId}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (value === -1) onCreatePlan();
-                else onPlanChange(value);
+      <ModelWorkspaceLayout
+        variant="cards"
+        directory={
+          <Panel className="ops-list-panel model-directory" title={ui("modelsPage.listTitle")}>
+            <ModelFamilyFilters
+              groups={groups}
+              value={group === "all" ? "" : group}
+              onChange={(value) => {
+                setGroup(value || "all");
+                pagination.setPage(1);
+              }}
+            />
+            <ModelDirectoryToolbar
+              value={search}
+              label={ui("routing.searchPlaceholder")}
+              onChange={(value) => {
+                setSearch(value);
+                pagination.setPage(1);
               }}
             >
-              <option value={0}>{t("myDefaultOrder")}</option>
-              {plans
-                .filter((plan) => !plan.default)
-                .map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.name}
-                  </option>
-                ))}
-              <option value={-1}>{t("newPlanOption")}</option>
-            </select>
-          </label>
-        ) : null}
-      </ModelDirectoryToolbar>
-      {query.isPending ? (
-        <Loading />
-      ) : query.error ? (
-        <ErrorState error={query.error} retry={() => void query.refetch()} />
-      ) : !items.length ? (
-        <EmptyHero title={t("noModels")} body={t("modelsWorkspaceHint")} />
-      ) : !filtered.length ? (
-        <EmptyHero title={ui("modelsPage.noMatches")} body={ui("modelsPage.noMatchesHint")} actions={<Button variant="secondary" onClick={() => { setSearch(""); setGroup("all"); }}>{ui("modelsPage.clearFilters")}</Button>} />
-      ) : (
-        <ListShell
-          footer={
-            <PaginationBar
-              {...pagination}
-              onPageChange={pagination.setPage}
-              onPageSizeChange={pagination.setPageSize}
-            />
-          }
-        >
-          {/* The console's own directory table (ModelDirectoryTable): same
+              {canRoute ? (
+                <label className="models-plan-picker">
+                  <span className="workspace-caption">{t("planScope")}</span>
+                  <select
+                    value={planId}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      if (value === -1) onCreatePlan();
+                      else onPlanChange(value);
+                    }}
+                  >
+                    <option value={0}>{t("myDefaultOrder")}</option>
+                    {plans
+                      .filter((plan) => !plan.default)
+                      .map((plan) => (
+                        <option key={plan.id} value={plan.id}>
+                          {plan.name}
+                        </option>
+                      ))}
+                    <option value={-1}>{t("newPlanOption")}</option>
+                  </select>
+                </label>
+              ) : null}
+            </ModelDirectoryToolbar>
+            {query.isPending ? (
+              <Loading />
+            ) : query.error ? (
+              <ErrorState error={query.error} retry={() => void query.refetch()} />
+            ) : !items.length ? (
+              <EmptyHero title={t("noModels")} body={t("modelsWorkspaceHint")} />
+            ) : !filtered.length ? (
+              <EmptyHero
+                title={ui("modelsPage.noMatches")}
+                body={ui("modelsPage.noMatchesHint")}
+                actions={
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setSearch("");
+                      setGroup("all");
+                    }}
+                  >
+                    {ui("modelsPage.clearFilters")}
+                  </Button>
+                }
+              />
+            ) : (
+              <ListShell
+                footer={
+                  <PaginationBar
+                    {...pagination}
+                    onPageChange={pagination.setPage}
+                    onPageSizeChange={pagination.setPageSize}
+                  />
+                }
+              >
+                {/* The console's own directory table (ModelDirectoryTable): same
               name cell, group + metadata badges, actions column. The member
               view drops the operator columns (upstream, status) and renders
               its own actions per row — the rows are the same object, seen
               without the site's internals. */}
-          <div className="table-wrap model-directory-wrap">
-          <ModelDirectoryTable
-            showUpstream={false}
-            showStatus={false}
-            rows={pagination.pageItems.map((model) => ({
-              name: model.name,
-              facts: <ModelFacts compact contextWindow={model.context_window} input={model.input_modalities} output={model.output_modalities} thinking={model.supports_thinking} />,
-              prices: !/[*?]/.test(model.name) ? <ModelPriceSummary model={model.name} scope="member" request={accountRequest} /> : null,
-              className: selected?.name === model.name ? "is-selected" : undefined,
-              tabIndex: 0,
-              onClick: () => setSelection(model.name),
-              onKeyDown: (event) => { if(event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelection(model.name); } },
-              group: model.vendor || autoModelGroup(model.name),
-              provider: (
-                <small className="model-nav-provider">
-                  {model.kind || t("unspecified")}
-                  {arrangedModels.has(model.name) ? ` · ${t("arrangedBadge")}` : ""}
-                </small>
-              ),
-              badges: (
-                <span className="model-meta-badges">
-                  {(model.input_modalities || "")
-                    .split(",")
-                    .filter(Boolean)
-                    .map((modality) => (
-                      <span key={modality} className="model-meta-badge">
-                        {modality}
-                      </span>
-                    ))}
-                  {/* The output is only news when it differs from the input:
+                <div className="table-wrap model-directory-wrap">
+                  <ModelDirectoryTable
+                    showUpstream={false}
+                    showStatus={false}
+                    rows={pagination.pageItems.map((model) => ({
+                      name: model.name,
+                      facts: (
+                        <ModelFacts
+                          compact
+                          contextWindow={model.context_window}
+                          input={model.input_modalities}
+                          output={model.output_modalities}
+                          thinking={model.supports_thinking}
+                        />
+                      ),
+                      prices: !/[*?]/.test(model.name) ? (
+                        <ModelPriceSummary
+                          model={model.name}
+                          scope="member"
+                          request={accountRequest}
+                        />
+                      ) : null,
+                      className: selected?.name === model.name ? "is-selected" : undefined,
+                      tabIndex: 0,
+                      onClick: () => setSelection(model.name),
+                      onKeyDown: (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelection(model.name);
+                        }
+                      },
+                      group: model.vendor || autoModelGroup(model.name),
+                      provider: (
+                        <small className="model-nav-provider">
+                          {model.kind || t("unspecified")}
+                          {arrangedModels.has(model.name) ? ` · ${t("arrangedBadge")}` : ""}
+                        </small>
+                      ),
+                      badges: (
+                        <span className="model-meta-badges">
+                          {(model.input_modalities || "")
+                            .split(",")
+                            .filter(Boolean)
+                            .map((modality) => (
+                              <span key={modality} className="model-meta-badge">
+                                {modality}
+                              </span>
+                            ))}
+                          {/* The output is only news when it differs from the input:
                       "text → text" is noise for every chat model. */}
-                  {model.output_modalities &&
-                  model.output_modalities !== model.input_modalities ? (
-                    <span className="model-meta-badge">
-                      → {model.output_modalities}
-                    </span>
-                  ) : null}
-                </span>
-              ),
-              status: "enabled" as const,
-              actions: (
-                <div className="member-model-actions">
-                  <Button variant="quiet" data-model-details aria-label={ui("modelsPage.viewDetails", {model:model.name})} onClick={()=>setSelection(model.name)}>{ui("modelsPage.cardDetailsShort")}</Button>
-                  <Button variant="secondary" icon={<ArrowUpRight size={14}/>} onClick={()=>onConnect(model.name)}>{t("connect")}</Button>
+                          {model.output_modalities &&
+                          model.output_modalities !== model.input_modalities ? (
+                            <span className="model-meta-badge">→ {model.output_modalities}</span>
+                          ) : null}
+                        </span>
+                      ),
+                      status: "enabled" as const,
+                      actions: (
+                        <div className="member-model-actions">
+                          <Button
+                            variant="quiet"
+                            data-model-details
+                            aria-label={ui("modelsPage.viewDetails", { model: model.name })}
+                            onClick={() => setSelection(model.name)}
+                          >
+                            {ui("modelsPage.cardDetailsShort")}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            icon={<ArrowUpRight size={14} />}
+                            onClick={() => onConnect(model.name)}
+                          >
+                            {t("connect")}
+                          </Button>
+                        </div>
+                      ),
+                    }))}
+                  />
                 </div>
-              ),
-            }))}
-          />
-          </div>
-        </ListShell>
-      )}
-      </Panel>
-      } detail={selected ? <>
-        <div className="detail-head"><div><h2 className="mono">{selected.name}</h2><small>{selected.vendor || selected.kind || t("unspecified")}</small></div></div>
-        <div className="detail-primary-bar">
-          <Button icon={<ArrowUpRight size={14} />} onClick={()=>onConnect(selected.name)}>{t("connect")}</Button>
-          {canRoute ? <Button variant="secondary" icon={<SlidersHorizontal size={14} />} onClick={()=>setArranging(selected.name)}>{t("arrange")}</Button> : null}
-        </div>
-        <ModelFacts contextWindow={selected.context_window} input={selected.input_modalities} output={selected.output_modalities} thinking={selected.supports_thinking} />
-      </> : <div className="detail-empty">{ui("modelsPage.selectHint")}</div>} />
+              </ListShell>
+            )}
+          </Panel>
+        }
+        detail={
+          selected ? (
+            <>
+              <div className="detail-head">
+                <div>
+                  <h2 className="mono">{selected.name}</h2>
+                  <small>{selected.vendor || selected.kind || t("unspecified")}</small>
+                </div>
+              </div>
+              <div className="detail-primary-bar">
+                <Button icon={<ArrowUpRight size={14} />} onClick={() => onConnect(selected.name)}>
+                  {t("connect")}
+                </Button>
+                {canRoute ? (
+                  <Button
+                    variant="secondary"
+                    icon={<SlidersHorizontal size={14} />}
+                    onClick={() => setArranging(selected.name)}
+                  >
+                    {t("arrange")}
+                  </Button>
+                ) : null}
+              </div>
+              <ModelFacts
+                contextWindow={selected.context_window}
+                input={selected.input_modalities}
+                output={selected.output_modalities}
+                thinking={selected.supports_thinking}
+              />
+            </>
+          ) : (
+            <div className="detail-empty">{ui("modelsPage.selectHint")}</div>
+          )
+        }
+      />
       {arranging ? (
         <RouteOrderDialog
           model={arranging}

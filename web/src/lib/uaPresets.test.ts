@@ -13,9 +13,9 @@ describe("uaPresets", () => {
   });
 
   it("reads the User-Agent out of a header_override JSON", () => {
-    expect(
-      uaFromHeaderOverride('{"User-Agent": "claude-cli/2.1.161", "X-A": "1"}'),
-    ).toBe("claude-cli/2.1.161");
+    expect(uaFromHeaderOverride('{"User-Agent": "claude-cli/2.1.161", "X-A": "1"}')).toBe(
+      "claude-cli/2.1.161",
+    );
     expect(uaFromHeaderOverride('{"X-A": "1"}')).toBe("");
     expect(uaFromHeaderOverride("not json")).toBe("");
   });
@@ -33,10 +33,7 @@ describe("uaPresets", () => {
   });
 
   it("removes the User-Agent key when blank", () => {
-    const next = setUAInHeaderOverride(
-      '{"User-Agent": "claude-cli/2.1.161", "X-A": "1"}',
-      "",
-    );
+    const next = setUAInHeaderOverride('{"User-Agent": "claude-cli/2.1.161", "X-A": "1"}', "");
     expect(JSON.parse(next)).toEqual({ "X-A": "1" });
   });
 

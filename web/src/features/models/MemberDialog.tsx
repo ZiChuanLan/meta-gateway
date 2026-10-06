@@ -1,13 +1,7 @@
 import { PriceFields, PricingRules } from "./PriceFields";
 import { useState } from "react";
 import type { RouteMember } from "../../api/types";
-import {
-  Button,
-  Dialog,
-  ErrorState,
-  Field,
-  InfoTip,
-} from "../../components/ui";
+import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { memberRealName, serializeMemberMapping } from "../../lib/alias";
 import {
@@ -55,9 +49,7 @@ export function MemberDialog({
   const [tiersEdited, setTiersEdited] = useState(false);
   const [windowsEdited, setWindowsEdited] = useState(false);
   const [tiers, setTiers] = useState(() => parseTiers(value.price_tiers));
-  const [windows, setWindows] = useState(() =>
-    parseWindows(value.price_schedule),
-  );
+  const [windows, setWindows] = useState(() => parseWindows(value.price_schedule));
   return (
     <Dialog
       title={value.id ? t("routing.editMember") : t("routing.addMember")}
@@ -80,12 +72,9 @@ export function MemberDialog({
               const next: Partial<RouteMember> = {
                 ...form,
                 ...(tiersEdited ? { price_tiers: encodeTiers(tiers) } : {}),
-                ...(windowsEdited
-                  ? { price_schedule: encodeWindows(windows) }
-                  : {}),
+                ...(windowsEdited ? { price_schedule: encodeWindows(windows) } : {}),
                 ...(valuesTouched &&
-                (form.priority !== value.priority ||
-                  form.weight !== value.weight)
+                (form.priority !== value.priority || form.weight !== value.weight)
                   ? { manual_override: true }
                   : {}),
               };
@@ -99,8 +88,7 @@ export function MemberDialog({
                   Object.entries(next).filter(
                     ([key, item]) =>
                       key === "id" ||
-                      JSON.stringify(item) !==
-                        JSON.stringify(value[key as keyof RouteMember]),
+                      JSON.stringify(item) !== JSON.stringify(value[key as keyof RouteMember]),
                   ),
                 ) as Partial<RouteMember>,
               );
@@ -185,9 +173,7 @@ export function MemberDialog({
       <Field label={t("routing.memberGroupLabel")}>
         <select
           value={form.group_name || "default"}
-          onChange={(event) =>
-            setForm({ ...form, group_name: event.target.value || "default" })
-          }
+          onChange={(event) => setForm({ ...form, group_name: event.target.value || "default" })}
         >
           {[...new Set(["default", ...groups])].map((group) => (
             <option key={group} value={group}>
@@ -213,9 +199,7 @@ export function MemberDialog({
         <input
           type="checkbox"
           checked={form.enabled ?? true}
-          onChange={(event) =>
-            setForm({ ...form, enabled: event.target.checked })
-          }
+          onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
         />
         <span>
           <strong>{t("routing.enabledLabel")}</strong>

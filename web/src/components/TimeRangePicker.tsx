@@ -76,8 +76,7 @@ export function useTimeRange(
   const [preset, setPresetState] = useState(initialPreset);
   const [drafts, setDrafts] = useState<{ since: string; until: string }>(() => ({
     since:
-      toLocalInput(seed?.since) ||
-      toLocalInput(new Date(Date.now() - 60 * 60_000).toISOString()),
+      toLocalInput(seed?.since) || toLocalInput(new Date(Date.now() - 60 * 60_000).toISOString()),
     until: toLocalInput(seed?.until) || toLocalInput(new Date().toISOString()),
   }));
   const [tick, setTick] = useState(0);
@@ -98,9 +97,7 @@ export function useTimeRange(
   const draftSince = fromLocalInput(drafts.since);
   const draftUntil = fromLocalInput(drafts.until);
   const draftValid =
-    !draftSince ||
-    !draftUntil ||
-    new Date(draftUntil).getTime() >= new Date(draftSince).getTime();
+    !draftSince || !draftUntil || new Date(draftUntil).getTime() >= new Date(draftSince).getTime();
 
   const bounds = useMemo(() => {
     if (preset === CUSTOM_PRESET) {
@@ -221,9 +218,7 @@ export function TimeRangePicker({
         </div>
       ) : null}
       <div className="time-range-meta">
-        <span className="time-range-caption">
-          {describeRange(range.since, range.until, t)}
-        </span>
+        <span className="time-range-caption">{describeRange(range.since, range.until, t)}</span>
         <Button
           variant="quiet"
           icon={<RefreshCw size={13} />}
@@ -246,14 +241,13 @@ export function TimeRangePicker({
  */
 export function useUrlTimeRange(
   params: URLSearchParams,
-  setParams: (
-    next: URLSearchParams,
-    options?: { replace?: boolean },
-  ) => void,
+  setParams: (next: URLSearchParams, options?: { replace?: boolean }) => void,
   defaultPreset = "24h",
 ): TimeRangeController {
   // The seed is read once: a later navigation must not yank the picker back.
-  const seedRef = useRef<{ preset: string; seed?: { since?: string; until?: string } } | null>(null);
+  const seedRef = useRef<{ preset: string; seed?: { since?: string; until?: string } } | null>(
+    null,
+  );
   if (seedRef.current == null) {
     const raw = (params.get("range") ?? "").trim();
     const known = raw === CUSTOM_PRESET || TIME_PRESETS.some((p) => p.id === raw);

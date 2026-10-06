@@ -3,13 +3,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { SearchableSelect } from "../../components/SearchableSelect";
-import {
-  Button,
-  Dialog,
-  ErrorState,
-  Field,
-  InfoTip,
-} from "../../components/ui";
+import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { PROVIDER_BASE_URLS } from "../../connectionTypes";
 import { apiKeyLooksWrong, keyHintFor } from "../../lib/apiKeyPaste";
@@ -50,11 +44,11 @@ export function AddChannelDialog({
   // which is what used to push operators into hand-written endpoint overrides.
   // Showing the resolved URL in the dialog makes a wrong join obvious up front.
   const [endpointPreview, setEndpointPreview] = useState<string | null>(null);
-	const canSubmit = Boolean(baseUrl.trim() && secret.trim());
-	// A hint, not a rule: relay sites issue whatever token they like, so a
-	// mismatch only ever earns a note next to the field.
-	const secretHint = keyHintFor(typeHint);
-	const secretLooksWrong = apiKeyLooksWrong(typeHint, secret);
+  const canSubmit = Boolean(baseUrl.trim() && secret.trim());
+  // A hint, not a rule: relay sites issue whatever token they like, so a
+  // mismatch only ever earns a note next to the field.
+  const secretHint = keyHintFor(typeHint);
+  const secretLooksWrong = apiKeyLooksWrong(typeHint, secret);
 
   // The sync mode is a per-channel decision with a real operational cost, so
   // it is asked up front instead of being silently inherited. The system
@@ -65,9 +59,7 @@ export function AddChannelDialog({
     retry: false,
   });
   const defaultSyncMode: ModelSyncMode =
-    runtimeSettings.data?.editable.default_model_sync_mode === "auto"
-      ? "auto"
-      : "manual";
+    runtimeSettings.data?.editable.default_model_sync_mode === "auto" ? "auto" : "manual";
   const [syncMode, setSyncMode] = useState<ModelSyncMode | null>(null);
   const effectiveSyncMode = syncMode ?? defaultSyncMode;
 
@@ -121,8 +113,7 @@ export function AddChannelDialog({
                 const previousDefault = PROVIDER_BASE_URLS[typeHint] ?? "";
                 if (
                   currentTrimmed === "" ||
-                  (previousDefault &&
-                    currentTrimmed === previousDefault.replace(/\/+$/, ""))
+                  (previousDefault && currentTrimmed === previousDefault.replace(/\/+$/, ""))
                 ) {
                   return PROVIDER_BASE_URLS[provider] ?? "";
                 }
@@ -165,10 +156,7 @@ export function AddChannelDialog({
                   // Never clobber an explicit choice: the operator picked a
                   // provider, and this heuristic has no authority over that.
                   if (typeTouched) return;
-                  if (
-                    detected.family &&
-                    TYPE_OPTIONS.some((o) => o.value === detected.family)
-                  ) {
+                  if (detected.family && TYPE_OPTIONS.some((o) => o.value === detected.family)) {
                     setTypeHint(detected.family);
                   }
                 })
@@ -190,33 +178,27 @@ export function AddChannelDialog({
             disabled={pending}
           />
         </Field>
-		<Field
-		  label={t("common.secret")}
-		  hint={secretHint || undefined}
-		>
-		  <input
-			type="password"
-			autoComplete="new-password"
-			required
-			value={secret}
-			onChange={(e) => setSecret(e.target.value)}
-			disabled={pending}
-		  />
-		  {secretLooksWrong ? (
-			<p className="map-row-error">
-			  {t("channels.keyFormatMismatch", {
-				type: typeHint,
-				hint: secretHint,
-			  })}
-			</p>
-		  ) : null}
-		</Field>
+        <Field label={t("common.secret")} hint={secretHint || undefined}>
+          <input
+            type="password"
+            autoComplete="new-password"
+            required
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            disabled={pending}
+          />
+          {secretLooksWrong ? (
+            <p className="map-row-error">
+              {t("channels.keyFormatMismatch", {
+                type: typeHint,
+                hint: secretHint,
+              })}
+            </p>
+          ) : null}
+        </Field>
       </div>
 
-      <section
-        className="detail-section connection-subpanel"
-        aria-label={t("channels.syncMode")}
-      >
+      <section className="detail-section connection-subpanel" aria-label={t("channels.syncMode")}>
         <div className="detail-section-head">
           <h3>{t("channels.modelsSection")}</h3>
         </div>

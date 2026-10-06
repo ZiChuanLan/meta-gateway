@@ -85,9 +85,7 @@ export function NewMemberDialog({
             <button
               className="team-button quiet"
               onClick={() =>
-                void navigator.clipboard.writeText(
-                  `${created.username} / ${created.password}`,
-                )
+                void navigator.clipboard.writeText(`${created.username} / ${created.password}`)
               }
             >
               {t("copy")}
@@ -130,7 +128,14 @@ export function NewMemberDialog({
               <input name="quota_tokens" type="number" min={0} step={1000} defaultValue={0} />
             </Field>
             <Field label={t("quotaCostTotal")}>
-              <input name="quota_cost" type="number" min={0} step="0.01" defaultValue={0} placeholder="0" />
+              <input
+                name="quota_cost"
+                type="number"
+                min={0}
+                step="0.01"
+                defaultValue={0}
+                placeholder="0"
+              />
             </Field>
           </div>
           <p className="team-muted">{t("quotaHint")}</p>
@@ -184,7 +189,7 @@ export function ImportMembersDialog({
           text: form.get("text"),
           policy_id: Number(form.get("policy_id") ?? 0),
           quota_tokens: Number(form.get("quota_tokens") ?? 0),
-        quota_cost: Number(form.get("quota_cost") ?? 0),
+          quota_cost: Number(form.get("quota_cost") ?? 0),
         }),
       });
       setOutcome(result);
@@ -252,7 +257,9 @@ export function ImportMembersDialog({
               rows={10}
               required
               spellCheck={false}
-              placeholder={"alice,Alice,password-123\nalice,Alice,password-123,500000\n# comments and blank lines are ignored"}
+              placeholder={
+                "alice,Alice,password-123\nalice,Alice,password-123,500000\n# comments and blank lines are ignored"
+              }
             />
           </Field>
           <p className="team-muted">{t("importHint")}</p>
@@ -270,7 +277,14 @@ export function ImportMembersDialog({
               <input name="quota_tokens" type="number" min={0} step={1000} defaultValue={0} />
             </Field>
             <Field label={t("quotaCostTotal")}>
-              <input name="quota_cost" type="number" min={0} step="0.01" defaultValue={0} placeholder="0" />
+              <input
+                name="quota_cost"
+                type="number"
+                min={0}
+                step="0.01"
+                defaultValue={0}
+                placeholder="0"
+              />
             </Field>
           </div>
           <p className="team-muted">{t("quotaHint")}</p>
@@ -322,8 +336,13 @@ export function QuotaDialog({
   // the previous limit while telling the operator the save succeeded.
   const tokenLimit = total.trim() === "" ? 0 : Number(total);
   const moneyLimit = costTotal.trim() === "" ? 0 : Number(costTotal);
-  const valid = Number.isSafeInteger(tokenLimit) && tokenLimit >= 0 && tokenLimit <= 1_000_000_000_000 &&
-    Number.isFinite(moneyLimit) && moneyLimit >= 0 && moneyLimit <= 1_000_000;
+  const valid =
+    Number.isSafeInteger(tokenLimit) &&
+    tokenLimit >= 0 &&
+    tokenLimit <= 1_000_000_000_000 &&
+    Number.isFinite(moneyLimit) &&
+    moneyLimit >= 0 &&
+    moneyLimit <= 1_000_000;
   async function save() {
     if (!valid || submitting.current) return;
     submitting.current = true;
@@ -349,11 +368,7 @@ export function QuotaDialog({
   }
 
   return (
-    <TeamModal
-      title={`${t("quota")} · ${user.name}`}
-      onClose={onClose}
-      busy={busy}
-    >
+    <TeamModal title={`${t("quota")} · ${user.name}`} onClose={onClose} busy={busy}>
       <p className="team-muted">
         {t("quotaUsed", {
           used: user.quota_used_tokens.toLocaleString(),
@@ -372,7 +387,9 @@ export function QuotaDialog({
             min={0}
             step={1}
             max={1_000_000_000_000}
-            aria-invalid={!Number.isSafeInteger(tokenLimit) || tokenLimit < 0 || tokenLimit > 1_000_000_000_000}
+            aria-invalid={
+              !Number.isSafeInteger(tokenLimit) || tokenLimit < 0 || tokenLimit > 1_000_000_000_000
+            }
             value={total}
             onChange={(e) => setTotal(e.target.value)}
           />
@@ -391,11 +408,7 @@ export function QuotaDialog({
         </Field>
         <Field label={t("quotaReset")}>
           <label className="check">
-            <input
-              type="checkbox"
-              checked={reset}
-              onChange={(e) => setReset(e.target.checked)}
-            />
+            <input type="checkbox" checked={reset} onChange={(e) => setReset(e.target.checked)} />
             <span>{t("quotaResetLabel")}</span>
           </label>
         </Field>
@@ -408,7 +421,11 @@ export function QuotaDialog({
         </div>
       ) : null}
       <div className="team-actions">
-        <button className="team-button primary" disabled={busy || !valid} onClick={() => void save()}>
+        <button
+          className="team-button primary"
+          disabled={busy || !valid}
+          onClick={() => void save()}
+        >
           {busy ? t("saving") : t("save")}
         </button>
         <button className="team-button quiet" type="button" onClick={onClose}>

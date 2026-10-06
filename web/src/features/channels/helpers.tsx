@@ -26,9 +26,7 @@ export type UserAuthFields = "both" | "cookie" | "none";
 const COOKIE_ONLY_USER_AUTH_TYPES = new Set(["external-checkin"]);
 
 /** Type ids the picker offers by name. Anything else is hand-typed. */
-const KNOWN_CHANNEL_TYPES = new Set(
-  CONNECTION_TYPE_OPTIONS.map((option) => option.value),
-);
+const KNOWN_CHANNEL_TYPES = new Set(CONNECTION_TYPE_OPTIONS.map((option) => option.value));
 
 /**
  * True when the operator is wiring an endpoint on their own terms — the
@@ -87,8 +85,7 @@ export function userAuthFieldsFor(typeHint: string): UserAuthFields {
 export /** Value shown in secret inputs when a credential is stored; keeping it means "don't change". */
 const SECRET_MASK = "••••••••••";
 
-export type ConnectionHealthFilter =
-  "all" | "ready" | "attention" | "missing_key";
+export type ConnectionHealthFilter = "all" | "ready" | "attention" | "missing_key";
 
 export function isMissingAPIKey(overview: ChannelOverview) {
   return !overview.has_api_key;
@@ -109,9 +106,7 @@ export function normalizeBase(url: string) {
 }
 
 export function needsVerify(overview: ChannelOverview) {
-  return (
-    channelReadiness(overview) === "unverified" || overview.model_count === 0
-  );
+  return channelReadiness(overview) === "unverified" || overview.model_count === 0;
 }
 
 export function capabilityFlags(overview: ChannelOverview) {

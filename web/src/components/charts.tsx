@@ -13,290 +13,287 @@ import { formatTokens } from "../lib/format";
  * wider than half a slot (edge bars would otherwise overflow the panel).
  */
 function chartTipLeft(index: number, count: number) {
-	const pct = (index / Math.max(1, count)) * 100 + 100 / Math.max(1, count) / 2;
-	return Math.min(Math.max(pct, 14), 86);
+  const pct = (index / Math.max(1, count)) * 100 + 100 / Math.max(1, count) / 2;
+  return Math.min(Math.max(pct, 14), 86);
 }
 
 /** Compact axis label: 0, 250, 1.5k, 12k … */
 function compactNumber(value: number) {
-	if (value >= 1000) {
-		const k = value / 1000;
-		return `${k >= 100 ? Math.round(k) : k.toFixed(k >= 10 ? 0 : 1)}k`;
-	}
-	return String(Math.round(value));
+  if (value >= 1000) {
+    const k = value / 1000;
+    return `${k >= 100 ? Math.round(k) : k.toFixed(k >= 10 ? 0 : 1)}k`;
+  }
+  return String(Math.round(value));
 }
 
 export function HourlyTrafficChart({
-	requests,
-	tokens,
-	failed,
-	labels,
-	height = 168,
-	selected = null,
-	onSelect,
-	labelStep = 4,
-	zoomed = false,
+  requests,
+  tokens,
+  failed,
+  labels,
+  height = 168,
+  selected = null,
+  onSelect,
+  labelStep = 4,
+  zoomed = false,
 }: {
-	/** One value per bucket, oldest → newest, aligned to epoch buckets. */
-	requests: number[];
-	/** Parallel token values for the same buckets (may be all zero). */
-	tokens: number[];
-	/** Parallel failed-request counts; drawn as the bottom slice of each bar. */
-	failed?: number[];
-	/** Short display label per bucket (e.g. "14:00"). Same length as requests. */
-	labels: string[];
-	height?: number;
-	/** Bucket index to render as selected (drill-down target). */
-	selected?: number | null;
-	/** Called with the bucket index when a bar is clicked. */
-	onSelect?: (index: number) => void;
-	/** Label one tick every N buckets. */
-	labelStep?: number;
-	/** Render the drill-down view with a zoom transition. */
-	zoomed?: boolean;
+  /** One value per bucket, oldest → newest, aligned to epoch buckets. */
+  requests: number[];
+  /** Parallel token values for the same buckets (may be all zero). */
+  tokens: number[];
+  /** Parallel failed-request counts; drawn as the bottom slice of each bar. */
+  failed?: number[];
+  /** Short display label per bucket (e.g. "14:00"). Same length as requests. */
+  labels: string[];
+  height?: number;
+  /** Bucket index to render as selected (drill-down target). */
+  selected?: number | null;
+  /** Called with the bucket index when a bar is clicked. */
+  onSelect?: (index: number) => void;
+  /** Label one tick every N buckets. */
+  labelStep?: number;
+  /** Render the drill-down view with a zoom transition. */
+  zoomed?: boolean;
 }) {
-	const [hot, setHot] = useState<number | null>(null);
-	const wrapRef = useRef<HTMLDivElement | null>(null);
-	const { t } = useI18n();
+  const [hot, setHot] = useState<number | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const { t } = useI18n();
 
-	// Render the SVG at the container's real pixel width: axis text stays 1:1
-	// instead of being stretched by preserveAspectRatio="none" on wide panels.
-	const [width, setWidth] = useState(720);
-	useEffect(() => {
-		const el = wrapRef.current;
-		if (!el || typeof ResizeObserver === "undefined") return;
-		const ro = new ResizeObserver((entries) => {
-			const w = entries[0]?.contentRect.width;
-			if (w && w > 0)
-				setWidth((prev) => (Math.abs(prev - w) > 0.5 ? Math.round(w) : prev));
-		});
-		ro.observe(el);
-		return () => ro.disconnect();
-	}, []);
+  // Render the SVG at the container's real pixel width: axis text stays 1:1
+  // instead of being stretched by preserveAspectRatio="none" on wide panels.
+  const [width, setWidth] = useState(720);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setWidth((prev) => (Math.abs(prev - w) > 0.5 ? Math.round(w) : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-	const W = width;
-	const PAD_L = 34;
-	const PAD_B = 20;
-	const PAD_T = 8;
+  const W = width;
+  const PAD_L = 34;
+  const PAD_B = 20;
+  const PAD_T = 8;
 
-	const { bars, linePath, areaPath, yTicks } = useMemo(() => {
-		const H = height;
-		const n = requests.length;
-		const maxReq = Math.max(1, ...requests);
-		const maxTok = Math.max(1, ...tokens);
-		const slot = W / Math.max(1, n);
-		const barW = Math.max(3, slot * 0.5);
-		const plotH = H - PAD_B - PAD_T;
-		const bars = requests.map((v, i) => {
-			const h = (v / maxReq) * plotH;
-			const y = H - PAD_B - h;
-			// Failed requests are the bottom slice of the bar, so the red
-			// height reads as a share of that bucket — not a separate scale.
-			const failCount = Math.min(failed?.[i] ?? 0, v);
-			const failH = v > 0 ? (failCount / v) * h : 0;
-			return {
-				x: PAD_L + i * slot + (slot - barW) / 2,
-				w: barW,
-				h,
-				y,
-				failH,
-				failY: H - PAD_B - failH,
-			};
-		});
-		const pts = tokens.map((v, i) => {
-			const x = PAD_L + i * slot + slot / 2;
-			const y = H - PAD_B - (v / maxTok) * plotH;
-			return [x, y] as const;
-		});
-		const linePath =
-			pts.length > 1
-				? pts
-						.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`)
-						.join(" ")
-				: "";
-		const areaPath =
-			linePath && pts.length > 1
-				? (() => {
-						const last = pts[pts.length - 1];
-						const first = pts[0];
-						if (!last || !first) return "";
-						return `${linePath} L${last[0].toFixed(1)},${H - PAD_B} L${first[0].toFixed(1)},${H - PAD_B} Z`;
-					})()
-				: "";
-		// Y-axis labels at 0 / mid / max of the request series.
-		const yTicks = [1, 0.5, 0].map((f) => ({
-			f,
-			label: f === 0 ? "0" : compactNumber(maxReq * f),
-			y: H - PAD_B - f * plotH,
-		}));
-		return { bars, linePath, areaPath, yTicks };
-	}, [requests, tokens, failed, height, W]);
+  const { bars, linePath, areaPath, yTicks } = useMemo(() => {
+    const H = height;
+    const n = requests.length;
+    const maxReq = Math.max(1, ...requests);
+    const maxTok = Math.max(1, ...tokens);
+    const slot = W / Math.max(1, n);
+    const barW = Math.max(3, slot * 0.5);
+    const plotH = H - PAD_B - PAD_T;
+    const bars = requests.map((v, i) => {
+      const h = (v / maxReq) * plotH;
+      const y = H - PAD_B - h;
+      // Failed requests are the bottom slice of the bar, so the red
+      // height reads as a share of that bucket — not a separate scale.
+      const failCount = Math.min(failed?.[i] ?? 0, v);
+      const failH = v > 0 ? (failCount / v) * h : 0;
+      return {
+        x: PAD_L + i * slot + (slot - barW) / 2,
+        w: barW,
+        h,
+        y,
+        failH,
+        failY: H - PAD_B - failH,
+      };
+    });
+    const pts = tokens.map((v, i) => {
+      const x = PAD_L + i * slot + slot / 2;
+      const y = H - PAD_B - (v / maxTok) * plotH;
+      return [x, y] as const;
+    });
+    const linePath =
+      pts.length > 1
+        ? pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ")
+        : "";
+    const areaPath =
+      linePath && pts.length > 1
+        ? (() => {
+            const last = pts[pts.length - 1];
+            const first = pts[0];
+            if (!last || !first) return "";
+            return `${linePath} L${last[0].toFixed(1)},${H - PAD_B} L${first[0].toFixed(1)},${H - PAD_B} Z`;
+          })()
+        : "";
+    // Y-axis labels at 0 / mid / max of the request series.
+    const yTicks = [1, 0.5, 0].map((f) => ({
+      f,
+      label: f === 0 ? "0" : compactNumber(maxReq * f),
+      y: H - PAD_B - f * plotH,
+    }));
+    return { bars, linePath, areaPath, yTicks };
+  }, [requests, tokens, failed, height, W]);
 
-	const hasData = requests.some((v) => v > 0) || tokens.some((v) => v > 0);
-	const hasFailures = (failed ?? []).some((v) => v > 0);
-	const hotBar = hot != null && hot < bars.length ? bars[hot] : null;
-	const hotLabel = hot != null && hot < labels.length ? labels[hot] : null;
+  const hasData = requests.some((v) => v > 0) || tokens.some((v) => v > 0);
+  const hasFailures = (failed ?? []).some((v) => v > 0);
+  const hotBar = hot != null && hot < bars.length ? bars[hot] : null;
+  const hotLabel = hot != null && hot < labels.length ? labels[hot] : null;
 
-	/** Map a pointer/touch X (viewport px) to the bar index under it. */
-	const indexFromX = (clientX: number) => {
-		const rect = wrapRef.current?.getBoundingClientRect();
-		if (!rect || rect.width === 0) return null;
-		const x = ((clientX - rect.left) / rect.width) * W - PAD_L;
-		const i = Math.floor(x / (W / Math.max(1, bars.length)));
-		return i >= 0 && i < bars.length ? i : null;
-	};
+  /** Map a pointer/touch X (viewport px) to the bar index under it. */
+  const indexFromX = (clientX: number) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return null;
+    const x = ((clientX - rect.left) / rect.width) * W - PAD_L;
+    const i = Math.floor(x / (W / Math.max(1, bars.length)));
+    return i >= 0 && i < bars.length ? i : null;
+  };
 
-	return (
-		<div className={`chart-block${zoomed ? " is-zoomed" : ""}`}>
-			{hasData ? (
-				<div className="chart-legend">
-					<span className="chart-legend-item">
-						<i className="chart-legend-bar" aria-hidden="true" />
-						{t("dashboard.chartLegendRequests")}
-					</span>
-					<span className="chart-legend-item">
-						<i className="chart-legend-line" aria-hidden="true" />
-						{t("dashboard.chartLegendTokens")}
-					</span>
-					{hasFailures ? (
-						<span className="chart-legend-item">
-							<i className="chart-legend-failed" aria-hidden="true" />
-							{t("dashboard.chartLegendFailed")}
-						</span>
-					) : null}
-				</div>
-			) : null}
-			<div
-				ref={wrapRef}
-				className={`chart-wrap${zoomed ? " is-zoomed" : ""}`}
-				style={{ height }}
-				onMouseLeave={() => setHot(null)}
-				onTouchStart={(e) => {
-					const i = indexFromX(e.touches[0]?.clientX ?? 0);
-					if (i != null) setHot(i);
-				}}
-				onTouchMove={(e) => {
-					const i = indexFromX(e.touches[0]?.clientX ?? 0);
-					if (i != null) setHot(i);
-				}}
-				onTouchEnd={() => setHot(null)}
-			>
-				{!hasData ? (
-					<p className="dashboard-empty chart-empty">{t("dashboard.chartEmpty")}</p>
-				) : (
-					<svg
-						viewBox={`0 0 ${W} ${height}`}
-						width="100%"
-						height={height}
-						role="img"
-						aria-label="hourly requests and tokens"
-					>
-						<defs>
-							{/* The stops carry classes rather than stop-color attributes: an
+  return (
+    <div className={`chart-block${zoomed ? " is-zoomed" : ""}`}>
+      {hasData ? (
+        <div className="chart-legend">
+          <span className="chart-legend-item">
+            <i className="chart-legend-bar" aria-hidden="true" />
+            {t("dashboard.chartLegendRequests")}
+          </span>
+          <span className="chart-legend-item">
+            <i className="chart-legend-line" aria-hidden="true" />
+            {t("dashboard.chartLegendTokens")}
+          </span>
+          {hasFailures ? (
+            <span className="chart-legend-item">
+              <i className="chart-legend-failed" aria-hidden="true" />
+              {t("dashboard.chartLegendFailed")}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      <div
+        ref={wrapRef}
+        className={`chart-wrap${zoomed ? " is-zoomed" : ""}`}
+        style={{ height }}
+        onMouseLeave={() => setHot(null)}
+        onTouchStart={(e) => {
+          const i = indexFromX(e.touches[0]?.clientX ?? 0);
+          if (i != null) setHot(i);
+        }}
+        onTouchMove={(e) => {
+          const i = indexFromX(e.touches[0]?.clientX ?? 0);
+          if (i != null) setHot(i);
+        }}
+        onTouchEnd={() => setHot(null)}
+      >
+        {!hasData ? (
+          <p className="dashboard-empty chart-empty">{t("dashboard.chartEmpty")}</p>
+        ) : (
+          <svg
+            viewBox={`0 0 ${W} ${height}`}
+            width="100%"
+            height={height}
+            role="img"
+            aria-label="hourly requests and tokens"
+          >
+            <defs>
+              {/* The stops carry classes rather than stop-color attributes: an
 							    attribute holding var() is resolved on a different path from a
 							    declaration, and it was precisely this fill that browsers
 							    repainted solid black when force-darkening a light page. As
 							    declarations the colours follow the theme. See system.css. */}
-							<linearGradient id="chart-area-fill" x1="0" y1="0" x2="0" y2="1">
-								<stop offset="0%" className="chart-area-stop-top" />
-								<stop offset="100%" className="chart-area-stop-bottom" />
-							</linearGradient>
-						</defs>
-						{/* Y-axis labels */}
-						{yTicks.map((tick) => (
-							<text
-								key={tick.f}
-								x={PAD_L - 7}
-								y={tick.y + 3}
-								textAnchor="end"
-								className="chart-tick chart-tick-y"
-							>
-								{tick.label}
-							</text>
-						))}
-						{/* gridlines */}
-						{[0.25, 0.5, 0.75].map((f) => (
-							<line
-								key={f}
-								x1={PAD_L}
-								x2={W}
-								y1={height - PAD_B - (height - PAD_B - PAD_T) * f}
-								y2={height - PAD_B - (height - PAD_B - PAD_T) * f}
-								className="chart-gridline"
-							/>
-						))}
-						{areaPath ? <path d={areaPath} fill="url(#chart-area-fill)" /> : null}
-						{linePath ? <path d={linePath} className="chart-token-line" /> : null}
-						{bars.map((b, i) => (
-							<g key={i}>
-								<rect
-									x={b.x}
-									y={b.y}
-									width={b.w}
-									height={b.h}
-									rx={2}
-									className={
-										hot === i
-											? "chart-bar is-hot"
-											: selected === i
-												? "chart-bar is-selected"
-												: "chart-bar"
-									}
-									onMouseEnter={() => setHot(i)}
-									onClick={() => onSelect?.(i)}
-								/>
-								{b.failH > 0 ? (
-									<rect
-										x={b.x}
-										y={b.failY}
-										width={b.w}
-										height={b.failH}
-										className="chart-bar is-failed"
-										pointerEvents="none"
-									/>
-								) : null}
-							</g>
-						))}
-						{/* bucket ticks every labelStep buckets */}
-						{labels.map((label, i) =>
-							i % labelStep === 0 ? (
-								<text
-									key={i}
-									x={PAD_L + i * (W / labels.length) + W / labels.length / 2}
-									y={height - 5}
-									textAnchor="middle"
-									className="chart-tick"
-								>
-									{label}
-								</text>
-							) : null,
-						)}
-					</svg>
-				)}
-				{hot != null && hotBar && hotLabel ? (
-					<div
-						className="chart-tip"
-						style={{
-							left: `${chartTipLeft(hot, bars.length)}%`,
-						}}
-					>
-						<strong>{hotLabel}</strong>
-						<span>
-							{t("dashboard.chartTooltip", {
-								req: String(requests[hot] ?? 0),
-								tok: formatTokens(tokens[hot] ?? 0),
-							})}
-						</span>
-						{(failed?.[hot] ?? 0) > 0 ? (
-							<span className="chart-tip-failed">
-								{t("dashboard.chartTooltipFailed", {
-									n: String(failed?.[hot] ?? 0),
-								})}
-							</span>
-						) : null}
-					</div>
-				) : null}
-			</div>
-		</div>
-	);
+              <linearGradient id="chart-area-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" className="chart-area-stop-top" />
+                <stop offset="100%" className="chart-area-stop-bottom" />
+              </linearGradient>
+            </defs>
+            {/* Y-axis labels */}
+            {yTicks.map((tick) => (
+              <text
+                key={tick.f}
+                x={PAD_L - 7}
+                y={tick.y + 3}
+                textAnchor="end"
+                className="chart-tick chart-tick-y"
+              >
+                {tick.label}
+              </text>
+            ))}
+            {/* gridlines */}
+            {[0.25, 0.5, 0.75].map((f) => (
+              <line
+                key={f}
+                x1={PAD_L}
+                x2={W}
+                y1={height - PAD_B - (height - PAD_B - PAD_T) * f}
+                y2={height - PAD_B - (height - PAD_B - PAD_T) * f}
+                className="chart-gridline"
+              />
+            ))}
+            {areaPath ? <path d={areaPath} fill="url(#chart-area-fill)" /> : null}
+            {linePath ? <path d={linePath} className="chart-token-line" /> : null}
+            {bars.map((b, i) => (
+              <g key={i}>
+                <rect
+                  x={b.x}
+                  y={b.y}
+                  width={b.w}
+                  height={b.h}
+                  rx={2}
+                  className={
+                    hot === i
+                      ? "chart-bar is-hot"
+                      : selected === i
+                        ? "chart-bar is-selected"
+                        : "chart-bar"
+                  }
+                  onMouseEnter={() => setHot(i)}
+                  onClick={() => onSelect?.(i)}
+                />
+                {b.failH > 0 ? (
+                  <rect
+                    x={b.x}
+                    y={b.failY}
+                    width={b.w}
+                    height={b.failH}
+                    className="chart-bar is-failed"
+                    pointerEvents="none"
+                  />
+                ) : null}
+              </g>
+            ))}
+            {/* bucket ticks every labelStep buckets */}
+            {labels.map((label, i) =>
+              i % labelStep === 0 ? (
+                <text
+                  key={i}
+                  x={PAD_L + i * (W / labels.length) + W / labels.length / 2}
+                  y={height - 5}
+                  textAnchor="middle"
+                  className="chart-tick"
+                >
+                  {label}
+                </text>
+              ) : null,
+            )}
+          </svg>
+        )}
+        {hot != null && hotBar && hotLabel ? (
+          <div
+            className="chart-tip"
+            style={{
+              left: `${chartTipLeft(hot, bars.length)}%`,
+            }}
+          >
+            <strong>{hotLabel}</strong>
+            <span>
+              {t("dashboard.chartTooltip", {
+                req: String(requests[hot] ?? 0),
+                tok: formatTokens(tokens[hot] ?? 0),
+              })}
+            </span>
+            {(failed?.[hot] ?? 0) > 0 ? (
+              <span className="chart-tip-failed">
+                {t("dashboard.chartTooltipFailed", {
+                  n: String(failed?.[hot] ?? 0),
+                })}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }

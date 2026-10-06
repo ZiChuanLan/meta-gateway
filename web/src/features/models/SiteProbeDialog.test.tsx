@@ -89,10 +89,17 @@ const disableAction: SiteProbeAction = {
   members_moved: 0,
 };
 
-function mockBackend(options: { actions?: SiteProbeAction[]; report?: SiteProbeReport; reportError?: boolean } = {}) {
+function mockBackend(
+  options: { actions?: SiteProbeAction[]; report?: SiteProbeReport; reportError?: boolean } = {},
+) {
   const apply = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}"));
-    return json({ actions: body.dry_run ? (options.actions ?? [disableAction]) : options.actions ?? [disableAction], dry_run: body.dry_run });
+    return json({
+      actions: body.dry_run
+        ? (options.actions ?? [disableAction])
+        : (options.actions ?? [disableAction]),
+      dry_run: body.dry_run,
+    });
   });
   const collect = vi.fn(() => json({ collected: 1, failed: 0, actions: [] }));
   const catalogImport = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -134,7 +141,16 @@ function mockBackend(options: { actions?: SiteProbeAction[]; report?: SiteProbeR
       title: "AI",
       groups: [{ id: 6, name: "GLM" }],
       monitors: [
-        { id: "44", name: "z-ai/glm-5.2", type: "keyword", group_name: "GLM", samples: 10, up_count: 9, ratio: 0.9, weak_evidence: false },
+        {
+          id: "44",
+          name: "z-ai/glm-5.2",
+          type: "keyword",
+          group_name: "GLM",
+          samples: 10,
+          up_count: 9,
+          ratio: 0.9,
+          weak_evidence: false,
+        },
       ],
     }),
   );
@@ -158,7 +174,10 @@ function mockBackend(options: { actions?: SiteProbeAction[]; report?: SiteProbeR
           },
         ]);
       }
-      if (path === "/admin/site-probe/report") return options.reportError ? json({ error: "load_failed" }, 500) : json(options.report ?? report());
+      if (path === "/admin/site-probe/report")
+        return options.reportError
+          ? json({ error: "load_failed" }, 500)
+          : json(options.report ?? report());
       if (path === "/admin/site-probe/apply") return apply(input, init);
       if (path === "/admin/site-probe/collect") return collect();
       if (path === "/admin/site-probe/detect") return detect();
@@ -208,23 +227,34 @@ describe("site probe dialog", () => {
   // Auto-apply is per site, so the switch has to reach the API as that site's
   // stored config — together with the thresholds a background round will use.
   it("formats source timestamps and prices without losing explicit zero prices", async () => {
-    const data = report(); data.sites[0]!.probe_last_run_at = "2026-10-04T00:10:00Z";
-    data.rows[0]!.observed_price = { mode: "token", currency_symbol: "$", input_per_million: 0, output_per_million: 4.999999999999999 };
-    mockBackend({ report: data }); renderDialog(); await screen.findByText("glm-5.2");
+    const data = report();
+    data.sites[0]!.probe_last_run_at = "2026-10-04T00:10:00Z";
+    data.rows[0]!.observed_price = {
+      mode: "token",
+      currency_symbol: "$",
+      input_per_million: 0,
+      output_per_million: 4.999999999999999,
+    };
+    mockBackend({ report: data });
+    renderDialog();
+    await screen.findByText("glm-5.2");
     expect(screen.getByText(/\$0 \/ \$5/)).toBeInTheDocument();
     expect(document.querySelector(".site-probe-card-run")?.textContent).not.toContain("T00:10:00Z");
   });
 
   it("shows report errors and does not permit blind preview", async () => {
-    mockBackend({ reportError: true }); renderDialog();
+    mockBackend({ reportError: true });
+    renderDialog();
     await waitFor(() => expect(screen.getByRole("button", { name: "预览影响" })).toBeDisabled());
     await waitFor(() => expect(screen.getByText(/load_failed/)).toBeInTheDocument());
   });
 
   it("saves automatic sources and keeps site thresholds separate from preview", async () => {
-    const data = report(); data.sites[0]!.policy = { ...data.policy, ratio_threshold: 0.5 };
+    const data = report();
+    data.sites[0]!.policy = { ...data.policy, ratio_threshold: 0.5 };
     const { save, collect } = mockBackend({ report: data });
-    renderDialog(); await screen.findByText("glm-5.2");
+    renderDialog();
+    await screen.findByText("glm-5.2");
     const preview = screen.getAllByRole("spinbutton")[0];
     expect(preview).toHaveValue(90);
     fireEvent.click(screen.getByRole("button", { name: "配置来源" }));
@@ -233,13 +263,16 @@ describe("site probe dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存并启用" }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     const body = JSON.parse(String(save.mock.calls[0]?.[1]?.body));
-    expect(body.auto).toBe(true); expect(body.site_id).toBe(1);
+    expect(body.auto).toBe(true);
+    expect(body.site_id).toBe(1);
     expect(JSON.parse(body.config).policy.ratio_threshold).toBe(0.5);
     await waitFor(() => expect(collect).toHaveBeenCalledTimes(1));
   });
 
   it("scopes preview and apply to the explicitly selected site", async () => {
-    const { apply } = mockBackend(); renderDialog(); await screen.findByText("glm-5.2");
+    const { apply } = mockBackend();
+    renderDialog();
+    await screen.findByText("glm-5.2");
     fireEvent.change(screen.getByLabelText("路由操作范围"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
     await screen.findByText("禁用成员");
@@ -250,26 +283,37 @@ describe("site probe dialog", () => {
   });
 
   it("filters cards without evidence instead of matching every name against an empty query", async () => {
-    const data = report(); data.rows = [];
-    mockBackend({ report: data }); renderDialog();
+    const data = report();
+    data.rows = [];
+    mockBackend({ report: data });
+    renderDialog();
     await waitFor(() => expect(document.querySelectorAll(".site-probe-card")).toHaveLength(1));
     fireEvent.click(screen.getByLabelText("只看有数据的"));
     expect(document.querySelectorAll(".site-probe-card")).toHaveLength(0);
   });
 
   it("requires re-detection after a manual URL changes", async () => {
-    mockBackend(); renderDialog(); await screen.findByText("glm-5.2");
+    mockBackend();
+    renderDialog();
+    await screen.findByText("glm-5.2");
     fireEvent.click(screen.getByRole("button", { name: "配置来源" }));
     fireEvent.click(screen.getByLabelText(/自动探针/));
-    fireEvent.change(screen.getByPlaceholderText("https://stat.example.com/status/ai"), { target: { value: "https://different.example/status/ai" } });
+    fireEvent.change(screen.getByPlaceholderText("https://stat.example.com/status/ai"), {
+      target: { value: "https://different.example/status/ai" },
+    });
     expect(screen.getByRole("button", { name: "保存并启用" })).toBeDisabled();
   });
 
   it("does not offer apply when the preview contains only protected members", async () => {
     mockBackend({ actions: [{ ...disableAction, skipped: "single_member" }] });
-    renderDialog(); await screen.findByText("glm-5.2");
+    renderDialog();
+    await screen.findByText("glm-5.2");
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
-    await waitFor(() => expect(within(document.querySelector(".site-probe-changes") as HTMLElement).getByRole("table")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(document.querySelector(".site-probe-changes") as HTMLElement).getByRole("table"),
+      ).toBeInTheDocument(),
+    );
     expect(screen.getByRole("button", { name: "应用" })).toBeDisabled();
   });
 
@@ -439,16 +483,12 @@ describe("site probe dialog", () => {
     await screen.findByText("glm-5.2");
 
     // Auto on: no URL box at all.
-    expect(
-      screen.queryByPlaceholderText("https://stat.example.com/status/ai"),
-    ).toBeNull();
+    expect(screen.queryByPlaceholderText("https://stat.example.com/status/ai")).toBeNull();
 
     // Addressed by its label, not by DOM order: the toolbar has checkboxes of
     // its own, and "the first one" is not a contract anybody promised.
     fireEvent.click(screen.getByLabelText(/自动探针/));
-    expect(
-      screen.getByPlaceholderText("https://stat.example.com/status/ai"),
-    ).toBeTruthy();
+    expect(screen.getByPlaceholderText("https://stat.example.com/status/ai")).toBeTruthy();
   });
 
   it("shows what the site reports next to the member it would affect", async () => {
@@ -477,9 +517,7 @@ describe("site probe dialog", () => {
     await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
     expect(JSON.parse(String(apply.mock.calls[0]?.[1]?.body)).dry_run).toBe(true);
     expect(await screen.findByText("禁用成员")).toBeTruthy();
-    expect(
-      screen.getByText(/site probe: 2 rounds below 90%/),
-    ).toBeTruthy();
+    expect(screen.getByText(/site probe: 2 rounds below 90%/)).toBeTruthy();
     expect((applyButton as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(applyButton);
@@ -495,10 +533,9 @@ describe("site probe dialog", () => {
 
     // The URL field lives behind the auto switch; turning auto off reveals it.
     fireEvent.click(screen.getByLabelText(/自动探针/));
-    fireEvent.change(
-      screen.getByPlaceholderText("https://stat.example.com/status/ai"),
-      { target: { value: "https://stat.example.com/status/ai" } },
-    );
+    fireEvent.change(screen.getByPlaceholderText("https://stat.example.com/status/ai"), {
+      target: { value: "https://stat.example.com/status/ai" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "识别来源" }));
     await waitFor(() => expect(detect).toHaveBeenCalled());
     expect(await screen.findByText(/Uptime Kuma 状态页「AI」/)).toBeTruthy();

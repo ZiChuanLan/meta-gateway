@@ -51,6 +51,10 @@ jobs:
         working-directory: web
         run: |
           npm run lint
+          # Prettier is the formatting gate: the sheets under src/styles and
+          # src/themes are excluded (see .prettierignore), everything else is
+          # checked, so a hand-formatted JSX block cannot land unreviewed.
+          npm run format:check
           npm run audit:entrypoints
           npm run typecheck
           npm test -- --run

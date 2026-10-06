@@ -150,10 +150,12 @@ export function parsePathMap(raw: string): ParseResult<PathMapRow[]> {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { rows: [], error: 'must be an object of {"<client path>":"<upstream path>"}' };
   }
-  const rows: PathMapRow[] = Object.entries(parsed as Record<string, unknown>).map(([from, to]) => ({
-    from: normalizePathKey(from),
-    to: typeof to === "string" ? to : String(to ?? ""),
-  }));
+  const rows: PathMapRow[] = Object.entries(parsed as Record<string, unknown>).map(
+    ([from, to]) => ({
+      from: normalizePathKey(from),
+      to: typeof to === "string" ? to : String(to ?? ""),
+    }),
+  );
   return { rows, error: null };
 }
 
@@ -208,17 +210,42 @@ function fieldMapRowFromJSON(entry: Record<string, unknown>): FieldMapRow {
   const value = entry.value as Record<string, unknown> | undefined;
   if (value && typeof value === "object") {
     if (typeof value.str === "string") {
-      return { mode: "value", from, to, template: "", valueType: "str", valueText: value.str, keep: "" };
+      return {
+        mode: "value",
+        from,
+        to,
+        template: "",
+        valueType: "str",
+        valueText: value.str,
+        keep: "",
+      };
     }
     if (typeof value.num === "number") {
-      return { mode: "value", from, to, template: "", valueType: "num", valueText: String(value.num), keep: "" };
+      return {
+        mode: "value",
+        from,
+        to,
+        template: "",
+        valueType: "num",
+        valueText: String(value.num),
+        keep: "",
+      };
     }
     if (typeof value.bool === "boolean") {
-      return { mode: "value", from, to, template: "", valueType: "bool", valueText: String(value.bool), keep: "" };
+      return {
+        mode: "value",
+        from,
+        to,
+        template: "",
+        valueType: "bool",
+        valueText: String(value.bool),
+        keep: "",
+      };
     }
     return { mode: "value", from, to, template: "", valueType: "null", valueText: "", keep: "" };
   }
-  if (template) return { mode: "template", from, to, template, valueType: "str", valueText: "", keep: "" };
+  if (template)
+    return { mode: "template", from, to, template, valueType: "str", valueText: "", keep: "" };
   return {
     mode: entry.move === true ? "move" : "copy",
     from,
@@ -240,34 +267,34 @@ export function serializeFieldMap(rows: FieldMapRow[]): string {
 }
 
 function fieldMapEntryFromRow(row: FieldMapRow): Record<string, unknown> | null {
-	const from = row.from.trim();
-	const to = row.to.trim();
-	if (row.mode === "keep") {
-		const keys = row.keep
-			.split(",")
-			.map((key) => key.trim())
-			.filter(Boolean);
-		if (keys.length === 0) return null;
-		return { keep: keys };
-	}
-	if (row.mode === "template") {
-		// The mode promises a template: an empty one carries nothing.
-		const template = row.template.trim();
-		if (!template) return null;
-		return to ? { to, template } : { template };
-	}
-	if (row.mode === "value") {
-		const hasValue = row.valueType === "null" || row.valueText.trim() !== "";
-		if (!to && !hasValue) return null;
-		return to ? { to, value: valueLiteral(row) } : { value: valueLiteral(row) };
-	}
-	// copy / move: keep whatever the operator typed, drop only a blank row.
-	if (!from && !to) return null;
-	const entry: Record<string, unknown> = {};
-	if (from) entry.from = from;
-	if (to) entry.to = to;
-	if (row.mode === "move") entry.move = true;
-	return entry;
+  const from = row.from.trim();
+  const to = row.to.trim();
+  if (row.mode === "keep") {
+    const keys = row.keep
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean);
+    if (keys.length === 0) return null;
+    return { keep: keys };
+  }
+  if (row.mode === "template") {
+    // The mode promises a template: an empty one carries nothing.
+    const template = row.template.trim();
+    if (!template) return null;
+    return to ? { to, template } : { template };
+  }
+  if (row.mode === "value") {
+    const hasValue = row.valueType === "null" || row.valueText.trim() !== "";
+    if (!to && !hasValue) return null;
+    return to ? { to, value: valueLiteral(row) } : { value: valueLiteral(row) };
+  }
+  // copy / move: keep whatever the operator typed, drop only a blank row.
+  if (!from && !to) return null;
+  const entry: Record<string, unknown> = {};
+  if (from) entry.from = from;
+  if (to) entry.to = to;
+  if (row.mode === "move") entry.move = true;
+  return entry;
 }
 
 function valueLiteral(row: FieldMapRow): Record<string, unknown> {
@@ -295,40 +322,43 @@ export function validatePathOverride(value: string): string | null {
 }
 
 export function validatePathMapRows(rows: PathMapRow[]): RowIssue[] {
-	const issues: RowIssue[] = [];
-	const seen = new Set<string>();
-	rows.forEach((row, index) => {
-		const key = normalizePathKey(row.from);
-		const target = row.to.trim();
-		if (key === "" && target === "") return; // an untouched blank row is not an error
-		if (key === "") {
-			issues.push({ index, message: "客户端路径不能为空" });
-			return;
-		}
-		// Record the key before any early return: a later row repeating a key whose
-		// first occurrence was rejected is still a duplicate.
-		const duplicate = seen.has(key);
-		seen.add(key);
-		if (target === "") {
-			issues.push({ index, message: "上游路径不能为空" });
-			return;
-		}
-		if (/[?#]/.test(target)) {
-			issues.push({ index, message: "上游路径不能带 query 或 fragment" });
-			return;
-		}
-		if (duplicate) {
-			issues.push({ index, message: "客户端路径重复" });
-		}
-	});
-	return issues;
+  const issues: RowIssue[] = [];
+  const seen = new Set<string>();
+  rows.forEach((row, index) => {
+    const key = normalizePathKey(row.from);
+    const target = row.to.trim();
+    if (key === "" && target === "") return; // an untouched blank row is not an error
+    if (key === "") {
+      issues.push({ index, message: "客户端路径不能为空" });
+      return;
+    }
+    // Record the key before any early return: a later row repeating a key whose
+    // first occurrence was rejected is still a duplicate.
+    const duplicate = seen.has(key);
+    seen.add(key);
+    if (target === "") {
+      issues.push({ index, message: "上游路径不能为空" });
+      return;
+    }
+    if (/[?#]/.test(target)) {
+      issues.push({ index, message: "上游路径不能带 query 或 fragment" });
+      return;
+    }
+    if (duplicate) {
+      issues.push({ index, message: "客户端路径重复" });
+    }
+  });
+  return issues;
 }
 
 export function validateFieldMapRows(rows: FieldMapRow[]): RowIssue[] {
   const issues: RowIssue[] = [];
   rows.forEach((row, index) => {
     if (row.mode === "keep") {
-      const keys = row.keep.split(",").map((key) => key.trim()).filter(Boolean);
+      const keys = row.keep
+        .split(",")
+        .map((key) => key.trim())
+        .filter(Boolean);
       if (keys.length === 0) {
         issues.push({ index, message: "keep 至少需要一个顶层键" });
         return;
@@ -392,7 +422,9 @@ export function summarizeEndpoints(value: EndpointMapValue): EndpointMapSummary 
     validateFieldMapRows(requestMap.rows).length +
     validateFieldMapRows(responseMap.rows).length +
     (validatePathOverride(value.pathOverride) ? 1 : 0);
-  const keepCount = [...requestMap.rows, ...responseMap.rows].filter((row) => row.mode === "keep").length;
+  const keepCount = [...requestMap.rows, ...responseMap.rows].filter(
+    (row) => row.mode === "keep",
+  ).length;
   return {
     pathCount: pathMap.rows.filter((row) => normalizePathKey(row.from) !== "").length,
     requestCount: requestMap.rows.length,
@@ -421,8 +453,24 @@ export const ENDPOINT_MAP_PRESETS: EndpointMapPreset[] = [
   {
     id: "keepTopLevel",
     requestMap: serializeFieldMap([
-      { mode: "copy", from: "messages.0.content", to: "state", template: "", valueType: "str", valueText: "", keep: "" },
-      { mode: "keep", from: "", to: "", template: "", valueType: "str", valueText: "", keep: "model, state" },
+      {
+        mode: "copy",
+        from: "messages.0.content",
+        to: "state",
+        template: "",
+        valueType: "str",
+        valueText: "",
+        keep: "",
+      },
+      {
+        mode: "keep",
+        from: "",
+        to: "",
+        template: "",
+        valueType: "str",
+        valueText: "",
+        keep: "model, state",
+      },
     ]),
   },
   {

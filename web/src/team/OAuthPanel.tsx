@@ -124,9 +124,7 @@ export function OAuthPanel({
           <input
             type="checkbox"
             checked={draft.auto_register}
-            onChange={(e) =>
-              setDraft({ ...draft, auto_register: e.target.checked })
-            }
+            onChange={(e) => setDraft({ ...draft, auto_register: e.target.checked })}
           />
           <span>{t("oauthAutoRegister")}</span>
         </label>
@@ -136,9 +134,7 @@ export function OAuthPanel({
           <select
             value={draft.default_policy_id}
             disabled={!draft.auto_register}
-            onChange={(e) =>
-              setDraft({ ...draft, default_policy_id: Number(e.target.value) })
-            }
+            onChange={(e) => setDraft({ ...draft, default_policy_id: Number(e.target.value) })}
           >
             <option value={0}>{t("oauthFirstPolicy")}</option>
             {policies.map((policy) => (
@@ -203,9 +199,7 @@ export function OAuthPanel({
                   autoComplete="new-password"
                   placeholder={provider.has_secret ? t("oauthSecretKeep") : ""}
                   value={secrets[provider.id] ?? ""}
-                  onChange={(e) =>
-                    setSecrets({ ...secrets, [provider.id]: e.target.value })
-                  }
+                  onChange={(e) => setSecrets({ ...secrets, [provider.id]: e.target.value })}
                 />
               </label>
               <label className="team-field">
@@ -227,9 +221,7 @@ export function OAuthPanel({
                   <input
                     value={provider.authorize_url}
                     placeholder={provider.default_authorize_url}
-                    onChange={(e) =>
-                      patch(provider.id, { authorize_url: e.target.value })
-                    }
+                    onChange={(e) => patch(provider.id, { authorize_url: e.target.value })}
                   />
                 </label>
                 <label className="team-field">
@@ -245,17 +237,13 @@ export function OAuthPanel({
                   <input
                     value={provider.userinfo_url}
                     placeholder={provider.default_userinfo_url}
-                    onChange={(e) =>
-                      patch(provider.id, { userinfo_url: e.target.value })
-                    }
+                    onChange={(e) => patch(provider.id, { userinfo_url: e.target.value })}
                   />
                 </label>
               </div>
             </details>
 
-            <p className="team-muted">
-              {ready ? t("oauthReady") : t("oauthNotReady")}
-            </p>
+            <p className="team-muted">{ready ? t("oauthReady") : t("oauthNotReady")}</p>
           </fieldset>
         );
       })}

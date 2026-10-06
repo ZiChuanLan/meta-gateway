@@ -37,22 +37,13 @@ const GROUP_RULES: Array<[string, RegExp]> = [
 
 export function autoModelGroup(model: string, vendor?: string): string {
   const source = `${vendor ?? ""}/${model.trim()}`;
-  return (
-    GROUP_RULES.find(([, pattern]) => pattern.test(source))?.[0] ?? "Other"
-  );
+  return GROUP_RULES.find(([, pattern]) => pattern.test(source))?.[0] ?? "Other";
 }
 
 /** Stable display order for auto groups; groups outside the list go last. */
-export const MODEL_GROUP_ORDER: string[] = [
-  ...GROUP_RULES.map(([name]) => name),
-  "Other",
-];
+export const MODEL_GROUP_ORDER: string[] = [...GROUP_RULES.map(([name]) => name), "Other"];
 
-export function modelGroup(
-  model: string,
-  manual?: string,
-  vendor?: string,
-): string {
+export function modelGroup(model: string, manual?: string, vendor?: string): string {
   return manual?.trim() || autoModelGroup(model, vendor);
 }
 
@@ -68,8 +59,7 @@ export function modelPatternMatches(pattern: string, model: string): boolean {
   while (valueIndex < value.length) {
     if (
       patternIndex < source.length &&
-      (source[patternIndex] === "?" ||
-        source[patternIndex] === value[valueIndex])
+      (source[patternIndex] === "?" || source[patternIndex] === value[valueIndex])
     ) {
       patternIndex += 1;
       valueIndex += 1;

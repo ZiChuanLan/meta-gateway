@@ -79,10 +79,7 @@ export function QuotasPanel() {
                 <td className="team-hide-mobile">{g.rate_per_minute || "—"}</td>
                 <td>
                   <div className="team-actions">
-                    <button
-                      className="team-button"
-                      onClick={() => setEditing(structuredClone(g))}
-                    >
+                    <button className="team-button" onClick={() => setEditing(structuredClone(g))}>
                       {t("edit")}
                     </button>
                     {g.name !== "default" && (
@@ -91,10 +88,7 @@ export function QuotasPanel() {
                         disabled={busy}
                         onClick={() => {
                           if (confirm(t("groupDeleteWarning", { name: g.name })))
-                            void run(
-                              `/admin/groups/${encodeURIComponent(g.name)}`,
-                              "DELETE",
-                            );
+                            void run(`/admin/groups/${encodeURIComponent(g.name)}`, "DELETE");
                         }}
                       >
                         {t("delete")}
@@ -143,11 +137,7 @@ function formatPool(used: number, total: number, t: (k: "unlimited") => string) 
   return `${used.toLocaleString()} / ${total.toLocaleString()}`;
 }
 
-function formatCostPool(
-  used: number,
-  total: number,
-  t: (k: "unlimited") => string,
-) {
+function formatCostPool(used: number, total: number, t: (k: "unlimited") => string) {
   if (total <= 0) return t("unlimited");
   return `$${used.toFixed(2)} / $${total.toFixed(2)}`;
 }
@@ -203,9 +193,7 @@ function GroupDialog({ group, onClose }: { group: KeyGroup; onClose: () => void 
               type="number"
               min={0}
               value={draft.quota_total_tokens}
-              onChange={(e) =>
-                patch({ quota_total_tokens: Number(e.target.value || 0) })
-              }
+              onChange={(e) => patch({ quota_total_tokens: Number(e.target.value || 0) })}
             />
           </Field>
           <Field label={t("quotaCostTotal")} hint={t("quotaCostHint")}>
@@ -214,9 +202,7 @@ function GroupDialog({ group, onClose }: { group: KeyGroup; onClose: () => void 
               min={0}
               step="0.01"
               value={draft.quota_total_cost}
-              onChange={(e) =>
-                patch({ quota_total_cost: Number(e.target.value || 0) })
-              }
+              onChange={(e) => patch({ quota_total_cost: Number(e.target.value || 0) })}
             />
           </Field>
           <Field label={t("rpm")}>
@@ -224,9 +210,7 @@ function GroupDialog({ group, onClose }: { group: KeyGroup; onClose: () => void 
               type="number"
               min={0}
               value={draft.rate_per_minute}
-              onChange={(e) =>
-                patch({ rate_per_minute: Number(e.target.value || 0) })
-              }
+              onChange={(e) => patch({ rate_per_minute: Number(e.target.value || 0) })}
             />
           </Field>
           <Field label={t("rateBurst")}>

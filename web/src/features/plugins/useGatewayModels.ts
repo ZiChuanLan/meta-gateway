@@ -16,21 +16,21 @@ type ModelSource = Pick<ReturnType<typeof api>, "routeOverviews">;
  * needs models reuses what that page already fetched.
  */
 export function useGatewayModels(service: ModelSource, enabled = true): string[] {
-	const routes = useQuery({
-		queryKey: ["route-overviews"],
-		queryFn: ({ signal }) => service.routeOverviews(signal),
-		staleTime: 60_000,
-		enabled,
-	});
-	return useMemo(
-		() =>
-			Array.from(
-				new Set(
-					(routes.data ?? [])
-						.map((item) => item.route.model_pattern)
-						.filter((pattern) => pattern && !/[*?]/.test(pattern)),
-				),
-			).sort(),
-		[routes.data],
-	);
+  const routes = useQuery({
+    queryKey: ["route-overviews"],
+    queryFn: ({ signal }) => service.routeOverviews(signal),
+    staleTime: 60_000,
+    enabled,
+  });
+  return useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (routes.data ?? [])
+            .map((item) => item.route.model_pattern)
+            .filter((pattern) => pattern && !/[*?]/.test(pattern)),
+        ),
+      ).sort(),
+    [routes.data],
+  );
 }

@@ -2,12 +2,35 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../i18n";
 import { MemberDialog } from "./MemberDialog";
-afterEach(() => { cleanup(); localStorage.clear(); });
-const member = { id: 17, channel_id: 5, priority: 9, weight: 30, enabled: true, manual_override: false, price_prompt_per_1k: 1 };
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
+const member = {
+  id: 17,
+  channel_id: 5,
+  priority: 9,
+  weight: 30,
+  enabled: true,
+  manual_override: false,
+  price_prompt_per_1k: 1,
+};
 function mount() {
   localStorage.setItem("meta-gateway.locale", "en");
   const save = vi.fn();
-  render(<I18nProvider><MemberDialog value={member} channels={[]} groups={[]} pending={false} error={null} onClose={() => {}} onSave={save} /></I18nProvider>);
+  render(
+    <I18nProvider>
+      <MemberDialog
+        value={member}
+        channels={[]}
+        groups={[]}
+        pending={false}
+        error={null}
+        onClose={() => {}}
+        onSave={save}
+      />
+    </I18nProvider>,
+  );
   return save;
 }
 it("changing price does not freeze inherited weights or resend enabled/health state", () => {

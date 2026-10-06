@@ -84,18 +84,16 @@ export function ChannelKeysDrawer({
   const [apiKeyName, setApiKeyName] = useState("");
   const [apiKey, setApiKey] = useState("");
   // What the last paste added, so a multi-key submit cannot look like a no-op.
-  const [pasteSummary, setPasteSummary] = useState<{ added: number; duplicates: number } | null>(null);
+  const [pasteSummary, setPasteSummary] = useState<{ added: number; duplicates: number } | null>(
+    null,
+  );
   const pendingPaste = splitApiKeys(apiKey);
   const keyHint = keyHintFor(channel.type_hint ?? "");
   // Only meaningful for a single key: a pasted blob is not one token.
   const keyWarning =
     pendingPaste.keys.length === 1 && apiKeyLooksWrong(channel.type_hint ?? "", apiKey);
-  const [keyModelsDraft, setKeyModelsDraft] = useState<
-    Record<number, string>
-  >({});
-  const [expandedModelIds, setExpandedModelIds] = useState<Set<number>>(
-    () => new Set(),
-  );
+  const [keyModelsDraft, setKeyModelsDraft] = useState<Record<number, string>>({});
+  const [expandedModelIds, setExpandedModelIds] = useState<Set<number>>(() => new Set());
   // Reveal: decrypt and show the plaintext secret of one credential.
   const [revealing, setRevealing] = useState<Credential | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
@@ -104,8 +102,7 @@ export function ChannelKeysDrawer({
     label: string;
   } | null>(null);
   const reveal = useAdminMutation({
-    mutationFn: (v: { siteId: number; id: number }) =>
-      service.revealCredential(v.siteId, v.id),
+    mutationFn: (v: { siteId: number; id: number }) => service.revealCredential(v.siteId, v.id),
     toastOnError: false,
     onSuccess: (result) => setRevealedSecret(result.secret),
   });
@@ -114,9 +111,7 @@ export function ChannelKeysDrawer({
     queryKey: ["discovered-models", channel.id],
     queryFn: ({ signal }) => service.discoveredModels(channel.id, signal),
   });
-  const channelModelNames = (discovered.data ?? []).map(
-    (model) => model.model_name,
-  );
+  const channelModelNames = (discovered.data ?? []).map((model) => model.model_name);
 
   const toggleModelPicker = (id: number) => {
     setExpandedModelIds((previous) => {
@@ -137,9 +132,7 @@ export function ChannelKeysDrawer({
     if (keys.length === 0) return;
     const label = keys.length === 1 ? apiKeyName.trim() || undefined : undefined;
     keys.forEach((secret, index) => onAddApiKey(secret, index === 0 ? label : undefined));
-    setPasteSummary(
-      keys.length > 1 || duplicates > 0 ? { added: keys.length, duplicates } : null,
-    );
+    setPasteSummary(keys.length > 1 || duplicates > 0 ? { added: keys.length, duplicates } : null);
     setApiKey("");
     setApiKeyName("");
   };
@@ -177,14 +170,9 @@ export function ChannelKeysDrawer({
             {apiKeys.map((item) => {
               const meta = parseCredentialMeta(item.meta_json);
               const enabled = item.status === "enabled";
-              const label =
-                meta.name?.trim() ||
-                t("channels.apiKeyUnnamed", { id: item.id });
-              const groupLabel =
-                meta.group?.trim() || t("channels.apiKeyGroupDefault");
-              const selectedModels = (keyModelsDraft[item.id] ??
-                item.models_csv ??
-                "")
+              const label = meta.name?.trim() || t("channels.apiKeyUnnamed", { id: item.id });
+              const groupLabel = meta.group?.trim() || t("channels.apiKeyGroupDefault");
+              const selectedModels = (keyModelsDraft[item.id] ?? item.models_csv ?? "")
                 .split(",")
                 .map((model) => model.trim())
                 .filter(Boolean);
@@ -201,17 +189,13 @@ export function ChannelKeysDrawer({
               // tried upstream and 404 instead of being skipped.
               const outOfScope = scoped
                 ? selectedModels.filter(
-                    (model) =>
-                      !ownModels.some((own) => matchesModel(model, own)),
+                    (model) => !ownModels.some((own) => matchesModel(model, own)),
                   )
                 : [];
               return (
                 <li
                   key={item.id}
-                  className={[
-                    "credential-key-row",
-                    !enabled ? "is-disabled" : "",
-                  ]
+                  className={["credential-key-row", !enabled ? "is-disabled" : ""]
                     .filter(Boolean)
                     .join(" ")}
                 >
@@ -220,9 +204,7 @@ export function ChannelKeysDrawer({
                       <strong>{label}</strong>
                       <small>
                         {`${groupLabel} · #${item.id}`}
-                        {!item.has_secret
-                          ? ` · ${t("channels.apiKeyNoSecret")}`
-                          : ""}
+                        {!item.has_secret ? ` · ${t("channels.apiKeyNoSecret")}` : ""}
                         {item.model_count != null && item.model_count >= 0
                           ? ` · ${t("channels.apiKeyModelCount", {
                               count: item.model_count,
@@ -267,14 +249,10 @@ export function ChannelKeysDrawer({
                           type="checkbox"
                           checked={enabled}
                           disabled={pending}
-                          onChange={(event) =>
-                            onToggleKey(item.id, event.target.checked)
-                          }
+                          onChange={(event) => onToggleKey(item.id, event.target.checked)}
                         />
                         <span className="credential-key-status-dot" aria-hidden="true" />
-                        <span>
-                          {enabled ? t("common.enabled") : t("common.disabled")}
-                        </span>
+                        <span>{enabled ? t("common.enabled") : t("common.disabled")}</span>
                       </label>
                       <span className="credential-key-action-group">
                         {item.has_secret ? (
@@ -381,10 +359,7 @@ export function ChannelKeysDrawer({
           </ul>
         )}
 
-        <Field
-          label={t("channels.apiKeyAdd")}
-          hint={t("channels.apiKeyAddHint")}
-        >
+        <Field label={t("channels.apiKeyAdd")} hint={t("channels.apiKeyAddHint")}>
           <div className="credential-key-add-row">
             <input
               className="credential-key-name-input"
@@ -399,43 +374,37 @@ export function ChannelKeysDrawer({
                 }
               }}
             />
-			<textarea
-			  className="credential-key-secret-input"
-			  rows={2}
-			  spellCheck={false}
-			  autoComplete="off"
-			  value={apiKey}
-			  onChange={(e) => {
-				setApiKey(e.target.value);
-				setPasteSummary(null);
-			  }}
-			  placeholder={t("channels.apiKeyPlaceholder")}
-			  disabled={pending || Boolean(addApiKeyPending)}
-			  onKeyDown={(e) => {
-				// A newline is part of a multi-key paste, so Enter submits only when
-				// the value is a single key (Ctrl/Cmd+Enter always submits).
-				if (e.key === "Enter" && (e.ctrlKey || e.metaKey || !apiKey.includes("\n"))) {
-				  e.preventDefault();
-				  submitAdd();
-				}
-			  }}
-			/>
+            <textarea
+              className="credential-key-secret-input"
+              rows={2}
+              spellCheck={false}
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                setPasteSummary(null);
+              }}
+              placeholder={t("channels.apiKeyPlaceholder")}
+              disabled={pending || Boolean(addApiKeyPending)}
+              onKeyDown={(e) => {
+                // A newline is part of a multi-key paste, so Enter submits only when
+                // the value is a single key (Ctrl/Cmd+Enter always submits).
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey || !apiKey.includes("\n"))) {
+                  e.preventDefault();
+                  submitAdd();
+                }
+              }}
+            />
             <Button
               variant="secondary"
-              disabled={
-                pending || Boolean(addApiKeyPending) || pendingPaste.keys.length === 0
-              }
+              disabled={pending || Boolean(addApiKeyPending) || pendingPaste.keys.length === 0}
               onClick={submitAdd}
             >
-              {addApiKeyPending
-                ? t("common.loading")
-                : t("channels.apiKeyAddSave")}
+              {addApiKeyPending ? t("common.loading") : t("channels.apiKeyAddSave")}
             </Button>
           </div>
           {keyHint ? (
-            <p className="map-section-hint">
-              {t("channels.keyFormatHint", { hint: keyHint })}
-            </p>
+            <p className="map-section-hint">{t("channels.keyFormatHint", { hint: keyHint })}</p>
           ) : null}
           {keyWarning ? (
             <p className="map-row-error">
@@ -453,7 +422,9 @@ export function ChannelKeysDrawer({
                 : pasteSummary && pasteSummary.duplicates > 0
                   ? ` · ${t("channels.apiKeyPasteDuplicates", { n: pasteSummary.duplicates })}`
                   : ""}
-              {pasteSummary ? ` · ${t("channels.apiKeyPasteAdded", { n: pasteSummary.added })}` : ""}
+              {pasteSummary
+                ? ` · ${t("channels.apiKeyPasteAdded", { n: pasteSummary.added })}`
+                : ""}
             </p>
           ) : null}
         </Field>

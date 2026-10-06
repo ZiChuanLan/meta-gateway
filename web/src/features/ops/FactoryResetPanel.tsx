@@ -1,10 +1,10 @@
-import { useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
-import { api } from "../../api/client"
-import { useAdminMutation } from "../../hooks/useAdminMutation"
-import { useI18n } from "../../i18n"
-import { useSession } from "../../session"
-import { Button, Panel } from "../../components/ui"
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { api } from "../../api/client";
+import { useAdminMutation } from "../../hooks/useAdminMutation";
+import { useI18n } from "../../i18n";
+import { useSession } from "../../session";
+import { Button, Panel } from "../../components/ui";
 
 export // Factory reset: wipe all business data (channels, keys, routes, logs,
 // histories, rules) while preserving configuration. Requires typing RESET.
@@ -31,9 +31,7 @@ function FactoryResetPanel() {
       <div className="panel-header">
         <strong>{t("ops.factoryReset.title")}</strong>
       </div>
-      <p className="muted panel-lede">
-        {t("ops.factoryReset.hint")}
-      </p>
+      <p className="muted panel-lede">{t("ops.factoryReset.hint")}</p>
       {!arm ? (
         <Button variant="danger" onClick={() => setArm(true)}>
           {t("ops.factoryReset.start")}
@@ -59,11 +57,7 @@ function FactoryResetPanel() {
           </Button>
         </div>
       )}
-      {reset.isSuccess ? (
-        <p className="factory-reset-done">
-          {t("ops.factoryReset.done")}
-        </p>
-      ) : null}
+      {reset.isSuccess ? <p className="factory-reset-done">{t("ops.factoryReset.done")}</p> : null}
       {reset.error instanceof Error ? (
         <div className="inline-error">{reset.error.message}</div>
       ) : null}

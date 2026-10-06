@@ -74,11 +74,11 @@ export function UpdateDialog({
   const trackMismatch = Boolean(
     trackedChannel && status.channel && trackedChannel !== status.channel,
   );
-  const lastFailure = failure ?? (
-    !watch && !applyError && availability?.phase === "failed" && availability.error
+  const lastFailure =
+    failure ??
+    (!watch && !applyError && availability?.phase === "failed" && availability.error
       ? { target: availability.target ?? status.latest, reason: availability.error }
-      : null
-  );
+      : null);
   // A failed handoff says why. "Permission denied" on the Docker socket is the
   // one that actually happens, and the raw message names neither the cause nor
   // the fix.
@@ -100,14 +100,10 @@ export function UpdateDialog({
       onClose={onClose}
     >
       <div className="update-dialog-body">
-        {["disabled", "unchecked", "uncomparable", "checkFailed"].includes(
-          state,
-        ) ? (
+        {["disabled", "unchecked", "uncomparable", "checkFailed"].includes(state) ? (
           <p role="status">{t(`updates.state.${state}`)}</p>
         ) : null}
-        {fresh.isError ? (
-          <ErrorState error={fresh.error} retry={() => fresh.refetch()} />
-        ) : null}
+        {fresh.isError ? <ErrorState error={fresh.error} retry={() => fresh.refetch()} /> : null}
         {status.error ? <p role="alert">{status.error}</p> : null}
         {availability && !availability.available ? (
           <p role="status">{t("updates.manualRequired")}</p>
@@ -115,12 +111,7 @@ export function UpdateDialog({
         <Field label={t("updates.channel")}>
           <select
             value={channel.data?.channel ?? status.channel ?? "stable"}
-            disabled={
-              !channel.data ||
-              Boolean(watch) ||
-              pending ||
-              changeChannel.isPending
-            }
+            disabled={!channel.data || Boolean(watch) || pending || changeChannel.isPending}
             onChange={(event) => {
               setApplyError(null);
               changeChannel.mutate(event.target.value);
@@ -144,15 +135,11 @@ export function UpdateDialog({
           <p className="field-hint" role="status">
             {t("updates.trackLocked", {
               tag: trackedTag ?? "—",
-              channel: t(
-                trackedChannel === "beta" ? "updates.beta" : "updates.stable",
-              ),
+              channel: t(trackedChannel === "beta" ? "updates.beta" : "updates.stable"),
             })}
           </p>
         ) : null}
-        {changeChannel.isError ? (
-          <p role="alert">{t("updates.failed")}</p>
-        ) : null}
+        {changeChannel.isError ? <p role="alert">{t("updates.failed")}</p> : null}
         {watch ? (
           <div className="update-progress" role="status">
             <RefreshCw size={16} className="is-spinning" />
@@ -175,20 +162,14 @@ export function UpdateDialog({
               <p className="field-hint" role="status">
                 {t("updates.channelIsNewer", {
                   current: status.current,
-                  channel: t(
-                    status.channel === "beta"
-                      ? "updates.beta"
-                      : "updates.stable",
-                  ),
+                  channel: t(status.channel === "beta" ? "updates.beta" : "updates.stable"),
                   latest: status.latest,
                 })}
               </p>
             ) : !status.has_update ? (
               <p className="muted">{t("updates.noUpgrade")}</p>
             ) : null}
-            <p className="muted update-restart-hint">
-              {t("app.updateRestartHint")}
-            </p>
+            <p className="muted update-restart-hint">{t("app.updateRestartHint")}</p>
           </>
         )}
       </div>
@@ -209,9 +190,7 @@ export function UpdateDialog({
           ) : (
             <span>{t("updates.timeout")}</span>
           )}
-          {permissionFailure ? (
-            <p className="field-hint">{t("updates.socketPermission")}</p>
-          ) : null}
+          {permissionFailure ? <p className="field-hint">{t("updates.socketPermission")}</p> : null}
         </div>
       ) : null}
       {applyError ? <ErrorState error={applyError} /> : null}
@@ -240,8 +219,7 @@ export function UpdateDialog({
             fresh.isError ||
             trackMismatch ||
             !channel.data ||
-            (status.channel !== undefined &&
-              channel.data.channel !== status.channel) ||
+            (status.channel !== undefined && channel.data.channel !== status.channel) ||
             !status.enabled ||
             !status.has_update ||
             Boolean(status.error)

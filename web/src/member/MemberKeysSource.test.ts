@@ -6,11 +6,15 @@ afterEach(() => vi.unstubAllGlobals());
 
 it("uses the account aggregate, preserving totals beyond 500 requests and ledger cost", async () => {
   const summary: UsageSummary = {
-    request_count: 1200, prompt_tokens: 6000, completion_tokens: 4000,
-    total_tokens: 10000, cost: 25,
+    request_count: 1200,
+    prompt_tokens: 6000,
+    completion_tokens: 4000,
+    total_tokens: 10000,
+    cost: 25,
   };
-  const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-    new Response(JSON.stringify(summary)));
+  const fetcher = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(summary)),
+  );
   vi.stubGlobal("fetch", fetcher);
   const signal = new AbortController().signal;
   expect(await memberKeysSource.usageSummary(signal)).toEqual(summary);
@@ -20,7 +24,10 @@ it("uses the account aggregate, preserving totals beyond 500 requests and ledger
 });
 
 it("does not turn aggregate failures into zero usage", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response('{"error":"unavailable"}', { status: 503 })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response('{"error":"unavailable"}', { status: 503 })),
+  );
   await expect(memberKeysSource.usageSummary()).rejects.toMatchObject({ status: 503 });
 });
 
@@ -28,6 +35,11 @@ it("preserves cancellation instead of reporting a zero summary", async () => {
   const controller = new AbortController();
   controller.abort();
   const aborted = new DOMException("Cancelled", "AbortError");
-  vi.stubGlobal("fetch", vi.fn(async () => { throw aborted; }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw aborted;
+    }),
+  );
   await expect(memberKeysSource.usageSummary(controller.signal)).rejects.toBe(aborted);
 });

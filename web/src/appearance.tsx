@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { flushSync } from "react-dom";
 import { normalizePalette, type PaletteId } from "./palettes";
 import { UI_THEMES } from "./themes/registry";
@@ -11,8 +20,9 @@ const STYLE_KEY = "meta-gateway.appearance";
 // Keep the original key so existing light/dark preferences survive the upgrade.
 const SCHEME_KEY = "meta-gateway.theme";
 const PALETTE_KEY = "meta-gateway.palette";
-const validStyle = (value: string | null): Appearance => APPEARANCES.find((style) => style === value) ?? "classic";
-const validScheme = (value: string | null): ColorScheme => value === "dark" ? "dark" : "light";
+const validStyle = (value: string | null): Appearance =>
+  APPEARANCES.find((style) => style === value) ?? "classic";
+const validScheme = (value: string | null): ColorScheme => (value === "dark" ? "dark" : "light");
 /**
  * The colour scheme to start in.
  *
@@ -29,8 +39,20 @@ function preferredScheme(): ColorScheme {
   if (stored === "dark" || stored === "light") return stored;
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
-function read(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
-function persist(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Appearance still works without browser storage. */ } }
+function read(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function persist(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* Appearance still works without browser storage. */
+  }
+}
 
 type AppearanceContextValue = {
   appearance: Appearance;
@@ -44,7 +66,10 @@ type AppearanceContextValue = {
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 
 function transition(apply: () => void) {
-  if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (
+    document.startViewTransition &&
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
     const result = document.startViewTransition(() => flushSync(apply));
     void result.ready.catch(() => {});
     void result.finished.catch(() => {});
@@ -63,21 +88,27 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const sync = (event: StorageEvent) => {
       if (event.storageArea && event.storageArea !== localStorage) return;
-      if (event.key === STYLE_KEY || event.key === null) updateAppearance(validStyle(read(STYLE_KEY)));
-      if (event.key === SCHEME_KEY || event.key === null) updateScheme(validScheme(read(SCHEME_KEY)));
-      if (event.key === PALETTE_KEY || event.key === null) updatePalette(normalizePalette(read(PALETTE_KEY)));
+      if (event.key === STYLE_KEY || event.key === null)
+        updateAppearance(validStyle(read(STYLE_KEY)));
+      if (event.key === SCHEME_KEY || event.key === null)
+        updateScheme(validScheme(read(SCHEME_KEY)));
+      if (event.key === PALETTE_KEY || event.key === null)
+        updatePalette(normalizePalette(read(PALETTE_KEY)));
     };
     window.addEventListener("storage", sync);
     return () => window.removeEventListener("storage", sync);
   }, []);
-  const setAppearance = useCallback((value: Appearance) => {
-    if (value === appearance) return;
-    transition(() => {
-      document.documentElement.dataset.appearance = value;
-      updateAppearance(value);
-      persist(STYLE_KEY, value);
-    });
-  }, [appearance]);
+  const setAppearance = useCallback(
+    (value: Appearance) => {
+      if (value === appearance) return;
+      transition(() => {
+        document.documentElement.dataset.appearance = value;
+        updateAppearance(value);
+        persist(STYLE_KEY, value);
+      });
+    },
+    [appearance],
+  );
   // `remember` distinguishes "the operator picked this" from "the system
   // changed"; only the former is written to storage, so a system-driven scheme
   // keeps following the system afterwards.
@@ -88,10 +119,13 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       if (remember) persist(SCHEME_KEY, value);
     });
   }, []);
-  const setScheme = useCallback((value: ColorScheme) => {
-    if (value === scheme) return;
-    applyScheme(value, true);
-  }, [scheme, applyScheme]);
+  const setScheme = useCallback(
+    (value: ColorScheme) => {
+      if (value === scheme) return;
+      applyScheme(value, true);
+    },
+    [scheme, applyScheme],
+  );
   // Follow the desktop while the operator has not chosen a scheme themselves.
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -102,16 +136,25 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     media.addEventListener("change", follow);
     return () => media.removeEventListener("change", follow);
   }, [applyScheme]);
-  const toggleScheme = useCallback(() => setScheme(scheme === "dark" ? "light" : "dark"), [scheme, setScheme]);
+  const toggleScheme = useCallback(
+    () => setScheme(scheme === "dark" ? "light" : "dark"),
+    [scheme, setScheme],
+  );
   // Swapping palettes is colour tuning rather than a mode change, so it skips
   // the clip-path wipe that setAppearance/setScheme use.
-  const setPalette = useCallback((value: PaletteId) => {
-    if (value === palette) return;
-    document.documentElement.dataset.palette = value;
-    updatePalette(value);
-    persist(PALETTE_KEY, value);
-  }, [palette]);
-  const value = useMemo(() => ({ appearance, scheme, palette, setAppearance, setScheme, setPalette, toggleScheme }), [appearance, scheme, palette, setAppearance, setScheme, setPalette, toggleScheme]);
+  const setPalette = useCallback(
+    (value: PaletteId) => {
+      if (value === palette) return;
+      document.documentElement.dataset.palette = value;
+      updatePalette(value);
+      persist(PALETTE_KEY, value);
+    },
+    [palette],
+  );
+  const value = useMemo(
+    () => ({ appearance, scheme, palette, setAppearance, setScheme, setPalette, toggleScheme }),
+    [appearance, scheme, palette, setAppearance, setScheme, setPalette, toggleScheme],
+  );
   return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
 }
 

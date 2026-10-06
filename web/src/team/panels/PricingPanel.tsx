@@ -38,10 +38,7 @@ export function PricingPanel() {
       )}
       <div className="team-head">
         <h3>{t("billingRatios")}</h3>
-        <button
-          className="team-button primary"
-          onClick={() => setEditing({ model: "", ratio: 1 })}
-        >
+        <button className="team-button primary" onClick={() => setEditing({ model: "", ratio: 1 })}>
           {t("newRatio")}
         </button>
       </div>
@@ -99,26 +96,27 @@ export function PricingPanel() {
       )}
       <h3>{t("unitPrices")}</h3>
       <p className="team-muted">{t("unitPricesHint")}</p>
-      <Link className="team-button" to="/models">{t("unitPrices")}</Link>
+      <Link className="team-button" to="/models">
+        {t("unitPrices")}
+      </Link>
       {editing && <RatioDialog ratio={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
-function RatioDialog({
-  ratio,
-  onClose,
-}: {
-  ratio: ModelRatio;
-  onClose: () => void;
-}) {
+function RatioDialog({ ratio, onClose }: { ratio: ModelRatio; onClose: () => void }) {
   const { request, locale, t } = useUsers();
   const { busy, error, run } = useTeamMutation(request, t);
   const [model, setModel] = useState(ratio.model);
   const [value, setValue] = useState(String(ratio.ratio));
   const { t: ui } = useI18n();
   const creating = ratio.model === "";
-  const valid = model.trim() !== "" && value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1000;
+  const valid =
+    model.trim() !== "" &&
+    value.trim() !== "" &&
+    Number.isFinite(Number(value)) &&
+    Number(value) >= 0 &&
+    Number(value) <= 1000;
   return (
     <TeamModal
       title={creating ? t("newRatio") : t("ratioTitle", { model: ratio.model })}
@@ -157,7 +155,11 @@ function RatioDialog({
             onChange={(e) => setValue(e.target.value)}
           />
         </Field>
-        {value.trim() !== "" && Number(value) === 0 ? <p role="status" className="team-muted">{ui("pricing.zeroRatio")}</p> : null}
+        {value.trim() !== "" && Number(value) === 0 ? (
+          <p role="status" className="team-muted">
+            {ui("pricing.zeroRatio")}
+          </p>
+        ) : null}
         {error ? (
           <div role="alert" className="team-error">
             {teamError(error, locale)}

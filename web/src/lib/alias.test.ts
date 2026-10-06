@@ -12,7 +12,8 @@ it("normalizes valid aliases consistently across readers", () => {
 });
 
 it.each([undefined, "", "{", "null", "[]", '{"real":7}', '{"real":{}}', '{"real":" "}'])(
-  "does not invent an alias from %s", (raw) => {
+  "does not invent an alias from %s",
+  (raw) => {
     expect(mappingRealName(raw)).toBe("");
     expect(memberRealName({ mapping_json: raw })).toBe("");
   },

@@ -11,20 +11,28 @@ import { CommandPalette } from "./CommandPalette";
 const identity = vi.hoisted(() => ({ role: "member" as ConsoleRole | null }));
 vi.mock("../session", async (load) => {
   const actual = await load<typeof import("../session")>();
-  return { ...actual, useSession: () => ({
-    role: identity.role, client: new ApiClient("test-token"),
-  }) };
+  return {
+    ...actual,
+    useSession: () => ({
+      role: identity.role,
+      client: new ApiClient("test-token"),
+    }),
+  };
 });
 
 const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
 beforeEach(() => {
-  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
 });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   localStorage.clear();
-  if (originalScroll) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScroll);
+  if (originalScroll)
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScroll);
   else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 
@@ -35,12 +43,22 @@ function mount(role: ConsoleRole | null) {
   // Even cached staff results must not be visible to members.
   qc.setQueryData(["command-search", "Models"], {
     channels: [{ id: 9, name: "private-channel", url: "https://example.test" }],
-    routes: [], credentials: [], logs: [],
+    routes: [],
+    credentials: [],
+    logs: [],
   });
   return render(
-    <QueryClientProvider client={qc}><I18nProvider><MemoryRouter>
-      <CommandPalette open onClose={() => {}} nav={[{ to: "/models", label: "Models", icon: Boxes }]} />
-    </MemoryRouter></I18nProvider></QueryClientProvider>,
+    <QueryClientProvider client={qc}>
+      <I18nProvider>
+        <MemoryRouter>
+          <CommandPalette
+            open
+            onClose={() => {}}
+            nav={[{ to: "/models", label: "Models", icon: Boxes }]}
+          />
+        </MemoryRouter>
+      </I18nProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -50,16 +68,26 @@ it("lets members search navigation without fetching or displaying administrator 
   mount("member");
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "Models" } });
   // Wait past the component debounce, not just its initial navigation render.
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  });
   expect(screen.getByRole("button", { name: /Models/ })).toBeInTheDocument();
   expect(screen.queryByText("private-channel")).not.toBeInTheDocument();
   expect(fetcher).not.toHaveBeenCalled();
 });
 
 it.each([null, "owner", "admin"] as const)("keeps gateway search for %s", async (role) => {
-  const fetcher = vi.fn(async () => new Response(JSON.stringify({
-    channels: [], routes: [], credentials: [], logs: [],
-  })));
+  const fetcher = vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          channels: [],
+          routes: [],
+          credentials: [],
+          logs: [],
+        }),
+      ),
+  );
   vi.stubGlobal("fetch", fetcher);
   mount(role);
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "gateway" } });

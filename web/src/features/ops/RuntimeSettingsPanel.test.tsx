@@ -8,16 +8,27 @@ import { SessionProvider } from "../../session";
 import { ToastProvider } from "../../toast";
 import { RuntimeSettingsPanel } from "./RuntimeSettingsPanel";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
 
-function mount(children: ReactNode, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+function mount(
+  children: ReactNode,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   localStorage.setItem("meta-gateway.locale", "en");
   localStorage.setItem("meta-gateway.admin-token", "test-token");
   render(
     <QueryClientProvider client={client}>
-      <I18nProvider><ToastProvider><SessionProvider><MemoryRouter>
-        {children}
-      </MemoryRouter></SessionProvider></ToastProvider></I18nProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <SessionProvider>
+            <MemoryRouter>{children}</MemoryRouter>
+          </SessionProvider>
+        </ToastProvider>
+      </I18nProvider>
     </QueryClientProvider>,
   );
   return client;
@@ -44,19 +55,20 @@ function runtimeFetcher(payload: () => unknown) {
 async function openRoutingCard() {
   // The nav has a "Routing" button too; only the group toggle carries
   // aria-expanded, so the filter picks the collapsible header.
-  fireEvent.click(
-    await screen.findByRole("button", { name: /Routing/, expanded: false }),
-  );
+  fireEvent.click(await screen.findByRole("button", { name: /Routing/, expanded: false }));
   return screen.findByLabelText(/Retry rounds/) as Promise<HTMLInputElement>;
 }
 
 it("shows an initial load failure with a working retry instead of endless loading", async () => {
-  const fetcher = vi.fn(async (_input: RequestInfo | URL) =>
-    new Response('{"error":"runtime_read_failed"}', { status: 500 }));
+  const fetcher = vi.fn(
+    async (_input: RequestInfo | URL) =>
+      new Response('{"error":"runtime_read_failed"}', { status: 500 }),
+  );
   vi.stubGlobal("fetch", fetcher);
   mount(<RuntimeSettingsPanel />);
   const retry = await screen.findByRole("button", { name: "Retry" });
-  const reads = () => fetcher.mock.calls.filter(([path]) => String(path).includes("/runtime-settings")).length;
+  const reads = () =>
+    fetcher.mock.calls.filter(([path]) => String(path).includes("/runtime-settings")).length;
   const before = reads();
   expect(before).toBeGreaterThan(0);
   fireEvent.click(retry);
@@ -68,7 +80,10 @@ it("shows an initial load failure with a working retry instead of endless loadin
 // typed. The page must say the server moved and let the operator choose.
 it("reports a changed server snapshot instead of overwriting the draft", async () => {
   let payload = settings({});
-  vi.stubGlobal("fetch", runtimeFetcher(() => payload));
+  vi.stubGlobal(
+    "fetch",
+    runtimeFetcher(() => payload),
+  );
   const qc = mount(<RuntimeSettingsPanel />);
   const rounds = await openRoutingCard();
   expect(rounds.value).toBe("2");
@@ -90,7 +105,10 @@ it("reports a changed server snapshot instead of overwriting the draft", async (
 
 it("keeps the local draft when the operator chooses their side", async () => {
   let payload = settings({});
-  vi.stubGlobal("fetch", runtimeFetcher(() => payload));
+  vi.stubGlobal(
+    "fetch",
+    runtimeFetcher(() => payload),
+  );
   const qc = mount(<RuntimeSettingsPanel />);
   const rounds = await openRoutingCard();
   fireEvent.change(rounds, { target: { value: "40" } });

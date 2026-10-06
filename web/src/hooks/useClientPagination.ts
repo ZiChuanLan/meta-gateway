@@ -17,21 +17,15 @@ export function useClientPagination<T>(
     if (!storageKey || typeof sessionStorage === "undefined") return null;
     try {
       const raw = sessionStorage.getItem(`pagination:${storageKey}`);
-      return raw
-        ? (JSON.parse(raw) as { page?: number; pageSize?: number })
-        : null;
+      return raw ? (JSON.parse(raw) as { page?: number; pageSize?: number }) : null;
     } catch {
       return null;
     }
   }, [storageKey]);
-  const [page, setPage] = useState(
-    saved?.page && saved.page > 0 ? saved.page : 1,
-  );
+  const [page, setPage] = useState(saved?.page && saved.page > 0 ? saved.page : 1);
   const [pageSize, setPageSize] = useState(
     saved?.pageSize &&
-      PAGE_SIZE_OPTIONS.includes(
-        saved.pageSize as (typeof PAGE_SIZE_OPTIONS)[number],
-      )
+      PAGE_SIZE_OPTIONS.includes(saved.pageSize as (typeof PAGE_SIZE_OPTIONS)[number])
       ? saved.pageSize
       : initialPageSize,
   );
@@ -40,8 +34,7 @@ export function useClientPagination<T>(
   const totalPages = Math.max(1, Math.ceil(total / pageSize) || 1);
   // Keep a restored page while the query is still loading (total=0); once
   // data arrives, clamp it to the real page count instead of losing it.
-  const safePage =
-    total === 0 ? Math.max(1, page) : Math.min(Math.max(1, page), totalPages);
+  const safePage = total === 0 ? Math.max(1, page) : Math.min(Math.max(1, page), totalPages);
 
   useEffect(() => {
     if (page !== safePage) setPage(safePage);

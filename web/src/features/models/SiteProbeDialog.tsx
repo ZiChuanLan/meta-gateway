@@ -72,7 +72,13 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
 
   const detect = useAdminMutation({
     mutationFn: (target: { url: string; siteId: string }) => service.siteProbeDetect(target.url),
-    onSuccess: (data, target) => { if (target.url === sourceDraft.current.url.trim() && target.siteId === sourceDraft.current.siteId) setDetection(data); },
+    onSuccess: (data, target) => {
+      if (
+        target.url === sourceDraft.current.url.trim() &&
+        target.siteId === sourceDraft.current.siteId
+      )
+        setDetection(data);
+    },
   });
   const save = useAdminMutation({
     mutationFn: (body: {
@@ -99,8 +105,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   // already have and reads every matched site once. No preview step — the
   // readings themselves are the confirmation.
   const catalogImport = useAdminMutation({
-    mutationFn: (body: { url: string }) =>
-      service.siteProbeCatalogImport(body),
+    mutationFn: (body: { url: string }) => service.siteProbeCatalogImport(body),
     invalidateKeys: [["sites"], ["site-probe"]],
   });
   // Cleanup for the debris an earlier import left behind: sites nothing routes
@@ -148,8 +153,17 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
     pendingIdOf: (id: number) => id,
   });
   const apply = useAdminMutation({
-    mutationFn: (body: { policy: SiteProbePolicy; dry_run: boolean; site_ids?: number[]; previewKey: string }) =>
-      service.siteProbeApply({ policy: body.policy, dry_run: body.dry_run, site_ids: body.site_ids }),
+    mutationFn: (body: {
+      policy: SiteProbePolicy;
+      dry_run: boolean;
+      site_ids?: number[];
+      previewKey: string;
+    }) =>
+      service.siteProbeApply({
+        policy: body.policy,
+        dry_run: body.dry_run,
+        site_ids: body.site_ids,
+      }),
     invalidateKeys: [["route-overviews"], ["channels"]],
     onSuccess: (data, variables) => {
       if (variables.previewKey !== previewKey.current) return;
@@ -165,10 +179,17 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   });
 
   const validPolicy = (value: SiteProbePolicy) =>
-    value.ratio_threshold > 0 && value.ratio_threshold <= 1 &&
-    Number.isInteger(value.min_samples) && value.min_samples >= 1 && value.min_samples <= 1000 &&
-    Number.isInteger(value.low_rounds) && value.low_rounds >= 1 && value.low_rounds <= 10 &&
-    Number.isInteger(value.high_rounds) && value.high_rounds >= 1 && value.high_rounds <= 10;
+    value.ratio_threshold > 0 &&
+    value.ratio_threshold <= 1 &&
+    Number.isInteger(value.min_samples) &&
+    value.min_samples >= 1 &&
+    value.min_samples <= 1000 &&
+    Number.isInteger(value.low_rounds) &&
+    value.low_rounds >= 1 &&
+    value.low_rounds <= 10 &&
+    Number.isInteger(value.high_rounds) &&
+    value.high_rounds >= 1 &&
+    value.high_rounds <= 10;
 
   const policyFromDraft = (patch: Partial<SiteProbePolicy>) => {
     setPolicy({ ...policy, ...patch });
@@ -181,19 +202,14 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   // arrays once instead of rebuilding them in each render.
   const rows = useMemo(() => report.data?.rows ?? [], [report.data]);
   const siteRows = useMemo(() => report.data?.sites ?? [], [report.data]);
-  const unmatchedRows = useMemo(
-    () => report.data?.unmatched ?? [],
-    [report.data],
-  );
+  const unmatchedRows = useMemo(() => report.data?.unmatched ?? [], [report.data]);
   const needle = query.trim().toLowerCase();
   const visibleRows = useMemo(() => {
     return rows.filter((row) => {
       if (scopeSite && row.site_id !== Number(scopeSite)) return false;
       if (onlyWithData && !rowHasEvidence(row)) return false;
       if (needle === "") return true;
-      return `${row.route} ${row.raw_model} ${row.site_name}`
-        .toLowerCase()
-        .includes(needle);
+      return `${row.route} ${row.raw_model} ${row.site_name}`.toLowerCase().includes(needle);
     });
   }, [rows, needle, onlyWithData, scopeSite]);
   const rowsBySite = useMemo(() => {
@@ -208,9 +224,9 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   // Cards follow the report's site list (so a configured site with no reading
   // yet still gets its card and its switch), ordered by name for a stable page.
   const cards = useMemo(() => {
-    const list = siteRows.filter((site) => !scopeSite || site.site_id === Number(scopeSite)).sort((left, right) =>
-      left.site_name.localeCompare(right.site_name),
-    );
+    const list = siteRows
+      .filter((site) => !scopeSite || site.site_id === Number(scopeSite))
+      .sort((left, right) => left.site_name.localeCompare(right.site_name));
     if (needle === "" && !onlyWithData) return list;
     return list.filter(
       (site) =>
@@ -221,54 +237,67 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
 
   const lowCount = visibleRows.filter((row) => row.verdict === "low").length;
   const autoDisabled = visibleRows.reduce(
-    (total, row) =>
-      total +
-      (row.members ?? []).filter((member) => member.auto_disabled).length,
+    (total, row) => total + (row.members ?? []).filter((member) => member.auto_disabled).length,
     0,
   );
-  const selectedSite = (sites.data ?? []).find(
-    (site) => String(site.id) === siteId,
-  );
+  const selectedSite = (sites.data ?? []).find((site) => String(site.id) === siteId);
   // A site already configured can be edited (thresholds, a manual URL) without
   // re-detecting its page.
-  const sourceKind = detection?.kind ?? (url.trim() === selectedSite?.probe_source_url ? selectedSite.probe_source_kind : "") ?? "";
+  const sourceKind =
+    detection?.kind ??
+    (url.trim() === selectedSite?.probe_source_url ? selectedSite.probe_source_kind : "") ??
+    "";
   const sourceURL = detection?.url ?? url.trim();
   // Auto mode needs no URL at all: the platform column derives the source.
   // It is the primary control; the URL field is the advanced override.
-  const [autoMode, setAutoMode] = useState<boolean>(
-    selectedSite?.probe_auto ?? true,
-  );
+  const [autoMode, setAutoMode] = useState<boolean>(selectedSite?.probe_auto ?? true);
   const sourceDraft = useRef({ siteId, url });
   sourceDraft.current = { siteId, url };
-  const canSave = siteId !== "" && validPolicy(sourcePolicy) &&
+  const canSave =
+    siteId !== "" &&
+    validPolicy(sourcePolicy) &&
     (autoMode || (sourceKind !== "" && sourceURL !== ""));
-  const busy = save.isPending || clear.isPending || collect.isPending || collectOne.isPending ||
-    catalogImport.isPending || catalogPrune.isPending || toggleSource.isPending ||
-    toggleAutoApply.isPending || apply.isPending || adopt.isPending;
+  const busy =
+    save.isPending ||
+    clear.isPending ||
+    collect.isPending ||
+    collectOne.isPending ||
+    catalogImport.isPending ||
+    catalogPrune.isPending ||
+    toggleSource.isPending ||
+    toggleAutoApply.isPending ||
+    apply.isPending ||
+    adopt.isPending;
   const evaluationKey = JSON.stringify([policy, scopeSite, report.dataUpdatedAt]);
   previewKey.current = evaluationKey;
-  useEffect(() => { setActions(null); setPreviewFor(""); }, [policy, scopeSite]);
-  const submitApply = (dry_run: boolean) => apply.mutate({
-    policy, dry_run, site_ids: scopeSite ? [Number(scopeSite)] : undefined,
-    previewKey: evaluationKey,
-  });
-  const saveDraft = () => save.mutate({
-    site_id: Number(siteId), kind: sourceKind,
-    url: sourceURL, auto: autoMode, enabled: true,
-    config: JSON.stringify({ auto_apply: autoApply, policy: sourcePolicy }),
-  });
+  useEffect(() => {
+    setActions(null);
+    setPreviewFor("");
+  }, [policy, scopeSite]);
+  const submitApply = (dry_run: boolean) =>
+    apply.mutate({
+      policy,
+      dry_run,
+      site_ids: scopeSite ? [Number(scopeSite)] : undefined,
+      previewKey: evaluationKey,
+    });
+  const saveDraft = () =>
+    save.mutate({
+      site_id: Number(siteId),
+      kind: sourceKind,
+      url: sourceURL,
+      auto: autoMode,
+      enabled: true,
+      config: JSON.stringify({ auto_apply: autoApply, policy: sourcePolicy }),
+    });
 
   const pickSite = (value: string) => {
     setSiteId(value);
     setDetection(null);
-    const site = (sites.data ?? []).find(
-      (candidate) => String(candidate.id) === value,
-    );
+    const site = (sites.data ?? []).find((candidate) => String(candidate.id) === value);
     setUrl(site?.probe_source_url ?? "");
     setAutoMode(site?.probe_auto ?? true);
-    const status = siteRows.find(
-      (candidate) => String(candidate.site_id) === value,
-    );
+    const status = siteRows.find((candidate) => String(candidate.site_id) === value);
     setAutoApply(status?.auto_apply ?? false);
     setSourcePolicy(status?.policy ?? DEFAULT_POLICY);
   };
@@ -291,7 +320,13 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
           </Button>
           <Button
             disabled={
-              busy || report.isFetching || report.isError || actions === null || !actions.some((action) => !action.skipped) || actionsAreDryRun === false || previewFor !== evaluationKey
+              busy ||
+              report.isFetching ||
+              report.isError ||
+              actions === null ||
+              !actions.some((action) => !action.skipped) ||
+              actionsAreDryRun === false ||
+              previewFor !== evaluationKey
             }
             onClick={() => submitApply(false)}
           >
@@ -305,9 +340,18 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
       <div className="site-probe-workflow">{t("modelsPage.siteProbe.workflow")}</div>
       <label className="field">
         <span>{t("modelsPage.siteProbe.actionScope")}</span>
-        <select aria-label={t("modelsPage.siteProbe.actionScope")} value={scopeSite} disabled={busy} onChange={(event) => setScopeSite(event.target.value)}>
+        <select
+          aria-label={t("modelsPage.siteProbe.actionScope")}
+          value={scopeSite}
+          disabled={busy}
+          onChange={(event) => setScopeSite(event.target.value)}
+        >
           <option value="">{t("modelsPage.siteProbe.allSitesScope")}</option>
-          {siteRows.map((site) => <option key={site.site_id} value={site.site_id}>{site.site_name}</option>)}
+          {siteRows.map((site) => (
+            <option key={site.site_id} value={site.site_id}>
+              {site.site_name}
+            </option>
+          ))}
         </select>
         <span className="field-hint">{t("modelsPage.siteProbe.scopeHint")}</span>
       </label>
@@ -389,9 +433,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
             min={1}
             max={1000}
             value={policy.min_samples}
-            onChange={(event) =>
-              policyFromDraft({ min_samples: Number(event.target.value) })
-            }
+            onChange={(event) => policyFromDraft({ min_samples: Number(event.target.value) })}
           />
         </label>
         <label className="field">
@@ -402,9 +444,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
             min={1}
             max={10}
             value={policy.low_rounds}
-            onChange={(event) =>
-              policyFromDraft({ low_rounds: Number(event.target.value) })
-            }
+            onChange={(event) => policyFromDraft({ low_rounds: Number(event.target.value) })}
           />
         </label>
         <label className="field">
@@ -415,9 +455,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
             min={1}
             max={10}
             value={policy.high_rounds}
-            onChange={(event) =>
-              policyFromDraft({ high_rounds: Number(event.target.value) })
-            }
+            onChange={(event) => policyFromDraft({ high_rounds: Number(event.target.value) })}
           />
         </label>
         <p className="site-probe-policy-hint">
@@ -442,14 +480,20 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
               key={site.site_id}
               site={site}
               rows={rowsBySite.get(site.site_id) ?? []}
-         			  sourcePending={busy}
-			  autoApplyPending={busy}
-			  collectPending={busy}
+              sourcePending={busy}
+              autoApplyPending={busy}
+              collectPending={busy}
               onToggleSource={() => toggleSource.mutate(site)}
               onToggleAutoApply={() => toggleAutoApply.mutate(site)}
               onCollect={() => collectOne.mutate(site.site_id)}
               onAdopt={adopt.mutate}
-              onConfigure={() => { pickSite(String(site.site_id)); document.getElementById("site-probe-source-settings")?.setAttribute("open", ""); document.getElementById("site-probe-source-settings")?.scrollIntoView?.({ block: "nearest" }); }}
+              onConfigure={() => {
+                pickSite(String(site.site_id));
+                document.getElementById("site-probe-source-settings")?.setAttribute("open", "");
+                document
+                  .getElementById("site-probe-source-settings")
+                  ?.scrollIntoView?.({ block: "nearest" });
+              }}
               adoptPending={adopt.isPending}
             />
           ))}
@@ -463,12 +507,14 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
             : t("modelsPage.siteProbe.adopted")}
         </div>
       ) : null}
-      {adopt.error ? (
-        <div className="inline-error">{String(adopt.error)}</div>
-      ) : null}
+      {adopt.error ? <div className="inline-error">{String(adopt.error)}</div> : null}
 
       <section className="site-probe-changes">
-        {actionsAreDryRun && actions !== null && previewFor !== evaluationKey ? <p role="status" className="field-hint">{t("modelsPage.siteProbe.previewExpired")}</p> : null}
+        {actionsAreDryRun && actions !== null && previewFor !== evaluationKey ? (
+          <p role="status" className="field-hint">
+            {t("modelsPage.siteProbe.previewExpired")}
+          </p>
+        ) : null}
         <header className="probe-picker-head">
           <h3>{t("modelsPage.siteProbe.changes")}</h3>
           <span className="probe-picker-count">
@@ -562,11 +608,12 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
                 className="mono"
                 value={url}
                 placeholder="https://stat.example.com/status/ai"
-                onChange={(event) => { setUrl(event.target.value); setDetection(null); }}
+                onChange={(event) => {
+                  setUrl(event.target.value);
+                  setDetection(null);
+                }}
               />
-              <span className="field-hint">
-                {t("modelsPage.siteProbe.sourceUrlHint")}
-              </span>
+              <span className="field-hint">{t("modelsPage.siteProbe.sourceUrlHint")}</span>
             </label>
             <div className="probe-picker-actions">
               <button
@@ -583,31 +630,55 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
           </div>
         ) : null}
         <div className="site-probe-policy">
-          {(["ratio_threshold", "min_samples", "low_rounds", "high_rounds"] as const).map((key, index) => (
-            <label className="field" key={key}>
-              <span>{t("modelsPage.siteProbe." + ["threshold", "minSamples", "lowRounds", "highRounds"][index])}</span>
-              <input type="number" min={1} max={key === "ratio_threshold" ? 100 : key === "min_samples" ? 1000 : 10}
-                value={key === "ratio_threshold" ? Math.round(sourcePolicy[key] * 100) : sourcePolicy[key]}
-                onChange={(event) => setSourcePolicy({ ...sourcePolicy, [key]: Number(event.target.value) / (key === "ratio_threshold" ? 100 : 1) })} />
-            </label>
-          ))}
+          {(["ratio_threshold", "min_samples", "low_rounds", "high_rounds"] as const).map(
+            (key, index) => (
+              <label className="field" key={key}>
+                <span>
+                  {t(
+                    "modelsPage.siteProbe." +
+                      ["threshold", "minSamples", "lowRounds", "highRounds"][index],
+                  )}
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={key === "ratio_threshold" ? 100 : key === "min_samples" ? 1000 : 10}
+                  value={
+                    key === "ratio_threshold"
+                      ? Math.round(sourcePolicy[key] * 100)
+                      : sourcePolicy[key]
+                  }
+                  onChange={(event) =>
+                    setSourcePolicy({
+                      ...sourcePolicy,
+                      [key]: Number(event.target.value) / (key === "ratio_threshold" ? 100 : 1),
+                    })
+                  }
+                />
+              </label>
+            ),
+          )}
         </div>
         <p className="field-hint">{t("modelsPage.siteProbe.sourcePolicyHint")}</p>
         <div className="probe-picker-actions">
-          <Button disabled={!canSave || busy || detect.isPending} onClick={saveDraft}>{t("modelsPage.siteProbe.save")}</Button>
-          <Button variant="secondary" disabled={!siteId || busy} onClick={() => clear.mutate(Number(siteId))}>{t("modelsPage.siteProbe.clear")}</Button>
+          <Button disabled={!canSave || busy || detect.isPending} onClick={saveDraft}>
+            {t("modelsPage.siteProbe.save")}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!siteId || busy}
+            onClick={() => clear.mutate(Number(siteId))}
+          >
+            {t("modelsPage.siteProbe.clear")}
+          </Button>
         </div>
         {detection ? (
           <div className="unify-result" role="status">
             {describeDetection(detection, t)}
           </div>
         ) : null}
-        {detect.error ? (
-          <div className="inline-error">{String(detect.error)}</div>
-        ) : null}
-        {save.error ? (
-          <div className="inline-error">{String(save.error)}</div>
-        ) : null}
+        {detect.error ? <div className="inline-error">{String(detect.error)}</div> : null}
+        {save.error ? <div className="inline-error">{String(save.error)}</div> : null}
         <div className="field-row">
           <label className="check marginless">
             <input
@@ -617,9 +688,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
             />
             <span>{t("modelsPage.siteProbe.autoApply")}</span>
           </label>
-          <span className="field-hint">
-            {t("modelsPage.siteProbe.autoApplyHint")}
-          </span>
+          <span className="field-hint">{t("modelsPage.siteProbe.autoApplyHint")}</span>
         </div>
         <div className="probe-picker-actions">
           <button
@@ -646,9 +715,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
                 count: unmatchedRows.length,
               })}
             </summary>
-            <p className="field-hint">
-              {t("modelsPage.siteProbe.unmatchedHint")}
-            </p>
+            <p className="field-hint">{t("modelsPage.siteProbe.unmatchedHint")}</p>
             <table className="table">
               <thead>
                 <tr>
@@ -711,9 +778,7 @@ function SiteProbeCard({
   const { t } = useI18n();
   const low = rows.filter((row) => row.verdict === "low").length;
   const parked = rows.reduce(
-    (total, row) =>
-      total +
-      (row.members ?? []).filter((member) => member.auto_disabled).length,
+    (total, row) => total + (row.members ?? []).filter((member) => member.auto_disabled).length,
     0,
   );
   const status = site.probe_last_error
@@ -722,9 +787,7 @@ function SiteProbeCard({
       ? t("modelsPage.siteProbe.collectOk", { count: site.monitor_count })
       : t("modelsPage.siteProbe.neverCollected");
   return (
-    <section
-      className={`site-probe-card${site.probe_source_enabled ? "" : " is-off"}`}
-    >
+    <section className={`site-probe-card${site.probe_source_enabled ? "" : " is-off"}`}>
       <header className="site-probe-card-head">
         <div className="site-probe-card-title">
           <span className="site-probe-card-name">{site.site_name}</span>
@@ -735,7 +798,9 @@ function SiteProbeCard({
           </span>
         </div>
         <div className="site-probe-card-switches">
-          <Button variant="quiet" disabled={sourcePending} onClick={onConfigure}>{t("modelsPage.siteProbe.configure")}</Button>
+          <Button variant="quiet" disabled={sourcePending} onClick={onConfigure}>
+            {t("modelsPage.siteProbe.configure")}
+          </Button>
           <button
             type="button"
             className={`site-probe-switch${site.probe_source_enabled ? " is-on" : ""}`}
@@ -785,9 +850,7 @@ function SiteProbeCard({
             : t("modelsPage.siteProbe.collectNow")}
         </button>
       </div>
-      {site.probe_last_error ? (
-        <div className="inline-error">{site.probe_last_error}</div>
-      ) : null}
+      {site.probe_last_error ? <div className="inline-error">{site.probe_last_error}</div> : null}
       {rows.length === 0 ? (
         <p className="field-hint site-probe-card-empty">
           {site.probe_source_enabled
@@ -840,14 +903,10 @@ function ModelLine({
         </span>
         {row.group_name ? <span className="site-probe-tag">{row.group_name}</span> : null}
         {row.match && row.match !== "exact" ? (
-          <span className="site-probe-match">
-            {t(`modelsPage.siteProbe.match.${row.match}`)}
-          </span>
+          <span className="site-probe-match">{t(`modelsPage.siteProbe.match.${row.match}`)}</span>
         ) : null}
         {newest?.weak_evidence && row.availability_source !== "traffic" ? (
-          <span className="site-probe-tag">
-            {t("modelsPage.siteProbe.weakEvidence")}
-          </span>
+          <span className="site-probe-tag">{t("modelsPage.siteProbe.weakEvidence")}</span>
         ) : null}
       </div>
       <div className="site-probe-model-data">
@@ -874,9 +933,7 @@ function ModelLine({
           ) : newest && newest.samples > 0 ? (
             <span className="mono">
               {formatAvailability(newest.up_count, newest.samples, t)}
-              <span className="site-probe-tag">
-                {t("modelsPage.siteProbe.sourceSite")}
-              </span>
+              <span className="site-probe-tag">{t("modelsPage.siteProbe.sourceSite")}</span>
             </span>
           ) : (
             <span className="mono">{t("modelsPage.siteProbe.noSamples")}</span>
@@ -935,18 +992,14 @@ function ModelLine({
             type="button"
             className="site-probe-adopt"
             disabled={adoptPending}
-            onClick={() =>
-              onAdopt((row.members ?? []).map((member) => member.member_id))
-            }
+            onClick={() => onAdopt((row.members ?? []).map((member) => member.member_id))}
           >
             <ChevronRight size={12} />
             {t("modelsPage.siteProbe.adoptPrice")}
           </button>
         ) : null}
         {parked && row.verdict !== "low" ? (
-          <span className="site-probe-hint">
-            {t("modelsPage.siteProbe.parkedHint")}
-          </span>
+          <span className="site-probe-hint">{t("modelsPage.siteProbe.parkedHint")}</span>
         ) : null}
       </div>
     </li>
@@ -986,10 +1039,7 @@ function describeSkip(skipped: string | undefined, t: Translate): string {
   return label === `modelsPage.siteProbe.skip.${skipped}` ? skipped : label;
 }
 
-function sourceKindLabel(
-  kind: string | undefined,
-  t: Translate,
-): string {
+function sourceKindLabel(kind: string | undefined, t: Translate): string {
   if (kind === "uptime_kuma") return t("modelsPage.siteProbe.kindUptimeKuma");
   if (kind === "newapi") return t("modelsPage.siteProbe.kindNewApi");
   if (kind === "sub2api_transit") return t("modelsPage.siteProbe.kindSub2Api");
@@ -1006,14 +1056,9 @@ function skipLabel(skipped: string, t: Translate): string {
   return label === key ? skipped : label;
 }
 
-function describeDetection(
-  detection: SiteProbeDetection,
-  t: Translate,
-): string {
+function describeDetection(detection: SiteProbeDetection, t: Translate): string {
   if (detection.kind === "uptime_kuma") {
-    const models = (detection.monitors ?? []).filter(
-      (monitor) => monitor.samples > 0,
-    ).length;
+    const models = (detection.monitors ?? []).filter((monitor) => monitor.samples > 0).length;
     return t("modelsPage.siteProbe.detectedKuma", {
       title: detection.title ?? detection.slug ?? "",
       groups: detection.groups?.length ?? 0,
@@ -1035,11 +1080,7 @@ function describeDetection(
   });
 }
 
-function formatAvailability(
-  up: number,
-  samples: number,
-  t: Translate,
-): string {
+function formatAvailability(up: number, samples: number, t: Translate): string {
   if (samples <= 0) return t("modelsPage.siteProbe.noSamples");
   const percent = Math.round((up / samples) * 1000) / 10;
   return `${percent}% (${up}/${samples})`;
@@ -1060,10 +1101,7 @@ function formatPercent(ratio: number): string {
 // whatever it says (New-API's quota_display_type) — one site is USD, the next is
 // CNY — and the gateway has no verified exchange rate for them. A number
 // carrying the wrong currency symbol is worse than one carrying its own.
-function formatPrice(
-  price: SiteProbePrice | undefined,
-  t: Translate,
-): string {
+function formatPrice(price: SiteProbePrice | undefined, t: Translate): string {
   if (!price) return "—";
   if (price.unparsed) {
     return t("modelsPage.siteProbe.priceUnparsed", {
@@ -1076,7 +1114,9 @@ function formatPrice(
       ? `${price.currency} `
       : "";
   const amount = (value: number | undefined) =>
-    value === undefined || !Number.isFinite(value) ? "—" : `${unit}${Number(value.toPrecision(10))}`;
+    value === undefined || !Number.isFinite(value)
+      ? "—"
+      : `${unit}${Number(value.toPrecision(10))}`;
   if (price.mode === "fixed") {
     return t("modelsPage.siteProbe.perCallPrice", {
       price: amount(price.per_request),
@@ -1090,7 +1130,9 @@ function formatPrice(
 
 function formatTime(value: string): string {
   const normalized = value.replace(" ", "T");
-  const date = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized) ? normalized : normalized + "Z");
+  const date = new Date(
+    /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized) ? normalized : normalized + "Z",
+  );
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }

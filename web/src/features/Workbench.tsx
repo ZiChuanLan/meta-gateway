@@ -42,8 +42,12 @@ function AdminWorkbench() {
         active={tab}
         onChange={(value) => setTab(value as TabValue)}
       />
-      <div hidden={tab !== "images"}><ImageStudio active={tab === "images"} /></div>
-      <div hidden={tab !== "text"}><Playground active={tab === "text"} /></div>
+      <div hidden={tab !== "images"}>
+        <ImageStudio active={tab === "images"} />
+      </div>
+      <div hidden={tab !== "text"}>
+        <Playground active={tab === "text"} />
+      </div>
     </Page>
   );
 }

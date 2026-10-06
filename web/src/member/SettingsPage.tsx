@@ -9,7 +9,6 @@ import { useI18n } from "../i18n";
 import { APPEARANCES, type Appearance } from "../appearance";
 import { UI_THEMES } from "../themes/registry";
 
-
 type Session = {
   id: string;
   created_at: number;
@@ -59,8 +58,7 @@ export function SettingsPage({
 
   const preferences = useQuery({
     queryKey: ["user", userID, "preferences"],
-    queryFn: ({ signal }) =>
-      accountRequest<PreferencesView>("/me/preferences", { signal }),
+    queryFn: ({ signal }) => accountRequest<PreferencesView>("/me/preferences", { signal }),
   });
   const [redeemCode, setRedeemCode] = useState("");
   const [redeemNotice, setRedeemNotice] = useState("");
@@ -71,8 +69,7 @@ export function SettingsPage({
 
   const sessions = useQuery({
     queryKey: ["user", userID, "sessions"],
-    queryFn: ({ signal }) =>
-      accountRequest<Session[]>("/me/sessions", { signal }),
+    queryFn: ({ signal }) => accountRequest<Session[]>("/me/sessions", { signal }),
   });
 
   async function savePreferences(event: FormEvent<HTMLFormElement>) {
@@ -123,11 +120,7 @@ export function SettingsPage({
         <div className="user-credit">
           <div>
             <span className="workspace-caption">{t("creditRemaining")}</span>
-            <strong>
-              {credit.unlimited
-                ? t("unlimited")
-                : credit.available.toLocaleString()}
-            </strong>
+            <strong>{credit.unlimited ? t("unlimited") : credit.available.toLocaleString()}</strong>
           </div>
           <div>
             <span className="workspace-caption">{t("creditUsed")}</span>
@@ -135,18 +128,14 @@ export function SettingsPage({
           </div>
           <div>
             <span className="workspace-caption">{t("creditTotal")}</span>
-            <strong>
-              {credit.unlimited ? t("unlimited") : credit.total.toLocaleString()}
-            </strong>
+            <strong>{credit.unlimited ? t("unlimited") : credit.total.toLocaleString()}</strong>
           </div>
           {/* The spend budget is a separate allowance: a member can be capped
               by money while tokens are unlimited, and vice versa. */}
           <div>
             <span className="workspace-caption">{t("creditCostRemaining")}</span>
             <strong>
-              {credit.cost_unlimited
-                ? t("unlimited")
-                : formatCost(credit.cost_available)}
+              {credit.cost_unlimited ? t("unlimited") : formatCost(credit.cost_available)}
             </strong>
           </div>
           <div>
@@ -223,12 +212,7 @@ export function SettingsPage({
         titleHelp={t("requestControlsHint")}
         actions={
           preferences.data?.can_edit ? (
-            <Button
-              type="submit"
-              form="preferences-form"
-              loading={busy}
-              disabled={busy}
-            >
+            <Button type="submit" form="preferences-form" loading={busy} disabled={busy}>
               {t("save")}
             </Button>
           ) : undefined
@@ -246,9 +230,7 @@ export function SettingsPage({
         ) : preferences.data ? (
           <>
             <p className="workspace-note" style={{ marginTop: 0 }}>
-              {preferences.data.can_edit
-                ? t("requestControlsHint")
-                : t("managedByOwner")}
+              {preferences.data.can_edit ? t("requestControlsHint") : t("managedByOwner")}
             </p>
             <form id="preferences-form" onSubmit={savePreferences}>
               <fieldset
@@ -283,8 +265,7 @@ export function SettingsPage({
                     onChange={(e) =>
                       setDraft({
                         ...draft,
-                        max_retries:
-                          e.target.value === "" ? null : Number(e.target.value),
+                        max_retries: e.target.value === "" ? null : Number(e.target.value),
                       })
                     }
                   />
@@ -302,16 +283,13 @@ export function SettingsPage({
               ) : null}
               <div className="user-setting-effective">
                 <span>
-                  {t("siteDefault")}:{" "}
-                  {preferences.data.site.failover_enabled ? t("on") : t("off")} ·{" "}
-                  {preferences.data.site.retry_times}
+                  {t("siteDefault")}: {preferences.data.site.failover_enabled ? t("on") : t("off")}{" "}
+                  · {preferences.data.site.retry_times}
                 </span>
                 <span>
                   {t("effectiveDefault")}:{" "}
-                  {preferences.data.effective.failover_enabled
-                    ? t("on")
-                    : t("off")}{" "}
-                  · {preferences.data.effective.retry_times}
+                  {preferences.data.effective.failover_enabled ? t("on") : t("off")} ·{" "}
+                  {preferences.data.effective.retry_times}
                 </span>
               </div>
               <p className="workspace-note">{t("retrySafetyHint")}</p>
@@ -326,10 +304,7 @@ export function SettingsPage({
               the same two sheets by name. */}
           <label className="field">
             <span className="field-label">{t("interfaceTheme")}</span>
-            <select
-              value={appearance}
-              onChange={(e) => onAppearance(e.target.value as Appearance)}
-            >
+            <select value={appearance} onChange={(e) => onAppearance(e.target.value as Appearance)}>
               {APPEARANCES.map((style) => (
                 <option key={style} value={style}>
                   {/* The theme names live in the console's shared dictionary
@@ -358,13 +333,15 @@ export function SettingsPage({
       </Panel>
 
       <Panel title={t("account")}>
-        <div className="user-setting-effective" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
+        <div
+          className="user-setting-effective"
+          style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}
+        >
           <span>
             {account.user.name} · {account.user.username}
           </span>
           <span>
-            {t("role")}: {t(account.user.role)} · {t("policy")}:{" "}
-            {account.policy.name}
+            {t("role")}: {t(account.user.role)} · {t("policy")}: {account.policy.name}
           </span>
         </div>
         <form
@@ -388,21 +365,11 @@ export function SettingsPage({
         >
           <label className="field">
             <span className="field-label">{t("currentPassword")}</span>
-            <input
-              name="current"
-              type="password"
-              required
-              autoComplete="current-password"
-            />
+            <input name="current" type="password" required autoComplete="current-password" />
           </label>
           <label className="field">
             <span className="field-label">{t("password")}</span>
-            <input
-              name="password"
-              type="password"
-              required
-              autoComplete="new-password"
-            />
+            <input name="password" type="password" required autoComplete="new-password" />
             <span className="field-hint">{t("passwordHint")}</span>
           </label>
           <div className="wide">
@@ -416,9 +383,7 @@ export function SettingsPage({
             {teamError(error, locale)}
           </div>
         ) : null}
-        <h3 style={{ margin: "26px 0 10px", fontSize: 13 }}>
-          {t("sessions")}
-        </h3>
+        <h3 style={{ margin: "26px 0 10px", fontSize: 13 }}>{t("sessions")}</h3>
         {sessions.error ? (
           <div className="team-error" role="alert">
             {teamError(sessions.error, locale)}
@@ -436,20 +401,16 @@ export function SettingsPage({
             <tbody>
               {(sessions.data ?? []).map((session) => (
                 <tr key={session.id}>
-                  <td>
-                    {new Date(session.created_at * 1000).toLocaleString(locale)}
-                  </td>
+                  <td>{new Date(session.created_at * 1000).toLocaleString(locale)}</td>
                   <td>{session.current ? t("currentSession") : "—"}</td>
                   <td>
                     <Button
                       variant="secondary"
                       disabled={busy}
                       onClick={() =>
-                        void run(`/me/sessions/${session.id}`, "DELETE").then(
-                          () => {
-                            if (session.current) onDisconnected();
-                          },
-                        )
+                        void run(`/me/sessions/${session.id}`, "DELETE").then(() => {
+                          if (session.current) onDisconnected();
+                        })
                       }
                     >
                       {t("revoke")}

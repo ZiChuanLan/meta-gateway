@@ -9,18 +9,15 @@ import { ExternalCheckinsPanel } from "./ops/ExternalCheckinsPanel";
  * and it lives in the panel below.
  */
 export function Checkins() {
-	const { t } = useI18n();
+  const { t } = useI18n();
 
-	return (
-		<Page
-			title={t("checkinsPage.title")}
-			description={t("checkinsPage.description")}
-		>
-			<div className="ops-canvas">
-				<CheckinsPanel>
-					<ExternalCheckinsPanel />
-				</CheckinsPanel>
-			</div>
-		</Page>
-	);
+  return (
+    <Page title={t("checkinsPage.title")} description={t("checkinsPage.description")}>
+      <div className="ops-canvas">
+        <CheckinsPanel>
+          <ExternalCheckinsPanel />
+        </CheckinsPanel>
+      </div>
+    </Page>
+  );
 }

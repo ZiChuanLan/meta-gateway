@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
-import { useI18n } from "../../i18n"
-import { formatCooldownLeft } from "./routingPolicy"
+import { useEffect, useState } from "react";
+import { useI18n } from "../../i18n";
+import { formatCooldownLeft } from "./routingPolicy";
 
 export /** Cooldown countdown that re-renders itself every second until expiry. */
 function CooldownHint({ until }: { until: string }) {

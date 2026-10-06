@@ -1,13 +1,21 @@
-import { RefreshCw } from "lucide-react"
-import { useQuery, type QueryKey } from "@tanstack/react-query"
-import { useState } from "react"
-import { api } from "../../api/client"
-import { useAdminMutation } from "../../hooks/useAdminMutation"
-import { useClientPagination } from "../../hooks/useClientPagination"
-import { useI18n } from "../../i18n"
-import { useSession } from "../../session"
-import { PaginationBar } from "../../components/PaginationBar"
-import { Button, DataTable, ErrorState, Loading, Panel, StatusBadge, formatDate } from "../../components/ui"
+import { RefreshCw } from "lucide-react";
+import { useQuery, type QueryKey } from "@tanstack/react-query";
+import { useState } from "react";
+import { api } from "../../api/client";
+import { useAdminMutation } from "../../hooks/useAdminMutation";
+import { useClientPagination } from "../../hooks/useClientPagination";
+import { useI18n } from "../../i18n";
+import { useSession } from "../../session";
+import { PaginationBar } from "../../components/PaginationBar";
+import {
+  Button,
+  DataTable,
+  ErrorState,
+  Loading,
+  Panel,
+  StatusBadge,
+  formatDate,
+} from "../../components/ui";
 
 const DISCOVERY_INVALIDATE_KEYS: QueryKey[] = [
   ["models"],
@@ -42,9 +50,7 @@ export function DiscoveryPanel() {
     pendingIdOf: (channelId: number) => channelId,
   });
   const failedChannelIds = new Set(
-    (refresh.data?.items ?? [])
-      .filter((item) => item.error)
-      .map((item) => item.channel_id),
+    (refresh.data?.items ?? []).filter((item) => item.error).map((item) => item.channel_id),
   );
   const modelRows = models.data ?? [];
   const modelPagination = useClientPagination(modelRows, 15);
@@ -78,9 +84,7 @@ export function DiscoveryPanel() {
                 refreshOne.mutate(filter);
               }}
             >
-              {refreshOne.isPending
-                ? t("ops.refreshing")
-                : t("ops.refreshChannel")}
+              {refreshOne.isPending ? t("ops.refreshing") : t("ops.refreshChannel")}
             </Button>
           )}
           <Button
@@ -98,9 +102,7 @@ export function DiscoveryPanel() {
     >
       {refresh.data && (
         <div className="result-strip">
-          <StatusBadge
-            value={refresh.data.failure_count > 0 ? "failed" : "success"}
-          />
+          <StatusBadge value={refresh.data.failure_count > 0 ? "failed" : "success"} />
           <span>
             {t("ops.refreshSummary", {
               success: refresh.data.success_count,
@@ -152,9 +154,7 @@ export function DiscoveryPanel() {
             {modelPagination.pageItems.map((m) => (
               <tr
                 key={m.id}
-                className={
-                  failedChannelIds.has(m.channel_id) ? "row-failed" : undefined
-                }
+                className={failedChannelIds.has(m.channel_id) ? "row-failed" : undefined}
               >
                 <td>
                   <strong>{m.model_name}</strong>

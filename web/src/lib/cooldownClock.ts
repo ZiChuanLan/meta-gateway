@@ -5,17 +5,17 @@ import { useEffect, useState } from "react";
  * blank, malformed, or already elapsed.
  */
 export function nextCooldownDeadline(
-	deadlines: readonly (string | null | undefined)[],
-	now = Date.now(),
+  deadlines: readonly (string | null | undefined)[],
+  now = Date.now(),
 ): number | null {
-	let soonest: number | null = null;
-	for (const iso of deadlines) {
-		if (!iso) continue;
-		const at = new Date(iso).getTime();
-		if (!Number.isFinite(at) || at <= now) continue;
-		if (soonest === null || at < soonest) soonest = at;
-	}
-	return soonest;
+  let soonest: number | null = null;
+  for (const iso of deadlines) {
+    if (!iso) continue;
+    const at = new Date(iso).getTime();
+    if (!Number.isFinite(at) || at <= now) continue;
+    if (soonest === null || at < soonest) soonest = at;
+  }
+  return soonest;
 }
 
 /**
@@ -30,21 +30,16 @@ export function nextCooldownDeadline(
  *
  * Pass the `cooldown_until` values of the rows being rendered.
  */
-export function useCooldownExpiry(
-	deadlines: readonly (string | null | undefined)[],
-): void {
-	// The clock is sampled into state so the timer callback can re-arm the
-	// hook; the verdict itself is always read from a fresh Date.now() in render.
-	const [now, setNow] = useState(() => Date.now());
-	const soonest = nextCooldownDeadline(deadlines, now);
-	useEffect(() => {
-		if (soonest === null) return;
-		// +250ms absorbs timer jitter: firing early would re-render with the row
-		// still cooling down, re-arm the same deadline and stall there.
-		const id = window.setTimeout(
-			() => setNow(Date.now()),
-			Math.max(0, soonest - Date.now()) + 250,
-		);
-		return () => window.clearTimeout(id);
-	}, [soonest]);
+export function useCooldownExpiry(deadlines: readonly (string | null | undefined)[]): void {
+  // The clock is sampled into state so the timer callback can re-arm the
+  // hook; the verdict itself is always read from a fresh Date.now() in render.
+  const [now, setNow] = useState(() => Date.now());
+  const soonest = nextCooldownDeadline(deadlines, now);
+  useEffect(() => {
+    if (soonest === null) return;
+    // +250ms absorbs timer jitter: firing early would re-render with the row
+    // still cooling down, re-arm the same deadline and stall there.
+    const id = window.setTimeout(() => setNow(Date.now()), Math.max(0, soonest - Date.now()) + 250);
+    return () => window.clearTimeout(id);
+  }, [soonest]);
 }

@@ -7,24 +7,13 @@ import type { ChannelOverview } from "../api/types";
  * members are unhealthy. Conversely, a health verdict must never be used to
  * claim that the host is unreachable; that is the connectivity dimension.
  */
-const CHANNEL_HEALTH_STATES = [
-  "disabled",
-  "unhealthy",
-  "degraded",
-  "healthy",
-  "unknown",
-] as const;
+const CHANNEL_HEALTH_STATES = ["disabled", "unhealthy", "degraded", "healthy", "unknown"] as const;
 
 type ChannelHealthState = (typeof CHANNEL_HEALTH_STATES)[number];
 
-const CHANNEL_CONNECTIVITY_STATES = [
-  "unknown",
-  "reachable",
-  "unreachable",
-] as const;
+const CHANNEL_CONNECTIVITY_STATES = ["unknown", "reachable", "unreachable"] as const;
 
-type ChannelConnectivityState =
-  (typeof CHANNEL_CONNECTIVITY_STATES)[number];
+type ChannelConnectivityState = (typeof CHANNEL_CONNECTIVITY_STATES)[number];
 
 export type ChannelReadiness =
   | "disabled"
@@ -51,27 +40,15 @@ type ChannelAccountState = (typeof CHANNEL_ACCOUNT_STATES)[number];
 type LiveConnectivity = { reachable: boolean } | null | undefined;
 
 function isHealthState(value: string | undefined): value is ChannelHealthState {
-  return Boolean(
-    value &&
-      (CHANNEL_HEALTH_STATES as readonly string[]).includes(value),
-  );
+  return Boolean(value && (CHANNEL_HEALTH_STATES as readonly string[]).includes(value));
 }
 
-function isConnectivityState(
-  value: string | undefined,
-): value is ChannelConnectivityState {
-  return Boolean(
-    value &&
-      (CHANNEL_CONNECTIVITY_STATES as readonly string[]).includes(value),
-  );
+function isConnectivityState(value: string | undefined): value is ChannelConnectivityState {
+  return Boolean(value && (CHANNEL_CONNECTIVITY_STATES as readonly string[]).includes(value));
 }
 
-function isAccountState(
-  value: string | undefined,
-): value is ChannelAccountState {
-  return Boolean(
-    value && (CHANNEL_ACCOUNT_STATES as readonly string[]).includes(value),
-  );
+function isAccountState(value: string | undefined): value is ChannelAccountState {
+  return Boolean(value && (CHANNEL_ACCOUNT_STATES as readonly string[]).includes(value));
 }
 
 /**
@@ -79,9 +56,7 @@ function isAccountState(
  * gateways that do not yet return health_state; it intentionally does not
  * inspect last_ping_ok.
  */
-export function channelHealthState(
-  overview: ChannelOverview,
-): ChannelHealthState {
+export function channelHealthState(overview: ChannelOverview): ChannelHealthState {
   if (isHealthState(overview.health_state)) return overview.health_state;
   if (overview.channel.status === "disabled") return "disabled";
   if (overview.channel.status === "auto_disabled") return "unhealthy";
@@ -100,9 +75,7 @@ export function channelHealthState(
  * backend derives account_state from last_account_probe_*; the fallback only
  * covers older gateways without the field.
  */
-export function channelAccountState(
-  overview: ChannelOverview,
-): ChannelAccountState {
+export function channelAccountState(overview: ChannelOverview): ChannelAccountState {
   if (isAccountState(overview.account_state)) return overview.account_state;
   if (!overview.last_account_probe_at) return "unknown";
   if (overview.last_account_probe_ok === true) return "ok";
@@ -123,9 +96,7 @@ export function channelAccountState(
  * for health_state and is kept separate so missing keys or a disabled site do
  * not get mislabeled as network failures.
  */
-export function channelReadiness(
-  overview: ChannelOverview,
-): ChannelReadiness {
+export function channelReadiness(overview: ChannelOverview): ChannelReadiness {
   if (overview.channel.status === "auto_disabled") return "auto_disabled";
   if (overview.channel.status !== "enabled") return "disabled";
   if (!overview.site_usable) return "blocked";
@@ -157,11 +128,7 @@ export function isChannelReady(overview: ChannelOverview): boolean {
  */
 export function channelNeedsAttention(overview: ChannelOverview): boolean {
   const readiness = channelReadiness(overview);
-  return (
-    readiness !== "ready" &&
-    readiness !== "missing_key" &&
-    readiness !== "disabled"
-  );
+  return readiness !== "ready" && readiness !== "missing_key" && readiness !== "disabled";
 }
 
 /**

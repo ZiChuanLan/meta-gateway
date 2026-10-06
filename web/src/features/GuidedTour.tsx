@@ -51,13 +51,8 @@ export function GuidedTour({ enabled = true }: { enabled?: boolean } = {}) {
     if (launched.current) return;
     // never run under vitest — the overlay buries whatever the test asserts.
     if (import.meta.env.VITEST) return;
-    const forced =
-      new URLSearchParams(window.location.search).get("tour") === "1";
-    if (
-      !forced &&
-      (localStorage.getItem(DISMISS_KEY) === "1" ||
-        location.pathname !== "/")
-    ) {
+    const forced = new URLSearchParams(window.location.search).get("tour") === "1";
+    if (!forced && (localStorage.getItem(DISMISS_KEY) === "1" || location.pathname !== "/")) {
       return;
     }
     // Give the first page a beat to mount so its boxes measure correctly.
@@ -83,7 +78,9 @@ function start(
     {
       route: "/",
       locate: () => {
-        const navigation = document.querySelector(".console-sidebar .console-navigation, .deck-sector-rail");
+        const navigation = document.querySelector(
+          ".console-sidebar .console-navigation, .deck-sector-rail",
+        );
         return navigation && navigation.getBoundingClientRect().width > 0
           ? navigation
           : document.querySelector(".console-mobile-trigger, .classic-mobile-trigger");
@@ -111,9 +108,8 @@ function start(
     },
     {
       route: "/channels",
-      prepare: () => textButton(t("channels.add"))?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      ),
+      prepare: () =>
+        textButton(t("channels.add"))?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
       locate: () => document.querySelector(".sync-mode"),
       title: t("tour.syncTitle"),
       description: t("tour.syncDesc"),

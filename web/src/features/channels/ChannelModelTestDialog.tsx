@@ -98,18 +98,15 @@ export function ChannelModelTestDialog({
     setRunning(true);
 
     let cursor = 0;
-    const workers = Array.from(
-      { length: Math.min(TEST_CONCURRENCY, names.length) },
-      async () => {
-        for (;;) {
-          if (stoppedRef.current || controller.signal.aborted) return;
-          const name = names[cursor];
-          cursor += 1;
-          if (name === undefined) return;
-          await testOne(name, controller.signal);
-        }
-      },
-    );
+    const workers = Array.from({ length: Math.min(TEST_CONCURRENCY, names.length) }, async () => {
+      for (;;) {
+        if (stoppedRef.current || controller.signal.aborted) return;
+        const name = names[cursor];
+        cursor += 1;
+        if (name === undefined) return;
+        await testOne(name, controller.signal);
+      }
+    });
     await Promise.all(workers);
 
     setRunning(false);
@@ -134,9 +131,7 @@ export function ChannelModelTestDialog({
       list = list.filter((model) => model.name.toLowerCase().includes(needle));
     }
     if (onlyFailures) {
-      list = list.filter(
-        (model) => verdicts[model.name]?.status === "failed",
-      );
+      list = list.filter((model) => verdicts[model.name]?.status === "failed");
     }
     return list;
   }, [models, needle, onlyFailures, verdicts]);
@@ -225,10 +220,7 @@ export function ChannelModelTestDialog({
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        <label
-          className="channel-model-test-knob"
-          title={t("channels.testDialog.maxTokensHint")}
-        >
+        <label className="channel-model-test-knob" title={t("channels.testDialog.maxTokensHint")}>
           <span>{t("channels.testDialog.maxTokens")}</span>
           <input
             type="number"
@@ -246,9 +238,7 @@ export function ChannelModelTestDialog({
           disabled={tally.failed === 0}
           onClick={() => setOnlyFailures((current) => !current)}
         >
-          {onlyFailures
-            ? t("channels.testDialog.showAll")
-            : t("channels.testDialog.onlyFailures")}
+          {onlyFailures ? t("channels.testDialog.showAll") : t("channels.testDialog.onlyFailures")}
         </button>
       </div>
 
@@ -265,9 +255,7 @@ export function ChannelModelTestDialog({
 
       {visible.length === 0 ? (
         <p className="detail-section-empty is-quiet">
-          {onlyFailures
-            ? t("channels.testDialog.noFailures")
-            : t("channels.testDialog.empty")}
+          {onlyFailures ? t("channels.testDialog.noFailures") : t("channels.testDialog.empty")}
         </p>
       ) : (
         <ul className="channel-model-list channel-model-test-list">
@@ -275,25 +263,15 @@ export function ChannelModelTestDialog({
             const verdict = verdicts[model.name];
             return (
               <li key={model.name} className="channel-model-row">
-                <span
-                  className="mono truncate channel-model-test-name"
-                  title={model.name}
-                >
+                <span className="mono truncate channel-model-test-name" title={model.name}>
                   {model.name}
                 </span>
                 {model.adopted ? (
-                  <span className="capability-chip is-key">
-                    {t("channels.testDialog.adopted")}
-                  </span>
+                  <span className="capability-chip is-key">{t("channels.testDialog.adopted")}</span>
                 ) : null}
-                <span className="channel-model-test-verdict">
-                  {renderVerdict(model.name)}
-                </span>
+                <span className="channel-model-test-verdict">{renderVerdict(model.name)}</span>
                 {verdict?.status === "failed" && verdict.error ? (
-                  <span
-                    className="channel-model-test-error"
-                    title={verdict.error}
-                  >
+                  <span className="channel-model-test-error" title={verdict.error}>
                     {verdict.error}
                   </span>
                 ) : null}

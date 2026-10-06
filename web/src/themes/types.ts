@@ -22,7 +22,12 @@ export type ThemeChromeProps = {
   pageLabel: string;
 };
 export type EntrancePhase = "sealing" | "revealing" | "sheathing";
-export type ThemeDetailsProps = { open: boolean; onClose: () => void; title: string; children: ReactNode };
+export type ThemeDetailsProps = {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+};
 export type UIThemePackage = {
   id: UIThemeId;
   version: string;

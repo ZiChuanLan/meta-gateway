@@ -11,8 +11,13 @@ function installFakeIndexedDB() {
   const rows = new Map<string, unknown>();
   const stores = new Set<string>();
   const opened: string[] = [];
-  const request = <T,>(value: T) => {
-    const req = { onsuccess: null as null | (() => void), onerror: null as null | (() => void), result: value, error: null };
+  const request = <T>(value: T) => {
+    const req = {
+      onsuccess: null as null | (() => void),
+      onerror: null as null | (() => void),
+      result: value,
+      error: null,
+    };
     queueMicrotask(() => req.onsuccess?.());
     return req as unknown as IDBRequest<T>;
   };
@@ -24,7 +29,13 @@ function installFakeIndexedDB() {
       return {};
     },
     transaction: (_name: string, _mode: string) => {
-      const tx = { error: null, oncomplete: null as null | (() => void), onerror: null as null | (() => void), onabort: null as null | (() => void), objectStore: () => store };
+      const tx = {
+        error: null,
+        oncomplete: null as null | (() => void),
+        onerror: null as null | (() => void),
+        onabort: null as null | (() => void),
+        objectStore: () => store,
+      };
       // A real transaction completes after its requests, so finish last.
       queueMicrotask(() => queueMicrotask(() => tx.oncomplete?.()));
       return tx;
@@ -44,7 +55,14 @@ function installFakeIndexedDB() {
   vi.stubGlobal("indexedDB", {
     open: (name: string) => {
       opened.push(name);
-      const req = { result: db, error: null, onsuccess: null as null | (() => void), onerror: null as null | (() => void), onupgradeneeded: null as null | (() => void), onblocked: null as null | (() => void) };
+      const req = {
+        result: db,
+        error: null,
+        onsuccess: null as null | (() => void),
+        onerror: null as null | (() => void),
+        onupgradeneeded: null as null | (() => void),
+        onblocked: null as null | (() => void),
+      };
       queueMicrotask(() => {
         req.onupgradeneeded?.();
         req.onsuccess?.();

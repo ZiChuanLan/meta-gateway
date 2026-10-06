@@ -146,31 +146,20 @@ export function EditChannelDialog({
   // advanced section and disappear entirely for types that cannot use them.
   const authFields = userAuthFieldsFor(typeHint);
   const showUserTokenField =
-    authFields === "both" ||
-    (authFields === "none" && Boolean(userCredential?.has_secret));
+    authFields === "both" || (authFields === "none" && Boolean(userCredential?.has_secret));
   const showUserCookieField =
-    authFields === "both" ||
-    authFields === "cookie" ||
-    Boolean(userCredential?.has_cookie);
+    authFields === "both" || authFields === "cookie" || Boolean(userCredential?.has_cookie);
   const [groupName, setGroupName] = useState(value.group_name || "default");
-  const [maxReasoningEffort, setMaxReasoningEffort] = useState(
-    value.max_reasoning_effort ?? "",
-  );
+  const [maxReasoningEffort, setMaxReasoningEffort] = useState(value.max_reasoning_effort ?? "");
   const [payloadRules, setPayloadRules] = useState(value.payload_rules ?? "");
   const [proxyUrl, setProxyUrl] = useState(value.proxy_url ?? "");
   const [maxConcurrent, setMaxConcurrent] = useState(value.max_concurrent ?? 0);
-  const [nonStreamTimeout, setNonStreamTimeout] = useState(
-    value.non_stream_timeout_seconds ?? 0,
-  );
+  const [nonStreamTimeout, setNonStreamTimeout] = useState(value.non_stream_timeout_seconds ?? 0);
   const [streamPolicy, setStreamPolicy] = useState(value.stream_policy ?? "");
   const [priority, setPriority] = useState(value.priority);
   const [weight, setWeight] = useState(value.weight);
-  const [headerOverride, setHeaderOverride] = useState(
-    value.header_override ?? "",
-  );
-  const [uaDraft, setUaDraft] = useState(
-    uaFromHeaderOverride(value.header_override ?? ""),
-  );
+  const [headerOverride, setHeaderOverride] = useState(value.header_override ?? "");
+  const [uaDraft, setUaDraft] = useState(uaFromHeaderOverride(value.header_override ?? ""));
   const applyUA = (ua: string) => {
     setUaDraft(ua);
     setHeaderOverride(setUAInHeaderOverride(headerOverride, ua));
@@ -179,16 +168,10 @@ export function EditChannelDialog({
   const [retryConfig, setRetryConfig] = useState(value.retry_config ?? "");
   // Custom endpoint / field mapping. Kept as raw text so a half-typed JSON
   // document survives re-renders; the API validates the grammar on save.
-  const [pathOverride, setPathOverride] = useState(
-    value.upstream_path_override ?? "",
-  );
+  const [pathOverride, setPathOverride] = useState(value.upstream_path_override ?? "");
   const [pathMap, setPathMap] = useState(value.upstream_path_map ?? "");
-  const [requestMap, setRequestMap] = useState(
-    value.upstream_request_map ?? "",
-  );
-  const [responseMap, setResponseMap] = useState(
-    value.upstream_response_map ?? "",
-  );
+  const [requestMap, setRequestMap] = useState(value.upstream_request_map ?? "");
+  const [responseMap, setResponseMap] = useState(value.upstream_response_map ?? "");
   // The mapping is a protocol contract, not a preference: a provider that is not
   // OpenAI-shaped ships its mapping with the provider (see the backend's
   // proxy.ProviderProfile), so these four boxes are an override and an
@@ -196,14 +179,13 @@ export function EditChannelDialog({
   // nothing configured — a channel that plain passes through should not open
   // onto four JSON editors — but always shown when the row already carries a
   // mapping, because then it is information the operator owns.
-  const [showEndpointMap, setShowEndpointMap] = useState(
-    () =>
-      Boolean(
-        (value.upstream_path_override ?? "").trim() ||
-          (value.upstream_path_map ?? "").trim() ||
-          (value.upstream_request_map ?? "").trim() ||
-          (value.upstream_response_map ?? "").trim(),
-      ),
+  const [showEndpointMap, setShowEndpointMap] = useState(() =>
+    Boolean(
+      (value.upstream_path_override ?? "").trim() ||
+      (value.upstream_path_map ?? "").trim() ||
+      (value.upstream_request_map ?? "").trim() ||
+      (value.upstream_response_map ?? "").trim(),
+    ),
   );
   const [syncMode, setSyncMode] = useState<ModelSyncMode>(
     value.model_sync_mode === "auto" ? "auto" : "manual",
@@ -223,19 +205,14 @@ export function EditChannelDialog({
   // owns, and hiding it would leave it uninspectable and unclearable (a provider
   // profile applied at save, and an endpoint split out of a pasted URL, both
   // land here).
-  const showEndpointMapSection =
-    isCustomChannelType(typeHint) || endpointMapParts.length > 0;
+  const showEndpointMapSection = isCustomChannelType(typeHint) || endpointMapParts.length > 0;
   // The model-management drawer writes the sync mode directly (single-field
   // PATCH); the edit dialog only sends its own picker value when the operator
   // actually moved it here, so a stale snapshot can never stomp that choice.
   const [syncModeDirty, setSyncModeDirty] = useState(false);
   const [stableFirst, setStableFirst] = useState(value.stable_first ?? false);
-  const [userToken, setUserToken] = useState(
-    userCredential?.has_secret ? SECRET_MASK : "",
-  );
-  const [userCookie, setUserCookie] = useState(
-    userCredential?.has_cookie ? SECRET_MASK : "",
-  );
+  const [userToken, setUserToken] = useState(userCredential?.has_secret ? SECRET_MASK : "");
+  const [userCookie, setUserCookie] = useState(userCredential?.has_cookie ? SECRET_MASK : "");
   // The credential overview arrives asynchronously (the channel overview and
   // the site's credential list are separate queries). Until it does, the token
   // fields are empty — which the save path reads as "clear the credential".
@@ -249,26 +226,18 @@ export function EditChannelDialog({
     setUserToken(userCredential.has_secret ? SECRET_MASK : "");
     setUserCookie(userCredential.has_cookie ? SECRET_MASK : "");
     setCheckinOn(userCredential.checkin_enabled);
-    setUserID(
-      String(
-        parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
-      ),
-    );
+    setUserID(String(parseCredentialMeta(userCredential.meta_json).platform_user_id ?? ""));
   }, [userCredential]);
   // New-API family numeric user id. It is derivable from the account token
   // (/api/user/self) but a fork may gate that endpoint behind the very header
   // derived from this id, so it has to be enterable by hand.
   const [userID, setUserID] = useState(
     userCredential?.meta_json
-      ? String(
-          parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "",
-        )
+      ? String(parseCredentialMeta(userCredential.meta_json).platform_user_id ?? "")
       : "",
   );
   // Keep the scheduled-switch in sync when the overview credential loads.
-  const [checkinOn, setCheckinOn] = useState(
-    userCredential?.checkin_enabled ?? false,
-  );
+  const [checkinOn, setCheckinOn] = useState(userCredential?.checkin_enabled ?? false);
   // Keep the in-dialog switch in sync when the overview credential loads.
   useEffect(() => {
     if (userCredential?.id != null) {
@@ -297,13 +266,9 @@ export function EditChannelDialog({
       ? t("channels.retryConfig")
       : "",
     stableFirst ? t("channels.stableFirst") : "",
-    payloadRules.trim() && payloadRules.trim() !== "[]"
-      ? t("channels.payloadRules")
-      : "",
+    payloadRules.trim() && payloadRules.trim() !== "[]" ? t("channels.payloadRules") : "",
     endpointMapParts.length > 0 ? t("channels.endpointMap") : "",
-    userCredential?.has_secret ||
-    userCredential?.has_cookie ||
-    userCredential?.id
+    userCredential?.has_secret || userCredential?.has_cookie || userCredential?.id
       ? t("channels.advUserCredential")
       : "",
     checkinOn ? t("channels.checkinSection") : "",
@@ -332,12 +297,10 @@ export function EditChannelDialog({
     (userToken !== "" && userToken !== SECRET_MASK) ||
     (userCookie !== "" && userCookie !== SECRET_MASK);
   const showUserIDField =
-    authFields === "both" ||
-    Boolean(userCredential?.meta_json?.includes("platform_user_id"));
+    authFields === "both" || Boolean(userCredential?.meta_json?.includes("platform_user_id"));
   // A typed id with nothing to attach it to would be dropped on save; say so
   // instead of losing it silently.
-  const userIDNeedsCredential =
-    showUserIDField && !userIDPersistable && userID !== "";
+  const userIDNeedsCredential = showUserIDField && !userIDPersistable && userID !== "";
   const canSubmit = Boolean(name.trim() && baseUrl.trim()) && !userIDInvalid;
   const apiKeys = credentials.filter((item) => item.kind === "api_key");
   const service = api(useSession().client!);
@@ -405,687 +368,608 @@ export function EditChannelDialog({
     <>
       <Drawer
         title={t("channels.edit")}
-      onClose={onClose}
-      busy={pending}
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose} disabled={pending}>
-            {t("common.cancel")}
-          </Button>
-          <Button
-            disabled={pending || !canSubmit}
-            onClick={() =>
-              onSave({
-                channel: value,
-                site,
-                userCredential,
-                relayCredential: credential,
-                name,
-                base_url: baseUrl,
-                type_hint: typeHint,
-                group_name: groupName,
-                max_reasoning_effort: maxReasoningEffort,
-                payload_rules: payloadRules,
-                proxy_url: proxyUrl,
-                max_concurrent: maxConcurrent,
-                non_stream_timeout_seconds: nonStreamTimeout,
-                stream_policy: streamPolicy,
-                priority,
-                weight,
-                header_override: headerOverride,
-                system_prompt: systemPrompt,
-                retry_config: retryConfig,
-                upstream_path_override: pathOverride,
-                upstream_path_map: pathMap,
-                upstream_request_map: requestMap,
-                upstream_response_map: responseMap,
-                ...(syncModeDirty ? { model_sync_mode: syncMode } : {}),
-                stable_first: stableFirst,
-                userToken,
-                userCookie,
-                userID,
-                apiKey: "",
-              })
-            }
-          >
-            {pending ? t("common.working") : t("common.save")}
-          </Button>
-        </>
-      }
-    >
-      <>
-        <div className="ops-panel-context">
-          <span>{t("channels.editHintDual")}</span>
-        </div>
-        <div className="form-grid form-grid-single">
-          <Field label={t("common.name")}>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={pending}
-            />
-          </Field>
-          <Field label={t("common.type")}>
-            <SearchableSelect
-              options={TYPE_OPTIONS}
-              groups={TYPE_GROUPS}
-              value={typeHint}
-              onChange={setTypeHint}
-              disabled={pending}
-              allowCustom
-              placeholder={t("common.type")}
-            />
-          </Field>
-          <Field label={t("channels.group")} hint={t("channels.groupHint")}>
-            <input
-              value={groupName}
-              onChange={(event) => setGroupName(event.target.value)}
-              disabled={pending}
-            />
-          </Field>
-          <Field
-            label={t("common.baseUrl")}
-            hint={
-              inheritedBase
-                ? t("channels.editBaseUrlInherited")
-                : t("channels.baseUrlHint")
-            }
-          >
-            <input
-              type="url"
-              required
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.example.com"
-              disabled={pending}
-            />
-          </Field>
-        </div>
-
-        <section
-          className="credential-key-panel connection-subpanel"
-          aria-label={t("channels.apiKeysTitle")}
-        >
-          <div className="credential-key-panel-head">
-            <div>
-              <strong>{t("channels.apiKeysTitle")}</strong>
-              <p>
-                {apiKeys.length === 0
-                  ? t("channels.apiKeysEmpty")
-                  : t("channels.apiKeysSummary", {
-                      n: apiKeys.filter((item) => item.status === "enabled")
-                        .length,
-                      total: apiKeys.length,
-                    })}
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              className="connection-manage-button"
-              disabled={pending}
-              onClick={onManageKeys}
-            >
-              <ExternalLink size={12} />
-              {t("channels.apiKeysManage")}
+        onClose={onClose}
+        busy={pending}
+        footer={
+          <>
+            <Button variant="secondary" onClick={onClose} disabled={pending}>
+              {t("common.cancel")}
             </Button>
+            <Button
+              disabled={pending || !canSubmit}
+              onClick={() =>
+                onSave({
+                  channel: value,
+                  site,
+                  userCredential,
+                  relayCredential: credential,
+                  name,
+                  base_url: baseUrl,
+                  type_hint: typeHint,
+                  group_name: groupName,
+                  max_reasoning_effort: maxReasoningEffort,
+                  payload_rules: payloadRules,
+                  proxy_url: proxyUrl,
+                  max_concurrent: maxConcurrent,
+                  non_stream_timeout_seconds: nonStreamTimeout,
+                  stream_policy: streamPolicy,
+                  priority,
+                  weight,
+                  header_override: headerOverride,
+                  system_prompt: systemPrompt,
+                  retry_config: retryConfig,
+                  upstream_path_override: pathOverride,
+                  upstream_path_map: pathMap,
+                  upstream_request_map: requestMap,
+                  upstream_response_map: responseMap,
+                  ...(syncModeDirty ? { model_sync_mode: syncMode } : {}),
+                  stable_first: stableFirst,
+                  userToken,
+                  userCookie,
+                  userID,
+                  apiKey: "",
+                })
+              }
+            >
+              {pending ? t("common.working") : t("common.save")}
+            </Button>
+          </>
+        }
+      >
+        <>
+          <div className="ops-panel-context">
+            <span>{t("channels.editHintDual")}</span>
           </div>
-          {apiKeys.length > 0 ? (
-            <ul className="credential-key-list is-summary">
-              {apiKeys.slice(0, 3).map((item) => {
-                const meta = parseCredentialMeta(item.meta_json);
-                const label =
-                  meta.name?.trim() ||
-                  t("channels.apiKeyUnnamed", { id: item.id });
-                return (
-                  <li
-                    key={item.id}
-                    className={[
-                      "credential-key-row",
-                      item.status !== "enabled" ? "is-disabled" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                  >
-                    <div className="credential-key-main">
-                      <strong>{label}</strong>
-                      <small>
-                        {`#${item.id}`}
-                      </small>
-                    </div>
-                    <span
-                      className={`credential-key-summary-check${item.status === "enabled" ? " is-checked" : ""}`}
-                      role="img"
-                      aria-label={
-                        item.status === "enabled"
-                          ? t("common.enabled")
-                          : t("common.disabled")
-                      }
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
-          {apiKeys.length > 3 ? (
-            <p className="credential-key-more">
-              {t("channels.apiKeysMore", { n: apiKeys.length - 3 })}
-            </p>
-          ) : null}
-        </section>
+          <div className="form-grid form-grid-single">
+            <Field label={t("common.name")}>
+              <input value={name} onChange={(e) => setName(e.target.value)} disabled={pending} />
+            </Field>
+            <Field label={t("common.type")}>
+              <SearchableSelect
+                options={TYPE_OPTIONS}
+                groups={TYPE_GROUPS}
+                value={typeHint}
+                onChange={setTypeHint}
+                disabled={pending}
+                allowCustom
+                placeholder={t("common.type")}
+              />
+            </Field>
+            <Field label={t("channels.group")} hint={t("channels.groupHint")}>
+              <input
+                value={groupName}
+                onChange={(event) => setGroupName(event.target.value)}
+                disabled={pending}
+              />
+            </Field>
+            <Field
+              label={t("common.baseUrl")}
+              hint={inheritedBase ? t("channels.editBaseUrlInherited") : t("channels.baseUrlHint")}
+            >
+              <input
+                type="url"
+                required
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.example.com"
+                disabled={pending}
+              />
+            </Field>
+          </div>
 
-        <section
-          className="detail-section channel-model-summary-section connection-subpanel"
-          aria-label={t("channels.modelsSection")}
-        >
-          <div className="detail-section-head">
-            <h3>{t("channels.modelsSection")}</h3>
-            <span className="detail-section-count">{editModels.length}</span>
-            <div className="detail-section-actions">
-              <button
-                type="button"
-                className="detail-section-expand connection-manage-button"
-                onClick={() => setTestOpen(true)}
-                disabled={editModels.length === 0}
-                title={t("channels.testActionHint")}
+          <section
+            className="credential-key-panel connection-subpanel"
+            aria-label={t("channels.apiKeysTitle")}
+          >
+            <div className="credential-key-panel-head">
+              <div>
+                <strong>{t("channels.apiKeysTitle")}</strong>
+                <p>
+                  {apiKeys.length === 0
+                    ? t("channels.apiKeysEmpty")
+                    : t("channels.apiKeysSummary", {
+                        n: apiKeys.filter((item) => item.status === "enabled").length,
+                        total: apiKeys.length,
+                      })}
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                className="connection-manage-button"
+                disabled={pending}
+                onClick={onManageKeys}
               >
-                <FlaskConical size={12} />
-                {t("channels.testAction")}
-              </button>
-              {onRefreshModels ? (
+                <ExternalLink size={12} />
+                {t("channels.apiKeysManage")}
+              </Button>
+            </div>
+            {apiKeys.length > 0 ? (
+              <ul className="credential-key-list is-summary">
+                {apiKeys.slice(0, 3).map((item) => {
+                  const meta = parseCredentialMeta(item.meta_json);
+                  const label = meta.name?.trim() || t("channels.apiKeyUnnamed", { id: item.id });
+                  return (
+                    <li
+                      key={item.id}
+                      className={[
+                        "credential-key-row",
+                        item.status !== "enabled" ? "is-disabled" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      <div className="credential-key-main">
+                        <strong>{label}</strong>
+                        <small>{`#${item.id}`}</small>
+                      </div>
+                      <span
+                        className={`credential-key-summary-check${item.status === "enabled" ? " is-checked" : ""}`}
+                        role="img"
+                        aria-label={
+                          item.status === "enabled" ? t("common.enabled") : t("common.disabled")
+                        }
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+            {apiKeys.length > 3 ? (
+              <p className="credential-key-more">
+                {t("channels.apiKeysMore", { n: apiKeys.length - 3 })}
+              </p>
+            ) : null}
+          </section>
+
+          <section
+            className="detail-section channel-model-summary-section connection-subpanel"
+            aria-label={t("channels.modelsSection")}
+          >
+            <div className="detail-section-head">
+              <h3>{t("channels.modelsSection")}</h3>
+              <span className="detail-section-count">{editModels.length}</span>
+              <div className="detail-section-actions">
                 <button
                   type="button"
                   className="detail-section-expand connection-manage-button"
-                  onClick={onRefreshModels}
-                  disabled={pending || refreshingModels}
-                  title={t("channels.fetchModels")}
+                  onClick={() => setTestOpen(true)}
+                  disabled={editModels.length === 0}
+                  title={t("channels.testActionHint")}
                 >
-                  <RefreshCw
-                    size={12}
-                    className={refreshingModels ? "spin" : undefined}
-                  />
-                  {t("channels.fetchModels")}
+                  <FlaskConical size={12} />
+                  {t("channels.testAction")}
                 </button>
-              ) : null}
-              <button
-                type="button"
-                className="detail-section-expand connection-manage-button connection-manage-button-models"
-                onClick={onManageModels}
-              >
-                <ExternalLink size={12} />
-                {t("channels.modelsManage")}
-              </button>
-            </div>
-          </div>
-          <SyncModePicker
-            value={syncMode}
-            onChange={(next) => {
-              setSyncMode(next);
-              setSyncModeDirty(true);
-            }}
-            disabled={pending}
-            modelCount={discovered.data ? editModels.length : null}
-            adoptedCount={adoptedCount}
-          />
-          {discovered.isLoading ? (
-            <p className="detail-section-empty is-quiet">
-              {t("common.loading")}…
-            </p>
-          ) : editModels.length === 0 ? (
-            <p className="detail-section-empty is-quiet">
-              {t("channels.modelsEmpty")}
-            </p>
-          ) : (
-            <ul className="channel-model-list is-compact">
-              {editModels.map((model) => {
-                const existingAlias = aliasOf(model.model_name);
-                const alias = existingAlias?.route.model_pattern ?? "";
-                return (
-                  <li key={model.id} className="channel-model-row">
-                    <span className="mono truncate" title={model.model_name}>
-                      {model.model_name}
-                    </span>
-                    {alias ? (
-                      <span className="capability-chip is-key">{alias}</span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <div className="advanced-section-divider">
-          <button
-            type="button"
-            className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
-            onClick={toggleAdvanced}
-            title={advancedConfigured.join(" · ") || undefined}
-          >
-            <ChevronDown size={13} />
-            {showAdvanced
-              ? t("channels.hideAdvanced")
-              : advancedConfigured.length > 0
-                ? t("channels.showAdvancedWithCount", { n: advancedConfigured.length })
-                : t("channels.showAdvanced")}
-          </button>
-        </div>
-        {showAdvanced ? (
-          <div className="advanced-fields">
-            {showUserTokenField || showUserCookieField ? (
-              <div className="form-grid">
-                {showUserTokenField ? (
-                  <Field
-                    label={t("channels.userToken")}
-                    hint={
-                      userCredential?.has_secret
-                        ? t("channels.userTokenPresentHint")
-                        : t("channels.userTokenHint")
-                    }
+                {onRefreshModels ? (
+                  <button
+                    type="button"
+                    className="detail-section-expand connection-manage-button"
+                    onClick={onRefreshModels}
+                    disabled={pending || refreshingModels}
+                    title={t("channels.fetchModels")}
                   >
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      value={userToken}
-                      onChange={(e) => setUserToken(e.target.value)}
-                      placeholder={
-                        userCredential?.has_secret
-                          ? t("channels.editSecretPlaceholder")
-                          : t("channels.userTokenEmptyPlaceholder")
-                      }
-                      disabled={pending}
-                    />
-                  </Field>
+                    <RefreshCw size={12} className={refreshingModels ? "spin" : undefined} />
+                    {t("channels.fetchModels")}
+                  </button>
                 ) : null}
-                {showUserCookieField ? (
-                  <Field
-                    label={t("channels.userCookie")}
-                    hint={
-                      userCredential?.has_cookie
-                        ? t("channels.userCookiePresentHint")
-                        : t("channels.userCookieHint")
-                    }
-                  >
-                    <input
-                      type="password"
-                      autoComplete="new-password"
-                      value={userCookie}
-                      onChange={(e) => setUserCookie(e.target.value)}
-                      placeholder={
-                        userCredential?.has_cookie
-                          ? t("channels.editSecretPlaceholder")
-                          : t("channels.userCookiePlaceholder")
-                      }
-                      disabled={pending}
-                    />
-                  </Field>
-                ) : null}
-                {showUserIDField ? (
-                  // Sits with the credential it is stored on: the numeric id
-                  // lives in the user credential's meta_json.
-                  <Field
-                    label={t("channels.userID")}
-                    hint={
-                      userIDNeedsCredential
-                        ? t("channels.userIDNeedsCredentialHint")
-                        : userIDMissing
-                          ? t("channels.userIDNeededHint")
-                          : t("channels.userIDHint")
-                    }
-                    className={userIDInvalid ? "is-invalid" : undefined}
-                  >
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={userID}
-                      onChange={(e) => setUserID(e.target.value.trim())}
-                      placeholder={t("channels.userIDPlaceholder")}
-                      disabled={pending}
-                    />
-                    {userIDInvalid ? (
-                      <p className="ua-preset-error">
-                        {t("channels.userIDInvalid")}
-                      </p>
-                    ) : null}
-                    {userIDNeedsCredential ? (
-                      <p className="ua-preset-error">
-                        {t("channels.userIDNeedsCredential")}
-                      </p>
-                    ) : null}
-                  </Field>
-                ) : null}
+                <button
+                  type="button"
+                  className="detail-section-expand connection-manage-button connection-manage-button-models"
+                  onClick={onManageModels}
+                >
+                  <ExternalLink size={12} />
+                  {t("channels.modelsManage")}
+                </button>
               </div>
-            ) : null}
-            {/* Check-in acts on the user credential, so it lives with the
+            </div>
+            <SyncModePicker
+              value={syncMode}
+              onChange={(next) => {
+                setSyncMode(next);
+                setSyncModeDirty(true);
+              }}
+              disabled={pending}
+              modelCount={discovered.data ? editModels.length : null}
+              adoptedCount={adoptedCount}
+            />
+            {discovered.isLoading ? (
+              <p className="detail-section-empty is-quiet">{t("common.loading")}…</p>
+            ) : editModels.length === 0 ? (
+              <p className="detail-section-empty is-quiet">{t("channels.modelsEmpty")}</p>
+            ) : (
+              <ul className="channel-model-list is-compact">
+                {editModels.map((model) => {
+                  const existingAlias = aliasOf(model.model_name);
+                  const alias = existingAlias?.route.model_pattern ?? "";
+                  return (
+                    <li key={model.id} className="channel-model-row">
+                      <span className="mono truncate" title={model.model_name}>
+                        {model.model_name}
+                      </span>
+                      {alias ? <span className="capability-chip is-key">{alias}</span> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <div className="advanced-section-divider">
+            <button
+              type="button"
+              className={`advanced-toggle${showAdvanced ? " is-open" : ""}`}
+              onClick={toggleAdvanced}
+              title={advancedConfigured.join(" · ") || undefined}
+            >
+              <ChevronDown size={13} />
+              {showAdvanced
+                ? t("channels.hideAdvanced")
+                : advancedConfigured.length > 0
+                  ? t("channels.showAdvancedWithCount", { n: advancedConfigured.length })
+                  : t("channels.showAdvanced")}
+            </button>
+          </div>
+          {showAdvanced ? (
+            <div className="advanced-fields">
+              {showUserTokenField || showUserCookieField ? (
+                <div className="form-grid">
+                  {showUserTokenField ? (
+                    <Field
+                      label={t("channels.userToken")}
+                      hint={
+                        userCredential?.has_secret
+                          ? t("channels.userTokenPresentHint")
+                          : t("channels.userTokenHint")
+                      }
+                    >
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={userToken}
+                        onChange={(e) => setUserToken(e.target.value)}
+                        placeholder={
+                          userCredential?.has_secret
+                            ? t("channels.editSecretPlaceholder")
+                            : t("channels.userTokenEmptyPlaceholder")
+                        }
+                        disabled={pending}
+                      />
+                    </Field>
+                  ) : null}
+                  {showUserCookieField ? (
+                    <Field
+                      label={t("channels.userCookie")}
+                      hint={
+                        userCredential?.has_cookie
+                          ? t("channels.userCookiePresentHint")
+                          : t("channels.userCookieHint")
+                      }
+                    >
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={userCookie}
+                        onChange={(e) => setUserCookie(e.target.value)}
+                        placeholder={
+                          userCredential?.has_cookie
+                            ? t("channels.editSecretPlaceholder")
+                            : t("channels.userCookiePlaceholder")
+                        }
+                        disabled={pending}
+                      />
+                    </Field>
+                  ) : null}
+                  {showUserIDField ? (
+                    // Sits with the credential it is stored on: the numeric id
+                    // lives in the user credential's meta_json.
+                    <Field
+                      label={t("channels.userID")}
+                      hint={
+                        userIDNeedsCredential
+                          ? t("channels.userIDNeedsCredentialHint")
+                          : userIDMissing
+                            ? t("channels.userIDNeededHint")
+                            : t("channels.userIDHint")
+                      }
+                      className={userIDInvalid ? "is-invalid" : undefined}
+                    >
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={userID}
+                        onChange={(e) => setUserID(e.target.value.trim())}
+                        placeholder={t("channels.userIDPlaceholder")}
+                        disabled={pending}
+                      />
+                      {userIDInvalid ? (
+                        <p className="ua-preset-error">{t("channels.userIDInvalid")}</p>
+                      ) : null}
+                      {userIDNeedsCredential ? (
+                        <p className="ua-preset-error">{t("channels.userIDNeedsCredential")}</p>
+                      ) : null}
+                    </Field>
+                  ) : null}
+                </div>
+              ) : null}
+              {/* Check-in acts on the user credential, so it lives with the
                 credential fields instead of as a standalone section in the main
                 form. It only exists for site families that actually expose a
                 check-in API — the backend profile says so per channel via
                 checkin_supported, so a provider without one now shows nothing
                 at all rather than a permanent explanatory block. */}
-            {checkinSupported ? (
-              <section
-                className="detail-section connection-subpanel"
-                aria-label={t("channels.checkinSection")}
-              >
-                <div className="detail-section-head">
-                  <h3>{t("channels.checkinSection")}</h3>
-                  <Link className="detail-section-expand" to="/checkins">
-                    {t("channels.checkinLogs")}
-                  </Link>
-                </div>
-                {!userCredential?.id ? (
-                  <p className="detail-section-empty is-quiet">
-                    {t("channels.checkinNeedsUserCredential")}
-                  </p>
-                ) : (
-                  <>
-                    <label className="check is-spaced">
-                      <input
-                        type="checkbox"
-                        checked={checkinOn}
-                        disabled={pending || toggleCheckin.isPending}
-                        onChange={(e) => {
-                          const next = e.target.checked;
-                          setCheckinOn(next);
-                          toggleCheckin.mutate(next);
-                        }}
-                      />
-                      <span>{t("channels.checkinEnable")}</span>
-                    </label>
+              {checkinSupported ? (
+                <section
+                  className="detail-section connection-subpanel"
+                  aria-label={t("channels.checkinSection")}
+                >
+                  <div className="detail-section-head">
+                    <h3>{t("channels.checkinSection")}</h3>
+                    <Link className="detail-section-expand" to="/checkins">
+                      {t("channels.checkinLogs")}
+                    </Link>
+                  </div>
+                  {!userCredential?.id ? (
                     <p className="detail-section-empty is-quiet">
-                      {checkinOn
-                        ? t("channels.checkinScheduledHint")
-                        : t("channels.checkinOffHint")}
+                      {t("channels.checkinNeedsUserCredential")}
                     </p>
-                  </>
-                )}
-                {toggleCheckin.isError ? (
-                  <ErrorState error={toggleCheckin.error} />
-                ) : null}
-              </section>
-            ) : null}
-            <div className="form-grid">
-              <Field
-                label={t("common.priority")}
-                hint={t("channels.priorityHint")}
-              >
-                <input
-                  type="number"
-                  value={priority}
-                  onChange={(e) => setPriority(Number(e.target.value) || 0)}
-                  disabled={pending}
-                />
-              </Field>
-              <Field label={t("common.weight")} hint={t("channels.weightHint")}>
-                <input
-                  type="number"
-                  value={weight}
-                  onChange={(e) => setWeight(Number(e.target.value) || 0)}
-                  disabled={pending}
-                />
-              </Field>
-              <Field
-                label={t("channels.maxReasoningEffort")}
-                hint={t("channels.maxReasoningEffortHint")}
-              >
-                <select
-                  value={maxReasoningEffort}
-                  onChange={(e) => setMaxReasoningEffort(e.target.value)}
-                  disabled={pending}
+                  ) : (
+                    <>
+                      <label className="check is-spaced">
+                        <input
+                          type="checkbox"
+                          checked={checkinOn}
+                          disabled={pending || toggleCheckin.isPending}
+                          onChange={(e) => {
+                            const next = e.target.checked;
+                            setCheckinOn(next);
+                            toggleCheckin.mutate(next);
+                          }}
+                        />
+                        <span>{t("channels.checkinEnable")}</span>
+                      </label>
+                      <p className="detail-section-empty is-quiet">
+                        {checkinOn
+                          ? t("channels.checkinScheduledHint")
+                          : t("channels.checkinOffHint")}
+                      </p>
+                    </>
+                  )}
+                  {toggleCheckin.isError ? <ErrorState error={toggleCheckin.error} /> : null}
+                </section>
+              ) : null}
+              <div className="form-grid">
+                <Field label={t("common.priority")} hint={t("channels.priorityHint")}>
+                  <input
+                    type="number"
+                    value={priority}
+                    onChange={(e) => setPriority(Number(e.target.value) || 0)}
+                    disabled={pending}
+                  />
+                </Field>
+                <Field label={t("common.weight")} hint={t("channels.weightHint")}>
+                  <input
+                    type="number"
+                    value={weight}
+                    onChange={(e) => setWeight(Number(e.target.value) || 0)}
+                    disabled={pending}
+                  />
+                </Field>
+                <Field
+                  label={t("channels.maxReasoningEffort")}
+                  hint={t("channels.maxReasoningEffortHint")}
                 >
-                  <option value="">
-                    {t("channels.maxReasoningEffortNone")}
-                  </option>
-                  {[
-                    "none",
-                    "minimal",
-                    "low",
-                    "medium",
-                    "high",
-                    "xhigh",
-                    "max",
-                  ].map((level) => (
-                    <option key={level} value={level}>
-                      {level}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field
-                label={t("channels.maxConcurrent")}
-                hint={t("channels.maxConcurrentHint")}
-              >
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={maxConcurrent}
-                  onChange={(e) =>
-                    setMaxConcurrent(Math.max(0, Number(e.target.value) || 0))
-                  }
-                  disabled={pending}
-                />
-              </Field>
-              <Field
-                label={t("channels.nonStreamTimeout")}
-                hint={t("channels.nonStreamTimeoutHint")}
-              >
-                <input
-                  type="number"
-                  min={0}
-                  max={86400}
-                  value={nonStreamTimeout}
-                  onChange={(e) =>
-                    setNonStreamTimeout(
-                      Math.max(0, Math.min(86400, Number(e.target.value) || 0)),
-                    )
-                  }
-                  disabled={pending}
-                />
-              </Field>
-              <Field
-                label={t("channels.streamPolicy")}
-                hint={t("channels.streamPolicyHint")}
-              >
-                <select
-                  value={streamPolicy}
-                  onChange={(e) =>
-                    setStreamPolicy(e.target.value as typeof streamPolicy)
-                  }
-                  disabled={pending}
-                >
-                  <option value="">{t("channels.streamPolicyDefault")}</option>
-                  <option value="force_stream">
-                    {t("channels.streamPolicyForceStream")}
-                  </option>
-                  <option value="force_non_stream">
-                    {t("channels.streamPolicyForceNonStream")}
-                  </option>
-                </select>
-              </Field>
-              <Field
-                label={t("channels.proxyUrl")}
-                hint={t("channels.proxyUrlHint")}
-              >
-                <input
-                  type="url"
-                  value={proxyUrl}
-                  placeholder="http://127.0.0.1:7897"
-                  onChange={(e) => setProxyUrl(e.target.value)}
-                  disabled={pending}
-                />
-              </Field>
-            </div>
-
-            <section className="detail-section">
-              <div className="detail-section-head">
-                <h3>{t("channels.overrides")}</h3>
-              </div>
-              <Field
-                label={t("channels.uaPreset")}
-                hint={t("channels.uaPresetHint")}
-              >
-                <div className="ua-preset-row">
                   <select
-                    aria-label={t("channels.uaPreset")}
-                    value={
-                      uaDraft && UA_PRESETS.includes(uaDraft)
-                        ? uaDraft
-                        : "custom"
-                    }
-                    onChange={(e) => {
-                      const preset = e.target.value;
-                      if (preset !== "custom") applyUA(preset);
-                    }}
+                    value={maxReasoningEffort}
+                    onChange={(e) => setMaxReasoningEffort(e.target.value)}
                     disabled={pending}
                   >
-                    <option value="custom">{t("channels.uaCustom")}</option>
-                    {UA_PRESETS.map((preset) => (
-                      <option key={preset} value={preset}>
-                        {preset}
+                    <option value="">{t("channels.maxReasoningEffortNone")}</option>
+                    {["none", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => (
+                      <option key={level} value={level}>
+                        {level}
                       </option>
                     ))}
                   </select>
+                </Field>
+                <Field label={t("channels.maxConcurrent")} hint={t("channels.maxConcurrentHint")}>
                   <input
-                    value={uaDraft}
-                    onChange={(e) => applyUA(e.target.value)}
-                    placeholder={t("channels.uaPlaceholder")}
+                    type="number"
+                    min={0}
+                    max={10000}
+                    value={maxConcurrent}
+                    onChange={(e) => setMaxConcurrent(Math.max(0, Number(e.target.value) || 0))}
                     disabled={pending}
                   />
-                </div>
-                {uaDraft && !isValidUserAgent(uaDraft) ? (
-                  <p className="ua-preset-error">{t("channels.uaInvalid")}</p>
-                ) : null}
-              </Field>
-              <Field
-                label={t("channels.headerOverride")}
-                hint={t("channels.headerOverrideHint")}
-              >
-                <textarea
-                  className="mono textarea-sm"
-                  value={headerOverride}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setHeaderOverride(next);
-                    setUaDraft(uaFromHeaderOverride(next));
-                  }}
-                  disabled={pending}
-                  placeholder='{"User-Agent": "…", "X-Custom": "value"}'
-                />
-              </Field>
-              <Field
-                label={t("channels.systemPrompt")}
-                hint={t("channels.systemPromptHint")}
-              >
-                <textarea
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  disabled={pending}
-                  placeholder={t("channels.systemPromptPlaceholder")}
-                  className="textarea-md"
-                />
-              </Field>
-              <Field
-                label={t("channels.retryConfig")}
-                hint={t("channels.retryConfigHint")}
-              >
-                <textarea
-                  value={retryConfig}
-                  onChange={(e) => setRetryConfig(e.target.value)}
-                  disabled={pending}
-                  placeholder={t("channels.retryConfigPlaceholder")}
-                  className="textarea-code"
-                />
-              </Field>
-              <label className="check is-spaced">
-                <input
-                  type="checkbox"
-                  checked={stableFirst}
-                  onChange={(e) => setStableFirst(e.target.checked)}
-                  disabled={pending}
-                />
-                <span>{t("channels.stableFirst")}</span>
-              </label>
-              <Field
-                label={t("channels.payloadRules")}
-                hint={t("channels.payloadRulesHint")}
-              >
-                <textarea
-                  className="mono textarea-lg"
-                  value={payloadRules}
-                  onChange={(e) => setPayloadRules(e.target.value)}
-                  disabled={pending}
-                  placeholder={JSON.stringify(
-                    [
-                      {
-                        name: "cap max tokens",
-                        match: {
-                          model: "gpt-*",
-                          payload: { max_tokens: { exists: true } },
-                        },
-                        actions: [
-                          {
-                            op: "set",
-                            path: "max_tokens",
-                            value: { num: 8000 },
-                          },
-                        ],
-                      },
-                    ],
-                    null,
-                    2,
-                  )}
-                />
-              </Field>
-              {showEndpointMapSection ? (
-              <div className="detail-section">
+                </Field>
+                <Field
+                  label={t("channels.nonStreamTimeout")}
+                  hint={t("channels.nonStreamTimeoutHint")}
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    max={86400}
+                    value={nonStreamTimeout}
+                    onChange={(e) =>
+                      setNonStreamTimeout(Math.max(0, Math.min(86400, Number(e.target.value) || 0)))
+                    }
+                    disabled={pending}
+                  />
+                </Field>
+                <Field label={t("channels.streamPolicy")} hint={t("channels.streamPolicyHint")}>
+                  <select
+                    value={streamPolicy}
+                    onChange={(e) => setStreamPolicy(e.target.value as typeof streamPolicy)}
+                    disabled={pending}
+                  >
+                    <option value="">{t("channels.streamPolicyDefault")}</option>
+                    <option value="force_stream">{t("channels.streamPolicyForceStream")}</option>
+                    <option value="force_non_stream">
+                      {t("channels.streamPolicyForceNonStream")}
+                    </option>
+                  </select>
+                </Field>
+                <Field label={t("channels.proxyUrl")} hint={t("channels.proxyUrlHint")}>
+                  <input
+                    type="url"
+                    value={proxyUrl}
+                    placeholder="http://127.0.0.1:7897"
+                    onChange={(e) => setProxyUrl(e.target.value)}
+                    disabled={pending}
+                  />
+                </Field>
+              </div>
+
+              <section className="detail-section">
                 <div className="detail-section-head">
-                  <h3>{t("channels.endpointMap")}</h3>
-                  {/* The "what is this section for" paragraph lives behind the
+                  <h3>{t("channels.overrides")}</h3>
+                </div>
+                <Field label={t("channels.uaPreset")} hint={t("channels.uaPresetHint")}>
+                  <div className="ua-preset-row">
+                    <select
+                      aria-label={t("channels.uaPreset")}
+                      value={uaDraft && UA_PRESETS.includes(uaDraft) ? uaDraft : "custom"}
+                      onChange={(e) => {
+                        const preset = e.target.value;
+                        if (preset !== "custom") applyUA(preset);
+                      }}
+                      disabled={pending}
+                    >
+                      <option value="custom">{t("channels.uaCustom")}</option>
+                      {UA_PRESETS.map((preset) => (
+                        <option key={preset} value={preset}>
+                          {preset}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={uaDraft}
+                      onChange={(e) => applyUA(e.target.value)}
+                      placeholder={t("channels.uaPlaceholder")}
+                      disabled={pending}
+                    />
+                  </div>
+                  {uaDraft && !isValidUserAgent(uaDraft) ? (
+                    <p className="ua-preset-error">{t("channels.uaInvalid")}</p>
+                  ) : null}
+                </Field>
+                <Field label={t("channels.headerOverride")} hint={t("channels.headerOverrideHint")}>
+                  <textarea
+                    className="mono textarea-sm"
+                    value={headerOverride}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setHeaderOverride(next);
+                      setUaDraft(uaFromHeaderOverride(next));
+                    }}
+                    disabled={pending}
+                    placeholder='{"User-Agent": "…", "X-Custom": "value"}'
+                  />
+                </Field>
+                <Field label={t("channels.systemPrompt")} hint={t("channels.systemPromptHint")}>
+                  <textarea
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    disabled={pending}
+                    placeholder={t("channels.systemPromptPlaceholder")}
+                    className="textarea-md"
+                  />
+                </Field>
+                <Field label={t("channels.retryConfig")} hint={t("channels.retryConfigHint")}>
+                  <textarea
+                    value={retryConfig}
+                    onChange={(e) => setRetryConfig(e.target.value)}
+                    disabled={pending}
+                    placeholder={t("channels.retryConfigPlaceholder")}
+                    className="textarea-code"
+                  />
+                </Field>
+                <label className="check is-spaced">
+                  <input
+                    type="checkbox"
+                    checked={stableFirst}
+                    onChange={(e) => setStableFirst(e.target.checked)}
+                    disabled={pending}
+                  />
+                  <span>{t("channels.stableFirst")}</span>
+                </label>
+                <Field label={t("channels.payloadRules")} hint={t("channels.payloadRulesHint")}>
+                  <textarea
+                    className="mono textarea-lg"
+                    value={payloadRules}
+                    onChange={(e) => setPayloadRules(e.target.value)}
+                    disabled={pending}
+                    placeholder={JSON.stringify(
+                      [
+                        {
+                          name: "cap max tokens",
+                          match: {
+                            model: "gpt-*",
+                            payload: { max_tokens: { exists: true } },
+                          },
+                          actions: [
+                            {
+                              op: "set",
+                              path: "max_tokens",
+                              value: { num: 8000 },
+                            },
+                          ],
+                        },
+                      ],
+                      null,
+                      2,
+                    )}
+                  />
+                </Field>
+                {showEndpointMapSection ? (
+                  <div className="detail-section">
+                    <div className="detail-section-head">
+                      <h3>{t("channels.endpointMap")}</h3>
+                      {/* The "what is this section for" paragraph lives behind the
                       title's (i) now: it used to sit here as a multi-line
                       block, which pushed the fold-away toggle below the fold.
                       Same affordance the field hints below already use. */}
-                  <InfoTip label={t("channels.endpointMapHint")} />
-                  <span className="panel-summary">
-                    {endpointMapParts.length === 0
-                      ? t("channels.endpointMapSummaryNone")
-                      : t("channels.endpointMapSummaryActive", {
-                          parts: endpointMapParts.join(" / "),
-                        })}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className={`advanced-toggle${showEndpointMap ? " is-open" : ""}`}
-                  aria-expanded={showEndpointMap}
-                  disabled={pending}
-                  onClick={() => setShowEndpointMap((open) => !open)}
-                >
-                  <ChevronDown size={13} />
-                  {showEndpointMap
-                    ? t("channels.endpointMapCollapse")
-                    : t("channels.endpointMapConfigure")}
-                </button>
-				{showEndpointMap ? (
-				<EndpointMapEditor
-					value={{ pathOverride, pathMap, requestMap, responseMap }}
-					onChange={(next) => {
-						setPathOverride(next.pathOverride);
-						setPathMap(next.pathMap);
-						setRequestMap(next.requestMap);
-						setResponseMap(next.responseMap);
-					}}
-					disabled={pending}
-				/>
-				) : null}
-              </div>
-              ) : null}
-            </section>
-          </div>
-        ) : null}
+                      <InfoTip label={t("channels.endpointMapHint")} />
+                      <span className="panel-summary">
+                        {endpointMapParts.length === 0
+                          ? t("channels.endpointMapSummaryNone")
+                          : t("channels.endpointMapSummaryActive", {
+                              parts: endpointMapParts.join(" / "),
+                            })}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className={`advanced-toggle${showEndpointMap ? " is-open" : ""}`}
+                      aria-expanded={showEndpointMap}
+                      disabled={pending}
+                      onClick={() => setShowEndpointMap((open) => !open)}
+                    >
+                      <ChevronDown size={13} />
+                      {showEndpointMap
+                        ? t("channels.endpointMapCollapse")
+                        : t("channels.endpointMapConfigure")}
+                    </button>
+                    {showEndpointMap ? (
+                      <EndpointMapEditor
+                        value={{ pathOverride, pathMap, requestMap, responseMap }}
+                        onChange={(next) => {
+                          setPathOverride(next.pathOverride);
+                          setPathMap(next.pathMap);
+                          setRequestMap(next.requestMap);
+                          setResponseMap(next.responseMap);
+                        }}
+                        disabled={pending}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+            </div>
+          ) : null}
 
-        {error ? <ErrorState error={error} /> : null}
-      </>
-    </Drawer>
+          {error ? <ErrorState error={error} /> : null}
+        </>
+      </Drawer>
       {/* Outside the drawer's body on purpose: that body is a <fieldset> the
           drawer disables while saving, and a nested fieldset cannot re-enable
           itself — the smoke test must stay usable while a save is pending. */}

@@ -1,32 +1,13 @@
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Fragment,
-  useMemo,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { Fragment, useMemo, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useToast } from "../toast";
-import type {
-  Channel,
-  DiscoveredModel,
-  RouteMember,
-  RouteOverview,
-} from "../api/types";
+import type { Channel, DiscoveredModel, RouteMember, RouteOverview } from "../api/types";
 import { EntityState } from "../components/EntityState";
 import { TelemetryStrip } from "../components/TelemetryStrip";
-import {
-  Button,
-  ConfirmDialog,
-  ErrorState,
-  Page,
-  Panel,
-  StatusBadge,
-} from "../components/ui";
+import { Button, ConfirmDialog, ErrorState, Page, Panel, StatusBadge } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
@@ -81,18 +62,13 @@ export function ChannelModelsPanel({
     queryFn: ({ signal }) => service.routeOverviews(signal),
   });
 
-  const models = useMemo<DiscoveredModel[]>(
-    () => discovered.data ?? [],
-    [discovered.data],
-  );
+  const models = useMemo<DiscoveredModel[]>(() => discovered.data ?? [], [discovered.data]);
   const [customName, setCustomName] = useState("");
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
   const [query, setQuery] = useState(initialQuery ?? "");
   // Narrow the list by adoption state: enabled rows (member on and on),
   // disabled rows (parked/never adopted), or everything.
-  const [statusFilter, setStatusFilter] = useState<
-    "all" | "enabled" | "disabled"
-  >("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkMode, setBulkMode] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -130,9 +106,7 @@ export function ChannelModelsPanel({
       if (mapped) return { overview, member: mapped.member };
       if (
         mappingReal(overview.route.mapping_json) === realModel &&
-        (overview.members ?? []).some(
-          (candidate) => candidate.member.channel_id === channelId,
-        )
+        (overview.members ?? []).some((candidate) => candidate.member.channel_id === channelId)
       ) {
         const legacy = (overview.members ?? []).find(
           (candidate) => candidate.member.channel_id === channelId,
@@ -155,8 +129,10 @@ export function ChannelModelsPanel({
       (overview) => overview.route.model_pattern === realModel,
     );
     return route?.members.find(
-      (candidate) => candidate.member.channel_id === channelId &&
-        (!mappingReal(candidate.member.mapping_json) || mappingReal(candidate.member.mapping_json) === realModel),
+      (candidate) =>
+        candidate.member.channel_id === channelId &&
+        (!mappingReal(candidate.member.mapping_json) ||
+          mappingReal(candidate.member.mapping_json) === realModel),
     )?.member;
   };
 
@@ -167,9 +143,7 @@ export function ChannelModelsPanel({
     const overview = (routeOverviews.data ?? []).find((e) =>
       (e.members ?? []).some((c) => c.member.id === member.id),
     );
-    const remaining = (overview?.members ?? []).filter(
-      (c) => c.member.id !== member.id,
-    );
+    const remaining = (overview?.members ?? []).filter((c) => c.member.id !== member.id);
     if ((overview?.members ?? []).length > 0 && remaining.length === 0) {
       await service.deleteRoute(overview!.route.id);
     }
@@ -183,11 +157,7 @@ export function ChannelModelsPanel({
       // deliberate configuration, they park like on auto channels
       // (reconcile respects parked members; a deleted one would just be
       // re-adopted on the next sync anyway).
-      if (
-        channel?.model_sync_mode === "manual" &&
-        member.enabled &&
-        !member.mapping_json
-      ) {
+      if (channel?.model_sync_mode === "manual" && member.enabled && !member.mapping_json) {
         await deleteMemberAndEmptyRoute(member);
         return;
       }
@@ -211,8 +181,7 @@ export function ChannelModelsPanel({
     );
     const routeId =
       target?.route.id ??
-      (await service.createRoute({ model_pattern: realModel, enabled: true }))
-        .id;
+      (await service.createRoute({ model_pattern: realModel, enabled: true })).id;
     await service.createMember(routeId, {
       channel_id: channelId,
       priority: 0,
@@ -235,9 +204,7 @@ export function ChannelModelsPanel({
             enabled,
           }),
         ),
-        ...(input.removals ?? []).map((member) =>
-          deleteMemberAndEmptyRoute(member),
-        ),
+        ...(input.removals ?? []).map((member) => deleteMemberAndEmptyRoute(member)),
       ]);
       for (const name of input.adoptions ?? []) {
         await adoptModel(name);
@@ -281,12 +248,8 @@ export function ChannelModelsPanel({
       // any remaining member (other channels, aliases, enabled rows) stay.
       let routes = 0;
       for (const routeId of new Set(targets.map((t) => t.routeId))) {
-        const overview = (routeOverviews.data ?? []).find(
-          (e) => e.route.id === routeId,
-        );
-        const remaining = (overview?.members ?? []).filter(
-          (c) => !deleted.has(c.member.id),
-        );
+        const overview = (routeOverviews.data ?? []).find((e) => e.route.id === routeId);
+        const remaining = (overview?.members ?? []).filter((c) => !deleted.has(c.member.id));
         if ((overview?.members ?? []).length > 0 && remaining.length === 0) {
           await service.deleteRoute(routeId);
           routes += 1;
@@ -406,9 +369,7 @@ export function ChannelModelsPanel({
       const overview = (routeOverviews.data ?? []).find(
         (entry) => entry.route.id === input.routeId,
       );
-      const remaining = (overview?.members ?? []).filter(
-        (c) => c.member.channel_id !== channelId,
-      );
+      const remaining = (overview?.members ?? []).filter((c) => c.member.channel_id !== channelId);
       if ((overview?.members ?? []).length > 0 && remaining.length === 0) {
         await service.deleteRoute(input.routeId);
       }
@@ -448,10 +409,8 @@ export function ChannelModelsPanel({
   }, [models, customModels, query, routeOverviews.data, statusFilter]);
 
   const selectable = filtered;
-  const allSelected =
-    selectable.length > 0 && selectable.every((m) => selectedIds.has(m.key));
-  const someSelected =
-    selectable.length > 0 && selectable.some((m) => selectedIds.has(m.key));
+  const allSelected = selectable.length > 0 && selectable.every((m) => selectedIds.has(m.key));
+  const someSelected = selectable.length > 0 && selectable.some((m) => selectedIds.has(m.key));
   useEffect(() => {
     if (selectAllRef.current) {
       selectAllRef.current.indeterminate = someSelected && !allSelected;
@@ -472,9 +431,7 @@ export function ChannelModelsPanel({
 
   const toggleSelectAll = () => {
     if (!bulkMode) setBulkMode(true);
-    setSelectedIds(
-      allSelected ? new Set() : new Set(selectable.map((item) => item.key)),
-    );
+    setSelectedIds(allSelected ? new Set() : new Set(selectable.map((item) => item.key)));
   };
 
   const enterBulkMode = () => {
@@ -510,34 +467,25 @@ export function ChannelModelsPanel({
     });
     const adoptions = enabled
       ? selectable
-          .filter(
-            (item) => selectedIds.has(item.key) && memberFor(item.name) == null,
-          )
+          .filter((item) => selectedIds.has(item.key) && memberFor(item.name) == null)
           .map((item) => item.name)
       : [];
-    if (updates.length === 0 && removals.length === 0 && adoptions.length === 0)
-      return;
+    if (updates.length === 0 && removals.length === 0 && adoptions.length === 0) return;
     bulkToggle.mutate({ updates, removals, adoptions });
   };
 
-  const selectedCount = selectable.filter((item) =>
-    selectedIds.has(item.key),
-  ).length;
+  const selectedCount = selectable.filter((item) => selectedIds.has(item.key)).length;
 
   const enabledCount =
-    models.filter((model) => memberFor(model.model_name)?.enabled ?? false)
-      .length + customModels.filter((custom) => custom.member.enabled).length;
-  const aliasedCount = models.filter((model) =>
-    Boolean(aliasFor(model.model_name)),
-  ).length;
+    models.filter((model) => memberFor(model.model_name)?.enabled ?? false).length +
+    customModels.filter((custom) => custom.member.enabled).length;
+  const aliasedCount = models.filter((model) => Boolean(aliasFor(model.model_name))).length;
   // "Adopted" = wired into routing (enabled or parked); "enabled" = currently
   // serving. Splitting them is what makes manual mode readable: a fresh
   // channel shows N models / 0 adopted by design, not because sync failed.
   const adoptedCount =
-    models.filter((model) => memberFor(model.model_name) != null).length +
-    customModels.length;
-  const syncMode: ModelSyncMode =
-    channel?.model_sync_mode === "auto" ? "auto" : "manual";
+    models.filter((model) => memberFor(model.model_name) != null).length + customModels.length;
+  const syncMode: ModelSyncMode = channel?.model_sync_mode === "auto" ? "auto" : "manual";
 
   // Group the filtered rows by vendor family for scannable bulk selection;
   // known groups keep their defined order, anything else lands in "Other".
@@ -549,9 +497,10 @@ export function ChannelModelsPanel({
       if (bucket) bucket.push(item);
       else buckets.set(group, [item]);
     }
-    const known = MODEL_GROUP_ORDER.filter((group) => buckets.has(group)).map(
-      (group) => ({ group, items: buckets.get(group)! }),
-    );
+    const known = MODEL_GROUP_ORDER.filter((group) => buckets.has(group)).map((group) => ({
+      group,
+      items: buckets.get(group)!,
+    }));
     const extra = [...buckets.keys()]
       .filter((group) => !MODEL_GROUP_ORDER.includes(group))
       .map((group) => ({ group, items: buckets.get(group)! }));
@@ -592,15 +541,11 @@ export function ChannelModelsPanel({
               aria-pressed={syncMode === mode}
               disabled={setSyncMode.isPending || !channel}
               title={
-                mode === "auto"
-                  ? t("channels.syncModeAutoHint")
-                  : t("channels.syncModeManualHint")
+                mode === "auto" ? t("channels.syncModeAutoHint") : t("channels.syncModeManualHint")
               }
               onClick={() => setSyncMode.mutate(mode)}
             >
-              {mode === "auto"
-                ? t("channels.syncModeAuto")
-                : t("channels.syncModeManual")}
+              {mode === "auto" ? t("channels.syncModeAuto") : t("channels.syncModeManual")}
             </button>
           ))}
         </div>
@@ -650,11 +595,7 @@ export function ChannelModelsPanel({
           >
             {(
               [
-                [
-                  "all",
-                  t("channels.modelsFilterAll"),
-                  models.length + customModels.length,
-                ],
+                ["all", t("channels.modelsFilterAll"), models.length + customModels.length],
                 ["enabled", t("channels.modelsFilterEnabled"), enabledCount],
                 [
                   "disabled",
@@ -710,10 +651,7 @@ export function ChannelModelsPanel({
             {t("channels.modelsCleanup", { n: parkedMembers.length })}
           </Button>
           {bulkMode ? (
-            <label
-              className="channel-model-select-all"
-              title={t("channels.modelsBulkHint")}
-            >
+            <label className="channel-model-select-all" title={t("channels.modelsBulkHint")}>
               <input
                 ref={selectAllRef}
                 type="checkbox"
@@ -724,11 +662,7 @@ export function ChannelModelsPanel({
               <span>{t("channels.modelsSelectAll")}</span>
             </label>
           ) : (
-            <Button
-              variant="secondary"
-              className="channel-alias-save"
-              onClick={enterBulkMode}
-            >
+            <Button variant="secondary" className="channel-alias-save" onClick={enterBulkMode}>
               {t("channels.modelsBulkSelect")}
             </Button>
           )}
@@ -781,17 +715,11 @@ export function ChannelModelsPanel({
           isError={discovered.isError}
           error={discovered.error}
           isEmpty={models.length === 0 && customModels.length === 0}
-          empty={
-            <p className="detail-section-empty is-quiet">
-              {t("channels.modelsEmpty")}
-            </p>
-          }
+          empty={<p className="detail-section-empty is-quiet">{t("channels.modelsEmpty")}</p>}
           retry={() => discovered.refetch()}
         >
           {filtered.length === 0 ? (
-            <p className="detail-section-empty is-quiet">
-              {t("channels.modelsFilterEmpty")}
-            </p>
+            <p className="detail-section-empty is-quiet">{t("channels.modelsFilterEmpty")}</p>
           ) : (
             <ul className="channel-model-list is-page">
               {grouped.map(({ group, items }) => {
@@ -801,22 +729,14 @@ export function ChannelModelsPanel({
                     <li
                       className={`channel-model-group-head${isCollapsed ? " is-collapsed" : ""}`}
                       onClick={() => toggleGroup(group)}
-                      title={
-                        isCollapsed
-                          ? t("channels.groupExpand")
-                          : t("channels.groupCollapse")
-                      }
+                      title={isCollapsed ? t("channels.groupExpand") : t("channels.groupCollapse")}
                     >
                       <span className="channel-model-group-name">{group}</span>
-                      <span className="channel-model-group-count">
-                        {items.length}
-                      </span>
+                      <span className="channel-model-group-count">{items.length}</span>
                     </li>
                     {!isCollapsed &&
                       items.map((item) => {
-                        const discoveredModel = models.find(
-                          (m) => m.model_name === item.name,
-                        );
+                        const discoveredModel = models.find((m) => m.model_name === item.name);
                         const isCustom = !discoveredModel;
                         const custom = isCustom
                           ? customModels.find((c) => c.name === item.name)
@@ -824,16 +744,12 @@ export function ChannelModelsPanel({
                         const member = memberFor(item.name);
                         const enabled = member ? member.enabled : false;
                         const aliasInfo = aliasFor(item.name);
-                        const alias =
-                          aliasInfo?.overview.route.model_pattern ?? "";
+                        const alias = aliasInfo?.overview.route.model_pattern ?? "";
                         const inputValue = discoveredModel
                           ? (aliasInputs[discoveredModel.id] ?? alias)
                           : alias;
                         return (
-                          <li
-                            key={item.key}
-                            className="channel-model-row is-alias"
-                          >
+                          <li key={item.key} className="channel-model-row is-alias">
                             {bulkMode ? (
                               <label
                                 className="channel-model-select"
@@ -859,9 +775,7 @@ export function ChannelModelsPanel({
                                   type="checkbox"
                                   checked={enabled}
                                   disabled={
-                                    member
-                                      ? toggleMember.pendingId === member.id
-                                      : adopt.isPending
+                                    member ? toggleMember.pendingId === member.id : adopt.isPending
                                   }
                                   onChange={() => {
                                     if (member) toggleMember.mutate(member);
@@ -882,8 +796,7 @@ export function ChannelModelsPanel({
                                     onChange={(event) =>
                                       setAliasInputs((previous) => ({
                                         ...previous,
-                                        [discoveredModel.id]:
-                                          event.target.value,
+                                        [discoveredModel.id]: event.target.value,
                                       }))
                                     }
                                   />
@@ -894,9 +807,7 @@ export function ChannelModelsPanel({
                                       aria-label={t("channels.aliasRemove")}
                                       title={t("channels.aliasRemove")}
                                       disabled={removeAlias.isPending}
-                                      onClick={() =>
-                                        removeAlias.mutate(item.name)
-                                      }
+                                      onClick={() => removeAlias.mutate(item.name)}
                                     >
                                       <Trash2 size={13} />
                                     </button>
@@ -904,10 +815,7 @@ export function ChannelModelsPanel({
                                     <Button
                                       variant="secondary"
                                       className="channel-alias-save"
-                                      disabled={
-                                        saveAlias.isPending ||
-                                        !inputValue.trim()
-                                      }
+                                      disabled={saveAlias.isPending || !inputValue.trim()}
                                       onClick={() =>
                                         saveAlias.mutate({
                                           realModel: item.name,
@@ -936,9 +844,7 @@ export function ChannelModelsPanel({
                                 </Button>
                               ) : null}
                             </span>
-                            <StatusBadge
-                              value={enabled ? "enabled" : "disabled"}
-                            />
+                            <StatusBadge value={enabled ? "enabled" : "disabled"} />
                           </li>
                         );
                       })}
@@ -982,10 +888,7 @@ export function ChannelModels() {
 
   if (channelId == null) {
     return (
-      <Page
-        title={t("channels.modelsSection")}
-        description=""
-      >
+      <Page title={t("channels.modelsSection")} description="">
         <ErrorState error={new Error("invalid channel id")} />
       </Page>
     );
@@ -996,11 +899,7 @@ export function ChannelModels() {
       title={t("channels.modelsSection")}
       description={t("channels.modelsManageHint")}
       actions={
-        <Button
-          variant="secondary"
-          icon={<ArrowLeft size={14} />}
-          onClick={() => navigate("/")}
-        >
+        <Button variant="secondary" icon={<ArrowLeft size={14} />} onClick={() => navigate("/")}>
           {t("channels.backToChannels")}
         </Button>
       }

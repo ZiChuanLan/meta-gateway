@@ -66,8 +66,7 @@ export function UsersLayout({ request }: { request: TeamRequest }) {
   });
 
   if (mode.isPending) return <Loading />;
-  if (mode.isError)
-    return <ErrorState error={mode.error} retry={() => void mode.refetch()} />;
+  if (mode.isError) return <ErrorState error={mode.error} retry={() => void mode.refetch()} />;
   const info = mode.data;
   if (!info) return null;
   // Owner and has_owner come from the settings document while the module is on
@@ -91,8 +90,8 @@ export function UsersLayout({ request }: { request: TeamRequest }) {
   // Before the module is switched on there is exactly one meaningful board:
   // the guide that switches it on. Offering "members" for a gateway that has no
   // accounts yet would be a door into an empty room.
-  const sections = SECTIONS.filter((section) =>
-    section.to === "overview" || (enabled && (!section.ownerOnly || owner)),
+  const sections = SECTIONS.filter(
+    (section) => section.to === "overview" || (enabled && (!section.ownerOnly || owner)),
   );
   return (
     <section className="team-surface">

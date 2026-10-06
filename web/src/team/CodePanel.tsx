@@ -99,9 +99,9 @@ export function CodePanel({
           expires_in_hours: Number(form.get("expires_in_hours") ?? 24),
           max_uses: Number(form.get("max_uses") ?? 1),
           quota_tokens: Number(form.get("quota_tokens") ?? 0),
-      // A voucher may carry tokens, money, or both: the account pool holds two
-      // budgets and the code says which one it tops up.
-      quota_cost: Number(form.get("quota_cost") ?? 0),
+          // A voucher may carry tokens, money, or both: the account pool holds two
+          // budgets and the code says which one it tops up.
+          quota_cost: Number(form.get("quota_cost") ?? 0),
           label: form.get("label") ?? "",
           note: form.get("note") ?? "",
         }),
@@ -161,9 +161,7 @@ export function CodePanel({
             <div className="team-actions">
               <button
                 className="team-button"
-                onClick={() =>
-                  void copy(minted.map((item) => item.code).join("\n"), "all")
-                }
+                onClick={() => void copy(minted.map((item) => item.code).join("\n"), "all")}
               >
                 {copied === "all" ? t("copied") : t("copyAll")}
               </button>
@@ -217,21 +215,21 @@ export function CodePanel({
                 ))}
               </select>
             </label>
-         			<label className="team-field">
-            <span>{t("codeQuota")}</span>
-            <input name="quota_tokens" type="number" min={0} step={1000} defaultValue={0} />
-          </label>
-          <label className="team-field">
-            <span>{t("codeQuotaCost")}</span>
-            <input
-              name="quota_cost"
-              type="number"
-              min={0}
-              step="0.01"
-              defaultValue={0}
-              placeholder="0"
-            />
-          </label>
+            <label className="team-field">
+              <span>{t("codeQuota")}</span>
+              <input name="quota_tokens" type="number" min={0} step={1000} defaultValue={0} />
+            </label>
+            <label className="team-field">
+              <span>{t("codeQuotaCost")}</span>
+              <input
+                name="quota_cost"
+                type="number"
+                min={0}
+                step="0.01"
+                defaultValue={0}
+                placeholder="0"
+              />
+            </label>
             <label className="team-field">
               <span>{t("policy")}</span>
               <select name="policy_id" defaultValue={policies[0]?.id ?? 1}>
@@ -259,11 +257,7 @@ export function CodePanel({
             <button className="team-button primary" type="submit" disabled={busy}>
               {busy ? t("saving") : t("codeMint")}
             </button>
-            <button
-              className="team-button quiet"
-              type="button"
-              onClick={() => setMinting(false)}
-            >
+            <button className="team-button quiet" type="button" onClick={() => setMinting(false)}>
               {t("cancel")}
             </button>
           </div>
@@ -303,10 +297,10 @@ export function CodePanel({
                     {code.used_count}/{code.max_uses}
                   </td>
                   <td className="team-hide-mobile">
-                        {code.quota_tokens > 0 ? code.quota_tokens.toLocaleString() : "—"}
-                        {(code.quota_cost ?? 0) > 0 ? (
-                          <small>{formatCost(code.quota_cost)}</small>
-                        ) : null}
+                    {code.quota_tokens > 0 ? code.quota_tokens.toLocaleString() : "—"}
+                    {(code.quota_cost ?? 0) > 0 ? (
+                      <small>{formatCost(code.quota_cost)}</small>
+                    ) : null}
                   </td>
                   <td>
                     <span className={`team-status ${codeStatus(code)}`}>

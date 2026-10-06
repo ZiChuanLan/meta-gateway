@@ -65,9 +65,7 @@ export function AccountPage() {
           <p className="muted">{consoleT("account.needsTeamSession")}</p>
         </div>
       );
-    return (
-      <ErrorState error={account.error} retry={() => void account.refetch()} />
-    );
+    return <ErrorState error={account.error} retry={() => void account.refetch()} />;
   }
   if (!account.data) return null;
   return (

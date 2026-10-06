@@ -88,12 +88,8 @@ describe("channel health dimensions", () => {
         overview({ last_ping_at: "2026-08-09T00:00:00Z", last_ping_ok: false }),
       ),
     ).toBe("unreachable");
-    expect(channelConnectivityState(overview(), { reachable: true })).toBe(
-      "reachable",
-    );
-    expect(channelConnectivityState(overview(), { reachable: false })).toBe(
-      "unreachable",
-    );
+    expect(channelConnectivityState(overview(), { reachable: true })).toBe("reachable");
+    expect(channelConnectivityState(overview(), { reachable: false })).toBe("unreachable");
   });
 
   it("marks route degradation for attention without calling it unreachable", () => {
@@ -112,9 +108,7 @@ describe("channel health dimensions", () => {
   it("derives the account state from the backend verdict and legacy fields", () => {
     expect(channelAccountState(overview())).toBe("unknown");
     expect(
-      channelAccountState(
-        overview({ account_state: "ok", last_account_probe_ok: true }),
-      ),
+      channelAccountState(overview({ account_state: "ok", last_account_probe_ok: true })),
     ).toBe("ok");
     expect(
       channelAccountState(

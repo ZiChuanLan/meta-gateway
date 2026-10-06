@@ -9,12 +9,37 @@ import { ModelChangesPanel } from "./ModelChangesPanel";
 
 function LocationProbe() {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}{location.search}</div>;
+  return (
+    <div data-testid="location">
+      {location.pathname}
+      {location.search}
+    </div>
+  );
 }
 
-const member = { member_id: 11, route_id: 7, route_name: "Public route", model_pattern: "public-model", channel_id: 1, upstream_model: "old-model", group_name: "default", deletable: true };
-const removed = { id: 1, channel_id: 1, channel_name: "Channel A", model_name: "old-model", kind: "removed", status: "pending", detected_at: "2026-08-20T00:00:00Z", candidates: ["new-model"], members: [member, { ...member, member_id: 12 }] };
-const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const member = {
+  member_id: 11,
+  route_id: 7,
+  route_name: "Public route",
+  model_pattern: "public-model",
+  channel_id: 1,
+  upstream_model: "old-model",
+  group_name: "default",
+  deletable: true,
+};
+const removed = {
+  id: 1,
+  channel_id: 1,
+  channel_name: "Channel A",
+  model_name: "old-model",
+  kind: "removed",
+  status: "pending",
+  detected_at: "2026-08-20T00:00:00Z",
+  candidates: ["new-model"],
+  members: [member, { ...member, member_id: 12 }],
+};
+const response = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 function setup(options: { applyError?: boolean; empty?: boolean } = {}) {
   const calls: { path: string; body: Record<string, unknown> }[] = [];
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -22,29 +47,90 @@ function setup(options: { applyError?: boolean; empty?: boolean } = {}) {
     if (init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       calls.push({ path, body });
-      if (path.endsWith("/preview")) return response({ preview_token: "server-preview", items: [{ ...member, source_channel_id: 1, source_model: "old-model", target_channel_id: body.target_channel_id, target_model: body.target_model }] });
-      if (path.endsWith("/apply")) return options.applyError ? response({ error: "snapshot changed" }, 409) : response({ updated: 1 });
+      if (path.endsWith("/preview"))
+        return response({
+          preview_token: "server-preview",
+          items: [
+            {
+              ...member,
+              source_channel_id: 1,
+              source_model: "old-model",
+              target_channel_id: body.target_channel_id,
+              target_model: body.target_model,
+            },
+          ],
+        });
+      if (path.endsWith("/apply"))
+        return options.applyError
+          ? response({ error: "snapshot changed" }, 409)
+          : response({ updated: 1 });
       if (path.endsWith("/discard-preview"))
         return response({
           preview_token: "discard-preview",
           // Both members sit on the same route, so the route goes with them.
           routes: 1,
           items: (body.member_ids as number[]).map((memberId) => ({
-            member_id: memberId, route_id: 7, route_name: "Public route", model_pattern: "public-model",
-            group_name: "default", channel_id: 1, upstream_model: "old-model", route_members: body.member_ids.length, route_deleted: true,
+            member_id: memberId,
+            route_id: 7,
+            route_name: "Public route",
+            model_pattern: "public-model",
+            group_name: "default",
+            channel_id: 1,
+            upstream_model: "old-model",
+            route_members: body.member_ids.length,
+            route_deleted: true,
           })),
         });
-      if (path.endsWith("/discard-apply")) return response({ removed: (body.member_ids as number[]).length, routes: 1 });
+      if (path.endsWith("/discard-apply"))
+        return response({ removed: (body.member_ids as number[]).length, routes: 1 });
       if (path.endsWith("/ignore")) return response({ updated: 1 });
     }
-    if (path.endsWith("/models/changes")) return response({ items: options.empty ? [] : [removed, { ...removed, id: 2, channel_id: 2, channel_name: "Channel B", members: [{ ...member, member_id: 21, channel_id: 2 }] }], summary: options.empty ? { added: 0, removed: 0, affected_routes: 0 } : { added: 0, removed: 2, affected_routes: 1 } });
-    if (path.endsWith("/admin/channels")) return response([{ id: 1, name: "Channel A", status: "enabled" }, { id: 2, name: "Channel B", status: "enabled" }]);
-    if (path.includes("/discovery/models?channel_id=")) return response([{ model_name: path.endsWith("=2") ? "other-model" : "new-model", available: true }]);
+    if (path.endsWith("/models/changes"))
+      return response({
+        items: options.empty
+          ? []
+          : [
+              removed,
+              {
+                ...removed,
+                id: 2,
+                channel_id: 2,
+                channel_name: "Channel B",
+                members: [{ ...member, member_id: 21, channel_id: 2 }],
+              },
+            ],
+        summary: options.empty
+          ? { added: 0, removed: 0, affected_routes: 0 }
+          : { added: 0, removed: 2, affected_routes: 1 },
+      });
+    if (path.endsWith("/admin/channels"))
+      return response([
+        { id: 1, name: "Channel A", status: "enabled" },
+        { id: 2, name: "Channel B", status: "enabled" },
+      ]);
+    if (path.includes("/discovery/models?channel_id="))
+      return response([
+        { model_name: path.endsWith("=2") ? "other-model" : "new-model", available: true },
+      ]);
     return response({ error: `unexpected ${path}` }, 500);
   });
   vi.stubGlobal("fetch", fetch);
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const view = render(<QueryClientProvider client={queryClient}><I18nProvider><ToastProvider><SessionProvider><MemoryRouter initialEntries={["/models"]}><ModelChangesPanel /></MemoryRouter></SessionProvider></ToastProvider></I18nProvider></QueryClientProvider>);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <ToastProvider>
+          <SessionProvider>
+            <MemoryRouter initialEntries={["/models"]}>
+              <ModelChangesPanel />
+            </MemoryRouter>
+          </SessionProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
   return { ...view, calls, queryClient };
 }
 async function openReplacement() {
@@ -53,13 +139,23 @@ async function openReplacement() {
   await screen.findByRole("option", { name: "new-model — Added" });
   fireEvent.change(screen.getByLabelText("Target model"), { target: { value: "new-model" } });
 }
-beforeEach(() => { localStorage.clear(); sessionStorage.clear(); localStorage.setItem("meta-gateway.locale", "en"); localStorage.setItem("meta-gateway.admin-token", "test-token"); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+  localStorage.setItem("meta-gateway.locale", "en");
+  localStorage.setItem("meta-gateway.admin-token", "test-token");
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 describe("upstream model maintenance", () => {
   it("stays compact with no changes and preserves history filters across navigation", async () => {
     const first = setup({ empty: true });
     fireEvent.click(await screen.findByRole("button", { name: "Change history" }));
-    fireEvent.change(screen.getByLabelText("Search model or channel"), { target: { value: "deepseek" } });
+    fireEvent.change(screen.getByLabelText("Search model or channel"), {
+      target: { value: "deepseek" },
+    });
     expect(await screen.findByText("No matching changes")).toBeInTheDocument();
     first.unmount();
     setup({ empty: true });
@@ -74,8 +170,15 @@ describe("upstream model maintenance", () => {
     await screen.findByRole("button", { name: "Apply (1 members)" });
     expect(screen.getByRole("heading", { name: "Confirm these mapping changes" })).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: "Apply (1 members)" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Updated upstream mappings for 1 members.");
-    expect(calls[0]?.body).toEqual({ change_ids: [1], member_ids: [11], target_channel_id: 1, target_model: "new-model" });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Updated upstream mappings for 1 members.",
+    );
+    expect(calls[0]?.body).toEqual({
+      change_ids: [1],
+      member_ids: [11],
+      target_channel_id: 1,
+      target_model: "new-model",
+    });
     expect(calls[1]?.body).toEqual({ ...calls[0]!.body, preview_token: "server-preview" });
   });
   it("makes cross-channel selection explicit and clears the previous target", async () => {
@@ -114,7 +217,9 @@ describe("upstream model maintenance", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Ignore" })[0]!);
     expect(calls).toHaveLength(0);
     fireEvent.click(screen.getAllByRole("button", { name: "Ignore" }).at(-1)!);
-    await waitFor(() => expect(calls).toEqual([{ path: "/admin/models/changes/ignore", body: { ids: [1] } }]));
+    await waitFor(() =>
+      expect(calls).toEqual([{ path: "/admin/models/changes/ignore", body: { ids: [1] } }]),
+    );
   });
   it("deletes the dead bindings through the preview token instead of repointing them", async () => {
     const { calls } = setup();
@@ -123,10 +228,14 @@ describe("upstream model maintenance", () => {
     // Nothing reaches the server before the operator previews the deletion.
     expect(calls).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Preview deletion" }));
-    expect(await screen.findByText("Deletes 2 bindings; 1 routes go with them.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Deletes 2 bindings; 1 routes go with them."),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/Last member of this route/)).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Delete (2 bindings)" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Deleted 2 bindings; 1 routes went with them.");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Deleted 2 bindings; 1 routes went with them.",
+    );
     expect(calls.map((call) => call.path)).toEqual([
       "/admin/models/changes/discard-preview",
       "/admin/models/changes/discard-apply",
@@ -143,12 +252,30 @@ describe("upstream model maintenance", () => {
     };
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path.endsWith("/models/changes")) return response({ items: [wildcard], summary: { added: 0, removed: 1, affected_routes: 1 } });
+      if (path.endsWith("/models/changes"))
+        return response({
+          items: [wildcard],
+          summary: { added: 0, removed: 1, affected_routes: 1 },
+        });
       return response({ error: `unexpected ${path}` }, 500);
     });
     vi.stubGlobal("fetch", fetch);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={queryClient}><I18nProvider><ToastProvider><SessionProvider><MemoryRouter initialEntries={["/models"]}><ModelChangesPanel /></MemoryRouter></SessionProvider></ToastProvider></I18nProvider></QueryClientProvider>);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nProvider>
+          <ToastProvider>
+            <SessionProvider>
+              <MemoryRouter initialEntries={["/models"]}>
+                <ModelChangesPanel />
+              </MemoryRouter>
+            </SessionProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </QueryClientProvider>,
+    );
     fireEvent.click(await screen.findByRole("button", { name: "View changes" }));
     const button = screen.getByRole("button", { name: "Delete binding" });
     expect(button).toBeDisabled();
@@ -163,20 +290,55 @@ describe("upstream model maintenance signals", () => {
     localStorage.setItem("meta-gateway.locale", "zh-CN");
   });
 
-  const signalMember = { member_id: 31, route_id: 9, route_name: "impacted-model", model_pattern: "impacted-model", channel_id: 7, upstream_model: "impacted-model", group_name: "default", deletable: true };
+  const signalMember = {
+    member_id: 31,
+    route_id: 9,
+    route_name: "impacted-model",
+    model_pattern: "impacted-model",
+    channel_id: 7,
+    upstream_model: "impacted-model",
+    group_name: "default",
+    deletable: true,
+  };
   const signalItems = [
     {
-      id: 21, channel_id: 7, channel_name: "WONG", model_name: "gone-model", kind: "removed", status: "pending",
-      detected_at: new Date(Date.now() - 3 * 86_400_000).toISOString(), candidates: [], members: [],
-      confirmed: true, miss_count: 3, partial_keys: true, flap_count: 2, runtime_blocked: true, blocked_at: "2026-09-10T08:00:00Z",
+      id: 21,
+      channel_id: 7,
+      channel_name: "WONG",
+      model_name: "gone-model",
+      kind: "removed",
+      status: "pending",
+      detected_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+      candidates: [],
+      members: [],
+      confirmed: true,
+      miss_count: 3,
+      partial_keys: true,
+      flap_count: 2,
+      runtime_blocked: true,
+      blocked_at: "2026-09-10T08:00:00Z",
     },
     {
-      id: 22, channel_id: 7, channel_name: "WONG", model_name: "brand-new", kind: "added", status: "pending",
-      detected_at: new Date().toISOString(), candidates: [], members: [],
+      id: 22,
+      channel_id: 7,
+      channel_name: "WONG",
+      model_name: "brand-new",
+      kind: "added",
+      status: "pending",
+      detected_at: new Date().toISOString(),
+      candidates: [],
+      members: [],
     },
     {
-      id: 23, channel_id: 7, channel_name: "WONG", model_name: "impacted-model", kind: "removed", status: "pending",
-      detected_at: new Date().toISOString(), candidates: [], members: [signalMember],
+      id: 23,
+      channel_id: 7,
+      channel_name: "WONG",
+      model_name: "impacted-model",
+      kind: "removed",
+      status: "pending",
+      detected_at: new Date().toISOString(),
+      candidates: [],
+      members: [signalMember],
     },
   ];
   const signalSummary = { added: 1, removed: 2, affected_routes: 1, confirmed: 1 };
@@ -190,11 +352,14 @@ describe("upstream model maintenance signals", () => {
         ignoreCalls.push(body.ids ?? []);
         return response({ updated: (body.ids ?? []).length });
       }
-      if (path.endsWith("/models/changes")) return response({ items: signalItems, summary: signalSummary });
+      if (path.endsWith("/models/changes"))
+        return response({ items: signalItems, summary: signalSummary });
       return response({ error: `unexpected ${path}` }, 500);
     });
     vi.stubGlobal("fetch", fetch);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
     render(
       <QueryClientProvider client={queryClient}>
         <I18nProvider>
@@ -202,7 +367,15 @@ describe("upstream model maintenance signals", () => {
             <SessionProvider>
               <MemoryRouter initialEntries={["/models"]}>
                 <Routes>
-                  <Route path="/models" element={<><ModelChangesPanel /><div data-testid="location" /></>} />
+                  <Route
+                    path="/models"
+                    element={
+                      <>
+                        <ModelChangesPanel />
+                        <div data-testid="location" />
+                      </>
+                    }
+                  />
                   <Route path="/models/channel/:channelId" element={<LocationProbe />} />
                 </Routes>
               </MemoryRouter>
@@ -239,7 +412,10 @@ describe("upstream model maintenance signals", () => {
     const empty = (await screen.findByText("gone-model")).closest("article")!;
     const disabled = within(empty).getByRole("button", { name: "删除绑定" });
     expect(disabled).toBeDisabled();
-    expect(disabled).toHaveAttribute("title", "该移除当前没有绑定的路由成员，也就没有可删除的绑定。");
+    expect(disabled).toHaveAttribute(
+      "title",
+      "该移除当前没有绑定的路由成员，也就没有可删除的绑定。",
+    );
     const impacted = screen.getAllByText("impacted-model")[0]!.closest("article")!;
     expect(within(impacted).getByRole("button", { name: "删除绑定" })).toBeEnabled();
   });

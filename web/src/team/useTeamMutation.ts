@@ -24,7 +24,7 @@ export function useTeamMutation(request: TeamRequest, t: TeamText) {
   const [notice, setNotice] = useState("");
 
   const run = useCallback(
-    async <T,>(
+    async <T>(
       path: string,
       method: string,
       body?: unknown,
@@ -42,7 +42,8 @@ export function useTeamMutation(request: TeamRequest, t: TeamText) {
         });
         onSuccess?.(data);
         await qc.invalidateQueries({ queryKey: ["team"] });
-        if (path.startsWith("/admin/ratios/")) await qc.invalidateQueries({ queryKey: ["model-pricing"] });
+        if (path.startsWith("/admin/ratios/"))
+          await qc.invalidateQueries({ queryKey: ["model-pricing"] });
         if (!onSuccess) setNotice(t("success"));
         return data;
       } catch (failure) {

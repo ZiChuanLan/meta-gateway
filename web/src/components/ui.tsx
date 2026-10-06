@@ -43,9 +43,7 @@ export function Button({
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={[`button button-${variant}`, className]
-        .filter(Boolean)
-        .join(" ")}
+      className={[`button button-${variant}`, className].filter(Boolean).join(" ")}
       {...props}
     >
       {loading ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : icon}
@@ -102,7 +100,9 @@ export function Page({
             <h1>{title}</h1>
             <p>{description}</p>
           </div>
-          <div className="toolbar page-actions" ref={setActionHost}>{actions}</div>
+          <div className="toolbar page-actions" ref={setActionHost}>
+            {actions}
+          </div>
         </header>
         {children}
       </Tag>
@@ -161,9 +161,7 @@ export function Panel({
 }) {
   const { t } = useI18n();
   const bodyId = useId();
-  const [open, setOpen] = useState(() =>
-    readPanelOpen(storageKey, defaultOpen),
-  );
+  const [open, setOpen] = useState(() => readPanelOpen(storageKey, defaultOpen));
   const folded = collapsible && !open;
   const toggle = () => {
     setOpen((prev) => {
@@ -172,10 +170,7 @@ export function Panel({
     });
   };
   return (
-    <section
-      id={id}
-      className={`panel ${className}${folded ? " is-collapsed" : ""}`.trim()}
-    >
+    <section id={id} className={`panel ${className}${folded ? " is-collapsed" : ""}`.trim()}>
       {(title || actions) && (
         <header className="panel-header">
           {title ? (
@@ -189,20 +184,14 @@ export function Panel({
                   title={open ? t("common.collapse") : t("common.expand")}
                   onClick={toggle}
                 >
-                  <ChevronDown
-                    size={14}
-                    className="panel-toggle-icon"
-                    aria-hidden="true"
-                  />
+                  <ChevronDown size={14} className="panel-toggle-icon" aria-hidden="true" />
                   <h2>{title}</h2>
                 </button>
               ) : (
                 <h2>{title}</h2>
               )}
               {titleHelp ? <InfoTip label={titleHelp} /> : null}
-              {folded && summary ? (
-                <span className="panel-summary">{summary}</span>
-              ) : null}
+              {folded && summary ? <span className="panel-summary">{summary}</span> : null}
             </div>
           ) : null}
           <div className="toolbar">{actions}</div>
@@ -237,7 +226,9 @@ export function Dialog({
   const { t } = useI18n();
   const titleId = useId();
   const dialogRef = useRef<HTMLElement | null>(null);
-  const close = () => { if (!busy) onClose(); };
+  const close = () => {
+    if (!busy) onClose();
+  };
   useModalFocus(dialogRef, close);
   // Portal to document.body so fixed backdrop is not clipped by Panel/content
   // overflow:hidden or filtered/transformed ancestors (common after ops shell restyle).
@@ -265,8 +256,18 @@ export function Dialog({
             <X size={18} />
           </IconButton>
         </header>
-        <div className="dialog-body"><fieldset className="overlay-fields" disabled={busy}>{children}</fieldset></div>
-        {actions && <footer><fieldset className="overlay-actions" disabled={busy}>{actions}</fieldset></footer>}
+        <div className="dialog-body">
+          <fieldset className="overlay-fields" disabled={busy}>
+            {children}
+          </fieldset>
+        </div>
+        {actions && (
+          <footer>
+            <fieldset className="overlay-actions" disabled={busy}>
+              {actions}
+            </fieldset>
+          </footer>
+        )}
       </section>
     </div>,
     document.body,
@@ -303,9 +304,7 @@ export function ConfirmDialog({
             {t("common.cancel")}
           </Button>
           <Button variant="danger" loading={pending} onClick={onConfirm}>
-            {pending
-              ? t("common.working")
-              : (confirmLabel ?? t("common.delete"))}
+            {pending ? t("common.working") : (confirmLabel ?? t("common.delete"))}
           </Button>
         </>
       }
@@ -374,17 +373,11 @@ export function InfoTip({ label }: { label: string }) {
     const chosen = candidates.find(fits) ?? candidates[2]!;
     const left = Math.max(
       padding,
-      Math.min(
-        chosen.left,
-        window.innerWidth - bubbleRect.width - padding,
-      ),
+      Math.min(chosen.left, window.innerWidth - bubbleRect.width - padding),
     );
     const top = Math.max(
       padding,
-      Math.min(
-        chosen.top,
-        window.innerHeight - bubbleRect.height - padding,
-      ),
+      Math.min(chosen.top, window.innerHeight - bubbleRect.height - padding),
     );
     setPosition({ top, left, placement: chosen.placement });
   }, []);
@@ -428,11 +421,7 @@ export function InfoTip({ label }: { label: string }) {
             className="info-tip-bubble"
             data-placement={position?.placement ?? "below"}
             data-visible={position ? "true" : "false"}
-            style={
-              position
-                ? { top: position.top, left: position.left }
-                : { top: 0, left: 0 }
-            }
+            style={position ? { top: position.top, left: position.left } : { top: 0, left: 0 }}
             role="tooltip"
           >
             {label}
@@ -486,16 +475,9 @@ export function Field({
 
 export function StatusBadge({ value }: { value: string | boolean }) {
   const { status } = useI18n();
-  const raw =
-    typeof value === "boolean"
-      ? value
-        ? "enabled"
-        : "disabled"
-      : String(value);
+  const raw = typeof value === "boolean" ? (value ? "enabled" : "disabled") : String(value);
   return (
-    <span className={`badge badge-${raw.toLowerCase().replaceAll("_", "-")}`}>
-      {status(value)}
-    </span>
+    <span className={`badge badge-${raw.toLowerCase().replaceAll("_", "-")}`}>{status(value)}</span>
   );
 }
 
@@ -511,23 +493,14 @@ export function Loading() {
 
 export function Empty({ children }: { children?: ReactNode }) {
   const { t } = useI18n();
-  return (
-    <div className="state state-empty">{children ?? t("common.empty")}</div>
-  );
+  return <div className="state state-empty">{children ?? t("common.empty")}</div>;
 }
 
-export function ErrorState({
-  error,
-  retry,
-}: {
-  error: unknown;
-  retry?: () => void;
-}) {
+export function ErrorState({ error, retry }: { error: unknown; retry?: () => void }) {
   const { t } = useI18n();
   const formatted = formatErrorObject(error, t);
   const cause =
-    formatted.cause.trim().toLocaleLowerCase() ===
-    formatted.title.trim().toLocaleLowerCase()
+    formatted.cause.trim().toLocaleLowerCase() === formatted.title.trim().toLocaleLowerCase()
       ? ""
       : formatted.cause;
   return (
@@ -536,9 +509,7 @@ export function ErrorState({
       <div className="error-state-body">
         <strong>{formatted.title}</strong>
         {cause ? <span>{cause}</span> : null}
-        {formatted.fix ? (
-          <span className="error-state-fix">{formatted.fix}</span>
-        ) : null}
+        {formatted.fix ? <span className="error-state-fix">{formatted.fix}</span> : null}
       </div>
       {retry && (
         <Button variant="secondary" onClick={retry}>
@@ -559,8 +530,8 @@ export function DataTable({
   empty?: boolean;
 }) {
   if (empty) return <Empty />;
-	return (
-		<div className="table-wrap" data-columns={headers.length}>
+  return (
+    <div className="table-wrap" data-columns={headers.length}>
       <table>
         <thead>
           <tr>
@@ -634,9 +605,7 @@ export function formatDate(value?: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const lang =
-    typeof document !== "undefined"
-      ? document.documentElement.lang || undefined
-      : undefined;
+    typeof document !== "undefined" ? document.documentElement.lang || undefined : undefined;
   return new Intl.DateTimeFormat(lang, {
     dateStyle: "medium",
     timeStyle: "short",

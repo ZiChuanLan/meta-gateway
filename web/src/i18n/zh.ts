@@ -8,8 +8,7 @@ export const zh: Dict = {
   "ops.tab.mode": "运行模式",
   "keys.userOwner": "所属用户 #{id}",
   "modelChanges.title": "上游模型变化",
-  "modelChanges.summary":
-    "新增 {added} · 疑似移除 {removed} · 影响路由 {routes}",
+  "modelChanges.summary": "新增 {added} · 疑似移除 {removed} · 影响路由 {routes}",
   "modelChanges.open": "查看变更",
   "modelChanges.history": "变更记录",
   "modelChanges.collapse": "收起变更",
@@ -30,24 +29,19 @@ export const zh: Dict = {
   "modelChanges.empty": "没有符合条件的变更",
   "modelChanges.noImpact": "当前没有受影响的路由成员",
   "modelChanges.candidates": "同次同步新增（仅供选择，不代表新版本）",
-  "modelChanges.noCandidates":
-    "同次同步没有新增模型，仍可从现有清单选择替代模型。",
+  "modelChanges.noCandidates": "同次同步没有新增模型，仍可从现有清单选择替代模型。",
   "modelChanges.replace": "选择替换",
   "modelChanges.discard": "删除绑定",
-  "modelChanges.discardHint":
-    "删除该渠道在受影响路由上的绑定；路由失去最后一个成员时会一并删除。",
-  "modelChanges.discardNoBinding":
-    "该移除当前没有绑定的路由成员，也就没有可删除的绑定。",
+  "modelChanges.discardHint": "删除该渠道在受影响路由上的绑定；路由失去最后一个成员时会一并删除。",
+  "modelChanges.discardNoBinding": "该移除当前没有绑定的路由成员，也就没有可删除的绑定。",
   "modelChanges.discardWildcard":
     "通配符绑定服务于多个模型名，删除会连带影响它们，需先为它指定固定上游模型。",
   "modelChanges.ignore": "忽略",
-  "modelChanges.ignoreConfirm":
-    "忽略选中的 {count} 条变更？这只关闭提醒，不会修复或修改路由。",
+  "modelChanges.ignoreConfirm": "忽略选中的 {count} 条变更？这只关闭提醒，不会修复或修改路由。",
   "modelChanges.select": "选择变更 {model} / {channel}",
   "modelChanges.bulk": "替换选中变更（{count}）",
   "modelChanges.bulkDiscard": "删除选中绑定（{count}）",
-  "modelChanges.bulkDiscardHint":
-    "批量删除需要所选变更都是「有可删绑定」的待处理移除记录。",
+  "modelChanges.bulkDiscardHint": "批量删除需要所选变更都是「有可删绑定」的待处理移除记录。",
   "modelChanges.sameChannel": "批量替换请只选择同一渠道的待处理移除记录。",
   "modelChanges.replaceTitle": "更换上游映射",
   "modelChanges.preserve":
@@ -71,20 +65,16 @@ export const zh: Dict = {
     "只删除选中的绑定；对外模型名、其它渠道的成员与路由设置保持不变。路由失去最后一个成员时会一并删除，不会留下一个还能被调用、却没有上游的名字。",
   "modelChanges.discardPreview": "预览删除",
   "modelChanges.discardPreviewTitle": "确认以下删除",
-  "modelChanges.discardImpact":
-    "将删除 {members} 个绑定，其中 {routes} 个路由会一并删除。",
-  "modelChanges.discardRouteDeleted":
-    "该路由的最后一个成员（共 {count} 个），路由一并删除",
+  "modelChanges.discardImpact": "将删除 {members} 个绑定，其中 {routes} 个路由会一并删除。",
+  "modelChanges.discardRouteDeleted": "该路由的最后一个成员（共 {count} 个），路由一并删除",
   "modelChanges.discardRouteKept": "该路由共 {count} 个成员，其余绑定保留",
   "modelChanges.discardConfirm": "确认删除（{count} 个绑定）",
   "modelChanges.discardDone": "已删除 {members} 个绑定，{routes} 个路由一并删除。",
-  "modelChanges.discardStale":
-    "预览已失效或删除失败，请返回核对并重新预览。",
+  "modelChanges.discardStale": "预览已失效或删除失败，请返回核对并重新预览。",
   "modelChanges.noTargets": "该渠道尚无可选模型，请先成功同步模型清单。",
   "modelChanges.summaryConfirmed": "已确认 {count}",
   "modelChanges.confirmedBadge": "已确认缺失",
-  "modelChanges.confirmedHint":
-    "该模型已连续 {count} 次完整同步未出现，基本可以认定上游已下线。",
+  "modelChanges.confirmedHint": "该模型已连续 {count} 次完整同步未出现，基本可以认定上游已下线。",
   "modelChanges.partialKeys": "部分 Key 未响应",
   "modelChanges.partialKeysHint":
     "本次同步只有部分 API Key 返回了清单，缺失可能来自未响应的 Key，属于疑似假阳性。",
@@ -97,8 +87,7 @@ export const zh: Dict = {
     "批量忽略没有路由成员受影响的待处理移除记录；忽略后可随时在历史中查看。",
   "modelChanges.adopt": "去接入",
   "modelChanges.adoptedChip": "已接入",
-  "modelChanges.adoptedHint":
-    "该模型已接入此渠道路由；提醒可忽略，每日清理时会自动解决。",
+  "modelChanges.adoptedHint": "该模型已接入此渠道路由；提醒可忽略，每日清理时会自动解决。",
 
   "lang.en": "English",
   "lang.zh": "中文",
@@ -154,8 +143,7 @@ export const zh: Dict = {
     "在 AAH 的 WebDAV 同步里勾上「账号」与「API 凭据」后重新备份；若是 Meta Gateway 自己导出的文件，导出时请勾选「包含密钥」。",
   "error.importInvalid": "备份内容不合法",
   "error.importInvalidCause": "文档结构不完整，或必要字段缺失、类型不对。",
-  "error.importInvalidFix":
-    "重新导出一次；若文件被手工编辑过，请换回原始文件。",
+  "error.importInvalidFix": "重新导出一次；若文件被手工编辑过，请换回原始文件。",
   "error.pluginMarketUnavailable": "插件市场不可用",
   "error.pluginMarketUnavailableCause":
     "没有任何一个插件源能返回注册表，所以市场里看不到任何插件。",
@@ -170,8 +158,7 @@ export const zh: Dict = {
   "error.decryptFailedCause": "解锁密码不正确，或备份文件已损坏。",
   "error.decryptFailedFix":
     "填写 AAH「备份加密」里设置的密码（不是网盘登录密码；坚果云等需用应用密码）。",
-  "error.upstream_unauthorized":
-    "上游返回 401/403。请检查 API Key 与 Base URL 是否正确。",
+  "error.upstream_unauthorized": "上游返回 401/403。请检查 API Key 与 Base URL 是否正确。",
   "error.upstream_failure": "上游模型发现失败。",
   "error.unsupported_adapter": "此连接类型没有可用的模型适配器。",
   "error.credential_unavailable": "凭证缺失或已禁用。",
@@ -197,8 +184,7 @@ export const zh: Dict = {
   "err.upstreamShape.fix":
     "确认该上游确实是 OpenAI 兼容形态；若不是（如 TypeSafe、各类自研接口），请在渠道的「自定义端点与字段映射」里配置请求 / 响应字段映射，或把上游供应商改成对应类型。",
   "err.missingKey.title": "缺少 API Key",
-  "err.missingKey.cause":
-    "该站点没有可用的 API Key，或上游隐藏 / 掩码了密钥列表。",
+  "err.missingKey.cause": "该站点没有可用的 API Key，或上游隐藏 / 掩码了密钥列表。",
   "err.missingKey.fix": "手动添加 API Key，或用访问令牌创建一个。",
   "err.tokenMasked.title": "API Key 已创建，但密钥被掩码",
   "err.tokenMasked.cause":
@@ -226,10 +212,8 @@ export const zh: Dict = {
     "该渠道不是这个模型的路由成员（可能刚被移除，或被移到了别的分组）。",
   "err.pinnedUpstream.memberDisabled": "该成员在这个模型下已停用，重新启用后即可试调。",
   "err.pinnedUpstream.channelDisabled": "该渠道整体处于停用（或被自动熔断）状态。",
-  "err.pinnedUpstream.noCredential":
-    "该渠道没有可用于这个模型的凭据（Key 池为空或凭据未启用）。",
-  "err.pinnedUpstream.coolingDown":
-    "该成员正在冷却中（刚失败过），冷却结束后会自动恢复。",
+  "err.pinnedUpstream.noCredential": "该渠道没有可用于这个模型的凭据（Key 池为空或凭据未启用）。",
+  "err.pinnedUpstream.coolingDown": "该成员正在冷却中（刚失败过），冷却结束后会自动恢复。",
   "err.pinnedUpstream.invalidWeight": "该成员的权重配置无效，无法参与选路。",
   "err.pinnedUpstream.noEligible":
     "这个路由当前没有任何可用成员：检查成员是否启用、渠道状态与凭据。",
@@ -237,14 +221,11 @@ export const zh: Dict = {
   "err.server.cause": "Meta Gateway 处理请求时发生内部错误。",
   "err.server.fix": "检查网关日志后重试。",
   "err.cancelled.title": "请求已取消",
-  "err.cancelled.cause":
-    "客户端提前断开或到达时限，网关停止了这次转发（不会自动重试）。",
+  "err.cancelled.cause": "客户端提前断开或到达时限，网关停止了这次转发（不会自动重试）。",
   "err.cancelled.fix": "直接重发请求即可；若频繁出现，检查客户端超时设置。",
   "err.emptyResponse.title": "上游返回了空回复",
-  "err.emptyResponse.cause":
-    "上游返回 200 但没有任何内容，网关已自动转移到下一个通道。",
-  "err.emptyResponse.fix":
-    "无需处理；若集中在同一通道，考虑禁用该通道的这个模型。",
+  "err.emptyResponse.cause": "上游返回 200 但没有任何内容，网关已自动转移到下一个通道。",
+  "err.emptyResponse.fix": "无需处理；若集中在同一通道，考虑禁用该通道的这个模型。",
   "err.unknown.title": "未知错误",
   "err.unknown.cause": "网关返回了无法识别的错误。",
   "err.unknown.fix": "重试，或查看网关日志获取详情。",
@@ -298,8 +279,7 @@ export const zh: Dict = {
   "actions.maintenance": "同步与维护",
   "actions.selection": "批量选择",
   "actions.danger": "危险操作",
-  "actions.accountUnavailable":
-    "账号信息暂不可用，请等待详情加载或重新验证账号。",
+  "actions.accountUnavailable": "账号信息暂不可用，请等待详情加载或重新验证账号。",
   "modelsPage.tools": "模型工具",
   "select.search": "搜索选项…",
   "select.custom": "自定义类型",
@@ -316,11 +296,9 @@ export const zh: Dict = {
   "appearance.description":
     "每套主题都有独立的导航、布局、排版与入场动效。选择后立即应用，可随时切回。",
   "appearance.classic.name": "经典控制台",
-  "appearance.classic.description":
-    "原版蓝金风格 · 顶部导航 · 目录与详情并排 · 机械开门过场",
+  "appearance.classic.description": "原版蓝金风格 · 顶部导航 · 目录与详情并排 · 机械开门过场",
   "appearance.modern.name": "现代工作空间",
-  "appearance.modern.description":
-    "清爽黑白蓝 · 分组侧栏 · 宽列表与详情抽屉 · 字排斜切过场",
+  "appearance.modern.description": "清爽黑白蓝 · 分组侧栏 · 宽列表与详情抽屉 · 字排斜切过场",
   "appearance.bundled": "内置主题包",
   "appearance.mode": "明暗模式",
   "appearance.modeHint": "独立于界面主题，也可以随时使用页面上的明暗切换按钮。",
@@ -375,25 +353,32 @@ export const zh: Dict = {
   "pricing.zeroRatio": "倍率为 0 会使该模型的费用为 0；token 额度仍会按真实用量扣减。",
   "pricing.asOf": "参考价计算时间：{time}。",
   "modelsPage.viewDetails": "查看 {model} 详情",
-  "modelsPage.memberDescription": "查看已授权模型的能力、价格与接入方式；个人编排只影响自己的请求。",
-  "pricing.invalidTiers": "阶梯输入必须完整且非负，输入上限须为不重复整数（0 表示无上限），最多 20 档。",
-  "pricing.invalidWindows": "时段必须填写 0–23 的整数小时，倍率必须大于 0 且不超过 1000，最多 20 条。",
-  "pricing.windowSemantics": "按网关时区和当前日历日匹配星期；跨午夜的 22→6 表示所选日的 0–6 点与 22–24 点。重叠时仅第一条生效，起止相同表示全天。",
-  "pricing.blankRules": "留空表示不配置：整行未填写会在保存时忽略；没有阶梯则使用基础价，没有时段则不调整倍率。半填规则需补齐或删除，明确的 0 不等于留空。",
+  "modelsPage.memberDescription":
+    "查看已授权模型的能力、价格与接入方式；个人编排只影响自己的请求。",
+  "pricing.invalidTiers":
+    "阶梯输入必须完整且非负，输入上限须为不重复整数（0 表示无上限），最多 20 档。",
+  "pricing.invalidWindows":
+    "时段必须填写 0–23 的整数小时，倍率必须大于 0 且不超过 1000，最多 20 条。",
+  "pricing.windowSemantics":
+    "按网关时区和当前日历日匹配星期；跨午夜的 22→6 表示所选日的 0–6 点与 22–24 点。重叠时仅第一条生效，起止相同表示全天。",
+  "pricing.blankRules":
+    "留空表示不配置：整行未填写会在保存时忽略；没有阶梯则使用基础价，没有时段则不调整倍率。半填规则需补齐或删除，明确的 0 不等于留空。",
   "modelsPage.cardDetailsShort": "详情",
   "modelsPage.cardDetails": "模型详情与操作",
   "modelsPage.cardPriceNote": "已含模型倍率 ×{ratio} · 单价按实际所选通道结算",
   "modelsPage.cardVariablePrice": "存在阶梯或时段价，此处显示当前首档价格。",
   "modelsPage.cardDescription": "浏览模型能力与单价，选择模型后接入或管理。",
   "pricing.referenceTitle": "价格与计费",
-  "pricing.referenceHint": "已启用且获授权成员的参考单价范围，并非固定报价。健康状态、令牌分组和个人编排可能缩小范围；各项最低价未必来自同一成员，实际费用以账单为准。",
+  "pricing.referenceHint":
+    "已启用且获授权成员的参考单价范围，并非固定报价。健康状态、令牌分组和个人编排可能缩小范围；各项最低价未必来自同一成员，实际费用以账单为准。",
   "pricing.inputSize": "计价输入量（输入 + 缓存写入 token）",
   "pricing.calculate": "更新参考价",
   "pricing.input": "输入 / 百万 token",
   "pricing.output": "输出 / 百万 token",
   "pricing.cache": "缓存读取 / 百万 token",
   "pricing.perCall": "每次调用附加费",
-  "pricing.effective": "按 {input} 个输入 token 选阶梯，已含 ×{ratio} 模型倍率；覆盖 {count} 个授权可用成员。",
+  "pricing.effective":
+    "按 {input} 个输入 token 选阶梯，已含 ×{ratio} 模型倍率；覆盖 {count} 个授权可用成员。",
   "pricing.tiered": "存在阶梯价格，输入量改变时请重新计算；每项范围的最低价可能来自不同成员。",
   "pricing.scheduled": "包含当前时段倍率，计费时区：{zone}；实际按请求结束时的时段结算。",
   "pricing.ledgerNotice": "仅供调用前参考，不会修改价格或历史账单。显示货币换算不改变 USD 账本。",
@@ -401,29 +386,40 @@ export const zh: Dict = {
   "pricing.storedOutput": "输出单价（USD / 千 token）",
   "pricing.storedCache": "缓存读取单价（USD / 千 token）",
   "pricing.storedCall": "每次调用附加费（USD）",
-  "pricing.storedNotice": "配置统一以 USD 写入；留空不能保存，明确填写 0 才表示零值。显示货币设置不会换算这里的输入。",
+  "pricing.storedNotice":
+    "配置统一以 USD 写入；留空不能保存，明确填写 0 才表示零值。显示货币设置不会换算这里的输入。",
   "pricing.rulesTitle": "如何计费与扣减额度",
-  "pricing.ruleLayer": "成员价优先于模型价，整层替换，不逐字段补齐。平价全 0 且无阶梯表示继承下一层；两层均无价按 0 计。",
-  "pricing.ruleFactors": "先按计价输入量选择阶梯，再乘命中的首个时段倍率与模型倍率。每次调用费可与 token 费叠加；倍率 0 会使费用为 0。",
-  "pricing.ruleCache": "缓存读取单价为 0 时沿用输入单价；缓存写入按输入价计。不提供用量时不得伪造 token。",
-  "pricing.ruleQuota": "令牌、租户分组和成员额度分别限制请求；token 与金额上限独立生效，任一达到上限均会拒绝后续调用。",
+  "pricing.ruleLayer":
+    "成员价优先于模型价，整层替换，不逐字段补齐。平价全 0 且无阶梯表示继承下一层；两层均无价按 0 计。",
+  "pricing.ruleFactors":
+    "先按计价输入量选择阶梯，再乘命中的首个时段倍率与模型倍率。每次调用费可与 token 费叠加；倍率 0 会使费用为 0。",
+  "pricing.ruleCache":
+    "缓存读取单价为 0 时沿用输入单价；缓存写入按输入价计。不提供用量时不得伪造 token。",
+  "pricing.ruleQuota":
+    "令牌、租户分组和成员额度分别限制请求；token 与金额上限独立生效，任一达到上限均会拒绝后续调用。",
   "logsPage.memberHistogramScope": "当前账号最近 {n} 次请求",
   "wizard.editionTitle": "先选择使用方式",
-  "wizard.editionHint": "个人模式用于自己调用；团队模式用于管理成员、授权与额度。团队模式需先创建 owner 账号，再启用。此选择与下方模型同步方式独立。",
- 	"login.upgradeHelp": "从旧版本升级？登录说明",
-	"login.moreWays": "更多登录方式",
-	"login.otherTitle": "其他登录方式",
-	"login.otherHint": "注册新账号、用第三方账号登录，或查看旧版本升级说明。",
-	"login.register": "注册（使用注册码）",
-	"login.viaProvider": "使用 {provider} 登录",
-	"login.backToSignIn": "返回登录",
-  "login.upgradeCredentials": "部署管理员用户名由 ADMIN_USERNAME 设置，未设置时默认为 admin；密码仍使用原 ADMIN_TOKEN。升级不会自动更改管理口令。登录后可在“设置 → 管理员登录设置”验证原口令并保存用户名，无需重启；网页保存的值优先于环境变量。",
-  "login.upgradeCollision": "若已有同名团队账号，系统优先校验该团队账号，不会退回管理口令。请给 ADMIN_USERNAME 设置一个不同的名称，例如 gateway-admin。",
-  "login.upgradeTeam": "只供自己使用无需创建团队账号；需要多人使用时，登录后在初始化或用户管理中创建 owner，再启用团队模式。所有账号共用 /console 登录。",
-  "operator.legacyHint": "不知道升级后的用户名？可用原管理口令和二次验证进入，随后网页会提示设置用户名。此兼容入口不会绕过口令或二次验证。",
+  "wizard.editionHint":
+    "个人模式用于自己调用；团队模式用于管理成员、授权与额度。团队模式需先创建 owner 账号，再启用。此选择与下方模型同步方式独立。",
+  "login.upgradeHelp": "从旧版本升级？登录说明",
+  "login.moreWays": "更多登录方式",
+  "login.otherTitle": "其他登录方式",
+  "login.otherHint": "注册新账号、用第三方账号登录，或查看旧版本升级说明。",
+  "login.register": "注册（使用注册码）",
+  "login.viaProvider": "使用 {provider} 登录",
+  "login.backToSignIn": "返回登录",
+  "login.upgradeCredentials":
+    "部署管理员用户名由 ADMIN_USERNAME 设置，未设置时默认为 admin；密码仍使用原 ADMIN_TOKEN。升级不会自动更改管理口令。登录后可在“设置 → 管理员登录设置”验证原口令并保存用户名，无需重启；网页保存的值优先于环境变量。",
+  "login.upgradeCollision":
+    "若已有同名团队账号，系统优先校验该团队账号，不会退回管理口令。请给 ADMIN_USERNAME 设置一个不同的名称，例如 gateway-admin。",
+  "login.upgradeTeam":
+    "只供自己使用无需创建团队账号；需要多人使用时，登录后在初始化或用户管理中创建 owner，再启用团队模式。所有账号共用 /console 登录。",
+  "operator.legacyHint":
+    "不知道升级后的用户名？可用原管理口令和二次验证进入，随后网页会提示设置用户名。此兼容入口不会绕过口令或二次验证。",
   "operator.legacyLogin": "使用原管理口令登录",
   "operator.title": "管理员登录设置",
-  "operator.usernameHint": "网页保存的用户名立即生效并在重启后保留，优先于 ADMIN_USERNAME。只修改部署管理员名称，不改口令或团队账号。",
+  "operator.usernameHint":
+    "网页保存的用户名立即生效并在重启后保留，优先于 ADMIN_USERNAME。只修改部署管理员名称，不改口令或团队账号。",
   "operator.confirmToken": "验证当前管理口令（ADMIN_TOKEN）",
   "operator.saved": "用户名已保存，下次登录使用新用户名，原管理口令不变。",
   "operator.saveFailed": "保存失败。请检查用户名是否已被占用、管理口令和二次验证码。",
@@ -433,15 +429,20 @@ export const zh: Dict = {
   "updates.channel": "更新渠道",
   "updates.stable": "稳定版",
   "updates.beta": "Beta 渠道",
-  "updates.channelHint": "稳定版不接收 Beta；Beta 渠道接收预发布及后续正式版。只检查，不会自动安装；不支持自动降级。",
+  "updates.channelHint":
+    "稳定版不接收 Beta；Beta 渠道接收预发布及后续正式版。只检查，不会自动安装；不支持自动降级。",
   "updates.betaWarning": "Beta 可能不稳定，升级前请备份数据库。",
-  "updates.watchtowerHint": "当前 Watchtower 跟踪标签：{tag}。它安装的是该标签当时指向的最新构建（可能比这里列出的版本更新），且不能切换标签；跨渠道要改部署的 IMAGE_TAG 并重建容器，网页设置替代不了这一步。",
-  "updates.trackLocked": "此部署的镜像标签是 {tag}，只能安装{channel}构建；控制台的渠道选择改变不了部署里的标签。要换渠道：把 .env 的 IMAGE_TAG 改成目标标签并重建容器。",
+  "updates.watchtowerHint":
+    "当前 Watchtower 跟踪标签：{tag}。它安装的是该标签当时指向的最新构建（可能比这里列出的版本更新），且不能切换标签；跨渠道要改部署的 IMAGE_TAG 并重建容器，网页设置替代不了这一步。",
+  "updates.trackLocked":
+    "此部署的镜像标签是 {tag}，只能安装{channel}构建；控制台的渠道选择改变不了部署里的标签。要换渠道：把 .env 的 IMAGE_TAG 改成目标标签并重建容器。",
   "updates.applyTracked": "安装 {tag} 上的最新构建",
-  "updates.notNewer": "执行器重启后的版本是 {detail}，不比当前运行版本新；该标签可能被指回了旧构建。",
+  "updates.notNewer":
+    "执行器重启后的版本是 {detail}，不比当前运行版本新；该标签可能被指回了旧构建。",
   "updates.check": "检查更新",
   "updates.failed": "无法保存渠道或检查更新，请稍后重试。",
-  "updates.applyFailed": "更新未启动。请检查更新服务、版本和镜像渠道；Watchtower 需 IMAGE_TAG 与所选渠道匹配。",
+  "updates.applyFailed":
+    "更新未启动。请检查更新服务、版本和镜像渠道；Watchtower 需 IMAGE_TAG 与所选渠道匹配。",
   "updates.noUpgrade": "当前没有可升级版本（也可能关闭了更新检查，或当前为开发构建）。",
   "updates.dialogTitle": "软件更新",
   "updates.state.disabled": "更新检查已关闭。",
@@ -533,7 +534,8 @@ export const zh: Dict = {
   "app.updateApply": "一键更新到 {version}",
   "app.updateReleasePage": "查看发布页",
   "app.updateNoNotes": "这个版本没有发布说明。",
-  "app.updateRestartHint": "更新会拉取新镜像并重启容器，期间服务会短暂中断（通常几十秒）；完成后页面会自动刷新。",
+  "app.updateRestartHint":
+    "更新会拉取新镜像并重启容器，期间服务会短暂中断（通常几十秒）；完成后页面会自动刷新。",
   "app.updateRunning": "正在更新…",
   "app.updateRunningHint":
     "正在拉取镜像并切换到新容器。页面会自动重连；新版本就绪后自动刷新。请勿关闭网关宿主机上的 Docker。",
@@ -574,13 +576,11 @@ export const zh: Dict = {
   "dashboard.quickstart.title": "快速开始",
   "dashboard.quickstart.body": "网关还没有接好。三步即可发出第一个转发请求：",
   "dashboard.quickstart.step1": "添加一个上游连接",
-  "dashboard.quickstart.step1Desc":
-    "一个模型服务商（OpenAI、Anthropic、Gemini…）及其 API Key。",
+  "dashboard.quickstart.step1Desc": "一个模型服务商（OpenAI、Anthropic、Gemini…）及其 API Key。",
   "dashboard.quickstart.step2": "同步模型",
   "dashboard.quickstart.step2Desc": "网关自动发现该连接真正支持的模型。",
   "dashboard.quickstart.step3": "创建令牌",
-  "dashboard.quickstart.step3Desc":
-    "下游客户端用这个令牌调用 /v1/…，而不是直接用服务商原始 Key。",
+  "dashboard.quickstart.step3Desc": "下游客户端用这个令牌调用 /v1/…，而不是直接用服务商原始 Key。",
   "dashboard.quickstart.action1": "添加连接",
   "dashboard.quickstart.action2": "查看模型",
   "dashboard.quickstart.action3": "创建令牌",
@@ -602,8 +602,7 @@ export const zh: Dict = {
   "dashboard.unitMinute": "{n} 分钟",
   "dashboard.unitHour": "{n} 小时",
   "dashboard.unitDay": "{n} 天",
-  "dashboard.noActivity":
-    "所选时间区间内还没有请求 — 可以到模型页用聊天测试面板试试。",
+  "dashboard.noActivity": "所选时间区间内还没有请求 — 可以到模型页用聊天测试面板试试。",
   "dashboard.channelHealth": "渠道健康",
   "dashboard.enabledOf": "已启用 {n} / {total}",
   "dashboard.recentLogs": "最近代理日志",
@@ -648,20 +647,16 @@ export const zh: Dict = {
   "app.nav.close": "关闭导航",
   "app.nav.settings": "设置",
   "maintain.title": "设置",
-  "maintain.description":
-    "管理运行策略、外观偏好与备份。模型和连接变更在各自工作区完成。",
+  "maintain.description": "管理运行策略、外观偏好与备份。模型和连接变更在各自工作区完成。",
   "maintain.tab.exchange": "交换",
   "channels.searchPlaceholder": "搜索连接",
   "channels.title": "上游连接",
-  "channels.description":
-    "接入上游服务，验证凭证并同步模型。这里的优先级和权重是连接级默认值。",
+  "channels.description": "接入上游服务，验证凭证并同步模型。这里的优先级和权重是连接级默认值。",
   "channels.add": "添加连接",
-  "channels.addHint":
-    "填写上游地址和凭证。「保存并验证」会完成连接检查与初次模型同步。",
+  "channels.addHint": "填写上游地址和凭证。「保存并验证」会完成连接检查与初次模型同步。",
   "channels.endpointPreview": "将请求到：{url}",
   "channels.namePlaceholder": "可选显示名称",
-  "channels.baseUrlHint":
-    "OpenAI 兼容根地址，是否带 /v1 均可，也可以直接粘贴完整 URL。",
+  "channels.baseUrlHint": "OpenAI 兼容根地址，是否带 /v1 均可，也可以直接粘贴完整 URL。",
   "channels.inheritsSite": "使用站点 Base URL",
   "channels.neverChecked": "从未",
   "channels.modelsSection": "模型",
@@ -688,8 +683,7 @@ export const zh: Dict = {
     "对每个模型发一次真实的最小请求，看它到底能不能应答。不会改动路由、健康状态与计费记录。",
   "channels.testDialog.search": "搜索模型",
   "channels.testDialog.maxTokens": "max tokens",
-  "channels.testDialog.maxTokensHint":
-    "推理模型可能需要更大的额度才会返回内容。",
+  "channels.testDialog.maxTokensHint": "推理模型可能需要更大的额度才会返回内容。",
   "channels.testDialog.onlyFailures": "仅看未通过",
   "channels.testDialog.showAll": "显示全部",
   "channels.testDialog.start": "全部测试",
@@ -745,15 +739,12 @@ export const zh: Dict = {
   "channels.modelsTotalHint": "上游探测到的候选模型数量",
   "channels.modelsAdoptedStat": "已接入",
   "channels.modelsAdoptedHint": "已经接入路由的模型（含被手动停用的）",
-  "channels.modelsNeverSyncedHint":
-    "尚未同步模型；编辑渠道后点「同步模型」拉取清单。",
+  "channels.modelsNeverSyncedHint": "尚未同步模型；编辑渠道后点「同步模型」拉取清单。",
   "channels.modelsSelectedCol": "已选",
-  "channels.modelsSelectedHint":
-    "已勾选接入路由的模型数（同步到的候选模型的子集）。",
+  "channels.modelsSelectedHint": "已勾选接入路由的模型数（同步到的候选模型的子集）。",
   "channels.modelsNoneAdoptedHint":
     "已同步但还没有模型接入路由；到模型页勾选接入，或切换为自动同步。",
-  "channels.modelsSyncBannerAuto":
-    "新探测到的模型会自动接入路由；取消勾选可停用单个模型。",
+  "channels.modelsSyncBannerAuto": "新探测到的模型会自动接入路由；取消勾选可停用单个模型。",
   "channels.modelsSyncBannerManual":
     "同步只刷新候选清单；勾选接入路由，取消勾选移除绑定（别名保留，可重新勾选重建）。",
   "channels.modelsCleanup": "清理已停用（{n}）",
@@ -762,8 +753,7 @@ export const zh: Dict = {
   "channels.modelsCleanupConfirm":
     "删除 {n} 个已停用的模型绑定？路由在删除后无任何成员时也会一并删除，此操作不可撤销。",
   "channels.modelsCleanupConfirmLabel": "删除",
-  "channels.modelsCleanupDone":
-    "已清理 {members} 个绑定，删除 {routes} 条空路由。",
+  "channels.modelsCleanupDone": "已清理 {members} 个绑定，删除 {routes} 条空路由。",
   "channels.adoptHint": "勾选即接入该模型；新探测到的模型默认未勾选。",
   "channels.modelAdoptHint": "尚未接入，勾选后开始服务此模型",
   "channels.groupExpand": "展开分组",
@@ -777,8 +767,7 @@ export const zh: Dict = {
   "channels.saveOnlyHint": "保存但不验证连接。",
   "channels.retryVerify": "重试验证",
   "channels.createdOnly": "已保存 {name}。需要时再验证。",
-  "channels.verifyFailed":
-    "{name} 已保存，但模型同步失败。可直接重试，不会重复创建。",
+  "channels.verifyFailed": "{name} 已保存，但模型同步失败。可直接重试，不会重复创建。",
   "channels.showAdvanced": "显示高级选项",
   "channels.showAdvancedWithCount": "显示高级选项（已配置 {n} 项）",
   "channels.advRouting": "路由优先级 / 权重",
@@ -789,8 +778,7 @@ export const zh: Dict = {
   "channels.deleteMsg": "删除 {name}？其模型也会从网关移除。",
   "channels.createdAndSynced": "已保存 {name} 并拉取 {models} 个模型。",
   "channels.refreshResult": "连接 #{id}：拉取了 {models} 个模型。",
-  "channels.probeResult":
-    "连接 #{id}：测试通过，{models} 个模型，{latency} 毫秒。",
+  "channels.probeResult": "连接 #{id}：测试通过，{models} 个模型，{latency} 毫秒。",
   "channels.refreshAll": "同步全部模型",
   "channels.stat.total": "连接数",
   "channels.stat.ready": "就绪",
@@ -809,12 +797,10 @@ export const zh: Dict = {
   "channels.edit": "编辑连接",
   "channels.editSecretPlaceholder": "输入新值替换;清空将删除",
   "channels.userToken": "用户 Access Token",
-  "channels.userTokenHint":
-    "New API / 站点登录令牌，用于签到与 /api/user/*。留空表示保持原值。",
+  "channels.userTokenHint": "New API / 站点登录令牌，用于签到与 /api/user/*。留空表示保持原值。",
   "channels.priorityHint":
     "连接级默认顺序，数字越大越先尝试。模型页启用独立优先级后，当前模型不再跟随此值。",
-  "channels.weightHint":
-    "同优先级内的默认分流比例。模型页启用独立权重后，当前模型不再跟随此值。",
+  "channels.weightHint": "同优先级内的默认分流比例。模型页启用独立权重后，当前模型不再跟随此值。",
   "channels.overrides": "请求改写",
   "channels.headerOverride": "Header 改写 (JSON)",
   "channels.uaPreset": "User-Agent 伪装",
@@ -838,8 +824,7 @@ export const zh: Dict = {
   "channels.nonStreamTimeout": "非流式请求超时（秒）",
   "channels.nonStreamTimeoutHint":
     "该通道非流式请求的总时长上限（请求+完整响应读取）；0 使用全局默认（5 分钟）。流式请求不受此限制，适合推理输出很慢的通道。",
-  "channels.maxConcurrentHint":
-    "渠道硬并发上限；超限请求 FIFO 排队等待。0 = 不限。",
+  "channels.maxConcurrentHint": "渠道硬并发上限；超限请求 FIFO 排队等待。0 = 不限。",
   "channels.payloadRulesHint":
     "JSON 规则数组：match（模型通配、协议、请求头子串、payload JSON path 条件）+ actions（set / delete / filter）。不匹配的请求原样透传。路径用点和索引：messages.0.content、messages.#.image_url（任意元素）。",
   "channels.endpointMap": "自定义端点与字段映射",
@@ -876,8 +861,7 @@ export const zh: Dict = {
   "channels.mapPresetPath": "端点路径改名",
   "channels.pathOverrideWhitespace": "端点覆盖不能包含空白字符",
   "channels.mapJsonInvalid": "JSON 无法解析：{message}",
-  "channels.mapJsonFallbackHint":
-    "有一列的内容不是合法 JSON，已原样保留，切到 JSON 模式可修正。",
+  "channels.mapJsonFallbackHint": "有一列的内容不是合法 JSON，已原样保留，切到 JSON 模式可修正。",
   "channels.pathMapSection": "路径映射（客户端路径 → 上游路径）",
   "channels.requestMapSection": "请求字段映射",
   "channels.responseMapSection": "响应字段映射",
@@ -892,10 +876,8 @@ export const zh: Dict = {
   "channels.mapValue": "固定值",
   "channels.mapPathEmpty": "还没有路径映射。映射生效时 URL 按映射值原样拼接，不自动补 /v1。",
   "channels.mapFieldsEmpty": "还没有字段操作。",
-  "channels.mapPathRowHint":
-    "键可用 * 结尾做前缀匹配，值可用 {path}（剩余路径）与 {model}。",
-  "channels.mapFieldRowHint":
-    "按数组顺序逐条执行；先读需要的值，再用 keep 删掉上游不接受的字段。",
+  "channels.mapPathRowHint": "键可用 * 结尾做前缀匹配，值可用 {path}（剩余路径）与 {model}。",
+  "channels.mapFieldRowHint": "按数组顺序逐条执行；先读需要的值，再用 keep 删掉上游不接受的字段。",
   "channels.mapModeCopy": "复制",
   "channels.mapModeMove": "搬运（搬完删源）",
   "channels.mapModeTemplate": "模板",
@@ -905,8 +887,7 @@ export const zh: Dict = {
   "channels.mapValueNum": "数字",
   "channels.mapValueBool": "布尔",
   "channels.mapValueNull": "null",
-  "channels.proxyUrlHint":
-    "该渠道上游请求的 HTTP(S) 代理。留空 = 继承全局代理（设置页）。",
+  "channels.proxyUrlHint": "该渠道上游请求的 HTTP(S) 代理。留空 = 继承全局代理（设置页）。",
   "channels.modelBlocks": "模型不存在（自动拉黑）",
   "channels.modelBlockClear": "解除",
   "channels.headerOverrideHint":
@@ -920,8 +901,7 @@ export const zh: Dict = {
   "channels.retryConfigPlaceholder":
     '{"status_codes":[403,529],"error_patterns":[{"pattern":"Console API"}]}',
   "channels.stableFirst": "灰度稳定池(1/N 流量,达标自动转正)",
-  "channels.stableFirstHint":
-    "新上游只接小份额流量;成功请求数达标后自动转正全量。",
+  "channels.stableFirstHint": "新上游只接小份额流量;成功请求数达标后自动转正全量。",
 
   "channels.apiKeysTitle": "API Key",
   "channels.apiKeysHint":
@@ -944,8 +924,7 @@ export const zh: Dict = {
     "每个 Key 的模型白名单，逗号分隔、支持 * 后缀通配符；留空 = 该 Key 同步到的全部模型。勾选会写成显式白名单，中继时跳过「该 Key 是否列过它」的校验，所以别勾它没同步到的模型。",
   "channels.keyModelsNoSnapshot":
     "该 Key 还没有同步快照，先列出渠道上的全部模型；同步一次后这里只列它自己的模型。",
-  "channels.keyModelsOutOfScope":
-    "有 {n} 个已选模型不在该 Key 的同步列表里，上游很可能直接 404。",
+  "channels.keyModelsOutOfScope": "有 {n} 个已选模型不在该 Key 的同步列表里，上游很可能直接 404。",
   "channels.keyModelsSelected": "已选择 {n} 个模型",
   "channels.keyModelsAll": "全部同步模型",
   "channels.keyModelsToggle": "展开模型白名单",
@@ -964,13 +943,13 @@ export const zh: Dict = {
   "channels.apiKeyAddHint": "添加后立即加入本站密钥池。",
   "channels.apiKeyPlaceholder": "可选，填写用于同步模型的 API Key",
   "channels.keyFormatHint": "该类型的密钥格式：{hint}",
-  "channels.keyFormatMismatch": "看起来不像 {type} 的密钥（应为 {hint}）——不阻断保存，确认后再提交。",
+  "channels.keyFormatMismatch":
+    "看起来不像 {type} 的密钥（应为 {hint}）——不阻断保存，确认后再提交。",
   "channels.apiKeyPasteCount": "待添加 {n} 个密钥",
   "channels.apiKeyPasteDuplicates": "已去掉 {n} 个重复",
   "channels.apiKeyPasteAdded": "本次已提交 {n} 个",
 
-  "channels.editBaseUrlInherited":
-    "此连接使用站点 Base URL。保存将更新该上游站点地址。",
+  "channels.editBaseUrlInherited": "此连接使用站点 Base URL。保存将更新该上游站点地址。",
   "channels.checkinEnable": "开启定时签到",
   "channels.checkinDisable": "关闭定时签到",
   "channels.checkinRun": "立即签到",
@@ -1003,8 +982,7 @@ export const zh: Dict = {
   "channels.createKeyGroupsUnavailable":
     "无法从上游获取令牌分组。连接可能不可达或令牌无效——已禁用创建，请先恢复连接。",
   "channels.createKeyConfirm": "创建",
-  "channels.createKeySuccess":
-    "已在 {name} 上创建 API Key — 可在该连接的凭证中查看。",
+  "channels.createKeySuccess": "已在 {name} 上创建 API Key — 可在该连接的凭证中查看。",
   "channels.accountProbeResult": "账号有效：{user}（{latency} 毫秒）。",
   "channels.healthState": "健康状态",
   "channels.healthState.healthy": "健康",
@@ -1044,25 +1022,19 @@ export const zh: Dict = {
   "channels.syncKeysResult":
     "API Key：新建 {created}，复用 {reused}，掩码跳过 {masked}，移除 {deleted}（上游已删除）。",
   "channels.syncKeysGroups": "按分组连接：新建 {created}，更新 {updated}。",
-  "channels.syncKeysEmpty":
-    "上游返回空令牌列表（不一定是过期：有的站不开放列表/密钥接口）。",
-  "channels.syncKeysMasked":
-    "列表有 token 但密钥被掩码且无法揭密；请手动粘贴完整密钥。",
+  "channels.syncKeysEmpty": "上游返回空令牌列表（不一定是过期：有的站不开放列表/密钥接口）。",
+  "channels.syncKeysMasked": "列表有 token 但密钥被掩码且无法揭密；请手动粘贴完整密钥。",
 
   "channels.badge.checkinOn": "签到已开",
   "channels.badge.checkinOff": "签到关闭",
   "channels.badge.needsUserId": "缺用户 ID",
   "channels.badge.tokenProblem": "访问令牌失效",
-  "channels.editHintDual":
-    "Access Token 与 Cookie 用于账户认证；API Key 用于模型同步与中继。",
-  "channels.userTokenPresentHint":
-    "已保存用户 Token(以掩码显示)。输入新值可轮换,清空则删除。",
+  "channels.editHintDual": "Access Token 与 Cookie 用于账户认证；API Key 用于模型同步与中继。",
+  "channels.userTokenPresentHint": "已保存用户 Token(以掩码显示)。输入新值可轮换,清空则删除。",
   "channels.userTokenEmptyPlaceholder": "粘贴 access_token 用于账号/签到",
   "channels.userCookie": "用户 Cookie",
-  "channels.userCookieHint":
-    "可选的会话 Cookie；Access Token 不可用时，账户 GET 接口可使用它。",
-  "channels.userCookiePresentHint":
-    "已保存 Cookie（以掩码显示）。输入新值可轮换，清空可删除。",
+  "channels.userCookieHint": "可选的会话 Cookie；Access Token 不可用时，账户 GET 接口可使用它。",
+  "channels.userCookiePresentHint": "已保存 Cookie（以掩码显示）。输入新值可轮换，清空可删除。",
   "channels.userCookiePlaceholder": "粘贴 Cookie Header 值",
   "channels.userID": "用户 ID",
   "channels.userIDHint":
@@ -1078,8 +1050,7 @@ export const zh: Dict = {
   "channels.badge.missingKey": "缺 API Key",
   "channels.badge.hasKey": "有 API Key",
   "channels.badge.models": "已路由模型",
-  "channels.pathHint":
-    "用户 Token：账号与签到。API Key：模型同步与中继故障转移。",
+  "channels.pathHint": "用户 Token：账号与签到。API Key：模型同步与中继故障转移。",
   "channels.defaultRouting": "连接级默认值",
   "channels.defaultPriorityWeight": "优先级 {priority} · 权重 {weight}",
   "exchange.missingApiKey": "缺 API Key",
@@ -1087,12 +1058,10 @@ export const zh: Dict = {
   "exchange.keySyncOK": "已同步 Key",
 
   "exchange.updatedHint": "已存在，跳过重同步",
-  "exchange.importSavedNote":
-    "已保存 {n} 条连接。仅新建/采纳的会做 Key 同步与模型发现。",
+  "exchange.importSavedNote": "已保存 {n} 条连接。仅新建/采纳的会做 Key 同步与模型发现。",
   "exchange.importPartialNote":
     "已写入数据库。导入后步骤有问题：模型发现失败 {discovery} 次，Key 同步失败 {keySync} 次。请补密钥或检查上游连通性，再到「连接」页刷新。",
-  "exchange.importMissingKeyNote":
-    "已保存。仍有 {n} 条连接缺少 API Key，补全前无法中继/发现模型。",
+  "exchange.importMissingKeyNote": "已保存。仍有 {n} 条连接缺少 API Key，补全前无法中继/发现模型。",
   "exchange.importNoIssues": "没有需要单独列出的 Key/模型问题。",
   "exchange.importIssues": "需关注",
   "exchange.issueKeySync": "Key 同步",
@@ -1174,8 +1143,7 @@ export const zh: Dict = {
   "keys.groupHint": '令牌所属的租户分组，用于额度与限流；留空默认 "default"。',
   "keys.groupPlaceholder": "选择租户分组…",
   "keys.groupDefault": "默认分组（不限额）",
-  "keys.modelGroupHint":
-    "选择已经在模型页配置好的模型分组，自动加入该分组下的模型白名单。",
+  "keys.modelGroupHint": "选择已经在模型页配置好的模型分组，自动加入该分组下的模型白名单。",
   "keys.modelGroupPlaceholder": "按模型分组加入白名单…",
   "keys.stat.total": "令牌数",
   "keys.stat.enabled": "已启用",
@@ -1185,11 +1153,11 @@ export const zh: Dict = {
   "keys.costCol": "累计费用",
   "keys.edit": "编辑额度",
   "keys.editDialog": "编辑 Token 额度",
-  "keys.editHint":
-    "可调整额度、模型范围与高级设置。已用 Token 来自计量成功的上游响应。",
+  "keys.editHint": "可调整额度、模型范围与高级设置。已用 Token 来自计量成功的上游响应。",
   "keys.quotaTotal": "Token 额度",
   "keys.unlimitedPlaceholder": "0 表示不限额",
-  "keys.invalidQuota": "Token 额度须为非负整数，金额上限须为有效的非负数字。留空或明确填写 0 表示不限额。",
+  "keys.invalidQuota":
+    "Token 额度须为非负整数，金额上限须为有效的非负数字。留空或明确填写 0 表示不限额。",
   "keys.sectionBilling": "配额",
   "keys.sectionBillingHint": "设置额度上限",
   "keys.sectionModels": "模型访问",
@@ -1249,11 +1217,9 @@ export const zh: Dict = {
     "绑定后，该 Key 在每个模型的候选池里优先只用那个分组的成员；该组不存在或为空时先回退到 default 分组，再回退到全部候选（可用性优先，不是访问隔离）。留空 = 不做分组过滤，所有分组的成员都可用；只想用 default 分组就选列表里的 default。",
   "keys.routeGroupNone": "留空 = 不限分组（所有分组可用）",
   "keys.customToken": "令牌内容",
-  "keys.customTokenHint":
-    "至少 16 位。只存哈希，无法回看。不勾选则由网关生成 mg-… 随机令牌。",
+  "keys.customTokenHint": "至少 16 位。只存哈希，无法回看。不勾选则由网关生成 mg-… 随机令牌。",
   "keys.customTokenPlaceholder": "任意 ≥16 位自定义令牌（默认 mg-…）",
-  "keys.autoTokenHint":
-    "默认由网关生成随机 mg-… 令牌。若要自己指定，请勾选上方「自己设置令牌」。",
+  "keys.autoTokenHint": "默认由网关生成随机 mg-… 令牌。若要自己指定，请勾选上方「自己设置令牌」。",
   "keys.modelAllowlist": "模型白名单",
   "keys.modelAllowlistHint":
     "选择后该令牌只能使用白名单内的模型。留空表示不限制。也可以按模型分组批量加入。列表只列出已接入路由的模型名（含渠道别名）——白名单是字面匹配，重命名过的模型要点它对外回答的名字。",
@@ -1261,8 +1227,7 @@ export const zh: Dict = {
   "keys.expiresAt": "过期时间",
   "keys.expiresAtHint": "到达该时间后令牌失效。留空 = 永不过期。",
   "keys.allowedIPs": "允许的 IP",
-  "keys.allowedIPsHint":
-    "每行一个 IP 或 CIDR。留空 = 不限制来源。给第三方令牌时建议填写。",
+  "keys.allowedIPsHint": "每行一个 IP 或 CIDR。留空 = 不限制来源。给第三方令牌时建议填写。",
   "keys.modelDenylistHint": "被禁止的模型——即使在白名单中也会被拦截。",
   "keys.modelPickerEmpty": "没有已接入路由的模型",
   "modelPicker.search": "搜索模型或渠道…",
@@ -1371,23 +1336,19 @@ export const zh: Dict = {
   "modelsPage.openChannelHint": "跳转到该渠道的模型设置",
   "modelsPage.servedBy": "优先成员：{name}",
   "modelsPage.pinnedMember": "固定成员：{name}",
-  "modelsPage.memberSummaryHint":
-    "此处展示路由配置，实际承接渠道以请求日志为准。",
+  "modelsPage.memberSummaryHint": "此处展示路由配置，实际承接渠道以请求日志为准。",
   "modelsPage.extraPaths": "另有 {n} 个成员",
   "modelsPage.showRouting": "显示路由选项",
   "modelsPage.hideRouting": "隐藏路由选项",
   "modelsPage.routingHint": "当多个连接提供同一模型时，在这里调整路由成员。",
-  "modelsPage.addRouteHint":
-    "同步模型会自动创建路由。只有上游未发现的模型名才需要手工添加。",
-  "modelsPage.rowActionsHint":
-    "通过行操作菜单测试、启用、查看日志或编辑当前模型。",
+  "modelsPage.addRouteHint": "同步模型会自动创建路由。只有上游未发现的模型名才需要手工添加。",
+  "modelsPage.rowActionsHint": "通过行操作菜单测试、启用、查看日志或编辑当前模型。",
   "modelsPage.autoMatchAdd": "一键挂载提供此模型的渠道",
   "modelsPage.autoMatchAddHint":
     "扫描所有启用中的渠道，把确实提供此模型的渠道一次性挂载到当前分组。",
   "modelsPage.autoMatch.title": "挂载所有提供此模型的渠道",
   "modelsPage.autoMatch.modeLabel": "匹配范围",
-  "modelsPage.autoMatch.modeExact":
-    "精确：只挂模型清单里有这个完整名字的渠道",
+  "modelsPage.autoMatch.modeExact": "精确：只挂模型清单里有这个完整名字的渠道",
   "modelsPage.autoMatch.modeRelated":
     "相关：同时挂提供以 {name} 开头的其他模型（如 {name}-flash、{name}.1）的渠道",
   "modelsPage.autoMatch.modeRewriteHint":
@@ -1413,11 +1374,9 @@ export const zh: Dict = {
   "modelsPage.empty":
     "暂无可用模型。推荐流程：在连接页编辑渠道 → 模型设置里勾选模型，路由会自动创建；也可以在下方手动添加路由。",
   "modelsPage.selectHint": "选择模型后可直接调整路由、成员和模型级覆盖项。",
-  "modelsPage.scopeHint":
-    "此处的变更只影响当前模型；连接页的优先级和权重仍是默认值。",
+  "modelsPage.scopeHint": "此处的变更只影响当前模型；连接页的优先级和权重仍是默认值。",
   "modelsPage.probe.action": "模型探测",
-  "modelsPage.probe.actionHint":
-    "对选定的渠道与模型发起真实调用，检测是否真的可用",
+  "modelsPage.probe.actionHint": "对选定的渠道与模型发起真实调用，检测是否真的可用",
   "modelsPage.probe.title": "模型探测",
   "modelsPage.siteProbe.title": "站点探针",
   "modelsPage.siteProbe.description":
@@ -1431,12 +1390,15 @@ export const zh: Dict = {
     "状态页（…/status/<slug>）或价格页（…/pricing）。填完先点「识别来源」。",
   "modelsPage.siteProbe.detect": "识别来源",
   "modelsPage.siteProbe.detecting": "识别中…",
-  "modelsPage.siteProbe.workflow": "① 查看数据 → ② 配置站点来源 → ③ 预览并应用路由影响。采集不消耗模型 token；已开启自动调整的站点可能在采集后改变路由。",
+  "modelsPage.siteProbe.workflow":
+    "① 查看数据 → ② 配置站点来源 → ③ 预览并应用路由影响。采集不消耗模型 token；已开启自动调整的站点可能在采集后改变路由。",
   "modelsPage.siteProbe.actionScope": "路由操作范围",
   "modelsPage.siteProbe.allSitesScope": "全部站点（站点级批量操作）",
-  "modelsPage.siteProbe.scopeHint": "预览和应用只作用于这里选择的站点，包含其全部模型。下方搜索与“仅有数据”只筛选展示，不改变操作范围。应用会按最新数据重新评估。",
+  "modelsPage.siteProbe.scopeHint":
+    "预览和应用只作用于这里选择的站点，包含其全部模型。下方搜索与“仅有数据”只筛选展示，不改变操作范围。应用会按最新数据重新评估。",
   "modelsPage.siteProbe.previewPolicy": "本次路由预览阈值（不保存到站点）",
-  "modelsPage.siteProbe.sourcePolicyHint": "以下阈值只属于当前编辑站点，点击“保存并启用”后生效；不会改动上方批量预览阈值。",
+  "modelsPage.siteProbe.sourcePolicyHint":
+    "以下阈值只属于当前编辑站点，点击“保存并启用”后生效；不会改动上方批量预览阈值。",
   "modelsPage.siteProbe.configure": "配置来源",
   "modelsPage.siteProbe.previewExpired": "数据或配置已更新，请重新预览后再应用。",
   "modelsPage.siteProbe.save": "保存并启用",
@@ -1453,8 +1415,7 @@ export const zh: Dict = {
   "modelsPage.siteProbe.pruneHint":
     "只删除既没有渠道、也没有凭据的站点（导入目录时留下的空壳）；有渠道的站点永远不动。",
   "modelsPage.siteProbe.onlyWithData": "只看有数据的",
-  "modelsPage.siteProbe.cardMeta":
-    "{models} 个模型 · 低可用 {low} · 已自动禁用 {parked}",
+  "modelsPage.siteProbe.cardMeta": "{models} 个模型 · 低可用 {low} · 已自动禁用 {parked}",
   "modelsPage.siteProbe.cardNoReadings":
     "没有匹配到你的模型路由（站点公布了其它模型），或还没采集到数据。",
   "modelsPage.siteProbe.cardOff": "探针已关闭，不再采集这个站点。",
@@ -1490,8 +1451,7 @@ export const zh: Dict = {
   "modelsPage.siteProbe.kindSub2Api": "Sub2API 公开资料",
   "modelsPage.siteProbe.transitModeActive": "主动探测",
   "modelsPage.siteProbe.transitModePassive": "真实流量聚合",
-  "modelsPage.siteProbe.detectedSub2Api":
-    "Sub2API 公开资料（{mode}）：{count} 个模型有读数",
+  "modelsPage.siteProbe.detectedSub2Api": "Sub2API 公开资料（{mode}）：{count} 个模型有读数",
   "modelsPage.siteProbe.noSource": "未配置",
   "modelsPage.siteProbe.collectOk": "采集到 {count} 条",
   "modelsPage.siteProbe.collectFailed": "采集失败",
@@ -1516,8 +1476,7 @@ export const zh: Dict = {
   "modelsPage.siteProbe.minSamples": "最小样本",
   "modelsPage.siteProbe.lowRounds": "连续低轮数",
   "modelsPage.siteProbe.highRounds": "连续好轮数",
-  "modelsPage.siteProbe.scope":
-    "{rows} 条读数 · 低 {low} · 好 {ok} · 已自动禁用 {disabled}",
+  "modelsPage.siteProbe.scope": "{rows} 条读数 · 低 {low} · 好 {ok} · 已自动禁用 {disabled}",
   "modelsPage.siteProbe.policyHint":
     "连续 {low} 轮低于 {threshold}%（每轮至少 {samples} 个样本）才禁用；恢复同样需要连续轮数达标。仅作用于本次预览和应用；站点自动调整使用单独保存的阈值。",
   "modelsPage.siteProbe.preview": "预览影响",
@@ -1539,8 +1498,7 @@ export const zh: Dict = {
   "modelsPage.siteProbe.readings": "探针读数",
   "modelsPage.siteProbe.readingCount": "{count} 条",
   "modelsPage.siteProbe.search": "搜索模型 / 站点",
-  "modelsPage.siteProbe.noReadings":
-    "还没有采集到数据：先给站点配置探针来源并采集一轮。",
+  "modelsPage.siteProbe.noReadings": "还没有采集到数据：先给站点配置探针来源并采集一轮。",
   "modelsPage.siteProbe.match.exact": "精确",
   "modelsPage.siteProbe.match.pattern": "通配",
   "modelsPage.siteProbe.match.member": "成员映射",
@@ -1567,15 +1525,13 @@ export const zh: Dict = {
   "modelsPage.siteProbe.perCall": "次",
   "modelsPage.siteProbe.perMillion": "每 1M token",
   "modelsPage.siteProbe.unmatched": "未匹配的监控（{count}）",
-  "modelsPage.siteProbe.unmatchedHint":
-    "站点在监控、但我们没有对应路由的模型：只展示，永不动作。",
+  "modelsPage.siteProbe.unmatchedHint": "站点在监控、但我们没有对应路由的模型：只展示，永不动作。",
   "modelsPage.probe.description":
     "对每个（渠道 × 模型）组合真实发一次最小请求（max_tokens 极小），判断该模型在此渠道上是否真的可用。探测会消耗上游额度，因此范围与成本在开始前始终可见，执行中可随时取消。",
   "modelsPage.probe.channels": "渠道",
   "modelsPage.probe.models": "模型",
   "modelsPage.probe.allHint": "默认勾选全部可探测项；清空选择后不能开始探测。",
-  "modelsPage.probe.filteredHint":
-    "模型列表已跟随选中的渠道收窄，只显示这些渠道实际接入的模型。",
+  "modelsPage.probe.filteredHint": "模型列表已跟随选中的渠道收窄，只显示这些渠道实际接入的模型。",
   "modelsPage.probe.searchChannels": "搜索渠道",
   "modelsPage.probe.searchModels": "搜索模型",
   "modelsPage.probe.selectedCount": "已选 {count}",
@@ -1596,8 +1552,7 @@ export const zh: Dict = {
   "modelsPage.probe.start": "开始探测",
   "modelsPage.probe.cancel": "停止",
   "modelsPage.probe.running": "进行中",
-  "modelsPage.probe.progress":
-    "已完成 {done}/{total} · 可用 {ok} · 失败 {fail}",
+  "modelsPage.probe.progress": "已完成 {done}/{total} · 可用 {ok} · 失败 {fail}",
   "modelsPage.probe.noResults": "还没有探测结果",
   "modelsPage.probe.ok": "可用",
   "modelsPage.probe.failed": "不可用",
@@ -1607,8 +1562,7 @@ export const zh: Dict = {
   "modelsPage.probe.colLatency": "延迟",
   "modelsPage.probe.colError": "错误",
   "modelsPage.unify.action": "统一名称",
-  "modelsPage.unify.actionHint":
-    "扫描各渠道中同一模型的不同命名，一键统一为单个模型名",
+  "modelsPage.unify.actionHint": "扫描各渠道中同一模型的不同命名，一键统一为单个模型名",
   "modelsPage.unify.title": "统一模型名称",
   "modelsPage.unify.description":
     "把各渠道同一模型的不同命名（[A]/[B] 账号前缀、deepseek-ai/ 厂商前缀、-0731 日期快照、-1 序号后缀）按规则依次归一，一步合并到最简名称。被合并的原名路由会被直接删除（不再留一个已禁用的死名），删除前会按快照保留全部配置，需要时可在「统一历史」里重建。",
@@ -1647,15 +1601,13 @@ export const zh: Dict = {
   "modelsPage.unify.showCovered": "展开 {count} 个已覆盖渠道",
   "modelsPage.unify.collapseCovered": "收起已覆盖渠道",
   "modelsPage.unify.history.action": "统一历史",
-  "modelsPage.unify.history.actionHint":
-    "查看已应用的统一，可撤销整组或单独重建被删除的原名",
+  "modelsPage.unify.history.actionHint": "查看已应用的统一，可撤销整组或单独重建被删除的原名",
   "modelsPage.unify.history.title": "统一历史",
   "modelsPage.unify.history.description":
     "每次应用都会记录为一个批次。撤销会删除由它创建的别名路由与成员，并按快照把被它删除的原名（连同成员配置）重建回来；也可以只重建某一个原名，保留别名本身。",
   "modelsPage.unify.history.empty": "还没有应用过任何统一。",
   "modelsPage.unify.history.archivedSection": "已移除的原名",
-  "modelsPage.unify.history.archivedHint":
-    "重建或还原单条不会影响别名本身，其余保持已移除状态。",
+  "modelsPage.unify.history.archivedHint": "重建或还原单条不会影响别名本身，其余保持已移除状态。",
   "modelsPage.unify.history.batchSection": "已应用的批次",
   "modelsPage.unify.history.rebuild": "重建",
   "modelsPage.unify.history.restore": "还原",
@@ -1666,8 +1618,7 @@ export const zh: Dict = {
   "modelsPage.unify.history.undone": "已撤销",
   "modelsPage.unify.history.reverted": "已还原",
   "modelsPage.unify.history.active": "生效中",
-  "modelsPage.unify.history.summary":
-    "{members} 个成员 · 移除 {deleted} 个原名",
+  "modelsPage.unify.history.summary": "{members} 个成员 · 移除 {deleted} 个原名",
 
   "sticky.title": "粘性会话",
   "sticky.hint":
@@ -1694,8 +1645,7 @@ export const zh: Dict = {
   "logsPage.ctaKeys": "创建密钥",
   "logsLive.keyUsed": "下游密钥",
   "logsLive.interrupt": "中止",
-  "logsLive.interrupted":
-    "请求 {id} 已中止；上游已断开，若客户端自动重试会以新请求出现",
+  "logsLive.interrupted": "请求 {id} 已中止；上游已断开，若客户端自动重试会以新请求出现",
   "logsLive.interruptAll": "全部中止",
   "logsLive.interruptAllHint": "中止当前所有进行中的请求",
   "logsLive.interruptAllDone": "已发送中止：{ok}/{total} 成功",
@@ -1705,8 +1655,7 @@ export const zh: Dict = {
   "logsLive.client": "客户端",
   "logsLive.streaming": "流式",
   "logsLive.retryOf": "疑似重试",
-  "logsLive.retryOfHint":
-    "中止请求 {id} 后，同一客户端密钥对该模型的再次请求（客户端自动重试）",
+  "logsLive.retryOfHint": "中止请求 {id} 后，同一客户端密钥对该模型的再次请求（客户端自动重试）",
   "logsLive.ttft": "首字延迟（TTFT）：收到上游第一个字节的时间",
   "logsLive.ttftValue": "首字 {n}ms",
   "logsLive.notInFlight": "请求已不在进行中",
@@ -1723,14 +1672,12 @@ export const zh: Dict = {
   "logsLive.round": "轮次",
   "logsLive.actions": "操作",
   "logsLive.emptyTitle": "暂无实时请求",
-  "logsLive.emptyBody":
-    "发送 /v1 请求后，这里会实时显示路由与渠道选择；进行中的请求可一键中止。",
+  "logsLive.emptyBody": "发送 /v1 请求后，这里会实时显示路由与渠道选择；进行中的请求可一键中止。",
   "try.open": "试调",
   "try.meta": "HTTP {status} · {latency} 毫秒 · {model} · {via}",
   "try.upstreamStatus": "上游返回 HTTP {status}",
 
-  "try.hintMulti":
-    "多个连接提供同名模型。可指定上游试调，或选「自动」走优先级/权重路由。",
+  "try.hintMulti": "多个连接提供同名模型。可指定上游试调，或选「自动」走优先级/权重路由。",
   "try.upstream": "上游连接",
   "try.upstreamAuto": "自动（网关选路）",
   "try.upstreamHintMulti": "指定连接可验证该路径；自动与线上 /v1 规则一致。",
@@ -1738,8 +1685,7 @@ export const zh: Dict = {
   "try.viaChannel": "经 {name}（#{id}）",
   "try.viaAuto": "经路由",
   "try.title": "试调 Chat Completions",
-  "try.hint":
-    "按网关路由对该模型发一次非流式试聊。无需客户端 Token，使用当前管理员会话。",
+  "try.hint": "按网关路由对该模型发一次非流式试聊。无需客户端 Token，使用当前管理员会话。",
   "try.keysHint": "当前有 {n} 个下游密钥。请粘贴在此创建的令牌。",
   "try.token": "下游令牌",
   "try.prompt": "提示词",
@@ -1768,8 +1714,7 @@ export const zh: Dict = {
   "sites.searchEmpty": "没有匹配的站点。",
 
   "exchange.formatSupport": "可以导入什么？",
-  "exchange.formatSupportHint":
-    "拖入备份文件，或从云盘同步。常见格式会自动识别。",
+  "exchange.formatSupportHint": "拖入备份文件，或从云盘同步。常见格式会自动识别。",
   "exchange.formatBadge.native": "原生",
   "exchange.formatBadge.compat": "兼容",
   "exchange.formatCanonical": "Meta Gateway 交换包",
@@ -1794,16 +1739,13 @@ export const zh: Dict = {
   "exchange.exportCountHint": "未选择时导出全部通道。",
   "exchange.exportSkipped": "已跳过 {n} 个通道（无凭证或地址无效）。",
   "exchange.encryptedTitle": "这份备份是加密的",
-  "exchange.encryptedHint":
-    "填写 AAH「备份加密」里设置的密码即可解锁。这不是网盘登录密码。",
+  "exchange.encryptedHint": "填写 AAH「备份加密」里设置的密码即可解锁。这不是网盘登录密码。",
   "exchange.unlockPassword": "备份解锁密码",
   "exchange.importEncrypted": "解密并导入",
   "exchange.unlockRequired": "这份备份已加密，请先填写解锁密码。",
   "exchange.skippedTitle": "已跳过 {n} 行",
-  "exchange.skippedNote":
-    "这些行没有可用的密钥、或字段不完整，其余内容已正常导入。",
-  "exchange.skipReason.missing_credential":
-    "没有可用密钥（Cookie 模式或未登录）",
+  "exchange.skippedNote": "这些行没有可用的密钥、或字段不完整，其余内容已正常导入。",
+  "exchange.skipReason.missing_credential": "没有可用密钥（Cookie 模式或未登录）",
   "exchange.skipReason.missing_field": "缺少必要字段",
   "exchange.skipReason.invalid_base_url": "地址无法识别",
   "exchange.skipReason.duplicate_identity": "与前面的记录重复",
@@ -1825,13 +1767,11 @@ export const zh: Dict = {
   "exchange.webdavCardNotConfigured": "未配置",
   "exchange.webdavTest": "测试",
   "exchange.webdavSave": "保存",
-  "exchange.webdavNotConfigured":
-    "WebDAV 尚未配置。填写地址和账号后可执行同步。",
+  "exchange.webdavNotConfigured": "WebDAV 尚未配置。填写地址和账号后可执行同步。",
   "exchange.webdavLastResult": "上次结果",
   "exchange.webdavEncrypted": "加密备份",
   "exchange.webdavUrl": "网盘文件夹地址",
-  "exchange.webdavUrlHint":
-    "填写 WebDAV 目录地址，例如坚果云、Nextcloud 或 NAS。",
+  "exchange.webdavUrlHint": "填写 WebDAV 目录地址，例如坚果云、Nextcloud 或 NAS。",
   "exchange.webdavUsername": "账号",
   "exchange.webdavPassword": "密码",
   "exchange.webdavPasswordKeep": "留空表示不改当前密码。",
@@ -1840,16 +1780,13 @@ export const zh: Dict = {
     "这和网盘登录密码不是同一个。备份文件加密时必填（AAH 开了加密）。留空表示保留已保存的值。",
   "exchange.webdavBackupPasswordPlaceholder": "若提示需要解锁密码，请填这里",
   "exchange.webdavSchedule": "自动执行",
-  "exchange.webdavScheduleHint":
-    "这个方向多久自动执行一次。定时任务始终使用增量合并。",
+  "exchange.webdavScheduleHint": "这个方向多久自动执行一次。定时任务始终使用增量合并。",
   "exchange.webdavMode": "导入方式",
   "exchange.webdavModeHint": "手动导入时如何应用下载到的备份。",
   "exchange.webdavMode.incremental": "增量合并",
-  "exchange.webdavMode.incrementalHint":
-    "新增备份中的连接，并更新匹配项；保留仅存在于本地的连接。",
+  "exchange.webdavMode.incrementalHint": "新增备份中的连接，并更新匹配项；保留仅存在于本地的连接。",
   "exchange.webdavMode.replace": "全量覆盖",
-  "exchange.webdavMode.replaceHint":
-    "先删除当前连接，再将云端备份作为唯一数据源导入。",
+  "exchange.webdavMode.replaceHint": "先删除当前连接，再将云端备份作为唯一数据源导入。",
   "exchange.webdavReplaceConfirmTitle": "确定覆盖全部当前连接？",
   "exchange.webdavReplaceConfirmBody":
     "这会先删除当前全部连接、凭证、已发现模型和模型路由，再导入云端备份。下游令牌、系统设置、代理/审计/用量日志和 WebDAV 配置会保留；与被删凭证绑定的签到日志会级联删除。",
@@ -1869,8 +1806,7 @@ export const zh: Dict = {
   "keys.title": "令牌",
   "keys.searchPlaceholder": "搜索令牌",
   "keys.empty": "还没有下游令牌。请创建令牌，以便客户端通过本网关调用 /v1。",
-  "keys.description":
-    "为 /v1 客户端签发下游令牌。令牌明文加密存储，可随时重新查看或旋转。",
+  "keys.description": "为 /v1 客户端签发下游令牌。令牌明文加密存储，可随时重新查看或旋转。",
   "keys.create": "创建令牌",
   "keys.createDialog": "创建下游令牌",
   "keys.delete": "删除令牌",
@@ -1883,15 +1819,13 @@ export const zh: Dict = {
   "keys.stored": "我已保存",
   "keys.view": "查看令牌",
   "keys.viewTitle": "令牌 · {name}",
-  "keys.viewWarning":
-    "令牌明文以加密形式存储，可随时重新查看。拥有控制台权限的人均可复制它。",
+  "keys.viewWarning": "令牌明文以加密形式存储，可随时重新查看。拥有控制台权限的人均可复制它。",
   "keys.rotate": "旋转令牌",
   "keys.rotateTitle": "旋转令牌",
   "keys.rotateConfirmMsg": "将生成新令牌，当前令牌立即失效，且此操作不可撤销。",
   "keys.rotateConfirm": "旋转令牌",
   "keys.rotatedTitle": "已签发新令牌",
-  "keys.rotatedWarning":
-    "旧令牌已失效。请立即复制新令牌——它已加密存储，之后仍可重新查看。",
+  "keys.rotatedWarning": "旧令牌已失效。请立即复制新令牌——它已加密存储，之后仍可重新查看。",
 
   "store.title": "拓展",
 
@@ -1941,8 +1875,7 @@ export const zh: Dict = {
   "store.unlock.settings.discovery": "设置 → 发现",
   "checkinsPage.kicker": "上游任务",
   "checkinsPage.title": "签到",
-  "checkinsPage.description":
-    "对支持的平台执行并查看凭证签到。",
+  "checkinsPage.description": "对支持的平台执行并查看凭证签到。",
   "store.description": "安装插件、注册 sidecar 服务；签到与交换是内置功能，不在这里开关。",
   "store.orphans": "未知残留",
   "store.activate": "激活",
@@ -1994,8 +1927,7 @@ export const zh: Dict = {
   "plugins.configInvalidJson": "配置必须是 JSON 对象",
   "plugins.configSaveFailed": "保存插件配置失败",
   "plugins.editTitle": "编辑插件",
-  "plugins.editHint":
-    "修改连接设置会重新执行健康检查；若服务不可达，将保留原配置。",
+  "plugins.editHint": "修改连接设置会重新执行健康检查；若服务不可达，将保留原配置。",
   "plugins.saveBtn": "保存",
   "plugins.editFailed": "保存失败",
   "plugins.urlLabel": "服务地址",
@@ -2005,8 +1937,7 @@ export const zh: Dict = {
   "plugins.prefixPlaceholder": "API 前缀（可选，如 /v0/management）",
   "plugins.createChannel": "创建渠道",
   "plugins.channelTitle": "从插件创建渠道",
-  "plugins.channelHint":
-    "渠道指向插件的 OpenAI 兼容 API，与普通上游一样参与路由、冷却与日志。",
+  "plugins.channelHint": "渠道指向插件的 OpenAI 兼容 API，与普通上游一样参与路由、冷却与日志。",
   "plugins.channelName": "渠道名称",
   "plugins.channelBase": "Base URL",
   "plugins.channelSite": "站点",
@@ -2046,8 +1977,7 @@ export const zh: Dict = {
   "routing.groupRename": "重命名",
   "routing.groupRenamePlaceholder": "新分组名，回车保存",
   "routing.groupDelete": "删除分组",
-  "routing.groupDeleteConfirm":
-    "删除分组 {name} 及其全部 {count} 个通道成员？此操作不可撤销。",
+  "routing.groupDeleteConfirm": "删除分组 {name} 及其全部 {count} 个通道成员？此操作不可撤销。",
   "routing.groupEmpty": "分组 {name} 还没有通道成员。",
   "routing.groupFallback": "请求分组 {name} 当前会回退到 {target} 分组。",
   "routing.groupFallbackAll": "请求分组 {name} 当前会回退到此路由的全部成员。",
@@ -2055,23 +1985,19 @@ export const zh: Dict = {
   "routing.groupTabsHint":
     "同一渠道可加入多个分组、各有优先级；API Key 绑定分组名后，请求只在该模型对应分组内选渠道，未定义时回退 default。",
   "routing.memberGroupLabel": "所属分组",
-  "routing.memberGroupHint":
-    "该成员归属的分组。API Key 绑定分组名后，只在本分组内选择渠道。",
+  "routing.memberGroupHint": "该成员归属的分组。API Key 绑定分组名后，只在本分组内选择渠道。",
   "routing.soloMember": "只用此渠道",
   "routing.soloMemberHint":
     "将路由固定到此渠道（单渠道模式）。其他渠道的启用状态不变，跨渠道重试按 0 处理，可随时恢复。",
   "routing.unsoloMember": "恢复路由",
   "routing.unsoloMemberHint": "切回自动路由；其他渠道的启用状态从未被改动。",
   "routing.singleModeBanner": "单渠道模式：{name}",
-  "routing.singleModeHint":
-    "仅此渠道承接流量，跨渠道重试按 0 处理；其他渠道的启用状态保持不变。",
+  "routing.singleModeHint": "仅此渠道承接流量，跨渠道重试按 0 处理；其他渠道的启用状态保持不变。",
   "routing.singleModeMissingName": "目标已失效",
   "routing.singleModeMissing": "固定的成员已不存在，当前按自动模式兜底。",
-  "routing.singleModeGroupMissing":
-    "固定成员不在当前分组的候选池中，此分组按自动模式选择渠道。",
+  "routing.singleModeGroupMissing": "固定成员不在当前分组的候选池中，此分组按自动模式选择渠道。",
   "routing.policySource.single": "固定成员策略",
-  "routing.singleModeDisabledWarning":
-    "注意：该渠道当前禁用/冷却中，请求会直接失败。",
+  "routing.singleModeDisabledWarning": "注意：该渠道当前禁用/冷却中，请求会直接失败。",
   "routing.singleModeRestore": "恢复为自动",
   "routing.pinChip": "固定",
   "routing.bulkSelect": "批量选择",
@@ -2096,20 +2022,15 @@ export const zh: Dict = {
   "routing.autoMatchUnknown": "匹配数量获取失败，保存时仍会按当前状态执行",
   "routing.retryOverrideTitle": "重试覆盖",
   "routing.retryRounds": "重试轮次",
-  "routing.retryRoundsHint":
-    "该模型的重试轮数。留空 = 跟随全局 RETRY_TIMES 设置。",
+  "routing.retryRoundsHint": "该模型的重试轮数。留空 = 跟随全局 RETRY_TIMES 设置。",
   "routing.channelRetry": "同渠道重发次数",
-  "routing.channelRetryHint":
-    "该模型的同渠道重发次数。留空 = 跟随全局 CHANNEL_RETRY_TIMES 设置。",
+  "routing.channelRetryHint": "该模型的同渠道重发次数。留空 = 跟随全局 CHANNEL_RETRY_TIMES 设置。",
   "routing.retryFollowGlobal": "跟随全局",
   "routing.reenableChannel": "重新启用",
-  "routing.reenableChannelHint":
-    "该渠道因连续失败被自动禁用。重新启用后恢复路由。",
-  "routing.memberDialogIntro":
-    "当多个通道都能提供同一模型时，用这些字段决定先走哪条上游。",
+  "routing.reenableChannelHint": "该渠道因连续失败被自动禁用。重新启用后恢复路由。",
+  "routing.memberDialogIntro": "当多个通道都能提供同一模型时，用这些字段决定先走哪条上游。",
   "routing.priorityLabel": "优先级（顺序）",
-  "routing.priorityHint":
-    "数字越大越先试。优先级不同时是严格先后顺序（像排行榜）。",
+  "routing.priorityHint": "数字越大越先试。优先级不同时是严格先后顺序（像排行榜）。",
   "routing.weightLabel": "权重（同优先级内）",
   "routing.memberPricePrompt": "输入单价 /1k",
   "routing.memberPriceCompletion": "输出单价 /1k",
@@ -2117,8 +2038,7 @@ export const zh: Dict = {
   "routing.memberPricePerRequest": "按次单价",
   "routing.memberPriceHint":
     "该渠道服务此模型的专属单价，优先于模型默认价；留 0 = 使用模型默认价。单位与费用展示一致。",
-  "routing.weightHint":
-    "仅当两条通道优先级相同时生效。权重大的分到更多流量（例如 70 对 30）。",
+  "routing.weightHint": "仅当两条通道优先级相同时生效。权重大的分到更多流量（例如 70 对 30）。",
   "routing.enabledLabel": "已启用",
   "routing.enabledHint": "关闭后，该模型不会再走这条通道（配置仍保留）。",
   "routing.memberRealName": "上游模型名（别名目标）",
@@ -2132,8 +2052,7 @@ export const zh: Dict = {
   "routing.financeUnitCalls": " 次",
   "routing.financeUnitM": "M",
   "routing.financeOverdrawn": "透支",
-  "routing.financeOverdrawnHint":
-    "该渠道余额为负（上游已透支），充值前无法承担任何调用。",
+  "routing.financeOverdrawnHint": "该渠道余额为负（上游已透支），充值前无法承担任何调用。",
   "routing.financeHint":
     "固定价模型显示余额可承担的调用次数；按量计费模型显示可承担的百万 token 数。",
   "routing.financeMissing": "暂无上游报价",
@@ -2141,8 +2060,7 @@ export const zh: Dict = {
   "routing.memberOriginHint":
     "该成员把这个路由名改写为该上游模型（共享别名时同一连接会出现多行，各自回写不同的原模型）。",
   "routing.openChannelModels": "查看该渠道的模型列表",
-  "routing.financeMissingHint":
-    "上游未提供该模型报价或账户余额数据；不代表网关没有配置计费单价。",
+  "routing.financeMissingHint": "上游未提供该模型报价或账户余额数据；不代表网关没有配置计费单价。",
   "routing.independentLabel": "此模型使用独立优先级/权重",
   "routing.independentHint":
     "开启后，该模型所有成员保留各自的优先级/权重，连接页修改或重新拉取模型都不会覆盖；关闭后，每个成员跟随所属连接自己的默认优先级/权重，这些默认值可以不同。新添加的成员默认跟随连接页。",
@@ -2197,8 +2115,7 @@ export const zh: Dict = {
   "ops.refreshing": "刷新中...",
   "ops.refreshSummary": "{success} 成功，{failure} 失败",
   "ops.refreshFailures": "失败通道：{channels}",
-  "ops.refreshChannelResult":
-    "通道 #{id}：发现 {models} 个模型；创建了 {routes} 条路由。",
+  "ops.refreshChannelResult": "通道 #{id}：发现 {models} 个模型；创建了 {routes} 条路由。",
   "ops.allStatuses": "全部状态",
   "ops.statusFilter": "状态筛选",
   "ops.runEnabled": "运行已启用项",
@@ -2238,8 +2155,7 @@ export const zh: Dict = {
   "ops.external.run": "立即签到",
   "ops.external.runDone": "签到已执行。",
   "ops.external.deleteTitle": "删除外部签到站点？",
-  "ops.external.deleteConfirm":
-    "将删除「{name}」及其 Cookie，签到历史随级联删除。",
+  "ops.external.deleteConfirm": "将删除「{name}」及其 Cookie，签到历史随级联删除。",
   "ops.external.noCookie": "未设置 Cookie",
   "ops.schedule.preset.off": "关闭",
   "ops.schedule.preset.hourly": "每小时",
@@ -2255,8 +2171,7 @@ export const zh: Dict = {
     "只会跑「已开启定时」且类型为 session/access_token 的凭证。API Key 会跳过。解密失败通常要在更换 MASTER_KEY 后重新录入。",
   "ops.checkinHint":
     "此表是历史运行记录。大量失败多半是密文解不开或不是登录态凭证，不是商店开关坏了。",
-  "ops.checkinCategory.credential_decrypt_failed":
-    "密文无法解密——更换 MASTER_KEY 后请重新录入",
+  "ops.checkinCategory.credential_decrypt_failed": "密文无法解密——更换 MASTER_KEY 后请重新录入",
   "ops.checkinCategory.credential_empty": "凭证密文为空",
   "ops.running": "运行中...",
   "ops.checkinSummary": "{success} 成功 · {failure} 失败 · {skipped} 跳过",
@@ -2284,8 +2199,7 @@ export const zh: Dict = {
   "ops.checkinCategory.deadline_exceeded": "超时",
   "ops.applyRetention": "应用保留策略",
   "ops.applyRetentionTitle": "应用审计保留策略",
-  "ops.applyRetentionMsg":
-    "删除超出服务器配置的时间与行数限制的审计事件？此操作不可撤销。",
+  "ops.applyRetentionMsg": "删除超出服务器配置的时间与行数限制的审计事件？此操作不可撤销。",
   "ops.runCleanup": "执行清理",
   "ops.olderEvents": "更早事件",
   "ops.newestEvents": "最新事件",
@@ -2294,14 +2208,12 @@ export const zh: Dict = {
   "ops.backupCreated": "备份 {name} 已就绪（{size}，{time}）",
   "ops.noBackups": "尚未创建备份。",
   "ops.backups.title": "备份清单",
-  "ops.backups.titleHelp":
-    "网关在线创建 SQLite 备份；恢复必须在服务停止后离线执行。",
+  "ops.backups.titleHelp": "网关在线创建 SQLite 备份；恢复必须在服务停止后离线执行。",
   "ops.restoreNote": "恢复为离线操作。请在服务停止时使用 {cmd}。",
   "ops.runtime.writableTitle": "运行参数",
   "ops.runtime.glossaryTitle": "术语速览",
   "ops.runtime.glossaryHint": "这些开关都是运维术语，一句话解释：",
-  "ops.runtime.glossary.cooldown":
-    "冷却 — 渠道失败后进入冷静期，期间不再分配请求。",
+  "ops.runtime.glossary.cooldown": "冷却 — 渠道失败后进入冷静期，期间不再分配请求。",
   "ops.runtime.glossary.progressive":
     "分级冷却 — 失败越多次冻结越久（默认 10 分钟 → 1 小时 → 24 小时）；每次成功降一档。",
   "ops.runtime.glossary.breaker":
@@ -2312,29 +2224,27 @@ export const zh: Dict = {
     "稳定灰度池 — 新渠道先只接 1/N 流量观察，稳定后自动转正全量。",
   "ops.runtime.glossary.concurrency":
     "并发突发防护 — 某个渠道同时在处理的请求太多时，新请求自动分流到其他渠道。",
-  "ops.runtime.glossary.recovery":
-    "被动恢复探针 — 定时探测被停用的渠道，上游恢复后自动重新启用。",
+  "ops.runtime.glossary.recovery": "被动恢复探针 — 定时探测被停用的渠道，上游恢复后自动重新启用。",
   "ops.runtime.glossary.retryAfter":
     "Retry-After — 上游说“N 秒后再试”，网关就尊重它，而不是立刻重试。",
   "ops.runtime.writableBody":
     "保存后立即应用全局运行策略，无需重启网关。部署路径与密钥不可在此编辑。",
   "ops.runtime.writableSummary":
     "全局路由、容错、限流、恢复、告警与审计策略。模型级调整请在模型页完成。",
-  "ops.runtime.checkinScope":
-    "全局调度开关；单凭证是否参与签到仍在连接页设置。",
+  "ops.runtime.checkinScope": "全局调度开关；单凭证是否参与签到仍在连接页设置。",
   "ops.runtime.openCheckin": "打开签到",
   "ops.runtime.save": "保存并生效",
   "ops.runtime.saved": "已保存并热更新（无需重启）。",
   "ops.runtime.unsaved": "有未保存的更改",
   "ops.runtime.remoteChanged": "服务端的运行参数已变化",
-  "ops.runtime.remoteChangedHint": "另一个会话保存过这些设置。你的修改还在，但保存会覆盖对方的结果——先选一个再保存。",
+  "ops.runtime.remoteChangedHint":
+    "另一个会话保存过这些设置。你的修改还在，但保存会覆盖对方的结果——先选一个再保存。",
   "ops.runtime.keepMine": "保留我的修改",
   "ops.runtime.reloadServer": "重载服务端设置",
   "ops.runtime.resetEnv": "恢复为环境变量",
   "ops.runtime.ratePerMinute": "每分钟",
   "ops.runtime.rateBurst": "突发",
-  "ops.runtime.serverReadonly":
-    "部署级配置。修改 HTTP_ADDR / DATA_DIR 后需重启。",
+  "ops.runtime.serverReadonly": "部署级配置。修改 HTTP_ADDR / DATA_DIR 后需重启。",
   "ops.runtime.source": "来源",
   "ops.runtime.sourceAdmin": "管理端覆盖",
   "ops.runtime.sourceEnvironment": "环境变量",
@@ -2353,14 +2263,11 @@ export const zh: Dict = {
     "开启后，429/5xx 等可重试失败触发固定冷却并允许自动禁用渠道；传输类失败（拒连/超时）首次不冷却，连续失败会冷却并计入自动禁用。关闭后仍会继续重试和跨渠道转移，但失败不会被记住。",
   "ops.runtime.section.healthSweep": "渠道健康巡检",
   "ops.runtime.autoDisable": "自动禁用阈值",
-  "ops.runtime.autoDisableHint":
-    "连续转发失败达到该次数后自动禁用渠道。0 = 关闭。",
+  "ops.runtime.autoDisableHint": "连续转发失败达到该次数后自动禁用渠道。0 = 关闭。",
   "ops.runtime.latencyAware": "延迟感知路由",
-  "ops.runtime.latencyAwareHint":
-    "按平滑响应延迟加权选择渠道。关闭 = 按原有优先级/权重。",
+  "ops.runtime.latencyAwareHint": "按平滑响应延迟加权选择渠道。关闭 = 按原有优先级/权重。",
   "ops.runtime.errorAware": "错误率感知路由",
-  "ops.runtime.errorAwareHint":
-    "对平滑失败倾向高的渠道降权；成功累积后份额自动回升。",
+  "ops.runtime.errorAwareHint": "对平滑失败倾向高的渠道降权；成功累积后份额自动回升。",
   "ops.runtime.stableFirst": "稳定灰度池",
   "ops.runtime.stableFirstHint":
     "新渠道先只接收 1/N 的请求试水;连续成功达到阈值后自动转正,与其他渠道同等分流。",
@@ -2368,14 +2275,12 @@ export const zh: Dict = {
   "ops.runtime.stableFirstDenominatorHint":
     "N 的含义:25 = 每 25 个请求只有 1 个(4%)会分给试水渠道。",
   "ops.runtime.stableFirstPromote": "转正阈值(成功请求数)",
-  "ops.runtime.stableFirstPromoteHint":
-    "试水渠道连续成功 N 次后自动转正,与其他渠道同等分流。",
+  "ops.runtime.stableFirstPromoteHint": "试水渠道连续成功 N 次后自动转正,与其他渠道同等分流。",
   "ops.runtime.concurrencyGuard": "并发突发防护",
   "ops.runtime.concurrencyGuardHint":
     "统计每渠道在途请求数,接近并发上限的渠道几乎不再被选中,突发流量自动分散到整个渠道池。",
   "ops.runtime.concurrencyLimit": "单渠道并发上限",
-  "ops.runtime.concurrencyLimitHint":
-    "一个渠道同时最多处理 N 个请求,超出的流量自动分给其他渠道。",
+  "ops.runtime.concurrencyLimitHint": "一个渠道同时最多处理 N 个请求,超出的流量自动分给其他渠道。",
   "ops.runtime.webhookURL": "运维 Webhook URL",
   "ops.runtime.proxyURL": "全局出口代理",
   "ops.runtime.proxyURLHint":
@@ -2391,8 +2296,7 @@ export const zh: Dict = {
   "ops.maintenance.hint":
     "清理孤儿数据（已删除渠道/路由/Key 的残留行）并在空闲页较多时执行 VACUUM 压缩。",
   "ops.maintenance.cron": "维护计划",
-  "ops.maintenance.cronHint":
-    "定时维护的五段 cron（默认 0 4 * * * = 每天 04:00）；留空 = 关闭。",
+  "ops.maintenance.cronHint": "定时维护的五段 cron（默认 0 4 * * * = 每天 04:00）；留空 = 关闭。",
   "ops.runtime.section.sync": "模型同步",
   "ops.runtime.section.probe": "定时模型探测",
   "ops.runtime.probeIntro":
@@ -2428,8 +2332,7 @@ export const zh: Dict = {
   "ops.runtime.webhookURLHint":
     "渠道自动禁用/恢复事件以 JSON POST 到该地址,节流窗口内合并重复通知。留空则不通知。",
   "ops.runtime.webhookThrottle": "Webhook 节流（秒）",
-  "ops.runtime.webhookThrottleHint":
-    "同一渠道的同类事件在 N 秒内只通知一次,防止刷屏。",
+  "ops.runtime.webhookThrottleHint": "同一渠道的同类事件在 N 秒内只通知一次,防止刷屏。",
   "ops.runtime.alertConfigJson": "告警矩阵（JSON）",
   "ops.runtime.alertConfigJsonHint":
     "多通道告警配置：bark / serverchan / telegram / smtp + cooldown_seconds + daily_summary_enabled。留空则禁用告警通道。保存后立即生效。",
@@ -2450,26 +2353,21 @@ export const zh: Dict = {
   "ops.runtime.validation.min": "不能小于 {min}。",
   "ops.runtime.validation.max": "不能大于 {max}。",
   "ops.runtime.validation.between": "请输入 {min}-{max} 之间的值。",
-  "ops.runtime.validation.jitterExceedsInterval":
-    "不能大于探测间隔（{interval} 秒）。",
+  "ops.runtime.validation.jitterExceedsInterval": "不能大于探测间隔（{interval} 秒）。",
   "ops.runtime.healthSweepJitter": "抖动（秒）",
   "ops.runtime.healthSweepJitterHint":
     "每轮探测叠加的随机延迟（0-3600），避免所有渠道同时探测（防惊群）。",
   "ops.runtime.healthSweepDegraded": "降级延迟阈值（毫秒）",
-  "ops.runtime.healthSweepDegradedHint":
-    "延迟超过该值即评为「降级」而非「正常」。",
+  "ops.runtime.healthSweepDegradedHint": "延迟超过该值即评为「降级」而非「正常」。",
   "ops.runtime.healthSweepConcurrency": "并发探测数",
-  "ops.runtime.healthSweepConcurrencyHint":
-    "全部渠道同时最多进行 N 个探测请求。",
+  "ops.runtime.healthSweepConcurrencyHint": "全部渠道同时最多进行 N 个探测请求。",
   "ops.runtime.healthSweepTimeout": "探测超时（秒）",
-  "ops.runtime.healthSweepTimeoutHint":
-    "单个探测最多耗时 N 秒，超过即评为「故障」。",
+  "ops.runtime.healthSweepTimeoutHint": "单个探测最多耗时 N 秒，超过即评为「故障」。",
   "ops.runtime.recoveryProbe": "被动恢复探针",
   "ops.runtime.recoveryProbeHint":
     "定时探测自动禁用的渠道，上游恢复后自动重新启用。手动禁用的渠道不会被探测。",
   "ops.runtime.recoveryInterval": "恢复探测间隔（秒）",
-  "ops.runtime.recoveryIntervalHint":
-    "每隔 N 秒探测一次被自动禁用的渠道,上游恢复后自动启用。",
+  "ops.runtime.recoveryIntervalHint": "每隔 N 秒探测一次被自动禁用的渠道,上游恢复后自动启用。",
   "ops.runtime.section.sticky": "粘性会话",
   "ops.runtime.stickyEnabled": "启用粘性会话",
   "ops.runtime.stickyEnabledHint":
@@ -2495,15 +2393,13 @@ export const zh: Dict = {
   "ops.runtime.multiUserHint":
     "成员账户、他们的额度、登录方式与成员界面都在这里管理。开关本身放在该区域的「概览」里，所以一个人自用时不占用任何位置。",
   "ops.runtime.openUsers": "打开用户管理",
-  "ops.runtime.group.routingDesc":
-    "故障转移与重试、路由策略、灰度发布、会话粘性",
+  "ops.runtime.group.routingDesc": "故障转移与重试、路由策略、灰度发布、会话粘性",
   "ops.runtime.group.healthDesc": "故障保护、渠道健康巡检、模型同步与探测",
   "ops.runtime.group.governanceDesc": "限流与审计日志保留",
   "ops.runtime.group.opsDesc": "告警通知、维护任务、定时签到与服务信息",
   "ops.runtime.groupCount": "{count} 项设置",
   "ops.runtime.group.security": "账号与数据维护",
-  "ops.runtime.group.securityDesc":
-    "两步验证与数据库清理——各自保存，不跟随上方的保存按钮",
+  "ops.runtime.group.securityDesc": "两步验证与数据库清理——各自保存，不跟随上方的保存按钮",
   "ops.runtime.group.danger": "危险操作",
   "ops.runtime.group.dangerDesc": "不可逆操作，执行前请先备份",
   "ops.runtime.buildVersion": "当前版本",
@@ -2512,8 +2408,7 @@ export const zh: Dict = {
   "ops.runtime.oneClickUpdate": "一键更新到 {version}",
   "ops.runtime.oneClickConfirm":
     "确认更新？容器将重启，服务中断约数秒，进行中的请求会被切断。数据卷不受影响；更新失败会自动回滚到当前版本。",
-  "ops.runtime.oneClickWaiting":
-    "正在更新到 {target}：拉取镜像并切换容器，完成后页面自动刷新…",
+  "ops.runtime.oneClickWaiting": "正在更新到 {target}：拉取镜像并切换容器，完成后页面自动刷新…",
   "ops.runtime.oneClickDone": "已成功更新到 {target}",
   "ops.runtime.oneClickFailed":
     "更新未在预期时间内完成——旧容器可能已自动回滚。请检查 docker logs -f meta-gateway-next，或手动 docker compose pull && docker compose up -d。",
@@ -2526,8 +2421,7 @@ export const zh: Dict = {
   "ops.runtime.copyFailed": "复制失败，请手动选择命令复制",
   "ops.runtime.updateChecking": "检查中…",
   "ops.runtime.updateUpToDate": "已是最新版本",
-  "ops.runtime.updateDevBuild":
-    "开发构建（{current}），无法比对版本；最新发布 {version}",
+  "ops.runtime.updateDevBuild": "开发构建（{current}），无法比对版本；最新发布 {version}",
   "ops.runtime.updateFound": "发现新版本 {version}",
   "ops.runtime.updateFailed": "检查失败，稍后重试",
   "ops.runtime.updateOff": "检查更新已关闭",
@@ -2551,11 +2445,9 @@ export const zh: Dict = {
   "ops.runtime.checkinMinute": "分钟",
   "ops.runtime.checkinDaily": "每天",
   "ops.runtime.relayRate": "中继限流",
-  "ops.runtime.relayRateHint":
-    "转发流量上限:每分钟 N 个请求,突发允许一次性冲高 N 个。",
+  "ops.runtime.relayRateHint": "转发流量上限:每分钟 N 个请求,突发允许一次性冲高 N 个。",
   "ops.runtime.adminRate": "管理端限流",
-  "ops.runtime.adminRateHint":
-    "管理后台上限:每分钟 N 个请求,突发允许一次性冲高 N 个。",
+  "ops.runtime.adminRateHint": "管理后台上限:每分钟 N 个请求,突发允许一次性冲高 N 个。",
   "ops.runtime.auditDays": "保留天数",
   "ops.runtime.auditDaysHint": "超过 N 天的审计记录会被清理。",
   "ops.runtime.auditRows": "最多保留行数",
@@ -2579,8 +2471,7 @@ export const zh: Dict = {
     "指标规则每 60 秒评估一次；告警通过已配置的 webhook/bark/serverchan/telegram/smtp 通道发送。",
   "ops.alertRules.empty": "还没有规则。添加一条，指标越阈值时就会收到通知。",
   "ops.alertRules.deleteTitle": "删除告警规则",
-  "ops.alertRules.deleteConfirm":
-    "删除后该指标越过阈值时不再通知。此操作不可恢复。",
+  "ops.alertRules.deleteConfirm": "删除后该指标越过阈值时不再通知。此操作不可恢复。",
   "ops.alertRules.add": "添加规则",
   "ops.alertRules.edit": "编辑规则",
   "ops.alertRules.name": "名称",
@@ -2595,8 +2486,7 @@ export const zh: Dict = {
     "作用于对话体每个字符串值的正则规则：mask 替换命中内容，reject 直接拒绝请求（400），exclude 命中时跳过指定渠道。",
   "ops.guard.empty": "还没有保护规则。",
   "ops.guard.deleteTitle": "删除保护规则",
-  "ops.guard.deleteConfirm":
-    "删除后该规则当前拦下的 prompt 将直接通过。此操作不可恢复。",
+  "ops.guard.deleteConfirm": "删除后该规则当前拦下的 prompt 将直接通过。此操作不可恢复。",
   "ops.guard.add": "添加规则",
   "ops.guard.edit": "编辑规则",
   "ops.guard.name": "名称",
@@ -2611,8 +2501,7 @@ export const zh: Dict = {
     "按上游 4xx 错误（状态码 + 错误体关键词）覆盖默认 failover：passthrough 直接透传错误（不重试）、rewrite 改写状态码、ignore_monitor 继续 failover 但跳过熔断/冷却/失败计数。规则对下一个请求立即生效。",
   "ops.errorRules.empty": "无规则——所有 4xx 错误都会 failover 到下一个渠道。",
   "ops.errorRules.deleteTitle": "删除错误规则",
-  "ops.errorRules.deleteConfirm":
-    "删除后匹配的错误将回到默认 failover 行为。此操作不可恢复。",
+  "ops.errorRules.deleteConfirm": "删除后匹配的错误将回到默认 failover 行为。此操作不可恢复。",
   "ops.errorRules.add": "添加规则",
   "ops.errorRules.edit": "编辑规则",
   "ops.errorRules.name": "名称",
@@ -2637,8 +2526,7 @@ export const zh: Dict = {
   "exchange.title": "交换",
   "exchange.description": "通过版本化的 Meta Gateway 交换格式迁移通道资产。",
   "exchange.exportTitle": "导出通道",
-  "exchange.exportHint":
-    "元数据导出走查安全但不可导入。含密钥的导出可导入，必须按凭证妥善保管。",
+  "exchange.exportHint": "元数据导出走查安全但不可导入。含密钥的导出可导入，必须按凭证妥善保管。",
   "exchange.allChannels": "全部通道",
   "exchange.downloadMetadata": "下载元数据",
   "exchange.exportSecrets": "导出含密钥",
@@ -2649,8 +2537,7 @@ export const zh: Dict = {
   "exchange.parseError": "无法将此文件解析为 JSON。请选择有效的交换文档。",
   "exchange.import": "导入资产",
   "exchange.importing": "导入中...",
-  "exchange.importingHint":
-    "先写入连接。模型同步为尽力而为，每个连接有超时，避免一直卡在导入中。",
+  "exchange.importingHint": "先写入连接。模型同步为尽力而为，每个连接有超时，避免一直卡在导入中。",
   "exchange.importComplete": "导入完成",
   "exchange.created": "新建",
   "exchange.updated": "更新",
@@ -2694,20 +2581,17 @@ export const zh: Dict = {
   "setup.step1Title": "添加第一个上游连接",
   "setup.step1Desc": "填入上游地址与 API Key，网关才有可转发的渠道。",
   "setup.step2Title": "同步模型",
-  "setup.step2Desc":
-    "在连接里点「同步模型」拉取清单；自动同步直接接入，按需勾选由你挑选。",
+  "setup.step2Desc": "在连接里点「同步模型」拉取清单；自动同步直接接入，按需勾选由你挑选。",
   "setup.step3Title": "创建下游 API Key",
   "setup.step3Desc": "调用方用这把 Key 访问网关。",
   "setup.step4Title": "发起第一次调用",
-  "setup.step4Desc":
-    "把下面的 curl 里的 Key 和模型名换成你的，返回 200 即接入成功。",
+  "setup.step4Desc": "把下面的 curl 里的 Key 和模型名换成你的，返回 200 即接入成功。",
   "setup.go": "去操作",
   "setup.copy": "复制",
   "setup.copied": "已复制",
 
   "tour.navTitle": "功能导航",
-  "tour.navDesc":
-    "「连接」管理上游渠道，「令牌」是发给调用方的 Key，「日志」可逐笔排查转发。",
+  "tour.navDesc": "「连接」管理上游渠道，「令牌」是发给调用方的 Key，「日志」可逐笔排查转发。",
   "tour.endpointTitle": "API 接入地址",
   "tour.endpointDesc": "调用方的 base_url 填这里，接口与 OpenAI 兼容。",
   "tour.guideTitle": "四步接入清单",
@@ -2717,25 +2601,19 @@ export const zh: Dict = {
   "tour.addTitle": "从这里开始：添加连接",
   "tour.addDesc": "点「添加连接」，填上游地址与 API Key，网关就有渠可转了。",
   "tour.syncTitle": "选一个同步模式",
-  "tour.syncDesc":
-    "自动同步=探测到的模型全部接入；按需勾选=只接入你挑的。以后随时在这里改。",
+  "tour.syncDesc": "自动同步=探测到的模型全部接入；按需勾选=只接入你挑的。以后随时在这里改。",
   "tour.keysTitle": "创建下游 Key",
-  "tour.keysDesc":
-    "点「创建」生成一把 Key 发给调用方，这是他们访问网关的凭证。",
+  "tour.keysDesc": "点「创建」生成一把 Key 发给调用方，这是他们访问网关的凭证。",
   "tour.logsTitle": "转发日志",
   "tour.logsDesc": "每笔请求的渠道、模型、延迟都在这里，出问题先来这里看。",
   "tour.checkinsTitle": "签到自动化",
-  "tour.checkinsDesc":
-    "开启后网关按计划替你签到上游站点；签到记录和外部签到都在这一页。",
+  "tour.checkinsDesc": "开启后网关按计划替你签到上游站点；签到记录和外部签到都在这一页。",
   "tour.settingsRelayTitle": "中继故障转移",
-  "tour.settingsRelayDesc":
-    "渠道挂了自动切下一个、Key 池轮换、重试次数——中继的容错都在这张卡片。",
+  "tour.settingsRelayDesc": "渠道挂了自动切下一个、Key 池轮换、重试次数——中继的容错都在这张卡片。",
   "tour.settingsSyncTitle": "模型同步",
-  "tour.settingsSyncDesc":
-    "新渠道的默认同步模式在这里改，就是向导第一步选的那个，随时可换。",
+  "tour.settingsSyncDesc": "新渠道的默认同步模式在这里改，就是向导第一步选的那个，随时可换。",
   "tour.settingsAlertsTitle": "告警通知",
-  "tour.settingsAlertsDesc":
-    "填上 Webhook、Bark、Telegram 或邮箱，渠道出故障第一时间知道。",
+  "tour.settingsAlertsDesc": "填上 Webhook、Bark、Telegram 或邮箱，渠道出故障第一时间知道。",
   "tour.next": "下一步",
   "tour.prev": "上一步",
   "tour.done": "完成",
@@ -2752,8 +2630,7 @@ export const zh: Dict = {
   "wizard.welcomeDesc":
     "这是一个多渠道 AI 网关：把上游服务聚合成一个 OpenAI 兼容入口。花一分钟完成初始配置。",
   "wizard.modeTitle": "新渠道的默认同步模式",
-  "wizard.modeDesc":
-    "决定每个新连接探测到的模型如何进入网关；只影响之后新建的连接。",
+  "wizard.modeDesc": "决定每个新连接探测到的模型如何进入网关；只影响之后新建的连接。",
   "wizard.modeAuto": "自动同步——探测到即接入，省心",
   "wizard.modeManual": "按需勾选——只接入你挑的，可控",
   "wizard.modeSaved": "已保存为系统默认",
@@ -2761,17 +2638,14 @@ export const zh: Dict = {
   "wizard.connDesc": "手动填写上游地址与 Key，或直接导入 AAH 插件的备份。",
   "wizard.manualTab": "手动填写",
   "wizard.importTab": "从 AAH 备份导入",
-  "wizard.importHint":
-    "选择 AAH 插件导出的自动备份 JSON 文件，网关会导入其中的连接并自动接管。",
+  "wizard.importHint": "选择 AAH 插件导出的自动备份 JSON 文件，网关会导入其中的连接并自动接管。",
   "wizard.pickFile": "选择备份文件",
   "wizard.importDone": "导入完成：新建 {created}、更新 {updated} 个连接。",
   "wizard.importInvalid": "无法将此文件解析为 JSON 备份。",
   "wizard.importFromFile": "选择备份文件",
   "wizard.importFromWebdav": "从网盘导入",
-  "wizard.importSkipped":
-    "另外 {n} 行被跳过（缺密钥或字段不完整），不影响其余导入。",
-  "wizard.webdavHint":
-    "填 AAH 里保存的 WebDAV 设置，网关会直接拉取 all-api-hub-backup/ 下的备份。",
+  "wizard.importSkipped": "另外 {n} 行被跳过（缺密钥或字段不完整），不影响其余导入。",
+  "wizard.webdavHint": "填 AAH 里保存的 WebDAV 设置，网关会直接拉取 all-api-hub-backup/ 下的备份。",
   "wizard.webdavUrl": "网盘地址",
   "wizard.webdavUsername": "账号",
   "wizard.webdavPassword": "密码 / 应用密码",
@@ -2799,8 +2673,7 @@ export const zh: Dict = {
   "wizard.keyCreated": "Key 已创建，可在「令牌」页随时查看。",
   "wizard.createAnother": "再创建一个",
   "wizard.doneTitle": "一切就绪",
-  "wizard.doneDesc":
-    "调用方把 base_url 指向下面的地址，带上你的 Key 即可调用。",
+  "wizard.doneDesc": "调用方把 base_url 指向下面的地址，带上你的 Key 即可调用。",
   "wizard.next": "下一步",
   "wizard.back": "上一步",
   "wizard.later": "稍后再做",
@@ -2833,8 +2706,7 @@ export const zh: Dict = {
   "playground.upstreamHint": "指定连接可验证该路径；自动与线上 /v1 规则一致。",
   "playground.upstreamHintOne": "当前仅有一个连接提供此模型。",
   "playground.params": "参数",
-  "playground.paramsHint":
-    "只发送勾选启用的采样参数；未启用的字段不会出现在上游请求里。",
+  "playground.paramsHint": "只发送勾选启用的采样参数；未启用的字段不会出现在上游请求里。",
   "playground.system": "系统提示词",
   "playground.systemPlaceholder": "可选，作为 system 消息放在对话最前…",
   "playground.maxTokens": "最大输出 token",
@@ -2882,8 +2754,7 @@ export const zh: Dict = {
   "workbench.image.protocol": "模型支持的接口",
   "workbench.image.referencesRequired": "请先添加参考图，再进行图片编辑。",
   "workbench.image.chooseEdit": "已添加参考图，请选择「自动」或「编辑」模式。",
-  "workbench.image.editUnsupported":
-    "此模型不支持图片编辑，请更换模型或移除参考图。",
+  "workbench.image.editUnsupported": "此模型不支持图片编辑，请更换模型或移除参考图。",
   "workbench.image.generateUnsupported": "此模型需要参考图，请选择图片编辑。",
   "workbench.image.invalidFile": "「{name}」不是图片文件。",
   "workbench.image.uploadTooLarge": "本次参考图合计不能超过 {mb} MB。",
@@ -2891,8 +2762,7 @@ export const zh: Dict = {
   "workbench.image.removeRef": "移除参考图 {name}",
   "workbench.image.generateRun": "生成图片",
   "workbench.image.editRun": "编辑图片",
-  "workbench.image.waitHint":
-    "正在等待上游返回图片，切换到文字对话不会丢失这次结果。",
+  "workbench.image.waitHint": "正在等待上游返回图片，切换到文字对话不会丢失这次结果。",
   "workbench.image.preview": "查看完整图片",
   "workbench.image.resultAlt": "生成的图片 {n}",
   "workbench.image.protocolValue": "{endpoint} · {format}",
@@ -2926,8 +2796,7 @@ export const zh: Dict = {
   "workbench.cap.maxImagesShort": "参考图 {n}",
   "workbench.cap.editHint":
     "端点列表决定网关用哪个接口调用此模型。填错不会被写入校验拦下，只会让该模型无法被规划。",
-  "workbench.cap.catalog.noSources":
-    "当前网关未配置任何外部目录，没有可同步的来源。",
+  "workbench.cap.catalog.noSources": "当前网关未配置任何外部目录，没有可同步的来源。",
   "workbench.cap.autoTag": "按内置规则标注",
   "workbench.cap.editTitle": "能力 · {name}",
   "workbench.cap.model": "模型",
@@ -2954,8 +2823,7 @@ export const zh: Dict = {
     "读取 LiteLLM 价目表与 models.dev 索引，回填到能力注册表。确认前不会写入任何内容，人工改过的行也永远不会被覆盖。",
   "workbench.cap.catalog.lastSync":
     "上次同步 {when} · 命中 {matched} 个模型 · 写入 {capabilities} 条能力、{metadata} 条元数据、{prices} 个单价",
-  "workbench.cap.catalog.neverSynced":
-    "尚未同步过。同步只覆盖已启用路由所服务的模型。",
+  "workbench.cap.catalog.neverSynced": "尚未同步过。同步只覆盖已启用路由所服务的模型。",
   "workbench.cap.catalog.scheduled": "按计划自动刷新",
   "workbench.cap.catalog.manualOnly": "仅手动同步",
   "workbench.cap.catalog.pricesOn": "单价自动回填",
@@ -2966,8 +2834,7 @@ export const zh: Dict = {
   "workbench.cap.catalog.onlyChanges": "只显示会变更的模型",
   "workbench.cap.catalog.summary":
     "{requested} 个模型中 {matched} 个在目录里 · {missing} 个未知 · {changes} 个将变更",
-  "workbench.cap.catalog.nothingToDo":
-    "无需处理 —— 所有已路由模型的能力登记已与目录一致。",
+  "workbench.cap.catalog.nothingToDo": "无需处理 —— 所有已路由模型的能力登记已与目录一致。",
   "workbench.cap.catalog.sourceErrors": "有数据源读取失败：{errors}",
   "workbench.cap.catalog.apply": "应用 {n} 项变更",
   "workbench.cap.catalog.groupCapability": "调用方式",

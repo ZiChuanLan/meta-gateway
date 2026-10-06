@@ -38,8 +38,7 @@ export function ImagePanel({ keys }: { keys: UserKey[] }) {
   // send every probe down a 400.
   const models = useQuery({
     queryKey: ["me", "model-catalog", "images"],
-    queryFn: ({ signal }) =>
-      accountRequest<UserModel[]>("/me/model-catalog", { signal }),
+    queryFn: ({ signal }) => accountRequest<UserModel[]>("/me/model-catalog", { signal }),
   });
   const imageModels = (models.data ?? []).filter((model) =>
     (model.output_modalities || "").toLowerCase().includes("image"),
@@ -49,10 +48,9 @@ export function ImagePanel({ keys }: { keys: UserKey[] }) {
   const activeModel = chosenModel || imageModels[0]?.name || "";
 
   async function revealToken(keyID: number) {
-    const { token } = await accountRequest<{ token: string }>(
-      `/me/keys/${keyID}/reveal`,
-      { method: "POST" },
-    );
+    const { token } = await accountRequest<{ token: string }>(`/me/keys/${keyID}/reveal`, {
+      method: "POST",
+    });
     return token;
   }
 
@@ -139,11 +137,7 @@ export function ImagePanel({ keys }: { keys: UserKey[] }) {
             >
               {t("imgGenerate")}
             </button>
-            <button
-              type="button"
-              aria-pressed={mode === "edit"}
-              onClick={() => setMode("edit")}
-            >
+            <button type="button" aria-pressed={mode === "edit"} onClick={() => setMode("edit")}>
               {t("imgEdit")}
             </button>
           </div>

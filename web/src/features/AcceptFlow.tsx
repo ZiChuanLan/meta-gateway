@@ -77,19 +77,10 @@ export function AcceptFlow({
 
   return (
     <form onSubmit={submit} aria-busy={busy}>
-      <fieldset
-        disabled={busy}
-        style={{ border: 0, padding: 0, margin: 0, display: "contents" }}
-      >
+      <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, display: "contents" }}>
         {!recovery && (
           <Field label={t("username")} hint={t("userHint")}>
-            <input
-              name="username"
-              required
-              minLength={3}
-              maxLength={64}
-              autoComplete="username"
-            />
+            <input name="username" required minLength={3} maxLength={64} autoComplete="username" />
           </Field>
         )}
         {signingUp && (
@@ -108,10 +99,7 @@ export function AcceptFlow({
             />
           </Field>
         )}
-        <Field
-          label={t("password")}
-          hint={signingUp || recovery ? t("passwordHint") : undefined}
-        >
+        <Field label={t("password")} hint={signingUp || recovery ? t("passwordHint") : undefined}>
           <input
             name="password"
             type="password"

@@ -50,10 +50,7 @@ export function PoliciesPanel() {
       )}
       <div className="team-head">
         <p className="team-muted">{t("policiesHint")}</p>
-        <button
-          className="team-button primary"
-          onClick={() => setEditing({ ...EMPTY_POLICY })}
-        >
+        <button className="team-button primary" onClick={() => setEditing({ ...EMPTY_POLICY })}>
           {t("newPolicy")}
         </button>
       </div>
@@ -77,10 +74,7 @@ export function PoliciesPanel() {
                 <td>{p.allow_routing ? t("on") : t("off")}</td>
                 <td>
                   <div className="team-actions">
-                    <button
-                      className="team-button"
-                      onClick={() => setEditing(structuredClone(p))}
-                    >
+                    <button className="team-button" onClick={() => setEditing(structuredClone(p))}>
                       {t("edit")}
                     </button>
                     {/* Policy #1 is the shipped default every member starts on;
@@ -105,11 +99,7 @@ export function PoliciesPanel() {
         </table>
       </div>
       {editing && (
-        <TeamModal
-          title={t("policy")}
-          busy={busy}
-          onClose={() => setEditing(null)}
-        >
+        <TeamModal title={t("policy")} busy={busy} onClose={() => setEditing(null)}>
           <form
             className="team-surface"
             onSubmit={(e) => {
@@ -142,9 +132,7 @@ export function PoliciesPanel() {
                   max={100}
                   required
                   value={editing.max_keys}
-                  onChange={(e) =>
-                    setEditing({ ...editing, max_keys: Number(e.target.value) })
-                  }
+                  onChange={(e) => setEditing({ ...editing, max_keys: Number(e.target.value) })}
                 />
               </Field>
               <Field label={t("rpm")}>
@@ -154,9 +142,7 @@ export function PoliciesPanel() {
                   max={100000}
                   required
                   value={editing.rpm}
-                  onChange={(e) =>
-                    setEditing({ ...editing, rpm: Number(e.target.value) })
-                  }
+                  onChange={(e) => setEditing({ ...editing, rpm: Number(e.target.value) })}
                 />
               </Field>
             </div>
@@ -164,9 +150,7 @@ export function PoliciesPanel() {
               <input
                 type="checkbox"
                 checked={editing.allow_routing}
-                onChange={(e) =>
-                  setEditing({ ...editing, allow_routing: e.target.checked })
-                }
+                onChange={(e) => setEditing({ ...editing, allow_routing: e.target.checked })}
               />
               {t("routing")}
             </label>
@@ -187,9 +171,7 @@ export function PoliciesPanel() {
               <input
                 type="checkbox"
                 checked={editing.all_models}
-                onChange={(e) =>
-                  setEditing({ ...editing, all_models: e.target.checked })
-                }
+                onChange={(e) => setEditing({ ...editing, all_models: e.target.checked })}
               />
               {t("allModels")}
             </label>
@@ -197,9 +179,7 @@ export function PoliciesPanel() {
               <Field label={t("modelList")}>
                 <textarea
                   value={editing.models.join("\n")}
-                  onChange={(e) =>
-                    setEditing({ ...editing, models: e.target.value.split("\n") })
-                  }
+                  onChange={(e) => setEditing({ ...editing, models: e.target.value.split("\n") })}
                 />
               </Field>
             )}
@@ -222,12 +202,7 @@ export function PoliciesPanel() {
                           // the two lists describe one decision, so they move
                           // together instead of leaving the model unreachable.
                           models: e.target.checked
-                            ? [
-                                ...new Set([
-                                  ...editing.models.filter(Boolean),
-                                  c.model,
-                                ]),
-                              ]
+                            ? [...new Set([...editing.models.filter(Boolean), c.model])]
                             : editing.models,
                         })
                       }

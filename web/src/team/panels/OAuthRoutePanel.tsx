@@ -16,12 +16,5 @@ export function OAuthRoutePanel() {
     queryKey: ["team", "policies"],
     queryFn: ({ signal }) => request<Policy[]>("/admin/team/policies", { signal }),
   });
-  return (
-    <OAuthPanel
-      request={request}
-      policies={policies.data ?? []}
-      locale={locale}
-      t={t}
-    />
-  );
+  return <OAuthPanel request={request} policies={policies.data ?? []} locale={locale} t={t} />;
 }

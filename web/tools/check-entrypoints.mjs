@@ -5,23 +5,40 @@ import ts from "typescript";
 // Include re-exports and literal lazy imports. Test-only files and declarations
 // are not browser entry points; code shared only by tests belongs under test/.
 const root = path.resolve("src");
-const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
-  entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)],
-);
-const files = walk(root).filter((file) =>
-  /\.tsx?$/.test(file) && !/(\.test\.|\.d\.ts$|[/\\]test[/\\])/.test(file),
+const walk = (dir) =>
+  fs
+    .readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) =>
+      entry.isDirectory() ? walk(path.join(dir, entry.name)) : [path.join(dir, entry.name)],
+    );
+const files = walk(root).filter(
+  (file) => /\.tsx?$/.test(file) && !/(\.test\.|\.d\.ts$|[/\\]test[/\\])/.test(file),
 );
 const config = ts.readConfigFile("tsconfig.app.json", ts.sys.readFile);
 const options = ts.parseJsonConfigFileContent(config.config, ts.sys, process.cwd()).options;
 const graph = new Map();
 for (const file of files) {
-  const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+  const source = ts.createSourceFile(
+    file,
+    fs.readFileSync(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
   const dependencies = [];
   const visit = (node) => {
     let specifier;
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
       specifier = node.moduleSpecifier.text;
-    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
       specifier = node.arguments[0].text;
     }
     if (specifier) {

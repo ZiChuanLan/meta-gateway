@@ -133,9 +133,7 @@ describe("ChannelModelTestDialog", () => {
     });
 
     harness.releases.shift()?.();
-    await waitFor(() =>
-      expect(screen.getByText("Passed")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Passed")).toBeInTheDocument());
     expect(screen.getByText("120 ms")).toBeInTheDocument();
   });
 
@@ -160,9 +158,7 @@ describe("ChannelModelTestDialog", () => {
       "llama-4",
       "qwen3-max",
     ]);
-    await waitFor(() =>
-      expect(screen.getAllByText("Passed")).toHaveLength(MODELS.length),
-    );
+    await waitFor(() => expect(screen.getAllByText("Passed")).toHaveLength(MODELS.length));
   });
 
   it("surfaces a refusal and can filter down to the failures", async () => {
@@ -210,9 +206,7 @@ describe("ChannelModelTestDialog", () => {
     const filter = screen.getByRole("button", { name: /failures only/i });
     expect(filter).toBeEnabled();
     filter.click();
-    await waitFor(() =>
-      expect(screen.queryByText("gpt-5")).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.queryByText("gpt-5")).not.toBeInTheDocument());
     expect(screen.getByText("claude-sonnet-4")).toBeInTheDocument();
   });
 

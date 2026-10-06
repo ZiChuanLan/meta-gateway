@@ -62,8 +62,8 @@ export function RouteOrderDialog({
   }
 
   function patch(id: number, values: Partial<RouteUpstream>) {
-    setRows((current) =>
-      current?.map((row) => (row.id === id ? { ...row, ...values } : row)) ?? current,
+    setRows(
+      (current) => current?.map((row) => (row.id === id ? { ...row, ...values } : row)) ?? current,
     );
     setNotice("");
   }
@@ -116,9 +116,9 @@ export function RouteOrderDialog({
 
   const dirty = Boolean(
     rows &&
-      query.data &&
-      JSON.stringify(rows.map((r) => [r.id, r.weight, r.disabled])) !==
-        JSON.stringify(query.data.upstreams.map((r) => [r.id, r.weight, r.disabled])),
+    query.data &&
+    JSON.stringify(rows.map((r) => [r.id, r.weight, r.disabled])) !==
+      JSON.stringify(query.data.upstreams.map((r) => [r.id, r.weight, r.disabled])),
   );
 
   return (
@@ -192,10 +192,8 @@ export function RouteOrderDialog({
               <span className="route-order-name">
                 <strong>{row.channel}</strong>
                 <small>
-                  {row.origin
-                    ? `${t("originUpstream")}: ${row.origin}`
-                    : t("sameAsRouteName")}{" "}
-                  · #{row.id}
+                  {row.origin ? `${t("originUpstream")}: ${row.origin}` : t("sameAsRouteName")} · #
+                  {row.id}
                   {row.group && row.group !== "default" ? ` · ${row.group}` : ""}
                 </small>
               </span>
@@ -208,9 +206,7 @@ export function RouteOrderDialog({
                   disabled={busy || row.disabled}
                   value={row.weight}
                   aria-label={`${t("upstreamWeight")} · ${row.channel}`}
-                  onChange={(event) =>
-                    patch(row.id, { weight: Number(event.target.value) || 1 })
-                  }
+                  onChange={(event) => patch(row.id, { weight: Number(event.target.value) || 1 })}
                 />
                 <small>
                   {t("siteDefaults")} {row.site_weight}
@@ -221,9 +217,7 @@ export function RouteOrderDialog({
                   type="checkbox"
                   disabled={busy}
                   checked={!row.disabled}
-                  onChange={(event) =>
-                    patch(row.id, { disabled: !event.target.checked })
-                  }
+                  onChange={(event) => patch(row.id, { disabled: !event.target.checked })}
                 />
                 <span>{t("participate")}</span>
               </label>

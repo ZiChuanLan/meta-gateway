@@ -11,13 +11,13 @@ type Holder = { [key: string]: unknown };
  * body so nothing is swallowed.
  */
 export function upstreamMessage(body: unknown): string {
-	if (typeof body === "string") return body.trim().slice(0, 400);
-	if (!body || typeof body !== "object") return "";
-	const error = (body as Holder).error;
-	if (typeof error === "string") return error;
-	if (error && typeof error === "object") {
-		const message = (error as Holder).message;
-		if (typeof message === "string") return message.trim();
-	}
-	return JSON.stringify(body).slice(0, 400);
+  if (typeof body === "string") return body.trim().slice(0, 400);
+  if (!body || typeof body !== "object") return "";
+  const error = (body as Holder).error;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const message = (error as Holder).message;
+    if (typeof message === "string") return message.trim();
+  }
+  return JSON.stringify(body).slice(0, 400);
 }

@@ -1,10 +1,8 @@
 type Status = "enabled" | "disabled" | "auto_disabled";
 
-type ChannelHealthState =
-  "disabled" | "unhealthy" | "degraded" | "healthy" | "unknown";
+type ChannelHealthState = "disabled" | "unhealthy" | "degraded" | "healthy" | "unknown";
 type ChannelConnectivityState = "unknown" | "reachable" | "unreachable";
-type ChannelAccountState =
-  "unknown" | "ok" | "invalid" | "banned" | "rate_limited" | "failed";
+type ChannelAccountState = "unknown" | "ok" | "invalid" | "banned" | "rate_limited" | "failed";
 
 export type SiteProbeSourceKind = "uptime_kuma" | "newapi" | "sub2api_transit" | "";
 
@@ -36,7 +34,7 @@ export interface Credential {
   meta_json?: string;
   status: Status;
   checkin_enabled: boolean;
-models_csv?: string;
+  models_csv?: string;
   /** Distinct models this key listed in the latest discovery snapshot (-1 = none yet). */
   model_count?: number;
   /** The model names behind model_count; empty when the key has no snapshot yet. */
@@ -474,11 +472,7 @@ export interface UnifyVariant {
 }
 
 /** Normalization rules, applied as a pipeline in this order. */
-export type UnifyRule =
-  | "account_prefix"
-  | "vendor_prefix"
-  | "date_suffix"
-  | "index_suffix";
+export type UnifyRule = "account_prefix" | "vendor_prefix" | "date_suffix" | "index_suffix";
 
 export interface UnifyGroup {
   canonical: string;
@@ -585,13 +579,7 @@ export type SiteProbeMatch =
   | "namespace"
   | "";
 
-export type SiteProbeVerdict =
-  | "ok"
-  | "low"
-  | "pending"
-  | "insufficient"
-  | "stale"
-  | "no_data";
+export type SiteProbeVerdict = "ok" | "low" | "pending" | "insufficient" | "stale" | "no_data";
 
 /** A price the site publishes for one model, normalized to USD. */
 export interface SiteProbePrice {
@@ -861,12 +849,7 @@ export interface UnifyOp {
   id: number;
   batch_id: number;
   seq: number;
-  op:
-    | "route_created"
-    | "member_created"
-    | "route_archived"
-    | "route_deleted"
-    | "route_enabled";
+  op: "route_created" | "member_created" | "route_archived" | "route_deleted" | "route_enabled";
   route_id: number;
   member_id?: number;
   prev_enabled?: boolean;
@@ -1467,7 +1450,8 @@ export interface ModuleStatus {
 /** One manifest-declared plugin configuration input. */
 export interface PluginConfigField {
   key: string;
-  type?: "string" | "text" | "number" | "bool" | "select" | "secret" | "model" | "model_groups" | string;
+  type?:
+    "string" | "text" | "number" | "bool" | "select" | "secret" | "model" | "model_groups" | string;
   label?: string;
   description?: string;
   required?: boolean;

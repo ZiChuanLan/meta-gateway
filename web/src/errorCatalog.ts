@@ -8,227 +8,227 @@
  */
 
 export type ErrorClass =
-	| "network"
-	| "auth"
-	| "config"
-	| "upstream_shape"
-	| "missing_key"
-	| "missing_user_token"
-	| "rate_limited"
-	| "upstream_reject"
-	| "pinned_upstream"
-	| "not_found"
-	| "server"
-	| "cancelled"
-	| "empty_response"
-	| "unknown";
+  | "network"
+  | "auth"
+  | "config"
+  | "upstream_shape"
+  | "missing_key"
+  | "missing_user_token"
+  | "rate_limited"
+  | "upstream_reject"
+  | "pinned_upstream"
+  | "not_found"
+  | "server"
+  | "cancelled"
+  | "empty_response"
+  | "unknown";
 
 export interface CategorizedError {
-	/** Stable, translatable class used to pick title / hint templates. */
-	class: ErrorClass;
-	/** Raw backend category (or HTTP status) that produced this class. */
-	raw: string;
-	/** HTTP status when known (0 otherwise). */
-	status?: number;
+  /** Stable, translatable class used to pick title / hint templates. */
+  class: ErrorClass;
+  /** Raw backend category (or HTTP status) that produced this class. */
+  raw: string;
+  /** HTTP status when known (0 otherwise). */
+  status?: number;
 }
 
 /** Map every known backend category string to its error class. */
 const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
-	// — Reachability / transport —
-	transport: "network",
-	upstream_failure: "network",
-	connection_failed: "network",
-	unreachable: "network",
-	timeout: "network",
-	dns_failure: "network",
-	tls_failure: "network",
-	outbound_blocked: "network",
+  // — Reachability / transport —
+  transport: "network",
+  upstream_failure: "network",
+  connection_failed: "network",
+  unreachable: "network",
+  timeout: "network",
+  dns_failure: "network",
+  tls_failure: "network",
+  outbound_blocked: "network",
 
-	// — Authentication / authorization —
-	unauthorized: "auth",
-	upstream_unauthorized: "auth",
-	invalid_token: "auth",
-	auth_failed: "auth",
-	upstream_status_401: "auth",
-	upstream_status_403: "auth",
-	user_token_not_for_models: "auth",
-	session_expired: "auth",
+  // — Authentication / authorization —
+  unauthorized: "auth",
+  upstream_unauthorized: "auth",
+  invalid_token: "auth",
+  auth_failed: "auth",
+  upstream_status_401: "auth",
+  upstream_status_403: "auth",
+  user_token_not_for_models: "auth",
+  session_expired: "auth",
 
-	// — Configuration / invalid input —
-	invalid_base_url: "config",
-	invalid_url: "config",
-	site_unavailable: "config",
-	channel_disabled: "config",
-	credential_unavailable: "config",
-	credential_disabled: "config",
-	unsupported_adapter: "config",
-	invalid_metadata: "config",
-	validation_error: "config",
-	invalid_channel_id: "config",
-	invalid_id: "config",
-	identity_conflict: "config",
-	unsupported_format: "config",
-	config_incomplete: "config",
+  // — Configuration / invalid input —
+  invalid_base_url: "config",
+  invalid_url: "config",
+  site_unavailable: "config",
+  channel_disabled: "config",
+  credential_unavailable: "config",
+  credential_disabled: "config",
+  unsupported_adapter: "config",
+  invalid_metadata: "config",
+  validation_error: "config",
+  invalid_channel_id: "config",
+  invalid_id: "config",
+  identity_conflict: "config",
+  unsupported_format: "config",
+  config_incomplete: "config",
 
-	// — Request conversion failed on our side (still the operator's config) —
-	// These four come from `proxy_classify.go`'s `adapterErrorCategory`, which
-	// runs when an adapter cannot turn the client request into an upstream one.
-	// The proxy returns them directly and never retries another channel
-	// ("request conversion is local validation, not an upstream health signal"),
-	// so they must NOT read as a network fault: the fix is the channel's type,
-	// endpoint mapping or payload rules, not its reachability.
-	//
-	// `unsupported_path` / `unsupported_feature` are raised by the adapters
-	// themselves (an Anthropic or Gemini channel asked for a path or a feature it
-	// cannot express); both answer 501. `adapter_request` is the catch-all for
-	// every other translation failure and answers 400.
-	unsupported_path: "config",
-	unsupported_feature: "config",
-	adapter_request: "config",
+  // — Request conversion failed on our side (still the operator's config) —
+  // These four come from `proxy_classify.go`'s `adapterErrorCategory`, which
+  // runs when an adapter cannot turn the client request into an upstream one.
+  // The proxy returns them directly and never retries another channel
+  // ("request conversion is local validation, not an upstream health signal"),
+  // so they must NOT read as a network fault: the fix is the channel's type,
+  // endpoint mapping or payload rules, not its reachability.
+  //
+  // `unsupported_path` / `unsupported_feature` are raised by the adapters
+  // themselves (an Anthropic or Gemini channel asked for a path or a feature it
+  // cannot express); both answer 501. `adapter_request` is the catch-all for
+  // every other translation failure and answers 400.
+  unsupported_path: "config",
+  unsupported_feature: "config",
+  adapter_request: "config",
 
-	// — The upstream answered, but not in a shape we can read —
-	// `invalid_payload` is an adapter-level verdict on a 2xx body (the model
-	// list, an account probe). It used to sit in "config", so a perfectly
-	// configured channel whose upstream simply does not speak OpenAI was told
-	// to "check Base URL, connection type and credentials" — sending the
-	// operator off to re-type a URL that was already right. The body shape is
-	// the upstream's, so it gets its own class.
-	invalid_payload: "upstream_shape",
+  // — The upstream answered, but not in a shape we can read —
+  // `invalid_payload` is an adapter-level verdict on a 2xx body (the model
+  // list, an account probe). It used to sit in "config", so a perfectly
+  // configured channel whose upstream simply does not speak OpenAI was told
+  // to "check Base URL, connection type and credentials" — sending the
+  // operator off to re-type a URL that was already right. The body shape is
+  // the upstream's, so it gets its own class.
+  invalid_payload: "upstream_shape",
 
-	// — Missing / masked API key —
-	no_credential: "missing_key",
-	missing_api_key: "missing_key",
-	keys_masked: "missing_key",
-	key_masked: "missing_key",
-	skipped_masked: "missing_key",
-	empty_token_list: "missing_key",
-	token_created_but_secret_masked: "missing_key",
-	already_has_api_key: "missing_key",
+  // — Missing / masked API key —
+  no_credential: "missing_key",
+  missing_api_key: "missing_key",
+  keys_masked: "missing_key",
+  key_masked: "missing_key",
+  skipped_masked: "missing_key",
+  empty_token_list: "missing_key",
+  token_created_but_secret_masked: "missing_key",
+  already_has_api_key: "missing_key",
 
-	// — Missing user (access) token —
-	user_credential_unavailable: "missing_user_token",
-	no_user_token: "missing_user_token",
+  // — Missing user (access) token —
+  user_credential_unavailable: "missing_user_token",
+  no_user_token: "missing_user_token",
 
-	// — Rate limiting —
-	rate_limited: "rate_limited",
-	upstream_status_408: "rate_limited",
-	upstream_status_429: "rate_limited",
+  // — Rate limiting —
+  rate_limited: "rate_limited",
+  upstream_status_408: "rate_limited",
+  upstream_status_429: "rate_limited",
 
-	// — Upstream rejected the request (other status codes) —
-	upstream_status: "upstream_reject",
-	upstream_status_400: "upstream_reject",
-	upstream_status_404: "upstream_reject",
-	upstream_status_500: "upstream_reject",
-	upstream_status_502: "upstream_reject",
-	upstream_status_503: "upstream_reject",
-	upstream_status_504: "upstream_reject",
-	// The native provider itself refused the prompt or the answer (Gemini's
-	// `promptFeedback.blockReason`, for instance). The request never reached the
-	// model, but the decision is the upstream's, so it belongs here and not in
-	// "config": re-typing the Base URL would not help.
-	content_blocked: "upstream_reject",
+  // — Upstream rejected the request (other status codes) —
+  upstream_status: "upstream_reject",
+  upstream_status_400: "upstream_reject",
+  upstream_status_404: "upstream_reject",
+  upstream_status_500: "upstream_reject",
+  upstream_status_502: "upstream_reject",
+  upstream_status_503: "upstream_reject",
+  upstream_status_504: "upstream_reject",
+  // The native provider itself refused the prompt or the answer (Gemini's
+  // `promptFeedback.blockReason`, for instance). The request never reached the
+  // model, but the decision is the upstream's, so it belongs here and not in
+  // "config": re-typing the Base URL would not help.
+  content_blocked: "upstream_reject",
 
-	// — The upstream the caller named is not usable —
-	// The console's 试调 and the health probes pin one row. Every one of these
-	// codes means "that row", not "some routing failure": a member switched off,
-	// a parked channel, an empty key pool, a cooling row, or a row that is not
-	// part of the route at all. They used to fall through to "unknown error",
-	// which told the operator nothing about the channel they had just clicked.
-	preferred_channel_unavailable: "pinned_upstream",
-	pinned_upstream_not_member: "pinned_upstream",
-	pinned_upstream_member_disabled: "pinned_upstream",
-	pinned_upstream_channel_disabled: "pinned_upstream",
-	pinned_upstream_no_credential: "pinned_upstream",
-	pinned_upstream_cooling_down: "pinned_upstream",
-	pinned_upstream_invalid_weight: "pinned_upstream",
-	// The route itself has nothing usable left.
-	no_eligible_upstream: "pinned_upstream",
+  // — The upstream the caller named is not usable —
+  // The console's 试调 and the health probes pin one row. Every one of these
+  // codes means "that row", not "some routing failure": a member switched off,
+  // a parked channel, an empty key pool, a cooling row, or a row that is not
+  // part of the route at all. They used to fall through to "unknown error",
+  // which told the operator nothing about the channel they had just clicked.
+  preferred_channel_unavailable: "pinned_upstream",
+  pinned_upstream_not_member: "pinned_upstream",
+  pinned_upstream_member_disabled: "pinned_upstream",
+  pinned_upstream_channel_disabled: "pinned_upstream",
+  pinned_upstream_no_credential: "pinned_upstream",
+  pinned_upstream_cooling_down: "pinned_upstream",
+  pinned_upstream_invalid_weight: "pinned_upstream",
+  // The route itself has nothing usable left.
+  no_eligible_upstream: "pinned_upstream",
 
-	// — Not found —
-	channel_not_found: "not_found",
-	route_not_found: "not_found",
-	credential_not_found: "not_found",
-	plugin_not_found: "not_found",
-	not_found: "not_found",
+  // — Not found —
+  channel_not_found: "not_found",
+  route_not_found: "not_found",
+  credential_not_found: "not_found",
+  plugin_not_found: "not_found",
+  not_found: "not_found",
 
-	// — Server / internal —
-	internal_error: "server",
-	server_error: "server",
-	persistence_failure: "server",
-	encryption_failed: "server",
-	decrypt_failed: "server",
-	response_too_large: "server",
+  // — Server / internal —
+  internal_error: "server",
+  server_error: "server",
+  persistence_failure: "server",
+  encryption_failed: "server",
+  decrypt_failed: "server",
+  response_too_large: "server",
 
-	// — Plugin market: registry, release lookup, package download —
-	// These used to arrive as "internal_error" (→ "server") with nothing logged,
-	// which made an unreachable registry look like a broken gateway. Codes that
-	// end in _status_NNN (an artifact host answering 403, say) are classified by
-	// the status heuristics below; the rest are named here.
-	plugin_market_unavailable: "network",
-	plugin_release_fetch: "network",
-	plugin_release_asset_unavailable: "network",
-	plugin_release_version_invalid: "config",
-	plugin_artifact_download: "network",
-	plugin_artifact_read: "network",
-	plugin_artifact_checksum_mismatch: "config",
-	plugin_artifact_size_mismatch: "config",
-	plugin_artifact_too_large: "config",
-	plugin_manifest_entrypoint_missing: "config",
-	plugin_manifest_entrypoint_invalid: "config",
-	plugin_manifest_missing_entrypoint: "config",
-	plugin_manifest_invalid_id: "config",
-	plugin_manifest_invalid_config: "config",
-	plugin_manifest_invalid_permissions: "config",
-	plugin_archive_path_invalid: "config",
-	plugin_archive_path_escape: "config",
-	plugin_archive_symlink_rejected: "config",
-	plugin_health_check_failed: "network",
-	plugin_stage_create: "server",
-	plugin_stage_write: "server",
-	plugin_replace_failed: "server",
-	plugin_entrypoint_unavailable: "server",
+  // — Plugin market: registry, release lookup, package download —
+  // These used to arrive as "internal_error" (→ "server") with nothing logged,
+  // which made an unreachable registry look like a broken gateway. Codes that
+  // end in _status_NNN (an artifact host answering 403, say) are classified by
+  // the status heuristics below; the rest are named here.
+  plugin_market_unavailable: "network",
+  plugin_release_fetch: "network",
+  plugin_release_asset_unavailable: "network",
+  plugin_release_version_invalid: "config",
+  plugin_artifact_download: "network",
+  plugin_artifact_read: "network",
+  plugin_artifact_checksum_mismatch: "config",
+  plugin_artifact_size_mismatch: "config",
+  plugin_artifact_too_large: "config",
+  plugin_manifest_entrypoint_missing: "config",
+  plugin_manifest_entrypoint_invalid: "config",
+  plugin_manifest_missing_entrypoint: "config",
+  plugin_manifest_invalid_id: "config",
+  plugin_manifest_invalid_config: "config",
+  plugin_manifest_invalid_permissions: "config",
+  plugin_archive_path_invalid: "config",
+  plugin_archive_path_escape: "config",
+  plugin_archive_symlink_rejected: "config",
+  plugin_health_check_failed: "network",
+  plugin_stage_create: "server",
+  plugin_stage_write: "server",
+  plugin_replace_failed: "server",
+  plugin_entrypoint_unavailable: "server",
 
-	// — Client cancelled / gateway attempt timeout: no retry happens because
-	// the caller is gone (or the attempt budget was consumed) — surfacing
-	// these as "network error" made the no-retry behavior look like a bug.
-	cancelled: "cancelled",
+  // — Client cancelled / gateway attempt timeout: no retry happens because
+  // the caller is gone (or the attempt budget was consumed) — surfacing
+  // these as "network error" made the no-retry behavior look like a bug.
+  cancelled: "cancelled",
 
-	// — Stream broke mid-flight (network-shaped, retried when possible) —
-	stream_interrupted: "network",
+  // — Stream broke mid-flight (network-shaped, retried when possible) —
+  stream_interrupted: "network",
 
-	// — 2xx with no usable content: silent upstream failure, failed over —
-	empty_response: "empty_response",
+  // — 2xx with no usable content: silent upstream failure, failed over —
+  empty_response: "empty_response",
 };
 
 function classForRaw(raw: string): ErrorClass {
-	return CATEGORY_TO_CLASS[raw.toLowerCase()] ?? "unknown";
+  return CATEGORY_TO_CLASS[raw.toLowerCase()] ?? "unknown";
 }
 
 /** Keyword → class for free-form backend messages (sentences, not categories). */
 const MESSAGE_KEYWORDS: Array<[RegExp, ErrorClass]> = [
-	[/no api token/i, "missing_key"],
-	[/no usable.*key/i, "missing_key"],
-	[/masked/i, "missing_key"],
-	[/cannot.*reveal/i, "missing_key"],
-	[/could not be revealed/i, "missing_key"],
-	[/secret.*masked/i, "missing_key"],
-	[/key list/i, "missing_key"],
-	[/hidden/i, "missing_key"],
-	[/unauthorized/i, "auth"],
-	[/invalid access token/i, "auth"],
-	[/invalid token/i, "auth"],
-	[/not provided/i, "auth"],
-	[/rate limit/i, "rate_limited"],
-	[/too many requests/i, "rate_limited"],
-	[/throttl/i, "rate_limited"],
-	[/connection.*(refused|reset|closed)/i, "network"],
-	[/tls/i, "network"],
-	[/handshake/i, "network"],
-	[/timeout/i, "network"],
-	[/cannot reach/i, "network"],
-	[/unreachable/i, "network"],
-	[/invalid base url/i, "config"],
-	[/not found/i, "not_found"],
+  [/no api token/i, "missing_key"],
+  [/no usable.*key/i, "missing_key"],
+  [/masked/i, "missing_key"],
+  [/cannot.*reveal/i, "missing_key"],
+  [/could not be revealed/i, "missing_key"],
+  [/secret.*masked/i, "missing_key"],
+  [/key list/i, "missing_key"],
+  [/hidden/i, "missing_key"],
+  [/unauthorized/i, "auth"],
+  [/invalid access token/i, "auth"],
+  [/invalid token/i, "auth"],
+  [/not provided/i, "auth"],
+  [/rate limit/i, "rate_limited"],
+  [/too many requests/i, "rate_limited"],
+  [/throttl/i, "rate_limited"],
+  [/connection.*(refused|reset|closed)/i, "network"],
+  [/tls/i, "network"],
+  [/handshake/i, "network"],
+  [/timeout/i, "network"],
+  [/cannot reach/i, "network"],
+  [/unreachable/i, "network"],
+  [/invalid base url/i, "config"],
+  [/not found/i, "not_found"],
 ];
 
 /**
@@ -236,36 +236,37 @@ const MESSAGE_KEYWORDS: Array<[RegExp, ErrorClass]> = [
  * unified taxonomy. Also understands "status <code>" and "HTTP <code>" shapes.
  */
 export function categorizeError(raw: string): CategorizedError {
-	const trimmed = (raw ?? "").trim();
-	const direct = classForRaw(trimmed);
-	if (direct !== "unknown") {
-		return { class: direct, raw: trimmed };
-	}
+  const trimmed = (raw ?? "").trim();
+  const direct = classForRaw(trimmed);
+  if (direct !== "unknown") {
+    return { class: direct, raw: trimmed };
+  }
 
-	// "upstream_status_429" → rate_limited; "status 503" / "HTTP 503" → class.
-	const statusMatch = trimmed.match(/(?:^|_)status[ _]*(\d{3})$/i) ?? trimmed.match(/HTTP[ _]*(\d{3})/i);
-	if (statusMatch) {
-		const status = Number(statusMatch[1]);
-		const cls = classForRaw(`upstream_status_${status}`);
-		if (cls !== "unknown") {
-			return { class: cls, raw: trimmed, status };
-		}
-	}
-	const bareCode = trimmed.match(/^\d{3}$/);
-	if (bareCode) {
-		const status = Number(bareCode[0]);
-		const cls = classForRaw(`upstream_status_${status}`);
-		if (cls !== "unknown") {
-			return { class: cls, raw: trimmed, status };
-		}
-	}
+  // "upstream_status_429" → rate_limited; "status 503" / "HTTP 503" → class.
+  const statusMatch =
+    trimmed.match(/(?:^|_)status[ _]*(\d{3})$/i) ?? trimmed.match(/HTTP[ _]*(\d{3})/i);
+  if (statusMatch) {
+    const status = Number(statusMatch[1]);
+    const cls = classForRaw(`upstream_status_${status}`);
+    if (cls !== "unknown") {
+      return { class: cls, raw: trimmed, status };
+    }
+  }
+  const bareCode = trimmed.match(/^\d{3}$/);
+  if (bareCode) {
+    const status = Number(bareCode[0]);
+    const cls = classForRaw(`upstream_status_${status}`);
+    if (cls !== "unknown") {
+      return { class: cls, raw: trimmed, status };
+    }
+  }
 
-	// Free-form message keyword matching.
-	for (const [pattern, cls] of MESSAGE_KEYWORDS) {
-		if (pattern.test(trimmed)) {
-			return { class: cls, raw: trimmed };
-		}
-	}
+  // Free-form message keyword matching.
+  for (const [pattern, cls] of MESSAGE_KEYWORDS) {
+    if (pattern.test(trimmed)) {
+      return { class: cls, raw: trimmed };
+    }
+  }
 
-	return { class: "unknown", raw: trimmed };
+  return { class: "unknown", raw: trimmed };
 }

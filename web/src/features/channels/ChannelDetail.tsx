@@ -1,14 +1,19 @@
-import { Activity, Pencil, RefreshCw, UserCheck } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
-import { api } from "../../api/client"
-import type { AccountProbeResult, ChannelPingResult, ChannelOverview, Site } from "../../api/types"
-import { Button, formatDate } from "../../components/ui"
-import { useI18n } from "../../i18n"
-import { useSession } from "../../session"
-import { channelAccountState } from "../channelHealth"
-import { ChannelAccountBadge, ChannelConnectivityBadge, ChannelHealthBadge, ChannelStatusBadges } from "./badges"
-import { ChannelModelBlocks } from "./ChannelModelBlocks"
-import { capabilityFlags } from "./helpers"
+import { Activity, Pencil, RefreshCw, UserCheck } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../../api/client";
+import type { AccountProbeResult, ChannelPingResult, ChannelOverview, Site } from "../../api/types";
+import { Button, formatDate } from "../../components/ui";
+import { useI18n } from "../../i18n";
+import { useSession } from "../../session";
+import { channelAccountState } from "../channelHealth";
+import {
+  ChannelAccountBadge,
+  ChannelConnectivityBadge,
+  ChannelHealthBadge,
+  ChannelStatusBadges,
+} from "./badges";
+import { ChannelModelBlocks } from "./ChannelModelBlocks";
+import { capabilityFlags } from "./helpers";
 
 export function ChannelDetail({
   overview,
@@ -39,19 +44,14 @@ export function ChannelDetail({
   const ch = overview.channel;
   const displayBase = ch.base_url || site?.base_url || "";
   const caps = capabilityFlags(overview);
-  const probeError =
-    overview.last_probe_error === "probe_slow"
-      ? ""
-      : overview.last_probe_error;
+  const probeError = overview.last_probe_error === "probe_slow" ? "" : overview.last_probe_error;
   const finance = useQuery({
     queryKey: ["finance"],
     queryFn: ({ signal }) => service.finance(signal),
     retry: false,
     staleTime: 120_000,
   });
-  const financeItem = (finance.data?.items ?? []).find(
-    (item) => item.channel_id === ch.id,
-  );
+  const financeItem = (finance.data?.items ?? []).find((item) => item.channel_id === ch.id);
   const quotaPerUnit =
     financeItem?.quota_per_unit && financeItem.quota_per_unit > 0
       ? financeItem.quota_per_unit
@@ -79,13 +79,9 @@ export function ChannelDetail({
     queryFn: ({ signal }) => service.healthHistory(ch.id, signal),
     refetchInterval: 60_000,
   });
-  const summaryItem = (healthSummary.data?.items ?? []).find(
-    (item) => item.channel_id === ch.id,
-  );
+  const summaryItem = (healthSummary.data?.items ?? []).find((item) => item.channel_id === ch.id);
   const availability =
-    summaryItem && summaryItem.total > 0
-      ? Math.round(summaryItem.availability * 100)
-      : null;
+    summaryItem && summaryItem.total > 0 ? Math.round(summaryItem.availability * 100) : null;
   const probePoints = healthHistory.data?.items ?? [];
 
   return (
@@ -112,32 +108,20 @@ export function ChannelDetail({
         <div className="capability-stack is-compact">
           <ChannelStatusBadges overview={overview} />
           {caps.tokenProblem ? (
-            <span className="capability-chip is-warn">
-              {t("channels.badge.tokenProblem")}
-            </span>
+            <span className="capability-chip is-warn">{t("channels.badge.tokenProblem")}</span>
           ) : null}
           {caps.checkinScheduled ? (
-            <span className="capability-chip is-checkin">
-              {t("channels.badge.checkinOn")}
-            </span>
+            <span className="capability-chip is-checkin">{t("channels.badge.checkinOn")}</span>
           ) : caps.checkinNeedsUserID ? (
-            <span className="capability-chip is-warn">
-              {t("channels.badge.needsUserId")}
-            </span>
+            <span className="capability-chip is-warn">{t("channels.badge.needsUserId")}</span>
           ) : caps.hasUser ? (
-            <span className="capability-chip is-muted">
-              {t("channels.badge.checkinOff")}
-            </span>
+            <span className="capability-chip is-muted">{t("channels.badge.checkinOff")}</span>
           ) : null}
           {caps.hasAPIKey ? (
-            <span className="capability-chip is-key">
-              {t("channels.badge.hasKey")}
-            </span>
+            <span className="capability-chip is-key">{t("channels.badge.hasKey")}</span>
           ) : null}
           {caps.modelsReady ? (
-            <span className="capability-chip is-models">
-              {t("channels.badge.models")}
-            </span>
+            <span className="capability-chip is-models">{t("channels.badge.models")}</span>
           ) : null}
         </div>
       </div>
@@ -163,9 +147,7 @@ export function ChannelDetail({
         {balance != null ? (
           <div>
             <span className="label">{t("channels.balance")}</span>
-            <span title={t("channels.balanceHint")}>
-              {formatCurrency(balance)}
-            </span>
+            <span title={t("channels.balanceHint")}>{formatCurrency(balance)}</span>
           </div>
         ) : null}
         <div>
@@ -182,8 +164,7 @@ export function ChannelDetail({
             <ChannelHealthBadge overview={overview} />
           </span>
         </div>
-        {channelAccountState(overview) !== "ok" &&
-        channelAccountState(overview) !== "unknown" ? (
+        {channelAccountState(overview) !== "ok" && channelAccountState(overview) !== "unknown" ? (
           <div>
             <span className="label">{t("channels.accountState")}</span>
             <span className="detail-health-value">
@@ -195,26 +176,19 @@ export function ChannelDetail({
           <span className="label">{t("channels.reachability")}</span>
           <span className="detail-health-value">
             <ChannelConnectivityBadge overview={overview} live={pingResult} />
-            {pingResult?.checked_at ?? overview.last_ping_at ? (
-              <small>
-                {formatDate(
-                  pingResult?.checked_at ?? overview.last_ping_at ?? "",
-                )}
-              </small>
+            {(pingResult?.checked_at ?? overview.last_ping_at) ? (
+              <small>{formatDate(pingResult?.checked_at ?? overview.last_ping_at ?? "")}</small>
             ) : null}
           </span>
         </div>
-      {probeError || overview.last_error ? (
-        <div className="detail-meta-error">
-          <span className="label">{t("common.error")}</span>
-          <span
-            className="truncate"
-            title={probeError || overview.last_error}
-          >
-            {status(probeError ?? overview.last_error ?? "")}
-          </span>
-        </div>
-      ) : null}
+        {probeError || overview.last_error ? (
+          <div className="detail-meta-error">
+            <span className="label">{t("common.error")}</span>
+            <span className="truncate" title={probeError || overview.last_error}>
+              {status(probeError ?? overview.last_error ?? "")}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       {(() => {
@@ -250,10 +224,19 @@ export function ChannelDetail({
       <div className="detail-pricing">
         <span className="label">{t("channels.healthTitle")}</span>
         <div className="health-summary-row">
-          <strong className={"health-availability" + (availability == null ? " is-na" : availability >= 90 ? " is-good" : availability >= 70 ? " is-warn" : " is-bad")}>
-            {availability == null
-              ? t("channels.healthNoData")
-              : `${availability}%`}
+          <strong
+            className={
+              "health-availability" +
+              (availability == null
+                ? " is-na"
+                : availability >= 90
+                  ? " is-good"
+                  : availability >= 70
+                    ? " is-warn"
+                    : " is-bad")
+            }
+          >
+            {availability == null ? t("channels.healthNoData") : `${availability}%`}
           </strong>
           {summaryItem ? (
             <span className="is-quiet" style={{ fontSize: 12 }}>
@@ -281,10 +264,7 @@ export function ChannelDetail({
               .reverse()
               .slice(-30)
               .map((p) => (
-                <span
-                  key={p.id}
-                  className={"health-dot" + (p.ok ? " is-ok" : " is-fail")}
-                />
+                <span key={p.id} className={"health-dot" + (p.ok ? " is-ok" : " is-fail")} />
               ))}
           </div>
         ) : null}
@@ -292,12 +272,7 @@ export function ChannelDetail({
 
       <div className="detail-primary-bar is-compact">
         <Button
-          icon={
-            <Activity
-              size={14}
-              className={pingPending ? "spin" : ""}
-            />
-          }
+          icon={<Activity size={14} className={pingPending ? "spin" : ""} />}
           disabled={busy}
           onClick={onPing}
         >
@@ -329,12 +304,7 @@ export function ChannelDetail({
         >
           {t("channels.fetchModels")}
         </Button>
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onClick={onEdit}
-          icon={<Pencil size={14} />}
-        >
+        <Button variant="secondary" disabled={busy} onClick={onEdit} icon={<Pencil size={14} />}>
           {t("common.edit")}
         </Button>
       </div>

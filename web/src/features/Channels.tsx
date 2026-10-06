@@ -22,10 +22,7 @@ import type { Channel, ChannelOverview, Site } from "../api/types";
 import { ChannelModelsPanel } from "./ChannelModels";
 import { ChannelKeysDrawer } from "./ChannelKeys";
 import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
-import {
-  rowContextPoint,
-  rowKeyboardContextPoint,
-} from "../components/contextMenu";
+import { rowContextPoint, rowKeyboardContextPoint } from "../components/contextMenu";
 import { Drawer } from "../components/Drawer";
 import { ThemeDetails } from "../themes/ThemeDetails";
 import { EmptyHero } from "../components/EmptyHero";
@@ -34,13 +31,7 @@ import { PaginationBar } from "../components/PaginationBar";
 import { EntityState } from "../components/EntityState";
 import { ResultStrip } from "../components/ResultStrip";
 import { TelemetryStrip } from "../components/TelemetryStrip";
-import {
-  Button,
-  ConfirmDialog,
-  DataTable,
-  Page,
-  Panel,
-} from "../components/ui";
+import { Button, ConfirmDialog, DataTable, Page, Panel } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
@@ -129,9 +120,7 @@ export function Channels() {
   const [edit, setEdit] = useState<Channel | null>(null);
   const [modelsChannel, setModelsChannel] = useState<Channel | null>(null);
   const [keysChannel, setKeysChannel] = useState<Channel | null>(null);
-  const [createKeyChannel, setCreateKeyChannel] = useState<Channel | null>(
-    null,
-  );
+  const [createKeyChannel, setCreateKeyChannel] = useState<Channel | null>(null);
   // Synchronous lock for the create-key dialog (see onCreate re-entry guard).
   const createKeyLocked = useRef(false);
   // Channel id the deep-link effect already popped the models drawer for.
@@ -147,17 +136,12 @@ export function Channels() {
     top: number;
     left: number;
   } | null>(null);
-  const [query, setQuery] = useState(
-    () => searchParam || readChannelTab("query", ""),
-  );
+  const [query, setQuery] = useState(() => searchParam || readChannelTab("query", ""));
   const healthParam = params.get("health") as ConnectionHealthFilter | null;
-  const [healthFilter, setHealthFilter] = useState<ConnectionHealthFilter>(
-    () =>
-      healthParam === "ready" ||
-      healthParam === "missing_key" ||
-      healthParam === "attention"
-        ? healthParam
-        : readChannelTab<ConnectionHealthFilter>("health", "all"),
+  const [healthFilter, setHealthFilter] = useState<ConnectionHealthFilter>(() =>
+    healthParam === "ready" || healthParam === "missing_key" || healthParam === "attention"
+      ? healthParam
+      : readChannelTab<ConnectionHealthFilter>("health", "all"),
   );
   const [typeFilter, setTypeFilter] = useState(() => {
     const v = params.get("type");
@@ -188,9 +172,7 @@ export function Channels() {
     // One-shot per navigation: re-running with the same target (a close
     // committing before the router's param transition) must not re-open.
     if (deepLinkOpened.current === target) return;
-    const overview = (overviews.data ?? []).find(
-      (entry) => entry.channel.id === target,
-    )?.channel;
+    const overview = (overviews.data ?? []).find((entry) => entry.channel.id === target)?.channel;
     if (overview) {
       deepLinkOpened.current = target;
       setModelsChannel(overview);
@@ -203,37 +185,35 @@ export function Channels() {
   // below run in the same commit that opens the drawer and re-add the param
   // from the stale searchParams snapshot, and a surviving param would make the
   // deep-link effect re-open the drawer right after this close.
- 	const closeModelsDrawer = () => {
-		setModelsChannel(null);
-		if (params.has("channel")) {
-			const next = new URLSearchParams(params);
-			next.delete("channel");
-			setParams(next, { replace: true });
-		}
-	};
-	// Deep-link from the log page's request chain (?keys=<id>): the chain names
-	// the upstream key that served an attempt, and this is the list that owns it.
-	useEffect(() => {
-		const target = positiveId(params.get("keys"));
-		if (!target || keysChannel?.id === target) return;
-		if (keysDeepLinkOpened.current === target) return;
-		const overview = (overviews.data ?? []).find(
-			(entry) => entry.channel.id === target,
-		)?.channel;
-		if (overview) {
-			keysDeepLinkOpened.current = target;
-			setKeysChannel(overview);
-			// Select the row the drawer belongs to as well. The linked channel
-			// arrives without ?id=, so the list ran its own auto-select and the
-			// page ended up pointing at two channels at once — drawer titled one,
-			// highlighted row another.
-			writeChannelTab("selected", target);
-			const next = new URLSearchParams(params);
-			next.delete("keys");
-			next.set("id", String(target));
-			setParams(next, { replace: true });
-		}
-	}, [params, overviews.data, keysChannel, setParams]);
+  const closeModelsDrawer = () => {
+    setModelsChannel(null);
+    if (params.has("channel")) {
+      const next = new URLSearchParams(params);
+      next.delete("channel");
+      setParams(next, { replace: true });
+    }
+  };
+  // Deep-link from the log page's request chain (?keys=<id>): the chain names
+  // the upstream key that served an attempt, and this is the list that owns it.
+  useEffect(() => {
+    const target = positiveId(params.get("keys"));
+    if (!target || keysChannel?.id === target) return;
+    if (keysDeepLinkOpened.current === target) return;
+    const overview = (overviews.data ?? []).find((entry) => entry.channel.id === target)?.channel;
+    if (overview) {
+      keysDeepLinkOpened.current = target;
+      setKeysChannel(overview);
+      // Select the row the drawer belongs to as well. The linked channel
+      // arrives without ?id=, so the list ran its own auto-select and the
+      // page ended up pointing at two channels at once — drawer titled one,
+      // highlighted row another.
+      writeChannelTab("selected", target);
+      const next = new URLSearchParams(params);
+      next.delete("keys");
+      next.set("id", String(target));
+      setParams(next, { replace: true });
+    }
+  }, [params, overviews.data, keysChannel, setParams]);
   useEffect(() => {
     const next = params.get("health") as ConnectionHealthFilter | null;
     if (next === "ready" || next === "missing_key" || next === "attention") {
@@ -263,24 +243,19 @@ export function Channels() {
     : (edit?.site_id ??
       // The channel selected, or opened via ⋯/context menu.
       (selectedId != null
-        ? (overviews.data ?? []).find((row) => row.channel.id === selectedId)
-            ?.channel.site_id
+        ? (overviews.data ?? []).find((row) => row.channel.id === selectedId)?.channel.site_id
         : undefined) ??
       (contextMenu != null
-        ? (overviews.data ?? []).find(
-            (row) => row.channel.id === contextMenu.channelId,
-          )?.channel.site_id
+        ? (overviews.data ?? []).find((row) => row.channel.id === contextMenu.channelId)?.channel
+            .site_id
         : undefined));
   const credentials = useQuery({
     queryKey: ["credentials", credentialSiteId],
-    queryFn: ({ signal }) =>
-      service.credentials(credentialSiteId as number, signal),
+    queryFn: ({ signal }) => service.credentials(credentialSiteId as number, signal),
     enabled: typeof credentialSiteId === "number" && credentialSiteId > 0,
   });
   const verifyAfterCreate = useRef(false);
-  const runVerifyRef = useRef<(channelId: number, name: string) => void>(
-    () => undefined,
-  );
+  const runVerifyRef = useRef<(channelId: number, name: string) => void>(() => undefined);
 
   const refresh = useAdminMutation({
     mutationFn: (id: number) => service.refreshChannel(id),
@@ -383,27 +358,20 @@ export function Channels() {
     },
   });
   const bulkStatus = useAdminMutation({
-    mutationFn: async (input: {
-      ids: number[];
-      status: "enabled" | "disabled";
-    }) => {
+    mutationFn: async (input: { ids: number[]; status: "enabled" | "disabled" }) => {
       return runBatch(input.ids, (id) => {
-          const overview = (overviews.data ?? []).find(
-            (o) => o.channel.id === id,
-          );
-          // A selected row whose overview is gone (deleted between the
-          // selection and this click) was NOT updated. Reject so it counts as
-          // a failure instead of silently inflating the success tally.
-          if (!overview) {
-            return Promise.reject(
-              new Error(`channel ${id} is no longer available`),
-            );
-          }
-          return service.updateChannel(id, {
-            ...overview.channel,
-            status: input.status,
-          });
+        const overview = (overviews.data ?? []).find((o) => o.channel.id === id);
+        // A selected row whose overview is gone (deleted between the
+        // selection and this click) was NOT updated. Reject so it counts as
+        // a failure instead of silently inflating the success tally.
+        if (!overview) {
+          return Promise.reject(new Error(`channel ${id} is no longer available`));
+        }
+        return service.updateChannel(id, {
+          ...overview.channel,
+          status: input.status,
         });
+      });
     },
     invalidateKeys: [...INVALIDATE],
     onSuccess: ({ ok, total, failures }) => {
@@ -464,8 +432,7 @@ export function Channels() {
   });
   const toggle = useAdminMutation({
     mutationFn: async (overview: ChannelOverview) => {
-      const next =
-        overview.channel.status === "enabled" ? "disabled" : "enabled";
+      const next = overview.channel.status === "enabled" ? "disabled" : "enabled";
       return service.updateChannel(overview.channel.id, {
         ...overview.channel,
         status: next,
@@ -542,8 +509,7 @@ export function Channels() {
       const userCookieKept = userCookieRaw === SECRET_MASK;
       const userCookie = userCookieKept ? "" : userCookieRaw;
       const userAuthMode = userCookieKept
-        ? input.userCredential?.auth_mode ||
-          (userToken ? "access_token" : "cookie")
+        ? input.userCredential?.auth_mode || (userToken ? "access_token" : "cookie")
         : userCookie
           ? userToken
             ? "auto"
@@ -557,25 +523,17 @@ export function Channels() {
       // gateway keeps resolving it from /api/user/self at check-in time, so
       // only write when the operator typed something or cleared a stored id.
       const userIDRaw = input.userID.trim();
-      const storedUserID = parseCredentialMeta(
-        userCred?.meta_json,
-      ).platform_user_id;
+      const storedUserID = parseCredentialMeta(userCred?.meta_json).platform_user_id;
       const userID = /^[0-9]+$/.test(userIDRaw) ? Number(userIDRaw) : undefined;
       const metaChanged = userID !== storedUserID;
       // The mask means "keep the stored value". An empty field means "remove"
       // only when something was actually stored; otherwise every save of an
       // untouched dialog would fire a pointless credential write.
-      const cookieChanged =
-        !userCookieKept && (userCookie !== "" || Boolean(userCred?.has_cookie));
-      const secretChanged =
-        !userTokenKept && (userToken !== "" || Boolean(userCred?.has_secret));
+      const cookieChanged = !userCookieKept && (userCookie !== "" || Boolean(userCred?.has_cookie));
+      const secretChanged = !userTokenKept && (userToken !== "" || Boolean(userCred?.has_secret));
       // Both auth materials were explicitly cleared → remove the credential.
       const clearCredential =
-        Boolean(userCred?.id) &&
-        cookieChanged &&
-        secretChanged &&
-        !userToken &&
-        !userCookie;
+        Boolean(userCred?.id) && cookieChanged && secretChanged && !userToken && !userCookie;
       /** Only the fields that actually changed are sent. */
       const credentialPatch = (): Record<string, unknown> => {
         const patch: Record<string, unknown> = {};
@@ -619,9 +577,7 @@ export function Channels() {
             kind: "access_token",
             ...(userToken ? { secret: userToken } : {}),
             ...(userCookie ? { cookie: userCookie } : {}),
-            ...(userID
-              ? { meta_json: JSON.stringify({ platform_user_id: userID }) }
-              : {}),
+            ...(userID ? { meta_json: JSON.stringify({ platform_user_id: userID }) } : {}),
             auth_mode: userAuthMode,
             status: "enabled",
           });
@@ -643,23 +599,16 @@ export function Channels() {
           });
           relayCredentialId = created.id;
         }
-      } else if (
-        relayCred?.id &&
-        relayCred.kind === "api_key" &&
-        relayCred.has_secret
-      ) {
+      } else if (relayCred?.id && relayCred.kind === "api_key" && relayCred.has_secret) {
         // Keep existing relay key bound when operator only edits other fields.
         relayCredentialId = relayCred.id;
       }
-      const channelBase = input.channel.base_url.trim()
-        ? base
-        : input.channel.base_url;
+      const channelBase = input.channel.base_url.trim() ? base : input.channel.base_url;
       const siteId = input.channel.site_id ?? input.site?.id;
       // Sync mode is intentionally absent from the spread: the drawer may
       // have changed it since this dialog opened, and only an explicit
       // picker change (below) may touch it.
-      const { model_sync_mode: _snapshotSyncMode, ...channelFields } =
-        input.channel;
+      const { model_sync_mode: _snapshotSyncMode, ...channelFields } = input.channel;
       return service.updateChannel(input.channel.id, {
         ...channelFields,
         name,
@@ -679,9 +628,7 @@ export function Channels() {
         upstream_path_map: input.upstream_path_map ?? "",
         upstream_request_map: input.upstream_request_map ?? "",
         upstream_response_map: input.upstream_response_map ?? "",
-        ...(input.model_sync_mode
-          ? { model_sync_mode: input.model_sync_mode }
-          : {}),
+        ...(input.model_sync_mode ? { model_sync_mode: input.model_sync_mode } : {}),
         stable_first: input.stable_first ?? false,
         site_id: siteId,
         credential_id: relayCredentialId,
@@ -693,10 +640,7 @@ export function Channels() {
   });
 
   const setCredentialStatus = useAdminMutation({
-    mutationFn: async (input: {
-      id: number;
-      status: "enabled" | "disabled";
-    }) => {
+    mutationFn: async (input: { id: number; status: "enabled" | "disabled" }) => {
       const list = credentials.data ?? [];
       const current = list.find((item) => item.id === input.id);
       return service.updateCredential(input.id, {
@@ -735,11 +679,7 @@ export function Channels() {
   });
 
   const addApiKeyCredential = useAdminMutation({
-    mutationFn: async (input: {
-      siteId: number;
-      secret: string;
-      name?: string;
-    }) => {
+    mutationFn: async (input: { siteId: number; secret: string; name?: string }) => {
       const secret = input.secret.trim();
       if (!secret) {
         throw new Error("api key is required");
@@ -759,8 +699,7 @@ export function Channels() {
   });
 
   const deleteApiKeyCredential = useAdminMutation({
-    mutationFn: (credentialId: number) =>
-      service.deleteCredential(credentialId),
+    mutationFn: (credentialId: number) => service.deleteCredential(credentialId),
     invalidateKeys: [...INVALIDATE, ["credentials"]],
   });
 
@@ -800,12 +739,8 @@ export function Channels() {
 
   const filterOptions = useMemo(() => {
     const list = overviews.data ?? [];
-    const types = [
-      ...new Set(list.map((item) => item.channel.type_hint).filter(Boolean)),
-    ].sort();
-    const groups = [
-      ...new Set(list.map((item) => item.channel.group_name).filter(Boolean)),
-    ].sort();
+    const types = [...new Set(list.map((item) => item.channel.type_hint).filter(Boolean))].sort();
+    const groups = [...new Set(list.map((item) => item.channel.group_name).filter(Boolean))].sort();
     return { types, groups };
   }, [overviews.data]);
   const rows = useMemo(() => {
@@ -828,9 +763,7 @@ export function Channels() {
       const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
       const base = (ch.base_url || site?.base_url || "").toLowerCase();
       return (
-        ch.name.toLowerCase().includes(term) ||
-        base.includes(term) ||
-        String(ch.id).includes(term)
+        ch.name.toLowerCase().includes(term) || base.includes(term) || String(ch.id).includes(term)
       );
     });
   }, [overviews.data, query, siteById, healthFilter, typeFilter, groupFilter]);
@@ -838,8 +771,7 @@ export function Channels() {
   const pagination = useClientPagination(rows, 20, "channels");
   const pageRows = pagination.pageItems;
   const pageAllSelected =
-    pageRows.length > 0 &&
-    pageRows.every((o) => bulkSelected.has(o.channel.id));
+    pageRows.length > 0 && pageRows.every((o) => bulkSelected.has(o.channel.id));
   const selectAllPage = () => {
     setBulkSelected((prev) => {
       const next = new Set(prev);
@@ -873,9 +805,7 @@ export function Channels() {
     if (!rows.length) return;
     const saved = readChannelTab<number | null>("selected", null);
     const target =
-      saved != null && rows.some((r) => r.channel.id === saved)
-        ? saved
-        : rows[0]!.channel.id;
+      saved != null && rows.some((r) => r.channel.id === saved) ? saved : rows[0]!.channel.id;
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -892,9 +822,7 @@ export function Channels() {
     null;
 
   const readyCount = (overviews.data ?? []).filter(isChannelReady).length;
-  const missingKeyCount = (overviews.data ?? []).filter((o) =>
-    isMissingAPIKey(o),
-  ).length;
+  const missingKeyCount = (overviews.data ?? []).filter((o) => isMissingAPIKey(o)).length;
   const attentionCount = (overviews.data ?? []).filter((o) => {
     return channelNeedsAttention(o);
   }).length;
@@ -925,10 +853,7 @@ export function Channels() {
     const siteId = overview?.channel.site_id;
     const onSite = list.filter((item) => {
       if (siteId != null && item.site_id !== siteId) return false;
-      return (
-        (item.kind === "access_token" || item.kind === "session") &&
-        item.status === "enabled"
-      );
+      return (item.kind === "access_token" || item.kind === "session") && item.status === "enabled";
     });
     if (!onSite.length) return undefined;
     // Match backend pickUserCredential: prefer the credential this channel is bound to,
@@ -954,9 +879,7 @@ export function Channels() {
       const hit = list.find((item) => item.id === id);
       if (hit && hit.kind === "api_key") return hit;
     }
-    return list.find(
-      (item) => item.kind === "api_key" && item.status === "enabled",
-    );
+    return list.find((item) => item.kind === "api_key" && item.status === "enabled");
   };
 
   const connectionActions = (
@@ -1099,10 +1022,7 @@ export function Channels() {
       },
       {
         key: "toggle",
-        label:
-          ch.status === "enabled"
-            ? t("common.disableAction")
-            : t("common.enableAction"),
+        label: ch.status === "enabled" ? t("common.disableAction") : t("common.enableAction"),
         icon: <Power size={14} />,
         disabled: busy,
         onSelect: () => {
@@ -1138,9 +1058,7 @@ export function Channels() {
         return [
           {
             key: "checkin-toggle",
-            label: scheduleOn
-              ? t("channels.checkinDisable")
-              : t("channels.checkinEnable"),
+            label: scheduleOn ? t("channels.checkinDisable") : t("channels.checkinEnable"),
             icon: <CalendarCheck size={14} />,
             disabled:
               busy ||
@@ -1227,10 +1145,7 @@ export function Channels() {
     setAddOpen(true);
   };
 
-  const submitCreate = (
-    value: CreateConnectionInput,
-    options: { verify: boolean },
-  ) => {
+  const submitCreate = (value: CreateConnectionInput, options: { verify: boolean }) => {
     verifyAfterCreate.current = options.verify;
     createConnection.mutate(value);
   };
@@ -1248,12 +1163,7 @@ export function Channels() {
         <>
           <Button
             variant="secondary"
-            icon={
-              <RefreshCw
-                size={16}
-                className={refreshAll.isPending ? "spin" : ""}
-              />
-            }
+            icon={<RefreshCw size={16} className={refreshAll.isPending ? "spin" : ""} />}
             disabled={refreshAll.isPending || !rows.length}
             onClick={() => {
               refreshAll.reset();
@@ -1264,12 +1174,7 @@ export function Channels() {
           </Button>
           <Button
             variant="secondary"
-            icon={
-              <UserCheck
-                size={16}
-                className={checkAllTokens.isPending ? "spin" : ""}
-              />
-            }
+            icon={<UserCheck size={16} className={checkAllTokens.isPending ? "spin" : ""} />}
             disabled={checkAllTokens.isPending || !rows.length}
             onClick={() => {
               checkAllTokens.reset();
@@ -1285,11 +1190,15 @@ export function Channels() {
       }
     >
       <div className="ops-canvas">
-        {bulkFailures.length > 0 ? <div role="alert" className="inline-error">
-          {bulkFailures.map((failure) => <p key={failure.item}>
-            #{failure.item}: {formatErrorMessage(failure.error, t)}
-          </p>)}
-        </div> : null}
+        {bulkFailures.length > 0 ? (
+          <div role="alert" className="inline-error">
+            {bulkFailures.map((failure) => (
+              <p key={failure.item}>
+                #{failure.item}: {formatErrorMessage(failure.error, t)}
+              </p>
+            ))}
+          </div>
+        ) : null}
         <TelemetryStrip
           items={[
             {
@@ -1342,9 +1251,7 @@ export function Channels() {
         ) : null}
         {stageMessage?.kind === "verify_failed" ? (
           <ResultStrip status="error">
-            <span>
-              {t("channels.verifyFailed", { name: stageMessage.name })}
-            </span>
+            <span>{t("channels.verifyFailed", { name: stageMessage.name })}</span>
             <Button
               variant="secondary"
               disabled={refresh.isPending}
@@ -1355,9 +1262,7 @@ export function Channels() {
           </ResultStrip>
         ) : null}
         {refreshAll.data ? (
-          <ResultStrip
-            status={refreshAll.data.failure_count > 0 ? "error" : "success"}
-          >
+          <ResultStrip status={refreshAll.data.failure_count > 0 ? "error" : "success"}>
             {t("ops.refreshSummary", {
               success: refreshAll.data.success_count,
               failure: refreshAll.data.failure_count,
@@ -1366,17 +1271,11 @@ export function Channels() {
         ) : null}
         {checkAllTokens.data ? (
           <ResultStrip
-            status={
-              checkAllTokens.data.items.some((item) => !item.ok)
-                ? "error"
-                : "success"
-            }
+            status={checkAllTokens.data.items.some((item) => !item.ok) ? "error" : "success"}
           >
             {t("channels.checkAllTokensSummary", {
-              success: checkAllTokens.data.items.filter((item) => item.ok)
-                .length,
-              failure: checkAllTokens.data.items.filter((item) => !item.ok)
-                .length,
+              success: checkAllTokens.data.items.filter((item) => item.ok).length,
+              failure: checkAllTokens.data.items.filter((item) => !item.ok).length,
             })}
           </ResultStrip>
         ) : null}
@@ -1408,9 +1307,7 @@ export function Channels() {
         {syncKeys.data ? (
           <ResultStrip
             status={
-              syncKeys.data.created_credentials +
-                syncKeys.data.reused_credentials >
-              0
+              syncKeys.data.created_credentials + syncKeys.data.reused_credentials > 0
                 ? "success"
                 : syncKeys.data.skipped_masked > 0 || syncKeys.data.empty_list
                   ? "error"
@@ -1424,8 +1321,7 @@ export function Channels() {
                 masked: syncKeys.data.skipped_masked,
                 deleted: syncKeys.data.deleted_credentials ?? 0,
               })}
-              {(syncKeys.data.created_channels ||
-                syncKeys.data.updated_channels) &&
+              {(syncKeys.data.created_channels || syncKeys.data.updated_channels) &&
                 ` ${t("channels.syncKeysGroups", {
                   created: syncKeys.data.created_channels ?? 0,
                   updated: syncKeys.data.updated_channels ?? 0,
@@ -1435,9 +1331,7 @@ export function Channels() {
                 : syncKeys.data.empty_list
                   ? ` — ${t("channels.syncKeysEmpty")}`
                   : syncKeys.data.skipped_masked > 0 &&
-                      syncKeys.data.created_credentials +
-                        syncKeys.data.reused_credentials ===
-                        0
+                      syncKeys.data.created_credentials + syncKeys.data.reused_credentials === 0
                     ? ` — ${t("channels.syncKeysMasked")}`
                     : ""}
             </span>
@@ -1497,9 +1391,7 @@ export function Channels() {
                   </option>
                 ))}
               </select>
-              <span className="workspace-list-caption">
-                {t("channels.listHint")}
-              </span>
+              <span className="workspace-list-caption">{t("channels.listHint")}</span>
             </div>
             <EntityState
               isLoading={overviews.isPending}
@@ -1523,9 +1415,7 @@ export function Channels() {
                           : t("channels.emptyTitle")
                   }
                   body={
-                    healthFilter === "all"
-                      ? t("channels.empty")
-                      : t("channels.filter.clearHint")
+                    healthFilter === "all" ? t("channels.empty") : t("channels.filter.clearHint")
                   }
                   actions={
                     healthFilter === "all" ? (
@@ -1533,10 +1423,7 @@ export function Channels() {
                         {t("channels.add")}
                       </Button>
                     ) : (
-                      <Button
-                        variant="secondary"
-                        onClick={() => setHealthFilter("all")}
-                      >
+                      <Button variant="secondary" onClick={() => setHealthFilter("all")}>
                         {t("common.clearFilters")}
                       </Button>
                     )
@@ -1581,10 +1468,7 @@ export function Channels() {
                   >
                     {t("common.disableAction")}
                   </Button>
-                  <Button
-                    variant="quiet"
-                    onClick={() => setBulkSelected(new Set())}
-                  >
+                  <Button variant="quiet" onClick={() => setBulkSelected(new Set())}>
                     {t("channels.bulkClear")}
                   </Button>
                   <Button variant="quiet" onClick={exitBulkMode}>
@@ -1621,8 +1505,7 @@ export function Channels() {
                 >
                   {pageRows.map((overview) => {
                     const ch = overview.channel;
-                    const site =
-                      ch.site_id != null ? siteById.get(ch.site_id) : undefined;
+                    const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
                     const displayBase = ch.base_url || site?.base_url || "";
                     const caps = capabilityFlags(overview);
                     const active = selected?.channel.id === ch.id;
@@ -1660,10 +1543,7 @@ export function Channels() {
                         }}
                       >
                         {bulkMode ? (
-                          <td
-                            className="bulk-cell"
-                            onClick={(event) => event.stopPropagation()}
-                          >
+                          <td className="bulk-cell" onClick={(event) => event.stopPropagation()}>
                             <input
                               type="checkbox"
                               aria-label={t("channels.bulkSelectOne", {
@@ -1677,9 +1557,7 @@ export function Channels() {
                         <td>
                           <strong>{ch.name}</strong>
                           {ch.group_name ? (
-                            <span className="capability-chip is-group">
-                              {ch.group_name}
-                            </span>
+                            <span className="capability-chip is-group">{ch.group_name}</span>
                           ) : null}
                           {displayBase ? (
                             <a
@@ -1693,9 +1571,7 @@ export function Channels() {
                               {displayBase}
                             </a>
                           ) : (
-                            <small className="mono truncate">
-                              {t("channels.inheritsSite")}
-                            </small>
+                            <small className="mono truncate">{t("channels.inheritsSite")}</small>
                           )}
                         </td>
                         <td className="status-col">
@@ -1776,9 +1652,7 @@ export function Channels() {
               {contextMenu
                 ? (() => {
                     const overview =
-                      rows.find(
-                        (row) => row.channel.id === contextMenu.channelId,
-                      ) ??
+                      rows.find((row) => row.channel.id === contextMenu.channelId) ??
                       (overviews.data ?? []).find(
                         (row) => row.channel.id === contextMenu.channelId,
                       );
@@ -1823,9 +1697,7 @@ export function Channels() {
                       : undefined
                   }
                   accountData={
-                    accountProbe.data?.channel_id === selected.channel.id
-                      ? accountProbe.data
-                      : null
+                    accountProbe.data?.channel_id === selected.channel.id ? accountProbe.data : null
                   }
                   busy={
                     refresh.pendingId === selected.channel.id ||
@@ -1845,11 +1717,7 @@ export function Channels() {
                     ping.mutate(selected.channel.id);
                   }}
                   pingPending={ping.pendingId === selected.channel.id}
-                  pingResult={
-                    ping.data?.channel_id === selected.channel.id
-                      ? ping.data
-                      : null
-                  }
+                  pingResult={ping.data?.channel_id === selected.channel.id ? ping.data : null}
                   onRefresh={() => {
                     refresh.reset();
                     refresh.mutate(selected.channel.id);
@@ -1888,23 +1756,17 @@ export function Channels() {
           credentials={credentials.data ?? []}
           credential={(() => {
             const overview =
-              (overviews.data ?? []).find(
-                (row) => row.channel.id === edit.id,
-              ) ?? null;
+              (overviews.data ?? []).find((row) => row.channel.id === edit.id) ?? null;
             return overview ? relayCredentialFor(overview) : undefined;
           })()}
           userCredential={(() => {
             const overview =
-              (overviews.data ?? []).find(
-                (row) => row.channel.id === edit.id,
-              ) ?? null;
+              (overviews.data ?? []).find((row) => row.channel.id === edit.id) ?? null;
             return overview ? userCredentialFor(overview) : undefined;
           })()}
           checkinSupported={(() => {
             const overview =
-              (overviews.data ?? []).find(
-                (row) => row.channel.id === edit.id,
-              ) ?? null;
+              (overviews.data ?? []).find((row) => row.channel.id === edit.id) ?? null;
             return overview?.checkin_supported ?? false;
           })()}
           pending={
@@ -2007,9 +1869,7 @@ export function Channels() {
               <div className="channel-models-panel-head">
                 <div>
                   <p className="page-kicker">{modelsChannel.name}</p>
-                  <p className="detail-section-empty is-quiet">
-                    {t("channels.modelsManageHint")}
-                  </p>
+                  <p className="detail-section-empty is-quiet">{t("channels.modelsManageHint")}</p>
                 </div>
               </div>
             }
@@ -2019,12 +1879,8 @@ export function Channels() {
       {keysChannel ? (
         <ChannelKeysDrawer
           channel={keysChannel}
-          apiKeys={(credentials.data ?? []).filter(
-            (item) => item.kind === "api_key",
-          )}
-          pending={
-            setCredentialStatus.isPending || deleteApiKeyCredential.isPending
-          }
+          apiKeys={(credentials.data ?? []).filter((item) => item.kind === "api_key")}
+          pending={setCredentialStatus.isPending || deleteApiKeyCredential.isPending}
           addApiKeyPending={addApiKeyCredential.isPending}
           syncKeysPending={syncKeys.isPending}
           onToggleKey={(id, enabled) =>
@@ -2033,12 +1889,8 @@ export function Channels() {
               status: enabled ? "enabled" : "disabled",
             })
           }
-          onUpdateKeyModels={(id, modelsCsv) =>
-            updateKeyModels.mutate({ id, modelsCsv })
-          }
-          onUpdateKeyPriority={(id, priority) =>
-            updateKeyPriority.mutate({ id, priority })
-          }
+          onUpdateKeyModels={(id, modelsCsv) => updateKeyModels.mutate({ id, modelsCsv })}
+          onUpdateKeyPriority={(id, priority) => updateKeyPriority.mutate({ id, priority })}
           onDeleteKey={(id) => deleteApiKeyCredential.mutate(id)}
           onAddApiKey={(secret, name) => {
             const siteId = keysChannel.site_id;
@@ -2049,16 +1901,16 @@ export function Channels() {
             syncKeys.reset();
             syncKeys.mutate(keysChannel.id);
           }}
-     					onClose={() => {
-						setKeysChannel(null);
-						// Strip the deep-link param, or the effect re-opens on the next
-						// render with the stale snapshot (same trap as ?channel=).
-						if (params.has("keys")) {
-							const next = new URLSearchParams(params);
-							next.delete("keys");
-							setParams(next, { replace: true });
-						}
-					}}
+          onClose={() => {
+            setKeysChannel(null);
+            // Strip the deep-link param, or the effect re-opens on the next
+            // render with the stale snapshot (same trap as ?channel=).
+            if (params.has("keys")) {
+              const next = new URLSearchParams(params);
+              next.delete("keys");
+              setParams(next, { replace: true });
+            }
+          }}
         />
       ) : null}
       {remove ? (

@@ -50,16 +50,11 @@ export function SyncModePicker({
       con: t("channels.syncModeManualCon"),
     },
   ];
-  const showCounts =
-    modelCount != null && modelCount > 0 && adoptedCount != null;
+  const showCounts = modelCount != null && modelCount > 0 && adoptedCount != null;
   return (
     <div className="sync-mode">
       <div className="sync-mode-row">
-        <div
-          className="sync-mode-toggle"
-          role="radiogroup"
-          aria-label={t("channels.syncMode")}
-        >
+        <div className="sync-mode-toggle" role="radiogroup" aria-label={t("channels.syncMode")}>
           {options.map((option) => {
             const active = value === option.mode;
             return (
@@ -87,9 +82,7 @@ export function SyncModePicker({
                 <em className="is-con">{option.con}</em>
               </span>
             ))}
-            <span className="sync-mode-pop-row is-switch">
-              {t("channels.syncModeGuideSwitch")}
-            </span>
+            <span className="sync-mode-pop-row is-switch">{t("channels.syncModeGuideSwitch")}</span>
           </span>
         </span>
         {showCounts ? (
@@ -105,9 +98,7 @@ export function SyncModePicker({
         <p className="sync-mode-default">
           {t("channels.syncModeInheritDefault", {
             mode:
-              defaultMode === "auto"
-                ? t("channels.syncModeAuto")
-                : t("channels.syncModeManual"),
+              defaultMode === "auto" ? t("channels.syncModeAuto") : t("channels.syncModeManual"),
           })}
         </p>
       ) : null}

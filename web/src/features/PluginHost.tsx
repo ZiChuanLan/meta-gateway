@@ -14,48 +14,48 @@ import { useSession } from "../session";
  * equivalent so a plain iframe (which cannot send headers) authenticates.
  */
 export function PluginHost() {
-	const { id } = useParams<{ id: string }>();
-	const { t } = useI18n();
-	const { client } = useSession();
-	const [error, setError] = useState(false);
-	const token = client?.getToken() ?? "";
-	const modules = useModules();
-	const hiddenPlugins = useHiddenPlugins();
-	const pluginName = modules.modules.find((item) => item.id === id)?.name ?? id;
-	const navHidden = id ? hiddenPlugins.has(id) : false;
+  const { id } = useParams<{ id: string }>();
+  const { t } = useI18n();
+  const { client } = useSession();
+  const [error, setError] = useState(false);
+  const token = client?.getToken() ?? "";
+  const modules = useModules();
+  const hiddenPlugins = useHiddenPlugins();
+  const pluginName = modules.modules.find((item) => item.id === id)?.name ?? id;
+  const navHidden = id ? hiddenPlugins.has(id) : false;
 
-	if (!id) return null;
-	const src = `/admin/plugins/${encodeURIComponent(id)}/proxy/?t=${encodeURIComponent(token)}`;
+  if (!id) return null;
+  const src = `/admin/plugins/${encodeURIComponent(id)}/proxy/?t=${encodeURIComponent(token)}`;
 
-	return (
-		<main className="page plugin-page">
-			<div className="plugin-page-bar">
-				<strong>{pluginName}</strong>
-				<label className="plugin-nav-switch">
-					<input
-						type="checkbox"
-						checked={!navHidden}
-						onChange={(event) => setPluginNavHidden(id, !event.target.checked)}
-					/>
-					<span>{t("plugins.showInNav")}</span>
-				</label>
-			</div>
-			<div className="plugin-host">
-				{error ? (
-					<p className="is-quiet" style={{ fontSize: 13 }}>
-						{t("plugins.loadFailed")}
-					</p>
-				) : (
-					<iframe
-						title={t("plugins.title")}
-						src={src}
-						onError={() => setError(true)}
-						referrerPolicy="no-referrer"
-						className="plugin-host-frame"
-						sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
-					/>
-				)}
-			</div>
-		</main>
-	);
+  return (
+    <main className="page plugin-page">
+      <div className="plugin-page-bar">
+        <strong>{pluginName}</strong>
+        <label className="plugin-nav-switch">
+          <input
+            type="checkbox"
+            checked={!navHidden}
+            onChange={(event) => setPluginNavHidden(id, !event.target.checked)}
+          />
+          <span>{t("plugins.showInNav")}</span>
+        </label>
+      </div>
+      <div className="plugin-host">
+        {error ? (
+          <p className="is-quiet" style={{ fontSize: 13 }}>
+            {t("plugins.loadFailed")}
+          </p>
+        ) : (
+          <iframe
+            title={t("plugins.title")}
+            src={src}
+            onError={() => setError(true)}
+            referrerPolicy="no-referrer"
+            className="plugin-host-frame"
+            sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
+          />
+        )}
+      </div>
+    </main>
+  );
 }

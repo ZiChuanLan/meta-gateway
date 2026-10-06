@@ -33,11 +33,7 @@ export type LogsSource = {
   channels?: (signal?: AbortSignal) => Promise<Channel[]>;
   keys: (signal?: AbortSignal) => Promise<DownstreamKey[]>;
   /** On-demand routing decision for one request (console only). */
-  decisionSnapshot?: (
-    requestId: string,
-    attempt: number,
-    signal?: AbortSignal,
-  ) => Promise<unknown>;
+  decisionSnapshot?: (requestId: string, attempt: number, signal?: AbortSignal) => Promise<unknown>;
 };
 
 export type LogsCapabilities = {

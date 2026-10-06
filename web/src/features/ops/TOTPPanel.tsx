@@ -1,9 +1,9 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
-import { api } from "../../api/client"
-import { useI18n } from "../../i18n"
-import { useSession } from "../../session"
-import { Button, Panel, StatusBadge } from "../../components/ui"
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { api } from "../../api/client";
+import { useI18n } from "../../i18n";
+import { useSession } from "../../session";
+import { Button, Panel, StatusBadge } from "../../components/ui";
 
 export // Admin TOTP 2FA panel: setup (show secret + otpauth URI), enable with a
 // code, and disable with a current code.
@@ -43,18 +43,13 @@ function TOTPPanel() {
     }
   };
   return (
-    <Panel
-      className="runtime-card runtime-tool-totp"
-      id="runtime-totp"
-    >
+    <Panel className="runtime-card runtime-tool-totp" id="runtime-totp">
       <div className="panel-header">
         <strong>{t("ops.runtime.totpTitle")}</strong>
         {enabled ? (
           <StatusBadge value="success" />
         ) : (
-          <span className="runtime-setting-value muted">
-            {t("ops.runtime.totpDisabled")}
-          </span>
+          <span className="runtime-setting-value muted">{t("ops.runtime.totpDisabled")}</span>
         )}
       </div>
       {!enabled && phase === "idle" ? (
@@ -74,9 +69,7 @@ function TOTPPanel() {
       ) : null}
       {!enabled && phase === "setup" && setupData ? (
         <div className="totp-setup">
-          <p className="muted panel-note">
-            {t("ops.runtime.totpSetupHint")}
-          </p>
+          <p className="muted panel-note">{t("ops.runtime.totpSetupHint")}</p>
           <div className="totp-secret-row mono">
             <code>{setupData.secret}</code>
             <button
@@ -116,9 +109,7 @@ function TOTPPanel() {
       ) : null}
       {enabled ? (
         <div className="totp-setup">
-          <p className="muted panel-note">
-            {t("ops.runtime.totpDisableHint")}
-          </p>
+          <p className="muted panel-note">{t("ops.runtime.totpDisableHint")}</p>
           <input
             type="text"
             inputMode="numeric"

@@ -6,15 +6,15 @@ import {
   useMemo,
   useState,
   type ReactNode,
-} from "react"
+} from "react";
 
-import { en } from "./en"
-import { zh } from "./zh"
-import type { Dict, Locale } from "./types"
+import { en } from "./en";
+import { zh } from "./zh";
+import type { Dict, Locale } from "./types";
 
-export type { Locale } from "./types"
+export type { Locale } from "./types";
 
-const LOCALE_KEY = "meta-gateway.locale"
+const LOCALE_KEY = "meta-gateway.locale";
 
 const dictionaries: Record<Locale, Dict> = { en, "zh-CN": zh };
 
@@ -48,12 +48,10 @@ export function translate(
 }
 
 function statusLabel(locale: Locale, value: string | boolean): string {
-  if (typeof value === "boolean")
-    return translate(locale, value ? "status.true" : "status.false");
+  if (typeof value === "boolean") return translate(locale, value ? "status.true" : "status.false");
   const normalized = String(value).toLowerCase();
   const mapped =
-    dictionaries[locale][`status.${normalized}`] ??
-    dictionaries.en[`status.${normalized}`];
+    dictionaries[locale][`status.${normalized}`] ?? dictionaries.en[`status.${normalized}`];
   return mapped ?? String(value);
 }
 

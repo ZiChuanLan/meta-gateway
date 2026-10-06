@@ -22,12 +22,8 @@ export function SetupGuide() {
   const { client } = useSession();
   const s = api(client!);
   const { t } = useI18n();
-  const [dismissed, setDismissed] = useState(
-    () => localStorage.getItem(DISMISS_KEY) === "1",
-  );
-  const [forced] = useState(
-    () => new URLSearchParams(window.location.search).get("setup") === "1",
-  );
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISS_KEY) === "1");
+  const [forced] = useState(() => new URLSearchParams(window.location.search).get("setup") === "1");
   const [copied, setCopied] = useState(false);
 
   const channels = useQuery({
@@ -50,9 +46,7 @@ export function SetupGuide() {
   const hasChannel = channelList.length > 0;
   const hasModels = channelList.some((row) => row.model_count > 0);
   const hasKey = (keys.data ?? []).length > 0;
-  const hasCall = (logs.data ?? []).some(
-    (row) => row.status >= 200 && row.status < 300,
-  );
+  const hasCall = (logs.data ?? []).some((row) => row.status >= 200 && row.status < 300);
 
   const steps = [
     {
@@ -113,11 +107,7 @@ export function SetupGuide() {
           <span className="setup-guide-progress">
             {t("setup.progress", { done: doneCount, total: steps.length })}
           </span>
-          <button
-            type="button"
-            className="setup-guide-dismiss"
-            onClick={dismiss}
-          >
+          <button type="button" className="setup-guide-dismiss" onClick={dismiss}>
             {t("setup.dismiss")}
           </button>
         </div>

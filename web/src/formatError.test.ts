@@ -3,8 +3,7 @@ import { categorizeError } from "./errorCatalog";
 import { formatErrorMessage } from "./formatError";
 import { translate } from "./i18n";
 
-const t = (key: string, vars?: Record<string, string | number>) =>
-  translate("zh-CN", key, vars);
+const t = (key: string, vars?: Record<string, string | number>) => translate("zh-CN", key, vars);
 
 /**
  * `invalid_payload` is the adapter's verdict on an upstream 2xx body it cannot

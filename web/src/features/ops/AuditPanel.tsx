@@ -1,12 +1,21 @@
-import { ShieldCheck } from "lucide-react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
-import { api } from "../../api/client"
-import { useClientPagination } from "../../hooks/useClientPagination"
-import { useI18n } from "../../i18n"
-import { useSession } from "../../session"
-import { PaginationBar } from "../../components/PaginationBar"
-import { Button, ConfirmDialog, DataTable, ErrorState, Loading, Panel, StatusBadge, formatDate } from "../../components/ui"
+import { ShieldCheck } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { api } from "../../api/client";
+import { useClientPagination } from "../../hooks/useClientPagination";
+import { useI18n } from "../../i18n";
+import { useSession } from "../../session";
+import { PaginationBar } from "../../components/PaginationBar";
+import {
+  Button,
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  Loading,
+  Panel,
+  StatusBadge,
+  formatDate,
+} from "../../components/ui";
 
 export function AuditPanel() {
   const { client } = useSession();
@@ -91,10 +100,7 @@ export function AuditPanel() {
             onPageSizeChange={auditPagination.setPageSize}
           />
           {q.data.length === 100 && (
-            <Button
-              variant="secondary"
-              onClick={() => setBefore(q.data.at(-1)?.id)}
-            >
+            <Button variant="secondary" onClick={() => setBefore(q.data.at(-1)?.id)}>
               {t("ops.olderEvents")}
             </Button>
           )}

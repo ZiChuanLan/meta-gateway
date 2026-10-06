@@ -1,13 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "../i18n";
@@ -152,10 +144,7 @@ describe("Channels two-phase create", () => {
           });
           return response;
         }
-        if (
-          path === "/admin/discovery/channels/21/refresh" &&
-          method === "POST"
-        ) {
+        if (path === "/admin/discovery/channels/21/refresh" && method === "POST") {
           const response = await refreshChannel();
           if (response.ok) {
             const current = overviews[0] as {
@@ -171,32 +160,24 @@ describe("Channels two-phase create", () => {
     );
 
     renderChannels();
-    expect(
-      await screen.findByRole("heading", { name: "Connections" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Connections" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add connection" }));
     fireEvent.change(screen.getByPlaceholderText("https://api.example.com"), {
       target: { value: "https://api.example.com" },
     });
-    const secretInput = document.querySelector(
-      'input[type="password"]',
-    ) as HTMLInputElement;
+    const secretInput = document.querySelector('input[type="password"]') as HTMLInputElement;
     fireEvent.change(secretInput, { target: { value: "sk-test" } });
     fireEvent.click(screen.getByRole("button", { name: "Save & verify" }));
 
     await waitFor(() => expect(createConnection).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(refreshChannel).toHaveBeenCalledTimes(1));
-    expect(
-      await screen.findByText(/was saved, but model sync failed/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/was saved, but model sync failed/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry verify" }));
     await waitFor(() => expect(refreshChannel).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(
-        screen.getByText(/saved and fetched 1 models/i),
-      ).toBeInTheDocument(),
+      expect(screen.getByText(/saved and fetched 1 models/i)).toBeInTheDocument(),
     );
     expect(createConnection).toHaveBeenCalledTimes(1);
   });
@@ -286,15 +267,9 @@ describe("Channels model sync payload", () => {
     renderChannels();
     await screen.findByRole("heading", { name: "Connections" });
     await screen.findByText("empty-upstream");
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "More actions" })[0]!,
-    );
-    fireEvent.click(
-      await screen.findByRole("menuitem", { name: "Sync models" }),
-    );
-    expect(
-      await screen.findByText(/Connection #21: fetched 0 models/i),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "More actions" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Sync models" }));
+    expect(await screen.findByText(/Connection #21: fetched 0 models/i)).toBeInTheDocument();
   });
 });
 
@@ -402,16 +377,10 @@ describe("capabilityFlags", () => {
     };
     // Missing API key is independent of token probe state.
     expect(capabilityFlags({ ...base }).missingAPIKey).toBe(true);
-    expect(
-      capabilityFlags({ ...base, last_probe_ok: false }).missingAPIKey,
-    ).toBe(true);
-    expect(
-      capabilityFlags({ ...base, last_probe_ok: true }).missingAPIKey,
-    ).toBe(true);
+    expect(capabilityFlags({ ...base, last_probe_ok: false }).missingAPIKey).toBe(true);
+    expect(capabilityFlags({ ...base, last_probe_ok: true }).missingAPIKey).toBe(true);
     // Without a user credential there is no token state at all.
-    expect(
-      capabilityFlags({ ...base, has_user_credential: false }).missingAPIKey,
-    ).toBe(true);
+    expect(capabilityFlags({ ...base, has_user_credential: false }).missingAPIKey).toBe(true);
   });
 
   it("flags access token problems only when a token exists and its probe failed", () => {
@@ -448,9 +417,7 @@ describe("capabilityFlags", () => {
     // Never probed → no verdict.
     expect(capabilityFlags({ ...base }).tokenProblem).toBe(false);
     // Account probe passed → token fine.
-    expect(
-      capabilityFlags({ ...base, last_account_probe_ok: true }).tokenProblem,
-    ).toBe(false);
+    expect(capabilityFlags({ ...base, last_account_probe_ok: true }).tokenProblem).toBe(false);
     // Account probe failed → token is the problem.
     expect(
       capabilityFlags({
@@ -460,9 +427,7 @@ describe("capabilityFlags", () => {
       }).tokenProblem,
     ).toBe(true);
     // Account probe failure without a timestamp is "never checked", not "failed".
-    expect(
-      capabilityFlags({ ...base, last_account_probe_ok: false }).tokenProblem,
-    ).toBe(false);
+    expect(capabilityFlags({ ...base, last_account_probe_ok: false }).tokenProblem).toBe(false);
     // A failed business probe (api_key chain) is not a token problem.
     expect(
       capabilityFlags({
@@ -618,16 +583,10 @@ describe("Channels create-key double-submit guard", () => {
         if (path === "/admin/plugins/status" && method === "GET") {
           return jsonResponse([]);
         }
-        if (
-          /\/admin\/channels\/7\/account\/token-groups$/.test(path) &&
-          method === "GET"
-        ) {
+        if (/\/admin\/channels\/7\/account\/token-groups$/.test(path) && method === "GET") {
           return jsonResponse({ groups: ["default"] });
         }
-        if (
-          /\/admin\/channels\/7\/account\/create-key$/.test(path) &&
-          method === "POST"
-        ) {
+        if (/\/admin\/channels\/7\/account\/create-key$/.test(path) && method === "POST") {
           createKeyCalls += 1;
           return jsonResponse({
             credential_id: 100 + createKeyCalls,
@@ -733,9 +692,7 @@ describe("Channels create-key double-submit guard", () => {
       });
       trigger.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(
-        screen.getByRole("menuitem", { name: /create api key/i }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: /create api key/i })).toBeInTheDocument();
     });
   });
 });
@@ -817,9 +774,7 @@ describe("Channels edit dialog sync mode", () => {
     );
 
     renderChannels();
-    expect(
-      await screen.findByRole("heading", { name: "Connections" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Connections" })).toBeInTheDocument();
 
     await waitFor(async () => {
       const trigger = screen.getByRole("button", { name: /more actions/i });
@@ -833,9 +788,10 @@ describe("Channels edit dialog sync mode", () => {
       name: "Pick on demand",
     });
     expect(manual).toHaveAttribute("aria-pressed", "true");
-    expect(
-      within(dialog).getByRole("button", { name: "Auto sync" }),
-    ).toHaveAttribute("aria-pressed", "false");
+    expect(within(dialog).getByRole("button", { name: "Auto sync" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("sends model_sync_mode only when the operator changed it in the dialog", async () => {
@@ -909,9 +865,7 @@ describe("Channels edit dialog sync mode", () => {
     );
 
     renderChannels();
-    expect(
-      await screen.findByRole("heading", { name: "Connections" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Connections" })).toBeInTheDocument();
 
     await waitFor(async () => {
       const trigger = screen.getByRole("button", { name: /more actions/i });
@@ -992,8 +946,7 @@ describe("Channels edit dialog user id", () => {
       account_supported: true,
     };
     const credentialBodies: Record<string, unknown>[] = [];
-    const credentialPuts: { path: string; body: Record<string, unknown> }[] =
-      [];
+    const credentialPuts: { path: string; body: Record<string, unknown> }[] = [];
     const channelPuts: Record<string, unknown>[] = [];
     const seen: string[] = [];
     vi.stubGlobal(
@@ -1084,9 +1037,7 @@ describe("Channels edit dialog user id", () => {
     );
 
     renderChannels();
-    expect(
-      await screen.findByRole("heading", { name: "Connections" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Connections" })).toBeInTheDocument();
 
     await waitFor(async () => {
       const trigger = screen.getByRole("button", { name: /more actions/i });
@@ -1143,9 +1094,7 @@ describe("Channels edit dialog user id", () => {
     const field = within(dialog).getByLabelText("User ID");
     fireEvent.change(field, { target: { value: "abc" } });
 
-    expect(
-      within(dialog).getByText("User ID must be digits only."),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText("User ID must be digits only.")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
     expect(credentialPuts).toHaveLength(0);
   });
@@ -1164,17 +1113,13 @@ describe("Channels edit dialog user id", () => {
 
     // Nothing stored yet, so the credential fields stay collapsed (the row
     // badge for this state points at the token, not at the user id).
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: /show advanced/i }),
-    );
+    fireEvent.click(within(dialog).getByRole("button", { name: /show advanced/i }));
 
     const field = within(dialog).getByLabelText("User ID");
     fireEvent.change(field, { target: { value: "1544" } });
 
     expect(
-      within(dialog).getByText(
-        /No user credential is set\. Fill in the User Access Token/,
-      ),
+      within(dialog).getByText(/No user credential is set\. Fill in the User Access Token/),
     ).toBeInTheDocument();
   });
 });
@@ -1256,9 +1201,7 @@ describe("Channels cooldown freshness", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByTestId("channel-health-badge")).toHaveTextContent(
-      "Degraded",
-    );
+    expect(screen.getByTestId("channel-health-badge")).toHaveTextContent("Degraded");
 
     // The backend now reports the cooldown as over; the page has to notice on
     // its own poll rather than on the next mount.
@@ -1266,9 +1209,7 @@ describe("Channels cooldown freshness", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15_100);
     });
-    expect(screen.getByTestId("channel-health-badge")).toHaveTextContent(
-      "Healthy",
-    );
+    expect(screen.getByTestId("channel-health-badge")).toHaveTextContent("Healthy");
   });
 });
 
@@ -1343,9 +1284,7 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
         const path = String(input).split("?")[0] ?? "";
         switch (path) {
           case "/admin/channels/overview":
-            return jsonResponse([
-              { ...overviewFor(channel), ...overviewPatch },
-            ]);
+            return jsonResponse([{ ...overviewFor(channel), ...overviewPatch }]);
           case "/admin/sites":
           case "/admin/channels":
           case "/admin/routes/overview":
@@ -1366,13 +1305,13 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
       screen.getByRole("menuitem", { name: /^edit$/i }).click();
     });
 
-		const dialog = await screen.findByRole("dialog");
-		// A channel that already carries advanced values opens the section on view,
-		// so the toggle only exists in the collapsed state. Either way the helper's
-		// contract is "the advanced block is open when this returns".
-		const toggle = within(dialog).queryByRole("button", { name: /^Show advanced/ });
-		if (toggle) fireEvent.click(toggle);
-		return dialog;
+    const dialog = await screen.findByRole("dialog");
+    // A channel that already carries advanced values opens the section on view,
+    // so the toggle only exists in the collapsed state. Either way the helper's
+    // contract is "the advanced block is open when this returns".
+    const toggle = within(dialog).queryByRole("button", { name: /^Show advanced/ });
+    if (toggle) fireEvent.click(toggle);
+    return dialog;
   }
 
   it("stays out of the way for an ordinary provider with nothing mapped", async () => {
@@ -1381,9 +1320,7 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
     const dialog = await openEditAdvanced({ type_hint: "openai-compatible" });
     // Proves the advanced block did open — the absence below is the gate, not a
     // missing click.
-    expect(
-      within(dialog).getByText("Payload rules (body rewrite)"),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Payload rules (body rewrite)")).toBeInTheDocument();
     expect(
       within(dialog).queryByRole("heading", {
         name: "Custom endpoint and field mapping",
@@ -1398,9 +1335,7 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
         name: "Custom endpoint and field mapping",
       }),
     ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText("Not configured (plain passthrough)"),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Not configured (plain passthrough)")).toBeInTheDocument();
   });
 
   it("keeps a mapping that already exists on the row visible and inspectable", async () => {
@@ -1416,9 +1351,7 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
         name: "Custom endpoint and field mapping",
       }),
     ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText("Configured: Request field map"),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Configured: Request field map")).toBeInTheDocument();
   });
 
   it("hides the check-in block entirely for a provider with no check-in API", async () => {
@@ -1428,19 +1361,12 @@ describe("Channels edit dialog endpoint mapping visibility", () => {
     const dialog = await openEditAdvanced({ type_hint: "openai-compatible" });
     // Proves the advanced block really did open, so the absence below is the
     // gate and not a missed click.
-    expect(
-      within(dialog).getByText("Payload rules (body rewrite)"),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).queryByRole("heading", { name: "Check-in" }),
-    ).toBeNull();
+    expect(within(dialog).getByText("Payload rules (body rewrite)")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("heading", { name: "Check-in" })).toBeNull();
   });
 
   it("offers scheduled check-in beside the credential for a supported provider", async () => {
-    const dialog = await openEditAdvanced(
-      { type_hint: "new-api" },
-      { checkin_supported: true },
-    );
+    const dialog = await openEditAdvanced({ type_hint: "new-api" }, { checkin_supported: true });
     const advanced = dialog.querySelector(".advanced-fields");
     expect(advanced).not.toBeNull();
     expect(
@@ -1578,8 +1504,8 @@ describe("Channels key-pool deep-link", () => {
     // And the list behind the drawer names the same channel: the row the
     // drawer belongs to is the selected one, not the row auto-select landed on.
     const workBuddyRow = () =>
-      Array.from(document.querySelectorAll(".channels-directory tr")).find(
-        (row) => row.textContent?.includes("WorkBuddy"),
+      Array.from(document.querySelectorAll(".channels-directory tr")).find((row) =>
+        row.textContent?.includes("WorkBuddy"),
       );
     await waitFor(() => expect(workBuddyRow()).toHaveClass("is-selected"));
   });
@@ -1594,8 +1520,8 @@ describe("Channels key-pool deep-link", () => {
 
     await screen.findByText("WorkBuddy");
     const workBuddyRow = () =>
-      Array.from(document.querySelectorAll(".channels-directory tr")).find(
-        (row) => row.textContent?.includes("WorkBuddy"),
+      Array.from(document.querySelectorAll(".channels-directory tr")).find((row) =>
+        row.textContent?.includes("WorkBuddy"),
       );
     await waitFor(() => expect(workBuddyRow()).toHaveClass("is-selected"));
   });

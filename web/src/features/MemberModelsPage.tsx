@@ -94,7 +94,8 @@ export function MemberModelsPage() {
   }, [qc, selectPlan, t, userID, push, locale]);
 
   if (account.isPending) return <Loading />;
-  if (!account.data) return <ErrorState error={account.error} retry={() => void account.refetch()} />;
+  if (!account.data)
+    return <ErrorState error={account.error} retry={() => void account.refetch()} />;
   const branding = account.data.branding;
   const base = branding.api_base_url || `${location.origin}/v1`;
   return (

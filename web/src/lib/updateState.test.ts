@@ -1,11 +1,12 @@
 import { expect, it } from "vitest";
-import {
-  compareVersions,
-  updateLanded,
-  updateState,
-  updateWentBackwards,
-} from "./updateState";
-const base = { enabled: true, current: "v4.0.0-beta.10", latest: "v4.0.0-beta.2", has_update: false, release_url: "" };
+import { compareVersions, updateLanded, updateState, updateWentBackwards } from "./updateState";
+const base = {
+  enabled: true,
+  current: "v4.0.0-beta.10",
+  latest: "v4.0.0-beta.2",
+  has_update: false,
+  release_url: "",
+};
 it("distinguishes unavailable comparison from genuinely current or ahead builds", () => {
   expect(updateState(base)).toBe("ahead");
   expect(updateState({ ...base, current: "dev" })).toBe("uncomparable");

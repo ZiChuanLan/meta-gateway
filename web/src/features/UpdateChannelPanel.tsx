@@ -22,8 +22,7 @@ export function UpdateChannelPanel() {
   const [open, setOpen] = useState(false);
   const current = useQuery({
     queryKey: ["update-channel"],
-    queryFn: ({ signal }) =>
-      client!.get<Channel>("/admin/update-channel", signal),
+    queryFn: ({ signal }) => client!.get<Channel>("/admin/update-channel", signal),
   });
   const save = useMutation({
     mutationFn: () => client!.put("/admin/update-channel", { channel: draft }),
@@ -46,8 +45,8 @@ export function UpdateChannelPanel() {
   // a preference that changes nothing.
   const trackLocked = Boolean(
     current.data?.mode === "watchtower" &&
-      current.data.tracking_channel &&
-      current.data.tracking_channel !== choice,
+    current.data.tracking_channel &&
+    current.data.tracking_channel !== choice,
   );
   return (
     <section>
@@ -62,9 +61,7 @@ export function UpdateChannelPanel() {
           <option value="beta">Beta</option>
         </select>
       </Field>
-      {choice === "beta" ? (
-        <p className="field-hint">{t("updates.betaWarning")}</p>
-      ) : null}
+      {choice === "beta" ? <p className="field-hint">{t("updates.betaWarning")}</p> : null}
       {current.data?.mode === "watchtower" ? (
         <p className="field-hint">
           {t("updates.watchtowerHint", {
@@ -77,17 +74,13 @@ export function UpdateChannelPanel() {
           {t("updates.trackLocked", {
             tag: current.data?.tracking_tag ?? "—",
             channel: t(
-              current.data?.tracking_channel === "beta"
-                ? "updates.beta"
-                : "updates.stable",
+              current.data?.tracking_channel === "beta" ? "updates.beta" : "updates.stable",
             ),
           })}
         </p>
       ) : null}
       <Button
-        disabled={
-          !draft || draft === current.data?.channel || save.isPending || trackLocked
-        }
+        disabled={!draft || draft === current.data?.channel || save.isPending || trackLocked}
         onClick={() => save.mutate()}
       >
         {t("common.save")}

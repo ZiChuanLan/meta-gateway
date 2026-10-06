@@ -32,10 +32,9 @@ export const memberLogsSource: LogsSource = {
     // The member endpoint caps its own page size; asking for more than it
     // serves would silently truncate, so the page size stays at the default.
     const query = params.toString();
-    const rows = await accountRequest<RequestRow[]>(
-      `/me/requests${query ? `?${query}` : ""}`,
-      { signal },
-    );
+    const rows = await accountRequest<RequestRow[]>(`/me/requests${query ? `?${query}` : ""}`, {
+      signal,
+    });
     return rows.map((row, index) => toProxyLog(row, index));
   },
   keys: async (signal) => {

@@ -4,9 +4,9 @@ import { Button } from "../../components/ui";
 
 /** One named shortlist: a scenario, and the models that may answer inside it. */
 export interface ModelGroup {
-	name: string;
-	hint: string;
-	models: string[];
+  name: string;
+  hint: string;
+  models: string[];
 }
 
 /**
@@ -16,14 +16,14 @@ export interface ModelGroup {
  * shortlist is one tap on "add model" away from correct.
  */
 const SCENARIO_PRESETS: Array<{
-	name: string;
-	hint: string;
+  name: string;
+  hint: string;
 }> = [
-	{ name: "code-simple", hint: "简单代码：小改动、脚本、一次性工具" },
-	{ name: "code-complex", hint: "复杂代码：有深度的实现与重构" },
-	{ name: "thinking", hint: "复杂推理、架构思考" },
-	{ name: "bugfix", hint: "bug 修复：定位缺陷、最小修复" },
-	{ name: "chat", hint: "日常回答" },
+  { name: "code-simple", hint: "简单代码：小改动、脚本、一次性工具" },
+  { name: "code-complex", hint: "复杂代码：有深度的实现与重构" },
+  { name: "thinking", hint: "复杂推理、架构思考" },
+  { name: "bugfix", hint: "bug 修复：定位缺陷、最小修复" },
+  { name: "chat", hint: "日常回答" },
 ];
 
 /**
@@ -36,11 +36,11 @@ const SCENARIO_PRESETS: Array<{
  * operator has to un-pick.
  */
 export function suggestModelGroups(): ModelGroup[] {
-	return SCENARIO_PRESETS.map((preset) => ({
-		name: preset.name,
-		hint: preset.hint,
-		models: [],
-	}));
+  return SCENARIO_PRESETS.map((preset) => ({
+    name: preset.name,
+    hint: preset.hint,
+    models: [],
+  }));
 }
 
 /**
@@ -58,32 +58,32 @@ export function suggestModelGroups(): ModelGroup[] {
  * the plugin ignores any scenario without a name or without models.
  */
 export function parseModelGroups(raw: string): ModelGroup[] {
-	const trimmed = raw.trim();
-	if (!trimmed.startsWith("[")) return [];
-	let decoded: unknown;
-	try {
-		decoded = JSON.parse(trimmed);
-	} catch {
-		return [];
-	}
-	if (!Array.isArray(decoded)) return [];
-	const out: ModelGroup[] = [];
-	for (const item of decoded) {
-		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-		const entry = item as { name?: unknown; hint?: unknown; models?: unknown };
-		const models = Array.isArray(entry.models)
-			? entry.models
-					.filter((model): model is string => typeof model === "string")
-					.map((model) => model.trim())
-					.filter(Boolean)
-			: [];
-		out.push({
-			name: typeof entry.name === "string" ? entry.name.trim() : "",
-			hint: typeof entry.hint === "string" ? entry.hint.trim() : "",
-			models,
-		});
-	}
-	return out;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("[")) return [];
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(decoded)) return [];
+  const out: ModelGroup[] = [];
+  for (const item of decoded) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const entry = item as { name?: unknown; hint?: unknown; models?: unknown };
+    const models = Array.isArray(entry.models)
+      ? entry.models
+          .filter((model): model is string => typeof model === "string")
+          .map((model) => model.trim())
+          .filter(Boolean)
+      : [];
+    out.push({
+      name: typeof entry.name === "string" ? entry.name.trim() : "",
+      hint: typeof entry.hint === "string" ? entry.hint.trim() : "",
+      models,
+    });
+  }
+  return out;
 }
 
 /**
@@ -96,13 +96,13 @@ export function parseModelGroups(raw: string): ModelGroup[] {
  * entries without a name or without models when it reads them.
  */
 export function formatModelGroups(groups: ModelGroup[]): string {
-	return JSON.stringify(
-		groups.map((group) => ({
-			name: group.name.trim(),
-			hint: group.hint.trim(),
-			models: group.models,
-		})),
-	);
+  return JSON.stringify(
+    groups.map((group) => ({
+      name: group.name.trim(),
+      hint: group.hint.trim(),
+      models: group.models,
+    })),
+  );
 }
 
 /**
@@ -114,23 +114,22 @@ export function formatModelGroups(groups: ModelGroup[]): string {
  * cannot be built around a model that has no route.
  */
 export function ModelGroupsField({
-	value,
-	onChange,
-	models,
+  value,
+  onChange,
+  models,
 }: {
-	value: string;
-	onChange: (next: string) => void;
-	models: string[];
+  value: string;
+  onChange: (next: string) => void;
+  models: string[];
 }) {
-	const { t } = useI18n();
+  const { t } = useI18n();
   const groups = parseModelGroups(value);
 
   const update = (next: ModelGroup[]) => onChange(formatModelGroups(next));
   const replace = (index: number, patch: Partial<ModelGroup>) =>
     update(groups.map((group, i) => (i === index ? { ...group, ...patch } : group)));
 
-  const addGroup = () =>
-    update([...groups, { name: "", hint: "", models: [] }]);
+  const addGroup = () => update([...groups, { name: "", hint: "", models: [] }]);
 
   // One click from the empty state to a usable starting point: four named
   // work kinds, no models pre-picked — which model answers what is the
@@ -144,91 +143,87 @@ export function ModelGroupsField({
         <p className="model-groups-empty">{t("plugins.modelGroups.empty")}</p>
       ) : null}
       {groups.length === 0 ? (
-        <Button
-          variant="secondary"
-          icon={<Sparkles size={14} />}
-          onClick={applyPresets}
-        >
+        <Button variant="secondary" icon={<Sparkles size={14} />} onClick={applyPresets}>
           {t("plugins.modelGroups.usePresets")}
         </Button>
       ) : null}
-			{groups.map((group, index) => {
-				const remaining = models.filter((model) => !group.models.includes(model));
-				return (
-					<div className="model-group" key={`group-${index}`}>
-						<div className="model-group-head">
-							<input
-								className="model-group-name"
-								placeholder={t("plugins.modelGroups.namePlaceholder")}
-								value={group.name}
-								onChange={(event) => replace(index, { name: event.target.value })}
-							/>
-							<input
-								className="model-group-hint"
-								placeholder={t("plugins.modelGroups.hintPlaceholder")}
-								value={group.hint}
-								onChange={(event) => replace(index, { hint: event.target.value })}
-							/>
-							<button
-								type="button"
-								className="model-group-remove"
-								aria-label={t("plugins.modelGroups.remove")}
-								onClick={() => update(groups.filter((_, i) => i !== index))}
-							>
-								<Trash2 size={14} />
-							</button>
-						</div>
-						<div className="model-group-models">
-							{group.models.map((model) => (
-								<span className="model-chip" key={model}>
-									<span className="mono">{model}</span>
-									<button
-										type="button"
-										aria-label={t("plugins.modelGroups.removeModel", { model })}
-										onClick={() =>
-											replace(index, {
-												models: group.models.filter((entry) => entry !== model),
-											})
-										}
-									>
-										<X size={12} />
-									</button>
-								</span>
-							))}
-							<select
-								className="model-group-add"
-								aria-label={t("plugins.modelGroups.pickModel")}
-								value=""
-								disabled={remaining.length === 0}
-								onChange={(event) => {
-									const model = event.target.value;
-									if (!model) return;
-									replace(index, { models: [...group.models, model] });
-								}}
-							>
-								<option value="">
-									{remaining.length === 0
-										? t("plugins.modelGroups.allPicked")
-										: t("plugins.modelGroups.addModel")}
-								</option>
-								{remaining.map((model) => (
-									<option key={model} value={model}>
-										{model}
-									</option>
-								))}
-							</select>
-						</div>
-					</div>
-				);
-			})}
-			<Button variant="secondary" icon={<Plus size={14} />} onClick={addGroup}>
-				{t("plugins.modelGroups.addScenario")}
-			</Button>
-			{models.length === 0 ? (
-				<p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-					{t("plugins.modelGroups.noModels")}
-				</p>
-			) : null}
-		</div>
-	);
+      {groups.map((group, index) => {
+        const remaining = models.filter((model) => !group.models.includes(model));
+        return (
+          <div className="model-group" key={`group-${index}`}>
+            <div className="model-group-head">
+              <input
+                className="model-group-name"
+                placeholder={t("plugins.modelGroups.namePlaceholder")}
+                value={group.name}
+                onChange={(event) => replace(index, { name: event.target.value })}
+              />
+              <input
+                className="model-group-hint"
+                placeholder={t("plugins.modelGroups.hintPlaceholder")}
+                value={group.hint}
+                onChange={(event) => replace(index, { hint: event.target.value })}
+              />
+              <button
+                type="button"
+                className="model-group-remove"
+                aria-label={t("plugins.modelGroups.remove")}
+                onClick={() => update(groups.filter((_, i) => i !== index))}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+            <div className="model-group-models">
+              {group.models.map((model) => (
+                <span className="model-chip" key={model}>
+                  <span className="mono">{model}</span>
+                  <button
+                    type="button"
+                    aria-label={t("plugins.modelGroups.removeModel", { model })}
+                    onClick={() =>
+                      replace(index, {
+                        models: group.models.filter((entry) => entry !== model),
+                      })
+                    }
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+              <select
+                className="model-group-add"
+                aria-label={t("plugins.modelGroups.pickModel")}
+                value=""
+                disabled={remaining.length === 0}
+                onChange={(event) => {
+                  const model = event.target.value;
+                  if (!model) return;
+                  replace(index, { models: [...group.models, model] });
+                }}
+              >
+                <option value="">
+                  {remaining.length === 0
+                    ? t("plugins.modelGroups.allPicked")
+                    : t("plugins.modelGroups.addModel")}
+                </option>
+                {remaining.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        );
+      })}
+      <Button variant="secondary" icon={<Plus size={14} />} onClick={addGroup}>
+        {t("plugins.modelGroups.addScenario")}
+      </Button>
+      {models.length === 0 ? (
+        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          {t("plugins.modelGroups.noModels")}
+        </p>
+      ) : null}
+    </div>
+  );
 }

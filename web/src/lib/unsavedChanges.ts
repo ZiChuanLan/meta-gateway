@@ -32,8 +32,5 @@ export function useUnsavedChanges(dirty: boolean) {
   }, [dirty]);
 
   /** True when the caller may proceed; false when the operator chose to stay. */
-  return useCallback(
-    () => !dirty || window.confirm(t("common.unsavedConfirm")),
-    [dirty, t],
-  );
+  return useCallback(() => !dirty || window.confirm(t("common.unsavedConfirm")), [dirty, t]);
 }

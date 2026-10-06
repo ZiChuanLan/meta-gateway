@@ -56,10 +56,7 @@ export function UnifyHistory({ onClose }: { onClose: () => void }) {
   const activeRemovedByBatch = new Map<number, number>();
   for (const entry of removed) {
     if (entry.rebuilt) continue;
-    activeRemovedByBatch.set(
-      entry.batch_id,
-      (activeRemovedByBatch.get(entry.batch_id) ?? 0) + 1,
-    );
+    activeRemovedByBatch.set(entry.batch_id, (activeRemovedByBatch.get(entry.batch_id) ?? 0) + 1);
   }
 
   return (
@@ -77,18 +74,14 @@ export function UnifyHistory({ onClose }: { onClose: () => void }) {
           {removed.length > 0 ? (
             <section className="unify-section">
               <h3>{t("modelsPage.unify.history.archivedSection")}</h3>
-              <p className="unify-section-hint">
-                {t("modelsPage.unify.history.archivedHint")}
-              </p>
+              <p className="unify-section-hint">{t("modelsPage.unify.history.archivedHint")}</p>
               {removed.map((entry) => (
                 <div className="unify-group" key={`${entry.batch_id}:${entry.route_id}`}>
                   <div className="unify-group-head">
                     <strong className="mono">{entry.model_name}</strong>
                     <span className="unify-arrow">→</span>
                     <span className="mono">{entry.canonical}</span>
-                    <span className="unify-count">
-                      {formatDate(entry.deleted_at)}
-                    </span>
+                    <span className="unify-count">{formatDate(entry.deleted_at)}</span>
                     {entry.rebuilt ? (
                       <span className="model-meta-badge">
                         {t("modelsPage.unify.history.reverted")}
@@ -124,16 +117,11 @@ export function UnifyHistory({ onClose }: { onClose: () => void }) {
           <section className="unify-section">
             <h3>{t("modelsPage.unify.history.batchSection")}</h3>
             {batches.map((batch) => (
-              <div
-                className={`unify-group${batch.undone_at ? " is-off" : ""}`}
-                key={batch.id}
-              >
+              <div className={`unify-group${batch.undone_at ? " is-off" : ""}`} key={batch.id}>
                 <div className="unify-group-head">
                   <strong className="mono">{batch.canonical}</strong>
                   {batch.undone_at ? (
-                    <span className="model-meta-badge">
-                      {t("modelsPage.unify.history.undone")}
-                    </span>
+                    <span className="model-meta-badge">{t("modelsPage.unify.history.undone")}</span>
                   ) : (
                     <span className="model-meta-badge is-mapped">
                       {t("modelsPage.unify.history.active")}

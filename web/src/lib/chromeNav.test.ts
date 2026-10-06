@@ -4,8 +4,8 @@ import { MODE_GATED_NAV, modeHiddenNav } from "./topBar";
 
 describe("console navigation registry", () => {
   it("keeps user management in the real navigation, not the single settings slot", () => {
-    expect(CHROME_NAV_ITEMS.find(item => item.path === "/users")?.group).toBe("primary");
-    expect(CHROME_NAV_ITEMS.filter(item => item.group === "settings")).toHaveLength(1);
+    expect(CHROME_NAV_ITEMS.find((item) => item.path === "/users")?.group).toBe("primary");
+    expect(CHROME_NAV_ITEMS.filter((item) => item.group === "settings")).toHaveLength(1);
   });
 
   // The multi-user area is the one entry hidden by state instead of by a
@@ -23,9 +23,15 @@ describe("console navigation registry", () => {
 });
 
 it("reserves personal settings for a team account while retaining deployment settings", async () => {
- const { CHROME_NAV_ITEMS, canAccessNav } = await import("./chromeNav");
- const account = CHROME_NAV_ITEMS.find(item=>item.path==="/account")!;
- expect(canAccessNav(account,null)).toBe(false);
- for(const role of ["member","owner","admin"] as const) expect(canAccessNav(account,role)).toBe(true);
- expect(canAccessNav(CHROME_NAV_ITEMS.find(item=>item.path==="/settings")!,null)).toBe(true);
+  const { CHROME_NAV_ITEMS, canAccessNav } = await import("./chromeNav");
+  const account = CHROME_NAV_ITEMS.find((item) => item.path === "/account")!;
+  expect(canAccessNav(account, null)).toBe(false);
+  for (const role of ["member", "owner", "admin"] as const)
+    expect(canAccessNav(account, role)).toBe(true);
+  expect(
+    canAccessNav(
+      CHROME_NAV_ITEMS.find((item) => item.path === "/settings")!,
+      null,
+    ),
+  ).toBe(true);
 });

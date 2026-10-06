@@ -8,41 +8,67 @@ import { SessionProvider } from "../session";
 import { ToastProvider } from "../toast";
 import Workbench from "./Workbench";
 
-const imageData = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/AF+msuWAAAAAElFTkSuQmCC";
+const imageData =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8AAAwAB/AF+msuWAAAAAElFTkSuQmCC";
 const clients: QueryClient[] = [];
 
 function capability(model = "gpt-image-2"): ModelCapability {
   const grok = model.startsWith("grok");
   return {
-    model, kind: "image_edit", provider: grok ? "xai" : "openai",
+    model,
+    kind: "image_edit",
+    provider: grok ? "xai" : "openai",
     endpoints: grok ? ["/v1/images/edits"] : ["/v1/images/generations", "/v1/images/edits"],
     input_formats: grok ? ["json"] : ["json", "multipart"],
-    input_modalities: ["text", "image"], output_modalities: ["image"],
-    max_input_images: 2, supports_stream: false, supports_tools: false,
-    supports_json_mode: false, async_task: false, size_options: "1024x1024",
-    source: "builtin", notes: "", updated_at: "",
+    input_modalities: ["text", "image"],
+    output_modalities: ["image"],
+    max_input_images: 2,
+    supports_stream: false,
+    supports_tools: false,
+    supports_json_mode: false,
+    async_task: false,
+    size_options: "1024x1024",
+    source: "builtin",
+    notes: "",
+    updated_at: "",
   };
 }
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 /** A routed chat model. The text tab lists models by the endpoint their
  *  capability resolves to, so an image registration must not appear there. */
 function chatCapability(model = "gpt-5.1"): ModelCapability {
   return {
-    model, kind: "chat", provider: "openai", endpoints: ["/v1/chat/completions"],
-    input_formats: ["json"], input_modalities: ["text"], output_modalities: ["text"],
-    max_input_images: 0, supports_stream: true, supports_tools: true,
-    supports_json_mode: true, async_task: false, size_options: "",
-    source: "builtin", notes: "", updated_at: "",
+    model,
+    kind: "chat",
+    provider: "openai",
+    endpoints: ["/v1/chat/completions"],
+    input_formats: ["json"],
+    input_modalities: ["text"],
+    output_modalities: ["text"],
+    max_input_images: 0,
+    supports_stream: true,
+    supports_tools: true,
+    supports_json_mode: true,
+    async_task: false,
+    size_options: "",
+    source: "builtin",
+    notes: "",
+    updated_at: "",
   };
 }
 
 function deferredResponse() {
   let resolve!: (value: Response) => void;
-  const promise = new Promise<Response>((complete) => { resolve = complete; });
+  const promise = new Promise<Response>((complete) => {
+    resolve = complete;
+  });
   return { promise, resolve };
 }
 
@@ -56,74 +82,147 @@ function sse(frames: Array<{ event?: string; data: string }>) {
 
 function streamedReply(...deltas: string[]) {
   return sse([
-    { event: "meta", data: JSON.stringify({ status: 200, latency_ms: 7, model: "gpt-5.1", channel_name: "chat-up" }) },
+    {
+      event: "meta",
+      data: JSON.stringify({
+        status: 200,
+        latency_ms: 7,
+        model: "gpt-5.1",
+        channel_name: "chat-up",
+      }),
+    },
     ...deltas.map((content) => ({ data: JSON.stringify({ choices: [{ delta: { content } }] }) })),
     { event: "done", data: "{}" },
   ]);
 }
 
-function mockBackend(options: {
-  capability?: ModelCapability;
-  resolve?: () => Promise<Response> | Response;
-  image?: (request: Record<string, unknown>) => Promise<Response> | Response;
-  chat?: (request: Record<string, unknown>) => Promise<Response> | Response;
-  /** Replaces the /admin/routes/overview payload (member shapes matter here). */
-  overview?: unknown[];
-} = {}) {
+function mockBackend(
+  options: {
+    capability?: ModelCapability;
+    resolve?: () => Promise<Response> | Response;
+    image?: (request: Record<string, unknown>) => Promise<Response> | Response;
+    chat?: (request: Record<string, unknown>) => Promise<Response> | Response;
+    /** Replaces the /admin/routes/overview payload (member shapes matter here). */
+    overview?: unknown[];
+  } = {},
+) {
   const model = options.capability ?? capability();
   const chatModel = chatCapability();
-  const resolve = vi.fn(options.resolve ?? (() => json({ items: {
-    [model.model]: model,
-    [chatModel.model]: chatModel,
-  } })));
-  const image = vi.fn(options.image ?? (() => json({
-    status: 200, latency_ms: 12, model: model.model,
-    plan: { endpoint: "images/edits", format: "json" },
-    images: [{ data_url: imageData, revised_prompt: "purple cube" }],
-  })));
-  const chat = vi.fn(options.chat ?? ((request: Record<string, unknown>) =>
-    request.stream
-      ? streamedReply("po", "ng")
-      : json({
-          status: 200, latency_ms: 8, model: chatModel.model, channel_name: "chat-up",
-          body: { id: "chatcmpl-test", choices: [{ message: { role: "assistant", content: "pong" } }] },
-        })));
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const path = new URL(String(input), "http://localhost").pathname;
-    if (path === "/admin/routes/overview")
-      return json(options.overview ?? [
-        { route: { id: 1, model_pattern: model.model, enabled: true }, members: [{ channel: { id: 7, name: "image-up" }, member: { id: 71, channel_id: 7, priority: 9, weight: 1 } }] },
-        { route: { id: 2, model_pattern: chatModel.model, enabled: true }, members: [{ channel: { id: 8, name: "chat-up" }, member: { id: 81, channel_id: 8, priority: 5, weight: 2 } }] },
-        { route: { id: 3, model_pattern: "disabled-image", enabled: false }, members: [] },
-      ]);
-    if (path === "/admin/model-capabilities/resolve") return resolve();
-    if (path === "/admin/model-capabilities") return json({ items: [model, chatModel] });
-    if (path === "/admin/model-capabilities/catalog") return json({
-      state: null, sources: ["litellm", "models.dev"], scheduled: true, prices_enabled: true,
-    });
-    if (path === "/admin/try/image") return image(JSON.parse(String(init?.body)) as Record<string, unknown>);
-    if (path === "/admin/try/chat") return chat(JSON.parse(String(init?.body)) as Record<string, unknown>);
-    return json({});
-  }));
+  const resolve = vi.fn(
+    options.resolve ??
+      (() =>
+        json({
+          items: {
+            [model.model]: model,
+            [chatModel.model]: chatModel,
+          },
+        })),
+  );
+  const image = vi.fn(
+    options.image ??
+      (() =>
+        json({
+          status: 200,
+          latency_ms: 12,
+          model: model.model,
+          plan: { endpoint: "images/edits", format: "json" },
+          images: [{ data_url: imageData, revised_prompt: "purple cube" }],
+        })),
+  );
+  const chat = vi.fn(
+    options.chat ??
+      ((request: Record<string, unknown>) =>
+        request.stream
+          ? streamedReply("po", "ng")
+          : json({
+              status: 200,
+              latency_ms: 8,
+              model: chatModel.model,
+              channel_name: "chat-up",
+              body: {
+                id: "chatcmpl-test",
+                choices: [{ message: { role: "assistant", content: "pong" } }],
+              },
+            })),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (path === "/admin/routes/overview")
+        return json(
+          options.overview ?? [
+            {
+              route: { id: 1, model_pattern: model.model, enabled: true },
+              members: [
+                {
+                  channel: { id: 7, name: "image-up" },
+                  member: { id: 71, channel_id: 7, priority: 9, weight: 1 },
+                },
+              ],
+            },
+            {
+              route: { id: 2, model_pattern: chatModel.model, enabled: true },
+              members: [
+                {
+                  channel: { id: 8, name: "chat-up" },
+                  member: { id: 81, channel_id: 8, priority: 5, weight: 2 },
+                },
+              ],
+            },
+            { route: { id: 3, model_pattern: "disabled-image", enabled: false }, members: [] },
+          ],
+        );
+      if (path === "/admin/model-capabilities/resolve") return resolve();
+      if (path === "/admin/model-capabilities") return json({ items: [model, chatModel] });
+      if (path === "/admin/model-capabilities/catalog")
+        return json({
+          state: null,
+          sources: ["litellm", "models.dev"],
+          scheduled: true,
+          prices_enabled: true,
+        });
+      if (path === "/admin/try/image")
+        return image(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (path === "/admin/try/chat")
+        return chat(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return json({});
+    }),
+  );
   return { resolve, image, chat };
 }
 
 function renderWorkbench() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   clients.push(client);
-  return render(<QueryClientProvider client={client}><I18nProvider><ToastProvider><SessionProvider><MemoryRouter>
-    <Workbench />
-  </MemoryRouter></SessionProvider></ToastProvider></I18nProvider></QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={client}>
+      <I18nProvider>
+        <ToastProvider>
+          <SessionProvider>
+            <MemoryRouter>
+              <Workbench />
+            </MemoryRouter>
+          </SessionProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
 }
 
 describe("image workbench", () => {
   beforeEach(() => {
-    localStorage.clear(); sessionStorage.clear();
+    localStorage.clear();
+    sessionStorage.clear();
     localStorage.setItem("meta-gateway.locale", "en");
     localStorage.setItem("meta-gateway.admin-token", "test-token");
   });
   afterEach(() => {
-    cleanup(); clients.splice(0).forEach((client) => client.clear()); vi.unstubAllGlobals();
+    cleanup();
+    clients.splice(0).forEach((client) => client.clear());
+    vi.unstubAllGlobals();
   });
 
   it("waits for capability resolution before deciding there are no image models", async () => {
@@ -139,8 +238,11 @@ describe("image workbench", () => {
     // carries the connection serving the model. A disabled route is not a
     // candidate even though it is present in the overview payload.
     fireEvent.click(screen.getByRole("button", { name: "Model" }));
-    expect(within(screen.getByRole("listbox", { name: "Model" })).getAllByRole("option")
-      .map((option) => option.textContent)).toEqual(["gpt-image-2 · image-up"]);
+    expect(
+      within(screen.getByRole("listbox", { name: "Model" }))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["gpt-image-2 · image-up"]);
   });
 
   it("shows capability lookup failures as errors instead of an empty model list", async () => {
@@ -154,25 +256,35 @@ describe("image workbench", () => {
     const backend = mockBackend({ capability: capability("grok-imagine-image-edit") });
     renderWorkbench();
     const submit = await screen.findByRole("button", { name: "Edit image" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "add a hat" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), {
+      target: { value: "add a hat" },
+    });
     expect(submit).toBeDisabled();
     expect(screen.getByText("Add a reference image before editing.")).toBeInTheDocument();
     const input = screen.getByLabelText("Add images");
-    fireEvent.change(input, { target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] } });
+    fireEvent.change(input, {
+      target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
+    });
     expect(await screen.findByRole("alert")).toHaveTextContent("notes.txt is not an image file");
     const oversized = new File(["image"], "large.png", { type: "image/png" });
     Object.defineProperty(oversized, "size", { value: 21 * 1024 * 1024 });
     fireEvent.change(input, { target: { files: [oversized] } });
     expect(await screen.findByRole("alert")).toHaveTextContent("20 MB");
     expect(backend.image).not.toHaveBeenCalled();
-    fireEvent.change(input, { target: { files: [new File(["image"], "reference.png", { type: "image/png" })] } });
+    fireEvent.change(input, {
+      target: { files: [new File(["image"], "reference.png", { type: "image/png" })] },
+    });
     expect(await screen.findByAltText("reference.png")).toBeInTheDocument();
     await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
     await waitFor(() => expect(backend.image).toHaveBeenCalledOnce());
     expect(backend.image.mock.calls[0]?.[0]).toMatchObject({
-      model: "grok-imagine-image-edit", mode: "auto", prompt: "add a hat",
-      images: [{ name: "reference.png", data_url: expect.stringContaining("data:image/png;base64,") }],
+      model: "grok-imagine-image-edit",
+      mode: "auto",
+      prompt: "add a hat",
+      images: [
+        { name: "reference.png", data_url: expect.stringContaining("data:image/png;base64,") },
+      ],
     });
   });
 
@@ -181,20 +293,26 @@ describe("image workbench", () => {
     // plane reports exhausted quota. Both surface as 429, so the status alone
     // hid the difference — the panel now relays the provider's own message.
     const backend = mockBackend({
-      image: () => json({
-        status: 429, latency_ms: 11644, model: "gpt-image-2",
-        plan: { endpoint: "images/edits", format: "json" },
-        images: [],
-        body: {
-          error: {
-            code: "upstream_unavailable",
-            message: "Grok Web 媒体上游返回 429: 8: Too many requests. Wait a moment and try again.",
+      image: () =>
+        json({
+          status: 429,
+          latency_ms: 11644,
+          model: "gpt-image-2",
+          plan: { endpoint: "images/edits", format: "json" },
+          images: [],
+          body: {
+            error: {
+              code: "upstream_unavailable",
+              message:
+                "Grok Web 媒体上游返回 429: 8: Too many requests. Wait a moment and try again.",
+            },
           },
-        },
-      }),
+        }),
     });
     renderWorkbench();
-    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), { target: { value: "add a hat" } });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), {
+      target: { value: "add a hat" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
     await waitFor(() => expect(backend.image).toHaveBeenCalledOnce());
     const alert = await screen.findByRole("alert");
@@ -209,20 +327,31 @@ describe("image workbench", () => {
         calls += 1;
         return calls === 1
           ? json({
-              status: 200, latency_ms: 12, model: "gpt-image-2",
+              status: 200,
+              latency_ms: 12,
+              model: "gpt-image-2",
               plan: { endpoint: "images/generations", format: "json" },
               images: [{ data_url: imageData, revised_prompt: "purple cube" }],
             })
           : json({
-              status: 429, latency_ms: 1677, model: "gpt-image-2",
+              status: 429,
+              latency_ms: 1677,
+              model: "gpt-image-2",
               plan: { endpoint: "images/generations", format: "json" },
               images: [],
-              body: { error: { code: "upstream_quota_exhausted", message: "Upstream account quota is cooling down" } },
+              body: {
+                error: {
+                  code: "upstream_quota_exhausted",
+                  message: "Upstream account quota is cooling down",
+                },
+              },
             });
       },
     });
     renderWorkbench();
-    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), { target: { value: "a purple cube" } });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), {
+      target: { value: "a purple cube" },
+    });
     const submit = screen.getByRole("button", { name: "Generate image" });
     fireEvent.click(submit);
     expect(await screen.findByAltText("purple cube")).toBeVisible();
@@ -237,7 +366,9 @@ describe("image workbench", () => {
     // reachable.
     const strip = screen.getByText("Recent generations").closest(".workbench-history");
     expect(strip).not.toBeNull();
-    fireEvent.click(within(strip as HTMLElement).getByRole("button", { name: /Open the gpt-image-2 generation/ }));
+    fireEvent.click(
+      within(strip as HTMLElement).getByRole("button", { name: /Open the gpt-image-2 generation/ }),
+    );
     expect(await screen.findByAltText("purple cube")).toBeVisible();
   });
 
@@ -246,16 +377,24 @@ describe("image workbench", () => {
     const backend = mockBackend({ image: () => pending.promise });
     renderWorkbench();
     const submit = await screen.findByRole("button", { name: "Generate image" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), { target: { value: "a purple cube" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Prompt" }), {
+      target: { value: "a purple cube" },
+    });
     fireEvent.click(submit);
     await waitFor(() => expect(backend.image).toHaveBeenCalledOnce());
     expect(screen.getByRole("button", { name: "Model" })).toBeDisabled();
     fireEvent.click(screen.getByText("Playground"));
-    await act(async () => pending.resolve(json({
-      status: 200, latency_ms: 12, model: "gpt-image-2",
-      plan: { endpoint: "images/generations", format: "json" },
-      images: [{ data_url: imageData, revised_prompt: "purple cube" }],
-    })));
+    await act(async () =>
+      pending.resolve(
+        json({
+          status: 200,
+          latency_ms: 12,
+          model: "gpt-image-2",
+          plan: { endpoint: "images/generations", format: "json" },
+          images: [{ data_url: imageData, revised_prompt: "purple cube" }],
+        }),
+      ),
+    );
     fireEvent.click(screen.getByText("Images"));
     expect(await screen.findByAltText("purple cube")).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("a purple cube");
@@ -277,22 +416,31 @@ describe("image workbench", () => {
     // The image model is routed but answers on /v1/images/*, so it is not a
     // candidate for a chat turn — opening the list proves it is not offered.
     fireEvent.click(picker);
-    expect(within(screen.getByRole("listbox", { name: "Model" })).getAllByRole("option")
-      .map((option) => option.textContent)).toEqual(["gpt-5.1"]);
+    expect(
+      within(screen.getByRole("listbox", { name: "Model" }))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["gpt-5.1"]);
     // Close the list again — it portals to <body>, so leaving it up would keep
     // its option buttons in every later role query.
     fireEvent.click(picker);
     expect(screen.queryByRole("listbox", { name: "Model" })).not.toBeInTheDocument();
     // Members of the selected model become the pinnable upstreams.
-    expect(within(screen.getByRole("combobox", { name: "Upstream connection" })).getAllByRole("option")
-      .map((option) => option.textContent)).toEqual(["Auto (gateway routing)", "chat-up · p5/w2"]);
+    expect(
+      within(screen.getByRole("combobox", { name: "Upstream connection" }))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Auto (gateway routing)", "chat-up · p5/w2"]);
 
     const composer = screen.getByPlaceholderText("Type a message — ⌘/Ctrl + Enter to send…");
     fireEvent.change(composer, { target: { value: "ping" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(backend.chat).toHaveBeenCalledOnce());
     expect(backend.chat.mock.calls[0]?.[0]).toMatchObject({
-      model: "gpt-5.1", stream: true, max_tokens: 4096, temperature: 0.7,
+      model: "gpt-5.1",
+      stream: true,
+      max_tokens: 4096,
+      temperature: 0.7,
       messages: [{ role: "user", content: "ping" }],
     });
     // Deltas are concatenated into one answer, and the meta frame lands as chips.
@@ -322,8 +470,20 @@ describe("image workbench", () => {
         {
           route: { id: 1, model_pattern: "alias", enabled: true },
           members: [
-            { channel: { id: 7, name: "sensenova" }, member: { id: 41, channel_id: 7, priority: 0, weight: 100 } },
-            { channel: { id: 7, name: "sensenova" }, member: { id: 42, channel_id: 7, priority: 0, weight: 100, mapping_json: '{"real":"SenseNova-V6"}' } },
+            {
+              channel: { id: 7, name: "sensenova" },
+              member: { id: 41, channel_id: 7, priority: 0, weight: 100 },
+            },
+            {
+              channel: { id: 7, name: "sensenova" },
+              member: {
+                id: 42,
+                channel_id: 7,
+                priority: 0,
+                weight: 100,
+                mapping_json: '{"real":"SenseNova-V6"}',
+              },
+            },
           ],
         },
       ],
@@ -333,7 +493,11 @@ describe("image workbench", () => {
     renderWorkbench();
     fireEvent.click(await screen.findByText("Playground"));
     const picker = await screen.findByRole("combobox", { name: "Upstream connection" });
-    expect(within(picker).getAllByRole("option").map((option) => option.textContent)).toEqual([
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
       "Auto (gateway routing)",
       "sensenova · p0/w100",
       "sensenova · origin SenseNova-V6 · p0/w100",
@@ -351,11 +515,12 @@ describe("image workbench", () => {
 
   it("surfaces an upstream refusal frame as a turn error instead of an empty answer", async () => {
     const backend = mockBackend({
-      chat: () => sse([
-        { event: "meta", data: JSON.stringify({ status: 429, latency_ms: 3, model: "gpt-5.1" }) },
-        { event: "error", data: JSON.stringify({ error: { message: "rate limited upstream" } }) },
-        { event: "done", data: "{}" },
-      ]),
+      chat: () =>
+        sse([
+          { event: "meta", data: JSON.stringify({ status: 429, latency_ms: 3, model: "gpt-5.1" }) },
+          { event: "error", data: JSON.stringify({ error: { message: "rate limited upstream" } }) },
+          { event: "done", data: "{}" },
+        ]),
     });
     renderWorkbench();
     fireEvent.click(await screen.findByText("Playground"));
@@ -368,11 +533,17 @@ describe("image workbench", () => {
 
   it("keeps the reply when a channel ignores the stream and answers buffered", async () => {
     const backend = mockBackend({
-      chat: () => sse([
-        { event: "meta", data: JSON.stringify({ status: 200, latency_ms: 5, model: "gpt-5.1" }) },
-        { event: "raw", data: JSON.stringify({ choices: [{ message: { role: "assistant", content: "buffered" } }] }) },
-        { event: "done", data: "{}" },
-      ]),
+      chat: () =>
+        sse([
+          { event: "meta", data: JSON.stringify({ status: 200, latency_ms: 5, model: "gpt-5.1" }) },
+          {
+            event: "raw",
+            data: JSON.stringify({
+              choices: [{ message: { role: "assistant", content: "buffered" } }],
+            }),
+          },
+          { event: "done", data: "{}" },
+        ]),
     });
     renderWorkbench();
     fireEvent.click(await screen.findByText("Playground"));
@@ -390,11 +561,21 @@ describe("image workbench", () => {
   it("restores the last generation and its request after a remount", async () => {
     mockBackend();
     const first = renderWorkbench();
-    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), { target: { value: "a purple cube" } });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Prompt" }), {
+      target: { value: "a purple cube" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
     expect(await screen.findByAltText("purple cube")).toBeVisible();
-    await waitFor(() => expect(localStorage.getItem("meta-gateway.state.workbench.runs") ?? "").toContain("data:image/png"));
-    await waitFor(() => expect(localStorage.getItem("meta-gateway.state.workbench.image-form") ?? "").toContain("a purple cube"));
+    await waitFor(() =>
+      expect(localStorage.getItem("meta-gateway.state.workbench.runs") ?? "").toContain(
+        "data:image/png",
+      ),
+    );
+    await waitFor(() =>
+      expect(localStorage.getItem("meta-gateway.state.workbench.image-form") ?? "").toContain(
+        "a purple cube",
+      ),
+    );
     first.unmount();
     renderWorkbench();
     expect(await screen.findByAltText("purple cube")).toBeVisible();
@@ -411,7 +592,9 @@ describe("image workbench", () => {
     await screen.findByAltText("purple cube");
     fireEvent.change(prompt, { target: { value: "second scene" } });
     fireEvent.click(screen.getByRole("button", { name: "Generate image" }));
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Reuse these settings" })).toHaveLength(2));
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Reuse these settings" })).toHaveLength(2),
+    );
     // Newest first, so entry 1 is the first run — and it carries its prompt.
     fireEvent.click(screen.getAllByRole("button", { name: "Reuse these settings" })[1]!);
     expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue("first scene");
@@ -426,7 +609,10 @@ describe("image workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("pong")).toBeInTheDocument();
     await waitFor(
-      () => expect(localStorage.getItem("meta-gateway.state.workbench.playground") ?? "").toContain("pong"),
+      () =>
+        expect(localStorage.getItem("meta-gateway.state.workbench.playground") ?? "").toContain(
+          "pong",
+        ),
       { timeout: 3000 },
     );
     first.unmount();

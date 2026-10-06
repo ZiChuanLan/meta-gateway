@@ -39,10 +39,7 @@ export function TryPanel({
   const [result, setResult] = useState("");
   const [meta, setMeta] = useState("");
 
-  const upstreams = useMemo(
-    () => upstreamChoices(members, route, t),
-    [members, route, t],
-  );
+  const upstreams = useMemo(() => upstreamChoices(members, route, t), [members, route, t]);
 
   const multiUpstream = upstreams.length > 1;
 
@@ -87,9 +84,7 @@ export function TryPanel({
       );
       setResult(JSON.stringify(response.body, null, 2));
       if (response.status < 200 || response.status >= 300) {
-        setError(
-          new Error(t("try.upstreamStatus", { status: response.status })),
-        );
+        setError(new Error(t("try.upstreamStatus", { status: response.status })));
       }
     } catch (err) {
       setError(err);
@@ -104,20 +99,12 @@ export function TryPanel({
         <span>{multiUpstream ? t("try.hintMulti") : t("try.hint")}</span>
       </div>
       <Field label={t("common.model")}>
-        <input
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="mono"
-        />
+        <input value={model} onChange={(e) => setModel(e.target.value)} className="mono" />
       </Field>
       {upstreams.length > 0 ? (
         <Field
           label={t("try.upstream")}
-          hint={
-            multiUpstream
-              ? t("try.upstreamHintMulti")
-              : t("try.upstreamHintOne")
-          }
+          hint={multiUpstream ? t("try.upstreamHintMulti") : t("try.upstreamHintOne")}
         >
           <select
             aria-label={t("try.upstream")}
@@ -137,9 +124,7 @@ export function TryPanel({
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} />
       </Field>
       {error ? <ErrorState error={error} /> : null}
-      {!error && meta ? (
-        <div className="result-strip result-strip-info">{meta}</div>
-      ) : null}
+      {!error && meta ? <div className="result-strip result-strip-info">{meta}</div> : null}
       {result ? (
         error ? (
           <details className="try-result-details">

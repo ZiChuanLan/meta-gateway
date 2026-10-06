@@ -8,13 +8,10 @@ describe("upstreamMessage", () => {
       upstreamMessage({
         error: {
           code: "upstream_unavailable",
-          message:
-            "Grok Web 媒体上游返回 429: 8: Too many requests. Wait a moment and try again.",
+          message: "Grok Web 媒体上游返回 429: 8: Too many requests. Wait a moment and try again.",
         },
       }),
-    ).toBe(
-      "Grok Web 媒体上游返回 429: 8: Too many requests. Wait a moment and try again.",
-    );
+    ).toBe("Grok Web 媒体上游返回 429: 8: Too many requests. Wait a moment and try again.");
   });
 
   it("shows the message for an exhausted upstream quota", () => {
@@ -27,9 +24,7 @@ describe("upstreamMessage", () => {
   });
 
   it("trims the message so padding never leaks into the panel", () => {
-    expect(upstreamMessage({ error: { message: "  spaced out  " } })).toBe(
-      "spaced out",
-    );
+    expect(upstreamMessage({ error: { message: "  spaced out  " } })).toBe("spaced out");
   });
 
   it("accepts a bare error string", () => {

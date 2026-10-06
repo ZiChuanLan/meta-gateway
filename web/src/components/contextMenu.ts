@@ -4,7 +4,12 @@ import type { KeyboardEvent, MouseEvent } from "react";
 // explicit escape hatch to the browser's own menu.
 export function rowContextPoint(event: MouseEvent<HTMLElement>) {
   const target = event.target instanceof Element ? event.target : null;
-  if (event.shiftKey || target?.closest('a[href], input, textarea, select, [contenteditable="true"]') || window.getSelection()?.toString()) return null;
+  if (
+    event.shiftKey ||
+    target?.closest('a[href], input, textarea, select, [contenteditable="true"]') ||
+    window.getSelection()?.toString()
+  )
+    return null;
   event.preventDefault();
   event.stopPropagation();
   event.currentTarget.focus({ preventScroll: true });

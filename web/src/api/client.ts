@@ -117,14 +117,21 @@ export class ApiClient {
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
     if (this.authMode === "bearer") headers.set("Authorization", `Bearer ${this.token}`);
-    else if (init.method && !["GET", "HEAD"].includes(init.method)) headers.set("X-Meta-CSRF", teamCSRF());
-    if (init.body && !headers.has("Content-Type"))
-      headers.set("Content-Type", "application/json");
+    else if (init.method && !["GET", "HEAD"].includes(init.method))
+      headers.set("X-Meta-CSRF", teamCSRF());
+    if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     let response: Response;
     try {
       response = await fetch(path, { ...init, headers, credentials: "same-origin" });
     } catch (error) {
-      if (init.signal?.aborted || (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError")) throw error;
+      if (
+        init.signal?.aborted ||
+        (typeof error === "object" &&
+          error !== null &&
+          "name" in error &&
+          error.name === "AbortError")
+      )
+        throw error;
       throw new ApiError(0, "Unable to reach Meta Gateway");
     }
     this.checkSession(generation);
@@ -137,28 +144,18 @@ export class ApiClient {
         else if (isRecord(body)) {
           if (typeof body.message === "string" && body.message.trim()) {
             message = body.message;
-          } else if (
-            typeof body.category === "string" &&
-            body.category.trim()
-          ) {
+          } else if (typeof body.category === "string" && body.category.trim()) {
             message = body.category;
           }
         }
       } catch {
         /* Stable status fallback. */
       }
-      const retry = Number.parseInt(
-        response.headers.get("Retry-After") ?? "",
-        10,
-      );
-      throw new ApiError(
-        response.status,
-        message,
-        Number.isFinite(retry) ? retry : undefined,
-      );
+      const retry = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
+      throw new ApiError(response.status, message, Number.isFinite(retry) ? retry : undefined);
     }
     if (response.status === 204) return undefined as T;
-    const data = await response.json() as T;
+    const data = (await response.json()) as T;
     this.checkSession(generation);
     return data;
   }
@@ -182,7 +179,8 @@ export class ApiClient {
     const headers = new Headers(init.headers);
     headers.set("Accept", "text/event-stream");
     if (this.authMode === "bearer") headers.set("Authorization", `Bearer ${this.token}`);
-    else if (init.method && !["GET", "HEAD"].includes(init.method)) headers.set("X-Meta-CSRF", teamCSRF());
+    else if (init.method && !["GET", "HEAD"].includes(init.method))
+      headers.set("X-Meta-CSRF", teamCSRF());
     if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     let response: Response;
     try {
@@ -193,7 +191,14 @@ export class ApiClient {
         credentials: "same-origin",
       });
     } catch (error) {
-      if (signal?.aborted || (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError")) throw error;
+      if (
+        signal?.aborted ||
+        (typeof error === "object" &&
+          error !== null &&
+          "name" in error &&
+          error.name === "AbortError")
+      )
+        throw error;
       throw new ApiError(0, "Unable to reach Meta Gateway");
     }
     if (this.authMode === "cookie" && generation !== teamSessionGeneration()) {
@@ -297,8 +302,7 @@ export const api = (client: ApiClient) => ({
       evidence?: string;
       title?: string;
     }>(`/admin/site-type?url=${encodeURIComponent(url)}`, signal),
-  updateSite: (id: number, body: Partial<Site>) =>
-    client.put<Site>(`/admin/sites/${id}`, body),
+  updateSite: (id: number, body: Partial<Site>) => client.put<Site>(`/admin/sites/${id}`, body),
   /** What URL the gateway would actually call for a base URL, so a wrong join is
    *  visible in the connection editor instead of surfacing as a 404 later. */
   endpointPreview: (url: string, signal?: AbortSignal) =>
@@ -342,17 +346,13 @@ export const api = (client: ApiClient) => ({
   ) => client.put<Credential>(`/admin/credentials/${id}`, body),
   deleteCredential: (id: number) => client.delete(`/admin/credentials/${id}`),
   revealCredential: (siteId: number, id: number) =>
-    client.post<{ secret: string }>(
-      `/admin/sites/${siteId}/credentials/${id}/reveal`,
-      {},
-    ),
+    client.post<{ secret: string }>(`/admin/sites/${siteId}/credentials/${id}/reveal`, {}),
   setCheckin: (id: number, enabled: boolean) =>
     client.put<{ credential_id: number; checkin_enabled: boolean }>(
       `/admin/credentials/${id}/checkin`,
       { enabled },
     ),
-  runCredential: (id: number) =>
-    client.post<RunResult>(`/admin/checkin/credentials/${id}/run`),
+  runCredential: (id: number) => client.post<RunResult>(`/admin/checkin/credentials/${id}/run`),
   externalCheckins: (signal?: AbortSignal) =>
     client.getList<ExternalCheckin>("/admin/checkin/external", signal),
   createExternalCheckin: (body: {
@@ -377,10 +377,8 @@ export const api = (client: ApiClient) => ({
       enabled?: boolean;
     },
   ) => client.put<ExternalCheckin>(`/admin/checkin/external/${siteId}`, body),
-  deleteExternalCheckin: (siteId: number) =>
-    client.delete(`/admin/checkin/external/${siteId}`),
-  channels: (signal?: AbortSignal) =>
-    client.getList<Channel>("/admin/channels", signal),
+  deleteExternalCheckin: (siteId: number) => client.delete(`/admin/checkin/external/${siteId}`),
+  channels: (signal?: AbortSignal) => client.getList<Channel>("/admin/channels", signal),
   createConnection: (body: {
     name?: string;
     base_url: string;
@@ -395,22 +393,17 @@ export const api = (client: ApiClient) => ({
   }) => client.post<ConnectionCreateResponse>("/admin/connections", body),
   channelOverviews: (signal?: AbortSignal) =>
     client.getList<ChannelOverview>("/admin/channels/overview", signal),
-  createChannel: (body: Partial<Channel>) =>
-    client.post<Channel>("/admin/channels", body),
+  createChannel: (body: Partial<Channel>) => client.post<Channel>("/admin/channels", body),
   updateChannel: (id: number, body: Partial<Channel>) =>
     client.put<Channel>(`/admin/channels/${id}`, body),
   deleteChannel: (id: number) => client.delete(`/admin/channels/${id}`),
-  duplicateChannel: (id: number) =>
-    client.post<Channel>(`/admin/channels/${id}/duplicate`, {}),
+  duplicateChannel: (id: number) => client.post<Channel>(`/admin/channels/${id}/duplicate`, {}),
   factoryReset: (confirm: string) =>
     client.post<{ deleted: Record<string, number> }>("/admin/reset", {
       confirm,
     }),
   lastDBGC: (signal?: AbortSignal) =>
-    client.get<{ result: DBGCResult | null; ran_at?: string }>(
-      "/admin/db/gc",
-      signal,
-    ),
+    client.get<{ result: DBGCResult | null; ran_at?: string }>("/admin/db/gc", signal),
   runDBGC: () => client.post<DBGCResult>("/admin/db/gc", {}),
   globalSearch: (q: string, signal?: AbortSignal) =>
     client.get<SearchHits>(`/admin/search?q=${encodeURIComponent(q)}`, signal),
@@ -427,8 +420,7 @@ export const api = (client: ApiClient) => ({
       auto_match_mode?: ModelMatchMode;
     },
   ) => client.post<Route>("/admin/routes", body),
-  updateRoute: (id: number, body: Partial<Route>) =>
-    client.put<Route>(`/admin/routes/${id}`, body),
+  updateRoute: (id: number, body: Partial<Route>) => client.put<Route>(`/admin/routes/${id}`, body),
   deleteRoute: (id: number) => client.delete(`/admin/routes/${id}`),
   // "Add every channel that serves this model" on an existing route. The list
   // is intersected server-side with the enabled matches, so a stale console
@@ -441,10 +433,11 @@ export const api = (client: ApiClient) => ({
     groupName?: string,
     match?: ModelMatchMode,
   ) =>
-    client.post<{ added: number; skipped: number }>(
-      `/admin/routes/${routeId}/auto-match`,
-      { channel_ids: channelIds, group_name: groupName ?? "", match },
-    ),
+    client.post<{ added: number; skipped: number }>(`/admin/routes/${routeId}/auto-match`, {
+      channel_ids: channelIds,
+      group_name: groupName ?? "",
+      match,
+    }),
   createMember: (routeId: number, body: Partial<RouteMember>) =>
     client.post<RouteMember>(`/admin/routes/${routeId}/members`, body),
   updateMember: (id: number, body: Partial<RouteMember>) =>
@@ -453,49 +446,33 @@ export const api = (client: ApiClient) => ({
     client.post<RouteMember>(`/admin/route-members/${id}/clear-health`),
   deleteMember: (id: number) => client.delete(`/admin/route-members/${id}`),
   renameMemberGroup: (routeId: number, from: string, to: string) =>
-    client.post<{ renamed: number }>(
-      `/admin/routes/${routeId}/groups/rename`,
-      { from, to },
-    ),
+    client.post<{ renamed: number }>(`/admin/routes/${routeId}/groups/rename`, { from, to }),
   copyMemberGroup: (routeId: number, from: string, to: string) =>
-    client.post<{ copied: number }>(
-      `/admin/routes/${routeId}/groups/copy`,
-      { from, to },
-    ),
+    client.post<{ copied: number }>(`/admin/routes/${routeId}/groups/copy`, { from, to }),
   routeGroups: (signal?: AbortSignal) =>
     client.get<{ groups: string[] }>("/admin/route-groups", signal),
   // Tenant groups — the quota/rate-limit container a client token can be bound
   // to. Distinct from routeGroups above, which name model groups inside a
   // route; the two are unrelated despite the shared word.
-  keyGroups: (signal?: AbortSignal) =>
-    client.get<Array<{ name: string }>>("/admin/groups", signal),
+  keyGroups: (signal?: AbortSignal) => client.get<Array<{ name: string }>>("/admin/groups", signal),
   deleteMemberGroup: (routeId: number, name: string) =>
-    client.delete(
-      `/admin/routes/${routeId}/groups/${encodeURIComponent(name)}`,
-    ),
+    client.delete(`/admin/routes/${routeId}/groups/${encodeURIComponent(name)}`),
   explain: (model: string, signal?: AbortSignal, routeGroup?: string) =>
     client.get<RouteExplanation>(
       `/admin/routes/explain?model=${encodeURIComponent(model)}${routeGroup ? `&route_group=${encodeURIComponent(routeGroup)}` : ""}`,
       signal,
     ),
-  sticky: (signal?: AbortSignal) =>
-    client.get<StickySnapshot>("/admin/sticky", signal),
-  keys: (signal?: AbortSignal) =>
-    client.getList<DownstreamKey>("/admin/downstream-keys", signal),
+  sticky: (signal?: AbortSignal) => client.get<StickySnapshot>("/admin/sticky", signal),
+  keys: (signal?: AbortSignal) => client.getList<DownstreamKey>("/admin/downstream-keys", signal),
   createKey: (body: KeyCreateInput) =>
     client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
-  updateKey: (
-    id: number,
-    body: KeyUpdateInput,
-  ) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
+  updateKey: (id: number, body: KeyUpdateInput) =>
+    client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
   deleteKey: (id: number) => client.delete(`/admin/downstream-keys/${id}`),
   revealKey: (id: number) =>
     client.post<{ token: string }>(`/admin/downstream-keys/${id}/reveal`, {}),
   rotateKey: (id: number) =>
-    client.post<{ id: number; token: string }>(
-      `/admin/downstream-keys/${id}/rotate`,
-      {},
-    ),
+    client.post<{ id: number; token: string }>(`/admin/downstream-keys/${id}/rotate`, {}),
   usageSummary: (
     downstreamKeyId?: number,
     signal?: AbortSignal,
@@ -503,8 +480,7 @@ export const api = (client: ApiClient) => ({
     until?: string,
   ) => {
     const query = new URLSearchParams();
-    if (downstreamKeyId != null)
-      query.set("downstream_key_id", String(downstreamKeyId));
+    if (downstreamKeyId != null) query.set("downstream_key_id", String(downstreamKeyId));
     if (since) query.set("since", since);
     if (until) query.set("until", until);
     const suffix = query.size ? `?${query.toString()}` : "";
@@ -550,8 +526,7 @@ export const api = (client: ApiClient) => ({
     const query = new URLSearchParams();
     if (filters?.downstream_key_id != null)
       query.set("downstream_key_id", String(filters.downstream_key_id));
-    if (filters?.channel_id != null)
-      query.set("channel_id", String(filters.channel_id));
+    if (filters?.channel_id != null) query.set("channel_id", String(filters.channel_id));
     if (filters?.model) query.set("model", filters.model);
     if (filters?.limit != null) query.set("limit", String(filters.limit));
     if (filters?.since) query.set("since", filters.since);
@@ -580,16 +555,13 @@ export const api = (client: ApiClient) => ({
     const query = new URLSearchParams();
     if (filters?.q) query.set("q", filters.q);
     if (filters?.site_id != null) query.set("site_id", String(filters.site_id));
-    if (filters?.channel_id != null)
-      query.set("channel_id", String(filters.channel_id));
+    if (filters?.channel_id != null) query.set("channel_id", String(filters.channel_id));
     if (filters?.downstream_key_id != null)
       query.set("downstream_key_id", String(filters.downstream_key_id));
     if (filters?.model) query.set("model", filters.model);
     if (filters?.status != null) query.set("status", String(filters.status));
-    if (filters?.upstream_request_id)
-      query.set("upstream_request_id", filters.upstream_request_id);
-    if (filters?.before_id != null)
-      query.set("before_id", String(filters.before_id));
+    if (filters?.upstream_request_id) query.set("upstream_request_id", filters.upstream_request_id);
+    if (filters?.before_id != null) query.set("before_id", String(filters.before_id));
     if (filters?.since) query.set("since", filters.since);
     if (filters?.until) query.set("until", filters.until);
     if (filters?.limit != null) query.set("limit", String(filters.limit));
@@ -625,10 +597,7 @@ export const api = (client: ApiClient) => ({
   previewModelDiscard: (input: ModelDiscardRequest) =>
     client.post<ModelDiscardPreview>("/admin/models/changes/discard-preview", input),
   applyModelDiscard: (input: ModelDiscardRequest) =>
-    client.post<{ removed: number; routes: number }>(
-      "/admin/models/changes/discard-apply",
-      input,
-    ),
+    client.post<{ removed: number; routes: number }>("/admin/models/changes/discard-apply", input),
   missingModels: (signal?: AbortSignal) =>
     client.get<{
       items: Array<{
@@ -652,17 +621,14 @@ export const api = (client: ApiClient) => ({
     client.post<UnifyPreview>("/admin/models/unify/preview", { rules }),
   // Model probing. A probe is a real upstream call with a tiny max_tokens,
   // so it is always an explicit, cancellable task.
-  probeStart: (request: ProbeStartRequest) =>
-    client.post<ProbeTask>("/admin/probes", request),
+  probeStart: (request: ProbeStartRequest) => client.post<ProbeTask>("/admin/probes", request),
   probeTasks: () => client.get<ProbeTask[]>("/admin/probes"),
   probeTask: (id: number, signal?: AbortSignal) =>
     client.get<ProbeTask>(`/admin/probes/${id}`, signal),
   probeResults: (id: number, signal?: AbortSignal) =>
     client.get<ModelProbeResult[]>(`/admin/probes/${id}/results`, signal),
-  probeCancel: (id: number) =>
-    client.post<{ status: string }>(`/admin/probes/${id}/cancel`, {}),
-  modelHealth: (signal?: AbortSignal) =>
-    client.get<ModelHealth[]>("/admin/model-health", signal),
+  probeCancel: (id: number) => client.post<{ status: string }>(`/admin/probes/${id}/cancel`, {}),
+  modelHealth: (signal?: AbortSignal) => client.get<ModelHealth[]>("/admin/model-health", signal),
   /**
    * External site probe data joined with our routes. The policy travels as
    * query parameters so the dialog can preview a different threshold before
@@ -675,10 +641,7 @@ export const api = (client: ApiClient) => ({
       low_rounds: String(policy.low_rounds),
       high_rounds: String(policy.high_rounds),
     });
-    return client.get<SiteProbeReport>(
-      `/admin/site-probe/report?${query}`,
-      signal,
-    );
+    return client.get<SiteProbeReport>(`/admin/site-probe/report?${query}`, signal);
   },
   /** Collect now: one site when ids are given, every enabled site otherwise. */
   siteProbeCollect: (siteIds?: number[]) =>
@@ -693,20 +656,16 @@ export const api = (client: ApiClient) => ({
     policy: SiteProbePolicy;
     dry_run: boolean;
   }) =>
-    client.post<{ actions: SiteProbeAction[]; dry_run: boolean }>(
-      "/admin/site-probe/apply",
-      body,
-    ),
+    client.post<{ actions: SiteProbeAction[]; dry_run: boolean }>("/admin/site-probe/apply", body),
   /**
    * Write a site's published price into the members' billing columns. The
    * quote comes from the collected sample, never from the request; the store
    * fills only fields that are still empty.
    */
   siteProbeAdoptPrice: (memberIds: number[]) =>
-    client.post<{ results: SiteProbeAdoptResult[] }>(
-      "/admin/site-probe/adopt-price",
-      { member_ids: memberIds },
-    ),
+    client.post<{ results: SiteProbeAdoptResult[] }>("/admin/site-probe/adopt-price", {
+      member_ids: memberIds,
+    }),
   siteProbeDetect: (url: string) =>
     client.post<SiteProbeDetection>("/admin/site-probe/detect", { url }),
   /**
@@ -757,8 +716,7 @@ export const api = (client: ApiClient) => ({
     enabled: boolean;
     config?: string;
   }) => client.put<Site>("/admin/site-probe/source", body),
-  clearSiteProbeSource: (siteId: number) =>
-    client.delete(`/admin/site-probe/source/${siteId}`),
+  clearSiteProbeSource: (siteId: number) => client.delete(`/admin/site-probe/source/${siteId}`),
   unifyApply: (groups: UnifyGroup[], deleteOriginals = true) =>
     client.post<UnifyApplyResult>("/admin/models/unify/apply", {
       // Removing the originals is what actually unifies a name: a parked
@@ -791,11 +749,8 @@ export const api = (client: ApiClient) => ({
   unifyUndo: (id: number) =>
     client.post<{ status: string }>(`/admin/models/unify/batches/${id}/undo`),
   unifyRestoreRoute: (id: number) =>
-    client.post<{ status: string }>(
-      `/admin/models/unify/deleted/${id}/restore`,
-    ),
-  probeChannel: (id: number) =>
-    client.post<ProbeResult>(`/admin/discovery/channels/${id}/probe`),
+    client.post<{ status: string }>(`/admin/models/unify/deleted/${id}/restore`),
+  probeChannel: (id: number) => client.post<ProbeResult>(`/admin/discovery/channels/${id}/probe`),
   tryChat: (body: {
     model: string;
     prompt?: string;
@@ -913,10 +868,7 @@ export const api = (client: ApiClient) => ({
       }>;
     }>("/admin/channels/account/probe-all"),
   finance: (signal?: AbortSignal) =>
-    client.get<{ items: FinanceItem[] }>(
-      "/admin/channels/account/finance",
-      signal,
-    ),
+    client.get<{ items: FinanceItem[] }>("/admin/channels/account/finance", signal),
   modelBlocks: (signal?: AbortSignal) =>
     client.get<{
       items: Array<{
@@ -928,14 +880,8 @@ export const api = (client: ApiClient) => ({
       }>;
     }>("/admin/model-blocks", signal),
   unblockModel: (channelId: number, model: string) =>
-    client.delete(
-      `/admin/model-blocks?channel_id=${channelId}&model=${encodeURIComponent(model)}`,
-    ),
-  createRedemptionCodes: (body: {
-    count: number;
-    quota_tokens: number;
-    expires_at?: string;
-  }) =>
+    client.delete(`/admin/model-blocks?channel_id=${channelId}&model=${encodeURIComponent(model)}`),
+  createRedemptionCodes: (body: { count: number; quota_tokens: number; expires_at?: string }) =>
     client.post<{
       items: Array<{ id: number; code: string; quota_tokens: number }>;
     }>("/admin/redemption-codes", body),
@@ -951,50 +897,32 @@ export const api = (client: ApiClient) => ({
         redeemed_at?: string;
       }>;
     }>("/admin/redemption-codes", signal),
-  deleteRedemptionCode: (id: number) =>
-    client.delete(`/admin/redemption-codes/${id}`),
+  deleteRedemptionCode: (id: number) => client.delete(`/admin/redemption-codes/${id}`),
   totpStatus: (signal?: AbortSignal) =>
     client.get<{ enabled: boolean }>("/admin/totp/status", signal),
-  totpSetup: () =>
-    client.post<{ secret: string; otpauth_uri: string }>(
-      "/admin/totp/setup",
-      {},
-    ),
-  totpEnable: (code: string) =>
-    client.post<{ enabled: boolean }>("/admin/totp/enable", { code }),
-  totpDisable: (code: string) =>
-    client.post<{ enabled: boolean }>("/admin/totp/disable", { code }),
+  totpSetup: () => client.post<{ secret: string; otpauth_uri: string }>("/admin/totp/setup", {}),
+  totpEnable: (code: string) => client.post<{ enabled: boolean }>("/admin/totp/enable", { code }),
+  totpDisable: (code: string) => client.post<{ enabled: boolean }>("/admin/totp/disable", { code }),
   modelMetadata: (signal?: AbortSignal) =>
     client.get<{ items: ModelMetadata[] }>("/admin/model-metadata", signal),
   upsertModelMetadata: (name: string, body: Partial<ModelMetadata>) =>
-    client.put<ModelMetadata>(
-      `/admin/model-metadata/${encodeURIComponent(name)}`,
-      body,
-    ),
+    client.put<ModelMetadata>(`/admin/model-metadata/${encodeURIComponent(name)}`, body),
   deleteModelMetadata: (name: string) =>
     client.delete(`/admin/model-metadata/${encodeURIComponent(name)}`),
   modelCapabilities: (signal?: AbortSignal) =>
-    client.get<{ items: ModelCapability[]; kinds: string[] }>(
-      "/admin/model-capabilities",
-      signal,
-    ),
+    client.get<{ items: ModelCapability[]; kinds: string[] }>("/admin/model-capabilities", signal),
   upsertModelCapability: (name: string, body: Partial<ModelCapability>) =>
-    client.put<ModelCapability>(
-      `/admin/model-capabilities/${encodeURIComponent(name)}`,
-      body,
-    ),
+    client.put<ModelCapability>(`/admin/model-capabilities/${encodeURIComponent(name)}`, body),
   deleteModelCapability: (name: string) =>
     client.delete(`/admin/model-capabilities/${encodeURIComponent(name)}`),
   resolveModelCapabilities: (models: string[]) =>
-    client.post<{ items: Record<string, ModelCapability> }>(
-      "/admin/model-capabilities/resolve",
-      { models },
-    ),
+    client.post<{ items: Record<string, ModelCapability> }>("/admin/model-capabilities/resolve", {
+      models,
+    }),
   autoTagModelCapabilities: (models: string[]) =>
-    client.post<{ ok: boolean; requested: number }>(
-      "/admin/model-capabilities/auto-tag",
-      { models },
-    ),
+    client.post<{ ok: boolean; requested: number }>("/admin/model-capabilities/auto-tag", {
+      models,
+    }),
   /** Last sync outcome plus which catalogs are wired in. Never hits the network. */
   catalogStatus: (signal?: AbortSignal) =>
     client.get<CatalogStatus>("/admin/model-capabilities/catalog", signal),
@@ -1022,8 +950,7 @@ export const api = (client: ApiClient) => ({
       "/admin/alert-rules",
       signal,
     ),
-  createAlertRule: (body: Partial<AlertRule>) =>
-    client.post<AlertRule>("/admin/alert-rules", body),
+  createAlertRule: (body: Partial<AlertRule>) => client.post<AlertRule>("/admin/alert-rules", body),
   updateAlertRule: (id: number, body: Partial<AlertRule>) =>
     client.put<AlertRule>(`/admin/alert-rules/${id}`, body),
   deleteAlertRule: (id: number) => client.delete(`/admin/alert-rules/${id}`),
@@ -1033,13 +960,9 @@ export const api = (client: ApiClient) => ({
     client.post<PromptGuardRule>("/admin/prompt-guards", body),
   updatePromptGuard: (id: number, body: Partial<PromptGuardRule>) =>
     client.put<PromptGuardRule>(`/admin/prompt-guards/${id}`, body),
-  deletePromptGuard: (id: number) =>
-    client.delete(`/admin/prompt-guards/${id}`),
+  deletePromptGuard: (id: number) => client.delete(`/admin/prompt-guards/${id}`),
   healthHistory: (channelId: number, signal?: AbortSignal) =>
-    client.get<{ items: HealthPoint[] }>(
-      `/admin/health-history?channel_id=${channelId}`,
-      signal,
-    ),
+    client.get<{ items: HealthPoint[] }>(`/admin/health-history?channel_id=${channelId}`, signal),
   healthSummary: (hours = 24, signal?: AbortSignal) =>
     client.get<{ items: HealthSummaryItem[] }>(
       `/admin/health-history/summary?hours=${hours}`,
@@ -1093,21 +1016,13 @@ export const api = (client: ApiClient) => ({
   createUpstreamKey: (
     id: number,
     body: { name?: string; group?: string; unlimited_quota?: boolean },
-  ) =>
-    client.post<CreateUpstreamKeyResult>(
-      `/admin/channels/${id}/account/create-key`,
-      body,
-    ),
+  ) => client.post<CreateUpstreamKeyResult>(`/admin/channels/${id}/account/create-key`, body),
   tokenGroups: (id: number, signal?: AbortSignal) =>
-    client.get<{ groups: string[] }>(
-      `/admin/channels/${id}/account/token-groups`,
-      signal,
-    ),
+    client.get<{ groups: string[] }>(`/admin/channels/${id}/account/token-groups`, signal),
   refreshChannel: (id: number) =>
     client.post<RefreshResult>(`/admin/discovery/channels/${id}/refresh`),
   refreshAll: () => client.post<RefreshSummary>("/admin/discovery/refresh"),
-  pingChannel: (id: number) =>
-    client.post<ChannelPingResult>(`/admin/channels/${id}/ping`),
+  pingChannel: (id: number) => client.post<ChannelPingResult>(`/admin/channels/${id}/ping`),
   checkinLogs: (query: string, signal?: AbortSignal) =>
     client.getList<CheckinLog>(`/admin/checkin/logs${query}`, signal),
   runAllCheckins: () => client.post<RunSummary>("/admin/checkin/run"),
@@ -1116,10 +1031,8 @@ export const api = (client: ApiClient) => ({
       `/admin/audit-events?limit=100${beforeId ? `&before_id=${beforeId}` : ""}`,
       signal,
     ),
-  cleanupAudit: () =>
-    client.post<{ removed: number }>("/admin/audit-events/cleanup"),
-  backups: (signal?: AbortSignal) =>
-    client.getList<BackupRecord>("/admin/backups", signal),
+  cleanupAudit: () => client.post<{ removed: number }>("/admin/audit-events/cleanup"),
+  backups: (signal?: AbortSignal) => client.getList<BackupRecord>("/admin/backups", signal),
   createBackup: () => client.post<BackupRecord>("/admin/backups"),
   runtimeSettings: (signal?: AbortSignal) =>
     client.get<RuntimeSettings>("/admin/runtime-settings", signal),
@@ -1130,26 +1043,20 @@ export const api = (client: ApiClient) => ({
     client.put<{ symbol: string; rate: number }>("/admin/display-settings", body),
   updateCheck: (signal?: AbortSignal) =>
     client.get<UpdateCheckStatus>("/admin/update-check", signal),
-  refreshUpdateCheck: () =>
-    client.post<UpdateCheckStatus>("/admin/update-check/refresh"),
+  refreshUpdateCheck: () => client.post<UpdateCheckStatus>("/admin/update-check/refresh"),
   selfUpdateStatus: (signal?: AbortSignal) =>
     client.get<SelfUpdateStatus>("/admin/self-update", signal),
   applySelfUpdate: (target: string) =>
-    client.post<{ started: boolean; target: string }>(
-      "/admin/self-update/apply",
-      { target },
-    ),
+    client.post<{ started: boolean; target: string }>("/admin/self-update/apply", { target }),
   updateRuntimeSettings: (body: RuntimeEditableSettings) =>
     client.put<RuntimeSettings>("/admin/runtime-settings", body),
-  resetRuntimeSettings: () =>
-    client.post<RuntimeSettings>("/admin/runtime-settings/reset"),
+  resetRuntimeSettings: () => client.post<RuntimeSettings>("/admin/runtime-settings/reset"),
   exportData: (includeSecrets: boolean, channelIds: number[]) =>
     client.post<ExchangeEnvelope>("/admin/exchange/export", {
       include_secrets: includeSecrets,
       channel_ids: channelIds,
     }),
-  importData: (document: unknown) =>
-    client.post<ImportResult>("/admin/exchange/import", document),
+  importData: (document: unknown) => client.post<ImportResult>("/admin/exchange/import", document),
   /**
    * Imports an AAH-encrypted backup. The server decrypts with the same
    * PBKDF2/AES-GCM envelope implementation the WebDAV pull uses.
@@ -1159,18 +1066,15 @@ export const api = (client: ApiClient) => ({
       document,
       password,
     }),
-  webdavStatus: (signal?: AbortSignal) =>
-    client.get<WebDAVStatus>("/admin/webdav/status", signal),
+  webdavStatus: (signal?: AbortSignal) => client.get<WebDAVStatus>("/admin/webdav/status", signal),
   webdavSettings: (signal?: AbortSignal) =>
     client.get<WebDAVSettings>("/admin/webdav/settings", signal),
   updateWebdavSettings: (body: WebDAVSettingsUpdate) =>
     client.put<WebDAVSettings>("/admin/webdav/settings", body),
   webdavTest: (direction: WebDAVSyncDirection = "download") =>
     client.post<WebDAVSyncResult>("/admin/webdav/test", { direction }),
-  webdavSync: (
-    direction: WebDAVSyncDirection = "download",
-    mode: WebDAVSyncMode = "incremental",
-  ) => client.post<WebDAVSyncResult>("/admin/webdav/sync", { direction, mode }),
+  webdavSync: (direction: WebDAVSyncDirection = "download", mode: WebDAVSyncMode = "incremental") =>
+    client.post<WebDAVSyncResult>("/admin/webdav/sync", { direction, mode }),
   pluginsMarket: (signal?: AbortSignal) =>
     client.get<{
       sources: Array<{ id: string; name: string; url: string }>;
@@ -1209,23 +1113,14 @@ export const api = (client: ApiClient) => ({
    */
   pluginHooks: (signal?: AbortSignal) =>
     client.get<{ hooks: PluginHookStatus[] }>("/admin/plugins/hooks", signal),
-  plugins: (signal?: AbortSignal) =>
-    client.getList<PluginRecord>("/admin/plugins", signal),
+  plugins: (signal?: AbortSignal) => client.getList<PluginRecord>("/admin/plugins", signal),
   activatePlugin: (id: string) =>
-    client.post<PluginRecord>(
-      `/admin/plugins/${encodeURIComponent(id)}/activate`,
-    ),
+    client.post<PluginRecord>(`/admin/plugins/${encodeURIComponent(id)}/activate`),
   disablePlugin: (id: string) =>
-    client.post<PluginRecord>(
-      `/admin/plugins/${encodeURIComponent(id)}/disable`,
-    ),
-  uninstallPlugin: (id: string) =>
-    client.delete(`/admin/plugins/${encodeURIComponent(id)}`),
+    client.post<PluginRecord>(`/admin/plugins/${encodeURIComponent(id)}/disable`),
+  uninstallPlugin: (id: string) => client.delete(`/admin/plugins/${encodeURIComponent(id)}`),
   pluginConfig: (id: string, signal?: AbortSignal) =>
-    client.get<PluginConfigResponse>(
-      `/admin/plugins/${encodeURIComponent(id)}/config`,
-      signal,
-    ),
+    client.get<PluginConfigResponse>(`/admin/plugins/${encodeURIComponent(id)}/config`, signal),
   savePluginConfig: (id: string, config: string) =>
     client.put<{ id: string; has_config: boolean }>(
       `/admin/plugins/${encodeURIComponent(id)}/config`,

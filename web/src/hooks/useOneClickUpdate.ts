@@ -65,9 +65,7 @@ export function useOneClickUpdate() {
         startedAt: status.data.started_at ?? Date.now(),
         from: status.data.from ?? undefined,
         tracked:
-          status.data.mode === "watchtower"
-            ? status.data.tracking_tag ?? undefined
-            : undefined,
+          status.data.mode === "watchtower" ? (status.data.tracking_tag ?? undefined) : undefined,
       };
       storeWatch(resumedWatch);
       setWatch(resumedWatch);
@@ -147,7 +145,11 @@ export function useOneClickUpdate() {
           return;
         }
         const current = await service.selfUpdateStatus(controller.signal);
-        if (current.phase === "failed" && (!current.target || current.target === watch.target) && !disposed) {
+        if (
+          current.phase === "failed" &&
+          (!current.target || current.target === watch.target) &&
+          !disposed
+        ) {
           finish(current.error ?? "Update failed");
           return;
         }

@@ -88,8 +88,7 @@ export function ModelDirectoryTable({
   className?: string;
 }) {
   const { t } = useI18n();
-  const columns =
-    (bulkMode ? 1 : 0) + 1 + (showUpstream ? 1 : 0) + (showStatus ? 1 : 0) + 1;
+  const columns = (bulkMode ? 1 : 0) + 1 + (showUpstream ? 1 : 0) + (showStatus ? 1 : 0) + 1;
   return (
     <div className="table-wrap" data-columns={columns}>
       <table className={className}>
@@ -125,9 +124,7 @@ export function ModelDirectoryTable({
                   {row.name}
                 </strong>
                 {row.provider}
-                {row.group ? (
-                  <span className="model-meta-badge is-group">{row.group}</span>
-                ) : null}
+                {row.group ? <span className="model-meta-badge is-group">{row.group}</span> : null}
                 {row.badges}
                 <span className="model-meta-badges">
                   {row.contextWindow && row.contextWindow > 0 ? (
@@ -152,18 +149,13 @@ export function ModelDirectoryTable({
                 {row.facts}
                 {row.prices}
               </td>
-              {showUpstream ? (
-                <td className="model-row-upstream">{row.upstream}</td>
-              ) : null}
+              {showUpstream ? <td className="model-row-upstream">{row.upstream}</td> : null}
               {showStatus ? (
                 <td className="status-col model-row-status">
                   <StatusBadge value={row.status} />
                 </td>
               ) : null}
-              <td
-                className="actions row-actions"
-                onClick={(event) => event.stopPropagation()}
-              >
+              <td className="actions row-actions" onClick={(event) => event.stopPropagation()}>
                 {row.actions}
               </td>
             </tr>

@@ -19,12 +19,5 @@ export function CodesPanel() {
     queryKey: ["team", "policies"],
     queryFn: ({ signal }) => request<Policy[]>("/admin/team/policies", { signal }),
   });
-  return (
-    <CodePanel
-      request={request}
-      policies={policies.data ?? []}
-      locale={locale}
-      t={t}
-    />
-  );
+  return <CodePanel request={request} policies={policies.data ?? []} locale={locale} t={t} />;
 }

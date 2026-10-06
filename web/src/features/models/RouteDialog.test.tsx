@@ -38,9 +38,7 @@ function renderDialog(
 // The affinity control lives behind the "model-level settings" fold, like every
 // other override this dialog exposes, so every case has to open it first.
 function showModelLevelSettings() {
-  fireEvent.click(
-    screen.getByRole("button", { name: "Show model-level settings" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Show model-level settings" }));
 }
 
 // Several selects in this dialog offer an "Inherit" option, so the option text
@@ -70,7 +68,9 @@ describe("route-level session affinity", () => {
     localStorage.setItem("meta-gateway.locale", "en");
     localStorage.setItem("meta-gateway.admin-token", "test-token");
   });
-  afterEach(() => { cleanup(); });
+  afterEach(() => {
+    cleanup();
+  });
 
   // Affinity is a per-model trade-off, so the dialog has to expose the
   // three-state override rather than only a global switch.

@@ -8,11 +8,7 @@ import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
 
-const PROBE_INVALIDATE_KEYS = [
-  ["probe-tasks"],
-  ["probe-results"],
-  ["model-health"],
-] as const;
+const PROBE_INVALIDATE_KEYS = [["probe-tasks"], ["probe-results"], ["model-health"]] as const;
 
 /**
  * Model probing: send a real completion to every selected (channel, model)
@@ -88,10 +84,7 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   }, [channels.data]);
 
   const selectableChannels = useMemo(
-    () =>
-      (channels.data ?? []).filter((channel) =>
-        index.byChannel.has(channel.id),
-      ),
+    () => (channels.data ?? []).filter((channel) => index.byChannel.has(channel.id)),
     [channels.data, index],
   );
 
@@ -107,8 +100,7 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   }, [pickedChannels, index, allChannels]);
 
   const scope = useMemo(() => {
-    const ids =
-      allChannels ? [...index.byChannel.keys()] : pickedChannels.map(Number);
+    const ids = allChannels ? [...index.byChannel.keys()] : pickedChannels.map(Number);
     const models = allModels ? visibleModels : pickedModels;
     let pairs = 0;
     for (const id of ids) {
@@ -124,10 +116,10 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   }, [pickedChannels, pickedModels, visibleModels, index, allChannels, allModels]);
 
   const toggleChannel = (id: string, value: boolean) => {
-    const current = allChannels ? selectableChannels.map((channel) => String(channel.id)) : pickedChannels;
-    const next = value
-      ? [...current, id]
-      : current.filter((item) => item !== id);
+    const current = allChannels
+      ? selectableChannels.map((channel) => String(channel.id))
+      : pickedChannels;
+    const next = value ? [...current, id] : current.filter((item) => item !== id);
     setAllChannels(false);
     setPickedChannels(next);
     // A model that no selected channel serves would silently vanish from the
@@ -146,8 +138,7 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   const submit = () => {
     if (!scope.pairs) return;
     start.mutate({
-      channel_ids:
-        allChannels ? undefined : pickedChannels.map(Number),
+      channel_ids: allChannels ? undefined : pickedChannels.map(Number),
       models: allModels ? undefined : pickedModels,
       prompt: prompt.trim() !== "" ? prompt : undefined,
       max_tokens: maxTokens,
@@ -199,8 +190,13 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
               count: index.byChannel.get(channel.id)?.size ?? 0,
             }),
           }))}
-          selected={allChannels ? selectableChannels.map((channel) => String(channel.id)) : pickedChannels}
-          onChange={(values) => { setAllChannels(false); setPickedChannels(values); }}
+          selected={
+            allChannels ? selectableChannels.map((channel) => String(channel.id)) : pickedChannels
+          }
+          onChange={(values) => {
+            setAllChannels(false);
+            setPickedChannels(values);
+          }}
           onToggleOne={toggleChannel}
           emptyLabel={t("common.loading")}
         />
@@ -216,7 +212,10 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
             }),
           }))}
           selected={allModels ? visibleModels : pickedModels}
-          onChange={(values) => { setAllModels(false); setPickedModels(values); }}
+          onChange={(values) => {
+            setAllModels(false);
+            setPickedModels(values);
+          }}
           emptyLabel={t("common.loading")}
         />
       </div>
@@ -290,9 +289,7 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
         </p>
       ) : null}
 
-      {start.error ? (
-        <div className="inline-error">{String(start.error)}</div>
-      ) : null}
+      {start.error ? <div className="inline-error">{String(start.error)}</div> : null}
 
       {latest ? (
         <div className="unify-result" role="status">
@@ -331,12 +328,8 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
                   <td>{channelNames.get(result.channel_id) ?? result.channel_id}</td>
                   <td className="mono">{result.model}</td>
                   <td>
-                    <span
-                      className={`model-meta-badge${result.ok ? " is-mapped" : ""}`}
-                    >
-                      {result.ok
-                        ? t("modelsPage.probe.ok")
-                        : t("modelsPage.probe.failed")}
+                    <span className={`model-meta-badge${result.ok ? " is-mapped" : ""}`}>
+                      {result.ok ? t("modelsPage.probe.ok") : t("modelsPage.probe.failed")}
                     </span>
                   </td>
                   <td>{result.latency_ms} ms</td>
@@ -390,16 +383,13 @@ function PickList({
       onToggleOne(value, checked);
       return;
     }
-    onChange(
-      checked ? [...selected, value] : selected.filter((item) => item !== value),
-    );
+    onChange(checked ? [...selected, value] : selected.filter((item) => item !== value));
   };
 
   // Select-all applies to what the operator can currently see, so a filter
   // narrows the bulk action instead of silently grabbing everything.
   const allVisibleSelected =
-    visible.length > 0 &&
-    visible.every((option) => selected.includes(option.value));
+    visible.length > 0 && visible.every((option) => selected.includes(option.value));
 
   return (
     <section className="probe-picker-col">
@@ -427,16 +417,16 @@ function PickList({
           className="unify-covered-toggle"
           disabled={disabled || visible.length === 0}
           onClick={() =>
-            onChange(allVisibleSelected
-              ? selected.filter(
-                  (item) => !visible.some((option) => option.value === item),
-                )
-              : [
-                  ...selected,
-                  ...visible
-                    .map((option) => option.value)
-                    .filter((value) => !selected.includes(value)),
-                ])
+            onChange(
+              allVisibleSelected
+                ? selected.filter((item) => !visible.some((option) => option.value === item))
+                : [
+                    ...selected,
+                    ...visible
+                      .map((option) => option.value)
+                      .filter((value) => !selected.includes(value)),
+                  ],
+            )
           }
         >
           {allVisibleSelected

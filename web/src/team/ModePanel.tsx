@@ -81,11 +81,7 @@ export function ModePanel({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (
-                mode === "personal" &&
-                query.data.mode === "team" &&
-                !confirm(t("disableHint"))
-              )
+              if (mode === "personal" && query.data.mode === "team" && !confirm(t("disableHint")))
                 return;
               void save("/admin/mode", "PATCH", { mode });
             }}
@@ -95,21 +91,15 @@ export function ModePanel({
                 aria-label={t("mode")}
                 className="runtime-mode-select"
                 value={mode}
-                onChange={(e) =>
-                  setChoice(e.target.value as "personal" | "team")
-                }
+                onChange={(e) => setChoice(e.target.value as "personal" | "team")}
               >
                 <option value="personal">{t("personal")}</option>
-            				<option value="team">{t("enabled")}</option>
+                <option value="team">{t("enabled")}</option>
               </select>
               <p className="muted panel-lede" style={{ marginTop: 12 }}>
                 {t("disableHint")}
               </p>
-              <Button
-                type="submit"
-                style={{ marginTop: 6 }}
-                disabled={mode === query.data.mode}
-              >
+              <Button type="submit" style={{ marginTop: 6 }} disabled={mode === query.data.mode}>
                 {busy ? t("saving") : t("save")}
               </Button>
             </fieldset>
@@ -124,55 +114,44 @@ export function ModePanel({
               </p>
               <form
                 style={{ marginTop: 12 }}
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                void save("/admin/mode/owner", "POST", {
-                  username: data.get("username"),
-                  name: data.get("name"),
-                  password: data.get("password"),
-                  totp: data.get("totp"),
-                });
-              }}
-            >
-              <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>
-                {t("bootstrap")}
-              </h4>
-              <p className="muted panel-lede">{t("bootstrapHint")}</p>
-              <fieldset className="team-modal-content" disabled={busy}>
-                <div className="form-grid">
-                  <Field label={t("username")}>
-                    <input
-                      name="username"
-                      minLength={3}
-                      maxLength={64}
-                      required
-                      autoComplete="username"
-                    />
-                  </Field>
-                  <Field label={t("name")}>
-                    <input name="name" maxLength={80} required />
-                  </Field>
-                  <Field label={`${t("password")} · ${t("passwordHint")}`}>
-                    <input
-                      name="password"
-                      type="password"
-                      required
-                      autoComplete="new-password"
-                    />
-                  </Field>
-                  <Field label={t("totp")}>
-                    <input
-                      name="totp"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                    />
-                  </Field>
-                </div>
-                <Button type="submit" variant="secondary">
-                  {busy ? t("saving") : t("bootstrap")}
-                </Button>
-              </fieldset>
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  void save("/admin/mode/owner", "POST", {
+                    username: data.get("username"),
+                    name: data.get("name"),
+                    password: data.get("password"),
+                    totp: data.get("totp"),
+                  });
+                }}
+              >
+                <h4 style={{ margin: "0 0 6px", fontSize: 13 }}>{t("bootstrap")}</h4>
+                <p className="muted panel-lede">{t("bootstrapHint")}</p>
+                <fieldset className="team-modal-content" disabled={busy}>
+                  <div className="form-grid">
+                    <Field label={t("username")}>
+                      <input
+                        name="username"
+                        minLength={3}
+                        maxLength={64}
+                        required
+                        autoComplete="username"
+                      />
+                    </Field>
+                    <Field label={t("name")}>
+                      <input name="name" maxLength={80} required />
+                    </Field>
+                    <Field label={`${t("password")} · ${t("passwordHint")}`}>
+                      <input name="password" type="password" required autoComplete="new-password" />
+                    </Field>
+                    <Field label={t("totp")}>
+                      <input name="totp" inputMode="numeric" autoComplete="one-time-code" />
+                    </Field>
+                  </div>
+                  <Button type="submit" variant="secondary">
+                    {busy ? t("saving") : t("bootstrap")}
+                  </Button>
+                </fieldset>
               </form>
             </>
           )}

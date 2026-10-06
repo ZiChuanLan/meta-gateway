@@ -23,10 +23,10 @@ import "./member/user.css";
 import "./member/workspaces.css";
 
 const queryClient = new QueryClient({
-	defaultOptions: {
-		queries: { staleTime: 15_000, retry: false, refetchOnWindowFocus: false },
-		mutations: { retry: false },
-	},
+  defaultOptions: {
+    queries: { staleTime: 15_000, retry: false, refetchOnWindowFocus: false },
+    mutations: { retry: false },
+  },
 });
 
 // A tab opened before a deploy runs the old build while the server only has the
@@ -34,19 +34,19 @@ const queryClient = new QueryClient({
 installPreloadRecovery();
 
 createRoot(document.getElementById("root")!).render(
-	<StrictMode>
-		<QueryClientProvider client={queryClient}>
-			<I18nProvider>
-				<ToastProvider>
-					<SessionProvider>
-						<BrowserRouter basename="/console">
-							<ErrorBoundary>
-								<App />
-							</ErrorBoundary>
-						</BrowserRouter>
-					</SessionProvider>
-				</ToastProvider>
-			</I18nProvider>
-		</QueryClientProvider>
-	</StrictMode>,
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <ToastProvider>
+          <SessionProvider>
+            <BrowserRouter basename="/console">
+              <ErrorBoundary>
+                <App />
+              </ErrorBoundary>
+            </BrowserRouter>
+          </SessionProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </QueryClientProvider>
+  </StrictMode>,
 );

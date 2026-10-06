@@ -59,8 +59,7 @@ export function AutoMatchMembersDialog({
 
   const matches = useQuery({
     queryKey: ["model-channels", route.model_pattern, mode],
-    queryFn: ({ signal }) =>
-      service.modelChannels(route.model_pattern, mode, signal),
+    queryFn: ({ signal }) => service.modelChannels(route.model_pattern, mode, signal),
   });
   const items = matches.data?.items ?? [];
   const alreadyAttached = new Set(attachedChannelIds);
@@ -81,19 +80,17 @@ export function AutoMatchMembersDialog({
   };
 
   const attach = useAdminMutation({
-    mutationFn: (ids: number[]) =>
-      service.autoMatchRouteMembers(route.id, ids, group, mode),
+    mutationFn: (ids: number[]) => service.autoMatchRouteMembers(route.id, ids, group, mode),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     toastOnError: false,
     onSuccess: ({ added, skipped }) => {
       toast.push({
         tone: added > 0 ? "success" : "info",
-        message: t(
-          skipped > 0
-            ? "modelsPage.autoMatch.doneSkipped"
-            : "modelsPage.autoMatch.done",
-          { group: group || t("routing.groupDefault"), added, skipped },
-        ),
+        message: t(skipped > 0 ? "modelsPage.autoMatch.doneSkipped" : "modelsPage.autoMatch.done", {
+          group: group || t("routing.groupDefault"),
+          added,
+          skipped,
+        }),
       });
       onClose();
     },
@@ -130,9 +127,7 @@ export function AutoMatchMembersDialog({
         })}
       </p>
       <fieldset className="match-mode">
-        <legend className="ops-panel-context">
-          {t("modelsPage.autoMatch.modeLabel")}
-        </legend>
+        <legend className="ops-panel-context">{t("modelsPage.autoMatch.modeLabel")}</legend>
         <label className="check">
           <input
             type="radio"
@@ -182,16 +177,12 @@ export function AutoMatchMembersDialog({
               icon={<CheckCheck size={13} />}
               onClick={() =>
                 setKept(
-                  allSelected
-                    ? new Set()
-                    : new Set(candidates.map((item) => item.channel_id)),
+                  allSelected ? new Set() : new Set(candidates.map((item) => item.channel_id)),
                 )
               }
             >
               {t(
-                allSelected
-                  ? "modelsPage.autoMatch.selectNone"
-                  : "modelsPage.autoMatch.selectAll",
+                allSelected ? "modelsPage.autoMatch.selectNone" : "modelsPage.autoMatch.selectAll",
               )}
             </Button>
           </div>

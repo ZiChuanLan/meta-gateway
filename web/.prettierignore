@@ -1,0 +1,12 @@
+# Prettier covers the application source only. The sheets under src/styles and
+# src/themes are hand-tuned (and deliberately compact in places): reformatting
+# 26k lines of CSS would bury every real change in whitespace, so CSS stays out
+# of the formatter. Same for build output and the lockfile.
+dist
+node_modules
+package-lock.json
+src/styles.css
+src/styles/**
+src/themes/**/*.css
+src/member/*.css
+src/team/*.css

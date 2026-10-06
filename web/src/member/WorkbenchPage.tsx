@@ -63,8 +63,7 @@ export function WorkbenchPage() {
   });
   const models = useQuery({
     queryKey: ["me", "model-catalog", "workbench"],
-    queryFn: ({ signal }) =>
-      accountRequest<UserModel[]>("/me/model-catalog", { signal }),
+    queryFn: ({ signal }) => accountRequest<UserModel[]>("/me/model-catalog", { signal }),
   });
 
   const usable = (keys.data ?? []).filter((key) => key.enabled);
@@ -81,10 +80,9 @@ export function WorkbenchPage() {
       // The plaintext is fetched once per probe and lives only in this request:
       // a member may reveal their own token, which is what lets the probe be an
       // ordinary /v1 call instead of a gateway-side impersonation.
-      const { token } = await accountRequest<{ token: string }>(
-        `/me/keys/${activeKey}/reveal`,
-        { method: "POST" },
-      );
+      const { token } = await accountRequest<{ token: string }>(`/me/keys/${activeKey}/reveal`, {
+        method: "POST",
+      });
       const response = await fetch("/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -127,107 +125,96 @@ export function WorkbenchPage() {
   }
 
   return (
-    <Page
-      title={t("workbench")}
-      description={t("wbIntro")}
-    >
+    <Page title={t("workbench")} description={t("wbIntro")}>
       <div className="tabs wb-mode-tabs">
-        <button
-          type="button"
-          aria-pressed={tool === "text"}
-          onClick={() => setTool("text")}
-        >
+        <button type="button" aria-pressed={tool === "text"} onClick={() => setTool("text")}>
           {t("wbText")}
         </button>
-        <button
-          type="button"
-          aria-pressed={tool === "image"}
-          onClick={() => setTool("image")}
-        >
+        <button type="button" aria-pressed={tool === "image"} onClick={() => setTool("image")}>
           {t("wbImage")}
         </button>
       </div>
       {tool === "image" ? (
         <ImagePanel keys={usable} />
       ) : (
-      <div className="wb-grid">
-        <Panel className="wb-compose">
-          <div className="panel-header">
-            <strong>{t("wbPrompt")}</strong>
-          </div>
-          <Field label={t("wbToken")}>
-            <select
-              value={activeKey}
-              disabled={pending || usable.length === 0}
-              onChange={(event) => setChosenKey(Number(event.target.value))}
-            >
-              {usable.map((key) => (
-                <option key={key.id} value={key.id}>
-                  {key.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {!keys.isPending && usable.length === 0 ? (
-            <p className="team-muted">{t("wbNoToken")}</p>
-          ) : null}
-          <Field label={t("wbModel")}>
-            <select
-              value={activeModel}
-              disabled={pending || modelNames.length === 0}
-              onChange={(event) => setChosenModel(event.target.value)}
-            >
-              {modelNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label={t("wbPrompt")}>
-            <textarea
-              rows={6}
-              value={prompt}
-              disabled={pending}
-              onChange={(event) => setPrompt(event.target.value)}
-            />
-          </Field>
-          {error ? (
-            <div role="alert" className="team-error">
-              {teamError(error, locale)}
+        <div className="wb-grid">
+          <Panel className="wb-compose">
+            <div className="panel-header">
+              <strong>{t("wbPrompt")}</strong>
             </div>
-          ) : null}
-          <div className="team-actions">
-            <Button
-              icon={<Send size={15} />}
-              disabled={pending || !activeKey || !activeModel}
-              onClick={() => void send()}
-            >
-              {pending ? t("wbSending") : t("wbSend")}
-            </Button>
-          </div>
-        </Panel>
-        <Panel className="wb-result">
-          <div className="panel-header">
-            <strong>{t("wbResult")}</strong>
-          </div>
-          {result ? (
-            <>
-              <pre className="wb-answer">{result.content}</pre>
-              <div className="wb-usage">
-                <strong>{t("wbUsage")}</strong>
-                <span>
-                  prompt {result.promptTokens ?? "—"} · completion{" "}
-                  {result.completionTokens ?? "—"} · total {result.totalTokens ?? "—"}
-                </span>
-                <small className="team-muted">{t("wbUsageNote")}</small>
+            <Field label={t("wbToken")}>
+              <select
+                value={activeKey}
+                disabled={pending || usable.length === 0}
+                onChange={(event) => setChosenKey(Number(event.target.value))}
+              >
+                {usable.map((key) => (
+                  <option key={key.id} value={key.id}>
+                    {key.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {!keys.isPending && usable.length === 0 ? (
+              <p className="team-muted">{t("wbNoToken")}</p>
+            ) : null}
+            <Field label={t("wbModel")}>
+              <select
+                value={activeModel}
+                disabled={pending || modelNames.length === 0}
+                onChange={(event) => setChosenModel(event.target.value)}
+              >
+                {modelNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t("wbPrompt")}>
+              <textarea
+                rows={6}
+                value={prompt}
+                disabled={pending}
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+            </Field>
+            {error ? (
+              <div role="alert" className="team-error">
+                {teamError(error, locale)}
               </div>
-            </>
-          ) : (
-            <p className="team-muted">{t("wbEmpty")}</p>
-          )}
-        </Panel>
-      </div>
+            ) : null}
+            <div className="team-actions">
+              <Button
+                icon={<Send size={15} />}
+                disabled={pending || !activeKey || !activeModel}
+                onClick={() => void send()}
+              >
+                {pending ? t("wbSending") : t("wbSend")}
+              </Button>
+            </div>
+          </Panel>
+          <Panel className="wb-result">
+            <div className="panel-header">
+              <strong>{t("wbResult")}</strong>
+            </div>
+            {result ? (
+              <>
+                <pre className="wb-answer">{result.content}</pre>
+                <div className="wb-usage">
+                  <strong>{t("wbUsage")}</strong>
+                  <span>
+                    prompt {result.promptTokens ?? "—"} · completion{" "}
+                    {result.completionTokens ?? "—"} · total {result.totalTokens ?? "—"}
+                  </span>
+                  <small className="team-muted">{t("wbUsageNote")}</small>
+                </div>
+              </>
+            ) : (
+              <p className="team-muted">{t("wbEmpty")}</p>
+            )}
+          </Panel>
+        </div>
       )}
     </Page>
   );

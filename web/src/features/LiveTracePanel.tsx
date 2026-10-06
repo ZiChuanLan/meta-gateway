@@ -1,13 +1,4 @@
-import {
-  Ban,
-  Check,
-  CircleDot,
-  Pause,
-  Play,
-  Radio,
-  WifiOff,
-  X,
-} from "lucide-react";
+import { Ban, Check, CircleDot, Pause, Play, Radio, WifiOff, X } from "lucide-react";
 import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { ApiError, api } from "../api/client";
 import type { LiveTraceRequest, LiveTraceRound } from "../api/types";
@@ -72,7 +63,11 @@ function formatBytes(n: number): string {
 
 /** Display duration: settled rows use the reported duration, running rows
  * tick from started_at so the view actually feels live. */
-function displayDuration(frame: LiveTraceRequest, now: number, t: (key: string, vars?: Record<string, string | number>) => string): string {
+function displayDuration(
+  frame: LiveTraceRequest,
+  now: number,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
   let ms = frame.duration_ms;
   if (frame.status === "running") {
     const started = Date.parse(frame.started_at);
@@ -146,10 +141,7 @@ function LiveTraceRow({
         {chain.length > 1 ? (
           <span className="live-trace-chain" title={chain.map(roundChainTitle).join("\n")}>
             {chain.map((entry) => (
-              <span
-                key={entry.round}
-                className={`live-trace-chain-hop is-${entry.status}`}
-              >
+              <span key={entry.round} className={`live-trace-chain-hop is-${entry.status}`}>
                 {entry.channel}
                 {entry.status === "failed" ? (
                   <X size={11} aria-hidden="true" />
@@ -166,9 +158,7 @@ function LiveTraceRow({
         )}
       </td>
       <td>
-        {frame.status === "running" ? (
-          <span className="live-trace-now" aria-hidden="true" />
-        ) : null}
+        {frame.status === "running" ? <span className="live-trace-now" aria-hidden="true" /> : null}
         <span className={`live-trace-status is-${frame.status}`}>
           <span className="live-trace-pulse" aria-hidden="true" />
           {t(`status.${frame.status}`)}
@@ -179,17 +169,12 @@ function LiveTraceRow({
           </small>
         ) : null}
         {frame.first_byte_ms && frame.first_byte_ms > 0 ? (
-          <small
-            className="live-trace-ttft"
-            title={t("logsLive.ttft")}
-          >
+          <small className="live-trace-ttft" title={t("logsLive.ttft")}>
             {t("logsLive.ttftValue", { n: frame.first_byte_ms })}
           </small>
         ) : null}
         {frame.stream && (frame.bytes_written ?? 0) > 0 ? (
-          <small className="live-trace-bytes">
-            {formatBytes(frame.bytes_written ?? 0)}
-          </small>
+          <small className="live-trace-bytes">{formatBytes(frame.bytes_written ?? 0)}</small>
         ) : null}
         {!frame.stream &&
         (frame.prompt_tokens || frame.completion_tokens) &&
@@ -256,16 +241,14 @@ export function LiveTracePanel() {
   const toast = useToast();
   const [conn, setConn] = useState<ConnState>("connecting");
   const [frames, setFrames] = useState<LiveTraceRequest[]>([]);
-  const [interrupting, setInterrupting] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [interrupting, setInterrupting] = useState<Set<string>>(() => new Set());
   const [paused, setPaused] = useState(false);
   // One-second heartbeat so running rows tick without waiting for backend
   // frames (durations are recomputed from started_at on each render).
   const [, tick] = useReducer((n: number) => n + 1, 0);
   const pausedRef = useRef(false);
   const pausedBuffer = useRef<LiveTraceRequest[]>([]);
-	const channelNames = useRef<Map<number, string>>(new Map());
+  const channelNames = useRef<Map<number, string>>(new Map());
 
   // Channel name resolution: keep a lightweight map for nicer labels.
   useEffect(() => {
@@ -361,13 +344,13 @@ export function LiveTracePanel() {
       backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
     };
 
-	void connect();
-	return () => {
-		disposed = true;
-		window.clearTimeout(retryTimer);
-		abort?.abort();
-	};
-	}, [client]);
+    void connect();
+    return () => {
+      disposed = true;
+      window.clearTimeout(retryTimer);
+      abort?.abort();
+    };
+  }, [client]);
 
   const mergeFrames = (incoming: LiveTraceRequest[]) => {
     if (pausedRef.current) {
@@ -381,8 +364,7 @@ export function LiveTracePanel() {
       // order of first appearance so newest stay on top.
       const order: string[] = [];
       const settledCount = current.filter(isSettled).length;
-      let settledToDrop =
-        settledCount + incoming.filter(isSettled).length - RETAIN_SETTLED;
+      let settledToDrop = settledCount + incoming.filter(isSettled).length - RETAIN_SETTLED;
       for (const frame of incoming) {
         if (!byId.has(frame.request_id)) {
           order.push(frame.request_id);
@@ -410,11 +392,11 @@ export function LiveTracePanel() {
     });
   };
 
-	const interrupt = (requestId: string) => {
-		if (!client) return;
-		setInterrupting((prev) => new Set(prev).add(requestId));
-		client
-			.interruptLiveRequest(requestId)
+  const interrupt = (requestId: string) => {
+    if (!client) return;
+    setInterrupting((prev) => new Set(prev).add(requestId));
+    client
+      .interruptLiveRequest(requestId)
       .then(() => {
         toast.push({
           tone: "success",
@@ -429,9 +411,7 @@ export function LiveTracePanel() {
         toast.pushError(new Error(message));
       })
       .finally(() => {
-        setInterrupting(
-          (prev) => new Set([...prev].filter((id) => id !== requestId)),
-        );
+        setInterrupting((prev) => new Set([...prev].filter((id) => id !== requestId)));
       });
   };
 
@@ -444,18 +424,16 @@ export function LiveTracePanel() {
       running.forEach((f) => next.add(f.request_id));
       return next;
     });
-    Promise.allSettled(
-      running.map((f) => client.interruptLiveRequest(f.request_id)),
-    ).then((results) => {
-      const ok = results.filter(
-        (r) => r.status === "fulfilled",
-      ).length;
-      toast.push({
-        tone: ok > 0 ? "success" : "error",
-        message: t("logsLive.interruptAllDone", { ok, total: running.length }),
-      });
-      setInterrupting(new Set());
-    });
+    Promise.allSettled(running.map((f) => client.interruptLiveRequest(f.request_id))).then(
+      (results) => {
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        toast.push({
+          tone: ok > 0 ? "success" : "error",
+          message: t("logsLive.interruptAllDone", { ok, total: running.length }),
+        });
+        setInterrupting(new Set());
+      },
+    );
   };
 
   const connMeta: Record<ConnState, { icon: ReactNode; label: string; className: string }> = {
@@ -492,26 +470,18 @@ export function LiveTracePanel() {
             {state.icon}
             {state.label}
           </span>
-          <span className="live-trace-count">
-            {t("logsLive.inFlight", { n: runningCount })}
-          </span>
+          <span className="live-trace-count">{t("logsLive.inFlight", { n: runningCount })}</span>
           <span className="live-trace-count is-quiet">
             {t("logsLive.total", { n: frames.length })}
           </span>
-          {paused ? (
-            <span className="live-trace-state is-warn">
-              {t("logsLive.paused")}
-            </span>
-          ) : null}
+          {paused ? <span className="live-trace-state is-warn">{t("logsLive.paused")}</span> : null}
         </div>
         {interrupting.size > 0 ? (
           <span className="live-trace-interrupting is-quiet">
             {t("logsLive.interrupting", { n: interrupting.size })}
           </span>
         ) : null}
-        <span className="live-trace-hint is-quiet">
-          {t("logsLive.hint")}
-        </span>
+        <span className="live-trace-hint is-quiet">{t("logsLive.hint")}</span>
         <div className="live-trace-controls">
           <Button
             variant="secondary"

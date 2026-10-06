@@ -13,7 +13,11 @@ import type { Account } from "./team/types";
 
 const ACCOUNT_CHANGE_KEY = "meta-gateway.account-change";
 function notifyAccountChange() {
-  try { localStorage.setItem(ACCOUNT_CHANGE_KEY, crypto.randomUUID()); } catch { /* optional cross-tab hint */ }
+  try {
+    localStorage.setItem(ACCOUNT_CHANGE_KEY, crypto.randomUUID());
+  } catch {
+    /* optional cross-tab hint */
+  }
 }
 
 const SESSION_KEY = "meta-gateway.admin-token";
@@ -57,9 +61,7 @@ const SessionContext = createContext<SessionValue | null>(null);
 
 function initialToken() {
   try {
-    return (
-      localStorage.getItem(SESSION_KEY) ?? sessionStorage.getItem(SESSION_KEY)
-    );
+    return localStorage.getItem(SESSION_KEY) ?? sessionStorage.getItem(SESSION_KEY);
   } catch {
     return null;
   }
@@ -104,7 +106,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (token || requiresLogin) return;
     try {
-      if (sessionStorage.getItem("meta-gateway.team-console") !== "1" && localStorage.getItem("meta-gateway.team-console") !== "1") return;
+      if (
+        sessionStorage.getItem("meta-gateway.team-console") !== "1" &&
+        localStorage.getItem("meta-gateway.team-console") !== "1"
+      )
+        return;
     } catch {
       return;
     }
@@ -145,10 +151,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
   const disconnect = useCallback(() => {
     if (role) notifyAccountChange();
-    if (role)
-      void accountRequest("/me/logout", { method: "POST", body: "{}" }).catch(
-        () => {},
-      );
+    if (role) void accountRequest("/me/logout", { method: "POST", body: "{}" }).catch(() => {});
     try {
       sessionStorage.removeItem("meta-gateway.team-console");
       localStorage.removeItem("meta-gateway.team-console");
@@ -168,7 +171,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         localStorage.removeItem("meta-gateway.team-console");
         sessionStorage.removeItem("meta-gateway.team-console");
-      } catch { /* optional navigation hints */ }
+      } catch {
+        /* optional navigation hints */
+      }
       storeToken(null, false);
       setTeamCSRF("");
       setRole(null);
@@ -188,7 +193,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setTeamCSRF("");
       setRole(null);
       setToken(null);
-      try { sessionStorage.removeItem("meta-gateway.team-console"); } catch { /* optional */ }
+      try {
+        sessionStorage.removeItem("meta-gateway.team-console");
+      } catch {
+        /* optional */
+      }
       // Do not remove shared localStorage: it belongs to the other tab's login.
     };
     window.addEventListener("storage", changed);
@@ -205,9 +214,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }),
     [role, token, connect, connectMember, disconnect],
   );
-  return (
-    <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
-  );
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {

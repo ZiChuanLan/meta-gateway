@@ -126,9 +126,7 @@ describe("user management module", () => {
   it("shows only the switch while the gateway is personal", async () => {
     renderUsers({ mode: "personal" });
     expect(await screen.findByRole("link", { name: "Overview" })).toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Members & invitations" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Members & invitations" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Pricing" })).not.toBeInTheDocument();
   });
 
@@ -151,13 +149,9 @@ describe("user management module", () => {
   // absent rather than disabled.
   it("offers an admin only the boards they may operate", async () => {
     renderUsers({ role: "admin" });
-    expect(
-      await screen.findByRole("link", { name: "Members & invitations" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Members & invitations" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Member interface" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Access & routing" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Access & routing" })).not.toBeInTheDocument();
   });
 
   // The roster used to print the token pool alone, which is why "how much is

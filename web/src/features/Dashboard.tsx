@@ -70,8 +70,7 @@ function relativeTime(
   const ms = Date.now() - new Date(iso).getTime();
   if (ms < MINUTE_MS) return t("dashboard.justNow");
   if (ms < 3600_000) return t("dashboard.minutesAgo", { n: Math.floor(ms / MINUTE_MS) });
-  if (ms < 24 * 3600_000)
-    return t("dashboard.hoursAgo", { n: Math.floor(ms / 3600_000) });
+  if (ms < 24 * 3600_000) return t("dashboard.hoursAgo", { n: Math.floor(ms / 3600_000) });
   return t("dashboard.daysAgo", { n: Math.floor(ms / (24 * 3600_000)) });
 }
 
@@ -112,9 +111,7 @@ function EndpointStrip() {
       <span className="endpoint-mono" aria-hidden="true">
         POST
       </span>
-      <span
-        className={`endpoint-dot${ready.data === true ? " is-healthy" : ""}`}
-      />
+      <span className={`endpoint-dot${ready.data === true ? " is-healthy" : ""}`} />
       <div className="endpoint-copy">
         <strong>{t("dashboard.endpoint")}</strong>
         <code>{endpoint}</code>
@@ -265,8 +262,7 @@ export function Dashboard() {
     if (member) return memberDashboardSource;
     const s = api(client!);
     return {
-      summary: (query, signal) =>
-        s.usageSummary(undefined, signal, query.since, query.until),
+      summary: (query, signal) => s.usageSummary(undefined, signal, query.since, query.until),
       series: (query, signal) => s.usageSeries(query, signal),
       topModels: (query, signal) => s.usageTopModels(query, signal),
       recent: (query, signal) => s.proxyLogs(query, signal),
@@ -274,10 +270,7 @@ export function Dashboard() {
     };
   }, [client, member]);
   return (
-    <DashboardView
-      source={source}
-      caps={member ? MEMBER_DASHBOARD_CAPS : ADMIN_DASHBOARD_CAPS}
-    />
+    <DashboardView source={source} caps={member ? MEMBER_DASHBOARD_CAPS : ADMIN_DASHBOARD_CAPS} />
   );
 }
 
@@ -306,8 +299,7 @@ export function DashboardView({
   // Everything else is windowed: the cards, the matrix, the chart, the ranking.
   const rangeSummary = useQuery({
     queryKey: ["usage-summary", "range", { since: range.since, until: range.until }],
-    queryFn: ({ signal }) =>
-      source.summary({ since: range.since, until: range.until }, signal),
+    queryFn: ({ signal }) => source.summary({ since: range.since, until: range.until }, signal),
     refetchInterval: 30_000,
   });
   // The equal-length window immediately before, for an honest trend badge.
@@ -327,13 +319,14 @@ export function DashboardView({
   const zoomSummary = useQuery({
     queryKey: ["usage-summary", "range", { since: zoom?.since, until: zoom?.until }],
     enabled: zoom != null,
-    queryFn: ({ signal }) =>
-      source.summary({ since: zoom!.since, until: zoom!.until }, signal),
+    queryFn: ({ signal }) => source.summary({ since: zoom!.since, until: zoom!.until }, signal),
   });
   const series = useQuery({
     queryKey: [
       "usage-series",
-      zoom ? { since: zoom.since, until: zoom.until, buckets: 12 } : { since: range.since, until: range.until, buckets: 48 },
+      zoom
+        ? { since: zoom.since, until: zoom.until, buckets: 12 }
+        : { since: range.since, until: range.until, buckets: 48 },
     ],
     queryFn: ({ signal }) =>
       zoom
@@ -392,8 +385,7 @@ export function DashboardView({
             (matrix.server_error_count ?? 0) -
             (matrix.other_count ?? 0),
         ));
-  const successRate =
-    matrix && matrix.request_count > 0 ? okCount / matrix.request_count : null;
+  const successRate = matrix && matrix.request_count > 0 ? okCount / matrix.request_count : null;
   const successTone =
     successRate === null
       ? "primary"
@@ -403,8 +395,7 @@ export function DashboardView({
           ? "warning"
           : "danger";
 
-  const healthyRatio =
-    channelCounts.total > 0 ? channelCounts.healthy / channelCounts.total : 1;
+  const healthyRatio = channelCounts.total > 0 ? channelCounts.healthy / channelCounts.total : 1;
   const healthTone =
     channelCounts.total === 0
       ? "warning"
@@ -418,11 +409,7 @@ export function DashboardView({
   const labels = useMemo(
     () =>
       series.data
-        ? seriesLabels(
-            series.data.since,
-            series.data.bucket_seconds,
-            series.data.requests.length,
-          )
+        ? seriesLabels(series.data.since, series.data.bucket_seconds, series.data.requests.length)
         : [],
     [series.data],
   );
@@ -431,8 +418,7 @@ export function DashboardView({
 
   const openBucket = (index: number) => {
     if (!series.data) return;
-    const start =
-      new Date(series.data.since).getTime() + index * series.data.bucket_seconds * 1000;
+    const start = new Date(series.data.since).getTime() + index * series.data.bucket_seconds * 1000;
     setZoom({
       since: new Date(start).toISOString(),
       until: new Date(start + series.data.bucket_seconds * 1000).toISOString(),
@@ -451,12 +437,12 @@ export function DashboardView({
       title={t("dashboard.title")}
       // A host without the channel matrix gets a description that does not
       // promise it: the panel is not its to show (see DashboardCapabilities).
-      description={
-        caps.channels
-          ? t("dashboard.description")
-          : t("dashboard.descriptionMember")
+      description={caps.channels ? t("dashboard.description") : t("dashboard.descriptionMember")}
+      actions={
+        <Button variant="quiet" icon={<Play size={14} />} onClick={() => setReplayEntrance(true)}>
+          {t("motion.replay")}
+        </Button>
       }
-      actions={<Button variant="quiet" icon={<Play size={14} />} onClick={() => setReplayEntrance(true)}>{t("motion.replay")}</Button>}
     >
       <DashboardAura />
       {replayEntrance ? <GatewayPreview onClose={() => setReplayEntrance(false)} /> : null}
@@ -516,9 +502,7 @@ export function DashboardView({
             items={[
               {
                 label: t("dashboard.totalTokens"),
-                value: allTime.data
-                  ? formatTokens(allTime.data.total_tokens)
-                  : "—",
+                value: allTime.data ? formatTokens(allTime.data.total_tokens) : "—",
                 hint: t("dashboard.totalTokensHint"),
                 icon: <Coins size={13} />,
               },
@@ -530,9 +514,7 @@ export function DashboardView({
               },
               {
                 label: t("dashboard.cacheRead"),
-                value: rangeSummary.isPending
-                  ? "—"
-                  : formatTokens(summary?.cache_read_tokens ?? 0),
+                value: rangeSummary.isPending ? "—" : formatTokens(summary?.cache_read_tokens ?? 0),
                 hint: t("dashboard.cacheReadHint"),
                 icon: <Database size={13} />,
               },
@@ -611,68 +593,66 @@ export function DashboardView({
         <div className={`cockpit-dual-grid${caps.channels ? "" : " is-single"}`}>
           {/* 左轨：渠道健康雷达点阵（只有宿主能看到渠道时才渲染） */}
           {caps.channels ? (
-          <Panel className="cockpit-panel cockpit-health-panel">
-            <div className="panel-header">
-              <div className="cockpit-panel-title">
-                <Boxes size={14} />
-                <strong>{t("dashboard.channelHealth")}</strong>
+            <Panel className="cockpit-panel cockpit-health-panel">
+              <div className="panel-header">
+                <div className="cockpit-panel-title">
+                  <Boxes size={14} />
+                  <strong>{t("dashboard.channelHealth")}</strong>
+                </div>
+                <span className="panel-muted">
+                  {t("dashboard.enabledOf", {
+                    n: channelCounts.enabled,
+                    total: channelCounts.total,
+                  })}
+                </span>
               </div>
-              <span className="panel-muted">
-                {t("dashboard.enabledOf", {
-                  n: channelCounts.enabled,
-                  total: channelCounts.total,
-                })}
-              </span>
-            </div>
-            <ul className="cockpit-channel-list">
-              {(channels.data ?? []).map((c) => {
-                const health = channelHealthState(c);
-                const tone =
-                  health === "healthy"
-                    ? "ok"
-                    : health === "unhealthy"
-                      ? "danger"
-                      : health === "disabled"
-                        ? "off"
-                        : "warn";
-                return (
-                  <li key={c.channel.id} className={`cockpit-channel-item is-${tone}`}>
-                    {caps.consoleLinks ? (
-                      <Link
-                        className="cockpit-channel-name"
-                        to={`/channels?id=${c.channel.id}`}
-                        title={c.channel.name}
-                      >
-                        {c.channel.name}
-                      </Link>
-                    ) : (
-                      <span className="cockpit-channel-name" title={c.channel.name}>
-                        {c.channel.name}
-                      </span>
-                    )}
-                    <span className="cockpit-channel-meta">
-                      {health === "healthy" ? (
-                        <span className="badge badge-ok">
-                          <Zap size={10} /> {t("dashboard.ready")}
-                        </span>
-                      ) : health === "disabled" ? (
-                        <span className="badge badge-neutral">
-                          {t("dashboard.disabled")}
-                        </span>
-                      ) : (
-                        <span
-                          className={`badge badge-${health === "unhealthy" ? "danger" : "warn"}`}
+              <ul className="cockpit-channel-list">
+                {(channels.data ?? []).map((c) => {
+                  const health = channelHealthState(c);
+                  const tone =
+                    health === "healthy"
+                      ? "ok"
+                      : health === "unhealthy"
+                        ? "danger"
+                        : health === "disabled"
+                          ? "off"
+                          : "warn";
+                  return (
+                    <li key={c.channel.id} className={`cockpit-channel-item is-${tone}`}>
+                      {caps.consoleLinks ? (
+                        <Link
+                          className="cockpit-channel-name"
+                          to={`/channels?id=${c.channel.id}`}
+                          title={c.channel.name}
                         >
-                          <AlertTriangle size={10} />
-                          {t(`channels.healthState.${health}`)}
+                          {c.channel.name}
+                        </Link>
+                      ) : (
+                        <span className="cockpit-channel-name" title={c.channel.name}>
+                          {c.channel.name}
                         </span>
                       )}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </Panel>
+                      <span className="cockpit-channel-meta">
+                        {health === "healthy" ? (
+                          <span className="badge badge-ok">
+                            <Zap size={10} /> {t("dashboard.ready")}
+                          </span>
+                        ) : health === "disabled" ? (
+                          <span className="badge badge-neutral">{t("dashboard.disabled")}</span>
+                        ) : (
+                          <span
+                            className={`badge badge-${health === "unhealthy" ? "danger" : "warn"}`}
+                          >
+                            <AlertTriangle size={10} />
+                            {t(`channels.healthState.${health}`)}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Panel>
           ) : null}
 
           {/* 右轨：最近代理请求流（跟随所选区间） */}
@@ -708,17 +688,11 @@ export function DashboardView({
                       )}
                       <div className="cockpit-log-right">
                         {(log.total_tokens ?? 0) > 0 ? (
-                          <span className="mono-value">
-                            {formatTokens(log.total_tokens ?? 0)}
-                          </span>
+                          <span className="mono-value">{formatTokens(log.total_tokens ?? 0)}</span>
                         ) : null}
-                        <span className={`badge badge-${tone}`}>
-                          {log.status}
-                        </span>
+                        <span className={`badge badge-${tone}`}>{log.status}</span>
                         <span className="mono-value">{log.latency_ms}ms</span>
-                        <span className="cockpit-log-time">
-                          {relativeTime(log.created_at, t)}
-                        </span>
+                        <span className="cockpit-log-time">{relativeTime(log.created_at, t)}</span>
                       </div>
                     </li>
                   );
@@ -787,7 +761,6 @@ export function DashboardView({
                 </ul>
               )}
             </div>
-
           </div>
         </Panel>
       </div>

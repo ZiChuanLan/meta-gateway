@@ -18,15 +18,15 @@ import type { TeamRequest } from "./types";
  */
 export function StandaloneAdmin({ request }: { request: TeamRequest }) {
   return (
-      <Suspense fallback={<Loading />}>
-        <Routes>
-          <Route path="/users" element={<UsersLayout request={request} />}>
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<OverviewPanel />} />
-            <Route path="members" element={<MembersPanel />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/users/overview" replace />} />
-        </Routes>
-      </Suspense>
+    <Suspense fallback={<Loading />}>
+      <Routes>
+        <Route path="/users" element={<UsersLayout request={request} />}>
+          <Route index element={<Navigate to="overview" replace />} />
+          <Route path="overview" element={<OverviewPanel />} />
+          <Route path="members" element={<MembersPanel />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/users/overview" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

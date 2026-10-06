@@ -1,9 +1,5 @@
 import { useI18n } from "../../i18n";
-import {
-  SCHEDULE_PRESETS,
-  presetOfCron,
-  type SchedulePresetId,
-} from "../../lib/schedulePresets";
+import { SCHEDULE_PRESETS, presetOfCron, type SchedulePresetId } from "../../lib/schedulePresets";
 import { CheckinTimePicker } from "./CheckinTimePicker";
 
 /**
@@ -58,11 +54,7 @@ export function CronSchedulePicker({
       {preset === "off" ? (
         <span className="muted">{t("ops.schedule.offHint")}</span>
       ) : preset === "custom" || preset === "daily" ? (
-        <CheckinTimePicker
-          value={value}
-          disabled={disabled}
-          onChange={onChange}
-        />
+        <CheckinTimePicker value={value} disabled={disabled} onChange={onChange} />
       ) : null}
     </span>
   );

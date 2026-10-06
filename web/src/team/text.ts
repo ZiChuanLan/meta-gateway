@@ -1,19 +1,62 @@
 const zh = {
-  teamDescription: "管理成员、授权与额度。个人／多用户模式在「概览」里切换；成员统一从 /console 登录。",
-  personalSettings: "个人设置", personalSettingsHint: "只调整自己的调用偏好和界面，不改变站点或其他用户。",
-  requestControls: "调用偏好", requestControlsHint: "已获站长授权。偏好只作用于自己的 Key，且不能突破站点与模型规则。",
-  allowRequestControls: "允许用户调整故障转移与重试上限", managedByOwner: "调用策略由站长管理；当前只读。",
-  failover: "跨渠道故障转移", inherit: "跟随站点", failoverOn: "允许在授权渠道内故障转移", failoverOff: "不进行跨渠道故障转移",
-  retryLimit: "个人跨渠道重试上限（留空跟随站点）", siteDefault: "站点默认", effectiveDefault: "实际生效",
-  retrySafetyHint: "个人上限只会收紧策略，模型级规则仍生效。关闭跨渠道转移不改变同渠道 Key 池策略；图像等非幂等请求仍不重试。",
-  displayPreferences: "界面偏好", interfaceTheme: "界面主题", colorScheme: "配色模式", system: "跟随系统", light: "浅色", dark: "深色", density: "列表密度", comfortable: "舒适", compact: "紧凑",
-  refresh: "刷新", all: "全部", moreActions: "更多操作", recordedTokens: "已记录 Tokens", currentKeysOnly: "当前密钥累计，不含已删除密钥",
-  lastUsed: "最近调用", neverUsed: "尚未调用", searchKeys: "搜索名称、密钥提示或模型", searchModels: "搜索模型、供应商或能力",
+  teamDescription:
+    "管理成员、授权与额度。个人／多用户模式在「概览」里切换；成员统一从 /console 登录。",
+  personalSettings: "个人设置",
+  personalSettingsHint: "只调整自己的调用偏好和界面，不改变站点或其他用户。",
+  requestControls: "调用偏好",
+  requestControlsHint: "已获站长授权。偏好只作用于自己的 Key，且不能突破站点与模型规则。",
+  allowRequestControls: "允许用户调整故障转移与重试上限",
+  managedByOwner: "调用策略由站长管理；当前只读。",
+  failover: "跨渠道故障转移",
+  inherit: "跟随站点",
+  failoverOn: "允许在授权渠道内故障转移",
+  failoverOff: "不进行跨渠道故障转移",
+  retryLimit: "个人跨渠道重试上限（留空跟随站点）",
+  siteDefault: "站点默认",
+  effectiveDefault: "实际生效",
+  retrySafetyHint:
+    "个人上限只会收紧策略，模型级规则仍生效。关闭跨渠道转移不改变同渠道 Key 池策略；图像等非幂等请求仍不重试。",
+  displayPreferences: "界面偏好",
+  interfaceTheme: "界面主题",
+  colorScheme: "配色模式",
+  system: "跟随系统",
+  light: "浅色",
+  dark: "深色",
+  density: "列表密度",
+  comfortable: "舒适",
+  compact: "紧凑",
+  refresh: "刷新",
+  all: "全部",
+  moreActions: "更多操作",
+  recordedTokens: "已记录 Tokens",
+  currentKeysOnly: "当前密钥累计，不含已删除密钥",
+  lastUsed: "最近调用",
+  neverUsed: "尚未调用",
+  searchKeys: "搜索名称、密钥提示或模型",
+  searchModels: "搜索模型、供应商或能力",
   modelsWorkspaceHint: "浏览自己可用的模型、能力与授权候选；不暴露管理配置。",
-  authorizedModels: "已授权模型", modelFamilies: "模型分组", authorizedCandidates: "已授权候选", capabilities: "能力", contextWindow: "上下文窗口", unspecified: "未提供",
-  logs: "请求日志", export: "导出当前结果", loadedRequests: "当前结果请求数", successful: "成功", failedRequests: "失败", recordedCost: "已记录费用",
-  searchRequests: "搜索请求 ID", allModelsShort: "全部模型", allStatuses: "全部状态", invalidTimeRange: "结束时间不能早于开始时间",
-  requestDetails: "详情", attempts: "上游尝试", inputTokens: "输入 Tokens", outputTokens: "输出 Tokens", cacheRead: "缓存读取", cacheWrite: "缓存写入",
+  authorizedModels: "已授权模型",
+  modelFamilies: "模型分组",
+  authorizedCandidates: "已授权候选",
+  capabilities: "能力",
+  contextWindow: "上下文窗口",
+  unspecified: "未提供",
+  logs: "请求日志",
+  export: "导出当前结果",
+  loadedRequests: "当前结果请求数",
+  successful: "成功",
+  failedRequests: "失败",
+  recordedCost: "已记录费用",
+  searchRequests: "搜索请求 ID",
+  allModelsShort: "全部模型",
+  allStatuses: "全部状态",
+  invalidTimeRange: "结束时间不能早于开始时间",
+  requestDetails: "详情",
+  attempts: "上游尝试",
+  inputTokens: "输入 Tokens",
+  outputTokens: "输出 Tokens",
+  cacheRead: "缓存读取",
+  cacheWrite: "缓存写入",
   team: "用户管理",
   mode: "运行模式",
   currentMode: "当前模式",
@@ -57,8 +100,7 @@ const zh = {
   bootstrap: "创建站长账户",
   bootstrapAuto:
     "切换到团队模式时会自动用部署管理员创建站长（用户名与口令沿用当前管理员），无需另外填写。",
-  bootstrapHint:
-    "仅当部署没有可用的管理员口令时，才需要在这里手动创建站长。",
+  bootstrapHint: "仅当部署没有可用的管理员口令时，才需要在这里手动创建站长。",
   totp: "原控制台两步验证码（如已开启）",
   ownerReady: "站长账户已创建",
   invite: "邀请用户",
@@ -80,14 +122,12 @@ const zh = {
   recovery: "生成账户恢复链接",
   revokeSessions: "退出该用户的所有会话",
   protectedOwner: "站长账户不可停用或降级",
-  userChangeHint:
-    "变更会撤销该用户的现有登录会话。暂停与恢复不会覆盖 Key 自身的启停状态。",
+  userChangeHint: "变更会撤销该用户的现有登录会话。暂停与恢复不会覆盖 Key 自身的启停状态。",
   policiesHint:
     "这里决定成员能用什么：模型名，以及这些模型能由哪些渠道承接。额度与限速不在这一页，在「额度」板块。默认策略不授予任何渠道，请先配置。",
   newPolicy: "新增策略",
   allModels: "允许调用所有模型",
-  modelList:
-    "按模型名授权（每行一个；空列表且未勾选上一项时，这个策略下没有任何模型可调）",
+  modelList: "按模型名授权（每行一个；空列表且未勾选上一项时，这个策略下没有任何模型可调）",
   maxKeys: "每人最多 Key 数",
   rpm: "每人每分钟请求数",
   routing: "允许个人路由",
@@ -136,14 +176,12 @@ const zh = {
   reveal: "查看密钥",
   model: "模型",
   importClient: "在 CC Switch 中导入",
-  importWarning:
-    "将把这把密钥交给本机 CC Switch。请勿转发包含密钥的链接。是否继续？",
+  importWarning: "将把这把密钥交给本机 CC Switch。请勿转发包含密钥的链接。是否继续？",
   importStarted: "已发起打开应用；请在客户端确认，尚未验证导入结果。",
   noModels: "暂无获授权的可用模型，请联系管理员。",
   getStarted: "选择一把 Key 后，在接入页生成配置。",
   noKeys: "创建你的第一把 API Key",
-  usageHint:
-    "最多显示所选时间范围内最近 200 次请求。未上报用量显示“—”，不估算 token。",
+  usageHint: "最多显示所选时间范围内最近 200 次请求。未上报用量显示“—”，不估算 token。",
   from: "起始日期",
   until: "结束日期",
   allKeys: "全部 Key",
@@ -172,8 +210,7 @@ const zh = {
   policyChanged: "策略立即影响关联用户及其 Key，是否保存？",
   arrange: "编排",
   modelsArrangeHint: "编排每个模型的上游顺序，只影响你自己的请求。",
-  arrangeHint:
-    "拖动调整上游顺序：顺序就是故障转移时尝试的先后；关掉的上游不参与你的请求。",
+  arrangeHint: "拖动调整上游顺序：顺序就是故障转移时尝试的先后；关掉的上游不参与你的请求。",
   arrangeSaved: "已保存",
   arrangedBadge: "已自定义",
   arrangeEmpty: "该模型暂无可编排的上游",
@@ -193,7 +230,8 @@ const zh = {
   sameAsRouteName: "同名转发",
   // —— team codes ——
   codes: "注册码与兑换码",
-  codesHint: "批量生成邀请码（注册用）和额度码（给已有成员充值）。明文码只在生成时显示一次，请当场复制。",
+  codesHint:
+    "批量生成邀请码（注册用）和额度码（给已有成员充值）。明文码只在生成时显示一次，请当场复制。",
   codeKind: "码类型",
   codeKindInvite: "注册码",
   codeKindCredit: "额度码",
@@ -207,7 +245,8 @@ const zh = {
   codeQuota: "附带额度（token）",
   codeQuotaCost: "附带额度（金额）",
   codeLabelHint: "例如 10 月新学员",
-  codeFormHint: "注册码可用多次时，每个码可以被不同账户重复使用；额度码每个账户只能用同一个码一次。",
+  codeFormHint:
+    "注册码可用多次时，每个码可以被不同账户重复使用；额度码每个账户只能用同一个码一次。",
   codeMinted: "已生成 {n} 个码",
   codeMintedOnce: "这些码只显示这一次，关闭后无法再取回；请立即复制或发送给成员。",
   copyAll: "复制全部",
@@ -227,14 +266,13 @@ const zh = {
   importFailures: "{n} 行未能导入：",
   copyCredentials: "复制账号与密码",
   quota: "Token 额度",
-  quotaHint:
-    "单位 token，0 表示不限。它与令牌、租户分组各自的限额同时生效，任一先耗尽即拒绝请求。",
+  quotaHint: "单位 token，0 表示不限。它与令牌、租户分组各自的限额同时生效，任一先耗尽即拒绝请求。",
   quotaUsed: "已用 {used}，总额 {total}",
-  quotaEditSemantics: "留空或 0 表示不限额；Token 上限必须为整数，金额按 USD 账本单位填写。降低上限不会清零已用量，只有勾选重置才会清零。",
+  quotaEditSemantics:
+    "留空或 0 表示不限额；Token 上限必须为整数，金额按 USD 账本单位填写。降低上限不会清零已用量，只有勾选重置才会清零。",
   quotaTotal: "Token 额度上限",
   quotaCostTotal: "金额额度",
-  quotaCostHint:
-    "按站点货币计价；与 Token 额度同时生效，先用尽者拒绝请求。",
+  quotaCostHint: "按站点货币计价；与 Token 额度同时生效，先用尽者拒绝请求。",
   quotaReset: "重置用量",
   quotaResetHint: "清零已用计数，常用于充值续期",
   quotaResetLabel: "把这名成员已用额度清零",
@@ -260,8 +298,7 @@ const zh = {
   oauthSecretKeep: "留空则保留现有密钥",
   oauthScopes: "Scopes",
   oauthAdvanced: "高级：自定义端点",
-  oauthAdvancedHint:
-    "留空使用官方地址。指向其他地址可用于自建代理或测试环境。",
+  oauthAdvancedHint: "留空使用官方地址。指向其他地址可用于自建代理或测试环境。",
   oauthAuthorizeURL: "授权端点",
   oauthTokenURL: "Token 端点",
   oauthUserInfoURL: "用户信息端点",
@@ -329,8 +366,7 @@ const zh = {
   pricingIntro:
     "计价顺序：路由成员单价 → 模型单价（取最具体且有价的一层，整层替换），再乘以模型倍率。缓存读取未设单价时按输入价计费。",
   billingRatios: "计费倍率",
-  billingRatiosHint:
-    "倍率乘在该模型的最终单价上，影响全站账单；1 表示不加价，留空即不设置。",
+  billingRatiosHint: "倍率乘在该模型的最终单价上，影响全站账单；1 表示不加价，留空即不设置。",
   newRatio: "新增倍率",
   ratioLabel: "倍率",
   ratioHint: "0–1000，1 为原价。",
@@ -371,27 +407,71 @@ const zh = {
 const en: Record<keyof typeof zh, string> = {
   teamDescription:
     "Manage members, access and credit. The personal / multi-user mode switches on the Overview board; members sign in at /console like everyone else.",
-  personalSettings:"Personal settings",personalSettingsHint:"Change only your own request preferences and interface, never the site or other users.",
-  requestControls:"Request preferences",requestControlsHint:"Enabled by your owner. These preferences only affect your keys and cannot override site or model rules.",
-  allowRequestControls:"Allow user failover and retry preferences",managedByOwner:"Request policy is managed by the owner. These controls are read-only.",
-  failover:"Cross-channel failover",inherit:"Inherit site policy",failoverOn:"Allow failover within authorized channels",failoverOff:"Do not fail over across channels",
-  retryLimit:"Personal cross-channel retry cap (empty inherits)",siteDefault:"Site default",effectiveDefault:"Effective for you",
-  retrySafetyHint:"Your cap can only narrow policy; model rules still apply. Disabling cross-channel failover does not change same-channel key-pool policy. Non-idempotent image requests are never retried.",
-  displayPreferences:"Interface preferences",interfaceTheme:"Interface theme",colorScheme:"Color scheme",system:"System",light:"Light",dark:"Dark",density:"List density",comfortable:"Comfortable",compact:"Compact",
-  refresh:"Refresh",all:"All",moreActions:"More actions",recordedTokens:"Recorded tokens",currentKeysOnly:"Current keys only; deleted keys excluded",
-  lastUsed:"Last request",neverUsed:"Not used yet",searchKeys:"Search name, key hint or model",searchModels:"Search models, providers or capabilities",
-  modelsWorkspaceHint:"Browse your models, capabilities and authorized candidates without exposing administration data.",
-  authorizedModels:"Authorized models",modelFamilies:"Model families",authorizedCandidates:"Authorized candidates",capabilities:"Capabilities",contextWindow:"Context window",unspecified:"Not specified",
-  logs:"Request logs",export:"Export current results",loadedRequests:"Requests in results",successful:"Successful",failedRequests:"Failed",recordedCost:"Recorded cost",
-  searchRequests:"Search request ID",allModelsShort:"All models",allStatuses:"All statuses",invalidTimeRange:"End must not precede start",
-  requestDetails:"Details",attempts:"Upstream attempts",inputTokens:"Input tokens",outputTokens:"Output tokens",cacheRead:"Cache read",cacheWrite:"Cache creation",
+  personalSettings: "Personal settings",
+  personalSettingsHint:
+    "Change only your own request preferences and interface, never the site or other users.",
+  requestControls: "Request preferences",
+  requestControlsHint:
+    "Enabled by your owner. These preferences only affect your keys and cannot override site or model rules.",
+  allowRequestControls: "Allow user failover and retry preferences",
+  managedByOwner: "Request policy is managed by the owner. These controls are read-only.",
+  failover: "Cross-channel failover",
+  inherit: "Inherit site policy",
+  failoverOn: "Allow failover within authorized channels",
+  failoverOff: "Do not fail over across channels",
+  retryLimit: "Personal cross-channel retry cap (empty inherits)",
+  siteDefault: "Site default",
+  effectiveDefault: "Effective for you",
+  retrySafetyHint:
+    "Your cap can only narrow policy; model rules still apply. Disabling cross-channel failover does not change same-channel key-pool policy. Non-idempotent image requests are never retried.",
+  displayPreferences: "Interface preferences",
+  interfaceTheme: "Interface theme",
+  colorScheme: "Color scheme",
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+  density: "List density",
+  comfortable: "Comfortable",
+  compact: "Compact",
+  refresh: "Refresh",
+  all: "All",
+  moreActions: "More actions",
+  recordedTokens: "Recorded tokens",
+  currentKeysOnly: "Current keys only; deleted keys excluded",
+  lastUsed: "Last request",
+  neverUsed: "Not used yet",
+  searchKeys: "Search name, key hint or model",
+  searchModels: "Search models, providers or capabilities",
+  modelsWorkspaceHint:
+    "Browse your models, capabilities and authorized candidates without exposing administration data.",
+  authorizedModels: "Authorized models",
+  modelFamilies: "Model families",
+  authorizedCandidates: "Authorized candidates",
+  capabilities: "Capabilities",
+  contextWindow: "Context window",
+  unspecified: "Not specified",
+  logs: "Request logs",
+  export: "Export current results",
+  loadedRequests: "Requests in results",
+  successful: "Successful",
+  failedRequests: "Failed",
+  recordedCost: "Recorded cost",
+  searchRequests: "Search request ID",
+  allModelsShort: "All models",
+  allStatuses: "All statuses",
+  invalidTimeRange: "End must not precede start",
+  requestDetails: "Details",
+  attempts: "Upstream attempts",
+  inputTokens: "Input tokens",
+  outputTokens: "Output tokens",
+  cacheRead: "Cache read",
+  cacheWrite: "Cache creation",
   team: "User management",
   mode: "Operating mode",
   currentMode: "Current mode",
   personal: "Personal",
   enabled: "Team",
-  modeHint:
-    "Personal keeps the original console. Team enables a separate user application.",
+  modeHint: "Personal keeps the original console. Team enables a separate user application.",
   disableHint:
     "Switching to personal revokes team sessions and blocks team keys. Accounts, settings and history remain. Existing personal keys are unaffected.",
   members: "Members & invitations",
@@ -429,8 +509,7 @@ const en: Record<keyof typeof zh, string> = {
   bootstrap: "Create owner account",
   bootstrapAuto:
     "Switching to team mode creates the owner from the deployment administrator automatically, reusing the admin username and secret — nothing to fill in.",
-  bootstrapHint:
-    "Only needed when the deployment has no admin secret to derive a password from.",
+  bootstrapHint: "Only needed when the deployment has no admin secret to derive a password from.",
   totp: "Console two-factor code (if enabled)",
   ownerReady: "Owner account created",
   invite: "Invite member",
@@ -467,8 +546,7 @@ const en: Record<keyof typeof zh, string> = {
   candidatesHint:
     "Decides which channels may serve the models authorized above, and therefore how far failover can go. Selecting a candidate also adds its model name to the list above (clearing the box does not remove a name already added).",
   none: "No data yet",
-  noCandidates:
-    "No public route members. Configure routes on the Models page first.",
+  noCandidates: "No public route members. Configure routes on the Models page first.",
   publicName: "Site name",
   logo: "Logo URL (HTTP/HTTPS, optional)",
   accent: "Accent",
@@ -490,8 +568,7 @@ const en: Record<keyof typeof zh, string> = {
   backLogin: "Back to sign in",
   invalidInvite: "One-time token missing. Reopen the complete link.",
   createKey: "Create API Key",
-  keyHint:
-    "Separate keys for each application, inheriting your account policy.",
+  keyHint: "Separate keys for each application, inheriting your account policy.",
   advanced: "Advanced options",
   expires: "Expiry (optional)",
   ips: "Allowed IPs/CIDRs (one per line, optional)",
@@ -500,12 +577,10 @@ const en: Record<keyof typeof zh, string> = {
   defaultRoute: "Authorized default routing",
   connect: "Connect",
   newKey: "Key created",
-  plaintextHint:
-    "Never publish real keys in repositories, screenshots or shared links.",
+  plaintextHint: "Never publish real keys in repositories, screenshots or shared links.",
   rotate: "Rotate",
   rotationWarning: "Rotation invalidates the old key immediately. Continue?",
-  deletionWarning:
-    "Delete this credential? Access will be revoked; historical records remain.",
+  deletionWarning: "Delete this credential? Access will be revoked; historical records remain.",
   enable: "Enable",
   disable: "Disable",
   copyConfig: "Copy configuration",
@@ -514,8 +589,7 @@ const en: Record<keyof typeof zh, string> = {
   importClient: "Import into CC Switch",
   importWarning:
     "This passes the key to your local CC Switch application. Do not share the generated link. Continue?",
-  importStarted:
-    "Opening the application. Confirm there; import success has not been verified.",
+  importStarted: "Opening the application. Confirm there; import success has not been verified.",
   noModels: "No authorized models are available. Contact your administrator.",
   getStarted: "Choose a key to generate application configuration.",
   noKeys: "Create your first API Key",
@@ -548,8 +622,7 @@ const en: Record<keyof typeof zh, string> = {
   policyInUse: "This policy is referenced by users or invitations",
   policyChanged: "This immediately affects associated users and keys. Save?",
   arrange: "Arrange",
-  modelsArrangeHint:
-    "Arrange each model's upstreams — it changes your own requests only.",
+  modelsArrangeHint: "Arrange each model's upstreams — it changes your own requests only.",
   arrangeHint:
     "Drag to set the order: it is the sequence failover walks. Upstreams you switch off never serve your requests.",
   arrangeSaved: "Saved",
@@ -589,8 +662,7 @@ const en: Record<keyof typeof zh, string> = {
   codeFormHint:
     "With more than one use, different people can register with the same signup code; a credit code can be redeemed once per account.",
   codeMinted: "{n} codes generated",
-  codeMintedOnce:
-    "These are shown once and cannot be recovered after closing. Copy them now.",
+  codeMintedOnce: "These are shown once and cannot be recovered after closing. Copy them now.",
   copyAll: "Copy all",
   codeEmpty: "No codes yet.",
   codeRevokeWarning:
@@ -599,8 +671,7 @@ const en: Record<keyof typeof zh, string> = {
   // —— member administration ——
   newMember: "New member",
   create: "Create",
-  memberCreatedHint:
-    "Account created. This initial password is shown once — hand it over now:",
+  memberCreatedHint: "Account created. This initial password is shown once — hand it over now:",
   passwordOptional: "Leave empty to generate a random password",
   importMembers: "Bulk import",
   import: "Import",
@@ -614,7 +685,8 @@ const en: Record<keyof typeof zh, string> = {
   quotaHint:
     "In tokens; 0 means unlimited. It applies together with the token's own quota and its tenant group's — whichever runs out first refuses the request.",
   quotaUsed: "Used {used} of {total}",
-  quotaEditSemantics: "Blank or 0 means unlimited. Token limits must be integers; money limits use ledger USD. Lowering a limit does not clear usage; only Reset clears counters.",
+  quotaEditSemantics:
+    "Blank or 0 means unlimited. Token limits must be integers; money limits use ledger USD. Lowering a limit does not clear usage; only Reset clears counters.",
   quotaTotal: "Token credit limit",
   quotaCostTotal: "Spend allowance",
   quotaCostHint:
@@ -627,8 +699,7 @@ const en: Record<keyof typeof zh, string> = {
   code: "Registration code",
   codeHint: "The signup code your operator gave you",
   haveCode: "I have a code",
-  staleBundle:
-    "The app was updated — this tab is running the old version. Refresh to continue.",
+  staleBundle: "The app was updated — this tab is running the old version. Refresh to continue.",
   oauth: "Third-party sign-in",
   oauthHint:
     "Let members sign in with GitHub or Linux.do. Register the callback URL at the provider exactly as shown.",
@@ -653,8 +724,7 @@ const en: Record<keyof typeof zh, string> = {
   oauthTokenURL: "Token endpoint",
   oauthUserInfoURL: "Userinfo endpoint",
   oauthReady: "Ready: the button appears on the sign-in page.",
-  oauthNotReady:
-    "Not ready: it appears only with a client id, a secret and the switch on.",
+  oauthNotReady: "Not ready: it appears only with a client id, a secret and the switch on.",
   oauthSignInWith: "Sign in with {name}",
   oauthOr: "or",
   oauthBindings: "Sign-in methods",
@@ -688,8 +758,7 @@ const en: Record<keyof typeof zh, string> = {
   selectMember: "Select {name}",
   bulkDeleteWarning:
     "This permanently deletes {n} selected members and revokes their API keys and sessions. It cannot be undone. Continue?",
-  "importReason.invalid_username":
-    "Invalid username (3-64 alphanumerics, . _ - allowed)",
+  "importReason.invalid_username": "Invalid username (3-64 alphanumerics, . _ - allowed)",
   "importReason.username_taken": "Username already taken",
   "importReason.invalid_quota": "Unreadable quota",
   "importReason.invalid_request": "Incomplete line",
@@ -712,7 +781,7 @@ const en: Record<keyof typeof zh, string> = {
     "Quotas and rate limits per group. They apply once a client token is bound to the group (in the token editor); unbound tokens use the default group. This is a different axis from an access policy: the policy decides which models a member may use, a group decides how much and how fast.",
   newGroup: "New group",
   quotaGroupTitle: "Group · {name}",
-  groupDeleteWarning: "Delete group \"{name}\"? Tokens bound to it fall back to the default group.",
+  groupDeleteWarning: 'Delete group "{name}"? Tokens bound to it fall back to the default group.',
   quotaTokensShort: "Tokens",
   quotaCostShort: "Spend",
   memberQuotas: "Member credit",
@@ -761,10 +830,7 @@ const en: Record<keyof typeof zh, string> = {
   imgResult: "Result",
   imgEmpty: "Nothing generated yet.",
 };
-export type TeamText = (
-  key: keyof typeof zh,
-  vars?: Record<string, string | number>,
-) => string;
+export type TeamText = (key: keyof typeof zh, vars?: Record<string, string | number>) => string;
 export type TeamKey = keyof typeof zh;
 /**
  * Team copy, with optional `{name}` interpolation — a code board has to say
@@ -786,8 +852,14 @@ export const teamError = (error: unknown, locale: string) => {
   // message table keys on the bare code.
   const code = raw.startsWith("oauth_error.") ? raw.slice("oauth_error.".length) : raw;
   const messages: Record<string, [string, string]> = {
-    preferences_not_allowed: ["站长未开放调用偏好设置", "The owner has not enabled request preferences"],
-    invalid_preferences: ["请检查故障转移选项和重试上限（0–100）", "Check the failover option and retry cap (0–100)"],
+    preferences_not_allowed: [
+      "站长未开放调用偏好设置",
+      "The owner has not enabled request preferences",
+    ],
+    invalid_preferences: [
+      "请检查故障转移选项和重试上限（0–100）",
+      "Check the failover option and retry cap (0–100)",
+    ],
     mode_changed: ["运行模式已改变，请返回设置页确认", "Operating mode changed. Check Settings."],
     team_disabled: ["团队服务未开启", "Team service is not enabled"],
     invalid_credentials: ["用户名或密码不正确", "Invalid credentials"],
@@ -795,24 +867,15 @@ export const teamError = (error: unknown, locale: string) => {
       "密码不能为空，最多 1024 字节",
       "Password must not be empty, and at most 1024 bytes",
     ],
-    invalid_username: [
-      "用户名格式或显示名称不正确",
-      "Invalid username or display name",
-    ],
+    invalid_username: ["用户名格式或显示名称不正确", "Invalid username or display name"],
     username_taken: ["用户名已被使用", "Username already exists"],
     invitation_invalid: [
       "邀请或恢复链接已失效、被撤销或已使用",
       "Invitation or recovery link is invalid or expired",
     ],
-    csrf_failed: [
-      "安全校验失败，请刷新页面后重试",
-      "Security check failed. Reload and try again",
-    ],
+    csrf_failed: ["安全校验失败，请刷新页面后重试", "Security check failed. Reload and try again"],
     key_limit: ["已达到策略允许的 Key 数量上限", "Key limit reached"],
-    invalid_members: [
-      "存在未授权或无效的路由成员",
-      "Unauthorized or invalid route members",
-    ],
+    invalid_members: ["存在未授权或无效的路由成员", "Unauthorized or invalid route members"],
     plan_in_use: [
       "方案正在使用或不存在，请先解除 Key 绑定",
       "Plan is in use or missing. Unbind keys first",
@@ -821,23 +884,11 @@ export const teamError = (error: unknown, locale: string) => {
     owner_protected: ["站长账户不可停用或降级", "Owner is protected"],
     owner_required: ["此操作仅限站长", "Owner permission required"],
     create_owner_first: ["请先创建站长账户", "Create the owner account first"],
-    totp_required: [
-      "请输入正确的原控制台两步验证码",
-      "Console two-factor code is required",
-    ],
-    invalid_policy: [
-      "请检查策略名称、请求速率和 Key 数量",
-      "Check policy name and limits",
-    ],
-    invalid_key: [
-      "请检查 Key 名称、过期时间和 IP 配置",
-      "Check key name, expiry and IP rules",
-    ],
+    totp_required: ["请输入正确的原控制台两步验证码", "Console two-factor code is required"],
+    invalid_policy: ["请检查策略名称、请求速率和 Key 数量", "Check policy name and limits"],
+    invalid_key: ["请检查 Key 名称、过期时间和 IP 配置", "Check key name, expiry and IP rules"],
     account_login_required: ["登录已失效，请重新登录", "Please sign in again"],
-    login_rate_limited: [
-      "尝试过于频繁，请稍后重试",
-      "Too many attempts. Try again later",
-    ],
+    login_rate_limited: ["尝试过于频繁，请稍后重试", "Too many attempts. Try again later"],
     // A refused third-party sign-in: one message per code the callback can
     // redirect with, so the login page explains what actually went wrong.
     oauth_state_invalid: [
@@ -877,10 +928,7 @@ export const teamError = (error: unknown, locale: string) => {
       "建立账户失败，请联系站长",
       "Account creation failed. Contact the operator.",
     ],
-    oauth_session_failed: [
-      "登录会话创建失败，请重试",
-      "Could not start a session. Try again.",
-    ],
+    oauth_session_failed: ["登录会话创建失败，请重试", "Could not start a session. Try again."],
   };
   return (
     messages[code]?.[locale.startsWith("zh") ? 0 : 1] ??

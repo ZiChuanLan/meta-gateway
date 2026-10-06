@@ -28,14 +28,14 @@ export function splitApiKeys(text: string): KeyPaste {
   const seen = new Set<string>();
   const keys: string[] = [];
   let duplicates = 0;
-	// Strip an inline note per line first, then split the line: a comment marker
-	// only ever ends the value it trails, not the rest of the paste.
-	const candidates = text
-		.split(/\r?\n/)
-		.map((line) => line.replace(/#.*$/, ""))
-		.flatMap((line) => line.split(/[\s,;]+/))
-		.map((part) => part.trim().replace(/^["']|["']$/g, ""))
-		.filter(Boolean);
+  // Strip an inline note per line first, then split the line: a comment marker
+  // only ever ends the value it trails, not the rest of the paste.
+  const candidates = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/#.*$/, ""))
+    .flatMap((line) => line.split(/[\s,;]+/))
+    .map((part) => part.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean);
   for (const candidate of candidates) {
     if (seen.has(candidate)) {
       duplicates += 1;

@@ -1,8 +1,13 @@
-import type { ChannelPingResult, ChannelOverview } from "../../api/types"
-import { StatusBadge } from "../../components/ui"
-import { useI18n } from "../../i18n"
-import { channelAccountState, channelConnectivityState, channelHealthState, channelReadiness } from "../channelHealth"
-import {  } from "./helpers"
+import type { ChannelPingResult, ChannelOverview } from "../../api/types";
+import { StatusBadge } from "../../components/ui";
+import { useI18n } from "../../i18n";
+import {
+  channelAccountState,
+  channelConnectivityState,
+  channelHealthState,
+  channelReadiness,
+} from "../channelHealth";
+import {} from "./helpers";
 
 function channelHealthReasonLabel(
   overview: ChannelOverview,
@@ -47,11 +52,7 @@ export function ChannelHealthBadge({ overview }: { overview: ChannelOverview }) 
   const state = channelHealthState(overview);
   const reason = channelHealthReasonLabel(overview, t);
   return (
-    <span
-      className={`badge badge-${state}`}
-      title={reason}
-      data-testid="channel-health-badge"
-    >
+    <span className={`badge badge-${state}`} title={reason} data-testid="channel-health-badge">
       {t(`channels.healthState.${state}`)}
     </span>
   );
@@ -96,10 +97,7 @@ function ChannelStatusBadges({ overview }: { overview: ChannelOverview }) {
   if (readiness === "missing_key") {
     const health = channelHealthState(overview);
     return (
-      <span
-        className="badge badge-missing-key"
-        title={channelHealthReasonLabel(overview, t)}
-      >
+      <span className="badge badge-missing-key" title={channelHealthReasonLabel(overview, t)}>
         {t(`channels.healthState.${health}`)} · {t("channels.badge.missingKey")}
       </span>
     );
@@ -154,10 +152,7 @@ export function ChannelConnectivityBadge({
   // only append detail when it adds information.
   const suffix = detail && detail !== stateLabel ? ` · ${detail}` : "";
   return (
-    <span
-      className={`badge badge-${state}`}
-      data-testid="channel-connectivity-badge"
-    >
+    <span className={`badge badge-${state}`} data-testid="channel-connectivity-badge">
       {stateLabel}
       {suffix}
     </span>

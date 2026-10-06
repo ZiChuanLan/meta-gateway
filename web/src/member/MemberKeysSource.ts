@@ -54,8 +54,7 @@ export const memberKeysSource: KeysSource = {
     const models = await accountRequest<string[]>("/me/models", { signal });
     return models.map((model_name) => ({ model_name }));
   },
-  usageSummary: (signal) =>
-    accountRequest<UsageSummary>("/me/usage/summary", { signal }),
+  usageSummary: (signal) => accountRequest<UsageSummary>("/me/usage/summary", { signal }),
   // Members have no visibility into routes, groups or the catalogue behind a
   // key: the capability flags keep these out of the UI, and these stubs keep
   // the shared renderer from having to special-case their absence.
@@ -67,10 +66,10 @@ export const memberKeysSource: KeysSource = {
   modelMetadata: async () => ({ items: [] }),
 
   createKey: async (body) => {
-    const created = await accountRequest<{ id: number; token: string }>(
-      "/me/keys",
-      { method: "POST", body: JSON.stringify(memberKeyBody(body)) },
-    );
+    const created = await accountRequest<{ id: number; token: string }>("/me/keys", {
+      method: "POST",
+      body: JSON.stringify(memberKeyBody(body)),
+    });
     return created;
   },
   updateKey: async (id, body) =>

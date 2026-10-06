@@ -2,19 +2,8 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { api } from "../../api/client";
-import type {
-  CatalogFieldChange,
-  CatalogPreviewItem,
-  ModelCapability,
-} from "../../api/types";
-import {
-  Button,
-  Dialog,
-  Empty,
-  ErrorState,
-  Field,
-  formatDate,
-} from "../../components/ui";
+import type { CatalogFieldChange, CatalogPreviewItem, ModelCapability } from "../../api/types";
+import { Button, Dialog, Empty, ErrorState, Field, formatDate } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
 
@@ -78,9 +67,7 @@ export function CapabilityRegistryDialog({ onClose }: { onClose: () => void }) {
   const autoTag = useMutation({
     mutationFn: () =>
       service.autoTagModelCapabilities(
-        Array.from(
-          new Set((routes.data ?? []).map((item) => item.route.model_pattern)),
-        ),
+        Array.from(new Set((routes.data ?? []).map((item) => item.route.model_pattern))),
       ),
     onSuccess: invalidateCapabilities,
   });
@@ -94,8 +81,7 @@ export function CapabilityRegistryDialog({ onClose }: { onClose: () => void }) {
   // The create form lives in the dialog itself, so it needs its own mutation
   // (the old tab reused the edit form's).
   const save = useMutation({
-    mutationFn: (value: ModelCapability) =>
-      service.upsertModelCapability(value.model, value),
+    mutationFn: (value: ModelCapability) => service.upsertModelCapability(value.model, value),
     onSuccess: async () => {
       setEditing(null);
       setNewModel("");
@@ -167,20 +153,12 @@ export function CapabilityRegistryDialog({ onClose }: { onClose: () => void }) {
         >
           {t("workbench.cap.add")}
         </Button>
-        <Button
-          variant="secondary"
-          disabled={autoTag.isPending}
-          onClick={() => autoTag.mutate()}
-        >
+        <Button variant="secondary" disabled={autoTag.isPending} onClick={() => autoTag.mutate()}>
           {t("workbench.cap.autoTag")}
         </Button>
         <Button
           disabled={catalogSources.length === 0}
-          title={
-            catalogSources.length === 0
-              ? t("workbench.cap.catalog.noSources")
-              : undefined
-          }
+          title={catalogSources.length === 0 ? t("workbench.cap.catalog.noSources") : undefined}
           onClick={() => setCatalogOpen(true)}
         >
           {t("workbench.cap.catalog.sync")}
@@ -227,9 +205,7 @@ export function CapabilityRegistryDialog({ onClose }: { onClose: () => void }) {
               <header>
                 <strong className="mono">{item.model}</strong>
                 <span className="pg-chip">{kindLabel(t, item.kind)}</span>
-                <span className="pg-chip">
-                  {t(`workbench.cap.source.${item.source}`)}
-                </span>
+                <span className="pg-chip">{t(`workbench.cap.source.${item.source}`)}</span>
                 <span className="flex-spacer" />
                 <Button variant="secondary" onClick={() => setEditing(item)}>
                   {t("common.edit")}
@@ -242,9 +218,7 @@ export function CapabilityRegistryDialog({ onClose }: { onClose: () => void }) {
                   {t("common.delete")}
                 </Button>
               </header>
-              <p className="cap-registry-meta mono">
-                {item.endpoints.join(", ") || "—"}
-              </p>
+              <p className="cap-registry-meta mono">{item.endpoints.join(", ") || "—"}</p>
               <p className="cap-registry-meta muted">
                 {item.input_formats.join(", ") || "—"}
                 {item.max_input_images
@@ -256,9 +230,7 @@ export function CapabilityRegistryDialog({ onClose }: { onClose: () => void }) {
                   item.output_modalities.join("/") || "—"
                 }`}
               </p>
-              {item.notes ? (
-                <p className="cap-registry-meta muted">{item.notes}</p>
-              ) : null}
+              {item.notes ? <p className="cap-registry-meta muted">{item.notes}</p> : null}
             </article>
           ))}
         </div>
@@ -477,10 +449,7 @@ function CatalogPlanRow({ item }: { item: CatalogPreviewItem }) {
     },
   ];
   return (
-    <article
-      className="catalog-plan-row"
-      data-action={isChanged(item) ? "write" : "skip"}
-    >
+    <article className="catalog-plan-row" data-action={isChanged(item) ? "write" : "skip"}>
       <header>
         <strong className="mono">{item.model}</strong>
         {item.found ? (
@@ -489,9 +458,7 @@ function CatalogPlanRow({ item }: { item: CatalogPreviewItem }) {
           <span className="pg-chip">{t("workbench.cap.catalog.notFound")}</span>
         )}
         {item.capability_action === "skip_manual" ? (
-          <span className="pg-chip is-danger">
-            {t("workbench.cap.catalog.manualKept")}
-          </span>
+          <span className="pg-chip is-danger">{t("workbench.cap.catalog.manualKept")}</span>
         ) : null}
       </header>
       {groups.map((group) =>
@@ -503,12 +470,8 @@ function CatalogPlanRow({ item }: { item: CatalogPreviewItem }) {
                 const labelKey = CATALOG_FIELD_KEYS[change.field];
                 return (
                   <li key={change.field}>
-                    <span className="mono">
-                      {labelKey ? t(labelKey) : change.field}
-                    </span>
-                    <span className="catalog-from mono">
-                      {change.from || "—"}
-                    </span>
+                    <span className="mono">{labelKey ? t(labelKey) : change.field}</span>
+                    <span className="catalog-from mono">{change.from || "—"}</span>
                     <span className="catalog-arrow">→</span>
                     <span className="catalog-to mono">{change.to || "—"}</span>
                   </li>
@@ -567,10 +530,7 @@ function CapabilityDialog({
       <p className="panel-hint">{t("workbench.cap.editHint")}</p>
       <div className="meta-form">
         <Field label={t("workbench.cap.kind")}>
-          <select
-            value={form.kind}
-            onChange={(e) => patch({ kind: e.target.value })}
-          >
+          <select value={form.kind} onChange={(e) => patch({ kind: e.target.value })}>
             {Object.keys(KIND_KEYS).map((kind) => (
               <option key={kind} value={kind}>
                 {kindLabel(t, kind)}
@@ -585,20 +545,14 @@ function CapabilityDialog({
             onChange={(e) => patch({ provider: e.target.value })}
           />
         </Field>
-        <Field
-          label={t("workbench.cap.endpoints")}
-          hint={t("workbench.cap.endpointsHint")}
-        >
+        <Field label={t("workbench.cap.endpoints")} hint={t("workbench.cap.endpointsHint")}>
           <input
             className="mono"
             value={form.endpoints.join(",")}
             onChange={(e) => patch({ endpoints: listField(e.target.value) })}
           />
         </Field>
-        <Field
-          label={t("workbench.cap.formats")}
-          hint={t("workbench.cap.formatsHint")}
-        >
+        <Field label={t("workbench.cap.formats")} hint={t("workbench.cap.formatsHint")}>
           <input
             className="mono"
             value={form.input_formats.join(",")}
@@ -621,34 +575,25 @@ function CapabilityDialog({
           <input
             value={form.input_modalities.join(",")}
             placeholder="text,image"
-            onChange={(event) =>
-              patch({ input_modalities: listField(event.target.value) })
-            }
+            onChange={(event) => patch({ input_modalities: listField(event.target.value) })}
           />
         </Field>
         <Field label={t("workbench.cap.outputs")}>
           <input
             value={form.output_modalities.join(",")}
             placeholder="image"
-            onChange={(event) =>
-              patch({ output_modalities: listField(event.target.value) })
-            }
+            onChange={(event) => patch({ output_modalities: listField(event.target.value) })}
           />
         </Field>
         <Field label={t("workbench.cap.sizes")}>
           <input
             value={form.size_options}
             placeholder="1024x1024,1024x1536"
-            onChange={(event) =>
-              patch({ size_options: event.target.value })
-            }
+            onChange={(event) => patch({ size_options: event.target.value })}
           />
         </Field>
         <Field label={t("workbench.cap.notes")}>
-          <input
-            value={form.notes}
-            onChange={(e) => patch({ notes: e.target.value })}
-          />
+          <input value={form.notes} onChange={(e) => patch({ notes: e.target.value })} />
         </Field>
       </div>
       {error ? <ErrorState error={error} /> : null}

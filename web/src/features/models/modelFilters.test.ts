@@ -15,9 +15,7 @@ describe("countActiveModelFilters", () => {
     expect(countActiveModelFilters({ ...idle, channel: 7 })).toBe(1);
     expect(countActiveModelFilters({ ...idle, status: "enabled" })).toBe(1);
     expect(countActiveModelFilters({ ...idle, group: "openai", channel: 7 })).toBe(2);
-    expect(
-      countActiveModelFilters({ group: "openai", channel: 7, status: "disabled" }),
-    ).toBe(3);
+    expect(countActiveModelFilters({ group: "openai", channel: 7, status: "disabled" })).toBe(3);
   });
 
   it("treats a departure from the default status as a filter, not just group and channel", () => {

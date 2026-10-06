@@ -16,8 +16,7 @@ function setup(mode: "personal" | "team", hasOwner: boolean) {
   let current: ModeInfo = { mode, has_owner: hasOwner, role: "owner" };
   const request: TeamRequest = async <T,>(path: string, init?: RequestInit) => {
     calls.push([path, init]);
-    if (path === "/admin/mode" && (!init || init.method === undefined))
-      return current as T;
+    if (path === "/admin/mode" && (!init || init.method === undefined)) return current as T;
     if (path === "/admin/mode" && init?.method === "PATCH") {
       current = { ...current, mode: JSON.parse(String(init.body)).mode };
       return current as T;
@@ -50,9 +49,7 @@ describe("operating mode", () => {
     ).toBeInTheDocument();
     // The manual form stays, but only as the fallback for a deployment with no
     // admin secret to derive a first password from.
-    expect(
-      screen.getByRole("heading", { name: "Create owner account" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Create owner account" })).toBeInTheDocument();
   });
 
   it("switches the instance to team mode through the settings panel", async () => {
@@ -74,8 +71,9 @@ describe("operating mode", () => {
 
   it("surfaces a link to the user-management area only in team mode", async () => {
     setup("team", true);
-    expect(
-      await screen.findByRole("link", { name: /User management/ }),
-    ).toHaveAttribute("href", "/console/users/members");
+    expect(await screen.findByRole("link", { name: /User management/ })).toHaveAttribute(
+      "href",
+      "/console/users/members",
+    );
   });
 });

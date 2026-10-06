@@ -32,10 +32,7 @@ export type KeysSource = {
   keyGroups?: (signal?: AbortSignal) => Promise<{ groups: string[] }>;
   modelMetadata: (signal?: AbortSignal) => Promise<{ items: ModelMetadata[] }>;
   createKey?: (body: KeyCreateInput) => Promise<Pick<CreatedDownstreamKey, "id" | "token">>;
-  updateKey?: (
-    id: number,
-    body: KeyUpdateInput,
-  ) => Promise<unknown>;
+  updateKey?: (id: number, body: KeyUpdateInput) => Promise<unknown>;
   /** Remove a key. Sources may resolve with a status payload; the page only
    *  needs it to have succeeded. */
   deleteKey?: (id: number) => Promise<unknown>;

@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  PRELOAD_EXHAUSTED_EVENT,
-  installPreloadRecovery,
-} from "./preloadRecovery";
+import { PRELOAD_EXHAUSTED_EVENT, installPreloadRecovery } from "./preloadRecovery";
 
 /**
  * The handler is installed on a stand-in window: jsdom's own `location` is not
@@ -79,10 +76,16 @@ describe("stale bundle recovery", () => {
   });
 });
 
-it("does not enter an automatic reload loop when storage is unavailable",()=>{
- vi.spyOn(Storage.prototype,"setItem").mockImplementation(()=>{throw new Error("storage denied");});
- const {window,reload}=fakeWindow();installPreloadRecovery(window as unknown as Window);
- window.fire("vite:preloadError");window.fire("vite:preloadError");
- expect(reload).not.toHaveBeenCalled();
- expect(window.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({type:PRELOAD_EXHAUSTED_EVENT}));
+it("does not enter an automatic reload loop when storage is unavailable", () => {
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("storage denied");
+  });
+  const { window, reload } = fakeWindow();
+  installPreloadRecovery(window as unknown as Window);
+  window.fire("vite:preloadError");
+  window.fire("vite:preloadError");
+  expect(reload).not.toHaveBeenCalled();
+  expect(window.dispatchEvent).toHaveBeenCalledWith(
+    expect.objectContaining({ type: PRELOAD_EXHAUSTED_EVENT }),
+  );
 });

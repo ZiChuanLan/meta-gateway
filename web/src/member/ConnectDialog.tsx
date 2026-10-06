@@ -63,11 +63,7 @@ export function ConnectDialog({
     client === "python"
       ? `import requests\n\nresponse = requests.get(\n    ${JSON.stringify(base + "/models")},\n    headers={"Authorization": ${JSON.stringify("Bearer " + secret)}}\n)\nprint(response.json())`
       : client === "ccswitch"
-        ? JSON.stringify(
-            { name: brandName, endpoint: base, apiKey: secret, model },
-            null,
-            2,
-          )
+        ? JSON.stringify({ name: brandName, endpoint: base, apiKey: secret, model }, null, 2)
         : `curl ${JSON.stringify(base + "/models")} \\\n  -H ${JSON.stringify("Authorization: Bearer " + secret)}`;
 
   function importIntoClient() {
@@ -104,10 +100,7 @@ export function ConnectDialog({
               {t("importClient")}
             </Button>
           ) : (
-            <Button
-              disabled={!secret}
-              onClick={() => onCopy(configuration, t("copied"))}
-            >
+            <Button disabled={!secret} onClick={() => onCopy(configuration, t("copied"))}>
               {t("copyConfig")}
             </Button>
           )}
@@ -127,10 +120,7 @@ export function ConnectDialog({
         <>
           <div className="user-secret">
             <code>{secret}</code>
-            <Button
-              variant="secondary"
-              onClick={() => onCopy(secret, t("copied"))}
-            >
+            <Button variant="secondary" onClick={() => onCopy(secret, t("copied"))}>
               {t("copy")}
             </Button>
           </div>

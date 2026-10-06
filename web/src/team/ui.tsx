@@ -1,4 +1,12 @@
-import { Children, cloneElement, isValidElement, useEffect, useId, useRef, type ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useId,
+  useRef,
+  type ReactNode,
+} from "react";
 export function TeamModal({
   title,
   children,
@@ -30,12 +38,7 @@ export function TeamModal({
     >
       <header>
         <h2>{title}</h2>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onClose}
-          aria-label="Close / 关闭"
-        >
+        <button type="button" disabled={busy} onClick={onClose} aria-label="Close / 关闭">
           ×
         </button>
       </header>
@@ -60,11 +63,12 @@ export function TeamField({
   return (
     <label className="team-field">
       <span id={labelID}>{label}</span>
-      {Children.map(children, child =>
+      {Children.map(children, (child) =>
         isValidElement<{ "aria-labelledby"?: string }>(child) &&
-        typeof child.type === "string" && ["input","select","textarea"].includes(child.type)
+        typeof child.type === "string" &&
+        ["input", "select", "textarea"].includes(child.type)
           ? cloneElement(child, { "aria-labelledby": labelID })
-          : child
+          : child,
       )}
       {hint ? <small className="team-hint">{hint}</small> : null}
     </label>

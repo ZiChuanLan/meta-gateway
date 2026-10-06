@@ -5,231 +5,237 @@ import { ApiClient, ApiError } from "./client";
 afterEach(() => vi.restoreAllMocks());
 
 describe("ApiClient", () => {
-	it("does not infer cookie authentication from the contents of an admin token", async () => {
-		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
-		await new ApiClient("@team-cookie").get("/admin/team/settings");
-		expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Authorization")).toBe("Bearer @team-cookie");
-	});
+  it("does not infer cookie authentication from the contents of an admin token", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+    await new ApiClient("@team-cookie").get("/admin/team/settings");
+    expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Authorization")).toBe(
+      "Bearer @team-cookie",
+    );
+  });
 
-	it("sends the admin token only in authorization", async () => {
-		const fetchMock = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
-		await new ApiClient("admin secret").get("/admin/sites");
-		const [path, init] = fetchMock.mock.calls[0]!;
-		expect(path).toBe("/admin/sites");
-		expect(new Headers(init?.headers).get("Authorization")).toBe(
-			"Bearer admin secret",
-		);
-		expect(JSON.stringify(init)).not.toContain("/admin/sites?token");
-	});
+  it("sends the admin token only in authorization", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    await new ApiClient("admin secret").get("/admin/sites");
+    const [path, init] = fetchMock.mock.calls[0]!;
+    expect(path).toBe("/admin/sites");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer admin secret");
+    expect(JSON.stringify(init)).not.toContain("/admin/sites?token");
+  });
 
-	it("returns a stable error without retaining response details", async () => {
-		vi.spyOn(globalThis, "fetch").mockResolvedValue(
-			new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
-		);
-		const error = await new ApiClient("do-not-leak")
-			.get("/admin/sites")
-			.catch((value: unknown) => value);
-		expect(error).toBeInstanceOf(ApiError);
-		expect(error).toMatchObject({ status: 401, message: "unauthorized" });
-		expect(JSON.stringify(error)).not.toContain("do-not-leak");
-	});
+  it("returns a stable error without retaining response details", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
+    );
+    const error = await new ApiClient("do-not-leak")
+      .get("/admin/sites")
+      .catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 401, message: "unauthorized" });
+    expect(JSON.stringify(error)).not.toContain("do-not-leak");
+  });
 
-	it("normalizes network failures", async () => {
-		vi.spyOn(globalThis, "fetch").mockRejectedValue(
-			new Error("socket details"),
-		);
-		await expect(
-			new ApiClient("token").get("/admin/sites"),
-		).rejects.toMatchObject({
-			status: 0,
-			message: "Unable to reach Meta Gateway",
-		});
-	});
+  it("normalizes network failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("socket details"));
+    await expect(new ApiClient("token").get("/admin/sites")).rejects.toMatchObject({
+      status: 0,
+      message: "Unable to reach Meta Gateway",
+    });
+  });
 
-	it("normalizes null list responses to empty arrays", async () => {
-		vi.spyOn(globalThis, "fetch").mockResolvedValue(
-			new Response("null", { status: 200 }),
-		);
-		await expect(
-			new ApiClient("token").getList("/admin/sites"),
-		).resolves.toEqual([]);
-	});
+  it("normalizes null list responses to empty arrays", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("null", { status: 200 }));
+    await expect(new ApiClient("token").getList("/admin/sites")).resolves.toEqual([]);
+  });
 
-	it("invalidates the session on any unauthorized response", async () => {
-		const onUnauthorized = vi.fn();
-		vi.spyOn(globalThis, "fetch").mockResolvedValue(
-			new Response('{"error":"unauthorized"}', { status: 401 }),
-		);
+  it("invalidates the session on any unauthorized response", async () => {
+    const onUnauthorized = vi.fn();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response('{"error":"unauthorized"}', { status: 401 }),
+    );
 
-		await expect(
-			new ApiClient("token", onUnauthorized).get("/admin/sites"),
-		).rejects.toMatchObject({ status: 401 });
-		expect(onUnauthorized).toHaveBeenCalledOnce();
-	});
+    await expect(new ApiClient("token", onUnauthorized).get("/admin/sites")).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
 });
 
 describe("api.proxyLogs filters", () => {
-	it("builds query string for site/channel/key/model/status filters", async () => {
-		const fetchMock = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
-		const { api } = await import("./client");
-		await api(new ApiClient("token")).proxyLogs({
-			site_id: 7,
-			channel_id: 42,
-			downstream_key_id: 9,
-			model: "gpt-test",
-			status: "failed",
-			limit: 50,
-		});
-		expect(String(fetchMock.mock.calls[0]![0])).toBe(
-			"/admin/proxy-logs?site_id=7&channel_id=42&downstream_key_id=9&model=gpt-test&status=failed&limit=50",
-		);
-	});
+  it("builds query string for site/channel/key/model/status filters", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    const { api } = await import("./client");
+    await api(new ApiClient("token")).proxyLogs({
+      site_id: 7,
+      channel_id: 42,
+      downstream_key_id: 9,
+      model: "gpt-test",
+      status: "failed",
+      limit: 50,
+    });
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "/admin/proxy-logs?site_id=7&channel_id=42&downstream_key_id=9&model=gpt-test&status=failed&limit=50",
+    );
+  });
 
-	it("omits query string when no filters are provided", async () => {
-		const fetchMock = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
-		const { api } = await import("./client");
-		await api(new ApiClient("token")).proxyLogs();
-		expect(String(fetchMock.mock.calls[0]![0])).toBe("/admin/proxy-logs");
-	});
+  it("omits query string when no filters are provided", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+    const { api } = await import("./client");
+    await api(new ApiClient("token")).proxyLogs();
+    expect(String(fetchMock.mock.calls[0]![0])).toBe("/admin/proxy-logs");
+  });
 });
 
 describe("api.unifyApply", () => {
-	it("sends covered variants too, so a leftover original is still deleted", async () => {
-		// Dropping `mapped` variants used to look harmless — the server skips
-		// duplicate members anyway — but it emptied the very groups whose only
-		// remaining work is deleting an original an earlier apply left behind.
-		const fetchMock = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
-		const { api } = await import("./client");
-		await api(new ApiClient("token")).unifyApply([
-			{
-				canonical: "gemini",
-				risky: false,
-				variants: [
-					{ channel_id: 1, channel_name: "C1", model_name: "[A]GEMINI", mapped: true },
-					{ channel_id: 2, channel_name: "C2", model_name: "GEMINI", mapped: false },
-				],
-			},
-		]);
-		const [path, init] = fetchMock.mock.calls[0]!;
-		expect(path).toBe("/admin/models/unify/apply");
-		expect(JSON.parse(String(init?.body))).toEqual({
-			delete_originals: true,
-			groups: [
-				{
-					canonical: "gemini",
-					variants: [
-						{ channel_id: 1, model_name: "[A]GEMINI" },
-						{ channel_id: 2, model_name: "GEMINI" },
-					],
-				},
-			],
-		});
-	});
+  it("sends covered variants too, so a leftover original is still deleted", async () => {
+    // Dropping `mapped` variants used to look harmless — the server skips
+    // duplicate members anyway — but it emptied the very groups whose only
+    // remaining work is deleting an original an earlier apply left behind.
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    const { api } = await import("./client");
+    await api(new ApiClient("token")).unifyApply([
+      {
+        canonical: "gemini",
+        risky: false,
+        variants: [
+          { channel_id: 1, channel_name: "C1", model_name: "[A]GEMINI", mapped: true },
+          { channel_id: 2, channel_name: "C2", model_name: "GEMINI", mapped: false },
+        ],
+      },
+    ]);
+    const [path, init] = fetchMock.mock.calls[0]!;
+    expect(path).toBe("/admin/models/unify/apply");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      delete_originals: true,
+      groups: [
+        {
+          canonical: "gemini",
+          variants: [
+            { channel_id: 1, model_name: "[A]GEMINI" },
+            { channel_id: 2, model_name: "GEMINI" },
+          ],
+        },
+      ],
+    });
+  });
 });
 
 describe("api connection and usage contracts", () => {
-	it("creates a connection through the transactional endpoint", async () => {
-		const fetchMock = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify({}), { status: 201 }));
-		const { api } = await import("./client");
-		await api(new ApiClient("token")).createConnection({
-			name: "demo",
-			base_url: "https://api.example.com",
-			secret: "sk-secret",
-			models_csv: "gpt-test",
-		});
-		const [path, init] = fetchMock.mock.calls[0]!;
-		expect(path).toBe("/admin/connections");
-		expect(JSON.parse(String(init?.body))).toMatchObject({
-			base_url: "https://api.example.com",
-			secret: "sk-secret",
-			models_csv: "gpt-test",
-		});
-		expect(String(init?.body)).not.toContain("header_override");
-	});
+  it("creates a connection through the transactional endpoint", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 201 }));
+    const { api } = await import("./client");
+    await api(new ApiClient("token")).createConnection({
+      name: "demo",
+      base_url: "https://api.example.com",
+      secret: "sk-secret",
+      models_csv: "gpt-test",
+    });
+    const [path, init] = fetchMock.mock.calls[0]!;
+    expect(path).toBe("/admin/connections");
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      base_url: "https://api.example.com",
+      secret: "sk-secret",
+      models_csv: "gpt-test",
+    });
+    expect(String(init?.body)).not.toContain("header_override");
+  });
 
-	it("passes an RFC3339 lower bound to usage summaries", async () => {
-		const fetchMock = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
-		const { api } = await import("./client");
-		await api(new ApiClient("token")).usageSummary(
-			undefined,
-			undefined,
-			"2026-08-16T00:00:00Z",
-		);
-		expect(String(fetchMock.mock.calls[0]![0])).toBe(
-			"/admin/usage/summary?since=2026-08-16T00%3A00%3A00Z",
-		);
-	});
+  it("passes an RFC3339 lower bound to usage summaries", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    const { api } = await import("./client");
+    await api(new ApiClient("token")).usageSummary(undefined, undefined, "2026-08-16T00:00:00Z");
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "/admin/usage/summary?since=2026-08-16T00%3A00%3A00Z",
+    );
+  });
 
-	it("writes a credential tier without dragging the allowlist along", async () => {
-		const fetchMock = vi
-			.spyOn(globalThis, "fetch")
-			.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
-		const { api } = await import("./client");
-		await api(new ApiClient("token")).updateCredential(143, {
-			kind: "api_key",
-			priority: 0,
-		});
-		const [path, init] = fetchMock.mock.calls[0]!;
-		expect(path).toBe("/admin/credentials/143");
-		expect(init?.method).toBe("PUT");
-		// The credential PUT is a partial update, so the body must carry only the
-		// fields the caller chose; anything injected here would overwrite a column
-		// the operator never touched.
-		expect(JSON.parse(String(init?.body))).toEqual({
-			kind: "api_key",
-			priority: 0,
-		});
-	});
+  it("writes a credential tier without dragging the allowlist along", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    const { api } = await import("./client");
+    await api(new ApiClient("token")).updateCredential(143, {
+      kind: "api_key",
+      priority: 0,
+    });
+    const [path, init] = fetchMock.mock.calls[0]!;
+    expect(path).toBe("/admin/credentials/143");
+    expect(init?.method).toBe("PUT");
+    // The credential PUT is a partial update, so the body must carry only the
+    // fields the caller chose; anything injected here would overwrite a column
+    // the operator never touched.
+    expect(JSON.parse(String(init?.body))).toEqual({
+      kind: "api_key",
+      priority: 0,
+    });
+  });
 });
 
-describe("cookie administrator transport",()=>{
- it("uses cookie and CSRF for streams rather than a placeholder bearer",async()=>{
-  setTeamCSRF("csrf-value");
-  const fetcher=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response("data: test\n\n"));
-  const client=new ApiClient("@team-cookie",undefined,"cookie");
-  await client.openLiveTrace();
-  const headers=new Headers(fetcher.mock.calls[0]?.[1]?.headers);
+describe("cookie administrator transport", () => {
+  it("uses cookie and CSRF for streams rather than a placeholder bearer", async () => {
+    setTeamCSRF("csrf-value");
+    const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("data: test\n\n"));
+    const client = new ApiClient("@team-cookie", undefined, "cookie");
+    await client.openLiveTrace();
+    const headers = new Headers(fetcher.mock.calls[0]?.[1]?.headers);
+    expect(headers.has("Authorization")).toBe(false);
+    expect(fetcher.mock.calls[0]?.[1]?.credentials).toBe("same-origin");
+  });
+  it("does not expire a new cookie session on a stale 401", async () => {
+    let finish!: (response: Response) => void;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const expired = vi.fn();
+    setTeamCSRF("old");
+    const pending = new ApiClient("cookie", expired, "cookie").get("/admin/sites");
+    setTeamCSRF("new");
+    finish(new Response("{}", { status: 401 }));
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(expired).not.toHaveBeenCalled();
+  });
+  it("does not return stale cookie data", async () => {
+    let finish!: (response: Response) => void;
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    setTeamCSRF("old");
+    const pending = new ApiClient("cookie", undefined, "cookie").get("/admin/sites");
+    setTeamCSRF("new");
+    finish(new Response('[{"name":"old"}]'));
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+  it("preserves aborted requests and streams", async () => {
+    const error = new DOMException("cancelled", "AbortError");
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(error);
+    const client = new ApiClient("bearer");
+    await expect(client.get("/admin/sites")).rejects.toBe(error);
+    await expect(client.openLiveTrace()).rejects.toBe(error);
+  });
+});
+
+it("sends CSRF on a cookie-authenticated streaming write", async () => {
+  setTeamCSRF("write-csrf");
+  const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("data: ok\n\n"));
+  await new ApiClient("cookie", undefined, "cookie").streamTryChat({ model: "demo" });
+  const headers = new Headers(fetcher.mock.calls[0]?.[1]?.headers);
+  expect(headers.get("X-Meta-CSRF")).toBe("write-csrf");
   expect(headers.has("Authorization")).toBe(false);
-  expect(fetcher.mock.calls[0]?.[1]?.credentials).toBe("same-origin");
- });
- it("does not expire a new cookie session on a stale 401",async()=>{
-  let finish!:(response:Response)=>void;
-  vi.spyOn(globalThis,"fetch").mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
-  const expired=vi.fn();setTeamCSRF("old");
-  const pending=new ApiClient("cookie",expired,"cookie").get("/admin/sites");
-  setTeamCSRF("new");finish(new Response('{}',{status:401}));
-  await expect(pending).rejects.toMatchObject({name:"AbortError"});expect(expired).not.toHaveBeenCalled();
- });
- it("does not return stale cookie data",async()=>{
-  let finish!:(response:Response)=>void;
-  vi.spyOn(globalThis,"fetch").mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
-  setTeamCSRF("old");const pending=new ApiClient("cookie",undefined,"cookie").get("/admin/sites");
-  setTeamCSRF("new");finish(new Response('[{"name":"old"}]'));
-  await expect(pending).rejects.toMatchObject({name:"AbortError"});
- });
- it("preserves aborted requests and streams",async()=>{
-  const error=new DOMException("cancelled","AbortError");vi.spyOn(globalThis,"fetch").mockRejectedValue(error);
-  const client=new ApiClient("bearer");
-  await expect(client.get("/admin/sites")).rejects.toBe(error);
-  await expect(client.openLiveTrace()).rejects.toBe(error);
- });
-});
-
-it("sends CSRF on a cookie-authenticated streaming write",async()=>{
- setTeamCSRF("write-csrf");const fetcher=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response("data: ok\n\n"));
- await new ApiClient("cookie",undefined,"cookie").streamTryChat({model:"demo"});
- const headers=new Headers(fetcher.mock.calls[0]?.[1]?.headers);
- expect(headers.get("X-Meta-CSRF")).toBe("write-csrf");expect(headers.has("Authorization")).toBe(false);
 });

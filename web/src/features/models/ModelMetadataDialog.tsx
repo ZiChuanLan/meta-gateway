@@ -1,8 +1,8 @@
 import { PriceFields, PricingRules } from "./PriceFields";
-import { useState } from "react"
-import type { ModelMetadata } from "../../api/types"
-import { Button, Dialog, Field } from "../../components/ui"
-import { useI18n } from "../../i18n"
+import { useState } from "react";
+import type { ModelMetadata } from "../../api/types";
+import { Button, Dialog, Field } from "../../components/ui";
+import { useI18n } from "../../i18n";
 import {
   PriceTiersEditor,
   PriceWindowsEditor,
@@ -12,7 +12,7 @@ import {
   parseWindows,
   validTiers,
   validWindows,
-} from "./PricingEditors"
+} from "./PricingEditors";
 
 export // Compact token-count rendering for metadata badges (128000 → 128K).
 // Capability annotation editor for one canonical model name (context window,
@@ -68,9 +68,7 @@ function ModelMetadataDialog({
             min={0}
             step={1000}
             value={form.context_window}
-            onChange={(e) =>
-              patch({ context_window: Math.max(0, Number(e.target.value) || 0) })
-            }
+            onChange={(e) => patch({ context_window: Math.max(0, Number(e.target.value) || 0) })}
             disabled={pending}
           />
         </Field>
@@ -93,9 +91,7 @@ function ModelMetadataDialog({
         <Field label={t("modelsPage.metaThinking")}>
           <select
             value={form.supports_thinking}
-            onChange={(e) =>
-              patch({ supports_thinking: Number(e.target.value) })
-            }
+            onChange={(e) => patch({ supports_thinking: Number(e.target.value) })}
             disabled={pending}
           >
             {thinkingOptions.map((option) => (
@@ -120,12 +116,31 @@ function ModelMetadataDialog({
             disabled={pending}
           />
         </Field>
-        <PriceFields value={form} onChange={patch} onValidityChange={setPricesValid} disabled={pending} />
+        <PriceFields
+          value={form}
+          onChange={patch}
+          onValidityChange={setPricesValid}
+          disabled={pending}
+        />
         <PricingRules />
-        <PriceTiersEditor value={tiers} onChange={(next) => { setTiersEdited(true); setTiers(next); }} disabled={pending} />
-        <PriceWindowsEditor value={windows} onChange={(next) => { setWindowsEdited(true); setWindows(next); }} disabled={pending} />
+        <PriceTiersEditor
+          value={tiers}
+          onChange={(next) => {
+            setTiersEdited(true);
+            setTiers(next);
+          }}
+          disabled={pending}
+        />
+        <PriceWindowsEditor
+          value={windows}
+          onChange={(next) => {
+            setWindowsEdited(true);
+            setWindows(next);
+          }}
+          disabled={pending}
+        />
       </div>
-	  {error ? <div className="inline-error">{String(error)}</div> : null}
+      {error ? <div className="inline-error">{String(error)}</div> : null}
       <div className="dialog-actions">
         {onDelete ? (
           <Button
@@ -142,7 +157,10 @@ function ModelMetadataDialog({
         <Button variant="secondary" disabled={pending} onClick={onClose}>
           {t("common.cancel")}
         </Button>
-        <Button disabled={pending || !pricesValid || !validTiers(tiers) || !validWindows(windows)} onClick={submit}>
+        <Button
+          disabled={pending || !pricesValid || !validTiers(tiers) || !validWindows(windows)}
+          onClick={submit}
+        >
           {pending ? t("common.working") : t("common.save")}
         </Button>
       </div>

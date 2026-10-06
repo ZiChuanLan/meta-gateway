@@ -56,39 +56,68 @@ export function parseWindows(raw?: string): PriceWindow[] {
 }
 
 /** Invalid editing values remain invalid until explicitly corrected, never coerced to free. */
-export const pricingNumber = (raw: string): number => raw.trim() === "" ? NaN : Number(raw);
-export const blankTier = (tier: PriceTier) => [tier.max_prompt_tokens,tier.prompt,tier.completion,tier.cache,tier.per_request].every(Number.isNaN);
-export const blankWindow = (window: PriceWindow) => window.days.length === 0 && [window.from_hour,window.to_hour,window.multiplier].every(Number.isNaN);
+export const pricingNumber = (raw: string): number => (raw.trim() === "" ? NaN : Number(raw));
+export const blankTier = (tier: PriceTier) =>
+  [tier.max_prompt_tokens, tier.prompt, tier.completion, tier.cache, tier.per_request].every(
+    Number.isNaN,
+  );
+export const blankWindow = (window: PriceWindow) =>
+  window.days.length === 0 &&
+  [window.from_hour, window.to_hour, window.multiplier].every(Number.isNaN);
 export function validTiers(tiers: PriceTier[]): boolean {
   const ceilings = new Set<number>();
-  return tiers.length <= 20 && tiers.filter((tier)=>!blankTier(tier)).every((tier) => {
-    if (!Number.isInteger(tier.max_prompt_tokens) || tier.max_prompt_tokens < 0 || ceilings.has(tier.max_prompt_tokens)) return false;
-    ceilings.add(tier.max_prompt_tokens);
-    return [tier.prompt, tier.completion, tier.cache, tier.per_request].every((n) => Number.isFinite(n) && n >= 0);
-  });
+  return (
+    tiers.length <= 20 &&
+    tiers
+      .filter((tier) => !blankTier(tier))
+      .every((tier) => {
+        if (
+          !Number.isInteger(tier.max_prompt_tokens) ||
+          tier.max_prompt_tokens < 0 ||
+          ceilings.has(tier.max_prompt_tokens)
+        )
+          return false;
+        ceilings.add(tier.max_prompt_tokens);
+        return [tier.prompt, tier.completion, tier.cache, tier.per_request].every(
+          (n) => Number.isFinite(n) && n >= 0,
+        );
+      })
+  );
 }
 export function validWindows(windows: PriceWindow[]): boolean {
-  return windows.length <= 20 && windows.filter((window)=>!blankWindow(window)).every((window) =>
-    [window.from_hour, window.to_hour].every((n) => Number.isInteger(n) && n >= 0 && n <= 23) &&
-    Number.isFinite(window.multiplier) && window.multiplier > 0 && window.multiplier <= 1000 &&
-    window.days.every((n) => Number.isInteger(n) && n >= 1 && n <= 7));
+  return (
+    windows.length <= 20 &&
+    windows
+      .filter((window) => !blankWindow(window))
+      .every(
+        (window) =>
+          [window.from_hour, window.to_hour].every(
+            (n) => Number.isInteger(n) && n >= 0 && n <= 23,
+          ) &&
+          Number.isFinite(window.multiplier) &&
+          window.multiplier > 0 &&
+          window.multiplier <= 1000 &&
+          window.days.every((n) => Number.isInteger(n) && n >= 1 && n <= 7),
+      )
+  );
 }
 
 /** Renders a ladder for storage; an empty ladder clears the column. */
 export function encodeTiers(tiers: PriceTier[]): string {
   if (!validTiers(tiers)) throw new Error("Invalid price tiers");
-  const configured = tiers.filter((tier)=>!blankTier(tier));
+  const configured = tiers.filter((tier) => !blankTier(tier));
   return configured.length === 0 ? "" : JSON.stringify(configured);
 }
 
 export function encodeWindows(windows: PriceWindow[]): string {
   if (!validWindows(windows)) throw new Error("Invalid price windows");
-  const configured = windows.filter((window)=>!blankWindow(window));
+  const configured = windows.filter((window) => !blankWindow(window));
   return configured.length === 0 ? "" : JSON.stringify(configured);
 }
 
 function normalizeTier(raw: Partial<PriceTier>): PriceTier {
-  const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const number = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
   return {
     max_prompt_tokens: number(raw.max_prompt_tokens),
     prompt: number(raw.prompt),
@@ -100,7 +129,9 @@ function normalizeTier(raw: Partial<PriceTier>): PriceTier {
 
 function normalizeWindow(raw: Partial<PriceWindow>): PriceWindow {
   const hour = (value: unknown) =>
-    typeof value === "number" && Number.isFinite(value) ? Math.min(23, Math.max(0, Math.trunc(value))) : 0;
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.min(23, Math.max(0, Math.trunc(value)))
+      : 0;
   const days = Array.isArray(raw.days)
     ? raw.days.filter((day): day is number => typeof day === "number" && day >= 1 && day <= 7)
     : [];
@@ -112,7 +143,13 @@ function normalizeWindow(raw: Partial<PriceWindow>): PriceWindow {
   };
 }
 
-const EMPTY_TIER: PriceTier = { max_prompt_tokens: NaN, prompt: NaN, completion: NaN, cache: NaN, per_request: NaN };
+const EMPTY_TIER: PriceTier = {
+  max_prompt_tokens: NaN,
+  prompt: NaN,
+  completion: NaN,
+  cache: NaN,
+  per_request: NaN,
+};
 const EMPTY_WINDOW: PriceWindow = { days: [], from_hour: NaN, to_hour: NaN, multiplier: NaN };
 
 export function PriceTiersEditor({
@@ -169,9 +206,7 @@ export function PriceTiersEditor({
               step="any"
               value={Number.isFinite(tier.completion) ? tier.completion : ""}
               disabled={disabled}
-              onChange={(event) =>
-                patch(index, { completion: pricingNumber(event.target.value) })
-              }
+              onChange={(event) => patch(index, { completion: pricingNumber(event.target.value) })}
             />
           </label>
           <label>
@@ -193,9 +228,7 @@ export function PriceTiersEditor({
               step="any"
               value={Number.isFinite(tier.per_request) ? tier.per_request : ""}
               disabled={disabled}
-              onChange={(event) =>
-                patch(index, { per_request: pricingNumber(event.target.value) })
-              }
+              onChange={(event) => patch(index, { per_request: pricingNumber(event.target.value) })}
             />
           </label>
           <button
@@ -262,9 +295,7 @@ export function PriceWindowsEditor({
                 max={23}
                 value={Number.isFinite(window.from_hour) ? window.from_hour : ""}
                 disabled={disabled}
-                onChange={(event) =>
-                  patch(index, { from_hour: pricingNumber(event.target.value) })
-                }
+                onChange={(event) => patch(index, { from_hour: pricingNumber(event.target.value) })}
               />
             </label>
             <label>
@@ -275,9 +306,7 @@ export function PriceWindowsEditor({
                 max={23}
                 value={Number.isFinite(window.to_hour) ? window.to_hour : ""}
                 disabled={disabled}
-                onChange={(event) =>
-                  patch(index, { to_hour: pricingNumber(event.target.value) })
-                }
+                onChange={(event) => patch(index, { to_hour: pricingNumber(event.target.value) })}
               />
             </label>
             <label>

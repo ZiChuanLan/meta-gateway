@@ -139,9 +139,7 @@ describe("dashboard time range", () => {
     fireEvent.click(screen.getByRole("tab", { name: "30 days" }));
 
     await waitFor(() => {
-      const latest = windowed
-        .filter((r) => r.path === "/admin/usage/series")
-        .at(-1)!;
+      const latest = windowed.filter((r) => r.path === "/admin/usage/series").at(-1)!;
       const span =
         new Date(latest.params.get("until")!).getTime() -
         new Date(latest.params.get("since")!).getTime();
@@ -163,8 +161,7 @@ describe("dashboard time range", () => {
     const picker = header?.querySelector(".time-range");
     expect(picker).not.toBeNull();
     expect(
-      header!.compareDocumentPosition(picker!) &
-        Node.DOCUMENT_POSITION_CONTAINED_BY,
+      header!.compareDocumentPosition(picker!) & Node.DOCUMENT_POSITION_CONTAINED_BY,
     ).toBeTruthy();
   });
 

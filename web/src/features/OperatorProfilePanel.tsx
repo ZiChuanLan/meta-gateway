@@ -17,8 +17,7 @@ export function OperatorProfilePanel({
   const qc = useQueryClient();
   const profile = useQuery({
     queryKey: ["operator-profile"],
-    queryFn: ({ signal }) =>
-      client!.get<Profile>("/admin/operator-profile", signal),
+    queryFn: ({ signal }) => client!.get<Profile>("/admin/operator-profile", signal),
   });
   const [name, setName] = useState<string | null>(null);
   const [token, setToken] = useState("");
@@ -117,8 +116,7 @@ export function OperatorUpgradePrompt({ onReady }: { onReady?: (ready: boolean) 
   });
   const profile = useQuery({
     queryKey: ["operator-profile"],
-    queryFn: ({ signal }) =>
-      client!.get<Profile>("/admin/operator-profile", signal),
+    queryFn: ({ signal }) => client!.get<Profile>("/admin/operator-profile", signal),
     enabled: Boolean(client) && role === null && !dismissed,
   });
   const close = () => {
@@ -129,16 +127,14 @@ export function OperatorUpgradePrompt({ onReady }: { onReady?: (ready: boolean) 
       /* optional */
     }
   };
-  const visible = Boolean(client && role === null && !dismissed && profile.data?.username && !profile.data.configured);
+  const visible = Boolean(
+    client && role === null && !dismissed && profile.data?.username && !profile.data.configured,
+  );
   const resolved = dismissed || !client || role !== null || !profile.isPending;
-  useEffect(() => { onReady?.(resolved && !visible); }, [onReady, resolved, visible]);
-  if (
-    !client ||
-    role !== null ||
-    dismissed ||
-    !profile.data?.username ||
-    profile.data.configured
-  )
+  useEffect(() => {
+    onReady?.(resolved && !visible);
+  }, [onReady, resolved, visible]);
+  if (!client || role !== null || dismissed || !profile.data?.username || profile.data.configured)
     return null;
   return (
     <Dialog title={t("operator.title")} onClose={close} busy={busy}>

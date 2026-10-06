@@ -7,7 +7,10 @@ import type {
 } from "../../api/types";
 import { mappingRealName } from "../../lib/alias";
 
-export function primaryMember(members: RoutingCandidate[], route?: Pick<Route, "routing_mode" | "single_member_id">) {
+export function primaryMember(
+  members: RoutingCandidate[],
+  route?: Pick<Route, "routing_mode" | "single_member_id">,
+) {
   if (!members.length) return null;
   if (route?.routing_mode === "single" && route.single_member_id != null) {
     const pinned = members.find((entry) => entry.member.id === route.single_member_id);
@@ -83,9 +86,7 @@ export function upstreamChoices(
   const choices = sortMembers(members).map((candidate) => {
     const origin = originModelOf(candidate.member, route);
     const name = candidate.channel.name;
-    const head = origin
-      ? `${name} · ${t("routing.memberOrigin", { model: origin })}`
-      : name;
+    const head = origin ? `${name} · ${t("routing.memberOrigin", { model: origin })}` : name;
     return {
       memberId: candidate.member.id,
       channelId: candidate.channel.id,
@@ -103,7 +104,10 @@ export function upstreamChoices(
   // group, which is what separates two members that only differ that way. A
   // collision surviving both is one upstream by every displayed fact, and the
   // picker has nothing left to say about it.
-  return separate(separate(choices, (choice) => `#${choice.channelId}`), (choice) => choice.group);
+  return separate(
+    separate(choices, (choice) => `#${choice.channelId}`),
+    (choice) => choice.group,
+  );
 }
 
 /** separate appends a suffix to every choice whose label is still ambiguous. */
@@ -178,8 +182,7 @@ function memberFinance(
   // token: price per 1M tokens → affordable 1M-token units (shown as M).
   // A negative balance (overdrawn upstream) affords nothing; show 0 instead
   // of a misleading negative count and let the caller render the overdrawn state.
-  const rawCalls =
-    balanceUsd <= 0 ? 0 : Math.floor(balanceUsd / priceUsd);
+  const rawCalls = balanceUsd <= 0 ? 0 : Math.floor(balanceUsd / priceUsd);
   const formatUsd = (value: number) => {
     if (value >= 1) return value.toFixed(2);
     if (value >= 0.01) return value.toFixed(4);

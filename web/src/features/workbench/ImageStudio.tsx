@@ -3,7 +3,15 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { SearchableSelect } from "../../components/SearchableSelect";
-import { Button, Empty, ErrorState, Field, IconButton, Panel, formatDate } from "../../components/ui";
+import {
+  Button,
+  Empty,
+  ErrorState,
+  Field,
+  IconButton,
+  Panel,
+  formatDate,
+} from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { upstreamMessage } from "../../lib/upstreamError";
 import { primaryChannelName, upstreamChoices } from "../models/routingPolicy";
@@ -74,13 +82,17 @@ export default function ImageStudio({ active }: { active: boolean }) {
       }
       if (form) {
         setModel((current) => current || form.model);
-        setMode((current) => (current === "auto" && form.mode ? (form.mode as typeof current) : current));
+        setMode((current) =>
+          current === "auto" && form.mode ? (form.mode as typeof current) : current,
+        );
         setSize((current) => current || form.size);
         setPrompt((current) => current || form.prompt);
       }
       setHistoryLoaded(true);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
   useEffect(() => {
     if (!historyLoaded) return;
@@ -89,26 +101,40 @@ export default function ImageStudio({ active }: { active: boolean }) {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [historyLoaded, model, mode, size, prompt]);
-  useEffect(() => { historyRef.current = history; }, [history]);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
 
   const routes = useQuery({
     queryKey: ["route-overviews"],
     queryFn: ({ signal }) => service.routeOverviews(signal),
     enabled: active,
   });
-  const modelNames = useMemo(() => Array.from(new Set((routes.data ?? [])
-    .filter(({ route }) => route.enabled && !/[*?]/.test(route.model_pattern))
-    .map(({ route }) => route.model_pattern))).sort(), [routes.data]);
+  const modelNames = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (routes.data ?? [])
+            .filter(({ route }) => route.enabled && !/[*?]/.test(route.model_pattern))
+            .map(({ route }) => route.model_pattern),
+        ),
+      ).sort(),
+    [routes.data],
+  );
   const capabilities = useQuery({
     queryKey: ["capabilities", modelNames],
     queryFn: () => service.resolveModelCapabilities(modelNames),
     enabled: active && modelNames.length > 0,
   });
-  const imageModels = useMemo(() => modelNames.filter((name) => {
-    const capability = capabilities.data?.items[name];
-    return capability && IMAGE_KINDS.has(capability.kind);
-  }), [modelNames, capabilities.data]);
-  const activeModel = imageModels.includes(model) ? model : imageModels[0] ?? "";
+  const imageModels = useMemo(
+    () =>
+      modelNames.filter((name) => {
+        const capability = capabilities.data?.items[name];
+        return capability && IMAGE_KINDS.has(capability.kind);
+      }),
+    [modelNames, capabilities.data],
+  );
+  const activeModel = imageModels.includes(model) ? model : (imageModels[0] ?? "");
   const modelSites = useMemo(() => {
     const map = new Map<string, string>();
     for (const overview of routes.data ?? []) {
@@ -121,10 +147,11 @@ export default function ImageStudio({ active }: { active: boolean }) {
   // labels — so "which site serves this model?" is answerable here, and typing
   // a site name filters down to the models it serves.
   const modelOptions = useMemo(
-    () => imageModels.map((name) => {
-      const site = modelSites.get(name);
-      return { value: name, label: site ? `${name} · ${site}` : name };
-    }),
+    () =>
+      imageModels.map((name) => {
+        const site = modelSites.get(name);
+        return { value: name, label: site ? `${name} · ${site}` : name };
+      }),
     [imageModels, modelSites],
   );
   // Image upstreams charge per plane, so pinning one is the way to test that
@@ -132,22 +159,22 @@ export default function ImageStudio({ active }: { active: boolean }) {
   // 原模型 in the label, since one channel can serve the alias under several
   // upstream names.
   const upstreams = useMemo(() => {
-    const overview = (routes.data ?? []).find(
-      ({ route }) => route.model_pattern === activeModel,
-    );
-    return overview
-      ? upstreamChoices(overview.members ?? [], overview.route, t)
-      : [];
+    const overview = (routes.data ?? []).find(({ route }) => route.model_pattern === activeModel);
+    return overview ? upstreamChoices(overview.members ?? [], overview.route, t) : [];
   }, [routes.data, activeModel, t]);
   const capability = capabilities.data?.items[activeModel];
   const endpoints = capability?.endpoints ?? [];
   const chatImages = endpoints.includes("/v1/chat/completions");
   const canGenerate = endpoints.includes("/v1/images/generations") || chatImages;
-  const canEdit = endpoints.includes("/v1/images/edits") ||
+  const canEdit =
+    endpoints.includes("/v1/images/edits") ||
     (chatImages && !!capability?.input_modalities.includes("image"));
   const maxImages = capability?.max_input_images ?? 0;
   const editing = mode === "edit" || (mode === "auto" && (refs.length > 0 || !canGenerate));
-  const sizeOptions = (capability?.size_options ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  const sizeOptions = (capability?.size_options ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
 
   let inputIssue = "";
   if (maxImages > 0 && refs.length > maxImages) {
@@ -165,20 +192,27 @@ export default function ImageStudio({ active }: { active: boolean }) {
   const run = useMutation({
     gcTime: 0,
     mutationFn: (request: ImageRequest) => service.tryImage(request),
-    onMutate: () => { setError(null); setFeedback(""); },
+    onMutate: () => {
+      setError(null);
+      setFeedback("");
+    },
     onSuccess: (data, request) => {
       // The success path drops `body` (it duplicates a large base64 image), so
       // read the upstream's own words only where the call actually failed.
       const refused = data.status < 200 || data.status >= 300;
-      const detail = refused || (data.images ?? []).length === 0
-        ? upstreamMessage(data.body)
-        : "";
+      const detail = refused || (data.images ?? []).length === 0 ? upstreamMessage(data.body) : "";
       const result: RunResult = {
         id: runID(),
-        at: new Date().toISOString(), model: data.model || request.model,
-        status: data.status, latencyMs: data.latency_ms, channelName: data.channel_name,
-        endpoint: data.plan?.endpoint ?? "", format: data.plan?.format ?? "",
-        prompt: request.prompt ?? "", mode: request.mode ?? "auto", size: request.size,
+        at: new Date().toISOString(),
+        model: data.model || request.model,
+        status: data.status,
+        latencyMs: data.latency_ms,
+        channelName: data.channel_name,
+        endpoint: data.plan?.endpoint ?? "",
+        format: data.plan?.format ?? "",
+        prompt: request.prompt ?? "",
+        mode: request.mode ?? "auto",
+        size: request.size,
         images: (data.images ?? []).filter((image) => imageSource(image)),
         upstreamError: detail || undefined,
       };
@@ -225,8 +259,10 @@ export default function ImageStudio({ active }: { active: boolean }) {
     const next = historyRef.current.filter((item) => item.id !== id);
     historyRef.current = next;
     setHistory(next);
-    setLatest((current) => (current && current.id === id ? next[0] ?? null : current));
-    void saveRuns(next).then((kept) => { if (!kept.length) setPersistWarning(""); });
+    setLatest((current) => (current && current.id === id ? (next[0] ?? null) : current));
+    void saveRuns(next).then((kept) => {
+      if (!kept.length) setPersistWarning("");
+    });
   }
 
   function forgetAll() {
@@ -250,7 +286,9 @@ export default function ImageStudio({ active }: { active: boolean }) {
       setFeedback(t("workbench.image.invalidFile", { name: invalid.name }));
       return;
     }
-    const bytes = refs.reduce((total, image) => total + image.size, 0) + files.reduce((total, file) => total + file.size, 0);
+    const bytes =
+      refs.reduce((total, image) => total + image.size, 0) +
+      files.reduce((total, file) => total + file.size, 0);
     if (bytes > MAX_UPLOAD_BYTES) {
       setFeedback(t("workbench.image.uploadTooLarge", { mb: 20 }));
       return;
@@ -258,16 +296,28 @@ export default function ImageStudio({ active }: { active: boolean }) {
     readingFiles.current = true;
     setReading(true);
     try {
-      const added = await Promise.all(files.map((file) => new Promise<ReferenceImage>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({ name: file.name, dataUrl: String(reader.result), size: file.size });
-        reader.onerror = () => reject(new Error(t("workbench.image.fileReadFailed", { name: file.name })));
-        reader.onabort = () => reject(new Error(t("workbench.image.fileReadFailed", { name: file.name })));
-        reader.readAsDataURL(file);
-      })));
+      const added = await Promise.all(
+        files.map(
+          (file) =>
+            new Promise<ReferenceImage>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () =>
+                resolve({ name: file.name, dataUrl: String(reader.result), size: file.size });
+              reader.onerror = () =>
+                reject(new Error(t("workbench.image.fileReadFailed", { name: file.name })));
+              reader.onabort = () =>
+                reject(new Error(t("workbench.image.fileReadFailed", { name: file.name })));
+              reader.readAsDataURL(file);
+            }),
+        ),
+      );
       setRefs((current) => [...current, ...added]);
     } catch (failure) {
-      setFeedback(failure instanceof Error ? failure.message : t("workbench.image.fileReadFailed", { name: files[0]?.name ?? "" }));
+      setFeedback(
+        failure instanceof Error
+          ? failure.message
+          : t("workbench.image.fileReadFailed", { name: files[0]?.name ?? "" }),
+      );
     } finally {
       readingFiles.current = false;
       setReading(false);
@@ -275,11 +325,21 @@ export default function ImageStudio({ active }: { active: boolean }) {
   }
 
   if (routes.isPending || (modelNames.length > 0 && capabilities.isPending)) {
-    return <p className="muted" role="status">{t("common.working")}</p>;
+    return (
+      <p className="muted" role="status">
+        {t("common.working")}
+      </p>
+    );
   }
   if (routes.isError) return <ErrorState error={routes.error} />;
-  if (modelNames.length > 0 && capabilities.isError) return <ErrorState error={capabilities.error} />;
-  if (imageModels.length === 0) return <Panel><Empty>{t("workbench.image.noModels")}</Empty></Panel>;
+  if (modelNames.length > 0 && capabilities.isError)
+    return <ErrorState error={capabilities.error} />;
+  if (imageModels.length === 0)
+    return (
+      <Panel>
+        <Empty>{t("workbench.image.noModels")}</Empty>
+      </Panel>
+    );
 
   return (
     <div className="workbench-grid">
@@ -293,7 +353,11 @@ export default function ImageStudio({ active }: { active: boolean }) {
                 value={activeModel}
                 placeholder={t("workbench.image.model")}
                 onChange={(next) => {
-                  setModel(next); setSize(""); setMode("auto"); setError(null); setFeedback("");
+                  setModel(next);
+                  setSize("");
+                  setMode("auto");
+                  setError(null);
+                  setFeedback("");
                   // Pinned connections belong to the previous model's members.
                   setMemberId(0);
                 }}
@@ -301,14 +365,20 @@ export default function ImageStudio({ active }: { active: boolean }) {
             </Field>
             <Field
               label={t("workbench.image.upstream")}
-              hint={upstreams.length > 1
-                ? t("workbench.image.upstreamHint")
-                : t("workbench.image.upstreamHintOne")}
+              hint={
+                upstreams.length > 1
+                  ? t("workbench.image.upstreamHint")
+                  : t("workbench.image.upstreamHintOne")
+              }
             >
               <select
                 aria-label={t("workbench.image.upstream")}
                 value={memberId}
-                onChange={(event) => { setMemberId(Number(event.target.value) || 0); setError(null); setFeedback(""); }}
+                onChange={(event) => {
+                  setMemberId(Number(event.target.value) || 0);
+                  setError(null);
+                  setFeedback("");
+                }}
               >
                 <option value={0}>{t("workbench.image.upstreamAuto")}</option>
                 {upstreams.map((upstream) => (
@@ -319,45 +389,111 @@ export default function ImageStudio({ active }: { active: boolean }) {
               </select>
             </Field>
             <Field label={t("workbench.image.mode")}>
-              <select aria-label={t("workbench.image.mode")} value={mode} onChange={(event) => { setMode(event.target.value as typeof mode); setError(null); setFeedback(""); }}>
+              <select
+                aria-label={t("workbench.image.mode")}
+                value={mode}
+                onChange={(event) => {
+                  setMode(event.target.value as typeof mode);
+                  setError(null);
+                  setFeedback("");
+                }}
+              >
                 <option value="auto">{t("workbench.image.modeAuto")}</option>
-                <option value="generate" disabled={!canGenerate}>{t("workbench.image.modeGenerate")}</option>
-                <option value="edit" disabled={!canEdit}>{t("workbench.image.modeEdit")}</option>
+                <option value="generate" disabled={!canGenerate}>
+                  {t("workbench.image.modeGenerate")}
+                </option>
+                <option value="edit" disabled={!canEdit}>
+                  {t("workbench.image.modeEdit")}
+                </option>
               </select>
             </Field>
             <Field label={t("workbench.image.size")}>
               {sizeOptions.length > 0 ? (
-                <select aria-label={t("workbench.image.size")} value={size} onChange={(event) => setSize(event.target.value)}>
+                <select
+                  aria-label={t("workbench.image.size")}
+                  value={size}
+                  onChange={(event) => setSize(event.target.value)}
+                >
                   <option value="">{t("workbench.image.sizeDefault")}</option>
-                  {sizeOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  {sizeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
-              ) : <input aria-label={t("workbench.image.size")} value={size} placeholder="1024x1024" onChange={(event) => setSize(event.target.value)} />}
+              ) : (
+                <input
+                  aria-label={t("workbench.image.size")}
+                  value={size}
+                  placeholder="1024x1024"
+                  onChange={(event) => setSize(event.target.value)}
+                />
+              )}
             </Field>
           </div>
           <Field label={t("workbench.image.prompt")}>
-            <textarea aria-label={t("workbench.image.prompt")} rows={4} value={prompt} placeholder={t("workbench.image.promptPlaceholder")} onChange={(event) => setPrompt(event.target.value)} />
+            <textarea
+              aria-label={t("workbench.image.prompt")}
+              rows={4}
+              value={prompt}
+              placeholder={t("workbench.image.promptPlaceholder")}
+              onChange={(event) => setPrompt(event.target.value)}
+            />
           </Field>
-          <Field label={t("workbench.image.refs")} hint={maxImages > 0 ? t("workbench.image.refsHint", { n: maxImages }) : t("workbench.image.refsHintUnbounded")}>
+          <Field
+            label={t("workbench.image.refs")}
+            hint={
+              maxImages > 0
+                ? t("workbench.image.refsHint", { n: maxImages })
+                : t("workbench.image.refsHintUnbounded")
+            }
+          >
             <div className="workbench-refs">
               {refs.map((image, index) => (
                 <div className="workbench-ref" key={`${image.name}-${index}`}>
                   <img src={image.dataUrl} alt={image.name} />
-                  <button type="button" className="workbench-ref-remove" aria-label={t("workbench.image.removeRef", { name: image.name })} onClick={() => {
-                    setRefs((current) => current.filter((_, position) => position !== index)); setError(null); setFeedback("");
-                  }}><Trash2 size={12} /></button>
+                  <button
+                    type="button"
+                    className="workbench-ref-remove"
+                    aria-label={t("workbench.image.removeRef", { name: image.name })}
+                    onClick={() => {
+                      setRefs((current) => current.filter((_, position) => position !== index));
+                      setError(null);
+                      setFeedback("");
+                    }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
               ))}
-              <button type="button" className="workbench-ref-add" disabled={!canEdit || (maxImages > 0 && refs.length >= maxImages)} onClick={() => fileInput.current?.click()}>
+              <button
+                type="button"
+                className="workbench-ref-add"
+                disabled={!canEdit || (maxImages > 0 && refs.length >= maxImages)}
+                onClick={() => fileInput.current?.click()}
+              >
                 + {t("workbench.image.addRef")}
               </button>
-              <input ref={fileInput} type="file" aria-label={t("workbench.image.addRef")} accept="image/*" multiple hidden onChange={(event) => {
-                const files = Array.from(event.target.files ?? []);
-                event.target.value = "";
-                void addFiles(files);
-              }} />
+              <input
+                ref={fileInput}
+                type="file"
+                aria-label={t("workbench.image.addRef")}
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  event.target.value = "";
+                  void addFiles(files);
+                }}
+              />
             </div>
           </Field>
-          {inputIssue ? <p className="panel-hint" role="status">{inputIssue}</p> : null}
+          {inputIssue ? (
+            <p className="panel-hint" role="status">
+              {inputIssue}
+            </p>
+          ) : null}
           <details className="workbench-protocol-details">
             <summary>{t("workbench.image.protocol")}</summary>
             <p className="mono">{endpoints.join(" · ")}</p>
@@ -365,76 +501,166 @@ export default function ImageStudio({ active }: { active: boolean }) {
             {capability?.notes ? <p className="workbench-notes">{capability.notes}</p> : null}
           </details>
           {error ? <ErrorState error={error} /> : null}
-          {feedback ? <p className="inline-error" role="alert">{feedback}</p> : null}
+          {feedback ? (
+            <p className="inline-error" role="alert">
+              {feedback}
+            </p>
+          ) : null}
           <div className="dialog-actions">
             <span className="flex-spacer" />
-            <Button disabled={busy || !activeModel || !prompt.trim() || !!inputIssue} onClick={() => run.mutate({
-              model: activeModel, prompt, mode, size: size || undefined,
-              member_id: memberId > 0 ? memberId : undefined,
-              images: refs.map((image) => ({ data_url: image.dataUrl, name: image.name })),
-            })}>
+            <Button
+              disabled={busy || !activeModel || !prompt.trim() || !!inputIssue}
+              onClick={() =>
+                run.mutate({
+                  model: activeModel,
+                  prompt,
+                  mode,
+                  size: size || undefined,
+                  member_id: memberId > 0 ? memberId : undefined,
+                  images: refs.map((image) => ({ data_url: image.dataUrl, name: image.name })),
+                })
+              }
+            >
               <Sparkles size={13} />
-              {busy ? t("common.working") : t(editing ? "workbench.image.editRun" : "workbench.image.generateRun")}
+              {busy
+                ? t("common.working")
+                : t(editing ? "workbench.image.editRun" : "workbench.image.generateRun")}
             </Button>
           </div>
         </fieldset>
       </Panel>
       <Panel title={t("workbench.image.resultTitle")}>
-        {run.isPending ? <p role="status" className="panel-hint">{t("workbench.image.waitHint")}</p> : null}
+        {run.isPending ? (
+          <p role="status" className="panel-hint">
+            {t("workbench.image.waitHint")}
+          </p>
+        ) : null}
         {!latest ? <Empty>{t("workbench.image.empty")}</Empty> : null}
-        {latest ? <>
-          <div className="workbench-meta">
-            <strong className="mono">{latest.model}</strong>
-            <span>{t("workbench.image.latency", { ms: latest.latencyMs })}</span>
-            {latest.channelName ? <span>{t("workbench.image.channel", { name: latest.channelName })}</span> : null}
-            <span className="mono">{latest.endpoint} · {latest.format}</span>
-            <span className="muted">{formatDate(latest.at)}</span>
-          </div>
-          <div className="workbench-gallery">
-            {latest.images.length === 0 ? <p className="muted">{latest.upstreamError || t("workbench.image.upstreamStatus", { status: latest.status })}</p> : null}
-            {latest.images.map((image, index) => {
-              const source = imageSource(image);
-              return <figure className="workbench-shot" key={index}>
-                <a href={source} target="_blank" rel="noopener noreferrer" aria-label={t("workbench.image.preview")}>
-                  <img src={source} alt={image.revised_prompt || t("workbench.image.resultAlt", { n: index + 1 })} loading="lazy" referrerPolicy="no-referrer" />
-                </a>
-                <figcaption>
-                  <a href={source} download={`${latest.model}-${index + 1}`} target="_blank" rel="noopener noreferrer">{t("workbench.image.download")}</a>
-                  {image.revised_prompt ? <span>{image.revised_prompt}</span> : null}
-                </figcaption>
-              </figure>;
-            })}
-          </div>
-        </> : null}
-        {showHistory ? <div className="workbench-history">
-          <div className="workbench-history-head">
-            <strong>{t("workbench.image.history")}</strong>
-            <span className="muted">{t("workbench.image.historyCount", { count: history.length })}</span>
-            <span className="flex-spacer" />
-            <Button variant="quiet" icon={<Trash2 size={14} />} onClick={forgetAll}>{t("workbench.image.historyClear")}</Button>
-          </div>
-          {persistWarning ? <p className="panel-hint" role="status">{persistWarning}</p> : null}
-          <ul>{history.map((item) => <li key={item.id} className={item.id === latest?.id ? "is-current" : undefined}>
-            <button
-              type="button"
-              className="workbench-history-item"
-              aria-pressed={item.id === latest?.id}
-              aria-label={t("workbench.image.historyOpen", { model: item.model, time: formatDate(item.at) })}
-              onClick={() => reuse(item, false)}
-            >
-              <img src={imageSource(item.images[0])} alt="" loading="lazy" referrerPolicy="no-referrer" />
-              <span>
-                <span className="workbench-history-prompt">{item.prompt || t("workbench.image.historyNoPrompt")}</span>
-                <span className="mono">{item.model}</span>
-                <span className="muted">{t("workbench.image.historyMeta", { n: item.images.length, ms: item.latencyMs, time: formatDate(item.at) })}</span>
+        {latest ? (
+          <>
+            <div className="workbench-meta">
+              <strong className="mono">{latest.model}</strong>
+              <span>{t("workbench.image.latency", { ms: latest.latencyMs })}</span>
+              {latest.channelName ? (
+                <span>{t("workbench.image.channel", { name: latest.channelName })}</span>
+              ) : null}
+              <span className="mono">
+                {latest.endpoint} · {latest.format}
               </span>
-            </button>
-            <span className="workbench-history-actions">
-              <IconButton label={t("workbench.image.historyReuse")} onClick={() => reuse(item, true)}><RotateCcw size={13} /></IconButton>
-              <IconButton label={t("workbench.image.historyDelete")} onClick={() => forget(item.id)}><Trash2 size={13} /></IconButton>
-            </span>
-          </li>)}</ul>
-        </div> : null}
+              <span className="muted">{formatDate(latest.at)}</span>
+            </div>
+            <div className="workbench-gallery">
+              {latest.images.length === 0 ? (
+                <p className="muted">
+                  {latest.upstreamError ||
+                    t("workbench.image.upstreamStatus", { status: latest.status })}
+                </p>
+              ) : null}
+              {latest.images.map((image, index) => {
+                const source = imageSource(image);
+                return (
+                  <figure className="workbench-shot" key={index}>
+                    <a
+                      href={source}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={t("workbench.image.preview")}
+                    >
+                      <img
+                        src={source}
+                        alt={
+                          image.revised_prompt || t("workbench.image.resultAlt", { n: index + 1 })
+                        }
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    </a>
+                    <figcaption>
+                      <a
+                        href={source}
+                        download={`${latest.model}-${index + 1}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {t("workbench.image.download")}
+                      </a>
+                      {image.revised_prompt ? <span>{image.revised_prompt}</span> : null}
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+        {showHistory ? (
+          <div className="workbench-history">
+            <div className="workbench-history-head">
+              <strong>{t("workbench.image.history")}</strong>
+              <span className="muted">
+                {t("workbench.image.historyCount", { count: history.length })}
+              </span>
+              <span className="flex-spacer" />
+              <Button variant="quiet" icon={<Trash2 size={14} />} onClick={forgetAll}>
+                {t("workbench.image.historyClear")}
+              </Button>
+            </div>
+            {persistWarning ? (
+              <p className="panel-hint" role="status">
+                {persistWarning}
+              </p>
+            ) : null}
+            <ul>
+              {history.map((item) => (
+                <li key={item.id} className={item.id === latest?.id ? "is-current" : undefined}>
+                  <button
+                    type="button"
+                    className="workbench-history-item"
+                    aria-pressed={item.id === latest?.id}
+                    aria-label={t("workbench.image.historyOpen", {
+                      model: item.model,
+                      time: formatDate(item.at),
+                    })}
+                    onClick={() => reuse(item, false)}
+                  >
+                    <img
+                      src={imageSource(item.images[0])}
+                      alt=""
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                    <span>
+                      <span className="workbench-history-prompt">
+                        {item.prompt || t("workbench.image.historyNoPrompt")}
+                      </span>
+                      <span className="mono">{item.model}</span>
+                      <span className="muted">
+                        {t("workbench.image.historyMeta", {
+                          n: item.images.length,
+                          ms: item.latencyMs,
+                          time: formatDate(item.at),
+                        })}
+                      </span>
+                    </span>
+                  </button>
+                  <span className="workbench-history-actions">
+                    <IconButton
+                      label={t("workbench.image.historyReuse")}
+                      onClick={() => reuse(item, true)}
+                    >
+                      <RotateCcw size={13} />
+                    </IconButton>
+                    <IconButton
+                      label={t("workbench.image.historyDelete")}
+                      onClick={() => forget(item.id)}
+                    >
+                      <Trash2 size={13} />
+                    </IconButton>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </Panel>
     </div>
   );

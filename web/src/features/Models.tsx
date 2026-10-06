@@ -160,15 +160,8 @@ function AdminModels() {
   const groupParam = params.get("group")?.trim() ?? "";
 
   return (
-    <Page
-      title={t("modelsPage.title")}
-      description={t("modelsPage.description")}
-    >
-      <ModelCatalog
-        initialModel={modelParam}
-        channelId={channelId}
-        initialGroup={groupParam}
-      />
+    <Page title={t("modelsPage.title")} description={t("modelsPage.description")}>
+      <ModelCatalog initialModel={modelParam} channelId={channelId} initialGroup={groupParam} />
     </Page>
   );
 }
@@ -330,9 +323,7 @@ function ModelCatalog({
   /** Route whose "attach every channel serving this model" preview is open. */
   const [autoMatchRoute, setAutoMatchRoute] = useState<Route | null>(null);
   const [bulkSelect, setBulkSelect] = useState(false);
-  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(
-    () => new Set(),
-  );
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(() => new Set());
   /** Route-group tab currently being viewed ("default" = legacy behavior). */
   const [activeGroup, setActiveGroup] = useState("default");
   /** Inline tab editor: create a new group or rename an existing one. */
@@ -343,8 +334,7 @@ function ModelCatalog({
     copyDefault?: boolean;
   } | null>(null);
   const [removeGroup, setRemoveGroup] = useState<string | null>(null);
-  const [missingDismissed, setMissingDismissed] =
-    useState(readMissingDismissed);
+  const [missingDismissed, setMissingDismissed] = useState(readMissingDismissed);
   const [contextMenu, setContextMenu] = useState<{
     routeId: number;
     top: number;
@@ -365,13 +355,7 @@ function ModelCatalog({
     const groups = new Set<string>();
     for (const item of overviews.data ?? []) {
       const meta = metaByModel.get(item.route.model_pattern);
-      groups.add(
-        modelGroup(
-          item.route.model_pattern,
-          item.route.model_group,
-          meta?.vendor,
-        ),
-      );
+      groups.add(modelGroup(item.route.model_pattern, item.route.model_group, meta?.vendor));
     }
     return [...groups].sort();
   }, [metaByModel, overviews.data]);
@@ -382,11 +366,7 @@ function ModelCatalog({
       const meta = metaByModel.get(item.route.model_pattern);
       if (
         groupFilter &&
-        modelGroup(
-          item.route.model_pattern,
-          item.route.model_group,
-          meta?.vendor,
-        ) !== groupFilter
+        modelGroup(item.route.model_pattern, item.route.model_group, meta?.vendor) !== groupFilter
       )
         return false;
       if (statusFilter === "enabled" && !item.route.enabled) return false;
@@ -468,9 +448,7 @@ function ModelCatalog({
   });
   const bulkDeleteRoutes = useAdminMutation({
     mutationFn: async (ids: number[]) => {
-      const results = await Promise.allSettled(
-        ids.map((id) => service.deleteRoute(id)),
-      );
+      const results = await Promise.allSettled(ids.map((id) => service.deleteRoute(id)));
       return {
         ok: results.filter((r) => r.status === "fulfilled").length,
         total: ids.length,
@@ -524,17 +502,14 @@ function ModelCatalog({
 
   useEffect(() => {
     if (!initialModel || !overviews.data?.length) return;
-    const match = overviews.data.find(
-      (item) => item.route.model_pattern === initialModel,
-    );
+    const match = overviews.data.find((item) => item.route.model_pattern === initialModel);
     if (match) {
       setSelected(match.route.id);
       setQuery(initialModel);
     }
   }, [initialModel, overviews.data]);
 
-  const selectedOverview =
-    overviews.data?.find((item) => item.route.id === selected) ?? null;
+  const selectedOverview = overviews.data?.find((item) => item.route.id === selected) ?? null;
   const selectedRoute = selectedOverview?.route ?? null;
   const selectedMembers = useMemo(
     () => selectedOverview?.members ?? [],
@@ -551,21 +526,13 @@ function ModelCatalog({
   }, [selected]);
 
   // Price-aware member ordering (cheapest first) when the toggle is on.
-  const financeItems = useMemo(
-    () => finance.data?.items ?? [],
-    [finance.data?.items],
-  );
-  const orderedMembers = useMemo(
-    () => sortMembers(selectedMembers),
-    [selectedMembers],
-  );
+  const financeItems = useMemo(() => finance.data?.items ?? [], [finance.data?.items]);
+  const orderedMembers = useMemo(() => sortMembers(selectedMembers), [selectedMembers]);
   /** Normalized member groups; the active tab stays visible while empty. */
   const groupNames = useMemo(() => {
     const names = new Set<string>();
     for (const candidate of orderedMembers) {
-      names.add(
-        (candidate.member.group_name || "").trim() || "default",
-      );
+      names.add((candidate.member.group_name || "").trim() || "default");
     }
     names.add("default");
     if (activeGroup) names.add(activeGroup);
@@ -586,9 +553,7 @@ function ModelCatalog({
   const visibleMembers = useMemo(
     () =>
       orderedMembers.filter(
-        (candidate) =>
-          ((candidate.member.group_name || "").trim() || "default") ===
-          activeGroup,
+        (candidate) => ((candidate.member.group_name || "").trim() || "default") === activeGroup,
       ),
     [activeGroup, orderedMembers],
   );
@@ -596,13 +561,10 @@ function ModelCatalog({
   // cooldown has just elapsed keeps showing 冷却中 / offering 清除冷却 until the
   // 15s poll (or a page switch) lands. Re-render the row at the deadline
   // instead of waiting for unrelated state to change.
-  useCooldownExpiry(
-    visibleMembers.map((candidate) => candidate.member.cooldown_until),
-  );
+  useCooldownExpiry(visibleMembers.map((candidate) => candidate.member.cooldown_until));
   const explain = useQuery({
     queryKey: ["explain", selected, activeGroup],
-    queryFn: ({ signal }) =>
-      service.explain(selectedRoute!.model_pattern, signal, activeGroup),
+    queryFn: ({ signal }) => service.explain(selectedRoute!.model_pattern, signal, activeGroup),
     enabled: Boolean(selectedRoute),
     refetchInterval: 15_000,
   });
@@ -613,13 +575,13 @@ function ModelCatalog({
     runtimeSettings.data?.editable,
   );
   const effectiveRetryRounds =
-    explain.data?.retry_times_override ?? selectedRoute?.retry_times ?? runtimeSettings.data?.editable.retry_times;
+    explain.data?.retry_times_override ??
+    selectedRoute?.retry_times ??
+    runtimeSettings.data?.editable.retry_times;
   const effectiveChannelRetries =
-    selectedRoute?.channel_retry_times ??
-    runtimeSettings.data?.editable.channel_retry_times;
+    selectedRoute?.channel_retry_times ?? runtimeSettings.data?.editable.channel_retry_times;
   const retryPolicyIsOverridden = selectedRoute?.retry_times != null;
-  const channelRetryPolicyIsOverridden =
-    selectedRoute?.channel_retry_times != null;
+  const channelRetryPolicyIsOverridden = selectedRoute?.channel_retry_times != null;
   /** The member pinned by routing_mode=single, when that mode is active. */
   const singleModePinned =
     selectedRoute?.routing_mode === "single"
@@ -628,15 +590,17 @@ function ModelCatalog({
         ) ?? null)
       : null;
   const singleModeActive = selectedRoute?.routing_mode === "single";
-  const singleModeApplies = Boolean(singleModePinned && explain.data?.candidates.some(
-    (item) => item.candidate.member.id === singleModePinned.member.id,
-  ));
+  const singleModeApplies = Boolean(
+    singleModePinned &&
+    explain.data?.candidates.some(
+      (item) => item.candidate.member.id === singleModePinned.member.id,
+    ),
+  );
   const pinOutsideGroup = Boolean(singleModePinned && explain.data && !singleModeApplies);
   /** Members of the route currently being edited (may differ from selection). */
   const editingOverview =
     edit?.id != null
-      ? ((overviews.data ?? []).find((item) => item.route.id === edit.id) ??
-        null)
+      ? ((overviews.data ?? []).find((item) => item.route.id === edit.id) ?? null)
       : null;
   const editingMembers = editingOverview?.members ?? [];
 
@@ -646,10 +610,7 @@ function ModelCatalog({
         auto_match_channel_ids?: number[];
         auto_match_mode?: ModelMatchMode;
       },
-    ) =>
-      value.id
-        ? service.updateRoute(value.id, value)
-        : service.createRoute(value),
+    ) => (value.id ? service.updateRoute(value.id, value) : service.createRoute(value)),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     toastOnError: false,
     onSuccess: (route) => {
@@ -668,9 +629,7 @@ function ModelCatalog({
   });
   const saveMember = useAdminMutation({
     mutationFn: (value: Partial<RouteMember>) =>
-      value.id
-        ? service.updateMember(value.id, value)
-        : service.createMember(selected!, value),
+      value.id ? service.updateMember(value.id, value) : service.createMember(selected!, value),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     toastOnError: false,
     onSuccess: () => setMember(null),
@@ -712,16 +671,13 @@ function ModelCatalog({
       service.updateRoute(route.id, {
         ...route,
         routing_mode: mode,
-        ...(singleMemberId !== undefined
-          ? { single_member_id: singleMemberId }
-          : {}),
+        ...(singleMemberId !== undefined ? { single_member_id: singleMemberId } : {}),
       }),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     pendingIdOf: ({ route }) => route.id,
   });
   const toggleMember = useAdminMutation({
-    mutationFn: (entry: RouteMember) =>
-      service.updateMember(entry.id, { enabled: !entry.enabled }),
+    mutationFn: (entry: RouteMember) => service.updateMember(entry.id, { enabled: !entry.enabled }),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     pendingIdOf: (entry) => entry.id,
   });
@@ -771,9 +727,7 @@ function ModelCatalog({
     });
   };
   const selectAllMembers = () => {
-    setSelectedMemberIds(
-      new Set((orderedMembers ?? []).map((c) => c.member.id)),
-    );
+    setSelectedMemberIds(new Set((orderedMembers ?? []).map((c) => c.member.id)));
   };
   const clearMemberSelection = () => setSelectedMemberIds(new Set());
   const clearHealth = useAdminMutation({
@@ -814,8 +768,7 @@ function ModelCatalog({
     },
   });
   const copyDefaultGroup = useAdminMutation({
-    mutationFn: (to: string) =>
-      service.copyMemberGroup(selected!, "default", to),
+    mutationFn: (to: string) => service.copyMemberGroup(selected!, "default", to),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     toastOnError: false,
     onSuccess: (_data, to) => {
@@ -837,12 +790,7 @@ function ModelCatalog({
    *  together with the draft and become impossible to click. */
   const groupEditorBlur = (event: FocusEvent) => {
     const scope = event.currentTarget.closest(".member-group-tabs");
-    if (
-      scope &&
-      event.relatedTarget instanceof Node &&
-      scope.contains(event.relatedTarget)
-    )
-      return;
+    if (scope && event.relatedTarget instanceof Node && scope.contains(event.relatedTarget)) return;
     setGroupDraft(null);
   };
   /** Commits the inline tab editor; new groups are local until first member. */
@@ -882,10 +830,7 @@ function ModelCatalog({
   /** Batch toggle "independent priority/weight" for every member of a model.
    *  Turning it off snaps members back to the channel's global values. */
   const pinAllMembers = useAdminMutation({
-    mutationFn: async (input: {
-      pinned: boolean;
-      members: RoutingCandidate[];
-    }) => {
+    mutationFn: async (input: { pinned: boolean; members: RoutingCandidate[] }) => {
       await Promise.all(
         input.members.map((candidate) => {
           const entry = candidate.member;
@@ -898,8 +843,7 @@ function ModelCatalog({
               };
           if (
             entry.manual_override === target.manual_override &&
-            (input.pinned || (entry.priority === target.priority &&
-            entry.weight === target.weight))
+            (input.pinned || (entry.priority === target.priority && entry.weight === target.weight))
           ) {
             return Promise.resolve(entry);
           }
@@ -925,17 +869,13 @@ function ModelCatalog({
     onSuccess: () => setEditMeta(null),
   });
   const saveMeta = useAdminMutation({
-    mutationFn: (value: ModelMetadata) =>
-      service.upsertModelMetadata(value.model_name, value),
+    mutationFn: (value: ModelMetadata) => service.upsertModelMetadata(value.model_name, value),
     invalidateKeys: [["model-metadata"], ["model-pricing"]],
     toastOnError: false,
     onSuccess: () => setEditMeta(null),
   });
 
-  const modelActions = (
-    route: Route,
-    options?: { closeContext?: boolean },
-  ): ActionMenuItem[] => {
+  const modelActions = (route: Route, options?: { closeContext?: boolean }): ActionMenuItem[] => {
     const busy = toggleRoute.pendingId === route.id || del.isPending;
     const close = () => {
       if (options?.closeContext) setContextMenu(null);
@@ -965,9 +905,7 @@ function ModelCatalog({
       },
       {
         key: "toggle",
-        label: route.enabled
-          ? t("common.disableAction")
-          : t("common.enableAction"),
+        label: route.enabled ? t("common.disableAction") : t("common.enableAction"),
         icon: <Power size={14} />,
         disabled: busy,
         onSelect: () => {
@@ -1026,18 +964,27 @@ function ModelCatalog({
         },
       },
     ];
-    const ranks: Record<string, number> = { try: 0, logs: 0, meta: 1, edit: 1, toggle: 1, bulk: 2, delete: 3 };
+    const ranks: Record<string, number> = {
+      try: 0,
+      logs: 0,
+      meta: 1,
+      edit: 1,
+      toggle: 1,
+      bulk: 2,
+      delete: 3,
+    };
     const sections = ["actions.view", "actions.manage", "actions.selection", "actions.danger"];
-    return items.sort((a, b) => (ranks[a.key] ?? 1) - (ranks[b.key] ?? 1)).map((item) => ({
-      ...item, group: t(sections[ranks[item.key] ?? 1]!),
-      disabledReason: item.disabled ? t("common.working") : undefined,
-    }));
+    return items
+      .sort((a, b) => (ranks[a.key] ?? 1) - (ranks[b.key] ?? 1))
+      .map((item) => ({
+        ...item,
+        group: t(sections[ranks[item.key] ?? 1]!),
+        disabledReason: item.disabled ? t("common.working") : undefined,
+      }));
   };
 
   const total = overviews.data?.length ?? 0;
-  const enabledCount = (overviews.data ?? []).filter(
-    (o) => o.route.enabled,
-  ).length;
+  const enabledCount = (overviews.data ?? []).filter((o) => o.route.enabled).length;
 
   return (
     <div className="ops-canvas models-catalog">
@@ -1058,9 +1005,7 @@ function ModelCatalog({
             label: t("modelsPage.stat.multi"),
             value: overviews.isPending
               ? "—"
-              : (overviews.data ?? []).filter(
-                  (o) => (o.members ?? []).length > 1,
-                ).length,
+              : (overviews.data ?? []).filter((o) => (o.members ?? []).length > 1).length,
             tone: "info",
           },
         ]}
@@ -1071,8 +1016,7 @@ function ModelCatalog({
           per route (routes.sticky_session), and those live bindings are the
           only place that is visible. The explicit `sticky.data &&` is what
           narrows the payload for the reads below. */}
-      {sticky.data &&
-      (sticky.data.enabled || sticky.data.stats.bound_sessions > 0) ? (
+      {sticky.data && (sticky.data.enabled || sticky.data.stats.bound_sessions > 0) ? (
         <Panel
           className="sticky-panel"
           title={t("sticky.title")}
@@ -1082,8 +1026,7 @@ function ModelCatalog({
           storageKey="models.sticky"
           summary={
             <>
-              <strong>{sticky.data.stats.bound_sessions}</strong>{" "}
-              {t("sticky.bound")}
+              <strong>{sticky.data.stats.bound_sessions}</strong> {t("sticky.bound")}
               <span className="panel-summary-sep" aria-hidden="true">
                 ·
               </span>
@@ -1093,8 +1036,7 @@ function ModelCatalog({
         >
           <div className="sticky-stats">
             <span>
-              <strong>{sticky.data.stats.bound_sessions}</strong>{" "}
-              {t("sticky.bound")}
+              <strong>{sticky.data.stats.bound_sessions}</strong> {t("sticky.bound")}
             </span>
             <span>
               <strong>{sticky.data.stats.hits}</strong> {t("sticky.hits")}
@@ -1129,13 +1071,10 @@ function ModelCatalog({
                     <tr key={entry.key}>
                       <td className="mono">{entry.key}</td>
                       <td>
-                        {(channels.data ?? []).find(
-                          (channel) => channel.id === entry.channel_id,
-                        )?.name ?? `#${entry.channel_id}`}
+                        {(channels.data ?? []).find((channel) => channel.id === entry.channel_id)
+                          ?.name ?? `#${entry.channel_id}`}
                       </td>
-                      <td className="muted">
-                        {new Date(entry.expires_at).toLocaleString()}
-                      </td>
+                      <td className="muted">{new Date(entry.expires_at).toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1181,396 +1120,423 @@ function ModelCatalog({
       ) : null}
 
       <PageActions>
-              <Button
-                variant="secondary"
-                icon={<Activity size={16} />}
-                onClick={() => setProbeOpen(true)}
-                title={t("modelsPage.probe.actionHint")}
-              >
-                {t("modelsPage.probe.action")}
-              </Button>
-              <ActionMenu label={t("modelsPage.tools")} items={[
-                { key: "capabilities", label: t("workbench.cap.title"), icon: <SlidersHorizontal size={14} />, onSelect: () => setCapabilitiesOpen(true) },
-                { key: "site-probe", label: t("modelsPage.siteProbe.title"), icon: <Activity size={14} />, onSelect: () => setSiteProbeOpen(true) },
-                { key: "unify", label: t("modelsPage.unify.action"), icon: <Combine size={14} />, onSelect: () => setUnifyOpen(true) },
-                { key: "history", label: t("modelsPage.unify.history.action"), icon: <History size={14} />, onSelect: () => setUnifyHistoryOpen(true) },
-                { key: "upstream-changes", label: t("modelChanges.title"), icon: <RefreshCw size={14} />, onSelect: () => setChangesOpenRequest((value) => value + 1) },
-              ]} />
-              <Button
-                icon={<Plus size={16} />}
-                title={t("modelsPage.addRouteHint")}
-                onClick={() => {
-                  save.reset();
-                  setEdit({ enabled: true });
-                }}
-              >
-                {t("routing.addRoute")}
-              </Button>
-      </PageActions>
-      <ModelWorkspaceLayout directory={
-        <Panel
-          className="ops-list-panel model-directory"
-          title={t("modelsPage.listTitle")}
+        <Button
+          variant="secondary"
+          icon={<Activity size={16} />}
+          onClick={() => setProbeOpen(true)}
+          title={t("modelsPage.probe.actionHint")}
         >
-          <ModelDirectoryToolbar value={query} label={t("routing.searchPlaceholder")} onChange={(nextQuery) => {
-            setQuery(nextQuery);
-            const next = new URLSearchParams(params);
-            if (nextQuery) next.set("model", nextQuery);
-            else next.delete("model");
-            next.delete("route");
-            setSearchParams(next, { replace: true });
-          }}>
-            <Button variant="quiet" aria-expanded={showModelFilters} onClick={() => setShowModelFilters(!showModelFilters)}>
-              {activeFilterCount > 0
-                ? t("modelsPage.filtersActive", { n: activeFilterCount })
-                : t("modelsPage.filters")}
-            </Button>
-            <div className="models-filter-options" hidden={!showModelFilters}>
-            <select
-              aria-label={t("modelsPage.groupFilter")}
-              value={groupFilter}
-              onChange={(event) => {
-                const nextGroup = event.target.value;
-                setGroupFilter(nextGroup);
+          {t("modelsPage.probe.action")}
+        </Button>
+        <ActionMenu
+          label={t("modelsPage.tools")}
+          items={[
+            {
+              key: "capabilities",
+              label: t("workbench.cap.title"),
+              icon: <SlidersHorizontal size={14} />,
+              onSelect: () => setCapabilitiesOpen(true),
+            },
+            {
+              key: "site-probe",
+              label: t("modelsPage.siteProbe.title"),
+              icon: <Activity size={14} />,
+              onSelect: () => setSiteProbeOpen(true),
+            },
+            {
+              key: "unify",
+              label: t("modelsPage.unify.action"),
+              icon: <Combine size={14} />,
+              onSelect: () => setUnifyOpen(true),
+            },
+            {
+              key: "history",
+              label: t("modelsPage.unify.history.action"),
+              icon: <History size={14} />,
+              onSelect: () => setUnifyHistoryOpen(true),
+            },
+            {
+              key: "upstream-changes",
+              label: t("modelChanges.title"),
+              icon: <RefreshCw size={14} />,
+              onSelect: () => setChangesOpenRequest((value) => value + 1),
+            },
+          ]}
+        />
+        <Button
+          icon={<Plus size={16} />}
+          title={t("modelsPage.addRouteHint")}
+          onClick={() => {
+            save.reset();
+            setEdit({ enabled: true });
+          }}
+        >
+          {t("routing.addRoute")}
+        </Button>
+      </PageActions>
+      <ModelWorkspaceLayout
+        directory={
+          <Panel className="ops-list-panel model-directory" title={t("modelsPage.listTitle")}>
+            <ModelDirectoryToolbar
+              value={query}
+              label={t("routing.searchPlaceholder")}
+              onChange={(nextQuery) => {
+                setQuery(nextQuery);
                 const next = new URLSearchParams(params);
-                if (nextGroup) next.set("group", nextGroup);
-                else next.delete("group");
+                if (nextQuery) next.set("model", nextQuery);
+                else next.delete("model");
                 next.delete("route");
                 setSearchParams(next, { replace: true });
               }}
             >
-              <option value="">{t("modelsPage.allGroups")}</option>
-              {modelGroups.map((group) => (
-                <option key={group} value={group}>
-                  {group}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={t("ops.filterChannel")}
-              value={channelFilter}
-              onChange={(event) => {
-                const next = Number(event.target.value) || 0;
-                setChannelFilter(next);
-                const nextParams = new URLSearchParams(params);
-                if (next > 0) nextParams.set("channel_id", String(next));
-                else nextParams.delete("channel_id");
-                nextParams.delete("route");
-                setSearchParams(nextParams, { replace: true });
-              }}
-            >
-              <option value={0}>{t("ops.allChannels")}</option>
-              {(channels.data ?? []).map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  {channel.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={t("modelsPage.statusFilter")}
-              value={statusFilter}
-              onChange={(event) => {
-                const next = event.target.value as "enabled" | "disabled" | "all";
-                setStatusFilter(next);
-                const nextParams = new URLSearchParams(params);
-                nextParams.delete("route");
-                setSearchParams(nextParams, { replace: true });
-              }}
-            >
-              <option value="all">{t("modelsPage.statusAll")}</option>
-              <option value="enabled">{t("common.enabled")}</option>
-              <option value="disabled">{t("common.disabled")}</option>
-            </select>
-            </div>
-          </ModelDirectoryToolbar>
+              <Button
+                variant="quiet"
+                aria-expanded={showModelFilters}
+                onClick={() => setShowModelFilters(!showModelFilters)}
+              >
+                {activeFilterCount > 0
+                  ? t("modelsPage.filtersActive", { n: activeFilterCount })
+                  : t("modelsPage.filters")}
+              </Button>
+              <div className="models-filter-options" hidden={!showModelFilters}>
+                <select
+                  aria-label={t("modelsPage.groupFilter")}
+                  value={groupFilter}
+                  onChange={(event) => {
+                    const nextGroup = event.target.value;
+                    setGroupFilter(nextGroup);
+                    const next = new URLSearchParams(params);
+                    if (nextGroup) next.set("group", nextGroup);
+                    else next.delete("group");
+                    next.delete("route");
+                    setSearchParams(next, { replace: true });
+                  }}
+                >
+                  <option value="">{t("modelsPage.allGroups")}</option>
+                  {modelGroups.map((group) => (
+                    <option key={group} value={group}>
+                      {group}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label={t("ops.filterChannel")}
+                  value={channelFilter}
+                  onChange={(event) => {
+                    const next = Number(event.target.value) || 0;
+                    setChannelFilter(next);
+                    const nextParams = new URLSearchParams(params);
+                    if (next > 0) nextParams.set("channel_id", String(next));
+                    else nextParams.delete("channel_id");
+                    nextParams.delete("route");
+                    setSearchParams(nextParams, { replace: true });
+                  }}
+                >
+                  <option value={0}>{t("ops.allChannels")}</option>
+                  {(channels.data ?? []).map((channel) => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label={t("modelsPage.statusFilter")}
+                  value={statusFilter}
+                  onChange={(event) => {
+                    const next = event.target.value as "enabled" | "disabled" | "all";
+                    setStatusFilter(next);
+                    const nextParams = new URLSearchParams(params);
+                    nextParams.delete("route");
+                    setSearchParams(nextParams, { replace: true });
+                  }}
+                >
+                  <option value="all">{t("modelsPage.statusAll")}</option>
+                  <option value="enabled">{t("common.enabled")}</option>
+                  <option value="disabled">{t("common.disabled")}</option>
+                </select>
+              </div>
+            </ModelDirectoryToolbar>
 
-          <EntityState
-            isLoading={overviews.isPending}
-            isError={overviews.isError}
-            error={overviews.error}
-            isEmpty={!rows.length}
-            empty={
-              <EmptyHero
-                kicker={t("modelsPage.emptyKicker")}
-                title={t("modelsPage.emptyTitle")}
-                body={t("modelsPage.empty")}
-                actions={
-                  <>
-                    {/* The recommended path: adopt models from the channel's
+            <EntityState
+              isLoading={overviews.isPending}
+              isError={overviews.isError}
+              error={overviews.error}
+              isEmpty={!rows.length}
+              empty={
+                <EmptyHero
+                  kicker={t("modelsPage.emptyKicker")}
+                  title={t("modelsPage.emptyTitle")}
+                  body={t("modelsPage.empty")}
+                  actions={
+                    <>
+                      {/* The recommended path: adopt models from the channel's
                         model settings — routes are created automatically.
                         Manual route creation stays available but demoted. */}
-                    <Link className="button" to="/channels">
-                      {t("modelsPage.ctaConnections")}
-                    </Link>
-                    <Button
-                      variant="secondary"
-                      icon={<Plus size={16} />}
-                      onClick={() => {
-                        save.reset();
-                        setEdit({ enabled: true });
-                      }}
-                    >
-                      {t("routing.addRoute")}
-                    </Button>
-                  </>
-                }
-              />
-            }
-            retry={() => overviews.refetch()}
-          >
-            <ListShell
-              footer={
-                <PaginationBar
-                  page={pagination.page}
-                  totalPages={pagination.totalPages}
-                  total={pagination.total}
-                  pageSize={pagination.pageSize}
-                  rangeStart={pagination.rangeStart}
-                  rangeEnd={pagination.rangeEnd}
-                  hasPrev={pagination.hasPrev}
-                  hasNext={pagination.hasNext}
-                  onPageChange={pagination.setPage}
-                  onPageSizeChange={pagination.setPageSize}
+                      <Link className="button" to="/channels">
+                        {t("modelsPage.ctaConnections")}
+                      </Link>
+                      <Button
+                        variant="secondary"
+                        icon={<Plus size={16} />}
+                        onClick={() => {
+                          save.reset();
+                          setEdit({ enabled: true });
+                        }}
+                      >
+                        {t("routing.addRoute")}
+                      </Button>
+                    </>
+                  }
                 />
               }
+              retry={() => overviews.refetch()}
             >
-              {bulkMode && bulkSelected.size > 0 ? (
-                <div className="toolbar bulk-bar">
-                  <span className="live-trace-count">
-                    {t("modelsPage.bulkSelected", { n: bulkSelected.size })}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    disabled={bulkBusy}
-                    onClick={() =>
-                      bulkToggleRoutes.mutate({
-                        ids: [...bulkSelected],
-                        enabled: true,
-                      })
-                    }
-                  >
-                    {t("modelsPage.bulkEnableSelected")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={bulkBusy}
-                    onClick={() =>
-                      bulkToggleRoutes.mutate({
-                        ids: [...bulkSelected],
-                        enabled: false,
-                      })
-                    }
-                  >
-                    {t("modelsPage.bulkDisableSelected")}
-                  </Button>
-                  {/* Irreversible, so it must not look identical to the two
+              <ListShell
+                footer={
+                  <PaginationBar
+                    page={pagination.page}
+                    totalPages={pagination.totalPages}
+                    total={pagination.total}
+                    pageSize={pagination.pageSize}
+                    rangeStart={pagination.rangeStart}
+                    rangeEnd={pagination.rangeEnd}
+                    hasPrev={pagination.hasPrev}
+                    hasNext={pagination.hasNext}
+                    onPageChange={pagination.setPage}
+                    onPageSizeChange={pagination.setPageSize}
+                  />
+                }
+              >
+                {bulkMode && bulkSelected.size > 0 ? (
+                  <div className="toolbar bulk-bar">
+                    <span className="live-trace-count">
+                      {t("modelsPage.bulkSelected", { n: bulkSelected.size })}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      disabled={bulkBusy}
+                      onClick={() =>
+                        bulkToggleRoutes.mutate({
+                          ids: [...bulkSelected],
+                          enabled: true,
+                        })
+                      }
+                    >
+                      {t("modelsPage.bulkEnableSelected")}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={bulkBusy}
+                      onClick={() =>
+                        bulkToggleRoutes.mutate({
+                          ids: [...bulkSelected],
+                          enabled: false,
+                        })
+                      }
+                    >
+                      {t("modelsPage.bulkDisableSelected")}
+                    </Button>
+                    {/* Irreversible, so it must not look identical to the two
                       reversible toggles beside it. */}
-                  <Button
-                    variant="danger"
-                    disabled={bulkBusy}
-                    onClick={() => setBulkDeleteOpen(true)}
-                  >
-                    {t("modelsPage.bulkDeleteSelected")}
-                  </Button>
-                  <Button
-                    variant="quiet"
-                    onClick={() => setBulkSelected(new Set())}
-                  >
-                    {t("modelsPage.bulkClear")}
-                  </Button>
-                  <Button variant="quiet" onClick={exitBulkMode}>
-                    {t("modelsPage.bulkDone")}
-                  </Button>
-                </div>
-              ) : null}
-              <div className="table-wrap model-directory-wrap">
-                {/* The directory rows themselves are shared with the member
+                    <Button
+                      variant="danger"
+                      disabled={bulkBusy}
+                      onClick={() => setBulkDeleteOpen(true)}
+                    >
+                      {t("modelsPage.bulkDeleteSelected")}
+                    </Button>
+                    <Button variant="quiet" onClick={() => setBulkSelected(new Set())}>
+                      {t("modelsPage.bulkClear")}
+                    </Button>
+                    <Button variant="quiet" onClick={exitBulkMode}>
+                      {t("modelsPage.bulkDone")}
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="table-wrap model-directory-wrap">
+                  {/* The directory rows themselves are shared with the member
                     app's catalogue (ModelDirectoryTable): same name cell, same
                     badges, same column semantics. The console supplies the
                     operator cells — upstream links, per-route menus, bulk
                     checkboxes — through the row slots. */}
-                <ModelDirectoryTable
-                  className={bulkMode ? "model-directory-table is-bulk" : "model-directory-table"}
-                  showUpstream
-                  bulkMode={bulkMode}
-                  bulkHeader={
-                    <input
-                      type="checkbox"
-                      aria-label={t("modelsPage.bulkSelectPage")}
-                      checked={pageAllSelected}
-                      onChange={selectAllPage}
-                    />
-                  }
-                  onBulkCellClick={(event) => event.stopPropagation()}
-                  rows={[
-                    // Plugin-answered models have no route and no members, so
-                    // they cannot be selected or opened like a route. They are
-                    // still real callable names — the downstream catalogue
-                    // advertises them — so they belong in this list with the
-                    // plugin named as their owner.
-                    ...(query.trim()
-                      ? virtualModels.filter((item) =>
-                          item.model.toLowerCase().includes(query.trim().toLowerCase()),
-                        )
-                      : virtualModels
-                    ).map((item) => ({
-                      name: item.model,
-                      group: t("modelsPage.pluginModel"),
-                      upstream: <span className="plugin-model-owner">{item.pluginName}</span>,
-                      status: "enabled" as const,
-                      actions: (
-                        <Button
-                          variant="quiet"
-                          onClick={() => navigate(pluginPageOf(item.pluginId))}
-                        >
-                          {t("modelsPage.pluginModelOpen")}
-                        </Button>
-                      ),
-                    })),
-                    ...pageRows.map((item) => {
-                      const active = item.route.id === selected;
-                      const meta = metaByModel.get(item.route.model_pattern);
-                      const group = modelGroup(
-                        item.route.model_pattern,
-                        item.route.model_group,
-                        meta?.vendor,
-                      );
-                      const head = primaryMember(item.members, item.route);
-                      const ready = item.members.filter(
-                        (entry) => candidateState(entry) === "ready",
-                      ).length;
-                      const rowBusy =
-                        toggleRoute.pendingId === item.route.id ||
-                        del.isPending;
-                      return {
-                        name: item.route.model_pattern,
-                        group,
-                        provider: (
-                          <small className="model-nav-provider">
-                            {head ? head.channel.name : t("modelsPage.noUpstream")}
-                          </small>
-                        ),
-                        badges: item.route.image_edit_shim ? (
-                          // Only meaningful on routes whose model has no
-                          // images endpoint of its own, so it stays a hint
-                          // rather than a status.
-                          <span
-                            className="model-meta-badge is-shim"
-                            title={t("routing.imageEditShimHint")}
-                          >
-                            {t("modelsPage.metaImageEdit")}
-                          </span>
-                        ) : undefined,
-                        contextWindow: meta?.context_window,
-                        supportsThinking: (meta?.supports_thinking ?? 0) > 0,
-                        vendor: meta?.vendor || undefined,
-                        upstream: head ? (
-                          <>
-                            <Link
-                              to={`/channels?channel=${head.channel.id}`}
-                              className="upstream-link"
-                              title={t("modelsPage.openChannelHint")}
-                              onClick={(event) => {
-                                // Don't trigger the row's selectRow when
-                                // jumping straight to the channel editor.
-                                event.stopPropagation();
-                              }}
-                            >
-                              {head.channel.name}
-                            </Link>
-                            {item.members.length > 1
-                              ? ` +${item.members.length - 1}`
-                              : ""}
-                          </>
-                        ) : (
-                          <span className="muted">{t("modelsPage.noUpstream")}</span>
-                        ),
-                        status: !item.route.enabled
-                          ? ("disabled" as const)
-                          : ready > 0
-                            ? ("ready" as const)
-                            : ("unavailable" as const),
+                  <ModelDirectoryTable
+                    className={bulkMode ? "model-directory-table is-bulk" : "model-directory-table"}
+                    showUpstream
+                    bulkMode={bulkMode}
+                    bulkHeader={
+                      <input
+                        type="checkbox"
+                        aria-label={t("modelsPage.bulkSelectPage")}
+                        checked={pageAllSelected}
+                        onChange={selectAllPage}
+                      />
+                    }
+                    onBulkCellClick={(event) => event.stopPropagation()}
+                    rows={[
+                      // Plugin-answered models have no route and no members, so
+                      // they cannot be selected or opened like a route. They are
+                      // still real callable names — the downstream catalogue
+                      // advertises them — so they belong in this list with the
+                      // plugin named as their owner.
+                      ...(query.trim()
+                        ? virtualModels.filter((item) =>
+                            item.model.toLowerCase().includes(query.trim().toLowerCase()),
+                          )
+                        : virtualModels
+                      ).map((item) => ({
+                        name: item.model,
+                        group: t("modelsPage.pluginModel"),
+                        upstream: <span className="plugin-model-owner">{item.pluginName}</span>,
+                        status: "enabled" as const,
                         actions: (
-                          <ActionMenu
-                            compact
-                            label={t("common.moreActions")}
-                            title={item.route.model_pattern}
-                            disabled={rowBusy}
-                            items={modelActions(item.route)}
-                          />
+                          <Button
+                            variant="quiet"
+                            onClick={() => navigate(pluginPageOf(item.pluginId))}
+                          >
+                            {t("modelsPage.pluginModelOpen")}
+                          </Button>
                         ),
-                        tabIndex: 0,
-                        className: `is-clickable${active ? " is-selected" : ""}`,
-                        bulkCell: bulkMode ? (
-                          <input
-                            type="checkbox"
-                            aria-label={t("modelsPage.bulkSelectOne", {
-                              model: item.route.model_pattern,
-                            })}
-                            checked={bulkSelected.has(item.route.id)}
-                            onChange={() => toggleBulkSelected(item.route.id)}
-                          />
-                        ) : null,
-                        onClick: () => selectRow(item.route.id),
-                        onContextMenu: (event: React.MouseEvent<HTMLElement>) => {
-                          const point = rowContextPoint(event);
-                          if (!point) return;
-                          selectRow(item.route.id);
-                          setContextMenu({
-                            routeId: item.route.id,
-                            ...point,
-                          });
-                        },
-                        onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
-                          const point = rowKeyboardContextPoint(event);
-                          if (point) { selectRow(item.route.id); setContextMenu({ routeId: item.route.id, ...point }); }
-                        },
-                      };
-                    }),
-                  ]}
-                />
-              </div>
-            </ListShell>
-            {contextMenu
-              ? (() => {
-                  const overview =
-                    rows.find((row) => row.route.id === contextMenu.routeId) ??
-                    (overviews.data ?? []).find(
-                      (row) => row.route.id === contextMenu.routeId,
+                      })),
+                      ...pageRows.map((item) => {
+                        const active = item.route.id === selected;
+                        const meta = metaByModel.get(item.route.model_pattern);
+                        const group = modelGroup(
+                          item.route.model_pattern,
+                          item.route.model_group,
+                          meta?.vendor,
+                        );
+                        const head = primaryMember(item.members, item.route);
+                        const ready = item.members.filter(
+                          (entry) => candidateState(entry) === "ready",
+                        ).length;
+                        const rowBusy = toggleRoute.pendingId === item.route.id || del.isPending;
+                        return {
+                          name: item.route.model_pattern,
+                          group,
+                          provider: (
+                            <small className="model-nav-provider">
+                              {head ? head.channel.name : t("modelsPage.noUpstream")}
+                            </small>
+                          ),
+                          badges: item.route.image_edit_shim ? (
+                            // Only meaningful on routes whose model has no
+                            // images endpoint of its own, so it stays a hint
+                            // rather than a status.
+                            <span
+                              className="model-meta-badge is-shim"
+                              title={t("routing.imageEditShimHint")}
+                            >
+                              {t("modelsPage.metaImageEdit")}
+                            </span>
+                          ) : undefined,
+                          contextWindow: meta?.context_window,
+                          supportsThinking: (meta?.supports_thinking ?? 0) > 0,
+                          vendor: meta?.vendor || undefined,
+                          upstream: head ? (
+                            <>
+                              <Link
+                                to={`/channels?channel=${head.channel.id}`}
+                                className="upstream-link"
+                                title={t("modelsPage.openChannelHint")}
+                                onClick={(event) => {
+                                  // Don't trigger the row's selectRow when
+                                  // jumping straight to the channel editor.
+                                  event.stopPropagation();
+                                }}
+                              >
+                                {head.channel.name}
+                              </Link>
+                              {item.members.length > 1 ? ` +${item.members.length - 1}` : ""}
+                            </>
+                          ) : (
+                            <span className="muted">{t("modelsPage.noUpstream")}</span>
+                          ),
+                          status: !item.route.enabled
+                            ? ("disabled" as const)
+                            : ready > 0
+                              ? ("ready" as const)
+                              : ("unavailable" as const),
+                          actions: (
+                            <ActionMenu
+                              compact
+                              label={t("common.moreActions")}
+                              title={item.route.model_pattern}
+                              disabled={rowBusy}
+                              items={modelActions(item.route)}
+                            />
+                          ),
+                          tabIndex: 0,
+                          className: `is-clickable${active ? " is-selected" : ""}`,
+                          bulkCell: bulkMode ? (
+                            <input
+                              type="checkbox"
+                              aria-label={t("modelsPage.bulkSelectOne", {
+                                model: item.route.model_pattern,
+                              })}
+                              checked={bulkSelected.has(item.route.id)}
+                              onChange={() => toggleBulkSelected(item.route.id)}
+                            />
+                          ) : null,
+                          onClick: () => selectRow(item.route.id),
+                          onContextMenu: (event: React.MouseEvent<HTMLElement>) => {
+                            const point = rowContextPoint(event);
+                            if (!point) return;
+                            selectRow(item.route.id);
+                            setContextMenu({
+                              routeId: item.route.id,
+                              ...point,
+                            });
+                          },
+                          onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+                            const point = rowKeyboardContextPoint(event);
+                            if (point) {
+                              selectRow(item.route.id);
+                              setContextMenu({ routeId: item.route.id, ...point });
+                            }
+                          },
+                        };
+                      }),
+                    ]}
+                  />
+                </div>
+              </ListShell>
+              {contextMenu
+                ? (() => {
+                    const overview =
+                      rows.find((row) => row.route.id === contextMenu.routeId) ??
+                      (overviews.data ?? []).find((row) => row.route.id === contextMenu.routeId);
+                    if (!overview) return null;
+                    return (
+                      <ActionMenu
+                        key={overview.route.id}
+                        label={t("common.moreActions")}
+                        title={overview.route.model_pattern}
+                        open
+                        onOpenChange={(open) => {
+                          if (!open) setContextMenu(null);
+                        }}
+                        position={{
+                          top: contextMenu.top,
+                          left: contextMenu.left,
+                        }}
+                        items={modelActions(overview.route, {
+                          closeContext: true,
+                        })}
+                      />
                     );
-                  if (!overview) return null;
-                  return (
-                    <ActionMenu
-                      key={overview.route.id}
-                      label={t("common.moreActions")}
-                      title={overview.route.model_pattern}
-                      open
-                      onOpenChange={(open) => {
-                        if (!open) setContextMenu(null);
-                      }}
-                      position={{
-                        top: contextMenu.top,
-                        left: contextMenu.left,
-                      }}
-                      items={modelActions(overview.route, {
-                        closeContext: true,
-                      })}
-                    />
-                  );
-                })()
-              : null}
-          </EntityState>
-        </Panel>
-        } detail={
+                  })()
+                : null}
+            </EntityState>
+          </Panel>
+        }
+        detail={
           !selectedRoute || !selectedOverview ? (
             <div className="detail-empty">{t("modelsPage.selectHint")}</div>
           ) : (
             <>
               <div className="detail-head">
                 <div>
-                  <p className="detail-kicker">
-                    {t("modelsPage.detailKicker")}
-                  </p>
+                  <p className="detail-kicker">{t("modelsPage.detailKicker")}</p>
                   <h2 className="mono">{selectedRoute.model_pattern}</h2>
                   <small
                     title={`${t("modelsPage.memberSummaryHint")} ${t("modelsPage.scopeHint")}`}
@@ -1587,9 +1553,7 @@ function ModelCatalog({
                       : ""}
                   </small>
                 </div>
-                <StatusBadge
-                  value={selectedRoute.enabled ? "enabled" : "disabled"}
-                />
+                <StatusBadge value={selectedRoute.enabled ? "enabled" : "disabled"} />
               </div>
 
               {/* Two clusters, not five loose controls: the primary action
@@ -1599,17 +1563,11 @@ function ModelCatalog({
                   explain: the mode hint on the mode control, the scope note on
                   the summary line under the title. */}
               <div className="detail-primary-bar">
-                <Button
-                  icon={<Sparkles size={14} />}
-                  onClick={() => setTryOpen(true)}
-                >
+                <Button icon={<Sparkles size={14} />} onClick={() => setTryOpen(true)}>
                   {t("try.open")}
                 </Button>
                 <span className="bar-spacer" />
-                <div
-                  className="routing-mode-control"
-                  title={t("modelsPage.scopeHint")}
-                >
+                <div className="routing-mode-control" title={t("modelsPage.scopeHint")}>
                   <span>{t("routing.mode.label")}</span>
                   <InfoTip label={t("routing.modeHint")} />
                   <select
@@ -1623,15 +1581,11 @@ function ModelCatalog({
                         // Manual single selection pins the top member; the
                         // per-member menu pins a specific channel.
                         const top =
-                          selectedMembers.find((c) => c.member.enabled) ??
-                          selectedMembers[0];
+                          selectedMembers.find((c) => c.member.enabled) ?? selectedMembers[0];
                         saveRoutingMode.mutate({
                           route: selectedRoute,
                           mode: next,
-                          singleMemberId:
-                            selectedRoute.single_member_id ??
-                            top?.member.id ??
-                            null,
+                          singleMemberId: selectedRoute.single_member_id ?? top?.member.id ?? null,
                         });
                         return;
                       }
@@ -1642,13 +1596,9 @@ function ModelCatalog({
                     }}
                   >
                     <option value="auto">{t("routing.mode.auto")}</option>
-                    <option value="adaptive">
-                      {t("routing.mode.adaptive")}
-                    </option>
+                    <option value="adaptive">{t("routing.mode.adaptive")}</option>
                     <option value="latency">{t("routing.mode.latency")}</option>
-                    <option value="weighted">
-                      {t("routing.mode.weighted")}
-                    </option>
+                    <option value="weighted">{t("routing.mode.weighted")}</option>
                     <option value="single">{t("routing.mode.single")}</option>
                   </select>
                 </div>
@@ -1659,7 +1609,6 @@ function ModelCatalog({
                   items={modelActions(selectedRoute)}
                 />
               </div>
-
 
               {singleModeActive && selectedRoute ? (
                 <div className="single-mode-banner">
@@ -1674,7 +1623,11 @@ function ModelCatalog({
                     </strong>
                     <small>
                       {singleModePinned
-                        ? t(pinOutsideGroup ? "routing.singleModeGroupMissing" : "routing.singleModeHint")
+                        ? t(
+                            pinOutsideGroup
+                              ? "routing.singleModeGroupMissing"
+                              : "routing.singleModeHint",
+                          )
                         : t("routing.singleModeMissing")}
                       {singleModePinned && !pinOutsideGroup && !singleModePinned.member.enabled
                         ? ` ${t("routing.singleModeDisabledWarning")}`
@@ -1697,19 +1650,31 @@ function ModelCatalog({
               ) : null}
 
               <div className="member-section-heading">
-                <button type="button" aria-expanded={showAdvanced} onClick={() => setShowAdvanced((value) => !value)}>
-                  {t("modelsPage.members")}<ChevronDown size={14} className={showAdvanced ? "chevron-flip is-open" : "chevron-flip"} />
+                <button
+                  type="button"
+                  aria-expanded={showAdvanced}
+                  onClick={() => setShowAdvanced((value) => !value)}
+                >
+                  {t("modelsPage.members")}
+                  <ChevronDown
+                    size={14}
+                    className={showAdvanced ? "chevron-flip is-open" : "chevron-flip"}
+                  />
                 </button>
-                <InfoTip label={t("modelsPage.routingHint") + " " + t("routing.reorderHint") + " " + t("routing.groupTabsHint")} />
+                <InfoTip
+                  label={
+                    t("modelsPage.routingHint") +
+                    " " +
+                    t("routing.reorderHint") +
+                    " " +
+                    t("routing.groupTabsHint")
+                  }
+                />
               </div>
               {showAdvanced ? (
                 <section className="models-advanced">
                   <div className="models-advanced-bar">
-                    <Button
-                      variant="secondary"
-                      icon={<Plus size={14} />}
-                      onClick={openAddMember}
-                    >
+                    <Button variant="secondary" icon={<Plus size={14} />} onClick={openAddMember}>
                       {t("routing.addMember")}
                     </Button>
                     {/* The bulk of what "add member" does over and over: one
@@ -1744,41 +1709,34 @@ function ModelCatalog({
                       <Button
                         variant="secondary"
                         disabled={selectedMemberIds.size === 0}
-                        onClick={() =>
-                          bulkToggleMembers.mutate({ enabled: true })
-                        }
+                        onClick={() => bulkToggleMembers.mutate({ enabled: true })}
                       >
                         {t("routing.bulkEnable")}
                       </Button>
                       <Button
                         variant="secondary"
                         disabled={selectedMemberIds.size === 0}
-                        onClick={() =>
-                          bulkToggleMembers.mutate({ enabled: false })
-                        }
+                        onClick={() => bulkToggleMembers.mutate({ enabled: false })}
                       >
                         {t("routing.bulkDisable")}
                       </Button>
                       <Button variant="secondary" onClick={selectAllMembers}>
                         {t("routing.bulkSelectAll")}
                       </Button>
-                      <Button
-                        variant="secondary"
-                        onClick={clearMemberSelection}
-                      >
+                      <Button variant="secondary" onClick={clearMemberSelection}>
                         {t("routing.bulkClear")}
                       </Button>
                     </div>
                   ) : null}
-          {reorderMembers.isPending ? (
-            <div className="routing-reorder-hint">
-              <span>
-                {reorderMembers.isPending
-                  ? t("routing.savingOrder")
-                  : t("routing.reorderHint")}
-              </span>
-            </div>
-          ) : null}
+                  {reorderMembers.isPending ? (
+                    <div className="routing-reorder-hint">
+                      <span>
+                        {reorderMembers.isPending
+                          ? t("routing.savingOrder")
+                          : t("routing.reorderHint")}
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="member-group-tabs">
                     <div
                       className="member-group-tablist"
@@ -1793,24 +1751,16 @@ function ModelCatalog({
                             key={name}
                             className={`member-group-tab${active ? " is-active" : ""}`}
                           >
-                                  <button
-                type="button"
-                role="tab"
-                aria-selected={active}
-                title={
-                  count === 0
-                    ? t("routing.groupEmptyHint")
-                    : undefined
-                }
-                onClick={() => setActiveGroup(name)}
-              >
+                            <button
+                              type="button"
+                              role="tab"
+                              aria-selected={active}
+                              title={count === 0 ? t("routing.groupEmptyHint") : undefined}
+                              onClick={() => setActiveGroup(name)}
+                            >
                               <span className="member-group-tab-main">
-                                {name === "default"
-                                  ? t("routing.groupDefault")
-                                  : name}
-                                <span className="member-group-count">
-                                  {count}
-                                </span>
+                                {name === "default" ? t("routing.groupDefault") : name}
+                                <span className="member-group-count">{count}</span>
                               </span>
                             </button>
                             {name !== "default" ? (
@@ -1869,9 +1819,7 @@ function ModelCatalog({
                         <button
                           type="button"
                           className="member-group-add"
-                          onClick={() =>
-                            setGroupDraft({ mode: "new", value: "" })
-                          }
+                          onClick={() => setGroupDraft({ mode: "new", value: "" })}
                         >
                           <Plus size={12} />
                           {t("routing.groupNew")}
@@ -1898,7 +1846,10 @@ function ModelCatalog({
                   {explain.data?.group_fallback ? (
                     <p className="member-group-hint" role="status">
                       {explain.data.route_group
-                        ? t("routing.groupFallback", { name: activeGroup, target: explain.data.route_group })
+                        ? t("routing.groupFallback", {
+                            name: activeGroup,
+                            target: explain.data.route_group,
+                          })
                         : t("routing.groupFallbackAll", { name: activeGroup })}
                     </p>
                   ) : null}
@@ -1908,30 +1859,26 @@ function ModelCatalog({
                     <div className="routing-group-empty">
                       <span>
                         {t("routing.groupEmpty", {
-                          name:
-                            activeGroup === "default"
-                              ? t("routing.groupDefault")
-                              : activeGroup,
+                          name: activeGroup === "default" ? t("routing.groupDefault") : activeGroup,
                         })}
                       </span>
-                      <Button
-                        variant="secondary"
-                        icon={<Plus size={14} />}
-                        onClick={openAddMember}
-                      >
+                      <Button variant="secondary" icon={<Plus size={14} />} onClick={openAddMember}>
                         {t("routing.addMember")}
                       </Button>
                     </div>
                   ) : (
                     visibleMembers.map((candidate, rowIndex) => {
                       const entry = candidate.member;
-                      const financeInfo = memberFinance(entry, originModelOf(entry, selectedRoute) || selectedModel, financeItems);
+                      const financeInfo = memberFinance(
+                        entry,
+                        originModelOf(entry, selectedRoute) || selectedModel,
+                        financeItems,
+                      );
                       const evaluation = explain.data?.candidates.find(
                         (item) => item.candidate.member.id === entry.id,
                       );
                       const activeCooldown = isActiveCooldown(entry);
-                      const autoDisabled =
-                        candidate.channel.status === "auto_disabled";
+                      const autoDisabled = candidate.channel.status === "auto_disabled";
                       const state = autoDisabled
                         ? "auto_disabled"
                         : evaluation?.reasons.includes("circuit_open")
@@ -1943,10 +1890,8 @@ function ModelCatalog({
                       // (the channel-level recovery button handles that).
                       const canResetMemberHealth =
                         !autoDisabled &&
-                        (activeCooldown ||
-                          (!entry.enabled && entry.fail_count > 0));
-                      const resetActionIsCooldown =
-                        activeCooldown && entry.enabled;
+                        (activeCooldown || (!entry.enabled && entry.fail_count > 0));
+                      const resetActionIsCooldown = activeCooldown && entry.enabled;
                       const ordered = visibleMembers;
                       const busy =
                         toggleMember.pendingId === entry.id ||
@@ -1956,9 +1901,7 @@ function ModelCatalog({
                         reorderMembers.mutate(next);
                       };
                       const moveBy = (delta: number) => {
-                        const from = ordered.findIndex(
-                          (item) => item.member.id === entry.id,
-                        );
+                        const from = ordered.findIndex((item) => item.member.id === entry.id);
                         const to = from + delta;
                         if (from < 0 || to < 0 || to >= ordered.length) return;
                         const next = [...ordered];
@@ -1971,17 +1914,11 @@ function ModelCatalog({
                         <div
                           className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
                           key={entry.id}
-                          draggable={
-                            !reorderMembers.isPending &&
-                            !bulkSelect
-                          }
+                          draggable={!reorderMembers.isPending && !bulkSelect}
                           onDragStart={(event) => {
                             setDragMemberId(entry.id);
                             event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData(
-                              "text/plain",
-                              String(entry.id),
-                            );
+                            event.dataTransfer.setData("text/plain", String(entry.id));
                           }}
                           onDragOver={(event) => {
                             event.preventDefault();
@@ -1989,18 +1926,12 @@ function ModelCatalog({
                           }}
                           onDrop={(event) => {
                             event.preventDefault();
-                            const sourceId = Number(
-                              event.dataTransfer.getData("text/plain"),
-                            );
+                            const sourceId = Number(event.dataTransfer.getData("text/plain"));
                             setDragMemberId(null);
                             if (!sourceId || sourceId === entry.id) return;
                             const current = sortMembers(visibleMembers);
-                            const from = current.findIndex(
-                              (item) => item.member.id === sourceId,
-                            );
-                            const to = current.findIndex(
-                              (item) => item.member.id === entry.id,
-                            );
+                            const from = current.findIndex((item) => item.member.id === sourceId);
+                            const to = current.findIndex((item) => item.member.id === entry.id);
                             if (from < 0 || to < 0) return;
                             const next = [...current];
                             const [moved] = next.splice(from, 1);
@@ -2040,8 +1971,7 @@ function ModelCatalog({
                                 onClick={() =>
                                   navigate(
                                     `/models/channel/${candidate.channel.id}?model=${encodeURIComponent(
-                                      originModelOf(entry, selectedRoute) ||
-                                        selectedModel,
+                                      originModelOf(entry, selectedRoute) || selectedModel,
                                     )}`,
                                   )
                                 }
@@ -2054,10 +1984,7 @@ function ModelCatalog({
                                   title={t("routing.memberOriginHint")}
                                 >
                                   {t("routing.memberOrigin", {
-                                    model: originModelOf(
-                                      entry,
-                                      selectedRoute,
-                                    ),
+                                    model: originModelOf(entry, selectedRoute),
                                   })}
                                 </span>
                               ) : null}
@@ -2070,10 +1997,7 @@ function ModelCatalog({
                               {t("routing.weightLabel")}: {entry.weight}
                               {(() => {
                                 const score = evaluation?.score;
-                                if (
-                                  score == null ||
-                                  Math.abs(score - entry.weight) < 0.01
-                                ) {
+                                if (score == null || Math.abs(score - entry.weight) < 0.01) {
                                   return null;
                                 }
                                 return (
@@ -2095,8 +2019,7 @@ function ModelCatalog({
                                     className="member-protected"
                                     title={t("routing.protectedHint")}
                                   >
-                                    <Shield size={12} />{" "}
-                                    {t("routing.protectedLabel")}
+                                    <Shield size={12} /> {t("routing.protectedLabel")}
                                   </span>
                                 </>
                               ) : null}
@@ -2119,11 +2042,11 @@ function ModelCatalog({
                                           : t("routing.financeCalls", {
                                               calls: info.calls,
                                             })}
-                    {info.fixed
-                      ? t("routing.financeUnitCalls")
-                      : t("routing.financeUnitM")}
-                    </span>
-                  </>
+                                        {info.fixed
+                                          ? t("routing.financeUnitCalls")
+                                          : t("routing.financeUnitM")}
+                                      </span>
+                                    </>
                                   );
                                 })()
                               ) : (
@@ -2139,15 +2062,11 @@ function ModelCatalog({
                               )}
                               {entry.fail_count > 0
                                 ? ` · ${t(
-                                    activeCooldown
-                                      ? "routing.failCount"
-                                      : "routing.failureHistory",
+                                    activeCooldown ? "routing.failCount" : "routing.failureHistory",
                                     { count: entry.fail_count },
                                   )}`
                                 : null}
-                              {activeCooldown && entry.last_error
-                                ? ` · ${entry.last_error}`
-                                : null}
+                              {activeCooldown && entry.last_error ? ` · ${entry.last_error}` : null}
                               {activeCooldown ? (
                                 <>
                                   {" "}
@@ -2157,8 +2076,7 @@ function ModelCatalog({
                             </small>
                           </div>
                           <div className="member-controls">
-                            {singleModeActive &&
-                            selectedRoute?.single_member_id === entry.id ? (
+                            {singleModeActive && selectedRoute?.single_member_id === entry.id ? (
                               <span
                                 className="member-pin-chip"
                                 title={t("routing.singleModeBanner", {
@@ -2177,13 +2095,8 @@ function ModelCatalog({
                                 type="button"
                                 className="member-clear-health"
                                 title={t("routing.reenableChannelHint")}
-                                disabled={
-                                  enableChannel.pendingId ===
-                                  candidate.channel.id
-                                }
-                                onClick={() =>
-                                  enableChannel.mutate(candidate.channel.id)
-                                }
+                                disabled={enableChannel.pendingId === candidate.channel.id}
+                                onClick={() => enableChannel.mutate(candidate.channel.id)}
                               >
                                 <Power size={13} />
                                 {t("routing.reenableChannel")}
@@ -2224,10 +2137,7 @@ function ModelCatalog({
                               className="icon-button"
                               aria-label={t("routing.moveDown")}
                               title={t("routing.moveDown")}
-                              disabled={
-                                busy ||
-                                rowIndex >= ordered.length - 1
-                              }
+                              disabled={busy || rowIndex >= ordered.length - 1}
                               onClick={() => moveBy(1)}
                             >
                               ↓
@@ -2251,19 +2161,15 @@ function ModelCatalog({
                                         key: "solo",
                                         icon: <Target size={14} />,
                                         label:
-                                          selectedRoute?.routing_mode ===
-                                            "single" &&
-                                          selectedRoute.single_member_id ===
-                                            entry.id
+                                          selectedRoute?.routing_mode === "single" &&
+                                          selectedRoute.single_member_id === entry.id
                                             ? t("routing.unsoloMember")
                                             : t("routing.soloMember"),
                                         disabled: pinMember.isPending,
                                         onSelect: () => {
                                           if (
-                                            selectedRoute?.routing_mode ===
-                                              "single" &&
-                                            selectedRoute.single_member_id ===
-                                              entry.id
+                                            selectedRoute?.routing_mode === "single" &&
+                                            selectedRoute.single_member_id === entry.id
                                           ) {
                                             pinMember.mutate({
                                               route: selectedRoute,
@@ -2288,8 +2194,7 @@ function ModelCatalog({
                                             ? "routing.clearHealth"
                                             : "routing.recoverMember",
                                         ),
-                                        onSelect: () =>
-                                          clearHealth.mutate(entry.id),
+                                        onSelect: () => clearHealth.mutate(entry.id),
                                       },
                                     ]
                                   : []),
@@ -2319,91 +2224,81 @@ function ModelCatalog({
                 </section>
               ) : null}
               <details className="route-policy-disclosure">
-                <summary>{t("routing.effectivePolicy")}<ChevronDown size={13} /></summary>
-              <div className="routing-policy-card">
-                <div className="routing-policy-summary">
-                  <span className="routing-policy-title">
-                    {t("routing.effectivePolicy")}
-                  </span>
-                  {effectivePolicy ? (
-                    <>
-                      <span
-                        className={`routing-signal${effectivePolicy.latency ? " is-on" : " is-off"}`}
-                      >
-                        {t("routing.signal.latency")}:{" "}
-                        {effectivePolicy.latency
-                          ? t("routing.signal.on")
-                          : t("routing.signal.off")}
-                      </span>
-                      <span
-                        className={`routing-signal${effectivePolicy.error ? " is-on" : " is-off"}`}
-                      >
-                        {t("routing.signal.error")}:{" "}
-                        {effectivePolicy.error
-                          ? t("routing.signal.on")
-                          : t("routing.signal.off")}
-                      </span>
-                      <span className="routing-policy-source">
-                        {t(effectivePolicy.source)}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="routing-policy-source">
-                      {t("routing.policyLoading")}
+                <summary>
+                  {t("routing.effectivePolicy")}
+                  <ChevronDown size={13} />
+                </summary>
+                <div className="routing-policy-card">
+                  <div className="routing-policy-summary">
+                    <span className="routing-policy-title">{t("routing.effectivePolicy")}</span>
+                    {effectivePolicy ? (
+                      <>
+                        <span
+                          className={`routing-signal${effectivePolicy.latency ? " is-on" : " is-off"}`}
+                        >
+                          {t("routing.signal.latency")}:{" "}
+                          {effectivePolicy.latency
+                            ? t("routing.signal.on")
+                            : t("routing.signal.off")}
+                        </span>
+                        <span
+                          className={`routing-signal${effectivePolicy.error ? " is-on" : " is-off"}`}
+                        >
+                          {t("routing.signal.error")}:{" "}
+                          {effectivePolicy.error ? t("routing.signal.on") : t("routing.signal.off")}
+                        </span>
+                        <span className="routing-policy-source">{t(effectivePolicy.source)}</span>
+                      </>
+                    ) : (
+                      <span className="routing-policy-source">{t("routing.policyLoading")}</span>
+                    )}
+                  </div>
+                  <div className="routing-retry-summary">
+                    <span className="routing-policy-title">{t("routing.retryPolicy")}</span>
+                    <span className="routing-policy-value">
+                      {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
+                      <small>
+                        {t(
+                          singleModeApplies
+                            ? "routing.policySource.single"
+                            : retryPolicyIsOverridden
+                              ? "routing.policySource.model"
+                              : "routing.policySource.global",
+                        )}
+                      </small>
                     </span>
-                  )}
+                    <span className="routing-policy-value">
+                      {t("routing.channelRetry")}: {effectiveChannelRetries ?? "?"}
+                      <small>
+                        {t(
+                          channelRetryPolicyIsOverridden
+                            ? "routing.policySource.model"
+                            : "routing.policySource.global",
+                        )}
+                      </small>
+                    </span>
+                    <span
+                      className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
+                    >
+                      {t("routing.failover")}:{" "}
+                      {runtimeSettings.data
+                        ? runtimeSettings.data.editable.cross_channel_failover_enabled
+                          ? t("routing.signal.on")
+                          : t("routing.signal.off")
+                        : "?"}
+                    </span>
+                  </div>
                 </div>
-                <div className="routing-retry-summary">
-                  <span className="routing-policy-title">
-                    {t("routing.retryPolicy")}
-                  </span>
-                  <span className="routing-policy-value">
-                    {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
-                    <small>
-                      {t(
-                        singleModeApplies ? "routing.policySource.single" : retryPolicyIsOverridden
-                          ? "routing.policySource.model"
-                          : "routing.policySource.global",
-                      )}
-                    </small>
-                  </span>
-                  <span className="routing-policy-value">
-                    {t("routing.channelRetry")}:{" "}
-                    {effectiveChannelRetries ?? "?"}
-                    <small>
-                      {t(
-                        channelRetryPolicyIsOverridden
-                          ? "routing.policySource.model"
-                          : "routing.policySource.global",
-                      )}
-                    </small>
-                  </span>
-                  <span
-                    className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
-                  >
-                    {t("routing.failover")}:{" "}
-                    {runtimeSettings.data
-                      ? runtimeSettings.data.editable
-                          .cross_channel_failover_enabled
-                        ? t("routing.signal.on")
-                        : t("routing.signal.off")
-                      : "?"}
-                  </span>
-                </div>
-              </div>
               </details>
             </>
           )
-        } />
+        }
+      />
 
       {unifyOpen ? <UnifyDialog onClose={() => setUnifyOpen(false)} /> : null}
-      {unifyHistoryOpen ? (
-        <UnifyHistory onClose={() => setUnifyHistoryOpen(false)} />
-      ) : null}
+      {unifyHistoryOpen ? <UnifyHistory onClose={() => setUnifyHistoryOpen(false)} /> : null}
       {probeOpen ? <ProbeDialog onClose={() => setProbeOpen(false)} /> : null}
-      {siteProbeOpen ? (
-        <SiteProbeDialog onClose={() => setSiteProbeOpen(false)} />
-      ) : null}
+      {siteProbeOpen ? <SiteProbeDialog onClose={() => setSiteProbeOpen(false)} /> : null}
       {capabilitiesOpen ? (
         <CapabilityRegistryDialog onClose={() => setCapabilitiesOpen(false)} />
       ) : null}
@@ -2411,9 +2306,7 @@ function ModelCatalog({
         <AutoMatchMembersDialog
           route={autoMatchRoute}
           group={activeGroup}
-          attachedChannelIds={visibleMembers.map(
-            (candidate) => candidate.channel.id,
-          )}
+          attachedChannelIds={visibleMembers.map((candidate) => candidate.channel.id)}
           onClose={() => setAutoMatchRoute(null)}
         />
       ) : null}

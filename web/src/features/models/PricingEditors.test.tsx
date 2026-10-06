@@ -9,7 +9,9 @@ import {
   encodeWindows,
   parseTiers,
   parseWindows,
-  pricingNumber, validTiers, validWindows,
+  pricingNumber,
+  validTiers,
+  validWindows,
 } from "./PricingEditors";
 
 /**
@@ -107,24 +109,28 @@ describe("pricing editors", () => {
   });
 });
 
- describe("pricing draft safety",()=>{
- it("does not turn blank or negative input into zero",()=>{
-  expect(Number.isNaN(pricingNumber(""))).toBe(true);
-  expect(pricingNumber("0")).toBe(0);
-  expect(pricingNumber("-2")).toBe(-2);
-  expect(validTiers([{max_prompt_tokens:0,prompt:NaN,completion:1,cache:0,per_request:0}])).toBe(false);
-  expect(()=>encodeTiers([{max_prompt_tokens:0,prompt:NaN,completion:1,cache:0,per_request:0}])).toThrow();
- });
- it("rejects ambiguous ceilings and fractional hours",()=>{
-  const tier={max_prompt_tokens:1000,prompt:1,completion:2,cache:0,per_request:0};
-  expect(validTiers([tier,tier])).toBe(false);
-  expect(validTiers([{...tier,max_prompt_tokens:1.5}])).toBe(false);
-  expect(validWindows([{days:[],from_hour:1.5,to_hour:6,multiplier:1}])).toBe(false);
- });
- it("accepts tiny positive multipliers without silently raising them",()=>{
-  const value=[{days:[],from_hour:22,to_hour:6,multiplier:0.001}];
-  expect(validWindows(value)).toBe(true);
-  expect(JSON.parse(encodeWindows(value))[0].multiplier).toBe(0.001);
-  expect(()=>encodeWindows([{...value[0]!,multiplier:0}])).toThrow();
- });
- });
+describe("pricing draft safety", () => {
+  it("does not turn blank or negative input into zero", () => {
+    expect(Number.isNaN(pricingNumber(""))).toBe(true);
+    expect(pricingNumber("0")).toBe(0);
+    expect(pricingNumber("-2")).toBe(-2);
+    expect(
+      validTiers([{ max_prompt_tokens: 0, prompt: NaN, completion: 1, cache: 0, per_request: 0 }]),
+    ).toBe(false);
+    expect(() =>
+      encodeTiers([{ max_prompt_tokens: 0, prompt: NaN, completion: 1, cache: 0, per_request: 0 }]),
+    ).toThrow();
+  });
+  it("rejects ambiguous ceilings and fractional hours", () => {
+    const tier = { max_prompt_tokens: 1000, prompt: 1, completion: 2, cache: 0, per_request: 0 };
+    expect(validTiers([tier, tier])).toBe(false);
+    expect(validTiers([{ ...tier, max_prompt_tokens: 1.5 }])).toBe(false);
+    expect(validWindows([{ days: [], from_hour: 1.5, to_hour: 6, multiplier: 1 }])).toBe(false);
+  });
+  it("accepts tiny positive multipliers without silently raising them", () => {
+    const value = [{ days: [], from_hour: 22, to_hour: 6, multiplier: 0.001 }];
+    expect(validWindows(value)).toBe(true);
+    expect(JSON.parse(encodeWindows(value))[0].multiplier).toBe(0.001);
+    expect(() => encodeWindows([{ ...value[0]!, multiplier: 0 }])).toThrow();
+  });
+});

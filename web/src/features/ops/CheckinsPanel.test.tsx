@@ -41,7 +41,13 @@ function setup(payload: Record<string, unknown>) {
         if (init?.method === "PUT") {
           const body = JSON.parse(String(init.body)) as Record<string, unknown>;
           calls.push({ path, body });
-          return response(settings({ source: "admin_override", has_override: true, editable: { ...payload.editable as object, ...body } }));
+          return response(
+            settings({
+              source: "admin_override",
+              has_override: true,
+              editable: { ...(payload.editable as object), ...body },
+            }),
+          );
         }
         return response(payload);
       }
@@ -50,7 +56,9 @@ function setup(payload: Record<string, unknown>) {
       return response({ error: `unexpected ${path}` }, 500);
     }),
   );
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   render(
     <QueryClientProvider client={client}>
       <I18nProvider>

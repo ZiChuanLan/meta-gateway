@@ -113,8 +113,7 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
     queryFn: ({ signal }) => service.listRedemptionCodes(signal),
   });
   const mint = useAdminMutation({
-    mutationFn: () =>
-      service.createRedemptionCodes({ count, quota_tokens: quota }),
+    mutationFn: () => service.createRedemptionCodes({ count, quota_tokens: quota }),
     invalidateKeys: [["redemption-codes"]],
     toastOnError: false,
     onSuccess: (result) => setMinted(result.items),
@@ -127,7 +126,11 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
   });
   const items = query.data?.items ?? [];
   return (
-    <Dialog title={t("keys.redemptionTitle")} onClose={onClose} busy={mint.isPending || voidCode.isPending}>
+    <Dialog
+      title={t("keys.redemptionTitle")}
+      onClose={onClose}
+      busy={mint.isPending || voidCode.isPending}
+    >
       <div className="redemption-mint">
         <Field label={t("keys.redemptionCount")}>
           <input
@@ -179,9 +182,7 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
         ) : (
           items.slice(0, 50).map((c) => (
             <div key={c.id} className="redemption-list-row">
-              <code className={c.redeemed_by_key_id ? "is-used" : ""}>
-                {c.code}
-              </code>
+              <code className={c.redeemed_by_key_id ? "is-used" : ""}>{c.code}</code>
               <span>{formatNumber(c.quota_tokens)}</span>
               {c.redeemed_by_key_id ? (
                 <span className="is-quiet">
@@ -194,9 +195,7 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
                   disabled={voidCode.pendingId === c.id}
                   onClick={() => voidCode.mutate(c.id)}
                 >
-                  {voidCode.pendingId === c.id
-                    ? t("common.working")
-                    : t("keys.redemptionVoid")}
+                  {voidCode.pendingId === c.id ? t("common.working") : t("keys.redemptionVoid")}
                 </button>
               )}
             </div>
@@ -272,34 +271,26 @@ export function Keys() {
     () =>
       member
         ? memberKeysSource
-        : ({
-      keys: (signal) => service.keys(signal),
-      discoveredModels: (signal) => service.discoveredModels(undefined, signal),
-      usageSummary: (signal) => service.usageSummary(undefined, signal),
-      routeOverviews: (signal) => service.routeOverviews(signal),
-      routeGroups: (signal) => service.routeGroups(signal),
-      // Tenant groups live behind their own endpoint; the page only needs the
-      // names for its picker.
-      keyGroups: (signal) =>
-        service
-          .keyGroups(signal)
-          .then((rows) => ({ groups: rows.map((row) => row.name) })),
-      modelMetadata: (signal) => service.modelMetadata(signal),
-      createKey: (body) => service.createKey(body),
-      updateKey: (id, body) => service.updateKey(id, body),
-      deleteKey: (id) => service.deleteKey(id),
-      revealKey: (id) => service.revealKey(id),
-      rotateKey: (id) => service.rotateKey(id),
-    }),
+        : {
+            keys: (signal) => service.keys(signal),
+            discoveredModels: (signal) => service.discoveredModels(undefined, signal),
+            usageSummary: (signal) => service.usageSummary(undefined, signal),
+            routeOverviews: (signal) => service.routeOverviews(signal),
+            routeGroups: (signal) => service.routeGroups(signal),
+            // Tenant groups live behind their own endpoint; the page only needs the
+            // names for its picker.
+            keyGroups: (signal) =>
+              service.keyGroups(signal).then((rows) => ({ groups: rows.map((row) => row.name) })),
+            modelMetadata: (signal) => service.modelMetadata(signal),
+            createKey: (body) => service.createKey(body),
+            updateKey: (id, body) => service.updateKey(id, body),
+            deleteKey: (id) => service.deleteKey(id),
+            revealKey: (id) => service.revealKey(id),
+            rotateKey: (id) => service.rotateKey(id),
+          },
     [member, service],
   );
-  return (
-    <KeysView
-      source={source}
-      caps={member ? MEMBER_KEY_CAPS : ADMIN_KEY_CAPS}
-      team={team}
-    />
-  );
+  return <KeysView source={source} caps={member ? MEMBER_KEY_CAPS : ADMIN_KEY_CAPS} team={team} />;
 }
 
 /**
@@ -405,16 +396,10 @@ export function KeysView({
       const channelList = [...channels]
         .map(([id, name]) => ({ id, name }))
         .sort((a, b) => a.id - b.id);
-      const group = modelGroup(
-        pattern,
-        overview.route.model_group,
-        metaByModel.get(pattern),
-      );
+      const group = modelGroup(pattern, overview.route.model_group, metaByModel.get(pattern));
       const disabled = !overview.route.enabled;
       if (/[?*]/.test(pattern)) {
-        const matched = discoveredNames.filter((name) =>
-          modelPatternMatches(pattern, name),
-        );
+        const matched = discoveredNames.filter((name) => modelPatternMatches(pattern, name));
         if (matched.length === 0) {
           out.push({ name: pattern, channels: channelList, group, disabled, pattern });
         }
@@ -455,11 +440,11 @@ export function KeysView({
   const [redemption, setRedemption] = useState(false);
   const [created, setCreated] = useState<Pick<CreatedDownstreamKey, "id" | "token"> | null>(null);
   const [remove, setRemove] = useState<number | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ id: number; top: number; left: number } | null>(null);
-  // Re-view a stored plaintext token (created after plaintext storage).
-  const [viewing, setViewing] = useState<{ id: number; name: string } | null>(
+  const [contextMenu, setContextMenu] = useState<{ id: number; top: number; left: number } | null>(
     null,
   );
+  // Re-view a stored plaintext token (created after plaintext storage).
+  const [viewing, setViewing] = useState<{ id: number; name: string } | null>(null);
   const [viewedToken, setViewedToken] = useState<string | null>(null);
   // Rotate: replace the token, old one dies instantly.
   const [rotating, setRotating] = useState<number | null>(null);
@@ -491,10 +476,7 @@ export function KeysView({
     },
   });
   const update = useAdminMutation({
-    mutationFn: (v: {
-      id: number;
-      body: KeyUpdateInput;
-    }) => source.updateKey!(v.id, v.body),
+    mutationFn: (v: { id: number; body: KeyUpdateInput }) => source.updateKey!(v.id, v.body),
     invalidateKeys: [["keys"], ["usage-summary"]],
     toastOnError: false,
     onSuccess: () => setEdit(null),
@@ -533,17 +515,12 @@ export function KeysView({
     const list = query.data ?? [];
     if (!searchTerm) return list;
     return list.filter(
-      (key) =>
-        key.name.toLowerCase().includes(searchTerm) ||
-        String(key.id).includes(searchTerm),
+      (key) => key.name.toLowerCase().includes(searchTerm) || String(key.id).includes(searchTerm),
     );
   }, [query.data, searchTerm]);
   const pagination = useClientPagination(rows, 12);
   const pageRows = pagination.pageItems;
-  const enabledCount = useMemo(
-    () => rows.filter((key) => key.enabled).length,
-    [rows],
-  );
+  const enabledCount = useMemo(() => rows.filter((key) => key.enabled).length, [rows]);
   const totalUsed = useMemo(
     () => rows.reduce((sum, key) => sum + (key.quota_used_tokens ?? 0), 0),
     [rows],
@@ -561,21 +538,35 @@ export function KeysView({
     reveal.mutate(key.id);
   };
   const keyActions = (key: DownstreamKey): ActionMenuItem[] => {
-    const busy = reveal.pendingId === key.id || del.pendingId === key.id ||
+    const busy =
+      reveal.pendingId === key.id ||
+      del.pendingId === key.id ||
       (rotate.isPending && rotate.variables?.id === key.id) ||
       (update.isPending && update.variables?.id === key.id);
     const actions: ActionMenuItem[] = [];
     // A capability that is off removes the item instead of disabling it: an
     // action a member can never perform should not appear at all.
-    if (caps.reveal && (key.has_token || key.id === rotatedToken?.id)) actions.push({
-      key: "view", label: t("keys.view"), group: t("actions.view"), icon: <Eye size={14} />,
-      disabled: busy, onSelect: () => viewKey(key),
-    });
+    if (caps.reveal && (key.has_token || key.id === rotatedToken?.id))
+      actions.push({
+        key: "view",
+        label: t("keys.view"),
+        group: t("actions.view"),
+        icon: <Eye size={14} />,
+        disabled: busy,
+        onSelect: () => viewKey(key),
+      });
     if (caps.edit) {
-      actions.push(
-        { key: "edit", label: t("keys.edit"), group: t("actions.manage"), icon: <Pencil size={14} />, disabled: busy,
-          onSelect: () => { update.reset(); setEdit(key); } },
-      );
+      actions.push({
+        key: "edit",
+        label: t("keys.edit"),
+        group: t("actions.manage"),
+        icon: <Pencil size={14} />,
+        disabled: busy,
+        onSelect: () => {
+          update.reset();
+          setEdit(key);
+        },
+      });
     }
     // Pausing a token is not the same as revoking it: the client keeps its
     // credentials and starts working again the moment the switch goes back on.
@@ -586,26 +577,42 @@ export function KeysView({
         group: t("actions.manage"),
         icon: key.enabled ? <Ban size={14} /> : <Check size={14} />,
         disabled: busy,
-        onSelect: () =>
-          update.mutate({ id: key.id, body: { enabled: !key.enabled } }),
+        onSelect: () => update.mutate({ id: key.id, body: { enabled: !key.enabled } }),
       });
     }
     if (caps.rotate) {
-      actions.push(
-        { key: "rotate", label: t("keys.rotate"), group: t("actions.danger"), danger: true, icon: <RefreshCw size={14} />, disabled: busy,
-          onSelect: () => { rotate.reset(); setRotateError(null); setRotating(key.id); } },
-      );
+      actions.push({
+        key: "rotate",
+        label: t("keys.rotate"),
+        group: t("actions.danger"),
+        danger: true,
+        icon: <RefreshCw size={14} />,
+        disabled: busy,
+        onSelect: () => {
+          rotate.reset();
+          setRotateError(null);
+          setRotating(key.id);
+        },
+      });
     }
     if (caps.remove) {
-      actions.push(
-        { key: "delete", label: t("keys.delete"), group: t("actions.danger"), danger: true, icon: <Trash2 size={14} />, disabled: busy,
-          onSelect: () => setRemove(key.id) },
-      );
+      actions.push({
+        key: "delete",
+        label: t("keys.delete"),
+        group: t("actions.danger"),
+        danger: true,
+        icon: <Trash2 size={14} />,
+        disabled: busy,
+        onSelect: () => setRemove(key.id),
+      });
     }
     // Member-only affordances (the connect sheet) arrive through the source's
     // own slot, so the same row can offer more without a second table.
     if (extraRowActions) actions.push(...extraRowActions(key));
-    return actions.map((action) => ({ ...action, disabledReason: action.disabled ? t("common.working") : undefined }));
+    return actions.map((action) => ({
+      ...action,
+      disabledReason: action.disabled ? t("common.working") : undefined,
+    }));
   };
   const contextKey = contextMenu ? rows.find((key) => key.id === contextMenu.id) : undefined;
 
@@ -664,16 +671,18 @@ export function KeysView({
             },
             {
               label: t("keys.stat.usedTokens"),
-              value: query.isPending || usage.isPending || usage.isError
-                ? "—"
-                : formatNumber(usage.data?.total_tokens ?? totalUsed),
+              value:
+                query.isPending || usage.isPending || usage.isError
+                  ? "—"
+                  : formatNumber(usage.data?.total_tokens ?? totalUsed),
               tone: "info",
             },
             {
               label: t("keys.stat.requests"),
-              value: usage.isPending || usage.isError
-                ? "—"
-                : formatNumber(usage.data?.request_count ?? 0),
+              value:
+                usage.isPending || usage.isError
+                  ? "—"
+                  : formatNumber(usage.data?.request_count ?? 0),
               tone: "warning",
             },
           ]}
@@ -737,7 +746,9 @@ export function KeysView({
                 ]}
               >
                 {pageRows.map((k) => (
-                  <tr key={k.id} tabIndex={0}
+                  <tr
+                    key={k.id}
+                    tabIndex={0}
                     onContextMenu={(event) => {
                       const point = rowContextPoint(event);
                       if (point) setContextMenu({ id: k.id, ...point });
@@ -745,41 +756,43 @@ export function KeysView({
                     onKeyDown={(event) => {
                       const point = rowKeyboardContextPoint(event);
                       if (point) setContextMenu({ id: k.id, ...point });
-                    }}>
+                    }}
+                  >
                     <td>
                       <strong>{k.name}</strong>
                       <small>#{k.id}</small>
-                      {showTeam && k.user_id ? <small>{t("keys.userOwner", { id: k.user_id })}</small> : null}
+                      {showTeam && k.user_id ? (
+                        <small>{t("keys.userOwner", { id: k.user_id })}</small>
+                      ) : null}
                     </td>
                     {caps.scopes ? <td>{k.scopes?.trim() || "relay"}</td> : null}
                     {caps.quotas ? (
-                    <td>
-                      <div className="quota-cell">
-                        <code>
-                          {formatQuota(k.quota_used_tokens, k.quota_total_tokens)}
-                        </code>
-                        {k.quota_total_tokens && k.quota_total_tokens > 0 ? (
-                          <span className="quota-meter" aria-hidden="true">
-                            <span
-                              className="quota-meter-fill"
-                              style={{
-                                transform: `scaleX(${Math.min(
-                                  1,
-                                  (k.quota_used_tokens ?? 0) / k.quota_total_tokens,
-                                )})`,
-                              }}
-                            />
-                          </span>
-                              ) : null}
-            {/* The money budget appears only when it is set: an unlimited key
+                      <td>
+                        <div className="quota-cell">
+                          <code>{formatQuota(k.quota_used_tokens, k.quota_total_tokens)}</code>
+                          {k.quota_total_tokens && k.quota_total_tokens > 0 ? (
+                            <span className="quota-meter" aria-hidden="true">
+                              <span
+                                className="quota-meter-fill"
+                                style={{
+                                  transform: `scaleX(${Math.min(
+                                    1,
+                                    (k.quota_used_tokens ?? 0) / k.quota_total_tokens,
+                                  )})`,
+                                }}
+                              />
+                            </span>
+                          ) : null}
+                          {/* The money budget appears only when it is set: an unlimited key
                 would otherwise grow a meaningless "0 / 0" line. */}
-            {(k.quota_total_cost ?? 0) > 0 ? (
-              <small>
-                {formatCost(k.quota_used_cost ?? 0)} / {formatCost(k.quota_total_cost ?? 0)}
-              </small>
-            ) : null}
-          </div>
-        </td>
+                          {(k.quota_total_cost ?? 0) > 0 ? (
+                            <small>
+                              {formatCost(k.quota_used_cost ?? 0)} /{" "}
+                              {formatCost(k.quota_total_cost ?? 0)}
+                            </small>
+                          ) : null}
+                        </div>
+                      </td>
                     ) : null}
                     {caps.pricing ? <td>{formatCost(k.cost)}</td> : null}
                     <td>
@@ -798,7 +811,7 @@ export function KeysView({
                     </td>
                     <td>{formatDate(k.created_at)}</td>
                     <td className="actions key-row-actions">
-                      {(caps.reveal && (k.has_token || k.id === rotatedToken?.id)) && (
+                      {caps.reveal && (k.has_token || k.id === rotatedToken?.id) && (
                         <IconButton
                           className="is-bare"
                           label={t("keys.view")}
@@ -808,7 +821,12 @@ export function KeysView({
                           <Eye size={14} />
                         </IconButton>
                       )}
-                      <ActionMenu compact label={t("common.moreActions")} title={k.name} items={keyActions(k)} />
+                      <ActionMenu
+                        compact
+                        label={t("common.moreActions")}
+                        title={k.name}
+                        items={keyActions(k)}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -818,8 +836,19 @@ export function KeysView({
         </Panel>
       </div>
 
-      {contextMenu && contextKey ? <ActionMenu key={contextKey.id} label={t("common.moreActions")} title={contextKey.name}
-        open position={contextMenu} onOpenChange={(open) => { if (!open) setContextMenu(null); }} items={keyActions(contextKey)} /> : null}
+      {contextMenu && contextKey ? (
+        <ActionMenu
+          key={contextKey.id}
+          label={t("common.moreActions")}
+          title={contextKey.name}
+          open
+          position={contextMenu}
+          onOpenChange={(open) => {
+            if (!open) setContextMenu(null);
+          }}
+          items={keyActions(contextKey)}
+        />
+      ) : null}
       {caps.quotas && redemption && <RedemptionDialog onClose={() => setRedemption(false)} />}
       {add && (
         <KeyDialog
@@ -843,31 +872,31 @@ export function KeysView({
           error={update.error}
           onClose={() => setEdit(null)}
           onSave={(v) =>
-      update.mutate({
-        id: edit.id,
-        body: {
-          // Every field the dialog can change has to travel: an omitted
-          // field means "keep the stored value" (the backend reads
-          // pointers), so dropping one here silently turns the input into
-          // a no-op. quota_total_cost and route_group_name were both
-          // collected but never sent, which is why picking a route group
-          // looked like it saved and did not.
-          name: v.name,
-          scopes: v.scopes,
-          quota_total_tokens: v.quota_total_tokens,
-          quota_total_cost: v.quota_total_cost,
-          model_allowlist: v.model_allowlist,
-          model_denylist: v.model_denylist,
-          expires_at: v.expires_at ?? "",
-          allowed_ips: v.allowed_ips ?? "",
-          // Always sent, empty included: "" is how a key is moved back to
-          // "no route group", and `|| undefined` would omit it instead.
-          route_group_name: v.route_group_name ?? "",
-          group_name: v.group_name ?? "",
-          reset_used: v.reset_used,
-        },
-      })
-    }
+            update.mutate({
+              id: edit.id,
+              body: {
+                // Every field the dialog can change has to travel: an omitted
+                // field means "keep the stored value" (the backend reads
+                // pointers), so dropping one here silently turns the input into
+                // a no-op. quota_total_cost and route_group_name were both
+                // collected but never sent, which is why picking a route group
+                // looked like it saved and did not.
+                name: v.name,
+                scopes: v.scopes,
+                quota_total_tokens: v.quota_total_tokens,
+                quota_total_cost: v.quota_total_cost,
+                model_allowlist: v.model_allowlist,
+                model_denylist: v.model_denylist,
+                expires_at: v.expires_at ?? "",
+                allowed_ips: v.allowed_ips ?? "",
+                // Always sent, empty included: "" is how a key is moved back to
+                // "no route group", and `|| undefined` would omit it instead.
+                route_group_name: v.route_group_name ?? "",
+                group_name: v.group_name ?? "",
+                reset_used: v.reset_used,
+              },
+            })
+          }
           modelOptions={modelOptions}
           modelGroupOptions={modelGroupOptions}
           modelsByGroup={modelsByGroup}
@@ -879,9 +908,7 @@ export function KeysView({
         <Dialog
           title={t("keys.copyTitle")}
           onClose={() => setCreated(null)}
-          actions={
-            <Button onClick={() => setCreated(null)}>{t("keys.stored")}</Button>
-          }
+          actions={<Button onClick={() => setCreated(null)}>{t("keys.stored")}</Button>}
         >
           <p className="warning">{t("keys.copyWarning")}</p>
           <div className="secret-output">
@@ -1004,9 +1031,7 @@ function KeyDialog({
   // refuses on whichever budget runs out first.
   const [quotaCost, setQuotaCost] = useState(
     String(
-      initial?.quota_total_cost && initial.quota_total_cost > 0
-        ? initial.quota_total_cost
-        : "",
+      initial?.quota_total_cost && initial.quota_total_cost > 0 ? initial.quota_total_cost : "",
     ),
   );
   const [tokenInputBad, setTokenInputBad] = useState(false);
@@ -1016,17 +1041,11 @@ function KeyDialog({
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean);
-  const [allowlist, setAllowlist] = useState<string[]>(() =>
-    splitModels(initial?.model_allowlist),
-  );
-  const [denylist, setDenylist] = useState<string[]>(() =>
-    splitModels(initial?.model_denylist),
-  );
+  const [allowlist, setAllowlist] = useState<string[]>(() => splitModels(initial?.model_allowlist));
+  const [denylist, setDenylist] = useState<string[]>(() => splitModels(initial?.model_denylist));
   const [expiresAt, setExpiresAt] = useState(initial?.expires_at ?? "");
   const [allowedIPs, setAllowedIPs] = useState(initial?.allowed_ips ?? "");
-  const [routeGroup, setRouteGroup] = useState(
-    initial?.route_group_name ?? "",
-  );
+  const [routeGroup, setRouteGroup] = useState(initial?.route_group_name ?? "");
   const [tenantGroup, setTenantGroup] = useState(initial?.group_name ?? "");
   const [resetUsed, setResetUsed] = useState(false);
   // Progressive disclosure: billing, model scoping and advanced controls are
@@ -1062,17 +1081,14 @@ function KeyDialog({
     ]);
   };
   const trimmedCustom = customToken.trim();
-  const customTooShort =
-    useCustomToken && trimmedCustom.length > 0 && trimmedCustom.length < 16;
+  const customTooShort = useCustomToken && trimmedCustom.length > 0 && trimmedCustom.length < 16;
   const tokenQuota = parseQuotaInput(quotaTotal, true);
   const costQuota = parseQuotaInput(quotaCost);
-  const quotasValid = tokenQuota !== null && costQuota !== null &&
-    !tokenInputBad && !costInputBad;
+  const quotasValid = tokenQuota !== null && costQuota !== null && !tokenInputBad && !costInputBad;
   const canSubmit =
-    Boolean(name.trim()) && quotasValid &&
-    (mode === "edit" ||
-      !useCustomToken ||
-      (trimmedCustom.length >= 16 && !customTooShort));
+    Boolean(name.trim()) &&
+    quotasValid &&
+    (mode === "edit" || !useCustomToken || (trimmedCustom.length >= 16 && !customTooShort));
 
   return (
     <Dialog
@@ -1092,10 +1108,7 @@ function KeyDialog({
               onSave({
                 name: name.trim(),
                 scopes: scopes.length > 0 ? scopes.join(",") : "relay",
-                token:
-                  mode === "create" && useCustomToken
-                    ? trimmedCustom
-                    : undefined,
+                token: mode === "create" && useCustomToken ? trimmedCustom : undefined,
                 quota_total_tokens: tokenQuota,
                 quota_total_cost: costQuota,
                 model_allowlist: allowlist.join(","),
@@ -1114,9 +1127,7 @@ function KeyDialog({
       }
     >
       <div className="ops-panel-context">
-        <span>
-          {mode === "create" ? t("keys.createHint") : t("keys.editHint")}
-        </span>
+        <span>{mode === "create" ? t("keys.createHint") : t("keys.editHint")}</span>
       </div>
       <Field label={t("common.name")}>
         <input
@@ -1143,37 +1154,41 @@ function KeyDialog({
         </button>
         {openBilling ? (
           <div className="key-dialog-fold-body">
-                <Field label={t("keys.quotaTotal")} hint={t("keys.quotaTotalHint")}>
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={quotaTotal}
-            onChange={(e) => {
-              setQuotaTotal(e.target.value);
-              setTokenInputBad(e.target.validity.badInput);
-            }}
-            aria-invalid={tokenQuota === null || tokenInputBad}
-            placeholder={t("keys.unlimitedPlaceholder")}
-          />
-        </Field>
-        <Field label={t("keys.quotaCost")} hint={t("keys.quotaCostHint")}>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={quotaCost}
-            onChange={(e) => {
-              setQuotaCost(e.target.value);
-              setCostInputBad(e.target.validity.badInput);
-            }}
-            aria-invalid={costQuota === null || costInputBad}
-            placeholder={t("keys.unlimitedPlaceholder")}
-          />
-        </Field>
-      </div>
+            <Field label={t("keys.quotaTotal")} hint={t("keys.quotaTotalHint")}>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={quotaTotal}
+                onChange={(e) => {
+                  setQuotaTotal(e.target.value);
+                  setTokenInputBad(e.target.validity.badInput);
+                }}
+                aria-invalid={tokenQuota === null || tokenInputBad}
+                placeholder={t("keys.unlimitedPlaceholder")}
+              />
+            </Field>
+            <Field label={t("keys.quotaCost")} hint={t("keys.quotaCostHint")}>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={quotaCost}
+                onChange={(e) => {
+                  setQuotaCost(e.target.value);
+                  setCostInputBad(e.target.validity.badInput);
+                }}
+                aria-invalid={costQuota === null || costInputBad}
+                placeholder={t("keys.unlimitedPlaceholder")}
+              />
+            </Field>
+          </div>
         ) : null}
-        {!quotasValid ? <p className="inline-error" role="alert">{t("keys.invalidQuota")}</p> : null}
+        {!quotasValid ? (
+          <p className="inline-error" role="alert">
+            {t("keys.invalidQuota")}
+          </p>
+        ) : null}
       </div>
 
       <div className="key-dialog-section">
@@ -1189,10 +1204,7 @@ function KeyDialog({
         </button>
         {openModels ? (
           <div className="key-dialog-fold-body">
-            <Field
-              label={t("keys.modelAllowlist")}
-              hint={t("keys.modelAllowlistHint")}
-            >
+            <Field label={t("keys.modelAllowlist")} hint={t("keys.modelAllowlistHint")}>
               <div className="model-group-picker">
                 <select
                   value={modelGroupSelection}
@@ -1283,9 +1295,7 @@ function KeyDialog({
                   type="datetime-local"
                   value={expiresAt ? toLocalInput(expiresAt) : ""}
                   disabled={pending}
-                  onChange={(e) =>
-                    setExpiresAt(e.target.value ? toRFC3339(e.target.value) : "")
-                  }
+                  onChange={(e) => setExpiresAt(e.target.value ? toRFC3339(e.target.value) : "")}
                 />
               </Field>
               <Field label={t("keys.allowedIPs")} hint={t("keys.allowedIPsHint")}>
@@ -1324,10 +1334,7 @@ function KeyDialog({
                   <span>{t("keys.useCustomToken")}</span>
                 </label>
                 {useCustomToken ? (
-                  <Field
-                    label={t("keys.customToken")}
-                    hint={t("keys.customTokenHint")}
-                  >
+                  <Field label={t("keys.customToken")} hint={t("keys.customTokenHint")}>
                     <input
                       type="password"
                       autoComplete="new-password"

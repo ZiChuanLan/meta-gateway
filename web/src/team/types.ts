@@ -37,7 +37,11 @@ export interface ModelRatio {
   ratio: number;
   updated_at?: string;
 }
-export interface ModeInfo { mode:"personal"|"team";has_owner:boolean;role:string }
+export interface ModeInfo {
+  mode: "personal" | "team";
+  has_owner: boolean;
+  role: string;
+}
 export interface TeamUser {
   id: number;
   username: string;
@@ -186,12 +190,7 @@ export interface ImportOutcome {
   created: ImportedMember[];
   failed: ImportFailure[];
 }
-export type BulkMemberAction =
-  | "pause"
-  | "resume"
-  | "policy"
-  | "revoke_sessions"
-  | "delete";
+export type BulkMemberAction = "pause" | "resume" | "policy" | "revoke_sessions" | "delete";
 export interface Account {
   user: TeamUser;
   policy: Policy;
@@ -245,16 +244,34 @@ export interface RequestRow {
   model: string;
   tokens: number | null;
   cost: number | null;
-  prompt_tokens?: number|null;
-  completion_tokens?: number|null;
-  cache_read_tokens?: number|null;
-  cache_creation_tokens?: number|null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
+  cache_read_tokens?: number | null;
+  cache_creation_tokens?: number | null;
   attempts?: number;
   key_name?: string;
   /** Client family guessed from the relay User-Agent, as shown in the admin log list. */
   client_family?: string;
 }
-export interface UserModel {supports_thinking?:number;name:string;vendor:string;kind:string;context_window:number;input_modalities:string;output_modalities:string;endpoints:string;candidates:number}
-export interface RequestPreferences {failover:"inherit"|"on"|"off";max_retries:number|null}
-export interface PreferencesView {preferences:RequestPreferences;can_edit:boolean;site:{failover_enabled:boolean;retry_times:number};effective:{failover_enabled:boolean;retry_times:number}}
+export interface UserModel {
+  supports_thinking?: number;
+  name: string;
+  vendor: string;
+  kind: string;
+  context_window: number;
+  input_modalities: string;
+  output_modalities: string;
+  endpoints: string;
+  candidates: number;
+}
+export interface RequestPreferences {
+  failover: "inherit" | "on" | "off";
+  max_retries: number | null;
+}
+export interface PreferencesView {
+  preferences: RequestPreferences;
+  can_edit: boolean;
+  site: { failover_enabled: boolean; retry_times: number };
+  effective: { failover_enabled: boolean; retry_times: number };
+}
 export type TeamRequest = <T>(path: string, init?: RequestInit) => Promise<T>;

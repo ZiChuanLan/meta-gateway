@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
 /** Compact token/request counts: 1.2M / 34.5k / 812. */
 export function formatTokens(n: number) {
-	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-	return String(n);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
 }
 
 /**
@@ -25,10 +25,19 @@ let symbol = "$";
 let rate = 1;
 let currencySnapshot = { symbol, rate };
 const currencyListeners = new Set<() => void>();
-const subscribeCurrency = (listener: () => void) => { currencyListeners.add(listener); return () => { currencyListeners.delete(listener); }; };
+const subscribeCurrency = (listener: () => void) => {
+  currencyListeners.add(listener);
+  return () => {
+    currencyListeners.delete(listener);
+  };
+};
 /** Trigger dependent renderers when a display setting is loaded or changed. */
 export function useCurrency() {
- return useSyncExternalStore(subscribeCurrency, () => currencySnapshot, () => DEFAULT_CURRENCY);
+  return useSyncExternalStore(
+    subscribeCurrency,
+    () => currencySnapshot,
+    () => DEFAULT_CURRENCY,
+  );
 }
 
 /** Defaults used until the shells have read the site settings. */
@@ -41,35 +50,36 @@ export const DEFAULT_CURRENCY = { symbol: "$", rate: 1 };
  * amount on the page.
  */
 export function setCurrency(next: { symbol?: string; rate?: number } | null | undefined) {
-	const nextSymbol = String(next?.symbol ?? "").trim();
-	symbol = nextSymbol && nextSymbol.length <= 8 ? nextSymbol : DEFAULT_CURRENCY.symbol;
-	const nextRate = Number(next?.rate ?? 1);
-	rate = Number.isFinite(nextRate) && nextRate > 0 ? nextRate : 1;
- if (currencySnapshot.symbol !== symbol || currencySnapshot.rate !== rate) {
-  currencySnapshot = { symbol, rate };
-  currencyListeners.forEach((listener) => listener());
- }
+  const nextSymbol = String(next?.symbol ?? "").trim();
+  symbol = nextSymbol && nextSymbol.length <= 8 ? nextSymbol : DEFAULT_CURRENCY.symbol;
+  const nextRate = Number(next?.rate ?? 1);
+  rate = Number.isFinite(nextRate) && nextRate > 0 ? nextRate : 1;
+  if (currencySnapshot.symbol !== symbol || currencySnapshot.rate !== rate) {
+    currencySnapshot = { symbol, rate };
+    currencyListeners.forEach((listener) => listener());
+  }
 }
 
 /** Converts a stored amount into the display currency. */
 export function displayAmount(value: number) {
-	return value * rate;
+  return value * rate;
 }
 
 /** Compact money rendering: ¥1.2k / $3.50 / $0.000123. */
 export function formatCost(value: number) {
-	const shown = displayAmount(value);
-	if (shown >= 1000) return `${symbol}${shown.toFixed(0)}`;
-	if (shown >= 1) return `${symbol}${shown.toFixed(2)}`;
-	if (shown >= 0.01) return `${symbol}${shown.toFixed(4)}`;
-	if (shown === 0) return `${symbol}0.00`;
-	return `${symbol}${shown.toFixed(6)}`;
+  const shown = displayAmount(value);
+  if (shown >= 1000) return `${symbol}${shown.toFixed(0)}`;
+  if (shown >= 1) return `${symbol}${shown.toFixed(2)}`;
+  if (shown >= 0.01) return `${symbol}${shown.toFixed(4)}`;
+  if (shown === 0) return `${symbol}0.00`;
+  return `${symbol}${shown.toFixed(6)}`;
 }
 
 /** Unit prices must not turn small nonzero charges into a displayed zero. */
 export function formatUnitPrice(value: number) {
- const shown = displayAmount(value);
- if (!Number.isFinite(shown)) return "—";
- if (shown !== 0 && Math.abs(shown) < 0.000001) return `${symbol}${Number(shown.toPrecision(10)).toString()}`;
- return `${symbol}${Number(shown.toPrecision(10)).toLocaleString("en-US", { minimumFractionDigits: Math.abs(shown) >= 1 || shown === 0 ? 2 : 0, maximumFractionDigits: 10 })}`;
+  const shown = displayAmount(value);
+  if (!Number.isFinite(shown)) return "—";
+  if (shown !== 0 && Math.abs(shown) < 0.000001)
+    return `${symbol}${Number(shown.toPrecision(10)).toString()}`;
+  return `${symbol}${Number(shown.toPrecision(10)).toLocaleString("en-US", { minimumFractionDigits: Math.abs(shown) >= 1 || shown === 0 ? 2 : 0, maximumFractionDigits: 10 })}`;
 }

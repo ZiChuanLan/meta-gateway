@@ -18,9 +18,7 @@ export function parseCredentialMeta(metaJSON?: string): {
           ? parsed.Group
           : undefined;
     const upstream =
-      typeof parsed.upstream_token_id === "number"
-        ? parsed.upstream_token_id
-        : undefined;
+      typeof parsed.upstream_token_id === "number" ? parsed.upstream_token_id : undefined;
     return {
       name,
       group,

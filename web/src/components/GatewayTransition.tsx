@@ -11,7 +11,15 @@ import type { UIThemeId } from "../themes/types";
 type EntrancePhase = "sealing" | "revealing" | "sheathing";
 
 /** Visual layer only: authentication and replay each own their completion. */
-export function GatewayTransition({ phase, onSkip, appearance = "modern" }: { phase: EntrancePhase; onSkip: () => void; appearance?: UIThemeId }) {
+export function GatewayTransition({
+  phase,
+  onSkip,
+  appearance = "modern",
+}: {
+  phase: EntrancePhase;
+  onSkip: () => void;
+  appearance?: UIThemeId;
+}) {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   useModalFocus(rootRef, onSkip);
@@ -22,11 +30,25 @@ export function GatewayTransition({ phase, onSkip, appearance = "modern" }: { ph
     "--entry-exit": `${ENTRANCE_EXIT_MS}ms`,
   } as CSSProperties;
   return createPortal(
-    <div ref={rootRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={t("motion.entrance")}
-      className={`gateway-transition gateway-${appearance === "classic" ? "classic" : "cinematic"} is-${phase}`} style={style}>
-      <div className="transition-art" aria-hidden="true"><Entrance phase={phase} /></div>
-      <button type="button" className="cinematic-skip" onClick={onSkip}><SkipForward size={14} />{t("motion.skip")}<kbd>Esc</kbd></button>
-    </div>, document.body,
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("motion.entrance")}
+      className={`gateway-transition gateway-${appearance === "classic" ? "classic" : "cinematic"} is-${phase}`}
+      style={style}
+    >
+      <div className="transition-art" aria-hidden="true">
+        <Entrance phase={phase} />
+      </div>
+      <button type="button" className="cinematic-skip" onClick={onSkip}>
+        <SkipForward size={14} />
+        {t("motion.skip")}
+        <kbd>Esc</kbd>
+      </button>
+    </div>,
+    document.body,
   );
 }
 
@@ -38,11 +60,23 @@ export function GatewayPreview({ onClose }: { onClose: () => void }) {
   closeRef.current = onClose;
   useEffect(() => {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const charge = window.setTimeout(() => setPhase("revealing"), reduced.matches ? 0 : ENTRANCE_CHARGE_MS);
-    const finish = window.setTimeout(() => closeRef.current(), reduced.matches ? 160 : ENTRANCE_CHARGE_MS + ENTRANCE_REVEAL_MS);
-    const preferenceChanged = () => { if (reduced.matches) closeRef.current(); };
+    const charge = window.setTimeout(
+      () => setPhase("revealing"),
+      reduced.matches ? 0 : ENTRANCE_CHARGE_MS,
+    );
+    const finish = window.setTimeout(
+      () => closeRef.current(),
+      reduced.matches ? 160 : ENTRANCE_CHARGE_MS + ENTRANCE_REVEAL_MS,
+    );
+    const preferenceChanged = () => {
+      if (reduced.matches) closeRef.current();
+    };
     reduced.addEventListener("change", preferenceChanged);
-    return () => { window.clearTimeout(charge); window.clearTimeout(finish); reduced.removeEventListener("change", preferenceChanged); };
+    return () => {
+      window.clearTimeout(charge);
+      window.clearTimeout(finish);
+      reduced.removeEventListener("change", preferenceChanged);
+    };
   }, []);
   return <GatewayTransition appearance={appearance} phase={phase} onSkip={onClose} />;
 }

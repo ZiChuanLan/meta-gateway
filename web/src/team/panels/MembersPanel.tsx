@@ -77,8 +77,7 @@ export function MembersPanel() {
     `${u.name} ${u.username}`.toLowerCase().includes(search.toLowerCase()),
   );
   const queryError = users.error || policies.error;
-  const policyName = (id: number) =>
-    policies.data?.find((p) => p.id === id)?.name ?? `#${id}`;
+  const policyName = (id: number) => policies.data?.find((p) => p.id === id)?.name ?? `#${id}`;
 
   return (
     <div>
@@ -116,12 +115,7 @@ export function MembersPanel() {
           locale={locale}
           onBack={() => setSelected(null)}
           onSave={(body) =>
-            void run(
-              `/admin/team/users/${selected.id}`,
-              "PATCH",
-              body,
-              () => setSelected(null),
-            )
+            void run(`/admin/team/users/${selected.id}`, "PATCH", body, () => setSelected(null))
           }
           onRevoke={() => {
             if (confirm(t("revokeSessions")))
@@ -137,10 +131,7 @@ export function MembersPanel() {
           }
           onUnlink={(bindingID) => {
             if (confirm(t("oauthUnlinkWarning")))
-              void run(
-                `/admin/team/users/${selected.id}/identities/${bindingID}`,
-                "DELETE",
-              );
+              void run(`/admin/team/users/${selected.id}/identities/${bindingID}`, "DELETE");
           }}
         />
       ) : (
@@ -194,16 +185,13 @@ export function MembersPanel() {
                         type="checkbox"
                         aria-label={t("selectAll")}
                         checked={
-                          visibleUsers.length > 0 &&
-                          visibleUsers.every((u) => checked.has(u.id))
+                          visibleUsers.length > 0 && visibleUsers.every((u) => checked.has(u.id))
                         }
                         onChange={(e) =>
                           setChecked(
                             e.target.checked
                               ? new Set(
-                                  visibleUsers
-                                    .filter((u) => u.role !== "owner")
-                                    .map((u) => u.id),
+                                  visibleUsers.filter((u) => u.role !== "owner").map((u) => u.id),
                                 )
                               : new Set(),
                           )
@@ -250,10 +238,7 @@ export function MembersPanel() {
                       </td>
                       <td className="team-hide-mobile">{u.key_count}</td>
                       <td>
-                        <button
-                          className="team-button quiet"
-                          onClick={() => setSelected(u)}
-                        >
+                        <button className="team-button quiet" onClick={() => setSelected(u)}>
                           {t("details")} →
                         </button>
                       </td>
@@ -405,11 +390,7 @@ function BulkBar({
             </button>
           </>
         ) : (
-          <button
-            className="team-button"
-            disabled={busy}
-            onClick={() => onRun("revoke_sessions")}
-          >
+          <button className="team-button" disabled={busy} onClick={() => onRun("revoke_sessions")}>
             {t("revokeSessions")}
           </button>
         )}
@@ -513,11 +494,7 @@ function MemberDetail({
             </select>
           </Field>
           <Field label={t("status")}>
-            <select
-              name="status"
-              defaultValue={user.status}
-              disabled={user.role === "owner"}
-            >
+            <select name="status" defaultValue={user.status} disabled={user.role === "owner"}>
               <option value="active">{t("active")}</option>
               <option value="paused">{t("paused")}</option>
             </select>

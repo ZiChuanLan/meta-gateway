@@ -1,4 +1,4 @@
-import { useI18n } from "../../i18n"
+import { useI18n } from "../../i18n";
 
 /** Parse a daily "m h * * *" cron into wall-clock time; null for custom schedules. */
 function parseDailyCron(cron: string): { hour: number; minute: number } | null {
@@ -41,8 +41,7 @@ function CheckinTimePicker({
   }
   const hourOptions = Array.from({ length: 24 }, (_, h) => h);
   const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5);
-  const pick = (hour: number, minute: number) =>
-    onChange(`${minute} ${hour} * * *`);
+  const pick = (hour: number, minute: number) => onChange(`${minute} ${hour} * * *`);
   const pad = (n: number) => String(n).padStart(2, "0");
   return (
     <span className="checkin-time-picker">

@@ -23,9 +23,9 @@ export type OverlayRegistration = (() => void) & {
 export function modalFocusRoots(): HTMLElement[] {
   const modal = lastModalIndex();
   if (modal < 0) return [];
-  return stack.slice(modal).flatMap((entry) =>
-    entry.element && !entry.transient ? [entry.element] : [],
-  );
+  return stack
+    .slice(modal)
+    .flatMap((entry) => (entry.element && !entry.transient ? [entry.element] : []));
 }
 
 function closeTopOverlay(event: KeyboardEvent) {
@@ -51,8 +51,10 @@ export function registerOverlay(
   // obscure a new dialog or leave multiple unrelated menus visible.
   for (const entry of [...stack]) if (entry.transient) entry.close();
   const entry: OverlayEntry = {
-    close, modal: options.modal ?? true,
-    transient: options.transient ?? false, element: options.element,
+    close,
+    modal: options.modal ?? true,
+    transient: options.transient ?? false,
+    element: options.element,
   };
   if (entry.modal && !stack.some((item) => item.modal)) {
     previousOverflow = document.body.style.overflow;
@@ -84,7 +86,6 @@ export function registerOverlay(
   };
   unregister.isTop = () => stack[stack.length - 1] === entry;
   unregister.ownsFocus = () =>
-    !stack[stack.length - 1]?.transient &&
-    stack[lastModalIndex()] === entry;
+    !stack[stack.length - 1]?.transient && stack[lastModalIndex()] === entry;
   return unregister;
 }

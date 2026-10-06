@@ -107,9 +107,9 @@ describe("upstream arrangement", () => {
     const rows = screen.getAllByRole("listitem");
     fireEvent.dragStart(rows[1]!);
     fireEvent.dragOver(rows[0]!);
-  		fireEvent.drop(rows[0]!);
-		// Site B now leads the list, so its switch is the first one.
-		fireEvent.click(screen.getAllByRole("checkbox")[0]!);
+    fireEvent.drop(rows[0]!);
+    // Site B now leads the list, so its switch is the first one.
+    fireEvent.click(screen.getAllByRole("checkbox")[0]!);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -153,8 +153,6 @@ describe("upstream arrangement", () => {
         </I18nProvider>
       </QueryClientProvider>,
     );
-    expect(
-      await screen.findByRole("button", { name: "Restore site order" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Restore site order" })).toBeInTheDocument();
   });
 });

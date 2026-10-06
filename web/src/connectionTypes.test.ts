@@ -50,9 +50,7 @@ describe("provider base URL presets", () => {
     // Measured against the live API: /chat/completions answers 401 (exists) and
     // /v1/chat/completions answers 404. Shipping the bare host would therefore
     // make the gateway call a path that does not exist.
-    expect(PROVIDER_BASE_URLS.perplexity).toBe(
-      "https://api.perplexity.ai/chat/completions",
-    );
+    expect(PROVIDER_BASE_URLS.perplexity).toBe("https://api.perplexity.ai/chat/completions");
   });
 
   it("gives TypeSafe its documented chat endpoint, keeping /v1/models reachable", () => {
@@ -62,8 +60,6 @@ describe("provider base URL presets", () => {
     // preset must be the chat endpoint, and the save-time split must peel it
     // back to `https://api.typesafe.ai` (which is what lets sync work without
     // the operator touching the endpoint mapping fields).
-    expect(PROVIDER_BASE_URLS.typesafe).toBe(
-      "https://api.typesafe.ai/v1/systemone",
-    );
+    expect(PROVIDER_BASE_URLS.typesafe).toBe("https://api.typesafe.ai/v1/systemone");
   });
 });
