@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { ShieldCheck, UserCheck, Users } from "lucide-react";
+import { TelemetryStrip } from "../../components/TelemetryStrip";
 import { ModePanel } from "../ModePanel";
 import { useUsers } from "../UsersContext";
 import type { Policy, TeamUser } from "../types";
@@ -12,6 +14,12 @@ import type { Policy, TeamUser } from "../types";
  * multi-user mode lands here, reads what turning it on will do, and does it in
  * one place. Everything else on this board is a summary of what is already
  * there.
+ *
+ * The summary used to be three hand-rolled boxes, the last of which showed the
+ * site's brand NAME where the others showed counts — a "statistic" that could
+ * never change. It is now the console's own telemetry strip, with three numbers
+ * an operator can act on: how many accounts exist, how many of them can actually
+ * sign in, and how many access policies they are spread across.
  */
 export function OverviewPanel() {
   const { request, locale, t, settings } = useUsers();
@@ -28,28 +36,35 @@ export function OverviewPanel() {
     queryFn: ({ signal }) => request<Policy[]>("/admin/team/policies", { signal }),
     enabled,
   });
+  const roster = users.data;
+  const active = roster?.filter((user) => user.status === "active").length;
 
   return (
     <div className="team-board">
-      <p className="team-muted">{t("overviewHint")}</p>
-      <ModePanel request={request} locale={locale} className="team-mode-card" />
+      <p className="panel-hint">{t("overviewHint")}</p>
+      <ModePanel request={request} locale={locale} />
       {enabled && (
-        <dl className="team-summary">
-          <div>
-            <dt>{t("members")}</dt>
-            <dd>{users.data?.length ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>{t("policies")}</dt>
-            <dd>{policies.data?.length ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>{t("branding")}</dt>
-            <dd>{settings.branding.name}</dd>
-          </div>
-        </dl>
+        <TelemetryStrip
+          items={[
+            {
+              label: t("members"),
+              value: roster ? roster.length : "—",
+              icon: <Users size={16} />,
+            },
+            {
+              label: t("activeMembers"),
+              value: active ?? "—",
+              icon: <UserCheck size={16} />,
+            },
+            {
+              label: t("policies"),
+              value: policies.data ? policies.data.length : "—",
+              icon: <ShieldCheck size={16} />,
+            },
+          ]}
+        />
       )}
-      <p className="team-muted">{t("moduleMap")}</p>
+      <p className="panel-hint">{t("moduleMap")}</p>
     </div>
   );
 }
