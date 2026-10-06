@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { RotateCcw, Sparkles, Trash2 } from "lucide-react";
-import { api } from "../../api/client";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
   Button,
@@ -14,8 +13,7 @@ import {
 } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { upstreamMessage } from "../../lib/upstreamError";
-import { primaryChannelName, upstreamChoices } from "../models/routingPolicy";
-import { useSession } from "../../session";
+import type { ImageBody, WorkbenchRunner } from "./runner";
 import {
   MAX_RUNS,
   loadImageForm,
@@ -32,8 +30,6 @@ const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 type ReferenceImage = { name: string; dataUrl: string; size: number };
 type ImageResult = WorkbenchImage;
 type RunResult = WorkbenchRun;
-type ImageRequest = Parameters<ReturnType<typeof api>["tryImage"]>[0];
-
 let runSeq = 0;
 const runID = () => `run-${Date.now().toString(36)}-${++runSeq}`;
 
@@ -44,10 +40,14 @@ function imageSource(image?: ImageResult) {
     : "";
 }
 
-export default function ImageStudio({ active }: { active: boolean }) {
+export default function ImageStudio({
+  active,
+  runner,
+}: {
+  active: boolean;
+  runner: WorkbenchRunner;
+}) {
   const { t } = useI18n();
-  const { client } = useSession();
-  const service = api(client!);
   const fileInput = useRef<HTMLInputElement>(null);
   const readingFiles = useRef(false);
   const [reading, setReading] = useState(false);
@@ -105,73 +105,47 @@ export default function ImageStudio({ active }: { active: boolean }) {
     historyRef.current = history;
   }, [history]);
 
-  const routes = useQuery({
-    queryKey: ["route-overviews"],
-    queryFn: ({ signal }) => service.routeOverviews(signal),
+  const catalogue = useQuery({
+    queryKey: ["workbench", "catalogue", runner.id],
+    queryFn: ({ signal }) => runner.catalogue(signal),
     enabled: active,
   });
-  const modelNames = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          (routes.data ?? [])
-            .filter(({ route }) => route.enabled && !/[*?]/.test(route.model_pattern))
-            .map(({ route }) => route.model_pattern),
-        ),
-      ).sort(),
-    [routes.data],
-  );
-  const capabilities = useQuery({
-    queryKey: ["capabilities", modelNames],
-    queryFn: () => service.resolveModelCapabilities(modelNames),
-    enabled: active && modelNames.length > 0,
-  });
+  const models = useMemo(() => catalogue.data ?? [], [catalogue.data]);
   const imageModels = useMemo(
     () =>
-      modelNames.filter((name) => {
-        const capability = capabilities.data?.items[name];
-        return capability && IMAGE_KINDS.has(capability.kind);
-      }),
-    [modelNames, capabilities.data],
+      models
+        .filter((model) => model.image && IMAGE_KINDS.has(model.image.kind))
+        .filter((model) => !/[*?]/.test(model.name))
+        .map((model) => model.name),
+    [models],
   );
   const activeModel = imageModels.includes(model) ? model : (imageModels[0] ?? "");
-  const modelSites = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const overview of routes.data ?? []) {
-      const site = primaryChannelName(overview);
-      if (site) map.set(overview.route.model_pattern, site);
-    }
-    return map;
-  }, [routes.data]);
-  // The option label carries the serving connection, and the picker searches
-  // labels — so "which site serves this model?" is answerable here, and typing
-  // a site name filters down to the models it serves.
+  const selected = models.find((item) => item.name === activeModel);
+  // The option label carries the serving connection when the runner knows one,
+  // and the picker searches labels — so "which site serves this model?" is
+  // answerable here for staff. A member's catalogue has no such fact, and their
+  // labels are the model name alone.
   const modelOptions = useMemo(
     () =>
       imageModels.map((name) => {
-        const site = modelSites.get(name);
+        const site = models.find((item) => item.name === name)?.site;
         return { value: name, label: site ? `${name} · ${site}` : name };
       }),
-    [imageModels, modelSites],
+    [imageModels, models],
   );
   // Image upstreams charge per plane, so pinning one is the way to test that
-  // specific path; mirror the Playground's connection picker — including the
-  // 原模型 in the label, since one channel can serve the alias under several
-  // upstream names.
-  const upstreams = useMemo(() => {
-    const overview = (routes.data ?? []).find(({ route }) => route.model_pattern === activeModel);
-    return overview ? upstreamChoices(overview.members ?? [], overview.route, t) : [];
-  }, [routes.data, activeModel, t]);
-  const capability = capabilities.data?.items[activeModel];
+  // specific path; for a member the row is the token the run spends.
+  const upstreams = useMemo(() => selected?.upstreams ?? [], [selected]);
+  const capability = selected?.image;
   const endpoints = capability?.endpoints ?? [];
   const chatImages = endpoints.includes("/v1/chat/completions");
   const canGenerate = endpoints.includes("/v1/images/generations") || chatImages;
   const canEdit =
     endpoints.includes("/v1/images/edits") ||
-    (chatImages && !!capability?.input_modalities.includes("image"));
-  const maxImages = capability?.max_input_images ?? 0;
+    (chatImages && !!capability?.inputModalities.includes("image"));
+  const maxImages = capability?.maxInputImages ?? 0;
   const editing = mode === "edit" || (mode === "auto" && (refs.length > 0 || !canGenerate));
-  const sizeOptions = (capability?.size_options ?? "")
+  const sizeOptions = (capability?.sizeOptions ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
@@ -191,7 +165,7 @@ export default function ImageStudio({ active }: { active: boolean }) {
 
   const run = useMutation({
     gcTime: 0,
-    mutationFn: (request: ImageRequest) => service.tryImage(request),
+    mutationFn: (request: ImageBody) => runner.image(request),
     onMutate: () => {
       setError(null);
       setFeedback("");
@@ -324,20 +298,19 @@ export default function ImageStudio({ active }: { active: boolean }) {
     }
   }
 
-  if (routes.isPending || (modelNames.length > 0 && capabilities.isPending)) {
+  if (catalogue.isPending) {
     return (
       <p className="muted" role="status">
         {t("common.working")}
       </p>
     );
   }
-  if (routes.isError) return <ErrorState error={routes.error} />;
-  if (modelNames.length > 0 && capabilities.isError)
-    return <ErrorState error={capabilities.error} />;
+  if (catalogue.isError)
+    return <ErrorState error={catalogue.error} retry={() => void catalogue.refetch()} />;
   if (imageModels.length === 0)
     return (
       <Panel>
-        <Empty>{t("workbench.image.noModels")}</Empty>
+        <Empty>{t(runner.emptyKeys.image)}</Empty>
       </Panel>
     );
 
@@ -382,7 +355,7 @@ export default function ImageStudio({ active }: { active: boolean }) {
               >
                 <option value={0}>{t("workbench.image.upstreamAuto")}</option>
                 {upstreams.map((upstream) => (
-                  <option key={upstream.memberId} value={upstream.memberId}>
+                  <option key={upstream.value} value={upstream.value}>
                     {upstream.label}
                   </option>
                 ))}
@@ -497,7 +470,7 @@ export default function ImageStudio({ active }: { active: boolean }) {
           <details className="workbench-protocol-details">
             <summary>{t("workbench.image.protocol")}</summary>
             <p className="mono">{endpoints.join(" · ")}</p>
-            <p className="muted">{capability?.input_formats.join(" / ")}</p>
+            <p className="muted">{capability?.inputFormats.join(" / ")}</p>
             {capability?.notes ? <p className="workbench-notes">{capability.notes}</p> : null}
           </details>
           {error ? <ErrorState error={error} /> : null}

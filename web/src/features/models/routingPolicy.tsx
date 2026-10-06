@@ -49,7 +49,7 @@ export function originModelOf(member: RouteMember, route?: Pick<Route, "mapping_
   return mappingRealName(raw);
 }
 
-type Translate = (key: string, vars?: Record<string, string | number>) => string;
+export type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 /**
  * One row of a 试调 "上游连接" picker. It identifies a route MEMBER, not a

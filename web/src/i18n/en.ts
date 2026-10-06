@@ -2899,6 +2899,8 @@ export const en: Dict = {
   "workbench.title": "Model workbench",
   "workbench.desc":
     "A studio that drives the upstream directly, reusing the same routing, billing and cancellation path as production.",
+  "workbench.pickKey": "Which token",
+  "workbench.pickKeyAuto": "Auto (first usable token)",
   "workbench.tabImages": "Images",
   "workbench.tabText": "Playground",
   "playground.title": "Chat playground",
@@ -2907,6 +2909,8 @@ export const en: Dict = {
   "playground.desc":
     "Lists routed models that answer on /v1/chat/completions. Every turn reuses the same routing, billing and cancellation path as live /v1 traffic, and needs no downstream key.",
   "playground.noModels": "No chat-capable model is currently routed.",
+  "playground.noModelsMember":
+    "No chat model is available to this account yet. Ask an administrator to grant one to your policy.",
   "playground.empty": "Send a message to start — replies stream in as they arrive.",
   "playground.suggest1": "Introduce yourself in one sentence.",
   "playground.suggest2": "Translate this into Chinese: probing the model gateway.",
@@ -3011,6 +3015,8 @@ export const en: Dict = {
     "This image exceeded the browser's storage quota, so the entry was not saved and will be gone after a reload.",
   "workbench.image.noModels":
     "No image model detected: create a route for one on the Models page, or register it under Model tools → Model capability registry there.",
+  "workbench.image.noModelsMember":
+    "No image model is available to this account yet. Ask an administrator to grant one to your policy.",
   "workbench.cap.title": "Model capability registry",
   "workbench.cap.help": "Decides which endpoint and encoding the gateway uses for a model",
   "workbench.cap.desc":

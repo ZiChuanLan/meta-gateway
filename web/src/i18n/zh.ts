@@ -2689,6 +2689,8 @@ export const zh: Dict = {
   "app.nav.workbench": "工作台",
   "workbench.title": "模型工作台",
   "workbench.desc": "直接打上游的图像与对话试验台，复用线上同一套选路、计费与取消逻辑。",
+  "workbench.pickKey": "用哪个令牌",
+  "workbench.pickKeyAuto": "自动（第一把可用令牌）",
   "workbench.tabImages": "图像",
   "workbench.tabText": "文字",
   "playground.title": "文字对话",
@@ -2696,6 +2698,7 @@ export const zh: Dict = {
   "playground.desc":
     "列出路由中可走 /v1/chat/completions 的模型。每一轮请求都复用与线上 /v1 相同的选路、计费与取消逻辑，无需下游密钥。",
   "playground.noModels": "当前路由里没有可用于对话的模型。",
+  "playground.noModelsMember": "这个账号还没有可用的对话模型。请联系管理员为你的方案授权模型。",
   "playground.empty": "发一句话就开始，回复会逐字流式返回。",
   "playground.suggest1": "用一句话介绍你自己。",
   "playground.suggest2": "把这句翻译成英文：正在调试模型网关。",
@@ -2793,6 +2796,8 @@ export const zh: Dict = {
     "图片体积超出浏览器存储限额，这条记录未能持久保存，刷新后会丢失。",
   "workbench.image.noModels":
     "没有检测到图像模型：在「模型」页建一条图像模型的路由，或在同一页的「模型工具 → 模型能力注册表」里手工登记。",
+  "workbench.image.noModelsMember":
+    "这个账号还没有可用的图像模型。请联系管理员为你的方案授权图像模型。",
   "workbench.cap.title": "模型能力注册表",
   "workbench.cap.help": "决定网关用哪个端点、哪种编码调用模型",
   "workbench.cap.desc":

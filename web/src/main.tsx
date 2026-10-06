@@ -16,10 +16,12 @@ import "./styles/theme-gallery.css";
 // Last on purpose: a palette ties on specificity with the theme token blocks,
 // so cascade order is what lets it win. See styles/palettes.css.
 import "./styles/palettes.css";
-// The member views' own styles: they were the member app's sheets, and the
-// views they dress (workbench, model arrangement, account panels) are now
-// pages of this console, so this is where they load.
-import "./member/user.css";
+// The member views' own styles: the sheets the member app used to carry, kept
+// only for the few controls that are genuinely a member's own (the credit
+// block, the arrangement editor's handle/rank columns, the redeem box). The
+// member *shell* that used to live here was deleted with the pages it dressed —
+// members now render inside the console's own shell and panels, so a second
+// copy of a top bar, side rail or card could only drift from the real one.
 import "./member/workspaces.css";
 
 const queryClient = new QueryClient({

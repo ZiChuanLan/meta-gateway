@@ -37,200 +37,16 @@
 }
 
 /* ---- Filter row -------------------------------------------------------- */
-.workspace-filterbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 16px;
-}
-.workspace-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 220px;
-  min-width: 0;
-  max-width: 340px;
-  min-height: 36px;
-  padding: 0 11px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--muted);
-  box-shadow: inset 0 1px 2px #171d2e05;
-  transition: border-color var(--dur-base), box-shadow var(--dur-base);
-}
-.workspace-search:focus-within {
-  border-color: var(--focus);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.workspace-search svg {
-  flex: 0 0 auto;
-  color: var(--muted);
-}
-.workspace-search input {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.workspace-search input:focus {
-  outline: none;
-  box-shadow: none;
-}
-.workspace-filterbar select {
-  max-width: 220px;
-}
-.workspace-filterbar > .button {
-  margin-left: auto;
-}
 
 /* ---- Model group tabs -------------------------------------------------- */
-.workspace-group-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 14px;
-}
-.workspace-group-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 32px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--muted-strong);
-  font: 550 11px/1.4 var(--font);
-  cursor: pointer;
-  transition: border-color var(--dur-base), background var(--dur-base), color var(--dur-base);
-}
-.workspace-group-tabs button:hover {
-  color: var(--ink);
-  border-color: var(--line-strong);
-}
-.workspace-group-tabs button[aria-pressed="true"] {
-  border-color: var(--primary-hairline);
-  background: var(--primary-soft);
-  color: var(--primary-active);
-}
-.workspace-group-tabs button small {
-  color: var(--muted-dark);
-  font: 500 10px/1 var(--mono);
-}
-.workspace-group-tabs button[aria-pressed="true"] small {
-  color: var(--primary-active);
-}
 
 /* ---- Row additions ----------------------------------------------------- */
-.workspace-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.workspace-tags span {
-  padding: 1px 6px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface-subtle);
-  color: var(--muted-strong);
-  font: 500 9px/1.7 var(--font);
-}
-.workspace-row-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.workspace-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted-strong);
-  font: 600 11px/1.4 var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-.workspace-status.is-ok {
-  color: var(--success);
-}
-.workspace-status.is-error {
-  color: var(--danger);
-}
 /* Latency as a bar plus the number: the bar ranks rows at a glance, the number
    is what gets copied into a bug report. */
-.workspace-latency {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 92px;
-}
-.workspace-latency > span {
-  display: block;
-  height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--primary) 0%, var(--primary-hover) 100%);
-}
-.workspace-latency small {
-  color: var(--muted);
-  font: 10px/1.3 var(--mono);
-}
 
 /* ---- Expanded request detail ------------------------------------------- */
-.workspace-detail-row > td {
-  padding: 0;
-  background: var(--surface-subtle);
-}
-.workspace-request-detail {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 14px 20px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--line);
-}
-.workspace-request-detail > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.workspace-request-detail span {
-  color: var(--muted);
-  font: 500 10px/1.4 var(--font);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.workspace-request-detail strong,
-.workspace-request-detail code {
-  color: var(--ink);
-  font: 550 12px/1.5 var(--font);
-  overflow-wrap: anywhere;
-}
-.workspace-request-detail code {
-  font-family: var(--mono);
-}
 
 /* ---- Notes and effective-value readouts -------------------------------- */
-.user-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 0 0;
-  color: var(--ink-soft);
-  font: 550 12px/1.5 var(--font);
-  cursor: pointer;
-}
-.user-check input {
-  width: 14px;
-  height: 14px;
-  min-height: 0;
-  margin: 0;
-}
 .workspace-note {
   margin: 10px 0 0;
   color: var(--muted);
@@ -287,73 +103,12 @@
 /* Three columns: the candidate (checkbox + caption), its priority and its
    weight. The header row uses the same grid so the numbers line up under the
    captions. */
-.user-plan-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 75px 75px;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 7px;
-}
-.user-plan-row input[type="number"] {
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 8px;
-  font: 12px var(--mono);
-}
-.user-plan-row input[type="number"]:disabled {
-  opacity: 0.45;
-}
-.user-candidates {
-  max-height: 300px;
-  margin-bottom: 16px;
-  padding: 12px;
-  overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-}
-.user-candidates .user-plan-row + .user-plan-row {
-  padding-top: 8px;
-  border-top: 1px solid var(--line-light);
-}
 
 /* ---- Lists ------------------------------------------------------------- */
 /* The user app's lists are cards: there is no fixed viewport pane to scroll,
    the page itself scrolls. */
-.user-keys-list,
-.user-logs-list {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
 
 @media (max-width: 760px) {
-  .workspace-filterbar {
-    align-items: stretch;
-  }
-  .workspace-search {
-    max-width: none;
-    flex: 1 1 100%;
-  }
-  .workspace-filterbar select {
-    flex: 1 1 140px;
-    width: auto;
-    max-width: none;
-  }
-  .workspace-filterbar > .button {
-    flex: 1 1 100%;
-    margin-left: 0;
-  }
-  .workspace-row-actions {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-  .workspace-request-detail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 14px;
-  }
   .user-base code {
     flex: 1 1 100%;
   }

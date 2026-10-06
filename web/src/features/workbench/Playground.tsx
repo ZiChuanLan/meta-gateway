@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, Eraser, Pencil, RefreshCw, Send, Square, Trash2 } from "lucide-react";
-import { api } from "../../api/client";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import {
   Button,
@@ -15,9 +14,8 @@ import {
 import { useI18n } from "../../i18n";
 import { parseSseJson, splitSseFrames } from "../../lib/sse";
 import { upstreamMessage } from "../../lib/upstreamError";
-import { upstreamChoices } from "../models/routingPolicy";
-import { useSession } from "../../session";
 import { loadPlayground, savePlayground, type StoredTurn } from "./workbenchState";
+import { CHAT_ENDPOINT, type WorkbenchRunner } from "./runner";
 
 /**
  * The workbench's chat playground. It talks to the same admin probe the Models
@@ -25,7 +23,6 @@ import { loadPlayground, savePlayground, type StoredTurn } from "./workbenchStat
  * accepts the whole transcript, so multi-turn, streaming and per-turn actions
  * all live here rather than in a bigger one-shot form.
  */
-const CHAT_ENDPOINT = "/v1/chat/completions";
 const SUGGESTIONS = ["playground.suggest1", "playground.suggest2", "playground.suggest3"];
 
 type Turn = StoredTurn & { editDraft?: string };
@@ -68,10 +65,14 @@ function firstChoice(body: unknown): { delta?: unknown; message?: unknown } | nu
   return choice && typeof choice === "object" ? choice : null;
 }
 
-export default function Playground({ active }: { active: boolean }) {
+export default function Playground({
+  active,
+  runner,
+}: {
+  active: boolean;
+  runner: WorkbenchRunner;
+}) {
   const { t } = useI18n();
-  const { client } = useSession();
-  const service = api(client!);
 
   const [model, setModel] = useState("");
   const [memberId, setMemberId] = useState(0);
@@ -147,36 +148,26 @@ export default function Playground({ active }: { active: boolean }) {
     turns,
   ]);
 
-  const routes = useQuery({
-    queryKey: ["route-overviews"],
-    queryFn: ({ signal }) => service.routeOverviews(signal),
+  // One round trip answers both pickers: which models can be called, what each
+  // one answers, and which connections it may be pinned to (route members for
+  // staff, their own tokens for a member — see workbench/runner.ts).
+  const catalogue = useQuery({
+    queryKey: ["workbench", "catalogue", runner.id],
+    queryFn: ({ signal }) => runner.catalogue(signal),
     enabled: active,
   });
-  // Wildcard patterns are route matchers, not callable model names.
-  const modelNames = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          (routes.data ?? [])
-            .filter(({ route }) => route.enabled && !/[*?]/.test(route.model_pattern))
-            .map(({ route }) => route.model_pattern),
-        ),
-      ).sort(),
-    [routes.data],
-  );
-  const capabilities = useQuery({
-    queryKey: ["capabilities", modelNames],
-    queryFn: () => service.resolveModelCapabilities(modelNames),
-    enabled: active && modelNames.length > 0,
-  });
+  const models = useMemo(() => catalogue.data ?? [], [catalogue.data]);
   // Image and embedding registrations answer elsewhere; a chat turn to them
   // would only produce a request the upstream has no route for.
   const chatModels = useMemo(
     () =>
-      modelNames.filter((name) =>
-        (capabilities.data?.items[name]?.endpoints ?? [CHAT_ENDPOINT]).includes(CHAT_ENDPOINT),
-      ),
-    [modelNames, capabilities.data],
+      models
+        .filter((model) =>
+          (model.endpoints.length ? model.endpoints : [CHAT_ENDPOINT]).includes(CHAT_ENDPOINT),
+        )
+        .filter((model) => !/[*?]/.test(model.name))
+        .map((model) => model.name),
+    [models],
   );
   const activeModel = chatModels.includes(model) ? model : (chatModels[0] ?? "");
   // The label is the model name alone. It used to carry the serving connection
@@ -189,13 +180,14 @@ export default function Playground({ active }: { active: boolean }) {
     () => chatModels.map((name) => ({ value: name, label: name })),
     [chatModels],
   );
-  // The rows a 上游连接 picker can offer for the selected model. They are
-  // route MEMBERS: a unified alias holds one per upstream 原模型 name, so the
-  // labels have to carry it — see upstreamChoices.
-  const upstreams = useMemo(() => {
-    const overview = (routes.data ?? []).find(({ route }) => route.model_pattern === activeModel);
-    return overview ? upstreamChoices(overview.members ?? [], overview.route, t) : [];
-  }, [routes.data, activeModel, t]);
+  // The rows a connection picker can offer for the selected model: route
+  // MEMBERS for staff (a unified alias holds one per upstream 原模型 name, so the
+  // labels have to carry it — see upstreamChoices), their own tokens for a
+  // member. Empty for a model nobody has a row for.
+  const upstreams = useMemo(
+    () => models.find((model) => model.name === activeModel)?.upstreams ?? [],
+    [models, activeModel],
+  );
 
   useEffect(() => {
     const node = scroller.current;
@@ -227,7 +219,7 @@ export default function Playground({ active }: { active: boolean }) {
 
     try {
       if (!stream) {
-        const response = await service.tryChat(request);
+        const response = await runner.chat(request);
         const { content, reasoning } = readParts(firstChoice(response.body)?.message);
         const failed = response.status < 200 || response.status >= 300;
         patch(assistantKey, (turn) => ({
@@ -248,7 +240,7 @@ export default function Playground({ active }: { active: boolean }) {
         return;
       }
 
-      const response = await service.streamTryChat(request, controller.signal);
+      const response = await runner.streamChat(request, controller.signal);
       const reader = response.body?.getReader();
       if (!reader) throw new Error(t("playground.unreadable"));
       const decoder = new TextDecoder();
@@ -452,21 +444,19 @@ export default function Playground({ active }: { active: boolean }) {
     setDraft("");
   }
 
-  if (routes.isPending || (modelNames.length > 0 && capabilities.isPending)) {
+  if (catalogue.isPending) {
     return (
       <p className="muted" role="status">
         {t("common.working")}
       </p>
     );
   }
-  if (routes.isError) return <ErrorState error={routes.error} />;
-  if (modelNames.length > 0 && capabilities.isError) {
-    return <ErrorState error={capabilities.error} />;
-  }
+  if (catalogue.isError)
+    return <ErrorState error={catalogue.error} retry={() => void catalogue.refetch()} />;
   if (chatModels.length === 0) {
     return (
       <Panel>
-        <Empty>{t("playground.noModels")}</Empty>
+        <Empty>{t(runner.emptyKeys.chat)}</Empty>
       </Panel>
     );
   }
@@ -504,19 +494,19 @@ export default function Playground({ active }: { active: boolean }) {
           />
         </Field>
         <Field
-          label={t("playground.upstream")}
+          label={t(runner.pickLabelKey)}
           hint={
             upstreams.length > 1 ? t("playground.upstreamHint") : t("playground.upstreamHintOne")
           }
         >
           <select
-            aria-label={t("playground.upstream")}
+            aria-label={t(runner.pickLabelKey)}
             value={memberId}
             onChange={(event) => setMemberId(Number(event.target.value) || 0)}
           >
-            <option value={0}>{t("playground.upstreamAuto")}</option>
+            <option value={0}>{t(runner.autoLabelKey)}</option>
             {upstreams.map((upstream) => (
-              <option key={upstream.memberId} value={upstream.memberId}>
+              <option key={upstream.value} value={upstream.value}>
                 {upstream.label}
               </option>
             ))}

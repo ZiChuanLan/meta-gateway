@@ -1,37 +1,39 @@
 import { useState } from "react";
 import { Image as ImageIcon, MessageSquare } from "lucide-react";
+import { api } from "../api/client";
 import { Page, Tabs } from "../components/ui";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import { WorkbenchPage as MemberWorkbench } from "../member/WorkbenchPage";
+import { adminRunner, memberRunner, type WorkbenchRunner } from "./workbench/runner";
 import ImageStudio from "./workbench/ImageStudio";
 import Playground from "./workbench/Playground";
 
 /**
- * The workbench is the run-it surface: generate an image, hold a conversation.
+ * The workbench: generate an image, hold a conversation.
+ *
+ * The two roles run different machines behind the same page (see
+ * workbench/runner.ts): staff probe through /admin/try/* with the deployment
+ * bearer, a member probes with one of their own tokens through the real /v1, so
+ * their quota, billing and request log behave exactly as they will for their own
+ * code. What they see is identical, which is the point — an earlier split had a
+ * second, simpler workbench for members, and the same page then looked like two
+ * different products.
+ *
  * The model capability registry used to be a third tab here; it is catalog data
  * rather than a thing you run, so it now lives behind the Models page's tools
  * menu (`CapabilityRegistryDialog`) next to the model list it describes.
  */
 type TabValue = "images" | "text";
 
-/**
- * The workbench, split by role.
- *
- * Staff probe with the admin's own path (/admin/try/*, which bypasses
- * downstream tokens on purpose); a member probes with their own token against
- * the real /v1, so metering, quota and the request log behave exactly as they
- * will for the member's own code. Two different machines behind one page, so
- * two components.
- */
 export default function Workbench() {
-  const { role } = useSession();
-  return role === "member" ? <MemberWorkbench /> : <AdminWorkbench />;
-}
-
-function AdminWorkbench() {
+  const { client, role } = useSession();
   const { t } = useI18n();
   const [tab, setTab] = useState<TabValue>("images");
+  const runner: WorkbenchRunner = client
+    ? role === "member"
+      ? memberRunner()
+      : adminRunner(api(client), t)
+    : memberRunner();
   return (
     <Page title={t("workbench.title")} description={t("workbench.desc")}>
       <Tabs
@@ -43,10 +45,10 @@ function AdminWorkbench() {
         onChange={(value) => setTab(value as TabValue)}
       />
       <div hidden={tab !== "images"}>
-        <ImageStudio active={tab === "images"} />
+        <ImageStudio active={tab === "images"} runner={runner} />
       </div>
       <div hidden={tab !== "text"}>
-        <Playground active={tab === "text"} />
+        <Playground active={tab === "text"} runner={runner} />
       </div>
     </Page>
   );
