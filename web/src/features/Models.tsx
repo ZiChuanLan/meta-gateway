@@ -1,10 +1,8 @@
 import { ModelWorkspaceLayout } from "./models/ModelWorkspaceLayout";
 import { ModelDirectoryToolbar } from "../components/ModelDirectoryToolbar";
 import {
-  ListChecks,
   Activity,
   RefreshCw,
-  ExternalLink,
   ChevronDown,
   Combine,
   GripVertical,
@@ -33,7 +31,7 @@ import type {
   RouteMember,
   RoutingCandidate,
 } from "../api/types";
-import { ActionMenu, type ActionMenuItem } from "../components/ActionMenu";
+import { ActionMenu } from "../components/ActionMenu";
 import { rowContextPoint, rowKeyboardContextPoint } from "../components/contextMenu";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
@@ -63,6 +61,7 @@ import { positiveId } from "../lib/positiveId";
 import { useCooldownExpiry } from "../lib/cooldownClock";
 import { modelGroup } from "./models/modelGroups";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
+import { modelActions as routeActions, type ModelActionDeps } from "./models/modelActions";
 import { RouteDialog } from "./models/RouteDialog";
 import { MemberDialog } from "./models/MemberDialog";
 import { UnifyDialog } from "./models/UnifyDialog";
@@ -875,113 +874,25 @@ function ModelCatalog({
     onSuccess: () => setEditMeta(null),
   });
 
-  const modelActions = (route: Route, options?: { closeContext?: boolean }): ActionMenuItem[] => {
-    const busy = toggleRoute.pendingId === route.id || del.isPending;
-    const close = () => {
-      if (options?.closeContext) setContextMenu(null);
-    };
-    const items: ActionMenuItem[] = [
-      {
-        key: "bulk",
-        label: t("modelsPage.bulkMode"),
-        icon: <ListChecks size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          setBulkMode(true);
-          setBulkSelected((current) => new Set(current).add(route.id));
-        },
-      },
-      {
-        key: "try",
-        label: t("try.open"),
-        icon: <Sparkles size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          selectRow(route.id);
-          setTryOpen(true);
-        },
-      },
-      {
-        key: "toggle",
-        label: route.enabled ? t("common.disableAction") : t("common.enableAction"),
-        icon: <Power size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          toggleRoute.mutate(route);
-        },
-      },
-      {
-        key: "logs",
-        label: t("modelsPage.openLogs"),
-        icon: <ExternalLink size={14} />,
-        onSelect: () => {
-          close();
-          navigate(`/logs?model=${encodeURIComponent(route.model_pattern)}`);
-        },
-      },
-      {
-        key: "meta",
-        label: t("modelsPage.editMetadata"),
-        icon: <Shield size={14} />,
-        onSelect: () => {
-          close();
-          setEditMeta(
-            metaByModel.get(route.model_pattern) ?? {
-              model_name: route.model_pattern,
-              context_window: 0,
-              input_modalities: "",
-              output_modalities: "",
-              supports_thinking: -1,
-              vendor: "",
-              notes: "",
-            },
-          );
-        },
-      },
-      {
-        key: "edit",
-        label: t("common.edit"),
-        icon: <Pencil size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          save.reset();
-          setEdit(route);
-        },
-      },
-      {
-        key: "delete",
-        label: t("common.delete"),
-        icon: <Trash2 size={14} />,
-        danger: true,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          setRemove(route);
-        },
-      },
-    ];
-    const ranks: Record<string, number> = {
-      try: 0,
-      logs: 0,
-      meta: 1,
-      edit: 1,
-      toggle: 1,
-      bulk: 2,
-      delete: 3,
-    };
-    const sections = ["actions.view", "actions.manage", "actions.selection", "actions.danger"];
-    return items
-      .sort((a, b) => (ranks[a.key] ?? 1) - (ranks[b.key] ?? 1))
-      .map((item) => ({
-        ...item,
-        group: t(sections[ranks[item.key] ?? 1]!),
-        disabledReason: item.disabled ? t("common.working") : undefined,
-      }));
+  // Everything the route action menu needs, in one explicit hand-off: the menu
+  // itself lives in models/modelActions.tsx (pure mapping, unit-testable).
+  const modelActionDeps: ModelActionDeps = {
+    t,
+    navigate,
+    metaByModel,
+    selectRow,
+    setContextMenu,
+    setBulkMode,
+    setBulkSelected,
+    setTryOpen,
+    setEditMeta,
+    setEdit,
+    setRemove,
+    mutations: { toggleRoute, del, save },
   };
+
+  const modelActions = (route: Route, options?: { closeContext?: boolean }) =>
+    routeActions(route, modelActionDeps, options);
 
   const total = overviews.data?.length ?? 0;
   const enabledCount = (overviews.data ?? []).filter((o) => o.route.enabled).length;
