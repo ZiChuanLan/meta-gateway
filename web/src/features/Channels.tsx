@@ -1,19 +1,4 @@
-import {
-  ListChecks,
-  PanelRightOpen,
-  ExternalLink,
-  KeyRound,
-  Pencil,
-  Play,
-  Plus,
-  Power,
-  RefreshCw,
-  Copy,
-  Search,
-  CalendarCheck,
-  Trash2,
-  UserCheck,
-} from "lucide-react";
+import { Plus, RefreshCw, Search, UserCheck } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -48,12 +33,12 @@ import { ChannelStatusBadges } from "./channels/badges";
 import {
   capabilityFlags,
   isMissingAPIKey,
-  needsVerify,
   normalizeBase,
   SECRET_MASK,
   type ConnectionHealthFilter,
   type CreateConnectionInput,
 } from "./channels/helpers";
+import { channelActions, type ChannelActionDeps } from "./channels/channelActions";
 import { positiveId } from "../lib/positiveId";
 import { runBatch } from "../lib/batch";
 import { parseCredentialMeta, withCredentialMetaValue } from "./credentialMeta";
@@ -882,262 +867,41 @@ export function Channels() {
     return list.find((item) => item.kind === "api_key" && item.status === "enabled");
   };
 
+  // Everything the action menu needs, in one explicit hand-off: the menu itself
+  // lives in channels/channelActions.tsx (pure mapping, unit-testable), and this
+  // is the board's half of the contract.
+  const channelActionDeps: ChannelActionDeps = {
+    t,
+    navigate,
+    pushError: (error) => toast.pushError(error),
+    userCredentialFor,
+    selectRow,
+    setContextMenu,
+    setBulkMode,
+    setBulkSelected,
+    setEdit,
+    setCreateKeyChannel,
+    setRemove,
+    setInspectorOpen,
+    mutations: {
+      refresh,
+      probe,
+      accountProbe,
+      syncKeys,
+      toggle,
+      del,
+      duplicate,
+      createUpstreamKey,
+      setCheckin,
+      runCheckin,
+      saveEdit,
+    },
+  };
+
   const connectionActions = (
     overview: ChannelOverview,
     options?: { closeContext?: boolean },
-  ): ActionMenuItem[] => {
-    const ch = overview.channel;
-    const caps = capabilityFlags(overview);
-    const busy =
-      refresh.pendingId === ch.id ||
-      probe.pendingId === ch.id ||
-      accountProbe.pendingId === ch.id ||
-      syncKeys.pendingId === ch.id ||
-      toggle.pendingId === ch.id ||
-      del.pendingId === ch.id;
-    const close = () => {
-      if (options?.closeContext) setContextMenu(null);
-    };
-    const items: ActionMenuItem[] = [
-      {
-        key: "bulk",
-        label: t("channels.bulkMode"),
-        icon: <ListChecks size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          setBulkMode(true);
-          setBulkSelected((current) => new Set(current).add(ch.id));
-        },
-      },
-      {
-        key: "edit",
-        label: t("common.edit"),
-        icon: <Pencil size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          saveEdit.reset();
-          setEdit(ch);
-        },
-      },
-    ];
-    if (caps.accountSupported && caps.hasUser) {
-      items.push({
-        key: "check-account",
-        label: t("channels.checkAccount"),
-        icon: <UserCheck size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          selectRow(ch.id);
-          accountProbe.reset();
-          accountProbe.mutate(ch.id, {
-            onError: (err) => toast.pushError(err),
-          });
-        },
-      });
-    }
-    if (caps.accountSupported && caps.hasUser && caps.needsKeyForRelay) {
-      items.push({
-        key: "sync-keys",
-        label: t("channels.syncKeys"),
-        icon: <KeyRound size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          selectRow(ch.id);
-          syncKeys.reset();
-          syncKeys.mutate(ch.id);
-        },
-      });
-    }
-    // Only offer key creation when the account token is known-good (last
-    // probe succeeded for this channel). A dead/blocked token should never
-    // show a create button that can only fail. Keys can be created even when
-    // the site already has keys — group-scoped upstreams (New API groups)
-    // typically need one key per group.
-    const canCreateKey =
-      caps.accountSupported &&
-      caps.hasUser &&
-      Boolean(overview.last_probe_at) &&
-      overview.last_probe_ok === true;
-    if (canCreateKey) {
-      items.push({
-        key: "create-key",
-        label: t("channels.createKey"),
-        icon: <Plus size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          selectRow(ch.id);
-          createUpstreamKey.reset();
-          setCreateKeyChannel(ch);
-        },
-      });
-    }
-    if (caps.hasAPIKey && !needsVerify(overview)) {
-      items.push({
-        key: "test",
-        label: t("channels.test"),
-        icon: <Play size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          selectRow(ch.id);
-          probe.reset();
-          probe.mutate(ch.id);
-        },
-      });
-    }
-    items.push({
-      key: "duplicate",
-      label: t("channels.duplicate"),
-      icon: <Copy size={14} />,
-      disabled: busy,
-      onSelect: () => {
-        close();
-        duplicate.reset();
-        duplicate.mutate(ch.id);
-      },
-    });
-    items.push(
-      {
-        key: "sync",
-        label: t("channels.fetchModels"),
-        icon: <RefreshCw size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          selectRow(ch.id);
-          refresh.reset();
-          refresh.mutate(ch.id);
-          // Model import doubles as an availability check; also refresh the
-          // access-token status while we are at it.
-          if (caps.accountSupported && caps.hasUser) {
-            accountProbe.reset();
-            accountProbe.mutate(ch.id);
-          }
-        },
-      },
-      {
-        key: "toggle",
-        label: ch.status === "enabled" ? t("common.disableAction") : t("common.enableAction"),
-        icon: <Power size={14} />,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          toggle.mutate(overview);
-        },
-      },
-      {
-        key: "models",
-        label: t("channels.openModels"),
-        icon: <ExternalLink size={14} />,
-        onSelect: () => {
-          close();
-          navigate(`/models?channel_id=${ch.id}`);
-        },
-      },
-      {
-        key: "logs",
-        label: t("channels.openLogs"),
-        icon: <ExternalLink size={14} />,
-        onSelect: () => {
-          close();
-          navigate(`/logs?channel_id=${ch.id}`);
-        },
-      },
-      ...(() => {
-        // Label must follow overview badge (site-level schedule), not an arbitrary first token.
-        const scheduleOn = Boolean(overview.checkin_enabled);
-        const checkinCred = userCredentialFor(overview);
-        if (!checkinCred && !caps.hasUser) return [];
-        // Has user token on overview but credentials list not loaded yet: still show correct label.
-        const canToggle = Boolean(checkinCred);
-        return [
-          {
-            key: "checkin-toggle",
-            label: scheduleOn ? t("channels.checkinDisable") : t("channels.checkinEnable"),
-            icon: <CalendarCheck size={14} />,
-            disabled:
-              busy ||
-              !canToggle ||
-              (checkinCred != null && setCheckin.pendingId === checkinCred.id),
-            onSelect: () => {
-              close();
-              if (!checkinCred) return;
-              setCheckin.mutate({
-                credentialId: checkinCred.id,
-                enabled: !scheduleOn,
-              });
-            },
-          },
-          {
-            key: "checkin-run",
-            label: t("channels.checkinRun"),
-            icon: <CalendarCheck size={14} />,
-            disabled:
-              busy ||
-              !canToggle ||
-              (checkinCred != null && runCheckin.pendingId === checkinCred.id),
-            onSelect: () => {
-              close();
-              if (!checkinCred) return;
-              runCheckin.mutate(checkinCred.id);
-            },
-          },
-        ];
-      })(),
-      {
-        key: "delete",
-        label: t("common.delete"),
-        icon: <Trash2 size={14} />,
-        danger: true,
-        disabled: busy,
-        onSelect: () => {
-          close();
-          setRemove(ch);
-        },
-      },
-    );
-    items.unshift({
-      key: "details",
-      label: t("channels.details"),
-      icon: <PanelRightOpen size={14} />,
-      onSelect: () => {
-        close();
-        selectRow(ch.id);
-        setInspectorOpen(true);
-      },
-    });
-    const ranks: Record<string, number> = {
-      details: 0,
-      models: 0,
-      logs: 0,
-      edit: 1,
-      duplicate: 1,
-      toggle: 1,
-      bulk: 3,
-      delete: 4,
-    };
-    const sections = [
-      "actions.view",
-      "actions.manage",
-      "actions.maintenance",
-      "actions.selection",
-      "actions.danger",
-    ];
-    return items
-      .sort((a, b) => (ranks[a.key] ?? 2) - (ranks[b.key] ?? 2))
-      .map((item) => ({
-        ...item,
-        group: t(sections[ranks[item.key] ?? 2]!),
-        disabledReason: item.disabled
-          ? t(busy ? "common.working" : "actions.accountUnavailable")
-          : undefined,
-      }));
-  };
+  ): ActionMenuItem[] => channelActions(overview, channelActionDeps, options);
 
   const openAdd = () => {
     createConnection.reset();
