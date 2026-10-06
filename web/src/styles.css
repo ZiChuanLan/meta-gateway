@@ -672,16 +672,6 @@ code,
   z-index: 2;
   box-shadow: 0 0 12px var(--primary-glow);
 }
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 .toolbar {
   display: flex;
   align-items: center;
@@ -801,17 +791,6 @@ a.button {
 .stat-card:nth-child(6) { animation-delay: 200ms; }
 .stat-card:nth-child(7) { animation-delay: 240ms; }
 .stat-card:nth-child(n + 8) { animation-delay: 280ms; }
-
-@keyframes stat-rise {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 .stat-card:disabled {
   opacity: 1;
   cursor: default;
@@ -925,10 +904,6 @@ td.status-col {
   border: 1px solid var(--line);
   background: var(--surface);
   font-size: 13px;
-}
-@keyframes strip-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: none; }
 }
 .result-strip-success {
   background: var(--success-soft);
@@ -1162,10 +1137,6 @@ label.directory-search input:focus {
 }
 
 /* —— Avant-Garde Precision Dialogs & Glass Backdrops —— */
-@keyframes dialog-in {
-  from { opacity: 0; transform: scale(0.97); }
-  to { opacity: 1; transform: scale(1); }
-}
 .secret-output {
   display: flex;
   align-items: center;
@@ -1185,18 +1156,6 @@ label.directory-search input:focus {
 }
 
 /* —— Drawers —— */
-@keyframes drawer-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes drawer-slide-right {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-@keyframes drawer-slide-left {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
 
 /* —— Quick start (first-run onboarding) —— */
 .glossary {
@@ -1724,16 +1683,6 @@ td.actions {
 }
 .diagnostic-disclosure .latency-histogram {
   margin: 12px 0 0;
-}
-@keyframes menu-pop {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 .advanced-fields {
   margin-top: 10px;
@@ -2558,25 +2507,6 @@ td.actions {
   font-size: 12px;
 }
 
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes dialog-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 @media (max-width: 1100px) {
   .split {
     grid-template-columns: 1fr;
@@ -2609,37 +2539,12 @@ td.actions {
 /* 2. 标题字符逐个点亮：上浮 + 模糊到清晰 */
 
 /* 3. 标注行依次上浮 */
-@keyframes hud-rise {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes hud-fade {
-  to {
-    opacity: 1;
-  }
-}
 
 /* 4. 面板淡入 + 指针视差（平滑跟随） */
 
 /* 5. 面板金顶线呼吸（常驻微光） */
-@keyframes accent-breathe {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
-}
 
 /* 6. 角落标注打字机 */
-@keyframes tag-typewriter {
-  to {
-    width: 16ch;
-  }
-}
 
 /* 7. 输入框 focus：底部青色线平滑展开（spring 曲线），失焦收回 */
 
@@ -2672,131 +2577,10 @@ td.actions {
 /* simple solid plane + a few diagonal strokes */
 
 /* 収刀入鞘 — disconnect: light veil covers, blade retracts into its sheath */
-
-@keyframes dialog-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.985);
-  }
-}
 @keyframes page-enter {
   from {
     opacity: 0;
     transform: translateY(7px);
-  }
-}
-@keyframes workspace-drift {
-  from {
-    transform: translate3d(0, 0, 0) rotate(-12deg);
-  }
-  to {
-    transform: translate3d(-28px, 18px, 0) rotate(-10deg);
-  }
-}
-@keyframes workspace-scan {
-  0%,
-  14% {
-    opacity: 0;
-    transform: translateY(8vh);
-  }
-  20% {
-    opacity: 0.7;
-  }
-  70% {
-    opacity: 0.28;
-  }
-  82%,
-  100% {
-    opacity: 0;
-    transform: translateY(92vh);
-  }
-}
-@keyframes code-stream {
-  0%,
-  15% {
-    transform: translateY(0);
-  }
-  85%,
-  100% {
-    transform: translateY(-16px);
-  }
-}
-@keyframes code-plane-breathe {
-  from {
-    opacity: 0.78;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes route-code-flow {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(24px);
-  }
-}
-@keyframes protocol-code-flow {
-  from {
-    transform: translateX(-7px);
-  }
-  to {
-    transform: translateX(13px);
-  }
-}
-@keyframes event-code-flow {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-54px);
-  }
-}
-@keyframes code-row-pulse {
-  0%,
-  70%,
-  100% {
-    opacity: 0.58;
-  }
-  82% {
-    opacity: 1;
-  }
-}
-@keyframes trace-scan {
-  0%,
-  12% {
-    opacity: 0;
-    transform: translateY(0);
-  }
-  22% {
-    opacity: 0.88;
-  }
-  78% {
-    opacity: 0.5;
-  }
-  92%,
-  100% {
-    opacity: 0;
-    transform: translateY(68vh);
-  }
-}
-@keyframes sweep-pulse {
-  from {
-    opacity: 0.68;
-    transform: scaleX(0.94);
-  }
-  to {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-}
-@keyframes ribbon-flow {
-  from {
-    transform: translateX(-12%);
-  }
-  to {
-    transform: translateX(16%);
   }
 }
 
@@ -6459,101 +6243,6 @@ td.actions {
     animation: none;
   }
 }
-
-@keyframes drawer-in {
-  0% {
-    transform: translate(100%);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
-}
-@keyframes drawer-in-left {
-  from {
-    opacity: 0;
-    /* Slide out of the neighbouring window (the channel editor sits
-       directly to the right), not across the whole viewport. */
-    transform: translateX(28px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes dialog-pop {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes stream-in {
-  0% {
-    opacity: 0;
-    transform: translate3d(18px, 0, 0);
-    filter: blur(3px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-    filter: blur(0);
-  }
-}
-@keyframes stream-in-up {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 14px, 0);
-    filter: blur(2px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-    filter: blur(0);
-  }
-}
-@keyframes gauge-sweep {
-  0% {
-    background-position: -200% 0;
-  }
-  to {
-    background-position: 200% 0;
-  }
-}
-@keyframes signal-pulse {
-  0%,
-  to {
-    box-shadow: 0 0 rgba(0, 0, 0, 0);
-  }
-  50% {
-    box-shadow: 0 0 0 5px rgba(0, 0, 0, 0.08);
-  }
-}
-@keyframes shim-sheen {
-  0% {
-    transform: translate(-120%) skew(-18deg);
-  }
-  to {
-    transform: translate(320%) skew(-18deg);
-  }
-}
-@keyframes dialog-spring {
-  0% {
-    opacity: 0;
-    transform: translateY(16px) scale(0.94);
-  }
-  70% {
-    transform: translateY(-2px) scale(1.005);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 /* Theme toggle in sidebar footer */
 .theme-toggle {
   display: inline-flex;
@@ -6579,16 +6268,6 @@ td.actions {
 /* —— Route transition + row stagger + card micro-interactions —— */
 .route-enter {
   animation: page-enter 200ms ease-out both;
-}
-@keyframes row-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7192,15 +6871,6 @@ label.check input[type="checkbox"] {
   );
   transform: translateX(-120%);
   pointer-events: none;
-}
-@keyframes banner-sheen {
-  0% {
-    transform: translateX(-120%);
-  }
-  18%,
-  100% {
-    transform: translateX(320%);
-  }
 }
 
 /* —— Save result strip: slide in —— */
@@ -8321,10 +7991,6 @@ label.check input[type="checkbox"] {
 /* —— Buttons: sheen sweep + magnetic feel —— */
 
 /* —— Inputs: focus ring breathing —— */
-@keyframes focus-breathe {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(124, 196, 240, 0.18); }
-  50% { box-shadow: 0 0 0 2px rgba(124, 196, 240, 0.34); }
-}
 
 /* —— Panel: hover lift + soft glow —— */
 
@@ -9086,16 +8752,6 @@ label.check input[type="checkbox"] {
 }
 
 /* 100% 满屏无界主工作区 */
-@keyframes viewport-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 /* ============================================================
    V2 — Gate Console Shell (SECTOR rail + live telemetry)
    Replaces the tactical-deck pill rail. Keeps the alabaster world.
