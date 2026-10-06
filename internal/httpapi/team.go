@@ -102,6 +102,10 @@ type TeamHandler struct {
 	// to team mode seeds the owner account from it, so the operator does not have
 	// to invent a second identity for themselves.
 	deploymentAdmin func() (username, password string)
+	// tokenLoginOpen reports whether the admin token still works as a password
+	// (i.e. no owner account has been claimed yet). It drives the sign-in page's
+	// upgrade entry; see sessionHandler.tokenLoginAllowed.
+	tokenLoginOpen func() bool
 }
 
 func NewTeamHandler(db *store.DB, enc *crypto.Encrypter) *TeamHandler {
@@ -353,6 +357,13 @@ func (h *TeamHandler) RegisterAdmin(r chi.Router) {
 	})
 }
 func (h *TeamHandler) RegisterPublic(r chi.Router) {
+	// Registered OUTSIDE the mode gate on purpose: the sign-in page asks this
+	// before anyone has a session, and the answer decides whether the upgrade
+	// entry exists. A v3 deployment upgrading to this build is almost always
+	// still personal, so gating it on team mode would hide the entry exactly
+	// where it is needed. It exposes one bit — "the admin token still works as a
+	// password" — and the token itself is of course still required to use it.
+	r.Get("/auth/upgrade", h.authUpgrade)
 	r.Group(func(a chi.Router) {
 		a.Use(h.ModeGate)
 		a.Get("/auth/options", h.authOptions)

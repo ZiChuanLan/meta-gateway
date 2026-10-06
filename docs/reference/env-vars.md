@@ -7,7 +7,7 @@
 默认值列来自 `internal/config/config.go` 里的字面量。显示为空表示该变量没有字面量默认值（例如 `MASTER_KEY` 必须显式提供）；显示为包限定名（如 `time.Minute`）表示默认值在代码里是计算得出的。
 必填项（`ADMIN_TOKEN`、`MASTER_KEY`）由启动校验强制，缺失会让进程直接退出——compose 文件刻意没有兜底凭据。
 
-共 **94** 个环境变量。
+共 **95** 个环境变量。
 
 | 变量 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -15,6 +15,7 @@
 | `ADMIN_RATE_PER_MINUTE` | 整数 | 300 | — |
 | `ADMIN_TOKEN` | 字符串 | — | — |
 | `ADMIN_TOKENS` | 字符串 | — | — |
+| `ADMIN_TOKEN_LOGIN` | 字符串 | "" | AdminTokenLogin re-opens the ADMIN_TOKEN-as-password login after the deployment has claimed an owner account. Empty (the default) means the token only works while no owner credential exists, which is what makes the first-run claim close the upgrade path by itself; "break-glass" is the documented recovery hatch for a deployment whose owner forgot the password. |
 | `ADMIN_USERNAME` | 字符串 | admin | — |
 | `ALERT_CONFIG_JSON` | 字符串 | "" | AlertConfigJSON is the multi-channel alert matrix config (bark/serverchan/ telegram/smtp + cooldown + daily summary flag), JSON-encoded. |
 | `ALERT_DAILY_SUMMARY_INTERVAL_SECONDS` | 整数（秒） | 0 | AlertDailySummaryInterval is how often the daily digest runs (0 = off). |
@@ -109,6 +110,6 @@
 ## 怎么读这张表
 
 - **类型** 列决定值的写法：`逗号分隔列表` 不是 JSON 数组，`整数（秒）` 是秒数而不是 Go duration 字符串。
-- **说明** 列取自 `Config` 结构体字段的文档注释。本表共 94 个变量，39 个在代码里带注释，其余 55 个显示为 `—`——那是代码里的文档缺口，不是生成器失败。
+- **说明** 列取自 `Config` 结构体字段的文档注释。本表共 95 个变量，40 个在代码里带注释，其余 55 个显示为 `—`——那是代码里的文档缺口，不是生成器失败。
 - `0` 在多数保留期与阈值项里表示「关闭该功能」，具体见各项说明。
 

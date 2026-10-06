@@ -439,7 +439,8 @@ export const en: Dict = {
   "wizard.editionTitle": "Choose how you use the gateway",
   "wizard.editionHint":
     "Personal mode is for your own access. Team mode adds members, grants and quotas; create an owner account before enabling it. This choice is separate from model synchronization below.",
-  "login.upgradeHelp": "Upgrading? Sign-in guide",
+  "login.upgradeHelp": "Upgrading from an older version?",
+  "login.upgradeEntry": "Upgrading from an older version",
   "login.moreWays": "More sign-in options",
   "login.otherTitle": "Other sign-in options",
   "login.otherHint":
@@ -448,19 +449,29 @@ export const en: Dict = {
   "login.viaProvider": "Continue with {provider}",
   "login.backToSignIn": "Back to sign-in",
   "login.upgradeCredentials":
-    "The deployment username is ADMIN_USERNAME (admin by default). Its password remains your existing ADMIN_TOKEN. Upgrading does not change it. After signing in, set a username under Settings → Administrator sign-in by confirming your existing token. Saved values override the environment and require no restart.",
+    'This gateway has no administrator account yet, so sign-in is still "deployment token as password". Sign in with the value of ADMIN_TOKEN and the console will ask you to set your own username and password; after that the token can no longer be used as a password.',
   "login.upgradeCollision":
-    "An existing team account owns its username; a failed password never falls back to the deployment token. Choose a distinct ADMIN_USERNAME, such as gateway-admin, if names conflict.",
+    "If the name you want is already taken by a member, pick another one — the gateway never falls back to the deployment token to let a sign-in through.",
   "login.upgradeTeam":
-    "Personal use does not require a team account. For multiple users, sign in and create an owner in setup or User management, then enable team mode. All accounts sign in at /console.",
+    "This step only creates the administrator's own account and is independent of team mode; create members later under User management. All accounts sign in at /console.",
   "operator.legacyHint":
-    "Unsure of your username after upgrading? Sign in with your original deployment token and two-factor code, then configure your username in the web console. This compatibility path does not bypass either check.",
+    "Unsure of your username after upgrading? Sign in here with the original deployment token (plus the code when two-factor is enabled). This entry exists only to finish the first setup, closes itself afterwards, and bypasses neither the token nor the second factor.",
   "operator.legacyLogin": "Sign in with deployment token",
-  "operator.title": "Administrator sign-in",
-  "operator.usernameHint":
-    "Saved usernames take effect immediately, survive restarts and override ADMIN_USERNAME. This changes only the deployment username, not its token or team accounts.",
-  "operator.confirmToken": "Confirm deployment token (ADMIN_TOKEN)",
-  "operator.saved": "Username saved. Use it with the unchanged deployment token next time.",
+  "operator.claimTitle": "Set up the administrator account",
+  "operator.title": "Administrator account",
+  "operator.claimHint":
+    "After this, the deployment signs in with one account (username + password). The deployment token stops working as a password and remains only as the documented recovery hatch (ADMIN_TOKEN_LOGIN=break-glass).",
+  "operator.changeHint":
+    "Change the administrator's username or password here. Sign in with the new credentials afterwards; sessions on other devices are revoked.",
+  "operator.newPassword": "New password",
+  "operator.confirmNewPassword": "Confirm new password",
+  "operator.passwordMismatch": "The two passwords do not match.",
+  "operator.confirmToken": "Current deployment token (ADMIN_TOKEN)",
+  "operator.confirmTokenHint":
+    "To confirm it is you: the deployment's ADMIN_TOKEN, plus the verification code when two-factor is enabled.",
+  "operator.claimSubmit": "Set up the account",
+  "operator.claimed":
+    "The administrator account is active. Sign in with the new username and password from now on.",
   "operator.saveFailed":
     "Save failed. Check username availability, deployment token and verification code.",
   "operator.loadFailed": "Unable to read administrator settings. Please retry.",

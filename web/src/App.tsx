@@ -302,6 +302,11 @@ function Connect({
   // asking for attention.
   const [otherOpen, setOtherOpen] = useState(false);
   const [providers, setProviders] = useState<{ id: string; label: string }[]>([]);
+  // Whether this deployment still accepts the admin token as a password, i.e.
+  // no owner account has been claimed yet. Answered by the public /auth/options
+  // so the upgrade entry can sit on the sign-in card — the page where an
+  // upgrading operator actually is — instead of hiding inside "more options".
+  const [upgradeLogin, setUpgradeLogin] = useState(false);
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
@@ -354,16 +359,34 @@ function Connect({
     const controller = new AbortController();
     void fetch("/auth/options", { credentials: "same-origin", signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
-      .then((body: { csrf?: string; oauth?: { id: string; label: string }[] } | null) => {
-        if (!body) return;
-        // Not setTeamCSRF: minting this anonymous token is not an account
-        // transition, and bumping the generation for it signed out an in-flight
-        // session restore (see the note in team/transport.ts).
-        if (body.csrf) refreshAnonymousCSRF(body.csrf);
-        if (body.oauth?.length) setProviders(body.oauth);
-      })
+      .then(
+        (
+          body: {
+            csrf?: string;
+            oauth?: { id: string; label: string }[];
+          } | null,
+        ) => {
+          if (!body) return;
+          // Not setTeamCSRF: minting this anonymous token is not an account
+          // transition, and bumping the generation for it signed out an in-flight
+          // session restore (see the note in team/transport.ts).
+          if (body.csrf) refreshAnonymousCSRF(body.csrf);
+          if (body.oauth?.length) setProviders(body.oauth);
+        },
+      )
       .catch(() => {
         /* personal mode, offline, or aborted: the form still works */
+      });
+    // Whether the upgrade entry belongs on the card. Its own endpoint because
+    // /auth/options sits behind the team-mode gate and answers 404 on a personal
+    // gateway — which is exactly the deployment that is upgrading.
+    void fetch("/auth/upgrade", { credentials: "same-origin", signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { upgrade_login?: boolean } | null) => {
+        if (body) setUpgradeLogin(Boolean(body.upgrade_login));
+      })
+      .catch(() => {
+        /* no entry is the safe answer */
       });
     return () => controller.abort();
   }, []);
@@ -645,16 +668,6 @@ function Connect({
                   <ChevronRight size={15} />
                 </a>
               ))}
-              <button
-                type="button"
-                className="login-other-item"
-                disabled={pending || transitioning}
-                onClick={() => setUpgradeHelp(true)}
-              >
-                <HelpCircle size={16} />
-                <span>{t("login.upgradeHelp")}</span>
-                <ChevronRight size={15} />
-              </button>
             </div>
             <button
               type="button"
@@ -764,6 +777,21 @@ function Connect({
 					    clicking it turns the card over. Registration, third-party sign-in
 					    and the upgrade guide live back there instead of competing with the
 					    form as a row of links. */}
+            {/* The upgrade entry belongs on the sign-in card, not behind "more
+				    options": this is the one page an operator lands on after updating,
+				    and it disappears by itself once the gateway has an owner account. */}
+            {upgradeLogin ? (
+              <button
+                type="button"
+                className="login-upgrade"
+                disabled={pending || transitioning}
+                onClick={() => setUpgradeHelp(true)}
+              >
+                <HelpCircle size={14} />
+                <span>{t("login.upgradeEntry")}</span>
+                <ChevronRight size={13} />
+              </button>
+            ) : null}
             <button
               type="button"
               className="login-card-peek"

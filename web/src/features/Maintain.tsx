@@ -1,4 +1,4 @@
-import { OperatorProfilePanel } from "./OperatorProfilePanel";
+import { OperatorClaimPanel } from "./OperatorProfilePanel";
 import { UpdateChannelPanel } from "./UpdateChannelPanel";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
@@ -93,7 +93,7 @@ export function Maintain() {
           <AppearancePanel modeHiddenNav={modeHiddenNav(operatingMode.data?.mode)} />
         ) : null}
         {active === "backups" ? <BackupsPanel /> : null}
-        {active === "operator" ? <OperatorProfilePanel /> : null}
+        {active === "operator" ? <OperatorClaimPanel /> : null}
         {active === "updates" ? <UpdateChannelPanel /> : null}
       </div>
     </Page>

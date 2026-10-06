@@ -401,7 +401,8 @@ export const zh: Dict = {
   "wizard.editionTitle": "先选择使用方式",
   "wizard.editionHint":
     "个人模式用于自己调用；团队模式用于管理成员、授权与额度。团队模式需先创建 owner 账号，再启用。此选择与下方模型同步方式独立。",
-  "login.upgradeHelp": "从旧版本升级？登录说明",
+  "login.upgradeHelp": "从旧版本升级？用原管理口令登录",
+  "login.upgradeEntry": "从旧版本升级",
   "login.moreWays": "更多登录方式",
   "login.otherTitle": "其他登录方式",
   "login.otherHint": "注册新账号、用第三方账号登录，或查看旧版本升级说明。",
@@ -409,20 +410,27 @@ export const zh: Dict = {
   "login.viaProvider": "使用 {provider} 登录",
   "login.backToSignIn": "返回登录",
   "login.upgradeCredentials":
-    "部署管理员用户名由 ADMIN_USERNAME 设置，未设置时默认为 admin；密码仍使用原 ADMIN_TOKEN。升级不会自动更改管理口令。登录后可在“设置 → 管理员登录设置”验证原口令并保存用户名，无需重启；网页保存的值优先于环境变量。",
-  "login.upgradeCollision":
-    "若已有同名团队账号，系统优先校验该团队账号，不会退回管理口令。请给 ADMIN_USERNAME 设置一个不同的名称，例如 gateway-admin。",
+    "这台网关还没有管理员账号，登录方式仍是「用管理口令登录」。用部署里 ADMIN_TOKEN 的值登录，控制台随后会请你设置自己的用户名与密码；设置完成后，管理口令不再能作为密码使用。",
+  "login.upgradeCollision": "若你要用的用户名已被成员占用，换一个即可——系统不会退回管理口令放行。",
   "login.upgradeTeam":
-    "只供自己使用无需创建团队账号；需要多人使用时，登录后在初始化或用户管理中创建 owner，再启用团队模式。所有账号共用 /console 登录。",
+    "这一步只建立管理员自己的账号，与团队模式无关；需要多人使用时再到用户管理里创建成员。所有账号共用 /console 登录。",
   "operator.legacyHint":
-    "不知道升级后的用户名？可用原管理口令和二次验证进入，随后网页会提示设置用户名。此兼容入口不会绕过口令或二次验证。",
+    "升级后不知道用户名？用原管理口令（启用二次验证时附验证码）从这里登录。该入口只用于完成首次设置，设置完成后自动关闭，且不会绕过口令或二次验证。",
   "operator.legacyLogin": "使用原管理口令登录",
-  "operator.title": "管理员登录设置",
-  "operator.usernameHint":
-    "网页保存的用户名立即生效并在重启后保留，优先于 ADMIN_USERNAME。只修改部署管理员名称，不改口令或团队账号。",
-  "operator.confirmToken": "验证当前管理口令（ADMIN_TOKEN）",
-  "operator.saved": "用户名已保存，下次登录使用新用户名，原管理口令不变。",
-  "operator.saveFailed": "保存失败。请检查用户名是否已被占用、管理口令和二次验证码。",
+  "operator.claimTitle": "设置管理员账号",
+  "operator.title": "管理员账号",
+  "operator.claimHint":
+    "设置后本部署改用一个账号（用户名 + 密码）登录；原管理口令将不再能作为密码使用，仅保留应急恢复用途（ADMIN_TOKEN_LOGIN=break-glass）。",
+  "operator.changeHint":
+    "在这里修改管理员的用户名或密码。修改后请用新凭据登录，其他设备上的会话会失效。",
+  "operator.newPassword": "新密码",
+  "operator.confirmNewPassword": "确认新密码",
+  "operator.passwordMismatch": "两次输入的密码不一致。",
+  "operator.confirmToken": "当前管理口令（ADMIN_TOKEN）",
+  "operator.confirmTokenHint": "确认身份用：填写部署里的 ADMIN_TOKEN；启用二次验证时还要填验证码。",
+  "operator.claimSubmit": "设置账号",
+  "operator.claimed": "管理员账号已生效，之后请用新用户名与密码登录。",
+  "operator.saveFailed": "保存失败。请检查用户名是否已被占用、管理口令与二次验证码。",
   "operator.loadFailed": "无法读取管理员设置，请稍后重试。",
   "operator.later": "稍后设置",
   "updates.timeout": "未在等待时间内确认更新完成。请检查容器状态和日志，勿连续重复更新。",

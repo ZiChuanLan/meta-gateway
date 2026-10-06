@@ -68,6 +68,14 @@ func (h *TeamHandler) bootstrap(w http.ResponseWriter, r *http.Request) {
 	h.audit(r, "team.owner.create", id)
 	teamJSON(w, 201, map[string]int64{"id": id})
 }
+func (h *TeamHandler) authUpgrade(w http.ResponseWriter, r *http.Request) {
+	if !teamOriginOK(r) {
+		teamFail(w, 403, "csrf_failed")
+		return
+	}
+	open := h.tokenLoginOpen != nil && h.tokenLoginOpen()
+	teamJSON(w, 200, map[string]any{"upgrade_login": open})
+}
 func (h *TeamHandler) authOptions(w http.ResponseWriter, r *http.Request) {
 	if !teamOriginOK(r) {
 		teamFail(w, 403, "csrf_failed")
@@ -83,7 +91,23 @@ func (h *TeamHandler) authOptions(w http.ResponseWriter, r *http.Request) {
 	// The login page renders one button per usable provider, so the visitor
 	// never sees an option that could not work. The currency rides along because
 	// the member app prints money before it has a session.
-	teamJSON(w, 200, map[string]any{"branding": s.Branding, "csrf": teamCSRF(raw), "oauth": h.oauthLoginOptions(), "currency": h.currency()})
+	//
+	// `upgrade_login` tells an upgrading deployment that its admin token still
+	// works as a password (i.e. no owner account has been claimed yet). Showing
+	// that entry is the whole reason it is public: it reveals nothing usable —
+	// the token is still required — and without it the upgrade path would be
+	// invisible on the one page where it is needed.
+	upgradeLogin := false
+	if h.tokenLoginOpen != nil {
+		upgradeLogin = h.tokenLoginOpen()
+	}
+	teamJSON(w, 200, map[string]any{
+		"branding":      s.Branding,
+		"csrf":          teamCSRF(raw),
+		"oauth":         h.oauthLoginOptions(),
+		"currency":      h.currency(),
+		"upgrade_login": upgradeLogin,
+	})
 }
 
 // currency renders the site's money presentation for the member app. It never

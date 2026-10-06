@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **231** 条注册、**185** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **234** 条注册、**188** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -49,6 +49,12 @@
 | --- | --- | --- |
 | `Get` | `/admin/audit-events` | list |
 | `Post` | `/admin/audit-events/cleanup` | cleanup |
+
+## /admin/auth · 1 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/auth/upgrade` | authUpgrade |
 
 ## /admin/backups · 2 条
 
@@ -278,6 +284,13 @@
 | `Post` | `/admin/models/unify/batches/{id}/undo` | unifyUndo |
 | `Post` | `/admin/models/unify/deleted/{id}/restore` | unifyRestoreRoute |
 | `Post` | `/admin/models/unify/preview` | unifyPreview |
+
+## /admin/operator · 2 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Post` | `/admin/operator/claim` | claimOwner |
+| `Get` | `/admin/operator/onboarding` | onboarding |
 
 ## /admin/operator-profile · 2 条
 

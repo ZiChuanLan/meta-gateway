@@ -588,6 +588,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		}
 		return username, cfg.AdminToken
 	}
+	// The sign-in page asks /auth/options whether the upgrade path is still open
+	// (see authOptions); the answer is the same predicate the login endpoint
+	// uses, so the entry can never appear on a gateway that would refuse it.
+	teamHandler.tokenLoginOpen = sessionHandler.tokenLoginAllowed
 	// Third-party sign-in calls the provider's token and userinfo endpoints from
 	// the server, so they follow the same proxy the operator configured for
 	// outbound traffic — not the container's HTTP_PROXY, which usually points at

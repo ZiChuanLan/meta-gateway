@@ -66,6 +66,10 @@ function stubAdminFetch(
     routes?: unknown[];
     mode?: { mode: string; has_owner: boolean; role: string };
     oauth?: { id: string; label: string }[];
+    /** Whether the sign-in page should offer the upgrade entry (the admin
+     *  token still works as a password). Defaults to on, which is the state an
+     *  upgrading deployment is in. */
+    upgradeLogin?: boolean;
   } = {},
 ) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -75,6 +79,11 @@ function stubAdminFetch(
     // recovery POSTs post against, plus the configured providers.
     if (path === "/auth/options") {
       return jsonResponse({ csrf: "csrf-from-options", oauth: overrides.oauth ?? [] });
+    }
+    // Ungated on purpose: the sign-in page asks this before /auth/options even
+    // exists (that one 404s on a personal gateway).
+    if (path === "/auth/upgrade") {
+      return jsonResponse({ upgrade_login: overrides.upgradeLogin ?? true });
     }
     if (method === "POST" && path === "/admin/session") {
       return jsonResponse({ session_token: "mg-sess.test" });
@@ -244,25 +253,31 @@ describe("channel-first shell", () => {
     ).toEqual([]);
   });
 
-  it("offers upgrade sign-in guidance without sending credentials", async () => {
+  it("offers upgrade sign-in guidance on the card, without sending credentials", async () => {
     const fetcher = stubAdminFetch();
     vi.stubGlobal("fetch", fetcher);
     renderApp();
-    // The guide lives on the second layer of the card now.
-    fireEvent.click(screen.getByRole("button", { name: "More sign-in options" }));
-    fireEvent.click(screen.getByRole("button", { name: "Upgrading? Sign-in guide" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("ADMIN_USERNAME");
+    // The entry sits on the sign-in card itself: this is the one page an
+    // upgrading operator lands on, and it disappears once an owner account
+    // exists (the server answers that in /auth/options).
+    fireEvent.click(await screen.findByRole("button", { name: "Upgrading from an older version" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("ADMIN_TOKEN");
     expect(fetcher.mock.calls.some(([path]) => String(path) === "/admin/session")).toBe(false);
   });
 
-  it("accepts a legacy token through upgrade help without guessing a username", async () => {
+  it("hides the upgrade entry once the gateway has an owner account", async () => {
+    vi.stubGlobal("fetch", stubAdminFetch({ upgradeLogin: false }));
+    renderApp();
+    await screen.findByRole("button", { name: "More sign-in options" });
+    expect(screen.queryByRole("button", { name: "Upgrading from an older version" })).toBeNull();
+  });
+
+  it("accepts a legacy token through the upgrade dialog without guessing a username", async () => {
     const fetcher = stubAdminFetch();
     vi.stubGlobal("fetch", fetcher);
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: "More sign-in options" }));
-    fireEvent.click(screen.getByRole("button", { name: "Upgrading? Sign-in guide" }));
-    fireEvent.change(screen.getByLabelText("Confirm deployment token (ADMIN_TOKEN)"), {
+    fireEvent.click(await screen.findByRole("button", { name: "Upgrading from an older version" }));
+    fireEvent.change(screen.getByLabelText("Current deployment token (ADMIN_TOKEN)"), {
       target: { value: "old-token" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign in with deployment token" }));

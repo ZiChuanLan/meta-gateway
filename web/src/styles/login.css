@@ -37,6 +37,13 @@
 .login-back { width: 100%; margin-top: 4px; padding: 6px; border: 0; background: transparent; color: var(--muted); font: 500 11.5px var(--font); cursor: pointer; }
 .login-back:hover:not(:disabled) { color: var(--ink); }
 .login-back:disabled { cursor: not-allowed; opacity: .6; }
+/* The upgrade entry: an upgrading deployment lands here directly instead of
+   digging through "more sign-in options". Hidden entirely once the gateway has
+   an owner account (the server answers that in /auth/options). */
+.login-upgrade { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 10px; padding: 7px 10px; border: 1px dashed var(--line-strong); border-radius: 10px; background: transparent; color: var(--muted-strong); font: 500 11.5px var(--font); cursor: pointer; }
+.login-upgrade:hover:not(:disabled) { color: var(--ink); border-color: var(--primary); background: var(--surface-subtle); }
+.login-upgrade:disabled { cursor: not-allowed; opacity: .6; }
+.login-upgrade svg:last-child { margin-left: auto; }
 .login-card-heading { margin-bottom: 28px; }
 .login-card-mark { display: inline-grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 13px; color: var(--primary); background: var(--surface); margin-bottom: 20px; }
 .login-card-heading h2 { font: 600 23px var(--font); letter-spacing: -.04em; margin: 0 0 10px; }
