@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TeamField as Field, TeamModal } from "../ui";
+import { ActionMenu } from "../../components/ActionMenu";
+import {
+  Button,
+  DataTable,
+  Dialog,
+  ErrorState,
+  Field,
+  Panel,
+  StatusBadge,
+} from "../../components/ui";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
 import { useUsers } from "../UsersContext";
@@ -25,7 +34,9 @@ const EMPTY_POLICY: Policy = {
  *
  * A policy is the unit the operator assigns to a member, so this board is where
  * "what is this person allowed to do" is decided — the members board only picks
- * which policy applies.
+ * which policy applies. It reads as one panel of policies (the create action in
+ * the panel header), and the editor is the console's own dialog rather than the
+ * module's private one.
  */
 export function PoliciesPanel() {
   const { request, locale, t } = useUsers();
@@ -40,68 +51,65 @@ export function PoliciesPanel() {
     queryFn: ({ signal }) => request<Candidate[]>("/admin/team/candidates", { signal }),
     enabled: editing !== null,
   });
+  const failure = error || policies.error;
 
   return (
-    <div>
-      {Boolean(error || policies.error) && (
-        <div role="alert" className="team-error">
-          {teamError(error || policies.error, locale)}
-        </div>
-      )}
-      <div className="team-head">
-        <p className="team-muted">{t("policiesHint")}</p>
-        <button className="team-button primary" onClick={() => setEditing({ ...EMPTY_POLICY })}>
-          {t("newPolicy")}
-        </button>
-      </div>
-      <div className="team-table-wrap">
-        <table className="team-table">
-          <thead>
-            <tr>
-              <th>{t("name")}</th>
-              <th>{t("candidates")}</th>
-              <th>{t("maxKeys")}</th>
-              <th>{t("routing")}</th>
-              <th />
+    <div className="team-board">
+      {failure ? <ErrorState error={failure} /> : null}
+      <Panel
+        title={t("policies")}
+        titleHelp={t("policiesHint")}
+        actions={<Button onClick={() => setEditing({ ...EMPTY_POLICY })}>{t("newPolicy")}</Button>}
+      >
+        <DataTable
+          headers={[t("name"), t("candidates"), t("maxKeys"), t("routing"), ""]}
+          empty={!policies.data?.length}
+        >
+          {policies.data?.map((p) => (
+            <tr key={p.id}>
+              <td>{p.name}</td>
+              <td>{p.member_ids.length}</td>
+              <td>{p.max_keys}</td>
+              <td>
+                <StatusBadge value={p.allow_routing} />
+              </td>
+              <td className="row-actions">
+                <ActionMenu
+                  compact
+                  label={t("moreActions")}
+                  items={[
+                    {
+                      key: "edit",
+                      label: t("edit"),
+                      onSelect: () => setEditing(structuredClone(p)),
+                    },
+                    // Policy #1 is the shipped default every member starts on;
+                    // deleting it would leave accounts pointing at nothing.
+                    ...(p.id === 1
+                      ? []
+                      : [
+                          {
+                            key: "delete",
+                            group: t("dangerZone"),
+                            label: t("delete"),
+                            danger: true,
+                            disabled: busy,
+                            onSelect: () => {
+                              if (confirm(t("deletionWarning")))
+                                void run(`/admin/team/policies/${p.id}`, "DELETE");
+                            },
+                          },
+                        ]),
+                  ]}
+                />
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {policies.data?.map((p) => (
-              <tr key={p.id}>
-                <td>{p.name}</td>
-                <td>{p.member_ids.length}</td>
-                <td>{p.max_keys}</td>
-                <td>{p.allow_routing ? t("on") : t("off")}</td>
-                <td>
-                  <div className="team-actions">
-                    <button className="team-button" onClick={() => setEditing(structuredClone(p))}>
-                      {t("edit")}
-                    </button>
-                    {/* Policy #1 is the shipped default every member starts on;
-                        deleting it would leave accounts pointing at nothing. */}
-                    {p.id !== 1 && (
-                      <button
-                        className="team-button danger"
-                        disabled={busy}
-                        onClick={() => {
-                          if (confirm(t("deletionWarning")))
-                            void run(`/admin/team/policies/${p.id}`, "DELETE");
-                        }}
-                      >
-                        {t("delete")}
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </DataTable>
+      </Panel>
       {editing && (
-        <TeamModal title={t("policy")} busy={busy} onClose={() => setEditing(null)}>
+        <Dialog title={t("policy")} busy={busy} onClose={() => setEditing(null)}>
           <form
-            className="team-surface"
             onSubmit={(e) => {
               e.preventDefault();
               if (confirm(t("policyChanged")))
@@ -124,7 +132,7 @@ export function PoliciesPanel() {
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               />
             </Field>
-            <div className="team-grid">
+            <div className="meta-form">
               <Field label={t("maxKeys")}>
                 <input
                   type="number"
@@ -146,34 +154,31 @@ export function PoliciesPanel() {
                 />
               </Field>
             </div>
-            <label className="team-check">
+            <label className="check marginless">
               <input
                 type="checkbox"
                 checked={editing.allow_routing}
                 onChange={(e) => setEditing({ ...editing, allow_routing: e.target.checked })}
               />
-              {t("routing")}
+              <span>{t("routing")}</span>
             </label>
-            <label className="team-check">
+            <label className="check marginless">
               <input
                 type="checkbox"
                 checked={editing.allow_request_preferences}
                 onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    allow_request_preferences: e.target.checked,
-                  })
+                  setEditing({ ...editing, allow_request_preferences: e.target.checked })
                 }
               />
-              {t("allowRequestControls")}
+              <span>{t("allowRequestControls")}</span>
             </label>
-            <label className="team-check">
+            <label className="check marginless">
               <input
                 type="checkbox"
                 checked={editing.all_models}
                 onChange={(e) => setEditing({ ...editing, all_models: e.target.checked })}
               />
-              {t("allModels")}
+              <span>{t("allModels")}</span>
             </label>
             {!editing.all_models && (
               <Field label={t("modelList")}>
@@ -183,53 +188,54 @@ export function PoliciesPanel() {
                 />
               </Field>
             )}
-            <h3>{t("candidates")}</h3>
-            <p className="team-muted">{t("candidatesHint")}</p>
-            <div className="team-candidates">
-              {candidates.data?.length ? (
-                candidates.data.map((c) => (
-                  <label className="team-check" key={c.id}>
-                    <input
-                      type="checkbox"
-                      checked={editing.member_ids.includes(c.id)}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          member_ids: e.target.checked
-                            ? [...editing.member_ids, c.id]
-                            : editing.member_ids.filter((id) => id !== c.id),
-                          // Granting a member also grants the model it serves:
-                          // the two lists describe one decision, so they move
-                          // together instead of leaving the model unreachable.
-                          models: e.target.checked
-                            ? [...new Set([...editing.models.filter(Boolean), c.model])]
-                            : editing.models,
-                        })
-                      }
-                    />
-                    <span>
-                      {c.model} · {c.name}{" "}
-                      <small>
-                        #{c.id}
-                        {c.enabled ? "" : ` · ${t("off")}`}
-                      </small>
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <p className="team-muted">{t("noCandidates")}</p>
-              )}
-            </div>
-            {!!error && (
-              <div role="alert" className="team-error">
-                {teamError(error, locale)}
+            <section className="drawer-section">
+              <h3>{t("candidates")}</h3>
+              <p className="panel-hint">{t("candidatesHint")}</p>
+              <div className="team-candidates">
+                {candidates.data?.length ? (
+                  candidates.data.map((c) => (
+                    <label className="check marginless" key={c.id}>
+                      <input
+                        type="checkbox"
+                        checked={editing.member_ids.includes(c.id)}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            member_ids: e.target.checked
+                              ? [...editing.member_ids, c.id]
+                              : editing.member_ids.filter((id) => id !== c.id),
+                            // Granting a member also grants the model it serves:
+                            // the two lists describe one decision, so they move
+                            // together instead of leaving the model unreachable.
+                            models: e.target.checked
+                              ? [...new Set([...editing.models.filter(Boolean), c.model])]
+                              : editing.models,
+                          })
+                        }
+                      />
+                      <span>
+                        {c.model} · {c.name} <small>#{c.id}</small>
+                        {c.enabled ? null : <StatusBadge value={false} />}
+                      </span>
+                    </label>
+                  ))
+                ) : (
+                  <p className="panel-hint">{t("noCandidates")}</p>
+                )}
               </div>
-            )}
-            <button className="team-button primary" disabled={busy}>
-              {busy ? t("saving") : t("save")}
-            </button>
+            </section>
+            {error ? (
+              <p role="alert" className="inline-error">
+                {teamError(error, locale)}
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <Button type="submit" loading={busy}>
+                {t("save")}
+              </Button>
+            </div>
           </form>
-        </TeamModal>
+        </Dialog>
       )}
     </div>
   );

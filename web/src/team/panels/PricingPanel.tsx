@@ -3,7 +3,8 @@ import { useI18n } from "../../i18n";
 import { PricingRules } from "../../features/models/PriceFields";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { TeamField as Field, TeamModal } from "../ui";
+import { ActionMenu } from "../../components/ActionMenu";
+import { Button, DataTable, Dialog, ErrorState, Field, Panel } from "../../components/ui";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
 import { useUsers } from "../UsersContext";
@@ -20,85 +21,72 @@ import type { ModelRatio } from "../types";
  * operators could not answer.
  */
 export function PricingPanel() {
-  const { request, locale, t } = useUsers();
+  const { request, t } = useUsers();
   const { busy, error, run } = useTeamMutation(request, t);
   const [editing, setEditing] = useState<ModelRatio | null>(null);
   const ratios = useQuery({
     queryKey: ["team", "ratios"],
     queryFn: ({ signal }) => request<ModelRatio[]>("/admin/ratios", { signal }),
   });
+  const failure = error || ratios.error;
   return (
     <div className="team-board">
-      <p className="team-muted">{t("pricingIntro")}</p>
+      <p className="panel-hint">{t("pricingIntro")}</p>
       <PricingRules />
-      {Boolean(error || ratios.error) && (
-        <div role="alert" className="team-error">
-          {teamError(error || ratios.error, locale)}
-        </div>
-      )}
-      <div className="team-head">
-        <h3>{t("billingRatios")}</h3>
-        <button className="team-button primary" onClick={() => setEditing({ model: "", ratio: 1 })}>
-          {t("newRatio")}
-        </button>
-      </div>
-      <p className="team-muted">{t("billingRatiosHint")}</p>
-      {ratios.data?.length ? (
-        <div className="team-table-wrap">
-          <table className="team-table">
-            <thead>
-              <tr>
-                <th>{t("model")}</th>
-                <th>{t("ratioLabel")}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {ratios.data.map((r) => (
-                <tr key={r.model}>
-                  <td>
-                    <code>{r.model}</code>
-                  </td>
-                  <td>× {r.ratio}</td>
-                  <td>
-                    <div className="team-actions">
-                      <button
-                        className="team-button"
-                        onClick={() => setEditing(structuredClone(r))}
-                      >
-                        {t("edit")}
-                      </button>
-                      <button
-                        className="team-button danger"
-                        disabled={busy}
-                        onClick={() => {
-                          if (confirm(t("ratioDeleteWarning", { model: r.model })))
-                            void run(
-                              `/admin/ratios/${encodeURIComponent(r.model)}`,
-                              "PUT",
-                              // A negative ratio is the endpoint's documented
-                              // way of removing the row (store.SetRatio).
-                              { ratio: -1 },
-                            );
-                        }}
-                      >
-                        {t("delete")}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="team-muted">{t("noRatios")}</p>
-      )}
-      <h3>{t("unitPrices")}</h3>
-      <p className="team-muted">{t("unitPricesHint")}</p>
-      <Link className="team-button" to="/models">
-        {t("unitPrices")}
-      </Link>
+      {failure ? <ErrorState error={failure} /> : null}
+      <Panel
+        title={t("billingRatios")}
+        titleHelp={t("billingRatiosHint")}
+        actions={
+          <Button onClick={() => setEditing({ model: "", ratio: 1 })}>{t("newRatio")}</Button>
+        }
+      >
+        <DataTable headers={[t("model"), t("ratioLabel"), ""]} empty={!ratios.data?.length}>
+          {ratios.data?.map((r) => (
+            <tr key={r.model}>
+              <td>
+                <code>{r.model}</code>
+              </td>
+              <td>× {r.ratio}</td>
+              <td className="row-actions">
+                <ActionMenu
+                  compact
+                  label={t("moreActions")}
+                  items={[
+                    {
+                      key: "edit",
+                      label: t("edit"),
+                      onSelect: () => setEditing(structuredClone(r)),
+                    },
+                    {
+                      key: "delete",
+                      group: t("dangerZone"),
+                      label: t("delete"),
+                      danger: true,
+                      disabled: busy,
+                      onSelect: () => {
+                        if (confirm(t("ratioDeleteWarning", { model: r.model })))
+                          void run(
+                            `/admin/ratios/${encodeURIComponent(r.model)}`,
+                            "PUT",
+                            // A negative ratio is the endpoint's documented way
+                            // of removing the row (store.SetRatio).
+                            { ratio: -1 },
+                          );
+                      },
+                    },
+                  ]}
+                />
+              </td>
+            </tr>
+          ))}
+        </DataTable>
+      </Panel>
+      <Panel title={t("unitPrices")} titleHelp={t("unitPricesHint")}>
+        <Link className="button" to="/models">
+          {t("openModelPricing")}
+        </Link>
+      </Panel>
       {editing && <RatioDialog ratio={editing} onClose={() => setEditing(null)} />}
     </div>
   );
@@ -118,7 +106,7 @@ function RatioDialog({ ratio, onClose }: { ratio: ModelRatio; onClose: () => voi
     Number(value) >= 0 &&
     Number(value) <= 1000;
   return (
-    <TeamModal
+    <Dialog
       title={creating ? t("newRatio") : t("ratioTitle", { model: ratio.model })}
       onClose={onClose}
       busy={busy}
@@ -156,24 +144,24 @@ function RatioDialog({ ratio, onClose }: { ratio: ModelRatio; onClose: () => voi
           />
         </Field>
         {value.trim() !== "" && Number(value) === 0 ? (
-          <p role="status" className="team-muted">
+          <p role="status" className="panel-hint">
             {ui("pricing.zeroRatio")}
           </p>
         ) : null}
         {error ? (
-          <div role="alert" className="team-error">
+          <p role="alert" className="inline-error">
             {teamError(error, locale)}
-          </div>
+          </p>
         ) : null}
-        <div className="team-actions">
-          <button className="team-button quiet" type="button" onClick={onClose}>
+        <div className="form-actions">
+          <Button variant="quiet" type="button" onClick={onClose}>
             {t("close")}
-          </button>
-          <button className="team-button primary" disabled={busy || !valid}>
-            {busy ? t("saving") : t("save")}
-          </button>
+          </Button>
+          <Button type="submit" loading={busy} disabled={!valid}>
+            {t("save")}
+          </Button>
         </div>
       </form>
-    </TeamModal>
+    </Dialog>
   );
 }
