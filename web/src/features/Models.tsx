@@ -62,6 +62,7 @@ import { RouteDirectory } from "./models/RouteDirectory";
 import { RouteDialog } from "./models/RouteDialog";
 import { MemberDialog } from "./models/MemberDialog";
 import { ModelToolDialogs, useModelTools } from "./models/ModelTools";
+import { RoutePolicyCard } from "./models/RoutePolicyCard";
 
 function readMissingDismissed() {
   try {
@@ -1803,73 +1804,18 @@ function ModelCatalog({
                   )}
                 </section>
               ) : null}
-              <details className="route-policy-disclosure">
-                <summary>
-                  {t("routing.effectivePolicy")}
-                  <ChevronDown size={13} />
-                </summary>
-                <div className="routing-policy-card">
-                  <div className="routing-policy-summary">
-                    <span className="routing-policy-title">{t("routing.effectivePolicy")}</span>
-                    {effectivePolicy ? (
-                      <>
-                        <span
-                          className={`routing-signal${effectivePolicy.latency ? " is-on" : " is-off"}`}
-                        >
-                          {t("routing.signal.latency")}:{" "}
-                          {effectivePolicy.latency
-                            ? t("routing.signal.on")
-                            : t("routing.signal.off")}
-                        </span>
-                        <span
-                          className={`routing-signal${effectivePolicy.error ? " is-on" : " is-off"}`}
-                        >
-                          {t("routing.signal.error")}:{" "}
-                          {effectivePolicy.error ? t("routing.signal.on") : t("routing.signal.off")}
-                        </span>
-                        <span className="routing-policy-source">{t(effectivePolicy.source)}</span>
-                      </>
-                    ) : (
-                      <span className="routing-policy-source">{t("routing.policyLoading")}</span>
-                    )}
-                  </div>
-                  <div className="routing-retry-summary">
-                    <span className="routing-policy-title">{t("routing.retryPolicy")}</span>
-                    <span className="routing-policy-value">
-                      {t("routing.retryRounds")}: {effectiveRetryRounds ?? "?"}
-                      <small>
-                        {t(
-                          singleModeApplies
-                            ? "routing.policySource.single"
-                            : retryPolicyIsOverridden
-                              ? "routing.policySource.model"
-                              : "routing.policySource.global",
-                        )}
-                      </small>
-                    </span>
-                    <span className="routing-policy-value">
-                      {t("routing.channelRetry")}: {effectiveChannelRetries ?? "?"}
-                      <small>
-                        {t(
-                          channelRetryPolicyIsOverridden
-                            ? "routing.policySource.model"
-                            : "routing.policySource.global",
-                        )}
-                      </small>
-                    </span>
-                    <span
-                      className={`routing-signal${runtimeSettings.data?.editable.cross_channel_failover_enabled ? " is-on" : " is-off"}`}
-                    >
-                      {t("routing.failover")}:{" "}
-                      {runtimeSettings.data
-                        ? runtimeSettings.data.editable.cross_channel_failover_enabled
-                          ? t("routing.signal.on")
-                          : t("routing.signal.off")
-                        : "?"}
-                    </span>
-                  </div>
-                </div>
-              </details>
+              <RoutePolicyCard
+                t={t}
+                effectivePolicy={effectivePolicy}
+                effectiveRetryRounds={effectiveRetryRounds}
+                effectiveChannelRetries={effectiveChannelRetries}
+                singleModeApplies={singleModeApplies}
+                retryPolicyIsOverridden={retryPolicyIsOverridden}
+                channelRetryPolicyIsOverridden={channelRetryPolicyIsOverridden}
+                crossChannelFailoverEnabled={
+                  runtimeSettings.data?.editable.cross_channel_failover_enabled
+                }
+              />
             </>
           )
         }
