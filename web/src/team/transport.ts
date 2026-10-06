@@ -6,6 +6,25 @@ export function setTeamCSRF(value: string) {
   sessionGeneration++;
   csrf = value;
 }
+/**
+ * The sign-in page's anonymous CSRF mint (`/auth/options`).
+ *
+ * Two rules make this different from `setTeamCSRF`:
+ *
+ *   - it must NOT bump the session generation. That guard exists to stop a
+ *     response from a previous account landing in the new one, i.e. for account
+ *     transitions. Minting an anonymous token is not a transition, and bumping
+ *     here invalidated the concurrent `/me` restore: the member's own session
+ *     then arrived as "Session changed" and they were shown the sign-in page on
+ *     every reload (and the navigation hint was cleared as if it had expired).
+ *   - it must not overwrite a live account's token, which is what the `csrf`
+ *     check does: the account's token is already in hand, so the late anonymous
+ *     response is stale by definition.
+ */
+export function refreshAnonymousCSRF(value: string) {
+  if (!value || csrf) return;
+  csrf = value;
+}
 export function teamSessionGeneration() {
   return sessionGeneration;
 }

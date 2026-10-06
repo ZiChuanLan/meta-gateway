@@ -221,6 +221,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		// limiter, which does not cover this route.
 		globalLoginLimiter: ratelimit.New(30, 5),
 		loginLimiter:       ratelimit.New(30, 5),
+		// Empty (the default) keeps the upgrade path open only until the
+		// deployment claims an owner account; "break-glass" forces it open for
+		// a lost owner password.
+		tokenLoginBreakGlass: cfg.AdminTokenLogin,
 	}
 	sessionHandler.RegisterPublic(r)
 	adminGroup.Use(teamHandler.AdminAuth(func(token string) bool {

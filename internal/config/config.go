@@ -17,8 +17,14 @@ type Config struct {
 	AdminToken    string
 	AdminUsername string
 	AdminTokens   []string
-	MasterKey     string
-	RetryTimes    int
+	// AdminTokenLogin re-opens the ADMIN_TOKEN-as-password login after the
+	// deployment has claimed an owner account. Empty (the default) means the
+	// token only works while no owner credential exists, which is what makes the
+	// first-run claim close the upgrade path by itself; "break-glass" is the
+	// documented recovery hatch for a deployment whose owner forgot the password.
+	AdminTokenLogin string
+	MasterKey       string
+	RetryTimes      int
 	// ChannelRetryTimes is how many times the same upstream key is re-sent
 	// after a retryable failure before moving to the next key/channel.
 	// Network errors (transport) fail fast after these retries instead of
@@ -499,6 +505,7 @@ func Load() (*Config, error) {
 		DataDir:                     dataDir,
 		AdminToken:                  firstNonEmpty(adminTokens),
 		AdminUsername:               envStr("ADMIN_USERNAME", "admin"),
+		AdminTokenLogin:             envStr("ADMIN_TOKEN_LOGIN", ""),
 		AdminTokens:                 adminTokens,
 		MasterKey:                   envStr("MASTER_KEY", ""),
 		RetryTimes:                  retryTimes,

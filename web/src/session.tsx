@@ -130,8 +130,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setRole(role);
         setToken(COOKIE_SESSION);
       })
-      .catch(() => {
+      .catch((error) => {
         if (!active) return;
+        // A superseded response (another request changed the session while this
+        // one was in flight) says nothing about the cookie, so it must not throw
+        // the operator back to the sign-in page or drop the navigation hint.
+        if (error instanceof DOMException && error.name === "AbortError") return;
         try {
           localStorage.removeItem("meta-gateway.team-console");
           sessionStorage.removeItem("meta-gateway.team-console");

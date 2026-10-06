@@ -42,7 +42,7 @@ import {
 } from "./lib/chromeNav";
 import { modeHiddenNav, useChromePrefs } from "./lib/topBar";
 import { isStaff, type ConsoleRole } from "./session";
-import { accountRequest, COOKIE_SESSION, setTeamCSRF } from "./team/transport";
+import { accountRequest, COOKIE_SESSION, refreshAnonymousCSRF } from "./team/transport";
 import { teamText } from "./team/text";
 import { AcceptFlow } from "./features/AcceptFlow";
 import { AccountPage } from "./features/AccountPage";
@@ -356,7 +356,10 @@ function Connect({
       .then((response) => (response.ok ? response.json() : null))
       .then((body: { csrf?: string; oauth?: { id: string; label: string }[] } | null) => {
         if (!body) return;
-        if (body.csrf) setTeamCSRF(body.csrf);
+        // Not setTeamCSRF: minting this anonymous token is not an account
+        // transition, and bumping the generation for it signed out an in-flight
+        // session restore (see the note in team/transport.ts).
+        if (body.csrf) refreshAnonymousCSRF(body.csrf);
         if (body.oauth?.length) setProviders(body.oauth);
       })
       .catch(() => {

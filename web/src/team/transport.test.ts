@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { accountRequest, setTeamCSRF, COOKIE_SESSION } from "./transport";
+import { accountRequest, setTeamCSRF, refreshAnonymousCSRF, COOKIE_SESSION } from "./transport";
 // This is a transport boundary test; the admin client is tested in api/client.test.ts.
 afterEach(() => {
   vi.restoreAllMocks();
@@ -81,4 +81,39 @@ it("does not deliver old account data to a new session", async () => {
   setTeamCSRF("new");
   finish(new Response('[{"request_id":"old-account"}]'));
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+});
+
+// Regression: the sign-in page mints an anonymous CSRF from /auth/options while
+// the console is restoring a cookie session at the same moment. That mint used
+// to bump the session generation, so the member's own /me came back as "Session
+// changed" — they were shown the sign-in page on every reload and the
+// navigation hint was cleared as if the session had expired.
+it("does not invalidate an in-flight restore when the sign-in page mints its CSRF", async () => {
+  let finish!: (response: Response) => void;
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = accountRequest("/me");
+  refreshAnonymousCSRF("anonymous-token");
+  finish(new Response('{"user":{"role":"member"}}'));
+  await expect(pending).resolves.toMatchObject({ user: { role: "member" } });
+});
+
+it("keeps the account's own CSRF when the anonymous mint arrives late", async () => {
+  setTeamCSRF("account-token");
+  refreshAnonymousCSRF("anonymous-token");
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response('{"ok":true}'));
+  await accountRequest("/me/keys", { method: "POST", body: "{}" });
+  expect(new Headers(fetch.mock.calls[0]![1]!.headers).get("X-Meta-CSRF")).toBe("account-token");
+});
+
+it("still delivers the anonymous token while nobody is signed in", async () => {
+  setTeamCSRF("");
+  refreshAnonymousCSRF("anonymous-token");
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response('{"ok":true}'));
+  await accountRequest("/me/recovery", { method: "POST", body: "{}" });
+  expect(new Headers(fetch.mock.calls[0]![1]!.headers).get("X-Meta-CSRF")).toBe("anonymous-token");
 });
