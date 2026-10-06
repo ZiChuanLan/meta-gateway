@@ -1,11 +1,21 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Gauge,
+  KeyRound,
+  LayoutDashboard,
+  Palette,
+  ShieldCheck,
+  Tags,
+  Ticket,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { useI18n } from "../i18n";
-import { ErrorState, Loading } from "../components/ui";
+import { ErrorState, Loading, Page } from "../components/ui";
 import { teamText, type TeamKey } from "./text";
 import type { ModeInfo, TeamRequest, TeamSettings } from "./types";
 import type { UsersContext } from "./UsersContext";
-import "./team.css";
 
 /**
  * The multi-user module's shell — the one entry point for everything that only
@@ -18,26 +28,48 @@ import "./team.css";
  * accounts finds the door from Settings and turns it on from here, instead of
  * the switch living among runtime parameters where it read like a tuning knob.
  *
- * Sections are routes, not tabs: each board is deep-linkable, survives a
- * reload, and can be hidden individually from the appearance panel. An admin
+ * Sections are routes, not stateful tabs: each board is deep-linkable, survives
+ * a reload, and can be hidden individually from the appearance panel. An admin
  * (non-owner) sees only the boards they may actually operate.
+ *
+ * Eight entries in one unlabelled row was a wall of words that wrapped into two
+ * lines on a phone and said nothing about which board belonged with which. They
+ * are now two labelled groups — the people who use the gateway, and how they get
+ * in and what they see — rendered with the console's own tab anatomy, so this
+ * shell reads as the same product as the rest of the console.
  */
 interface Section {
   to: string;
   label: TeamKey;
+  icon: LucideIcon;
   /** Owner-only boards are absent for an admin, not merely disabled. */
   ownerOnly: boolean;
 }
 
-const SECTIONS: Section[] = [
-  { to: "overview", label: "overview", ownerOnly: false },
-  { to: "members", label: "members", ownerOnly: false },
-  { to: "policies", label: "policies", ownerOnly: true },
-  { to: "quotas", label: "quotas", ownerOnly: true },
-  { to: "pricing", label: "pricing", ownerOnly: true },
-  { to: "codes", label: "codes", ownerOnly: true },
-  { to: "oauth", label: "oauth", ownerOnly: true },
-  { to: "branding", label: "branding", ownerOnly: true },
+interface Group {
+  label: TeamKey;
+  sections: Section[];
+}
+
+const GROUPS: Group[] = [
+  {
+    label: "navGroupMembers",
+    sections: [
+      { to: "overview", label: "overview", icon: LayoutDashboard, ownerOnly: false },
+      { to: "members", label: "members", icon: Users, ownerOnly: false },
+      { to: "policies", label: "policies", icon: ShieldCheck, ownerOnly: true },
+      { to: "quotas", label: "quotas", icon: Gauge, ownerOnly: true },
+    ],
+  },
+  {
+    label: "navGroupAccess",
+    sections: [
+      { to: "codes", label: "codes", icon: Ticket, ownerOnly: true },
+      { to: "pricing", label: "pricing", icon: Tags, ownerOnly: true },
+      { to: "oauth", label: "oauth", icon: KeyRound, ownerOnly: true },
+      { to: "branding", label: "branding", icon: Palette, ownerOnly: true },
+    ],
+  },
 ];
 
 export function UsersLayout({ request }: { request: TeamRequest }) {
@@ -90,26 +122,30 @@ export function UsersLayout({ request }: { request: TeamRequest }) {
   // Before the module is switched on there is exactly one meaningful board:
   // the guide that switches it on. Offering "members" for a gateway that has no
   // accounts yet would be a door into an empty room.
-  const sections = SECTIONS.filter(
-    (section) => section.to === "overview" || (enabled && (!section.ownerOnly || owner)),
-  );
+  const groups = GROUPS.map((group) => ({
+    label: group.label,
+    sections: group.sections.filter(
+      (section) => section.to === "overview" || (enabled && (!section.ownerOnly || owner)),
+    ),
+  })).filter((group) => group.sections.length > 0);
   return (
-    <section className="team-surface">
-      <div className="team-head">
-        <div>
-          <h1>{t("team")}</h1>
-          <p className="team-muted">{t("teamDescription")}</p>
-        </div>
-      </div>
-      <nav className="team-subnav" aria-label={t("team")}>
-        {sections.map((section) => (
-          <NavLink
-            key={section.to}
-            to={section.to}
-            className={({ isActive }) => (isActive ? "is-active" : "")}
-          >
-            {t(section.label)}
-          </NavLink>
+    <Page
+      as="section"
+      className="team-surface"
+      title={t("team")}
+      description={t("teamDescription")}
+    >
+      <nav className="tabs is-grouped" aria-label={t("team")}>
+        {groups.map((group) => (
+          <div className="tabs-group" key={group.label}>
+            <span className="tabs-group-label">{t(group.label)}</span>
+            {group.sections.map((section) => (
+              <NavLink key={section.to} to={section.to}>
+                <section.icon size={13} aria-hidden="true" />
+                {t(section.label)}
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
       <Outlet
@@ -124,6 +160,6 @@ export function UsersLayout({ request }: { request: TeamRequest }) {
           } satisfies UsersContext
         }
       />
-    </section>
+    </Page>
   );
 }

@@ -66,6 +66,8 @@ const zh = {
   disableHint:
     "切回个人模式会退出所有团队会话，阻止团队 Key 后续调用；用户、配置和历史保留。原个人 Key 不受影响。",
   members: "成员与邀请",
+  navGroupMembers: "成员与权限",
+  navGroupAccess: "接入与界面",
   policies: "权限与路由",
   branding: "成员界面",
   save: "保存",
@@ -475,6 +477,8 @@ const en: Record<keyof typeof zh, string> = {
   disableHint:
     "Switching to personal revokes team sessions and blocks team keys. Accounts, settings and history remain. Existing personal keys are unaffected.",
   members: "Members & invitations",
+  navGroupMembers: "Members & access",
+  navGroupAccess: "Onboarding & UI",
   policies: "Access & routing",
   branding: "Member interface",
   save: "Save",
