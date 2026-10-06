@@ -24,7 +24,6 @@ import { ActionMenu } from "../components/ActionMenu";
 import { TelemetryStrip } from "../components/TelemetryStrip";
 import { Button, ConfirmDialog, Dialog, Empty, Page, PageActions, Panel } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
-import { useModules } from "../hooks/useModules";
 import { useToast } from "../toast";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
@@ -34,6 +33,7 @@ import { MemberModelsPage as MemberModels } from "./MemberModelsPage";
 import { positiveId } from "../lib/positiveId";
 import { readScopedTabState, writeScopedTabState } from "../lib/tabState";
 import { useListSelection } from "../lib/useListSelection";
+import { useModelsBoard } from "./models/useModelsBoard";
 import { useModelFilters } from "./models/useModelFilters";
 import { useCooldownExpiry } from "../lib/cooldownClock";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
@@ -108,12 +108,18 @@ function AdminModels() {
 
   return (
     <Page title={t("modelsPage.title")} description={t("modelsPage.description")}>
-      <ModelCatalog initialModel={modelParam} channelId={channelId} initialGroup={groupParam} />
+      <ModelsWorkspace initialModel={modelParam} channelId={channelId} initialGroup={groupParam} />
     </Page>
   );
 }
 
-function ModelCatalog({
+/**
+ * The models workspace: the page that owns the catalogue's state (queries, filters,
+ * selection, bulk actions and dialogs) and composes the four pieces the A02 split
+ * produced — RouteDirectory, RouteDetailPanel, ModelTools and RoutePolicyCard — over
+ * the shared ModelWorkspaceLayout.
+ */
+function ModelsWorkspace({
   initialModel,
   channelId: channelIdFromUrl,
   initialGroup,
@@ -127,98 +133,23 @@ function ModelCatalog({
   const service = api(client!);
   const toast = useToast();
   const navigate = useNavigate();
-  const modules = useModules();
   const [params, setSearchParams] = useSearchParams();
 
-  const overviews = useQuery({
-    queryKey: ["route-overviews"],
-    queryFn: ({ signal }) => service.routeOverviews(signal),
-    refetchInterval: 15_000,
-  });
-  const channels = useQuery({
-    queryKey: ["channels"],
-    queryFn: ({ signal }) => service.channels(signal),
-  });
-  const sticky = useQuery({
-    queryKey: ["sticky"],
-    queryFn: ({ signal }) => service.sticky(signal),
-    retry: false,
-    refetchInterval: 15_000,
-  });
-  const runtimeSettings = useQuery({
-    queryKey: ["runtime-settings"],
-    queryFn: ({ signal }) => service.runtimeSettings(signal),
-    retry: false,
-  });
-  // Account finances (balance + per-model price per channel), cached upstream
-  // for a short TTL; used to show call price / affordable calls per member.
-  const finance = useQuery({
-    queryKey: ["finance"],
-    queryFn: ({ signal }) => service.finance(signal),
-    retry: false,
-    refetchInterval: 120_000,
-  });
-  // Models exposed by channels but not covered by any enabled route.
-  const missing = useQuery({
-    queryKey: ["missing-models"],
-    queryFn: ({ signal }) => service.missingModels(signal),
-    refetchInterval: 60_000,
-  });
-  // Model metadata library (capability annotations shown as badges).
-  const metadata = useQuery({
-    queryKey: ["model-metadata"],
-    queryFn: ({ signal }) => service.modelMetadata(signal),
-    refetchInterval: 60_000,
-  });
-  // Models a plugin answers for. They have no route of their own — a route hook
-  // rewrites the request before selection — so they never appear in the route
-  // list above, and without this the console gives no sign that a model the
-  // downstream catalogue advertises exists at all.
-  const pluginHooks = useQuery({
-    queryKey: ["plugins-hooks"],
-    queryFn: ({ signal }) => service.pluginHooks(signal),
-    refetchInterval: 60_000,
-  });
-  const virtualModels = useMemo(() => {
-    const hooks = pluginHooks.data?.hooks ?? [];
-    const out: Array<{ model: string; pluginId: string; pluginName: string }> = [];
-    const seen = new Set<string>();
-    for (const hook of hooks) {
-      if (hook.point !== "route") continue;
-      for (const pattern of hook.match_models ?? []) {
-        // A wildcard is a matcher, not a callable model name: same rule the
-        // gateway applies when it builds the downstream catalogue.
-        if (!pattern || /[*?]/.test(pattern) || seen.has(pattern)) continue;
-        seen.add(pattern);
-        out.push({
-          model: pattern,
-          pluginId: hook.plugin_id,
-          pluginName: hook.plugin_name || hook.plugin_id,
-        });
-      }
-    }
-    return out.sort((a, b) => a.model.localeCompare(b.model));
-  }, [pluginHooks.data]);
-  const metaByModel = useMemo(() => {
-    const map = new Map<string, ModelMetadata>();
-    for (const item of metadata.data?.items ?? []) {
-      map.set(item.model_name, item);
-    }
-    return map;
-  }, [metadata.data]);
-
-  /**
-   * Where a plugin-answered model row links to. The console router mounts under
-   * basename="/console", so an in-app target is route-relative —
-   * "/plugins/<id>". Writing "/console/plugins/<id>" resolves to
-   * /console/console/plugins/<id>, matches no route, and silently bounces back
-   * to the overview through the catch-all redirect. The backend already answers
-   * with the right path (`open_path`, plugins/service.go openPathFor); the
-   * literal is the fallback for a plugin whose status record has not loaded.
-   */
-  const pluginPageOf = (pluginId: string) =>
-    modules.byId.get(pluginId)?.open_path || `/plugins/${encodeURIComponent(pluginId)}`;
-
+  // Everything this page reads (the eight queries and the three derived lookups)
+  // is owned by models/useModelsBoard — including the refetch intervals, which are
+  // a policy rather than an accident of where the query happened to be written.
+  const board = useModelsBoard({ service });
+  const {
+    overviews,
+    channels,
+    sticky,
+    runtimeSettings,
+    missing,
+    virtualModels,
+    metaByModel,
+    pluginPageOf,
+    financeItems,
+  } = board;
   // URL wins over tab-scoped state on first mount; tab state survives the
   // bare-path sidebar navigation that drops the query string. Read once, so the
   // states and the filter panel's default-open decision cannot disagree.
@@ -429,7 +360,6 @@ function ModelCatalog({
   }, [selected]);
 
   // Price-aware member ordering (cheapest first) when the toggle is on.
-  const financeItems = useMemo(() => finance.data?.items ?? [], [finance.data?.items]);
   const orderedMembers = useMemo(() => sortMembers(selectedMembers), [selectedMembers]);
   /** Normalized member groups; the active tab stays visible while empty. */
   const groupNames = useMemo(() => {
