@@ -29,10 +29,11 @@ import {
   isMissingAPIKey,
   normalizeBase,
   SECRET_MASK,
-  type ConnectionHealthFilter,
   type CreateConnectionInput,
 } from "./channels/helpers";
 import { channelActions, type ChannelActionDeps } from "./channels/channelActions";
+import { readChannelTab, writeChannelTab } from "./channels/tabState";
+import { useChannelFilters } from "./channels/useChannelFilters";
 import {
   credentialPatch as buildCredentialPatch,
   credentialShouldBeRemoved,
@@ -56,34 +57,12 @@ const INVALIDATE = [
   ["route-overviews"],
   ["discovered-models"],
 ] as const;
-
-// Tab-scoped persistence. The sidebar navigates to bare /channels (no query
-// string), so URL-only filters are lost on page switches; these helpers keep
-// the current tab's search and filters across navigation.
-function readChannelTab<T>(key: string, fallback: T): T {
-  try {
-    const raw = sessionStorage.getItem(`channels.${key}`);
-    return raw != null ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeChannelTab<T>(key: string, value: T) {
-  try {
-    sessionStorage.setItem(`channels.${key}`, JSON.stringify(value));
-  } catch {
-    // Storage unavailable; state stays in memory for this render.
-  }
-}
-
 export function Channels() {
   const { client } = useSession();
   const { t } = useI18n();
   const toast = useToast();
   const service = api(client!);
   const [params, setParams] = useSearchParams();
-  const searchParam = params.get("search") ?? "";
   const navigate = useNavigate();
   // Cooldown counters (`cooling_member_count`, `failure_count`) are computed
   // live by the backend from `route_members.cooldown_until`, and the degraded
@@ -124,21 +103,19 @@ export function Channels() {
     top: number;
     left: number;
   } | null>(null);
-  const [query, setQuery] = useState(() => searchParam || readChannelTab("query", ""));
-  const healthParam = params.get("health") as ConnectionHealthFilter | null;
-  const [healthFilter, setHealthFilter] = useState<ConnectionHealthFilter>(() =>
-    healthParam === "ready" || healthParam === "missing_key" || healthParam === "attention"
-      ? healthParam
-      : readChannelTab<ConnectionHealthFilter>("health", "all"),
-  );
-  const [typeFilter, setTypeFilter] = useState(() => {
-    const v = params.get("type");
-    return v && v !== "all" ? v : readChannelTab("type", "all");
-  });
-  const [groupFilter, setGroupFilter] = useState(() => {
-    const v = params.get("group");
-    return v && v !== "all" ? v : readChannelTab("group", "all");
-  });
+  const filters = useChannelFilters(params, setParams);
+  const {
+    query,
+    setQuery,
+    healthFilter,
+    setHealthFilter,
+    typeFilter,
+    setTypeFilter,
+    groupFilter,
+    setGroupFilter,
+    updateFilterParam,
+    toggleHealthFilter,
+  } = filters;
   const [stageMessage, setStageMessage] = useState<{
     kind: "created" | "created_and_verified" | "verify_failed";
     name: string;
@@ -147,11 +124,6 @@ export function Channels() {
   } | null>(null);
   const selectedId = positiveId(params.get("id"));
   const [inspectorOpen, setInspectorOpen] = useState(Boolean(selectedId));
-  // URL wins over tab state; only overwrite when the URL actually carries a value
-  // so a bare-path navigation never clears the tab-restored state.
-  useEffect(() => {
-    if (searchParam) setQuery(searchParam);
-  }, [searchParam]);
   // Deep-link from the models page (?channel=<id>): pop that channel's model
   // management drawer open so the user lands directly on the right tab.
   useEffect(() => {
@@ -202,25 +174,6 @@ export function Channels() {
       setParams(next, { replace: true });
     }
   }, [params, overviews.data, keysChannel, setParams]);
-  useEffect(() => {
-    const next = params.get("health") as ConnectionHealthFilter | null;
-    if (next === "ready" || next === "missing_key" || next === "attention") {
-      setHealthFilter(next);
-    }
-  }, [params]);
-  useEffect(() => {
-    const next = params.get("type");
-    if (next && next !== "all") setTypeFilter(next);
-  }, [params]);
-  useEffect(() => {
-    const next = params.get("group");
-    if (next && next !== "all") setGroupFilter(next);
-  }, [params]);
-
-  useEffect(() => writeChannelTab("query", query), [query]);
-  useEffect(() => writeChannelTab("health", healthFilter), [healthFilter]);
-  useEffect(() => writeChannelTab("type", typeFilter), [typeFilter]);
-  useEffect(() => writeChannelTab("group", groupFilter), [groupFilter]);
   // Load site credentials for the surface that is about to render them. The
   // keys drawer owns the pool it shows, so its channel decides the fetch:
   // otherwise the pool follows the list selection, and a deep-link (?keys=<id>)
@@ -803,19 +756,6 @@ export function Channels() {
   const attentionCount = (overviews.data ?? []).filter((o) => {
     return channelNeedsAttention(o);
   }).length;
-
-  const updateFilterParam = (key: string, value: string) => {
-    const next = new URLSearchParams(params);
-    if (!value || value === "all") next.delete(key);
-    else next.set(key, value);
-    next.delete("id");
-    setParams(next, { replace: true });
-  };
-  const toggleHealthFilter = (next: ConnectionHealthFilter) => {
-    const value = healthFilter === next ? "all" : next;
-    setHealthFilter(value);
-    updateFilterParam("health", value);
-  };
 
   const selectRow = (id: number) => {
     writeChannelTab("selected", id);
