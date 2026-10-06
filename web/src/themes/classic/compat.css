@@ -41,7 +41,7 @@
    instead, which is what keeps the card in view while the long list scrolls. */
 :root[data-appearance="classic"] .theme-classic .channels-workspace { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(310px,1fr); grid-template-rows: minmax(0, 1fr); gap: 20px; align-items: stretch; }
 :root[data-appearance="classic"] .classic-channel-detail { min-width: 0; position: sticky; top: 118px; display: flex; flex-direction: column; }
-:root[data-appearance="classic"] .classic-channel-detail > .detail-card { flex: 1 1 auto; position: static; }
+:root[data-appearance="classic"] .classic-channel-detail > .detail-card { }
 /* The workspace is capped to the space actually left below the page chrome so
    the console stops scrolling as a whole. It used to inherit the directory's
    `min(70vh, 820px)` (styles.css), and 70vh ignores everything the workspace
