@@ -675,3 +675,13 @@ table tbody tr.is-selected {
 .team-toolbar {
   max-width: 420px;
 }
+
+/* The batch-mint form sits inside the codes panel, so it keeps the panel's own
+   width and rhythm instead of the page's. */
+.team-mint-form {
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid var(--line-light);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-subtle) 60%, transparent);
+}

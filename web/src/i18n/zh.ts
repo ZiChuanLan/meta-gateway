@@ -490,6 +490,10 @@ export const zh: Dict = {
 
   "status.enabled": "已启用",
   "status.active": "正常",
+  "status.pending": "待使用",
+  "status.consumed": "已用完",
+  "status.expired": "已过期",
+  "status.revoked": "已撤销",
   "status.disabled": "已禁用",
   "status.auto_disabled": "已自动禁用",
   "status.ready": "就绪",

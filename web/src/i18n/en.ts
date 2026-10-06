@@ -538,6 +538,10 @@ export const en: Dict = {
 
   "status.enabled": "Enabled",
   "status.active": "Active",
+  "status.pending": "Pending",
+  "status.consumed": "Used up",
+  "status.expired": "Expired",
+  "status.revoked": "Revoked",
   "status.disabled": "Disabled",
   "status.auto_disabled": "Auto-disabled",
   "status.ready": "Ready",

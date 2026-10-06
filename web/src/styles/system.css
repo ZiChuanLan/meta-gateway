@@ -687,3 +687,26 @@ input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-hei
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
+
+/* Lifecycle tones for badges whose state is a stage, not a switch: a code that
+   is waiting, spent, past its date, or was cancelled. */
+.badge-pending {
+  border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary);
+}
+.badge-consumed {
+  border-color: var(--line-light);
+  background: var(--surface-hover);
+  color: var(--muted-strong);
+}
+.badge-expired {
+  border-color: color-mix(in srgb, var(--warn, #b8860b) 38%, transparent);
+  background: color-mix(in srgb, var(--warn, #b8860b) 12%, var(--surface));
+  color: color-mix(in srgb, var(--warn, #b8860b) 78%, var(--ink));
+}
+.badge-revoked {
+  border-color: color-mix(in srgb, var(--danger, #c0392b) 38%, transparent);
+  background: color-mix(in srgb, var(--danger, #c0392b) 10%, var(--surface));
+  color: var(--danger, #c0392b);
+}
