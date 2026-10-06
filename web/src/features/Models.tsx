@@ -2,21 +2,11 @@ import { ModelWorkspaceLayout } from "./models/ModelWorkspaceLayout";
 import {
   Activity,
   RefreshCw,
-  ChevronDown,
   Combine,
-  GripVertical,
   History,
   Info,
-  Pencil,
   Plus,
-  Power,
-  RotateCcw,
-  Shield,
   SlidersHorizontal,
-  Sparkles,
-  Target,
-  Trash2,
-  Wand2,
   X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -32,17 +22,7 @@ import type {
 } from "../api/types";
 import { ActionMenu } from "../components/ActionMenu";
 import { TelemetryStrip } from "../components/TelemetryStrip";
-import {
-  Button,
-  ConfirmDialog,
-  Dialog,
-  Empty,
-  Page,
-  PageActions,
-  Panel,
-  InfoTip,
-  StatusBadge,
-} from "../components/ui";
+import { Button, ConfirmDialog, Dialog, Empty, Page, PageActions, Panel } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useModules } from "../hooks/useModules";
 import { useToast } from "../toast";
@@ -62,8 +42,7 @@ import { RouteDirectory } from "./models/RouteDirectory";
 import { RouteDialog } from "./models/RouteDialog";
 import { MemberDialog } from "./models/MemberDialog";
 import { ModelToolDialogs, useModelTools } from "./models/ModelTools";
-import { RoutePolicyCard } from "./models/RoutePolicyCard";
-import { memberActions } from "./models/memberActions";
+import { RouteDetailPanel } from "./models/RouteDetailPanel";
 
 function readMissingDismissed() {
   try {
@@ -87,17 +66,8 @@ const readTabState = <T,>(key: string, fallback: T): T =>
   readScopedTabState("models", key, fallback);
 const writeTabState = <T,>(key: string, value: T): void =>
   writeScopedTabState("models", key, value);
-import { CooldownHint } from "./models/CooldownHint";
 import { countActiveModelFilters } from "./models/modelFilters";
-import {
-  primaryMember,
-  sortMembers,
-  isActiveCooldown,
-  candidateState,
-  memberFinance,
-  getEffectiveRoutingPolicy,
-  originModelOf,
-} from "./models/routingPolicy";
+import { primaryMember, sortMembers, getEffectiveRoutingPolicy } from "./models/routingPolicy";
 
 const ROUTING_INVALIDATE_KEYS = [
   ["routes"],
@@ -1115,650 +1085,82 @@ function ModelCatalog({
           !selectedRoute || !selectedOverview ? (
             <div className="detail-empty">{t("modelsPage.selectHint")}</div>
           ) : (
-            <>
-              <div className="detail-head">
-                <div>
-                  <p className="detail-kicker">{t("modelsPage.detailKicker")}</p>
-                  <h2 className="mono">{selectedRoute.model_pattern}</h2>
-                  <small
-                    title={`${t("modelsPage.memberSummaryHint")} ${t("modelsPage.scopeHint")}`}
-                  >
-                    {primary
-                      ? t(singleModePinned ? "modelsPage.pinnedMember" : "modelsPage.servedBy", {
-                          name: primary.channel.name,
-                        })
-                      : t("modelsPage.noUpstream")}
-                    {selectedMembers.length > 1
-                      ? ` · ${t("modelsPage.extraPaths", {
-                          n: selectedMembers.length - 1,
-                        })}`
-                      : ""}
-                  </small>
-                </div>
-                <StatusBadge value={selectedRoute.enabled ? "enabled" : "disabled"} />
-              </div>
-
-              {/* Two clusters, not five loose controls: the primary action
-                  (run a call) on the left, the settings group — routing mode
-                  and the overflow menu — pinned right. The two bare (i) icons
-                  that used to float here now live on the elements they
-                  explain: the mode hint on the mode control, the scope note on
-                  the summary line under the title. */}
-              <div className="detail-primary-bar">
-                <Button icon={<Sparkles size={14} />} onClick={() => setTryOpen(true)}>
-                  {t("try.open")}
-                </Button>
-                <span className="bar-spacer" />
-                <div className="routing-mode-control" title={t("modelsPage.scopeHint")}>
-                  <span>{t("routing.mode.label")}</span>
-                  <InfoTip label={t("routing.modeHint")} />
-                  <select
-                    className="routing-mode-select"
-                    aria-label={t("routing.mode.label")}
-                    value={selectedRoute.routing_mode || "auto"}
-                    disabled={saveRoutingMode.pendingId === selectedRoute.id}
-                    onChange={(event) => {
-                      const next = event.target.value;
-                      if (next === "single") {
-                        // Manual single selection pins the top member; the
-                        // per-member menu pins a specific channel.
-                        const top =
-                          selectedMembers.find((c) => c.member.enabled) ?? selectedMembers[0];
-                        saveRoutingMode.mutate({
-                          route: selectedRoute,
-                          mode: next,
-                          singleMemberId: selectedRoute.single_member_id ?? top?.member.id ?? null,
-                        });
-                        return;
-                      }
-                      saveRoutingMode.mutate({
-                        route: selectedRoute,
-                        mode: next,
-                      });
-                    }}
-                  >
-                    <option value="auto">{t("routing.mode.auto")}</option>
-                    <option value="adaptive">{t("routing.mode.adaptive")}</option>
-                    <option value="latency">{t("routing.mode.latency")}</option>
-                    <option value="weighted">{t("routing.mode.weighted")}</option>
-                    <option value="single">{t("routing.mode.single")}</option>
-                  </select>
-                </div>
-                <ActionMenu
-                  compact
-                  label={t("common.moreActions")}
-                  disabled={toggleRoute.pendingId === selectedRoute.id}
-                  items={modelActions(selectedRoute)}
-                />
-              </div>
-
-              {singleModeActive && selectedRoute ? (
-                <div className="single-mode-banner">
-                  <Target size={15} />
-                  <div className="single-mode-banner-body">
-                    <strong>
-                      {t("routing.singleModeBanner", {
-                        name: singleModePinned
-                          ? singleModePinned.channel.name
-                          : t("routing.singleModeMissingName"),
-                      })}
-                    </strong>
-                    <small>
-                      {singleModePinned
-                        ? t(
-                            pinOutsideGroup
-                              ? "routing.singleModeGroupMissing"
-                              : "routing.singleModeHint",
-                          )
-                        : t("routing.singleModeMissing")}
-                      {singleModePinned && !pinOutsideGroup && !singleModePinned.member.enabled
-                        ? ` ${t("routing.singleModeDisabledWarning")}`
-                        : ""}
-                    </small>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    disabled={pinMember.isPending}
-                    onClick={() =>
-                      pinMember.mutate({
-                        route: selectedRoute,
-                        memberId: null,
-                      })
-                    }
-                  >
-                    {t("routing.singleModeRestore")}
-                  </Button>
-                </div>
-              ) : null}
-
-              <div className="member-section-heading">
-                <button
-                  type="button"
-                  aria-expanded={showAdvanced}
-                  onClick={() => setShowAdvanced((value) => !value)}
-                >
-                  {t("modelsPage.members")}
-                  <ChevronDown
-                    size={14}
-                    className={showAdvanced ? "chevron-flip is-open" : "chevron-flip"}
-                  />
-                </button>
-                <InfoTip
-                  label={
-                    t("modelsPage.routingHint") +
-                    " " +
-                    t("routing.reorderHint") +
-                    " " +
-                    t("routing.groupTabsHint")
-                  }
-                />
-              </div>
-              {showAdvanced ? (
-                <section className="models-advanced">
-                  <div className="models-advanced-bar">
-                    <Button variant="secondary" icon={<Plus size={14} />} onClick={openAddMember}>
-                      {t("routing.addMember")}
-                    </Button>
-                    {/* The bulk of what "add member" does over and over: one
-                        click attaches every enabled channel that really
-                        serves this model to the group being viewed. */}
-                    <Button
-                      variant="secondary"
-                      icon={<Wand2 size={14} />}
-                      title={t("modelsPage.autoMatchAddHint")}
-                      onClick={() => setAutoMatchRoute(selectedRoute)}
-                    >
-                      {t("modelsPage.autoMatchAdd")}
-                    </Button>
-                    <span className="bar-spacer" />
-                    <Button
-                      variant={bulkSelect ? "primary" : "secondary"}
-                      onClick={() => {
-                        setBulkSelect((value) => !value);
-                        setSelectedMemberIds(new Set());
-                      }}
-                    >
-                      {t("routing.bulkSelect")}
-                    </Button>
-                  </div>
-                  {bulkSelect && selectedMembers.length > 0 ? (
-                    <div className="routing-bulk-bar">
-                      <span className="routing-bulk-count">
-                        {t("routing.bulkSelected", {
-                          count: selectedMemberIds.size,
-                        })}
-                      </span>
-                      <Button
-                        variant="secondary"
-                        disabled={selectedMemberIds.size === 0}
-                        onClick={() => bulkToggleMembers.mutate({ enabled: true })}
-                      >
-                        {t("routing.bulkEnable")}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        disabled={selectedMemberIds.size === 0}
-                        onClick={() => bulkToggleMembers.mutate({ enabled: false })}
-                      >
-                        {t("routing.bulkDisable")}
-                      </Button>
-                      <Button variant="secondary" onClick={selectAllMembers}>
-                        {t("routing.bulkSelectAll")}
-                      </Button>
-                      <Button variant="secondary" onClick={clearMemberSelection}>
-                        {t("routing.bulkClear")}
-                      </Button>
-                    </div>
-                  ) : null}
-                  {reorderMembers.isPending ? (
-                    <div className="routing-reorder-hint">
-                      <span>
-                        {reorderMembers.isPending
-                          ? t("routing.savingOrder")
-                          : t("routing.reorderHint")}
-                      </span>
-                    </div>
-                  ) : null}
-                  <div className="member-group-tabs">
-                    <div
-                      className="member-group-tablist"
-                      role="tablist"
-                      aria-label={t("routing.memberGroupLabel")}
-                    >
-                      {groupNames.map((name) => {
-                        const active = name === activeGroup;
-                        const count = groupCounts.get(name) ?? 0;
-                        return (
-                          <div
-                            key={name}
-                            className={`member-group-tab${active ? " is-active" : ""}`}
-                          >
-                            <button
-                              type="button"
-                              role="tab"
-                              aria-selected={active}
-                              title={count === 0 ? t("routing.groupEmptyHint") : undefined}
-                              onClick={() => setActiveGroup(name)}
-                            >
-                              <span className="member-group-tab-main">
-                                {name === "default" ? t("routing.groupDefault") : name}
-                                <span className="member-group-count">{count}</span>
-                              </span>
-                            </button>
-                            {name !== "default" ? (
-                              <ActionMenu
-                                compact
-                                label={t("common.moreActions")}
-                                items={[
-                                  {
-                                    key: "rename",
-                                    icon: <Pencil size={14} />,
-                                    label: t("routing.groupRename"),
-                                    onSelect: () =>
-                                      setGroupDraft({
-                                        mode: "rename",
-                                        from: name,
-                                        value: name,
-                                      }),
-                                  },
-                                  {
-                                    key: "delete",
-                                    icon: <Trash2 size={14} />,
-                                    label: t("routing.groupDelete"),
-                                    danger: true,
-                                    onSelect: () => setRemoveGroup(name),
-                                  },
-                                ]}
-                              />
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                      {groupDraft ? (
-                        <input
-                          className="member-group-input"
-                          autoFocus
-                          value={groupDraft.value}
-                          maxLength={64}
-                          placeholder={
-                            groupDraft.mode === "new"
-                              ? t("routing.groupNewPlaceholder")
-                              : t("routing.groupRenamePlaceholder")
-                          }
-                          onChange={(event) =>
-                            setGroupDraft({
-                              ...groupDraft,
-                              value: event.target.value,
-                            })
-                          }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") submitGroupDraft();
-                            if (event.key === "Escape") setGroupDraft(null);
-                          }}
-                          onBlur={groupEditorBlur}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          className="member-group-add"
-                          onClick={() => setGroupDraft({ mode: "new", value: "" })}
-                        >
-                          <Plus size={12} />
-                          {t("routing.groupNew")}
-                        </button>
-                      )}
-                    </div>
-                    {groupDraft?.mode === "new" ? (
-                      <label className="member-group-copy">
-                        <input
-                          type="checkbox"
-                          checked={groupDraft.copyDefault ?? false}
-                          onChange={(event) =>
-                            setGroupDraft({
-                              ...groupDraft,
-                              copyDefault: event.target.checked,
-                            })
-                          }
-                          onBlur={groupEditorBlur}
-                        />
-                        <span>{t("routing.groupCopyDefault")}</span>
-                      </label>
-                    ) : null}
-                  </div>
-                  {explain.data?.group_fallback ? (
-                    <p className="member-group-hint" role="status">
-                      {explain.data.route_group
-                        ? t("routing.groupFallback", {
-                            name: activeGroup,
-                            target: explain.data.route_group,
-                          })
-                        : t("routing.groupFallbackAll", { name: activeGroup })}
-                    </p>
-                  ) : null}
-                  {!selectedMembers.length ? (
-                    <Empty>{t("routing.noMembers")}</Empty>
-                  ) : visibleMembers.length === 0 ? (
-                    <div className="routing-group-empty">
-                      <span>
-                        {t("routing.groupEmpty", {
-                          name: activeGroup === "default" ? t("routing.groupDefault") : activeGroup,
-                        })}
-                      </span>
-                      <Button variant="secondary" icon={<Plus size={14} />} onClick={openAddMember}>
-                        {t("routing.addMember")}
-                      </Button>
-                    </div>
-                  ) : (
-                    visibleMembers.map((candidate, rowIndex) => {
-                      const entry = candidate.member;
-                      const financeInfo = memberFinance(
-                        entry,
-                        originModelOf(entry, selectedRoute) || selectedModel,
-                        financeItems,
-                      );
-                      const evaluation = explain.data?.candidates.find(
-                        (item) => item.candidate.member.id === entry.id,
-                      );
-                      const activeCooldown = isActiveCooldown(entry);
-                      const autoDisabled = candidate.channel.status === "auto_disabled";
-                      const state = autoDisabled
-                        ? "auto_disabled"
-                        : evaluation?.reasons.includes("circuit_open")
-                          ? "circuit_open"
-                          : candidateState(candidate);
-                      // An expired cooldown is history, not an actionable
-                      // cooldown. A disabled member still needs an explicit
-                      // recovery action, unless the whole channel is parked
-                      // (the channel-level recovery button handles that).
-                      const canResetMemberHealth =
-                        !autoDisabled &&
-                        (activeCooldown || (!entry.enabled && entry.fail_count > 0));
-                      const resetActionIsCooldown = activeCooldown && entry.enabled;
-                      const ordered = visibleMembers;
-                      const busy =
-                        toggleMember.pendingId === entry.id ||
-                        clearHealth.pendingId === entry.id ||
-                        reorderMembers.isPending;
-                      const applyOrder = (next: RoutingCandidate[]) => {
-                        reorderMembers.mutate(next);
-                      };
-                      const moveBy = (delta: number) => {
-                        const from = ordered.findIndex((item) => item.member.id === entry.id);
-                        const to = from + delta;
-                        if (from < 0 || to < 0 || to >= ordered.length) return;
-                        const next = [...ordered];
-                        const temp = next[from]!;
-                        next[from] = next[to]!;
-                        next[to] = temp;
-                        applyOrder(next);
-                      };
-                      return (
-                        <div
-                          className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
-                          key={entry.id}
-                          draggable={!reorderMembers.isPending && !bulkSelect}
-                          onDragStart={(event) => {
-                            setDragMemberId(entry.id);
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData("text/plain", String(entry.id));
-                          }}
-                          onDragOver={(event) => {
-                            event.preventDefault();
-                            event.dataTransfer.dropEffect = "move";
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            const sourceId = Number(event.dataTransfer.getData("text/plain"));
-                            setDragMemberId(null);
-                            if (!sourceId || sourceId === entry.id) return;
-                            const current = sortMembers(visibleMembers);
-                            const from = current.findIndex((item) => item.member.id === sourceId);
-                            const to = current.findIndex((item) => item.member.id === entry.id);
-                            if (from < 0 || to < 0) return;
-                            const next = [...current];
-                            const [moved] = next.splice(from, 1);
-                            if (!moved) return;
-                            next.splice(to, 0, moved);
-                            applyOrder(next);
-                          }}
-                          onDragEnd={() => setDragMemberId(null)}
-                        >
-                          {bulkSelect ? (
-                            <label
-                              className="member-bulk-check"
-                              title={t("routing.bulkToggleSelect")}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedMemberIds.has(entry.id)}
-                                onChange={() => toggleMemberSelect(entry.id)}
-                              />
-                            </label>
-                          ) : (
-                            <button
-                              type="button"
-                              className="member-drag-handle"
-                              aria-label={t("routing.orderLabel")}
-                              title={t("routing.reorderHint")}
-                            >
-                              <GripVertical size={16} />
-                            </button>
-                          )}
-                          <div className="member-row-main">
-                            <strong>
-                              <button
-                                type="button"
-                                className="member-channel-link"
-                                title={t("routing.openChannelModels")}
-                                onClick={() =>
-                                  navigate(
-                                    `/models/channel/${candidate.channel.id}?model=${encodeURIComponent(
-                                      originModelOf(entry, selectedRoute) || selectedModel,
-                                    )}`,
-                                  )
-                                }
-                              >
-                                {candidate.channel.name}
-                              </button>
-                              {originModelOf(entry, selectedRoute) ? (
-                                <span
-                                  className="member-origin-badge"
-                                  title={t("routing.memberOriginHint")}
-                                >
-                                  {t("routing.memberOrigin", {
-                                    model: originModelOf(entry, selectedRoute),
-                                  })}
-                                </span>
-                              ) : null}
-                            </strong>
-                            <small>
-                              #{rowIndex + 1}
-                              {" · "}
-                              {t("routing.priorityLabel")}: {entry.priority}
-                              {" · "}
-                              {t("routing.weightLabel")}: {entry.weight}
-                              {(() => {
-                                const score = evaluation?.score;
-                                if (score == null || Math.abs(score - entry.weight) < 0.01) {
-                                  return null;
-                                }
-                                return (
-                                  <>
-                                    {" → "}
-                                    <span
-                                      className="member-effective-weight"
-                                      title={t("routing.baseWeightHint")}
-                                    >
-                                      {Math.round(score)}
-                                    </span>
-                                  </>
-                                );
-                              })()}
-                              {entry.manual_override ? (
-                                <>
-                                  {" "}
-                                  <span
-                                    className="member-protected"
-                                    title={t("routing.protectedHint")}
-                                  >
-                                    <Shield size={12} /> {t("routing.protectedLabel")}
-                                  </span>
-                                </>
-                              ) : null}
-                              {financeInfo ? (
-                                (() => {
-                                  const info = financeInfo;
-                                  return (
-                                    <>
-                                      {" · "}
-                                      <span
-                                        className="member-finance"
-                                        title={
-                                          info.overdrawn
-                                            ? t("routing.financeOverdrawnHint")
-                                            : t("routing.financeHint")
-                                        }
-                                      >
-                                        {info.overdrawn
-                                          ? t("routing.financeOverdrawn")
-                                          : t("routing.financeCalls", {
-                                              calls: info.calls,
-                                            })}
-                                        {info.fixed
-                                          ? t("routing.financeUnitCalls")
-                                          : t("routing.financeUnitM")}
-                                      </span>
-                                    </>
-                                  );
-                                })()
-                              ) : (
-                                <>
-                                  {" · "}
-                                  <span
-                                    className="member-finance is-na"
-                                    title={t("routing.financeMissingHint")}
-                                  >
-                                    {t("routing.financeMissing")}
-                                  </span>
-                                </>
-                              )}
-                              {entry.fail_count > 0
-                                ? ` · ${t(
-                                    activeCooldown ? "routing.failCount" : "routing.failureHistory",
-                                    { count: entry.fail_count },
-                                  )}`
-                                : null}
-                              {activeCooldown && entry.last_error ? ` · ${entry.last_error}` : null}
-                              {activeCooldown ? (
-                                <>
-                                  {" "}
-                                  <CooldownHint until={entry.cooldown_until!} />
-                                </>
-                              ) : null}
-                            </small>
-                          </div>
-                          <div className="member-controls">
-                            {singleModeActive && selectedRoute?.single_member_id === entry.id ? (
-                              <span
-                                className="member-pin-chip"
-                                title={t("routing.singleModeBanner", {
-                                  name: candidate.channel.name,
-                                })}
-                              >
-                                <Target size={11} />
-                                {t("routing.pinChip")}
-                              </span>
-                            ) : null}
-                            <span className="member-row-state">
-                              <StatusBadge value={state} />
-                            </span>
-                            {candidate.channel.status === "auto_disabled" ? (
-                              <button
-                                type="button"
-                                className="member-clear-health"
-                                title={t("routing.reenableChannelHint")}
-                                disabled={enableChannel.pendingId === candidate.channel.id}
-                                onClick={() => enableChannel.mutate(candidate.channel.id)}
-                              >
-                                <Power size={13} />
-                                {t("routing.reenableChannel")}
-                              </button>
-                            ) : null}
-                            {canResetMemberHealth ? (
-                              <button
-                                type="button"
-                                className="member-clear-health"
-                                title={t(
-                                  resetActionIsCooldown
-                                    ? "routing.clearHealth"
-                                    : "routing.recoverMemberHint",
-                                )}
-                                disabled={clearHealth.isPending}
-                                onClick={() => clearHealth.mutate(entry.id)}
-                              >
-                                <RotateCcw size={13} />
-                                {t(
-                                  resetActionIsCooldown
-                                    ? "routing.clearHealth"
-                                    : "routing.recoverMember",
-                                )}
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="icon-button"
-                              aria-label={t("routing.moveUp")}
-                              title={t("routing.moveUp")}
-                              disabled={busy || rowIndex <= 0}
-                              onClick={() => moveBy(-1)}
-                            >
-                              ↑
-                            </button>
-                            <button
-                              type="button"
-                              className="icon-button"
-                              aria-label={t("routing.moveDown")}
-                              title={t("routing.moveDown")}
-                              disabled={busy || rowIndex >= ordered.length - 1}
-                              onClick={() => moveBy(1)}
-                            >
-                              ↓
-                            </button>
-                            <ActionMenu
-                              compact
-                              label={t("common.moreActions")}
-                              disabled={busy || bulkSelect}
-                              items={memberActions(entry, {
-                                t,
-                                route: selectedRoute ?? null,
-                                memberCount: orderedMembers.length,
-                                canResetHealth: canResetMemberHealth,
-                                resetIsCooldown: resetActionIsCooldown,
-                                mutations: { toggleMember, pinMember, clearHealth, saveMember },
-                                setMember,
-                                setRemoveMember,
-                              })}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </section>
-              ) : null}
-              <RoutePolicyCard
-                t={t}
-                effectivePolicy={effectivePolicy}
-                effectiveRetryRounds={effectiveRetryRounds}
-                effectiveChannelRetries={effectiveChannelRetries}
-                singleModeApplies={singleModeApplies}
-                retryPolicyIsOverridden={retryPolicyIsOverridden}
-                channelRetryPolicyIsOverridden={channelRetryPolicyIsOverridden}
-                crossChannelFailoverEnabled={
-                  runtimeSettings.data?.editable.cross_channel_failover_enabled
-                }
-              />
-            </>
+            <RouteDetailPanel
+              t={t}
+              route={selectedRoute}
+              selectedModel={selectedModel}
+              header={{
+                t,
+                route: selectedRoute,
+                primary,
+                memberCount: selectedMembers.length,
+                singleModePinned: Boolean(singleModePinned),
+                onOpenTry: () => setTryOpen(true),
+                saveRoutingMode,
+                toggleRoute,
+                actions: modelActions(selectedRoute),
+                candidates: selectedMembers,
+              }}
+              policy={{
+                t,
+                effectivePolicy,
+                effectiveRetryRounds,
+                effectiveChannelRetries,
+                singleModeApplies,
+                retryPolicyIsOverridden,
+                channelRetryPolicyIsOverridden,
+                crossChannelFailoverEnabled:
+                  runtimeSettings.data?.editable.cross_channel_failover_enabled,
+              }}
+              singleModeActive={singleModeActive}
+              singleModePinned={singleModePinned}
+              pinOutsideGroup={pinOutsideGroup}
+              pinPending={Boolean(pinMember.isPending)}
+              onClearPin={() => pinMember.mutate({ route: selectedRoute, memberId: null })}
+              showAdvanced={showAdvanced}
+              setShowAdvanced={setShowAdvanced}
+              openAddMember={openAddMember}
+              setAutoMatchRoute={setAutoMatchRoute}
+              bulkSelect={bulkSelect}
+              setBulkSelect={setBulkSelect}
+              selectedMemberIds={selectedMemberIds}
+              setSelectedMemberIds={setSelectedMemberIds}
+              bulkToggleMembers={bulkToggleMembers}
+              selectAllMembers={selectAllMembers}
+              clearMemberSelection={clearMemberSelection}
+              groupNames={groupNames}
+              activeGroup={activeGroup}
+              setActiveGroup={setActiveGroup}
+              groupCounts={groupCounts}
+              groupDraft={groupDraft}
+              setGroupDraft={setGroupDraft}
+              submitGroupDraft={submitGroupDraft}
+              groupEditorBlur={groupEditorBlur}
+              setRemoveGroup={setRemoveGroup}
+              groupFallback={
+                explain.data?.group_fallback ? { routeGroup: explain.data.route_group } : null
+              }
+              totalMemberCount={selectedMembers.length}
+              list={{
+                t,
+                route: selectedRoute,
+                selectedModel,
+                members: visibleMembers,
+                explain,
+                financeItems,
+                dragMemberId,
+                setDragMemberId,
+                reorderMembers,
+                bulkSelect,
+                selectedMemberIds,
+                toggleMemberSelect,
+                navigate,
+                enableChannel,
+                mutations: { toggleMember, pinMember, clearHealth, saveMember },
+                setMember,
+                setRemoveMember,
+              }}
+            />
           )
         }
       />
