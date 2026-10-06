@@ -59,6 +59,7 @@ import { TryPanel } from "./TryPanel";
 import { MemberModelsPage as MemberModels } from "./MemberModelsPage";
 import { positiveId } from "../lib/positiveId";
 import { readScopedTabState, writeScopedTabState } from "../lib/tabState";
+import { useListSelection } from "../lib/useListSelection";
 import { useCooldownExpiry } from "../lib/cooldownClock";
 import { modelGroup } from "./models/modelGroups";
 import { ModelMetadataDialog } from "./models/ModelMetadataDialog";
@@ -375,12 +376,14 @@ function ModelCatalog({
 
   // Bulk selection over the routing table (current-page checkboxes); actions
   // resolve against the full filtered list so selections survive paging.
-  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
-  const [bulkMode, setBulkMode] = useState(false);
-  const exitBulkMode = () => {
-    setBulkMode(false);
-    setBulkSelected(new Set());
-  };
+  // Bulk selection, owned by lib/useListSelection (shared with the connections
+  // board); local names kept so the rest of this page reads as before.
+  const selection = useListSelection();
+  const bulkSelected = selection.selected;
+  const bulkMode = selection.mode;
+  const setBulkSelected = selection.setSelected;
+  const setBulkMode = selection.setMode;
+  const exitBulkMode = selection.exit;
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const bulkRoutes = useMemo(
     () => rows.filter((item) => bulkSelected.has(item.route.id)),
@@ -399,14 +402,8 @@ function ModelCatalog({
       return next;
     });
   };
-  const toggleBulkSelected = (id: number) => {
-    setBulkSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  // The hook's toggle is the same operation this page had inline.
+  const toggleBulkSelected = selection.toggle;
   const bulkToggleRoutes = useAdminMutation({
     mutationFn: async (input: { ids: number[]; enabled: boolean }) => {
       const results = await Promise.allSettled(
