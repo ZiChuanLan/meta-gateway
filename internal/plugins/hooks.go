@@ -403,22 +403,6 @@ func (s *Service) rebuildHookEntriesLocked(records []store.PluginRecord, enabled
 	s.hookEntries = entries
 }
 
-// refreshHookEntries recomputes the enabled hook declarations from the
-// persisted records and the current config cache. It is the cheap reload for a
-// change that can reach the entries themselves (a saved config), not for one
-// that changes which plugins are enabled — that path goes through
-// reloadEnabled.
-func (s *Service) refreshHookEntries() {
-	records, err := s.store.List()
-	if err != nil {
-		log.Printf("plugins: hook refresh skipped: %v", err)
-		return
-	}
-	s.mu.Lock()
-	s.rebuildHookEntriesLocked(records, s.enabled)
-	s.mu.Unlock()
-}
-
 // hasInterceptPermission reports whether a manifest declared the intercept
 // permission.
 func hasInterceptPermission(permissions []string) bool {

@@ -20,13 +20,6 @@ const (
 	UnifyOpRouteDeleted = "route_deleted"
 )
 
-// unifyRemovalOps are the op kinds that removed a superseded original route,
-// newest scheme first. Both stay listed in the history so a batch applied
-// before the switch to deletion can still be undone.
-func IsUnifyRemovalOp(op string) bool {
-	return op == UnifyOpRouteDeleted || op == UnifyOpRouteArchived
-}
-
 // UnifyBatch is one applied unification group. UndoneAt is nil while the batch
 // is still in effect; set once it has been reverted.
 type UnifyBatch struct {

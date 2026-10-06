@@ -163,6 +163,8 @@ export interface Route {
   updated_at: string;
 }
 export interface RouteMember {
+  /** Set by automatic probing; distinct from an operator's manual disable. */
+  auto_disabled?: boolean;
   id: number;
   route_id: number;
   channel_id: number;
@@ -240,6 +242,26 @@ export interface DownstreamKey {
 export interface CreatedDownstreamKey extends DownstreamKey {
   token: string;
 }
+/** Writable key fields shared by the editor, data source and API client. */
+export type KeyUpdateInput = {
+  name?: string;
+  enabled?: boolean;
+  scopes?: string;
+  quota_total_tokens?: number;
+  quota_total_cost?: number;
+  model_allowlist?: string;
+  model_denylist?: string;
+  expires_at?: string;
+  allowed_ips?: string;
+  route_group_name?: string;
+  group_name?: string;
+  reset_used?: boolean;
+};
+
+export type KeyCreateInput = Omit<KeyUpdateInput, "enabled" | "reset_used"> & {
+  name: string;
+  token?: string;
+};
 export interface UsageSummary {
   request_count: number;
   prompt_tokens: number;
@@ -1166,10 +1188,22 @@ export interface RuntimeEditableSettings {
 }
 
 export interface SelfUpdateStatus {
+  target?: string;
+  started_at?: number;
+  /** The build the update started from, so another browser can confirm a
+   *  tracked-tag handoff (see updateLanded). */
+  from?: string;
   available: boolean;
   running: boolean;
   phase: "idle" | "checking" | "pulling" | "starting-successor" | "handoff" | "failed";
+  mode?: "watchtower" | "socket" | "none";
   error?: string;
+  /** The floating image tag the watchtower executor updates, when one is set. */
+  tracking_tag?: string;
+  /** Which release channel that tag delivers: "stable", "beta", or "" for a
+   *  pin. In watchtower mode the tag decides what can be installed, not the
+   *  console's channel preference. */
+  tracking_channel?: "stable" | "beta" | "";
 }
 
 export interface UpdateCheckStatus {
@@ -1200,6 +1234,7 @@ export interface RuntimeSettings {
 }
 
 export interface RoutingCandidate {
+  upstream_model?: string;
   member: RouteMember;
   channel: Channel;
   credential_usable: boolean;

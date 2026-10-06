@@ -1,17 +1,17 @@
 // Responses API ↔ chat completions conversion. The gateway's internal pivot
 // protocol is OpenAI chat/completions; the Responses wire contract (used by
 // Codex and the OpenAI Agents/SDK tooling) is expressed through this converter.
-// Only text content and function tools are mapped — image/file parts and
+// Text, image URLs and function tools are mapped; file IDs and
 // response-stored state are intentionally out of scope for upstreams that do
 // not natively speak the Responses protocol.
 package adapters
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"strings"
 	"time"
 )
@@ -38,18 +38,21 @@ type chatConvCall struct {
 // translator round-trips. Unknown fields are dropped, never forwarded
 // half-way: a chat upstream would reject them anyway.
 type responsesRequest struct {
-	Model           string          `json:"model"`
-	Instructions    any             `json:"instructions"`
-	Input           json.RawMessage `json:"input"`
-	MaxOutputTokens *int            `json:"max_output_tokens"`
-	Temperature     *float64        `json:"temperature"`
-	TopP            *float64        `json:"top_p"`
-	Stop            json.RawMessage `json:"stop"`
-	Stream          bool            `json:"stream"`
-	Tools           []responsesTool `json:"tools"`
-	ToolChoice      json.RawMessage `json:"tool_choice"`
-	ParallelCalls   *bool           `json:"parallel_tool_calls"`
-	Reasoning       *struct {
+	PreviousResponseID string          `json:"previous_response_id"`
+	Conversation       json.RawMessage `json:"conversation"`
+	Background         bool            `json:"background"`
+	Model              string          `json:"model"`
+	Instructions       any             `json:"instructions"`
+	Input              json.RawMessage `json:"input"`
+	MaxOutputTokens    *int            `json:"max_output_tokens"`
+	Temperature        *float64        `json:"temperature"`
+	TopP               *float64        `json:"top_p"`
+	Stop               json.RawMessage `json:"stop"`
+	Stream             bool            `json:"stream"`
+	Tools              []responsesTool `json:"tools"`
+	ToolChoice         json.RawMessage `json:"tool_choice"`
+	ParallelCalls      *bool           `json:"parallel_tool_calls"`
+	Reasoning          *struct {
 		Effort  string `json:"effort"`
 		Summary string `json:"summary"`
 	} `json:"reasoning"`
@@ -59,6 +62,7 @@ type responsesRequest struct {
 }
 
 type responsesTool struct {
+	Strict      *bool           `json:"strict"`
 	Type        string          `json:"type"`
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
@@ -67,17 +71,21 @@ type responsesTool struct {
 
 // inputItem is one entry of the Responses "input" array.
 type inputItem struct {
-	Type    string          `json:"type"`
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
-	Name    string          `json:"name"`
-	CallID  string          `json:"call_id"`
-	Output  string          `json:"output"`
+	Arguments *string         `json:"arguments"`
+	Type      string          `json:"type"`
+	Role      string          `json:"role"`
+	Content   json.RawMessage `json:"content"`
+	Name      string          `json:"name"`
+	CallID    string          `json:"call_id"`
+	Output    string          `json:"output"`
 }
 
 type inputPart struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	ImageURL string `json:"image_url"`
+	Detail   string `json:"detail"`
+	Refusal  string `json:"refusal"`
 }
 
 // ResponsesToChat converts a /v1/responses request into a chat/completions
@@ -87,6 +95,14 @@ func ResponsesToChat(body []byte) ([]byte, error) {
 	var req responsesRequest
 	if err := json.Unmarshal(body, &req); err != nil || strings.TrimSpace(req.Model) == "" {
 		return nil, fmt.Errorf("responses: invalid request (model required)")
+	}
+	if req.PreviousResponseID != "" || req.Background || (len(req.Conversation) > 0 && string(req.Conversation) != "null") {
+		return nil, fmt.Errorf("%w: stored conversation and background execution require a native Responses upstream", ErrUnsupportedFeature)
+	}
+	for _, tool := range req.Tools {
+		if tool.Type != "function" || strings.TrimSpace(tool.Name) == "" {
+			return nil, fmt.Errorf("%w: tool %q requires a native Responses upstream", ErrUnsupportedFeature, tool.Type)
+		}
 	}
 	messages := make([]chatConvMessage, 0, 4)
 	if instructions, ok := stringOrEmpty(req.Instructions); ok && strings.TrimSpace(instructions) != "" {
@@ -124,9 +140,11 @@ func ResponsesToChat(body []byte) ([]byte, error) {
 		out["tools"] = responsesToolsToChat(req.Tools)
 	}
 	if len(req.ToolChoice) > 0 && string(req.ToolChoice) != "null" {
-		if choice, err := responsesToolChoiceToChat(req.ToolChoice); err == nil {
-			out["tool_choice"] = choice
+		choice, err := responsesToolChoiceToChat(req.ToolChoice)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid tool_choice", ErrUnsupportedFeature)
 		}
+		out["tool_choice"] = choice
 	}
 	if req.ParallelCalls != nil {
 		out["parallel_tool_calls"] = *req.ParallelCalls
@@ -172,7 +190,7 @@ func responsesInputToMessages(raw json.RawMessage) ([]chatConvMessage, error) {
 	messages := make([]chatConvMessage, 0, len(items))
 	for _, item := range items {
 		switch item.Type {
-		case "message":
+		case "message", "":
 			role := item.Role
 			if role == "system" || role == "developer" {
 				role = "system"
@@ -186,7 +204,9 @@ func responsesInputToMessages(raw json.RawMessage) ([]chatConvMessage, error) {
 			messages = append(messages, chatConvMessage{Role: role, Content: text})
 		case "function_call":
 			arguments := "{}"
-			if trimmed := strings.TrimSpace(item.Output); trimmed != "" && strings.HasPrefix(trimmed, "{") {
+			if item.Arguments != nil {
+				arguments = *item.Arguments
+			} else if trimmed := strings.TrimSpace(item.Output); trimmed != "" && strings.HasPrefix(trimmed, "{") {
 				arguments = trimmed
 			} else if trimmed != "" {
 				arguments = `{"result":` + strconvQuote(trimmed) + `}`
@@ -197,9 +217,11 @@ func responsesInputToMessages(raw json.RawMessage) ([]chatConvMessage, error) {
 			messages = append(messages, chatConvMessage{Role: "assistant", ToolCalls: []chatConvCall{call}})
 		case "function_call_output":
 			messages = append(messages, chatConvMessage{Role: "tool", Content: item.Output, ToolCallID: item.CallID})
-		default:
+		case "reasoning":
 			// Reasoning/summary items carry no direct chat equivalent; skip
 			// them instead of failing the request.
+		default:
+			return nil, fmt.Errorf("%w: input item %q", ErrUnsupportedFeature, item.Type)
 		}
 	}
 	if len(messages) == 0 {
@@ -216,7 +238,7 @@ func strconvQuote(value string) string {
 // inputContentText flattens a message item's content (string or part array)
 // into plain text. Image parts are dropped (chat upstreams cannot be assumed
 // to accept them under translation); empty text still yields a valid message.
-func inputContentText(raw json.RawMessage) (string, error) {
+func inputContentText(raw json.RawMessage) (any, error) {
 	raw = json.RawMessage(strings.TrimSpace(string(raw)))
 	if len(raw) == 0 || string(raw) == "null" {
 		return "", nil
@@ -233,11 +255,32 @@ func inputContentText(raw json.RawMessage) (string, error) {
 		return "", errors.New("responses: invalid message content parts")
 	}
 	var builder strings.Builder
+	var content []map[string]any
+	hasImage := false
 	for _, part := range parts {
 		switch part.Type {
-		case "input_text", "text", "output_text", "refusal":
+		case "input_text", "text", "output_text":
 			builder.WriteString(part.Text)
+			content = append(content, map[string]any{"type": "text", "text": part.Text})
+		case "refusal":
+			builder.WriteString(part.Refusal)
+			content = append(content, map[string]any{"type": "text", "text": part.Refusal})
+		case "input_image":
+			if part.ImageURL == "" {
+				return nil, fmt.Errorf("%w: image file IDs require a native Responses upstream", ErrUnsupportedFeature)
+			}
+			image := map[string]any{"url": part.ImageURL}
+			if part.Detail != "" {
+				image["detail"] = part.Detail
+			}
+			content = append(content, map[string]any{"type": "image_url", "image_url": image})
+			hasImage = true
+		default:
+			return nil, fmt.Errorf("%w: input content %q", ErrUnsupportedFeature, part.Type)
 		}
+	}
+	if hasImage {
+		return content, nil
 	}
 	return builder.String(), nil
 }
@@ -249,6 +292,9 @@ func responsesToolsToChat(tools []responsesTool) []map[string]any {
 			continue
 		}
 		function := map[string]any{"name": tool.Name}
+		if tool.Strict != nil {
+			function["strict"] = *tool.Strict
+		}
 		if strings.TrimSpace(tool.Description) != "" {
 			function["description"] = tool.Description
 		}

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -14,6 +15,7 @@ import { SessionProvider } from "../session";
 import { ToastProvider } from "../toast";
 import { Keys, KeysView } from "./Keys";
 import { MEMBER_KEY_CAPS, type KeysSource } from "./keys/KeysSource";
+import { setCurrency } from "../lib/format";
 
 function LocationProbe() {
 	const location = useLocation();
@@ -75,8 +77,31 @@ function firstCreateKeyButton() {
 	return button;
 }
 
+function keyEditFetch() {
+  const key = {
+    id: 9, name: "audit-key", enabled: true, scopes: "relay",
+    quota_total_tokens: 100, quota_used_tokens: 2, quota_total_cost: 25,
+    group_name: "standard", cost: 1, has_token: true, created_at: "2026-10-06",
+  };
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input).split("?")[0];
+    if (path === "/admin/downstream-keys/9" && init?.method === "PUT") {
+      Object.assign(key, JSON.parse(String(init.body)));
+      return jsonResponse(key);
+    }
+    if (path === "/admin/downstream-keys") return jsonResponse([key]);
+    if (path === "/admin/mode") return jsonResponse({ mode: "team", has_owner: true, role: "owner" });
+    if (path === "/admin/groups") return jsonResponse([{ name: "standard" }, { name: "vip" }]);
+    if (path === "/admin/route-groups") return jsonResponse({ groups: ["default"] });
+    if (path === "/admin/model-metadata") return jsonResponse({ items: [] });
+    if (path === "/admin/usage/summary") return jsonResponse({ request_count: 1, total_tokens: 2, cost: 1 });
+    return jsonResponse([]);
+  });
+}
+
 describe("Keys page", () => {
 	beforeEach(() => {
+		setCurrency({ symbol: "$", rate: 1 });
 		localStorage.clear();
 		sessionStorage.clear();
 		localStorage.setItem("meta-gateway.locale", "en");
@@ -85,6 +110,7 @@ describe("Keys page", () => {
 
 	afterEach(() => {
 		cleanup();
+		setCurrency({ symbol: "$", rate: 1 });
 		vi.unstubAllGlobals();
 	});
 
@@ -561,4 +587,55 @@ describe("Keys page", () => {
 		// never shown which group their token is bound to.
 		expect(screen.queryByText("Tenant group")).not.toBeInTheDocument();
 	});
+
+  it.each(["vip", ""])("saves and reloads the tenant group including explicit clearing: %s", async (group) => {
+    const fetcher = keyEditFetch();
+    vi.stubGlobal("fetch", fetcher);
+    renderKeys();
+    await screen.findByText("audit-key");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit quota" }));
+    const field = await screen.findByLabelText("Tenant group");
+    await waitFor(() => expect(within(field).getByRole("option", { name: "vip" })).toBeInTheDocument());
+    fireEvent.change(field, { target: { value: group } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const put = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body)).group_name).toBe(group);
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit quota" }));
+    // An explicitly cleared group no longer automatically opens Advanced.
+    if (!screen.queryByLabelText("Tenant group")) fireEvent.click(screen.getByText("Advanced"));
+    expect(await screen.findByLabelText("Tenant group")).toHaveValue(group);
+  });
+
+  it.each([["Token quota", "-1"], ["Token quota", "1.5"], ["Spend limit", "-1"]])(
+    "rejects invalid %s=%s rather than saving an unlimited quota", async (label, value) => {
+      const fetcher = keyEditFetch();
+      vi.stubGlobal("fetch", fetcher);
+      renderKeys();
+      await screen.findByText("audit-key");
+      fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Edit quota" }));
+      fireEvent.change(await screen.findByLabelText(label), { target: { value } });
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      expect(screen.getByRole("alert")).toHaveTextContent(/non-negative/);
+      expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+      fireEvent.change(screen.getByLabelText(label), { target: { value: "0" } });
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    },
+  );
+
+  it("converts recorded fees for display without converting USD quota inputs", async () => {
+    const fetcher = keyEditFetch();
+    vi.stubGlobal("fetch", fetcher);
+    renderKeys();
+    await screen.findByText("audit-key");
+    act(() => setCurrency({ symbol: "¥", rate: 7 }));
+    expect(await screen.findByText("¥7.00")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit quota" }));
+    expect(await screen.findByLabelText("Spend limit")).toHaveValue(25);
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+  });
 });

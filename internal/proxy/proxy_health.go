@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -321,8 +322,18 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 	if priceCache <= 0 {
 		priceCache = pricePrompt
 	}
-	return (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion +
+	for _, price := range []float64{pricePrompt, priceCompletion, priceCache, pricePerRequest, ratio, multiplier} {
+		if price < 0 || math.IsNaN(price) || math.IsInf(price, 0) {
+			log.Printf("proxy: invalid billing configuration model=%s", req.Model)
+			return 0
+		}
+	}
+	cost := (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion +
 		cacheRead/1000.0*priceCache + pricePerRequest) * ratio * multiplier
+	if cost < 0 || math.IsNaN(cost) || math.IsInf(cost, 0) {
+		return 0
+	}
+	return cost
 }
 
 // priceLayer resolves the price layer in force for a request: the member that
@@ -344,25 +355,25 @@ func (s *Service) priceLayer(req Request) (domain.PriceLayer, bool) {
 	if s.db.ModelMetadata == nil {
 		return domain.PriceLayer{}, false
 	}
-	meta, err := s.db.ModelMetadata.Get(req.Model)
+	upstream := req.UpstreamModel
+	// Internal callers may only carry the member id. Public relay callbacks
+	// pass the actual attempt model, avoiding this extra lookup on that path.
+	if upstream == "" && req.MemberID > 0 && s.db.RouteMember != nil {
+		if member, err := s.db.RouteMember.GetByID(req.MemberID); err == nil && member != nil {
+			var routeMapping string
+			if s.db.Route != nil {
+				if route, err := s.db.Route.GetByID(member.RouteID); err == nil && route != nil {
+					routeMapping = route.MappingJSON
+				}
+			}
+			upstream = domain.ResolveUpstreamModel(req.Model, member.MappingJSON, routeMapping)
+		}
+	}
+	layer, priced, err := s.db.ModelMetadata.BillingLayer(req.Model, upstream)
 	if err != nil {
 		log.Printf("proxy: model prices model=%s: %v", req.Model, err)
-		return domain.PriceLayer{}, false
 	}
-	if meta == nil {
-		return domain.PriceLayer{}, false
-	}
-	layer, resolveErr := domain.ResolvePriceLayer(
-		meta.PricePromptPer1k, meta.PriceCompletionPer1k, meta.PriceCachePer1k,
-		meta.PricePerRequest, meta.PriceTiers, meta.PriceSchedule,
-	)
-	if resolveErr != nil {
-		log.Printf("proxy: model prices model=%s: %v", req.Model, resolveErr)
-	}
-	if !layer.Priced() {
-		return domain.PriceLayer{}, false
-	}
-	return layer, true
+	return layer, priced
 }
 
 // RecordStreamFailure marks the member that served a stream as failed after the

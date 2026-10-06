@@ -14,6 +14,9 @@ import { lazy } from "react";
 export const OverviewPanel = lazy(() =>
   import("./OverviewPanel").then((m) => ({ default: m.OverviewPanel })),
 );
+export const UsersLayout = lazy(() =>
+  import("../UsersLayout").then((module) => ({ default: module.UsersLayout })),
+);
 export const MembersPanel = lazy(() =>
   import("./MembersPanel").then((m) => ({ default: m.MembersPanel })),
 );

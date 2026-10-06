@@ -70,18 +70,6 @@ const (
 	DefaultSiteProbeRetentionDays = 7
 )
 
-// NewBalanceSweeper preserves the historical constructor defaults.
-func NewBalanceSweeper(account BalanceAccount, db *store.DB, healthRetentionDays int, logger *slog.Logger) *BalanceSweeper {
-	if healthRetentionDays <= 0 {
-		healthRetentionDays = DefaultHealthHistoryRetentionDays
-	}
-	return NewBalanceSweeperWithRetention(account, db, RetentionConfig{
-		BalanceHistoryDays:   DefaultBalanceHistoryRetentionDays,
-		DecisionSnapshotDays: DefaultDecisionSnapshotRetentionDays,
-		HealthHistoryDays:    healthRetentionDays,
-	}, logger)
-}
-
 // NewBalanceSweeperWithRetention builds a sweep with independently configured
 // retention windows. It is used by the application config path so a zero
 // value can intentionally disable pruning.

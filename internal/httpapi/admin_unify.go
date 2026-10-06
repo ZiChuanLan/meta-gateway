@@ -13,7 +13,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -348,17 +347,15 @@ type UnifyPreview struct {
 	Deleted []domain.DeletedRoute `json:"deleted"`
 }
 
+// mappingRealName extracts {"real": "..."} from a member's mapping JSON. An
+// empty result means the member serves the route's own name unchanged, which
+// is how plain (non-alias) members are stored.
+//
+// One extractor for the whole repo: this used to be a local copy, and a second
+// copy in the forward path did not trim — the two disagreed about
+// {"real":" x "}.
 func mappingRealName(mappingJSON string) string {
-	if strings.TrimSpace(mappingJSON) == "" {
-		return ""
-	}
-	var mapping struct {
-		Real string `json:"real"`
-	}
-	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(mapping.Real)
+	return domain.MemberRealModel(mappingJSON)
 }
 
 // servedKey identifies one channel's binding on one route by the upstream model

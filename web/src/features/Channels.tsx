@@ -64,6 +64,7 @@ import {
   type CreateConnectionInput,
 } from "./channels/helpers";
 import { positiveId } from "../lib/positiveId";
+import { runBatch } from "../lib/batch";
 import { parseCredentialMeta, withCredentialMetaValue } from "./credentialMeta";
 export { channelReadiness } from "./channelHealth";
 
@@ -353,6 +354,7 @@ export function Channels() {
 
   // Bulk selection over the connections table (current-page checkboxes).
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  const [bulkFailures, setBulkFailures] = useState<{ item: number; error: unknown }[]>([]);
   const [bulkMode, setBulkMode] = useState(false);
   const exitBulkMode = () => {
     setBulkMode(false);
@@ -368,21 +370,16 @@ export function Channels() {
   };
   const bulkSync = useAdminMutation({
     mutationFn: async (ids: number[]) => {
-      const results = await Promise.allSettled(
-        ids.map((id) => service.refreshChannel(id)),
-      );
-      return {
-        ok: results.filter((r) => r.status === "fulfilled").length,
-        total: ids.length,
-      };
+      return runBatch(ids, (id) => service.refreshChannel(id));
     },
     invalidateKeys: [...INVALIDATE],
-    onSuccess: ({ ok, total }) => {
+    onSuccess: ({ ok, total, failures }) => {
       toast.push({
         tone: ok === total ? "success" : "error",
         message: t("channels.bulkSyncDone", { ok, total }),
       });
-      setBulkSelected(new Set());
+      setBulkSelected(new Set(failures.map((failure) => failure.item)));
+      setBulkFailures(failures);
     },
   });
   const bulkStatus = useAdminMutation({
@@ -390,8 +387,7 @@ export function Channels() {
       ids: number[];
       status: "enabled" | "disabled";
     }) => {
-      const results = await Promise.allSettled(
-        input.ids.map((id) => {
+      return runBatch(input.ids, (id) => {
           const overview = (overviews.data ?? []).find(
             (o) => o.channel.id === id,
           );
@@ -407,20 +403,16 @@ export function Channels() {
             ...overview.channel,
             status: input.status,
           });
-        }),
-      );
-      return {
-        ok: results.filter((r) => r.status === "fulfilled").length,
-        total: input.ids.length,
-      };
+        });
     },
     invalidateKeys: [...INVALIDATE],
-    onSuccess: ({ ok, total }) => {
+    onSuccess: ({ ok, total, failures }) => {
       toast.push({
         tone: ok === total ? "success" : "error",
         message: t("channels.bulkStatusDone", { ok, total }),
       });
-      setBulkSelected(new Set());
+      setBulkSelected(new Set(failures.map((failure) => failure.item)));
+      setBulkFailures(failures);
     },
   });
   const bulkBusy = bulkSync.isPending || bulkStatus.isPending;
@@ -1250,7 +1242,6 @@ export function Channels() {
 
   return (
     <Page
-      kicker={t("channels.kicker")}
       title={t("channels.title")}
       description={t("channels.description")}
       actions={
@@ -1294,6 +1285,11 @@ export function Channels() {
       }
     >
       <div className="ops-canvas">
+        {bulkFailures.length > 0 ? <div role="alert" className="inline-error">
+          {bulkFailures.map((failure) => <p key={failure.item}>
+            #{failure.item}: {formatErrorMessage(failure.error, t)}
+          </p>)}
+        </div> : null}
         <TelemetryStrip
           items={[
             {

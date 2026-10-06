@@ -272,6 +272,7 @@ export const en: Dict = {
   "err.classSuffix": " ({class})",
 
   "common.working": "Working…",
+  "common.unsavedConfirm": "You have unsaved changes. Leave anyway?",
   "common.maskedPlaceholder": "•••••••••• (keep stored value)",
   "common.select": "Select",
   "common.actions": "Actions",
@@ -461,13 +462,21 @@ export const en: Dict = {
   "updates.beta": "Beta channel",
   "updates.channelHint": "Stable excludes beta. Beta includes prereleases and subsequent stable releases. Checking does not install updates. Automatic downgrades are not supported.",
   "updates.betaWarning": "Beta may be unstable. Back up the database before upgrading.",
-  "updates.watchtowerHint": "Watchtower tracks: {tag}. It cannot switch image tags. Set deployment IMAGE_TAG to beta or latest and recreate the container to change tracks; the web preference cannot replace this step.",
+  "updates.watchtowerHint": "Watchtower tracks: {tag}. It installs whatever build that tag points to at the time (which can be newer than the version listed here), and it cannot switch tags. Changing tracks means setting the deployment's IMAGE_TAG and recreating the container; the web preference cannot replace that step.",
+  "updates.trackLocked": "This deployment's image tag is {tag}, which only installs {channel} builds. The console's channel choice cannot change the tag in the deployment. To switch tracks, set IMAGE_TAG to the other tag and recreate the container.",
+  "updates.applyTracked": "Install the newest build on {tag}",
+  "updates.notNewer": "The executor came back as {detail}, which is not newer than the running build; the tag may have been repointed to an older one.",
   "updates.check": "Check for updates",
   "updates.failed": "Unable to save the channel or check for updates. Please retry.",
   "updates.applyFailed": "Update did not start. Check the service, version and image track. Watchtower requires IMAGE_TAG to match the selected track.",
   "updates.noUpgrade":
     "No upgrade is available, update checks are disabled, or this is a development build.",
   "updates.dialogTitle": "Software update",
+  "updates.state.disabled": "Update checks are disabled.",
+  "updates.state.unchecked": "No release version has been retrieved yet.",
+  "updates.state.uncomparable": "This build cannot be compared with a release. Check the deployed build.",
+  "updates.state.checkFailed": "The update check failed; this does not mean the build is up to date.",
+  "updates.manualRequired": "This deployment does not support installing updates in the console. Update it through your deployment tools.",
   "updates.nothingToInstall": "Nothing to install",
   "updates.currentVersion": "Running {version}",
   "updates.channelIsNewer":
@@ -1223,7 +1232,7 @@ export const en: Dict = {
   "pricing.sat": "Sat",
   "pricing.sun": "Sun",
   "modelsPage.metaPriceHint":
-    "Per-model billing; a route member's own unit price takes precedence over it. Cache-read 0 = billed at the input price. Units are whatever you use consistently across cost displays.",
+    "Per-model billing; the serving route member's own price takes precedence. Cache-read 0 uses the input price. Prices are stored in USD; display currency changes presentation only.",
   "modelsPage.metaNotes": "Notes",
   "modelsPage.missingModels":
     "{count} channel-exposed models are not covered by any route",
@@ -1403,10 +1412,10 @@ export const en: Dict = {
     "Models the site monitors that we serve no route for: shown for reference, never acted on.",
   "modelsPage.probe.description":
     "Sends one minimal request (tiny max_tokens) to every (channel × model) pair to find out whether that model really works on that channel. Probing consumes upstream quota, so the scope and cost stay visible before you start and the run can be stopped at any time.",
-  "modelsPage.probe.channels": "Channels (none = all)",
-  "modelsPage.probe.models": "Models (none = all)",
+  "modelsPage.probe.channels": "Channels",
+  "modelsPage.probe.models": "Models",
   "modelsPage.probe.allHint":
-    "Leaving both unselected probes every model of every route.",
+    "All available targets are selected initially. Clearing the selection disables probing.",
   "modelsPage.probe.filteredHint":
     "The model list narrows to what the selected channels actually serve.",
   "modelsPage.probe.searchChannels": "Search channels",
@@ -1670,6 +1679,8 @@ export const en: Dict = {
   "keys.editHint":
     "Adjust the quota, the model scope and advanced settings. Used tokens accumulate from successful metered responses.",
   "keys.quotaTotal": "Token quota",
+  "keys.unlimitedPlaceholder": "0 = unlimited",
+  "keys.invalidQuota": "Token quota must be a non-negative whole number and spend limit a finite non-negative amount. Blank or an explicit 0 means unlimited.",
   "keys.sectionBilling": "Quota",
   "keys.sectionBillingHint": "Set a token cap",
   "keys.sectionModels": "Model access",
@@ -1693,7 +1704,7 @@ export const en: Dict = {
     "0 means unlimited. When set, /v1 returns 402 after used tokens reach the limit.",
   "keys.quotaCost": "Spend limit",
   "keys.quotaCostHint":
-    "Priced in the site's currency and enforced beside the token quota — whichever runs out first returns 402. 0 means unlimited.",
+    "Stored in USD; display currency does not convert this input. Enforced beside the token quota — whichever runs out first returns 402. 0 means unlimited.",
   "keys.resetUsed": "Reset used tokens to 0",
   "keys.redemption": "Redemption codes",
   "keys.redemptionTitle": "Redemption codes",
@@ -1743,6 +1754,7 @@ export const en: Dict = {
   "logsPage.decisionStickyHit": "sticky hit",
   "logsPage.decisionStickyMiss": "sticky: {reason}",
   "logsPage.decisionEmpty": "No decision snapshot for this request.",
+  "logsPage.decisionUnavailable": "The channel actually selected was not recorded for this attempt.",
   "logsPage.decisionSkipped": "skipped",
   "logsPage.errorClass.network": "Network error",
   "logsPage.errorClass.auth": "Auth failed",
@@ -2284,13 +2296,13 @@ export const en: Dict = {
     "This channel's balance is negative (overdrawn upstream); it cannot afford any calls until topped up.",
   "routing.financeHint":
     "Fixed-price models show how many requests the balance affords; token-billed models show how many 1M-token units it affords.",
-  "routing.financeMissing": "no price",
+  "routing.financeMissing": "no upstream quote",
   "routing.memberOrigin": "origin {model}",
   "routing.memberOriginHint":
     "This member rewrites the route name to this upstream model (shared aliases show one channel on several rows, each rewriting to its own origin).",
   "routing.openChannelModels": "Open this channel's model list",
   "routing.financeMissingHint":
-    "No price data — the upstream did not return pricing for this model (or the account has no balance data).",
+    "No upstream quote or account balance data is available. This does not mean the gateway has no configured billing price.",
   "routing.independentLabel": "Independent priority/weight for this model",
   "routing.independentHint":
     "On = every member of this model keeps its own priority/weight. Changes on the Connections page or a model re-sync won't overwrite them. Off = each member follows its connection's own default priority/weight; those defaults may differ. New members follow the connection by default.",
@@ -2484,6 +2496,11 @@ export const en: Dict = {
   "ops.runtime.openCheckin": "Open check-in",
   "ops.runtime.save": "Save & apply",
   "ops.runtime.saved": "Saved and applied without restart.",
+  "ops.runtime.unsaved": "Unsaved changes",
+  "ops.runtime.remoteChanged": "The server's runtime parameters changed",
+  "ops.runtime.remoteChangedHint": "Another session saved these settings. Your edits are still here, but saving now would overwrite theirs — pick one side before saving.",
+  "ops.runtime.keepMine": "Keep my changes",
+  "ops.runtime.reloadServer": "Reload server settings",
   "ops.runtime.resetEnv": "Reset to environment",
   "ops.runtime.ratePerMinute": "Per minute",
   "ops.runtime.rateBurst": "Burst",

@@ -948,3 +948,28 @@
 
 .operator-profile-panel { max-width: 640px; }
 .operator-profile-panel .field-hint { max-width: none; line-height: 1.7; }
+
+/* Runtime settings: unsaved-edits and remote-change notices above the action
+   bar. The panel owns its own `dirty` contract — the shared dialogs only
+   protect `busy` (a write in flight). */
+.runtime-settings-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  font-size: 13px;
+}
+.runtime-settings-notice-copy { display: grid; gap: 4px; max-width: 620px; }
+.runtime-settings-notice-copy p { margin: 0; }
+.runtime-settings-unsaved {
+  align-self: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning);
+}

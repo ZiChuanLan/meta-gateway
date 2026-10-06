@@ -20,7 +20,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/user/**/*.{ts,tsx}', 'src/team/**/*.{ts,tsx}'],
+    files: ['src/user/**/*.{ts,tsx}', 'src/team/**/*.{ts,tsx}', 'src/member/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [
         // The member app SHARES PAGES with the console on purpose: a list page

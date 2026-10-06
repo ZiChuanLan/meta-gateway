@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/lan/meta-gateway/internal/updatecheck"
 	"log"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/lan/meta-gateway/internal/buildinfo"
+	"github.com/lan/meta-gateway/internal/updatecheck"
 )
 
 // Phases surfaced to the console while an update runs. After "handoff" the
@@ -46,11 +48,24 @@ const (
 
 // Status is the console-facing update state.
 type Status struct {
+	Target    string `json:"target,omitempty"`
+	StartedAt int64  `json:"started_at,omitempty"`
+	// From is the build the task started from. The console needs it to confirm a
+	// tracked-tag update from another browser: the executor installs whatever the
+	// tag points to, so "the version changed and is newer than this" is the only
+	// honest success criterion on that path.
+	From      string `json:"from,omitempty"`
 	Available bool   `json:"available"`
 	Running   bool   `json:"running"`
 	Phase     string `json:"phase"`
 	Mode      Mode   `json:"mode"`
 	Error     string `json:"error,omitempty"`
+	// TrackingTag / TrackingChannel describe what the executor can actually
+	// install. In watchtower mode it installs whatever the tracked tag points to
+	// at that moment — not the release the console named — so the console has to
+	// show the tag it is really asking for.
+	TrackingTag     string `json:"tracking_tag,omitempty"`
+	TrackingChannel string `json:"tracking_channel,omitempty"`
 }
 
 // Service runs the one-click update orchestration.
@@ -59,10 +74,13 @@ type Service struct {
 	client *Client
 	now    func() time.Time
 
-	mu     sync.Mutex
-	phase  string
-	errStr string
-	target string
+	mu          sync.Mutex
+	phase       string
+	errStr      string
+	target      string
+	from        string
+	started     time.Time
+	journalPath string
 }
 
 func New(socket string) *Service {
@@ -102,16 +120,37 @@ func (s *Service) Status() Status {
 	mode := s.Mode()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.expireLocked()
 	available := mode != ModeNone
 	if s.phase == PhaseHandoff {
 		available = true
 	}
 	return Status{
-		Available: available,
-		Running:   s.phase != PhaseIdle && s.phase != PhaseFailed,
-		Phase:     s.phase,
-		Mode:      mode,
-		Error:     s.errStr,
+		Target: s.target,
+		StartedAt: func() int64 {
+			if s.started.IsZero() {
+				return 0
+			}
+			return s.started.UnixMilli()
+		}(),
+		Available:       available,
+		Running:         s.phase != PhaseIdle && s.phase != PhaseFailed,
+		Phase:           s.phase,
+		Mode:            mode,
+		Error:           s.errStr,
+		From:            s.from,
+		TrackingTag:     TrackingTag(),
+		TrackingChannel: TrackingChannel(),
+	}
+}
+
+func (s *Service) expireLocked() {
+	if s.phase != PhaseIdle && s.phase != PhaseFailed && !s.started.IsZero() && s.now().Sub(s.started) > 16*time.Minute {
+		s.phase = PhaseFailed
+		s.errStr = "update completion was not confirmed before the deadline; inspect the deployment before retrying"
+		if err := s.persistLocked(); err != nil {
+			log.Printf("self-update: cannot persist deadline state: %v", err)
+		}
 	}
 }
 
@@ -122,6 +161,9 @@ func (s *Service) fail(err error) {
 func (s *Service) setPhase(phase, errStr string) {
 	s.mu.Lock()
 	s.phase, s.errStr = phase, errStr
+	if err := s.persistLocked(); err != nil {
+		log.Printf("self-update: cannot persist phase: %v", err)
+	}
 	s.mu.Unlock()
 	log.Printf("self-update: phase=%s err=%q", phase, errStr)
 }
@@ -134,12 +176,39 @@ func (s *Service) Start() error { return s.start("") }
 
 // TrackingTag is deployment-declared for Watchtower, which cannot change tags.
 func TrackingTag() string { return strings.TrimSpace(os.Getenv("SELFUPDATE_TRACK_TAG")) }
+
+// TrackingChannel maps the tracked tag to the release channel it delivers:
+// "latest" carries stable releases, "beta" carries prereleases. A pinned tag
+// (e.g. "4.0.0-beta.6") names one build instead of a channel, so it maps to "".
+func TrackingChannel() string {
+	switch TrackingTag() {
+	case "beta":
+		return "beta"
+	case "latest":
+		return "stable"
+	default:
+		return ""
+	}
+}
+
 func WatchtowerTargetAllowed(target string) bool {
 	tag := TrackingTag()
 	if tag == "beta" {
 		return updatecheck.IsReleaseTag(target)
 	}
 	return tag == "latest" && !strings.Contains(target, "-") && updatecheck.IsReleaseTag(target)
+}
+
+// trackMismatch names both sides of the disagreement. The tagged image is the
+// only thing Watchtower can install, and it is set in the deployment file — not
+// in the console — so the message has to say which value to change.
+func trackMismatch(target string) error {
+	channel := "stable"
+	if strings.Contains(target, "-") {
+		channel = "beta"
+	}
+	return fmt.Errorf("%w (target %s is a %s build; this deployment tracks IMAGE_TAG=%s)",
+		ErrTrackMismatch, target, channel, TrackingTag())
 }
 func (s *Service) StartTarget(target string) error {
 	if !updatecheck.IsReleaseTag(target) {
@@ -153,9 +222,10 @@ func (s *Service) start(target string) error {
 		return ErrUnavailable
 	}
 	if target != "" && mode == ModeWatchtower && !WatchtowerTargetAllowed(target) {
-		return ErrTrackMismatch
+		return trackMismatch(target)
 	}
 	s.mu.Lock()
+	s.expireLocked()
 	if s.phase != PhaseIdle && s.phase != PhaseFailed {
 		s.mu.Unlock()
 		return ErrAlreadyRuning
@@ -163,6 +233,15 @@ func (s *Service) start(target string) error {
 	s.phase = PhaseChecking
 	s.errStr = ""
 	s.target = target
+	s.from = buildinfo.Version
+	s.started = s.now()
+	if err := s.persistLocked(); err != nil {
+		s.phase = PhaseFailed
+		s.errStr = "cannot persist update state; no update was started"
+		message := s.errStr
+		s.mu.Unlock()
+		return errors.New(message)
+	}
 	s.mu.Unlock()
 	if mode == ModeWatchtower {
 		go func() {
@@ -290,6 +369,19 @@ func (s *Service) handoff() {
 	if networks := networksConfig(self); networks != nil {
 		nextConfig["NetworkingConfig"] = networks
 	}
+	// The orchestration container needs the same socket mounts/security
+	// context even when the deployment uses HostConfig.Mounts rather than Binds.
+	if self.HostConfigRaw != nil {
+		host := self.HostConfigRaw
+		host["PortBindings"] = nil
+		host["PublishAllPorts"] = false
+		host["AutoRemove"] = false
+		host["RestartPolicy"] = map[string]any{"Name": "no"}
+		nextConfig["HostConfig"] = host
+	}
+	if user, ok := self.ConfigRaw["User"]; ok {
+		nextConfig["User"] = user
+	}
 
 	nextID, err := s.client.CreateContainer(ctx, nextName, nextConfig)
 	if err != nil {
@@ -324,6 +416,7 @@ func (s *Service) watchSuccessor(nextID string) {
 	for {
 		select {
 		case <-ctx.Done():
+			s.fail(errors.New("successor did not finish before the deadline"))
 			return
 		case <-ticker.C:
 		}
@@ -341,17 +434,15 @@ func (s *Service) watchSuccessor(nextID string) {
 			return // the swap is under way; this process is about to die
 		}
 		detail := ""
+		evidence := ""
 		if err == nil {
 			detail = fmt.Sprintf("exit code %d", next.State.ExitCode)
-			if next.State.Error != "" {
-				detail += ", " + next.State.Error
-			}
+			evidence = next.State.Error
 		}
 		if logs, logErr := s.client.Logs(ctx, nextID, 20); logErr == nil {
-			if tail := strings.TrimSpace(logs); tail != "" {
-				detail += "; last output: " + tail
-			}
+			evidence += "\n" + logs
 		}
+		detail += safeSuccessorHint(evidence)
 		_ = s.client.RemoveContainer(ctx, nextID)
 		if detail != "" {
 			s.fail(fmt.Errorf("successor exited without completing the swap (%s)", detail))
@@ -360,6 +451,15 @@ func (s *Service) watchSuccessor(nextID string) {
 		s.fail(errors.New("successor exited without completing the swap"))
 		return
 	}
+}
+
+// Container output may contain credentials from a custom entrypoint. Surface
+// only known diagnostic categories, never arbitrary log text in an API error.
+func safeSuccessorHint(evidence string) string {
+	if strings.Contains(strings.ToLower(evidence), "permission denied") {
+		return "; permission denied accessing the Docker socket"
+	}
+	return ""
 }
 
 // SwapIfRequested runs inside the SUCCESSOR container: it tears the old
@@ -380,105 +480,152 @@ func SwapIfRequested() {
 	log.Printf("self-update: successor taking over from %q (image %s)", oldName, image)
 
 	if err := runSwap(ctx, client, oldName, image, portsJSON, strings.TrimSpace(os.Getenv(policyEnv))); err != nil {
-		fatalRollback(client, ctx, oldName, err)
+		log.Printf("self-update: swap failed: %v", err)
+		os.Exit(1)
 	}
 	log.Printf("self-update: swap complete - successor exiting")
 	os.Exit(0)
 }
 
-// runSwap tears the old container down and recreates the final one with the
-// original name, ports and restart policy. Every failure restarts the old
-// container before returning the error.
-func runSwap(ctx context.Context, client *Client, oldName, image, portsJSON, policyName string) error {
-	self, err := client.InspectContainer(ctx, OwnContainerID())
+// runSwap preserves the old container until the replacement is healthy. A
+// failed replacement frees its name, then restores the exact old container.
+// This restores the deployment, not arbitrary backwards-incompatible DB changes.
+func runSwap(ctx context.Context, client *Client, oldName, image, _, _ string) error {
+	old, err := client.InspectContainer(ctx, oldName)
 	if err != nil {
-		return rollback(client, ctx, oldName, fmt.Errorf("inspect self: %w", err))
+		return fmt.Errorf("inspect original: %w", err)
+	}
+	if old.HostConfig.AutoRemove {
+		return errors.New("auto-remove containers require a manual update")
 	}
 	if image == "" {
-		image = self.Config.Image
+		image = old.Config.Image
 	}
-
-	// Stop and remove the old container: frees the name and the host ports.
-	if err := client.StopContainer(ctx, oldName, 20); err != nil {
-		return rollback(client, ctx, oldName, fmt.Errorf("stop old: %w", err))
+	config, host := old.ConfigRaw, old.HostConfigRaw
+	if config == nil || host == nil {
+		return errors.New("original container configuration is missing")
 	}
-	if err := client.RemoveContainer(ctx, oldName); err != nil {
-		return rollback(client, ctx, oldName, fmt.Errorf("remove old: %w", err))
-	}
-
-	env := make([]string, 0, len(self.Config.Env))
-	for _, entry := range self.Config.Env {
-		if strings.HasPrefix(entry, swapEnv+"=") ||
-			strings.HasPrefix(entry, portsEnv+"=") ||
-			strings.HasPrefix(entry, imageEnv+"=") {
+	config["Image"] = image
+	_, trackingTag := splitImageRef(image)
+	env := make([]string, 0, len(old.Config.Env)+1)
+	for _, entry := range old.Config.Env {
+		if strings.HasPrefix(entry, "SELFUPDATE_TRACK_TAG=") || strings.HasPrefix(entry, swapEnv+"=") || strings.HasPrefix(entry, portsEnv+"=") || strings.HasPrefix(entry, imageEnv+"=") || strings.HasPrefix(entry, policyEnv+"=") {
 			continue
 		}
 		env = append(env, entry)
 	}
-	var portBindings map[string]any
-	if portsJSON != "" {
-		_ = json.Unmarshal([]byte(portsJSON), &portBindings)
+	config["Env"] = append(env, "SELFUPDATE_TRACK_TAG="+trackingTag)
+	// Docker-generated hostnames identify a container, not a deployment setting.
+	if hostname, ok := config["Hostname"].(string); ok && strings.HasPrefix(old.ID, hostname) {
+		delete(config, "Hostname")
 	}
-	finalConfig := map[string]any{
-		"Image":  image,
-		"Env":    env,
-		"Labels": self.Config.Labels,
-		"HostConfig": map[string]any{
-			"Binds":         self.HostConfig.Binds,
-			"PortBindings":  portBindings,
-			"RestartPolicy": map[string]any{"Name": restartPolicyOrDefault(policyName)},
-			"NetworkMode":   networkMode(self),
-			// Carried for the same reason the successor carries it, and this is
-			// the half that matters afterwards: the FINAL container is the one
-			// that has to run a handoff next time. Dropping it here leaves a
-			// deployment that updated successfully once and can never update
-			// again — the next attempt cannot open the socket it needs.
-			"GroupAdd": self.HostConfig.GroupAdd,
-		},
-		"NetworkingConfig": networksConfig(self),
+	if health, ok := config["Healthcheck"].(map[string]any); !ok || health == nil {
+		port := "4100"
+		for _, entry := range old.Config.Env {
+			if strings.HasPrefix(entry, "HTTP_ADDR=") {
+				value := strings.TrimPrefix(entry, "HTTP_ADDR=")
+				i := strings.LastIndex(value, ":")
+				if i < 0 {
+					return errors.New("cannot determine readiness port")
+				}
+				port = value[i+1:]
+			}
+		}
+		config["Healthcheck"] = map[string]any{"Test": []string{"CMD", "curl", "--fail", "--silent", "http://127.0.0.1:" + port + "/readyz"}, "Interval": int64(time.Second), "Timeout": int64(3 * time.Second), "Retries": 30, "StartPeriod": int64(10 * time.Second)}
 	}
-	if len(self.Config.Entrypoint) > 0 {
-		finalConfig["Entrypoint"] = self.Config.Entrypoint
+	if health, ok := config["Healthcheck"].(map[string]any); ok {
+		if test, ok := health["Test"].([]any); ok && len(test) > 0 && test[0] == "NONE" {
+			return errors.New("enable a health check before using direct updates")
+		}
 	}
-	if len(self.Config.Cmd) > 0 {
-		finalConfig["Cmd"] = self.Config.Cmd
+	// Reattach anonymous volumes too; merely copying Config.Volumes creates new
+	// empty volumes and silently loses the data path.
+	binds := append([]string(nil), old.HostConfig.Binds...)
+	for _, mount := range old.Mounts {
+		covered := false
+		for _, bind := range binds {
+			if strings.Contains(bind, ":"+mount.Destination+":") || strings.HasSuffix(bind, ":"+mount.Destination) {
+				covered = true
+			}
+		}
+		if mounts, ok := host["Mounts"].([]any); ok {
+			for _, raw := range mounts {
+				if m, ok := raw.(map[string]any); ok && m["Target"] == mount.Destination {
+					covered = true
+				}
+			}
+		}
+		if covered {
+			continue
+		}
+		if mount.Type != "volume" && mount.Type != "bind" {
+			continue
+		}
+		source := mount.Source
+		if mount.Type == "volume" && mount.Name != "" {
+			source = mount.Name
+		}
+		bind := source + ":" + mount.Destination
+		if !mount.RW {
+			bind += ":ro"
+		}
+		binds = append(binds, bind)
 	}
-	if self.Config.WorkingDir != "" {
-		finalConfig["WorkingDir"] = self.Config.WorkingDir
+	host["Binds"] = binds
+	config["HostConfig"] = host
+	config["NetworkingConfig"] = networksConfig(old)
+	backupName := oldName + "-rollback"
+	if err = client.StopContainer(ctx, oldName, 20); err != nil {
+		return rollback(client, ctx, oldName, err)
 	}
-	if len(self.Config.ExposedPorts) > 0 {
-		finalConfig["ExposedPorts"] = self.Config.ExposedPorts
+	if err = client.RenameContainer(ctx, oldName, backupName); err != nil {
+		return rollback(client, ctx, oldName, err)
 	}
-	// Healthcheck intentionally omitted: the image default applies again.
-
-	finalID, err := client.CreateContainer(ctx, oldName, finalConfig)
+	finalID := ""
+	restore := func(cause error) error {
+		recovery, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if finalID != "" {
+			if e := client.RemoveContainer(recovery, finalID); e != nil {
+				return fmt.Errorf("%w; cannot remove failed replacement: %v", cause, e)
+			}
+		}
+		if e := client.RenameContainer(recovery, backupName, oldName); e != nil {
+			return fmt.Errorf("%w; old container retained as %s: %v", cause, backupName, e)
+		}
+		if e := client.StartContainer(recovery, oldName); e != nil {
+			return fmt.Errorf("%w; failed to restart original: %v", cause, e)
+		}
+		return cause
+	}
+	finalID, err = client.CreateContainer(ctx, oldName, config)
 	if err != nil {
-		return rollback(client, ctx, oldName, fmt.Errorf("create final: %w", err))
+		return restore(fmt.Errorf("create replacement: %w", err))
 	}
-	if err := client.StartContainer(ctx, finalID); err != nil {
-		return rollback(client, ctx, oldName, fmt.Errorf("start final: %w", err))
+	if err = client.StartContainer(ctx, finalID); err != nil {
+		return restore(fmt.Errorf("start replacement: %w", err))
 	}
-	// The final container runs outside this cgroup, fully independent.
-	log.Printf("self-update: final container %s is up", finalID)
+	ready, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	if err = client.waitHealthy(ready, finalID); err != nil {
+		return restore(fmt.Errorf("replacement not ready: %w", err))
+	}
+	if err = client.RemoveContainer(ctx, backupName); err != nil {
+		log.Printf("self-update: replacement healthy; old container retained at %s", backupName)
+	}
 	return nil
 }
 
 // rollback restarts the old container so the deployment keeps serving, then
 // returns the wrapped failure.
-func rollback(client *Client, ctx context.Context, oldName string, err error) error {
+func rollback(client *Client, _ context.Context, oldName string, err error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 	log.Printf("self-update: FAILED: %v - rolling back to the old container", err)
 	if startErr := client.StartContainer(ctx, oldName); startErr != nil {
 		log.Printf("self-update: ROLLBACK FAILED for %s: %v - recover with: docker compose up -d", oldName, startErr)
 	}
 	return err
-}
-
-func fatalRollback(client *Client, ctx context.Context, oldName string, err error) {
-	log.Printf("self-update: FAILED: %v — rolling back to the old container", err)
-	if startErr := client.StartContainer(ctx, oldName); startErr != nil {
-		log.Printf("self-update: ROLLBACK FAILED for %s: %v — recover with: docker compose up -d", oldName, startErr)
-	}
-	os.Exit(1)
 }
 
 func networkMode(self *Container) string {
@@ -489,13 +636,6 @@ func networkMode(self *Container) string {
 		return name
 	}
 	return "default"
-}
-
-func restartPolicyOrDefault(name string) string {
-	if trimmed := strings.TrimSpace(name); trimmed != "" {
-		return trimmed
-	}
-	return "no"
 }
 
 func networksConfig(self *Container) map[string]any {

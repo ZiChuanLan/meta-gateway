@@ -1,125 +1,169 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { useSession } from "../session";
+import { updateLanded, updateWentBackwards } from "../lib/updateState";
+import type { UpdateWatch } from "../lib/updateState";
 
-export interface UpdateWatch {
-	target: string;
-	startedAt: number;
-}
-
+export type { UpdateWatch };
 export interface UpdateFailure {
-	target: string;
-	/**
-	 * The updater's own reason, verbatim, when it reported one. Empty means the
-	 * watch simply ran out of time and nothing was ever confirmed.
-	 */
-	reason: string;
+  target: string;
+  reason: string;
+  /** Set when the console itself diagnosed the outcome, so the dialog can
+   *  translate it; `reason` then carries the data (version and tag). */
+  code?: "notNewer";
+}
+const STORAGE = "meta-gateway.update-watch";
+const BUDGET = 16 * 60_000;
+function readWatch(): UpdateWatch | null {
+  try {
+    const value = JSON.parse(
+      sessionStorage.getItem(STORAGE) ?? "null",
+    ) as Partial<UpdateWatch> | null;
+    if (!value || typeof value.target !== "string" || !Number.isFinite(value.startedAt))
+      return null;
+    return {
+      target: value.target,
+      startedAt: value.startedAt!,
+      from: typeof value.from === "string" ? value.from : undefined,
+      tracked: typeof value.tracked === "string" ? value.tracked : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+function storeWatch(value: UpdateWatch | null) {
+  try {
+    if (value) sessionStorage.setItem(STORAGE, JSON.stringify(value));
+    else sessionStorage.removeItem(STORAGE);
+  } catch {
+    /* A blocked storage must not break observing a live task. */
+  }
 }
 
-/**
- * Drives the one-click container update: apply, then watch the PUBLIC health
- * endpoint until it reports the target version.
- *
- * Why /healthz and not /admin/self-update: the handoff tears the current
- * container down the moment the successor is healthy, so the admin API answer
- * "which phase?" stops being trustworthy mid-flight. The public endpoint is
- * answered by whichever container currently owns the port — when it reports the
- * target version, the successor has taken over.
- *
- * The 3s poll and the 3-minute budget match the ops settings panel, which used
- * this flow first; both panels now share this hook so their behavior cannot
- * drift.
- *
- * The admin status is polled too, but for the opposite reason: a handoff that
- * fails fails FAST (a socket it cannot open, an image it cannot pull) and
- * /admin/self-update is the only place that says why. Waiting the full three
- * minutes and then reporting "not confirmed in time" hid a permission error
- * behind a timeout for an operator who had simply not been told.
- */
+/** One bounded observer; navigation can resume it without submitting again. */
 export function useOneClickUpdate() {
-	const { client } = useSession();
-	const service = client ? api(client) : null;
-	const [failure, setFailure] = useState<UpdateFailure | null>(null);
-	const [watch, setWatch] = useState<UpdateWatch | null>(null);
-	const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
-	// `api(client)` builds a fresh object every render, so it must not be an effect
-	// dependency: that would tear down and restart the 3s poll on every render and
-	// the tick would never land.
-	const serviceRef = useRef(service);
-	serviceRef.current = service;
-	// onDone/onError are stable per mount; refs keep the polling effect from
-	// restarting when the caller passes inline closures.
-	const onDoneRef = useRef<(() => void) | null>(null);
-	const onErrorRef = useRef<((target: string) => void) | null>(null);
-
-	const apply = useCallback(
-		async (target: string) => {
-			if (!service) return;
-			setFailure(null);
-			await service.applySelfUpdate(target);
-			setConfirmTarget(null);
-			setWatch({ target, startedAt: Date.now() });
-		},
-		[service],
-	);
-
-	const poll = useCallback(
-		(watching: UpdateWatch, onDone: () => void, onError: (target: string) => void) => {
-			onDoneRef.current = onDone;
-			onErrorRef.current = onError;
-			setWatch(watching);
-		},
-		[],
-	);
-
-	useEffect(() => {
-		if (!watch) return;
-		const service = serviceRef.current;
-		if (!service) return;
-		const started = Date.now();
-		const timer = window.setInterval(async () => {
-			// A failed handoff reports itself; take that over the timeout, because
-			// it is the difference between "unknown" and "here is what to fix".
-			try {
-				const status = await service.selfUpdateStatus();
-				if (status.phase === "failed" && status.error) {
-					setWatch(null);
-					setFailure({ target: watch.target, reason: status.error });
-					onErrorRef.current?.(watch.target);
-					return;
-				}
-			} catch {
-				// Mid-handoff the admin API is legitimately unreachable; the public
-				// endpoint below is what decides success.
-			}
-			try {
-				const res = await fetch("/healthz");
-				const body = (await res.json()) as { version?: string };
-				if (body.version === watch.target) {
-					setWatch(null);
-					onDoneRef.current?.();
-					return;
-				}
-			} catch {
-				// Container restarting — keep polling.
-			}
-			if (Date.now() - started > 180_000) {
-				setWatch(null);
-				setFailure({ target: watch.target, reason: "" });
-				onErrorRef.current?.(watch.target);
-			}
-		}, 3000);
-		return () => window.clearInterval(timer);
-	}, [watch]);
-
-	return {
-		watch,
-		failure,
-		// Kept for callers that only need "which target failed".
-		failedTarget: failure?.target ?? null,
-		confirmTarget,
-		setConfirmTarget,
-		apply,
-		poll,
-	};
+  const { client } = useSession();
+  const service = useMemo(() => (client ? api(client) : null), [client]);
+  const [watch, setWatch] = useState<UpdateWatch | null>(readWatch);
+  const [failure, setFailure] = useState<UpdateFailure | null>(null);
+  const resumed = useRef(false);
+  const status = useQuery({
+    queryKey: ["self-update"],
+    queryFn: ({ signal }) => service!.selfUpdateStatus(signal),
+    enabled: Boolean(service) && !watch,
+    staleTime: 0,
+  });
+  useEffect(() => {
+    if (resumed.current || !status.data) return;
+    resumed.current = true;
+    if (!watch && status.data?.running && status.data.target) {
+      // Started in another tab or browser: rebuild the same watch from the
+      // server's record, including what it can tell about the tracked tag.
+      const resumedWatch: UpdateWatch = {
+        target: status.data.target,
+        startedAt: status.data.started_at ?? Date.now(),
+        from: status.data.from ?? undefined,
+        tracked:
+          status.data.mode === "watchtower"
+            ? status.data.tracking_tag ?? undefined
+            : undefined,
+      };
+      storeWatch(resumedWatch);
+      setWatch(resumedWatch);
+    }
+  }, [status.data, watch]);
+  const apply = useCallback(
+    async (target: string, options: { from?: string; tracked?: string } = {}) => {
+      if (!service) return;
+      setFailure(null);
+      const next: UpdateWatch = {
+        target,
+        startedAt: Date.now(),
+        from: options.from,
+        tracked: options.tracked,
+      };
+      storeWatch(next);
+      setWatch(next);
+      try {
+        await service.applySelfUpdate(target);
+      } catch (error) {
+        // A network failure is ambiguous: keep observing rather than encouraging
+        // another submission. A definite HTTP rejection did not start this task.
+        if (
+          error &&
+          typeof error === "object" &&
+          "status" in error &&
+          typeof error.status === "number" &&
+          error.status > 0
+        ) {
+          storeWatch(null);
+          setWatch(null);
+          throw error;
+        }
+      }
+    },
+    [service],
+  );
+  useEffect(() => {
+    if (!watch || !service) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let controller: AbortController | undefined;
+    const finish = (reason?: string, code?: UpdateFailure["code"]) => {
+      storeWatch(null);
+      setWatch(null);
+      if (reason !== undefined) setFailure({ target: watch.target, reason, code });
+    };
+    const tick = async () => {
+      if (disposed) return;
+      if (Date.now() - watch.startedAt >= BUDGET) {
+        finish("");
+        return;
+      }
+      controller = new AbortController();
+      const timeout = setTimeout(() => controller?.abort(), 5000);
+      try {
+        const health = await fetch("/healthz", {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        const body = (await health.json()) as { version?: string };
+        const version = body.version;
+        if (health.ok && updateLanded(watch, version)) {
+          const ready = await fetch("/readyz", {
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          if (ready.ok && !disposed) {
+            finish();
+            window.location.reload();
+            return;
+          }
+        } else if (health.ok && updateWentBackwards(watch, version)) {
+          // No reason to wait out the budget: the executor already reported a
+          // build older than the one it replaced.
+          finish(`${version} on tag ${watch.tracked}`, "notNewer");
+          return;
+        }
+        const current = await service.selfUpdateStatus(controller.signal);
+        if (current.phase === "failed" && (!current.target || current.target === watch.target) && !disposed) {
+          finish(current.error ?? "Update failed");
+          return;
+        }
+      } catch {
+        /* Restart or an unavailable endpoint is not a confirmed failure. */
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (!disposed) timer = setTimeout(() => void tick(), 3000);
+    };
+    timer = setTimeout(() => void tick(), 3000);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      controller?.abort();
+    };
+  }, [service, watch]);
+  return { watch, failure, apply, availability: status.data };
 }

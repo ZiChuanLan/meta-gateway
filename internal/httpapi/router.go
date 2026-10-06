@@ -609,7 +609,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	go updateService.Run(updateCtx)
 	NewUpdateCheckHandler(updateService, runtimeController).Register(adminGroup)
 	// One-click container update (opt-in: needs the Docker socket mounted).
-	selfUpdateService := selfupdate.New(selfupdate.DefaultSocket)
+	selfUpdateService := selfupdate.NewWithDataDir(selfupdate.DefaultSocket, cfg.DataDir)
 	NewSelfUpdateHandler(selfUpdateService, updateService, db).Register(adminGroup)
 	NewRuntimeSettingsHandler(runtimeController).Register(adminGroup)
 	// Passive-recovery loop: probes auto-disabled channels on a schedule and

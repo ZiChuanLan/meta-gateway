@@ -20,18 +20,22 @@ import (
 // the route's mapping_json value, expected to be {"real":"upstream-model"}.
 // It is a no-op when the body is not JSON, the field is absent, or it does not
 // match the requested alias.
+//
+// The name comes from domain.MemberRealModel, the same extractor the forward
+// path uses for the health key and the log's upstream name. Parsing it here
+// instead let the two disagree: the local copy did not trim, so a mapping stored
+// as {"real":" gpt-4o "} sent a padded model name upstream (a 404) while every
+// record of the request named the trimmed one.
 func rewriteModelName(body []byte, requestedModel, mappingJSON string, contentType ...string) []byte {
 	if len(body) == 0 || requestedModel == "" || mappingJSON == "" {
 		return body
 	}
-	var mapping struct {
-		Real string `json:"real"`
-	}
-	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil || mapping.Real == "" {
+	realModel := domain.MemberRealModel(mappingJSON)
+	if realModel == "" {
 		return body
 	}
 	if len(contentType) > 0 && strings.HasPrefix(strings.ToLower(contentType[0]), "multipart/form-data") {
-		return rewriteMultipartModel(body, requestedModel, mapping.Real, contentType[0])
+		return rewriteMultipartModel(body, requestedModel, realModel, contentType[0])
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -43,7 +47,7 @@ func rewriteModelName(body []byte, requestedModel, mappingJSON string, contentTy
 	if !ok || json.Unmarshal(rawModel, &current) != nil || current != requestedModel {
 		return body
 	}
-	real, err := json.Marshal(mapping.Real)
+	real, err := json.Marshal(realModel)
 	if err != nil {
 		return body
 	}
@@ -104,13 +108,6 @@ func rewriteMultipartModel(body []byte, requestedModel, realModel, contentType s
 // health bookkeeping can key on the actual upstream name rather than the
 // client-facing alias. Empty when the mapping is absent or malformed.
 //
-// One implementation, in domain: the selector resolves the same name for its
-// scoring keys, and two parsers would eventually disagree about a malformed
-// mapping.
-func realModelFromMapping(mappingJSON string) string {
-	return domain.MemberRealModel(mappingJSON)
-}
-
 // reasoningEffortLevels is the ordered set of OpenAI-style reasoning effort
 // values understood by the gateway. A client-requested effort beyond a
 // channel's declared max is downgraded to the max at forward time, and one the
@@ -170,8 +167,15 @@ func downgradeReasoningEffort(body []byte, maxEffort string, allowed []string) (
 		return nil, ""
 	}
 	raw, ok := payload["reasoning_effort"]
+	var nested map[string]json.RawMessage
 	if !ok {
-		return nil, ""
+		if json.Unmarshal(payload["reasoning"], &nested) != nil {
+			return nil, ""
+		}
+		raw, ok = nested["effort"]
+		if !ok {
+			return nil, ""
+		}
 	}
 	var effort string
 	if err := json.Unmarshal(raw, &effort); err != nil {
@@ -200,7 +204,16 @@ func downgradeReasoningEffort(body []byte, maxEffort string, allowed []string) (
 	if target == effort {
 		return nil, ""
 	}
-	payload["reasoning_effort"] = json.RawMessage(fmt.Sprintf("%q", target))
+	if nested != nil {
+		nested["effort"] = json.RawMessage(fmt.Sprintf("%q", target))
+		encoded, err := json.Marshal(nested)
+		if err != nil {
+			return nil, ""
+		}
+		payload["reasoning"] = encoded
+	} else {
+		payload["reasoning_effort"] = json.RawMessage(fmt.Sprintf("%q", target))
+	}
 	rewritten, err := json.Marshal(payload)
 	if err != nil {
 		return nil, ""

@@ -1,22 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  useEffect,
-  useId,
-  useState,
-  type InputHTMLAttributes,
-  type ReactNode,
-} from "react";
-import { ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../api/client";
+import { updateState } from "../../lib/updateState";
 import type { RuntimeEditableSettings } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
-import { useToast } from "../../toast";
 import { useSession } from "../../session";
+import { useUnsavedChanges } from "../../lib/unsavedChanges";
 import {
   Button,
-  ConfirmDialog,
   ErrorState,
   Loading,
   Panel,
@@ -43,35 +36,6 @@ function numberOr(value: string, fallback: number) {
 // claim "up to date" for it.
 function isReleaseVersion(version: string) {
   return /^v?\d+(\.\d+)*(-[\w.]+)?$/.test(version.trim());
-}
-
-// One-click copy for an update command shown next to the check-update row.
-function CopyCommand({ command }: { command: string }) {
-  const { t } = useI18n();
-  const toast = useToast();
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="update-cmd-row">
-      <code className="mono">{command}</code>
-      <Button
-        variant="quiet"
-        disabled={copied}
-        onClick={() => {
-          navigator.clipboard
-            .writeText(command)
-            .then(() => {
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1500);
-            })
-            .catch(() =>
-              toast.pushError(new Error(t("ops.runtime.copyFailed"))),
-            );
-        }}
-      >
-        {copied ? t("ops.runtime.copied") : t("ops.runtime.copy")}
-      </Button>
-    </div>
-  );
 }
 
 /** Panel-level anchor order for the runtime settings section nav. */
@@ -137,179 +101,64 @@ const ANCHOR_GROUP: Record<string, string> = Object.fromEntries(
 const groupCardCount = (key: string) =>
   RUNTIME_SECTION_GROUPS.find((group) => group.key === key)?.anchors.length ?? 0;
 
-function SettingLabel({ label, hint }: { label: string; hint: string }) {
-  return (
-    <span className="setting-label">
-      <span>{label}</span>
-      <InfoTip label={hint} />
-    </span>
-  );
-}
-
-function numberValidationError(
-  value: number,
-  min: number | undefined,
-  max: number | undefined,
-  customError: string | undefined,
-  t: (key: string, vars?: Record<string, string | number>) => string,
-) {
-  if (!Number.isFinite(value)) return t("ops.runtime.validation.number");
-  if (!Number.isInteger(value)) return t("ops.runtime.validation.integer");
-  if (min !== undefined && value < min) {
-    return max !== undefined
-      ? t("ops.runtime.validation.between", { min, max })
-      : t("ops.runtime.validation.min", { min });
-  }
-  if (max !== undefined && value > max) {
-    return min !== undefined
-      ? t("ops.runtime.validation.between", { min, max })
-      : t("ops.runtime.validation.max", { max });
-  }
-  return customError;
-}
-
-type ValidatedNumberInputProps = Omit<
-  InputHTMLAttributes<HTMLInputElement>,
-  "max" | "min" | "value"
-> & {
-  min?: number;
-  max?: number;
-  value: number;
-  customError?: string;
-};
-
-function ValidatedNumberInput({
-  min,
-  max,
-  customError,
-  disabled,
-  value,
-  ...props
-}: ValidatedNumberInputProps) {
-  const { t } = useI18n();
-  const errorId = useId();
-  const numericValue = Number(value);
-  const error =
-    disabled || !Number.isFinite(numericValue)
-      ? undefined
-      : numberValidationError(numericValue, min, max, customError, t);
-
-  return (
-    <span className={`setting-input-wrap${error ? " is-invalid" : ""}`}>
-      <input
-        {...props}
-        type="number"
-        min={min}
-        max={max}
-        step={1}
-        disabled={disabled}
-        value={value}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-      />
-      {error ? (
-        <span id={errorId} className="setting-validation" role="alert">
-          {error}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-/** Masonry container: CSS columns balance the cards by height. */
-function RuntimeSettingsColumns({ children }: { children: ReactNode }) {
-  return <div className="runtime-settings-grid">{children}</div>;
-}
-
-/**
- * One collapsible settings group. The page renders every group collapsed by
- * default — the old always-open layout was ~20 cards of form controls in one
- * scroll, and the section nav was the only way to make sense of it. A group's
- * header is the toggle: chevron, title, description, and how many cards live
- * inside, so a collapsed row still says what it is hiding. Which groups are
- * open is page state, not per-group state, so the section nav can open a
- * group from anywhere.
- */
-function CollapsibleGroup({
-  id,
-  title,
-  description,
-  cardCount,
-  open,
-  onToggle,
-  children,
-  danger = false,
-}: {
-  id: string;
-  title: string;
-  description: string;
-  cardCount?: number;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-  danger?: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <section
-      className={`runtime-group is-collapsible${open ? " is-open" : ""}${danger ? " is-danger" : ""}`}
-      id={id}
-    >
-      <button
-        type="button"
-        className="runtime-group-toggle"
-        aria-expanded={open}
-        aria-controls={`${id}-body`}
-        onClick={onToggle}
-      >
-        <span className="runtime-group-chevron" aria-hidden="true">
-          <ChevronRight size={15} />
-        </span>
-        <span className="runtime-group-title">
-          <strong>{title}</strong>
-          <p>{description}</p>
-        </span>
-        {cardCount != null && cardCount > 0 ? (
-          <span className="runtime-group-count">
-            {t("ops.runtime.groupCount", { count: cardCount })}
-          </span>
-        ) : null}
-      </button>
-      {open ? (
-        <div className="runtime-group-body" id={`${id}-body`}>
-          {children}
-        </div>
-      ) : null}
-    </section>
-  );
-}
+import {
+  CollapsibleGroup,
+  RuntimeSettingsColumns,
+  SettingLabel,
+  ValidatedNumberInput,
+} from "./runtimeControls";
 
 /** Admin-writable runtime parameters with hot reload. */
-export function RuntimeSettingsPanel() {
-  const { client } = useSession();
+export function RuntimeSettingsPanel({
+  onDirtyChange,
+}: {
+  /** Lets the surrounding settings page guard its own tab switches. */
+  onDirtyChange?: (dirty: boolean) => void;
+} = {}) {
+  const { client, role } = useSession();
   const { t } = useI18n();
-  const toast = useToast();
   const s = api(client!);
   const query = useQuery({
     queryKey: ["runtime-settings"],
     queryFn: ({ signal }) => s.runtimeSettings(signal),
   });
   const [draft, setDraft] = useState<RuntimeEditableSettings | null>(null);
+  const [dirty, setDirty] = useState(false);
+  // The server snapshot the draft was seeded from. A background refetch is
+  // compared against it so "the server moved" can be reported instead of being
+  // applied over what the operator is typing (the refetch used to replace the
+  // draft unconditionally whenever the query data changed).
+  const baseline = useRef("");
+  const [remoteChanged, setRemoteChanged] = useState(false);
+  const guardLeave = useUnsavedChanges(dirty);
 
   useEffect(() => {
-    if (query.data?.editable) {
-      setDraft({ ...query.data.editable });
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    const editable = query.data?.editable;
+    if (!editable) return;
+    const incoming = JSON.stringify(editable);
+    if (dirty) {
+      if (incoming !== baseline.current) setRemoteChanged(true);
+      return;
     }
-  }, [query.data]);
+    baseline.current = incoming;
+    setDraft({ ...editable });
+    setRemoteChanged(false);
+  }, [query.data, dirty]);
 
   const save = useAdminMutation({
     mutationFn: (body: RuntimeEditableSettings) =>
       s.updateRuntimeSettings(body),
     invalidateKeys: [["runtime-settings"]],
+    onSuccess: () => { setDirty(false); },
   });
   const reset = useAdminMutation({
     mutationFn: () => s.resetRuntimeSettings(),
     invalidateKeys: [["runtime-settings"]],
+    onSuccess: () => { setDirty(false); },
   });
   const updateCheckQuery = useQuery({
     queryKey: ["update-check"],
@@ -322,10 +171,26 @@ export function RuntimeSettingsPanel() {
     invalidateKeys: [["update-check"]],
   });
 
-  const updateInfo = refreshUpdate.data ?? updateCheckQuery.data;
-  const [confirmUpdateTarget, setConfirmUpdateTarget] = useState<string | null>(
-    null,
-  );
+  // Take the server's values and drop the local draft. Offered next to "keep
+  // mine": the operator decides which side wins, instead of the page deciding
+  // for them (silently, as it used to).
+  const reloadFromServer = () => {
+    const editable = query.data?.editable;
+    if (!editable) return;
+    baseline.current = JSON.stringify(editable);
+    setDraft({ ...editable });
+    setDirty(false);
+    save.reset();
+    reset.reset();
+    setRemoteChanged(false);
+  };
+  const keepLocalDraft = () => {
+    const editable = query.data?.editable;
+    if (editable) baseline.current = JSON.stringify(editable);
+    setRemoteChanged(false);
+  };
+
+  const updateInfo = updateCheckQuery.data;
   // Which groups are expanded. Everything starts collapsed: the page reads as
   // six one-line rows instead of ~20 open cards, and a section becomes part of
   // the page only when someone asks for it. The security group (self-saving
@@ -355,63 +220,17 @@ export function RuntimeSettingsPanel() {
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
-  const [updateWatch, setUpdateWatch] = useState<{
-    target: string;
-    startedAt: number;
-  } | null>(null);
-
-  // While an update is in flight, watch the public health endpoint: when it
-  // reports the target version the successor container took over.
-  useEffect(() => {
-    if (!updateWatch) return;
-    const started = Date.now();
-    const timer = window.setInterval(async () => {
-      try {
-        const res = await fetch("/healthz");
-        const body = (await res.json()) as { version?: string };
-        if (body.version === updateWatch.target) {
-          toast.push({
-            tone: "success",
-            message: t("ops.runtime.oneClickDone", {
-              target: updateWatch.target,
-            }),
-          });
-          setUpdateWatch(null);
-          window.setTimeout(() => window.location.reload(), 1200);
-          return;
-        }
-      } catch {
-        // Container restarting — keep polling.
-      }
-      if (Date.now() - started > 180_000) {
-        setUpdateWatch(null);
-        toast.pushError(
-          new Error(t("ops.runtime.oneClickFailed", { target: updateWatch.target })),
-        );
-      }
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [updateWatch, t, toast]);
-
-  const applyUpdate = useAdminMutation({
-    mutationFn: (target: string) => s.applySelfUpdate(target),
-    onSuccess: (_data, target) => {
-      setConfirmUpdateTarget(null);
-      setUpdateWatch({ target, startedAt: Date.now() });
-    },
-    toastOnError: true,
-  });
+  if (query.isError) {
+    return (
+      <Panel>
+        <ErrorState error={query.error} retry={() => query.refetch()} />
+      </Panel>
+    );
+  }
   if (query.isPending || !draft) {
     return (
       <Panel>
         <Loading />
-      </Panel>
-    );
-  }
-  if (query.isError) {
-    return (
-      <Panel>
-        <ErrorState error={query.error} />
       </Panel>
     );
   }
@@ -421,6 +240,7 @@ export function RuntimeSettingsPanel() {
     key: K,
     value: RuntimeEditableSettings[K],
   ) => {
+    setDirty(true);
     save.reset();
     reset.reset();
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -453,7 +273,13 @@ export function RuntimeSettingsPanel() {
           {t("ops.runtime.updateFound", { version: updateInfo.latest })}
         </a>
       );
-    return <span>{t("ops.runtime.updateUpToDate")}</span>;
+    const state = updateState(updateInfo);
+    if (state === "current") return <span>{t("ops.runtime.updateUpToDate")}</span>;
+    if (state === "ahead") return <span>{t("updates.channelIsNewer", {
+      current: updateInfo.current, latest: updateInfo.latest,
+      channel: t(updateInfo.channel === "beta" ? "updates.beta" : "updates.stable"),
+    })}</span>;
+    return <span>{t(`updates.state.${state}`)}</span>;
   })();
 
   return (
@@ -1562,60 +1388,18 @@ export function RuntimeSettingsPanel() {
             </Button>
             <span className="runtime-update-result">{updateResult}</span>
           </div>
-          {updateInfo?.has_update ? (
-            <div className="runtime-update-help">
-              <div className="runtime-update-row">
-                <Button
-                  disabled={applyUpdate.isPending || updateWatch != null}
-                  onClick={() =>
-                    setConfirmUpdateTarget(updateInfo.latest || "")
-                  }
-                >
-                  {updateWatch
-                    ? t("ops.runtime.oneClickWaiting", {
-                        target: updateWatch.target,
-                      })
-                    : t("ops.runtime.oneClickUpdate", {
-                        version: updateInfo.latest || "",
-                      })}
-                </Button>
-                {applyUpdate.error ? (
-                  <span className="inline-error" role="alert">
-                    {String(applyUpdate.error)}
-                  </span>
-                ) : null}
-              </div>
-              <details className="runtime-update-manual">
-                <summary className="muted">
-                  {t("ops.runtime.updateManualSummary")}
-                </summary>
-                <p className="muted">{t("ops.runtime.updateHelp")}</p>
-                <CopyCommand command="docker compose pull && docker compose up -d" />
-                <p className="muted">{t("ops.runtime.updateAutoHint")}</p>
-                <CopyCommand command="docker compose --profile auto-update up -d" />
-              </details>
-            </div>
+          {role === null || role === "owner" ? (
+            <Link
+              className="button button-secondary"
+              to="/settings?tab=updates"
+              onClick={(event) => {
+                if (!guardLeave()) event.preventDefault();
+              }}
+            >
+              {t("updates.dialogTitle")}
+            </Link>
           ) : null}
         </Panel>
-        {confirmUpdateTarget ? (
-        <ConfirmDialog
-          title={t("ops.runtime.oneClickUpdate", {
-            version: confirmUpdateTarget,
-          })}
-          confirmLabel={t("ops.runtime.oneClickUpdate", {
-            version: confirmUpdateTarget,
-          })}
-          message={t("ops.runtime.oneClickConfirm")}
-          onClose={() => {
-            if (!applyUpdate.isPending) setConfirmUpdateTarget(null);
-          }}
-          onConfirm={() => {
-            if (confirmUpdateTarget) applyUpdate.mutate(confirmUpdateTarget);
-          }}
-          pending={applyUpdate.isPending}
-          error={applyUpdate.error}
-        />
-        ) : null}
         </RuntimeSettingsColumns>
       </CollapsibleGroup>
 
@@ -1650,7 +1434,28 @@ export function RuntimeSettingsPanel() {
         <FactoryResetPanel />
       </CollapsibleGroup>
 
+      {remoteChanged ? (
+        <div className="runtime-settings-notice" role="status">
+          <div className="runtime-settings-notice-copy">
+            <strong>{t("ops.runtime.remoteChanged")}</strong>
+            <p className="field-hint">{t("ops.runtime.remoteChangedHint")}</p>
+          </div>
+          <span className="flex-spacer" />
+          <Button variant="secondary" onClick={keepLocalDraft}>
+            {t("ops.runtime.keepMine")}
+          </Button>
+          <Button variant="secondary" onClick={reloadFromServer}>
+            {t("ops.runtime.reloadServer")}
+          </Button>
+        </div>
+      ) : null}
+
       <div className="runtime-settings-actions">
+        {dirty && !remoteChanged ? (
+          <span className="runtime-settings-unsaved" role="status">
+            {t("ops.runtime.unsaved")}
+          </span>
+        ) : null}
         <Button
           disabled={busy}
           onClick={() => {

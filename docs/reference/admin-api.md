@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **230** 条注册、**184** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **231** 条注册、**185** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -63,7 +63,7 @@
 | --- | --- | --- |
 | `Get` | `/admin/balance-history` | balanceHistory |
 
-## /admin/channels · 15 条
+## /admin/channels · 16 条
 
 | 方法 | 路径 | handler |
 | --- | --- | --- |
@@ -81,6 +81,7 @@
 | `Post` | `/admin/channels/{id}/account/sync-keys` | syncKeys |
 | `Get` | `/admin/channels/{id}/account/token-groups` | tokenGroups |
 | `Post` | `/admin/channels/{id}/duplicate` | duplicateChannel |
+| `Post` | `/admin/channels/{id}/model-alias` | setChannelModelAlias |
 | `Post` | `/admin/channels/{id}/ping` | pingChannel |
 
 ## /admin/checkin · 7 条

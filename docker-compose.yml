@@ -23,6 +23,7 @@ services:
       HTTPS_PROXY: "${HTTPS_PROXY:-}"
       NO_PROXY: "${NO_PROXY:-127.0.0.1,localhost}"
       SELFUPDATE_TRACK_TAG: "${IMAGE_TAG:-latest}"
+      WATCHTOWER_TOKEN: "${WATCHTOWER_TOKEN:-meta-gateway-local-update}"
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_TOKEN: "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
       ADMIN_TOKENS: "${ADMIN_TOKENS:-}"

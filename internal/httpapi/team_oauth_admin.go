@@ -237,23 +237,3 @@ func (h *TeamHandler) oauthLoginOptions() []map[string]string {
 	}
 	return out
 }
-
-// identitiesFor is used by the member list so a row can show, at a glance,
-// whether that account has a third-party login attached.
-func (h *TeamHandler) identityCounts() map[int64]int {
-	counts := map[int64]int{}
-	rows, err := h.db.Query(`SELECT user_id,count(*) FROM team_identities GROUP BY user_id`)
-	if err != nil {
-		return counts
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id int64
-		var count int
-		if rows.Scan(&id, &count) != nil {
-			return counts
-		}
-		counts[id] = count
-	}
-	return counts
-}

@@ -77,6 +77,9 @@ func TestPayloadRulesRewriteAndFilter(t *testing.T) {
 	rules := `[{"name":"cap","match":{"model":"gemini-*","payload":{"max_tokens":{"exists":true}}},"actions":[{"op":"set","path":"max_tokens","value":{"num":8000}},{"op":"delete","path":"messages.0.content"}]}]`
 	put(t, fmt.Sprintf("%s/admin/channels/%d", serverURL, id), map[string]any{"payload_rules": rules})
 	body = post()
+	if !strings.Contains(body, "choices") {
+		t.Fatalf("rewritten request failed: %s", body)
+	}
 	if !strings.Contains(received, `"max_tokens":8000`) {
 		t.Fatalf("rewrite not applied: %s", received)
 	}
@@ -118,7 +121,8 @@ func TestPayloadRulesRewriteAndFilter(t *testing.T) {
 	if !strings.Contains(string(imgBody), "images blocked") {
 		t.Fatalf("filter reason missing: %s", imgBody)
 	}
-	// The same channel still serves text-only requests.
+	// The same channel still serves text-only requests. (One assertion, not two:
+	// the check below is what "the filter let this one through" means.)
 	body = post()
 	if body == "" || !strings.Contains(body, "choices") {
 		t.Fatalf("post-filter text request failed: %s", body)
@@ -158,6 +162,9 @@ func TestPayloadRulesRewriteAndFilter(t *testing.T) {
 	// Clear rules → passthrough restored.
 	put(t, fmt.Sprintf("%s/admin/channels/%d", serverURL, id), map[string]any{"payload_rules": ""})
 	body = post()
+	if !strings.Contains(body, "choices") {
+		t.Fatalf("rewritten request failed: %s", body)
+	}
 	if !strings.Contains(received, `"max_tokens":100`) {
 		t.Fatalf("cleared rules still rewriting: %s", received)
 	}

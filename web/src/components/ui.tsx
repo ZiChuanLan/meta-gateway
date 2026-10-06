@@ -91,8 +91,6 @@ export function Page({
   description: string;
   actions?: ReactNode;
   className?: string;
-  /** @deprecated Kicker eyebrows are banned on this surface; kept for call-site compat. */
-  kicker?: string;
   children: ReactNode;
 }) {
   const [actionHost, setActionHost] = useState<HTMLDivElement | null>(null);

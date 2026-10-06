@@ -42,26 +42,6 @@ type SegmentConverter interface {
 	WrapOpenAIStream(source io.ReadCloser) io.ReadCloser
 }
 
-// OpenAISegment is the identity pivot segment: the client already speaks the
-// OpenAI contract.
-type OpenAISegment struct{}
-
-func (OpenAISegment) Name() string { return "openai" }
-
-func (OpenAISegment) ToOpenAI(openAIPath string, body []byte) (string, []byte, error) {
-	return openAIPath, body, nil
-}
-
-func (OpenAISegment) FromOpenAI(_ string, body []byte) ([]byte, error) {
-	return body, nil
-}
-
-func (OpenAISegment) PivotPath(openAIPath string) string { return openAIPath }
-
-func (OpenAISegment) WrapOpenAIStream(source io.ReadCloser) io.ReadCloser {
-	return nil
-}
-
 // AnthropicDownstreamSegment serves native Anthropic Messages clients
 // (/v1/messages) through any upstream: requests pivot to OpenAI chat, responses
 // and streams pivot back to the Messages shape.

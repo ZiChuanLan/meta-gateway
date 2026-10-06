@@ -5,6 +5,7 @@ import type {
   RouteOverview,
   RoutingCandidate,
 } from "../../api/types";
+import { mappingRealName } from "../../lib/alias";
 
 export function primaryMember(members: RoutingCandidate[], route?: Pick<Route, "routing_mode" | "single_member_id">) {
   if (!members.length) return null;
@@ -42,13 +43,7 @@ export function sortMembers(members: RoutingCandidate[]) {
 // means the member forwards the route name unchanged.
 export function originModelOf(member: RouteMember, route?: Pick<Route, "mapping_json">): string {
   const raw = member.mapping_json || route?.mapping_json || "";
-  if (!raw) return "";
-  try {
-    const parsed = JSON.parse(raw) as { real?: string };
-    return parsed.real ?? "";
-  } catch {
-    return "";
-  }
+  return mappingRealName(raw);
 }
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
@@ -139,6 +134,8 @@ export function candidateState(candidate: RoutingCandidate) {
   // consecutive-failure circuit. Surface it as the dominant state on every
   // member row so the model page (the routing view) shows it clearly.
   if (candidate.channel.status === "auto_disabled") return "auto_disabled";
+  if (candidate.channel.status && candidate.channel.status !== "enabled") return "disabled";
+  if (member.auto_disabled) return "auto_disabled";
   if (!member.enabled) return "disabled";
   if (!candidate.credential_usable) return "no_credential";
   // Historical failures do not keep a member degraded after its penalty ends.

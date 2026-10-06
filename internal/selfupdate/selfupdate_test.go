@@ -57,7 +57,7 @@ func newFakeDocker(t *testing.T) *fakeDocker {
 		switch {
 		case r.URL.Path == "/_ping":
 			w.WriteHeader(200)
-		case r.URL.Path == "/containers/self-id/json":
+		case r.URL.Path == "/containers/self-id/json" || r.URL.Path == "/containers/gw/json":
 			w.Write([]byte(`{
 				"Id": "self-id", "Name": "/gw",
 				"Config": {"Image": "zichuanlan/meta-gateway:latest", "Env": ["ADMIN_TOKEN=x"], "Labels": {"app": "meta-gateway"}},
@@ -75,6 +75,8 @@ func newFakeDocker(t *testing.T) *fakeDocker {
 			w.Write([]byte(`{"Id": "next-id", "Name": "/gw-next", "Config": {"Image": "zichuanlan/meta-gateway:latest"}, "HostConfig": {"GroupAdd": ["988"]}, "NetworkSettings": {}, "State": {"Running": true}}`))
 		case r.URL.Path == "/images/create":
 			w.Write([]byte("{\"status\":\"Pulling from zichuanlan/meta-gateway\"}\n{\"status\":\"Download complete\"}\n"))
+		case r.URL.Path == "/containers/final-id/json":
+			w.Write([]byte(`{"State":{"Running":true,"Health":{"Status":"healthy"}}}`))
 		case strings.HasPrefix(r.URL.Path, "/containers/create"):
 			w.WriteHeader(201)
 			id := "final-id"
@@ -192,15 +194,16 @@ func TestSwapRecreatesFinalAndRollsBack(t *testing.T) {
 	if err := runSwap(ctx, client, "gw", "zichuanlan/meta-gateway:latest", portsJSON, "unless-stopped"); err != nil {
 		t.Fatalf("swap failed: %v", err)
 	}
-	// Order: stop old → remove old → create final (original name) → start final.
+	// Stop/rename the old container, but retain it until the new one is healthy.
 	stopIdx := callsIndex(f.calls, "POST", "/containers/gw/stop")
-	removeIdx := callsIndex(f.calls, "DELETE", "/containers/gw")
+	renameIdx := callsIndex(f.calls, "POST", "/containers/gw/rename")
+	removeIdx := callsIndex(f.calls, "DELETE", "/containers/gw-rollback")
 	createIdx := callsIndex(f.calls, "POST", "/containers/create")
 	startIdx := callsIndex(f.calls, "POST", "/containers/final-id/start")
-	if stopIdx < 0 || removeIdx < 0 || createIdx < 0 || startIdx < 0 {
+	if stopIdx < 0 || renameIdx < 0 || removeIdx < 0 || createIdx < 0 || startIdx < 0 {
 		t.Fatalf("calls=%v", f.calls)
 	}
-	if !(stopIdx < removeIdx && removeIdx < createIdx && createIdx < startIdx) {
+	if !(stopIdx < renameIdx && renameIdx < createIdx && createIdx < startIdx && startIdx < removeIdx) {
 		t.Fatalf("swap order wrong: %v", f.calls)
 	}
 	finalBody := f.bodies["/containers/create"]
@@ -212,8 +215,8 @@ func TestSwapRecreatesFinalAndRollsBack(t *testing.T) {
 	if containsPrefix(env, swapEnv+"=") || containsPrefix(env, portsEnv+"=") {
 		t.Fatalf("final container still carries swap env: %v", env)
 	}
-	if _, has := finalBody["Healthcheck"]; has {
-		t.Fatal("final container must restore the image healthcheck")
+	if _, has := finalBody["Healthcheck"]; !has {
+		t.Fatal("final container needs a readiness healthcheck")
 	}
 	policy := hostConfig["RestartPolicy"].(map[string]any)
 	if policy["Name"] != "unless-stopped" {

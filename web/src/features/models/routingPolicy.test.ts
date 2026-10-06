@@ -99,6 +99,10 @@ describe("isActiveCooldown / candidateState", () => {
 		expect(candidateState(candidate(1, {}))).toBe("ready");
 		expect(candidateState(candidate(1, { enabled: false }))).toBe("disabled");
 		expect(candidateState(candidate(1, { cooldown_until: future }))).toBe("cooling_down");
+		expect(candidateState(candidate(1, { channelStatus: "disabled" }))).toBe("disabled");
+		const probeDisabled = candidate(1, { enabled: false });
+		probeDisabled.member.auto_disabled = true;
+		expect(candidateState(probeDisabled)).toBe("auto_disabled");
 	});
 });
 

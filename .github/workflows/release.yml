@@ -125,6 +125,13 @@ jobs:
         with:
           images: zichuanlan/meta-gateway
           flavor: latest=false
+          # `latest` only moves for stable releases. `beta` moves for every
+          # release on purpose: the beta channel is documented as receiving
+          # prereleases AND the stable releases that follow them. The failure
+          # mode to watch here is the opposite one — an out-of-band patch on an
+          # older stable line moves both floating tags backwards. That is why
+          # the apply endpoint refuses any target that is not newer than the
+          # running build, and why the verification step below exists.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ steps.channel.outputs.prerelease == 'false' }}
@@ -187,3 +194,28 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}
           make_latest: ${{ steps.channel.outputs.prerelease == 'true' && 'false' || 'true' }}
+
+      # The image and the release are two different publication channels and the
+      # console's update check reads the second one. v4.0.0-beta.6 shipped here:
+      # the run is green, `:4.0.0-beta.6` and the floating `:beta` tag are on
+      # Docker Hub, and there is no release for the tag — so the beta channel kept
+      # offering beta.5, and an operator who installed it watched for a version
+      # the executor would never report. A green run that published nothing is
+      # unreadable from the outside, so assert the release exists and is public.
+      - name: Verify the release is published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          draft=""
+          if ! draft="$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.draft')"; then
+            echo "::error::no GitHub release for $TAG; the console update check cannot see this build"
+            exit 1
+          fi
+          if [ "$draft" != "false" ]; then
+            echo "::error::release for $TAG is a draft; publish it or the update check will keep offering the previous build"
+            exit 1
+          fi
+          echo "release $TAG is published"

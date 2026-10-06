@@ -202,6 +202,29 @@ describe("channel-first shell", () => {
     ).toBe(true);
   });
 
+  it("restores a limited administrator inside the existing router without requesting gateway-only APIs", async () => {
+    localStorage.setItem("meta-gateway.team-console", "1");
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input).split("?")[0]!;
+      requests.push(path);
+      if (path === "/me") return jsonResponse({ user: { id: 2, role: "admin" }, csrf: "limited-csrf" });
+      if (path === "/me/display-settings") return jsonResponse({ symbol: "$", rate: 1 });
+      if (path === "/admin/mode") return jsonResponse({ mode: "team", has_owner: true, role: "admin" });
+      if (path === "/admin/team/settings") return jsonResponse({
+        settings: { mode: "team", branding: { name: "QA Team" } }, has_owner: true, role: "admin",
+      });
+      return jsonResponse([]);
+    }));
+    renderApp();
+    expect(await screen.findByRole("heading", { name: "User management" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/users/overview"));
+    expect(document.querySelector('a[href="/console/users/policies"]')).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "Members & invitations" }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/users/members"));
+    expect(requests.filter((path) => path.startsWith("/admin/") && !path.startsWith("/admin/team/") && path !== "/admin/mode")).toEqual([]);
+  });
+
 	it("offers upgrade sign-in guidance without sending credentials", async () => {
     const fetcher=stubAdminFetch();vi.stubGlobal("fetch",fetcher);
     renderApp();

@@ -130,7 +130,10 @@ func (s *Service) Run(ctx context.Context) {
 
 func (s *Service) fetch(ctx context.Context) Status {
 	channel := s.Channel()
-	fallback := Status{Current: buildinfo.Version, Channel: channel}
+	fallback := s.Status()
+	fallback.Current = buildinfo.Version
+	fallback.Channel = channel
+	fallback.Err = ""
 	if s.enabled != nil && !s.enabled() {
 		return fallback
 	}

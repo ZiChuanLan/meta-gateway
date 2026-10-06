@@ -183,10 +183,7 @@ func (s *Service) SyncExternalIfDue(ctx context.Context, catalogURL string, now 
 
 	count, err := s.SyncExternal(ctx, catalogURL)
 	if err != nil {
-		s.externalMu.Lock()
-		// Leave the timestamp: the next round retries after the interval rather
-		// than hammering a directory that is failing.
-		s.externalMu.Unlock()
+		// Leave the timestamp: retry after the interval, without an empty lock.
 		return 0, true, err
 	}
 	return count, true, nil

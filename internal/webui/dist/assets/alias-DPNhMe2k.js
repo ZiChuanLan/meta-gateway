@@ -1,0 +1,1 @@
+function a(r){if(!r?.trim())return{};try{const e=JSON.parse(r);if(e&&typeof e=="object"&&"real"in e){const t=e.real;if(typeof t=="string")return{real:t.trim()||void 0}}}catch{}return{}}function n(r){const e=r.trim();return e?JSON.stringify({real:e}):""}function i(r){return a(r.mapping_json).real??""}function m(r){return a(r).real??""}export{i as a,m,n as s};

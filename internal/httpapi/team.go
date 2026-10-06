@@ -94,7 +94,6 @@ type TeamHandler struct {
 	loginLimiter       *ratelimit.Limiter
 	globalLoginLimiter *ratelimit.Limiter
 	userLimiter        *groupRateLimiter
-	models             func() []string
 	requestDefaults    func() TeamRequestDefaults
 	// outboundProxy reports the operator's outbound proxy. Empty means direct.
 	outboundProxy func() string

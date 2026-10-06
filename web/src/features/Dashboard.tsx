@@ -448,7 +448,6 @@ export function DashboardView({
   return (
     <Page
       className="dashboard-page"
-      kicker={t("dashboard.kicker")}
       title={t("dashboard.title")}
       // A host without the channel matrix gets a description that does not
       // promise it: the panel is not its to show (see DashboardCapabilities).

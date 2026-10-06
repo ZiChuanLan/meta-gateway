@@ -104,8 +104,7 @@ function DecisionSnapshotView({
 	// highest-priority eligible candidate.
 	const selected =
 		candidates.find((c) => c.candidate?.channel?.id === selectedID)
-			?.candidate?.channel?.name ??
-		candidates.find((c) => c.eligible)?.candidate?.channel?.name;
+			?.candidate?.channel?.name;
 	return (
 		<div className="log-decision">
 			<div className="log-decision-head">
@@ -114,7 +113,14 @@ function DecisionSnapshotView({
 					<span>
 						{t("logsPage.decisionSelected", { channel: selected })}
 					</span>
-				) : null}
+				) : (
+					// The attempt's own record is the only authority here. Naming the
+					// highest-priority eligible candidate instead would attribute the
+					// request to a channel that never served it — and saying nothing
+					// leaves the operator unable to tell "not recorded" from "the
+					// panel failed to load".
+					<span className="muted">{t("logsPage.decisionUnavailable")}</span>
+				)}
 				{payload.routing_mode ? <code>{payload.routing_mode}</code> : null}
 				{payload.sticky_hit ? (
 					<span className="log-decision-sticky">
@@ -1175,7 +1181,6 @@ export function Logs() {
 
   return (
     <Page
-      kicker={t("logsPage.kicker")}
       title={t("logsPage.title")}
       description={t(member ? "logsPage.memberDescription" : "logsPage.hubDescription")}
     >

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/lan/meta-gateway/internal/domain"
 )
@@ -17,6 +18,9 @@ import (
 // validateMemberPricing checks and normalizes a route member's ladder and
 // schedule in place.
 func validateMemberPricing(member *domain.RouteMember) error {
+	if err := checkedFlatPrices(member.PricePromptPer1k, member.PriceCompletionPer1k, member.PriceCachePer1k, member.PricePerRequest); err != nil {
+		return err
+	}
 	tiers, err := checkedPriceTiers(member.PriceTiers)
 	if err != nil {
 		return err
@@ -31,6 +35,9 @@ func validateMemberPricing(member *domain.RouteMember) error {
 
 // validateModelPricing checks and normalizes a model's ladder and schedule.
 func validateModelPricing(meta *domain.ModelMetadata) error {
+	if err := checkedFlatPrices(meta.PricePromptPer1k, meta.PriceCompletionPer1k, meta.PriceCachePer1k, meta.PricePerRequest); err != nil {
+		return err
+	}
 	tiers, err := checkedPriceTiers(meta.PriceTiers)
 	if err != nil {
 		return err
@@ -40,6 +47,15 @@ func validateModelPricing(meta *domain.ModelMetadata) error {
 		return err
 	}
 	meta.PriceTiers, meta.PriceSchedule = tiers, windows
+	return nil
+}
+
+func checkedFlatPrices(prices ...float64) error {
+	for _, price := range prices {
+		if price < 0 || math.IsNaN(price) || math.IsInf(price, 0) {
+			return fmt.Errorf("prices must be finite and non-negative")
+		}
+	}
 	return nil
 }
 

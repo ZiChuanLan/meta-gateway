@@ -754,6 +754,8 @@ type ModelRatio struct {
 
 // RoutingCandidate contains the persisted facts needed to evaluate one member.
 type RoutingCandidate struct {
+	// Filled during selection, when the concrete requested name is known.
+	UpstreamModel    string      `json:"upstream_model,omitempty"`
 	Member           RouteMember `json:"member"`
 	Channel          Channel     `json:"channel"`
 	CredentialUsable bool        `json:"credential_usable"`
@@ -791,10 +793,27 @@ func MemberRealModel(mappingJSON string) string {
 // one served the traffic. The forward path already resolved this name for
 // blacklisting; the scoring path resolves it the same way now.
 func UpstreamModelName(candidate RoutingCandidate) string {
+	if candidate.UpstreamModel != "" {
+		return candidate.UpstreamModel
+	}
 	if real := MemberRealModel(candidate.Member.MappingJSON); real != "" {
 		return real
 	}
 	return candidate.ModelPattern
+}
+
+// ResolveUpstreamModel mirrors forwarding precedence, including legacy route
+// aliases and concrete requests matched by wildcard routes. Invalid nonempty
+// member mappings fail open rather than unexpectedly inheriting another map.
+func ResolveUpstreamModel(requested, memberMapping, routeMapping string) string {
+	mapping := strings.TrimSpace(routeMapping)
+	if member := strings.TrimSpace(memberMapping); member != "" {
+		mapping = member
+	}
+	if real := MemberRealModel(mapping); real != "" {
+		return real
+	}
+	return requested
 }
 
 // RouteOverview is the admin-facing route matrix with enriched channel members.

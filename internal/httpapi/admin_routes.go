@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -304,32 +305,52 @@ func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	var rm domain.RouteMember
-	if err := decodeJSON(w, r, &rm, 0, false); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-	rm.ID = id
-	if rm.Weight < 0 {
-		writeError(w, http.StatusBadRequest, "weight must be non-negative")
-		return
-	}
-	if _, ok := validateRouteGroup(rm.GroupName); !ok {
-		writeError(w, http.StatusBadRequest, "group name too long")
-		return
-	}
-	if err := validateMemberPricing(&rm); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := h.db.RouteMember.Update(&rm); err != nil {
+	existing, err := h.db.RouteMember.GetByID(id)
+	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	// The PUT came from an operator action, so record the intent: this is what
-	// keeps a probe-disabled flag from surviving a manual toggle and a manual
-	// disable from being resurrected by automatic recovery.
-	if err := h.db.RouteMember.ApplyManualIntent(id, rm.Enabled); err != nil {
+	if existing == nil {
+		writeError(w, 404, "route member not found")
+		return
+	}
+	var raw json.RawMessage
+	if err := decodeJSON(w, r, &raw, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	var input map[string]json.RawMessage
+	rm := *existing
+	if err := json.Unmarshal(raw, &input); err != nil || input == nil {
+		writeError(w, 400, "JSON object required")
+		return
+	}
+	if err := json.Unmarshal(raw, &rm); err != nil {
+		writeError(w, 400, "invalid member fields")
+		return
+	}
+	fields := map[string]bool{}
+	for name, value := range input {
+		if strings.TrimSpace(string(value)) != "null" {
+			fields[name] = true
+		}
+	}
+	rm.ID = id
+	if fields["weight"] && rm.Weight < 0 {
+		writeError(w, http.StatusBadRequest, "weight must be non-negative")
+		return
+	}
+	if _, ok := validateRouteGroup(rm.GroupName); fields["group_name"] && !ok {
+		writeError(w, http.StatusBadRequest, "group name too long")
+		return
+	}
+	if fields["price_tiers"] || fields["price_schedule"] || fields["price_prompt_per_1k"] || fields["price_completion_per_1k"] || fields["price_cache_per_1k"] || fields["price_per_request"] {
+		if err := validateMemberPricing(&rm); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+	}
+	if err := h.db.RouteMember.PatchConfiguration(&rm, fields); err != nil {
 		writeStoreError(w, err)
 		return
 	}

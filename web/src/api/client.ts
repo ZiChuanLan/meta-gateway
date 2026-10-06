@@ -12,6 +12,8 @@ import type {
   ConnectionCreateResponse,
   CheckinLog,
   CreatedDownstreamKey,
+  KeyCreateInput,
+  KeyUpdateInput,
   Credential,
   UsageRecord,
   UsageSummary,
@@ -283,6 +285,8 @@ function isErrorBody(value: unknown): value is { error: string } {
 }
 
 export const api = (client: ApiClient) => ({
+  setChannelModelAlias: (id: number, model: string, alias: string) =>
+    client.post<{ route_id: number }>(`/admin/channels/${id}/model-alias`, { model, alias }),
   sites: (signal?: AbortSignal) => client.getList<Site>("/admin/sites", signal),
   createSite: (body: Partial<Site>) => client.post<Site>("/admin/sites", body),
   detectSiteType: (url: string, signal?: AbortSignal) =>
@@ -478,36 +482,11 @@ export const api = (client: ApiClient) => ({
     client.get<StickySnapshot>("/admin/sticky", signal),
   keys: (signal?: AbortSignal) =>
     client.getList<DownstreamKey>("/admin/downstream-keys", signal),
-  createKey: (body: {
-    name: string;
-    scopes?: string;
-    token?: string;
-    quota_total_tokens?: number;
-    /** Spend budget in the ledger's unit; 0 = unlimited. */
-    quota_total_cost?: number;
-    model_allowlist?: string;
-    model_denylist?: string;
-    expires_at?: string;
-    allowed_ips?: string;
-    /** Bound route group; empty means the key is not bound to one. */
-    route_group_name?: string;
-  }) => client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
+  createKey: (body: KeyCreateInput) =>
+    client.post<CreatedDownstreamKey>("/admin/downstream-keys", body),
   updateKey: (
     id: number,
-    body: {
-      name?: string;
-      enabled?: boolean;
-      scopes?: string;
-      quota_total_tokens?: number;
-      quota_total_cost?: number;
-      model_allowlist?: string;
-      model_denylist?: string;
-      expires_at?: string;
-      allowed_ips?: string;
-      /** Bound route group; "" moves the key back to no route group. */
-      route_group_name?: string;
-      reset_used?: boolean;
-    },
+    body: KeyUpdateInput,
   ) => client.put<DownstreamKey>(`/admin/downstream-keys/${id}`, body),
   deleteKey: (id: number) => client.delete(`/admin/downstream-keys/${id}`),
   revealKey: (id: number) =>

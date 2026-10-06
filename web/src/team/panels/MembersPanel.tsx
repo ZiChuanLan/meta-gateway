@@ -4,7 +4,7 @@ import { TeamField as Field } from "../ui";
 import { ImportMembersDialog, NewMemberDialog, QuotaDialog } from "../MemberForms";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
-import { useUsers } from "../UsersLayout";
+import { useUsers } from "../UsersContext";
 import type { BulkMemberAction, OAuthBinding, Policy, TeamUser, UserKey } from "../types";
 
 /**

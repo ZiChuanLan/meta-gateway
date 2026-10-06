@@ -316,3 +316,75 @@ func postWithToken(t *testing.T, url, token, payload string) (*http.Response, []
 	body, _ := io.ReadAll(resp.Body)
 	return resp, body
 }
+
+// Both relay entries must book an attempt identically: same usage row, same
+// price resolution (the member's own prices, resolved by id), same proxy-log
+// backfill. The two entry points used to hold private copies of that block, and
+// they drifted — which is exactly why the accounting now lives in one place
+// (relay_accounting.go) and this test pins the behaviour instead of the code.
+func TestBothRelayEntriesBookUsageTheSameWay(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"object":"chat.completion","choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"prompt_tokens":1000,"completion_tokens":0,"total_tokens":1000}}`)
+	}))
+	defer upstream.Close()
+
+	serverURL, token, routeID, db := setupImageRelayWithStore(t, upstream.URL, "gemini-2.5-flash")
+	members, err := db.RouteMember.ListByRoute(routeID)
+	if err != nil || len(members) == 0 {
+		t.Fatalf("route %d has no member: %v", routeID, err)
+	}
+	member := members[0]
+	// A price only the member layer carries, so the row proves the attempt's
+	// member id reached the billing lookup.
+	member.PricePromptPer1k = 3
+	if err := db.RouteMember.Update(&member); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, call := range []struct{ name, path, body string }{
+		{"registered", "/v1/chat/completions", `{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}]}`},
+		{"custom", "/v1/systemone", `{"model":"gemini-2.5-flash","state":"payouts failed"}`},
+	} {
+		resp, raw := postWithToken(t, serverURL+call.path, token, call.body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s entry: status=%d body=%s", call.name, resp.StatusCode, raw)
+		}
+	}
+
+	rows, err := db.Query(`SELECT path, prompt_tokens, cost FROM usage_records`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	booked := map[string]float64{}
+	for rows.Next() {
+		var (
+			path   string
+			prompt int
+			cost   float64
+		)
+		if err := rows.Scan(&path, &prompt, &cost); err != nil {
+			t.Fatal(err)
+		}
+		if prompt != 1000 {
+			t.Fatalf("path %q booked %d prompt tokens, want 1000", path, prompt)
+		}
+		booked[path] = cost
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(booked) != 2 {
+		t.Fatalf("usage rows = %v, want one per entry", booked)
+	}
+	for _, path := range []string{"chat/completions", "systemone"} {
+		cost, ok := booked[path]
+		if !ok {
+			t.Fatalf("no usage row for path %q: %v", path, booked)
+		}
+		if cost != 3 {
+			t.Fatalf("path %q cost = %v, want 3 from the member's own price", path, cost)
+		}
+	}
+}

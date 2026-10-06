@@ -1,9 +1,9 @@
 import { Play, Search, Square } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
 import type { ProbeStartRequest, RouteOverview } from "../../api/types";
-import { Button, Dialog, Empty } from "../../components/ui";
+import { Button, Dialog, Empty, ErrorState } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
@@ -28,6 +28,8 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   const service = api(client!);
   const [pickedChannels, setPickedChannels] = useState<string[]>([]);
   const [pickedModels, setPickedModels] = useState<string[]>([]);
+  const [allChannels, setAllChannels] = useState(true);
+  const [allModels, setAllModels] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [maxTokens, setMaxTokens] = useState(1);
   const [concurrency, setConcurrency] = useState(4);
@@ -58,7 +60,13 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
     queryKey: ["probe-results", latest?.id],
     queryFn: ({ signal }) => service.probeResults(latest!.id, signal),
     enabled: latest !== undefined,
+    refetchInterval: running ? 1000 : false,
   });
+  const refetchResults = results.refetch;
+  const latestID = latest?.id;
+  useEffect(() => {
+    if (latestID !== undefined && !running) void refetchResults();
+  }, [latestID, running, refetchResults]);
 
   const start = useAdminMutation({
     mutationFn: (request: ProbeStartRequest) => service.probeStart(request),
@@ -90,20 +98,18 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   // Models follow the channel selection: with channels picked, only models
   // those channels actually serve stay in reach.
   const visibleModels = useMemo(() => {
-    if (pickedChannels.length === 0) return index.models;
+    if (allChannels) return index.models;
     const union = new Set<string>();
     for (const id of pickedChannels) {
       for (const model of index.byChannel.get(Number(id)) ?? []) union.add(model);
     }
     return index.models.filter((model) => union.has(model));
-  }, [pickedChannels, index]);
+  }, [pickedChannels, index, allChannels]);
 
   const scope = useMemo(() => {
     const ids =
-      pickedChannels.length > 0
-        ? pickedChannels.map(Number)
-        : [...index.byChannel.keys()];
-    const models = pickedModels.length > 0 ? pickedModels : visibleModels;
+      allChannels ? [...index.byChannel.keys()] : pickedChannels.map(Number);
+    const models = allModels ? visibleModels : pickedModels;
     let pairs = 0;
     for (const id of ids) {
       const owned = index.byChannel.get(id);
@@ -115,12 +121,14 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
       models: models.length,
       pairs,
     };
-  }, [pickedChannels, pickedModels, visibleModels, index]);
+  }, [pickedChannels, pickedModels, visibleModels, index, allChannels, allModels]);
 
   const toggleChannel = (id: string, value: boolean) => {
+    const current = allChannels ? selectableChannels.map((channel) => String(channel.id)) : pickedChannels;
     const next = value
-      ? [...pickedChannels, id]
-      : pickedChannels.filter((item) => item !== id);
+      ? [...current, id]
+      : current.filter((item) => item !== id);
+    setAllChannels(false);
     setPickedChannels(next);
     // A model that no selected channel serves would silently vanish from the
     // run, so drop it here and keep the estimate honest.
@@ -136,10 +144,11 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   };
 
   const submit = () => {
+    if (!scope.pairs) return;
     start.mutate({
       channel_ids:
-        pickedChannels.length > 0 ? pickedChannels.map(Number) : undefined,
-      models: pickedModels.length > 0 ? pickedModels : undefined,
+        allChannels ? undefined : pickedChannels.map(Number),
+      models: allModels ? undefined : pickedModels,
       prompt: prompt.trim() !== "" ? prompt : undefined,
       max_tokens: maxTokens,
       concurrency,
@@ -190,8 +199,8 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
               count: index.byChannel.get(channel.id)?.size ?? 0,
             }),
           }))}
-          selected={pickedChannels}
-          onChange={setPickedChannels}
+          selected={allChannels ? selectableChannels.map((channel) => String(channel.id)) : pickedChannels}
+          onChange={(values) => { setAllChannels(false); setPickedChannels(values); }}
           onToggleOne={toggleChannel}
           emptyLabel={t("common.loading")}
         />
@@ -206,8 +215,8 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
               count: index.byModel.get(model)?.size ?? 0,
             }),
           }))}
-          selected={pickedModels}
-          onChange={setPickedModels}
+          selected={allModels ? visibleModels : pickedModels}
+          onChange={(values) => { setAllModels(false); setPickedModels(values); }}
           emptyLabel={t("common.loading")}
         />
       </div>
@@ -297,8 +306,10 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
         </div>
       ) : null}
 
-      {results.isPending ? (
+      {latest && results.isPending ? (
         <Empty>{t("common.loading")}</Empty>
+      ) : results.isError ? (
+        <ErrorState error={results.error} retry={() => results.refetch()} />
       ) : (results.data ?? []).length === 0 ? (
         <Empty>{t("modelsPage.probe.noResults")}</Empty>
       ) : (

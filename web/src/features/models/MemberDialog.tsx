@@ -1,9 +1,15 @@
 import { PriceFields, PricingRules } from "./PriceFields";
-import { useState } from "react"
-import type { RouteMember } from "../../api/types"
-import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui"
-import { useI18n } from "../../i18n"
-import { memberRealName, serializeMemberMapping } from "../../lib/alias"
+import { useState } from "react";
+import type { RouteMember } from "../../api/types";
+import {
+  Button,
+  Dialog,
+  ErrorState,
+  Field,
+  InfoTip,
+} from "../../components/ui";
+import { useI18n } from "../../i18n";
+import { memberRealName, serializeMemberMapping } from "../../lib/alias";
 import {
   PriceTiersEditor,
   PriceWindowsEditor,
@@ -13,7 +19,7 @@ import {
   parseWindows,
   validTiers,
   validWindows,
-} from "./PricingEditors"
+} from "./PricingEditors";
 
 export function MemberDialog({
   value,
@@ -49,7 +55,9 @@ export function MemberDialog({
   const [tiersEdited, setTiersEdited] = useState(false);
   const [windowsEdited, setWindowsEdited] = useState(false);
   const [tiers, setTiers] = useState(() => parseTiers(value.price_tiers));
-  const [windows, setWindows] = useState(() => parseWindows(value.price_schedule));
+  const [windows, setWindows] = useState(() =>
+    parseWindows(value.price_schedule),
+  );
   return (
     <Dialog
       title={value.id ? t("routing.editMember") : t("routing.addMember")}
@@ -61,15 +69,42 @@ export function MemberDialog({
             {t("common.cancel")}
           </Button>
           <Button
-            disabled={pending || !form.channel_id || !pricesValid || !validTiers(tiers) || !validWindows(windows)}
-            onClick={() =>
-              onSave({
-                ...form,
-                price_tiers: tiersEdited ? encodeTiers(tiers) : (value.price_tiers ?? ""),
-                price_schedule: windowsEdited ? encodeWindows(windows) : (value.price_schedule ?? ""),
-                manual_override: (form.manual_override ?? false) || valuesTouched,
-              })
+            disabled={
+              pending ||
+              !form.channel_id ||
+              !pricesValid ||
+              !validTiers(tiers) ||
+              !validWindows(windows)
             }
+            onClick={() => {
+              const next: Partial<RouteMember> = {
+                ...form,
+                ...(tiersEdited ? { price_tiers: encodeTiers(tiers) } : {}),
+                ...(windowsEdited
+                  ? { price_schedule: encodeWindows(windows) }
+                  : {}),
+                ...(valuesTouched &&
+                (form.priority !== value.priority ||
+                  form.weight !== value.weight)
+                  ? { manual_override: true }
+                  : {}),
+              };
+              if (!value.id) {
+                onSave(next);
+                return;
+              }
+              // Send intent, not the stale snapshot loaded when the editor opened.
+              onSave(
+                Object.fromEntries(
+                  Object.entries(next).filter(
+                    ([key, item]) =>
+                      key === "id" ||
+                      JSON.stringify(item) !==
+                        JSON.stringify(value[key as keyof RouteMember]),
+                  ),
+                ) as Partial<RouteMember>,
+              );
+            }}
           >
             {pending ? t("common.working") : t("common.save")}
           </Button>
@@ -96,9 +131,9 @@ export function MemberDialog({
           </select>
         </Field>
       ) : null}
-			<div className="ops-panel-context">
-				<span>{t("routing.memberDialogIntro")}</span>
-			</div>
+      <div className="ops-panel-context">
+        <span>{t("routing.memberDialogIntro")}</span>
+      </div>
       <div className="form-grid">
         <Field label={t("routing.priorityLabel")}>
           <input
@@ -123,10 +158,29 @@ export function MemberDialog({
           />
           <InfoTip label={t("routing.weightHint")} />
         </Field>
-        <PriceFields value={form} onChange={(partial) => { markTouched(); setForm({ ...form, ...partial }); }} onValidityChange={setPricesValid} disabled={pending} />
+        <PriceFields
+          value={form}
+          onChange={(partial) => setForm({ ...form, ...partial })}
+          onValidityChange={setPricesValid}
+          disabled={pending}
+        />
         <PricingRules />
-        <PriceTiersEditor value={tiers} onChange={(next) => { setTiersEdited(true); setTiers(next); }} disabled={pending} />
-        <PriceWindowsEditor value={windows} onChange={(next) => { setWindowsEdited(true); setWindows(next); }} disabled={pending} />
+        <PriceTiersEditor
+          value={tiers}
+          onChange={(next) => {
+            setTiersEdited(true);
+            setTiers(next);
+          }}
+          disabled={pending}
+        />
+        <PriceWindowsEditor
+          value={windows}
+          onChange={(next) => {
+            setWindowsEdited(true);
+            setWindows(next);
+          }}
+          disabled={pending}
+        />
       </div>
       <Field label={t("routing.memberGroupLabel")}>
         <select
@@ -137,9 +191,7 @@ export function MemberDialog({
         >
           {[...new Set(["default", ...groups])].map((group) => (
             <option key={group} value={group}>
-              {group === "default"
-                ? t("routing.groupDefault")
-                : group}
+              {group === "default" ? t("routing.groupDefault") : group}
             </option>
           ))}
         </select>
@@ -152,7 +204,6 @@ export function MemberDialog({
           onChange={(event) => {
             const next = event.target.value;
             setRealName(next);
-            markTouched();
             setForm({ ...form, mapping_json: serializeMemberMapping(next) });
           }}
         />

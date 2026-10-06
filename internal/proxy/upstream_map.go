@@ -306,11 +306,6 @@ func rejectFramedPath(column, path string) error {
 	return nil
 }
 
-// frameMarker spells the bracket-path marker.
-func frameMarker(path string) string {
-	return "[" + strings.Trim(strings.TrimSpace(path), "/") + "]"
-}
-
 // SplitFramedPath reports whether a path is a bracket path and returns the inner
 // path it stands for. Only the validator uses it today (the runtime rejects the
 // form), and it lives here so the spelling stays in one place if the form is

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ModePanel } from "../ModePanel";
-import { useUsers } from "../UsersLayout";
+import { useUsers } from "../UsersContext";
 import type { Policy, TeamUser } from "../types";
 
 /**

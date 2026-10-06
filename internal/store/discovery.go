@@ -112,6 +112,31 @@ func (s *DiscoveredModelStore) Reconcile(ctx context.Context, input ReconcileInp
 		return result, fmt.Errorf("discovery reconcile clear snapshot: %w", err)
 	}
 	checkedAt := input.CheckedAt.UTC().Format(time.RFC3339Nano)
+	// A renamed upstream model is already adopted. Recreating its original
+	// route on every sync would duplicate weights and evade the old cooldown.
+	aliases := map[string]bool{}
+	aliasRows, aliasErr := tx.QueryContext(ctx, `SELECT m.mapping_json,r.mapping_json
+		FROM route_members m JOIN routes r ON r.id=m.route_id WHERE m.channel_id=?`, input.ChannelID)
+	if aliasErr != nil {
+		return result, aliasErr
+	}
+	for aliasRows.Next() {
+		var memberMap, routeMap string
+		if aliasErr = aliasRows.Scan(&memberMap, &routeMap); aliasErr != nil {
+			aliasRows.Close()
+			return result, aliasErr
+		}
+		real := domain.ResolveUpstreamModel("", memberMap, routeMap)
+		if real != "" {
+			aliases[real] = true
+		}
+	}
+	aliasErr = aliasRows.Err()
+	aliasRows.Close()
+	if aliasErr != nil {
+		return result, aliasErr
+	}
+
 	for _, model := range input.Models {
 		if _, err = tx.ExecContext(ctx, `INSERT INTO discovered_models (channel_id, model_name, available, source, latency_ms, checked_at) VALUES (?, ?, 1, ?, ?, ?)`, input.ChannelID, model, input.Source, input.LatencyMs, checkedAt); err != nil {
 			return result, fmt.Errorf("discovery reconcile insert snapshot: %w", err)
@@ -140,6 +165,9 @@ func (s *DiscoveredModelStore) Reconcile(ctx context.Context, input ReconcileInp
 		// list only: routes/members are created on demand from the channel
 		// models panel. Auto-sync channels adopt every probed model.
 		if domain.NormalizeModelSyncMode(syncMode) != domain.ModelSyncModeAuto {
+			continue
+		}
+		if aliases[model] {
 			continue
 		}
 		var routeID int64

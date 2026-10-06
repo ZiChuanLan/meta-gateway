@@ -373,19 +373,22 @@ func (s *RouteMemberStore) ListRouteOverviews() ([]domain.RouteOverview, error) 
 	if err != nil {
 		return nil, err
 	}
+	routeByID := make(map[int64]domain.Route, len(routes))
+	for _, route := range routes {
+		routeByID[route.ID] = route
+	}
+	members, err := s.listOverviewCandidates(routeByID)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]domain.RouteOverview, 0, len(routes))
 	for _, route := range routes {
-		members, memberErr := s.listCandidatesByRoute(route)
-		if memberErr != nil {
-			return nil, memberErr
-		}
-		result = append(result, domain.RouteOverview{Route: route, Members: members})
+		result = append(result, domain.RouteOverview{Route: route, Members: members[route.ID]})
 	}
 	return result, nil
 }
 
-func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.RoutingCandidate, error) {
-	routeID := route.ID
+func (s *RouteMemberStore) listOverviewCandidates(routes map[int64]domain.Route) (map[int64][]domain.RoutingCandidate, error) {
 	rows, err := s.db.Query(`SELECT
 			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
 			rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
@@ -410,12 +413,15 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 		FROM route_members rm JOIN channels c ON c.id = rm.channel_id
 		LEFT JOIN credentials cred ON cred.id = c.credential_id
 		LEFT JOIN routes rt ON rt.id = rm.route_id
-		WHERE rm.route_id = ? ORDER BY rm.priority DESC, rm.weight DESC, rm.id`, routeID)
+		ORDER BY rm.route_id, rm.priority DESC, rm.weight DESC, rm.id`)
 	if err != nil {
 		return nil, fmt.Errorf("route overview members: %w", err)
 	}
 	defer rows.Close()
-	var result []domain.RoutingCandidate
+	result := make(map[int64][]domain.RoutingCandidate, len(routes))
+	for id := range routes {
+		result[id] = []domain.RoutingCandidate{}
+	}
 	for rows.Next() {
 		var candidate domain.RoutingCandidate
 		var enabled, auto, manual, autoDisabled, credentialUsable, stableFirst int
@@ -451,16 +457,15 @@ func (s *RouteMemberStore) listCandidatesByRoute(route domain.Route) ([]domain.R
 		candidate.Member.AutoDisabled = autoDisabled != 0
 		candidate.CredentialUsable = credentialUsable != 0
 		candidate.Channel.StableFirst = stableFirst != 0
+		route, exists := routes[candidate.Member.RouteID]
+		if !exists {
+			continue
+		}
 		applyRouteModelOverrides(&candidate.Channel, route)
-		result = append(result, candidate)
+		result[route.ID] = append(result[route.ID], candidate)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
-	}
-	// A route without members must serialize as [] rather than null so the
-	// admin UI never crashes on .some()/.length over a nil slice.
-	if result == nil {
-		result = []domain.RoutingCandidate{}
 	}
 	return result, nil
 }

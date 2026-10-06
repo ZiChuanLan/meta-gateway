@@ -18,6 +18,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
   CreatedDownstreamKey,
+  KeyCreateInput,
+  KeyUpdateInput,
   DownstreamKey,
   RouteOverview,
 } from "../api/types";
@@ -38,6 +40,9 @@ import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { useOperatingMode } from "../hooks/useOperatingMode";
 import { memberKeysSource } from "../member/MemberKeysSource";
+import { parseQuotaInput } from "./keys/quotaInput";
+import { mappingRealName } from "../lib/alias";
+import { formatCost as formatLedgerCost, useCurrency } from "../lib/format";
 import {
   ADMIN_KEY_CAPS,
   MEMBER_KEY_CAPS,
@@ -122,7 +127,7 @@ function RedemptionDialog({ onClose }: { onClose: () => void }) {
   });
   const items = query.data?.items ?? [];
   return (
-    <Dialog title={t("keys.redemptionTitle")} onClose={onClose}>
+    <Dialog title={t("keys.redemptionTitle")} onClose={onClose} busy={mint.isPending || voidCode.isPending}>
       <div className="redemption-mint">
         <Field label={t("keys.redemptionCount")}>
           <input
@@ -216,8 +221,8 @@ function formatQuota(used?: number, total?: number) {
 }
 
 function formatCost(value?: number) {
-  if (value == null || value <= 0) return "—";
-  return value.toFixed(4);
+  if (value == null || !Number.isFinite(value)) return "—";
+  return formatLedgerCost(value);
 }
 
 /**
@@ -230,14 +235,8 @@ function formatCost(value?: number) {
 function aliasReals(overview: RouteOverview): string[] {
   const out = new Set<string>();
   const collect = (raw?: string) => {
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as { real?: string };
-      const real = parsed.real?.trim();
-      if (real) out.add(real);
-    } catch {
-      // Malformed mapping: the proxy fails open on those, and so does the UI.
-    }
+    const real = mappingRealName(raw);
+    if (real) out.add(real);
   };
   collect(overview.route.mapping_json);
   for (const candidate of overview.members ?? []) {
@@ -286,8 +285,8 @@ export function Keys() {
           .keyGroups(signal)
           .then((rows) => ({ groups: rows.map((row) => row.name) })),
       modelMetadata: (signal) => service.modelMetadata(signal),
-      createKey: (body) => service.createKey(body as never),
-      updateKey: (id, body) => service.updateKey(id, body as never),
+      createKey: (body) => service.createKey(body),
+      updateKey: (id, body) => service.updateKey(id, body),
       deleteKey: (id) => service.deleteKey(id),
       revealKey: (id) => service.revealKey(id),
       rotateKey: (id) => service.rotateKey(id),
@@ -332,6 +331,7 @@ export function KeysView({
   extraRowActions?: (key: DownstreamKey) => ActionMenuItem[];
 }) {
   const { t } = useI18n();
+  useCurrency();
   // Both conditions matter: the capability says this viewer may see team
   // concepts at all, the prop says the gateway is currently in that mode.
   const showTeam = Boolean(team) && caps.team;
@@ -453,7 +453,7 @@ export function KeysView({
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState<DownstreamKey | null>(null);
   const [redemption, setRedemption] = useState(false);
-  const [created, setCreated] = useState<CreatedDownstreamKey | null>(null);
+  const [created, setCreated] = useState<Pick<CreatedDownstreamKey, "id" | "token"> | null>(null);
   const [remove, setRemove] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ id: number; top: number; left: number } | null>(null);
   // Re-view a stored plaintext token (created after plaintext storage).
@@ -482,18 +482,7 @@ export function KeysView({
   }, [searchParams, setSearchParams]);
 
   const create = useAdminMutation({
-    mutationFn: (v: {
-      name: string;
-      scopes?: string;
-      token?: string;
-      quota_total_tokens?: number;
-      quota_total_cost?: number;
-      model_allowlist?: string;
-      model_denylist?: string;
-      expires_at?: string;
-      allowed_ips?: string;
-      route_group_name?: string;
-    }) => source.createKey!(v),
+    mutationFn: (v: KeyCreateInput) => source.createKey!(v),
     invalidateKeys: [["keys"], ["usage-summary"]],
     toastOnError: false,
     onSuccess: (result) => {
@@ -504,21 +493,8 @@ export function KeysView({
   const update = useAdminMutation({
     mutationFn: (v: {
       id: number;
-      body: {
-        name?: string;
-        enabled?: boolean;
-        scopes?: string;
-        quota_total_tokens?: number;
-        quota_total_cost?: number;
-        model_allowlist?: string;
-        model_denylist?: string;
-        expires_at?: string;
-        allowed_ips?: string;
-        route_group_name?: string;
-        group_name?: string;
-        reset_used?: boolean;
-      };
-    }) => source.updateKey!(v.id, v.body as Record<string, unknown>),
+      body: KeyUpdateInput;
+    }) => source.updateKey!(v.id, v.body),
     invalidateKeys: [["keys"], ["usage-summary"]],
     toastOnError: false,
     onSuccess: () => setEdit(null),
@@ -635,7 +611,6 @@ export function KeysView({
 
   return (
     <Page
-      kicker={t("keys.kicker")}
       title={t("keys.title")}
       description={t("keys.description")}
       actions={
@@ -689,20 +664,21 @@ export function KeysView({
             },
             {
               label: t("keys.stat.usedTokens"),
-              value: query.isPending
+              value: query.isPending || usage.isPending || usage.isError
                 ? "—"
                 : formatNumber(usage.data?.total_tokens ?? totalUsed),
               tone: "info",
             },
             {
               label: t("keys.stat.requests"),
-              value: usage.isPending
+              value: usage.isPending || usage.isError
                 ? "—"
                 : formatNumber(usage.data?.request_count ?? 0),
               tone: "warning",
             },
           ]}
         />
+        {usage.isError ? <ErrorState error={usage.error} retry={() => usage.refetch()} /> : null}
 
         <Panel className="ops-list-panel">
           <EntityState
@@ -887,6 +863,7 @@ export function KeysView({
           // Always sent, empty included: "" is how a key is moved back to
           // "no route group", and `|| undefined` would omit it instead.
           route_group_name: v.route_group_name ?? "",
+          group_name: v.group_name ?? "",
           reset_used: v.reset_used,
         },
       })
@@ -974,19 +951,7 @@ export function KeysView({
   );
 }
 
-type KeyFormValues = {
-  name: string;
-  scopes?: string;
-  token?: string;
-  quota_total_tokens?: number;
-  /** Spend budget in the ledger's unit; 0 = unlimited. */
-  quota_total_cost?: number;
-  model_allowlist?: string;
-  model_denylist?: string;
-  expires_at?: string;
-  allowed_ips?: string;
-  route_group_name?: string;
-  group_name?: string;
+type KeyFormValues = KeyCreateInput & {
   reset_used?: boolean;
 };
 
@@ -1044,6 +1009,8 @@ function KeyDialog({
         : "",
     ),
   );
+  const [tokenInputBad, setTokenInputBad] = useState(false);
+  const [costInputBad, setCostInputBad] = useState(false);
   const splitModels = (raw?: string) =>
     (raw ?? "")
       .split(",")
@@ -1070,7 +1037,7 @@ function KeyDialog({
   // Pre-open a section when the stored value is non-trivial (edit mode).
   useEffect(() => {
     if (mode !== "edit") return;
-      if ((initial?.quota_total_tokens ?? 0) > 0 || (initial?.quota_total_cost ?? 0) > 0) {
+    if ((initial?.quota_total_tokens ?? 0) > 0 || (initial?.quota_total_cost ?? 0) > 0) {
       setOpenBilling(true);
     }
     if ((initial?.model_allowlist ?? "").trim() || (initial?.model_denylist ?? "").trim()) {
@@ -1079,7 +1046,8 @@ function KeyDialog({
     if (
       (initial?.expires_at ?? "").trim() ||
       (initial?.allowed_ips ?? "").trim() ||
-      (initial?.route_group_name ?? "").trim()
+      (initial?.route_group_name ?? "").trim() ||
+      (initial?.group_name ?? "").trim()
     ) {
       setOpenAdvanced(true);
     }
@@ -1096,18 +1064,15 @@ function KeyDialog({
   const trimmedCustom = customToken.trim();
   const customTooShort =
     useCustomToken && trimmedCustom.length > 0 && trimmedCustom.length < 16;
+  const tokenQuota = parseQuotaInput(quotaTotal, true);
+  const costQuota = parseQuotaInput(quotaCost);
+  const quotasValid = tokenQuota !== null && costQuota !== null &&
+    !tokenInputBad && !costInputBad;
   const canSubmit =
-    Boolean(name.trim()) &&
+    Boolean(name.trim()) && quotasValid &&
     (mode === "edit" ||
       !useCustomToken ||
       (trimmedCustom.length >= 16 && !customTooShort));
-
-  const parseOptionalNumber = (raw: string) => {
-    const trimmed = raw.trim();
-    if (!trimmed) return 0;
-    const value = Number(trimmed);
-    return Number.isFinite(value) && value >= 0 ? value : 0;
-  };
 
   return (
     <Dialog
@@ -1122,7 +1087,8 @@ function KeyDialog({
           <Button
             disabled={pending || !canSubmit}
             icon={<KeyRound size={16} />}
-            onClick={() =>
+            onClick={() => {
+              if (!canSubmit || tokenQuota === null || costQuota === null) return;
               onSave({
                 name: name.trim(),
                 scopes: scopes.length > 0 ? scopes.join(",") : "relay",
@@ -1130,8 +1096,8 @@ function KeyDialog({
                   mode === "create" && useCustomToken
                     ? trimmedCustom
                     : undefined,
-                    quota_total_tokens: parseOptionalNumber(quotaTotal),
-        quota_total_cost: parseOptionalNumber(quotaCost),
+                quota_total_tokens: tokenQuota,
+                quota_total_cost: costQuota,
                 model_allowlist: allowlist.join(","),
                 model_denylist: denylist.join(","),
                 expires_at: expiresAt.trim() || undefined,
@@ -1139,8 +1105,8 @@ function KeyDialog({
                 route_group_name: routeGroup.trim() || undefined,
                 group_name: tenantGroup.trim() || undefined,
                 reset_used: mode === "edit" ? resetUsed : undefined,
-              })
-            }
+              });
+            }}
           >
             {mode === "create" ? t("common.create") : t("common.save")}
           </Button>
@@ -1183,8 +1149,12 @@ function KeyDialog({
             min={0}
             step={1}
             value={quotaTotal}
-            onChange={(e) => setQuotaTotal(e.target.value)}
-            placeholder="0 = unlimited"
+            onChange={(e) => {
+              setQuotaTotal(e.target.value);
+              setTokenInputBad(e.target.validity.badInput);
+            }}
+            aria-invalid={tokenQuota === null || tokenInputBad}
+            placeholder={t("keys.unlimitedPlaceholder")}
           />
         </Field>
         <Field label={t("keys.quotaCost")} hint={t("keys.quotaCostHint")}>
@@ -1193,12 +1163,17 @@ function KeyDialog({
             min={0}
             step="0.01"
             value={quotaCost}
-            onChange={(e) => setQuotaCost(e.target.value)}
-            placeholder="0 = unlimited"
+            onChange={(e) => {
+              setQuotaCost(e.target.value);
+              setCostInputBad(e.target.validity.badInput);
+            }}
+            aria-invalid={costQuota === null || costInputBad}
+            placeholder={t("keys.unlimitedPlaceholder")}
           />
         </Field>
       </div>
         ) : null}
+        {!quotasValid ? <p className="inline-error" role="alert">{t("keys.invalidQuota")}</p> : null}
       </div>
 
       <div className="key-dialog-section">

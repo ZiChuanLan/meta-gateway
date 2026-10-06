@@ -635,17 +635,11 @@ func removalCount(ex sqlExecutor, batchID int64) int {
 // mappingRealName extracts {"real": "..."} from a member's mapping JSON. An
 // empty result means the member serves the route's own name unchanged, which
 // is how plain (non-alias) members are stored.
+//
+// Delegates to the domain extractor so the unify transaction and the forward
+// path can never disagree about a malformed or padded mapping.
 func mappingRealName(mappingJSON string) string {
-	if strings.TrimSpace(mappingJSON) == "" {
-		return ""
-	}
-	var mapping struct {
-		Real string `json:"real"`
-	}
-	if err := json.Unmarshal([]byte(mappingJSON), &mapping); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(mapping.Real)
+	return domain.MemberRealModel(mappingJSON)
 }
 
 // jsonMarshalRealName builds the per-member alias redirect that unification

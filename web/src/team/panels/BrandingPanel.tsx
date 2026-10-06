@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { TeamField as Field } from "../ui";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
-import { useUsers } from "../UsersLayout";
+import { useUsers } from "../UsersContext";
 import type { TeamSettings } from "../types";
 
 /**

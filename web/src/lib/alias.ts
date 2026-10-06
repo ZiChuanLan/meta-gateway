@@ -34,3 +34,8 @@ export function serializeMemberMapping(real: string): string {
 export function memberRealName(member: { mapping_json?: string }): string {
   return parseMemberMapping(member.mapping_json).real ?? "";
 }
+
+/** Read a mapping without inventing a model name for malformed JSON. */
+export function mappingRealName(json?: string): string {
+  return parseMemberMapping(json).real ?? "";
+}

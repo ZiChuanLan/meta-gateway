@@ -77,14 +77,6 @@ func New(db *store.DB, notifier delivery) *Service {
 	}
 }
 
-// SetNotifier swaps the delivery backend (used when the notifier is wired
-// after construction).
-func (s *Service) SetNotifier(n delivery) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.notifier = n
-}
-
 // Tick evaluates all enabled rules once. Callers run it on a fixed cadence.
 func (s *Service) Tick(ctx context.Context) {
 	rules, err := s.db.AlertRule.ListEnabled()

@@ -85,18 +85,6 @@ func (p *hookPluginServer) routeInput() map[string]any {
 	return p.lastRouteInput
 }
 
-func (p *hookPluginServer) requestInput() map[string]any {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.lastReqInput
-}
-
-func (p *hookPluginServer) responseInput() map[string]any {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.lastRespInput
-}
-
 func writeHookJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(value)

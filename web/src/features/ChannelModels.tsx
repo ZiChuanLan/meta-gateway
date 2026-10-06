@@ -33,6 +33,7 @@ import { useSession } from "../session";
 import { MODEL_GROUP_ORDER, autoModelGroup } from "./models/modelGroups";
 import { positiveId } from "../lib/positiveId";
 import type { ModelSyncMode } from "./channels/SyncModePicker";
+import { mappingRealName as mappingReal } from "../lib/alias";
 
 const INVALIDATE = [
   ["channel-overviews"],
@@ -111,17 +112,6 @@ export function ChannelModelsPanel({
     });
   const forcedOpen = query.trim() !== "" || bulkMode;
 
-  // mappingReal parses a {"real":"…"} mapping value; empty when absent.
-  const mappingReal = (raw: string | undefined): string => {
-    if (!raw) return "";
-    try {
-      const parsed = JSON.parse(raw) as { real?: string };
-      return parsed.real ?? "";
-    } catch {
-      return "";
-    }
-  };
-
   // aliasFor returns the alias binding for a real model on this channel:
   // the (route, member) pair whose member carries {"real": realModel}. New
   // aliases store the mapping on the member (shared aliases: several models/
@@ -131,6 +121,7 @@ export function ChannelModelsPanel({
     realModel: string,
   ): { overview: RouteOverview; member: RouteMember } | undefined => {
     for (const overview of routeOverviews.data ?? []) {
+      if (overview.route.model_pattern === realModel) continue;
       const mapped = (overview.members ?? []).find(
         (candidate) =>
           candidate.member.channel_id === channelId &&
@@ -164,7 +155,8 @@ export function ChannelModelsPanel({
       (overview) => overview.route.model_pattern === realModel,
     );
     return route?.members.find(
-      (candidate) => candidate.member.channel_id === channelId,
+      (candidate) => candidate.member.channel_id === channelId &&
+        (!mappingReal(candidate.member.mapping_json) || mappingReal(candidate.member.mapping_json) === realModel),
     )?.member;
   };
 
@@ -200,7 +192,6 @@ export function ChannelModelsPanel({
         return;
       }
       await service.updateMember(member.id, {
-        ...member,
         enabled: !member.enabled,
       });
     },
@@ -241,7 +232,6 @@ export function ChannelModelsPanel({
       await Promise.all([
         ...input.updates.map(({ member, enabled }) =>
           service.updateMember(member.id, {
-            ...member,
             enabled,
           }),
         ),
@@ -321,156 +311,14 @@ export function ChannelModelsPanel({
   const toast = useToast();
 
   const saveAlias = useAdminMutation({
-    mutationFn: async (input: { realModel: string; alias: string }) => {
-      const alias = input.alias.trim();
-      if (!alias || channelId == null) return;
-      const mapping = JSON.stringify({ real: input.realModel });
-      const existing = aliasFor(input.realModel);
-      // No existing alias and the alias equals the real name: nothing to do.
-      if (alias === input.realModel && !existing) return;
-      let aliasRouteId: number;
-
-      // The alias name changed: drop this channel's mapped member from the
-      // old route. The alias route may be shared by other channels/models, so
-      // only this member is removed (the route itself is deleted only when it
-      // has no members left).
-      if (existing && existing.overview.route.model_pattern !== alias) {
-        const remaining = (existing.overview.members ?? []).filter(
-          (candidate) => candidate.member.id !== existing.member.id,
-        );
-        await service.deleteMember(existing.member.id);
-        if (remaining.length === 0) {
-          await service.deleteRoute(existing.overview.route.id);
-        }
-      }
-
-      // Upsert this channel's alias member on the target route. The mapping
-      // lives on the member, so several real models/channels may share one
-      // alias name while the proxy rewrites to each member's own real model.
-      const upsertMember = async (routeId: number) => {
-        const overview = (routeOverviews.data ?? []).find(
-          (entry) => entry.route.id === routeId,
-        );
-        const mine = (overview?.members ?? []).find(
-          (candidate) =>
-            candidate.member.channel_id === channelId &&
-            mappingReal(candidate.member.mapping_json) === input.realModel,
-        );
-        if (mine) {
-          if (mine.member.mapping_json !== mapping) {
-            await service.updateMember(mine.member.id, {
-              ...mine.member,
-              mapping_json: mapping,
-            });
-          }
-        } else {
-          await service.createMember(routeId, {
-            channel_id: channelId,
-            priority: 0,
-            weight: 100,
-            enabled: true,
-            auto: true,
-            manual_override: true,
-            mapping_json: mapping,
-          });
-        }
-      };
-
-      const target = (routeOverviews.data ?? []).find(
-        (entry) => entry.route.model_pattern === alias,
-      );
-      if (target) {
-        // Reuse the existing route (custom model name, or another real
-        // model's alias): attach this channel as an additional member instead
-        // of hitting the global UNIQUE(model_pattern) constraint.
-        aliasRouteId = target.route.id;
-        await upsertMember(aliasRouteId);
-      } else {
-        const created = await service.createRoute({
-          model_pattern: alias,
-          enabled: true,
-        });
-        aliasRouteId = created.id;
-        await upsertMember(aliasRouteId);
-      }
-
-      // Retire the original model name for this channel: drop its member
-      // on the original route; delete the route if it became empty.
-      const original = (routeOverviews.data ?? []).find(
-        (overview) =>
-          overview.route.model_pattern === input.realModel &&
-          overview.route.id !== aliasRouteId,
-      );
-      if (original) {
-        const originalMember = original.members?.find(
-          (candidate) => candidate.member.channel_id === channelId,
-        );
-        if (originalMember) {
-          await service.deleteMember(originalMember.member.id);
-        }
-        const remaining = (original.members ?? []).filter(
-          (candidate) => candidate.member.channel_id !== channelId,
-        );
-        if (remaining.length === 0) {
-          await service.deleteRoute(original.route.id);
-        }
-      }
-    },
+    mutationFn: (input: { realModel: string; alias: string }) =>
+      service.setChannelModelAlias(channelId!, input.realModel, input.alias.trim()),
     invalidateKeys: [...INVALIDATE],
   });
 
   const removeAlias = useAdminMutation({
-    mutationFn: async (realModel: string) => {
-      const alias = aliasFor(realModel);
-      if (!alias || channelId == null) return;
-      const { overview, member } = alias;
-      // Remove only this channel's mapped member; the alias route stays when
-      // other channels/models still share the alias name, and disappears once
-      // it has no members left.
-      const remaining = (overview.members ?? []).filter(
-        (candidate) => candidate.member.id !== member.id,
-      );
-      await service.deleteMember(member.id);
-      if (remaining.length === 0) {
-        await service.deleteRoute(overview.route.id);
-      }
-      // Restore the real-name binding so the model stays reachable under its
-      // real name again (the original member was dropped when the alias was
-      // saved).
-      const originalRoute = (routeOverviews.data ?? []).find(
-        (entry) =>
-          entry.route.model_pattern === realModel &&
-          entry.route.id !== overview.route.id,
-      );
-      if (originalRoute) {
-        const existingMember = (originalRoute.members ?? []).find(
-          (candidate) => candidate.member.channel_id === channelId,
-        );
-        if (!existingMember) {
-          await service.createMember(originalRoute.route.id, {
-            channel_id: channelId,
-            priority: 0,
-            weight: 100,
-            enabled: true,
-            auto: true,
-            manual_override: true,
-          });
-        }
-      } else {
-        const created = await service.createRoute({
-          model_pattern: realModel,
-          enabled: true,
-        });
-        await service.createMember(created.id, {
-          channel_id: channelId,
-          priority: 0,
-          weight: 100,
-          enabled: true,
-          auto: true,
-          manual_override: true,
-        });
-      }
-    },
+    mutationFn: (realModel: string) =>
+      service.setChannelModelAlias(channelId!, realModel, realModel),
     invalidateKeys: [...INVALIDATE],
   });
 
@@ -522,7 +370,6 @@ export function ChannelModelsPanel({
         // tell the user it exists (no silent no-op).
         if (!existingMember.enabled) {
           await service.updateMember(existingMember.id, {
-            ...existingMember,
             enabled: true,
           });
           toast.push({
@@ -643,10 +490,8 @@ export function ChannelModelsPanel({
   };
 
   const runBulk = (enabled: boolean) => {
-    // Enable-selected acts as a whitelist: checked rows are enabled (or
-    // adopted when not wired yet) and every other wired row is disabled in
-    // the same pass, so the saved state matches exactly what the operator
-    // checked. Disable-selected only touches wired, checked rows.
+    // Both operations act only on the selection. Enabling a subset is not
+    // permission to disable every other upstream model on the channel.
     const manual = channel?.model_sync_mode === "manual";
     const updates: { member: RouteMember; enabled: boolean }[] = [];
     const removals: RouteMember[] = [];
@@ -654,7 +499,8 @@ export function ChannelModelsPanel({
       const member = memberFor(item.name);
       if (!member) return;
       const isSelected = selectedIds.has(item.key);
-      const next = enabled ? isSelected : isSelected ? false : member.enabled;
+      if (!isSelected) return;
+      const next = enabled;
       if (member.enabled === next) return;
       if (!next && manual && !member.mapping_json) {
         removals.push(member);
@@ -1137,7 +983,6 @@ export function ChannelModels() {
   if (channelId == null) {
     return (
       <Page
-        kicker={t("channels.detailKicker")}
         title={t("channels.modelsSection")}
         description=""
       >
@@ -1148,7 +993,6 @@ export function ChannelModels() {
 
   return (
     <Page
-      kicker={t("channels.modelsSection")}
       title={t("channels.modelsSection")}
       description={t("channels.modelsManageHint")}
       actions={

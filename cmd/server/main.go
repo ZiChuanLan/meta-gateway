@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "time/tzdata" // embed IANA tz database so CHECKIN_TZ works in minimal containers
+
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/backup"
 	"github.com/lan/meta-gateway/internal/checkin"
@@ -27,7 +29,6 @@ import (
 	"github.com/lan/meta-gateway/internal/selfupdate"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/webdavsync"
-	_ "time/tzdata" // embed IANA tz database so CHECKIN_TZ works in minimal containers
 )
 
 func main() {
@@ -174,7 +175,6 @@ func main() {
 	if cfg.CheckinTZ != "" {
 		logger.Info("check-in scheduler timezone", "tz", cfg.CheckinTZ)
 	}
-	// Check-in scheduler resync on module toggle is wired in httpapi via runtimeconfig.ResyncCheckin.
 
 	var auditDays atomic.Int64
 	var auditRows atomic.Int64

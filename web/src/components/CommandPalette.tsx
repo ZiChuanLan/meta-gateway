@@ -21,7 +21,7 @@ import {
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { useSession } from "../session";
+import { isStaff, useSession } from "../session";
 import { useI18n } from "../i18n";
 
 type NavDest = { to: string; label: string; icon: LucideIcon };
@@ -49,7 +49,8 @@ export function CommandPalette({
 	onClose: () => void;
 	nav: NavDest[];
 }) {
-	const { client } = useSession();
+	const { client, role } = useSession();
+	const canSearchGateway = Boolean(client) && isStaff(role);
 	const service = api(client!);
 	const { t } = useI18n();
 	const navigate = useNavigate();
@@ -79,7 +80,7 @@ export function CommandPalette({
 	const results = useQuery({
 		queryKey: ["command-search", debounced],
 		queryFn: ({ signal }) => service.globalSearch(debounced, signal),
-		enabled: open && debounced.length > 0,
+		enabled: canSearchGateway && open && debounced.length > 0,
 	});
 
 	const q = debounced.toLowerCase();
@@ -101,7 +102,7 @@ export function CommandPalette({
 				run: () => go(n.to),
 			}));
 
-		const hits = results.data ?? {
+		const hits = (canSearchGateway ? results.data : undefined) ?? {
 			channels: [],
 			routes: [],
 			credentials: [],
@@ -156,7 +157,7 @@ export function CommandPalette({
 			}
 		}
 		return [...navCommands, ...hitCommands];
-	}, [nav, q, results.data, navigate, onClose, t]);
+	}, [nav, q, results.data, canSearchGateway, navigate, onClose, t]);
 
 	// Keep the active index in bounds as the list shrinks/grows.
 	useEffect(() => {

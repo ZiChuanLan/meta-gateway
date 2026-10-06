@@ -51,6 +51,7 @@ jobs:
         working-directory: web
         run: |
           npm run lint
+          npm run audit:entrypoints
           npm run typecheck
           npm test -- --run
           npm run build
@@ -69,6 +70,15 @@ jobs:
           fi
       - name: Vet
         run: go vet ./...
+      - name: Static analysis
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+      - name: Unreachable code
+        run: |
+          result="$(go run golang.org/x/tools/cmd/deadcode@v0.49.0 -test ./...)"
+          if [ -n "$result" ]; then
+            printf '%s\n' "$result"
+            exit 1
+          fi
       - name: Test
         run: go test ./...
       - name: Race test

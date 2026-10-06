@@ -1,8 +1,7 @@
 import { Suspense } from "react";
-import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { Loading } from "../components/ui";
-import { UsersLayout } from "./UsersLayout";
-import { MembersPanel, OverviewPanel } from "./panels/lazy";
+import { UsersLayout, MembersPanel, OverviewPanel } from "./panels/lazy";
 import type { TeamRequest } from "./types";
 
 /**
@@ -11,26 +10,23 @@ import type { TeamRequest } from "./types";
  *
  * It is the multi-user module on its own, without the gateway's console around
  * it: an admin administers people, not upstream channels, and the console's
- * other pages are the owner's business. The routes are held in memory because
- * this screen owns the whole document — there is no console router above it to
- * hang paths off, and an admin has no reason to bookmark a board inside a
- * sign-in session.
+ * other pages are the owner's business. It uses the console's existing router:
+ * a second MemoryRouter inside BrowserRouter would crash the signed-in app.
  *
  * Only the two boards an admin may actually open are mounted here; UsersLayout
  * hides the owner-only sections for the same reason.
  */
 export function StandaloneAdmin({ request }: { request: TeamRequest }) {
   return (
-    <MemoryRouter initialEntries={["/overview"]}>
       <Suspense fallback={<Loading />}>
         <Routes>
-          <Route path="/" element={<UsersLayout request={request} />}>
+          <Route path="/users" element={<UsersLayout request={request} />}>
             <Route index element={<Navigate to="overview" replace />} />
             <Route path="overview" element={<OverviewPanel />} />
             <Route path="members" element={<MembersPanel />} />
           </Route>
+          <Route path="*" element={<Navigate to="/users/overview" replace />} />
         </Routes>
       </Suspense>
-    </MemoryRouter>
   );
 }

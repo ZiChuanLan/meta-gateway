@@ -7,7 +7,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	pathpkg "path"
 	"regexp"
@@ -423,42 +422,7 @@ func (h *PluginHandler) proxySidecar(w http.ResponseWriter, r *http.Request) {
 		requestPath = "/"
 	}
 	target.Path = strings.TrimRight(target.Path, "/") + "/" + strings.TrimLeft(requestPath, "/")
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	// Same transport as every other plugin request: the plugin page must be
-	// reached directly, not through the operator's outbound proxy (see
-	// plugins.newSidecarClient for the failure this prevents).
-	if transport := h.service.SidecarTransport(); transport != nil {
-		proxy.Transport = transport
-	}
-	// NewSingleHostReverseProxy only rewrites scheme/host; the path must be
-	// set explicitly or the plugin receives /admin/plugins/{id}/proxy/… and
-	// 404s. Query params are preserved (the admin ?t= token is stripped).
-	proxy.Director = func(req *http.Request) {
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-		req.URL.Path = target.Path
-		if spec.APIKey != "" {
-			req.Header.Set("X-Plugin-Key", spec.APIKey)
-		}
-		if configHeader != "" {
-			req.Header.Set(plugins.XPluginConfigHeader, configHeader)
-		}
-		if authMode == sidecarAuthAdmin {
-			req.Header.Del("Authorization")
-		} else if authMode == sidecarAuthPlugin {
-			// Normalize the accepted plugin credential so surrounding whitespace
-			// cannot be interpreted differently by the sidecar.
-			req.Header.Set("Authorization", "Bearer "+pluginToken)
-		}
-		q := req.URL.Query()
-		q.Del("t")
-		req.URL.RawQuery = q.Encode()
-	}
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		setPluginSecurityHeaderValues(resp.Header)
-		return nil
-	}
-	proxy.ServeHTTP(w, r)
+	newPluginReverseProxy(target, h.service.SidecarTransport(), authMode, pluginToken, spec.APIKey, configHeader).ServeHTTP(w, r)
 }
 
 // forwardAPIPrefix reverse-proxies a root-level API prefix (declared via
@@ -497,35 +461,7 @@ func (h *PluginHandler) forwardAPIPrefix(w http.ResponseWriter, r *http.Request)
 	// Preserve the full prefix path: /v0/management/login → {url}/v0/management/login.
 	rest := strings.TrimPrefix(r.URL.Path, owner.Prefix)
 	target.Path = strings.TrimRight(target.Path, "/") + owner.Prefix + rest
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	// Same transport as every other plugin request: see plugins.newSidecarClient.
-	if transport := h.service.SidecarTransport(); transport != nil {
-		proxy.Transport = transport
-	}
-	proxy.Director = func(req *http.Request) {
-		req.URL.Scheme = target.Scheme
-		req.URL.Host = target.Host
-		req.URL.Path = target.Path
-		if owner.Spec.APIKey != "" {
-			req.Header.Set("X-Plugin-Key", owner.Spec.APIKey)
-		}
-		if configHeader != "" {
-			req.Header.Set(plugins.XPluginConfigHeader, configHeader)
-		}
-		if authMode == sidecarAuthAdmin {
-			req.Header.Del("Authorization")
-		} else if authMode == sidecarAuthPlugin {
-			req.Header.Set("Authorization", "Bearer "+pluginToken)
-		}
-		q := req.URL.Query()
-		q.Del("t")
-		req.URL.RawQuery = q.Encode()
-	}
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		setPluginSecurityHeaderValues(resp.Header)
-		return nil
-	}
-	proxy.ServeHTTP(w, r)
+	newPluginReverseProxy(target, h.service.SidecarTransport(), authMode, pluginToken, owner.Spec.APIKey, configHeader).ServeHTTP(w, r)
 }
 
 // sidecarAuth authenticates a public sidecar request and returns the forwarding

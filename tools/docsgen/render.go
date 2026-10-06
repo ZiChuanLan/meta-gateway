@@ -115,20 +115,6 @@ func sortStrings(values []string) {
 	}
 }
 
-func uniqueSorted(values []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, value := range values {
-		if value == "" || seen[value] {
-			continue
-		}
-		seen[value] = true
-		out = append(out, value)
-	}
-	sortStrings(out)
-	return out
-}
-
 func joinOrDash(values []string) string {
 	if len(values) == 0 {
 		return "—"

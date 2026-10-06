@@ -13,7 +13,6 @@ export function Checkins() {
 
 	return (
 		<Page
-			kicker={t("checkinsPage.kicker")}
 			title={t("checkinsPage.title")}
 			description={t("checkinsPage.description")}
 		>

@@ -1,5 +1,7 @@
 import type {
   CreatedDownstreamKey,
+  KeyCreateInput,
+  KeyUpdateInput,
   DiscoveredModel,
   DownstreamKey,
   ModelMetadata,
@@ -22,30 +24,18 @@ import type {
  */
 export type KeysSource = {
   keys: (signal?: AbortSignal) => Promise<DownstreamKey[]>;
-  discoveredModels: (signal?: AbortSignal) => Promise<DiscoveredModel[]>;
+  discoveredModels: (signal?: AbortSignal) => Promise<Pick<DiscoveredModel, "model_name">[]>;
   usageSummary: (signal?: AbortSignal) => Promise<UsageSummary>;
   routeOverviews: (signal?: AbortSignal) => Promise<RouteOverview[]>;
   routeGroups: (signal?: AbortSignal) => Promise<{ groups: string[] }>;
   /** Tenant groups a token may be bound to (multi-user gateways only). */
   keyGroups?: (signal?: AbortSignal) => Promise<{ groups: string[] }>;
   modelMetadata: (signal?: AbortSignal) => Promise<{ items: ModelMetadata[] }>;
-  createKey?: (body: {
-    name: string;
-    scopes?: string;
-    token?: string;
-    quota_total_tokens?: number;
-    quota_total_cost?: number;
-    model_allowlist?: string;
-    model_denylist?: string;
-    expires_at?: string;
-    allowed_ips?: string;
-    route_group_name?: string;
-    plan_id?: number;
-  }) => Promise<CreatedDownstreamKey>;
+  createKey?: (body: KeyCreateInput) => Promise<Pick<CreatedDownstreamKey, "id" | "token">>;
   updateKey?: (
     id: number,
-    body: Record<string, unknown>,
-  ) => Promise<DownstreamKey>;
+    body: KeyUpdateInput,
+  ) => Promise<unknown>;
   /** Remove a key. Sources may resolve with a status payload; the page only
    *  needs it to have succeeded. */
   deleteKey?: (id: number) => Promise<unknown>;

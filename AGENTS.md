@@ -200,7 +200,7 @@ tools/              # 仓库工具：docsgen（生成 docs/reference）、landin
 | --- | --- | --- |
 | `ChannelStore.ListOverviews` | 控制台渠道列表/编辑抽屉 | 表单回填成零值，保存即抹掉配置 |
 | `RouteMemberStore.RoutingCandidates` | **实际转发选中的渠道** | 运行时读到零值，该列的功能完全不生效 |
-| `RouteMemberStore.listCandidatesByRoute` | 路由详情页成员列表 | 与上者不一致，UI 与行为对不上 |
+| `RouteMemberStore.listOverviewCandidates` | 路由详情页成员列表 | 与上者不一致，UI 与行为对不上 |
 
 三处 SELECT 的列顺序必须与各自的 `Scan` 一一对应。2026-09-21 的「自定义端点映射」就踩过这个坑：migration 与 ListOverviews 都补了，但 `RoutingCandidates` 漏了，表现是「配了映射、请求仍走旧路径」——单测（`TestUpstreamMapTranslatesTypeSafeShapedUpstream`）才拦住。**加完列后跑一次 `go test ./internal/proxy/ -run TestUpstreamMap`。**
 
@@ -221,7 +221,7 @@ tools/              # 仓库工具：docsgen（生成 docs/reference）、landin
 实现在 `internal/proxy/proxy_health.go` 的 `billingCost` 与 `priceLayer`（key 级单价已于 2026-09-13 移除）：
 
 1. `route_members` 的单价列 + `price_tiers` / `price_schedule`（最具体：该路由 × 该渠道）
-2. `model_metadata` 的单价列 + `price_tiers` / `price_schedule`（按模型名）
+2. `model_metadata` 的单价列 + `price_tiers` / `price_schedule`（先按对外模型名；未定价的别名再查实际转发的原模型名，避免改名后变成免费）
 
 **命中判定看 `domain.PriceLayer.Priced()`，不是看扁平列是否非 0**：
 `prompt > 0 || completion > 0 || per_request > 0 || 配了阶梯`。命中即停止下探；两层都不命中 → cost = 0（免费）。

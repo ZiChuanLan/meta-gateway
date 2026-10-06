@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -55,24 +56,13 @@ func modelPricingParams(w http.ResponseWriter, r *http.Request) (string, int, bo
 }
 
 func referenceModelPricing(db *store.DB, model string, input int, allowed func(int64) bool) (*modelPriceView, error) {
-	meta, err := db.ModelMetadata.Get(model)
-	if err != nil {
-		return nil, err
-	}
-	fallback := domain.PriceLayer{}
-	if meta != nil {
-		fallback, err = domain.ResolvePriceLayer(meta.PricePromptPer1k, meta.PriceCompletionPer1k, meta.PriceCachePer1k, meta.PricePerRequest, meta.PriceTiers, meta.PriceSchedule)
-		if err != nil {
-			return nil, err
-		}
-	}
 	ratio, err := db.ModelRatio.GetRatio(model)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
 	view := &modelPriceView{Model: model, InputTokens: input, Currency: "USD", EvaluatedAt: now, Timezone: now.Location().String(), Ratio: ratio}
-	rows, err := db.Query(`SELECT rm.id,rm.price_prompt_per_1k,rm.price_completion_per_1k,rm.price_cache_per_1k,rm.price_per_request,rm.price_tiers,rm.price_schedule
+	rows, err := db.Query(`SELECT rm.id,rm.price_prompt_per_1k,rm.price_completion_per_1k,rm.price_cache_per_1k,rm.price_per_request,rm.price_tiers,rm.price_schedule,rm.mapping_json,r.mapping_json
  FROM route_members rm JOIN routes r ON r.id=rm.route_id JOIN channels c ON c.id=rm.channel_id
  WHERE r.model_pattern=? AND r.enabled=1 AND rm.enabled=1 AND c.status='enabled'
  ORDER BY rm.id`, model)
@@ -80,22 +70,45 @@ func referenceModelPricing(db *store.DB, model string, input int, allowed func(i
 		return nil, err
 	}
 	defer rows.Close()
+	type priceRow struct {
+		id                                           int64
+		prompt, completion, cache, perRequest        float64
+		tiers, schedule, memberMapping, routeMapping string
+	}
+	var prices []priceRow
 	for rows.Next() {
-		var id int64
-		var prompt, completion, cache, perRequest float64
-		var tiers, schedule string
-		if err := rows.Scan(&id, &prompt, &completion, &cache, &perRequest, &tiers, &schedule); err != nil {
+		var row priceRow
+		if err := rows.Scan(&row.id, &row.prompt, &row.completion, &row.cache, &row.perRequest, &row.tiers, &row.schedule, &row.memberMapping, &row.routeMapping); err != nil {
 			return nil, err
 		}
-		if allowed != nil && !allowed(id) {
-			continue
+		if allowed == nil || allowed(row.id) {
+			prices = append(prices, row)
 		}
-		layer, err := domain.ResolvePriceLayer(prompt, completion, cache, perRequest, tiers, schedule)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Release the SQLite cursor before resolving metadata through the same DB.
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	metadata := map[string]domain.PriceLayer{}
+	for _, row := range prices {
+		layer, err := domain.ResolvePriceLayer(row.prompt, row.completion, row.cache, row.perRequest, row.tiers, row.schedule)
 		if err != nil {
-			return nil, err
+			log.Printf("model pricing: discarded invalid member rules for %d: %v", row.id, err)
 		}
 		if !layer.Priced() {
-			layer = fallback
+			upstream := domain.ResolveUpstreamModel(model, row.memberMapping, row.routeMapping)
+			cached, ok := metadata[upstream]
+			if !ok {
+				cached, _, err = db.ModelMetadata.BillingLayer(model, upstream)
+				if err != nil {
+					return nil, err
+				}
+				metadata[upstream] = cached
+			}
+			layer = cached
 		}
 		// An unpriced model is free in the existing ledger. A cache-only fallback
 		// must not invent a charge when the billing path considers it unpriced.

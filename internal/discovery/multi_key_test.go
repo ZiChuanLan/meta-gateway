@@ -28,7 +28,7 @@ func TestRefreshMergesModelsAcrossKeys(t *testing.T) {
 		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		body, ok := keyModels[bearer]
 		if !ok {
-			http.Error(w, `{"error":{"message":"unknown key"}}`, 401)
+			http.Error(w, `{"error":{"message":"unknown key"}}`, http.StatusUnauthorized)
 			return
 		}
 		_, _ = io.WriteString(w, body)
@@ -89,7 +89,7 @@ func TestRefreshSkipsFailingKeyAndKeepsItsPriorSet(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if bearer == "broken-key" && failBroken.Load() {
-			http.Error(w, `{"error":{"message":"forbidden"}}`, 403)
+			http.Error(w, `{"error":{"message":"forbidden"}}`, http.StatusForbidden)
 			return
 		}
 		if bearer == "broken-key" {

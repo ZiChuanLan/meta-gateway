@@ -97,19 +97,6 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader) (*
 	return c.http.Do(req)
 }
 
-// Ping reports whether the Docker API is reachable.
-func (c *Client) Ping(ctx context.Context) error {
-	resp, err := c.do(ctx, http.MethodGet, "/_ping", nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("docker ping: status %d", resp.StatusCode)
-	}
-	return nil
-}
-
 // splitImageRef separates an image reference into repository and tag.
 // A ref without a tag yields "latest" (Docker's own default) instead of
 // panicking, and a registry host with a port (host:5000/img) is not mistaken
@@ -143,14 +130,25 @@ func (c *Client) PullImage(ctx context.Context, ref string, progress func(string
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		if progress == nil {
-			continue
-		}
 		var line struct {
 			Status string `json:"status"`
 			ID     string `json:"id"`
+			Error  string `json:"error"`
+			Detail struct {
+				Message string `json:"message"`
+			} `json:"errorDetail"`
 		}
-		if json.Unmarshal(scanner.Bytes(), &line) == nil && line.Status != "" {
+		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
+			return fmt.Errorf("docker pull %s: invalid progress stream: %w", ref, err)
+		}
+		if line.Error != "" || line.Detail.Message != "" {
+			message := line.Error
+			if message == "" {
+				message = line.Detail.Message
+			}
+			return fmt.Errorf("docker pull %s: %s", ref, message)
+		}
+		if progress != nil && line.Status != "" {
 			progress(strings.TrimSpace(line.ID + " " + line.Status))
 		}
 	}
@@ -159,6 +157,12 @@ func (c *Client) PullImage(ctx context.Context, ref string, progress func(string
 
 // Container is the slice of docker container inspect the updater needs.
 type Container struct {
+	ConfigRaw     map[string]any `json:"-"`
+	HostConfigRaw map[string]any `json:"-"`
+	Mounts        []struct {
+		Type, Source, Destination, Name string
+		RW                              bool
+	}
 	ID   string
 	Name string
 	// Config is the container creation config (env, image, labels, ...).
@@ -191,6 +195,9 @@ type Container struct {
 		Running  bool   `json:"Running"`
 		ExitCode int    `json:"ExitCode"`
 		Error    string `json:"Error"`
+		Health   *struct {
+			Status string `json:"Status"`
+		} `json:"Health"`
 	} `json:"State"`
 	NetworkSettings struct {
 		Networks map[string]struct {
@@ -210,12 +217,58 @@ func (c *Client) InspectContainer(ctx context.Context, id string) (*Container, e
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("docker inspect %s: status %d: %s", id, resp.StatusCode, body)
 	}
-	var container Container
-	if err := json.NewDecoder(resp.Body).Decode(&container); err != nil {
+	var raw json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, err
 	}
+	var container Container
+	if err := json.Unmarshal(raw, &container); err != nil {
+		return nil, err
+	}
+	var parts struct{ Config, HostConfig map[string]any }
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return nil, err
+	}
+	container.ConfigRaw, container.HostConfigRaw = parts.Config, parts.HostConfig
 	container.Name = strings.TrimPrefix(container.Name, "/")
 	return &container, nil
+}
+
+func (c *Client) RenameContainer(ctx context.Context, id, name string) error {
+	resp, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/rename?name="+url.QueryEscape(name), nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("docker rename %s: status %d", id, resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) waitHealthy(ctx context.Context, id string) error {
+	for {
+		container, err := c.InspectContainer(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !container.State.Running {
+			return fmt.Errorf("new container exited: code %d", container.State.ExitCode)
+		}
+		if container.State.Health != nil {
+			if container.State.Health.Status == "healthy" {
+				return nil
+			}
+			if container.State.Health.Status == "unhealthy" {
+				return fmt.Errorf("new container failed health checks")
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // CreateContainer creates a container from a raw create-config body and

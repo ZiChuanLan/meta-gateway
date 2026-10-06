@@ -89,6 +89,27 @@ func TestDowngradeReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestResponsesNestedReasoningCapPreservesOtherFields(t *testing.T) {
+	body, note := downgradeReasoningEffort([]byte(`{"model":"m","reasoning":{"effort":"max","summary":"auto"},"input":"hi"}`), "high", nil)
+	if note != "max→high" {
+		t.Fatalf("note=%q", note)
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc["reasoning_effort"]; ok {
+		t.Fatal("Responses was rewritten as a chat request")
+	}
+	var reasoning struct{ Effort, Summary string }
+	if err := json.Unmarshal(doc["reasoning"], &reasoning); err != nil {
+		t.Fatal(err)
+	}
+	if reasoning.Effort != "high" || reasoning.Summary != "auto" {
+		t.Fatalf("reasoning=%+v", reasoning)
+	}
+}
+
 func TestDowngradeReasoningEffortPreservesOtherFields(t *testing.T) {
 	body := `{"model":"alias","reasoning_effort":"max","messages":[{"role":"user","content":"hi"}],"stream":true,"temperature":0.7}`
 	out, note := downgradeReasoningEffort([]byte(body), "xhigh", nil)

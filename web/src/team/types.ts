@@ -121,15 +121,6 @@ export interface UserKey {
   used_tokens?: number;
   cost?: number;
 }
-export interface Invite {
-  id: number;
-  label: string;
-  policy_id: number;
-  role: string;
-  expires_at: number;
-  consumed: boolean;
-  revoked: boolean;
-}
 /**
  * One row of the code board. `invite` signs someone up (possibly many times),
  * `credit` tops up an existing account. The plaintext code is never listed:
@@ -209,11 +200,6 @@ export interface Account {
   credit: CreditView;
   /** Symbol + rate every amount is rendered through. */
   currency?: CurrencyView;
-}
-/** One provider button on the sign-in page (only fully configured ones). */
-export interface OAuthOption {
-  id: string;
-  label: string;
 }
 /** The provider card in the console's sign-in settings. */
 export interface OAuthProviderView {

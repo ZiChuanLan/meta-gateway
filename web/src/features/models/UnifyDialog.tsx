@@ -102,7 +102,7 @@ export function UnifyDialog({ onClose }: { onClose: () => void }) {
   const empty = !preview.isPending && groups.length === 0;
 
   return (
-    <Dialog title={t("modelsPage.unify.title")} onClose={onClose}>
+    <Dialog title={t("modelsPage.unify.title")} onClose={onClose} busy={apply.isPending}>
       <p className="unify-intro">{t("modelsPage.unify.description")}</p>
 
       {result ? (

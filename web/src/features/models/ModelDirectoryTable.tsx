@@ -44,7 +44,7 @@ export type DirectoryRow = {
   upstream?: ReactNode;
   /** Row status. The console derives ready/unverified/disabled from members;
    *  a catalogue row is always enabled. */
-  status: "ready" | "disabled" | "unverified" | "enabled";
+  status: "ready" | "disabled" | "unverified" | "enabled" | "unavailable";
   /** Row actions (console ActionMenu, member buttons). Rendered in the last
    *  cell; clicks there never select the row. */
   actions?: ReactNode;

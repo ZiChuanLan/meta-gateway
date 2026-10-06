@@ -20,11 +20,6 @@ func (n *recordingNotifier) SendAlert(_ context.Context, _ webhook.AlertLevel, _
 	return true
 }
 
-// deliverable is the subset of the notifier the evaluator needs.
-type deliverable interface {
-	SendAlert(ctx context.Context, level, title, message string) bool
-}
-
 func TestOperatorEvaluation(t *testing.T) {
 	cases := []struct {
 		op        string

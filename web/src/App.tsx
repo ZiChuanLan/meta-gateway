@@ -59,7 +59,6 @@ import { LoginShell } from "./components/LoginShell";
 // The multi-user module (its own area of the console) and the sign-in screen a
 // team admin gets. Boards are loaded on demand — see team/panels/lazy.ts.
 import * as UsersBoards from "./team/panels/lazy";
-import { StandaloneAdmin } from "./team/StandaloneAdmin";
 import { useOperatingMode } from "./hooks/useOperatingMode";
 import { setCurrency, useCurrency } from "./lib/format";
 import { useToast } from "./toast";
@@ -98,9 +97,10 @@ const Store = lazy(() =>
 const Workbench = lazy(() =>
 	import("./features/Workbench").then((module) => ({ default: module.default })),
 );
-const UsersLayout = lazy(() =>
-	import("./team/UsersLayout").then((module) => ({ default: module.UsersLayout })),
+const StandaloneAdmin = lazy(() =>
+	import("./team/StandaloneAdmin").then((module) => ({ default: module.StandaloneAdmin })),
 );
+const UsersLayout = UsersBoards.UsersLayout;
 
 type TransitionPhase = "idle" | "fading" | "sealing" | "revealing" | "sheathing";
 
@@ -143,7 +143,7 @@ function GatewayApp() {
 		// The console's own endpoint is behind the admin gate; a member reads
 		// the same values from their own path, so both format money alike.
 		queryFn: ({ signal }) =>
-			role === "member"
+			role === "member" || role === "admin"
 				? accountRequest<{ symbol: string; rate: number }>(
 						"/me/display-settings",
 						{ signal },
@@ -246,7 +246,7 @@ function GatewayApp() {
 	return (
 		<>
 			{client && role === "admin" ? (
-				<div><header style={{padding:16,display:"flex",justifyContent:"space-between"}}><strong>Meta Gateway</strong><button type="button" onClick={handleDisconnect}>退出 / Sign out</button></header><StandaloneAdmin request={adminRequest}/></div>
+				<div><header style={{padding:16,display:"flex",justifyContent:"space-between"}}><strong>Meta Gateway</strong><Button onClick={handleDisconnect}>{t("app.disconnect")}</Button></header><Suspense fallback={<Loading />}><StandaloneAdmin request={adminRequest}/></Suspense></div>
 			) : client ? (
 				<div
 					className={`authenticated-stage${transitionPhase === "revealing" ? " is-revealing" : ""}`}
@@ -794,6 +794,7 @@ function AuthenticatedShell({
 	// stored per browser like the theme).
 	const hiddenPlugins = useHiddenPlugins();
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	const [operatorPromptReady, setOperatorPromptReady] = useState(false);
 	const { client, role } = useSession();
 	// A raw admin token (role === null) is the operator themselves, so it ranks
 	// with an owner. Everything the console shows is then filtered by role:
@@ -835,7 +836,7 @@ function AuthenticatedShell({
 		queryKey: ["update-check"],
 		queryFn: ({ signal }) => api(client!).updateCheck(signal),
 		// Releasing the gateway's image is an operator's decision.
-		enabled: isStaff(role),
+		enabled: role === null || role === "owner",
 		staleTime: 10 * 60_000,
 		refetchInterval: 30 * 60_000,
 	});
@@ -944,15 +945,15 @@ function AuthenticatedShell({
 	const navSections = [
 		{ label: t("shell.section.gateway"), items: primaryNav.filter((item) => corePaths.includes(item.to)) },
 		{ label: t("shell.section.activity"), items: primaryNav.filter((item) => activityPaths.includes(item.to)) },
-		{ label: t("shell.section.manage"), items: [...primaryNav.filter((item) => !corePaths.includes(item.to) && !activityPaths.includes(item.to)), ...(settingsNav ? [settingsNav] : [])] },
+		{ label: t("shell.section.manage"), items: [...primaryNav.filter((item) => !corePaths.includes(item.to) && !activityPaths.includes(item.to)), ...(settingsNav && !hidden.has(settingsNav.to) ? [settingsNav] : [])] },
 	];
 	return (
 		<>
-			<OperatorUpgradePrompt />
+			<OperatorUpgradePrompt onReady={setOperatorPromptReady} />
 			<ConsoleShell appearance={appearance} sections={navSections} version={gatewayVersion} theme={theme} onThemeChange={changeTheme}
 				onSearch={() => setPaletteOpen(true)} onDisconnect={onUnauthorized}
 				health={{ healthy, total, loading: channelStats.isPending, available: isStaff(role) }}
-				update={updateCheck.data?.has_update ? updateCheck.data : undefined} background={consoleBg} entering={Boolean(routeAnim)}>
+				update={(role === null || role === "owner") && updateCheck.data?.has_update ? updateCheck.data : undefined} background={consoleBg} entering={Boolean(routeAnim)}>
 				<RouteGuard role={effectiveRole} pathname={location.pathname} />
 				<Suspense fallback={<Loading />}>
 					<Routes>
@@ -1009,7 +1010,7 @@ function AuthenticatedShell({
 
 			</ConsoleShell>
 			<CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} nav={paletteNav} />
-			<GuidedTour enabled={!entranceActive} />
+			<GuidedTour enabled={!entranceActive && isStaff(role) && operatorPromptReady} />
 		</>
 	);
 }

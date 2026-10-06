@@ -466,19 +466,6 @@ func (c *Controller) applyLocked(values Editable) {
 	_ = c.applyWithError(values)
 }
 
-// ResyncCheckin re-applies the current check-in schedule from the latest
-// editable settings. Called after a settings change so the scheduler follows
-// the checkbox without a restart.
-func (c *Controller) ResyncCheckin() error {
-	c.mu.RLock()
-	values := c.current
-	c.mu.RUnlock()
-	if c.appliers.CheckinSched == nil {
-		return nil
-	}
-	return c.appliers.CheckinSched.SetSchedule(values.CheckinCron, values.CheckinEnabled)
-}
-
 func (c *Controller) applyWithError(values Editable) error {
 	if c.appliers.Proxy != nil {
 		c.appliers.Proxy.SetRetryPolicy(values.RetryTimes, time.Duration(values.CooldownSeconds)*time.Second)
@@ -684,19 +671,19 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 // bootstrap so an older override row cannot accidentally zero new settings.
 func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editable {
 	editable := rowToEditable(row)
-	if editable.CrossChannelFailoverEnabled == false && row.CrossChannelFailoverEnabled == -1 {
+	if !editable.CrossChannelFailoverEnabled && row.CrossChannelFailoverEnabled == -1 {
 		editable.CrossChannelFailoverEnabled = c.env.CrossChannelFailoverEnabled
 	}
 	if editable.ChannelAutoDisableThreshold < 0 {
 		editable.ChannelAutoDisableThreshold = c.env.ChannelAutoDisableThreshold
 	}
-	if editable.RoutingLatencyAware == false && row.RoutingLatencyAware == -1 {
+	if !editable.RoutingLatencyAware && row.RoutingLatencyAware == -1 {
 		editable.RoutingLatencyAware = c.env.RoutingLatencyAware
 	}
-	if editable.RoutingErrorAware == false && row.RoutingErrorAware == -1 {
+	if !editable.RoutingErrorAware && row.RoutingErrorAware == -1 {
 		editable.RoutingErrorAware = c.env.RoutingErrorAware
 	}
-	if editable.RoutingConcurrencyEnabled == false && row.RoutingConcurrencyEnabled == -1 {
+	if !editable.RoutingConcurrencyEnabled && row.RoutingConcurrencyEnabled == -1 {
 		editable.RoutingConcurrencyEnabled = c.env.RoutingConcurrencyEnabled
 	}
 	if editable.RoutingConcurrencyLimit < 0 {
@@ -708,7 +695,7 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	if editable.WebhookThrottleSeconds < 0 {
 		editable.WebhookThrottleSeconds = c.env.WebhookThrottleSeconds
 	}
-	if editable.StableFirstEnabled == false && row.StableFirstEnabled == -1 {
+	if !editable.StableFirstEnabled && row.StableFirstEnabled == -1 {
 		editable.StableFirstEnabled = c.env.StableFirstEnabled
 	}
 	if editable.StableFirstDenominator < 0 {
@@ -717,16 +704,16 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	if editable.StableFirstPromoteRequests < 0 {
 		editable.StableFirstPromoteRequests = c.env.StableFirstPromoteRequests
 	}
-	if editable.FaultProtectionEnabled == false && row.FaultProtectionEnabled == -1 {
+	if !editable.FaultProtectionEnabled && row.FaultProtectionEnabled == -1 {
 		editable.FaultProtectionEnabled = c.env.FaultProtectionEnabled
 	}
-	if editable.RecoveryProbeEnabled == false && row.RecoveryProbeEnabled == -1 {
+	if !editable.RecoveryProbeEnabled && row.RecoveryProbeEnabled == -1 {
 		editable.RecoveryProbeEnabled = c.env.RecoveryProbeEnabled
 	}
 	if editable.RecoveryProbeIntervalSeconds < 0 {
 		editable.RecoveryProbeIntervalSeconds = c.env.RecoveryProbeIntervalSeconds
 	}
-	if editable.StickyEnabled == false && row.StickyEnabled == -1 {
+	if !editable.StickyEnabled && row.StickyEnabled == -1 {
 		editable.StickyEnabled = c.env.StickyEnabled
 	}
 	if editable.StickyTTLMinutes < 0 {
@@ -741,7 +728,7 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	if editable.AlertDailySummaryIntervalSeconds < 0 {
 		editable.AlertDailySummaryIntervalSeconds = c.env.AlertDailySummaryIntervalSeconds
 	}
-	if editable.HealthSweepEnabled == false && row.HealthSweepEnabled == -1 {
+	if !editable.HealthSweepEnabled && row.HealthSweepEnabled == -1 {
 		editable.HealthSweepEnabled = c.env.HealthSweepEnabled
 	}
 	if editable.HealthSweepIntervalSeconds < 0 {
@@ -763,7 +750,7 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 		editable.ChannelRetryTimes = c.env.ChannelRetryTimes
 	}
 
-	if editable.UpdateCheckEnabled == false && row.UpdateCheckEnabled == -1 {
+	if !editable.UpdateCheckEnabled && row.UpdateCheckEnabled == -1 {
 		editable.UpdateCheckEnabled = c.env.UpdateCheckEnabled
 	}
 	if editable.DefaultModelSyncMode == "" {

@@ -3,6 +3,7 @@ import "driver.js/dist/driver.css";
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../i18n";
+import { deferUntilNoModal } from "../lib/deferUntilNoModal";
 
 const DISMISS_KEY = "mg.guided-tour.done";
 
@@ -60,11 +61,10 @@ export function GuidedTour({ enabled = true }: { enabled?: boolean } = {}) {
       return;
     }
     // Give the first page a beat to mount so its boxes measure correctly.
-    const timer = window.setTimeout(() => {
+    return deferUntilNoModal(() => {
       launched.current = true;
       start(t, navigate);
-    }, 600);
-    return () => window.clearTimeout(timer);
+    });
   }, [enabled, location.pathname, t, navigate]);
 
   return null;

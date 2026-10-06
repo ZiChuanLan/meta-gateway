@@ -74,6 +74,41 @@ func TestModelPricingReferenceUsesBillingLayersAndAccountGrants(t *testing.T) {
 	alice.request("GET", "/admin/model-pricing?model=priced-model", nil, 403)
 }
 
+func TestAliasReferencePriceMatchesUpstreamMetadataFallback(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	channel, err := db.Channel.Create(&domain.Channel{Name: "source", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.RouteMember.SetChannelModelAlias(channel, "real-model", "public"); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.ModelMetadata.Upsert(&domain.ModelMetadata{ModelName: "real-model", PricePromptPer1k: 1.25}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := referenceModelPricing(db, "public", 1000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Candidates != 1 || view.Input.Min != 1.25 || view.Input.Max != 1.25 {
+		t.Fatalf("alias reference became free: %+v", view)
+	}
+	if err = db.ModelMetadata.Upsert(&domain.ModelMetadata{ModelName: "public", PriceCompletionPer1k: 4}); err != nil {
+		t.Fatal(err)
+	}
+	view, err = referenceModelPricing(db, "public", 1000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Input.Max != 0 || view.Output.Max != 4 {
+		t.Fatalf("reference price mixed layers: %+v", view)
+	}
+}
+
 func TestReferenceModelPricingTiersTimeCacheAndZeroRatio(t *testing.T) {
 	e := newTeamTestEnv(t)
 	route, err := e.db.Route.Create(&domain.Route{ModelPattern: "tier-model", Enabled: true})

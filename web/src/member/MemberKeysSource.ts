@@ -1,5 +1,5 @@
 import type { KeysSource } from "../features/keys/KeysSource";
-import type { DownstreamKey } from "../api/types";
+import type { DownstreamKey, UsageSummary } from "../api/types";
 import { accountRequest } from "../team/transport";
 import type { UserKey } from "../team/types";
 
@@ -32,7 +32,7 @@ function toDownstreamKey(key: UserKey): DownstreamKey {
     has_token: true,
     cost: key.cost ?? 0,
     created_at: key.created_at,
-  } as DownstreamKey;
+  };
 }
 
 type MemberKey = UserKey & {
@@ -52,20 +52,10 @@ export const memberKeysSource: KeysSource = {
   // allow-list picker needs; there is no discovery snapshot on this side.
   discoveredModels: async (signal) => {
     const models = await accountRequest<string[]>("/me/models", { signal });
-    return models.map((model_name) => ({ model_name }) as never);
+    return models.map((model_name) => ({ model_name }));
   },
-  usageSummary: async (signal) => {
-    const rows = await accountRequest<
-      Array<{ tokens?: number; cost?: number; created_at?: string }>
-    >("/me/requests?limit=500", { signal }).catch(() => []);
-    return {
-      request_count: rows.length,
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      total_tokens: rows.reduce((sum, row) => sum + (row.tokens ?? 0), 0),
-      total_cost: rows.reduce((sum, row) => sum + (row.cost ?? 0), 0),
-    } as never;
-  },
+  usageSummary: (signal) =>
+    accountRequest<UsageSummary>("/me/usage/summary", { signal }),
   // Members have no visibility into routes, groups or the catalogue behind a
   // key: the capability flags keep these out of the UI, and these stubs keep
   // the shared renderer from having to special-case their absence.
@@ -81,13 +71,13 @@ export const memberKeysSource: KeysSource = {
       "/me/keys",
       { method: "POST", body: JSON.stringify(memberKeyBody(body)) },
     );
-    return { id: created.id, token: created.token } as never;
+    return created;
   },
   updateKey: async (id, body) =>
-    (await accountRequest(`/me/keys/${id}`, {
+    accountRequest<{ ok: boolean }>(`/me/keys/${id}`, {
       method: "PATCH",
       body: JSON.stringify(memberKeyBody(body)),
-    })) as never,
+    }),
   deleteKey: (id) => accountRequest(`/me/keys/${id}`, { method: "DELETE" }),
   revealKey: (id) =>
     accountRequest<{ token: string }>(`/me/keys/${id}/reveal`, {

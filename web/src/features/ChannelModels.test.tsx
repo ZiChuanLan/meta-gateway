@@ -322,4 +322,39 @@ describe("ChannelModelsPanel", () => {
 		expect(screen.getByText("没有符合筛选条件的模型。")).toBeInTheDocument();
 		expect(screen.queryByText("gpt-4o")).not.toBeInTheDocument();
 	});
+
+  it("renames through one transactional request without deleting bindings in the browser", async () => {
+    stubPanelEndpoints();
+    const original = globalThis.fetch;
+    const requests: { path: string; method: string; body?: BodyInit | null }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ path: String(input), method: init?.method ?? "GET", body: init?.body });
+      if (String(input).endsWith("/model-alias")) return jsonResponse({ route_id: 11 });
+      return original(input, init);
+    }));
+    renderPanel();
+    await expandAllGroups();
+    const row = screen.getByText("gpt-4o").closest("li")!;
+    fireEvent.change(within(row).getByRole("textbox"), { target: { value: "shared-alias" } });
+    fireEvent.click(within(row).getByRole("button", { name: "保存别名" }));
+    await waitFor(() => expect(requests.some((r) => r.path.endsWith("/model-alias"))).toBe(true));
+    const writes = requests.filter((r) => r.method !== "GET");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.path).toBe("/admin/channels/5/model-alias");
+    expect(JSON.parse(String(writes[0]?.body))).toEqual({ model: "gpt-4o", alias: "shared-alias" });
+  });
+
+  it("enabling selected models does not disable or delete unselected models", async () => {
+    const deletes: string[] = [], puts: string[] = [];
+    stubPanelEndpoints(deletes, puts);
+    renderPanel();
+    await expandAllGroups();
+    fireEvent.click(screen.getByRole("button", { name: "批量选择" }));
+    const row = screen.getByText("deepseek-chat").closest("li")!;
+    fireEvent.click(within(row).getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "启用选中" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toBe("/admin/route-members/22");
+    expect(deletes).toEqual([]);
+  });
 });

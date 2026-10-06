@@ -34,11 +34,6 @@ export function useCurrency() {
 /** Defaults used until the shells have read the site settings. */
 export const DEFAULT_CURRENCY = { symbol: "$", rate: 1 };
 
-/** Reads the current presentation. */
-export function currentCurrency() {
-	return currencySnapshot;
-}
-
 /**
  * Applies the site's settings. An empty symbol or a non-positive rate falls
  * back to the defaults instead of printing nonsense: this value is written from

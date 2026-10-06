@@ -29,6 +29,7 @@ import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
 import { ChannelModelTestDialog } from "./ChannelModelTestDialog";
 import { EndpointMapEditor } from "./EndpointMapEditor";
 import { readAdvancedOpen, writeAdvancedOpen } from "./advancedPrefs";
+import { mappingRealName as mappingReal } from "../../lib/alias";
 
 export function EditChannelDialog({
   value,
@@ -354,16 +355,6 @@ export function EditChannelDialog({
     },
     invalidateKeys: [["credentials"], ["channel-overviews"]],
   });
-  // mappingReal parses a {"real":"…"} mapping value; empty when absent.
-  const mappingReal = (raw: string | undefined): string => {
-    if (!raw) return "";
-    try {
-      const parsed = JSON.parse(raw) as { real?: string };
-      return parsed.real ?? "";
-    } catch {
-      return "";
-    }
-  };
   const aliasOf = (realModel: string) =>
     routeOverviews?.find((overview) => {
       const onChannel = (overview.members ?? []).some(

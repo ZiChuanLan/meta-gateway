@@ -6,12 +6,12 @@ import { useAdminMutation } from "../../hooks/useAdminMutation"
 import { useI18n } from "../../i18n"
 import { useSession } from "../../session"
 import {
-  Button,
   ConfirmDialog,
   Dialog,
   Field,
   Panel,
 } from "../../components/ui"
+import { RuleEditorFooter } from "./RuleEditorFooter"
 
 export // Error passthrough rules: status/keyword → passthrough / rewrite /
 // ignore_monitor. Read live on every request, so edits apply instantly.
@@ -161,6 +161,7 @@ function ErrorRuleEditor({
 	<Dialog
 		title={form.id ? t("ops.errorRules.edit") : t("ops.errorRules.add")}
 		onClose={onClose}
+      busy={pending}
 	>
       <div className="meta-form">
         <Field label={t("ops.errorRules.name")}>
@@ -237,16 +238,12 @@ function ErrorRuleEditor({
           <span>{t("common.enabled")}</span>
         </label>
       </div>
-      {error ? <div className="inline-error">{error.message}</div> : null}
-      <div className="dialog-actions">
-        <span className="flex-spacer" />
-        <Button variant="secondary" disabled={pending} onClick={onClose}>
-          {t("common.cancel")}
-        </Button>
-        <Button disabled={pending} onClick={() => onSave(form)}>
-          {pending ? t("common.working") : t("common.save")}
-        </Button>
-      </div>
+      <RuleEditorFooter
+        pending={pending}
+        error={error}
+        onCancel={onClose}
+        onSave={() => onSave(form)}
+      />
     </Dialog>
   );
 }

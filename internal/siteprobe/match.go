@@ -279,9 +279,6 @@ func patternMatchesCore(pattern, core string) bool {
 	return folded == core
 }
 
-// Patterns returns every route pattern that can be matched, sorted.
-func (r *Resolver) Patterns() []string { return r.patterns }
-
 // MembersFor returns the members of a route that live on one site.
 func (r *Resolver) MembersFor(route string, siteID int64) []MemberRef {
 	var out []MemberRef

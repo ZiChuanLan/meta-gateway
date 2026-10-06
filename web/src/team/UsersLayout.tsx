@@ -1,9 +1,10 @@
-import { NavLink, Outlet, useOutletContext } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useI18n } from "../i18n";
 import { ErrorState, Loading } from "../components/ui";
-import { teamText, type TeamKey, type TeamText } from "./text";
+import { teamText, type TeamKey } from "./text";
 import type { ModeInfo, TeamRequest, TeamSettings } from "./types";
+import type { UsersContext } from "./UsersContext";
 import "./team.css";
 
 /**
@@ -21,21 +22,6 @@ import "./team.css";
  * reload, and can be hidden individually from the appearance panel. An admin
  * (non-owner) sees only the boards they may actually operate.
  */
-export interface UsersContext {
-  request: TeamRequest;
-  locale: string;
-  t: TeamText;
-  /** The viewer may change team-wide settings (mode, policies, quotas, codes). */
-  owner: boolean;
-  settings: TeamSettings;
-  hasOwner: boolean;
-}
-
-/** Everything a section board needs, handed down by the shell. */
-export function useUsers(): UsersContext {
-  return useOutletContext<UsersContext>();
-}
-
 interface Section {
   to: string;
   label: TeamKey;

@@ -3,7 +3,6 @@ package httpapi
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/lan/meta-gateway/internal/auth"
 	"github.com/lan/meta-gateway/internal/livetrace"
 	"github.com/lan/meta-gateway/internal/proxy"
-	"github.com/lan/meta-gateway/internal/usage"
 )
 
 // Custom-path passthrough: POST /v1/<anything-not-registered>.
@@ -142,6 +140,7 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 		finishTrace = func() {}
 	}
 	defer finishTrace()
+	watchCtx = withHookOrigin(watchCtx, r.Header)
 
 	headers := clientHeaders(r.Header)
 	// Pin the path where payload rules can see it, so a per-model
@@ -166,42 +165,17 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 		RouteGroup:         downstreamRouteGroup(r),
 	}
 	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
+	setHookDecisionHeader(w.Header(), meta)
 	writeUpstreamResult(
 		w, watchCtx, requestID, result, request.Stream,
-		func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
-			channelID := int64(0)
-			if meta != nil {
-				channelID = meta.ChannelID
-				proxyReq.RouteID = meta.RouteID
-				proxyReq.MemberID = meta.MemberID
-				proxyReq.GrayAttempt = meta.GrayAttempt
-			}
-			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
-			if h.db != nil && h.db.ProxyLog != nil && requestID != "" {
-				if err := h.db.ProxyLog.UpdateMetaByRequestID(requestID, firstByteMs, clientFamily); err != nil {
-					log.Printf("relay: update log meta request_id=%s: %v", requestID, err)
-				}
-			}
-			if h.liveTrace != nil && requestID != "" {
-				h.liveTrace.FinishCopied(requestID, status, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
-			}
-		},
+		h.attemptAccountant(proxyReq, meta, requestID, clientFamily),
 		func(int64) {
 			// Custom paths carry no known stream contract, so the live view gets
 			// no byte-progress rumble; the request still shows as running.
 		},
 		h.streamErrorCallback(watchCtx, meta),
 	)
-	if h.liveTrace != nil && requestID != "" {
-		switch {
-		case result == nil:
-			h.liveTrace.Finish(requestID, livetrace.StatusFailed, "upstream response missing")
-		case result.Err != nil && r.Context().Err() != nil:
-			h.liveTrace.Finish(requestID, livetrace.StatusCanceled, result.Err.Error())
-		case result.Err != nil:
-			h.liveTrace.Finish(requestID, livetrace.StatusFailed, result.Err.Error())
-		}
-	}
+	h.finalizeFailedLiveTrace(requestID, result, r.Context().Err() != nil)
 }
 
 // UpstreamURLEchoHeader names the response header carrying the URL the gateway

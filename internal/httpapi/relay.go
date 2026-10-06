@@ -326,6 +326,9 @@ func (h *RelayHandler) computeRawModels() []string {
 }
 
 type chatCompletionsRequest struct {
+	Reasoning struct {
+		Effort string `json:"effort"`
+	} `json:"reasoning"`
 	Model           string `json:"model"`
 	Stream          bool   `json:"stream"`
 	ReasoningEffort string `json:"reasoning_effort"`
@@ -552,47 +555,13 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	}
 	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
 	setHookDecisionHeader(w.Header(), meta)
-	if h.liveTrace != nil && requestID != "" {
-		switch {
-		case result == nil:
-			h.liveTrace.Finish(requestID, livetrace.StatusFailed, "upstream response missing")
-		case result.Err != nil:
-			if r.Context().Err() != nil {
-				h.liveTrace.Finish(requestID, livetrace.StatusCanceled, result.Err.Error())
-			} else {
-				h.liveTrace.Finish(requestID, livetrace.StatusFailed, result.Err.Error())
-			}
-		default:
-			// Success is finalized by the onUsage callback below, after the
-			// body has been fully copied — a stream stays "running" (with
-			// live byte/first-byte progress) until the client has it all.
-		}
-	}
+	h.finalizeFailedLiveTrace(requestID, result, r.Context().Err() != nil)
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
 	forceSSE := stream
 	var lastProgress time.Time
 	writeUpstreamResult(
 		w, watchCtx, requestID, result, forceSSE,
-		func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
-			channelID := int64(0)
-			if meta != nil {
-				channelID = meta.ChannelID
-				proxyReq.RouteID = meta.RouteID
-				// Billing resolves the member's own prices by id: the
-				// (route, channel) pair is not unique across route groups.
-				proxyReq.MemberID = meta.MemberID
-				proxyReq.GrayAttempt = meta.GrayAttempt
-			}
-			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
-			if h.db != nil && h.db.ProxyLog != nil && requestID != "" {
-				if err := h.db.ProxyLog.UpdateMetaByRequestID(requestID, firstByteMs, clientFamily); err != nil {
-					log.Printf("relay: update log meta request_id=%s: %v", requestID, err)
-				}
-			}
-			if h.liveTrace != nil && requestID != "" {
-				h.liveTrace.FinishCopied(requestID, status, int64(firstByteMs), bytesSent, tokens.PromptTokens, tokens.CompletionTokens)
-			}
-		},
+		h.attemptAccountant(proxyReq, meta, requestID, clientFamily),
 		func(bytesSent int64) {
 			// Throttled stream progress for the live view (~1 update/s).
 			if h.liveTrace == nil || requestID == "" {
@@ -765,6 +734,9 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		modelName = request.Model
 		stream = request.Stream
 		reasoningEffort = request.ReasoningEffort
+		if openAIPath == "responses" && request.Reasoning.Effort != "" {
+			reasoningEffort = request.Reasoning.Effort
+		}
 	} else {
 		var request modelOnlyRequest
 		if err := json.Unmarshal(body, &request); err != nil {
@@ -866,6 +838,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 				// Billing resolves the member's own prices by id: the
 				// (route, channel) pair is not unique across route groups.
 				proxyReq.MemberID = meta.MemberID
+				proxyReq.UpstreamModel = meta.UpstreamModel
 				proxyReq.GrayAttempt = meta.GrayAttempt
 			}
 			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)

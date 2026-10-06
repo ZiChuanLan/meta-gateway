@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { TeamField as Field, TeamModal } from "../ui";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
-import { useUsers } from "../UsersLayout";
+import { useUsers } from "../UsersContext";
 import type { ModelRatio } from "../types";
 
 /**

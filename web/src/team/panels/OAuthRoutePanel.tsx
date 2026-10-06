@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { OAuthPanel } from "../OAuthPanel";
-import { useUsers } from "../UsersLayout";
+import { useUsers } from "../UsersContext";
 import type { Policy } from "../types";
 
 /**

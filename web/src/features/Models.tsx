@@ -161,7 +161,6 @@ function AdminModels() {
 
   return (
     <Page
-      kicker={t("modelsPage.kicker")}
       title={t("modelsPage.title")}
       description={t("modelsPage.description")}
     >
@@ -722,7 +721,7 @@ function ModelCatalog({
   });
   const toggleMember = useAdminMutation({
     mutationFn: (entry: RouteMember) =>
-      service.updateMember(entry.id, { ...entry, enabled: !entry.enabled }),
+      service.updateMember(entry.id, { enabled: !entry.enabled }),
     invalidateKeys: [...ROUTING_INVALIDATE_KEYS],
     pendingIdOf: (entry) => entry.id,
   });
@@ -749,7 +748,6 @@ function ModelCatalog({
         .filter((candidate) => candidate.member.enabled !== input.enabled)
         .map((candidate) =>
           service.updateMember(candidate.member.id, {
-            ...candidate.member,
             enabled: input.enabled,
           }),
         );
@@ -797,7 +795,6 @@ function ModelCatalog({
             return Promise.resolve(entry);
           }
           return service.updateMember(entry.id, {
-            ...entry,
             priority: nextPriority,
             manual_override: true,
           });
@@ -893,17 +890,16 @@ function ModelCatalog({
         input.members.map((candidate) => {
           const entry = candidate.member;
           const target = input.pinned
-            ? { ...entry, manual_override: true }
+            ? { manual_override: true }
             : {
-                ...entry,
                 manual_override: false,
                 priority: candidate.channel.priority,
                 weight: candidate.channel.weight,
               };
           if (
             entry.manual_override === target.manual_override &&
-            entry.priority === target.priority &&
-            entry.weight === target.weight
+            (input.pinned || (entry.priority === target.priority &&
+            entry.weight === target.weight))
           ) {
             return Promise.resolve(entry);
           }
@@ -1493,7 +1489,7 @@ function ModelCatalog({
                           ? ("disabled" as const)
                           : ready > 0
                             ? ("ready" as const)
-                            : ("unverified" as const),
+                            : ("unavailable" as const),
                         actions: (
                           <ActionMenu
                             compact
@@ -1929,6 +1925,7 @@ function ModelCatalog({
                   ) : (
                     visibleMembers.map((candidate, rowIndex) => {
                       const entry = candidate.member;
+                      const financeInfo = memberFinance(entry, originModelOf(entry, selectedRoute) || selectedModel, financeItems);
                       const evaluation = explain.data?.candidates.find(
                         (item) => item.candidate.member.id === entry.id,
                       );
@@ -2103,17 +2100,9 @@ function ModelCatalog({
                                   </span>
                                 </>
                               ) : null}
-                              {memberFinance(
-                                entry,
-                                selectedModel,
-                                financeItems,
-                              ) ? (
+                              {financeInfo ? (
                                 (() => {
-                                  const info = memberFinance(
-                                    entry,
-                                    selectedModel,
-                                    financeItems,
-                                  )!;
+                                  const info = financeInfo;
                                   return (
                                     <>
                                       {" · "}

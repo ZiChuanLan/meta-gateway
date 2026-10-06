@@ -123,6 +123,7 @@ func (h *AdminHandler) Register(r chi.Router) {
 	// One-shot connection creation: site + credential + channel, with site
 	// reuse by normalized URL and rollback of partially created rows.
 	r.Post("/connections", h.createConnection)
+	r.Post("/channels/{id}/model-alias", h.setChannelModelAlias)
 
 	// Credentials
 	r.Get("/sites/{siteId}/credentials", h.listCredentials)

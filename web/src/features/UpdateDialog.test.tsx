@@ -11,6 +11,31 @@ afterEach(() => {
 	cleanup();
 	vi.unstubAllGlobals();
 	localStorage.clear();
+	sessionStorage.clear();
+});
+
+it("resumes observing an update after remount without submitting it twice", async () => {
+  const fetcher = stubFetch({ latest: "v4.0.0-beta.2", has_update: true });
+  vi.stubGlobal("fetch", fetcher);
+  const props = { ...noUpdate, latest: "v4.0.0-beta.2", has_update: true };
+  const first = mount(<UpdateDialog update={props} onClose={() => {}} />);
+  const apply = await screen.findByRole("button", { name: /Update to v4\.0\.0-beta\.2/ });
+  await waitFor(() => expect(apply).toBeEnabled());
+  fireEvent.click(apply);
+  await waitFor(() => expect(sessionStorage.getItem("meta-gateway.update-watch")).not.toBeNull());
+  const before = sessionStorage.getItem("meta-gateway.update-watch");
+  first.unmount();
+  mount(<UpdateDialog update={props} onClose={() => {}} />);
+  expect(sessionStorage.getItem("meta-gateway.update-watch")).toBe(before);
+  expect(fetcher.mock.calls.filter(([path]) => String(path).includes("/self-update/apply"))).toHaveLength(1);
+});
+
+it("shows the persisted failure when reopening without starting another update", async () => {
+  const fetcher = stubFetch({}, { phase: "failed", error: "previous update failed; inspect the deployment logs" });
+  vi.stubGlobal("fetch", fetcher);
+  mount(<UpdateDialog update={noUpdate} onClose={() => {}} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("previous update failed");
+  expect(fetcher.mock.calls.some(([path]) => String(path).includes("/self-update/apply"))).toBe(false);
 });
 
 function mount(children: ReactNode) {
@@ -28,27 +53,39 @@ function mount(children: ReactNode) {
 }
 
 /** Answer the three reads the dialog makes; the check result is the interesting one. */
-function stubFetch(check: Partial<UpdateCheckStatus>, selfUpdate: Record<string, unknown> = {}) {
-	return vi.fn(async (input: RequestInfo | URL) => {
-		const path = String(input).split("?")[0];
-		if (path === "/admin/update-check")
-			return new Response(
-				JSON.stringify({
-					channel: "stable",
-					enabled: true,
-					current: "v4.0.0-beta.1",
-					latest: "v3.8.6",
-					has_update: false,
-					release_url: "",
-					...check,
-				}),
-			);
-		if (path === "/admin/update-channel")
-			return new Response(JSON.stringify({ channel: "stable", mode: "socket", tracking_tag: "beta" }));
-		if (path === "/admin/self-update")
-			return new Response(JSON.stringify({ available: true, running: false, phase: "idle", ...selfUpdate }));
-		return new Response(JSON.stringify({}), { status: 200 });
-	});
+function stubFetch(
+  check: Partial<UpdateCheckStatus>,
+  selfUpdate: Record<string, unknown> = {},
+  channelDoc: Record<string, unknown> = {},
+) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input).split("?")[0];
+    if (path === "/admin/update-check")
+      return new Response(
+        JSON.stringify({
+          channel: "stable",
+          enabled: true,
+          current: "v4.0.0-beta.1",
+          latest: "v3.8.6",
+          has_update: false,
+          release_url: "",
+          ...check,
+        }),
+      );
+    if (path === "/admin/update-channel")
+      return new Response(
+        JSON.stringify({
+          channel: "stable",
+          mode: "socket",
+          tracking_tag: "beta",
+          tracking_channel: "",
+          ...channelDoc,
+        }),
+      );
+    if (path === "/admin/self-update")
+      return new Response(JSON.stringify({ available: true, running: false, phase: "idle", ...selfUpdate }));
+    return new Response(JSON.stringify({}), { status: 200 });
+  });
 }
 
 const noUpdate: UpdateCheckStatus = {
@@ -76,8 +113,7 @@ it("says the running build is ahead of the selected channel instead of only 'no 
 	expect(screen.queryByText(/Update to v3\.8\.6/)).toBeNull();
 });
 
-it("shows a plain 'no upgrade' when the running build IS the channel's latest", async () => {
-	vi.stubGlobal(
+it("shows a plain 'no upgrade' when the running build IS the channel's latest", async () => {	vi.stubGlobal(
 		"fetch",
 		stubFetch({ current: "v3.8.6", latest: "v3.8.6" }),
 	);
@@ -127,4 +163,44 @@ it("reports the updater's own failure reason instead of a timeout", { timeout: 2
 	expect(alert).toHaveTextContent(/group_add/);
 	expect(alert).not.toHaveTextContent(/not confirmed in time/);
 	expect(fetcher.mock.calls.some(([p]) => String(p).includes("/admin/self-update"))).toBe(true);
+});
+
+// The watchtower executor updates one floating tag, and that tag is declared in
+// the deployment file — not in the console. Offering a cross-track install can
+// only end in the server's watchtower_channel_mismatch, so the dialog prepares
+// the operator with the value to change instead.
+it("refuses a cross-track install and names the deployment value to change", async () => {
+  vi.stubGlobal(
+    "fetch",
+    stubFetch(
+      { channel: "stable", current: "v3.8.6", latest: "v4.0.0-beta.7", has_update: true },
+      {
+        available: true,
+        running: false,
+        phase: "idle",
+        mode: "watchtower",
+        tracking_tag: "beta",
+        tracking_channel: "beta",
+      },
+      { channel: "stable", mode: "watchtower", tracking_tag: "beta", tracking_channel: "beta" },
+    ),
+  );
+  mount(
+    <UpdateDialog
+      update={{
+        ...noUpdate,
+        channel: "stable",
+        current: "v3.8.6",
+        latest: "v4.0.0-beta.7",
+        has_update: true,
+      }}
+      onClose={() => {}}
+    />,
+  );
+
+  // The button names what the executor will actually do — install the newest
+  // build on the tracked tag — instead of promising a release it may not install.
+  const apply = await screen.findByRole("button", { name: /Install the newest build on beta/ });
+  await waitFor(() => expect(apply).toBeDisabled());
+  expect(await screen.findByText(/set IMAGE_TAG to the other tag/)).toBeInTheDocument();
 });

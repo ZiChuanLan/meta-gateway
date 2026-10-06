@@ -128,7 +128,6 @@ export function WorkbenchPage() {
 
   return (
     <Page
-      kicker={t("workbench")}
       title={t("workbench")}
       description={t("wbIntro")}
     >

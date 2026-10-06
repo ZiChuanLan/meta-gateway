@@ -96,5 +96,3 @@ func TestBindingOutranksPriorityTier(t *testing.T) {
 		t.Fatalf("bound channel 20 not selected (got %d); binding must outrank the priority tier", decision.Selected.Channel.ID)
 	}
 }
-
-func ptrI64(v int64) *int64 { return &v }

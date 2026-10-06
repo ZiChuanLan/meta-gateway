@@ -6,12 +6,12 @@ import { useAdminMutation } from "../../hooks/useAdminMutation"
 import { useI18n } from "../../i18n"
 import { useSession } from "../../session"
 import {
-  Button,
   ConfirmDialog,
   Dialog,
   Field,
   Panel,
 } from "../../components/ui"
+import { RuleEditorFooter } from "./RuleEditorFooter"
 
 export // Sensitive prompt guards: regex rules that mask, reject, or channel-exclude
 // request bodies containing sensitive content (API keys, credentials…).
@@ -158,6 +158,7 @@ function PromptGuardEditor({
     <Dialog
       title={form.id ? t("ops.guard.edit") : t("ops.guard.add")}
       onClose={onClose}
+      busy={pending}
     >
       <div className="meta-form">
         <Field label={t("ops.guard.name")}>
@@ -219,16 +220,12 @@ function PromptGuardEditor({
           <span>{t("common.enabled")}</span>
         </label>
       </div>
-      {error ? <div className="inline-error">{error.message}</div> : null}
-      <div className="dialog-actions">
-        <span className="flex-spacer" />
-        <Button variant="secondary" disabled={pending} onClick={onClose}>
-          {t("common.cancel")}
-        </Button>
-        <Button disabled={pending} onClick={() => onSave(form)}>
-          {pending ? t("common.working") : t("common.save")}
-        </Button>
-      </div>
+      <RuleEditorFooter
+        pending={pending}
+        error={error}
+        onCancel={onClose}
+        onSave={() => onSave(form)}
+      />
     </Dialog>
   );
 }

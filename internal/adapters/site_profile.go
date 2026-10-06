@@ -116,19 +116,3 @@ func SiteProfileFor(typeHint, platform string) SiteProfile {
 	}
 	return siteProfiles["unknown"]
 }
-
-// CheckinSupported reports whether the site family offers check-in.
-func CheckinSupported(typeHint, platform string) bool {
-	return SiteProfileFor(typeHint, platform).Checkin
-}
-
-// AccountSupported reports whether the site family has a server-side account
-// adapter (token creation / sync / probe).
-func AccountSupported(typeHint, platform string) bool {
-	switch SiteProfileFor(typeHint, platform).Family {
-	case FamilyUnsupported, FamilyExternal:
-		return false
-	default:
-		return true
-	}
-}

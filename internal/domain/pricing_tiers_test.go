@@ -107,7 +107,7 @@ func TestScheduleMultiplierMatchesWindow(t *testing.T) {
 	// A weekday night band that runs over midnight, plus a weekend discount.
 	windows := []domain.PriceWindow{
 		{Days: []int{1, 2, 3, 4, 5}, FromHour: 22, ToHour: 6, Multiplier: 0.5},
-		{Days: []int{6, 7}, FromHour: 0, ToHour: 24 % 24, Multiplier: 0.7},
+		{Days: []int{6, 7}, FromHour: 0, ToHour: 0, Multiplier: 0.7},
 	}
 	// Monday 23:00 — inside the night band.
 	if got := domain.ScheduleMultiplier(windows, time.Date(2026, 10, 5, 23, 0, 0, 0, time.UTC)); got != 0.5 {

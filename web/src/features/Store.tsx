@@ -218,7 +218,6 @@ function StoreExtensions() {
 
 	return (
 		<Page
-			kicker={t("store.kicker")}
 			title={t("store.title")}
 			description={t("store.description")}
 			actions={

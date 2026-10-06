@@ -32,11 +32,17 @@ func (h *SelfUpdateHandler) Register(r chi.Router) {
 	r.Post("/self-update/apply", h.apply)
 }
 
-func (h *SelfUpdateHandler) status(w http.ResponseWriter, _ *http.Request) {
+func (h *SelfUpdateHandler) status(w http.ResponseWriter, r *http.Request) {
+	if !teamOwner(w, r) {
+		return
+	}
 	writeJSON(w, http.StatusOK, h.updater.Status())
 }
 
 func (h *SelfUpdateHandler) apply(w http.ResponseWriter, r *http.Request) {
+	if !teamOwner(w, r) {
+		return
+	}
 	var req struct {
 		Target string `json:"target"`
 	}
@@ -117,7 +123,12 @@ func (h *SelfUpdateHandler) getChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mode := h.updater.Mode()
-	writeJSON(w, 200, map[string]any{"channel": p.UpdateChannel, "mode": mode, "tracking_tag": selfupdate.TrackingTag()})
+	writeJSON(w, 200, map[string]any{
+		"channel":          p.UpdateChannel,
+		"mode":             mode,
+		"tracking_tag":     selfupdate.TrackingTag(),
+		"tracking_channel": selfupdate.TrackingChannel(),
+	})
 }
 func (h *SelfUpdateHandler) saveChannel(w http.ResponseWriter, r *http.Request) {
 	if !teamOwner(w, r) {
