@@ -33,6 +33,10 @@ import {
   type CreateConnectionInput,
 } from "./channels/helpers";
 import { channelActions, type ChannelActionDeps } from "./channels/channelActions";
+import {
+  credentialPatch as buildCredentialPatch,
+  credentialShouldBeRemoved,
+} from "./channels/credentialPatch";
 import { ChannelDialogs } from "./channels/ChannelDialogs";
 import {
   relayCredentialFor as pickRelayCredential,
@@ -40,7 +44,7 @@ import {
 } from "./channels/channelCredentials";
 import { positiveId } from "../lib/positiveId";
 import { runBatch } from "../lib/batch";
-import { parseCredentialMeta, withCredentialMetaValue } from "./credentialMeta";
+import { parseCredentialMeta } from "./credentialMeta";
 export { channelReadiness } from "./channelHealth";
 
 const INVALIDATE = [
@@ -516,36 +520,25 @@ export function Channels() {
       const cookieChanged = !userCookieKept && (userCookie !== "" || Boolean(userCred?.has_cookie));
       const secretChanged = !userTokenKept && (userToken !== "" || Boolean(userCred?.has_secret));
       // Both auth materials were explicitly cleared → remove the credential.
-      const clearCredential =
-        Boolean(userCred?.id) && cookieChanged && secretChanged && !userToken && !userCookie;
-      /** Only the fields that actually changed are sent. */
-      const credentialPatch = (): Record<string, unknown> => {
-        const patch: Record<string, unknown> = {};
-        if (secretChanged) {
-          patch.kind =
-            userCred?.kind === "session" || userCred?.kind === "access_token"
-              ? userCred.kind
-              : "access_token";
-          if (userToken) patch.secret = userToken;
-          else patch.clear_secret = true;
-        }
-        if (cookieChanged) {
-          if (userCookie) patch.cookie = userCookie;
-          else patch.clear_cookie = true;
-        }
-        if (metaChanged) {
-          patch.meta_json = withCredentialMetaValue(
-            userCred?.meta_json,
-            "platform_user_id",
-            userID,
-          );
-        }
-        if (secretChanged || cookieChanged) {
-          patch.auth_mode = userAuthMode;
-          patch.status = "enabled";
-        }
-        return patch;
-      };
+      const clearCredential = credentialShouldBeRemoved({
+        userCred,
+        userToken,
+        userCookie,
+        secretChanged,
+        cookieChanged,
+      });
+      /** Only the fields that actually changed are sent; see channels/credentialPatch.ts. */
+      const credentialPatch = () =>
+        buildCredentialPatch({
+          userCred,
+          userToken,
+          userCookie,
+          userID,
+          userAuthMode,
+          secretChanged,
+          cookieChanged,
+          metaChanged,
+        });
       if (input.site) {
         if (userCred?.id) {
           if (clearCredential) {
