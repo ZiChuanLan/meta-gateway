@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Field, Panel } from "../components/ui";
+import { Button, Field, Page, Panel } from "../components/ui";
 import { formatCost } from "../lib/format";
 import { accountRequest } from "../team/transport";
 import { teamError, type TeamText } from "../team/text";
@@ -108,14 +108,7 @@ export function SettingsPage({
   }
 
   return (
-    <div className="page">
-      <header className="page-header">
-        <div className="page-heading">
-          <h1>{t("personalSettings")}</h1>
-          <p>{t("personalSettingsHint")}</p>
-        </div>
-      </header>
-
+    <Page title={t("personalSettings")} description={t("personalSettingsHint")}>
       <Panel title={t("credit")} titleHelp={t("creditHint")}>
         <div className="user-credit">
           <div>
@@ -221,12 +214,12 @@ export function SettingsPage({
         {preferences.isPending ? (
           <p className="workspace-note">{t("load")}</p>
         ) : preferences.error ? (
-          <div className="team-error" role="alert">
+          <p className="inline-error" role="alert">
             {teamError(preferences.error, locale)}{" "}
             <Button variant="quiet" onClick={() => void preferences.refetch()}>
               {t("retry")}
             </Button>
-          </div>
+          </p>
         ) : preferences.data ? (
           <>
             <p className="workspace-note" style={{ marginTop: 0 }}>
@@ -272,9 +265,9 @@ export function SettingsPage({
                 </label>
               </fieldset>
               {error ? (
-                <div className="team-error" role="alert">
+                <p className="inline-error" role="alert">
                   {teamError(error, locale)}
-                </div>
+                </p>
               ) : null}
               {saved ? (
                 <p role="status" className="workspace-note">
@@ -379,15 +372,15 @@ export function SettingsPage({
           </div>
         </form>
         {error ? (
-          <div className="team-error" role="alert">
+          <p className="inline-error" role="alert">
             {teamError(error, locale)}
-          </div>
+          </p>
         ) : null}
         <h3 style={{ margin: "26px 0 10px", fontSize: 13 }}>{t("sessions")}</h3>
         {sessions.error ? (
-          <div className="team-error" role="alert">
+          <p className="inline-error" role="alert">
             {teamError(sessions.error, locale)}
-          </div>
+          </p>
         ) : null}
         <div className="table-wrap" data-columns="3">
           <table>
@@ -422,6 +415,6 @@ export function SettingsPage({
           </table>
         </div>
       </Panel>
-    </div>
+    </Page>
   );
 }
