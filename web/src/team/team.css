@@ -599,3 +599,79 @@ table tbody tr.is-selected {
   white-space: nowrap;
   text-align: right;
 }
+
+/* ---- Quota meters ------------------------------------------------------- */
+/* Two budgets, two meters: the figures alone needed reading, the bar answers
+   "how much is left" at a glance. The wrapper is the button when the operator
+   may change the credit, so it has to look like a control and read like a value. */
+.quota-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 168px;
+}
+.quota-meters-button {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-base), border-color var(--dur-base);
+}
+.quota-meters-button:hover {
+  border-color: var(--line);
+  background: var(--surface-hover);
+}
+.quota-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.quota-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font: 11px/1.4 var(--mono);
+}
+.quota-meter-figures {
+  color: var(--ink-soft);
+}
+.quota-meter-percent {
+  color: var(--muted);
+}
+.quota-meter-track {
+  display: block;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  overflow: hidden;
+}
+.quota-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width var(--dur-slow);
+}
+.quota-meter-fill.is-high {
+  background: var(--warn, #b8860b);
+}
+.quota-meter-fill.is-critical {
+  background: var(--danger, #c0392b);
+}
+.quota-unlimited {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* The directory search is a one-line filter here, not the models page's
+   full-width directory header. */
+.team-toolbar {
+  max-width: 420px;
+}

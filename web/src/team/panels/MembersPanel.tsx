@@ -147,7 +147,9 @@ export function MembersPanel() {
               ＋ {t("newMember")}
             </Button>
           </PageActions>
-          <ModelDirectoryToolbar value={search} onChange={setSearch} label={t("search")} />
+          <div className="team-toolbar">
+            <ModelDirectoryToolbar value={search} onChange={setSearch} label={t("search")} />
+          </div>
           {checked.size > 0 && (
             <BulkBar
               count={checked.size}
@@ -230,6 +232,7 @@ export function MembersPanel() {
                   <td>{u.key_count}</td>
                   <td className="row-actions">
                     <ActionMenu
+                      compact
                       label={t("moreActions")}
                       items={[
                         { key: "details", label: t("details"), onSelect: () => setSelected(u) },
@@ -307,6 +310,10 @@ export function MembersPanel() {
  * (domain/team.go). Showing only the token figure is what made "how much is
  * left" unanswerable: the money side is what a prepaid member actually runs out
  * of first.
+ *
+ * Both were previously printed as one line of figures — "0 / 100,000 · $0.00 /
+ * $5.00" — which answers the question only if you read every digit. They are now
+ * two meters, so "almost out" is visible before the member hits it.
  */
 function QuotaCell({
   user,
@@ -318,19 +325,61 @@ function QuotaCell({
   onEdit: () => void;
 }) {
   const { t } = useUsers();
-  const tokens =
-    user.quota_total_tokens > 0
-      ? `${user.quota_used_tokens.toLocaleString()} / ${user.quota_total_tokens.toLocaleString()}`
-      : t("unlimited");
-  const cost =
-    user.quota_total_cost > 0
-      ? `$${user.quota_used_cost.toFixed(2)} / $${user.quota_total_cost.toFixed(2)}`
-      : null;
-  const label = cost ? `${tokens} · ${cost}` : tokens;
-  if (!owner) return <span>{label}</span>;
+  const budgets = [
+    {
+      key: "tokens",
+      total: user.quota_total_tokens,
+      used: user.quota_used_tokens,
+      format: (value: number) => value.toLocaleString(),
+    },
+    {
+      key: "cost",
+      total: user.quota_total_cost,
+      used: user.quota_used_cost,
+      format: (value: number) => `$${value.toFixed(2)}`,
+    },
+  ].filter((budget) => budget.total > 0);
+  const body = (
+    <span className="quota-meters">
+      {budgets.length === 0 ? (
+        <span className="quota-unlimited">{t("unlimited")}</span>
+      ) : (
+        budgets.map((budget) => {
+          const percent = Math.max(
+            0,
+            Math.min(100, Math.round((budget.used / budget.total) * 100)),
+          );
+          return (
+            <span className="quota-meter" key={budget.key}>
+              <span className="quota-meter-head">
+                <span className="quota-meter-figures">
+                  {budget.format(budget.used)} / {budget.format(budget.total)}
+                </span>
+                <span className="quota-meter-percent">{percent}%</span>
+              </span>
+              <span
+                className="quota-meter-track"
+                role="img"
+                aria-label={t("quotaUsedPercent", { percent })}
+              >
+                <span
+                  className={
+                    "quota-meter-fill" +
+                    (percent >= 90 ? " is-critical" : percent >= 70 ? " is-high" : "")
+                  }
+                  style={{ width: `${percent}%` }}
+                />
+              </span>
+            </span>
+          );
+        })
+      )}
+    </span>
+  );
+  if (!owner) return body;
   return (
-    <button className="team-quota" onClick={onEdit} title={t("editQuota")}>
-      {label}
+    <button className="quota-meters-button" onClick={onEdit} title={t("editQuota")}>
+      {body}
     </button>
   );
 }
