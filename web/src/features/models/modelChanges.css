@@ -172,6 +172,24 @@
   overflow-wrap: anywhere;
   margin-top: 4px;
 }
+/* A single value plus its consequence (the deletion preview). It deliberately
+   does NOT reuse .model-change-mapping: that grid reserves an 18px column for
+   the → between a source and a target, and a two-child row put the note in that
+   column, one character per line. */
+.model-change-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.model-change-note code {
+  overflow-wrap: anywhere;
+}
+.model-change-note > span {
+  min-width: 0;
+}
 @media (max-width: 640px) {
   .model-change-history {
     padding: 14px;

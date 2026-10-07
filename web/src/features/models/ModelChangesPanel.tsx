@@ -852,10 +852,12 @@ function DiscardDialog({
                 <span className="muted">
                   {item.route_name} · #{item.member_id} · {item.group_name || "default"}
                 </span>
-                <div className="model-change-mapping">
-                  <span>
-                    <code>{item.upstream_model}</code>
-                  </span>
+                {/* One value and what deleting it costs — not the "from → to"
+                    pair the replacement preview draws. Sharing that three-column
+                    grid put this note into the 18px arrow column, where it
+                    rendered one character per line. */}
+                <div className="model-change-note">
+                  <code>{item.upstream_model}</code>
                   <span className={item.route_deleted ? "model-change-warning" : "muted"}>
                     {t(
                       item.route_deleted

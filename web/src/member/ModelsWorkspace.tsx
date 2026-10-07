@@ -234,44 +234,49 @@ export function ModelsWorkspace({
                 pagination.setPage(1);
               }}
             >
-              <label className="models-sort-picker">
-                <span className="workspace-caption">{ui("modelsPage.sortLabel")}</span>
-                <select
-                  value={sort}
-                  onChange={(event) => {
-                    setSort(event.target.value as ModelSort);
-                    pagination.setPage(1);
-                  }}
-                >
-                  <option value="default">{ui("modelsPage.sort.default")}</option>
-                  <option value="usage">{ui("modelsPage.sort.usage")}</option>
-                  <option value="latency">{ui("modelsPage.sort.latency")}</option>
-                  <option value="recent">{ui("modelsPage.sort.recent")}</option>
-                </select>
-              </label>
-              {canRoute ? (
-                <label className="models-plan-picker">
-                  <span className="workspace-caption">{t("planScope")}</span>
+              {/* Search on the left, the two view controls grouped on the right:
+                  scattered between them, the row read as three unrelated
+                  widgets with a void in the middle. */}
+              <div className="models-toolbar-controls">
+                <label className="models-sort-picker">
+                  <span>{ui("modelsPage.sortLabel")}</span>
                   <select
-                    value={planId}
+                    value={sort}
                     onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (value === -1) onCreatePlan();
-                      else onPlanChange(value);
+                      setSort(event.target.value as ModelSort);
+                      pagination.setPage(1);
                     }}
                   >
-                    <option value={0}>{t("myDefaultOrder")}</option>
-                    {plans
-                      .filter((plan) => !plan.default)
-                      .map((plan) => (
-                        <option key={plan.id} value={plan.id}>
-                          {plan.name}
-                        </option>
-                      ))}
-                    <option value={-1}>{t("newPlanOption")}</option>
+                    <option value="default">{ui("modelsPage.sort.default")}</option>
+                    <option value="usage">{ui("modelsPage.sort.usage")}</option>
+                    <option value="latency">{ui("modelsPage.sort.latency")}</option>
+                    <option value="recent">{ui("modelsPage.sort.recent")}</option>
                   </select>
                 </label>
-              ) : null}
+                {canRoute ? (
+                  <label className="models-plan-picker">
+                    <span>{t("planScope")}</span>
+                    <select
+                      value={planId}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (value === -1) onCreatePlan();
+                        else onPlanChange(value);
+                      }}
+                    >
+                      <option value={0}>{t("myDefaultOrder")}</option>
+                      {plans
+                        .filter((plan) => !plan.default)
+                        .map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name}
+                          </option>
+                        ))}
+                      <option value={-1}>{t("newPlanOption")}</option>
+                    </select>
+                  </label>
+                ) : null}
+              </div>
             </ModelDirectoryToolbar>
             {query.isPending ? (
               <Loading />

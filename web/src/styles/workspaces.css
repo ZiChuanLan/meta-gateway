@@ -879,18 +879,26 @@
 :root[data-appearance] .member-model-catalog .model-directory > .panel-header { display: none; }
 :root[data-appearance] .member-model-catalog .model-family-filters { padding: 0 0 14px; gap: 6px; }
 :root[data-appearance] .member-model-catalog .model-family-filters button { border-radius: 8px; padding: 5px 10px; font-size: 12px; }
-:root[data-appearance] .member-model-catalog .models-simple-toolbar { padding: 0 0 20px; border: 0; margin: 0; display: flex; gap: 16px; align-items: center; }
-:root[data-appearance] .member-model-catalog .models-search { flex: 1 1 260px; max-width: 420px !important; height: 38px; border-radius: 9px; background: var(--surface); }
-:root[data-appearance] .member-model-catalog .models-plan-picker { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-:root[data-appearance] .member-model-catalog .models-plan-picker select { border-radius: 8px; min-height: 36px; }
-/* Sort sits with the search box, before the plan picker that owns the right edge. */
-:root[data-appearance] .member-model-catalog .models-sort-picker { display: flex; align-items: center; gap: 8px; flex: none; }
-:root[data-appearance] .member-model-catalog .models-sort-picker select { border-radius: 8px; min-height: 36px; }
-@media (max-width: 600px) {
+/* One toolbar row: the search field, then the view controls grouped at the far
+   right. Controls share a height, radius, border and type scale (the search box
+   and the two selects were 40px/37px/36px with three different radii), and the
+   labels are captions rather than body text. */
+:root[data-appearance] .member-model-catalog .models-simple-toolbar { padding: 0 0 16px; border: 0; margin: 0; display: flex; gap: 10px; align-items: center; }
+:root[data-appearance] .member-model-catalog .models-search { flex: 0 1 300px; max-width: 300px !important; height: 38px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+:root[data-appearance] .member-model-catalog .models-search:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+:root[data-appearance] .member-model-catalog .models-toolbar-controls { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+:root[data-appearance] .member-model-catalog .models-sort-picker,
+:root[data-appearance] .member-model-catalog .models-plan-picker { display: flex; align-items: center; gap: 8px; margin-left: 0; }
+:root[data-appearance] .member-model-catalog .models-sort-picker > span,
+:root[data-appearance] .member-model-catalog .models-plan-picker > span { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
+:root[data-appearance] .member-model-catalog .models-sort-picker select,
+:root[data-appearance] .member-model-catalog .models-plan-picker select { height: 38px; min-height: 38px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-soft); font-family: inherit; font-size: 12.5px; }
+:root[data-appearance] .member-model-catalog .models-sort-picker select:focus-visible,
+:root[data-appearance] .member-model-catalog .models-plan-picker select:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+@media (max-width: 700px) {
  :root[data-appearance] .member-model-catalog .models-simple-toolbar { flex-wrap: wrap; }
  :root[data-appearance] .member-model-catalog .models-search { flex-basis: 100%; max-width: none !important; }
- :root[data-appearance] .member-model-catalog .models-plan-picker { margin-left: 0; }
- :root[data-appearance] .member-model-catalog .models-sort-picker { margin-left: 0; }
+ :root[data-appearance] .member-model-catalog .models-toolbar-controls { margin-left: 0; width: 100%; justify-content: space-between; }
 }
 
 .operator-profile-panel { max-width: 640px; }

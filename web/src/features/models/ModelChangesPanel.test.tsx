@@ -232,6 +232,13 @@ describe("upstream model maintenance", () => {
       await screen.findByText("Deletes 2 bindings; 1 routes go with them."),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/Last member of this route/)).toHaveLength(2);
+    // Each row is one value and its consequence, so the note must not land in the
+    // mapping grid: that grid reserves an 18px column for the arrow between a
+    // source and a target, and the note rendered one character per line there.
+    const note = screen.getAllByText(/Last member of this route/)[0]!;
+    expect(note.closest(".model-change-mapping")).toBeNull();
+    expect(note.parentElement).toHaveClass("model-change-note");
+    expect(note.parentElement?.textContent).toContain("old-model");
     fireEvent.click(screen.getByRole("button", { name: "Delete (2 bindings)" }));
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Deleted 2 bindings; 1 routes went with them.",
