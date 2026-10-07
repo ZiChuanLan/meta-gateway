@@ -364,6 +364,12 @@ export const zh: Dict = {
   "pricing.blankRules":
     "留空表示不配置：整行未填写会在保存时忽略；没有阶梯则使用基础价，没有时段则不调整倍率。半填规则需补齐或删除，明确的 0 不等于留空。",
   "modelsPage.cardDetailsShort": "详情",
+  "modelsPage.cap.vision": "视觉",
+  "modelsPage.cap.reasoning": "推理",
+  "modelsPage.cap.longContext": "长上下文",
+  "modelsPage.cap.imageOutput": "出图",
+  "modelsPage.memberTipTitle": "这把令牌可直接用于任意 OpenAI 兼容客户端",
+  "modelsPage.memberTipBody": "Base URL 与接入方法在「接入」里；用量与花费只记在你自己名下。",
   "modelsPage.cardDetails": "模型详情与操作",
   "modelsPage.cardPriceNote": "已含模型倍率 ×{ratio} · 单价按实际所选通道结算",
   "modelsPage.cardVariablePrice": "存在阶梯或时段价，此处显示当前首档价格。",

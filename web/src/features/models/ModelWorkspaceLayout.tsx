@@ -27,7 +27,7 @@ export function ModelWorkspaceLayout({
         onClickCapture={(event) => {
           const target = event.target as HTMLElement;
           if (
-            target.closest('tbody tr[data-model-selectable="true"]') &&
+            target.closest('[data-model-selectable="true"]') &&
             !target.closest(".model-price-summary, .bulk-cell, a, input") &&
             (!target.closest("button") || !!target.closest("[data-model-details]"))
           )

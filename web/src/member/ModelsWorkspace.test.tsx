@@ -50,8 +50,10 @@ it("shares directory search, preserves connect, and clears an empty filter", asy
   );
   expect((await screen.findAllByText("gpt-test"))[0]).toBeInTheDocument();
   expect(container.querySelector(".model-directory .models-simple-toolbar")).toBeInTheDocument();
-  expect(container.querySelector(".model-directory-table")).toBeInTheDocument();
-  expect(container.querySelector(".model-directory-table .model-facts")).toBeInTheDocument();
+  // The directory renders cards now (same model, same shared facts): the
+  // assertion is about the shared atoms being present, not about the container.
+  expect(container.querySelector(".model-card-grid")).toBeInTheDocument();
+  expect(container.querySelector(".model-card .model-facts")).toBeInTheDocument();
   expect(container.querySelector(".model-facts")).toHaveTextContent("32.0k");
   expect(container.querySelector(".model-facts")).not.toHaveTextContent("Unknown");
   expect(screen.queryByRole("combobox", { name: "Model family" })).toBeNull();

@@ -398,6 +398,13 @@ export const en: Dict = {
   "pricing.blankRules":
     "Blank means unconfigured: entirely empty rows are ignored on save. No tiers uses base prices; no windows means no time adjustment. Complete or remove partial rows. Explicit zero is not blank.",
   "modelsPage.cardDetailsShort": "Details",
+  "modelsPage.cap.vision": "Vision",
+  "modelsPage.cap.reasoning": "Reasoning",
+  "modelsPage.cap.longContext": "Long context",
+  "modelsPage.cap.imageOutput": "Image output",
+  "modelsPage.memberTipTitle": "This token works in any OpenAI-compatible client",
+  "modelsPage.memberTipBody":
+    "The Base URL and setup live behind Connect; usage and cost are recorded against you alone.",
   "modelsPage.cardDetails": "Model details and actions",
   "modelsPage.cardPriceNote": "Includes model ratio ×{ratio} · billed by the selected route member",
   "modelsPage.cardVariablePrice": "Tiered or scheduled pricing: current first-tier rates shown.",

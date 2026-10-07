@@ -8,13 +8,14 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Boxes, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { Button, Page, Panel, Loading, ErrorState } from "../components/ui";
+import { NoticeBar } from "../components/NoticeBar";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
 import { TelemetryStrip } from "../components/TelemetryStrip";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { autoModelGroup } from "../lib/modelGroups";
-import { ModelDirectoryTable } from "../features/models/ModelDirectoryTable";
+import { ModelCard, ModelCardGrid } from "../features/models/ModelCard";
 import { accountRequest } from "../team/transport";
 import { teamText } from "../team/text";
 import type { Plan, RouteList, UserModel } from "../team/types";
@@ -133,6 +134,14 @@ export function ModelsWorkspace({
                 pagination.setPage(1);
               }}
             />
+            {/* One line in the deployment's own voice, above the list it applies
+                to. The announcement board (operator-authored) renders here too,
+                with the same component. */}
+            <NoticeBar
+              tone="info"
+              title={ui("modelsPage.memberTipTitle")}
+              body={ui("modelsPage.memberTipBody")}
+            />
             <ModelDirectoryToolbar
               value={search}
               label={ui("routing.searchPlaceholder")}
@@ -202,13 +211,20 @@ export function ModelsWorkspace({
               view drops the operator columns (upstream, status) and renders
               its own actions per row — the rows are the same object, seen
               without the site's internals. */}
-                <div className="table-wrap model-directory-wrap">
-                  <ModelDirectoryTable
-                    showUpstream={false}
-                    showStatus={false}
-                    rows={pagination.pageItems.map((model) => ({
-                      name: model.name,
-                      facts: (
+                {/* Cards, not table rows: a row answers "does this model exist", a
+                    card has to answer "should I use it" — identity, real specs, the
+                    capabilities those specs imply, and the price as this member pays
+                    it (group multiplier included). */}
+                <ModelCardGrid>
+                  {pagination.pageItems.map((model) => (
+                    <ModelCard
+                      key={model.name}
+                      name={model.name}
+                      vendor={model.vendor || model.kind || undefined}
+                      group={autoModelGroup(model.name)}
+                      arranged={arrangedModels.has(model.name)}
+                      capabilities={memberCapabilities(ui, model)}
+                      facts={
                         <ModelFacts
                           compact
                           contextWindow={model.context_window}
@@ -216,51 +232,20 @@ export function ModelsWorkspace({
                           output={model.output_modalities}
                           thinking={model.supports_thinking}
                         />
-                      ),
-                      prices: !/[*?]/.test(model.name) ? (
-                        <ModelPriceSummary
-                          model={model.name}
-                          scope="member"
-                          request={accountRequest}
-                        />
-                      ) : null,
-                      className: selected?.name === model.name ? "is-selected" : undefined,
-                      tabIndex: 0,
-                      onClick: () => setSelection(model.name),
-                      onKeyDown: (event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSelection(model.name);
-                        }
-                      },
-                      group: model.vendor || autoModelGroup(model.name),
-                      provider: (
-                        <small className="model-nav-provider">
-                          {model.kind || t("unspecified")}
-                          {arrangedModels.has(model.name) ? ` · ${t("arrangedBadge")}` : ""}
-                        </small>
-                      ),
-                      badges: (
-                        <span className="model-meta-badges">
-                          {(model.input_modalities || "")
-                            .split(",")
-                            .filter(Boolean)
-                            .map((modality) => (
-                              <span key={modality} className="model-meta-badge">
-                                {modality}
-                              </span>
-                            ))}
-                          {/* The output is only news when it differs from the input:
-                      "text → text" is noise for every chat model. */}
-                          {model.output_modalities &&
-                          model.output_modalities !== model.input_modalities ? (
-                            <span className="model-meta-badge">→ {model.output_modalities}</span>
-                          ) : null}
-                        </span>
-                      ),
-                      status: "enabled" as const,
-                      actions: (
-                        <div className="member-model-actions">
+                      }
+                      prices={
+                        !/[*?]/.test(model.name) ? (
+                          <ModelPriceSummary
+                            model={model.name}
+                            scope="member"
+                            request={accountRequest}
+                          />
+                        ) : null
+                      }
+                      selected={selected?.name === model.name}
+                      onSelect={() => setSelection(model.name)}
+                      actions={
+                        <>
                           <Button
                             variant="quiet"
                             data-model-details
@@ -276,11 +261,11 @@ export function ModelsWorkspace({
                           >
                             {t("connect")}
                           </Button>
-                        </div>
-                      ),
-                    }))}
-                  />
-                </div>
+                        </>
+                      }
+                    />
+                  ))}
+                </ModelCardGrid>
               </ListShell>
             )}
           </Panel>
@@ -331,4 +316,26 @@ export function ModelsWorkspace({
       ) : null}
     </Page>
   );
+}
+
+/**
+ * Capabilities derived from the model's own fields, never a claim we cannot
+ * source: vision from the declared input modalities, reasoning from the
+ * thinking flag, long context from the declared window, image output when the
+ * output modality differs from the input.
+ */
+function memberCapabilities(
+  ui: (key: string, vars?: Record<string, string | number>) => string,
+  model: UserModel,
+): string[] {
+  const input = (model.input_modalities || "").toLowerCase();
+  const output = (model.output_modalities || "").toLowerCase();
+  const caps: string[] = [];
+  if (input.includes("image")) caps.push(ui("modelsPage.cap.vision"));
+  if ((model.supports_thinking ?? 0) > 0) caps.push(ui("modelsPage.cap.reasoning"));
+  if ((model.context_window ?? 0) >= 128000) caps.push(ui("modelsPage.cap.longContext"));
+  if (output.includes("image") && !input.includes("image")) {
+    caps.push(ui("modelsPage.cap.imageOutput"));
+  }
+  return caps;
 }

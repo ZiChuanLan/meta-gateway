@@ -973,3 +973,246 @@
   font-weight: 600;
   color: var(--warning);
 }
+
+/* ---------------------------------------------------------------------------
+   Model card grid (features/models/ModelCard) + the notice bar
+   (components/NoticeBar).
+
+   The member catalogue's models were a table row each: name, two badges, a
+   price line, two buttons. A row answers "does this model exist"; a card has to
+   answer "should I use it" — so the card spends its space on identity, real
+   specs, the capabilities derived from those specs, and the price as the reader
+   pays it. The house rules hold here: tone comes from the icon and a tinted
+   surface (never a thick colored edge), depth from an offset shadow, and both
+   themes come from the same tokens.
+--------------------------------------------------------------------------- */
+
+.model-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-4, 14px);
+  padding: var(--space-2, 6px) 0;
+}
+
+@media (max-width: 640px) {
+  .model-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.model-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 10px);
+  padding: var(--space-4, 14px) var(--space-4, 16px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color 160ms ease-out,
+    transform 160ms ease-out,
+    box-shadow 160ms ease-out;
+}
+
+.model-card.is-clickable {
+  cursor: pointer;
+}
+
+/* Hover is the one authored moment on this surface: the card lifts 1px and its
+   edge firms up. No scaling, no glow. */
+.model-card.is-clickable:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.model-card.is-selected {
+  border-color: var(--primary);
+  background: var(--surface-raised);
+}
+
+.model-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.model-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3, 10px);
+}
+
+.model-card-identity {
+  min-width: 0;
+}
+
+.model-card-identity h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink-primary, var(--ink));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.model-card-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 0.7rem;
+  color: var(--muted-strong, var(--muted));
+  background: var(--surface-subtle);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius-pill);
+}
+
+.model-card-chip.is-vendor {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: var(--primary-hairline);
+}
+
+.model-card-chip.is-arranged {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.model-card-status {
+  flex: none;
+}
+
+.model-card-facts {
+  font-size: 0.78rem;
+  color: var(--muted-strong, var(--muted));
+}
+
+.model-card-metrics {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.model-card-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-card-caps li {
+  padding: 1px 7px;
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.model-card-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3, 10px);
+  margin-top: auto;
+  padding-top: var(--space-3, 10px);
+  border-top: 1px solid var(--line-light);
+}
+
+.model-card-price {
+  min-width: 0;
+  font-size: 0.76rem;
+  color: var(--muted-strong, var(--muted));
+  font-variant-numeric: tabular-nums;
+}
+
+.model-card-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+/* --- Notice bar ---------------------------------------------------------- */
+
+.notice-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 10px);
+  padding: var(--space-3, 10px) var(--space-4, 14px);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line-light);
+  border-radius: var(--radius);
+}
+
+.notice-bar.is-warn {
+  background: var(--warning-soft);
+  border-color: transparent;
+}
+
+.notice-bar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--info);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+.notice-bar.is-warn .notice-bar-icon {
+  color: var(--warning);
+}
+
+.notice-bar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.notice-bar-text strong {
+  font-weight: 600;
+  color: var(--ink-primary, var(--ink));
+}
+
+.notice-bar-action {
+  margin-left: auto;
+  flex: none;
+}
+
+.notice-bar-dismiss {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.notice-bar-dismiss:hover {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
