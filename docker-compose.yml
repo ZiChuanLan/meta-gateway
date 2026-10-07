@@ -189,6 +189,16 @@ services:
   # result.json / .ready）。不做定时自动更新：只在控制台点「一键更新」时执行。
   # 移除它：docker compose stop compose-updater && docker compose rm compose-updater
   # （移除后网关会退回 watchtower / socket 模式，或显示「不可用」）。
+  #
+  # ⚠️ 工程目录挂到 /work（不是宿主机上的原路径），两点代价都要知道：
+  #   1. compose 用**运行目录的名字**推导工程名，所以 update.sh 必须用 `-p` 显式钉住真正的
+  #      工程名（从侧车自己的 com.docker.compose.project 标签读）。不钉的话 `up` 会把整套栈
+  #      当成一个叫 work 的新项目：新网络、**新建的空数据卷**、第二个网关容器。2026-10-07
+  #      生产实测撞上，只因真容器占着 4100 才没起来——端口空着的时候操作员会得到一个
+  #      空库网关，看起来就是「更新把我的配置全清了」。
+  #   2. 相对宿主路径（`./certs:/certs` 这类）在侧车里会解析成 /work/…，而守护进程按
+  #      宿主机解释——那是个宿主机上不存在的路径。要加这类挂载，就把本服务也改成挂到与
+  #      宿主机相同的绝对路径，并同步改 PROJECT_DIR 与 entrypoint。
   compose-updater:
     image: docker:27-cli
     container_name: meta-gateway-compose-updater

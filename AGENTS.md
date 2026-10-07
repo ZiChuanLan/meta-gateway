@@ -561,10 +561,18 @@ CI 会跑一遍生成器再 `git diff --exit-code docs/reference`。所以：
 ### 6.1 部署更新：默认执行器是 **compose-updater 侧车**
 
 2026-10-07 变更：**compose 里的 `watchtower` 服务已被 `compose-updater` 取代**（`tools/compose-updater/update.sh`，
-镜像 `docker:27-cli`）。侧车持有 socket 与工程目录，点更新时在宿主机跑 `docker compose pull meta-gateway` +
-`docker compose up -d --no-build --no-deps meta-gateway`，所以**镜像与环境变量一起更新**。
+镜像 `docker:27-cli`）。侧车持有 socket 与工程目录，点更新时在宿主机跑 `docker compose -p <project> pull meta-gateway` +
+`docker compose -p <project> up -d --no-build --no-deps meta-gateway`，所以**镜像与环境变量一起更新**。
 网关自己看不到 socket；两者只共享 `meta-gateway-update` 卷（`request.json` / `result.json` / `.ready` 心跳）。
 `selfupdate.Mode()` 的顺序：`compose` → `watchtower` → `socket` → `none`（后两者只为兼容旧部署保留）。
+
+> **侧车必须用 `-p` 钉住工程名（2026-10-08 修）**：侧车把工程目录挂到 `/work`，而 compose 用**运行目录名**
+> 推导工程名 —— 不钉就是 `project=work`：新网络、**新建的空数据卷**、第二个网关容器，真正在服务的栈一步没动。
+> 2026-10-07 生产实测撞上，只因真容器占着 4100 端口才没起来；端口空着时操作员会拿到一个空库网关，
+> 看起来就是「更新把我的配置全清了」。`update.sh` 现在从侧车自己的 `com.docker.compose.project` 标签读出
+> 真工程名并 `-p` 上去（`COMPOSE_PROJECT_NAME` 可覆盖，`docker run` 起的侧车没有标签则回退到目录名并记日志）。
+> 同一条挂载还有第二个副作用要记着：**相对宿主路径**（`./x:/y`）在侧车里会解析成 `/work/…`，
+> 要加这类挂载就把本服务改成挂宿主机同路径，并同步改 `PROJECT_DIR` 与 entrypoint。
 
 > **为什么必须换掉 watchtower（实测 + 官方证据）**：watchtower 按**旧容器的 inspect 数据**重建容器，
 > 所以 `environment:` / `.env` 的变更**永远不会进入新容器**；官方 issue #233 维护者原话：
