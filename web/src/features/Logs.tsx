@@ -604,6 +604,32 @@ export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapab
                   ? "success"
                   : "warning",
             },
+            // The two figures a member actually reconciles: what this page of
+            // requests cost, and how long it took. Both are computed over the
+            // rows on screen and labelled as such — a range total would be a
+            // different number, and the strip must not imply it has one.
+            ...(caps.pricing
+              ? [
+                  {
+                    label: t("logsPage.stat.cost"),
+                    value: logs.isPending
+                      ? "—"
+                      : formatCost(visibleRows.reduce((sum, row) => sum + (row.cost ?? 0), 0)),
+                    tone: "info" as const,
+                  },
+                ]
+              : []),
+            {
+              label: t("logsPage.stat.avgLatency"),
+              value:
+                logs.isPending || visibleRows.length === 0
+                  ? "—"
+                  : `${Math.round(
+                      visibleRows.reduce((sum, row) => sum + (row.latency_ms ?? 0), 0) /
+                        visibleRows.length,
+                    )} ms`,
+              tone: "primary",
+            },
           ]}
         />
         <div className="logs-overview-actions">

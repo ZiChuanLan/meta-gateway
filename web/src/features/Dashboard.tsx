@@ -41,6 +41,7 @@ import { formatCost, formatTokens } from "../lib/format";
 import { channelHealthState } from "./channelHealth";
 import { DashboardAura } from "../components/DashboardAura";
 import { GatewayPreview } from "../components/GatewayTransition";
+import { MemberHome } from "../member/MemberHome";
 
 const MINUTE_MS = 60_000;
 
@@ -190,6 +191,9 @@ function ResultDistribution({
 /** Drill-down target: a bucket of the main series. */
 type Zoom = { since: string; until: string; label: string };
 
+/** The smallest previous-window base that makes a trend percentage meaningful. */
+const MIN_TREND_BASE = 10;
+
 /**
  * What the overview needs from its host.
  *
@@ -226,12 +230,19 @@ export interface DashboardCapabilities {
   setup: boolean;
   /** Links into the console's own pages (connections, models). */
   consoleLinks: boolean;
+  /**
+   * This is somebody's own account rather than the gateway's: the page opens
+   * with the member's own band (identity, budget, the way in) instead of the
+   * operator's endpoint strip, and it drops the operator's flourishes.
+   */
+  memberHome: boolean;
 }
 
 export const ADMIN_DASHBOARD_CAPS: DashboardCapabilities = {
   channels: true,
   setup: true,
   consoleLinks: true,
+  memberHome: false,
 };
 
 /**
@@ -245,6 +256,7 @@ export const MEMBER_DASHBOARD_CAPS: DashboardCapabilities = {
   channels: false,
   setup: false,
   consoleLinks: false,
+  memberHome: true,
 };
 
 /**
@@ -257,7 +269,16 @@ export const MEMBER_DASHBOARD_CAPS: DashboardCapabilities = {
  */
 export function Dashboard() {
   const { client, role } = useSession();
+  const { t } = useI18n();
   const member = role === "member";
+  // The member's home is titled with their own name, so the page heading has to
+  // know who is reading it. Same query key as the band below, so this costs no
+  // extra request — react-query serves both from one.
+  const account = useQuery({
+    queryKey: ["me", "account"],
+    queryFn: ({ signal }) => accountRequest<Account>("/me", { signal }),
+    enabled: member,
+  });
   const source = useMemo<DashboardSource>(() => {
     if (member) return memberDashboardSource;
     const s = api(client!);
@@ -269,19 +290,35 @@ export function Dashboard() {
       channels: (signal) => s.channelOverviews(signal),
     };
   }, [client, member]);
+  const memberTitle = member
+    ? account.data
+      ? t("member.home.greeting", {
+          name: account.data.user.name || account.data.user.username,
+        })
+      : undefined
+    : undefined;
   return (
-    <DashboardView source={source} caps={member ? MEMBER_DASHBOARD_CAPS : ADMIN_DASHBOARD_CAPS} />
+    <DashboardView
+      source={source}
+      caps={member ? MEMBER_DASHBOARD_CAPS : ADMIN_DASHBOARD_CAPS}
+      title={memberTitle}
+    />
   );
 }
 
 import { memberDashboardSource } from "../member/MemberDashboardSource";
+import { accountRequest } from "../team/transport";
+import type { Account } from "../team/types";
 
 export function DashboardView({
   source,
   caps,
+  title,
 }: {
   source: DashboardSource;
   caps: DashboardCapabilities;
+  /** A host that knows who is reading may replace the page's own heading. */
+  title?: string;
 }) {
   const [replayEntrance, setReplayEntrance] = useState(false);
   const { t } = useI18n();
@@ -367,8 +404,11 @@ export function DashboardView({
 
   const windowRequests = summary?.request_count ?? 0;
   const previousRequests = previous.data?.request_count ?? 0;
+  // A percentage against a window that held a handful of requests is arithmetic,
+  // not information: a quiet previous period is what turns an ordinary day into
+  // "+15800%". The badge waits until the base is big enough to mean something.
   const requestTrend =
-    range.since && previousRequests > 0 && windowRequests > 0
+    range.since && previousRequests >= MIN_TREND_BASE && windowRequests > 0
       ? windowRequests / previousRequests - 1
       : null;
 
@@ -434,23 +474,31 @@ export function DashboardView({
   return (
     <Page
       className="dashboard-page"
-      title={t("dashboard.title")}
+      title={title ?? t("dashboard.title")}
       // A host without the channel matrix gets a description that does not
       // promise it: the panel is not its to show (see DashboardCapabilities).
       description={caps.channels ? t("dashboard.description") : t("dashboard.descriptionMember")}
       actions={
-        <Button variant="quiet" icon={<Play size={14} />} onClick={() => setReplayEntrance(true)}>
-          {t("motion.replay")}
-        </Button>
+        // Replaying the brand entrance is the operator's flourish; a member's own
+        // home is a place to check a balance and leave, not to watch an animated
+        // gateway. Staff keep it.
+        caps.memberHome ? undefined : (
+          <Button variant="quiet" icon={<Play size={14} />} onClick={() => setReplayEntrance(true)}>
+            {t("motion.replay")}
+          </Button>
+        )
       }
     >
       <DashboardAura />
       {replayEntrance ? <GatewayPreview onClose={() => setReplayEntrance(false)} /> : null}
       <div className="cockpit-stack">
+        {/* The member's own band answers "where do I connect, what is left, what
+            next" in one place; the endpoint strip below it is the operator's
+            version of the same line, so a host renders one or the other. */}
+        {caps.memberHome ? <MemberHome /> : null}
         {caps.setup ? <SetupGuide /> : null}
 
-        {/* 1. 终端接入端点条 (Gateway Endpoint Strip) */}
-        <EndpointStrip />
+        {caps.memberHome ? null : <EndpointStrip />}
 
         {/* 2. 一体化遥测读数条 (Instrument Telemetry Band) */}
         <div className="telemetry-stack">

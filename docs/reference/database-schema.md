@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **123** 个 `.sql` 文件，其中 **123** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **125** 个 `.sql` 文件，其中 **125** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -26,7 +26,7 @@
 
 ## 表
 
-共 **56** 个表。
+共 **57** 个表。
 
 ### admin_totp · 4 列
 
@@ -50,6 +50,19 @@
 | `sustained_seconds` | INTEGER | 是 | 300 | — |
 | `cooldown_seconds` | INTEGER | 是 | 900 | — |
 | `level` | TEXT | 是 | 'warning' | — |
+| `enabled` | INTEGER | 是 | 1 | — |
+| `created_at` | TEXT | 是 | — | — |
+| `updated_at` | TEXT | 是 | — | — |
+
+### announcements · 8 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `title` | TEXT | 是 | — | — |
+| `body` | TEXT | 是 | '' | — |
+| `tone` | TEXT | 是 | 'info' | — |
+| `pinned` | INTEGER | 是 | 0 | — |
 | `enabled` | INTEGER | 是 | 1 | — |
 | `created_at` | TEXT | 是 | — | — |
 | `updated_at` | TEXT | 是 | — | — |
@@ -949,10 +962,11 @@
 
 ## 索引
 
-共 **67** 个索引。
+共 **69** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
+| `idx_announcements_order` | `announcements` | — |
 | `idx_audit_events_action` | `audit_events` | — |
 | `idx_audit_events_created_at` | `audit_events` | — |
 | `idx_backup_records_created_at` | `backup_records` | — |
@@ -1019,5 +1033,6 @@
 | `team_sessions_user` | `team_sessions` | — |
 | `idx_usage_records_created` | `usage_records` | — |
 | `idx_usage_records_key_created` | `usage_records` | — |
+| `idx_usage_records_request` | `usage_records` | — |
 | `usage_records_user_time` | `usage_records` | — |
 

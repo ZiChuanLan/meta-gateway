@@ -264,6 +264,51 @@ export interface UserModel {
   endpoints: string;
   candidates: number;
 }
+/**
+ * One account's own figures for one model (`/me/model-stats`).
+ *
+ * `requests` counts this account's completed client requests; tokens and cost
+ * come from the billing records. A request that never reached an upstream
+ * resolves to no model and is reported as the view's `unassigned` count instead
+ * of being attributed to one.
+ */
+export interface MemberModelStat {
+  model: string;
+  requests: number;
+  ok: number;
+  failed: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cache_read_tokens: number;
+  cost: number;
+  avg_latency_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  last_at: string;
+}
+export interface MemberModelStats {
+  since: string;
+  until: string;
+  unassigned: number;
+  models: MemberModelStat[];
+}
+/**
+ * What the gateway's own probes say about the upstreams behind one model. It
+ * names neither the upstream nor its URL: a member learns whether the model is
+ * serviceable, not where the gateway buys it.
+ */
+export interface MemberModelAvailability {
+  model: string;
+  upstreams: number;
+  probed: number;
+  healthy: number;
+  samples: number;
+  ok_samples: number;
+  availability: number;
+  avg_latency_ms: number;
+  last_probed_at: string;
+}
 export interface RequestPreferences {
   failover: "inherit" | "on" | "off";
   max_retries: number | null;

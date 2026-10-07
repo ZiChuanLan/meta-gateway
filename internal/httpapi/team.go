@@ -405,6 +405,11 @@ func (h *TeamHandler) RegisterPublic(r chi.Router) {
 		me.Get("/usage/summary", h.myUsageSummary)
 		me.Get("/usage/series", h.myUsageSeries)
 		me.Get("/usage/top-models", h.myTopModels)
+		// Per-model figures for the account, and the site's own probe state for
+		// the models it may call. Separate endpoints: one reads the member's
+		// requests, the other the gateway's probes.
+		me.Get("/model-stats", h.myModelStats)
+		me.Get("/model-availability", h.myModelAvailability)
 		me.Get("/plans", h.myPlans)
 		me.Post("/plans", h.savePlan)
 		me.Put("/plans/{id}", h.savePlan)

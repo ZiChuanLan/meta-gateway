@@ -30,6 +30,10 @@ function toDownstreamKey(key: UserKey): DownstreamKey {
     group_name: "",
     // Whether a token can still be revealed: an account's own key always can.
     has_token: true,
+    // The masked tail, so a card can say which token it is without a reveal
+    // round-trip, and the last time the gateway saw it.
+    token_hint: key.hint ?? "",
+    last_used_at: key.last_used_at ?? "",
     cost: key.cost ?? 0,
     created_at: key.created_at,
   };

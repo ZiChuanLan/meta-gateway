@@ -71,6 +71,15 @@ export type KeysCapabilities = {
    * operating mode as well.
    */
   team: boolean;
+  /**
+   * Lay the tokens out as cards rather than as the operator's table.
+   *
+   * A site's token table is scanned by column — many rows, few questions. A
+   * person's own tokens are a handful, and each one is read on its own: which
+   * token is this (the masked tail), what has it cost me, when did I last use
+   * it. That is a card, and the same rows feed both layouts.
+   */
+  cards: boolean;
 };
 
 export const MEMBER_KEY_CAPS: KeysCapabilities = {
@@ -86,6 +95,7 @@ export const MEMBER_KEY_CAPS: KeysCapabilities = {
   pricing: true,
   upstream: false,
   team: false,
+  cards: true,
 };
 
 export const ADMIN_KEY_CAPS: KeysCapabilities = {
@@ -101,4 +111,5 @@ export const ADMIN_KEY_CAPS: KeysCapabilities = {
   pricing: true,
   upstream: true,
   team: true,
+  cards: false,
 };

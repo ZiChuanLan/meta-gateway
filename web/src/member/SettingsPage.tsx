@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Field, Page, Panel } from "../components/ui";
+import { QuotaMeter } from "../components/QuotaMeter";
 import { formatCost } from "../lib/format";
 import { accountRequest } from "../team/transport";
 import { teamError, type TeamText } from "../team/text";
@@ -108,33 +109,77 @@ export function SettingsPage({
   }
 
   return (
-    <Page title={t("personalSettings")} description={t("personalSettingsHint")}>
-      <Panel title={t("credit")} titleHelp={t("creditHint")}>
-        <div className="user-credit">
-          <div>
-            <span className="workspace-caption">{t("creditRemaining")}</span>
-            <strong>{credit.unlimited ? t("unlimited") : credit.available.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span className="workspace-caption">{t("creditUsed")}</span>
-            <strong>{credit.used.toLocaleString()}</strong>
-          </div>
-          <div>
-            <span className="workspace-caption">{t("creditTotal")}</span>
-            <strong>{credit.unlimited ? t("unlimited") : credit.total.toLocaleString()}</strong>
-          </div>
-          {/* The spend budget is a separate allowance: a member can be capped
-              by money while tokens are unlimited, and vice versa. */}
-          <div>
-            <span className="workspace-caption">{t("creditCostRemaining")}</span>
-            <strong>
-              {credit.cost_unlimited ? t("unlimited") : formatCost(credit.cost_available)}
-            </strong>
-          </div>
-          <div>
-            <span className="workspace-caption">{t("creditCostUsed")}</span>
-            <strong>{formatCost(credit.cost_used)}</strong>
-          </div>
+    <Page
+      className="member-settings-page"
+      title={t("personalSettings")}
+      description={t("personalSettingsHint")}
+    >
+      {/* Who you are comes before what you may change: the account's identity
+          used to sit at the bottom, inside a setting nobody had reason to open. */}
+      <div className="member-identity">
+        <div className="member-identity-main">
+          <strong>{account.user.name || account.user.username}</strong>
+          <span className="member-identity-handle">@{account.user.username}</span>
+        </div>
+        <div className="member-identity-chips">
+          <span className="member-home-chip">{t(account.user.role)}</span>
+          <span className="member-home-chip">
+            {t("policy")} · {account.policy.name}
+          </span>
+          <span className="member-home-chip">{account.branding.name}</span>
+        </div>
+      </div>
+      <Panel className="settings-credit" title={t("credit")} titleHelp={t("creditHint")}>
+        <div className="member-credit-meters">
+          {/* Two budgets, both enforced, whichever runs out first. They used to be
+              five plain figures of equal weight, so "how much is left" had to be
+              worked out by comparing columns. */}
+          <QuotaMeter
+            label={t("credit")}
+            headline={
+              credit.unlimited ? (
+                t("unlimited")
+              ) : (
+                <>
+                  <span className="member-home-remaining">{t("creditRemaining")}</span>
+                  {credit.available.toLocaleString()}
+                </>
+              )
+            }
+            used={credit.used}
+            total={credit.total}
+            format={(value) => value.toLocaleString()}
+            percentLabel={(percent) => t("quotaUsedPercent", { percent })}
+            unlimitedLabel={t("unlimited")}
+            footer={
+              <span className="member-meter-words">
+                {t("creditUsed")} · {t("creditTotal")}
+              </span>
+            }
+          />
+          <QuotaMeter
+            label={t("creditCost")}
+            headline={
+              credit.cost_unlimited ? (
+                t("unlimited")
+              ) : (
+                <>
+                  <span className="member-home-remaining">{t("creditRemaining")}</span>
+                  {formatCost(credit.cost_available)}
+                </>
+              )
+            }
+            used={credit.cost_used}
+            total={credit.cost_total}
+            format={formatCost}
+            percentLabel={(percent) => t("quotaUsedPercent", { percent })}
+            unlimitedLabel={t("unlimited")}
+            footer={
+              <span className="member-meter-words">
+                {t("creditCostUsed")} · {t("creditCostTotal")}
+              </span>
+            }
+          />
         </div>
         <form
           className="user-redeem"
@@ -201,6 +246,7 @@ export function SettingsPage({
       </Panel>
 
       <Panel
+        className="settings-preferences"
         title={t("requestControls")}
         titleHelp={t("requestControlsHint")}
         actions={
@@ -291,7 +337,7 @@ export function SettingsPage({
         ) : null}
       </Panel>
 
-      <Panel title={t("displayPreferences")}>
+      <Panel className="settings-display" title={t("displayPreferences")}>
         <div className="form-grid">
           {/* The member app wears the console's themes, so the picker offers
               the same two sheets by name. */}
@@ -325,7 +371,7 @@ export function SettingsPage({
         </div>
       </Panel>
 
-      <Panel title={t("account")}>
+      <Panel className="settings-account" title={t("account")}>
         <div
           className="user-setting-effective"
           style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}

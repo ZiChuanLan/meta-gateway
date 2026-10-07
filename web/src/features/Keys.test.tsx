@@ -548,6 +548,80 @@ describe("Keys page", () => {
     expect(screen.queryByText("Tenant group")).not.toBeInTheDocument();
   });
 
+  it("reads a member's tokens as cards: masked tail, their own usage, one-click copy", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const revealed: number[] = [];
+    const source: KeysSource = {
+      keys: async () => [
+        {
+          id: 7,
+          name: "cursor",
+          enabled: true,
+          quota_used_tokens: 2500,
+          quota_total_tokens: 0,
+          cost: 1.25,
+          created_at: "2026-10-01",
+          has_token: true,
+          token_hint: "ab12",
+          last_used_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+          model_allowlist: "",
+          expires_at: "",
+          allowed_ips: "",
+        } as never,
+      ],
+      discoveredModels: async () => [],
+      usageSummary: async () =>
+        ({ request_count: 0, total_tokens: 0, total_cost: 0 }) as never,
+      routeOverviews: async () => [],
+      routeGroups: async () => ({ groups: [] }),
+      modelMetadata: async () => ({ items: [] }),
+      revealKey: async (id: number) => {
+        revealed.push(id);
+        return { token: "sk-member-secret" };
+      },
+    };
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <I18nProvider>
+          <ToastProvider>
+            <MemoryRouter>
+              <KeysView source={source} caps={MEMBER_KEY_CAPS} />
+            </MemoryRouter>
+          </ToastProvider>
+        </I18nProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("cursor")).toBeInTheDocument();
+    // The operator's table is not what a member gets.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // The masked tail is the only identity a token has on screen, and it comes
+    // from the gateway's stored hint — never from a fabricated prefix.
+    expect(screen.getByText(/••••••••••ab12/)).toBeInTheDocument();
+    expect(screen.getByText("2.5k")).toBeInTheDocument();
+    expect(screen.getByText("$1.25")).toBeInTheDocument();
+    expect(screen.getByText("3 d ago")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Copy the token for cursor/ }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("sk-member-secret"));
+    expect(revealed).toEqual([7]);
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
+  });
+
+  it("keeps the site's table for an operator, even though the rows are the same", async () => {
+    vi.stubGlobal("fetch", keyEditFetch());
+    renderKeys();
+    expect(await screen.findByText("audit-key")).toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(document.querySelector(".key-card-grid")).toBeNull();
+  });
+
   it.each(["vip", ""])(
     "saves and reloads the tenant group including explicit clearing: %s",
     async (group) => {

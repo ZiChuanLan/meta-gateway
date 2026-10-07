@@ -190,7 +190,7 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	// Keep this in step with the newest NNN_*.sql file: it is the tripwire that
 	// catches a migration that silently failed to apply (or applied twice).
-	const wantMigrations = 123
+	const wantMigrations = 125
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)

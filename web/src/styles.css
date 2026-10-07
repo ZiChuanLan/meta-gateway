@@ -8273,18 +8273,6 @@ label.check input[type="checkbox"] {
   color: var(--ink-soft);
   font-size: 12px;
 }
-.quota-meter {
-  display: block;
-  height: 4px;
-  border: 1px solid var(--line);
-  overflow: hidden;
-}
-.quota-meter-fill {
-  display: block;
-  height: 100%;
-  transform-origin: left;
-  transition: transform var(--dur-hover) var(--ease-hover);
-}
 
 .routing-signal.is-on {
 }
@@ -8650,15 +8638,6 @@ label.check input[type="checkbox"] {
 .member-row:hover {
   background: var(--surface-subtle);
   border-color: var(--line-light);
-}
-
-.quota-meter {
-  border-radius: var(--radius-sm);
-  background: var(--surface-subtle);
-}
-.quota-meter-fill {
-  background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
-  box-shadow: 0 0 8px var(--primary-glow);
 }
 
 .model-rank-track {

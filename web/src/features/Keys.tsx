@@ -31,6 +31,7 @@ import { ModelPicker, type ModelOption } from "../components/ModelPicker";
 import { ScopePicker } from "../components/ScopePicker";
 import { autoModelGroup, modelGroup, modelPatternMatches } from "./models/modelGroups";
 import { PaginationBar } from "../components/PaginationBar";
+import { QuotaBar, quotaPercent } from "../components/QuotaMeter";
 import { SecretRevealDialog } from "../components/SecretRevealDialog";
 import { EntityState } from "../components/EntityState";
 import { TelemetryStrip } from "../components/TelemetryStrip";
@@ -40,6 +41,7 @@ import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { useOperatingMode } from "../hooks/useOperatingMode";
 import { memberKeysSource } from "../member/MemberKeysSource";
+import { KeyCard } from "./keys/KeyCard";
 import { parseQuotaInput } from "./keys/quotaInput";
 import { mappingRealName } from "../lib/alias";
 import { formatCost as formatLedgerCost, useCurrency } from "../lib/format";
@@ -494,6 +496,39 @@ export function KeysView({
     toastOnError: false,
     onSuccess: (result) => setViewedToken(result.token),
   });
+  // Copying a token is the same read the reveal dialog performs, without making
+  // the reader transcribe a secret by hand: reveal, put it on the clipboard,
+  // confirm in place. If the clipboard is unavailable the dialog opens instead,
+  // which is the one path that still lets them see it.
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const copy = useAdminMutation({
+    mutationFn: (key: { id: number; name: string }) => source.revealKey!(key.id),
+    pendingIdOf: (key) => key.id,
+    toastOnError: false,
+    onSuccess: (result, variables) => {
+      const clipboard = navigator.clipboard;
+      if (!clipboard?.writeText) {
+        // No clipboard in this context (an insecure origin, or a browser that
+        // withheld the API): show the secret instead of a button that lies.
+        setViewedToken(result.token);
+        setViewing({ id: variables.id, name: variables.name });
+        return;
+      }
+      void clipboard
+        .writeText(result.token)
+        .then(() => {
+          setCopiedId(variables.id);
+          window.setTimeout(
+            () => setCopiedId((current) => (current === variables.id ? null : current)),
+            1800,
+          );
+        })
+        .catch(() => {
+          setViewedToken(result.token);
+          setViewing({ id: variables.id, name: variables.name });
+        });
+    },
+  });
   const rotate = useAdminMutation({
     mutationFn: (v: { id: number; name: string }) => source.rotateKey!(v.id),
     invalidateKeys: [["keys"]],
@@ -536,6 +571,10 @@ export function KeysView({
     setViewedToken(null);
     setViewing({ id: key.id, name: key.name });
     reveal.mutate(key.id);
+  };
+  const copyKey = (key: DownstreamKey) => {
+    copy.reset();
+    copy.mutate({ id: key.id, name: key.name });
   };
   const keyActions = (key: DownstreamKey): ActionMenuItem[] => {
     const busy =
@@ -734,7 +773,50 @@ export function KeysView({
                 />
               }
             >
-              <DataTable
+              {caps.cards ? (
+                // A person's own tokens: few, and each one read on its own. The
+                // same rows and the same actions feed both layouts, so the card
+                // and the table can never drift apart.
+                <div className="key-card-grid">
+                  {pageRows.map((k) => (
+                    <KeyCard
+                      key={k.id}
+                      name={k.name}
+                      id={k.id}
+                      hint={k.token_hint}
+                      usedTokens={k.quota_used_tokens ?? 0}
+                      cost={k.cost ?? 0}
+                      lastUsedAt={k.last_used_at}
+                      modelScope={k.model_allowlist}
+                      expiresAt={k.expires_at}
+                      allowedIPs={k.allowed_ips}
+                      busy={
+                        reveal.pendingId === k.id ||
+                        (update.isPending && update.variables?.id === k.id)
+                      }
+                      copied={copiedId === k.id}
+                      copyPending={copy.pendingId === k.id}
+                      onCopy={caps.reveal ? () => copyKey(k) : undefined}
+                      toggle={
+                        caps.edit ? (
+                          <EnabledSwitch
+                            on={k.enabled}
+                            name={k.name}
+                            pending={update.isPending && update.variables?.id === k.id}
+                            onToggle={() =>
+                              update.mutate({ id: k.id, body: { enabled: !k.enabled } })
+                            }
+                          />
+                        ) : (
+                          <StatusBadge value={k.enabled} />
+                        )
+                      }
+                      actions={keyActions(k)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <DataTable
                 headers={[
                   t("common.name"),
                   ...(caps.scopes ? [t("keys.accessCol")] : []),
@@ -771,17 +853,9 @@ export function KeysView({
                         <div className="quota-cell">
                           <code>{formatQuota(k.quota_used_tokens, k.quota_total_tokens)}</code>
                           {k.quota_total_tokens && k.quota_total_tokens > 0 ? (
-                            <span className="quota-meter" aria-hidden="true">
-                              <span
-                                className="quota-meter-fill"
-                                style={{
-                                  transform: `scaleX(${Math.min(
-                                    1,
-                                    (k.quota_used_tokens ?? 0) / k.quota_total_tokens,
-                                  )})`,
-                                }}
-                              />
-                            </span>
+                            <QuotaBar
+                              percent={quotaPercent(k.quota_used_tokens ?? 0, k.quota_total_tokens)}
+                            />
                           ) : null}
                           {/* The money budget appears only when it is set: an unlimited key
                 would otherwise grow a meaningless "0 / 0" line. */}
@@ -831,6 +905,7 @@ export function KeysView({
                   </tr>
                 ))}
               </DataTable>
+              )}
             </ListShell>
           </EntityState>
         </Panel>

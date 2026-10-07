@@ -415,9 +415,11 @@ table tbody tr.is-selected {
 }
 
 /* ---- Quota meters ------------------------------------------------------- */
-/* Two budgets, two meters: the figures alone needed reading, the bar answers
-   "how much is left" at a glance. The wrapper is the button when the operator
-   may change the credit, so it has to look like a control and read like a value. */
+/* The layout for a stack of meters inside a table cell (the users boards) and
+   the button that makes the credit editable. The meter itself — figures, the
+   percentage and the bar with its 70/90 thresholds — lives in
+   styles/system.css as components/QuotaMeter, so this sheet no longer carries a
+   second copy of it under its own class names. */
 .quota-meters {
   display: flex;
   flex-direction: column;
@@ -440,44 +442,6 @@ table tbody tr.is-selected {
 .quota-meters-button:hover {
   border-color: var(--line);
   background: var(--surface-hover);
-}
-.quota-meter {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.quota-meter-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  font: 11px/1.4 var(--mono);
-}
-.quota-meter-figures {
-  color: var(--ink-soft);
-}
-.quota-meter-percent {
-  color: var(--muted);
-}
-.quota-meter-track {
-  display: block;
-  height: 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 10%, transparent);
-  overflow: hidden;
-}
-.quota-meter-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--primary);
-  transition: width var(--dur-slow);
-}
-.quota-meter-fill.is-high {
-  background: var(--warn, #b8860b);
-}
-.quota-meter-fill.is-critical {
-  background: var(--danger, #c0392b);
 }
 .quota-unlimited {
   color: var(--muted);

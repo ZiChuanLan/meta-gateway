@@ -1,3 +1,4 @@
+import { QuotaMeter } from "../components/QuotaMeter";
 import { useUsers } from "./UsersContext";
 
 /**
@@ -36,43 +37,23 @@ export function QuotaMeters({
     },
     { key: "cost", total: totalCost, used: usedCost, format: (v: number) => `$${v.toFixed(2)}` },
   ].filter((budget) => budget.total > 0);
-  const body = (
-    <span className="quota-meters">
-      {budgets.length === 0 ? (
-        <span className="quota-unlimited">{t("unlimited")}</span>
-      ) : (
-        budgets.map((budget) => {
-          const percent = Math.max(
-            0,
-            Math.min(100, Math.round((budget.used / budget.total) * 100)),
-          );
-          return (
-            <span className="quota-meter" key={budget.key}>
-              <span className="quota-meter-head">
-                <span className="quota-meter-figures">
-                  {budget.format(budget.used)} / {budget.format(budget.total)}
-                </span>
-                <span className="quota-meter-percent">{percent}%</span>
-              </span>
-              <span
-                className="quota-meter-track"
-                role="img"
-                aria-label={t("quotaUsedPercent", { percent })}
-              >
-                <span
-                  className={
-                    "quota-meter-fill" +
-                    (percent >= 90 ? " is-critical" : percent >= 70 ? " is-high" : "")
-                  }
-                  style={{ width: `${percent}%` }}
-                />
-              </span>
-            </span>
-          );
-        })
-      )}
-    </span>
-  );
+ 	const body = (
+		<span className="quota-meters">
+			{budgets.length === 0 ? (
+				<span className="quota-unlimited">{t("unlimited")}</span>
+			) : (
+				budgets.map((budget) => (
+					<QuotaMeter
+						key={budget.key}
+						used={budget.used}
+						total={budget.total}
+						format={budget.format}
+						percentLabel={(percent) => t("quotaUsedPercent", { percent })}
+					/>
+				))
+			)}
+		</span>
+	);
   if (!onEdit) return body;
   return (
     <button className="quota-meters-button" onClick={onEdit} title={t("editQuota")}>

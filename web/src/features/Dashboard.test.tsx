@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { I18nProvider } from "../i18n";
 import { SessionProvider } from "../session";
-import { Dashboard } from "./Dashboard";
+import { Dashboard, DashboardView, MEMBER_DASHBOARD_CAPS } from "./Dashboard";
+import { memberDashboardSource } from "../member/MemberDashboardSource";
 
 function LocationProbe() {
   const location = useLocation();
@@ -185,5 +186,114 @@ describe("dashboard time range", () => {
     });
     // The chart header switches to the detail view and offers a way back.
     expect(screen.getByLabelText("Back to overview")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The member's own band, and what must NOT be on a member's page.
+ *
+ * The overview is shared by staff and members, and it used to open with the
+ * operator's endpoint strip and channel-health matrix for both. This pins the
+ * member side: their identity and budgets at the top, the four ways in, and none
+ * of the gateway's own instrumentation or flourishes.
+ */
+describe("member overview", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("opens with the member's own band instead of the operator's readouts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = new URL(String(input), "http://localhost").pathname;
+        let body: unknown = [];
+        if (path === "/me") {
+          body = {
+            user: { id: 7, username: "lan", name: "Lan", role: "member", policy_id: 2 },
+            policy: { id: 2, name: "Standard", all_models: true, max_keys: 10, rpm: 120 },
+            branding: { name: "Meta Gateway", api_base_url: "https://gw.example/v1" },
+            credit: {
+              total: 5000000,
+              used: 2000000,
+              available: 3000000,
+              unlimited: false,
+              cost_total: 50,
+              cost_used: 4.92,
+              cost_available: 45.08,
+              cost_unlimited: false,
+            },
+          };
+        } else if (path === "/me/usage/summary") {
+          body = {
+            request_count: 12,
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            ok_count: 11,
+            client_error_count: 1,
+            server_error_count: 0,
+            other_count: 0,
+            cost: 0.4,
+          };
+        } else if (path === "/me/usage/series") {
+          body = {
+            since: new Date("2026-10-06T00:00:00.000Z").toISOString(),
+            until: new Date("2026-10-07T00:00:00.000Z").toISOString(),
+            bucket_seconds: 3600,
+            requests: [1, 2, 3],
+            failed: [0, 0, 1],
+            tokens: [10, 20, 30],
+            prompt_tokens: [6, 12, 18],
+            completion_tokens: [4, 8, 12],
+            cache_read_tokens: [0, 0, 0],
+            cache_creation_tokens: [0, 0, 0],
+            cost: [0.01, 0.02, 0.03],
+          };
+        }
+        return new Response(JSON.stringify(body), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <I18nProvider>
+          <MemoryRouter initialEntries={["/"]}>
+            <DashboardView source={memberDashboardSource} caps={MEMBER_DASHBOARD_CAPS} />
+          </MemoryRouter>
+        </I18nProvider>
+      </QueryClientProvider>,
+    );
+
+    // The band reads /me: the base URL, the plan and its limits, and the two
+    // budgets with the remaining balance as the figure rather than five numbers
+    // to compare. (The greeting itself is the page heading, which this test
+    // mounts without a host — Dashboard supplies it from the same query.)
+    expect(await screen.findByText("https://gw.example/v1")).toBeInTheDocument();
+    expect(screen.getByText(/Standard/)).toBeInTheDocument();
+    expect(screen.getByText("3,000,000")).toBeInTheDocument();
+    expect(screen.getByText("$45.08")).toBeInTheDocument();
+    expect(screen.getByText(/2,000,000\s*\/\s*5,000,000/)).toBeInTheDocument();
+    // The four ways in point at the member's own pages.
+    expect(screen.getByRole("link", { name: /New token/ })).toHaveAttribute("href", "/keys");
+    expect(screen.getByRole("link", { name: /Browse models/ })).toHaveAttribute("href", "/models");
+
+    // None of the operator's instrumentation, and none of the brand flourishes.
+    expect(screen.queryByText("Channel health")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Clients call this URL with a downstream token."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Replay/ })).not.toBeInTheDocument();
   });
 });

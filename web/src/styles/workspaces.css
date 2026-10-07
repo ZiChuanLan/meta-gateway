@@ -865,38 +865,16 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-/* Model catalogue: one shared, responsive card grid in both themes. */
-:root[data-appearance] .model-card-workspace .model-directory { width: 100%; max-height: none; position: static; }
-:root[data-appearance] .model-card-workspace .model-directory-wrap,
-:root[data-appearance] .model-card-workspace .table-wrap { overflow: visible; max-height: none; }
-:root[data-appearance] .model-card-workspace .model-directory-table { display: block; width: 100%; min-width: 0 !important; }
-:root[data-appearance] .model-card-workspace .model-directory-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-:root[data-appearance] .model-card-workspace .model-directory-table tbody { display: grid; grid-template-columns: repeat(auto-fill,minmax(min(100%,310px),1fr)); gap: 16px; padding: 12px; }
-:root[data-appearance] .model-card-workspace .model-directory-table tr { display: flex; flex-wrap: wrap; align-content: flex-start; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; cursor: pointer; }
-:root[data-appearance] .model-card-workspace .model-directory-table td { display: block; padding: 0; border: 0; min-width: 0; }
-:root[data-appearance] .model-card-workspace .model-row-name { width: 100%; }
-:root[data-appearance] .model-card-workspace .model-row-name strong { display: block; font-size: 13px; white-space: normal; overflow-wrap: anywhere; margin-bottom: 10px; }
-:root[data-appearance] .model-card-workspace .model-row-upstream { flex: 1; margin-top: 12px; }
-:root[data-appearance] .model-card-workspace .model-row-status { margin: 12px 8px 0 0; }
-:root[data-appearance] .model-card-workspace .row-actions { margin: 12px 0 0 auto; }
-:root[data-appearance] .model-card-workspace .model-price-summary { border: 0; margin: 8px 0 0; padding: 0; cursor: default; }
-:root[data-appearance] .model-card-workspace .model-price-grid { gap: 8px; margin: 10px 0; }
-:root[data-appearance] .model-card-workspace .model-price-grid > div { padding: 10px; border-radius: 9px; background: var(--surface-subtle); }
-:root[data-appearance] .model-card-workspace .model-price-grid dd { font-weight: 650; }
-:root[data-appearance] .model-card-workspace .model-meta-badge { display: inline-block; margin: 2px; }
-:root[data-appearance] .model-card-workspace .model-nav-provider { margin-bottom: 8px; }
-:root[data-appearance] .model-card-workspace .model-directory-table tr:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-
-:root[data-appearance] .model-card-workspace .model-directory-table td.model-row-name { flex: 0 0 100%; max-width: 100%; width: 100%; }
-:root[data-appearance] .model-card-workspace .model-directory-table td.model-row-upstream { display: none; }
-:root[data-appearance] .model-card-workspace .model-directory-table tr { align-items: flex-start; }
+/* The model catalogue's card grid is shared by both themes and lives with the
+   card itself (features/models/ModelCard + styles/member.css); what the member
+   page overrides here is only its chrome: no second frame around the cards, and
+   one toolbar row of search, sort and plan. */
 
 .model-family-filters { display: flex; flex-wrap: wrap; gap: 7px; padding: 12px; }
 .model-family-filters button { border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; color: var(--muted); background: var(--surface-subtle); cursor: pointer; font: inherit; font-size: 12px; }
 .model-family-filters button[aria-pressed="true"] { background: var(--primary); color: var(--on-primary, white); border-color: var(--primary); }
 .model-family-filters button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-/* Member catalogue only: compact reading cards, not miniature edit forms. */
 :root[data-appearance] .member-model-catalog .model-directory { border: 0; box-shadow: none; background: transparent; }
 :root[data-appearance] .member-model-catalog .model-directory > .panel-header { display: none; }
 :root[data-appearance] .member-model-catalog .model-family-filters { padding: 0 0 14px; gap: 6px; }
@@ -905,45 +883,14 @@
 :root[data-appearance] .member-model-catalog .models-search { flex: 1 1 260px; max-width: 420px !important; height: 38px; border-radius: 9px; background: var(--surface); }
 :root[data-appearance] .member-model-catalog .models-plan-picker { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 :root[data-appearance] .member-model-catalog .models-plan-picker select { border-radius: 8px; min-height: 36px; }
-:root[data-appearance] .member-model-catalog .table-wrap { border: 0; background: transparent; box-shadow: none; }
-:root[data-appearance] .member-model-catalog .model-directory-table tbody { padding: 0; gap: 16px; align-items: stretch; }
-:root[data-appearance] .member-model-catalog .model-directory-table tr { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; padding: 20px; min-height: 0; height: auto; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 2px 8px #18213404; transition: border-color .15s, box-shadow .15s; }
-:root[data-appearance] .member-model-catalog .model-directory-table tr.is-selected { background: var(--surface); border-color: var(--line); box-shadow: 0 2px 8px #18213404; }
-:root[data-appearance] .member-model-catalog .model-directory-table tr:hover { border-color: var(--primary); box-shadow: 0 4px 16px #18213409; }
-:root[data-appearance] .member-model-catalog .model-directory-table td.model-row-name { flex: 0 0 auto; }
-:root[data-appearance] .member-model-catalog .model-row-name strong { margin: 0 0 8px; font-size: 14px; line-height: 1.5; }
-:root[data-appearance] .member-model-catalog .model-meta-badge { font-size: 11px; padding: 3px 7px; border-radius: 5px; border: 0; }
-:root[data-appearance] .member-model-catalog .model-facts-compact { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0 0; color: var(--muted); }
-:root[data-appearance] .member-model-catalog .model-facts-compact > div { display: flex; gap: 5px; }
-:root[data-appearance] .member-model-catalog .model-facts-compact dt,
-:root[data-appearance] .member-model-catalog .model-facts-compact dd { margin: 0; font-size: 11px; line-height: 1.5; }
-:root[data-appearance] .member-model-catalog .model-price-summary { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line-light); }
-:root[data-appearance] .member-model-catalog .model-price-grid { margin: 0; gap: 16px; }
-:root[data-appearance] .member-model-catalog .model-price-grid > div { padding: 0; border-radius: 0; background: transparent; }
-:root[data-appearance] .member-model-catalog .model-price-grid dt { font-size: 11px; }
-:root[data-appearance] .member-model-catalog .model-price-grid dd { font-size: 20px; line-height: 1.4; margin-top: 4px; font-weight: 600; letter-spacing: -.4px; }
-:root[data-appearance] .member-model-catalog .model-price-summary .field-hint { margin: 9px 0 0; font-size: 10px; }
-:root[data-appearance] .member-model-catalog .model-directory-table .row-actions { width: 100%; margin: auto 0 0; padding-top: 18px; }
-.member-model-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-:root[data-appearance] .member-model-catalog .member-model-actions .button { min-height: 32px; border-radius: 8px; padding: 6px 10px; font-size: 12px; }
-:root[data-appearance] .member-model-catalog .list-shell-footer { border: 0; background: transparent; padding: 18px 0 0; }
+/* Sort sits with the search box, before the plan picker that owns the right edge. */
+:root[data-appearance] .member-model-catalog .models-sort-picker { display: flex; align-items: center; gap: 8px; flex: none; }
+:root[data-appearance] .member-model-catalog .models-sort-picker select { border-radius: 8px; min-height: 36px; }
 @media (max-width: 600px) {
  :root[data-appearance] .member-model-catalog .models-simple-toolbar { flex-wrap: wrap; }
  :root[data-appearance] .member-model-catalog .models-search { flex-basis: 100%; max-width: none !important; }
  :root[data-appearance] .member-model-catalog .models-plan-picker { margin-left: 0; }
-}
-
-/* Defeat legacy table striping/min-height only inside the member catalogue. */
-:root[data-appearance] .member-model-catalog .model-card-workspace .ops-list-panel { padding: 0 !important; border: 0 !important; box-shadow: none !important; background: transparent !important; }
-:root[data-appearance] .member-model-catalog .model-card-workspace .table-wrap,
-:root[data-appearance] .member-model-catalog .model-card-workspace .list-shell,
-:root[data-appearance] .member-model-catalog .model-card-workspace .list-shell-body { border: 0 !important; box-shadow: none !important; background: transparent !important; min-height: 0 !important; }
-:root[data-appearance] .member-model-catalog .model-card-workspace .model-directory-table tbody { gap: 16px !important; padding: 0 !important; }
-:root[data-appearance] .member-model-catalog .model-card-workspace .model-directory-table tbody tr { background: var(--surface) !important; min-height: 0 !important; }
-:root[data-appearance] .member-model-catalog .models-simple-toolbar .directory-search.models-search { max-width: 420px !important; flex: 1 1 260px !important; }
-:root[data-appearance] .member-model-catalog .model-card-workspace .list-shell-footer { background: transparent !important; border: 0 !important; }
-@media (max-width: 600px) {
- :root[data-appearance] .member-model-catalog .models-simple-toolbar .directory-search.models-search { max-width: none !important; flex-basis: 100% !important; }
+ :root[data-appearance] .member-model-catalog .models-sort-picker { margin-left: 0; }
 }
 
 .operator-profile-panel { max-width: 640px; }

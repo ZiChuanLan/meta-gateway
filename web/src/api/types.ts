@@ -235,6 +235,14 @@ export interface DownstreamKey {
   /** Persisted billing total for this key (sum of usage_records.cost). */
   cost?: number;
   has_token?: boolean;
+  /**
+   * The token's masked tail (last four characters), for showing which token a
+   * row is without revealing one. Empty when the gateway minted it before the
+   * hint was recorded.
+   */
+  token_hint?: string;
+  /** When this token was last used, if the gateway has seen it. */
+  last_used_at?: string;
   created_at: string;
 }
 export interface CreatedDownstreamKey extends DownstreamKey {
