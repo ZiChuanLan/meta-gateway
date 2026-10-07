@@ -6,6 +6,31 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+> **一键更新不再对着一个叫 `work` 的平行栈执行。**
+
+### Fixed
+
+- **compose-updater 侧车钉住部署自己的工程名。** 侧车把工程目录挂到 `/work`，而 compose 用
+  **运行目录名**推导工程名 —— 于是「一键更新」跑的是 `project=work`：新网络、**新建的空数据卷**、
+  第二个网关容器，真正在服务的栈一步没动。2026-10-07 生产实测撞上（`result.json` 里的原始日志：
+  `Volume "work_meta-gateway-data" Created` → `Container work-meta-gateway-1 Starting` →
+  `Bind for 0.0.0.0:4100 failed: port is already allocated`），只因真容器占着 4100 端口才没起来；
+  端口空着时操作员会拿到一个空库网关，看起来就是「更新把我的配置全清了」。现在 `update.sh` 从侧车
+  自己的 `com.docker.compose.project` 标签读出真工程名，每条 compose 命令都用 `-p` 钉住
+  （`COMPOSE_PROJECT_NAME` 可覆盖；`docker run` 起的侧车没有该标签，回退到目录名并记一行日志）。
+- **`docker-compose.yml` 把这条挂载的两点代价写进注释**：工程名必须靠 `-p` 钉；相对宿主路径
+  （`./x:/y`）在侧车里会解析成 `/work/…`，要加这类挂载就把本服务改成挂宿主机同路径。
+
+### Verification
+
+- 本地用一个记录调用的假 `docker` 跑脚本：HEAD 的脚本是 `docker compose pull/up …`（没有 `-p`），
+  修好的脚本是 `docker compose -p meta-gateway pull/up …`；没有标签时回退为目录名并写明假设。
+- 生产端到端（RN，2026-10-08 01:28）：`git pull` 后 `docker compose up -d --force-recreate --no-deps compose-updater`，
+  侧车容器带 `com.docker.compose.project=meta-gateway`、`working_dir=/work`；投递一次 `request.json` 后
+  `updater.log` 是 `project=meta-gateway` → `Container meta-gateway-meta-gateway-1 Recreated` →
+  `update finished (exit=0 pull=ok up=ok)`，`docker ps -a` / `volume ls` / `network ls` 里没有任何 `work_*`。
+  这次更新把生产从 v4.2.1 升到 v4.2.3（`/healthz` 实测 `commit=b9ca5bf…`，容器 `Up` 且 healthy）。
+
 ## [v4.2.3]
 
 > **图像接口不再被 60 秒的聊天超时掐断；Responses 的原生探测不再每请求付一次。**
