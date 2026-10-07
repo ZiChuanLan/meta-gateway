@@ -602,17 +602,23 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// Update check: periodic GitHub latest-release comparison for the console
 	// badge. The admin toggle (read live from runtime settings) gates every
 	// outbound call.
+	//
+	// The channel is the deployment's own tag, not a console preference. The
+	// console cannot change which tag the container runs — that is the
+	// deployment file — so a switch there could only make the check offer a build
+	// the executor would never install. Deriving it means "what you are offered"
+	// and "what you can install" are the same question; a pinned tag or a
+	// container predating the variable checks the stable channel.
 	updateCtx, updateCancel := context.WithCancel(context.Background())
 	RegisterStopper(updateCancel)
 	updateService := updatecheck.New(func() bool {
 		return runtimeController.Snapshot().Editable.UpdateCheckEnabled
 	})
 	updateService.SetChannelSource(func() string {
-		prefs, err := db.OperatorPreferences()
-		if err != nil {
-			return "stable"
+		if channel := selfupdate.TrackingChannel(); channel != "" {
+			return channel
 		}
-		return prefs.UpdateChannel
+		return "stable"
 	})
 	go updateService.Run(updateCtx)
 	NewUpdateCheckHandler(updateService, runtimeController).Register(adminGroup)

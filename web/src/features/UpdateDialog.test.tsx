@@ -63,12 +63,8 @@ function mount(children: ReactNode) {
   );
 }
 
-/** Answer the three reads the dialog makes; the check result is the interesting one. */
-function stubFetch(
-  check: Partial<UpdateCheckStatus>,
-  selfUpdate: Record<string, unknown> = {},
-  channelDoc: Record<string, unknown> = {},
-) {
+/** Answer the reads the dialog makes; the check result is the interesting one. */
+function stubFetch(check: Partial<UpdateCheckStatus>, selfUpdate: Record<string, unknown> = {}) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input).split("?")[0];
     if (path === "/admin/update-check")
@@ -81,16 +77,6 @@ function stubFetch(
           has_update: false,
           release_url: "",
           ...check,
-        }),
-      );
-    if (path === "/admin/update-channel")
-      return new Response(
-        JSON.stringify({
-          channel: "stable",
-          mode: "socket",
-          tracking_tag: "beta",
-          tracking_channel: "",
-          ...channelDoc,
         }),
       );
     if (path === "/admin/self-update")
@@ -181,9 +167,10 @@ it(
 );
 
 // The watchtower executor updates one floating tag, and that tag is declared in
-// the deployment file — not in the console. Offering a cross-track install can
-// only end in the server's watchtower_channel_mismatch, so the dialog prepares
-// the operator with the value to change instead.
+// the deployment file — not in the console. There is no channel switch any more
+// (the check reads the same tag), but the guard stays: offering a cross-track
+// install can only end in the server's watchtower_channel_mismatch, so the
+// dialog names the deployment value to change instead.
 it("refuses a cross-track install and names the deployment value to change", async () => {
   vi.stubGlobal(
     "fetch",
@@ -197,7 +184,6 @@ it("refuses a cross-track install and names the deployment value to change", asy
         tracking_tag: "beta",
         tracking_channel: "beta",
       },
-      { channel: "stable", mode: "watchtower", tracking_tag: "beta", tracking_channel: "beta" },
     ),
   );
   mount(

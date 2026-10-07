@@ -25,6 +25,7 @@ import { FactoryResetPanel } from "./FactoryResetPanel";
 import { TOTPPanel } from "./TOTPPanel";
 import { CheckinTimePicker } from "./CheckinTimePicker";
 import { CronSchedulePicker } from "./CronSchedulePicker";
+import { UpdateDialog } from "../UpdateDialog";
 
 function numberOr(value: string, fallback: number) {
   const parsed = Number(value);
@@ -130,7 +131,12 @@ export function RuntimeSettingsPanel({
   // draft unconditionally whenever the query data changed).
   const baseline = useRef("");
   const [remoteChanged, setRemoteChanged] = useState(false);
-  const guardLeave = useUnsavedChanges(dirty);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  // The panel's own update entry opens a dialog instead of navigating, so the
+  // in-app predicate is not needed here any more; the browser-level guard is
+  // what still protects an unsubmitted draft, and the settings page guards its
+  // tab switches.
+  useUnsavedChanges(dirty);
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -1294,15 +1300,9 @@ export function RuntimeSettingsPanel({
               <span className="runtime-update-result">{updateResult}</span>
             </div>
             {role === null || role === "owner" ? (
-              <Link
-                className="button button-secondary"
-                to="/settings?tab=updates"
-                onClick={(event) => {
-                  if (!guardLeave()) event.preventDefault();
-                }}
-              >
+              <Button variant="secondary" onClick={() => setUpdateOpen(true)}>
                 {t("updates.dialogTitle")}
-              </Link>
+              </Button>
             ) : null}
           </Panel>
         </RuntimeSettingsColumns>
@@ -1381,6 +1381,12 @@ export function RuntimeSettingsPanel({
           {reset.isPending ? t("common.working") : t("ops.runtime.resetEnv")}
         </Button>
       </div>
+      {/* The update entry used to deep-link into Settings → update channel. The
+          channel is not a setting (it is the deployment's image tag), so the
+          entry now opens the same dialog the top-bar pill does. */}
+      {updateOpen && updateCheckQuery.data ? (
+        <UpdateDialog update={updateCheckQuery.data} onClose={() => setUpdateOpen(false)} />
+      ) : null}
     </div>
   );
 }

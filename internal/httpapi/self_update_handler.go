@@ -26,8 +26,6 @@ func NewSelfUpdateHandler(updater *selfupdate.Service, updateCheck *updatecheck.
 }
 
 func (h *SelfUpdateHandler) Register(r chi.Router) {
-	r.Get("/update-channel", h.getChannel)
-	r.Put("/update-channel", h.saveChannel)
 	r.Get("/self-update", h.status)
 	r.Post("/self-update/apply", h.apply)
 }
@@ -111,47 +109,4 @@ func (h *SelfUpdateHandler) audit(r *http.Request, target, outcome string) {
 		Category:   "target=" + target,
 		StatusCode: http.StatusOK,
 	})
-}
-
-func (h *SelfUpdateHandler) getChannel(w http.ResponseWriter, r *http.Request) {
-	if !teamOwner(w, r) {
-		return
-	}
-	p, err := h.db.OperatorPreferences()
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	mode := h.updater.Mode()
-	writeJSON(w, 200, map[string]any{
-		"channel":          p.UpdateChannel,
-		"mode":             mode,
-		"tracking_tag":     selfupdate.TrackingTag(),
-		"tracking_channel": selfupdate.TrackingChannel(),
-	})
-}
-func (h *SelfUpdateHandler) saveChannel(w http.ResponseWriter, r *http.Request) {
-	if !teamOwner(w, r) {
-		return
-	}
-	var req struct {
-		Channel string `json:"channel"`
-	}
-	if err := decodeJSON(w, r, &req, 0, false); err != nil {
-		return
-	}
-	if req.Channel != "stable" && req.Channel != "beta" {
-		writeError(w, 400, "invalid update channel")
-		return
-	}
-	if h.updater.Status().Running {
-		writeError(w, 409, "update already running")
-		return
-	}
-	if _, err := h.db.Exec(`UPDATE operator_preferences SET update_channel=? WHERE id=1`, req.Channel); err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	h.audit(r, req.Channel, "channel_changed")
-	h.getChannel(w, r)
 }

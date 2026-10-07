@@ -14,7 +14,21 @@ V4 当前为预发布，**先备份数据库再试用**。Beta 发布到 GitHub 
 
 ### 更新渠道
 
-更新弹窗可选稳定 / Beta 渠道，刷新对应版本后再确认安装。
+**渠道就是部署的镜像标签（`.env` 的 `IMAGE_TAG`），控制台只读展示，不提供切换。** 原因很直接：
+控制台改变不了容器跑的是哪个标签，所以旧版那个「网页渠道选择」只能改「检查哪个渠道」，改不了
+「实际装哪个渠道」——两者不一致时服务端会以 `watchtower_channel_mismatch` 拒绝安装。现在更新检查直接读
+部署标签（`selfupdate.TrackingChannel`），**「检查到的」与「能装的」是同一个答案**。
+
+```bash
+# 换渠道：改 .env 再重建（唯一方式）
+# .env：IMAGE_TAG=beta      # latest = 稳定版；beta = 预发布
+cd /opt/meta-gateway
+docker compose pull meta-gateway
+docker compose up -d --no-build --no-deps --force-recreate meta-gateway
+```
+
+固定版本也可用（如 `IMAGE_TAG=4.0.0-beta.7`）：这时更新弹窗会说明「此部署固定了版本」，网页升级不会
+改变它。部署文件里没有 `IMAGE_TAG` 时渠道未知，按稳定版检查，弹窗会提示去设置它。
 
 > [!IMPORTANT]
 > **网页只能往前装，不能降级。** `POST /admin/self-update/apply` 会先校验
@@ -43,27 +57,54 @@ return ModeNone
 | **安装指定版本 / 换渠道** | ❌ 只能更新已配置的标签 | ✅ 拉任意版本，并把新标签写进新容器 |
 | 额外风险 | 无 | **socket ≈ 宿主机 root**，且插件/钩子同进程可达 |
 
-### 首次切渠道
+### 首次从 v3 升级到 v4（必须手动一次）
 
-因为「stable 实例没有渠道功能、渠道功能只在 V4」这个先后关系，**第一次切到 Beta 必须手动一次**：
+从 v3.8.6 开始的第一次跨大版本升级**要走一次 compose 命令**，三个理由都是实测过的：
+
+1. **v3 网页里没有渠道概念**：`/admin/update-channel` 是 v4 才有的；v3 的按钮只能触发执行器拉取
+   **当前标签**（`:latest`），所以“先切 Beta 试试”在 v3 上做不到。
+2. **容器环境变量不会自己更新**：watchtower 按**现有容器的配置**重建，不读 compose 文件。旧容器缺少 v4 新增的
+   `SELFUPDATE_TRACK_TAG`、`ADMIN_TOKEN_LOGIN` 等变量，只有 compose 重建才能带上；`docker compose up -d`
+   顺便把 compose 里新增的变量（本版补齐了 32 个此前漏传的）一次性带进去。
+3. **大版本会跑数据库迁移**（实测 108 → 125）：v3 库 → v4 库是单向的，迁移 110 会清空旧的个人路由方案。
+   这是唯一“先备份再落地”的时机。
 
 ```bash
-# .env：IMAGE_TAG=beta（它同时是 compose 重建时的落点）
+cd /opt/meta-gateway
+curl -s http://127.0.0.1:4100/healthz          # 记下当前版本
+# 1) 备份数据卷到宿主机（卷名 meta-gateway_meta-gateway-data）
+docker compose stop meta-gateway
+docker run --rm -v meta-gateway_meta-gateway-data:/d -v "$PWD":/backup alpine \
+  tar czf /backup/mg-data-$(date +%F-%H%M).tar.gz -C /d .
+# 2) 升级
 docker compose pull meta-gateway
 docker compose up -d --no-build --no-deps --force-recreate meta-gateway
+# 3) 验收
+curl -s http://127.0.0.1:4100/healthz          # version 应变成目标版本
+docker compose logs --tail=80 meta-gateway     # 迁移与启动日志
 ```
 
-之后就交给网页。`IMAGE_TAG=latest` 跟踪稳定版；固定版本可用 `4.0.0-beta.1` 这类标签。
+从 v4 起，日常升级回到网页一键更新即可（执行器优先用 watchtower，见上表）；只有**换渠道或改了 `.env`**
+才需要再做一次 compose 重建。
+
+### 定时自动更新（可选，默认关闭）
+
+watchtower 以 HTTP API 模式运行时**默认不轮询**（官方文档：*“By default, enabling this mode prevents
+periodic polls”*），所以推完镜像不会自己上线。要无人值守自动升级，在 `.env` 里显式打开：
+
+```bash
+WATCHTOWER_HTTP_API_PERIODIC_POLLS=true
+WATCHTOWER_POLL_INTERVAL=86400    # 秒；默认 24 小时
+```
 
 > [!WARNING]
-> **网页切换改的是运行中的容器，不会回写 `.env`。** 代码里没有任何回写 `.env` 的机制。
-> 所以 `.env` 的 `IMAGE_TAG` 是「`docker compose up` 重建时的落点」——切完渠道顺手同步它，
-> 否则下次 compose 重建会落回旧值。
+> 自动轮询只能跟随**当前标签**（换渠道仍要改 `.env`），而且**大版本会在无人值守时落地**——包括数据库迁移。
+> 开启前请确认有可用备份与回滚方案。
 
 ### 已知限制
 
-- 首次无 Socket 的跨渠道切换仍需一次部署配置变更（见上）。
-- **稳定版实例上无法用网页切到 Beta**：渠道功能本身是 V4 引入的，v3 没有 `/admin/update-channel`。
+- 换渠道（稳定 ↔ Beta）与固定版本变更**必须改 `.env` 并重建容器**：这是部署文件的事，控制台按设计不提供切换。
+- 从 v3 升级的第一次仍需手动执行上面的 compose 命令（v3 没有渠道功能，容器环境也不会自己更新）。
 - 未实现更新助手、任意历史版本降级、价格版本锁定。
 - 测试框架的开发依赖仍有已记录的 Vitest/mocker 公告，勿对不可信网络开放开发测试服务。
 - **Beta 不等于完整安全审计完成。**

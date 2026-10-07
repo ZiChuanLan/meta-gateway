@@ -112,14 +112,17 @@ curl --fail http://127.0.0.1:4100/readyz
 > **`MASTER_KEY` 必须随数据库一起备份、一起迁移。** 换一个 `MASTER_KEY` 打开同一个库，所有已存凭据都解不开。
 
 > [!NOTE]
-> **`:latest` 是稳定版（v3）；V4 预发布用 `:beta`。** 切换要改 `IMAGE_TAG` 并重建容器——Watchtower 只更新当前标签，**不能**通过网页换部署标签，也**不支持自动降级**：
+> **`:latest` 是稳定版；`:beta` 是预发布（当前 `v4.0.0-beta.7`）。渠道由部署的 `IMAGE_TAG` 决定**：控制台只读展示它，
+> 不提供切换（它改变不了容器跑的标签）。换渠道就是改 `.env` 并重建，**也不支持自动降级**：
 >
 > ```bash
 > export IMAGE_TAG=beta
 > docker compose pull meta-gateway && docker compose up -d --no-build --force-recreate meta-gateway
 > ```
 >
-> 详见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
+> 从 v3 升到 v4 的**第一次**要走一次这条命令（v3 没有渠道概念，且容器环境变量只能靠 compose 重建更新）；
+> 之后日常升级用控制台的一键更新即可。自动轮询默认关闭，要开就设 `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`
+> （大版本会无人值守落地，含数据库迁移）。详见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
 
 单行 `docker run`、源码构建、AI 一键部署提示词、升级到 V4 Beta —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。
 

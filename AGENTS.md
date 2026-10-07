@@ -561,8 +561,13 @@ CI 会跑一遍生成器再 `git diff --exit-code docs/reference`。所以：
 ### 6.1 部署更新：watchtower 是 **HTTP API 模式**，不会自己轮询
 
 2026-09-29 实测纠正（上一版写“推 latest 就自动更新”）：两台 watchtower 的配置里只有
-`WATCHTOWER_HTTP_API_UPDATE=true` + `WATCHTOWER_HTTP_API_TOKEN`，**既没有 `--interval` 也没有 `--schedule`**，
-而且 compose 未映射 8080 端口。所以推完镜像**不会自動上线**，必须显式触发（无端口映射 → 只能从宿主机打容器 IP）：
+`WATCHTOWER_HTTP_API_UPDATE=true` + `WATCHTOWER_HTTP_API_TOKEN`，而且 compose 未映射 8080 端口。
+所以推完镜像**不会自動上线**，必须显式触发（无端口映射 → 只能从宿主机打容器 IP）：
+
+> **2026-10-07 修正上一版的归因**：真正的原因不是“没配 interval”，而是 **HTTP API 模式默认禁用轮询**。
+> 官方文档原文：*“By default, enabling this mode prevents periodic polls”*——要轮询必须显式设
+> `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`（默认 `false`），只改 `WATCHTOWER_POLL_INTERVAL` 没用。
+> 2026-10-07 起 compose 把这两个变量作为**可选开关**透传（默认关闭），所以在重建容器前那两台仍是“不轮询”。
 
 ```bash
 cd /opt/meta-gateway

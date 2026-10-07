@@ -8,7 +8,12 @@ func TestWatchtowerTracksConfiguredImageOnly(t *testing.T) {
 		want          bool
 	}{
 		{"latest", "v1.2.3", true}, {"latest", "v1.3.0-beta.1", false}, {"beta", "v1.3.0-beta.2", true},
-		{"beta", "v1.3.0", true}, {"1.2.3-beta.1", "v1.2.3-beta.2", false}, {"", "v1.2.3", false},
+		{"beta", "v1.3.0", true}, {"1.2.3-beta.1", "v1.2.3-beta.2", false},
+		// Unset is not "unknown": it is the container that predates the variable,
+		// which the executor would update to its own tag anyway. A value that is
+		// set but is not a channel (a pinned version, a typo) still refuses — see
+		// watchtower_test.go.
+		{"", "v1.2.3", true},
 	} {
 		t.Setenv("SELFUPDATE_TRACK_TAG", tc.track)
 		if got := WatchtowerTargetAllowed(tc.target); got != tc.want {

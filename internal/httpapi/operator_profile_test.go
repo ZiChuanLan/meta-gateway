@@ -2,11 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
-	"github.com/lan/meta-gateway/internal/totp"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/lan/meta-gateway/internal/totp"
 )
 
 func TestOperatorUsernameSaveOverridesEnvironmentAndSurvivesReload(t *testing.T) {
@@ -76,14 +76,16 @@ func TestOperatorPreferencesAreOwnerOnly(t *testing.T) {
 	for _, b := range []*teamTestBrowser{member, admin} {
 		b.request("GET", "/admin/operator-profile", nil, 403)
 		b.request("POST", "/admin/operator-profile", map[string]string{"username": "nope", "token": "team-admin-secret"}, 403)
+	}
+	// The update channel is not a preference any more: it is the deployment's
+	// tag, so there is no endpoint left to write it through. Non-owners are
+	// stopped by the admin guard before routing; the owner sees the route gone.
+	for _, b := range []*teamTestBrowser{member, admin} {
+		b.request("GET", "/admin/update-channel", nil, 403)
 		b.request("PUT", "/admin/update-channel", map[string]string{"channel": "beta"}, 403)
 	}
-	e.admin("PUT", "/admin/update-channel", map[string]string{"channel": "other"}, 400)
-	e.admin("PUT", "/admin/update-channel", map[string]string{"channel": "beta"}, 200)
-	raw := e.admin("GET", "/admin/update-channel", nil, 200)
-	if !strings.Contains(string(raw), `"beta"`) {
-		t.Fatal(string(raw))
-	}
+	e.admin("GET", "/admin/update-channel", nil, 404)
+	e.admin("PUT", "/admin/update-channel", map[string]string{"channel": "beta"}, 404)
 }
 
 func TestOAuthUsernameSkipsReservedOperator(t *testing.T) {

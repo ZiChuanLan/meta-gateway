@@ -191,12 +191,39 @@ func TrackingChannel() string {
 	}
 }
 
+// WatchtowerTargetAllowed reports whether the console may ask the executor for
+// this target.
+//
+// The executor installs the image behind the tag the container was created with
+// — not the release the console named — so the guard exists to stop the console
+// from promising a build it cannot bring up.
 func WatchtowerTargetAllowed(target string) bool {
-	tag := TrackingTag()
-	if tag == "beta" {
-		return updatecheck.IsReleaseTag(target)
+	if !updatecheck.IsReleaseTag(target) {
+		return false
 	}
-	return tag == "latest" && !strings.Contains(target, "-") && updatecheck.IsReleaseTag(target)
+	switch TrackingTag() {
+	case "beta":
+		// The beta tag carries prereleases and the stable releases after them.
+		return true
+	case "latest":
+		// `latest` never carries a prerelease; accepting one here would install
+		// latest and report success for a build nobody asked for.
+		return !strings.Contains(target, "-")
+	case "":
+		// Unset. The variable arrives from the deployment file, so this is a
+		// container created before it existed — typically one watchtower
+		// recreated from its own older config, which is exactly how a v3
+		// deployment arrives at v4. Refusing here would leave the console's update
+		// button permanently dead on that deployment, and the executor installs
+		// the container's own tag either way; the console reports the tag it is
+		// really asking for.
+		return true
+	default:
+		// A pinned version (a supported deployment choice) or a typo: the executor
+		// can only re-pull that tag, so no console-named release would be
+		// installed. Refusing is the honest answer.
+		return false
+	}
 }
 
 // trackMismatch names both sides of the disagreement. The tagged image is the

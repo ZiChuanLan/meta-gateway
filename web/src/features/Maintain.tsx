@@ -1,5 +1,4 @@
 import { OperatorClaimPanel } from "./OperatorProfilePanel";
-import { UpdateChannelPanel } from "./UpdateChannelPanel";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../i18n";
@@ -11,7 +10,7 @@ import { modeHiddenNav } from "../lib/topBar";
 import { useSession } from "../session";
 import { useUnsavedChanges } from "../lib/unsavedChanges";
 
-type SystemTab = "runtime" | "appearance" | "backups" | "operator" | "updates";
+type SystemTab = "runtime" | "appearance" | "backups" | "operator";
 
 /**
  * Settings: runtime parameters, appearance, and backups. The multi-user area
@@ -36,10 +35,7 @@ export function Maintain() {
       { value: "appearance", label: t("appearance.title") },
       { value: "backups", label: t("ops.tab.backups") },
       ...(role === null || role === "owner"
-        ? [
-            { value: "operator" as const, label: t("operator.title") },
-            { value: "updates" as const, label: t("updates.channel") },
-          ]
+        ? [{ value: "operator" as const, label: t("operator.title") }]
         : []),
     ],
     [t, role],
@@ -94,7 +90,6 @@ export function Maintain() {
         ) : null}
         {active === "backups" ? <BackupsPanel /> : null}
         {active === "operator" ? <OperatorClaimPanel /> : null}
-        {active === "updates" ? <UpdateChannelPanel /> : null}
       </div>
     </Page>
   );

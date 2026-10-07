@@ -443,20 +443,20 @@ export const zh: Dict = {
   "updates.channel": "更新渠道",
   "updates.stable": "稳定版",
   "updates.beta": "Beta 渠道",
-  "updates.channelHint":
-    "稳定版不接收 Beta；Beta 渠道接收预发布及后续正式版。只检查，不会自动安装；不支持自动降级。",
+  "updates.channelFromDeploy":
+    "渠道由部署的镜像标签决定（当前 {tag}），控制台只读：只有部署文件能改变它接收的渠道。",
+  "updates.channelUnknown":
+    "部署文件没有声明 IMAGE_TAG，无法判断渠道，按稳定版检查。设为 latest 或 beta 并重建容器即可确定。",
+  "updates.pinnedTag":
+    "此部署固定了版本（IMAGE_TAG={tag}），网页升级不会改变它；要升级请改 .env 并重建容器。",
   "updates.betaWarning": "Beta 可能不稳定，升级前请备份数据库。",
-  "updates.watchtowerHint":
-    "当前 Watchtower 跟踪标签：{tag}。它安装的是该标签当时指向的最新构建（可能比这里列出的版本更新），且不能切换标签；跨渠道要改部署的 IMAGE_TAG 并重建容器，网页设置替代不了这一步。",
   "updates.trackLocked":
-    "此部署的镜像标签是 {tag}，只能安装{channel}构建；控制台的渠道选择改变不了部署里的标签。要换渠道：把 .env 的 IMAGE_TAG 改成目标标签并重建容器。",
+    "此部署的镜像标签是 {tag}，只能安装{channel}构建；控制台改不了部署里的标签。要换渠道：把 .env 的 IMAGE_TAG 改成目标标签并重建容器。",
   "updates.applyTracked": "安装 {tag} 上的最新构建",
   "updates.notNewer":
     "执行器重启后的版本是 {detail}，不比当前运行版本新；该标签可能被指回了旧构建。",
-  "updates.check": "检查更新",
-  "updates.failed": "无法保存渠道或检查更新，请稍后重试。",
   "updates.applyFailed":
-    "更新未启动。请检查更新服务、版本和镜像渠道；Watchtower 需 IMAGE_TAG 与所选渠道匹配。",
+    "更新未启动。请检查更新服务、版本和镜像渠道；部署的 IMAGE_TAG 必须是 latest 或 beta。",
   "updates.noUpgrade": "当前没有可升级版本（也可能关闭了更新检查，或当前为开发构建）。",
   "updates.dialogTitle": "软件更新",
   "updates.state.disabled": "更新检查已关闭。",
@@ -467,7 +467,7 @@ export const zh: Dict = {
   "updates.nothingToInstall": "无可安装版本",
   "updates.currentVersion": "当前运行 {version}",
   "updates.channelIsNewer":
-    "你运行的是 {current}，它比「{channel}」渠道的最新版（{latest}）更新。切渠道不会降级，所以这里没有可安装的版本。",
+    "你运行的是 {current}，它比「{channel}」渠道的最新版（{latest}）更新。升级不会降级，所以这里没有可安装的版本。",
   "updates.failedReason": "更新未完成：",
   "updates.socketPermission":
     "容器打不开 Docker 套接字（权限不足）。它需要宿主机 docker 组的附加组：用 stat -c '%g' /var/run/docker.sock 取 GID，给服务加 group_add: [\"<GID>\"] 后重建容器。",

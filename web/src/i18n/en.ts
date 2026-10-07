@@ -488,20 +488,20 @@ export const en: Dict = {
   "updates.channel": "Update channel",
   "updates.stable": "Stable",
   "updates.beta": "Beta channel",
-  "updates.channelHint":
-    "Stable excludes beta. Beta includes prereleases and subsequent stable releases. Checking does not install updates. Automatic downgrades are not supported.",
+  "updates.channelFromDeploy":
+    "The channel comes from the deployment's image tag ({tag}). The console only reads it: only the deployment file decides which channel this instance receives.",
+  "updates.channelUnknown":
+    "The deployment file does not declare IMAGE_TAG, so the channel is unknown and the stable channel is used. Set it to latest or beta and recreate the container.",
+  "updates.pinnedTag":
+    "This deployment pins a version (IMAGE_TAG={tag}), so a web update would not change it. Set IMAGE_TAG and recreate the container to upgrade.",
   "updates.betaWarning": "Beta may be unstable. Back up the database before upgrading.",
-  "updates.watchtowerHint":
-    "Watchtower tracks: {tag}. It installs whatever build that tag points to at the time (which can be newer than the version listed here), and it cannot switch tags. Changing tracks means setting the deployment's IMAGE_TAG and recreating the container; the web preference cannot replace that step.",
   "updates.trackLocked":
-    "This deployment's image tag is {tag}, which only installs {channel} builds. The console's channel choice cannot change the tag in the deployment. To switch tracks, set IMAGE_TAG to the other tag and recreate the container.",
+    "This deployment's image tag is {tag}, which only installs {channel} builds. The console cannot change the tag in the deployment. To switch tracks, set IMAGE_TAG to the other tag and recreate the container.",
   "updates.applyTracked": "Install the newest build on {tag}",
   "updates.notNewer":
     "The executor came back as {detail}, which is not newer than the running build; the tag may have been repointed to an older one.",
-  "updates.check": "Check for updates",
-  "updates.failed": "Unable to save the channel or check for updates. Please retry.",
   "updates.applyFailed":
-    "Update did not start. Check the service, version and image track. Watchtower requires IMAGE_TAG to match the selected track.",
+    "Update did not start. Check the service, version and image track. The deployment's IMAGE_TAG must be latest or beta.",
   "updates.noUpgrade":
     "No upgrade is available, update checks are disabled, or this is a development build.",
   "updates.dialogTitle": "Software update",
@@ -516,7 +516,7 @@ export const en: Dict = {
   "updates.nothingToInstall": "Nothing to install",
   "updates.currentVersion": "Running {version}",
   "updates.channelIsNewer":
-    "You are running {current}, which is newer than the latest release on the {channel} channel ({latest}). Switching channels does not downgrade, so there is nothing to install here.",
+    "You are running {current}, which is newer than the latest release on the {channel} channel ({latest}). Updates never downgrade, so there is nothing to install here.",
   "updates.failedReason": "Update did not complete:",
   "updates.socketPermission":
     "The container cannot open the Docker socket (permission denied). It needs the host's docker group as a supplementary group: read the GID with stat -c '%g' /var/run/docker.sock, add group_add: [\"<GID>\"] to the service, and recreate the container.",

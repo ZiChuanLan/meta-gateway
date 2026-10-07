@@ -4,7 +4,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n";
 import { SessionProvider } from "../session";
 import { OperatorClaimPanel, OperatorUpgradePrompt } from "./OperatorProfilePanel";
-import { UpdateChannelPanel } from "./UpdateChannelPanel";
 import type { ReactNode } from "react";
 afterEach(() => {
   cleanup();
@@ -116,33 +115,6 @@ it("refuses to submit a password that does not match its confirmation", async ()
   expect(screen.getByText("The two passwords do not match.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Set up the account" })).toBeDisabled();
 });
-it("makes beta an explicit choice and explains watchtower tag limits", async () => {
-  const fetcher = vi.fn(
-    async (_input: RequestInfo | URL, init?: RequestInit) =>
-      new Response(
-        JSON.stringify({
-          channel: init?.method === "PUT" ? "beta" : "stable",
-          mode: "watchtower",
-          tracking_tag: "latest",
-        }),
-      ),
-  );
-  vi.stubGlobal("fetch", fetcher);
-  mount(<UpdateChannelPanel />);
-  const select = await screen.findByLabelText("Update channel");
-  await waitFor(() => expect(select).toBeEnabled());
-  fireEvent.change(select, { target: { value: "beta" } });
-  expect(screen.getByText(/Beta may be unstable/)).toBeInTheDocument();
-  expect(screen.getByText(/Watchtower tracks: latest/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  await waitFor(() =>
-    expect(fetcher.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true),
-  );
-  expect(fetcher.mock.calls.some(([path]) => String(path).includes("self-update/apply"))).toBe(
-    false,
-  );
-});
-
 it("prompts an unclaimed deployment and allows deferral", async () => {
   sessionStorage.removeItem("operator-claim-dismissed");
   vi.stubGlobal(

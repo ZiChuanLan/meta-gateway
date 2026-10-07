@@ -6,6 +6,29 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Changed
+
+- **更新渠道不再是控制台设置，它就是部署的镜像标签。** 旧设计里控制台的「渠道」选择只决定**检查哪个渠道**，
+  而**实际装哪个渠道**由 `.env` 的 `IMAGE_TAG` 决定；两者不一致时服务端以 `watchtower_channel_mismatch` 拒绝，
+  于是操作员改了一个改变不了任何事的开关。现在更新检查直接读部署标签（`selfupdate.TrackingChannel`），
+  「检查到的」与「能装的」是同一个答案：`/admin/update-channel`（GET/PUT）、写入 `operator_preferences.update_channel`
+  的路径与控制台的渠道选择器一并移除，更新弹窗改为只读展示渠道 + 部署标签，并写明「换渠道 = 改 `.env` 再重建容器」。
+- **`SELFUPDATE_TRACK_TAG` 缺失不再让更新按钮永久失效。** 该变量来自部署文件，而 watchtower 按**现有容器的配置**
+  重建容器，所以一个由旧 compose 建起、之后一直靠 watchtower 升级的实例永远不会有它——旧实现会把每一次安装
+  都拒成 track mismatch。现在「未设置」按「执行器会装它自己的标签」放行（控制台照旧报告真实标签）；
+  **设了值但不是渠道**（固定版本、拼错）仍然拒绝。
+- **watchtower 定时轮询成为显式开关**：compose 透传 `WATCHTOWER_HTTP_API_PERIODIC_POLLS`（默认 `false`）与
+  `WATCHTOWER_POLL_INTERVAL`。HTTP API 模式默认禁用轮询（官方文档 *“By default, enabling this mode prevents
+  periodic polls”*），所以只设 interval 不生效；打开即无人值守升级，文档写明大版本会连带数据库迁移一起落地。
+
+### Fixed
+
+- **32 个 `internal/config` 会读、但 `docker-compose.yml` 从未传给容器的环境变量**（`HEALTH_SWEEP_*`、
+  `OUTBOUND_MAX_IDLE_CONNS*`、`SQLITE_MAX_OPEN_CONNS`、`CORS_ALLOWED_ORIGINS`、`BACKUP_RETENTION_COUNT`、
+  `WEBHOOK_*`、`MODEL_CATALOG_*`、`STABLE_FIRST_*`、`ROUTING_*`、`RECOVERY_PROBE_*`、`WEBDAV_UPLOAD_ENABLED`、
+  `PLUGIN_CATALOG_URL`、`CHANNEL_AUTO_DISABLE_THRESHOLD`、`UPDATE_CHECK_ENABLED`）现在都透传，默认值与代码默认值
+  一致，不设置时行为不变。此前写在 `.env` 里的这些值**静默失效**——实测生产 `.env` 里就有 11 个这样的键。
+
 ## [v4.0.0-beta.7]
 
 > **预发布，请先备份数据库。** 本版把成员界面做成自己的工作台，并把两个巨型页面按状态所有权拆开；

@@ -4,6 +4,11 @@ import "strings"
 
 type OperatorPreferences struct {
 	AdminUsername string `json:"admin_username"`
+	// UpdateChannel is the column the console's channel switch used to write.
+	// That switch is gone: the channel a deployment receives is its own image
+	// tag (see selfupdate.TrackingChannel), and the update check now reads it
+	// from there instead of from a preference the console could set. The column
+	// stays so an older row is not lost and a rollback does not have to migrate.
 	UpdateChannel string `json:"update_channel"`
 }
 

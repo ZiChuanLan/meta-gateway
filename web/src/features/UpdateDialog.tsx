@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Download, ExternalLink, RefreshCw } from "lucide-react";
 import { api } from "../api/client";
 import { useSession } from "../session";
@@ -17,6 +17,13 @@ import { updateState } from "../lib/updateState";
  * apply button that starts the container handoff. The link out stays available
  * as a secondary action for the full release page.
  *
+ * The channel is a fact here, not a control. Which releases a deployment
+ * receives is its image tag, and that lives in the deployment file — a switch in
+ * this dialog could only change which releases the console *looks at*, and the
+ * server refuses to install across tracks, so the operator would set a
+ * preference that changed nothing. The update check reads the tag instead
+ * (httpapi/router.go), which is why the two can no longer disagree.
+ *
  * `update` is the parent's already-fetched check result; the dialog refetches
  * only when opened, so a stale badge does not show stale notes.
  */
@@ -33,26 +40,6 @@ export function UpdateDialog({
   const { watch, apply, failure, availability } = useOneClickUpdate();
   const [applyError, setApplyError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
-  const qc = useQueryClient();
-  const channel = useQuery({
-    queryKey: ["update-channel"],
-    queryFn: ({ signal }) =>
-      client!.get<{
-        channel: "stable" | "beta";
-        mode: string;
-        tracking_tag: string;
-      }>("/admin/update-channel", signal),
-    enabled: Boolean(client),
-  });
-  const changeChannel = useMutation({
-    mutationFn: async (value: string) => {
-      await client!.put("/admin/update-channel", { channel: value });
-      const checked = await service!.refreshUpdateCheck();
-
-      qc.setQueryData(["update-check"], checked);
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["update-channel"] }),
-  });
 
   // Refetch on open: the pill may have been rendered from a cache that is
   // hours old, and the notes shown here are the whole point of the dialog.
@@ -65,12 +52,18 @@ export function UpdateDialog({
   const status = fresh.data ?? update;
   const notes = (status.notes ?? "").trim();
   // What the executor can actually install. In watchtower mode it updates one
-  // floating tag, and the console's channel preference cannot change which tag
-  // that is — the preference lives in the deployment file. An install that
-  // crosses tracks is refused by the server, so it is prepared for here.
+  // floating tag, and the console cannot change which tag that is — the tag is
+  // declared in the deployment file. An install that crosses tracks is refused
+  // by the server, so it is prepared for here.
   const executor = availability?.mode === "watchtower" ? availability : undefined;
   const trackedTag = executor?.tracking_tag;
-  const trackedChannel = executor?.tracking_channel;
+  // The channel the check read, and the tag behind it. Both come from the
+  // deployment: the server derives the check's channel from the same tag.
+  const trackedChannel = availability?.tracking_channel;
+  const deployChannel = trackedChannel || status.channel;
+  // A tag that is neither channel (a pinned version) can only be re-pulled by
+  // the executor, so no release the console names would ever be installed.
+  const pinnedTag = Boolean(executor?.tracking_tag && !executor?.tracking_channel);
   const trackMismatch = Boolean(
     trackedChannel && status.channel && trackedChannel !== status.channel,
   );
@@ -96,7 +89,7 @@ export function UpdateDialog({
           ? t("app.updateDialogTitle", { version: status.latest })
           : t("updates.dialogTitle")
       }
-      busy={pending || changeChannel.isPending}
+      busy={pending}
       onClose={onClose}
     >
       <div className="update-dialog-body">
@@ -108,27 +101,22 @@ export function UpdateDialog({
         {availability && !availability.available ? (
           <p role="status">{t("updates.manualRequired")}</p>
         ) : null}
+        {/* The channel the deployment receives, read from its image tag. Shown
+            rather than offered: only the deployment file can change it. */}
         <Field label={t("updates.channel")}>
-          <select
-            value={channel.data?.channel ?? status.channel ?? "stable"}
-            disabled={!channel.data || Boolean(watch) || pending || changeChannel.isPending}
-            onChange={(event) => {
-              setApplyError(null);
-              changeChannel.mutate(event.target.value);
-            }}
-          >
-            <option value="stable">{t("updates.stable")}</option>
-            <option value="beta">Beta</option>
-          </select>
+          <span className="update-channel-fact">
+            {t(deployChannel === "beta" ? "updates.beta" : "updates.stable")}
+          </span>
         </Field>
-        {channel.data?.channel === "beta" ? (
-          <p className="field-hint">{t("updates.betaWarning")}</p>
-        ) : null}
-        {channel.data?.mode === "watchtower" ? (
-          <p className="field-hint">
-            {t("updates.watchtowerHint", {
-              tag: channel.data.tracking_tag || "—",
-            })}
+        <p className="field-hint">
+          {trackedTag
+            ? t("updates.channelFromDeploy", { tag: trackedTag })
+            : t("updates.channelUnknown")}
+        </p>
+        {deployChannel === "beta" ? <p className="field-hint">{t("updates.betaWarning")}</p> : null}
+        {pinnedTag ? (
+          <p className="field-hint" role="status">
+            {t("updates.pinnedTag", { tag: trackedTag ?? "—" })}
           </p>
         ) : null}
         {trackMismatch ? (
@@ -139,7 +127,6 @@ export function UpdateDialog({
             })}
           </p>
         ) : null}
-        {changeChannel.isError ? <p role="alert">{t("updates.failed")}</p> : null}
         {watch ? (
           <div className="update-progress" role="status">
             <RefreshCw size={16} className="is-spinning" />
@@ -213,13 +200,10 @@ export function UpdateDialog({
             availability.running ||
             Boolean(watch) ||
             pending ||
-            changeChannel.isPending ||
-            changeChannel.isError ||
             fresh.isFetching ||
             fresh.isError ||
             trackMismatch ||
-            !channel.data ||
-            (status.channel !== undefined && channel.data.channel !== status.channel) ||
+            pinnedTag ||
             !status.enabled ||
             !status.has_update ||
             Boolean(status.error)

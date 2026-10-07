@@ -60,17 +60,21 @@ POST /admin/reset
 
 ## 五、自更新
 
-网关可以检查并安装新版本。两条渠道：
+网关可以检查并安装新版本。两条渠道由**部署的镜像标签**（`.env` 的 `IMAGE_TAG`）决定，控制台只读展示：
 
 | 渠道 | 行为 |
 | :--- | :--- |
-| 稳定 | 跟踪正式 Release |
-| Beta | 跟踪预发布（**不覆盖 `latest`**） |
+| 稳定（`IMAGE_TAG=latest`） | 跟踪正式 Release |
+| Beta（`IMAGE_TAG=beta`） | 跟踪预发布（**不覆盖 `latest`**） |
 
-相关设置：`UPDATE_CHECK_ENABLED`（默认 true）、`GET/PUT /admin/update-channel`、`GET /admin/update-check` + `POST /admin/update-check/refresh`、`GET/POST /admin/self-update`。
+相关设置：`UPDATE_CHECK_ENABLED`（默认 true）、`GET /admin/update-check` + `POST /admin/update-check/refresh`、`GET /admin/self-update`（`Status` 里带 `tracking_tag` / `tracking_channel`）+ `POST /admin/self-update/apply`。
+**没有渠道切换接口**：控制台改变不了容器跑的标签，换渠道就是改 `.env` 再重建（见[升级与更新渠道](/guide/upgrade)）。
 
 > [!IMPORTANT]
-> **Watchtower 是 HTTP API 模式，不会自己轮询。** 两台生产机的 watchtower 配置里既没有 `--interval` 也没有 `--schedule`，所以推完镜像**不会自动上线**，必须显式触发 `/v1/update`。详见[部署与反代](./deployment)。
+> **Watchtower 是 HTTP API 模式，默认不轮询。** 官方文档：*“By default, enabling this mode prevents periodic polls”*，
+> 所以要定时自动更新必须显式设 `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`（默认 false，compose 已透传；
+> 只改 `WATCHTOWER_POLL_INTERVAL` 不生效）。默认状态下推完镜像**不会自动上线**，必须显式触发 `/v1/update`。
+> 详见[部署与反代](./deployment)。
 
 ## 六、日常维护清单
 

@@ -11,6 +11,10 @@ import (
 // that tag delivers, have to reach the browser. Until they did, the dialog could
 // offer a beta on a `latest`-tracked deployment, get a refusal it did not
 // explain, or (worse) watch for a version the executor would never bring up.
+//
+// This payload is now the only place they come from: the console has no channel
+// switch, because the channel is the deployment's tag and only the deployment
+// file can change it.
 func TestSelfUpdateStatusExposesTheTrackedTag(t *testing.T) {
 	// A closed local port, so the watchtower probe fails instantly instead of
 	// waiting on DNS for a compose hostname that does not exist here.
@@ -36,20 +40,5 @@ func TestSelfUpdateStatusExposesTheTrackedTag(t *testing.T) {
 	}
 	if status.From != "" {
 		t.Fatalf("from=%q, want empty while idle", status.From)
-	}
-
-	var channel struct {
-		Channel         string `json:"channel"`
-		TrackingTag     string `json:"tracking_tag"`
-		TrackingChannel string `json:"tracking_channel"`
-	}
-	if err := json.Unmarshal(e.admin("GET", "/admin/update-channel", nil, 200), &channel); err != nil {
-		t.Fatal(err)
-	}
-	// The preference and the deployment's tag are two different facts; the
-	// settings panel needs both to explain why a cross-track choice cannot be
-	// installed.
-	if channel.Channel != "stable" || channel.TrackingTag != "beta" || channel.TrackingChannel != "beta" {
-		t.Fatalf("update-channel: %+v", channel)
 	}
 }

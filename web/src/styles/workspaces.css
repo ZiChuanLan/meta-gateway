@@ -511,6 +511,18 @@
   word-break: break-word;
 }
 .update-restart-hint { margin: 0; font-size: 12px; }
+/* The channel is a fact read off the deployment's image tag, not a control: only
+   the deployment file can change it, so it renders as text. */
+.update-channel-fact {
+  display: inline-block;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
 .update-progress {
   display: flex;
   align-items: flex-start;
