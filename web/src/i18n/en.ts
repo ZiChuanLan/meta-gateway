@@ -498,6 +498,9 @@ export const en: Dict = {
   "updates.trackLocked":
     "This deployment's image tag is {tag}, which only installs {channel} builds. The console cannot change the tag in the deployment. To switch tracks, set IMAGE_TAG to the other tag and recreate the container.",
   "updates.applyTracked": "Install the newest build on {tag}",
+  "updates.backupBeforeApply":
+    "Updating takes a database backup first (into BACKUP_DIR, e.g. /data/backups). If the backup fails, or BACKUP_DIR is not set, the update does not start. Upgrades are not rolled back automatically; restore that snapshot if you need to.",
+  "updates.backupTaken": "Database backup created: {name}",
   "updates.notNewer":
     "The executor came back as {detail}, which is not newer than the running build; the tag may have been repointed to an older one.",
   "updates.applyFailed":

@@ -453,6 +453,9 @@ export const zh: Dict = {
   "updates.trackLocked":
     "此部署的镜像标签是 {tag}，只能安装{channel}构建；控制台改不了部署里的标签。要换渠道：把 .env 的 IMAGE_TAG 改成目标标签并重建容器。",
   "updates.applyTracked": "安装 {tag} 上的最新构建",
+  "updates.backupBeforeApply":
+    "点更新会先自动备份数据库（存到 BACKUP_DIR，如 /data/backups）；备份失败或没配 BACKUP_DIR 就不会开始更新。升级不会自动回滚，需要时用这个快照恢复。",
+  "updates.backupTaken": "已创建数据库备份：{name}",
   "updates.notNewer":
     "执行器重启后的版本是 {detail}，不比当前运行版本新；该标签可能被指回了旧构建。",
   "updates.applyFailed":

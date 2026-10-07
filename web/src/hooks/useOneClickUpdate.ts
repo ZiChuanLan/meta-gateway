@@ -84,7 +84,11 @@ export function useOneClickUpdate() {
       storeWatch(next);
       setWatch(next);
       try {
-        await service.applySelfUpdate(target);
+        // The server snapshots the database before it starts the handoff, and it
+        // refuses to start without one; the name comes back so the console can
+        // say which snapshot this upgrade can be rolled back to.
+        const started = await service.applySelfUpdate(target);
+        return started?.backup;
       } catch (error) {
         // A network failure is ambiguous: keep observing rather than encouraging
         // another submission. A definite HTTP rejection did not start this task.

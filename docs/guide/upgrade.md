@@ -57,35 +57,42 @@ return ModeNone
 | **安装指定版本 / 换渠道** | ❌ 只能更新已配置的标签 | ✅ 拉任意版本，并把新标签写进新容器 |
 | 额外风险 | 无 | **socket ≈ 宿主机 root**，且插件/钩子同进程可达 |
 
-### 首次从 v3 升级到 v4（必须手动一次）
+### 首次从 v3 升级到 v4
 
-从 v3.8.6 开始的第一次跨大版本升级**要走一次 compose 命令**，三个理由都是实测过的：
+**两条路都可以**，不需要先读文档再动手：
 
-1. **v3 网页里没有渠道概念**：`/admin/update-channel` 是 v4 才有的；v3 的按钮只能触发执行器拉取
-   **当前标签**（`:latest`），所以“先切 Beta 试试”在 v3 上做不到。
-2. **容器环境变量不会自己更新**：watchtower 按**现有容器的配置**重建，不读 compose 文件。旧容器缺少 v4 新增的
-   `SELFUPDATE_TRACK_TAG`、`ADMIN_TOKEN_LOGIN` 等变量，只有 compose 重建才能带上；`docker compose up -d`
-   顺便把 compose 里新增的变量（本版补齐了 32 个此前漏传的）一次性带进去。
-3. **大版本会跑数据库迁移**（实测 108 → 125）：v3 库 → v4 库是单向的，迁移 110 会清空旧的个人路由方案。
-   这是唯一“先备份再落地”的时机。
+| 方式 | 做了什么 | 什么时候用 |
+| :--- | :--- | :--- |
+| 控制台点「更新」 | 执行器拉取 `IMAGE_TAG` 指向的镜像、重建容器、跑迁移；**动手前自动备份数据库** | 默认选择，日常升级也是它 |
+| `docker compose pull && up -d` | 同上，**并且把 compose 文件里的环境变量一起带进新容器** | 想让 `.env` 里新增/修改的变量生效时（随时补做一次即可） |
 
 ```bash
 cd /opt/meta-gateway
-curl -s http://127.0.0.1:4100/healthz          # 记下当前版本
-# 1) 备份数据卷到宿主机（卷名 meta-gateway_meta-gateway-data）
-docker compose stop meta-gateway
-docker run --rm -v meta-gateway_meta-gateway-data:/d -v "$PWD":/backup alpine \
-  tar czf /backup/mg-data-$(date +%F-%H%M).tar.gz -C /d .
-# 2) 升级
 docker compose pull meta-gateway
 docker compose up -d --no-build --no-deps --force-recreate meta-gateway
-# 3) 验收
-curl -s http://127.0.0.1:4100/healthz          # version 应变成目标版本
-docker compose logs --tail=80 meta-gateway     # 迁移与启动日志
 ```
 
-从 v4 起，日常升级回到网页一键更新即可（执行器优先用 watchtower，见上表）；只有**换渠道或改了 `.env`**
-才需要再做一次 compose 重建。
+两条路的差别只有一个：**watchtower 不读 compose 文件**（官方 issue #233：它只用容器元数据里的环境变量），
+所以点按钮时新容器**沿用旧容器的环境变量**，而 `docker compose up` 会把 compose 里声明的变量重新应用一遍。
+这不会阻止升级：v4 对每一个新增变量都有代码默认值（已用 v3 部署的实际容器环境实测启动与转发正常）。
+
+> [!NOTE]
+> **升级后建议补做一次 `docker compose up -d`**：v3 时代的容器环境里没有 `ADMIN_TOKEN_LOGIN`、
+> `SELFUPDATE_TRACK_TAG`，而 `.env` 里有些变量（如 `HEALTH_SWEEP_*`、`SQLITE_MAX_OPEN_CONNS`）因为
+> 旧版 compose 没传而**从未生效**。补做一次重建就会全部对齐，不需要停服务、也不需要手动备份——
+> 升级前的那次快照已经在 `/data/backups` 里。
+
+大版本会跑数据库迁移（实测 v3.8.6 → v4：108 → 125），**迁移是单向的**，所以无论走哪条路，升级前都会
+先落一份经过校验的数据库快照（备份失败或没配 `BACKUP_DIR` 就不开始）。需要回退时用它恢复：
+
+```bash
+# 列出快照名（控制台「设置 → 备份」也可以看）
+docker exec meta-gateway-meta-gateway-1 ls -1 /data/backups
+# 回退（先停容器，再恢复，再起来）
+docker compose stop meta-gateway
+docker compose run --rm meta-gateway restore --from <快照名>
+docker compose up -d --no-build meta-gateway
+```
 
 ### 定时自动更新（可选，默认关闭）
 

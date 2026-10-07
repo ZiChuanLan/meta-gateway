@@ -4,11 +4,13 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/lan/meta-gateway/internal/backup"
 	"github.com/lan/meta-gateway/internal/buildinfo"
 	"github.com/lan/meta-gateway/internal/selfupdate"
 	"github.com/lan/meta-gateway/internal/store"
@@ -18,11 +20,12 @@ import (
 type SelfUpdateHandler struct {
 	updater     *selfupdate.Service
 	updateCheck *updatecheck.Service
+	backups     *backup.Service
 	db          *store.DB
 }
 
-func NewSelfUpdateHandler(updater *selfupdate.Service, updateCheck *updatecheck.Service, db *store.DB) *SelfUpdateHandler {
-	return &SelfUpdateHandler{updater: updater, updateCheck: updateCheck, db: db}
+func NewSelfUpdateHandler(updater *selfupdate.Service, updateCheck *updatecheck.Service, backups *backup.Service, db *store.DB) *SelfUpdateHandler {
+	return &SelfUpdateHandler{updater: updater, updateCheck: updateCheck, backups: backups, db: db}
 }
 
 func (h *SelfUpdateHandler) Register(r chi.Router) {
@@ -70,6 +73,19 @@ func (h *SelfUpdateHandler) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Everything that can reject this request has rejected it; the last step
+	// before the handoff is the snapshot. An upgrade runs migrations, migrations
+	// are one-way, and this is the final moment the current data exists in its old
+	// shape — so the click takes the backup instead of asking the operator to copy
+	// a volume first, which is how a one-click update turns into a documentation
+	// exercise. A backup that cannot be taken (or verified) stops the update.
+	backupName, err := h.preUpdateBackup(r.Context())
+	if err != nil {
+		h.audit(r, target, "backup_failed")
+		writeError(w, http.StatusConflict, "update not started: "+err.Error())
+		return
+	}
+
 	if err := h.updater.StartTarget(target); err != nil {
 		status := http.StatusInternalServerError
 		switch {
@@ -93,7 +109,22 @@ func (h *SelfUpdateHandler) apply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"started": true,
 		"target":  target,
+		"backup":  backupName,
 	})
+}
+
+// preUpdateBackup snapshots the database into the backup directory and returns
+// the snapshot's name. It refuses when no directory is configured: the caller's
+// next step is a one-way migration, so "no backup available" is not a warning.
+func (h *SelfUpdateHandler) preUpdateBackup(ctx context.Context) (string, error) {
+	if h.backups == nil || h.backups.Dir() == "" {
+		return "", errors.New("BACKUP_DIR is not configured, and an upgrade cannot be undone without a snapshot")
+	}
+	record, err := h.backups.Create(ctx)
+	if err != nil {
+		return "", err
+	}
+	return record.Name, nil
 }
 
 func (h *SelfUpdateHandler) audit(r *http.Request, target, outcome string) {

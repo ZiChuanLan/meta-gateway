@@ -107,6 +107,12 @@ func (s *Service) Create(ctx context.Context) (*store.BackupRecord, error) {
 
 func (s *Service) List(limit int) ([]store.BackupRecord, error) { return s.db.BackupRecord.List(limit) }
 
+// Dir is where snapshots are written. The self-update path asks, because an
+// update that cannot be rolled back must not start, and an empty directory is
+// the misconfiguration that would otherwise only show up as a confusing
+// "backup failed" after the operator already decided to upgrade.
+func (s *Service) Dir() string { return s.dir }
+
 func (s *Service) record(record *store.BackupRecord, started time.Time) error {
 	record.DurationMs = time.Since(started).Milliseconds()
 	return s.db.BackupRecord.Insert(record)

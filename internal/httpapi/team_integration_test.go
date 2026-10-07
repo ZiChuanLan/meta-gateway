@@ -22,10 +22,11 @@ import (
 )
 
 type teamTestEnv struct {
-	server *httptest.Server
-	db     *store.DB
-	enc    *crypto.Encrypter
-	t      *testing.T
+	server    *httptest.Server
+	db        *store.DB
+	enc       *crypto.Encrypter
+	backupDir string
+	t         *testing.T
 }
 type teamTestBrowser struct {
 	env    *teamTestEnv
@@ -45,9 +46,20 @@ func newTeamTestEnv(t *testing.T) *teamTestEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(NewTestRouter(t, &config.Config{AdminToken: "team-admin-secret", MetricsToken: "metrics", OutboundAllowCIDRs: []string{"127.0.0.0/8"}, RetryTimes: 2}, db, enc))
+	backupDir := t.TempDir()
+	server := httptest.NewServer(NewTestRouter(t, &config.Config{
+		AdminToken:         "team-admin-secret",
+		MetricsToken:       "metrics",
+		OutboundAllowCIDRs: []string{"127.0.0.0/8"},
+		RetryTimes:         2,
+		// The self-update path refuses to run without a snapshot directory, so a
+		// deployment with none is a deployment that cannot update — the test
+		// environment has one for the same reason compose does.
+		BackupDir:            backupDir,
+		BackupRetentionCount: 5,
+	}, db, enc))
 	t.Cleanup(server.Close)
-	return &teamTestEnv{server, db, enc, t}
+	return &teamTestEnv{server, db, enc, backupDir, t}
 }
 func (e *teamTestEnv) call(client *http.Client, method, path string, body any, bearer, csrf string) (int, []byte, http.Header) {
 	e.t.Helper()

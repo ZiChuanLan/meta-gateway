@@ -534,6 +534,7 @@
 }
 .update-progress strong { display: block; margin-bottom: 4px; font-size: 13.5px; }
 .update-progress p { margin: 0; font-size: 12px; color: var(--muted-strong); }
+.update-progress-backup { margin-top: 6px !important; font-variant-numeric: tabular-nums; }
 .is-spinning { animation: update-spin 1.1s linear infinite; }
 @keyframes update-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {

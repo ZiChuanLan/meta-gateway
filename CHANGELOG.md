@@ -6,6 +6,20 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Added
+
+- **一键更新现在自己先备份数据库。** 升级会跑单向迁移，而 `POST /admin/self-update/apply` 此前只在容器层留了回滚
+  （把旧容器改名 `-rollback`），数据层没有任何快照——操作员得先自己复制数据卷，这正是「点一下就更新」变成
+  「先读文档」的地方。现在点更新会在启动交接**之前**创建并校验一份数据库快照（`backup.Service.Create`：SQLite
+  online backup + 完整性校验），备份名随 `202` 响应返回、控制台在进度框里显示；**备份失败或没配 `BACKUP_DIR`
+  就不开始更新**。`backup.Service.Dir()` 为此暴露了快照目录。
+
+### Fixed
+
+- **启动失败时的 `configuration invalid` 现在带原因。** 此前那条日志丢掉了 `config.Load()` 的错误，只剩一句
+  「configuration invalid」——操作员只能靠猜哪个变量写错了。现在带 `error` 字段，实测输出形如
+  `config: METRICS_TOKEN or TRUSTED_SCRAPER_CIDRS is required`。
+
 ## [v4.0.0-beta.8]
 
 > **预发布，请先备份数据库。** 本版把「更新渠道」从控制台设置改成部署的镜像标签，并修掉更新路径上的两个死结；

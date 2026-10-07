@@ -55,7 +55,11 @@ func main() {
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("configuration invalid", "category", "configuration")
+		// The reason goes in the log. A deployment that fails here is usually
+		// failing on one value the operator just typed, and "configuration
+		// invalid" with nothing after it sends them hunting through every
+		// variable they have.
+		logger.Error("configuration invalid", "category", "configuration", "error", err.Error())
 		os.Exit(1)
 	}
 

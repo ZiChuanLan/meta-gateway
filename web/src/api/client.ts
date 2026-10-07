@@ -1047,7 +1047,9 @@ export const api = (client: ApiClient) => ({
   selfUpdateStatus: (signal?: AbortSignal) =>
     client.get<SelfUpdateStatus>("/admin/self-update", signal),
   applySelfUpdate: (target: string) =>
-    client.post<{ started: boolean; target: string }>("/admin/self-update/apply", { target }),
+    client.post<{ started: boolean; target: string; backup?: string }>("/admin/self-update/apply", {
+      target,
+    }),
   updateRuntimeSettings: (body: RuntimeEditableSettings) =>
     client.put<RuntimeSettings>("/admin/runtime-settings", body),
   resetRuntimeSettings: () => client.post<RuntimeSettings>("/admin/runtime-settings/reset"),

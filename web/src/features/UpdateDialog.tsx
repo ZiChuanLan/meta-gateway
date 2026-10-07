@@ -40,6 +40,7 @@ export function UpdateDialog({
   const { watch, apply, failure, availability } = useOneClickUpdate();
   const [applyError, setApplyError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
+  const [backup, setBackup] = useState<string | undefined>(undefined);
 
   // Refetch on open: the pill may have been rendered from a cache that is
   // hours old, and the notes shown here are the whole point of the dialog.
@@ -133,6 +134,14 @@ export function UpdateDialog({
             <div>
               <strong>{t("app.updateRunning")}</strong>
               <p>{t("app.updateRunningHint")}</p>
+              {/* The snapshot this upgrade can be rolled back to. Naming it here
+                  is the difference between "an update is running" and "and here
+                  is how to undo it". */}
+              {backup ? (
+                <p className="update-progress-backup">
+                  {t("updates.backupTaken", { name: backup })}
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -157,6 +166,11 @@ export function UpdateDialog({
               <p className="muted">{t("updates.noUpgrade")}</p>
             ) : null}
             <p className="muted update-restart-hint">{t("app.updateRestartHint")}</p>
+            {/* Say it before the click, not after: this is why nobody has to
+                copy a volume by hand first. */}
+            {status.has_update ? (
+              <p className="field-hint">{t("updates.backupBeforeApply")}</p>
+            ) : null}
           </>
         )}
       </div>
@@ -212,10 +226,11 @@ export function UpdateDialog({
             setPending(true);
             setApplyError(null);
             try {
-              await apply(status.latest, {
+              const name = await apply(status.latest, {
                 from: status.current,
                 tracked: trackedTag,
               });
+              if (name) setBackup(name);
             } catch (error) {
               setApplyError(error);
             } finally {
