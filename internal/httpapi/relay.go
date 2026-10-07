@@ -1243,6 +1243,12 @@ func copyResponseHeaders(dst, src http.Header, stream bool) {
 	if value := src.Get(UpstreamURLEchoHeader); value != "" {
 		dst.Set(UpstreamURLEchoHeader, value)
 	}
+	// A Responses→chat fallback cannot carry server-side tools; the proxy names
+	// the ones it dropped so a client (or the operator reading its logs) can see
+	// why the model did not search the web.
+	if value := src.Get(proxy.DroppedToolsEchoHeader); value != "" {
+		dst.Set(proxy.DroppedToolsEchoHeader, value)
+	}
 	if stream {
 		dst.Set("Content-Type", "text/event-stream")
 		dst.Set("Cache-Control", "no-cache")

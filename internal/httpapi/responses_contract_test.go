@@ -9,6 +9,79 @@ import (
 	"testing"
 )
 
+// The shape a real coding agent sends, end to end: an upstream with no native
+// Responses surface, and a request carrying server-side tools.
+//
+// The payload mirrors a captured Codex 0.155.1 request (client_metadata, include,
+// prompt_cache_key, reasoning, store, parallel_tool_calls, and a tool list mixing
+// function / web_search / namespace entries). Before this, the non-function tools
+// made the translation refuse, so the upstream's 404 was passed to the client and
+// the agent retried every two seconds without ever working.
+func TestResponsesCodexShapeReachesAChatOnlyUpstream(t *testing.T) {
+	captured := make(chan []byte, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/responses") {
+			http.Error(w, "404 page not found", http.StatusNotFound)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		captured <- body
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"id":"chat-1","model":"public","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1,"total_tokens":11}}`)
+	}))
+	defer upstream.Close()
+	base, token, _, _ := setupImageRelayWithStore(t, upstream.URL, "public")
+
+	payload := map[string]any{
+		"model":               "public",
+		"stream":              false,
+		"store":               false,
+		"include":             []string{"reasoning.encrypted_content"},
+		"prompt_cache_key":    "session-1",
+		"reasoning":           map[string]any{"summary": "auto"},
+		"parallel_tool_calls": true,
+		"instructions":        "You are a coding agent.",
+		"tool_choice":         "auto",
+		"input":               []map[string]any{{"role": "user", "content": "say hi"}},
+		"tools": []map[string]any{
+			{"type": "function", "name": "exec_command", "parameters": map[string]any{"type": "object"}},
+			{"type": "web_search"},
+			{"type": "namespace", "name": "multi_agent_v1"},
+		},
+	}
+	raw, _ := json.Marshal(payload)
+	req, _ := http.NewRequest(http.MethodPost, base+"/v1/responses", strings.NewReader(string(raw)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"object":"response"`) {
+		t.Fatalf("the client did not get a Responses object: %s", body)
+	}
+	// The drop is reported, so "the model did not search the web" is explainable.
+	if dropped := resp.Header.Get("X-Meta-Dropped-Tools"); dropped != "web_search,namespace:multi_agent_v1" {
+		t.Fatalf("X-Meta-Dropped-Tools = %q", dropped)
+	}
+	chatBody := <-captured
+	if strings.Contains(string(chatBody), "web_search") || strings.Contains(string(chatBody), "namespace") {
+		t.Fatalf("a server-side tool reached a chat upstream: %s", chatBody)
+	}
+	if !strings.Contains(string(chatBody), `"name":"exec_command"`) {
+		t.Fatalf("the function tool was lost: %s", chatBody)
+	}
+	// The instructions survive as the system message, and the input as the user turn.
+	if !strings.Contains(string(chatBody), "coding agent") || !strings.Contains(string(chatBody), "say hi") {
+		t.Fatalf("conversation lost: %s", chatBody)
+	}
+}
+
 // A Responses request that needs a native upstream (stored conversation, or
 // tools that are not functions) cannot be replayed as a chat completion. The
 // channel has no /v1/responses surface, so all the gateway holds is the

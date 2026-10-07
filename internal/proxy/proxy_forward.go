@@ -490,15 +490,23 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				if responsesPassthroughFallback && !responsesFallbackTried &&
 					result != nil && result.Err == nil &&
 					(result.StatusCode == http.StatusNotFound || result.StatusCode == http.StatusMethodNotAllowed) {
-					translated, translateErr := adapters.ResponsesToChat(requestSource)
+					translated, droppedTools, translateErr := adapters.ResponsesToChatReport(requestSource)
 					if translateErr != nil {
-						// Stored conversation, background execution or non-function tools:
-						// this request needs a native Responses upstream and the one we
-						// just tried does not have it. Keep the upstream's 404 driving the
-						// failover walk, but remember why so the client is not told
-						// "404 page not found" when nothing else can serve it either.
+						// Stored conversation, background execution or a forced tool that
+						// only a native upstream can run: this request needs a native
+						// Responses upstream and the one we just tried does not have it.
+						// Keep the upstream's 404 driving the failover walk, but remember
+						// why so the client is not told "404 page not found" when nothing
+						// else can serve it either.
 						responsesRefusal = translateErr
 						log.Printf("proxy: responses fallback refused (request_id=%s): %v", req.RequestID, translateErr)
+					}
+					if len(droppedTools) > 0 {
+						// Server-side tools (web_search, mcp, ...) have no chat/completions
+						// equivalent. The turn still runs; what was lost is named in the
+						// response header and in the log, because "the model did not search
+						// the web" has to be explainable afterwards.
+						log.Printf("proxy: responses fallback dropped server-side tools (request_id=%s): %s", req.RequestID, strings.Join(droppedTools, ", "))
 					}
 					if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && translateErr == nil {
 						translated = injectSystemPrompt(translated, prompt)
@@ -517,6 +525,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 							// here on: log and echo THAT url, not the /responses one that 404'd.
 							req.UpstreamURLActual = adapters.SafeURL(chatURL)
 							result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, chatURL, headers, translated)
+							if result != nil && len(droppedTools) > 0 {
+								if result.Header == nil {
+									result.Header = http.Header{}
+								}
+								result.Header.Set(DroppedToolsEchoHeader, strings.Join(droppedTools, ","))
+							}
 						} else {
 							log.Printf("proxy: responses fallback translation missing (request_id=%s)", req.RequestID)
 						}
@@ -1118,6 +1132,13 @@ func hasPathPrefix(path string, prefixes ...string) bool {
 // so the relay handler can forward it to the client and the operator can see,
 // without reading a log, which endpoint a custom-path call reached.
 const UpstreamURLEchoHeader = "X-Meta-Upstream-URL"
+
+// DroppedToolsEchoHeader names the server-side tools a Responses→chat fallback
+// had to drop (web_search, mcp, ...). A chat upstream cannot run them, so the
+// turn proceeds without them — and without this header nobody could tell
+// afterwards why the model never searched. It is set on the relay result and
+// forwarded to the client by the relay handler.
+const DroppedToolsEchoHeader = "X-Meta-Dropped-Tools"
 
 // upstreamFieldValue reads a per-request endpoint field, preferring the request
 // body over the caller's headers (a body value is the more explicit statement of

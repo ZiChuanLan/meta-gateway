@@ -6,6 +6,31 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v4.2.2]
+
+> **Responses 客户端（Codex / Cursor 等）现在能在只有 chat/completions 的上游上工作。**
+
+### Fixed
+
+- **Responses→chat 回退不再因为一个服务端工具而整体拒绝。** 之前的转换逻辑要求 `tools` 里**每一个**都是
+  `type: "function"`，否则整请求拒绝（`ErrUnsupportedFeature`）；而真实编码代理的默认工具集里总有别的：
+  用本机 Codex 0.155.1 实测抓包，它每轮都带 `{"type":"web_search"}` 与 `{"type":"namespace","name":"multi_agent_v1"}`，
+  于是回退从未生效，客户端拿到的是上游那句 `404 page not found` 并每 2 秒重试一次（生产日志一小时 28 条）。
+  现在：
+  - **function 工具照旧保留**，服务端工具（`web_search` / `file_search` / `mcp` / `namespace` …）在转换时**丢弃**，
+    并在响应头 `X-Meta-Dropped-Tools` 里列出、同时记一行日志——“模型没联网搜索”事后可解释；
+  - `previous_response_id` / `conversation` / `background` 仍然拒绝（状态在上游，无法重建）✓ 不变；
+  - `tool_choice` 强制指定一个被丢弃的工具时仍然拒绝（不能向上游要一个它没有的工具）。
+- 用**真实抓取的 Codex 请求体**（76684 字节）验证：转换成功、丢弃列表正是 `namespace:multi_agent_v1, web_search`、
+  7 个 function 工具与 4 条消息完整保留。新增两个测试钉住：Codex 形状的请求端到端跑通（200 + 响应头 + 上游只收到
+  function 工具），以及“强制指定被丢弃工具”仍返回 501。
+
+### Changed
+
+- `adapters.ResponsesToChat` 保留原签名（`[]byte, error`），新增 `ResponsesToChatReport` 返回被丢弃的工具清单；
+  旧调用点无需修改。
+- 文档：`docs/clients/index.md` 新增「Responses 客户端的两个例外」表（可用 / 丢弃并标注 / 501 三种情形）。
+
 ## [v4.2.1]
 
 > **修复两个生产上真实撞到的问题。** ① 只重建了网关服务的部署，容器会丢掉给 watchtower 的 `enable` 标签，
