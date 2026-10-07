@@ -16,7 +16,7 @@ func TestWatchtowerTracksConfiguredImageOnly(t *testing.T) {
 		{"", "v1.2.3", true},
 	} {
 		t.Setenv("SELFUPDATE_TRACK_TAG", tc.track)
-		if got := WatchtowerTargetAllowed(tc.target); got != tc.want {
+		if got := TrackedTargetAllowed(tc.target); got != tc.want {
 			t.Errorf("%+v got %v", tc, got)
 		}
 	}

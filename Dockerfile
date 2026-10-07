@@ -30,8 +30,12 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates curl \
     && addgroup -S -g 10001 metagateway \
     && adduser -S -D -H -u 10001 -G metagateway metagateway \
-    && install -d -o metagateway -g metagateway -m 0700 /data /data/backups
+    && install -d -o metagateway -g metagateway -m 0700 /data /data/backups /update
 COPY --from=builder /bin/meta-gateway /usr/local/bin/meta-gateway
+# /update is the one-click update's state volume (see tools/compose-updater). It is
+# created here, owned by the runtime user, for the same reason /data is: a fresh
+# named volume inherits the ownership of the image's directory, and without this
+# the gateway would get EACCES writing its update request.
 USER metagateway:metagateway
 WORKDIR /data
 EXPOSE 4100

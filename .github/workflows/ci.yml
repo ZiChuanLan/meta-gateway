@@ -103,6 +103,12 @@ jobs:
           MASTER_KEY: ci-master-key-at-least-32-characters
           METRICS_TOKEN: ci-metrics-token
         run: docker compose config --quiet
+      # The update executor is a shell script, so it needs its own gate: it is the
+      # component that runs `docker compose up` against a real deployment, and a
+      # bug there is only visible after an operator has already clicked update.
+      # The fakes keep it hermetic (no Docker, no network).
+      - name: Compose updater contract
+        run: sh tools/compose-updater/update_test.sh
       - name: Compose E2E
         env:
           ADMIN_TOKEN: ci-admin-token

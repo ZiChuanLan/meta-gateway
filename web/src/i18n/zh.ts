@@ -456,6 +456,12 @@ export const zh: Dict = {
   "updates.backupBeforeApply":
     "点更新会先自动备份数据库（存到 BACKUP_DIR，如 /data/backups）；备份失败或没配 BACKUP_DIR 就不会开始更新。升级不会自动回滚，需要时用这个快照恢复。",
   "updates.backupTaken": "已创建数据库备份：{name}",
+  "updates.modeCompose":
+    "执行器：compose 侧车（{project}）。更新时会重新读取 docker-compose.yml 与 .env，所以环境变量的改动会跟着一起生效。",
+  "updates.modeWatchtower":
+    "执行器：watchtower。它按旧容器的配置重建容器，**环境变量的改动不会生效**（要同步 env 请在宿主机跑一次 docker compose up -d，或换成 compose 侧车）。",
+  "updates.lastFailure": "上一次更新失败（退出码 {code}）",
+  "updates.lastFailureNoLog": "（没有日志）",
   "updates.notNewer":
     "执行器重启后的版本是 {detail}，不比当前运行版本新；该标签可能被指回了旧构建。",
   "updates.applyFailed":

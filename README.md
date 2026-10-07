@@ -120,9 +120,9 @@ curl --fail http://127.0.0.1:4100/readyz
 > docker compose pull meta-gateway && docker compose up -d --no-build --force-recreate meta-gateway
 > ```
 >
-> **从 v3 升到 v4**：点控制台「更新」即可（会先自动备份数据库）；升级后用原管理口令登录，控制台会引导
-> 认领管理员账号。想同时把 `.env` 里新增/修改的变量带进容器，再补做一次上面那条 `docker compose up -d`。
-> 自动轮询默认关闭，要开就设 `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`（大版本会无人值守落地，含数据库迁移）。
+> **升级**：控制台点一下「更新」就行——会先自动备份数据库，然后由 `compose-updater` 侧车在宿主机上跑
+> `docker compose pull` + `docker compose up -d`，所以**镜像和环境变量的改动一起生效**。
+> 从 v3 或任何旧 compose 文件升上来的第一次要手动跑一次上面的 `up -d`（侧车是新增服务，旧文件里没有它）。
 > 详见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
 
 单行 `docker run`、源码构建、AI 一键部署提示词、从 v3 升级到 V4 —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。

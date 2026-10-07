@@ -67,14 +67,16 @@ POST /admin/reset
 | 稳定（`IMAGE_TAG=latest`） | 跟踪正式 Release |
 | Beta（`IMAGE_TAG=beta`） | 跟踪预发布（**不覆盖 `latest`**） |
 
-相关设置：`UPDATE_CHECK_ENABLED`（默认 true）、`GET /admin/update-check` + `POST /admin/update-check/refresh`、`GET /admin/self-update`（`Status` 里带 `tracking_tag` / `tracking_channel`）+ `POST /admin/self-update/apply`。
+相关设置：`UPDATE_CHECK_ENABLED`（默认 true）、`GET /admin/update-check` + `POST /admin/update-check/refresh`、`GET /admin/self-update`（`Status` 里带 `tracking_tag` / `tracking_channel` / `mode` / `last_result`）+ `POST /admin/self-update/apply`。
 **没有渠道切换接口**：控制台改变不了容器跑的标签，换渠道就是改 `.env` 再重建（见[升级与更新渠道](/guide/upgrade)）。
 
 > [!IMPORTANT]
-> **Watchtower 是 HTTP API 模式，默认不轮询。** 官方文档：*“By default, enabling this mode prevents periodic polls”*，
-> 所以要定时自动更新必须显式设 `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`（默认 false，compose 已透传；
-> 只改 `WATCHTOWER_POLL_INTERVAL` 不生效）。默认状态下推完镜像**不会自动上线**，必须显式触发 `/v1/update`。
-> 详见[部署与反代](./deployment)。
+> **一键更新的默认执行器是 `compose-updater` 侧车**（`tools/compose-updater/update.sh`，跑在 `docker:27-cli` 里）：
+> 它持有 socket 与工程目录，点更新时在宿主机跑 `docker compose pull` + `docker compose up -d --no-build --no-deps`。
+> 网关与它只共享一个卷（`request.json` / `result.json` / `.ready`），网关自己看不到 socket。
+> 它**不做定时轮询**，只在点击时执行；要无人值守请自己加 cron（见[升级与更新渠道](/guide/upgrade)）。
+> 为什么不用 watchtower 当默认：它按**旧容器的 inspect 数据**重建容器，`.env` 与 `environment:` 的变更
+> 永远进不了新容器（containrrr/watchtower#233），于是改一次环境变量就要手动 compose 一次。
 
 ## 六、日常维护清单
 

@@ -52,11 +52,13 @@ export function UpdateDialog({
   });
   const status = fresh.data ?? update;
   const notes = (status.notes ?? "").trim();
-  // What the executor can actually install. In watchtower mode it updates one
-  // floating tag, and the console cannot change which tag that is — the tag is
-  // declared in the deployment file. An install that crosses tracks is refused
-  // by the server, so it is prepared for here.
-  const executor = availability?.mode === "watchtower" ? availability : undefined;
+  // What the executor can actually install. A tag-following executor (the
+  // compose updater, or the watchtower companion) installs whatever the
+  // deployment's tag points to at that moment — not the release the console
+  // named — so its tracking fields decide what may be offered. Socket mode can
+  // install a named release, so it is exempt.
+  const tagFollower = availability?.mode === "compose" || availability?.mode === "watchtower";
+  const executor = tagFollower ? availability : undefined;
   const trackedTag = executor?.tracking_tag;
   // The channel the check read, and the tag behind it. Both come from the
   // deployment: the server derives the check's channel from the same tag.
@@ -68,6 +70,13 @@ export function UpdateDialog({
   const trackMismatch = Boolean(
     trackedChannel && status.channel && trackedChannel !== status.channel,
   );
+  // The previous run, when it failed. The executor is a separate container, so
+  // its failure is not this process's error: without this the dialog would show
+  // nothing at all and the version would simply not change.
+  const updaterFailure =
+    availability?.last_result && availability.last_result.exit_code !== 0
+      ? availability.last_result
+      : undefined;
   const lastFailure =
     failure ??
     (!watch && !applyError && availability?.phase === "failed" && availability.error
@@ -99,6 +108,16 @@ export function UpdateDialog({
         ) : null}
         {fresh.isError ? <ErrorState error={fresh.error} retry={() => fresh.refetch()} /> : null}
         {status.error ? <p role="alert">{status.error}</p> : null}
+        {/* A failed run happens in the executor's container, so this process has
+            no error of its own to show; the result file is the only record. */}
+        {updaterFailure ? (
+          <details className="update-last-failure" open>
+            <summary role="alert">
+              {t("updates.lastFailure", { code: updaterFailure.exit_code })}
+            </summary>
+            <pre>{updaterFailure.log || t("updates.lastFailureNoLog")}</pre>
+          </details>
+        ) : null}
         {availability && !availability.available ? (
           <p role="status">{t("updates.manualRequired")}</p>
         ) : null}
@@ -127,6 +146,17 @@ export function UpdateDialog({
               channel: t(trackedChannel === "beta" ? "updates.beta" : "updates.stable"),
             })}
           </p>
+        ) : null}
+        {/* What the executor does with the deployment file — the one difference
+            an operator needs to know: only the compose updater re-reads it, so
+            only it brings env changes along. */}
+        {availability?.mode === "compose" ? (
+          <p className="field-hint">
+            {t("updates.modeCompose", { project: availability.updater_project || "—" })}
+          </p>
+        ) : null}
+        {availability?.mode === "watchtower" ? (
+          <p className="field-hint">{t("updates.modeWatchtower")}</p>
         ) : null}
         {watch ? (
           <div className="update-progress" role="status">

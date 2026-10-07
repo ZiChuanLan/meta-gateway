@@ -1187,14 +1187,30 @@ export interface SelfUpdateStatus {
   available: boolean;
   running: boolean;
   phase: "idle" | "checking" | "pulling" | "starting-successor" | "handoff" | "failed";
-  mode?: "watchtower" | "socket" | "none";
+  /** "compose" is the updater sidecar: it re-reads the deployment file, so env
+   *  changes land with the image. "watchtower" updates the container from its
+   *  own inspect data, so env changes never reach it. "socket" is the gateway
+   *  holding the socket itself. */
+  mode?: "compose" | "watchtower" | "socket" | "none";
   error?: string;
-  /** The floating image tag the watchtower executor updates, when one is set. */
+  /** The floating image tag the executor updates, when one is set. */
   tracking_tag?: string;
   /** Which release channel that tag delivers: "stable", "beta", or "" for a
-   *  pin. In watchtower mode the tag decides what can be installed, not the
-   *  console's channel preference. */
+   *  pin. The tag decides what can be installed, not a console preference. */
   tracking_channel?: "stable" | "beta" | "";
+  /** Where the compose updater runs (its project directory). */
+  updater_project?: string;
+  /** The previous compose-updater run. A failed update otherwise leaves the old
+   *  container running with no explanation anywhere the operator looks. */
+  last_result?: {
+    target?: string;
+    exit_code: number;
+    started_at?: number;
+    finished_at?: number;
+    pull?: string;
+    up?: string;
+    log?: string;
+  };
 }
 
 export interface UpdateCheckStatus {

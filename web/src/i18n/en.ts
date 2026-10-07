@@ -501,6 +501,12 @@ export const en: Dict = {
   "updates.backupBeforeApply":
     "Updating takes a database backup first (into BACKUP_DIR, e.g. /data/backups). If the backup fails, or BACKUP_DIR is not set, the update does not start. Upgrades are not rolled back automatically; restore that snapshot if you need to.",
   "updates.backupTaken": "Database backup created: {name}",
+  "updates.modeCompose":
+    "Executor: compose updater ({project}). It re-reads docker-compose.yml and .env, so environment changes take effect along with the image.",
+  "updates.modeWatchtower":
+    "Executor: watchtower. It recreates the container from the old container's configuration, so **environment changes do not take effect** (run docker compose up -d on the host to sync them, or switch to the compose updater).",
+  "updates.lastFailure": "The last update failed (exit code {code})",
+  "updates.lastFailureNoLog": "(no log)",
   "updates.notNewer":
     "The executor came back as {detail}, which is not newer than the running build; the tag may have been repointed to an older one.",
   "updates.applyFailed":

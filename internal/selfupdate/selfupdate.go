@@ -36,11 +36,14 @@ var (
 	ErrTrackMismatch = errors.New("watchtower_channel_mismatch: set IMAGE_TAG to beta or latest and recreate the container before switching tracks")
 )
 
-// Update mode: watchtower companion (preferred — no socket in the gateway),
-// direct socket handoff, or none (copy-command fallback).
+// Update mode: compose-updater sidecar (preferred — it re-reads the deployment
+// file, so env changes land too), the watchtower companion (no socket in the
+// gateway, but env changes never reach the new container), direct socket
+// handoff, or none (copy-command fallback).
 type Mode string
 
 const (
+	ModeCompose    Mode = "compose"
 	ModeWatchtower Mode = "watchtower"
 	ModeSocket     Mode = "socket"
 	ModeNone       Mode = "none"
@@ -66,6 +69,14 @@ type Status struct {
 	// show the tag it is really asking for.
 	TrackingTag     string `json:"tracking_tag,omitempty"`
 	TrackingChannel string `json:"tracking_channel,omitempty"`
+	// UpdaterProject is where the compose updater runs (its project directory).
+	// It is the one detail an operator needs to verify what an update will
+	// touch, and it comes from the updater's own heartbeat.
+	UpdaterProject string `json:"updater_project,omitempty"`
+	// LastResult is the previous compose-updater run, written by the sidecar.
+	// Without it a failed update leaves the old container running and no
+	// explanation anywhere the operator looks.
+	LastResult *ComposeUpdaterResult `json:"last_result,omitempty"`
 }
 
 // Service runs the one-click update orchestration.
@@ -98,9 +109,13 @@ func (s *Service) socketAvailable() bool {
 	return SocketAvailable(s.socket) && OwnContainerID() != ""
 }
 
-// Mode picks the execution path: the watchtower companion when it is on the
-// compose network, otherwise the direct socket handoff.
+// Mode picks the execution path: the compose updater when its sidecar is
+// sharing the state volume, otherwise the watchtower companion, otherwise the
+// direct socket handoff.
 func (s *Service) Mode() Mode {
+	if ComposeUpdaterAvailable() {
+		return ModeCompose
+	}
 	if WatchtowerReachable() {
 		return ModeWatchtower
 	}
@@ -118,6 +133,16 @@ func (s *Service) Status() Status {
 	// it. On a host where the companion's name does not resolve, that is a DNS
 	// timeout per poll.
 	mode := s.Mode()
+	// Both of these are small files on the shared volume; reading them here keeps
+	// the console's poll the only place that has to know about the protocol.
+	var updaterProject string
+	var lastResult *ComposeUpdaterResult
+	if mode == ModeCompose {
+		updaterProject = ComposeUpdaterProjectDir()
+		if result, ok := ComposeUpdaterLastResult(); ok {
+			lastResult = &result
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.expireLocked()
@@ -141,6 +166,8 @@ func (s *Service) Status() Status {
 		From:            s.from,
 		TrackingTag:     TrackingTag(),
 		TrackingChannel: TrackingChannel(),
+		UpdaterProject:  updaterProject,
+		LastResult:      lastResult,
 	}
 }
 
@@ -191,13 +218,13 @@ func TrackingChannel() string {
 	}
 }
 
-// WatchtowerTargetAllowed reports whether the console may ask the executor for
-// this target.
+// TrackedTargetAllowed reports whether the console may ask a tag-following
+// executor (the compose updater or the watchtower companion) for this target.
 //
-// The executor installs the image behind the tag the container was created with
-// — not the release the console named — so the guard exists to stop the console
-// from promising a build it cannot bring up.
-func WatchtowerTargetAllowed(target string) bool {
+// Both install the image behind the tag the deployment declares — not the release
+// the console named — so the guard exists to stop the console from promising a
+// build it cannot bring up.
+func TrackedTargetAllowed(target string) bool {
 	if !updatecheck.IsReleaseTag(target) {
 		return false
 	}
@@ -248,7 +275,7 @@ func (s *Service) start(target string) error {
 	if mode == ModeNone {
 		return ErrUnavailable
 	}
-	if target != "" && mode == ModeWatchtower && !WatchtowerTargetAllowed(target) {
+	if target != "" && mode != ModeSocket && !TrackedTargetAllowed(target) {
 		return trackMismatch(target)
 	}
 	s.mu.Lock()
@@ -270,6 +297,21 @@ func (s *Service) start(target string) error {
 		return errors.New(message)
 	}
 	s.mu.Unlock()
+	if mode == ModeCompose {
+		go func() {
+			s.setPhase(PhasePulling, "")
+			// The sidecar does the pulling and the recreate; this process only
+			// hands over the request. Its own container is what gets replaced, so
+			// nothing here can report the outcome — the successor reads the
+			// updater's result file instead (Status.LastResult).
+			if err := TriggerComposeUpdater(target, s.from); err != nil {
+				s.fail(fmt.Errorf("compose updater: %w", err))
+				return
+			}
+			s.setPhase(PhaseHandoff, "")
+		}()
+		return nil
+	}
 	if mode == ModeWatchtower {
 		go func() {
 			s.setPhase(PhasePulling, "")

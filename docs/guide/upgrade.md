@@ -38,54 +38,78 @@ docker compose up -d --no-build --no-deps --force-recreate meta-gateway
 > （实测）。所以「从 Beta 切回稳定」在稳定版还没超过你当前版本之前是**做不到**的——这是刻意的安全属性，
 > 不是缺失的功能。
 
-### 两条执行路径，以及为什么“挂了 socket 不一定就生效”
+### 三条执行路径，以及为什么默认是 compose 侧车
 
 `selfupdate.Mode()` 的判定顺序是固定的：
 
 ```go
-if WatchtowerReachable() { return ModeWatchtower }   // ← 先探测伴生服务
-if s.socketAvailable()     { return ModeSocket }
+if ComposeUpdaterAvailable() { return ModeCompose }    // ← 侧车心跳新鲜
+if WatchtowerReachable()     { return ModeWatchtower }  // ← 伴生服务可达
+if s.socketAvailable()       { return ModeSocket }
 return ModeNone
 ```
 
-**Watchtower 优先。** 所以只取消注释 `/var/run/docker.sock` 挂载是**不够的**——只要那个伴生容器
-在 compose 网络里可达，模式就仍然是 `watchtower`（实测：socket 已挂载但 `mode` 仍为 `watchtower`）。
-要进 socket 模式，必须让 watchtower 不可达（停掉并从 compose 里移除）。
+| | **Compose 侧车**（默认） | Watchtower | Socket |
+| :--- | :--- | :--- | :--- |
+| 前提 | `compose-updater` 服务在跑（心跳新鲜） | 伴生容器可达 | socket 已挂载**且**前两者不可用 |
+| 一键更新 | ✅ | ✅ | ✅ |
+| **环境变量同步** | ✅ **重新读 `.env` 与 compose 文件** | ❌ 按旧容器的 inspect 数据重建 | ❌ 同左 |
+| 失败可见 | ✅ 结果与日志尾部写进状态卷 | ❌ 只说“开始了” | 部分 |
+| 谁持有 socket | 侧车容器（网关看不到） | 伴生容器 | **网关自己** |
+| 换渠道 / 装指定版本 | ❌ 跟随部署的 `IMAGE_TAG` | ❌ 同左 | ✅ 可换标签 |
 
-| | Watchtower 模式 | Socket 模式 |
-| :--- | :--- | :--- |
-| 前提 | 伴生容器可达 | socket 已挂载**且** watchtower 不可达 |
-| 一键更新 | ✅ | ✅ |
-| **安装指定版本 / 换渠道** | ❌ 只能更新已配置的标签 | ✅ 拉任意版本，并把新标签写进新容器 |
-| 额外风险 | 无 | **socket ≈ 宿主机 root**，且插件/钩子同进程可达 |
+**为什么不再用 watchtower 做默认：** 它按**旧容器的 inspect 数据**重建容器，所以 `environment:` 与
+`.env` 的变更**永远进不了新容器**。这不是配置问题，是它的设计边界——维护者在被问到时说得直接：
+*"Watchtower works with env vars present in container metadata (like docker inspect _containerId_),
+so it looks like it can't use docker-compose variables"*（containrrr/watchtower#233），后续结论是
+*"outside of the scope of watchtower"*。于是每次改环境变量都得手敲一次 `docker compose up -d`。
+
+`compose-updater` 侧车持有 socket **与工程目录**，点更新时在宿主机上跑的就是那两条命令：
+
+```bash
+docker compose pull meta-gateway
+docker compose up -d --no-build --no-deps meta-gateway
+```
+
+所以镜像与环境变量一起生效，失败时还会把退出码与日志尾部写进状态卷，控制台直接展示。
+
+> [!NOTE]
+> **`docker-compose.yml` 本身的改动仍需要一次人工重建。** `.env` 是配置（自动同步），compose 文件是代码：
+> 当一个版本新增了服务或新增了变量声明（如 v4.0.0 补齐的 32 个变量），要 `git pull` 后跑一次
+> `docker compose up -d`。侧车刻意**不会**替你改部署文件——静默改写别人的部署配置不是“更新镜像”的含义。
+
+| | Compose 侧车模式 | Watchtower 模式 | Socket 模式 |
+| :--- | :--- | :--- | :--- |
+| 前提 | 侧车心跳新鲜 | 伴生容器可达 | socket 已挂载**且**前两者不可用 |
+| 一键更新 | ✅ | ✅ | ✅ |
+| **安装指定版本 / 换渠道** | ❌ 只能更新部署标签 | ❌ 同左 | ✅ 拉任意版本，并把新标签写进新容器 |
+| 额外风险 | 侧车持有 socket（≈ 宿主机 root） | 同左 | **网关进程自己持有 socket**，且插件/钩子同进程可达 |
 
 ### 首次从 v3 升级到 v4
 
-**两条路都可以**，不需要先读文档再动手：
-
-| 方式 | 做了什么 | 什么时候用 |
-| :--- | :--- | :--- |
-| 控制台点「更新」 | 执行器拉取 `IMAGE_TAG` 指向的镜像、重建容器、跑迁移；**动手前自动备份数据库** | 默认选择，日常升级也是它 |
-| `docker compose pull && up -d` | 同上，**并且把 compose 文件里的环境变量一起带进新容器** | 想让 `.env` 里新增/修改的变量生效时（随时补做一次即可） |
+**老部署（v3 时代的 compose 文件）需要一次 `docker compose up -d`**，之后就都交给控制台。原因很具体：
+侧车是**新增的服务**，而旧 compose 文件里没有它，也没有共享的状态卷；同时 v4.0.0 补齐的 32 个环境变量
+也是写在**新** compose 里的。一次重建把这两件事一起解决：
 
 ```bash
 cd /opt/meta-gateway
+git pull --ff-only
 docker compose pull meta-gateway
-docker compose up -d --no-build --no-deps --force-recreate meta-gateway
+docker compose up -d --no-build --force-recreate meta-gateway
+curl -s http://127.0.0.1:4100/healthz          # version 应变成 v4.0.0
 ```
 
-两条路的差别只有一个：**watchtower 不读 compose 文件**（官方 issue #233：它只用容器元数据里的环境变量），
-所以点按钮时新容器**沿用旧容器的环境变量**，而 `docker compose up` 会把 compose 里声明的变量重新应用一遍。
-这不会阻止升级：v4 对每一个新增变量都有代码默认值（已用 v3 部署的实际容器环境实测启动与转发正常）。
+也可以**先点控制台「更新」**（watchtower 路径，会先自动备份数据库），升级完再补上面那条
+`docker compose up -d` 把侧车装上——两种顺序都会得到同一个结果。
+
+升级后的日常更新就是控制台点一下：**镜像与环境变量一起更新**，不需要再碰宿主机。
 
 > [!NOTE]
-> **升级后建议补做一次 `docker compose up -d`**：v3 时代的容器环境里没有 `ADMIN_TOKEN_LOGIN`、
-> `SELFUPDATE_TRACK_TAG`，而 `.env` 里有些变量（如 `HEALTH_SWEEP_*`、`SQLITE_MAX_OPEN_CONNS`）因为
-> 旧版 compose 没传而**从未生效**。补做一次重建就会全部对齐，不需要停服务、也不需要手动备份——
-> 升级前的那次快照已经在 `/data/backups` 里。
+> **升级会自动备份。** 点「更新」时网关会在启动交接**之前**创建并校验一份数据库快照（存在
+> `BACKUP_DIR`，如 `/data/backups`），备份失败或没配 `BACKUP_DIR` 就不开始。所以不要停服、
+> 也不要手动拷数据卷——除非你想在升级前把快照取到宿主机上另存。
 
-大版本会跑数据库迁移（实测 v3.8.6 → v4：108 → 125），**迁移是单向的**，所以无论走哪条路，升级前都会
-先落一份经过校验的数据库快照（备份失败或没配 `BACKUP_DIR` 就不开始）。需要回退时用它恢复：
+大版本会跑数据库迁移（实测 v3.8.6 → v4：108 → 125），**迁移是单向的**。需要回退时用升级前那份快照：
 
 ```bash
 # 列出快照名（控制台「设置 → 备份」也可以看）
@@ -96,19 +120,19 @@ docker compose run --rm meta-gateway restore --from <快照名>
 docker compose up -d --no-build meta-gateway
 ```
 
-### 定时自动更新（可选，默认关闭）
+### 自动更新（没有内置定时器）
 
-watchtower 以 HTTP API 模式运行时**默认不轮询**（官方文档：*“By default, enabling this mode prevents
-periodic polls”*），所以推完镜像不会自己上线。要无人值守自动升级，在 `.env` 里显式打开：
+侧车**只响应点击**，不做任何定时轮询（稳定性优先：无人值守的升级会带着数据库迁移一起落地）。
+要无人值守就自己加一个 cron/systemd timer，内容与侧车一样：
 
 ```bash
-WATCHTOWER_HTTP_API_PERIODIC_POLLS=true
-WATCHTOWER_POLL_INTERVAL=86400    # 秒；默认 24 小时
+cd /opt/meta-gateway && docker compose pull meta-gateway \
+  && docker compose up -d --no-build --no-deps meta-gateway
 ```
 
 > [!WARNING]
-> 自动轮询只能跟随**当前标签**（换渠道仍要改 `.env`），而且**大版本会在无人值守时落地**——包括数据库迁移。
-> 开启前请确认有可用备份与回滚方案。
+> 定时更新只能跟随**当前标签**（换渠道仍要改 `.env`），而且**大版本会在无人值守时落地**——包括数据库迁移。
+> 这条路径也**不会**自动备份（备份是控制台点按钮那一步做的），请自行安排。
 
 ### 已知限制
 

@@ -558,26 +558,30 @@ CI 会跑一遍生成器再 `git diff --exit-code docs/reference`。所以：
 > **排查“网关行为”类问题时注意**：阿里云本机 `127.0.0.1:4100` 那个容器几乎无流量
 > （`proxy_logs` 当天可能只有 4 行），真正的日志在 RN 上。
 
-### 6.1 部署更新：watchtower 是 **HTTP API 模式**，不会自己轮询
+### 6.1 部署更新：默认执行器是 **compose-updater 侧车**
 
-2026-09-29 实测纠正（上一版写“推 latest 就自动更新”）：两台 watchtower 的配置里只有
-`WATCHTOWER_HTTP_API_UPDATE=true` + `WATCHTOWER_HTTP_API_TOKEN`，而且 compose 未映射 8080 端口。
-所以推完镜像**不会自動上线**，必须显式触发（无端口映射 → 只能从宿主机打容器 IP）：
+2026-10-07 变更：**compose 里的 `watchtower` 服务已被 `compose-updater` 取代**（`tools/compose-updater/update.sh`，
+镜像 `docker:27-cli`）。侧车持有 socket 与工程目录，点更新时在宿主机跑 `docker compose pull meta-gateway` +
+`docker compose up -d --no-build --no-deps meta-gateway`，所以**镜像与环境变量一起更新**。
+网关自己看不到 socket；两者只共享 `meta-gateway-update` 卷（`request.json` / `result.json` / `.ready` 心跳）。
+`selfupdate.Mode()` 的顺序：`compose` → `watchtower` → `socket` → `none`（后两者只为兼容旧部署保留）。
 
-> **2026-10-07 修正上一版的归因**：真正的原因不是“没配 interval”，而是 **HTTP API 模式默认禁用轮询**。
-> 官方文档原文：*“By default, enabling this mode prevents periodic polls”*——要轮询必须显式设
-> `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`（默认 `false`），只改 `WATCHTOWER_POLL_INTERVAL` 没用。
-> 2026-10-07 起 compose 把这两个变量作为**可选开关**透传（默认关闭），所以在重建容器前那两台仍是“不轮询”。
+> **为什么必须换掉 watchtower（实测 + 官方证据）**：watchtower 按**旧容器的 inspect 数据**重建容器，
+> 所以 `environment:` / `.env` 的变更**永远不会进入新容器**；官方 issue #233 维护者原话：
+> *“Watchtower works with env vars present in container metadata (like docker inspect _containerId_),
+> so it looks like it can't use docker-compose variables”*，后续结论 *“outside of the scope of watchtower”*。
+> 旧版 compose 的归因（“没配 interval”）是错的：HTTP API 模式默认禁用轮询（*“By default, enabling this mode
+> prevents periodic polls”*），而且即使轮询也同步不了 env。
+
+**升级那两台机器时需要一次人工重建**（侧车是新增服务，旧 compose 文件里没有）：
 
 ```bash
-cd /opt/meta-gateway
-TOKEN=$(grep -m1 '^WATCHTOWER_TOKEN=' .env | cut -d= -f2-); TOKEN=${TOKEN:-meta-gateway-local-update}
-IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' meta-gateway-watchtower)
-curl -H "Authorization: Bearer $TOKEN" http://$IP:8080/v1/update
-curl -s http://127.0.0.1:4100/healthz   # 等到 version 变成新 tag
+cd /opt/meta-gateway && git pull --ff-only
+docker compose pull meta-gateway
+docker compose up -d --no-build --force-recreate meta-gateway   # 装上侧车 + 补齐 32 个变量
 ```
 
-取版本用 `/healthz` 的 `version`/`commit` 字段（例：`{"commit":"aad5039…","status":"ok","version":"v3.8.0"}`）——
+之后日常升级都在控制台点一下（会自动先备份数据库）。取版本用 `/healthz` 的 `version`/`commit`：
 这是判断“哪台跑的是哪个构建”最快的单一信号。
 
 **主机的可达性**（2026-09-29 实测）：RN 从本机经 EasyTier 可达（`ssh -i ~/.ssh/mg_prod_ed25519 root@10.144.144.6`，

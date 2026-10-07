@@ -142,8 +142,12 @@ services:
       WEBDAV_UPLOAD_ENABLED: "${WEBDAV_UPLOAD_ENABLED:-false}"
     volumes:
       - meta-gateway-data:/data
-      # 一键更新（可选，默认关闭）：取消注释后控制台出现「一键更新」按钮。
-      # 注意：Docker 套接字约等于宿主机 root 权限，仅在可信环境启用。
+      # 一键更新的状态卷：与 compose-updater 共享。网关只写 request.json、读
+      # result.json；套接字在侧车那边，不在网关。
+      - meta-gateway-update:/update
+      # 一键更新（可选，另一种做法）：取消注释后由网关自己持有套接字。
+      # 注意：Docker 套接字约等于宿主机 root 权限，仅在可信环境启用；默认路径是
+      # 用下面的 compose-updater 侧车（网关看不到套接字）。
       #
       # 取消注释后**还必须同时配 group_add**（见下方），否则套接字挂进来了也打不开：
       # 容器以 uid 10001 运行，而 socket 属于宿主机的 docker 组，不在该组就是 EACCES，
@@ -151,8 +155,6 @@ services:
       # GID 用 stat -c '%g' /var/run/docker.sock 取（常见 998/999/988）。
       # - /var/run/docker.sock:/var/run/docker.sock
     # group_add: ["${DOCKER_GID:-999}"]  # 仅在启用 socket 一键更新时打开
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:4100/readyz"]
       interval: 10s
@@ -162,30 +164,38 @@ services:
     stop_grace_period: 20s
     restart: unless-stopped
 
-  # 一键更新的执行器（compose 默认网络内，端口不对外发布）。平时完全闲置——
-  # 只在控制台点「一键更新」时被调起：拉取新镜像并重建 meta-gateway 容器。
-  # 不做任何定时自动更新（稳定性优先）。移除：docker compose stop watchtower
-  # && docker compose rm watchtower
-  watchtower:
-    image: containrrr/watchtower
-    container_name: meta-gateway-watchtower
+  # 一键更新的执行器。持有 Docker 套接字与 compose 工程目录，点更新时在宿主机上跑：
+  #
+  #   docker compose pull meta-gateway
+  #   docker compose up -d --no-build --no-deps meta-gateway
+  #
+  # 也就是操作员本来要手敲的两条命令。**重新读部署文件是重点**：`.env` 的值会被重新
+  # 插值，所以改环境变量会和换镜像一起生效，不必再等谁来敲一次命令。
+  #
+  # 为什么不用 watchtower：它按**旧容器的 inspect 数据**重建容器，`environment:`/
+  # `.env` 的变更永远进不了新容器（containrrr/watchtower#233：“it can't use
+  # docker-compose variables”），于是每次改环境变量都要手动 compose up。
+  #
+  # 网关自己看不到套接字；两者只共享 meta-gateway-update 卷（request.json /
+  # result.json / .ready）。不做定时自动更新：只在控制台点「一键更新」时执行。
+  # 移除它：docker compose stop compose-updater && docker compose rm compose-updater
+  # （移除后网关会退回 watchtower / socket 模式，或显示「不可用」）。
+  compose-updater:
+    image: docker:27-cli
+    container_name: meta-gateway-compose-updater
+    working_dir: /work
+    entrypoint: ["/bin/sh", "/work/tools/compose-updater/update.sh"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # 工程目录（只读够用：compose 只读 docker-compose.yml 与 .env）
+      - ./:/work:ro
+      - meta-gateway-update:/update
     environment:
-      WATCHTOWER_HTTP_API_UPDATE: "true"
-      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN:-meta-gateway-local-update}"
-      WATCHTOWER_LABEL_ENABLE: "true"
-      WATCHTOWER_CLEANUP: "true"
-      # 定时自动更新（默认关闭）。HTTP API 模式默认**不轮询**：即使 interval 有默认值，
-      # 只有显式打开 WATCHTOWER_HTTP_API_PERIODIC_POLLS 才会定时拉取镜像
-      # （watchtower docs/http-api-mode.md："By default, enabling this mode prevents
-      # periodic polls"）。打开后只跟随当前 IMAGE_TAG，不能换渠道，且大版本会在无人
-      # 值守时落地（含数据库迁移）——请先确保有备份。
-      WATCHTOWER_HTTP_API_PERIODIC_POLLS: "${WATCHTOWER_HTTP_API_PERIODIC_POLLS:-false}"
-      WATCHTOWER_POLL_INTERVAL: "${WATCHTOWER_POLL_INTERVAL:-86400}"
-      # containrrr/watchtower 停更于 2023，对 Docker 29+ 需要固定 API 版本
-      DOCKER_API_VERSION: "1.44"
+      PROJECT_DIR: "/work"
+      SERVICE: "meta-gateway"
+      STATE_DIR: "/update"
     restart: unless-stopped
 
 volumes:
   meta-gateway-data:
+  meta-gateway-update:

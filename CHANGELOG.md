@@ -6,6 +6,46 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v4.1.0]
+
+> **一键更新从此真的会同步环境变量。** 默认执行器从 watchtower 换成仓库自带的 `compose-updater` 侧车：
+> 它在宿主机上跑 `docker compose pull` + `docker compose up -d --no-build --no-deps`，也就是操作员
+> 本来要手敲的两条命令，所以 `.env` 的改动会跟着镜像一起生效，不再需要“升级后补做一次重建”。
+>
+> **升级到本版需要一次 `docker compose up -d`**：侧车是新增服务，旧 compose 文件里没有它。
+> 之后日常更新都在控制台点一下（会自动先备份数据库）。
+
+### Changed
+
+- **一键更新的默认执行器换成 compose 侧车（`compose-updater`）。** 旧默认是 watchtower，而它按**旧容器的
+  inspect 数据**重建容器，`environment:` 与 `.env` 的变更**永远进不了新容器**——维护者原话：
+  *“Watchtower works with env vars present in container metadata (like docker inspect _containerId_),
+  so it looks like it can't use docker-compose variables”*（containrrr/watchtower#233），后续结论是
+  *“outside of the scope of watchtower”*。结果就是每改一次环境变量都得手敲一次 compose 命令。
+  新侧车（`tools/compose-updater/update.sh`，跑在官方 `docker:27-cli` 镜像里）持有 socket **与工程目录**，
+  点更新时重新读部署文件，所以镜像与环境变量一起生效。
+- **网关与侧车之间没有网络接口，也没有第二个 token。** 两者只共享一个卷（`meta-gateway-update`）：
+  网关写 `request.json`、读 `result.json`，侧车每 30s 刷一次 `.ready` 心跳。心跳是“执行器在不在”的唯一信号——
+  把侧车从 compose 里删掉后，控制台会立刻回到“不可用”而不会安静地什么都不做。
+  网关自己依然看不到 socket（socket 只在侧车里）。
+- **更新失败现在看得见。** 侧车把每一步（`pull` / `up`）的结果、退出码与日志尾部写进 `result.json`，
+  `/admin/self-update` 的 `last_result` 把它带给控制台，弹窗会展开显示。此前失败只发生在执行器容器里，
+  控制台只能看到“版本没变”。
+- **watchtower 从 compose 里删除**（`containrrr/watchtower` 已停更于 2023），代码里的 `watchtower` 模式保留，
+  仅供尚未重建容器的旧部署继续使用；`selfupdate.Mode()` 的顺序变为 `compose` → `watchtower` → `socket` → `none`。
+- **不再提供定时自动更新**：侧车只响应点击。要无人值守请自己加 cron/systemd timer（文档给出了与侧车相同的命令），
+  文档同时写明它不会自动备份、且大版本会带着数据库迁移一起落地。
+
+### Verification
+
+- `tools/compose-updater/update_test.sh` 用假 `docker` 跑真实脚本：心跳写入、请求被取走、成功路径
+  （`exit_code:0`、`pull/up` 均为 `ok`、确实执行了带服务范围的 `up -d --no-build --no-deps`）、
+  失败路径（`exit_code:1`、`up:failed`、日志尾部进入结果）全部断言通过。
+- Go 侧：心跳新鲜度与失效、请求原子写入（无 `.tmp` 残留）、重复点击返回 busy、
+  `last_result` 读取与畸形文件容错、以及 compose 模式下沿用同一条 tag 守卫（`latest` 拒绝预发布）。
+- `docker-compose.yml` 用真实 YAML 解析器验证：服务为 `meta-gateway` + `compose-updater`，
+  共享卷 `meta-gateway-update`，侧车以只读方式挂工程目录，`watchtower` 已不存在。
+
 ## [v4.0.0]
 
 > **v4 正式版。** 自 v3 以来的最大一次改动：账号体系（团队/成员）、成员控制台、页面结构、更新机制。

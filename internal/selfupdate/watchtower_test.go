@@ -61,24 +61,24 @@ func TestTrackMismatchNamesBothSides(t *testing.T) {
 	// The beta channel carries prereleases and the stable releases after them,
 	// so a stable target is allowed there — and only the running-version guard
 	// stops a backwards move.
-	if !WatchtowerTargetAllowed("v4.0.0") {
+	if !TrackedTargetAllowed("v4.0.0") {
 		t.Fatal("beta track rejects a stable release")
 	}
-	if !WatchtowerTargetAllowed("v4.0.0-beta.7") {
+	if !TrackedTargetAllowed("v4.0.0-beta.7") {
 		t.Fatal("beta track rejects a prerelease")
 	}
 	// `latest` never carries a prerelease.
 	t.Setenv("SELFUPDATE_TRACK_TAG", "latest")
-	if WatchtowerTargetAllowed("v4.0.0-beta.7") {
+	if TrackedTargetAllowed("v4.0.0-beta.7") {
 		t.Fatal("latest track accepted a prerelease")
 	}
-	if !WatchtowerTargetAllowed("v4.0.0") {
+	if !TrackedTargetAllowed("v4.0.0") {
 		t.Fatal("latest track rejects a stable release")
 	}
 	// An unset tag is the compose default (`latest`), but an unknown value must
 	// not silently become a channel.
 	t.Setenv("SELFUPDATE_TRACK_TAG", "nightly")
-	if WatchtowerTargetAllowed("v4.0.0") || WatchtowerTargetAllowed("v4.0.0-beta.7") {
+	if TrackedTargetAllowed("v4.0.0") || TrackedTargetAllowed("v4.0.0-beta.7") {
 		t.Fatal("unknown tracking tag accepted a target")
 	}
 }
