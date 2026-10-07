@@ -1,8 +1,10 @@
 # 升级与更新渠道
 
-## V4 Beta
+## V4
 
-V4 当前为预发布，**先备份数据库再试用**。Beta 发布到 GitHub Pre-release 和 `zichuanlan/meta-gateway:beta`，不覆盖稳定版 `latest`。
+**V4 已是正式版**（`zichuanlan/meta-gateway:latest`，GitHub Release 标记 Latest）。升级前建议先备份：
+从控制台点「更新」会**自动创建并校验一份数据库快照**（存到 `BACKUP_DIR`，如 `/data/backups`）。
+Beta 渠道仍然存在，发布到 GitHub Pre-release 与 `zichuanlan/meta-gateway:beta`，不覆盖 `latest`。
 
 ### 登录方式的变化
 

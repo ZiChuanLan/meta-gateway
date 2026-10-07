@@ -13,7 +13,7 @@ Meta Gateway 是自托管的 AI 网关 + 管理控制台：对下游暴露 OpenA
 | 立刻跑起来 | [Docker Compose 部署](./quickstart-docker) |
 | 从源码构建 | [源码构建运行](./quickstart-source) |
 | 让 AI 助手替你部署 | [AI 一键部署](./ai-deploy-prompt) |
-| 升级到 V4 Beta | [升级与更新渠道](./upgrade) |
+| 从 v3 升级到 V4 | [升级与更新渠道](./upgrade) |
 
 ## 核心概念里最容易混淆的两件事
 

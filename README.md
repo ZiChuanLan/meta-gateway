@@ -86,7 +86,7 @@
 # docker-compose.yml
 services:
   meta-gateway:
-    image: zichuanlan/meta-gateway:${IMAGE_TAG:-latest}   # latest = 稳定版；beta = V4 预发布
+      image: zichuanlan/meta-gateway:${IMAGE_TAG:-latest}   # latest = 正式版；beta = 预发布
     container_name: meta-gateway
     restart: unless-stopped
     ports:
@@ -112,7 +112,7 @@ curl --fail http://127.0.0.1:4100/readyz
 > **`MASTER_KEY` 必须随数据库一起备份、一起迁移。** 换一个 `MASTER_KEY` 打开同一个库，所有已存凭据都解不开。
 
 > [!NOTE]
-> **`:latest` 是稳定版；`:beta` 是预发布（当前 `v4.0.0-beta.7`）。渠道由部署的 `IMAGE_TAG` 决定**：控制台只读展示它，
+> **`:latest` 是稳定版（当前 `v4.0.0`）；`:beta` 是预发布。渠道由部署的 `IMAGE_TAG` 决定**：控制台只读展示它，
 > 不提供切换（它改变不了容器跑的标签）。换渠道就是改 `.env` 并重建，**也不支持自动降级**：
 >
 > ```bash
@@ -120,11 +120,12 @@ curl --fail http://127.0.0.1:4100/readyz
 > docker compose pull meta-gateway && docker compose up -d --no-build --force-recreate meta-gateway
 > ```
 >
-> 从 v3 升到 v4 的**第一次**要走一次这条命令（v3 没有渠道概念，且容器环境变量只能靠 compose 重建更新）；
-> 之后日常升级用控制台的一键更新即可。自动轮询默认关闭，要开就设 `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`
-> （大版本会无人值守落地，含数据库迁移）。详见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
+> **从 v3 升到 v4**：点控制台「更新」即可（会先自动备份数据库）；升级后用原管理口令登录，控制台会引导
+> 认领管理员账号。想同时把 `.env` 里新增/修改的变量带进容器，再补做一次上面那条 `docker compose up -d`。
+> 自动轮询默认关闭，要开就设 `WATCHTOWER_HTTP_API_PERIODIC_POLLS=true`（大版本会无人值守落地，含数据库迁移）。
+> 详见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
 
-单行 `docker run`、源码构建、AI 一键部署提示词、升级到 V4 Beta —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。
+单行 `docker run`、源码构建、AI 一键部署提示词、从 v3 升级到 V4 —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。
 
 ## 接入
 
