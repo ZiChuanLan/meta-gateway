@@ -1,5 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -38,6 +46,14 @@ function renderApp(initialEntries: string[] = ["/"]) {
 
 /** Mirrors `basename` in main.tsx — the console is served under /console. */
 const BASENAME = "/console";
+
+// The shell mounts every page through a dynamic import, so the first assertion
+// after a render waits on a chunk rather than on the app. Testing Library's 1s
+// default is enough on an idle machine and not enough when 88 files run in
+// parallel: this file failed with "Unable to find role=heading" while the same
+// test passed alone. The wait is raised here, per file, instead of globally —
+// a global timeout would also hide a genuine hang everywhere else.
+configure({ asyncUtilTimeout: 5000 });
 
 function LocationProbe() {
   const location = useLocation();

@@ -33,7 +33,10 @@ export function quotaPercent(used: number, total: number): number {
 export function QuotaBar({ percent, label }: { percent: number; label?: string }) {
   return (
     <span className="quota-bar" role={label ? "img" : undefined} aria-label={label}>
-      <span className={`quota-bar-fill is-${quotaLevel(percent)}`} style={{ width: `${percent}%` }} />
+      <span
+        className={`quota-bar-fill is-${quotaLevel(percent)}`}
+        style={{ width: `${percent}%` }}
+      />
     </span>
   );
 }

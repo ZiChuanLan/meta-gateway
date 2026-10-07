@@ -138,7 +138,10 @@ export function KeyCard({
  * the reader do the subtraction. Falls back to the raw date when the stamp is
  * unparseable rather than inventing an age.
  */
-function relative(value: string, t: (key: string, vars?: Record<string, string | number>) => string) {
+function relative(
+  value: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   const at = new Date(value).getTime();
   if (!Number.isFinite(at)) return value;
   const minutes = Math.floor((Date.now() - at) / 60_000);

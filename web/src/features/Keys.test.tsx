@@ -574,8 +574,7 @@ describe("Keys page", () => {
         } as never,
       ],
       discoveredModels: async () => [],
-      usageSummary: async () =>
-        ({ request_count: 0, total_tokens: 0, total_cost: 0 }) as never,
+      usageSummary: async () => ({ request_count: 0, total_tokens: 0, total_cost: 0 }) as never,
       routeOverviews: async () => [],
       routeGroups: async () => ({ groups: [] }),
       modelMetadata: async () => ({ items: [] }),

@@ -95,11 +95,13 @@ export function ModelsWorkspace({
   const items = useMemo(() => query.data ?? [], [query.data]);
   const arrangedModels = useMemo(() => new Set(arranged.data?.models ?? []), [arranged.data]);
   const statsByModel = useMemo(
-    () => new Map<string, MemberModelStat>((stats.data?.models ?? []).map((row) => [row.model, row])),
+    () =>
+      new Map<string, MemberModelStat>((stats.data?.models ?? []).map((row) => [row.model, row])),
     [stats.data],
   );
   const healthByModel = useMemo(
-    () => new Map<string, MemberModelAvailability>((health.data ?? []).map((row) => [row.model, row])),
+    () =>
+      new Map<string, MemberModelAvailability>((health.data ?? []).map((row) => [row.model, row])),
     [health.data],
   );
   const totals = useMemo(() => {

@@ -37,23 +37,23 @@ export function QuotaMeters({
     },
     { key: "cost", total: totalCost, used: usedCost, format: (v: number) => `$${v.toFixed(2)}` },
   ].filter((budget) => budget.total > 0);
- 	const body = (
-		<span className="quota-meters">
-			{budgets.length === 0 ? (
-				<span className="quota-unlimited">{t("unlimited")}</span>
-			) : (
-				budgets.map((budget) => (
-					<QuotaMeter
-						key={budget.key}
-						used={budget.used}
-						total={budget.total}
-						format={budget.format}
-						percentLabel={(percent) => t("quotaUsedPercent", { percent })}
-					/>
-				))
-			)}
-		</span>
-	);
+  const body = (
+    <span className="quota-meters">
+      {budgets.length === 0 ? (
+        <span className="quota-unlimited">{t("unlimited")}</span>
+      ) : (
+        budgets.map((budget) => (
+          <QuotaMeter
+            key={budget.key}
+            used={budget.used}
+            total={budget.total}
+            format={budget.format}
+            percentLabel={(percent) => t("quotaUsedPercent", { percent })}
+          />
+        ))
+      )}
+    </span>
+  );
   if (!onEdit) return body;
   return (
     <button className="quota-meters-button" onClick={onEdit} title={t("editQuota")}>

@@ -817,94 +817,97 @@ export function KeysView({
                 </div>
               ) : (
                 <DataTable
-                headers={[
-                  t("common.name"),
-                  ...(caps.scopes ? [t("keys.accessCol")] : []),
-                  ...(caps.quotas ? [t("keys.quotaCol")] : []),
-                  ...(caps.pricing ? [t("keys.costCol")] : []),
-                  t("common.status"),
-                  t("common.created"),
-                  t("common.actions"),
-                ]}
-              >
-                {pageRows.map((k) => (
-                  <tr
-                    key={k.id}
-                    tabIndex={0}
-                    onContextMenu={(event) => {
-                      const point = rowContextPoint(event);
-                      if (point) setContextMenu({ id: k.id, ...point });
-                    }}
-                    onKeyDown={(event) => {
-                      const point = rowKeyboardContextPoint(event);
-                      if (point) setContextMenu({ id: k.id, ...point });
-                    }}
-                  >
-                    <td>
-                      <strong>{k.name}</strong>
-                      <small>#{k.id}</small>
-                      {showTeam && k.user_id ? (
-                        <small>{t("keys.userOwner", { id: k.user_id })}</small>
-                      ) : null}
-                    </td>
-                    {caps.scopes ? <td>{k.scopes?.trim() || "relay"}</td> : null}
-                    {caps.quotas ? (
+                  headers={[
+                    t("common.name"),
+                    ...(caps.scopes ? [t("keys.accessCol")] : []),
+                    ...(caps.quotas ? [t("keys.quotaCol")] : []),
+                    ...(caps.pricing ? [t("keys.costCol")] : []),
+                    t("common.status"),
+                    t("common.created"),
+                    t("common.actions"),
+                  ]}
+                >
+                  {pageRows.map((k) => (
+                    <tr
+                      key={k.id}
+                      tabIndex={0}
+                      onContextMenu={(event) => {
+                        const point = rowContextPoint(event);
+                        if (point) setContextMenu({ id: k.id, ...point });
+                      }}
+                      onKeyDown={(event) => {
+                        const point = rowKeyboardContextPoint(event);
+                        if (point) setContextMenu({ id: k.id, ...point });
+                      }}
+                    >
                       <td>
-                        <div className="quota-cell">
-                          <code>{formatQuota(k.quota_used_tokens, k.quota_total_tokens)}</code>
-                          {k.quota_total_tokens && k.quota_total_tokens > 0 ? (
-                            <QuotaBar
-                              percent={quotaPercent(k.quota_used_tokens ?? 0, k.quota_total_tokens)}
-                            />
-                          ) : null}
-                          {/* The money budget appears only when it is set: an unlimited key
-                would otherwise grow a meaningless "0 / 0" line. */}
-                          {(k.quota_total_cost ?? 0) > 0 ? (
-                            <small>
-                              {formatCost(k.quota_used_cost ?? 0)} /{" "}
-                              {formatCost(k.quota_total_cost ?? 0)}
-                            </small>
-                          ) : null}
-                        </div>
+                        <strong>{k.name}</strong>
+                        <small>#{k.id}</small>
+                        {showTeam && k.user_id ? (
+                          <small>{t("keys.userOwner", { id: k.user_id })}</small>
+                        ) : null}
                       </td>
-                    ) : null}
-                    {caps.pricing ? <td>{formatCost(k.cost)}</td> : null}
-                    <td>
-                      {caps.edit ? (
-                        <EnabledSwitch
-                          on={k.enabled}
-                          name={k.name}
-                          pending={update.isPending && update.variables?.id === k.id}
-                          onToggle={() =>
-                            update.mutate({ id: k.id, body: { enabled: !k.enabled } })
-                          }
+                      {caps.scopes ? <td>{k.scopes?.trim() || "relay"}</td> : null}
+                      {caps.quotas ? (
+                        <td>
+                          <div className="quota-cell">
+                            <code>{formatQuota(k.quota_used_tokens, k.quota_total_tokens)}</code>
+                            {k.quota_total_tokens && k.quota_total_tokens > 0 ? (
+                              <QuotaBar
+                                percent={quotaPercent(
+                                  k.quota_used_tokens ?? 0,
+                                  k.quota_total_tokens,
+                                )}
+                              />
+                            ) : null}
+                            {/* The money budget appears only when it is set: an unlimited key
+                would otherwise grow a meaningless "0 / 0" line. */}
+                            {(k.quota_total_cost ?? 0) > 0 ? (
+                              <small>
+                                {formatCost(k.quota_used_cost ?? 0)} /{" "}
+                                {formatCost(k.quota_total_cost ?? 0)}
+                              </small>
+                            ) : null}
+                          </div>
+                        </td>
+                      ) : null}
+                      {caps.pricing ? <td>{formatCost(k.cost)}</td> : null}
+                      <td>
+                        {caps.edit ? (
+                          <EnabledSwitch
+                            on={k.enabled}
+                            name={k.name}
+                            pending={update.isPending && update.variables?.id === k.id}
+                            onToggle={() =>
+                              update.mutate({ id: k.id, body: { enabled: !k.enabled } })
+                            }
+                          />
+                        ) : (
+                          <StatusBadge value={k.enabled} />
+                        )}
+                      </td>
+                      <td>{formatDate(k.created_at)}</td>
+                      <td className="actions key-row-actions">
+                        {caps.reveal && (k.has_token || k.id === rotatedToken?.id) && (
+                          <IconButton
+                            className="is-bare"
+                            label={t("keys.view")}
+                            disabled={reveal.pendingId === k.id}
+                            onClick={() => viewKey(k)}
+                          >
+                            <Eye size={14} />
+                          </IconButton>
+                        )}
+                        <ActionMenu
+                          compact
+                          label={t("common.moreActions")}
+                          title={k.name}
+                          items={keyActions(k)}
                         />
-                      ) : (
-                        <StatusBadge value={k.enabled} />
-                      )}
-                    </td>
-                    <td>{formatDate(k.created_at)}</td>
-                    <td className="actions key-row-actions">
-                      {caps.reveal && (k.has_token || k.id === rotatedToken?.id) && (
-                        <IconButton
-                          className="is-bare"
-                          label={t("keys.view")}
-                          disabled={reveal.pendingId === k.id}
-                          onClick={() => viewKey(k)}
-                        >
-                          <Eye size={14} />
-                        </IconButton>
-                      )}
-                      <ActionMenu
-                        compact
-                        label={t("common.moreActions")}
-                        title={k.name}
-                        items={keyActions(k)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </DataTable>
+                      </td>
+                    </tr>
+                  ))}
+                </DataTable>
               )}
             </ListShell>
           </EntityState>

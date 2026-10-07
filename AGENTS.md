@@ -46,16 +46,32 @@ npm run build          # tsc -b && vite build
 
 ### 完整交付前的质量门（全绿才算完成，少跑一项就可能被 CI 挡下）
 
+**照抄 `ci.yml` 的 Verify 步骤，不要凭记忆减项：**
+
 ```bash
-cd web && npm run lint && npx tsc -b && npx vitest run && npm run build && cd ..
-gofmt -l . && go vet ./... && go build ./... && go test ./...
+cd web && npm run lint && npm run format:check && npm run audit:entrypoints \
+  && npm run typecheck && npm test -- --run && npm run build && cd ..
+
+test -z "$(gofmt -l .)"
 go run ./tools/docsgen && git diff --exit-code docs/reference   # 文档与代码一致
+go vet ./... && go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+test -z "$(go run golang.org/x/tools/cmd/deadcode@v0.49.0 -test ./...)"
+go build -trimpath ./cmd/server && go test ./... && go test -race -timeout 20m ./...
+docker compose config --quiet   # 再跑 Compose E2E（见 ci.yml 第 11 步）
 ```
 
-> **`npm run lint` 别省。** CI 的 Verify 步骤是 `npm run lint && npm run typecheck && npm test -- --run
-> && npm run build`，一条 eslint **error**（例如测试文件里没被用到的 `within` 导入）就能让 CI 全红；
-> 而 `release.yml` 的 `wait-for-ci` 会因此**拒绝发布**（tag 推上去了，镜像不会发）。2026-09-24 的
-> v3.5.0 就是在推送前补跑 lint 时才拦下这条 —— 更早的清单里没有它，而 tsc / vitest 都不会报未使用的导入。
+> **2026-10-07 实测：这份清单少两项，直接把 master 推红了。** 本文早先写的 web 段落是
+> `lint && tsc -b && vitest run && build`，而 `ci.yml` 的 `Verify Web Admin` 实际是
+> `lint && format:check && audit:entrypoints && typecheck && test -- --run && build`。
+> 少了 **`format:check`（Prettier）** 与 **`audit:entrypoints`**：前者挂了——Prettier 采用后
+> （2026-10-06 `b804f54`）新写的 6 个文件未经 `--write`，本地 lint/tsc/vitest 全绿、CI 第一步就红；
+> 而 `release.yml` 的 `wait-for-ci` 会因此**拒绝为这个 tag 构建镜像**。
+>
+> **`npm run lint` 同样别省。** 一条 eslint **error**（例如测试文件里没被用到的 `within` 导入）就能让 CI 全红，
+> 而 tsc / vitest 都不会报未使用的导入；2026-09-24 的 v3.5.0 就是在推送前补跑 lint 时才拦下这条。
+>
+> CI 的 Verify 是**串行**的：web 步骤红了，后面的 gofmt / docsgen / vet / staticcheck / deadcode /
+> test / race / build / compose 全部 `skipped`——也就是说「本地跑过 go 测试」不等于「CI 的 go 步骤过了」。
 
 > Windows / 沙箱环境注意：`vite build` 默认 `emptyOutDir: true`，会先删掉旧的 `dist/`（含数十个
 > 带 hash 的 chunk）。在带批量删除护栏的沙箱里，这一步有两种表现，**都是同一个根因、都要提权重跑**：
