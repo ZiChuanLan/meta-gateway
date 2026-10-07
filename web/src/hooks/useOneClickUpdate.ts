@@ -15,6 +15,10 @@ export interface UpdateFailure {
 }
 const STORAGE = "meta-gateway.update-watch";
 const BUDGET = 16 * 60_000;
+// How long an executor may take before the console stops assuming it is merely
+// slow. A watchtower pull plus recreate is seconds; minutes means something is
+// wrong, and the operator should be told while the task is still open.
+const STALL_AFTER = 3 * 60_000;
 function readWatch(): UpdateWatch | null {
   try {
     const value = JSON.parse(
@@ -47,6 +51,12 @@ export function useOneClickUpdate() {
   const service = useMemo(() => (client ? api(client) : null), [client]);
   const [watch, setWatch] = useState<UpdateWatch | null>(readWatch);
   const [failure, setFailure] = useState<UpdateFailure | null>(null);
+  // Set when the executor has had time to do its job and the running build has
+  // not moved. A silent wait is the worst outcome here: watchtower can accept
+  // the request and scan nothing (a container that lost its enable label), and
+  // the operator would sit in front of "updating…" for the full 16-minute budget
+  // with nothing to act on. Observed in production on 2026-10-07.
+  const [stalled, setStalled] = useState(false);
   const resumed = useRef(false);
   const status = useQuery({
     queryKey: ["self-update"],
@@ -123,6 +133,7 @@ export function useOneClickUpdate() {
         finish("");
         return;
       }
+      if (Date.now() - watch.startedAt >= STALL_AFTER) setStalled(true);
       controller = new AbortController();
       const timeout = setTimeout(() => controller?.abort(), 5000);
       try {
@@ -171,5 +182,5 @@ export function useOneClickUpdate() {
       controller?.abort();
     };
   }, [service, watch]);
-  return { watch, failure, apply, availability: status.data };
+  return { watch, failure, apply, stalled, availability: status.data };
 }

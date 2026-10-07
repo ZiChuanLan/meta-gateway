@@ -155,6 +155,12 @@ services:
       # GID 用 stat -c '%g' /var/run/docker.sock 取（常见 998/999/988）。
       # - /var/run/docker.sock:/var/run/docker.sock
     # group_add: ["${DOCKER_GID:-999}"]  # 仅在启用 socket 一键更新时打开
+    # 这个标签是给 **watchtower** 的（旧部署可能还在跑它）。新部署用的是 compose-updater
+    # 侧车，不读它；但一个只重建了本服务、没停 watchtower 的部署，重建后容器会丢掉这个
+    # 标签，watchtower 就变成“扫到 0 个容器”，点更新悄无声息地什么都不做
+    # （2026-10-07 实测：watchtower 日志 Scanned=0 Updated=0）。留着它没坏处。
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:4100/readyz"]
       interval: 10s

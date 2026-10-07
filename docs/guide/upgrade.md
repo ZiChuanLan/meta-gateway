@@ -95,13 +95,19 @@ docker compose up -d --no-build --no-deps meta-gateway
 cd /opt/meta-gateway
 git pull --ff-only
 docker compose pull meta-gateway
-docker compose up -d --no-build --force-recreate meta-gateway
-curl -s http://127.0.0.1:4100/healthz          # version 应变成 v4.0.0
+docker compose up -d --no-build --force-recreate
+curl -s http://127.0.0.1:4100/healthz          # version 应变成 v4.x
 ```
+
+> [!IMPORTANT]
+> **不要写成 `docker compose up -d meta-gateway`。** 带上服务名只会重建那一个服务：新增的
+> `compose-updater` 侧车**不会启动**，而旧容器会丢掉给 watchtower 的 `enable` 标签——于是 watchtower
+> 变成“扫到 0 个容器”，点更新什么都没发生、界面却一直显示“正在更新…”（2026-10-07 实测）。
+> 不带服务名的 `up -d` 会启动侧车，并顺手清掉已经从 compose 文件里删掉的 watchtower 容器。
+> 跑完用 `docker compose ps` 确认 `meta-gateway` 与 `compose-updater` 都在。
 
 也可以**先点控制台「更新」**（watchtower 路径，会先自动备份数据库），升级完再补上面那条
 `docker compose up -d` 把侧车装上——两种顺序都会得到同一个结果。
-
 > [!NOTE]
 > **控制台会自己提醒这一步。** 网关能看出自己的环境变量是否来自当前部署文件（看容器里有没有
 > `SELFUPDATE_TRACK_TAG` 这个由 compose 声明的标记，或者侧车在不在）：两者都没有就说明升级只换了镜像、

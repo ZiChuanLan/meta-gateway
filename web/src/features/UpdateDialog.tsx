@@ -37,7 +37,7 @@ export function UpdateDialog({
   const { t } = useI18n();
   const { client } = useSession();
   const service = client ? api(client) : null;
-  const { watch, apply, failure, availability } = useOneClickUpdate();
+  const { watch, apply, failure, stalled, availability } = useOneClickUpdate();
   const [applyError, setApplyError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
   const [backup, setBackup] = useState<string | undefined>(undefined);
@@ -170,6 +170,13 @@ export function UpdateDialog({
               {backup ? (
                 <p className="update-progress-backup">
                   {t("updates.backupTaken", { name: backup })}
+                </p>
+              ) : null}
+              {/* Past the point where a healthy executor would have finished:
+                  name what to check instead of waiting out the budget. */}
+              {stalled ? (
+                <p className="update-progress-stalled" role="alert">
+                  {t("updates.stalled", { version: status.current || "—" })}
                 </p>
               ) : null}
             </div>

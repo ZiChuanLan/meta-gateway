@@ -501,6 +501,8 @@ export const en: Dict = {
   "updates.backupBeforeApply":
     "Updating takes a database backup first (into BACKUP_DIR, e.g. /data/backups). If the backup fails, or BACKUP_DIR is not set, the update does not start. Upgrades are not rolled back automatically; restore that snapshot if you need to.",
   "updates.backupTaken": "Database backup created: {name}",
+  "updates.stalled":
+    "The executor has not replaced the container yet (still running {version}). Usual causes: it cannot see this container (watchtower needs the container's enable label), or the image tag does not point at the target release yet. Run docker compose up -d (without a service name) on the host to align it, then check for updates again.",
   "updates.modeCompose":
     "Executor: compose updater ({project}). It re-reads docker-compose.yml and .env, so environment changes take effect along with the image.",
   "updates.modeWatchtower":

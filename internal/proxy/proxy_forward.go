@@ -168,6 +168,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 	stickyStore := s.sticky.Load()
 	var last *relay.Result
 	var lastMeta *AttemptMeta
+	// responsesRefusal records why the Responses→chat fallback could not be
+	// built. It is only used at the very end: when every channel answered 404 to
+	// a native /v1/responses, the client needs this reason instead of the
+	// upstream's "404 page not found".
+	var responsesRefusal error
 	retrySafe := retrySafeRequest(req)
 	// Route-level retry overrides tune the round counts (retry_times /
 	// channel_retry_times) but cannot re-enable cross-channel failover when
@@ -486,6 +491,15 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 					result != nil && result.Err == nil &&
 					(result.StatusCode == http.StatusNotFound || result.StatusCode == http.StatusMethodNotAllowed) {
 					translated, translateErr := adapters.ResponsesToChat(requestSource)
+					if translateErr != nil {
+						// Stored conversation, background execution or non-function tools:
+						// this request needs a native Responses upstream and the one we
+						// just tried does not have it. Keep the upstream's 404 driving the
+						// failover walk, but remember why so the client is not told
+						// "404 page not found" when nothing else can serve it either.
+						responsesRefusal = translateErr
+						log.Printf("proxy: responses fallback refused (request_id=%s): %v", req.RequestID, translateErr)
+					}
 					if prompt := strings.TrimSpace(candidate.Channel.SystemPrompt); prompt != "" && translateErr == nil {
 						translated = injectSystemPrompt(translated, prompt)
 					}
@@ -865,6 +879,23 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		}
 	}
 	if last != nil {
+		// A Responses client whose request cannot be expressed as a chat
+		// completion (stored conversation, non-function tools) has no fallback
+		// path: the upstream has no native /v1/responses surface, so all we hold
+		// is its 404. Passing that through tells the client nothing — "404 page
+		// not found" reads as "this gateway has no Responses endpoint" — while
+		// the real reason is a capability the request needs. The routing decision
+		// above is untouched (the 404 still drove the walk); only the final
+		// message changes, and only when every channel said the same thing.
+		if responsesRefusal != nil && last.StatusCode == http.StatusNotFound {
+			if last.Body != nil {
+				_ = last.Body.Close()
+			}
+			return preserve(&relay.Result{
+				StatusCode: adapterErrorStatus(responsesRefusal, http.StatusNotImplemented),
+				Err:        responsesRefusal,
+			}), lastMeta
+		}
 		return last, lastMeta
 	}
 	return &relay.Result{Err: routing.ErrNoEligible}, lastMeta

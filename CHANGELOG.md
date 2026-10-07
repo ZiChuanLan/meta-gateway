@@ -6,6 +6,36 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v4.2.1]
+
+> **修复两个生产上真实撞到的问题。** ① 只重建了网关服务的部署，容器会丢掉给 watchtower 的 `enable` 标签，
+> 于是点「更新」什么都没发生、界面却一直显示“正在更新…”；② Responses 客户端拿到上游的 `404 page not found`，
+> 而真正的原因（该请求需要原生 Responses 上游）从未告诉它。
+
+### Fixed
+
+- **一键更新不再静默地什么都不做。** 2026-10-07 实测：某部署按文档只重建了 `meta-gateway` 服务
+  （`docker compose up -d meta-gateway`），于是 ① 新增的 `compose-updater` 侧车没启动；② 容器丢掉了
+  `com.centurylinklabs.watchtower.enable` 标签——watchtower 日志 `Scanned=0 Updated=0`，点更新无任何效果，
+  而控制台只能等满 16 分钟。三处修正：
+  - compose 把该标签**加回**网关服务（新部署用侧车、不读它；但只重建本服务的旧部署靠它活着），
+    并在注释里写明这个陷阱；
+  - 文档里的首次升级命令改为**不带服务名**的 `docker compose up -d --no-build --force-recreate`，
+    并说明带服务名会导致侧车不启动、watchtower 变盲；
+  - 控制台在 3 分钟没有任何版本变化时直接给出原因与处理办法（不再只是“正在更新…”）。
+- **Responses 请求失败时给出真实原因。** `POST /v1/responses` 在无原生 Responses 上游的渠道上会先试原生端点
+  （404），再回退为 chat/completions。但需要原生上游的请求（`previous_response_id` 续聊、`background`、
+  非 function 工具）**无法**翻译，此前网关会把上游的 `404 page not found` 原样透给客户端——客户端只会理解为
+  “这个网关没有 Responses 端点”并每 2 秒重试一次（生产实测）。现在这类请求返回 **501** 并带上网关自己的原因
+  （`unsupported_feature`），路由/故障转移决策不变（404 仍然照旧驱动选路，只有最终消息换了）。
+
+### Verification
+
+- 新增 `TestResponsesRefusalReplacesTheUpstreamNotFound`：上游对 `/responses` 返回 404、且**不得**被回退调用，
+  客户端拿到 501 与网关原因（而不是 `page not found`）；既有的 Responses 回退用例（JSON + SSE、参数与计费保真）
+  继续通过。
+- 侧车与标签修正：`docker compose config` 仍有效（CI 会跑），compose 的 YAML 已用真实解析器校验。
+
 ## [v4.2.0]
 
 > **控制台会主动告诉你还差哪一步。** v4.1.0 把「一键更新同步环境变量」做成了默认，但那个能力需要部署文件

@@ -9,6 +9,53 @@ import (
 	"testing"
 )
 
+// A Responses request that needs a native upstream (stored conversation, or
+// tools that are not functions) cannot be replayed as a chat completion. The
+// channel has no /v1/responses surface, so all the gateway holds is the
+// upstream's 404 — and passing that through is worse than useless: the client
+// reads "404 page not found" as "this gateway has no Responses endpoint" and
+// retries forever (production, 2026-10-07: a client retried every 2s). The
+// gateway has to say what it actually knows.
+func TestResponsesRefusalReplacesTheUpstreamNotFound(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/responses") {
+			http.Error(w, "not supported", http.StatusNotFound)
+			return
+		}
+		t.Fatalf("the fallback must not run for a refused request, got %s", r.URL.Path)
+	}))
+	defer upstream.Close()
+	base, token, _, _ := setupImageRelayWithStore(t, upstream.URL, "public")
+
+	payload := map[string]any{
+		"model":                "public",
+		"previous_response_id": "resp_123",
+		"input":                []map[string]any{{"role": "user", "content": "hello"}},
+	}
+	raw, _ := json.Marshal(payload)
+	req, _ := http.NewRequest(http.MethodPost, base+"/v1/responses", strings.NewReader(string(raw)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		t.Fatalf("status=404 body=%s: the upstream's page-not-found was passed through", body)
+	}
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("status=%d body=%s, want 501 for an unsupported feature", resp.StatusCode, body)
+	}
+	// The console's error catalog owns the wording; what matters here is that the
+	// client is told the gateway could not serve it, not that a page was missing.
+	if !strings.Contains(string(body), "not supported") || strings.Contains(string(body), "page not found") {
+		t.Fatalf("body=%s, want the gateway's own reason", body)
+	}
+}
+
 func TestResponsesHTTPFallbackPreservesArgumentsAndUsage(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		name := "json"

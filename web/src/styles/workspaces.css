@@ -535,6 +535,17 @@
 .update-progress strong { display: block; margin-bottom: 4px; font-size: 13.5px; }
 .update-progress p { margin: 0; font-size: 12px; color: var(--muted-strong); }
 .update-progress-backup { margin-top: 6px !important; font-variant-numeric: tabular-nums; }
+/* Shown when a healthy executor would already have finished: the wait is not a
+   progress indicator any more, it is a symptom. */
+.update-progress-stalled {
+  margin-top: 8px !important;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--warning-surface, rgba(232, 185, 62, 0.14));
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
 /* A failed run happens in the executor's own container, so the console shows its
    recorded log rather than an error of its own. */
 .update-last-failure { margin: 0; font-size: 12px; }
