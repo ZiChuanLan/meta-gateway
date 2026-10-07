@@ -6,6 +6,35 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v4.2.0]
+
+> **控制台会主动告诉你还差哪一步。** v4.1.0 把「一键更新同步环境变量」做成了默认，但那个能力需要部署文件
+> 被重新读一次才存在；没做过那一步的部署（包括刚从 v3/v4.0.0 升上来的），登录后会看到一次性提示与
+> 要执行的命令，执行完提示自己消失。
+
+### Added
+
+- **`GET /admin/self-update` 新增 `deployment_step`，控制台据此弹出一次性提示。** 判据是一个**标记变量**
+  而不是 diff：`docker compose` 在创建容器时会应用它声明的每一个变量，所以容器里有
+  `SELFUPDATE_TRACK_TAG`（compose 第 25 行，值取 `IMAGE_TAG`）就说明它是被当前部署文件创建的；
+  没有就说明升级只换了镜像、compose 文件从未被重新读，因此自那次重建后新增的变量（以及 v4.1.0 新增的
+  `compose-updater` 侧车）都还没生效。**侧车心跳也算证据**（手写 compose 或把标记变量留空时，只要侧车在跑就
+  说明文件已经应用过，不该再让人重建）。提示带一条可复制的一行命令（`git pull --ff-only && docker compose
+  pull … && docker compose up -d --no-build --force-recreate meta-gateway`），可以在本次浏览器会话里“稍后”。
+  执行后标记出现，提示**自行退场**，所以不需要在服务端存“已读”——不需要加迁移。
+- 非容器部署（无 `HOSTNAME`）不会弹这个提示：那种环境没有 compose 文件可应用。
+- **`docker run` 部署的例外已在文档里说清**：它们没有 compose 文件，环境就是启动参数本身，所以“待生效的改动”
+  根本不存在。提示的文案直接说明这一点（“不是用 compose 部署的可以忽略”），同时
+  `docs/guide/quickstart-docker.md` 的单行 `docker run` 示例现在带上 `SELFUPDATE_TRACK_TAG`，
+  照示例部署就不会看到这个提示（它同时让更新弹窗显示正确的渠道）。
+
+### Verification
+
+- Go：`DeploymentStep()` 在无标记且在容器内时返回 `compose_recreate`，有标记时为空，侧车心跳新鲜时为空，
+  非容器时为空。
+- 前端：提示在 `deployment_step` 存在时渲染出真实命令；环境已对齐（字段缺失）时不渲染；
+  “稍后”只静默本次会话；上一个提示（认领管理员账号）未结束时不会叠着弹。
+
 ## [v4.1.0]
 
 > **一键更新从此真的会同步环境变量。** 默认执行器从 watchtower 换成仓库自带的 `compose-updater` 侧车：

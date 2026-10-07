@@ -1,4 +1,5 @@
 import { OperatorUpgradePrompt } from "./features/OperatorProfilePanel";
+import { DeploymentStepPrompt } from "./features/DeploymentStepPrompt";
 import {
   ArrowLeft,
   ArrowRight,
@@ -1098,6 +1099,9 @@ function AuthenticatedShell({
   return (
     <>
       <OperatorUpgradePrompt onReady={setOperatorPromptReady} />
+      {/* Gated on the claim prompt so the two dialogs never stack: the account
+          comes first, then the deployment file. */}
+      <DeploymentStepPrompt enabled={operatorPromptReady} />
       <ConsoleShell
         appearance={appearance}
         sections={navSections}

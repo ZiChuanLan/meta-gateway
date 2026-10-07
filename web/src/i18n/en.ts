@@ -504,9 +504,17 @@ export const en: Dict = {
   "updates.modeCompose":
     "Executor: compose updater ({project}). It re-reads docker-compose.yml and .env, so environment changes take effect along with the image.",
   "updates.modeWatchtower":
-    "Executor: watchtower. It recreates the container from the old container's configuration, so **environment changes do not take effect** (run docker compose up -d on the host to sync them, or switch to the compose updater).",
+    "Executor: watchtower. It recreates the container from the old container's configuration, so environment changes do not take effect (run docker compose up -d on the host to sync them, or switch to the compose updater).",
   "updates.lastFailure": "The last update failed (exit code {code})",
   "updates.lastFailureNoLog": "(no log)",
+  "deploy.stepTitle": "One step left: apply the deployment file",
+  "deploy.stepWhy":
+    "The upgrade replaced the image but never re-read docker-compose.yml, so this container still has the environment it was created with: variables you added to .env are not in effect yet (and a deployment upgraded before v4.1.0 has no compose-updater sidecar either). Run the command below in your deploy directory.",
+  "deploy.stepNote":
+    "Once is enough. The notice disappears by itself afterwards. If you do not deploy with compose (docker run, for example), it does not apply to you: your environment is exactly the flags you started with, so nothing is pending. If the notice does not disappear, the container still has the old environment — check that docker-compose.yml was really recreated.",
+  "deploy.stepCopy": "Copy command",
+  "deploy.stepCopied": "Copied",
+  "deploy.stepLater": "Later",
   "updates.notNewer":
     "The executor came back as {detail}, which is not newer than the running build; the tag may have been repointed to an older one.",
   "updates.applyFailed":

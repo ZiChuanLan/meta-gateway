@@ -38,10 +38,17 @@ docker run -d --name meta-gateway \
   -p 4100:4100 \
   -e ADMIN_TOKEN=your-secure-admin-token \
   -e MASTER_KEY=your-32-char-encryption-key-here!! \
+  -e SELFUPDATE_TRACK_TAG=latest \
   -v ./data:/data \
   --restart unless-stopped \
   zichuanlan/meta-gateway:latest
 ```
+
+> [!NOTE]
+> **`SELFUPDATE_TRACK_TAG` 是你要跟踪的镜像标签（这里 = `latest` 正式版，预发布用 `beta`）。** 它有两个作用：
+> 控制台的更新弹窗会按它显示“当前跟随哪个渠道”，而且网关靠它判断“这个容器的环境变量是不是它本来该有的”。
+> 用 `docker run` 部署时它不会自动存在，**建议带上**；否则控制台会误以为你还没应用部署文件而弹一次提示
+> （提示可以“稍后”关掉，不影响使用）。
 
 ## 三个必填项
 

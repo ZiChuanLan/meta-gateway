@@ -36,6 +36,49 @@ func writeHeartbeat(t *testing.T, dir string, age time.Duration) {
 	}
 }
 
+// An upgrade through the console replaces the image but never re-reads the
+// deployment file, so the container ends up with the old environment (and without
+// the compose-updater sidecar). The console has to say so: the alternative is an
+// operator who never learns that the variables they added to .env are inert.
+func TestDeploymentStepFollowsTheMarker(t *testing.T) {
+	t.Setenv("HOSTNAME", "c0ffee123456")
+	// No sidecar sharing the state volume, so the marker variable is the only
+	// evidence available in these cases.
+	withUpdaterDir(t)
+
+	t.Setenv("SELFUPDATE_TRACK_TAG", "")
+	if got := DeploymentStep(); got != "compose_recreate" {
+		t.Fatalf("step=%q without the marker, want compose_recreate", got)
+	}
+
+	// The marker is present exactly when compose created this container from a
+	// file that declares it — which is also when the environment is aligned.
+	t.Setenv("SELFUPDATE_TRACK_TAG", "latest")
+	if got := DeploymentStep(); got != "" {
+		t.Fatalf("step=%q with the marker, want empty", got)
+	}
+
+	// Not in a container: there is no compose file to apply.
+	t.Setenv("HOSTNAME", "")
+	t.Setenv("SELFUPDATE_TRACK_TAG", "")
+	if got := DeploymentStep(); got != "" {
+		t.Fatalf("step=%q outside a container, want empty", got)
+	}
+}
+
+// A deployment whose file has the updater service has applied its file, even if
+// the marker variable is missing (a hand-written compose file, say). Asking it to
+// apply the file again would be wrong.
+func TestDeploymentStepAcceptsTheSidecarAsEvidence(t *testing.T) {
+	t.Setenv("HOSTNAME", "c0ffee123456")
+	t.Setenv("SELFUPDATE_TRACK_TAG", "")
+	dir := withUpdaterDir(t)
+	writeHeartbeat(t, dir, 0)
+	if got := DeploymentStep(); got != "" {
+		t.Fatalf("step=%q with a live sidecar, want empty", got)
+	}
+}
+
 func TestComposeUpdaterAvailabilityFollowsTheHeartbeat(t *testing.T) {
 	dir := withUpdaterDir(t)
 

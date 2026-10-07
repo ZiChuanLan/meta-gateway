@@ -459,9 +459,17 @@ export const zh: Dict = {
   "updates.modeCompose":
     "执行器：compose 侧车（{project}）。更新时会重新读取 docker-compose.yml 与 .env，所以环境变量的改动会跟着一起生效。",
   "updates.modeWatchtower":
-    "执行器：watchtower。它按旧容器的配置重建容器，**环境变量的改动不会生效**（要同步 env 请在宿主机跑一次 docker compose up -d，或换成 compose 侧车）。",
+    "执行器：watchtower。它按旧容器的配置重建容器，环境变量的改动不会生效（要同步 env 请在宿主机跑一次 docker compose up -d，或换成 compose 侧车）。",
   "updates.lastFailure": "上一次更新失败（退出码 {code}）",
   "updates.lastFailureNoLog": "（没有日志）",
+  "deploy.stepTitle": "还差一步：应用部署文件",
+  "deploy.stepWhy":
+    "升级只换了镜像，没有重新读取 docker-compose.yml。所以这个容器还在用上一次重建时的环境变量：你在 .env 里新加的变量还没生效（v4.1.0 之前升级的部署也还没有 compose-updater 侧车）。在部署目录里执行下面这一条就好。",
+  "deploy.stepNote":
+    "只需一次。执行后这个提示会自己消失；如果你不是用 compose 部署的（比如 docker run），这条不适用——你的环境变量就是启动参数里的那些，没有“待生效”的改动，可以忽略。若提示没有消失，说明容器还是旧环境，检查一下 docker-compose.yml 是否真的被重建了。",
+  "deploy.stepCopy": "复制命令",
+  "deploy.stepCopied": "已复制",
+  "deploy.stepLater": "稍后",
   "updates.notNewer":
     "执行器重启后的版本是 {detail}，不比当前运行版本新；该标签可能被指回了旧构建。",
   "updates.applyFailed":

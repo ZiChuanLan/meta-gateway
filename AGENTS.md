@@ -581,7 +581,10 @@ docker compose pull meta-gateway
 docker compose up -d --no-build --force-recreate meta-gateway   # 装上侧车 + 补齐 32 个变量
 ```
 
-之后日常升级都在控制台点一下（会自动先备份数据库）。取版本用 `/healthz` 的 `version`/`commit`：
+之后日常升级都在控制台点一下（会自动先备份数据库）。**没做过那次重建的部署，控制台会弹提示**：
+`GET /admin/self-update` 的 `deployment_step` 非空 = “这个容器的环境早于部署文件”（判据是 compose 声明的
+`SELFUPDATE_TRACK_TAG` 在不在；侧车心跳也算证据），前端据此弹出一次性提示 + 要跑的命令，执行完自动消失。
+取版本用 `/healthz` 的 `version`/`commit`：
 这是判断“哪台跑的是哪个构建”最快的单一信号。
 
 **主机的可达性**（2026-09-29 实测）：RN 从本机经 EasyTier 可达（`ssh -i ~/.ssh/mg_prod_ed25519 root@10.144.144.6`，

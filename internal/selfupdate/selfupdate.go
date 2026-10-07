@@ -73,6 +73,10 @@ type Status struct {
 	// It is the one detail an operator needs to verify what an update will
 	// touch, and it comes from the updater's own heartbeat.
 	UpdaterProject string `json:"updater_project,omitempty"`
+	// DeploymentStep is non-empty when this container's environment predates the
+	// deployment file, so the console can show the one command that fixes it
+	// instead of leaving the operator to find out from the docs.
+	DeploymentStep string `json:"deployment_step,omitempty"`
 	// LastResult is the previous compose-updater run, written by the sidecar.
 	// Without it a failed update leaves the old container running and no
 	// explanation anywhere the operator looks.
@@ -166,6 +170,7 @@ func (s *Service) Status() Status {
 		From:            s.from,
 		TrackingTag:     TrackingTag(),
 		TrackingChannel: TrackingChannel(),
+		DeploymentStep:  DeploymentStep(),
 		UpdaterProject:  updaterProject,
 		LastResult:      lastResult,
 	}
@@ -203,6 +208,34 @@ func (s *Service) Start() error { return s.start("") }
 
 // TrackingTag is deployment-declared for Watchtower, which cannot change tags.
 func TrackingTag() string { return strings.TrimSpace(os.Getenv("SELFUPDATE_TRACK_TAG")) }
+
+// DeploymentStep names the one-time action this container still needs, when its
+// environment predates the deployment file. It is empty when there is nothing to
+// do.
+//
+// The check is a marker variable rather than a diff: docker compose applies every
+// variable it declares when it creates a container, so a container created from a
+// compose file that declares SELFUPDATE_TRACK_TAG carries that file's whole
+// environment, and a container without it was created by an older file (or by
+// docker run). That is exactly the state a deployment lands in after an upgrade
+// through the console: the executor replaced the image, the compose file was
+// never re-read, so the variables added since — and the compose-updater sidecar
+// itself — are still missing. Applying the file once fixes it and this notice
+// retires itself, which is why it needs no dismissal stored on the server.
+//
+// The sidecar's heartbeat is accepted as evidence too: a deployment that
+// recreated the container from a file with the updater service but without the
+// marker (a hand-written compose file, or an explicitly emptied variable) has
+// already applied its file, and telling it to apply it again would be wrong.
+func DeploymentStep() string {
+	if OwnContainerID() == "" {
+		return ""
+	}
+	if TrackingTag() != "" || ComposeUpdaterAvailable() {
+		return ""
+	}
+	return "compose_recreate"
+}
 
 // TrackingChannel maps the tracked tag to the release channel it delivers:
 // "latest" carries stable releases, "beta" carries prereleases. A pinned tag

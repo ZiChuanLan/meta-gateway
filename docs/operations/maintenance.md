@@ -77,6 +77,10 @@ POST /admin/reset
 > 它**不做定时轮询**，只在点击时执行；要无人值守请自己加 cron（见[升级与更新渠道](/guide/upgrade)）。
 > 为什么不用 watchtower 当默认：它按**旧容器的 inspect 数据**重建容器，`.env` 与 `environment:` 的变更
 > 永远进不了新容器（containrrr/watchtower#233），于是改一次环境变量就要手动 compose 一次。
+>
+> **没做那一次重建的部署，控制台会弹提示。** `Status.DeploymentStep` 非空即意味着“这个容器的环境
+> 早于部署文件”（判据是 `SELFUPDATE_TRACK_TAG` 这个 compose 声明的标记在不在），控制台据此弹出一次性
+> 提示并给出要跑的命令；执行完标记出现，提示自动消失。
 
 ## 六、日常维护清单
 

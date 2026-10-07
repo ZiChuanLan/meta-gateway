@@ -1200,6 +1200,9 @@ export interface SelfUpdateStatus {
   tracking_channel?: "stable" | "beta" | "";
   /** Where the compose updater runs (its project directory). */
   updater_project?: string;
+  /** Non-empty when this container's environment predates the deployment file:
+   *  the console shows the one command that fixes it. Empty means aligned. */
+  deployment_step?: "compose_recreate";
   /** The previous compose-updater run. A failed update otherwise leaves the old
    *  container running with no explanation anywhere the operator looks. */
   last_result?: {
