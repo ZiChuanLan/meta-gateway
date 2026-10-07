@@ -27,6 +27,11 @@ services:
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_TOKEN: "${ADMIN_TOKEN:?ADMIN_TOKEN is required}"
       ADMIN_TOKENS: "${ADMIN_TOKENS:-}"
+      # The documented lock-out rescue (ADMIN_TOKEN_LOGIN=break-glass) was not
+      # wired into the container at all: the variable existed in the docs but had
+      # no way in, so a deployment that had claimed its owner account could not
+      # use the rescue it was told about.
+      ADMIN_TOKEN_LOGIN: "${ADMIN_TOKEN_LOGIN:-}"
       MASTER_KEY: "${MASTER_KEY:?MASTER_KEY is required}"
       METRICS_TOKEN: "${METRICS_TOKEN:?METRICS_TOKEN is required}"
       EXCHANGE_ALLOW_SECRET_EXPORT: "${EXCHANGE_ALLOW_SECRET_EXPORT:-true}"
