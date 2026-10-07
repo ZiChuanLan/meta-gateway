@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/domain"
@@ -326,11 +327,11 @@ func TestFailedCollectionProducesNoVerdictAndNoAction(t *testing.T) {
 	// directly, and `null.filter` is exactly how an empty state crashes a view
 	// that every data-filled test passes. (sites is non-empty here — the
 	// configured site is listed even when its collection failed.)
-	encoded, err := json.Marshal(Report{Policy: report.Policy, GeneratedAt: report.GeneratedAt, Rows: []Row{}, Unmatched: []Unmatched{}, Sites: report.Sites})
+	encoded, err := json.Marshal(Report{Policy: report.Policy, GeneratedAt: report.GeneratedAt, Rows: []Row{}, Unmatched: []Unmatched{}, NameOnly: []NameOnly{}, Sites: report.Sites})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	for _, field := range []string{"\"rows\":[]", "\"unmatched\":[]"} {
+	for _, field := range []string{"\"rows\":[]", "\"unmatched\":[]", "\"name_only\":[]"} {
 		if !strings.Contains(string(encoded), field) {
 			t.Fatalf("report JSON = %s, want %s (null array breaks the console)", encoded, field)
 		}
@@ -347,6 +348,122 @@ func TestFailedCollectionProducesNoVerdictAndNoAction(t *testing.T) {
 	}
 	if site.ProbeLastError == "" {
 		t.Fatal("the site row must surface the collection error")
+	}
+}
+
+// A route whose members live on one site must not produce rows for another site
+// that merely publishes a model with the same name.
+//
+// The match index is a name index: site B publishing "deepseek-v4-flash" matches
+// route STRRX because a member of STRRX — on site A — maps that upstream name.
+// That is a candidate, not a reading: site B has no member on STRRX, so there is
+// nothing to judge, disable or price. Before this split the report emitted a row
+// anyway, titled with the route name; in production 31 of 47 rows were like that
+// and 15 of them shared one route name, so the whole table read as one model.
+func TestNameOnlyMatchesAreCandidatesNotRows(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer db.Close()
+
+	// Site A owns the member that maps the upstream name.
+	siteA, err := db.Site.Create(&domain.Site{Name: "A", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelA, err := db.Channel.Create(&domain.Channel{SiteID: &siteA, Name: "A-key", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "STRRX", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberID, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: channelA, Enabled: true, MappingJSON: `{"real":"deepseek-v4-flash"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Site B publishes the same upstream name and has no member on that route.
+	siteB, err := db.Site.Create(&domain.Site{Name: "B", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Channel.Create(&domain.Channel{SiteID: &siteB, Name: "B-key", Status: domain.StatusEnabled}); err != nil {
+		t.Fatal(err)
+	}
+	runB, err := db.CreateSiteProbeRun(siteB, SourceNewAPI, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.InsertSiteProbeSamples([]store.SiteProbeSample{{
+		RunID: runB, SiteID: siteB, MonitorName: "deepseek-v4-flash", RawModel: "deepseek-v4-flash",
+		ObservedAt: time.Now(), Samples: 10, UpCount: 3, Ratio: 0.3,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	// Only a finished, successful round is evidence: the report reads samples
+	// through a join on the run's status, so an open round is invisible.
+	if err := db.FinishSiteProbeRun(runB, store.SiteProbeRunOK, 1, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := NewService(db, nil, nil).Report(DefaultPolicy())
+	if err != nil {
+		t.Fatalf("report: %v", err)
+	}
+
+	for _, row := range report.Rows {
+		if row.SiteID == siteB {
+			t.Fatalf("site B got a row for %q with %d members; a site that serves nothing must not be judged", row.Route, len(row.Members))
+		}
+	}
+	attached := false
+	for _, row := range report.Rows {
+		if row.SiteID == siteA && row.Route == "STRRX" {
+			attached = true
+			if len(row.Members) != 1 || row.Members[0].MemberID != memberID {
+				t.Fatalf("site A row members = %+v, want the one member", row.Members)
+			}
+		}
+	}
+	if !attached {
+		t.Fatal("site A lost the row for its own member")
+	}
+
+	if len(report.NameOnly) != 1 {
+		t.Fatalf("name-only candidates = %+v, want exactly the site B collision", report.NameOnly)
+	}
+	candidate := report.NameOnly[0]
+	if candidate.SiteID != siteB || candidate.Route != "STRRX" || candidate.RawModel != "deepseek-v4-flash" {
+		t.Fatalf("candidate = %+v, want site B / deepseek-v4-flash -> STRRX", candidate)
+	}
+	if candidate.Match != MatchMemberReal {
+		t.Fatalf("candidate match = %q, want %q", candidate.Match, MatchMemberReal)
+	}
+	// The site's own reading travels with the candidate: it is why an operator
+	// might attach a member at all.
+	if candidate.Samples != 10 || candidate.Ratio != 0.3 {
+		t.Fatalf("candidate reading = %d samples at %v", candidate.Samples, candidate.Ratio)
+	}
+
+	// And a candidate is never acted on: applying must leave the member alone.
+	actions, err := NewService(db, nil, nil).Apply(context.Background(), ApplyRequest{DryRun: false})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(actions) != 0 {
+		t.Fatalf("actions = %+v, want none for a name-only candidate", actions)
+	}
+	member, err := db.RouteMember.GetByID(memberID)
+	if err != nil || member == nil {
+		t.Fatalf("load member: %v", err)
+	}
+	if member.AutoDisabled {
+		t.Fatal("a candidate disabled the member on another site")
 	}
 }
 

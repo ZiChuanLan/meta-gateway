@@ -206,6 +206,29 @@ type Unmatched struct {
 	Price     *store.SiteProbePrice `json:"price,omitempty"`
 }
 
+// NameOnly is a model a site publishes whose name matches one of our routes,
+// but that route has no member on this site.
+//
+// It exists because the alternative is a lie: the match index is a name index,
+// so a site publishing "kimi-k3" matches whichever route has a member mapping
+// that name — even when that member lives on a different site. Emitting a Row
+// for it produced rows with no members, which carry a verdict nobody can act on
+// and hide the model the site actually publishes (2026-10-07: 31 of 47 rows in
+// production were like this, and 15 of them shared one route name, so every one
+// of them read as the same model). A candidate is honest: here is a model this
+// site sells that we could attach a member to.
+type NameOnly struct {
+	SiteID    int64                 `json:"site_id"`
+	SiteName  string                `json:"site_name"`
+	RawModel  string                `json:"raw_model"`
+	Route     string                `json:"route"`
+	Match     string                `json:"match"`
+	GroupName string                `json:"group_name,omitempty"`
+	Ratio     float64               `json:"ratio"`
+	Samples   int                   `json:"samples"`
+	Price     *store.SiteProbePrice `json:"price,omitempty"`
+}
+
 // SiteStatus is the collection state of one site, for the tool's site list.
 type SiteStatus struct {
 	SiteID       int64      `json:"site_id"`
@@ -230,6 +253,7 @@ type Report struct {
 	Policy      Policy       `json:"policy"`
 	Rows        []Row        `json:"rows"`
 	Unmatched   []Unmatched  `json:"unmatched"`
+	NameOnly    []NameOnly   `json:"name_only"`
 	Sites       []SiteStatus `json:"sites"`
 	GeneratedAt time.Time    `json:"generated_at"`
 }
@@ -478,9 +502,10 @@ func (s *Service) Report(policy Policy) (*Report, error) {
 	// first real empty view.
 	report := &Report{
 		Policy: policy, GeneratedAt: now,
-		Rows: []Row{}, Unmatched: []Unmatched{}, Sites: []SiteStatus{},
+		Rows: []Row{}, Unmatched: []Unmatched{}, NameOnly: []NameOnly{}, Sites: []SiteStatus{},
 	}
 	seenUnmatched := make(map[string]bool)
+	seenNameOnly := make(map[string]bool)
 	for _, site := range sites {
 		status := SiteStatus{
 			SiteID: site.ID, SiteName: site.Name, Kind: site.ProbeSourceKind,
@@ -498,7 +523,16 @@ func (s *Service) Report(policy Policy) (*Report, error) {
 		}
 		report.Sites = append(report.Sites, status)
 
-		for _, row := range s.rowsForSite(site, samplesBySite[site.ID], resolver, traffic, external, catalog, policy, now) {
+		rows, candidates := s.rowsForSite(site, samplesBySite[site.ID], resolver, traffic, external, catalog, policy, now)
+		for _, candidate := range candidates {
+			key := fmt.Sprintf("%d/%s/%s", site.ID, candidate.RawModel, candidate.Route)
+			if seenNameOnly[key] {
+				continue
+			}
+			seenNameOnly[key] = true
+			report.NameOnly = append(report.NameOnly, candidate)
+		}
+		for _, row := range rows {
 			if row.Route == "" {
 				key := fmt.Sprintf("%d/%s", site.ID, row.RawModel)
 				if !seenUnmatched[key] {
@@ -530,11 +564,27 @@ func (s *Service) Report(policy Policy) (*Report, error) {
 		}
 		return report.Unmatched[i].RawModel < report.Unmatched[j].RawModel
 	})
+	sort.Slice(report.NameOnly, func(i, j int) bool {
+		if report.NameOnly[i].SiteName != report.NameOnly[j].SiteName {
+			return report.NameOnly[i].SiteName < report.NameOnly[j].SiteName
+		}
+		if report.NameOnly[i].RawModel != report.NameOnly[j].RawModel {
+			return report.NameOnly[i].RawModel < report.NameOnly[j].RawModel
+		}
+		return report.NameOnly[i].Route < report.NameOnly[j].Route
+	})
 	return report, nil
 }
 
-// rowsForSite folds one site's samples into per-model rows (newest round first).
-func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample, resolver *Resolver, traffic map[string]store.TrafficStat, external map[string]ExternalReading, catalog map[string]adapters.PriceQuote, policy Policy, now time.Time) []Row {
+// rowsForSite folds one site's samples into per-model rows (newest round first),
+// plus the candidates it publishes for routes that have no member here.
+//
+// The split is the point: a row is something an operator can act on (it has
+// members on this site), a candidate is a name that happens to collide with one
+// of our routes. Mixing them produced rows whose members list was empty — a
+// verdict nothing could act on, titled with the route name, so every such row
+// looked like the same model.
+func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample, resolver *Resolver, traffic map[string]store.TrafficStat, external map[string]ExternalReading, catalog map[string]adapters.PriceQuote, policy Policy, now time.Time) ([]Row, []NameOnly) {
 	type bucket struct {
 		rawModel  string
 		groupName string
@@ -558,6 +608,7 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 		})
 	}
 	rows := make([]Row, 0, len(order))
+	candidates := make([]NameOnly, 0, len(order))
 	for _, key := range order {
 		entry := byModel[key]
 		// A site lists the bare upstream name while our catalog names each alias
@@ -568,15 +619,33 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 		if len(matches) == 0 {
 			matches = []ModelMatch{{}}
 		}
+		observed := observablePrice(entry.rawModel, entry.rounds)
 		for _, match := range matches {
+			members := resolver.MembersFor(match.Route, site.ID)
+			// A match by name with no member on this site is not something this
+			// site serves for us: report the published model as a candidate and
+			// leave the routing table alone. (The second pass below covers the
+			// other direction — routes we do serve here with nothing published.)
+			if match.Route != "" && len(members) == 0 {
+				reading := Round{}
+				if len(entry.rounds) > 0 {
+					reading = entry.rounds[0]
+				}
+				candidates = append(candidates, NameOnly{
+					SiteID: site.ID, SiteName: site.Name, RawModel: entry.rawModel,
+					Route: match.Route, Match: match.Kind, GroupName: entry.groupName,
+					Ratio: reading.Ratio, Samples: reading.Samples, Price: reading.Price,
+				})
+				continue
+			}
 			row := Row{
 				Route: match.Route, Match: match.Kind, RawModel: entry.rawModel,
 				SiteID: site.ID, SiteName: site.Name, GroupName: entry.groupName,
 				Rounds: entry.rounds, Members: []MemberState{}, SourceKind: site.ProbeSourceKind,
-				ObservedPrice: observablePrice(entry.rawModel, entry.rounds),
+				ObservedPrice: observed,
 			}
 			row.PriceOnly = readingsArePriceOnly(entry.rounds)
-			for _, member := range resolver.MembersFor(match.Route, site.ID) {
+			for _, member := range members {
 				row.Members = append(row.Members, MemberState{
 					MemberID: member.MemberID, ChannelID: member.ChannelID, ChannelName: member.ChannelName,
 					GroupName: member.GroupName, Enabled: member.Enabled, AutoDisabled: member.AutoDisabled,
@@ -628,7 +697,7 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 		row.Verdict, row.LowStreak, row.OKStreak, row.AvailabilitySource = evaluate(policy, nil, row.Traffic, row.External, now)
 		rows = append(rows, row)
 	}
-	return rows
+	return rows, candidates
 }
 
 // observablePrice normalizes the newest published price into a quote, or nil
