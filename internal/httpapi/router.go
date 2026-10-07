@@ -49,20 +49,23 @@ import (
 )
 
 type Dependencies struct {
-	Registry          *adapters.Registry
-	CheckinService    *checkin.Service
-	CheckinScheduler  *checkin.Scheduler
-	DiscoveryService  *discovery.Service
-	ExchangeService   *exchange.Service
-	PluginService     *plugins.Service
-	OutboundClient    *http.Client
-	Logger            *slog.Logger
-	Metrics           *observability.Registry
-	State             *observability.State
-	BackupService     *backup.Service
-	WebDAVService     *webdavsync.Service
-	RuntimeController *runtimeconfig.Controller
-	SetAuditRetention func(days, rows int)
+	Registry         *adapters.Registry
+	CheckinService   *checkin.Service
+	CheckinScheduler *checkin.Scheduler
+	DiscoveryService *discovery.Service
+	ExchangeService  *exchange.Service
+	PluginService    *plugins.Service
+	OutboundClient   *http.Client
+	// OutboundImageClient is the client for the image endpoints (longer
+	// response-header ceiling). nil = reuse OutboundClient.
+	OutboundImageClient *http.Client
+	Logger              *slog.Logger
+	Metrics             *observability.Registry
+	State               *observability.State
+	BackupService       *backup.Service
+	WebDAVService       *webdavsync.Service
+	RuntimeController   *runtimeconfig.Controller
+	SetAuditRetention   func(days, rows int)
 }
 
 // New creates a fully wired chi.Router.
@@ -104,6 +107,17 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	if outboundClient == nil {
 		outboundClient = outbound.NewClient(outboundPolicy, outbound.ClientOptions{
 			ResponseHeaderTimeout: cfg.OutboundResponseHeaderTimeout,
+			TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
+		})
+	}
+	// A second client with the image ceiling: image edits are non-idempotent (so
+	// they are never retried) and slow by nature, which made the shared 60s
+	// header timeout the only thing standing between a working upstream and a
+	// 502 (production, 2026-10-07).
+	imageClient := dependencies.OutboundImageClient
+	if imageClient == nil {
+		imageClient = outbound.NewClient(outboundPolicy, outbound.ClientOptions{
+			ResponseHeaderTimeout: cfg.OutboundImageHeaderTimeout,
 			TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
 		})
 	}
@@ -269,6 +283,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	stickyStore := routing.NewStickyStore(stickyTTL, nil)
 	selector.SetSticky(stickyStore, cfg.StickyEnabled)
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
+	proxyService.SetImageRelay(relay.NewWithClient(imageClient))
 	proxyService.SetAdapterRegistry(registry)
 	proxyService.SetCredentialRefresher(checkinService)
 	proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)

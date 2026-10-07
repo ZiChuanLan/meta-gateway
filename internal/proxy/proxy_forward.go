@@ -479,17 +479,31 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				if proxyURL := strings.TrimSpace(candidate.Channel.ProxyURL); proxyURL != "" {
 					fwdCtx = outbound.WithChannelProxy(fwdCtx, proxyURL)
 				}
-				// (gate slot is held at the channel-attempt level, above the retry
-				// loops — see the Acquire/releaseGate pair near the meta setup)
-				result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, upstreamURL, headers, requestBody)
 				// Responses passthrough fallback: an OpenAI-compatible channel that
 				// lacks a native /v1/responses surface answers 404/405 (endpoint
 				// missing). Replay ONCE with the request pivoted to chat/completions;
 				// the pair's Response/Stream modes below convert the upstream
 				// answer back to the Responses contract.
+				//
+				// A channel that already told us it has no native surface skips the
+				// probe entirely: sending the body to an endpoint we know is missing
+				// costs a full upload and a round-trip on every request, and the
+				// answer is the same 404 the fallback exists to absorb.
+				// (gate slot is held at the channel-attempt level, above the retry
+				// loops — see the Acquire/releaseGate pair near the meta setup)
+				nativeAttempted := true
+				if responsesPassthroughFallback && s.nativeResponsesUnsupported(candidate.Channel.ID) {
+					nativeAttempted = false
+					result = &relay.Result{StatusCode: http.StatusNotFound}
+				} else {
+					result = s.upstreamFor(req.OpenAIPath).ForwardWithHeaders(fwdCtx, req.Method, upstreamURL, headers, requestBody)
+				}
 				if responsesPassthroughFallback && !responsesFallbackTried &&
 					result != nil && result.Err == nil &&
 					(result.StatusCode == http.StatusNotFound || result.StatusCode == http.StatusMethodNotAllowed) {
+					if nativeAttempted {
+						s.markNativeResponsesUnsupported(candidate.Channel.ID)
+					}
 					translated, droppedTools, translateErr := adapters.ResponsesToChatReport(requestSource)
 					if translateErr != nil {
 						// Stored conversation, background execution or a forced tool that
@@ -524,7 +538,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 							// The pivoted replay is the endpoint that answers the client from
 							// here on: log and echo THAT url, not the /responses one that 404'd.
 							req.UpstreamURLActual = adapters.SafeURL(chatURL)
-							result = s.relay.ForwardWithHeaders(fwdCtx, req.Method, chatURL, headers, translated)
+							result = s.upstreamFor(req.OpenAIPath).ForwardWithHeaders(fwdCtx, req.Method, chatURL, headers, translated)
 							if result != nil && len(droppedTools) > 0 {
 								if result.Header == nil {
 									result.Header = http.Header{}

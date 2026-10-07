@@ -64,6 +64,9 @@ type Config struct {
 	OutboundConnectTimeout        time.Duration
 	OutboundTLSHandshakeTimeout   time.Duration
 	OutboundResponseHeaderTimeout time.Duration
+	// OutboundImageHeaderTimeout is the response-header ceiling for the image
+	// endpoints, which are slower by nature and never retried.
+	OutboundImageHeaderTimeout time.Duration
 	// OutboundMaxIdleConns is the total outbound idle connection ceiling.
 	OutboundMaxIdleConns int
 	// OutboundMaxIdleConnsPerHost is the per-upstream-host idle connection ceiling.
@@ -252,6 +255,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	headerTimeout, err := envDurationSeconds("OUTBOUND_HEADER_TIMEOUT_SECONDS", 60, 1, 3600)
+	if err != nil {
+		return nil, err
+	}
+	// Image generation and editing is the one family that legitimately takes
+	// minutes: the caller is waiting for an artifact, the operation is never
+	// retried (a replay would bill twice), and the upstream may need well over
+	// the chat timeout. Without a separate ceiling those requests fail with
+	// "timeout awaiting response headers" while the upstream is still working.
+	imageHeaderTimeout, err := envDurationSeconds("OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS", 300, 1, 3600)
 	if err != nil {
 		return nil, err
 	}
@@ -535,6 +547,7 @@ func Load() (*Config, error) {
 		OutboundConnectTimeout:        connectTimeout,
 		OutboundTLSHandshakeTimeout:   tlsTimeout,
 		OutboundResponseHeaderTimeout: headerTimeout,
+		OutboundImageHeaderTimeout:    imageHeaderTimeout,
 		OutboundMaxIdleConns:          outboundMaxIdle,
 		OutboundMaxIdleConnsPerHost:   outboundMaxIdlePerHost,
 		SQLiteMaxOpenConns:            sqliteMaxConns,

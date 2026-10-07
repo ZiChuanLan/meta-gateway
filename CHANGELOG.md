@@ -6,6 +6,29 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+## [v4.2.3]
+
+> **图像接口不再被 60 秒的聊天超时掐断；Responses 的原生探测不再每请求付一次。**
+
+### Fixed
+
+- **图像生成/编辑有了自己的响应头上限。** 图像请求与聊天共用 60s 的 `OUTBOUND_HEADER_TIMEOUT_SECONDS`，
+  而图像天生慢：生产实测两次 `/v1/images/edits` 在 **60060ms / 60063ms** 整点失败（`http2: timeout awaiting
+  response headers`），而同一个上游几分钟前刚用 **55144ms** 成功返回过——上游没问题，是我们的耐心不够。
+  现在图像端点用独立的 `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`（默认 **300**，compose 已透传），
+  理由写进代码：图像是唯一“调用方在等一个产物”的端点，而且**绝不重试**（重放=二次计费），
+  所以超时是唯一的旋钮。新增测试 `TestImageEndpointsUseTheirOwnResponseHeaderCeiling`：
+  同一个上游、同一段延迟，聊天在自己的上限上失败、图像端点仍在等并成功。
+- **这不是更新引入的回归**（实测排除）：`OUTBOUND_HEADER_TIMEOUT_SECONDS` 的默认值在 v3.8.6 与 master
+  **完全一致（60）**，`internal/outbound` 与 `internal/relay` 在两个版本之间**零 diff**，图像不重试的规则也两边相同。
+  变的是上游的耗时。
+- **Responses 的原生探测每渠道只付一次。** OpenAI 家族的上游可能是原生 Responses（`openai-compatible` 只描述形状、
+  不承诺 `/v1/responses` 存在），所以回退策略是“先原生、404/405 才转 chat”；但一个确实没有该端点的渠道会为
+  **每一次**请求付这次探测：生产 500 条日志里的 44 条 Responses 请求**全部**先把整个 body 传到
+  `https://wb.zichuanlan.top/v1/responses` 拿到 404（其中 43× 404、1× 502、0 次原生成功），而抓到的客户端请求体是 77KB。
+  现在 404/405 会**按渠道记住 10 分钟**：首个请求探测，后续直接走转换；能原生的渠道永远不会被标记，原生能力不丢。
+  新增测试 `TestResponsesNativeProbeIsPaidOncePerChannel`：两个请求只产生 3 次上游调用（`/responses` 一次 + `/chat/completions` 两次）。
+
 ## [v4.2.2]
 
 > **Responses 客户端（Codex / Cursor 等）现在能在只有 chat/completions 的上游上工作。**

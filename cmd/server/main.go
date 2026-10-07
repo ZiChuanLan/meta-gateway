@@ -113,6 +113,15 @@ func main() {
 		MaxIdleConns:          cfg.OutboundMaxIdleConns,
 		MaxIdleConnsPerHost:   cfg.OutboundMaxIdleConnsPerHost,
 	})
+	// The image endpoints get their own, longer response-header ceiling: they are
+	// slow by nature and never retried, so the chat timeout is the only thing
+	// that can turn a working upstream into a 502.
+	imageClient := outbound.NewClient(outboundPolicy, outbound.ClientOptions{
+		ResponseHeaderTimeout: cfg.OutboundImageHeaderTimeout,
+		TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
+		MaxIdleConns:          cfg.OutboundMaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.OutboundMaxIdleConnsPerHost,
+	})
 	registry := adapters.NewRegistry(outboundClient)
 	checkinService := checkin.New(db, enc, registry)
 	pluginService, err := plugins.NewServiceWithOptions(cfg.PluginsDir, db.Plugin, cfg.PluginCatalogURL, outboundClient)
@@ -186,14 +195,15 @@ func main() {
 	auditRows.Store(int64(cfg.AuditRetentionRows))
 
 	handler := httpapi.NewWithDependencies(cfg, db, enc, httpapi.Dependencies{
-		Registry:         registry,
-		CheckinService:   checkinService,
-		CheckinScheduler: scheduler,
-		DiscoveryService: discoveryService,
-		ExchangeService:  exchangeService,
-		PluginService:    pluginService,
-		OutboundClient:   outboundClient,
-		Logger:           logger, Metrics: metrics, State: state,
+		Registry:            registry,
+		CheckinService:      checkinService,
+		CheckinScheduler:    scheduler,
+		DiscoveryService:    discoveryService,
+		ExchangeService:     exchangeService,
+		PluginService:       pluginService,
+		OutboundClient:      outboundClient,
+		OutboundImageClient: imageClient,
+		Logger:              logger, Metrics: metrics, State: state,
 		BackupService: backup.NewWithRetention(db, cfg.BackupDir, cfg.BackupRetentionCount),
 		WebDAVService: webdavService,
 		SetAuditRetention: func(days, rows int) {

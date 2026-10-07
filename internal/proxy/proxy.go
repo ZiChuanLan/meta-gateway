@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -74,8 +75,21 @@ type Relay interface {
 }
 
 type Service struct {
-	selector                    Selector
-	relay                       Relay
+	selector Selector
+	relay    Relay
+	// slowRelay serves the endpoints that legitimately take minutes. Image
+	// generation and editing is the only such family: the client is waiting for
+	// an artifact, the operation is non-idempotent so it is never retried, and
+	// the upstream may genuinely need 60-180s to answer. Sharing the chat
+	// client's 60s response-header timeout made those requests fail with
+	// "http2: timeout awaiting response headers" while the upstream was still
+	// working (production, 2026-10-07: two image edits at 60.06s, 502).
+	// nil = use relay for everything (the historical behaviour).
+	slowRelay Relay
+	// nativeResponsesMiss records the channels that answered 404/405 for
+	// /v1/responses, so the native probe is paid once instead of per request.
+	nativeResponsesMu           sync.Mutex
+	nativeResponsesMiss         map[int64]time.Time
 	db                          *store.DB
 	enc                         *crypto.Encrypter
 	retryTimes                  atomic.Int64
@@ -264,6 +278,65 @@ type AttemptMeta struct {
 	// order (route, then per-attempt request/response decisions). Empty when no
 	// plugin was involved.
 	HookDecisions []HookDecision `json:"hook_decisions,omitempty"`
+}
+
+// SetImageRelay installs the client used for the image endpoints, which need a
+// longer response-header timeout than chat. nil keeps the single client.
+func (s *Service) SetImageRelay(upstream Relay) { s.slowRelay = upstream }
+
+// responsesNativeMissTTL is how long a channel stays marked as lacking a native
+// /v1/responses surface. Short enough that an upstream which adds one is noticed
+// without operator action, long enough that the probe is a one-off rather than a
+// per-request cost.
+const responsesNativeMissTTL = 10 * time.Minute
+
+// nativeResponsesUnsupported reports whether this channel is known to answer
+// 404/405 for /v1/responses.
+//
+// The fallback for an OpenAI-family upstream is native-first: the upstream may
+// well speak Responses natively, and native is lossless where the chat
+// translation drops server-side tools and refuses stored conversations. But for
+// a chat-only upstream that means every single request pays the probe — a
+// production channel served 44/44 Responses requests by uploading the whole
+// body to /v1/responses and getting a 404 first. Remembering the answer keeps
+// both properties: native where it exists, no wasted round-trip where it does
+// not.
+func (s *Service) nativeResponsesUnsupported(channelID int64) bool {
+	if channelID == 0 {
+		return false
+	}
+	s.nativeResponsesMu.Lock()
+	defer s.nativeResponsesMu.Unlock()
+	learnedAt, ok := s.nativeResponsesMiss[channelID]
+	if !ok {
+		return false
+	}
+	if time.Since(learnedAt) > responsesNativeMissTTL {
+		delete(s.nativeResponsesMiss, channelID)
+		return false
+	}
+	return true
+}
+
+func (s *Service) markNativeResponsesUnsupported(channelID int64) {
+	if channelID == 0 {
+		return
+	}
+	s.nativeResponsesMu.Lock()
+	defer s.nativeResponsesMu.Unlock()
+	if s.nativeResponsesMiss == nil {
+		s.nativeResponsesMiss = make(map[int64]time.Time)
+	}
+	s.nativeResponsesMiss[channelID] = time.Now()
+}
+
+// upstreamFor picks the client for one request path. Only the image family
+// switches: everything else keeps the tuned chat timeout.
+func (s *Service) upstreamFor(openAIPath string) Relay {
+	if s.slowRelay != nil && strings.HasPrefix(strings.Trim(openAIPath, "/"), "images/") {
+		return s.slowRelay
+	}
+	return s.relay
 }
 
 func New(selector Selector, upstream Relay, db *store.DB, enc *crypto.Encrypter, retryTimes int, cooldown time.Duration) *Service {

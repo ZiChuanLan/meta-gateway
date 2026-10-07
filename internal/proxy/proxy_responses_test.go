@@ -61,6 +61,69 @@ func TestResponsesNativePassthrough(t *testing.T) {
 	}
 }
 
+// TestResponsesNativeProbeIsPaidOncePerChannel pins the cost side of the
+// native-first rule: an upstream that 404s /v1/responses is asked ONCE, and the
+// channel is translated from then on.
+//
+// Production, 2026-10-07: channel 98 (openai-compatible) answered 404 to
+// /v1/responses, and all 44 Responses requests in the log uploaded their whole
+// body to that endpoint first (the captured client body was 77 KB) before the
+// translation ran. The answer never changes, so asking once is enough.
+func TestResponsesNativeProbeIsPaidOncePerChannel(t *testing.T) {
+	chatAnswer := `{"id":"chatcmpl-1","object":"chat.completion","created":1,"model":"model",` +
+		`"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}],` +
+		`"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}`
+	upstream := &queuedRelay{results: []*relay.Result{
+		response(http.StatusNotFound, `{"error":{"message":"not found"}}`),
+		response(http.StatusOK, chatAnswer),
+		response(http.StatusOK, chatAnswer),
+	}}
+	service, db, highMemberID, _ := setupProxy(t, upstream)
+	service.SetAdapterRegistry(adapters.NewRegistry(nil))
+
+	call := func(id string) *relay.Result {
+		result, meta := service.ForwardWithMeta(context.Background(), Request{
+			RequestID:          id,
+			Model:              "model",
+			Body:               []byte(responsesBody),
+			Method:             http.MethodPost,
+			OpenAIPath:         "responses",
+			DownstreamProtocol: "responses",
+		})
+		if result == nil || result.Err != nil {
+			t.Fatalf("%s: result=%+v", id, result)
+		}
+		if meta == nil || meta.MemberID != highMemberID {
+			t.Fatalf("%s: meta=%+v", id, meta)
+		}
+		return result
+	}
+
+	call("probe-first")
+	if len(upstream.calls) != 2 {
+		t.Fatalf("first request must probe then translate, calls=%v", upstream.calls)
+	}
+	call("probe-second")
+	if len(upstream.calls) != 3 {
+		t.Fatalf("the native probe was paid again, calls=%v", upstream.calls)
+	}
+	if !strings.HasSuffix(upstream.calls[0], "/responses") {
+		t.Fatalf("calls[0]=%q, want the native probe first", upstream.calls[0])
+	}
+	for _, call := range upstream.calls[1:] {
+		if !strings.HasSuffix(call, "/chat/completions") {
+			t.Fatalf("call=%q, want the translated endpoint", call)
+		}
+	}
+	// The mark is per channel: another one still gets its own probe.
+	if !service.nativeResponsesUnsupported(channelOfMember(t, db, highMemberID)) {
+		t.Fatal("the probed channel was not remembered")
+	}
+	if service.nativeResponsesUnsupported(channelOfMember(t, db, highMemberID) + 1000) {
+		t.Fatal("the mark leaked to another channel")
+	}
+}
+
 // TestResponsesFallbackTranslatesOn404 verifies the in-place fallback: the
 // upstream 404s on /v1/responses, so the SAME channel is replayed with the
 // request pivoted to chat/completions and the chat answer converts back to
