@@ -1,6 +1,5 @@
 import { useId, type InputHTMLAttributes, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { InfoTip } from "../../components/ui";
 import { useI18n } from "../../i18n";
 
 // The presentational controls the runtime settings page is built from. They were
@@ -35,11 +34,9 @@ export function SettingState({ state }: { state: "changed" | "default" }) {
  */
 export function SettingLabel({
   label,
-  hint,
   changed,
 }: {
   label: string;
-  hint: string;
   /** Omit for labels that do not map to a single setting (sub-labels). */
   changed?: boolean;
 }) {
@@ -48,8 +45,10 @@ export function SettingLabel({
     <span className="field-label runtime-row-label">
       <span>{name}</span>
       {unit ? <span className="runtime-row-unit">{unit}</span> : null}
-      <InfoTip label={hint} />
-      {changed === undefined ? null : <SettingState state={changed ? "changed" : "default"} />}
+      {/* Only "changed" gets a badge. A chip on every row that gives the same
+          answer is noise, and on a page with instant save the one answer worth a
+          mark is "I overrode the default". */}
+      {changed ? <SettingState state="changed" /> : null}
     </span>
   );
 }
@@ -99,8 +98,14 @@ export function RuntimeRow({
 }) {
   return (
     <label className={`field runtime-row${wide ? " wide" : ""}`}>
-      <SettingLabel label={label} hint={hint} changed={changed} />
+      <SettingLabel label={label} changed={changed} />
       {children}
+      {/* The hint is read, not hovered. Behind a tooltip it is invisible on a
+          printed page, in a screenshot, and to anyone scanning rather than
+          studying — and the page loses the one line that says what the field
+          does. It sits under the control it explains, like every other form in
+          the console. */}
+      {hint ? <span className="field-hint runtime-row-hint">{hint}</span> : null}
     </label>
   );
 }

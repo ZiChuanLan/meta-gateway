@@ -253,3 +253,24 @@
   border-bottom: 0;
   min-height: 0;
 }
+
+/* —— Form fields are white with a hairline, not a grey slab ——
+   A filled grey box inside a white card reads as "disabled" or "not finished",
+   and it is the main reason the console's forms look older than its own panels.
+   Fields are white like the card, kept apart by one hairline and a focus ring;
+   the corners stay square, which is this appearance's own language. Scoped with
+   :not() so switches, radios and sliders keep their own treatment. */
+:root[data-appearance="classic"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+:root[data-appearance="classic"] select,
+:root[data-appearance="classic"] textarea {
+  background: var(--surface);
+  border-color: var(--line-strong, var(--line));
+}
+/* Focus is where the eye already is: one ring, drawn outside the border so the
+   field does not move when it appears. */
+:root[data-appearance="classic"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+:root[data-appearance="classic"] select:focus,
+:root[data-appearance="classic"] textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}

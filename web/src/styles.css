@@ -9919,35 +9919,94 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 .runtime-cards-grid > .is-wide-section .runtime-rows {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
-/* Row shape and row spacing live on the grid, not on the field. With the field's
-   own margin the row was only as tall as its tallest control, and a switch row
-   came out 6px shorter than a numeric one (the checkbox inherits the generic
-   38px input box), so the two columns drifted apart by that much on every row
-   and no two rows lined up. One min-height for every field fixes the shape; the
-   grid's row-gap then spaces them all identically. */
-.runtime-cards-grid .runtime-rows {
-  row-gap: 22px;
+/* Fields stack: one column, the control full width, its hint underneath.
+   Two columns made every card look half-empty — a numeric setting is a few
+   digits wide, so the right half of each row was a hole, and a card with an odd
+   number of fields ended in another one. A stack has no holes, and it is how
+   every other form in the console reads. */
+/* `:root[data-appearance]` is load-bearing, not decoration: the skins style
+   `.form-grid` themselves (`:root[data-appearance="classic"] .form-grid` in
+   theme.css) and that selector outranks a bare page rule loaded earlier, so
+   without the prefix this one silently loses and the fields stay two-up. */
+:root[data-appearance] .runtime-cards-grid .runtime-rows {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 20px;
   margin-bottom: 0;
+}
+/* A card that owns the whole width does have room for a real row of short
+   numeric settings; auto-fit keeps four across on a wide card and falls back to
+   two rather than crushing four columns into a narrow one. */
+:root[data-appearance] .runtime-cards-grid > .is-wide-section .runtime-rows {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 .runtime-cards-grid .runtime-rows > .field {
-  min-height: 66px;
   margin-bottom: 0;
 }
-/* The switch is a 16px glyph, not a 38px input: centred in the band the text
-   inputs occupy and flush with the column, so a switch row and a numeric row are
-   the same height to the pixel. */
+/* A control fills its column: a settings control is a place to type, and a
+   160px box inside a 440px card reads as a placeholder rather than a field. */
+.runtime-cards-grid .runtime-rows > .field > input,
+.runtime-cards-grid .runtime-rows > .field > select,
+.runtime-cards-grid .runtime-rows > .field > .setting-input-wrap {
+  width: 100%;
+  max-width: none;
+}
+/* The hint sits under the control it explains, in the console's own hint type. */
+.runtime-row-hint {
+  max-width: 78ch;
+  margin-top: -2px;
+}
+/* A boolean is a switch, and it is a square one: this console has no rounded
+   corners, so a pill would be a borrowed accent. Track 42x22 with an 18px knob
+   and 2px of slack on both ends. Geometry is stated in border-box terms on both
+   elements so the knob lands flush against the far wall whatever the global
+   box-sizing is — flush is what makes a switch read as "on" at a glance. */
 .runtime-cards-grid .runtime-rows > .field > input[type="checkbox"] {
+  position: relative;
+  /* Without this the platform widget paints over the track and a 42px switch
+     comes out looking like a stretched native checkbox. */
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 42px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: 0;
+  background: var(--surface-subtle);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast, 120ms),
+    border-color var(--dur-fast, 120ms);
+}
+.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  box-sizing: border-box;
   width: 16px;
   height: 16px;
-  margin: 11px 0 0;
-  background: none;
+  border: 1px solid var(--line-strong, var(--line));
+  background: var(--surface);
+  transition: transform var(--dur-fast, 120ms);
 }
-/* A numeric setting is two or three digits wide; stretched to the column it
-   reads as an empty box. The control sits in .setting-input-wrap, so the cap goes
-   on the wrapper — capping the .field would squeeze the label with it. */
-.runtime-cards-grid .runtime-rows > .field:not(.wide) > input[type="number"],
-.runtime-cards-grid .runtime-rows > .field:not(.wide) > .setting-input-wrap:has(> input[type="number"]) {
-  max-width: 160px;
+.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]:checked::before {
+  transform: translateX(20px);
+  border-color: transparent;
+}
+.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--primary-soft);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .runtime-cards-grid .runtime-rows > .field > input[type="checkbox"],
+  .runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]::before {
+    transition: none;
+  }
 }
 @keyframes runtime-pane-in {
   from {
