@@ -419,3 +419,111 @@ func TestCheckinScheduleSurvivesRestart(t *testing.T) {
 		t.Fatalf("restart did not restore the override: %+v", snapshot)
 	}
 }
+
+// The outbound limits are the one knob an operator reaches for during an
+// incident, so the applier has to carry three things at once: a non-zero value
+// becomes the live limit, a zero falls back to the deployment value (not to
+// "no timeout"), and clearing the override hands the deployment values back.
+func TestOutboundLimitsFollowEditableAndFallBackToEnv(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cfg := &config.Config{
+		AdminToken:                    "admin-test",
+		MetricsToken:                  "metrics-test",
+		MaxAdminBodyBytes:             1 << 20,
+		RetryTimes:                    2,
+		CrossChannelFailoverEnabled:   true,
+		Cooldown:                      30 * time.Second,
+		StableFirstDenominator:        25,
+		StableFirstPromoteRequests:    100,
+		RoutingConcurrencyLimit:       64,
+		OutboundConnectTimeout:        10 * time.Second,
+		OutboundResponseHeaderTimeout: 60 * time.Second,
+		OutboundImageHeaderTimeout:    300 * time.Second,
+		OutboundTLSHandshakeTimeout:   10 * time.Second,
+		OutboundMaxIdleConns:          512,
+		OutboundMaxIdleConnsPerHost:   64,
+	}
+	var applied OutboundLimits
+	controller := New(cfg, db.RuntimeSettings, Appliers{
+		SetOutboundLimits: func(limits OutboundLimits) { applied = limits },
+	})
+	if err := controller.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	// Bootstrap applies the deployment values.
+	if applied.HeaderTimeout != 60*time.Second || applied.ImageHeaderTimeout != 300*time.Second {
+		t.Fatalf("bootstrap limits = %+v, want the deployment values", applied)
+	}
+
+	// An override, with the image ceiling left at 0 (deployment default). The
+	// baseline mirrors a valid full settings document; only the outbound fields
+	// are the subject here.
+	next := Editable{
+		RetryTimes:                   5,
+		CrossChannelFailoverEnabled:  false,
+		CooldownSeconds:              60,
+		CheckinEnabled:               true,
+		CheckinCron:                  "15 7 * * 1-5",
+		RelayRatePerMinute:           100,
+		RelayRateBurst:               10,
+		AdminRatePerMinute:           50,
+		AdminRateBurst:               5,
+		AuditRetentionDays:           7,
+		AuditRetentionRows:           500,
+		StableFirstDenominator:       25,
+		StableFirstPromoteRequests:   100,
+		RoutingConcurrencyLimit:      64,
+		WebhookThrottleSeconds:       300,
+		StickyEnabled:                true,
+		StickyTTLMinutes:             60,
+		HealthSweepEnabled:           true,
+		HealthSweepIntervalSeconds:   120,
+		HealthSweepJitterSeconds:     5,
+		HealthSweepDegradedMs:        1000,
+		HealthSweepConcurrency:       2,
+		HealthSweepTimeoutSeconds:    10,
+		ChannelRetryTimes:            3,
+		DefaultModelSyncMode:         "auto",
+		SiteProbeIntervalSeconds:     300,
+		SiteProbeJitterSeconds:       15,
+		OutboundHeaderTimeoutSeconds: 180,
+		OutboundMaxIdleConnsPerHost:  256,
+	}
+	snap, err := controller.Update(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.HeaderTimeout != 180*time.Second {
+		t.Fatalf("header timeout = %v, want 3m", applied.HeaderTimeout)
+	}
+	if applied.ImageHeaderTimeout != 300*time.Second {
+		t.Fatalf("image header timeout = %v, want the deployment 5m (0 means default, not no ceiling)",
+			applied.ImageHeaderTimeout)
+	}
+	if applied.MaxIdleConnsPerHost != 256 {
+		t.Fatalf("per-host idle conns = %d, want 256", applied.MaxIdleConnsPerHost)
+	}
+	if applied.MaxIdleConns != 512 || applied.ConnectTimeout != 10*time.Second {
+		t.Fatalf("untouched limits drifted: %+v", applied)
+	}
+	// The console shows the effective values, not the stored zero.
+	if snap.Editable.OutboundImageHeaderTimeoutSeconds != 300 {
+		t.Fatalf("console shows image ceiling %d, want the effective 300",
+			snap.Editable.OutboundImageHeaderTimeoutSeconds)
+	}
+
+	cleared, err := controller.ClearOverride()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied.HeaderTimeout != 60*time.Second || applied.MaxIdleConnsPerHost != 64 {
+		t.Fatalf("after clear = %+v, want the deployment values", applied)
+	}
+	if cleared.Editable.OutboundHeaderTimeoutSeconds != 60 {
+		t.Fatalf("cleared console value = %d, want 60", cleared.Editable.OutboundHeaderTimeoutSeconds)
+	}
+}

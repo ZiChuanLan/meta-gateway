@@ -30,6 +30,13 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ### Added
 
+- **出网超时与连接池成了运行设置（保存即生效，不用重建容器）。** 六项：连接超时、响应头超时、图像响应头超时、TLS 握手超时、
+  空闲连接上限（全局 / 单上游）。以前只能改 `.env` 再重建容器 —— 而「图像编辑正好 60 秒死」这类问题要调的正是
+  `OUTBOUND_HEADER_TIMEOUT_SECONDS` / `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`。位置：设置 → 运行设置 → 服务与网络 →
+  「出网超时与连接池」；**填 0 = 用部署默认值**（部署参数卡片里能看到当前生效值）。实现是 `outbound.LiveClient`：
+  两条 relay（普通 / 图像）各持有一个稳定的 `*http.Client`，保存时在它下面**换掉 transport**，所以下一个请求就用新超时；
+  SSRF 校验在外层包装里，不随重建移动（重建会丢弃旧连接池的空闲连接 —— 刻意的：留着就是继续用旧超时）。
+  迁移 124 给 `runtime_settings` 加六列（0 = 未覆盖），`docs/reference` 已重新生成。
 - **控制台「设置 → 运行设置」多了只读的「部署参数（环境变量）」卡片。** 它列出进程启动时读到的每个环境变量、
   它取到的值，以及这个值是来自环境还是代码默认 —— compose 忘了透传的变量与刻意的默认值在容器里长得
   一模一样，而「请求为什么正好 60 秒死」这类问题的答案就藏在这个区别里（例如 `OUTBOUND_HEADER_TIMEOUT_SECONDS`

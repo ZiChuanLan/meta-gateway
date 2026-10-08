@@ -139,6 +139,28 @@ type Editable struct {
 	// that polls every 15 minutes gains nothing from a faster round.
 	SiteProbeIntervalSeconds int `json:"site_probe_interval_seconds"`
 	SiteProbeJitterSeconds   int `json:"site_probe_jitter_seconds"`
+	// Outbound client limits. They are runtime settings because the header
+	// ceiling is what decides whether a slow upstream dies at 60s: the image
+	// endpoints needed 5 minutes and the fix used to require a .env edit and a
+	// container recreate. 0 = the deployment default (OUTBOUND_* in the
+	// environment); a non-zero value is an override that survives restarts.
+	OutboundConnectTimeoutSeconds     int `json:"outbound_connect_timeout_seconds"`
+	OutboundHeaderTimeoutSeconds      int `json:"outbound_header_timeout_seconds"`
+	OutboundImageHeaderTimeoutSeconds int `json:"outbound_image_header_timeout_seconds"`
+	OutboundTLSTimeoutSeconds         int `json:"outbound_tls_timeout_seconds"`
+	OutboundMaxIdleConns              int `json:"outbound_max_idle_conns"`
+	OutboundMaxIdleConnsPerHost       int `json:"outbound_max_idle_conns_per_host"`
+}
+
+// OutboundLimits is the resolved outbound client configuration: timeouts and
+// pool sizes with the deployment defaults already applied.
+type OutboundLimits struct {
+	ConnectTimeout      time.Duration
+	HeaderTimeout       time.Duration
+	ImageHeaderTimeout  time.Duration
+	TLSTimeout          time.Duration
+	MaxIdleConns        int
+	MaxIdleConnsPerHost int
 }
 
 // Snapshot is the effective runtime view returned to Admin UI.
@@ -194,6 +216,10 @@ type Appliers struct {
 	SetProbeSchedule func(schedule ProbeSchedule) error
 	// SetRecoveryProbe hot-applies the passive-recovery probe configuration.
 	SetRecoveryProbe func(enabled bool, interval time.Duration)
+	// SetOutboundLimits hot-applies the outbound client limits (timeouts, pool
+	// sizes). Every outbound holder keeps one client whose transport is rebuilt,
+	// so the change lands on the next request instead of the next restart.
+	SetOutboundLimits func(limits OutboundLimits)
 	// SetStableFirst hot-applies the grayscale pool (selector + promotion).
 	SetStableFirst func(enabled bool, denominator, promoteRequests int)
 	// SetConcurrencyAware hot-applies the in-flight burst guard.
@@ -275,6 +301,13 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		// setting, so an operator can speed the round up without a restart.
 		SiteProbeIntervalSeconds: cfg.SiteProbeIntervalSeconds,
 		SiteProbeJitterSeconds:   cfg.SiteProbeJitterSeconds,
+		// Outbound limits: env bootstrap, same contract as the site-probe cadence.
+		OutboundConnectTimeoutSeconds:     int(cfg.OutboundConnectTimeout / time.Second),
+		OutboundHeaderTimeoutSeconds:      int(cfg.OutboundResponseHeaderTimeout / time.Second),
+		OutboundImageHeaderTimeoutSeconds: int(cfg.OutboundImageHeaderTimeout / time.Second),
+		OutboundTLSTimeoutSeconds:         int(cfg.OutboundTLSHandshakeTimeout / time.Second),
+		OutboundMaxIdleConns:              cfg.OutboundMaxIdleConns,
+		OutboundMaxIdleConnsPerHost:       cfg.OutboundMaxIdleConnsPerHost,
 	}
 	c := &Controller{
 		env:      env,
@@ -361,57 +394,63 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	row := &store.RuntimeSettingsRow{
-		HasOverride:                      true,
-		RetryTimes:                       next.RetryTimes,
-		CrossChannelFailoverEnabled:      boolInt(next.CrossChannelFailoverEnabled),
-		CooldownSeconds:                  next.CooldownSeconds,
-		CheckinEnabled:                   next.CheckinEnabled,
-		CheckinCron:                      next.CheckinCron,
-		RelayRatePerMinute:               next.RelayRatePerMinute,
-		RelayRateBurst:                   next.RelayRateBurst,
-		AdminRatePerMinute:               next.AdminRatePerMinute,
-		AdminRateBurst:                   next.AdminRateBurst,
-		AuditRetentionDays:               next.AuditRetentionDays,
-		AuditRetentionRows:               next.AuditRetentionRows,
-		ChannelAutoDisableThreshold:      next.ChannelAutoDisableThreshold,
-		RoutingLatencyAware:              boolInt(next.RoutingLatencyAware),
-		RoutingErrorAware:                boolInt(next.RoutingErrorAware),
-		RoutingConcurrencyEnabled:        boolInt(next.RoutingConcurrencyEnabled),
-		RoutingConcurrencyLimit:          next.RoutingConcurrencyLimit,
-		WebhookURL:                       next.WebhookURL,
-		ProxyURL:                         next.ProxyURL,
-		DiscoveryCron:                    next.DiscoveryCron,
-		DBGCCron:                         next.DBGCCron,
-		ProbeCron:                        next.ProbeCron,
-		ProbePrompt:                      next.ProbePrompt,
-		ProbeMaxTokens:                   next.ProbeMaxTokens,
-		ProbeConcurrency:                 next.ProbeConcurrency,
-		ProbeAutoDisable:                 next.ProbeAutoDisable,
-		ProbeChannels:                    next.ProbeChannels,
-		ProbeModels:                      next.ProbeModels,
-		WebhookThrottleSeconds:           next.WebhookThrottleSeconds,
-		StableFirstEnabled:               boolInt(next.StableFirstEnabled),
-		StableFirstDenominator:           next.StableFirstDenominator,
-		StableFirstPromoteRequests:       next.StableFirstPromoteRequests,
-		RecoveryProbeEnabled:             boolInt(next.RecoveryProbeEnabled),
-		RecoveryProbeIntervalSeconds:     next.RecoveryProbeIntervalSeconds,
-		FaultProtectionEnabled:           boolInt(next.FaultProtectionEnabled),
-		StickyEnabled:                    boolInt(next.StickyEnabled),
-		StickyTTLMinutes:                 next.StickyTTLMinutes,
-		AlertConfigJSON:                  next.AlertConfigJSON,
-		AlertSweepIntervalSeconds:        next.AlertSweepIntervalSeconds,
-		AlertDailySummaryIntervalSeconds: next.AlertDailySummaryIntervalSeconds,
-		HealthSweepEnabled:               boolInt(next.HealthSweepEnabled),
-		HealthSweepIntervalSeconds:       next.HealthSweepIntervalSeconds,
-		HealthSweepJitterSeconds:         next.HealthSweepJitterSeconds,
-		HealthSweepDegradedMs:            next.HealthSweepDegradedMs,
-		HealthSweepConcurrency:           next.HealthSweepConcurrency,
-		HealthSweepTimeoutSeconds:        next.HealthSweepTimeoutSeconds,
-		ChannelRetryTimes:                next.ChannelRetryTimes,
-		UpdateCheckEnabled:               boolInt(next.UpdateCheckEnabled),
-		DefaultModelSyncMode:             next.DefaultModelSyncMode,
-		SiteProbeIntervalSeconds:         unsetIfZero(next.SiteProbeIntervalSeconds),
-		SiteProbeJitterSeconds:           next.SiteProbeJitterSeconds,
+		HasOverride:                       true,
+		RetryTimes:                        next.RetryTimes,
+		CrossChannelFailoverEnabled:       boolInt(next.CrossChannelFailoverEnabled),
+		CooldownSeconds:                   next.CooldownSeconds,
+		CheckinEnabled:                    next.CheckinEnabled,
+		CheckinCron:                       next.CheckinCron,
+		RelayRatePerMinute:                next.RelayRatePerMinute,
+		RelayRateBurst:                    next.RelayRateBurst,
+		AdminRatePerMinute:                next.AdminRatePerMinute,
+		AdminRateBurst:                    next.AdminRateBurst,
+		AuditRetentionDays:                next.AuditRetentionDays,
+		AuditRetentionRows:                next.AuditRetentionRows,
+		ChannelAutoDisableThreshold:       next.ChannelAutoDisableThreshold,
+		RoutingLatencyAware:               boolInt(next.RoutingLatencyAware),
+		RoutingErrorAware:                 boolInt(next.RoutingErrorAware),
+		RoutingConcurrencyEnabled:         boolInt(next.RoutingConcurrencyEnabled),
+		RoutingConcurrencyLimit:           next.RoutingConcurrencyLimit,
+		WebhookURL:                        next.WebhookURL,
+		ProxyURL:                          next.ProxyURL,
+		DiscoveryCron:                     next.DiscoveryCron,
+		DBGCCron:                          next.DBGCCron,
+		ProbeCron:                         next.ProbeCron,
+		ProbePrompt:                       next.ProbePrompt,
+		ProbeMaxTokens:                    next.ProbeMaxTokens,
+		ProbeConcurrency:                  next.ProbeConcurrency,
+		ProbeAutoDisable:                  next.ProbeAutoDisable,
+		ProbeChannels:                     next.ProbeChannels,
+		ProbeModels:                       next.ProbeModels,
+		WebhookThrottleSeconds:            next.WebhookThrottleSeconds,
+		StableFirstEnabled:                boolInt(next.StableFirstEnabled),
+		StableFirstDenominator:            next.StableFirstDenominator,
+		StableFirstPromoteRequests:        next.StableFirstPromoteRequests,
+		RecoveryProbeEnabled:              boolInt(next.RecoveryProbeEnabled),
+		RecoveryProbeIntervalSeconds:      next.RecoveryProbeIntervalSeconds,
+		FaultProtectionEnabled:            boolInt(next.FaultProtectionEnabled),
+		StickyEnabled:                     boolInt(next.StickyEnabled),
+		StickyTTLMinutes:                  next.StickyTTLMinutes,
+		AlertConfigJSON:                   next.AlertConfigJSON,
+		AlertSweepIntervalSeconds:         next.AlertSweepIntervalSeconds,
+		AlertDailySummaryIntervalSeconds:  next.AlertDailySummaryIntervalSeconds,
+		HealthSweepEnabled:                boolInt(next.HealthSweepEnabled),
+		HealthSweepIntervalSeconds:        next.HealthSweepIntervalSeconds,
+		HealthSweepJitterSeconds:          next.HealthSweepJitterSeconds,
+		HealthSweepDegradedMs:             next.HealthSweepDegradedMs,
+		HealthSweepConcurrency:            next.HealthSweepConcurrency,
+		HealthSweepTimeoutSeconds:         next.HealthSweepTimeoutSeconds,
+		ChannelRetryTimes:                 next.ChannelRetryTimes,
+		UpdateCheckEnabled:                boolInt(next.UpdateCheckEnabled),
+		DefaultModelSyncMode:              next.DefaultModelSyncMode,
+		SiteProbeIntervalSeconds:          unsetIfZero(next.SiteProbeIntervalSeconds),
+		SiteProbeJitterSeconds:            next.SiteProbeJitterSeconds,
+		OutboundConnectTimeoutSeconds:     next.OutboundConnectTimeoutSeconds,
+		OutboundHeaderTimeoutSeconds:      next.OutboundHeaderTimeoutSeconds,
+		OutboundImageHeaderTimeoutSeconds: next.OutboundImageHeaderTimeoutSeconds,
+		OutboundTLSTimeoutSeconds:         next.OutboundTLSTimeoutSeconds,
+		OutboundMaxIdleConns:              next.OutboundMaxIdleConns,
+		OutboundMaxIdleConnsPerHost:       next.OutboundMaxIdleConnsPerHost,
 	}
 	previousRow, err := c.store.Get()
 	if err != nil {
@@ -434,11 +473,39 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 	}
 	now := time.Now().UTC()
 	c.mu.Lock()
-	c.current = next
+	// The console must show the values that are in effect: a stored 0 means "no
+	// override", so the deployment value is what the operator should read back
+	// (and what a later save re-sends).
+	c.current = c.withOutboundDefaults(next)
 	c.source = "admin_override"
 	c.updated = &now
 	c.mu.Unlock()
 	return c.Snapshot(), nil
+}
+
+// withOutboundDefaults fills the outbound limits that were left at 0 with the
+// deployment values, so the effective configuration and the stored override can
+// never disagree in the console.
+func (c *Controller) withOutboundDefaults(values Editable) Editable {
+	if values.OutboundConnectTimeoutSeconds <= 0 {
+		values.OutboundConnectTimeoutSeconds = int(c.cfg.OutboundConnectTimeout / time.Second)
+	}
+	if values.OutboundHeaderTimeoutSeconds <= 0 {
+		values.OutboundHeaderTimeoutSeconds = int(c.cfg.OutboundResponseHeaderTimeout / time.Second)
+	}
+	if values.OutboundImageHeaderTimeoutSeconds <= 0 {
+		values.OutboundImageHeaderTimeoutSeconds = int(c.cfg.OutboundImageHeaderTimeout / time.Second)
+	}
+	if values.OutboundTLSTimeoutSeconds <= 0 {
+		values.OutboundTLSTimeoutSeconds = int(c.cfg.OutboundTLSHandshakeTimeout / time.Second)
+	}
+	if values.OutboundMaxIdleConns <= 0 {
+		values.OutboundMaxIdleConns = c.cfg.OutboundMaxIdleConns
+	}
+	if values.OutboundMaxIdleConnsPerHost <= 0 {
+		values.OutboundMaxIdleConnsPerHost = c.cfg.OutboundMaxIdleConnsPerHost
+	}
+	return values
 }
 
 // ClearOverride removes Admin override and re-applies env bootstrap.
@@ -601,7 +668,37 @@ func (c *Controller) applyWithError(values Editable) error {
 			time.Duration(values.SiteProbeJitterSeconds)*time.Second,
 		)
 	}
+	// Outbound limits hot reload: the relays and every other outbound holder keep
+	// one client whose transport is rebuilt here, so the next request picks up the
+	// new timeouts. 0 means "no override" and resolves to the deployment value.
+	if c.appliers.SetOutboundLimits != nil {
+		c.appliers.SetOutboundLimits(OutboundLimits{
+			ConnectTimeout:      secondsOrEnv(values.OutboundConnectTimeoutSeconds, c.cfg.OutboundConnectTimeout),
+			HeaderTimeout:       secondsOrEnv(values.OutboundHeaderTimeoutSeconds, c.cfg.OutboundResponseHeaderTimeout),
+			ImageHeaderTimeout:  secondsOrEnv(values.OutboundImageHeaderTimeoutSeconds, c.cfg.OutboundImageHeaderTimeout),
+			TLSTimeout:          secondsOrEnv(values.OutboundTLSTimeoutSeconds, c.cfg.OutboundTLSHandshakeTimeout),
+			MaxIdleConns:        intOrEnv(values.OutboundMaxIdleConns, c.cfg.OutboundMaxIdleConns),
+			MaxIdleConnsPerHost: intOrEnv(values.OutboundMaxIdleConnsPerHost, c.cfg.OutboundMaxIdleConnsPerHost),
+		})
+	}
 	return nil
+}
+
+// secondsOrEnv resolves a stored seconds value to a duration, falling back to the
+// deployment default when the setting is 0 ("no override").
+func secondsOrEnv(value int, fallback time.Duration) time.Duration {
+	if value <= 0 {
+		return fallback
+	}
+	return time.Duration(value) * time.Second
+}
+
+// intOrEnv resolves a stored count to the deployment default when unset.
+func intOrEnv(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 // boolInt converts a bool to the runtime-settings integer encoding.
@@ -624,54 +721,60 @@ func unsetIfZero(value int) int {
 
 func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 	return Editable{
-		RetryTimes:                       row.RetryTimes,
-		CrossChannelFailoverEnabled:      row.CrossChannelFailoverEnabled == 1,
-		CooldownSeconds:                  row.CooldownSeconds,
-		CheckinEnabled:                   row.CheckinEnabled,
-		CheckinCron:                      row.CheckinCron,
-		RelayRatePerMinute:               row.RelayRatePerMinute,
-		RelayRateBurst:                   row.RelayRateBurst,
-		AdminRatePerMinute:               row.AdminRatePerMinute,
-		AdminRateBurst:                   row.AdminRateBurst,
-		AuditRetentionDays:               row.AuditRetentionDays,
-		AuditRetentionRows:               row.AuditRetentionRows,
-		ChannelAutoDisableThreshold:      row.ChannelAutoDisableThreshold,
-		RoutingLatencyAware:              row.RoutingLatencyAware == 1,
-		RoutingErrorAware:                row.RoutingErrorAware == 1,
-		RoutingConcurrencyEnabled:        row.RoutingConcurrencyEnabled == 1,
-		RoutingConcurrencyLimit:          row.RoutingConcurrencyLimit,
-		WebhookURL:                       row.WebhookURL,
-		ProxyURL:                         row.ProxyURL,
-		DiscoveryCron:                    row.DiscoveryCron,
-		DBGCCron:                         row.DBGCCron,
-		ProbeCron:                        row.ProbeCron,
-		ProbePrompt:                      row.ProbePrompt,
-		ProbeMaxTokens:                   row.ProbeMaxTokens,
-		ProbeConcurrency:                 row.ProbeConcurrency,
-		ProbeAutoDisable:                 row.ProbeAutoDisable,
-		ProbeChannels:                    row.ProbeChannels,
-		ProbeModels:                      row.ProbeModels,
-		WebhookThrottleSeconds:           row.WebhookThrottleSeconds,
-		StableFirstEnabled:               row.StableFirstEnabled == 1,
-		StableFirstDenominator:           row.StableFirstDenominator,
-		StableFirstPromoteRequests:       row.StableFirstPromoteRequests,
-		FaultProtectionEnabled:           row.FaultProtectionEnabled == 1,
-		StickyEnabled:                    row.StickyEnabled == 1,
-		StickyTTLMinutes:                 row.StickyTTLMinutes,
-		AlertConfigJSON:                  row.AlertConfigJSON,
-		AlertSweepIntervalSeconds:        row.AlertSweepIntervalSeconds,
-		AlertDailySummaryIntervalSeconds: row.AlertDailySummaryIntervalSeconds,
-		HealthSweepEnabled:               row.HealthSweepEnabled == 1,
-		HealthSweepIntervalSeconds:       row.HealthSweepIntervalSeconds,
-		HealthSweepJitterSeconds:         row.HealthSweepJitterSeconds,
-		HealthSweepDegradedMs:            row.HealthSweepDegradedMs,
-		HealthSweepConcurrency:           row.HealthSweepConcurrency,
-		HealthSweepTimeoutSeconds:        row.HealthSweepTimeoutSeconds,
-		ChannelRetryTimes:                row.ChannelRetryTimes,
-		UpdateCheckEnabled:               row.UpdateCheckEnabled == 1,
-		DefaultModelSyncMode:             row.DefaultModelSyncMode,
-		SiteProbeIntervalSeconds:         row.SiteProbeIntervalSeconds,
-		SiteProbeJitterSeconds:           row.SiteProbeJitterSeconds,
+		RetryTimes:                        row.RetryTimes,
+		CrossChannelFailoverEnabled:       row.CrossChannelFailoverEnabled == 1,
+		CooldownSeconds:                   row.CooldownSeconds,
+		CheckinEnabled:                    row.CheckinEnabled,
+		CheckinCron:                       row.CheckinCron,
+		RelayRatePerMinute:                row.RelayRatePerMinute,
+		RelayRateBurst:                    row.RelayRateBurst,
+		AdminRatePerMinute:                row.AdminRatePerMinute,
+		AdminRateBurst:                    row.AdminRateBurst,
+		AuditRetentionDays:                row.AuditRetentionDays,
+		AuditRetentionRows:                row.AuditRetentionRows,
+		ChannelAutoDisableThreshold:       row.ChannelAutoDisableThreshold,
+		RoutingLatencyAware:               row.RoutingLatencyAware == 1,
+		RoutingErrorAware:                 row.RoutingErrorAware == 1,
+		RoutingConcurrencyEnabled:         row.RoutingConcurrencyEnabled == 1,
+		RoutingConcurrencyLimit:           row.RoutingConcurrencyLimit,
+		WebhookURL:                        row.WebhookURL,
+		ProxyURL:                          row.ProxyURL,
+		DiscoveryCron:                     row.DiscoveryCron,
+		DBGCCron:                          row.DBGCCron,
+		ProbeCron:                         row.ProbeCron,
+		ProbePrompt:                       row.ProbePrompt,
+		ProbeMaxTokens:                    row.ProbeMaxTokens,
+		ProbeConcurrency:                  row.ProbeConcurrency,
+		ProbeAutoDisable:                  row.ProbeAutoDisable,
+		ProbeChannels:                     row.ProbeChannels,
+		ProbeModels:                       row.ProbeModels,
+		WebhookThrottleSeconds:            row.WebhookThrottleSeconds,
+		StableFirstEnabled:                row.StableFirstEnabled == 1,
+		StableFirstDenominator:            row.StableFirstDenominator,
+		StableFirstPromoteRequests:        row.StableFirstPromoteRequests,
+		FaultProtectionEnabled:            row.FaultProtectionEnabled == 1,
+		StickyEnabled:                     row.StickyEnabled == 1,
+		StickyTTLMinutes:                  row.StickyTTLMinutes,
+		AlertConfigJSON:                   row.AlertConfigJSON,
+		AlertSweepIntervalSeconds:         row.AlertSweepIntervalSeconds,
+		AlertDailySummaryIntervalSeconds:  row.AlertDailySummaryIntervalSeconds,
+		HealthSweepEnabled:                row.HealthSweepEnabled == 1,
+		HealthSweepIntervalSeconds:        row.HealthSweepIntervalSeconds,
+		HealthSweepJitterSeconds:          row.HealthSweepJitterSeconds,
+		HealthSweepDegradedMs:             row.HealthSweepDegradedMs,
+		HealthSweepConcurrency:            row.HealthSweepConcurrency,
+		HealthSweepTimeoutSeconds:         row.HealthSweepTimeoutSeconds,
+		ChannelRetryTimes:                 row.ChannelRetryTimes,
+		UpdateCheckEnabled:                row.UpdateCheckEnabled == 1,
+		DefaultModelSyncMode:              row.DefaultModelSyncMode,
+		SiteProbeIntervalSeconds:          row.SiteProbeIntervalSeconds,
+		SiteProbeJitterSeconds:            row.SiteProbeJitterSeconds,
+		OutboundConnectTimeoutSeconds:     row.OutboundConnectTimeoutSeconds,
+		OutboundHeaderTimeoutSeconds:      row.OutboundHeaderTimeoutSeconds,
+		OutboundImageHeaderTimeoutSeconds: row.OutboundImageHeaderTimeoutSeconds,
+		OutboundTLSTimeoutSeconds:         row.OutboundTLSTimeoutSeconds,
+		OutboundMaxIdleConns:              row.OutboundMaxIdleConns,
+		OutboundMaxIdleConnsPerHost:       row.OutboundMaxIdleConnsPerHost,
 	}
 }
 
@@ -770,7 +873,10 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	if editable.SiteProbeJitterSeconds < 0 {
 		editable.SiteProbeJitterSeconds = c.env.SiteProbeJitterSeconds
 	}
-	return editable
+	// Outbound limits: a stored 0 is "no override", so the console shows the
+	// deployment value the process is actually running with instead of a limit
+	// that is not the one in effect.
+	return c.withOutboundDefaults(editable)
 }
 
 // Validate enforces the same bounds as env loading for Admin-writable fields.
@@ -904,6 +1010,26 @@ func Validate(values Editable) error {
 	}
 	if values.SiteProbeIntervalSeconds > 0 && values.SiteProbeJitterSeconds > values.SiteProbeIntervalSeconds {
 		return fmt.Errorf("site_probe_jitter_seconds must not exceed site_probe_interval_seconds")
+	}
+	// Outbound limits: 0 means "deployment default", so the floor is 0 and the
+	// ceilings keep a typo from turning every request into an instant failure.
+	if values.OutboundConnectTimeoutSeconds < 0 || values.OutboundConnectTimeoutSeconds > 600 {
+		return fmt.Errorf("outbound_connect_timeout_seconds must be between 0 and 600")
+	}
+	if values.OutboundHeaderTimeoutSeconds < 0 || values.OutboundHeaderTimeoutSeconds > 3600 {
+		return fmt.Errorf("outbound_header_timeout_seconds must be between 0 and 3600")
+	}
+	if values.OutboundImageHeaderTimeoutSeconds < 0 || values.OutboundImageHeaderTimeoutSeconds > 3600 {
+		return fmt.Errorf("outbound_image_header_timeout_seconds must be between 0 and 3600")
+	}
+	if values.OutboundTLSTimeoutSeconds < 0 || values.OutboundTLSTimeoutSeconds > 600 {
+		return fmt.Errorf("outbound_tls_timeout_seconds must be between 0 and 600")
+	}
+	if values.OutboundMaxIdleConns < 0 || values.OutboundMaxIdleConns > 100000 {
+		return fmt.Errorf("outbound_max_idle_conns must be between 0 and 100000")
+	}
+	if values.OutboundMaxIdleConnsPerHost < 0 || values.OutboundMaxIdleConnsPerHost > 100000 {
+		return fmt.Errorf("outbound_max_idle_conns_per_host must be between 0 and 100000")
 	}
 	return nil
 }

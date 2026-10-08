@@ -2571,6 +2571,25 @@ export const en: Dict = {
   "ops.runtime.proxyURL": "Global outbound proxy",
   "ops.runtime.proxyURLHint":
     "HTTP(S) proxy for all upstream requests (channels with their own proxy_url override it). Empty = direct. Example: http://127.0.0.1:7897",
+  "ops.runtime.outboundLimits": "Outbound timeouts & connection pool",
+  "ops.runtime.outboundLimitsHint":
+    "0 uses the deployment default (the effective value is in Deployment parameters). Saved live — no container rebuild.",
+  "ops.runtime.outboundConnectTimeout": "Connect timeout (s)",
+  "ops.runtime.outboundConnectTimeoutHint": "TCP/TLS connect ceiling. 0 = deployment default (10).",
+  "ops.runtime.outboundHeaderTimeout": "Response-header timeout (s)",
+  "ops.runtime.outboundHeaderTimeoutHint":
+    "How long to wait for upstream response headers (streaming bodies are not covered). 0 = deployment default (60); raise it for a slow non-streaming upstream.",
+  "ops.runtime.outboundImageHeaderTimeout": "Image header timeout (s)",
+  "ops.runtime.outboundImageHeaderTimeoutHint":
+    "Image generation and edits only; they are far slower than chat. 0 = deployment default (300).",
+  "ops.runtime.outboundTLSTimeout": "TLS handshake timeout (s)",
+  "ops.runtime.outboundTLSTimeoutHint": "TLS handshake ceiling. 0 = deployment default (10).",
+  "ops.runtime.outboundMaxIdleConns": "Idle connections (total)",
+  "ops.runtime.outboundMaxIdleConnsHint":
+    "Idle connections shared by every upstream. 0 = deployment default (512).",
+  "ops.runtime.outboundMaxIdleConnsPerHost": "Idle connections (per host)",
+  "ops.runtime.outboundMaxIdleConnsPerHostHint":
+    "Idle connections per upstream host — Go's default is 2, which throttles a busy gateway. 0 = deployment default (64).",
   "ops.runtime.discoveryCron": "Scheduled model refresh",
   "ops.runtime.discoveryCronHint":
     "Five-field cron (e.g. 0 3 * * * = daily 03:00) to re-scan channel model lists automatically; empty = disabled.",

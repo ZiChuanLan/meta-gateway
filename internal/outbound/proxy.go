@@ -25,6 +25,9 @@ type channelProxyKey struct{}
 // client, unwrapping the validating transport. A nil hook restores direct
 // connections. Returns false when the transport chain is unrecognized.
 func SetClientProxy(client *http.Client, hook func(*http.Request) (*url.URL, error)) bool {
+	if client == nil {
+		return false
+	}
 	transport, ok := client.Transport.(validatingTransport)
 	if !ok {
 		if plain, ok := client.Transport.(*http.Transport); ok {
@@ -32,6 +35,12 @@ func SetClientProxy(client *http.Client, hook func(*http.Request) (*url.URL, err
 			return true
 		}
 		return false
+	}
+	// A live client keeps the hook in its delegating transport, so a later rebuild
+	// re-installs it on the fresh transport instead of losing it.
+	if live, ok := transport.next.(*liveTransport); ok {
+		live.setProxy(hook)
+		return true
 	}
 	if inner, ok := transport.next.(*http.Transport); ok {
 		inner.Proxy = wrapProxyHook(hook)

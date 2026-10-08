@@ -1195,6 +1195,14 @@ export interface RuntimeEditableSettings {
    */
   site_probe_interval_seconds: number;
   site_probe_jitter_seconds: number;
+  // Outbound client limits: 0 = the deployment default (OUTBOUND_* in the env),
+  // and a non-zero value is a live override.
+  outbound_connect_timeout_seconds: number;
+  outbound_header_timeout_seconds: number;
+  outbound_image_header_timeout_seconds: number;
+  outbound_tls_timeout_seconds: number;
+  outbound_max_idle_conns: number;
+  outbound_max_idle_conns_per_host: number;
 }
 
 export interface SelfUpdateStatus {

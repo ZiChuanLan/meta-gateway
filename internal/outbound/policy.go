@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,7 +28,35 @@ type Policy struct {
 	hosts    map[string]struct{}
 	prefixes []netip.Prefix
 	resolver Resolver
-	dialer   Dialer
+	// dialer holds the built-in dialer (net.Dialer) behind an atomic value so the
+	// connect timeout can be changed while requests are in flight. A policy built
+	// with an injected Dialer (tests) keeps it and ignores SetDialTimeout.
+	dialer       atomic.Value // Dialer
+	injectedDial bool
+}
+
+// DefaultDialTimeout is the outbound connect timeout when none is configured.
+const DefaultDialTimeout = 10 * time.Second
+
+// SetDialTimeout replaces the built-in dialer's connect timeout. Injected dialers
+// (tests, embedders) are left alone: the timeout is the gateway's own knob, not
+// theirs.
+func (p *Policy) SetDialTimeout(timeout time.Duration) {
+	if p == nil || p.injectedDial {
+		return
+	}
+	if timeout <= 0 {
+		timeout = DefaultDialTimeout
+	}
+	p.dialer.Store(Dialer(&net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}))
+}
+
+// currentDialer is the dialer every dial goes through.
+func (p *Policy) currentDialer() Dialer {
+	if value := p.dialer.Load(); value != nil {
+		return value.(Dialer)
+	}
+	return &net.Dialer{Timeout: DefaultDialTimeout, KeepAlive: 30 * time.Second}
 }
 
 type Options struct {
@@ -66,14 +95,18 @@ func NewPolicy(opts Options) (*Policy, error) {
 		resolver = net.DefaultResolver
 	}
 	dialer := opts.Dialer
+	injectedDial := false
 	if dialer == nil {
 		timeout := opts.DialTimeout
 		if timeout <= 0 {
-			timeout = 10 * time.Second
+			timeout = DefaultDialTimeout
 		}
 		dialer = &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
+	} else {
+		injectedDial = true
 	}
-	policy := &Policy{hosts: hosts, prefixes: prefixes, resolver: resolver, dialer: dialer}
+	policy := &Policy{hosts: hosts, prefixes: prefixes, resolver: resolver, injectedDial: injectedDial}
+	policy.dialer.Store(dialer)
 	return policy, nil
 }
 func (p *Policy) ValidateURL(raw string) error {
@@ -147,7 +180,7 @@ func (p *Policy) DialContext(ctx context.Context, network, address string) (net.
 		if !allowedHost && !p.addressAllowed(addr) {
 			continue
 		}
-		conn, dialErr := p.dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), port))
+		conn, dialErr := p.currentDialer().DialContext(ctx, network, net.JoinHostPort(addr.String(), port))
 		if dialErr == nil {
 			return conn, nil
 		}
@@ -249,9 +282,78 @@ const DefaultMaxIdleConns = 512
 const DefaultMaxIdleConnsPerHost = 64
 
 func NewClient(policy *Policy, opts ClientOptions) *http.Client {
-	if policy == nil {
-		panic("outbound: nil policy")
+	return newClient(policy, newTransport(policy, opts), opts)
+}
+
+// LiveClient is an outbound client whose transport can be rebuilt while the
+// gateway runs. Every holder (the two relays, the discovery registry, the admin
+// handler, WebDAV) keeps one stable *http.Client; a settings change swaps the
+// transport underneath it, so timeouts and pool sizes are live while the SSRF
+// validation in the outer wrapper stays exactly where it was.
+//
+// Rebuilding drops the previous transport's idle connections: an explicit change
+// of the outbound limits is a fine moment to re-establish them, and leaving the
+// old ones around would keep the old timeouts in use.
+type LiveClient struct {
+	*http.Client
+	policy *Policy
+	inner  *liveTransport
+}
+
+// liveTransport delegates to the transport Rebuild installed. A nil transport
+// means the client was never initialised, which cannot happen through the
+// constructor.
+type liveTransport struct {
+	current atomic.Pointer[http.Transport]
+	// proxy is remembered so a rebuild keeps the configured proxy hook.
+	proxy atomic.Value // func(*http.Request) (*url.URL, error)
+}
+
+func (t *liveTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	transport := t.current.Load()
+	if transport == nil {
+		return nil, errors.New("outbound: live client has no transport")
 	}
+	return transport.RoundTrip(req)
+}
+
+func (t *liveTransport) setProxy(hook func(*http.Request) (*url.URL, error)) {
+	t.proxy.Store(hook)
+	if transport := t.current.Load(); transport != nil {
+		transport.Proxy = wrapProxyHook(hook)
+	}
+}
+
+func (t *liveTransport) proxyHook() func(*http.Request) (*url.URL, error) {
+	if value := t.proxy.Load(); value != nil {
+		if hook, ok := value.(func(*http.Request) (*url.URL, error)); ok {
+			return hook
+		}
+	}
+	return nil
+}
+
+// NewLiveClient builds a client whose timeouts and pool sizes can change at
+// runtime through Rebuild.
+func NewLiveClient(policy *Policy, opts ClientOptions) *LiveClient {
+	inner := &liveTransport{}
+	inner.current.Store(newTransport(policy, opts))
+	return &LiveClient{Client: newClient(policy, inner, opts), policy: policy, inner: inner}
+}
+
+// Rebuild replaces the transport with one built from opts. Requests already in
+// flight keep the transport they started on; the next one picks up the new
+// timeouts.
+func (c *LiveClient) Rebuild(opts ClientOptions) {
+	if c == nil {
+		return
+	}
+	opts.Proxy = c.inner.proxyHook()
+	c.inner.current.Store(newTransport(c.policy, opts))
+}
+
+// newTransport builds the transport carrying every knob the settings can change.
+func newTransport(policy *Policy, opts ClientOptions) *http.Transport {
 	tlsTimeout := opts.TLSHandshakeTimeout
 	if tlsTimeout <= 0 {
 		tlsTimeout = 10 * time.Second
@@ -268,7 +370,7 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 	if maxIdleConnsPerHost <= 0 {
 		maxIdleConnsPerHost = DefaultMaxIdleConnsPerHost
 	}
-	transport := &http.Transport{
+	return &http.Transport{
 		// Environment proxies are intentionally disabled (P7 contract): proxy-
 		// side DNS resolution would bypass DialContext's address validation and
 		// re-open the SSRF surface. An explicit configured proxy (opts.Proxy) is
@@ -284,7 +386,15 @@ func NewClient(policy *Policy, opts ClientOptions) *http.Client {
 		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 	}
-	client := &http.Client{Transport: validatingTransport{policy: policy, next: transport, proxy: transport.Proxy}}
+}
+
+func newClient(policy *Policy, next http.RoundTripper, opts ClientOptions) *http.Client {
+	if policy == nil {
+		panic("outbound: nil policy")
+	}
+	client := &http.Client{
+		Transport: validatingTransport{policy: policy, next: next, proxy: wrapProxyHook(opts.Proxy)},
+	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxRedirects {
 			return errors.New("outbound redirect limit exceeded")

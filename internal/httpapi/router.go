@@ -104,11 +104,20 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		panic("httpapi: invalid outbound policy")
 	}
 	outboundClient := dependencies.OutboundClient
+	// The two clients are live: the outbound limits are runtime settings, so the
+	// relays keep one client whose transport is rebuilt when they change. The
+	// pool sizes ride along, which is why they are set here and not in
+	// NewClient's caller.
+	var liveOutbound, liveImage *outbound.LiveClient
 	if outboundClient == nil {
-		outboundClient = outbound.NewClient(outboundPolicy, outbound.ClientOptions{
+		live := outbound.NewLiveClient(outboundPolicy, outbound.ClientOptions{
 			ResponseHeaderTimeout: cfg.OutboundResponseHeaderTimeout,
 			TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
+			MaxIdleConns:          cfg.OutboundMaxIdleConns,
+			MaxIdleConnsPerHost:   cfg.OutboundMaxIdleConnsPerHost,
 		})
+		liveOutbound = live
+		outboundClient = live.Client
 	}
 	// A second client with the image ceiling: image edits are non-idempotent (so
 	// they are never retried) and slow by nature, which made the shared 60s
@@ -116,10 +125,14 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// 502 (production, 2026-10-07).
 	imageClient := dependencies.OutboundImageClient
 	if imageClient == nil {
-		imageClient = outbound.NewClient(outboundPolicy, outbound.ClientOptions{
+		live := outbound.NewLiveClient(outboundPolicy, outbound.ClientOptions{
 			ResponseHeaderTimeout: cfg.OutboundImageHeaderTimeout,
 			TLSHandshakeTimeout:   cfg.OutboundTLSHandshakeTimeout,
+			MaxIdleConns:          cfg.OutboundMaxIdleConns,
+			MaxIdleConnsPerHost:   cfg.OutboundMaxIdleConnsPerHost,
 		})
+		liveImage = live
+		imageClient = live.Client
 	}
 	registry := dependencies.Registry
 	if registry == nil {
@@ -579,6 +592,31 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			// settings change takes effect on the next one.
 			SetSiteProbeSchedule: func(interval, jitter time.Duration) {
 				siteProbeScheduler.SetSchedule(interval, jitter)
+			},
+			// Outbound limits hot reload. The two relays share one client each, so the
+			// transport underneath them is rebuilt here and the next request picks up
+			// the new timeouts; the connect timeout lives on the policy's dialer. The
+			// image client keeps its own, longer ceiling. An embedder that injected
+			// its own client keeps it untouched (both live clients are nil then),
+			// which is the documented contract for injected dependencies.
+			SetOutboundLimits: func(limits runtimeconfig.OutboundLimits) {
+				outboundPolicy.SetDialTimeout(limits.ConnectTimeout)
+				if liveOutbound != nil {
+					liveOutbound.Rebuild(outbound.ClientOptions{
+						ResponseHeaderTimeout: limits.HeaderTimeout,
+						TLSHandshakeTimeout:   limits.TLSTimeout,
+						MaxIdleConns:          limits.MaxIdleConns,
+						MaxIdleConnsPerHost:   limits.MaxIdleConnsPerHost,
+					})
+				}
+				if liveImage != nil {
+					liveImage.Rebuild(outbound.ClientOptions{
+						ResponseHeaderTimeout: limits.ImageHeaderTimeout,
+						TLSHandshakeTimeout:   limits.TLSTimeout,
+						MaxIdleConns:          limits.MaxIdleConns,
+						MaxIdleConnsPerHost:   limits.MaxIdleConnsPerHost,
+					})
+				}
 			},
 		})
 	}

@@ -1271,6 +1271,104 @@ export function RuntimeSettingsPanel({
                 onChange={(e) => patch("proxy_url", e.target.value)}
               />
             </label>
+            <div className="runtime-setting-sub">
+              <span className="runtime-setting-subtitle">{t("ops.runtime.outboundLimits")}</span>
+              <span className="field-hint">{t("ops.runtime.outboundLimitsHint")}</span>
+            </div>
+            <div className="field-row">
+              <label className="field">
+                <SettingLabel
+                  label={t("ops.runtime.outboundConnectTimeout")}
+                  hint={t("ops.runtime.outboundConnectTimeoutHint")}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={600}
+                  disabled={busy}
+                  value={draft.outbound_connect_timeout_seconds ?? 0}
+                  onChange={(e) =>
+                    patch("outbound_connect_timeout_seconds", Number(e.target.value))
+                  }
+                />
+              </label>
+              <label className="field">
+                <SettingLabel
+                  label={t("ops.runtime.outboundHeaderTimeout")}
+                  hint={t("ops.runtime.outboundHeaderTimeoutHint")}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={3600}
+                  disabled={busy}
+                  value={draft.outbound_header_timeout_seconds ?? 0}
+                  onChange={(e) => patch("outbound_header_timeout_seconds", Number(e.target.value))}
+                />
+              </label>
+              <label className="field">
+                <SettingLabel
+                  label={t("ops.runtime.outboundImageHeaderTimeout")}
+                  hint={t("ops.runtime.outboundImageHeaderTimeoutHint")}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={3600}
+                  disabled={busy}
+                  value={draft.outbound_image_header_timeout_seconds ?? 0}
+                  onChange={(e) =>
+                    patch("outbound_image_header_timeout_seconds", Number(e.target.value))
+                  }
+                />
+              </label>
+            </div>
+            <div className="field-row">
+              <label className="field">
+                <SettingLabel
+                  label={t("ops.runtime.outboundTLSTimeout")}
+                  hint={t("ops.runtime.outboundTLSTimeoutHint")}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={600}
+                  disabled={busy}
+                  value={draft.outbound_tls_timeout_seconds ?? 0}
+                  onChange={(e) => patch("outbound_tls_timeout_seconds", Number(e.target.value))}
+                />
+              </label>
+              <label className="field">
+                <SettingLabel
+                  label={t("ops.runtime.outboundMaxIdleConns")}
+                  hint={t("ops.runtime.outboundMaxIdleConnsHint")}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  disabled={busy}
+                  value={draft.outbound_max_idle_conns ?? 0}
+                  onChange={(e) => patch("outbound_max_idle_conns", Number(e.target.value))}
+                />
+              </label>
+              <label className="field">
+                <SettingLabel
+                  label={t("ops.runtime.outboundMaxIdleConnsPerHost")}
+                  hint={t("ops.runtime.outboundMaxIdleConnsPerHostHint")}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={100000}
+                  disabled={busy}
+                  value={draft.outbound_max_idle_conns_per_host ?? 0}
+                  onChange={(e) =>
+                    patch("outbound_max_idle_conns_per_host", Number(e.target.value))
+                  }
+                />
+              </label>
+            </div>
             <p className="muted panel-lede">{t("ops.runtime.serverReadonly")}</p>
             <div className="runtime-setting-row">
               <span className="runtime-setting-label">{t("ops.runtime.buildVersion")}</span>

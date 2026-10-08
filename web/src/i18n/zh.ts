@@ -2371,6 +2371,25 @@ export const zh: Dict = {
   "ops.runtime.proxyURL": "全局出口代理",
   "ops.runtime.proxyURLHint":
     "所有上游请求的 HTTP(S) 代理（设置了自有代理的渠道优先）。留空 = 直连。例如 http://127.0.0.1:7897",
+  "ops.runtime.outboundLimits": "出网超时与连接池",
+  "ops.runtime.outboundLimitsHint":
+    "填 0 = 用部署默认值（部署参数里能看到当前生效值）；保存即生效，不需要重启容器。",
+  "ops.runtime.outboundConnectTimeout": "连接超时（秒）",
+  "ops.runtime.outboundConnectTimeoutHint": "建立 TCP/TLS 连接的上限。0 = 部署默认（默认 10）。",
+  "ops.runtime.outboundHeaderTimeout": "响应头超时（秒）",
+  "ops.runtime.outboundHeaderTimeoutHint":
+    "等待上游响应头的上限（不含流式正文）。0 = 部署默认（默认 60）；正文很慢但不流式的上游要调大。",
+  "ops.runtime.outboundImageHeaderTimeout": "图像响应头超时（秒）",
+  "ops.runtime.outboundImageHeaderTimeoutHint":
+    "图像生成/编辑专用，比普通请求慢得多。0 = 部署默认（默认 300）；上游再慢就继续调大。",
+  "ops.runtime.outboundTLSTimeout": "TLS 握手超时（秒）",
+  "ops.runtime.outboundTLSTimeoutHint": "TLS 握手上限。0 = 部署默认（默认 10）。",
+  "ops.runtime.outboundMaxIdleConns": "空闲连接上限（全局）",
+  "ops.runtime.outboundMaxIdleConnsHint":
+    "所有上游共享的空闲连接数上限。0 = 部署默认（默认 512）。",
+  "ops.runtime.outboundMaxIdleConnsPerHost": "空闲连接上限（单上游）",
+  "ops.runtime.outboundMaxIdleConnsPerHostHint":
+    "同一上游主机的空闲连接上限（Go 默认只有 2，高并发下会拖慢）。0 = 部署默认（默认 64）。",
   "ops.runtime.discoveryCron": "定时模型同步",
   "ops.runtime.discoveryCronHint":
     "五段 cron（如 0 3 * * * = 每天 03:00）定时重新扫描渠道模型列表；留空 = 关闭。",
