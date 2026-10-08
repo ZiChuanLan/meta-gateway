@@ -1623,6 +1623,16 @@ export const zh: Dict = {
   "modelsPage.probe.autoDisable": "连续失败几次后禁用",
   "modelsPage.probe.autoDisableHint":
     "连续失败 {count} 次的成员会被自动禁用，探测成功即自动恢复；填 0 表示只报告不改动路由。人工禁用的成员不会被恢复。",
+  "modelsPage.probe.schedule": "定时探测",
+  "modelsPage.probe.scheduleScope": "定时范围：{channels} · {models}",
+  "modelsPage.probe.scheduleAllChannels": "全部渠道",
+  "modelsPage.probe.scheduleChannels": "{count} 个渠道",
+  "modelsPage.probe.scheduleAllModels": "全部模型",
+  "modelsPage.probe.scheduleModels": "{count} 个模型",
+  "modelsPage.probe.scheduleUseSelection": "用当前选择设为定时范围",
+  "modelsPage.probe.scheduleScopeMatches": "定时范围与当前选择一致",
+  "modelsPage.probe.scheduleHint":
+    "定时轮次按这个计划与范围跑真实调用（同样消耗额度）；范围留「全部」时，以后新增的渠道/模型会自动进入下一轮。提示词、并发、连续失败禁用等参数在「设置 → 运行设置 → 定时模型探测」里。",
   "modelsPage.probe.start": "开始探测",
   "modelsPage.probe.cancel": "停止",
   "modelsPage.probe.running": "进行中",

@@ -1490,6 +1490,16 @@ export const en: Dict = {
   "modelsPage.probe.autoDisable": "Disable after N failures",
   "modelsPage.probe.autoDisableHint":
     "A member failing {count} times in a row is disabled, and comes back as soon as a probe succeeds. 0 only reports. Members you disabled by hand are never re-enabled.",
+  "modelsPage.probe.schedule": "Scheduled probing",
+  "modelsPage.probe.scheduleScope": "Scheduled scope: {channels} · {models}",
+  "modelsPage.probe.scheduleAllChannels": "all channels",
+  "modelsPage.probe.scheduleChannels": "{count} channels",
+  "modelsPage.probe.scheduleAllModels": "all models",
+  "modelsPage.probe.scheduleModels": "{count} models",
+  "modelsPage.probe.scheduleUseSelection": "Use this selection for the schedule",
+  "modelsPage.probe.scheduleScopeMatches": "The schedule already covers this selection",
+  "modelsPage.probe.scheduleHint":
+    'The scheduled round runs real calls over this plan and scope (it costs tokens the same way); leaving the scope on "all" means channels and models added later join the next round by themselves. Prompt, concurrency and the auto-disable threshold live in Settings → Runtime settings → Scheduled model probe.',
   "modelsPage.probe.start": "Start probing",
   "modelsPage.probe.cancel": "Stop",
   "modelsPage.probe.running": "running",

@@ -6,7 +6,8 @@ import type { ProbeStartRequest, RouteOverview } from "../../api/types";
 import { Button, Dialog, Empty, ErrorState } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
-import { useSession } from "../../session";
+import { useSession, isStaff } from "../../session";
+import { CronSchedulePicker } from "../ops/CronSchedulePicker";
 
 const PROBE_INVALIDATE_KEYS = [["probe-tasks"], ["probe-results"], ["model-health"]] as const;
 
@@ -20,8 +21,12 @@ const PROBE_INVALIDATE_KEYS = [["probe-tasks"], ["probe-results"], ["model-healt
  */
 export function ProbeDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
-  const { client } = useSession();
+  const { client, role } = useSession();
   const service = api(client!);
+  // Members reach this dialog through the shared models page but cannot read the
+  // deployment's runtime settings, so the schedule block is staff-only rather
+  // than a permanently empty form.
+  const staff = isStaff(role);
   const [pickedChannels, setPickedChannels] = useState<string[]>([]);
   const [pickedModels, setPickedModels] = useState<string[]>([]);
   const [allChannels, setAllChannels] = useState(true);
@@ -40,6 +45,29 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   const routes = useQuery({
     queryKey: ["route-overviews"],
     queryFn: ({ signal }) => service.routeOverviews(signal),
+  });
+  // The scheduled run is the same probe with the same pick lists, so its scope
+  // and its schedule are set from here: the selection above is exactly what the
+  // schedule needs, and asking the operator to re-pick it in Settings would be a
+  // second, separately-remembered copy of the same decision.
+  const runtime = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: ({ signal }) => service.runtimeSettings(signal),
+    enabled: staff,
+  });
+  const schedule = useAdminMutation({
+    mutationFn: (
+      patch: Partial<{
+        probe_cron: string;
+        probe_channels: number[];
+        probe_models: string[];
+      }>,
+    ) => {
+      const editable = runtime.data?.editable;
+      if (!editable) throw new Error("runtime settings are not loaded");
+      return service.updateRuntimeSettings({ ...editable, ...patch });
+    },
+    invalidateKeys: [["runtime-settings"]],
   });
 
   // Poll while a run is in flight; the interval turns itself off once idle.
@@ -146,6 +174,22 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
       auto_disable_after: autoDisable > 0 ? autoDisable : undefined,
     });
   };
+
+  // What the scheduled run covers. An empty list means "everything" on the
+  // backend, so selecting everything writes [] rather than a snapshot of today's
+  // channels: a channel added tomorrow must join the next round by itself.
+  const scheduledCron = runtime.data?.editable?.probe_cron ?? "";
+  const scheduledChannels = runtime.data?.editable?.probe_channels ?? [];
+  const scheduledModels = runtime.data?.editable?.probe_models ?? [];
+  const selectionMatchesSchedule =
+    (allChannels ? scheduledChannels.length === 0 : sameSet(scheduledChannels, pickedChannels)) &&
+    (allModels ? scheduledModels.length === 0 : sameSet(scheduledModels, pickedModels));
+  const scheduleReady = staff && runtime.data?.editable !== undefined;
+  const saveScope = () =>
+    schedule.mutate({
+      probe_channels: allChannels ? [] : pickedChannels.map(Number),
+      probe_models: allModels ? [] : pickedModels,
+    });
 
   return (
     <Dialog
@@ -290,6 +334,50 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
       ) : null}
 
       {start.error ? <div className="inline-error">{String(start.error)}</div> : null}
+
+      {/* The same pick lists above are what the schedule needs, so the schedule is
+          configured where the selection is made. The run knobs stay in Settings:
+          this block owns only the plan and the scope. */}
+      {staff ? (
+        <div className="probe-schedule">
+          <div className="probe-schedule-head">
+            <span className="probe-schedule-title">{t("modelsPage.probe.schedule")}</span>
+            <CronSchedulePicker
+              value={scheduledCron}
+              disabled={!scheduleReady || running || schedule.isPending}
+              onChange={(cron) => schedule.mutate({ probe_cron: cron })}
+            />
+          </div>
+          <div className="probe-schedule-head">
+            <span className="probe-schedule-scope" role="status">
+              {t("modelsPage.probe.scheduleScope", {
+                channels:
+                  scheduledChannels.length === 0
+                    ? t("modelsPage.probe.scheduleAllChannels")
+                    : t("modelsPage.probe.scheduleChannels", { count: scheduledChannels.length }),
+                models:
+                  scheduledModels.length === 0
+                    ? t("modelsPage.probe.scheduleAllModels")
+                    : t("modelsPage.probe.scheduleModels", { count: scheduledModels.length }),
+              })}
+            </span>
+            {selectionMatchesSchedule ? (
+              <span className="muted">{t("modelsPage.probe.scheduleScopeMatches")}</span>
+            ) : (
+              <button
+                type="button"
+                className="unify-covered-toggle"
+                disabled={!scheduleReady || running || schedule.isPending}
+                onClick={saveScope}
+              >
+                {t("modelsPage.probe.scheduleUseSelection")}
+              </button>
+            )}
+          </div>
+          <p className="field-hint">{t("modelsPage.probe.scheduleHint")}</p>
+          {schedule.error ? <div className="inline-error">{String(schedule.error)}</div> : null}
+        </div>
+      ) : null}
 
       {latest ? (
         <div className="unify-result" role="status">
@@ -490,4 +578,12 @@ function buildIndex(overviews: RouteOverview[]) {
     }
   }
   return { byChannel, byModel, models: [...byModel.keys()].sort() };
+}
+
+/** Set equality over ids or names, for "is the schedule already this scope?". */
+function sameSet(a: readonly (string | number)[], b: readonly (string | number)[]) {
+  if (a.length !== b.length) return false;
+  const norm = (values: readonly (string | number)[]) =>
+    [...values].map(String).sort().join("\u0000");
+  return norm(a) === norm(b);
 }

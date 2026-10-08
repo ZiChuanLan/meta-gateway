@@ -29,6 +29,12 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   与图像专用的 `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`）。能被「运行设置」覆盖的项以覆盖值为准。表由 `internal/config/params.go` 的字段绑定生成，
   `params_test.go` 解析 `config.go` 双向核对：Load 读到的每个变量都在表里、表里没有死项、绑定字段与 Load
   的赋值一致、凭据类变量一律打码。密钥值只以打码形式下发，前端拿到的是 `••••••`。
+- **「模型探测」里能直接设定时计划与定时范围。** 对话框本来就拿着渠道/模型两份勾选列表，而定时轮次要用的正是这两份
+  —— 以前只能去「设置 → 运行设置 → 定时模型探测」里填计划，而范围（`probe_channels` / `probe_models`）**根本没有
+  界面入口**，尽管后端一直在用它（`internal/probe/scheduler.go` 的 `CandidatePairs(db, schedule.ChannelIDs, schedule.Models)`）。
+  现在对话框底部有「定时探测」块：计划下拉（关闭 = 留空）、当前定时范围、以及「用当前选择设为定时范围」一键写入。
+  范围选「全部」时写入的是**空列表**（后端的「全部」语义），所以以后新增的渠道/模型会自动进入下一轮，而不是被钉在今天的快照上。
+  写入是读-改-写：只动 `probe_cron` / `probe_channels` / `probe_models`，其余运行设置原样保留；成员账号看不到这一块（读不到运行设置）。
 
 ### Changed
 

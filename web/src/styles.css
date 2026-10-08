@@ -4520,6 +4520,33 @@ td.actions {
   color: var(--ink-soft);
   font-size: 12.5px;
 }
+.probe-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.probe-schedule-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.probe-schedule-title {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.probe-schedule-scope {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.probe-schedule .field-hint {
+  margin: 0;
+}
 .probe-results {
   max-height: 34vh;
   overflow-y: auto;
