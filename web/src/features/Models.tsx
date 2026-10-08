@@ -42,6 +42,7 @@ import { RouteDirectory } from "./models/RouteDirectory";
 import { RouteDialog } from "./models/RouteDialog";
 import { MemberDialog } from "./models/MemberDialog";
 import { ModelToolDialogs, useModelTools } from "./models/ModelTools";
+import { ModelChangesPanel } from "./models/ModelChangesPanel";
 import { RouteDetailPanel } from "./models/RouteDetailPanel";
 
 function readMissingDismissed() {
@@ -918,6 +919,10 @@ function ModelsWorkspace({
           {t("routing.addRoute")}
         </Button>
       </PageActions>
+      {/* The upstream-change summary sits above the workspace: it is a notice
+          about the model list underneath it, and it was a footnote at the
+          bottom of the page where nobody saw it before opening the list. */}
+      <ModelChangesPanel openRequest={tools.changesOpenRequest} hideWhenQuiet />
       <ModelWorkspaceLayout
         directory={
           <RouteDirectory

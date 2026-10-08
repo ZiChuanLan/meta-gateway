@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { Route, RouteOverview } from "../../api/types";
-import { ModelChangesPanel } from "./ModelChangesPanel";
 import { UnifyDialog } from "./UnifyDialog";
 import { UnifyHistory } from "./UnifyHistory";
 import { ProbeDialog } from "./ProbeDialog";
@@ -75,9 +74,6 @@ export function ModelToolDialogs({
 }) {
   return (
     <>
-      {/* The watcher polls upstream changes while it is mounted, so it stays out
-          of the tree until the operator asks for it. */}
-      <ModelChangesPanel openRequest={tools.changesOpenRequest} hideWhenQuiet />
       {tools.unifyOpen ? <UnifyDialog onClose={() => tools.setUnifyOpen(false)} /> : null}
       {tools.unifyHistoryOpen ? (
         <UnifyHistory onClose={() => tools.setUnifyHistoryOpen(false)} />
