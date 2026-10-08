@@ -25,7 +25,13 @@ export function SettingState({ state }: { state: "changed" | "default" }) {
 
 /**
  * One labelled setting: the label, its hint as an InfoTip, and — when the
- * caller compares against the deployment default — the resulting badge.
+ * caller compares against the deployment default — the resulting badge. It sits
+ * on the console's `.field-label`, so a settings row's label is the same object
+ * as every other form label in the app.
+ *
+ * A measurement the label already names in brackets moves out of the name to
+ * its right ("探测间隔（秒）" reads "探测间隔 秒"), where it annotates the value
+ * instead of lengthening the word.
  */
 export function SettingLabel({
   label,
@@ -37,9 +43,11 @@ export function SettingLabel({
   /** Omit for labels that do not map to a single setting (sub-labels). */
   changed?: boolean;
 }) {
+  const { name, unit } = splitUnit(label);
   return (
-    <span className="setting-label">
-      <span>{label}</span>
+    <span className="field-label runtime-row-label">
+      <span>{name}</span>
+      {unit ? <span className="runtime-row-unit">{unit}</span> : null}
       <InfoTip label={hint} />
       {changed === undefined ? null : <SettingState state={changed ? "changed" : "default"} />}
     </span>
@@ -64,45 +72,34 @@ export function splitUnit(label: string): { name: string; unit: string } {
 }
 
 /**
- * One settings row. The page is a continuous surface with hairline separators,
- * so this — not a card grid — is the repeating unit: label on the left, control
- * on the right, one line tall, the unit riding next to the value.
+ * One settings row: a real `.field`, the console's stacked label-over-control
+ * column, laid out inside `.form-grid`. A settings page is therefore the same
+ * object as every other form in the app — two columns, each label directly above
+ * the control it names — instead of labels pinned left and controls drifting to
+ * the far edge of a wide line.
  *
- * The row carries its own class instead of reusing `.field`: `.field` is a
- * generic stacked column (`display: flex; flex-direction: column`) and winning
- * that declaration back per row is exactly how the previous version ended up
- * with the label stacked above its control.
- *
- * It is a `<label>`, so click-to-focus and the accessible name keep working for
- * the toggle rows, where the control is the row's only child.
+ * It stays a `<label>`, so click-to-focus and the accessible name keep working
+ * for the toggle rows, where the control is the row's only child.
  */
 export function RuntimeRow({
   label,
   hint,
   changed,
   wide = false,
-  text = false,
   children,
 }: {
   label: string;
   hint: string;
   /** Omit for rows that do not map to a single setting. */
   changed?: boolean;
-  /** Label above, control below at full width: textareas, cron and time pickers. */
+  /** Spans both columns: textareas, cron and time pickers. */
   wide?: boolean;
-  /** One line, but the control takes the room left over: URL and text inputs. */
-  text?: boolean;
   children: ReactNode;
 }) {
-  const { name, unit } = splitUnit(label);
   return (
-    <label className={`runtime-row${wide ? " is-wide" : ""}${text ? " is-text" : ""}`}>
-      <SettingLabel label={name} hint={hint} changed={changed} />
-      <span className="runtime-row-leader" aria-hidden="true" />
-      <span className="runtime-row-value">
-        {children}
-        {unit ? <span className="runtime-row-unit">{unit}</span> : null}
-      </span>
+    <label className={`field runtime-row${wide ? " wide" : ""}`}>
+      <SettingLabel label={label} hint={hint} changed={changed} />
+      {children}
     </label>
   );
 }

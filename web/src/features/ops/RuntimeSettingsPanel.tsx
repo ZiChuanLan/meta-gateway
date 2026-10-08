@@ -289,22 +289,21 @@ function SectionCard({
 }) {
   const { t } = useI18n();
   return (
-    <section
-      className={`panel runtime-section runtime-section-${section.key}`}
-      id={`runtime-${section.key}`}
-    >
-      {/* A section is one of the console's panels, not a page head with a rule
-          under it: the skin paints .panel (classic: hairline border, no radius,
-          soft shadow, 24/26 padding) and .panel-header, so this page stops
-          carrying a look of its own. */}
-      <header className="panel-header runtime-section-head">
-        <h3 className="runtime-section-title">{t(section.label)}</h3>
-        <SettingState state={changed ? "changed" : "default"} />
-        <span className="runtime-section-spacer" />
-        {actions}
-        <Button variant="quiet" disabled={busy || !changed} onClick={onRestore}>
-          {t("ops.runtime.resetSection")}
-        </Button>
+    <section className="runtime-section" id={`runtime-${section.key}`}>
+      {/* A section head is the console's own panel header: the title, the badge
+          that says whether this section overrides the deployment default, and
+          the one action that takes it back to that default. */}
+      <header className="panel-header">
+        <div className="panel-title">
+          <h2>{t(section.label)}</h2>
+          <SettingState state={changed ? "changed" : "default"} />
+        </div>
+        <div className="toolbar">
+          {actions}
+          <Button variant="quiet" disabled={busy || !changed} onClick={onRestore}>
+            {t("ops.runtime.resetSection")}
+          </Button>
+        </div>
       </header>
       {/* Fields lay out in the console's form grid (two columns of stacked
           label-over-control), the same pattern every other form page uses. */}
@@ -650,11 +649,11 @@ export function RuntimeSettingsPanel({
           (where the values come from, when they last changed) and the one
           action that resets the whole override layer. */}
       <header className="runtime-head">
-        <div className="runtime-head-main">
-          <div className="runtime-head-line">
-            <h2 className="runtime-head-title">{t("ops.runtime.writableTitle")}</h2>
+        <div className="runtime-head-copy">
+          <h2 className="runtime-head-title">
+            {t("ops.runtime.writableTitle")}
             <InfoTip label={t("ops.runtime.writableSummary")} />
-          </div>
+          </h2>
           <p className="runtime-head-meta">
             <span>
               {t("ops.runtime.source")}
@@ -671,7 +670,7 @@ export function RuntimeSettingsPanel({
             ) : null}
           </p>
         </div>
-        <div className="runtime-head-actions">
+        <div className="toolbar runtime-head-actions">
           <span className="runtime-save-status" role="status">
             {status}
           </span>
@@ -694,9 +693,9 @@ export function RuntimeSettingsPanel({
       </header>
 
       <div className="runtime-layout">
-        {/* The index is an index: three group labels in tracked caps, twenty-two
-            entries on a 30px rhythm, the current one held by an accent rule in
-            the gutter rather than a filled row. */}
+        {/* The index is a panel-internal list: three group captions, the entries
+            at the console's own list size, the current one held by the
+            selection tint and its weight. */}
         <nav className="panel runtime-index" aria-label={t("ops.runtime.sectionNav")}>
           {RUNTIME_GROUPS.map((group) => (
             <div key={group.key} className="runtime-index-group">
@@ -709,7 +708,6 @@ export function RuntimeSettingsPanel({
                   aria-current={section.key === active.key ? "true" : undefined}
                   onClick={() => setActiveSection(section.key)}
                 >
-                  <span className="runtime-index-mark" aria-hidden="true" />
                   <span className="runtime-index-text">{t(section.label)}</span>
                   {sectionChanged(section) ? (
                     <span className="runtime-nav-dot" aria-hidden="true" />
@@ -720,11 +718,12 @@ export function RuntimeSettingsPanel({
           ))}
         </nav>
 
-        {/* One blur/change listener for the whole section body: React bubbles
-            both through the container, so no field needs its own save call.
-            Keyed on the section so the single authored entrance replays. */}
+        {/* One blur/change listener for the whole pane: React bubbles both
+            through the container, so no field needs its own save call. The pane
+            is the console's .panel; keyed on the section so the one authored
+            entrance replays. */}
         <div
-          className="runtime-section-body"
+          className="panel runtime-pane"
           key={active.key}
           onBlur={handleSectionBlur}
           onChange={handleSectionChange}
@@ -1315,7 +1314,6 @@ export function RuntimeSettingsPanel({
                 label={t("ops.runtime.probePrompt")}
                 hint={t("ops.runtime.probePromptHint")}
                 changed={isChanged("probe_prompt")}
-                text
               >
                 <input
                   type="text"
@@ -1522,7 +1520,6 @@ export function RuntimeSettingsPanel({
                 label={t("ops.runtime.webhookURL")}
                 hint={t("ops.runtime.webhookURLHint")}
                 changed={isChanged("webhook_url")}
-                text
               >
                 <input
                   type="url"
@@ -1624,7 +1621,6 @@ export function RuntimeSettingsPanel({
                 label={t("ops.maintenance.cron")}
                 hint={t("ops.maintenance.cronHint")}
                 changed={isChanged("db_gc_cron")}
-                text
               >
                 <input
                   type="text"
@@ -1648,7 +1644,6 @@ export function RuntimeSettingsPanel({
                 label={t("ops.runtime.proxyURL")}
                 hint={t("ops.runtime.proxyURLHint")}
                 changed={isChanged("proxy_url")}
-                text
               >
                 <input
                   type="url"
@@ -1659,8 +1654,8 @@ export function RuntimeSettingsPanel({
                 />
               </RuntimeRow>
 
-              <div className="runtime-setting-sub">
-                <span className="runtime-setting-subtitle">{t("ops.runtime.outboundLimits")}</span>
+              <div className="runtime-subhead">
+                <span className="field-label">{t("ops.runtime.outboundLimits")}</span>
                 <span className="field-hint">{t("ops.runtime.outboundLimitsHint")}</span>
               </div>
               <RuntimeRow
@@ -1755,36 +1750,39 @@ export function RuntimeSettingsPanel({
               </RuntimeRow>
 
               <p className="muted panel-lede">{t("ops.runtime.serverReadonly")}</p>
-              <div className="runtime-setting-row">
-                <span className="runtime-setting-label">{t("ops.runtime.buildVersion")}</span>
-                <strong className="runtime-setting-value mono">
-                  {updateCheckQuery.data?.current ?? "…"}
-                </strong>
-              </div>
-              <div className="runtime-setting-row">
-                <span className="runtime-setting-label">{t("ops.runtime.httpAddr")}</span>
-                <strong className="runtime-setting-value mono">{data.server_http_addr}</strong>
-              </div>
-              <div className="runtime-setting-row">
-                <span className="runtime-setting-label">{t("ops.runtime.dataDir")}</span>
-                <strong className="runtime-setting-value mono">{data.data_dir}</strong>
-              </div>
-              <div className="runtime-setting-row">
-                <span className="runtime-setting-label">{t("ops.runtime.backupDir")}</span>
-                <strong className="runtime-setting-value mono">{data.backup_dir}</strong>
-              </div>
-              <div className="runtime-setting-row">
-                <span className="runtime-setting-label">{t("ops.runtime.pluginsDir")}</span>
-                <strong className="runtime-setting-value mono">{data.plugins_dir}</strong>
-              </div>
-              <div className="runtime-setting-row">
-                <span className="runtime-setting-label">{t("ops.runtime.metricsToken")}</span>
-                <strong className="runtime-setting-value mono">
-                  {data.metrics_token_masked
-                    ? data.metrics_token_masked
-                    : t("ops.runtime.metricsTokenNone")}
-                </strong>
-              </div>
+              {/* Read-only facts about the running process: a definition list,
+                  so the paths and the build stamp read as one reference block
+                  instead of six half-empty form rows. */}
+              <dl className="runtime-readouts">
+                <div className="runtime-readout">
+                  <dt className="field-label">{t("ops.runtime.buildVersion")}</dt>
+                  <dd className="mono">{updateCheckQuery.data?.current ?? "…"}</dd>
+                </div>
+                <div className="runtime-readout">
+                  <dt className="field-label">{t("ops.runtime.httpAddr")}</dt>
+                  <dd className="mono">{data.server_http_addr}</dd>
+                </div>
+                <div className="runtime-readout">
+                  <dt className="field-label">{t("ops.runtime.dataDir")}</dt>
+                  <dd className="mono">{data.data_dir}</dd>
+                </div>
+                <div className="runtime-readout">
+                  <dt className="field-label">{t("ops.runtime.backupDir")}</dt>
+                  <dd className="mono">{data.backup_dir}</dd>
+                </div>
+                <div className="runtime-readout">
+                  <dt className="field-label">{t("ops.runtime.pluginsDir")}</dt>
+                  <dd className="mono">{data.plugins_dir}</dd>
+                </div>
+                <div className="runtime-readout">
+                  <dt className="field-label">{t("ops.runtime.metricsToken")}</dt>
+                  <dd className="mono">
+                    {data.metrics_token_masked
+                      ? data.metrics_token_masked
+                      : t("ops.runtime.metricsTokenNone")}
+                  </dd>
+                </div>
+              </dl>
 
               <RuntimeRow
                 label={t("ops.runtime.updateCheck")}
@@ -1885,17 +1883,17 @@ export function RuntimeSettingsPanel({
               entry, so without this the module would be unreachable from
               Settings. */}
           {active.key === "users" ? (
-            <section className="runtime-section runtime-section-users" id="runtime-users">
-              <header className="runtime-section-head">
-                <h3 className="runtime-section-title">{t("ops.runtime.section.users")}</h3>
-              </header>
-              <div className="runtime-rows">
-                <p className="muted panel-lede">{t("ops.runtime.multiUserHint")}</p>
-                <div className="runtime-actions">
-                  <Link className="button button-quiet" to="/users">
-                    {t("ops.runtime.openUsers")}
-                  </Link>
+            <section className="runtime-section" id="runtime-users">
+              <header className="panel-header">
+                <div className="panel-title">
+                  <h2>{t("ops.runtime.section.users")}</h2>
                 </div>
+              </header>
+              <p className="muted panel-lede">{t("ops.runtime.multiUserHint")}</p>
+              <div className="runtime-actions">
+                <Link className="button button-quiet" to="/users">
+                  {t("ops.runtime.openUsers")}
+                </Link>
               </div>
             </section>
           ) : null}
