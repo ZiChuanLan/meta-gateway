@@ -290,12 +290,14 @@ function SectionCard({
   const { t } = useI18n();
   return (
     <section
-      className={`runtime-section runtime-section-${section.key}`}
+      className={`panel runtime-section runtime-section-${section.key}`}
       id={`runtime-${section.key}`}
     >
-      {/* The section header is the page head of the pane: a 2px rule under a
-          title, not the top of a card. */}
-      <header className="runtime-section-head">
+      {/* A section is one of the console's panels, not a page head with a rule
+          under it: the skin paints .panel (classic: hairline border, no radius,
+          soft shadow, 24/26 padding) and .panel-header, so this page stops
+          carrying a look of its own. */}
+      <header className="panel-header runtime-section-head">
         <h3 className="runtime-section-title">{t(section.label)}</h3>
         <SettingState state={changed ? "changed" : "default"} />
         <span className="runtime-section-spacer" />
@@ -304,7 +306,9 @@ function SectionCard({
           {t("ops.runtime.resetSection")}
         </Button>
       </header>
-      <div className="runtime-rows">{children}</div>
+      {/* Fields lay out in the console's form grid (two columns of stacked
+          label-over-control), the same pattern every other form page uses. */}
+      <div className="form-grid runtime-rows">{children}</div>
     </section>
   );
 }
@@ -693,7 +697,7 @@ export function RuntimeSettingsPanel({
         {/* The index is an index: three group labels in tracked caps, twenty-two
             entries on a 30px rhythm, the current one held by an accent rule in
             the gutter rather than a filled row. */}
-        <nav className="runtime-index" aria-label={t("ops.runtime.sectionNav")}>
+        <nav className="panel runtime-index" aria-label={t("ops.runtime.sectionNav")}>
           {RUNTIME_GROUPS.map((group) => (
             <div key={group.key} className="runtime-index-group">
               <span className="runtime-index-label">{t(group.label)}</span>
