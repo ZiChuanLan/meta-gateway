@@ -1550,9 +1550,6 @@ td.actions {
   background: var(--surface);
   color: var(--ink);
 }
-.stat-card {
-  background: var(--surface);
-}
 
 /* —— Split / master-detail —— */
 .split {
@@ -6282,7 +6279,6 @@ td.actions {
 @media (prefers-reduced-motion: reduce) {
   .route-enter,
   .stagger-row,
-  .stat-card,
   .dashboard-list li {
     animation: none;
   }
@@ -6441,76 +6437,11 @@ td.actions {
   line-height: 1.6;
 }
 
-/* —— Stat card upgrade (icons, tones, trends) —— */
-.stat-card-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-.stat-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stat-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  color: var(--muted);
-}
-.tone-primary .stat-icon {
-  background: var(--accent-soft);
-  color: var(--primary);
-}
-.tone-info .stat-icon {
-  background: var(--info-soft);
-  color: var(--info);
-}
-.tone-success .stat-icon {
-  background: var(--success-soft);
-  color: var(--success);
-}
-.tone-warning .stat-icon {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-.tone-danger .stat-icon {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
 .tone-primary.is-interactive:hover {
   border-color: rgba(0, 0, 0, 0.6);
 }
 .tone-success.is-interactive:hover {
   border-color: var(--success);
-}
-.stat-trend {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex: none;
-  padding: 2px 7px;
-  border-radius: var(--radius);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-.stat-trend.is-up {
-  color: var(--success);
-  background: var(--success-soft);
-}
-.stat-trend.is-down {
-  color: var(--danger);
-  background: var(--danger-soft);
 }
 
 /* —— Dashboard chart —— */
@@ -7347,16 +7278,6 @@ label.check input[type="checkbox"] {
   overflow-wrap: anywhere;
 }
 
-.stat-card,
-.stat-card-top,
-.stat-label {
-  min-width: 0;
-}
-
-.stat-card {
-  min-height: 82px;
-}
-
 /* Keep ordinary prose intact; only long identifiers should break anywhere. */
 
 .ops-list-panel .table-wrap[data-columns="4"] table {
@@ -7604,10 +7525,6 @@ label.check input[type="checkbox"] {
 }
 
 @media (max-width: 1100px) {
-  .stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .store-col-side {
     grid-template-columns: 1fr;
   }
@@ -7665,15 +7582,6 @@ label.check input[type="checkbox"] {
   .filter-bar > .button {
     width: 100%;
     min-width: 0;
-  }
-
-  .stat-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .stat-card {
-    min-height: 72px;
   }
 
   .detail-meta.is-compact {
