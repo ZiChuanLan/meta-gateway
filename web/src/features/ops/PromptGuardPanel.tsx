@@ -33,7 +33,7 @@ function PromptGuardPanel() {
   });
   const items = query.data?.items ?? [];
   return (
-    <section className="runtime-section runtime-tool-prompt-guard" id="runtime-prompt-guards">
+    <section className="panel runtime-section runtime-tool-prompt-guard" id="runtime-prompt-guards">
       <div className="panel-header">
         <strong>{t("ops.guard.title")}</strong>
         <button

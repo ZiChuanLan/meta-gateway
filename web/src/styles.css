@@ -9805,74 +9805,75 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
+/* Three peers of one choice: a single track with a moving selection, not three
+   floating buttons that each look like they belong somewhere else. */
 .runtime-category-tabs {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
 }
 .runtime-category-tab {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 18px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink-soft);
-  font: 550 13px/1.4 var(--font);
+  padding: 6px 14px;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--muted);
+  font: 550 12.5px/1.45 var(--font);
   cursor: pointer;
-  transition: all var(--dur-base);
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
 }
 .runtime-category-tab:hover {
-  background: var(--surface-hover);
   color: var(--ink);
 }
 .runtime-category-tab.is-active {
-  border-color: var(--primary);
-  background: var(--primary-soft);
+  background: var(--surface);
   color: var(--ink);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(15, 42, 66, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 .runtime-category-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--surface-subtle);
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
+  font: 500 11px/1 var(--font);
+  font-variant-numeric: tabular-nums;
 }
 .runtime-category-tab.is-active .runtime-category-count {
-  background: var(--surface);
   color: var(--primary);
 }
+/* The anchors are an index of what the category holds, not a second row of
+   buttons competing with the selector above them: quiet text, one hairline
+   apart from the track. */
 .runtime-anchors-bar {
   display: flex;
-  align-items: center;
-  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 1px 2px;
 }
 .runtime-anchor-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 3px 9px;
+  border: 0;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  background: transparent;
   color: var(--muted);
-  font: 500 12px/1.4 var(--font);
+  font: 500 12px/1.5 var(--font);
   cursor: pointer;
-  transition: all var(--dur-base);
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
 }
 .runtime-anchor-pill:hover {
-  border-color: var(--line-strong);
+  background: var(--surface-subtle);
   color: var(--ink);
-  background: var(--surface-hover);
 }
 .runtime-nav-dot {
   flex: 0 0 auto;
@@ -9882,12 +9883,14 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   background: var(--primary);
 }
 
-/* —— High-density 2-Column Cards Grid —— */
+/* —— The cards: two columns, and one row shape for every field —— */
 .runtime-cards-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-items: start;
+  /* Cards in a row end on the same line: the shorter one takes the slack, which
+     is what "aligned" means to an eye looking down the seam between them. */
+  align-items: stretch;
   animation: runtime-pane-in 150ms var(--ease-out) both;
 }
 @media (max-width: 960px) {
@@ -9895,24 +9898,49 @@ Whole-app render guard — see components/ErrorBoundary.tsx
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.runtime-cards-grid > .runtime-section {
+/* The grid item is a slot this page owns; the card is its content. Keeping the
+   two apart is what makes a row line up: a panel that is itself the grid item
+   also matches the skins' own `.panel + .panel` spacing rule, which pushed every
+   right-hand card 18px down inside its own row while its neighbour stayed put. */
+.runtime-card-slot {
+  display: flex;
+  min-width: 0;
+}
+.runtime-card-slot > .runtime-section {
+  flex: 1;
+  min-width: 0;
   margin: 0;
 }
 .runtime-cards-grid > .is-wide-section {
   grid-column: 1 / -1;
 }
-/* A card's bottom edge is the panel's own padding. The form grid was built for a
-   page — its trailing margin separates the fields from the submit button — so
-   inside a card that 22px plus the last row's field margin left ~38px of nothing
-   under the last control. Only the last row is trimmed: in an odd-count grid the
-   second-to-last field shares its row with a sibling that keeps its margin, so
-   the row height — and the spacing between rows — is unchanged. */
+/* A card that owns the whole width would strand its fields in two half-metre
+   columns; four across is the same density the half-width cards have. */
+.runtime-cards-grid > .is-wide-section .runtime-rows {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+/* Row shape and row spacing live on the grid, not on the field. With the field's
+   own margin the row was only as tall as its tallest control, and a switch row
+   came out 6px shorter than a numeric one (the checkbox inherits the generic
+   38px input box), so the two columns drifted apart by that much on every row
+   and no two rows lined up. One min-height for every field fixes the shape; the
+   grid's row-gap then spaces them all identically. */
 .runtime-cards-grid .runtime-rows {
+  row-gap: 22px;
   margin-bottom: 0;
 }
-.runtime-cards-grid .runtime-rows > .field:nth-last-child(-n + 2),
-.runtime-cards-grid .runtime-rows > :last-child {
+.runtime-cards-grid .runtime-rows > .field {
+  min-height: 66px;
   margin-bottom: 0;
+}
+/* The switch is a 16px glyph, not a 38px input: centred in the band the text
+   inputs occupy and flush with the column, so a switch row and a numeric row are
+   the same height to the pixel. */
+.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 11px 0 0;
+  background: none;
 }
 /* A numeric setting is two or three digits wide; stretched to the column it
    reads as an empty box. The control sits in .setting-input-wrap, so the cap goes

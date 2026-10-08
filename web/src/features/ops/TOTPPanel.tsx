@@ -43,7 +43,7 @@ function TOTPPanel() {
     }
   };
   return (
-    <section className="runtime-section runtime-tool-totp" id="runtime-totp">
+    <section className="panel runtime-section runtime-tool-totp" id="runtime-totp">
       <div className="panel-header">
         <strong>{t("ops.runtime.totpTitle")}</strong>
         {enabled ? (

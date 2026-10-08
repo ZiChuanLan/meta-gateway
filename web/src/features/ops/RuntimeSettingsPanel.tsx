@@ -296,21 +296,26 @@ function SectionCard({
   const section = sectionProp ?? (sectionKey ? SECTION_BY_KEY.get(sectionKey) : undefined);
   if (!section) return null;
   return (
-    <Panel className={`runtime-section ${className}`} id={`runtime-${section.key}`}>
-      <div className="panel-header">
-        <div className="panel-title">
-          <h3>{t(section.label)}</h3>
-          <SettingState state={changed ? "changed" : "default"} />
+    // The grid item is a slot this page owns; the card is its content. A panel
+    // that is itself the grid item also matches the skins' own `.panel + .panel`
+    // spacing rule, which pushed every right-hand card 18px down its own row.
+    <div className={className ? `runtime-card-slot ${className}` : "runtime-card-slot"}>
+      <Panel className="runtime-section" id={`runtime-${section.key}`}>
+        <div className="panel-header">
+          <div className="panel-title">
+            <h3>{t(section.label)}</h3>
+            <SettingState state={changed ? "changed" : "default"} />
+          </div>
+          <div className="toolbar">
+            {actions}
+            <Button variant="quiet" disabled={busy || !changed} onClick={onRestore}>
+              {t("ops.runtime.resetSection")}
+            </Button>
+          </div>
         </div>
-        <div className="toolbar">
-          {actions}
-          <Button variant="quiet" disabled={busy || !changed} onClick={onRestore}>
-            {t("ops.runtime.resetSection")}
-          </Button>
-        </div>
-      </div>
-      <div className="form-grid runtime-rows">{children}</div>
-    </Panel>
+        <div className="form-grid runtime-rows">{children}</div>
+      </Panel>
+    </div>
   );
 }
 
@@ -965,6 +970,7 @@ export function RuntimeSettingsPanel({
             changed={isSectionChanged("limits")}
             busy={busy}
             onRestore={() => restoreSectionByKey("limits")}
+            className="is-wide-section"
           >
             {/* Four peer limits, four peer rows: the per-minute rate and its
                   burst used to share one multi-column block, which is exactly
@@ -1039,12 +1045,12 @@ export function RuntimeSettingsPanel({
         ) : null}
 
         {isSectionVisible("errorRules") ? (
-          <div className="is-wide-section">
+          <div className="runtime-card-slot">
             <ErrorRulesPanel />
           </div>
         ) : null}
         {isSectionVisible("promptGuard") ? (
-          <div className="is-wide-section">
+          <div className="runtime-card-slot">
             <PromptGuardPanel />
           </div>
         ) : null}
@@ -1631,7 +1637,7 @@ export function RuntimeSettingsPanel({
         ) : null}
 
         {isSectionVisible("alertRules") ? (
-          <div className="is-wide-section">
+          <div className="runtime-card-slot">
             <AlertRulesPanel />
           </div>
         ) : null}
@@ -1895,27 +1901,37 @@ export function RuntimeSettingsPanel({
           </SectionCard>
         ) : null}
 
-        {isSectionVisible("totp") ? <TOTPPanel /> : null}
-        {isSectionVisible("dbMaintenance") ? <MaintenancePanel /> : null}
+        {isSectionVisible("totp") ? (
+          <div className="runtime-card-slot">
+            <TOTPPanel />
+          </div>
+        ) : null}
+        {isSectionVisible("dbMaintenance") ? (
+          <div className="runtime-card-slot">
+            <MaintenancePanel />
+          </div>
+        ) : null}
 
         {isSectionVisible("users") ? (
-          <Panel className="runtime-section is-wide-section" id="runtime-users">
-            <header className="panel-header">
-              <div className="panel-title">
-                <h2>{t("ops.runtime.section.users")}</h2>
+          <div className="runtime-card-slot is-wide-section">
+            <Panel className="runtime-section" id="runtime-users">
+              <header className="panel-header">
+                <div className="panel-title">
+                  <h2>{t("ops.runtime.section.users")}</h2>
+                </div>
+              </header>
+              <p className="muted panel-lede">{t("ops.runtime.multiUserHint")}</p>
+              <div className="runtime-actions">
+                <Link className="button button-quiet" to="/users">
+                  {t("ops.runtime.openUsers")}
+                </Link>
               </div>
-            </header>
-            <p className="muted panel-lede">{t("ops.runtime.multiUserHint")}</p>
-            <div className="runtime-actions">
-              <Link className="button button-quiet" to="/users">
-                {t("ops.runtime.openUsers")}
-              </Link>
-            </div>
-          </Panel>
+            </Panel>
+          </div>
         ) : null}
 
         {isSectionVisible("danger") ? (
-          <div className="is-wide-section">
+          <div className="runtime-card-slot is-wide-section">
             <CollapsibleGroup
               id="runtime-group-danger"
               title={t("ops.runtime.group.danger")}

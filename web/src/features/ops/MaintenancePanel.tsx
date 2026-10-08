@@ -35,7 +35,7 @@ function MaintenancePanel() {
       res.error_passthrough_rules
     : 0;
   return (
-    <section className="runtime-section runtime-tool-maintenance" id="runtime-db-maintenance">
+    <section className="panel runtime-section runtime-tool-maintenance" id="runtime-db-maintenance">
       <div className="panel-header">
         <strong>{t("ops.maintenance.title")}</strong>
         <span className="flex-spacer" />

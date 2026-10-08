@@ -33,7 +33,7 @@ function ErrorRulesPanel() {
   });
   const items = query.data?.items ?? [];
   return (
-    <section className="runtime-section runtime-tool-error-rules" id="runtime-error-rules">
+    <section className="panel runtime-section runtime-tool-error-rules" id="runtime-error-rules">
       <div className="panel-header">
         <strong>{t("ops.errorRules.title")}</strong>
         <button

@@ -25,7 +25,7 @@ function FactoryResetPanel() {
   });
   return (
     <section
-      className="runtime-section runtime-tool-factory-reset is-danger-zone"
+      className="panel runtime-section runtime-tool-factory-reset is-danger-zone"
       id="runtime-factory-reset"
     >
       <div className="panel-header">
