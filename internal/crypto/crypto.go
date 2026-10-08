@@ -9,6 +9,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -17,8 +18,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"golang.org/x/crypto/pbkdf2"
 )
 
 const (
@@ -85,7 +84,10 @@ func New(masterKey string) (*Encrypter, error) {
 		return nil, ErrInvalidKey
 	}
 	legacy := sha256.Sum256([]byte(masterKey))
-	modern := pbkdf2.Key([]byte(masterKey), []byte(masterKeySaltV2), pbkdf2Iterations, 32, sha256.New)
+	modern, err := pbkdf2.Key(sha256.New, masterKey, []byte(masterKeySaltV2), pbkdf2Iterations, 32)
+	if err != nil {
+		return nil, fmt.Errorf("crypto: derive key: %w", err)
+	}
 	return &Encrypter{
 		key:   modern,
 		keyV1: legacy[:],

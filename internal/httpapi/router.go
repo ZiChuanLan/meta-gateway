@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -61,7 +62,7 @@ type Dependencies struct {
 	OutboundImageClient *http.Client
 	Logger              *slog.Logger
 	Metrics             *observability.Registry
-	State               *observability.State
+	State               *atomic.Bool
 	BackupService       *backup.Service
 	WebDAVService       *webdavsync.Service
 	RuntimeController   *runtimeconfig.Controller
@@ -86,7 +87,8 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	}
 	state := dependencies.State
 	if state == nil {
-		state = observability.NewState()
+		state = new(atomic.Bool)
+		state.Store(true)
 	}
 	clientIPs, err := newClientIPResolver(cfg.TrustedProxyCIDRs)
 	if err != nil {
@@ -178,7 +180,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		})
 	})
 	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if !state.Ready() || !pingReady(db, cfg.ReadinessTimeout) {
+		if !state.Load() || !pingReady(db, cfg.ReadinessTimeout) {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
 			return
 		}
@@ -191,7 +193,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		if err := metrics.WritePrometheus(w, state.Ready()); err != nil {
+		if err := metrics.WritePrometheus(w, state.Load()); err != nil {
 			logger.ErrorContext(request.Context(), "metrics write failed", "category", "write")
 		}
 	})

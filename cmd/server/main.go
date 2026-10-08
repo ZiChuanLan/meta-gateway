@@ -151,7 +151,8 @@ func main() {
 		stopModelDiscovery()
 	}()
 	metrics := observability.NewRegistry()
-	state := observability.NewState()
+	state := new(atomic.Bool)
+	state.Store(true)
 	discoveryService := discovery.New(db, enc, registry)
 	exchangeService := exchange.NewService(db, enc, discoveryService)
 	webdavMaxBytes := cfg.WebDAVMaxBytes
@@ -297,7 +298,7 @@ func main() {
 		stop()
 	}
 
-	state.SetReady(false)
+	state.Store(false)
 	cancelMaintenance()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ServerShutdownTimeout)
 	defer cancel()

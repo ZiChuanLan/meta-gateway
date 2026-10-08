@@ -3,13 +3,12 @@ package webdavsync
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"testing"
-
-	"golang.org/x/crypto/pbkdf2"
 )
 
 func TestDecryptEnvelopeRoundTrip(t *testing.T) {
@@ -52,7 +51,10 @@ func mustEncryptEnvelope(t *testing.T, password string, plaintext []byte, iterat
 	if _, err := rand.Read(iv); err != nil {
 		t.Fatal(err)
 	}
-	key := pbkdf2.Key([]byte(password), salt, iterations, 32, sha256.New)
+	key, err := pbkdf2.Key(sha256.New, password, salt, iterations, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		t.Fatal(err)

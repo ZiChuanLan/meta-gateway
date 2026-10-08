@@ -3,12 +3,11 @@ package webdavsync
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/pbkdf2"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
-
-	"golang.org/x/crypto/pbkdf2"
 )
 
 const (
@@ -73,7 +72,10 @@ func DecryptEnvelope(envelope *EncryptedEnvelopeV1, password string) ([]byte, er
 	if err != nil || len(ciphertext) == 0 {
 		return nil, Error{Category: CategoryDecryptFailed, Message: "invalid ciphertext"}
 	}
-	key := pbkdf2.Key([]byte(password), salt, envelope.Iter, 32, sha256.New)
+	key, err := pbkdf2.Key(sha256.New, password, salt, envelope.Iter, 32)
+	if err != nil {
+		return nil, Error{Category: CategoryDecryptFailed, Message: "key derivation failed"}
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, Error{Category: CategoryDecryptFailed, Message: "cipher init failed"}

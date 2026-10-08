@@ -12,11 +12,12 @@ import (
 )
 
 // This test is the guard that keeps the console's deployment-parameter view
-// honest. The table in params.go names a Config field per environment variable;
-// a wrong field would show the operator a real-looking number that is not the
-// one in effect, and nothing else in the build would notice. So the test reads
-// config.go and checks both directions: every variable Load reads appears in the
-// table bound to the field Load assigns it to, and nothing in the table is dead.
+// honest. The env tag on a Config field is what binds an environment variable to
+// the field holding its value; a tag on the wrong field would show the operator a
+// real-looking number that is not the one in effect, and nothing else in the
+// build would notice. So the test reads config.go and checks both directions:
+// every variable Load reads carries a tag, that tag sits on the field Load
+// assigns the value to, and no tag outlives the read it describes.
 
 // helperKeys are the readers whose environment variable is not an argument but a
 // constant inside the helper.
@@ -36,39 +37,54 @@ var alwaysSensitive = map[string]bool{
 
 func TestDeploymentParametersMatchLoad(t *testing.T) {
 	keys, fields := envReadsFromSource(t)
+	tags := tagBindings(t)
 
-	// Direction 1: every variable Load reads is in the table.
-	tableKeys := make(map[string]envParamSpec, len(envParamSpecs))
-	for _, spec := range envParamSpecs {
-		if _, dup := tableKeys[spec.Key]; dup {
-			t.Errorf("duplicate entry for %s", spec.Key)
-		}
-		tableKeys[spec.Key] = spec
-	}
+	// Direction 1: every variable Load reads carries a tag, so the console can
+	// show it.
 	for key := range keys {
-		if _, ok := tableKeys[key]; !ok {
-			t.Errorf("%s is read in config.go but missing from envParamSpecs — the console would never show it", key)
+		if _, ok := tags[key]; !ok {
+			t.Errorf("%s is read in config.go but no Config field carries env:%q — the console would never show it", key, key)
 		}
 	}
-	// Direction 2: nothing dead, and the field is the one Load assigns.
-	configType := reflect.TypeOf(Config{})
-	for key, spec := range tableKeys {
+	// Direction 2: nothing dead, and the tag sits on the field Load assigns.
+	for key, tag := range tags {
 		if !keys[key] {
-			t.Errorf("envParamSpecs lists %s, which config.go never reads", key)
+			t.Errorf("env:%q is on %s, but config.go never reads %s", key, tag.Field, key)
 			continue
 		}
-		if _, ok := configType.FieldByName(spec.Field); !ok {
-			t.Errorf("%s is bound to %s, which is not a Config field", key, spec.Field)
-			continue
+		if bound := fields[key]; len(bound) > 0 && !bound[tag.Field] {
+			t.Errorf("%s is tagged on %s, but Load assigns it to %s",
+				key, tag.Field, strings.Join(sortedKeys(bound), " / "))
 		}
-		if bound := fields[key]; len(bound) > 0 && !bound[spec.Field] {
-			t.Errorf("%s is bound to %s, but Load assigns it to %s",
-				key, spec.Field, strings.Join(sortedKeys(bound), " / "))
-		}
-		if want := sensitiveKey.MatchString(key) || alwaysSensitive[key]; want != spec.Secret {
-			t.Errorf("%s: Secret=%v, want %v (a credential must never reach the console payload)", key, spec.Secret, want)
+		if want := sensitiveKey.MatchString(key) || alwaysSensitive[key]; want != tag.Secret {
+			t.Errorf("%s: secret=%v, want %v (a credential must never reach the console payload)", key, tag.Secret, want)
 		}
 	}
+}
+
+// tagBinding is what a Config field's env tag declares.
+type tagBinding struct {
+	Field  string
+	Secret bool
+}
+
+// tagBindings collects the env tags off the Config fields.
+func tagBindings(t *testing.T) map[string]tagBinding {
+	t.Helper()
+	configType := reflect.TypeOf(Config{})
+	out := make(map[string]tagBinding, configType.NumField())
+	for i := 0; i < configType.NumField(); i++ {
+		field := configType.Field(i)
+		key := field.Tag.Get("env")
+		if key == "" {
+			continue
+		}
+		if _, dup := out[key]; dup {
+			t.Errorf("duplicate env tag %s", key)
+		}
+		out[key] = tagBinding{Field: field.Name, Secret: field.Tag.Get("secret") == "true"}
+	}
+	return out
 }
 
 // envReadsFromSource parses config.go and returns every environment variable it

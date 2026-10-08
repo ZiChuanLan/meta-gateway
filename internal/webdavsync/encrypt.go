@@ -3,12 +3,11 @@ package webdavsync
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-
-	"golang.org/x/crypto/pbkdf2"
 )
 
 // envelopeUploadIterations: 210k PBKDF2-SHA256 rounds, inside the range the
@@ -33,7 +32,10 @@ func EncryptEnvelope(plaintext []byte, password string, iterations int) ([]byte,
 	if _, err := rand.Read(iv); err != nil {
 		return nil, Error{Category: CategoryInternal, Message: "random iv failed"}
 	}
-	key := pbkdf2.Key([]byte(password), salt, iterations, 32, sha256.New)
+	key, err := pbkdf2.Key(sha256.New, password, salt, iterations, 32)
+	if err != nil {
+		return nil, Error{Category: CategoryInternal, Message: "key derivation failed"}
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, Error{Category: CategoryInternal, Message: "cipher init failed"}

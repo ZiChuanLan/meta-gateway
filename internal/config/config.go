@@ -12,184 +12,184 @@ import (
 )
 
 type Config struct {
-	HTTPAddr      string
-	DataDir       string
-	AdminToken    string
-	AdminUsername string
-	AdminTokens   []string
+	HTTPAddr      string   `env:"HTTP_ADDR"`
+	DataDir       string   `env:"DATA_DIR"`
+	AdminToken    string   `env:"ADMIN_TOKEN" secret:"true"`
+	AdminUsername string   `env:"ADMIN_USERNAME"`
+	AdminTokens   []string `env:"ADMIN_TOKENS" secret:"true"`
 	// AdminTokenLogin re-opens the ADMIN_TOKEN-as-password login after the
 	// deployment has claimed an owner account. Empty (the default) means the
 	// token only works while no owner credential exists, which is what makes the
 	// first-run claim close the upgrade path by itself; "break-glass" is the
 	// documented recovery hatch for a deployment whose owner forgot the password.
-	AdminTokenLogin string
-	MasterKey       string
-	RetryTimes      int
+	AdminTokenLogin string `env:"ADMIN_TOKEN_LOGIN"`
+	MasterKey       string `env:"MASTER_KEY" secret:"true"`
+	RetryTimes      int    `env:"RETRY_TIMES"`
 	// ChannelRetryTimes is how many times the same upstream key is re-sent
 	// after a retryable failure before moving to the next key/channel.
 	// Network errors (transport) fail fast after these retries instead of
 	// fanning out across every channel.
-	ChannelRetryTimes int
+	ChannelRetryTimes int `env:"CHANNEL_RETRY_TIMES"`
 	// UpdateCheckEnabled lets the gateway query GitHub for newer releases to
 	// power the console update badge.
-	UpdateCheckEnabled          bool
-	CrossChannelFailoverEnabled bool
-	Cooldown                    time.Duration
+	UpdateCheckEnabled          bool          `env:"UPDATE_CHECK_ENABLED"`
+	CrossChannelFailoverEnabled bool          `env:"CROSS_CHANNEL_FAILOVER_ENABLED"`
+	Cooldown                    time.Duration `env:"COOLDOWN_SECONDS"`
 	// SQLiteMaxOpenConns is the SQLite connection-pool ceiling (WAL allows
 	// concurrent readers). Default 4; 1 restores the fully serialized behavior.
-	SQLiteMaxOpenConns int
-	CheckinEnabled     bool
-	CheckinCron        string
+	SQLiteMaxOpenConns int    `env:"SQLITE_MAX_OPEN_CONNS"`
+	CheckinEnabled     bool   `env:"CHECKIN_ENABLED"`
+	CheckinCron        string `env:"CHECKIN_CRON"`
 	// CheckinTZ is the IANA timezone (e.g. "Asia/Shanghai") the check-in cron is
 	// interpreted in. Empty means the process local timezone (UTC in containers).
-	CheckinTZ string
+	CheckinTZ string `env:"CHECKIN_TZ"`
 
-	WebDAVSyncEnabled    bool
-	WebDAVUploadEnabled  bool
-	WebDAVURL            string
-	WebDAVUsername       string
-	WebDAVPassword       string
-	WebDAVBackupPassword string
+	WebDAVSyncEnabled    bool   `env:"WEBDAV_SYNC_ENABLED"`
+	WebDAVUploadEnabled  bool   `env:"WEBDAV_UPLOAD_ENABLED"`
+	WebDAVURL            string `env:"WEBDAV_URL"`
+	WebDAVUsername       string `env:"WEBDAV_USERNAME"`
+	WebDAVPassword       string `env:"WEBDAV_PASSWORD" secret:"true"`
+	WebDAVBackupPassword string `env:"WEBDAV_BACKUP_PASSWORD" secret:"true"`
 	// Upload direction owns its own connection; each WEBDAV_UPLOAD_* falls back
 	// to the matching shared variable when unset.
-	WebDAVUploadURL            string
-	WebDAVUploadUsername       string
-	WebDAVUploadPassword       string
-	WebDAVUploadBackupPassword string
-	WebDAVCron                 string
-	WebDAVMaxBytes             int64
+	WebDAVUploadURL            string `env:"WEBDAV_UPLOAD_URL"`
+	WebDAVUploadUsername       string `env:"WEBDAV_UPLOAD_USERNAME"`
+	WebDAVUploadPassword       string `env:"WEBDAV_UPLOAD_PASSWORD" secret:"true"`
+	WebDAVUploadBackupPassword string `env:"WEBDAV_UPLOAD_BACKUP_PASSWORD" secret:"true"`
+	WebDAVCron                 string `env:"WEBDAV_CRON"`
+	WebDAVMaxBytes             int64  `env:"WEBDAV_MAX_BYTES"`
 
-	OutboundAllowHosts            []string
-	OutboundAllowCIDRs            []string
-	OutboundConnectTimeout        time.Duration
-	OutboundTLSHandshakeTimeout   time.Duration
-	OutboundResponseHeaderTimeout time.Duration
+	OutboundAllowHosts            []string      `env:"OUTBOUND_ALLOW_HOSTS"`
+	OutboundAllowCIDRs            []string      `env:"OUTBOUND_ALLOW_CIDRS"`
+	OutboundConnectTimeout        time.Duration `env:"OUTBOUND_CONNECT_TIMEOUT_SECONDS"`
+	OutboundTLSHandshakeTimeout   time.Duration `env:"OUTBOUND_TLS_TIMEOUT_SECONDS"`
+	OutboundResponseHeaderTimeout time.Duration `env:"OUTBOUND_HEADER_TIMEOUT_SECONDS"`
 	// OutboundImageHeaderTimeout is the response-header ceiling for the image
 	// endpoints, which are slower by nature and never retried.
-	OutboundImageHeaderTimeout time.Duration
+	OutboundImageHeaderTimeout time.Duration `env:"OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS"`
 	// OutboundMaxIdleConns is the total outbound idle connection ceiling.
-	OutboundMaxIdleConns int
+	OutboundMaxIdleConns int `env:"OUTBOUND_MAX_IDLE_CONNS"`
 	// OutboundMaxIdleConnsPerHost is the per-upstream-host idle connection ceiling.
-	OutboundMaxIdleConnsPerHost int
-	TrustedProxyCIDRs           []string
-	RelayRatePerMinute          int
-	RelayRateBurst              int
-	RelayModelRatePerMinute     int
-	RelayModelRateBurst         int
+	OutboundMaxIdleConnsPerHost int      `env:"OUTBOUND_MAX_IDLE_CONNS_PER_HOST"`
+	TrustedProxyCIDRs           []string `env:"TRUSTED_PROXY_CIDRS"`
+	RelayRatePerMinute          int      `env:"RELAY_RATE_PER_MINUTE"`
+	RelayRateBurst              int      `env:"RELAY_RATE_BURST"`
+	RelayModelRatePerMinute     int      `env:"RELAY_MODEL_RATE_PER_MINUTE"`
+	RelayModelRateBurst         int      `env:"RELAY_MODEL_RATE_BURST"`
 	// ChannelAutoDisableThreshold: consecutive member failures before a channel
 	// is auto-disabled. 0 disables the feature.
-	ChannelAutoDisableThreshold int
+	ChannelAutoDisableThreshold int `env:"CHANNEL_AUTO_DISABLE_THRESHOLD"`
 	// RoutingLatencyAware enables latency-weighted channel selection.
-	RoutingLatencyAware bool
+	RoutingLatencyAware bool `env:"ROUTING_LATENCY_AWARE"`
 	// RoutingErrorAware penalizes channels with a high EWMA failure propensity.
-	RoutingErrorAware bool
+	RoutingErrorAware bool `env:"ROUTING_ERROR_AWARE"`
 	// RoutingConcurrencyEnabled enables the in-flight burst guard.
-	RoutingConcurrencyEnabled bool
+	RoutingConcurrencyEnabled bool `env:"ROUTING_CONCURRENCY_AWARE"`
 	// RoutingConcurrencyLimit is the per-channel in-flight ceiling.
-	RoutingConcurrencyLimit int
+	RoutingConcurrencyLimit int `env:"ROUTING_CONCURRENCY_LIMIT"`
 	// WebhookURL is the operational notification endpoint ("" disables).
-	WebhookURL string
+	WebhookURL string `env:"WEBHOOK_URL" secret:"true"`
 	// WebhookThrottleSeconds coalesces repeated events within the window.
-	WebhookThrottleSeconds int
+	WebhookThrottleSeconds int `env:"WEBHOOK_THROTTLE_SECONDS"`
 	// AlertConfigJSON is the multi-channel alert matrix config (bark/serverchan/
 	// telegram/smtp + cooldown + daily summary flag), JSON-encoded.
-	AlertConfigJSON string
+	AlertConfigJSON string `env:"ALERT_CONFIG_JSON" secret:"true"`
 	// AlertDailySummaryInterval is how often the daily digest runs (0 = off).
-	AlertDailySummaryInterval time.Duration
+	AlertDailySummaryInterval time.Duration `env:"ALERT_DAILY_SUMMARY_INTERVAL_SECONDS"`
 	// AlertSweepInterval is how often the proactive health sweep runs (0 = off).
-	AlertSweepInterval time.Duration
+	AlertSweepInterval time.Duration `env:"ALERT_SWEEP_INTERVAL_SECONDS"`
 	// RecoveryProbeEnabled enables the passive-recovery loop for auto-disabled channels.
-	RecoveryProbeEnabled bool
+	RecoveryProbeEnabled bool `env:"RECOVERY_PROBE_ENABLED"`
 	// RecoveryProbeIntervalSeconds is the recovery-loop cadence.
-	RecoveryProbeIntervalSeconds int
+	RecoveryProbeIntervalSeconds int `env:"RECOVERY_PROBE_INTERVAL_SECONDS"`
 	// FaultProtectionEnabled gates fixed cooldown and channel auto-disable.
-	FaultProtectionEnabled bool
+	FaultProtectionEnabled bool `env:"FAULT_PROTECTION_ENABLED"`
 	// FaultProtectionConfigured distinguishes a loaded config from a minimal
 	// test/embedder literal, whose zero value should preserve legacy protection.
 	FaultProtectionConfigured bool
 	// StickyEnabled enables sticky-session routing (same conversation prefers
 	// the previously successful channel).
-	StickyEnabled bool
+	StickyEnabled bool `env:"STICKY_ENABLED"`
 	// StickyTTL is how long a session binding stays valid without renewal.
-	StickyTTL time.Duration
+	StickyTTL time.Duration `env:"STICKY_TTL_MINUTES"`
 	// StableFirstEnabled gates the 1/N grayscale pool.
-	StableFirstEnabled bool
+	StableFirstEnabled bool `env:"STABLE_FIRST_ENABLED"`
 	// StableFirstDenominator is the draw base (25 = grayscale gets 1/25).
-	StableFirstDenominator int
+	StableFirstDenominator int `env:"STABLE_FIRST_DENOMINATOR"`
 	// StableFirstPromoteRequests is the successful-attempt threshold for
 	// automatic promotion out of the grayscale pool.
-	StableFirstPromoteRequests int
-	AdminRatePerMinute         int
-	AdminRateBurst             int
-	MetricsToken               string
-	TrustedScraperCIDRs        []string
+	StableFirstPromoteRequests int      `env:"STABLE_FIRST_PROMOTE_REQUESTS"`
+	AdminRatePerMinute         int      `env:"ADMIN_RATE_PER_MINUTE"`
+	AdminRateBurst             int      `env:"ADMIN_RATE_BURST"`
+	MetricsToken               string   `env:"METRICS_TOKEN" secret:"true"`
+	TrustedScraperCIDRs        []string `env:"TRUSTED_SCRAPER_CIDRS"`
 	// CORSAllowedOrigins opens the downstream /v1 surface to browser callers.
 	// Empty means any origin ("*"), which is the zero-config default; entries
 	// are exact origins or "*.example.com" subdomain patterns.
-	CORSAllowedOrigins      []string
-	MaxHeaderBytes          int
-	MaxAdminBodyBytes       int64
-	ServerReadHeaderTimeout time.Duration
-	ServerReadTimeout       time.Duration
-	ServerIdleTimeout       time.Duration
-	ServerShutdownTimeout   time.Duration
-	ReadinessTimeout        time.Duration
-	AuditRetentionDays      int
-	AuditRetentionRows      int
+	CORSAllowedOrigins      []string      `env:"CORS_ALLOWED_ORIGINS"`
+	MaxHeaderBytes          int           `env:"MAX_HEADER_BYTES"`
+	MaxAdminBodyBytes       int64         `env:"MAX_ADMIN_BODY_BYTES"`
+	ServerReadHeaderTimeout time.Duration `env:"SERVER_READ_HEADER_TIMEOUT_SECONDS"`
+	ServerReadTimeout       time.Duration `env:"SERVER_READ_TIMEOUT_SECONDS"`
+	ServerIdleTimeout       time.Duration `env:"SERVER_IDLE_TIMEOUT_SECONDS"`
+	ServerShutdownTimeout   time.Duration `env:"SERVER_SHUTDOWN_TIMEOUT_SECONDS"`
+	ReadinessTimeout        time.Duration `env:"READINESS_TIMEOUT_SECONDS"`
+	AuditRetentionDays      int           `env:"AUDIT_RETENTION_DAYS"`
+	AuditRetentionRows      int           `env:"AUDIT_RETENTION_ROWS"`
 	// HealthHistoryRetentionDays bounds channel_health_history rows (default 90).
-	HealthHistoryRetentionDays int
+	HealthHistoryRetentionDays int `env:"HEALTH_HISTORY_RETENTION_DAYS"`
 	// BalanceHistoryRetentionDays and DecisionSnapshotRetentionDays control
 	// the other daily maintenance pruners. Zero disables each pruner.
-	BalanceHistoryRetentionDays   int
-	DecisionSnapshotRetentionDays int
+	BalanceHistoryRetentionDays   int `env:"BALANCE_HISTORY_RETENTION_DAYS"`
+	DecisionSnapshotRetentionDays int `env:"DECISION_SNAPSHOT_RETENTION_DAYS"`
 	// ModelChangeRetentionDays bounds finished model_changes rows (default
 	// 90); ModelChangeAutoIgnoreDays auto-ignores pending removals with no
 	// route impact after that many days (0 = off by default).
-	ModelChangeRetentionDays  int
-	ModelChangeAutoIgnoreDays int
+	ModelChangeRetentionDays  int `env:"MODEL_CHANGE_RETENTION_DAYS"`
+	ModelChangeAutoIgnoreDays int `env:"MODEL_CHANGE_AUTO_IGNORE_DAYS"`
 	// SiteProbeRetentionDays bounds external site-probe rounds and their
 	// samples (default 7): one row per monitored model per site per round.
-	SiteProbeRetentionDays int
+	SiteProbeRetentionDays int `env:"SITE_PROBE_RETENTION_DAYS"`
 	// SiteProbeIntervalSeconds / SiteProbeJitterSeconds are the external
 	// site-probe collection cadence (defaults 900 + 120). They are the env
 	// bootstrap for a hot-reloadable runtime setting, so an operator can speed
 	// the round up for sites that publish heartbeats every minute without a
 	// restart.
-	SiteProbeIntervalSeconds int
-	SiteProbeJitterSeconds   int
-	BackupRetentionCount     int
-	BackupDir                string
-	PluginsDir               string
-	PluginCatalogURL         string
+	SiteProbeIntervalSeconds int    `env:"SITE_PROBE_INTERVAL_SECONDS"`
+	SiteProbeJitterSeconds   int    `env:"SITE_PROBE_JITTER_SECONDS"`
+	BackupRetentionCount     int    `env:"BACKUP_RETENTION_COUNT"`
+	BackupDir                string `env:"BACKUP_DIR"`
+	PluginsDir               string `env:"PLUGINS_DIR"`
+	PluginCatalogURL         string `env:"PLUGIN_CATALOG_URL"`
 	// PluginMarketURLs appends extra plugin market registry URLs
 	// (comma-separated; the built-in official registry is always included).
-	PluginMarketURLs []string
+	PluginMarketURLs []string `env:"PLUGIN_MARKET_URLS"`
 	// ModelCatalogSources selects which external model indexes a sync reads
 	// (comma-separated: "litellm", "models.dev"). Empty disables the sync
 	// entirely, which is also what a zero interval does.
-	ModelCatalogSources []string
+	ModelCatalogSources []string `env:"MODEL_CATALOG_SOURCES"`
 	// ModelCatalogInterval is the gap between scheduled catalog syncs. Zero
 	// turns the schedule off while leaving the manual sync available.
-	ModelCatalogInterval time.Duration
+	ModelCatalogInterval time.Duration `env:"MODEL_CATALOG_SYNC_INTERVAL_HOURS"`
 	// ModelCatalogSyncPrices lets a sync fill in per-1k prices it finds. It
 	// only ever fills columns the gateway has left at zero, so an operator's own
 	// price always wins; set false to keep every price hand-managed.
-	ModelCatalogSyncPrices bool
+	ModelCatalogSyncPrices bool `env:"MODEL_CATALOG_SYNC_PRICES"`
 	// ExchangeAllowSecretExport gates include_secrets on export (default true for compat).
-	ExchangeAllowSecretExport bool
+	ExchangeAllowSecretExport bool `env:"EXCHANGE_ALLOW_SECRET_EXPORT"`
 	// HealthSweepEnabled enables the periodic channel health sweep (jittered
 	// probes grading operational/degraded/error with transition alerts).
-	HealthSweepEnabled bool
+	HealthSweepEnabled bool `env:"HEALTH_SWEEP_ENABLED"`
 	// HealthSweepIntervalSeconds is the base probe interval.
-	HealthSweepIntervalSeconds int
+	HealthSweepIntervalSeconds int `env:"HEALTH_SWEEP_INTERVAL_SECONDS"`
 	// HealthSweepJitterSeconds is the per-round random jitter ceiling.
-	HealthSweepJitterSeconds int
+	HealthSweepJitterSeconds int `env:"HEALTH_SWEEP_JITTER_SECONDS"`
 	// HealthSweepDegradedMs: latency above this grades the channel degraded.
-	HealthSweepDegradedMs int
+	HealthSweepDegradedMs int `env:"HEALTH_SWEEP_DEGRADED_MS"`
 	// HealthSweepConcurrency caps simultaneous probes.
-	HealthSweepConcurrency int
+	HealthSweepConcurrency int `env:"HEALTH_SWEEP_CONCURRENCY"`
 	// HealthSweepTimeoutSeconds bounds one probe.
-	HealthSweepTimeoutSeconds int
+	HealthSweepTimeoutSeconds int `env:"HEALTH_SWEEP_TIMEOUT_SECONDS"`
 }
 
 func Load() (*Config, error) {

@@ -53,9 +53,9 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 - **控制台「设置 → 运行设置」多了只读的「部署参数（环境变量）」卡片。** 它列出进程启动时读到的每个环境变量、
   它取到的值，以及这个值是来自环境还是代码默认 —— compose 忘了透传的变量与刻意的默认值在容器里长得
   一模一样，而「请求为什么正好 60 秒死」这类问题的答案就藏在这个区别里（例如 `OUTBOUND_HEADER_TIMEOUT_SECONDS`
-  与图像专用的 `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`）。能被「运行设置」覆盖的项以覆盖值为准。表由 `internal/config/params.go` 的字段绑定生成，
-  `params_test.go` 解析 `config.go` 双向核对：Load 读到的每个变量都在表里、表里没有死项、绑定字段与 Load
-  的赋值一致、凭据类变量一律打码。密钥值只以打码形式下发，前端拿到的是 `••••••`。
+  与图像专用的 `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`）。能被「运行设置」覆盖的项以覆盖值为准。绑定写在 `Config` 字段的
+  `env` 标签上（`secret:"true"` 表示打码），`params_test.go` 解析 `config.go` 双向核对：Load 读到的每个变量都有标签、
+  标签没有死项、标签所在字段与 Load 的赋值一致、凭据类变量一律打码。密钥值只以打码形式下发，前端拿到的是 `••••••`。
 - **「模型探测」里能直接设定时计划与定时范围。** 对话框本来就拿着渠道/模型两份勾选列表，而定时轮次要用的正是这两份
   —— 以前只能去「设置 → 运行设置 → 定时模型探测」里填计划，而范围（`probe_channels` / `probe_models`）**根本没有
   界面入口**，尽管后端一直在用它（`internal/probe/scheduler.go` 的 `CandidatePairs(db, schedule.ChannelIDs, schedule.Models)`）。
@@ -105,6 +105,25 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   吃掉了几乎全部空间：16 个字符的模型名只剩 ~82px，站点自己的模型名与路由 chip 双双截断（在运行中的控制台
   实测，1440px 视口）。现在第一列有真实下限（320px）、价格列不再折行、表格在窄窗口内自己横向滚动，工具弹窗
   放宽到 1320px —— 这是一张数据表，需要宽度。
+
+### Maintenance
+
+- **审计发现的重复实现收敛为一份，行为不变。** 同一段逻辑写两遍的地方合并成单一实现，全部通过既有测试：
+  - `store/route.go` 的两份 46 列路由候选投影（控制台概览 / 转发候选池）合成一个 `routeMemberChannelColumns` 常量
+    + `scanRoutingCandidate`，`store/channel.go` 的 5 条渠道 SELECT 同样提为一个列常量：以后给 channels 加列漏改一处，
+    不再表现为「配置设了、运行时读到零值」；
+  - SSE 帧读取（`data:` 累积、空行分发、`event:` 行、EOF 尾帧）与「上游 body 只关一次」收敛到 `adapters/sse_stream.go`：
+    三份实现此前已在细节上分叉（一份收 `event:`、一份靠 EOF 分发）；Gemini 的单行读取器与 `usage.Tee` 的逐行扫描是不同算法，刻意不合并；
+  - 通配符匹配（路由模型名 / payload 规则 / 错误透传规则）收敛到 `store.GlobMatch`，原先隐含的差异（大小写折叠、空 pattern 的含义、
+    `?` 按 rune 还是 byte）变成显式选项；
+  - 其余各处：`usage_records` INSERT、Responses↔原生上游的翻译注册、forward_convert 的流包装与 body 改写、
+    Anthropic `tool_use` 块构造。
+- **环境变量与字段的绑定从 `params.go` 的 96 行表格搬进 `Config` 字段标签**（`env:"…"` / `secret:"true"`）：
+  新增一个环境变量只需改一处。`params_test.go` 仍解析 `config.go` 双向核对（读到的变量都有标签、标签都对应真实读取、
+  secret 标记符合凭据命名约定）。唯一可观察差异：「部署参数」列表改为按 key 严格排序。
+- **stdlib 替换掉手写与外部依赖**：PBKDF2 换到 `crypto/pbkdf2`（派生结果与 `x/crypto` 逐字节一致，用临时等价测试验证过——
+  MASTER_KEY 换推导会让已加密的凭据全部解不开）、`maps.Clone` / `slices.Sorted` 取代手写拷贝与排序、
+  `observability.State`（只包了一个 atomic bool 的类型）换成 `*atomic.Bool`。
 
 ### Verification
 
