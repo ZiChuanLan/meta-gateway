@@ -43,6 +43,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     itemsRef.current = items;
   }, [items]);
 
+  // Auto-dismiss timers are the one thing here that owns the clock, so they must
+  // not outlive the provider: a toast scheduled just before unmount used to fire
+  // into a torn-down environment and throw `window is not defined` from the
+  // timer callback — an error no component boundary can catch, which is why it
+  // surfaced as an unhandled error rather than a failing test.
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const timer of pending.values()) window.clearTimeout(timer);
+      pending.clear();
+    };
+  }, []);
+
   const dismiss = useCallback((id: string) => {
     const timer = timers.current.get(id);
     if (timer !== undefined) {
