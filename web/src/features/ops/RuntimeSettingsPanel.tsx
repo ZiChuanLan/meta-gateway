@@ -810,6 +810,25 @@ export function RuntimeSettingsPanel({
               <strong>{t("ops.runtime.section.probe")}</strong>
             </div>
             <p className="muted panel-lede">{t("ops.runtime.probeIntro")}</p>
+            {/* The scope is chosen where the pick lists are (模型 → 模型工具 → 模型探测),
+                so this card states it instead of offering a second editor for it. */}
+            <p className="muted" role="status">
+              {t("ops.runtime.probeScope", {
+                channels:
+                  (draft.probe_channels ?? []).length === 0
+                    ? t("ops.runtime.probeScopeAllChannels")
+                    : t("ops.runtime.probeScopeChannels", {
+                        count: (draft.probe_channels ?? []).length,
+                      }),
+                models:
+                  (draft.probe_models ?? []).length === 0
+                    ? t("ops.runtime.probeScopeAllModels")
+                    : t("ops.runtime.probeScopeModels", {
+                        count: (draft.probe_models ?? []).length,
+                      }),
+              })}
+              <span className="field-hint"> {t("ops.runtime.probeScopeHint")}</span>
+            </p>
             <label className="field">
               <SettingLabel
                 label={t("ops.runtime.probeCron")}

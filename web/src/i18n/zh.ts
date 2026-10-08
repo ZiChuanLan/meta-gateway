@@ -1632,7 +1632,9 @@ export const zh: Dict = {
   "modelsPage.probe.scheduleUseSelection": "用当前选择设为定时范围",
   "modelsPage.probe.scheduleScopeMatches": "定时范围与当前选择一致",
   "modelsPage.probe.scheduleHint":
-    "定时轮次按这个计划与范围跑真实调用（同样消耗额度）；范围留「全部」时，以后新增的渠道/模型会自动进入下一轮。提示词、并发、连续失败禁用等参数在「设置 → 运行设置 → 定时模型探测」里。",
+    "定时轮次按这个计划、范围与上面的四个参数跑真实调用（同样消耗额度）；范围留「全部」时，以后新增的渠道/模型会自动进入下一轮。这里的值就是运行设置里的那份，设置页也能改。",
+  "modelsPage.probe.knobsShared":
+    "这四个参数与定时轮次共用同一份运行设置：在这里改完（离开输入框时保存）下次定时轮次就用新值，在「设置 → 运行设置 → 定时模型探测」里改也一样。",
   "modelsPage.probe.start": "开始探测",
   "modelsPage.probe.cancel": "停止",
   "modelsPage.probe.running": "进行中",
@@ -2388,6 +2390,13 @@ export const zh: Dict = {
   "ops.runtime.probeCron": "探测计划",
   "ops.runtime.probeCronHint":
     "五段 cron（如 0 */6 * * * = 每 6 小时）定时探测全部渠道的全部模型；留空 = 关闭。",
+  "ops.runtime.probeScope": "探测范围：{channels} · {models}",
+  "ops.runtime.probeScopeAllChannels": "全部渠道",
+  "ops.runtime.probeScopeChannels": "{count} 个渠道",
+  "ops.runtime.probeScopeAllModels": "全部模型",
+  "ops.runtime.probeScopeModels": "{count} 个模型",
+  "ops.runtime.probeScopeHint":
+    "范围与下面的四个参数在「模型 → 模型工具 → 模型探测」里改（那里就是同一份设置）；这里显示的是当前生效值。",
   "ops.runtime.probePrompt": "探测提示词",
   "ops.runtime.probePromptHint":
     "发给上游的用户消息。留空则用默认的 hi；推理类模型建议加长，否则可能因输出预算不足而失败。",

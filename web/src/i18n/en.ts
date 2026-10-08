@@ -1499,7 +1499,9 @@ export const en: Dict = {
   "modelsPage.probe.scheduleUseSelection": "Use this selection for the schedule",
   "modelsPage.probe.scheduleScopeMatches": "The schedule already covers this selection",
   "modelsPage.probe.scheduleHint":
-    'The scheduled round runs real calls over this plan and scope (it costs tokens the same way); leaving the scope on "all" means channels and models added later join the next round by themselves. Prompt, concurrency and the auto-disable threshold live in Settings → Runtime settings → Scheduled model probe.',
+    'The scheduled round runs real calls over this plan, scope and the four knobs above (it costs tokens the same way); leaving the scope on "all" means channels and models added later join the next round by themselves. Those values are the stored runtime settings, so the settings page shows the same numbers.',
+  "modelsPage.probe.knobsShared":
+    "These four are the scheduled round’s own parameters (one stored setting, not a per-run copy): edit them here — saved when the field loses focus — and the next scheduled round uses them, exactly as if you had changed them in Settings → Runtime settings → Scheduled model probe.",
   "modelsPage.probe.start": "Start probing",
   "modelsPage.probe.cancel": "Stop",
   "modelsPage.probe.running": "running",
@@ -2589,6 +2591,13 @@ export const en: Dict = {
   "ops.runtime.probeCron": "Probe schedule",
   "ops.runtime.probeCronHint":
     "Five-field cron (e.g. 0 */6 * * * = every 6 hours) probing every model on every channel; empty = disabled.",
+  "ops.runtime.probeScope": "Probe scope: {channels} · {models}",
+  "ops.runtime.probeScopeAllChannels": "all channels",
+  "ops.runtime.probeScopeChannels": "{count} channels",
+  "ops.runtime.probeScopeAllModels": "all models",
+  "ops.runtime.probeScopeModels": "{count} models",
+  "ops.runtime.probeScopeHint":
+    "Scope and the four parameters below are edited in Models → Model tools → Model probing (the same stored settings); this card shows what is in effect.",
   "ops.runtime.probePrompt": "Probe prompt",
   "ops.runtime.probePromptHint":
     "The user message sent upstream. Blank uses the default hi; reasoning models need something longer or they fail on output budget alone.",

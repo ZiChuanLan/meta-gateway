@@ -31,12 +31,17 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
   const [pickedModels, setPickedModels] = useState<string[]>([]);
   const [allChannels, setAllChannels] = useState(true);
   const [allModels, setAllModels] = useState(true);
-  const [prompt, setPrompt] = useState("");
-  const [maxTokens, setMaxTokens] = useState(1);
-  const [concurrency, setConcurrency] = useState(4);
+  // The run knobs are drafts of the RUNTIME settings, not a second copy of them:
+  // the scheduled round reads probe_prompt / probe_max_tokens / probe_concurrency /
+  // probe_auto_disable, so an operator who tunes them here must get the same values
+  // in the next scheduled round (and vice versa). Drafts keep typing smooth; blur
+  // commits, and starting a run sends what is on screen either way.
+  const [promptDraft, setPromptDraft] = useState("");
+  const [maxTokensDraft, setMaxTokensDraft] = useState(1);
+  const [concurrencyDraft, setConcurrencyDraft] = useState(4);
   // 0 leaves routing untouched; above it, this is how many consecutive
   // failures a member survives before the run takes it out of rotation.
-  const [autoDisable, setAutoDisable] = useState(0);
+  const [autoDisableDraft, setAutoDisableDraft] = useState(0);
 
   const channels = useQuery({
     queryKey: ["channels"],
@@ -61,6 +66,10 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
         probe_cron: string;
         probe_channels: number[];
         probe_models: string[];
+        probe_prompt: string;
+        probe_max_tokens: number;
+        probe_concurrency: number;
+        probe_auto_disable: number;
       }>,
     ) => {
       const editable = runtime.data?.editable;
@@ -69,6 +78,29 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
     },
     invalidateKeys: [["runtime-settings"]],
   });
+  // Seed the drafts from the stored values, one effect per field: depending on
+  // the whole object would reset the field being typed in whenever a background
+  // refetch handed back a new object.
+  const storedPrompt = runtime.data?.editable?.probe_prompt;
+  const storedMaxTokens = runtime.data?.editable?.probe_max_tokens;
+  const storedConcurrency = runtime.data?.editable?.probe_concurrency;
+  const storedAutoDisable = runtime.data?.editable?.probe_auto_disable;
+  useEffect(() => {
+    if (storedPrompt === undefined) return;
+    setPromptDraft(storedPrompt);
+  }, [storedPrompt]);
+  useEffect(() => {
+    if (storedMaxTokens === undefined) return;
+    setMaxTokensDraft(storedMaxTokens || 1);
+  }, [storedMaxTokens]);
+  useEffect(() => {
+    if (storedConcurrency === undefined) return;
+    setConcurrencyDraft(storedConcurrency || 4);
+  }, [storedConcurrency]);
+  useEffect(() => {
+    if (storedAutoDisable === undefined) return;
+    setAutoDisableDraft(storedAutoDisable);
+  }, [storedAutoDisable]);
 
   // Poll while a run is in flight; the interval turns itself off once idle.
   const tasks = useQuery({
@@ -165,14 +197,36 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
 
   const submit = () => {
     if (!scope.pairs) return;
+    // A run started from here uses what is on screen, and writes it back so the
+    // next scheduled round runs the same thing (blur may not have happened yet).
+    saveKnobs();
     start.mutate({
       channel_ids: allChannels ? undefined : pickedChannels.map(Number),
       models: allModels ? undefined : pickedModels,
-      prompt: prompt.trim() !== "" ? prompt : undefined,
-      max_tokens: maxTokens,
-      concurrency,
-      auto_disable_after: autoDisable > 0 ? autoDisable : undefined,
+      prompt: promptDraft.trim() !== "" ? promptDraft : undefined,
+      max_tokens: maxTokensDraft,
+      concurrency: concurrencyDraft,
+      auto_disable_after: autoDisableDraft > 0 ? autoDisableDraft : undefined,
     });
+  };
+
+  // The four run knobs are stored runtime settings, shared with the scheduled
+  // round. Committing on blur keeps a typed value from being lost, and writing
+  // only changed fields keeps a blur from being a write for nothing.
+  const saveKnobs = () => {
+    if (!scheduleReady) return;
+    const patch: Partial<{
+      probe_prompt: string;
+      probe_max_tokens: number;
+      probe_concurrency: number;
+      probe_auto_disable: number;
+    }> = {};
+    if (promptDraft !== (storedPrompt ?? "")) patch.probe_prompt = promptDraft;
+    if (maxTokensDraft !== (storedMaxTokens || 1)) patch.probe_max_tokens = maxTokensDraft;
+    if (concurrencyDraft !== (storedConcurrency || 4)) patch.probe_concurrency = concurrencyDraft;
+    if (autoDisableDraft !== (storedAutoDisable ?? 0)) patch.probe_auto_disable = autoDisableDraft;
+    if (Object.keys(patch).length === 0) return;
+    schedule.mutate(patch);
   };
 
   // What the scheduled run covers. An empty list means "everything" on the
@@ -276,9 +330,10 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
           className="probe-prompt"
           rows={2}
           disabled={running}
-          value={prompt}
+          value={promptDraft}
           placeholder={t("modelsPage.probe.promptPlaceholder")}
-          onChange={(event) => setPrompt(event.target.value)}
+          onChange={(event) => setPromptDraft(event.target.value)}
+          onBlur={saveKnobs}
         />
       </label>
 
@@ -290,8 +345,9 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
             min={1}
             max={256}
             disabled={running}
-            value={maxTokens}
-            onChange={(event) => setMaxTokens(Number(event.target.value))}
+            value={maxTokensDraft}
+            onChange={(event) => setMaxTokensDraft(Number(event.target.value))}
+            onBlur={saveKnobs}
           />
         </label>
         <label className="field">
@@ -301,8 +357,9 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
             min={1}
             max={16}
             disabled={running}
-            value={concurrency}
-            onChange={(event) => setConcurrency(Number(event.target.value))}
+            value={concurrencyDraft}
+            onChange={(event) => setConcurrencyDraft(Number(event.target.value))}
+            onBlur={saveKnobs}
           />
         </label>
         <label className="field">
@@ -312,11 +369,14 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
             min={0}
             max={10}
             disabled={running}
-            value={autoDisable}
-            onChange={(event) => setAutoDisable(Number(event.target.value))}
+            value={autoDisableDraft}
+            onChange={(event) => setAutoDisableDraft(Number(event.target.value))}
+            onBlur={saveKnobs}
           />
         </label>
       </div>
+      {/* These four are the scheduled round's parameters, not a per-run copy. */}
+      <p className="unify-section-hint">{t("modelsPage.probe.knobsShared")}</p>
 
       {/* The estimate sits after the knobs that determine it, so changing the
           scope or the prompt re-reads as a new price before submitting. */}
@@ -327,17 +387,17 @@ export function ProbeDialog({ onClose }: { onClose: () => void }) {
           pairs: scope.pairs,
         })}
       </div>
-      {autoDisable > 0 ? (
+      {autoDisableDraft > 0 ? (
         <p className="unify-section-hint">
-          {t("modelsPage.probe.autoDisableHint", { count: autoDisable })}
+          {t("modelsPage.probe.autoDisableHint", { count: autoDisableDraft })}
         </p>
       ) : null}
 
       {start.error ? <div className="inline-error">{String(start.error)}</div> : null}
 
       {/* The same pick lists above are what the schedule needs, so the schedule is
-          configured where the selection is made. The run knobs stay in Settings:
-          this block owns only the plan and the scope. */}
+          configured where the selection is made — plan, scope and the four run
+          knobs, which are stored settings the scheduled round reads directly. */}
       {staff ? (
         <div className="probe-schedule">
           <div className="probe-schedule-head">
