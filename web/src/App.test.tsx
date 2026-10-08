@@ -445,7 +445,11 @@ describe("channel-first shell", () => {
     cleanup();
     renderApp(["/checkins"]);
     expect(await screen.findByRole("heading", { level: 1, name: "Check-in" })).toBeInTheDocument();
-  });
+    // Three full app mounts in one case: 1s on an idle machine, but the 5s default
+    // is not enough when the whole suite runs in parallel (measured 4059ms and
+    // 5016ms on 2026-10-08, the latter a timeout). The assertions are about
+    // navigation, not speed.
+  }, 20000);
 
   // The top bar used to carry a check-in shortcut next to the navigation entry
   // pointing at the same page, and needed a switch of its own just to get out
