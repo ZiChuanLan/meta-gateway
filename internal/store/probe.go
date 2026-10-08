@@ -34,15 +34,18 @@ type ProbeTask struct {
 
 // ProbeResult is a single probe attempt against one channel for one model.
 type ProbeResult struct {
-	ID         int64     `json:"id"`
-	TaskID     int64     `json:"task_id"`
-	ChannelID  int64     `json:"channel_id"`
-	Model      string    `json:"model"`
-	OK         bool      `json:"ok"`
-	StatusCode int       `json:"status_code"`
-	LatencyMS  int       `json:"latency_ms"`
-	Error      string    `json:"error,omitempty"`
-	ProbedAt   time.Time `json:"probed_at"`
+	ID         int64  `json:"id"`
+	TaskID     int64  `json:"task_id"`
+	ChannelID  int64  `json:"channel_id"`
+	Model      string `json:"model"`
+	OK         bool   `json:"ok"`
+	StatusCode int    `json:"status_code"`
+	LatencyMS  int    `json:"latency_ms"`
+	Error      string `json:"error,omitempty"`
+	// Form is the shape this probe was sent in ("minimal" or "real"), which is
+	// how a site that bans probing can be shown the gateway respected it.
+	Form     string    `json:"form,omitempty"`
+	ProbedAt time.Time `json:"probed_at"`
 }
 
 // ModelHealth is the latest known state of one (channel, model) pair, shown in
@@ -146,9 +149,9 @@ func (db *DB) InsertProbeResult(result *ProbeResult) error {
 	if result.StatusCode > 0 {
 		statusCode = result.StatusCode
 	}
-	if _, err := db.Exec(`INSERT INTO probe_results (task_id, channel_id, model, ok, status_code, latency_ms, error, probed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-		result.TaskID, result.ChannelID, result.Model, boolInt(result.OK), statusCode, result.LatencyMS, result.Error); err != nil {
+	if _, err := db.Exec(`INSERT INTO probe_results (task_id, channel_id, model, ok, status_code, latency_ms, error, form, probed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		result.TaskID, result.ChannelID, result.Model, boolInt(result.OK), statusCode, result.LatencyMS, result.Error, result.Form); err != nil {
 		return fmt.Errorf("probe: insert result: %w", err)
 	}
 	return nil
@@ -158,7 +161,7 @@ func (db *DB) ListProbeResults(taskID int64, limit int) ([]ProbeResult, error) {
 	if limit <= 0 || limit > 2000 {
 		limit = 500
 	}
-	rows, err := db.Query(`SELECT id, task_id, channel_id, model, ok, status_code, latency_ms, error, probed_at
+	rows, err := db.Query(`SELECT id, task_id, channel_id, model, ok, status_code, latency_ms, error, form, probed_at
 		FROM probe_results WHERE task_id = ? ORDER BY id LIMIT ?`, taskID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("probe: list results: %w", err)
@@ -169,7 +172,7 @@ func (db *DB) ListProbeResults(taskID int64, limit int) ([]ProbeResult, error) {
 		var result ProbeResult
 		var statusCode, latency sql.NullInt64
 		if err := rows.Scan(&result.ID, &result.TaskID, &result.ChannelID, &result.Model,
-			&result.OK, &statusCode, &latency, &result.Error, scanTime(&result.ProbedAt)); err != nil {
+			&result.OK, &statusCode, &latency, &result.Error, &result.Form, scanTime(&result.ProbedAt)); err != nil {
 			return nil, fmt.Errorf("probe: scan result: %w", err)
 		}
 		if statusCode.Valid {

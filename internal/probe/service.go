@@ -15,7 +15,6 @@ package probe
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/callplan"
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/store"
@@ -284,24 +285,37 @@ func (s *Service) applyHealthAction(pair Pair, ok bool, failures, threshold int)
 	}
 }
 
-// probeOne sends a single minimal chat completion to one channel.
+// probeOne sends a single chat completion to one channel, in the shape that
+// channel's call policy asks for.
 func (s *Service) probeOne(ctx context.Context, taskID int64, pair Pair, maxTokens int, prompt string) store.ProbeResult {
 	result := store.ProbeResult{TaskID: taskID, ChannelID: pair.ChannelID, Model: pair.Model}
 
-	if prompt == "" {
-		prompt = DefaultPrompt
-	}
-	body, err := json.Marshal(map[string]any{
-		"model": pair.Model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"stream":     false,
-		"max_tokens": maxTokens,
-	})
+	// The one gate for this path: the target's policy decides the shape of the
+	// call, never whether it happens. On a lookup error the real form is used —
+	// a site that bans probing is the side that gets damaged by guessing wrong,
+	// and a handful of probes is bounded traffic either way.
+	policy, err := s.db.Channel.CallPolicyFor(pair.ChannelID)
 	if err != nil {
-		result.Error = "build request: " + err.Error()
+		s.logger.Warn("probe: resolve call policy, using the real form", "channel", pair.ChannelID, "error", err)
+		policy = domain.CallPolicyRealCallsOnly
+	}
+	plan, err := callplan.Request(policy, domain.PurposeProbe, callplan.Spec{
+		Model:     pair.Model,
+		Prompt:    prompt,
+		MaxTokens: maxTokens,
+		ChannelID: pair.ChannelID,
+	}, DefaultPrompt)
+	if err != nil {
+		result.Error = err.Error()
 		return result
+	}
+	body := plan.Body
+	result.Form = string(plan.Form)
+	if plan.Form == domain.CallFormReal {
+		// Worth a line of its own: a site that bans probing is being called in
+		// the real form, and that is the fact an operator is asked to prove.
+		s.logger.Info("probe: real-form call", "channel", pair.ChannelID, "model", pair.Model,
+			"max_tokens", plan.MaxTokens, "policy", string(policy))
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lan/meta-gateway/internal/callplan"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/relay"
@@ -465,5 +466,89 @@ func TestProbeRecoversSelfDisabledMember(t *testing.T) {
 	waitForTask(t, db, task.ID)
 	if !memberEnabled(t, db, chID, "m1") {
 		t.Error("member stayed disabled after a successful probe; recovery should restore it")
+	}
+}
+
+// A channel whose site bans probing must be called in the real form, and the
+// shape has to be visible afterwards: the policy is only worth having if its
+// effect can be shown to the site that asked for it.
+func TestProbeUsesTheRealFormWhenTheSiteBansProbing(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	channelID := newProbeFixture(t, db, "model-policy")
+	channel, err := db.Channel.GetByID(channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel.CallPolicy = domain.CallPolicyRealCallsOnly
+	if err := db.Channel.Update(channel); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakeRelay{ok: map[int64]bool{channelID: true}}
+	service := NewService(db, fake, nil)
+	// max_tokens 1 is what the operator configured for cheapness; the policy has
+	// to overrule it, because a one-token budget is the probe signature itself.
+	task, err := service.Start(context.Background(), []Pair{{ChannelID: channelID, Model: "model-policy"}},
+		Options{MaxTokens: 1})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitForTask(t, db, task.ID)
+
+	if got := fake.sentMaxToken(); got < callplan.RealMaxTokensFloor {
+		t.Errorf("upstream received max_tokens %d, want the real-form floor %d", got, callplan.RealMaxTokensFloor)
+	}
+	if got := fake.sentPrompt(); got == DefaultPrompt {
+		t.Errorf("upstream received the probe prompt %q: the real form was not used", got)
+	}
+
+	results, err := db.ListProbeResults(task.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	if results[0].Form != domain.CallFormReal {
+		t.Errorf("recorded form = %q, want %q", results[0].Form, domain.CallFormReal)
+	}
+}
+
+// The default policy must not change the probe's shape: this is the behaviour
+// every existing deployment has, and the feature is opt-in per site.
+func TestProbeKeepsTheMinimalFormByDefault(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	channelID := newProbeFixture(t, db, "model-default-policy")
+	fake := &fakeRelay{ok: map[int64]bool{channelID: true}}
+	service := NewService(db, fake, nil)
+	task, err := service.Start(context.Background(), []Pair{{ChannelID: channelID, Model: "model-default-policy"}},
+		Options{MaxTokens: 1})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitForTask(t, db, task.ID)
+
+	if got := fake.sentPrompt(); got != DefaultPrompt {
+		t.Errorf("prompt = %q, want the minimal %q", got, DefaultPrompt)
+	}
+	if got := fake.sentMaxToken(); got != 1 {
+		t.Errorf("max_tokens = %d, want the configured 1", got)
+	}
+	results, err := db.ListProbeResults(task.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Form != domain.CallFormMinimal {
+		t.Errorf("recorded form = %+v, want %q", results, domain.CallFormMinimal)
 	}
 }

@@ -97,6 +97,22 @@ type Site struct {
 	ProbeSourceEnabled bool       `json:"probe_source_enabled"`
 	ProbeLastRunAt     *time.Time `json:"probe_last_run_at,omitempty"`
 	ProbeLastError     string     `json:"probe_last_error,omitempty"`
+
+	// CallPolicy is how this site wants automated traffic to look (the channel
+	// can override it). See domain.CallPolicy.
+	CallPolicy string `json:"call_policy,omitempty"`
+	// The keepalive window. It lives on the site because the ban is "no call for
+	// N days" and N is the site's rule (15 days here, 30 there), not the
+	// channel's; a channel only overrides the switch and the window when its
+	// account differs.
+	KeepaliveEnabled          bool   `json:"keepalive_enabled"`
+	KeepaliveIdleDays         int    `json:"keepalive_idle_days,omitempty"`
+	KeepaliveSafetyMarginDays int    `json:"keepalive_safety_margin_days,omitempty"`
+	KeepaliveModel            string `json:"keepalive_model,omitempty"`
+	KeepalivePrompt           string `json:"keepalive_prompt,omitempty"`
+	KeepaliveMaxTokens        int    `json:"keepalive_max_tokens,omitempty"`
+	KeepaliveDailyCap         int    `json:"keepalive_daily_cap,omitempty"`
+	KeepaliveQuietHours       string `json:"keepalive_quiet_hours,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +257,21 @@ type Channel struct {
 	// StableFirstRequests counts successful relay attempts since the channel
 	// was marked grayscale (promotion input).
 	StableFirstRequests int `json:"stable_first_requests,omitempty"`
+	// CallPolicy overrides the site's policy for this channel ("" = inherit).
+	// See domain.CallPolicy: it decides the *shape* of automated calls, never
+	// whether reads happen.
+	CallPolicy string `json:"call_policy,omitempty"`
+	// KeepaliveEnabled overrides the site's keepalive switch. nil = inherit,
+	// which is why it is a pointer: "off by my own decision" and "inherit an
+	// off site" are different answers in the console.
+	KeepaliveEnabled *bool `json:"keepalive_enabled,omitempty"`
+	// KeepaliveIdleDays overrides the site's ban window; 0 = inherit.
+	KeepaliveIdleDays int `json:"keepalive_idle_days,omitempty"`
+	// LastRealCallAt is when the upstream last received a chat request on this
+	// channel. Written by the relay on every attempt the upstream answered,
+	// including failures: the ban counts requests that arrived, not requests
+	// that succeeded.
+	LastRealCallAt *time.Time `json:"last_real_call_at,omitempty"`
 	// ConsecutiveFailures counts failed relay attempts (auto-disable input).
 	ConsecutiveFailures int       `json:"-"`
 	CreatedAt           time.Time `json:"created_at"`
