@@ -1383,9 +1383,18 @@ export const en: Dict = {
   "modelsPage.siteProbe.collectFailed": "collection failed",
   "modelsPage.siteProbe.colSite": "Site",
   "modelsPage.siteProbe.colKind": "Source",
-  "modelsPage.siteProbe.autoApply": "Auto-apply (this site acts on its own every round)",
   "modelsPage.siteProbe.autoApplyHint":
-    "With this on, the site applies the thresholds below as soon as a round is collected; with it off the data is collected and shown, and nothing moves until you press Apply.",
+    "With this on, the site applies its own thresholds as soon as a round is collected; with it off the data is collected and shown, and nothing moves until you press Apply.",
+  "modelsPage.siteProbe.autoApplyOnHint":
+    "On: each round disables or recovers members on this site's own thresholds, with no click.",
+  "modelsPage.siteProbe.autoApplyOffHint":
+    "Collecting only: verdicts change nothing until you preview and apply.",
+  "modelsPage.siteProbe.cadence": "Automatic collection: every {interval}, jitter ±{jitter}",
+  "modelsPage.siteProbe.cadenceHint":
+    "Change the cadence in Settings → Runtime settings → Site probe (saved live); the Collect now button on a site refreshes just that one.",
+  "modelsPage.siteProbe.unitHours": "{count} h",
+  "modelsPage.siteProbe.unitMinutes": "{count} min",
+  "modelsPage.siteProbe.unitSeconds": "{count} s",
   "modelsPage.siteProbe.colLastRun": "Last collected",
   "modelsPage.siteProbe.colModel": "Model",
   "modelsPage.siteProbe.colChannel": "Channel",

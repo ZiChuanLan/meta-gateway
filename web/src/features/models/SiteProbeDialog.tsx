@@ -24,6 +24,18 @@ const DEFAULT_POLICY: SiteProbePolicy = {
   high_rounds: 2,
 };
 
+/**
+ * A cadence in seconds, in the largest whole unit that stays exact: the setting
+ * is stored in seconds (minimum 60), so "900" has to read as "15 分钟" or the
+ * operator cannot compare it with the last-run timestamps next to it.
+ */
+function formatCadence(seconds: number, t: Translate) {
+  if (seconds <= 0) return t("modelsPage.siteProbe.unitSeconds", { count: 0 });
+  if (seconds % 3600 === 0) return t("modelsPage.siteProbe.unitHours", { count: seconds / 3600 });
+  if (seconds % 60 === 0) return t("modelsPage.siteProbe.unitMinutes", { count: seconds / 60 });
+  return t("modelsPage.siteProbe.unitSeconds", { count: seconds });
+}
+
 /** How many unmatched models are listed before the operator asks for more. */
 const UNMATCHED_PAGE = 20;
 
@@ -56,7 +68,6 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   const [scopeSite, setScopeSite] = useState("");
   const previewKey = useRef("");
   const [previewFor, setPreviewFor] = useState("");
-  const [autoApply, setAutoApply] = useState(false);
   const [url, setUrl] = useState("");
   const [siteId, setSiteId] = useState<string>("");
   const [detection, setDetection] = useState<SiteProbeDetection | null>(null);
@@ -80,6 +91,13 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   const report = useQuery({
     queryKey: ["site-probe", policy],
     queryFn: ({ signal }) => service.siteProbeReport(policy, signal),
+  });
+  // The collection cadence is a runtime setting, not a property of this dialog.
+  // It is read here only so the operator can see how fresh these numbers can be
+  // — and where to change it — without leaving the readings they are judging.
+  const runtime = useQuery({
+    queryKey: ["runtime-settings"],
+    queryFn: ({ signal }) => service.runtimeSettings(signal),
   });
 
   const detect = useAdminMutation({
@@ -308,6 +326,16 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
     0,
   );
   const selectedSite = (sites.data ?? []).find((site) => String(site.id) === siteId);
+  // `editable` is guarded too: an older gateway, or a partial payload, must not
+  // blank the dialog over a line that is only informative.
+  const cadenceSeconds = runtime.data?.editable?.site_probe_interval_seconds ?? 0;
+  const cadence =
+    cadenceSeconds > 0
+      ? {
+          interval: formatCadence(cadenceSeconds, t),
+          jitter: formatCadence(runtime.data?.editable?.site_probe_jitter_seconds ?? 0, t),
+        }
+      : null;
   // A site already configured can be edited (thresholds, a manual URL) without
   // re-detecting its page.
   const sourceKind =
@@ -348,15 +376,20 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
       site_ids: scopeSite ? [Number(scopeSite)] : undefined,
       previewKey: evaluationKey,
     });
-  const saveDraft = () =>
+  // The auto-apply switch is the only writer of that flag (it saves on click), so
+  // a thresholds save echoes the site's CURRENT value: sending a draft copy would
+  // silently revert a switch flipped after the site was picked.
+  const saveDraft = () => {
+    const target = siteRows.find((candidate) => String(candidate.site_id) === siteId);
     save.mutate({
       site_id: Number(siteId),
       kind: sourceKind,
       url: sourceURL,
       auto: autoMode,
       enabled: true,
-      config: JSON.stringify({ auto_apply: autoApply, policy: sourcePolicy }),
+      config: JSON.stringify({ auto_apply: target?.auto_apply ?? false, policy: sourcePolicy }),
     });
+  };
 
   const pickSite = (value: string) => {
     setSiteId(value);
@@ -365,7 +398,6 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
     setUrl(site?.probe_source_url ?? "");
     setAutoMode(site?.probe_auto ?? true);
     const status = siteRows.find((candidate) => String(candidate.site_id) === value);
-    setAutoApply(status?.auto_apply ?? false);
     setSourcePolicy(status?.policy ?? DEFAULT_POLICY);
   };
 
@@ -405,6 +437,15 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
       <p className="unify-intro">{t("modelsPage.siteProbe.description")}</p>
 
       <div className="site-probe-workflow">{t("modelsPage.siteProbe.workflow")}</div>
+      {cadence ? (
+        <p className="site-probe-cadence" role="status">
+          {t("modelsPage.siteProbe.cadence", {
+            interval: cadence.interval,
+            jitter: cadence.jitter,
+          })}
+          <span className="field-hint">· {t("modelsPage.siteProbe.cadenceHint")}</span>
+        </p>
+      ) : null}
       <label className="field">
         <span>{t("modelsPage.siteProbe.actionScope")}</span>
         <select
@@ -819,17 +860,6 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
         ) : null}
         {detect.error ? <div className="inline-error">{String(detect.error)}</div> : null}
         {save.error ? <div className="inline-error">{String(save.error)}</div> : null}
-        <div className="field-row">
-          <label className="check marginless">
-            <input
-              type="checkbox"
-              checked={autoApply}
-              onChange={(event) => setAutoApply(event.target.checked)}
-            />
-            <span>{t("modelsPage.siteProbe.autoApply")}</span>
-          </label>
-          <span className="field-hint">{t("modelsPage.siteProbe.autoApplyHint")}</span>
-        </div>
         {/* Destructive and rare, so it is separated and armed by a second
             click instead of sitting next to Save as a red word. */}
         <div className="site-probe-maintenance">
@@ -1013,6 +1043,19 @@ function SiteProbeDetail({
           </button>
         </div>
       </header>
+      {/* The switch in the header is the whole per-site decision, so what it does
+          is spelled out where the switch is. It used to sit at the bottom of
+          高级设置 as a second control for the same flag, where the operator
+          reading thresholds met it long after flipping the toggle. */}
+      {site.probe_source_enabled ? (
+        <p className={`site-probe-auto-state${site.auto_apply ? " is-on" : ""}`}>
+          {t(
+            site.auto_apply
+              ? "modelsPage.siteProbe.autoApplyOnHint"
+              : "modelsPage.siteProbe.autoApplyOffHint",
+          )}
+        </p>
+      ) : null}
       <div className="site-probe-card-meta">
         <span>
           {t("modelsPage.siteProbe.cardMeta", {

@@ -91,8 +91,18 @@ const disableAction: SiteProbeAction = {
 };
 
 function mockBackend(
-  options: { actions?: SiteProbeAction[]; report?: SiteProbeReport; reportError?: boolean } = {},
+  options: {
+    actions?: SiteProbeAction[];
+    report?: SiteProbeReport;
+    reportError?: boolean;
+    siteProbeIntervalSeconds?: number;
+    siteProbeJitterSeconds?: number;
+  } = {},
 ) {
+  // One report object for the whole test: the save endpoint below writes into
+  // it, so a refetch after a switch reflects what the backend now stores — which
+  // is exactly what the dialog reads back.
+  const reportData = options.report ?? report();
   const apply = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}"));
     return json({
@@ -119,6 +129,15 @@ function mockBackend(
   });
   const save = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}"));
+    const stored = reportData.sites.find((site) => site.site_id === body.site_id);
+    if (stored) {
+      stored.probe_source_kind = body.kind;
+      stored.probe_source_url = body.url;
+      stored.probe_source_enabled = body.enabled;
+      const config = JSON.parse(String(body.config || "{}"));
+      stored.auto_apply = Boolean(config.auto_apply);
+      if (config.policy) stored.policy = config.policy;
+    }
     return json({
       id: body.site_id,
       name: "公益站A",
@@ -176,14 +195,19 @@ function mockBackend(
         ]);
       }
       if (path === "/admin/site-probe/report")
-        return options.reportError
-          ? json({ error: "load_failed" }, 500)
-          : json(options.report ?? report());
+        return options.reportError ? json({ error: "load_failed" }, 500) : json(reportData);
       if (path === "/admin/site-probe/apply") return apply(input, init);
       if (path === "/admin/site-probe/collect") return collect();
       if (path === "/admin/site-probe/detect") return detect();
       if (path === "/admin/site-probe/source") return save(input, init);
       if (path === "/admin/site-probe/catalog/import") return catalogImport(input, init);
+      if (path === "/admin/runtime-settings")
+        return json({
+          editable: {
+            site_probe_interval_seconds: options.siteProbeIntervalSeconds ?? 900,
+            site_probe_jitter_seconds: options.siteProbeJitterSeconds ?? 120,
+          },
+        });
       return json({});
     }),
   );
@@ -268,6 +292,46 @@ describe("site probe dialog", () => {
     expect(body.site_id).toBe(1);
     expect(JSON.parse(body.config).policy.ratio_threshold).toBe(0.5);
     await waitFor(() => expect(collect).toHaveBeenCalledTimes(1));
+  });
+
+  // The cadence is a runtime setting rather than a control of this dialog, so the
+  // dialog states the value it is running with: an operator judging a reading has
+  // to be able to tell whether the number behind it is minutes or hours old.
+  it("states the collection cadence it is running with", async () => {
+    mockBackend({ siteProbeIntervalSeconds: 900, siteProbeJitterSeconds: 120 });
+    renderDialog();
+    await screen.findByText("z-ai/glm-5.2");
+    const cadence = await screen.findByText(/自动采集：每 15 分钟一轮/);
+    expect(cadence).toHaveTextContent("抖动 ±2 分钟");
+    expect(cadence).toHaveTextContent("运行设置");
+  });
+
+  // Flipping the switch writes the flag immediately. A later thresholds save used
+  // to echo a draft copy taken when the site was picked, so it could silently put
+  // the switch back — and the consequence of the switch is now stated next to it
+  // instead of behind 高级设置, where the same flag had a second control.
+  it("keeps the auto-apply switch out of 高级设置 and does not revert it on save", async () => {
+    const { save } = mockBackend();
+    renderDialog();
+    await screen.findByText("z-ai/glm-5.2");
+
+    const offHint = await screen.findByText(/只采集与展示/);
+    expect(document.querySelector(".advanced-section")?.contains(offHint)).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "自动应用 关" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "自动应用 开" })).toBeInTheDocument(),
+    );
+    expect(await screen.findByText(/已开启：每轮采集结束后/)).toBeInTheDocument();
+
+    // Saving thresholds must carry the flag the backend now holds, not the copy
+    // from before the switch was flipped.
+    fireEvent.click(screen.getByRole("button", { name: "配置来源" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并启用" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    const second = JSON.parse(String(save.mock.calls[1]?.[1]?.body));
+    expect(JSON.parse(second.config).auto_apply).toBe(true);
   });
 
   it("scopes preview and apply to the explicitly selected site", async () => {

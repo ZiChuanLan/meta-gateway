@@ -1522,9 +1522,18 @@ export const zh: Dict = {
   "modelsPage.siteProbe.collectFailed": "采集失败",
   "modelsPage.siteProbe.colSite": "站点",
   "modelsPage.siteProbe.colKind": "来源",
-  "modelsPage.siteProbe.autoApply": "自动应用（该站点每轮自行禁用/恢复成员）",
   "modelsPage.siteProbe.autoApplyHint":
-    "勾选后，该站点每次采集完就按下面的阈值自动动手；不勾选则只采集与展示，等你点「应用」。",
+    "开启后，该站点每次采集完就按它自己的阈值自动动手；关闭则只采集与展示，等你点「应用」。",
+  "modelsPage.siteProbe.autoApplyOnHint":
+    "已开启：每轮采集结束后按本站点的阈值自行禁用/恢复成员，不用等你点「应用」。",
+  "modelsPage.siteProbe.autoApplyOffHint":
+    "当前只采集与展示：判定结果不会改动路由，等你预览后点「应用」。",
+  "modelsPage.siteProbe.cadence": "自动采集：每 {interval}一轮，抖动 ±{jitter}",
+  "modelsPage.siteProbe.cadenceHint":
+    "频率在「设置 → 运行设置 → 站点探针」修改，保存即生效；站点行上的「立即采集」可随时刷新单个站点。",
+  "modelsPage.siteProbe.unitHours": "{count} 小时",
+  "modelsPage.siteProbe.unitMinutes": "{count} 分钟",
+  "modelsPage.siteProbe.unitSeconds": "{count} 秒",
   "modelsPage.siteProbe.colLastRun": "最近采集",
   "modelsPage.siteProbe.colModel": "模型",
   "modelsPage.siteProbe.colChannel": "渠道",

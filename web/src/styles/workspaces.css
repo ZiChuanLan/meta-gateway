@@ -1045,6 +1045,31 @@
 
 /* Site probe workflow: expose scope before any routing changes. */
 .site-probe-workflow { padding: 12px 14px; margin-bottom: 16px; border: 1px solid var(--line); background: var(--surface-subtle); line-height: 1.65; color: var(--muted); }
+/* The cadence is a runtime setting rather than a dialog control, so it reads as a
+   statement (value first, then where to change it) instead of a form row. */
+.site-probe-cadence {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: -8px 0 16px;
+  font-size: var(--text-xs);
+  color: var(--muted-strong);
+}
+.site-probe-cadence .field-hint {
+  margin: 0;
+}
+/* What the per-site auto-apply switch does, right under the switch. On, it is
+   tinted: a site that acts on its own is a different risk than one that waits. */
+.site-probe-auto-state {
+  margin: 0;
+  padding: 0 var(--space-4) 6px;
+  font-size: var(--text-xs);
+  color: var(--muted-dark);
+}
+.site-probe-auto-state.is-on {
+  color: var(--info);
+}
 .site-probe-card-switches { flex-wrap: wrap; }
 @media (max-width: 600px) {
   .site-probe-card-head { align-items: flex-start; flex-direction: column; }
