@@ -1,8 +1,8 @@
 import { useI18n } from "../../i18n";
 
 /** Parse a daily "m h * * *" cron into wall-clock time; null for custom schedules. */
-function parseDailyCron(cron: string): { hour: number; minute: number } | null {
-  const parts = cron.trim().split(/\s+/);
+function parseDailyCron(cron = ""): { hour: number; minute: number } | null {
+  const parts = (cron || "").trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [minuteRaw, hourRaw, dom, month, dow] = parts;
   if (dom !== "*" || month !== "*" || dow !== "*") return null;

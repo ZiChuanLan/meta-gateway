@@ -14,23 +14,15 @@
    the card (no border, no radius, no shadow) and keep one hairline above each
    section, so a page of settings reads as dense rows on the surface rather than
    as a stack of boxes. */
-.theme-modern .runtime-index.panel,
-.theme-modern .runtime-pane.panel {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+.theme-modern .runtime-cards-grid > .runtime-section {
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
   box-shadow: none;
 }
-.theme-modern .runtime-pane > .runtime-section > .panel-header {
-  margin-bottom: 18px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-.theme-modern .runtime-index-group + .runtime-index-group {
-  padding-top: 12px;
-  border-top: 1px solid var(--line-light);
-}
-.theme-modern .runtime-layout {
-  grid-template-columns: 232px minmax(0, 1fr);
+.theme-modern .runtime-cards-grid > .runtime-section > .panel-header {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-light);
 }

@@ -74,9 +74,25 @@ function runtimeServer(read: () => Record<string, unknown>) {
   return { fetcher, puts };
 }
 
-/** The sidebar owns navigation now: a section is one click away, always. */
+/** The navigation owns sections: a section is one click away, always. */
 async function openSection(name: string) {
-  fireEvent.click(await screen.findByRole("button", { name }));
+  await screen.findByRole("tablist");
+  const pill = screen.queryByRole("button", { name });
+  if (pill) {
+    fireEvent.click(pill);
+    return;
+  }
+  for (const cat of [/Forwarding & routing/, /Health & automation/, /Data & operations/]) {
+    const tab = screen.queryByRole("tab", { name: cat });
+    if (tab) {
+      fireEvent.click(tab);
+      const target = screen.queryByRole("button", { name });
+      if (target) {
+        fireEvent.click(target);
+        return;
+      }
+    }
+  }
 }
 
 it("shows an initial load failure with a working retry instead of endless loading", async () => {
@@ -97,7 +113,7 @@ it("shows an initial load failure with a working retry instead of endless loadin
 
 // The page used to be nineteen peer cards behind a chip index; the sidebar
 // states which three groups they fall into and shows one section at a time.
-it("groups the sections semantically and shows one section at a time", async () => {
+it("groups the sections semantically into category tabs with high information density", async () => {
   vi.stubGlobal("fetch", runtimeServer(() => payload()).fetcher);
   mount(<RuntimeSettingsPanel />);
 
@@ -105,17 +121,17 @@ it("groups the sections semantically and shows one section at a time", async () 
   expect(screen.getByText("Health & automation")).toBeInTheDocument();
   expect(screen.getByText("Data & operations")).toBeInTheDocument();
 
-  // The landing section is the first one; nothing else is mounted with it.
-  expect(screen.getByRole("button", { name: "Relay failover" })).toHaveAttribute(
-    "aria-current",
-    "true",
-  );
-  expect(screen.queryByText("Per-channel concurrency ceiling")).toBeNull();
-
-  await openSection("Routing");
+  // In the active category, sections are visible together in the dense grid!
+  expect(screen.getByRole("heading", { name: "Relay failover" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Routing" })).toBeInTheDocument();
   expect(screen.getByText("Per-channel concurrency ceiling")).toBeInTheDocument();
-  expect(screen.queryByText("Cross-channel failover")).toBeNull();
-  expect(screen.getByRole("button", { name: "Routing" })).toHaveAttribute("aria-current", "true");
+
+  // Switch to Health & automation tab
+  fireEvent.click(screen.getByRole("tab", { name: /Health & automation/ }));
+  expect(
+    await screen.findByRole("heading", { name: /Failure cooldown|Cooldown/ }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Relay failover" })).toBeNull();
 });
 
 // I04's other half: a background refetch used to replace the draft whenever the
@@ -228,7 +244,8 @@ it("restores one section to the deployment defaults without touching the rest", 
   vi.stubGlobal("fetch", server.fetcher);
   mount(<RuntimeSettingsPanel />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "Restore this section" }));
+  const restoreButtons = await screen.findAllByRole("button", { name: "Restore this section" });
+  fireEvent.click(restoreButtons[0]!);
   await waitFor(() => expect(server.puts).toHaveLength(1));
   expect(server.puts[0]!.retry_times).toBe(2);
   // Sticky sessions are another section's business and stay as the operator
@@ -265,7 +282,7 @@ it("shows the environment layer read-only, folded into the service section", asy
 
   // Folded until asked for: the variable list is a fact about the deployment,
   // not a knob, and it should not out-shout the settings above it.
-  const toggle = screen.getByRole("button", { name: /Deployment parameters \(env\)/ });
+  const toggle = await screen.findByRole("button", { name: /Deployment parameters \(env\)/ });
   expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByLabelText("Filter variables")).toBeNull();
   fireEvent.click(toggle);

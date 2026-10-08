@@ -9796,86 +9796,110 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   font-weight: 600;
 }
 
-/* —— Shell: the index and the pane, one gutter apart —— */
-.runtime-layout {
-  display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
-  align-items: start;
-  gap: 20px;
-}
-.runtime-settings .runtime-index.panel {
-  position: sticky;
-  top: 16px;
+/* —— Category Tabs & Anchors —— */
+.runtime-category-bar {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-height: calc(100dvh - 120px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  gap: 12px;
+  margin: 16px 0 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
 }
-.runtime-index-group {
+.runtime-category-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
-.runtime-index-label {
-  padding: 0 9px 5px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-/* The index owns its own list type: the appearance sheets style bare `button`
-   elements (classic switches them to `font: inherit` and a link colour), so the
-   list has to outrank them or every entry renders at body size in link blue. */
-.runtime-settings .runtime-index .runtime-index-item {
-  display: flex;
+.runtime-category-tab {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 9px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
+  padding: 8px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
   color: var(--ink-soft);
-  font: 500 12px/1.4 var(--font);
-  text-align: left;
+  font: 550 13px/1.4 var(--font);
   cursor: pointer;
-  transition:
-    background var(--dur-base),
-    color var(--dur-base);
+  transition: all var(--dur-base);
 }
-.runtime-settings .runtime-index .runtime-index-item:hover {
+.runtime-category-tab:hover {
   background: var(--surface-hover);
   color: var(--ink);
 }
-.runtime-settings .runtime-index .runtime-index-item.is-active {
+.runtime-category-tab.is-active {
+  border-color: var(--primary);
   background: var(--primary-soft);
   color: var(--ink);
   font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 42, 66, 0.08);
 }
-.runtime-settings .runtime-index .runtime-index-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.runtime-category-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.runtime-category-tab.is-active .runtime-category-count {
+  background: var(--surface);
+  color: var(--primary);
+}
+.runtime-anchors-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.runtime-anchor-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 12px/1.4 var(--font);
+  cursor: pointer;
+  transition: all var(--dur-base);
+}
+.runtime-anchor-pill:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: var(--surface-hover);
 }
 .runtime-nav-dot {
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  margin-left: auto;
   border-radius: 50%;
   background: var(--primary);
 }
 
-/* —— Pane: one section of the console's form grid, switched in place —— */
-.runtime-settings .runtime-pane.panel {
-  min-width: 0;
+/* —— High-density 2-Column Cards Grid —— */
+.runtime-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
   animation: runtime-pane-in 150ms var(--ease-out) both;
+}
+@media (max-width: 960px) {
+  .runtime-cards-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.runtime-cards-grid > .runtime-section {
+  margin: 0;
+}
+.runtime-cards-grid > .is-wide-section {
+  grid-column: 1 / -1;
 }
 @keyframes runtime-pane-in {
   from {
