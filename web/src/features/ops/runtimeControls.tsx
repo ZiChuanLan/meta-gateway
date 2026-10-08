@@ -56,9 +56,10 @@ export function SettingLabel({
 
 /**
  * The measurement a label already names in brackets: "探测间隔（秒）" is a
- * panel that reads `探测间隔   60 秒`, so the unit moves out of the label and
- * beside the value, where a meter belongs. Only measurement-shaped brackets are
- * lifted; "(1/N)" or "(成功请求数)" are part of the name and stay put.
+ * field that reads `探测间隔 秒` over its own control, so the unit moves out of
+ * the name and to its right, where it annotates the value. Only
+ * measurement-shaped brackets are lifted; "(1/N)" or "(成功请求数)" are part of
+ * the name and stay put.
  */
 const UNIT_PATTERN =
   /^(秒|毫秒|分钟|小时|天|次|个|条|行|s|ms|m|h|d|min|sec|hrs?|seconds?|milliseconds?|minutes?|hours?|days?|times?|rows?|items?|entries?)$/i;

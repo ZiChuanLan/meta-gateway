@@ -9809,7 +9809,6 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 12px;
   max-height: calc(100dvh - 120px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -9828,7 +9827,10 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
-.runtime-index-item {
+/* The index owns its own list type: the appearance sheets style bare `button`
+   elements (classic switches them to `font: inherit` and a link colour), so the
+   list has to outrank them or every entry renders at body size in link blue. */
+.runtime-settings .runtime-index .runtime-index-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -9846,16 +9848,16 @@ Whole-app render guard — see components/ErrorBoundary.tsx
     background var(--dur-base),
     color var(--dur-base);
 }
-.runtime-index-item:hover {
+.runtime-settings .runtime-index .runtime-index-item:hover {
   background: var(--surface-hover);
   color: var(--ink);
 }
-.runtime-index-item.is-active {
+.runtime-settings .runtime-index .runtime-index-item.is-active {
   background: var(--primary-soft);
-  color: var(--primary-active);
+  color: var(--ink);
   font-weight: 600;
 }
-.runtime-index-text {
+.runtime-settings .runtime-index .runtime-index-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9911,6 +9913,22 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   color: var(--muted);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+/* 已改 / 默认 — the badge that stands in for the Save button instant save never
+   gave the page. */
+.runtime-settings .setting-state {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.runtime-settings .setting-state.is-changed {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-active);
 }
 .runtime-row .setting-input-wrap {
   display: grid;
@@ -10143,7 +10161,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   }
   .runtime-subblock-chevron,
   .runtime-fold-chevron,
-  .runtime-index-item {
+  .runtime-settings .runtime-index .runtime-index-item {
     transition: none;
   }
 }
