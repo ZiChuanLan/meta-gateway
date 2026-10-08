@@ -835,26 +835,10 @@ input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-hei
   }
 }
 
-/* --- All-white minimal surface ----------------------------------------------
-   The console read as "grey page + white cards". Following the approved
-   references, the page is white and the structure is carried by hairlines and
-   whitespace instead of containers. Panels keep their identity, headers and ids
-   — only their chrome goes. */
-:root:not([data-theme="dark"]) .panel {
-  border-color: transparent;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-:root:not([data-theme="dark"]) .panel-header {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 10px;
-}
-:root:not([data-theme="dark"]) .panel + .panel {
-  margin-top: 30px;
-}
-/* The page owns the surface now, so the shell's content area must not paint a
-   second one. */
+/* The page owns the surface now, so nothing else repaints it. Page-level chrome
+   for the settings page lives in the appearance skins (see themes/*), never
+   here: a page that styles itself is exactly how the runtime settings page ended
+   up looking like neither skin. */
 :root:not([data-theme="dark"]) .console-main,
 :root:not([data-theme="dark"]) .console-body,
 :root:not([data-theme="dark"]) .workspace-host {
