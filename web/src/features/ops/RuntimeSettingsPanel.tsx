@@ -200,6 +200,15 @@ const RUNTIME_GROUPS: readonly RuntimeGroup[] = [
         fields: ["site_probe_interval_seconds", "site_probe_jitter_seconds"],
       },
       {
+        key: "keepalive",
+        label: "ops.runtime.section.keepalive",
+        fields: [
+          "keepalive_enabled",
+          "keepalive_check_interval_seconds",
+          "keepalive_default_idle_days",
+        ],
+      },
+      {
         key: "checkin",
         label: "ops.runtime.section.checkin",
         fields: ["checkin_enabled", "checkin_cron"],
@@ -1444,6 +1453,70 @@ export function RuntimeSettingsPanel({
                   patch(
                     "site_probe_jitter_seconds",
                     numberOr(e.target.value, draft.site_probe_jitter_seconds),
+                  )
+                }
+              />
+            </RuntimeRow>
+          </SectionCard>
+        ) : null}
+
+        {isSectionVisible("keepalive") ? (
+          <SectionCard
+            sectionKey="keepalive"
+            changed={isSectionChanged("keepalive")}
+            busy={busy}
+            onRestore={() => restoreSectionByKey("keepalive")}
+            actions={
+              <Link className="button button-quiet" to="/channels">
+                {t("ops.runtime.openKeepalive")}
+              </Link>
+            }
+          >
+            <p className="muted panel-lede">{t("ops.runtime.keepaliveIntro")}</p>
+            <RuntimeRow
+              label={t("ops.runtime.keepaliveEnabled")}
+              hint={t("ops.runtime.keepaliveEnabledHint")}
+              changed={isChanged("keepalive_enabled")}
+            >
+              <input
+                type="checkbox"
+                disabled={busy}
+                checked={draft.keepalive_enabled}
+                onChange={(e) => patch("keepalive_enabled", e.target.checked)}
+              />
+            </RuntimeRow>
+            <RuntimeRow
+              label={t("ops.runtime.keepaliveInterval")}
+              hint={t("ops.runtime.keepaliveIntervalHint")}
+              changed={isChanged("keepalive_check_interval_seconds")}
+            >
+              <ValidatedNumberInput
+                min={60}
+                max={86400}
+                disabled={busy}
+                value={draft.keepalive_check_interval_seconds}
+                onChange={(e) =>
+                  patch(
+                    "keepalive_check_interval_seconds",
+                    numberOr(e.target.value, draft.keepalive_check_interval_seconds),
+                  )
+                }
+              />
+            </RuntimeRow>
+            <RuntimeRow
+              label={t("ops.runtime.keepaliveDefaultIdleDays")}
+              hint={t("ops.runtime.keepaliveDefaultIdleDaysHint")}
+              changed={isChanged("keepalive_default_idle_days")}
+            >
+              <ValidatedNumberInput
+                min={0}
+                max={3650}
+                disabled={busy}
+                value={draft.keepalive_default_idle_days}
+                onChange={(e) =>
+                  patch(
+                    "keepalive_default_idle_days",
+                    numberOr(e.target.value, draft.keepalive_default_idle_days),
                   )
                 }
               />

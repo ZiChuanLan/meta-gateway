@@ -64,7 +64,7 @@ func (h *KeepaliveHandler) status(w http.ResponseWriter, _ *http.Request) {
 	for _, target := range targets {
 		idle := target.IdleDays(now)
 		views = append(views, keepaliveTargetView{
-			KeepaliveTarget: clientTarget(target),
+			KeepaliveTarget: target,
 			SiteName:        target.SiteName,
 			IdleDays:        idle,
 			// Negative means the window is already past; the console shows that
@@ -76,14 +76,6 @@ func (h *KeepaliveHandler) status(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, keepaliveStatus{Targets: views, Now: now})
-}
-
-// clientTarget strips the resolved window down to what the console needs and
-// keeps the credential id out of the payload: the id is plumbing, the site and
-// channel names are the facts an operator reads.
-func clientTarget(target domain.KeepaliveTarget) domain.KeepaliveTarget {
-	target.CredentialID = 0
-	return target
 }
 
 func (h *KeepaliveHandler) run(w http.ResponseWriter, r *http.Request) {

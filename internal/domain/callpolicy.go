@@ -100,13 +100,13 @@ func CallFormFor(policy, purpose string) string {
 // The model to call is not here: it is resolved onto KeepaliveTarget.Model,
 // which is the only place a caller reads it from.
 type KeepaliveConfig struct {
-	Enabled          bool
-	IdleDays         int
-	SafetyMarginDays int
-	Prompt           string
-	MaxTokens        int
-	DailyCap         int
-	QuietHours       string
+	Enabled          bool   `json:"enabled"`
+	IdleDays         int    `json:"idle_days"`
+	SafetyMarginDays int    `json:"safety_margin_days"`
+	Prompt           string `json:"prompt,omitempty"`
+	MaxTokens        int    `json:"max_tokens,omitempty"`
+	DailyCap         int    `json:"daily_cap,omitempty"`
+	QuietHours       string `json:"quiet_hours,omitempty"`
 }
 
 // IdleSince is the moment the idle clock starts: the last real call, or the
@@ -246,26 +246,28 @@ type KeepaliveEvent struct {
 // two channels sharing a key would otherwise be called twice — while the sending
 // unit stays a single channel x model, so the request goes somewhere real.
 type KeepaliveTarget struct {
-	CredentialID int64
-	SiteID       int64
-	SiteName     string
-	ChannelID    int64
-	ChannelName  string
-	Model        string
-	Policy       string
-	Config       KeepaliveConfig
+	// CredentialID is plumbing (the ban counts per account, and two channels can
+	// share one), not a fact an operator reads, so it stays out of the payload.
+	CredentialID int64           `json:"-"`
+	SiteID       int64           `json:"site_id"`
+	SiteName     string          `json:"site_name"`
+	ChannelID    int64           `json:"channel_id"`
+	ChannelName  string          `json:"channel_name"`
+	Model        string          `json:"model"`
+	Policy       string          `json:"call_policy"`
+	Config       KeepaliveConfig `json:"config"`
 	// LastCallAt is the newest real call across every channel of this
 	// credential. nil means "never called" — which is not the same as "idle
 	// forever", so it is reported rather than treated as day zero.
-	LastCallAt *time.Time
+	LastCallAt *time.Time `json:"last_call_at,omitempty"`
 	// CreatedAt is the channel's own age, the idle clock's floor when there has
 	// never been a call: a channel added yesterday must not be called today just
 	// because it has no history.
-	CreatedAt time.Time
+	CreatedAt time.Time `json:"-"`
 	// SendsToday counts this credential's successful keepalive calls since UTC
 	// midnight, for the daily cap.
-	SendsToday int
+	SendsToday int `json:"sends_today"`
 	// SkipReason names why a target cannot be called at all (no model), so the
 	// console can show "cannot keepalive" instead of leaving a silent gap.
-	SkipReason string
+	SkipReason string `json:"skip_reason,omitempty"`
 }

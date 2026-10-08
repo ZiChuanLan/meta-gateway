@@ -102,6 +102,15 @@ func (s *ChannelStore) KeepaliveTargets(globalIdleDays int) ([]domain.KeepaliveT
 	}
 	defer rows.Close()
 
+	// Which model an account can be called on decides whether the call can be
+	// dispatched at all: the gateway reaches a channel through a route member, so
+	// a channel no route points at has no dispatcher (the console says so instead
+	// of failing a call every round).
+	routed, err := s.routedModels()
+	if err != nil {
+		return nil, err
+	}
+
 	var targets []domain.KeepaliveTarget
 	for rows.Next() {
 		var t domain.KeepaliveTarget
@@ -128,16 +137,23 @@ func (s *ChannelStore) KeepaliveTargets(globalIdleDays int) ([]domain.KeepaliveT
 		if t.Config.IdleDays <= 0 {
 			t.Config.IdleDays = globalIdleDays
 		}
-		// The model is resolved here rather than at the call site: the site's
-		// configured one wins, otherwise a model the channel actually serves, and
-		// a channel with neither has nowhere to send — which is a visible state,
-		// not a silence.
+		// The site's own choice wins, then a model a route actually serves, then
+		// the channel's own list.
 		t.Model = strings.TrimSpace(model)
+		if t.Model == "" {
+			t.Model = routed[t.ChannelID]
+		}
 		if t.Model == "" {
 			t.Model = firstModel(modelsCSV)
 		}
 		if t.Model == "" {
 			t.SkipReason = "no_usable_model"
+		}
+		if routed[t.ChannelID] == "" && t.SkipReason == "" {
+			// A site-level keepalive_model that happens not to be routed is a
+			// narrower case left to the footprint: the call fails once, visibly,
+			// rather than being silently skipped.
+			t.SkipReason = "no_route"
 		}
 		if parsed, ok := parseStoredTime(lastCall.String); ok {
 			t.LastCallAt = &parsed
@@ -148,6 +164,32 @@ func (s *ChannelStore) KeepaliveTargets(globalIdleDays int) ([]domain.KeepaliveT
 		return nil, err
 	}
 	return s.attachCredentialIdle(targets)
+}
+
+// routedModels returns one model each channel is reachable through: the first
+// enabled route member's pattern. A keepalive on a channel with no route member
+// has nowhere to go, because routing is how the gateway finds a channel.
+func (s *ChannelStore) routedModels() (map[int64]string, error) {
+	rows, err := s.db.Query(`SELECT rm.channel_id, r.model_pattern
+		FROM route_members rm JOIN routes r ON r.id = rm.route_id
+		WHERE rm.enabled = 1 AND r.enabled = 1
+		ORDER BY rm.priority DESC, rm.id`)
+	if err != nil {
+		return nil, fmt.Errorf("routed models: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[int64]string)
+	for rows.Next() {
+		var channelID int64
+		var pattern string
+		if err := rows.Scan(&channelID, &pattern); err != nil {
+			return nil, fmt.Errorf("routed model scan: %w", err)
+		}
+		if _, seen := result[channelID]; !seen && strings.TrimSpace(pattern) != "" {
+			result[channelID] = strings.TrimSpace(pattern)
+		}
+	}
+	return result, rows.Err()
 }
 
 // attachCredentialIdle folds per-channel rows into one row per credential: the

@@ -37,6 +37,10 @@ import type {
   SiteProbeDetection,
   SiteProbePolicy,
   SiteProbeReport,
+  KeepaliveEvent,
+  KeepaliveRound,
+  KeepaliveStatus,
+  SiteKeepaliveInput,
   ModelMetadata,
   ModelCapability,
   ModelChangesResponse,
@@ -629,6 +633,26 @@ export const api = (client: ApiClient) => ({
     client.get<ModelProbeResult[]>(`/admin/probes/${id}/results`, signal),
   probeCancel: (id: number) => client.post<{ status: string }>(`/admin/probes/${id}/cancel`, {}),
   modelHealth: (signal?: AbortSignal) => client.get<ModelHealth[]>("/admin/model-health", signal),
+
+  /**
+   * Keepalive state, resolved per channel (window, idle age, and whether the
+   * next round would call it). The same resolution the scheduler uses, so the
+   * page cannot promise something the runner will not do.
+   */
+  keepalive: (signal?: AbortSignal) => client.get<KeepaliveStatus>("/admin/keepalive", signal),
+  keepaliveEvents: (limit = 50, signal?: AbortSignal) =>
+    client.get<KeepaliveEvent[]>(`/admin/keepalive/events?limit=${limit}`, signal),
+  /** Run one round now: it still only calls what is actually due. */
+  keepaliveRun: () => client.post<KeepaliveRound>("/admin/keepalive/run", {}),
+  /** Call one channel now, whatever the schedule says (the operator's override). */
+  keepaliveSend: (channelId: number) =>
+    client.post<KeepaliveEvent>(`/admin/keepalive/channels/${channelId}/send`, {}),
+  /**
+   * Write one site's call policy and keepalive window. A dedicated endpoint: the
+   * site form does not show these columns, so a save from it must not blank them.
+   */
+  keepaliveSaveSite: (siteId: number, input: SiteKeepaliveInput) =>
+    client.put<Site>(`/admin/keepalive/sites/${siteId}`, input),
   /**
    * External site probe data joined with our routes. The policy travels as
    * query parameters so the dialog can preview a different threshold before

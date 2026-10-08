@@ -289,3 +289,56 @@ func TestKeepaliveSendsTodayCountsSuccessfulCallsOnly(t *testing.T) {
 		t.Errorf("the footprint record lost its reason or form: %+v", events[0])
 	}
 }
+
+// A channel no route points at has no dispatcher, so the console must say so
+// rather than let a failed call repeat every round.
+func TestKeepaliveTargetsReportAChannelWithNoRoute(t *testing.T) {
+	db := openTestDB(t)
+	_, _, channels := keepaliveFixture(t, db, domain.CallPolicyAllowProbe, 30)
+
+	targets, err := db.Channel.KeepaliveTargets(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("targets = %d, want 1", len(targets))
+	}
+	if targets[0].SkipReason != "no_route" {
+		t.Fatalf("skip reason = %q, want no_route (nothing routes to this channel)", targets[0].SkipReason)
+	}
+
+	// Once a route serves one of the channel's models, the target becomes
+	// callable and the model is the one routing reaches it with.
+	routeID, err := db.Route.Create(&domain.Route{
+		ModelPattern: "model-routed", Enabled: true, RoutingMode: domain.RoutingModeAuto,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: channels[0], Weight: 100, Enabled: true, GroupName: "default",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// keepaliveFixture makes two channels sharing a credential; both need a
+	// route member for the group to be callable.
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: routeID, ChannelID: channels[1], Weight: 100, Enabled: true, GroupName: "default",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	targets, err = db.Channel.KeepaliveTargets(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("targets = %d, want 1", len(targets))
+	}
+	if targets[0].SkipReason != "" {
+		t.Fatalf("skip reason = %q, want empty once a route reaches the channel", targets[0].SkipReason)
+	}
+	if targets[0].Model != "model-routed" {
+		t.Errorf("model = %q, want the routed pattern", targets[0].Model)
+	}
+}

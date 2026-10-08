@@ -1,5 +1,5 @@
-import { Plus, RefreshCw, UserCheck } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { HeartPulse, Plus, RefreshCw, UserCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Channel, ChannelOverview, Site } from "../api/types";
@@ -31,6 +31,7 @@ import {
   credentialShouldBeRemoved,
 } from "./channels/credentialPatch";
 import { ChannelDialogs } from "./channels/ChannelDialogs";
+import { KeepaliveDialog } from "./channels/KeepaliveDialog";
 import { useChannelBoard } from "./channels/useChannelBoard";
 import {
   relayCredentialFor as pickRelayCredential,
@@ -135,6 +136,11 @@ export function Channels() {
   // Health probing is driven by the backend health sweep (default on) and by
   // the explicit per-channel actions below; entering this page does not fire
   // network pings for every enabled connection anymore.
+  // The keepalive workspace is a dialog rather than a tab: it reads and writes
+  // the same sites the rest of this page manages, and an operator opens it when
+  // a window is approaching, not on every visit.
+  const [keepaliveOpen, setKeepaliveOpen] = useState(false);
+
   const createConnection = useAdminMutation({
     mutationFn: (input: CreateConnectionInput) =>
       service.createConnection({
@@ -724,6 +730,14 @@ export function Channels() {
           >
             {t("channels.checkAllTokens")}
           </Button>
+          <Button
+            variant="secondary"
+            icon={<HeartPulse size={16} />}
+            disabled={!rows.length}
+            onClick={() => setKeepaliveOpen(true)}
+          >
+            {t("channels.keepalive.open")}
+          </Button>
           <Button icon={<Plus size={16} />} onClick={openAdd}>
             {t("channels.add")}
           </Button>
@@ -970,6 +984,8 @@ export function Channels() {
           </ThemeDetails>
         </div>
       </div>
+
+      {keepaliveOpen ? <KeepaliveDialog onClose={() => setKeepaliveOpen(false)} /> : null}
 
       <ChannelDialogs
         t={t}

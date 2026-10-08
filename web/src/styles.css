@@ -10237,3 +10237,150 @@ Whole-app render guard — see components/ErrorBoundary.tsx
     transition: none;
   }
 }
+
+/* —— Keepalive workspace —— */
+/* A table needs more room than the default 700px dialog, and the same rule has
+   to outrank both skins' own .dialog widths (the site-probe dialog sets the
+   precedent). */
+:root[data-appearance] .dialog:has(.keepalive-table) {
+  width: min(1120px, calc(100vw - 32px));
+}
+.keepalive-toolbar {
+  margin-bottom: 14px;
+}
+.keepalive-clock {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.keepalive-notice {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-size: 12px;
+}
+.keepalive-site {
+  margin-bottom: 16px;
+}
+.keepalive-site > .panel-header h3 {
+  margin: 0;
+  font: 600 14px/1.45 var(--font);
+  letter-spacing: -0.02em;
+}
+.keepalive-policy {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+}
+/* The one badge worth a colour: this site forbids probing, so every automated
+   call is reshaped and the operator should be able to see that at a glance. */
+.keepalive-policy.is-real {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+.keepalive-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.keepalive-table th {
+  padding: 0 10px 6px 0;
+  color: var(--muted);
+  font: 500 11px/1.6 var(--font);
+  text-align: left;
+  white-space: nowrap;
+}
+.keepalive-table td {
+  padding: 9px 10px 9px 0;
+  border-top: 1px solid var(--line-light);
+  vertical-align: top;
+}
+.keepalive-table tr > td:last-child,
+.keepalive-table tr > th:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+.keepalive-channel {
+  display: block;
+  color: var(--ink);
+  font-weight: 550;
+}
+.keepalive-model {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+}
+/* Red enough to catch the eye, not enough to shout: ≤3 days of window left. */
+.keepalive-urgent {
+  color: var(--danger);
+  font-weight: 600;
+}
+.keepalive-today {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+}
+.keepalive-state {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.keepalive-state.is-due {
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+.keepalive-state.is-warn {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.keepalive-form {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.keepalive-form-actions {
+  align-items: center;
+}
+.keepalive-events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.keepalive-events li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-light);
+}
+.keepalive-events li:first-child {
+  border-top: 0;
+}
+.keepalive-events li.is-failed .keepalive-event-what {
+  color: var(--danger);
+}
+.keepalive-event-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.keepalive-event-what {
+  flex: 0 0 auto;
+  color: var(--ink);
+}
+.keepalive-event-why {
+  min-width: 0;
+}

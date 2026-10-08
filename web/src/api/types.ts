@@ -1193,6 +1193,12 @@ export interface RuntimeEditableSettings {
    * at very different rates, so how often the gateway reads those pages is a
    * setting rather than a constant (defaults: 900s + 120s jitter).
    */
+  // Keepalive: the master switch, how often a round asks whether anything is
+  // due, and the window used by a site that has none of its own. The per-site
+  // window is data, edited on the connections page.
+  keepalive_enabled: boolean;
+  keepalive_check_interval_seconds: number;
+  keepalive_default_idle_days: number;
   site_probe_interval_seconds: number;
   site_probe_jitter_seconds: number;
   // Outbound client limits: 0 = the deployment default (OUTBOUND_* in the env),
@@ -1758,4 +1764,87 @@ export interface ModelDiscardPreview {
   /** Route rows deleted because every member of theirs is discarded. */
   routes: number;
   items: ModelDiscardItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Keepalive
+// ---------------------------------------------------------------------------
+
+/**
+ * The resolved keepalive window for one channel. Every value here has already
+ * been through the channel > site > global chain, so the page shows what the
+ * next round will actually do rather than what one layer happens to hold.
+ */
+export interface KeepaliveConfig {
+  enabled: boolean;
+  idle_days: number;
+  safety_margin_days: number;
+  prompt?: string;
+  max_tokens?: number;
+  daily_cap?: number;
+  quiet_hours?: string;
+}
+
+export interface KeepaliveTarget {
+  site_id: number;
+  site_name: string;
+  channel_id: number;
+  channel_name: string;
+  /** The model a keepalive call would use; empty means "cannot keepalive". */
+  model: string;
+  call_policy: string;
+  config: KeepaliveConfig;
+  /** The newest real call on this account. Absent = never called. */
+  last_call_at?: string;
+  sends_today: number;
+  /** Set when the channel cannot be called at all (no usable model). */
+  skip_reason?: string;
+
+  // Computed by the server against its own clock, so the page cannot disagree
+  // with the scheduler about what "idle" means.
+  idle_days: number;
+  remaining_days: number;
+  ready: boolean;
+  never_called: boolean;
+}
+
+export interface KeepaliveStatus {
+  targets: KeepaliveTarget[];
+  now: string;
+}
+
+export interface KeepaliveRound {
+  Checked: number;
+  Sent: number;
+  Failed: number;
+  Skipped: number;
+  NotReady: number;
+}
+
+export interface KeepaliveEvent {
+  id: number;
+  site_id: number;
+  site_name: string;
+  channel_id: number;
+  channel_name: string;
+  model: string;
+  form: string;
+  reason: string;
+  ok: boolean;
+  status_code: number;
+  error?: string;
+  created_at: string;
+}
+
+/** What one site's policy/window editor writes (PUT /admin/keepalive/sites/{id}). */
+export interface SiteKeepaliveInput {
+  call_policy: string;
+  keepalive_enabled: boolean;
+  keepalive_idle_days: number;
+  keepalive_safety_margin_days: number;
+  keepalive_model: string;
+  keepalive_prompt: string;
+  keepalive_max_tokens: number;
+  keepalive_daily_cap: number;
+  keepalive_quiet_hours: string;
 }
