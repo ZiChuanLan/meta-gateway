@@ -690,8 +690,8 @@ export function RuntimeSettingsPanel({
       </header>
 
       <div className="runtime-layout">
-        {/* The index is an index: three group labels in mono caps, twenty-two
-            entries on a 30px rhythm, the current one held by a gold rule in
+        {/* The index is an index: three group labels in tracked caps, twenty-two
+            entries on a 30px rhythm, the current one held by an accent rule in
             the gutter rather than a filled row. */}
         <nav className="runtime-index" aria-label={t("ops.runtime.sectionNav")}>
           {RUNTIME_GROUPS.map((group) => (
