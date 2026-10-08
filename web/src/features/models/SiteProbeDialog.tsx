@@ -6,6 +6,7 @@ import type {
   Site,
   SiteProbeAction,
   SiteProbeDetection,
+  SiteProbeNameOnly,
   SiteProbePolicy,
   SiteProbePrice,
   SiteProbeRow,
@@ -22,6 +23,9 @@ const DEFAULT_POLICY: SiteProbePolicy = {
   low_rounds: 2,
   high_rounds: 2,
 };
+
+/** How many unmatched models are listed before the operator asks for more. */
+const UNMATCHED_PAGE = 20;
 
 /** The default monitoring directory. Importing copies addresses, never data. */
 export const CATALOG_URL = "https://watchbot.cfd/api/v1/public/dashboard";
@@ -60,6 +64,14 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   const [actionsAreDryRun, setActionsAreDryRun] = useState(true);
   const [query, setQuery] = useState("");
   const [onlyWithData, setOnlyWithData] = useState(false);
+  // The rail's own filter and selection: separate from `scopeSite`, which is the
+  // ACTION scope (what a preview/apply touches) and must not move when the
+  // operator is merely looking at a different site.
+  const [railFilter, setRailFilter] = useState<"all" | "attached" | "candidates" | "issues">("all");
+  const [activeSiteId, setActiveSiteId] = useState<number | null>(null);
+  const [unmatchedQuery, setUnmatchedQuery] = useState("");
+  const [showAllUnmatched, setShowAllUnmatched] = useState(false);
+  const [pruneArmed, setPruneArmed] = useState(false);
 
   const sites = useQuery({
     queryKey: ["sites"],
@@ -203,6 +215,10 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
   const rows = useMemo(() => report.data?.rows ?? [], [report.data]);
   const siteRows = useMemo(() => report.data?.sites ?? [], [report.data]);
   const unmatchedRows = useMemo(() => report.data?.unmatched ?? [], [report.data]);
+  // Name-only matches: a site publishes a model whose name matches one of our
+  // routes, but the route has no member there. Shown as candidates, never as
+  // readings — there is nothing on this site to judge, disable or price.
+  const nameOnlyRows = useMemo(() => report.data?.name_only ?? [], [report.data]);
   const needle = query.trim().toLowerCase();
   const visibleRows = useMemo(() => {
     return rows.filter((row) => {
@@ -221,6 +237,46 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
     }
     return grouped;
   }, [visibleRows]);
+  const candidatesBySite = useMemo(() => {
+    const grouped = new Map<number, SiteProbeNameOnly[]>();
+    for (const candidate of nameOnlyRows) {
+      if (
+        needle !== "" &&
+        !`${candidate.raw_model} ${candidate.route}`.toLowerCase().includes(needle)
+      )
+        continue;
+      const bucket = grouped.get(candidate.site_id) ?? [];
+      bucket.push(candidate);
+      grouped.set(candidate.site_id, bucket);
+    }
+    return grouped;
+  }, [nameOnlyRows, needle]);
+  const railFiltered = useMemo(() => {
+    const list = siteRows
+      .filter((site) => !scopeSite || site.site_id === Number(scopeSite))
+      .sort((left, right) => left.site_name.localeCompare(right.site_name));
+    if (railFilter === "all") return list;
+    return list.filter((site) => {
+      const attached = rowsBySite.get(site.site_id) ?? [];
+      const candidates = candidatesBySite.get(site.site_id) ?? [];
+      if (railFilter === "attached") return attached.length > 0;
+      if (railFilter === "candidates") return candidates.length > 0;
+      return (
+        !!site.probe_last_error ||
+        attached.some(
+          (row) =>
+            row.verdict === "low" || (row.members ?? []).some((member) => member.auto_disabled),
+        )
+      );
+    });
+  }, [siteRows, rowsBySite, candidatesBySite, railFilter, scopeSite]);
+  // The rail is the site list; the detail pane follows the selection. A search
+  // narrows the list without stealing the selection, so typing never blanks the
+  // pane the operator is reading.
+  const activeSite = useMemo(() => {
+    const inScope = railFiltered.length > 0 ? railFiltered : siteRows;
+    return inScope.find((site) => site.site_id === activeSiteId) ?? inScope[0];
+  }, [railFiltered, siteRows, activeSiteId]);
   // Cards follow the report's site list (so a configured site with no reading
   // yet still gets its card and its switch), ordered by name for a stable page.
   const cards = useMemo(() => {
@@ -234,6 +290,17 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
         (!onlyWithData && needle !== "" && site.site_name.toLowerCase().includes(needle)),
     );
   }, [siteRows, rowsBySite, needle, onlyWithData, scopeSite]);
+
+  const unmatchedFiltered = useMemo(() => {
+    const term = unmatchedQuery.trim().toLowerCase();
+    if (term === "") return unmatchedRows;
+    return unmatchedRows.filter((row) =>
+      `${row.raw_model} ${row.site_name}`.toLowerCase().includes(term),
+    );
+  }, [unmatchedRows, unmatchedQuery]);
+  const unmatchedShown = showAllUnmatched
+    ? unmatchedFiltered
+    : unmatchedFiltered.slice(0, UNMATCHED_PAGE);
 
   const lowCount = visibleRows.filter((row) => row.verdict === "low").length;
   const autoDisabled = visibleRows.reduce(
@@ -474,29 +541,89 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
       ) : cards.length === 0 ? (
         <Empty>{t("modelsPage.siteProbe.noReadings")}</Empty>
       ) : (
-        <div className="site-probe-cards">
-          {cards.map((site) => (
-            <SiteProbeCard
-              key={site.site_id}
-              site={site}
-              rows={rowsBySite.get(site.site_id) ?? []}
-              sourcePending={busy}
-              autoApplyPending={busy}
-              collectPending={busy}
-              onToggleSource={() => toggleSource.mutate(site)}
-              onToggleAutoApply={() => toggleAutoApply.mutate(site)}
-              onCollect={() => collectOne.mutate(site.site_id)}
-              onAdopt={adopt.mutate}
-              onConfigure={() => {
-                pickSite(String(site.site_id));
-                document.getElementById("site-probe-source-settings")?.setAttribute("open", "");
-                document
-                  .getElementById("site-probe-source-settings")
-                  ?.scrollIntoView?.({ block: "nearest" });
-              }}
-              adoptPending={adopt.isPending}
-            />
-          ))}
+        /* A rail instead of a wall of cards: one row per site, always visible, so
+           an operator can scan 40 sites and pick the one with a problem. The
+           cards put every site side by side, which made the page unusable at
+           exactly the fleet size this tool exists for. */
+        <div className="site-probe-layout">
+          <nav className="site-probe-rail" aria-label={t("modelsPage.siteProbe.railTitle")}>
+            <div className="site-probe-rail-head">
+              <span className="site-probe-rail-title">{t("modelsPage.siteProbe.railTitle")}</span>
+              <div className="site-probe-rail-filters" role="group">
+                {(["all", "attached", "candidates", "issues"] as const).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={`site-probe-rail-filter${railFilter === key ? " is-active" : ""}`}
+                    aria-pressed={railFilter === key}
+                    onClick={() => setRailFilter(key)}
+                  >
+                    {t(
+                      `modelsPage.siteProbe.rail${key === "all" ? "All" : key === "attached" ? "Attached" : key === "candidates" ? "Candidates" : "Issues"}`,
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ul className="site-probe-rail-list">
+              {railFiltered.map((site) => (
+                <li key={site.site_id}>
+                  <button
+                    type="button"
+                    className={`site-probe-rail-item${
+                      activeSiteId === site.site_id ? " is-active" : ""
+                    }${site.probe_source_enabled ? "" : " is-off"}`}
+                    onClick={() => setActiveSiteId(site.site_id)}
+                  >
+                    <span className="site-probe-rail-name">{site.site_name}</span>
+                    <span className="site-probe-rail-meta mono">
+                      {t("modelsPage.siteProbe.railCounts", {
+                        attached: rowsBySite.get(site.site_id)?.length ?? 0,
+                        candidates: candidatesBySite.get(site.site_id)?.length ?? 0,
+                      })}
+                    </span>
+                    {site.probe_last_error ? (
+                      <span
+                        className="site-probe-rail-dot is-error"
+                        title={site.probe_last_error}
+                      />
+                    ) : site.auto_apply ? (
+                      <span className="site-probe-rail-dot is-auto" />
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+              {railFiltered.length === 0 ? (
+                <li className="site-probe-rail-empty">{t("modelsPage.siteProbe.railNoMatch")}</li>
+              ) : null}
+            </ul>
+          </nav>
+          <div className="site-probe-detail">
+            {activeSite ? (
+              <SiteProbeDetail
+                site={activeSite}
+                rows={rowsBySite.get(activeSite.site_id) ?? []}
+                candidates={candidatesBySite.get(activeSite.site_id) ?? []}
+                sourcePending={busy}
+                autoApplyPending={busy}
+                collectPending={busy}
+                onToggleSource={() => toggleSource.mutate(activeSite)}
+                onToggleAutoApply={() => toggleAutoApply.mutate(activeSite)}
+                onCollect={() => collectOne.mutate(activeSite.site_id)}
+                onAdopt={adopt.mutate}
+                onConfigure={() => {
+                  pickSite(String(activeSite.site_id));
+                  document.getElementById("site-probe-source-settings")?.setAttribute("open", "");
+                  document
+                    .getElementById("site-probe-source-settings")
+                    ?.scrollIntoView?.({ block: "nearest" });
+                }}
+                adoptPending={adopt.isPending}
+              />
+            ) : (
+              <Empty>{t("modelsPage.siteProbe.detailPick")}</Empty>
+            )}
+          </div>
         </div>
       )}
 
@@ -630,19 +757,21 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
           </div>
         ) : null}
         <div className="site-probe-policy">
-          {(["ratio_threshold", "min_samples", "low_rounds", "high_rounds"] as const).map(
-            (key, index) => (
-              <label className="field" key={key}>
-                <span>
-                  {t(
-                    "modelsPage.siteProbe." +
-                      ["threshold", "minSamples", "lowRounds", "highRounds"][index],
-                  )}
-                </span>
+          {(
+            [
+              ["ratio_threshold", "threshold", 100, "unitPercent"],
+              ["min_samples", "minSamples", 1000, "unitSamples"],
+              ["low_rounds", "lowRounds", 10, "unitRounds"],
+              ["high_rounds", "highRounds", 10, "unitRounds"],
+            ] as const
+          ).map(([key, label, max, unit]) => (
+            <label className="field site-probe-number" key={key}>
+              <span>{t("modelsPage.siteProbe." + label)}</span>
+              <span className="site-probe-number-input">
                 <input
                   type="number"
                   min={1}
-                  max={key === "ratio_threshold" ? 100 : key === "min_samples" ? 1000 : 10}
+                  max={max}
                   value={
                     key === "ratio_threshold"
                       ? Math.round(sourcePolicy[key] * 100)
@@ -655,10 +784,21 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
                     })
                   }
                 />
-              </label>
-            ),
-          )}
+                <em>{t("modelsPage.siteProbe." + unit)}</em>
+              </span>
+            </label>
+          ))}
         </div>
+        {/* The four numbers in one sentence: an operator setting a threshold
+            should be able to read back what it does without knowing the code. */}
+        <p className="site-probe-policy-hint">
+          {t("modelsPage.siteProbe.policyPreview", {
+            low: sourcePolicy.low_rounds,
+            threshold: Math.round(sourcePolicy.ratio_threshold * 100),
+            samples: sourcePolicy.min_samples,
+            high: sourcePolicy.high_rounds,
+          })}
+        </p>
         <p className="field-hint">{t("modelsPage.siteProbe.sourcePolicyHint")}</p>
         <div className="probe-picker-actions">
           <Button disabled={!canSave || busy || detect.isPending} onClick={saveDraft}>
@@ -690,15 +830,26 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
           </label>
           <span className="field-hint">{t("modelsPage.siteProbe.autoApplyHint")}</span>
         </div>
-        <div className="probe-picker-actions">
-          <button
-            type="button"
-            className="unify-covered-toggle"
+        {/* Destructive and rare, so it is separated and armed by a second
+            click instead of sitting next to Save as a red word. */}
+        <div className="site-probe-maintenance">
+          <span className="site-probe-maintenance-title">
+            {t("modelsPage.siteProbe.maintenance")}
+          </span>
+          <Button
+            variant="danger"
             disabled={busy}
-            onClick={() => catalogPrune.mutate()}
+            onClick={() => {
+              if (!pruneArmed) {
+                setPruneArmed(true);
+                return;
+              }
+              setPruneArmed(false);
+              catalogPrune.mutate();
+            }}
           >
-            {t("modelsPage.siteProbe.prune")}
-          </button>
+            {pruneArmed ? t("modelsPage.siteProbe.pruneConfirm") : t("modelsPage.siteProbe.prune")}
+          </Button>
           {catalogPrune.data ? (
             <span className="field-hint">
               {t("modelsPage.siteProbe.pruned", {
@@ -706,8 +857,8 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
               })}
             </span>
           ) : null}
+          <span className="field-hint">{t("modelsPage.siteProbe.pruneHint")}</span>
         </div>
-        <p className="field-hint">{t("modelsPage.siteProbe.pruneHint")}</p>
         {unmatchedRows.length > 0 ? (
           <details className="advanced-section">
             <summary>
@@ -716,26 +867,58 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
               })}
             </summary>
             <p className="field-hint">{t("modelsPage.siteProbe.unmatchedHint")}</p>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t("modelsPage.siteProbe.colModel")}</th>
-                  <th>{t("modelsPage.siteProbe.colSite")}</th>
-                  <th>{t("modelsPage.siteProbe.colAvailability")}</th>
-                  <th>{t("modelsPage.siteProbe.colPrice")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unmatchedRows.map((row) => (
-                  <tr key={`${row.site_id}-${row.raw_model}`}>
-                    <td className="mono">{row.raw_model}</td>
-                    <td>{row.site_name}</td>
-                    <td>{formatRatio(row.ratio, row.samples, t)}</td>
-                    <td className="mono">{formatPrice(row.price, t)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {/* 158 rows of raw list is not a report. Summary first, then a search,
+                then the first page — the operator is looking for one model, not
+                reading the site's catalogue. */}
+            <div className="probe-picker-head">
+              <span className="site-probe-summary" role="status">
+                {t("modelsPage.siteProbe.unmatchedSummary", {
+                  count: unmatchedFiltered.length,
+                  sites: new Set(unmatchedFiltered.map((row) => row.site_id)).size,
+                })}
+              </span>
+              <div className="probe-search">
+                <Search size={13} />
+                <input
+                  type="search"
+                  value={unmatchedQuery}
+                  placeholder={t("modelsPage.siteProbe.search")}
+                  onChange={(event) => {
+                    setUnmatchedQuery(event.target.value);
+                    setShowAllUnmatched(false);
+                  }}
+                />
+              </div>
+            </div>
+            <ul className="site-probe-unmatched-list">
+              {unmatchedShown.map((row) => (
+                <li key={`${row.site_id}-${row.raw_model}`}>
+                  <span className="mono">{row.raw_model}</span>
+                  <span className="site-probe-unmatched-site">{row.site_name}</span>
+                  <span className="mono">{formatRatio(row.ratio, row.samples, t)}</span>
+                  <span className="mono">{formatPrice(row.price, t)}</span>
+                  <span className="field-hint">{t("modelsPage.siteProbe.unmatchedReason")}</span>
+                </li>
+              ))}
+            </ul>
+            {unmatchedFiltered.length > UNMATCHED_PAGE && !showAllUnmatched ? (
+              <button
+                type="button"
+                className="unify-covered-toggle"
+                onClick={() => setShowAllUnmatched(true)}
+              >
+                {t("modelsPage.siteProbe.showAll", { count: unmatchedFiltered.length })}
+              </button>
+            ) : null}
+            {showAllUnmatched && unmatchedFiltered.length > UNMATCHED_PAGE ? (
+              <button
+                type="button"
+                className="unify-covered-toggle"
+                onClick={() => setShowAllUnmatched(false)}
+              >
+                {t("modelsPage.siteProbe.showLess")}
+              </button>
+            ) : null}
           </details>
         ) : null}
       </details>
@@ -744,15 +927,17 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * One site: its collection state, its two switches, and the models it reports.
+ * One site's detail: its collection state, its two switches, the candidates it
+ * publishes, and the models it reports.
  *
- * The switches are on the card because that is the unit they act on — a site
- * whose price page changed is turned off here, without touching any other site
- * or any routing table.
+ * The switches live here because the site is the unit they act on — a site whose
+ * price page changed is turned off here, without touching any other site or any
+ * routing table.
  */
-function SiteProbeCard({
+function SiteProbeDetail({
   site,
   rows,
+  candidates,
   sourcePending,
   autoApplyPending,
   collectPending,
@@ -765,6 +950,7 @@ function SiteProbeCard({
 }: {
   site: SiteProbeSiteStatus;
   rows: SiteProbeRow[];
+  candidates: SiteProbeNameOnly[];
   sourcePending: boolean;
   autoApplyPending: boolean;
   collectPending: boolean;
@@ -851,6 +1037,26 @@ function SiteProbeCard({
         </button>
       </div>
       {site.probe_last_error ? <div className="inline-error">{site.probe_last_error}</div> : null}
+      {candidates.length > 0 ? (
+        <details className="site-probe-candidates">
+          <summary>{t("modelsPage.siteProbe.candidates", { count: candidates.length })}</summary>
+          <p className="field-hint">{t("modelsPage.siteProbe.candidatesHint")}</p>
+          <ul className="site-probe-candidate-list">
+            {candidates.map((candidate, index) => (
+              <li key={`${candidate.raw_model}-${candidate.route}-${index}`}>
+                <span className="mono">{candidate.raw_model}</span>
+                <span className="site-probe-route-chip mono">
+                  {t("modelsPage.siteProbe.routeChip", { route: candidate.route })}
+                </span>
+                <span className="mono site-probe-candidate-reading">
+                  {formatRatio(candidate.ratio, candidate.samples, t)}
+                </span>
+                <span className="mono">{formatPrice(candidate.price, t)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
       {rows.length === 0 ? (
         <p className="field-hint site-probe-card-empty">
           {site.probe_source_enabled
@@ -858,27 +1064,38 @@ function SiteProbeCard({
             : t("modelsPage.siteProbe.cardOff")}
         </p>
       ) : (
-        <ul className="site-probe-models">
-          {rows.map((row, index) => (
-            <ModelLine
-              key={`${row.route}-${row.site_id}-${row.raw_model}-${row.group_name}-${index}`}
-              row={row}
-              onAdopt={onAdopt}
-              adoptPending={adoptPending}
-            />
-          ))}
-        </ul>
+        <div className="site-probe-models">
+          <ModelListHeader />
+          <ul className="site-probe-model-list">
+            {rows.map((row, index) => (
+              <ModelLine
+                key={`${row.route}-${row.site_id}-${row.raw_model}-${row.group_name}-${index}`}
+                row={row}
+                onAdopt={onAdopt}
+                adoptPending={adoptPending}
+              />
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
 }
 
 /**
- * One model inside a card.
+ * One model inside a site's list.
+ *
+ * The title is the model the SITE publishes, not the route it happens to match.
+ * Those are different things and conflating them is how a table of unrelated
+ * readings ends up looking like one model repeated: the match index is a name
+ * index, so a dozen sites publishing "kimi-k3" all rendered under that route's
+ * name. The route follows as a chip, so the connection stays visible without
+ * pretending the names are the same.
  *
  * The availability cell always says WHERE its number came from: a site's own
- * status page and our own relayed traffic are different evidence, and a screen
- * that mixes them silently cannot be trusted to park a channel.
+ * status page, a third-party directory and our own relayed traffic are different
+ * evidence, and a screen that mixes them silently cannot be trusted to park a
+ * channel.
  */
 function ModelLine({
   row,
@@ -894,14 +1111,18 @@ function ModelLine({
   const parked = (row.members ?? []).some((member) => member.auto_disabled);
   return (
     <li className="site-probe-model">
-      <div className="site-probe-model-head">
-        <span className="site-probe-model-name mono" title={row.raw_model}>
-          {row.route}
+      <div className="site-probe-model-name">
+        <span className="mono" title={row.raw_model}>
+          {row.raw_model}
         </span>
+        {row.route && row.route !== row.raw_model ? (
+          <span className="site-probe-route-chip mono">
+            {t("modelsPage.siteProbe.routeChip", { route: row.route })}
+          </span>
+        ) : null}
         <span className={`site-probe-pill is-${row.verdict}`}>
           {t(`modelsPage.siteProbe.verdict.${row.verdict}`)}
         </span>
-        {row.group_name ? <span className="site-probe-tag">{row.group_name}</span> : null}
         {row.match && row.match !== "exact" ? (
           <span className="site-probe-match">{t(`modelsPage.siteProbe.match.${row.match}`)}</span>
         ) : null}
@@ -909,61 +1130,52 @@ function ModelLine({
           <span className="site-probe-tag">{t("modelsPage.siteProbe.weakEvidence")}</span>
         ) : null}
       </div>
-      <div className="site-probe-model-data">
-        <span className="site-probe-cell">
-          <em>{t("modelsPage.siteProbe.colAvailability")}</em>
-          {row.availability_source === "traffic" && row.traffic ? (
-            <span className="mono">
-              {formatRatio(row.traffic.ratio, row.traffic.samples, t)}
-              <span className="site-probe-tag">
-                {t("modelsPage.siteProbe.sourceTraffic", {
-                  hours: row.traffic.window_hours,
-                })}
-              </span>
-            </span>
-          ) : row.availability_source === "watchbot" && row.external ? (
-            <span className="mono">
-              {formatPercent(row.external.ratio)}
-              <span className="site-probe-tag">
-                {t("modelsPage.siteProbe.sourceExternal", {
-                  source: row.external.source,
-                })}
-              </span>
-            </span>
-          ) : newest && newest.samples > 0 ? (
-            <span className="mono">
-              {formatAvailability(newest.up_count, newest.samples, t)}
-              <span className="site-probe-tag">{t("modelsPage.siteProbe.sourceSite")}</span>
-            </span>
-          ) : (
-            <span className="mono">{t("modelsPage.siteProbe.noSamples")}</span>
-          )}
-        </span>
-        <span className="site-probe-cell">
-          <em>{t("modelsPage.siteProbe.colStreak")}</em>
-          <span className="mono">
-            {row.low_streak > 0
-              ? t("modelsPage.siteProbe.streakLow", { count: row.low_streak })
-              : row.ok_streak > 0
-                ? t("modelsPage.siteProbe.streakOk", { count: row.ok_streak })
-                : "—"}
-          </span>
-        </span>
-        <span className="site-probe-cell">
-          <em>{t("modelsPage.siteProbe.colPrice")}</em>
-          <span className="mono">
-            {row.observed_price ? formatPrice(row.observed_price, t) : "—"}
-          </span>
-          {row.catalog_price ? (
+      <span className="site-probe-cell is-value">
+        {row.availability_source === "traffic" && row.traffic ? (
+          <>
+            <span className="mono">{formatRatio(row.traffic.ratio, row.traffic.samples, t)}</span>
             <span className="site-probe-tag">
-              {t("modelsPage.siteProbe.catalogPrice", {
-                price: formatPrice(row.catalog_price, t),
-              })}
+              {t("modelsPage.siteProbe.sourceTraffic", { hours: row.traffic.window_hours })}
             </span>
-          ) : null}
+          </>
+        ) : row.availability_source === "watchbot" && row.external ? (
+          <>
+            <span className="mono">{formatPercent(row.external.ratio)}</span>
+            <span className="site-probe-tag">
+              {t("modelsPage.siteProbe.sourceExternal", { source: row.external.source })}
+            </span>
+          </>
+        ) : newest && newest.samples > 0 ? (
+          <>
+            <span className="mono">{formatAvailability(newest.up_count, newest.samples, t)}</span>
+            <span className="site-probe-tag">{t("modelsPage.siteProbe.sourceSite")}</span>
+          </>
+        ) : (
+          <span className="mono">{t("modelsPage.siteProbe.noSamples")}</span>
+        )}
+      </span>
+      <span className="site-probe-cell is-value">
+        <span className="mono">
+          {row.low_streak > 0
+            ? t("modelsPage.siteProbe.streakLow", { count: row.low_streak })
+            : row.ok_streak > 0
+              ? t("modelsPage.siteProbe.streakOk", { count: row.ok_streak })
+              : "—"}
         </span>
-      </div>
-      <div className="site-probe-model-foot">
+      </span>
+      <span className="site-probe-cell is-value">
+        <span className="mono">
+          {row.observed_price ? formatPrice(row.observed_price, t) : "—"}
+        </span>
+        {row.catalog_price ? (
+          <span className="site-probe-tag">
+            {t("modelsPage.siteProbe.catalogPrice", {
+              price: formatPrice(row.catalog_price, t),
+            })}
+          </span>
+        ) : null}
+      </span>
+      <span className="site-probe-cell is-value">
         {(row.members ?? []).map((member) => (
           <span
             key={member.member_id}
@@ -973,20 +1185,19 @@ function ModelLine({
             title={member.channel_name}
           >
             {member.single_member
-              ? t("modelsPage.siteProbe.memberSingle", {
-                  name: member.channel_name,
-                })
+              ? t("modelsPage.siteProbe.memberSingle", { name: member.channel_name })
               : member.auto_disabled
-                ? t("modelsPage.siteProbe.memberAutoDisabled", {
-                    name: member.channel_name,
-                  })
+                ? t("modelsPage.siteProbe.memberAutoDisabled", { name: member.channel_name })
                 : member.enabled
                   ? member.channel_name
-                  : t("modelsPage.siteProbe.memberDisabled", {
-                      name: member.channel_name,
-                    })}
+                  : t("modelsPage.siteProbe.memberDisabled", { name: member.channel_name })}
           </span>
         ))}
+        {parked && row.verdict !== "low" ? (
+          <span className="site-probe-hint">{t("modelsPage.siteProbe.parkedHint")}</span>
+        ) : null}
+      </span>
+      <span className="site-probe-cell is-action">
         {adoptablePrice(row) ? (
           <button
             type="button"
@@ -998,11 +1209,23 @@ function ModelLine({
             {t("modelsPage.siteProbe.adoptPrice")}
           </button>
         ) : null}
-        {parked && row.verdict !== "low" ? (
-          <span className="site-probe-hint">{t("modelsPage.siteProbe.parkedHint")}</span>
-        ) : null}
-      </div>
+      </span>
     </li>
+  );
+}
+
+/** Column labels for a site's model list; the values below are right-aligned. */
+function ModelListHeader() {
+  const { t } = useI18n();
+  return (
+    <div className="site-probe-model site-probe-model-head" aria-hidden="true">
+      <span>{t("modelsPage.siteProbe.colModel")}</span>
+      <span>{t("modelsPage.siteProbe.colAvailability")}</span>
+      <span>{t("modelsPage.siteProbe.colStreak")}</span>
+      <span>{t("modelsPage.siteProbe.colPrice")}</span>
+      <span>{t("modelsPage.siteProbe.colChannel")}</span>
+      <span />
+    </div>
   );
 }
 

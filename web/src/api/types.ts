@@ -730,8 +730,27 @@ export interface SiteProbeReport {
   policy: SiteProbePolicy;
   rows: SiteProbeRow[];
   unmatched: SiteProbeUnmatched[];
+  /**
+   * Models a site publishes whose name matches one of our routes, but that
+   * route has no member on this site. Reported as a candidate — something to
+   * attach — never as a reading: there is nothing here to judge or disable.
+   */
+  name_only: SiteProbeNameOnly[];
   sites: SiteProbeSiteStatus[];
   generated_at: string;
+}
+
+/** A name collision with a route we serve elsewhere: a candidate, not a reading. */
+export interface SiteProbeNameOnly {
+  site_id: number;
+  site_name: string;
+  raw_model: string;
+  route: string;
+  match: SiteProbeMatch;
+  group_name?: string;
+  ratio: number;
+  samples: number;
+  price?: SiteProbePrice;
 }
 
 /** One routing change the site-probe policy proposes (or applied). */

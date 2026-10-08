@@ -685,11 +685,121 @@
   line-height: 1.6;
 }
 
-.site-probe-cards {
+/* Rail + detail instead of a wall of cards: one row per site so 40 sites are
+   scannable, and the detail pane is the site the operator picked. */
+.site-probe-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: var(--space-5);
   padding: var(--space-5) 0;
+  align-items: start;
+}
+.site-probe-rail {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  max-height: 62vh;
+  overflow: auto;
+  position: sticky;
+  top: 8px;
+}
+.site-probe-rail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid var(--line-light);
+  background: var(--surface-subtle);
+}
+.site-probe-rail-title {
+  font-size: var(--text-xs);
+  color: var(--muted-dark);
+}
+.site-probe-rail-filters {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.site-probe-rail-filter {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: 500 var(--text-xs) / 1 inherit;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+.site-probe-rail-filter.is-active {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: var(--surface);
+}
+.site-probe-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.site-probe-rail-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  padding: 8px var(--space-3);
+  cursor: pointer;
+}
+.site-probe-rail-item:hover {
+  background: var(--surface-hover);
+}
+.site-probe-rail-item.is-active {
+  border-left-color: var(--accent);
+  background: var(--surface-hover);
+}
+.site-probe-rail-item.is-off {
+  opacity: 0.6;
+}
+.site-probe-rail-name {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.site-probe-rail-meta {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--muted-dark);
+}
+.site-probe-rail-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  align-self: center;
+}
+.site-probe-rail-dot.is-error {
+  background: var(--danger);
+}
+.site-probe-rail-dot.is-auto {
+  background: var(--success);
+}
+.site-probe-rail-empty {
+  padding: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.site-probe-detail {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .site-probe-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-probe-rail {
+    position: static;
+    max-height: 40vh;
+  }
 }
 .site-probe-card {
   border: 1px solid var(--line);
@@ -766,25 +876,67 @@
 .site-probe-card-empty { margin: var(--space-4); }
 
 .site-probe-models { list-style: none; margin: 0; padding: 0; }
+/* One aligned row per model. The labels live in the header once instead of
+   being repeated above every value, which is what made a list of 15 rows read
+   as 45 lines of small print. */
+.site-probe-models { border-top: 1px solid var(--line-light); overflow-x: auto; }
+.site-probe-model-list { list-style: none; margin: 0; padding: 0; }
 .site-probe-model {
-  padding: var(--space-3) var(--space-4);
+  display: grid;
+  /* The model column carries the site's own model name AND the route chip, so it
+     needs a real minimum. With minmax(0, …) the other columns' minimums ate the
+     width and a 16-character model rendered as "moonsh…" next to a two-letter
+     chip — checked in the running console at 1440px, 2026-10-08. */
+  grid-template-columns:
+    minmax(320px, 2.6fr) minmax(120px, 1.3fr) minmax(56px, 0.5fr) minmax(140px, 1.2fr)
+    minmax(104px, 1fr) max-content;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 7px var(--space-4);
   border-bottom: 1px solid var(--line-light);
 }
-.site-probe-model:last-child { border-bottom: 0; }
-.site-probe-model:hover { background: var(--surface-hover); }
+.site-probe-model:last-child {
+  border-bottom: 0;
+}
+.site-probe-model:hover {
+  background: var(--surface-hover);
+}
 .site-probe-model-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-xs);
+  color: var(--muted-dark);
+}
+.site-probe-model-head:hover {
+  background: var(--surface-subtle);
+}
+.site-probe-model-head > span:nth-child(n + 2) {
+  text-align: right;
 }
 .site-probe-model-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: var(--text-sm);
   font-weight: 600;
+  max-width: none;
+}
+.site-probe-model-name > span.mono {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 60%;
+}
+.site-probe-route-chip {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--muted-strong);
+  border: 1px solid var(--line-strong);
+  padding: 1px 6px;
+  white-space: nowrap;
 }
 .site-probe-pill {
   font-size: var(--text-xs);
@@ -824,6 +976,26 @@
   min-width: 0;
   font-size: var(--text-xs);
   color: var(--muted-strong);
+}
+/* In the table layout the value cells are inline, right-aligned, and wrap only
+   when a source tag needs the room. */
+.site-probe-cell.is-value {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  text-align: right;
+}
+.site-probe-cell.is-action {
+  justify-content: flex-end;
+  align-items: center;
+}
+.site-probe-cell.is-value .site-probe-tag {
+  margin-left: 0;
+}
+.site-probe-cell.is-value .site-probe-member {
+  margin: 0;
 }
 .site-probe-cell em {
   font-style: normal;
@@ -875,17 +1047,16 @@
 .site-probe-workflow { padding: 12px 14px; margin-bottom: 16px; border: 1px solid var(--line); background: var(--surface-subtle); line-height: 1.65; color: var(--muted); }
 .site-probe-card-switches { flex-wrap: wrap; }
 @media (max-width: 600px) {
-  .site-probe-cards { grid-template-columns: minmax(0, 1fr); }
   .site-probe-card-head { align-items: flex-start; flex-direction: column; }
   .site-probe-policy .field { flex: 1 1 120px; }
   .site-probe-changes { overflow-x: auto; }
 }
 
-:root[data-appearance] .dialog:has(.site-probe-workflow) { width: min(1120px, calc(100vw - 32px)); }
-.site-probe-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
+/* A data table needs width: with a 268px rail the model column was left ~230px
+   and a 16-character model name plus its route chip, verdict and match tag could
+   not fit on one line (measured in the running console, 2026-10-08). */
+:root[data-appearance] .dialog:has(.site-probe-workflow) { width: min(1320px, calc(100vw - 32px)); }
 .site-probe-card-kind, .site-probe-card-run { overflow-wrap: anywhere; }
-
-.site-probe-cards { align-items: start; }
 
 /* Shared model details and billing reference, never a member-only skin. */
 .model-price-summary { padding-block: 16px; border-top: 1px solid var(--line); margin-top: 16px; }
@@ -1210,4 +1381,72 @@
 .notice-bar-dismiss:hover {
   color: var(--ink);
   background: var(--surface-hover);
+}
+
+/* Candidates, maintenance and the unmatched list: the three places the redesign
+   replaced "dump everything" with "say what it is first". */
+.site-probe-candidates {
+  margin: var(--space-3) 0;
+  border: 1px solid var(--line-light);
+  background: var(--surface-subtle);
+  padding: 8px var(--space-3);
+}
+.site-probe-candidates > summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--muted-strong);
+}
+.site-probe-candidate-list,
+.site-probe-unmatched-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.site-probe-candidate-list > li,
+.site-probe-unmatched-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto 84px 96px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 5px 0;
+  border-top: 1px solid var(--line-light);
+  font-size: var(--text-xs);
+}
+.site-probe-unmatched-list > li {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 84px 96px auto;
+}
+.site-probe-unmatched-list > li > .field-hint {
+  margin: 0;
+  text-align: right;
+}
+.site-probe-candidate-reading {
+  text-align: right;
+}
+.site-probe-maintenance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line-light);
+}
+.site-probe-maintenance-title {
+  font-size: var(--text-xs);
+  color: var(--muted-dark);
+}
+/* Numbers with their unit attached: a bare 90 in a box could be a percentage,
+   a count or a duration, and the four fields here are all three. */
+.site-probe-number-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.site-probe-number-input input {
+  width: 84px;
+}
+.site-probe-number-input em {
+  font-style: normal;
+  font-size: var(--text-xs);
+  color: var(--muted-dark);
 }

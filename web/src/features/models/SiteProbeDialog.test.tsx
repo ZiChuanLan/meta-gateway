@@ -66,6 +66,7 @@ function report(): SiteProbeReport {
         ],
       },
     ],
+    name_only: [],
     unmatched: [
       {
         site_id: 1,
@@ -237,7 +238,7 @@ describe("site probe dialog", () => {
     };
     mockBackend({ report: data });
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
     expect(screen.getByText(/\$0 \/ \$5/)).toBeInTheDocument();
     expect(document.querySelector(".site-probe-card-run")?.textContent).not.toContain("T00:10:00Z");
   });
@@ -254,7 +255,7 @@ describe("site probe dialog", () => {
     data.sites[0]!.policy = { ...data.policy, ratio_threshold: 0.5 };
     const { save, collect } = mockBackend({ report: data });
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
     const preview = screen.getAllByRole("spinbutton")[0];
     expect(preview).toHaveValue(90);
     fireEvent.click(screen.getByRole("button", { name: "配置来源" }));
@@ -272,7 +273,7 @@ describe("site probe dialog", () => {
   it("scopes preview and apply to the explicitly selected site", async () => {
     const { apply } = mockBackend();
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
     fireEvent.change(screen.getByLabelText("路由操作范围"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
     await screen.findByText("禁用成员");
@@ -287,15 +288,15 @@ describe("site probe dialog", () => {
     data.rows = [];
     mockBackend({ report: data });
     renderDialog();
-    await waitFor(() => expect(document.querySelectorAll(".site-probe-card")).toHaveLength(1));
+    await waitFor(() => expect(document.querySelectorAll(".site-probe-rail-item")).toHaveLength(1));
     fireEvent.click(screen.getByLabelText("只看有数据的"));
-    expect(document.querySelectorAll(".site-probe-card")).toHaveLength(0);
+    expect(document.querySelectorAll(".site-probe-rail-item")).toHaveLength(0);
   });
 
   it("requires re-detection after a manual URL changes", async () => {
     mockBackend();
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
     fireEvent.click(screen.getByRole("button", { name: "配置来源" }));
     fireEvent.click(screen.getByLabelText(/自动探针/));
     fireEvent.change(screen.getByPlaceholderText("https://stat.example.com/status/ai"), {
@@ -307,7 +308,7 @@ describe("site probe dialog", () => {
   it("does not offer apply when the preview contains only protected members", async () => {
     mockBackend({ actions: [{ ...disableAction, skipped: "single_member" }] });
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
     fireEvent.click(screen.getByRole("button", { name: "预览影响" }));
     await waitFor(() =>
       expect(
@@ -320,7 +321,7 @@ describe("site probe dialog", () => {
   it("imports the catalog in one click and reads the new sites immediately", async () => {
     const { catalogImport } = mockBackend();
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
 
     // One click: no preview table, no confirmation, no follow-up buttons.
     fireEvent.click(screen.getByRole("button", { name: "从监测目录导入" }));
@@ -337,7 +338,7 @@ describe("site probe dialog", () => {
     // The entries we have no channel for are reported, not imported.
     expect(screen.getByText(/另有 39 个站点你还没有渠道，未导入/)).toBeTruthy();
     // The readings refresh themselves — no "collect now" to press.
-    expect(await screen.findByText("glm-5.2")).toBeTruthy();
+    expect(await screen.findByText("z-ai/glm-5.2")).toBeTruthy();
   });
 
   it("labels third-party availability and prints prices in the site's own currency", async () => {
@@ -395,7 +396,7 @@ describe("site probe dialog", () => {
     mockBackend({ report: external });
     renderDialog();
 
-    expect(await screen.findByText("cn:glm-5.2")).toBeTruthy();
+    expect(await screen.findByText("glm-5.2")).toBeTruthy();
     expect(screen.getByText("31%")).toBeTruthy();
     expect(screen.getByText("第三方 watchbot")).toBeTruthy();
     expect(screen.getByText(/¥1\.35 \/ ¥4\.05/)).toBeTruthy();
@@ -456,7 +457,7 @@ describe("site probe dialog", () => {
     mockBackend({ report: priceOnly });
     renderDialog();
 
-    expect(await screen.findByText("cn:glm-5.2")).toBeTruthy();
+    expect(await screen.findByText("glm-5.2")).toBeTruthy();
     expect(screen.getByText("78.6% (14)")).toBeTruthy();
     expect(screen.getByText("本站实测 24h")).toBeTruthy();
     expect(screen.getByText("去命名空间")).toBeTruthy();
@@ -467,7 +468,7 @@ describe("site probe dialog", () => {
   it("toggles a site's probe source from its row", async () => {
     const { save } = mockBackend();
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
 
     fireEvent.click(screen.getAllByRole("button", { name: "已开启" })[0]!);
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
@@ -480,7 +481,7 @@ describe("site probe dialog", () => {
   it("reveals the URL field only when auto mode is off", async () => {
     mockBackend();
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
 
     // Auto on: no URL box at all.
     expect(screen.queryByPlaceholderText("https://stat.example.com/status/ai")).toBeNull();
@@ -495,7 +496,7 @@ describe("site probe dialog", () => {
     mockBackend();
     renderDialog();
 
-    expect(await screen.findByText("glm-5.2")).toBeTruthy();
+    expect(await screen.findByText("z-ai/glm-5.2")).toBeTruthy();
     // The reading is the site's own numbers, and the member it maps to is shown
     // so a disable is never a surprise.
     expect(screen.getByText("30% (3/10)")).toBeTruthy();
@@ -507,7 +508,7 @@ describe("site probe dialog", () => {
   it("previews before it applies, and never calls apply without a preview", async () => {
     const { apply } = mockBackend();
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
 
     const applyButton = screen.getByRole("button", { name: "应用" });
     // Applying blind is exactly what this tool must not allow.
@@ -529,7 +530,7 @@ describe("site probe dialog", () => {
   it("identifies a pasted source URL before it is saved", async () => {
     const { detect } = mockBackend();
     renderDialog();
-    await screen.findByText("glm-5.2");
+    await screen.findByText("z-ai/glm-5.2");
 
     // The URL field lives behind the auto switch; turning auto off reveals it.
     fireEvent.click(screen.getByLabelText(/自动探针/));
@@ -539,5 +540,51 @@ describe("site probe dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "识别来源" }));
     await waitFor(() => expect(detect).toHaveBeenCalled());
     expect(await screen.findByText(/Uptime Kuma 状态页「AI」/)).toBeTruthy();
+  });
+});
+
+// The defect these pin is the one that made this screen unreadable in production:
+// a row's title was the ROUTE name, so every site publishing a model that matched
+// that route rendered under the same heading. On 2026-10-07 that was 15 rows
+// across 8 sites all reading "STRRX", with the site's own model name only in a
+// tooltip — which is what an operator reports as "my edit changed every channel".
+describe("site probe row identity", () => {
+  it("titles a row with the model the site publishes and shows the route as a chip", async () => {
+    mockBackend();
+    renderDialog();
+    const title = await screen.findByText("z-ai/glm-5.2");
+    const cell = title.closest(".site-probe-model-name");
+    expect(cell?.textContent).toContain("z-ai/glm-5.2");
+    // The route follows as a chip: the connection stays visible without
+    // pretending the two names are the same thing.
+    expect(cell?.textContent).toContain("glm-5.2");
+    expect(cell?.textContent).toContain("→");
+  });
+
+  // A name-only match is a candidate, not a reading: the route has no member on
+  // this site, so there is nothing to judge, disable or price here.
+  it("reports a name-only match as a candidate instead of a reading", async () => {
+    const data = report();
+    data.name_only = [
+      {
+        site_id: 1,
+        site_name: "公益站A",
+        raw_model: "kimi-k3",
+        route: "STRRX",
+        match: "namespace",
+        ratio: 0.3,
+        samples: 10,
+      },
+    ];
+    mockBackend({ report: data });
+    renderDialog();
+    await screen.findByText("z-ai/glm-5.2");
+    // The rail counts it separately from the attached rows…
+    expect(screen.getByText(/1 已挂载 · 1 同名未挂载/)).toBeInTheDocument();
+    // …and the detail names the collision rather than hiding it.
+    fireEvent.click(screen.getByText("同名未挂载（1）"));
+    const list = within(document.querySelector(".site-probe-candidate-list") as HTMLElement);
+    expect(list.getByText("kimi-k3")).toBeInTheDocument();
+    expect(list.getByText(/→ STRRX/)).toBeInTheDocument();
   });
 });
