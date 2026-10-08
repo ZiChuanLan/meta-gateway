@@ -781,18 +781,6 @@ function Connect({
             {/* The upgrade entry belongs on the sign-in card, not behind "more
 				    options": this is the one page an operator lands on after updating,
 				    and it disappears by itself once the gateway has an owner account. */}
-            {upgradeLogin ? (
-              <button
-                type="button"
-                className="login-upgrade"
-                disabled={pending || transitioning}
-                onClick={() => setUpgradeHelp(true)}
-              >
-                <HelpCircle size={14} />
-                <span>{t("login.upgradeEntry")}</span>
-                <ChevronRight size={13} />
-              </button>
-            ) : null}
             <button
               type="button"
               className="login-card-peek"
@@ -805,6 +793,28 @@ function Connect({
           </>
         )}
       </div>
+      {/* The upgrade entry belongs on the sign-in card, not behind "more
+          options": this is the one page an operator lands on after updating, and
+          it disappears by itself once the gateway has an owner account.
+
+          It sits OUTSIDE .login-card-stack deliberately. The "more ways" tab is
+          the exposed edge of the layer behind, anchored top/bottom to that stack
+          so it hugs the card it belongs to — which only holds while the stack
+          contains nothing but the card and the tab. With the upgrade row inside,
+          the stack grew 49px taller than the card and the tab hung past the
+          card's bottom edge onto the upgrade row. */}
+      {!accepting && !otherOpen && upgradeLogin ? (
+        <button
+          type="button"
+          className="login-upgrade"
+          disabled={pending || transitioning}
+          onClick={() => setUpgradeHelp(true)}
+        >
+          <HelpCircle size={14} />
+          <span>{t("login.upgradeEntry")}</span>
+          <ChevronRight size={13} />
+        </button>
+      ) : null}
       {upgradeHelp ? (
         <Dialog title={t("login.upgradeHelp")} onClose={() => setUpgradeHelp(false)}>
           <p>{t("login.upgradeCredentials")}</p>
