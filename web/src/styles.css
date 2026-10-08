@@ -676,11 +676,6 @@ td.status-col {
   font-size: 13px;
   font-weight: 600;
 }
-.runtime-inline-field .setting-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
-}
 .setting-check-label {
   display: inline-flex;
   align-items: center;
@@ -3437,408 +3432,9 @@ td.actions {
   resize: vertical;
 }
 
-/* —— Runtime settings (read-only env snapshot) —— */
-.runtime-settings-context {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-left: 1px solid var(--accent);
-  box-shadow: inset 2px 0 0 var(--accent);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-}
-.runtime-settings-context-copy {
-  min-width: 0;
-}
-.runtime-settings-context-copy strong {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--ink);
-  font-size: 13px;
-}
-.runtime-settings-context-copy p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-.runtime-settings-context-meta {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px 10px;
-  color: var(--muted);
-  font-size: 11px;
-  text-align: right;
-}
-.runtime-source-pill {
-  padding: 3px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 0;
-  color: var(--accent);
-  background: var(--accent-soft);
-  font-weight: 650;
-}
-.runtime-settings-banner {
-  margin-bottom: 14px;
-}
 .ops-panel-context { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; color: var(--muted); font-size: 12px; }
 .ops-panel-context > span { max-width: 60ch; }
 .ops-panel-context .info-tip { flex: 0 0 18px; }
-.runtime-settings-banner small {
-  display: block;
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 11px;
-}
-/* Master-detail: the sidebar picks one section, the body shows it. The page
-   used to be a chip index over nineteen open cards in one scroll, which
-   answered "what exists" and never "where is what I need". */
-.runtime-settings-layout {
-  display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-.runtime-section-body {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-}
-.runtime-section-body > .runtime-card {
-  margin: 0;
-  /* Density. A settings pane is a control surface: fields sit two-to-a-row in a
-     column wide enough that a label, its help button and its 已改/默认 badge stay
-     on one line beside the control. Stretching three fields across a 1132px row
-     reads as scattered, not dense; stacking them in one 820px column while the
-     rest of the window sits empty reads as a form on a page. Two columns of
-     ~430px is the shape that is actually both. */
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  align-content: start;
-  gap: 0 28px;
-  max-width: 940px;
-}
-.runtime-section-body > .runtime-card > .panel-header {
-  grid-column: 1 / -1;
-  margin-bottom: 2px;
-}
-/* Label left, control right: the shape every dense settings list uses, and the
-   one that keeps a label and its input on the same line of sight. */
-.runtime-section-body > .runtime-card > .field,
-.runtime-section-body > .runtime-card > .check {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(96px, 148px);
-  align-items: center;
-  gap: 4px 10px;
-  margin: 0;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--line-light);
-}
-.runtime-section-body > .runtime-card > .field > input,
-.runtime-section-body > .runtime-card > .field > select,
-.runtime-section-body > .runtime-card > .field > .setting-input-wrap,
-.runtime-section-body > .runtime-card > .field > .runtime-inline-fields {
-  width: 100%;
-  min-width: 0;
-}
-.runtime-section-body > .runtime-card > .field > .setting-input-wrap > input,
-.runtime-section-body > .runtime-card > .field > input,
-.runtime-section-body > .runtime-card > .field > select {
-  text-align: right;
-}
-/* Wide controls own the full width: a textarea, a cron picker or the alert JSON
-   squeezed into the control column is unusable. */
-.runtime-section-body > .runtime-card > .field:has(textarea),
-.runtime-section-body > .runtime-card > .field:has(.cron-schedule-picker),
-.runtime-section-body > .runtime-card > .field:has(.checkin-time-picker),
-.runtime-section-body > .runtime-card > .field.is-wide {
-  grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 1fr);
-}
-.runtime-section-body > .runtime-card > .field:has(textarea) > .setting-input-wrap > input,
-.runtime-section-body > .runtime-card > .field:has(textarea) > textarea {
-  text-align: left;
-}
-/* A checkbox row is a switch with a label, not a labelled field. */
-.runtime-section-body > .runtime-card > .check.is-stacked {
-  grid-template-columns: auto minmax(0, 1fr);
-}
-.runtime-section-body > .runtime-card > .field:last-of-type,
-.runtime-section-body > .runtime-card > .check:last-of-type {
-  border-bottom: 0;
-}
-@media (max-width: 900px) {
-  .runtime-settings-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-  }
-  /* Stacked, the full section list would push the selected card below the
-     fold: bound it and let it scroll on its own instead. */
-  .runtime-section-nav {
-    position: static;
-    max-height: 38vh;
-    overflow-y: auto;
-    padding-right: 4px;
-    overscroll-behavior: contain;
-  }
-}
-.runtime-setting-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 4px 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
-.runtime-setting-row:last-of-type {
-  border-bottom: 0;
-}
-/* The deployment parameters are a read-only table, not a form: three columns so
-   a long variable name cannot push its value out of alignment, and the source
-   chip stays on the right edge. */
-.runtime-param-filter {
-  width: 100%;
-  margin-bottom: 8px;
-}
-.runtime-param-list {
-  display: flex;
-  flex-direction: column;
-  max-height: 24rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.runtime-param-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 4px 10px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--line);
-}
-.runtime-param-row:last-of-type {
-  border-bottom: 0;
-}
-.runtime-param-key {
-  color: var(--muted);
-  font-size: 11.5px;
-  overflow-wrap: anywhere;
-}
-.runtime-param-value {
-  justify-self: end;
-  text-align: right;
-  font-size: 12px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.runtime-param-source {
-  padding: 1px 7px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.runtime-param-source.is-env {
-  border-color: var(--info);
-  color: var(--info);
-}
-.runtime-param-empty {
-  padding: 10px 0;
-  font-size: 12px;
-}
-.runtime-setting-label {
-  color: var(--muted);
-  font-size: 12px;
-}
-.runtime-setting-value {
-  justify-self: end;
-  text-align: right;
-  font-size: 12px;
-  font-weight: 600;
-  word-break: break-word;
-}
-@media (max-width: 600px) {
-  .runtime-settings-context {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .runtime-settings-context-meta {
-    justify-content: flex-start;
-    text-align: left;
-  }
-}
-.runtime-inline-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-.runtime-inline-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.runtime-inline-field > span:not(.setting-label) {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
-}
-.runtime-inline-field .info-tip {
-  width: 16px;
-  height: 16px;
-  flex-basis: 16px;
-}
-.runtime-settings .panel-header > div {
-  min-width: 0;
-}
-.runtime-settings .panel-muted {
-  margin: 3px 0 0;
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 400;
-}
-.setting-check-label .info-tip {
-  width: 17px;
-  height: 17px;
-  flex-basis: 17px;
-}
-.setting-input-wrap {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.setting-input-wrap > input {
-  flex: 0 1 160px;
-  width: 100%;
-  max-width: 160px;
-}
-
-.setting-input-wrap.is-invalid > input {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent);
-}
-
-.setting-validation {
-  flex: 1 1 180px;
-  min-width: 0;
-  padding-top: 9px;
-  color: var(--danger);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.runtime-inline-fields input {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-@media (max-width: 1100px) {
-  .runtime-inline-fields {
-    grid-template-columns: 1fr;
-  }
-}
-.runtime-settings-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.runtime-section-nav {
-  position: sticky;
-  top: 12px;
-  display: grid;
-  gap: 8px;
-  align-content: start;
-  /* Twenty-two sections must not stretch the page past the fold: the rail scrolls
-     inside its own column instead. */
-  max-height: calc(100vh - 96px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.runtime-nav-group {
-  display: grid;
-  gap: 1px;
-}
-.runtime-nav-group-label {
-  padding: 0 0 3px 8px;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.runtime-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 4px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-soft);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 1.45;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-.runtime-nav-item:hover {
-  background: var(--surface-hover);
-  color: var(--ink);
-}
-.runtime-nav-item.is-active {
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-  background: var(--accent-soft);
-  color: var(--accent-hover);
-  font-weight: 650;
-}
-/* A change made three sections ago has to stay visible from here. */
-.runtime-nav-dot {
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  margin-left: auto;
-  border-radius: 50%;
-  background: var(--warning);
-}
-.runtime-card {
-  scroll-margin-top: 14px;
-}
-.runtime-section-body .runtime-card input[type="number"] {
-  max-width: 160px;
-}
-
-.runtime-inline-fields .setting-input-wrap {
-  display: block;
-}
-
-.runtime-inline-fields .setting-input-wrap > input {
-  max-width: 100%;
-}
-
-.runtime-inline-fields .setting-validation {
-  padding-top: 5px;
-}
 .checkin-time-picker {
   display: inline-flex;
   align-items: center;
@@ -4556,8 +4152,6 @@ td.actions {
   margin-top: 8px;
   font-size: 12px;
   color: var(--success);
-}
-.runtime-card.is-danger-zone {
 }
 .model-rank {
   list-style: none;
@@ -6767,39 +6361,6 @@ label.check input[type="checkbox"] {
   cursor: not-allowed;
 }
 
-/* —— Section entrance: the card rises when the sidebar switches to it —— */
-.runtime-section-body > .runtime-card {
-  animation: panel-rise 0.32s var(--ease-out) backwards;
-}
-@keyframes panel-rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-}
-
-/* —— Banner: editorial red edge (no sheen) —— */
-.runtime-settings-banner {
-  border-left: 1px solid var(--accent);
-  box-shadow: inset 2px 0 0 var(--accent);
-  padding-left: 18px;
-  position: relative;
-  overflow: hidden;
-}
-.runtime-settings-banner::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 55%;
-  background: linear-gradient(
-    100deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.55) 50%,
-    transparent 100%
-  );
-  transform: translateX(-120%);
-  pointer-events: none;
-}
 
 /* —— Save result strip: slide in —— */
 .result-strip {
@@ -6824,28 +6385,8 @@ label.check input[type="checkbox"] {
   transform: scale(1.12);
 }
 
-/* —— Setting rows: hover affordance —— */
-.runtime-settings .check,
-.runtime-settings .field {
-  transition: background-color var(--dur-hover) var(--ease-hover);
-  border-radius: var(--radius);
-  margin-left: -6px;
-  padding-left: 6px;
-}
-.runtime-settings .check:hover {
-  background: color-mix(in srgb, var(--surface-hover) 35%, transparent);
-}
-
-/* Keep focus feedback on the actual control instead of tinting the whole row. */
-.runtime-settings .field:hover,
-.runtime-settings .field:focus-within {
-  background: transparent;
-}
-
 /* —— Page-level entrance already exists (.route-enter); keep exits fast —— */
 @media (prefers-reduced-motion: reduce) {
-  .runtime-section-body > .runtime-card,
-  .runtime-settings-banner::after,
   .result-strip {
     animation: none !important;
   }
@@ -6943,99 +6484,6 @@ label.check input[type="checkbox"] {
 }
 
 /* —— Settings cards: one visual and spacing system —— */
-.runtime-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.runtime-settings .runtime-card {
-  position: relative;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: none;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
-}
-
-.runtime-settings .runtime-card:hover {
-  border-color: var(--line-strong);
-  transform: translate(-1px, -1px);
-}
-
-.runtime-settings > .runtime-card-alerts,
-.runtime-settings > .runtime-card-server {
-  margin-top: 0;
-}
-
-.runtime-settings .runtime-card > .panel-header {
-  min-height: 0;
-  padding-bottom: 10px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid var(--line);
-}
-
-.runtime-settings .runtime-card > .field,
-.runtime-settings .runtime-card > .check {
-  margin-top: 0 !important;
-  margin-bottom: 10px !important;
-}
-
-.runtime-settings .runtime-card > .field:last-child,
-.runtime-settings .runtime-card > .check:last-child {
-  margin-bottom: 0 !important;
-}
-
-.runtime-settings .runtime-card > .panel-muted {
-  margin: 12px 0 6px !important;
-  line-height: 1.4;
-}
-
-.runtime-settings .runtime-card > .panel-header strong {
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.runtime-card-server .runtime-setting-row {
-  padding: 10px 0;
-}
-
-.runtime-card-server .runtime-setting-value {
-  max-width: min(70ch, 100%);
-  overflow-wrap: anywhere;
-}
-
-.runtime-tools-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 0;
-  align-items: stretch;
-}
-
-.runtime-tools-column {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-.runtime-tools-column > .runtime-card,
-.runtime-tools-grid > .runtime-card {
-  min-width: 0;
-  margin: 0;
-}
-
-.runtime-tools-grid > .runtime-card .muted {
-  line-height: 1.65;
-}
-
 .runtime-tool-totp > .button {
   width: 100%;
   margin-top: 2px;
@@ -7198,59 +6646,9 @@ label.check input[type="checkbox"] {
   min-width: 0;
 }
 
-.runtime-settings-actions {
-  position: sticky;
-  bottom: 12px;
-  z-index: 5;
-  margin-top: 0;
-  justify-content: flex-end;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  box-shadow: 0 8px 24px rgba(28, 26, 23, 0.1);
-  backdrop-filter: blur(10px);
-}
-
-@media (max-width: 860px) {
-  .runtime-tools-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .runtime-tools-column,
-  .runtime-tools-grid > .runtime-card {
-    grid-column: 1;
-  }
-}
-
 @media (max-width: 600px) {
-  .runtime-card-server .panel-header,
-  .runtime-tools-grid .runtime-card .panel-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .runtime-card-server .runtime-setting-row {
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
-
-  .runtime-card-server .runtime-setting-value {
-    justify-self: start;
-    text-align: left;
-  }
-
   .totp-setup > input {
     flex-basis: 100%;
-  }
-
-  .runtime-settings-actions {
-    bottom: 8px;
-    justify-content: stretch;
-  }
-
-  .runtime-settings-actions .button {
-    flex: 1 1 100%;
   }
 }
 
@@ -9204,27 +8602,6 @@ a.log-chain-value:hover { text-decoration: underline; }
   box-shadow: inset 2px 0 0 var(--muted);
 }
 
-/* ============================================================
-   V2 — Runtime settings cards: uniform editor heads
-   ============================================================ */
-.runtime-settings .runtime-card > .panel-header {
-  position: relative;
-  padding-left: 12px;
-}
-.runtime-settings .runtime-card > .panel-header::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  background: var(--primary);
-  opacity: 0.55;
-}
-.runtime-card-cooldown > .panel-header::before { background: var(--warning); }
-.runtime-card-health-sweep > .panel-header::before { background: var(--success); }
-.runtime-card-alerts > .panel-header::before { background: var(--danger); }
-.runtime-card-server > .panel-header::before { background: var(--info); }
 
 /* ============================================================
    V2 — Reduced motion: kill decorative motion, keep state motion
@@ -9283,171 +8660,7 @@ a.log-chain-value:hover { text-decoration: underline; }
 
 /* Newer-release badge in the deck status cluster */
 
-/* Settings page: semantic group sections */
-.runtime-group {
-  margin-bottom: 26px;
-}
 
-/* Terminal region for irreversible actions. A hairline danger rule above it
-   and a quiet tint behind the label — deliberately not a framed box: a danger
-   zone reads stronger when it is the only tinted row on the page, not when it
-   is a loud red rectangle. */
-.runtime-group.is-danger {
-  margin-top: 34px;
-}
-.runtime-group.is-danger > .runtime-group-header {
-  border-bottom-color: var(--danger-soft);
-}
-.runtime-group.is-danger .runtime-group-title strong {
-  color: var(--danger);
-}
-
-/* The reset card sits inside that well, so it drops its own frame instead of
-   stacking a second border on top of the region's. */
-.runtime-card.is-danger-zone {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-.runtime-group-header {
-  margin: 0 0 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
-}
-.runtime-group-title strong {
-  display: block;
-  color: var(--ink);
-  font-family: var(--font-serif);
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
-.runtime-group-title p {
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-/* Collapsible settings groups. The header IS the toggle: a full-width row
-   with chevron, title block and a card count. Open groups restore the old
-   section look (hairline under the header); closed ones are a quiet one-line
-   row, so the page opens as a table of contents instead of ~20 cards. */
-.runtime-group.is-collapsible {
-  margin-bottom: 8px;
-}
-.runtime-group.is-collapsible.is-danger {
-  margin-top: 18px;
-}
-.runtime-group-toggle {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  margin: 0;
-  padding: 13px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
-}
-.runtime-group-toggle:hover {
-  background: var(--surface-hover);
-  border-color: var(--line-strong);
-}
-.runtime-group.is-open .runtime-group-toggle {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-bottom-color: transparent;
-}
-.runtime-group.is-danger .runtime-group-toggle {
-  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
-  background: var(--surface);
-}
-.runtime-group.is-danger .runtime-group-toggle:hover {
-  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
-  background: var(--surface-hover);
-}
-.runtime-group.is-danger .runtime-group-toggle strong {
-  color: var(--danger);
-}
-.runtime-group.is-danger .runtime-group-chevron {
-  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
-  color: var(--danger);
-}
-.runtime-group-chevron {
-  display: grid;
-  place-items: center;
-  flex: 0 0 26px;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--muted);
-  transition: transform 160ms ease;
-}
-.runtime-group.is-open .runtime-group-chevron {
-  transform: rotate(90deg);
-}
-.runtime-group-count {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title strong {
-  font-size: 14px;
-}
-.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title p {
-  margin-top: 1px;
-}
-.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title strong,
-.runtime-group.is-collapsible .runtime-group-toggle .runtime-group-title p {
-  min-width: 0;
-}
-.runtime-group-body {
-  padding: 16px 14px;
-  border: 1px solid var(--line);
-  border-top: 0;
-  border-radius: 0 0 var(--radius) var(--radius);
-  background: var(--surface);
-}
-.runtime-group.is-danger .runtime-group-body {
-  padding: 16px 14px;
-  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
-  border-top: 0;
-  background: var(--surface);
-}
-
-/* Update-check row in the server card */
-.runtime-update-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.runtime-update-result {
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-.runtime-update-link {
-  color: var(--accent-hover);
-  font-weight: 700;
-  text-decoration: none;
-  border-bottom: 1px solid var(--accent-glow);
-  transition: color var(--dur-hover) var(--ease-hover);
-}
-.runtime-update-link:hover {
-  color: var(--accent);
-}
 
 /* —— First-run setup guide (dashboard checklist) ——
    Shows while the gateway has no upstream connections; each step reflects
@@ -10140,20 +9353,6 @@ a.log-chain-value:hover { text-decoration: underline; }
   background: var(--surface);
 }
 
-/* —— Update helper next to the check-update row —— */
-.runtime-update-help {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  background: var(--surface-subtle);
-  display: grid;
-  gap: 6px;
-}
-.runtime-update-help p {
-  margin: 0;
-  font-size: 12px;
-  max-width: 72ch;
-}
 .update-cmd-row {
   display: flex;
   align-items: center;
@@ -10169,13 +9368,6 @@ a.log-chain-value:hover { text-decoration: underline; }
   background: var(--surface);
 }
 
-.runtime-update-manual {
-  margin-top: 4px;
-}
-.runtime-update-manual summary {
-  cursor: pointer;
-  font-size: 12px;
-}
 
 
 /* ——————————————————————————————————————————————————————————————
@@ -10538,4 +9730,857 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 .crash-actions {
   display: flex;
   gap: 10px;
+}
+
+/* ==========================================================================
+   Runtime settings — instrument panel (paper + amber)
+
+   One continuous surface: a 22-entry index on the left, the selected section's
+   rows on the right, hairline separators, no cards and no shadows. The palette
+   is scoped to this module instead of added to a theme, because it is a
+   committed surface — paper #F7F5F0, ink #1C1B18, amber #B0812F — and it has to
+   read the same in the modern theme and in classic. Every theme token the
+   nested controls use is re-pointed here, so a button, a badge, an InfoTip
+   bubble or one of the embedded tool panels picks the paper world up without
+   knowing it exists. Text keeps 4.5:1 on paper: labels at 70% ink (6.1:1),
+   hints and readouts at 62% (4.7:1), amber text darkened to #8A6320 (4.9:1)
+   while #B0812F stays the mark/rule/focus colour.
+   ========================================================================== */
+.runtime-settings {
+  --rt-paper: #f7f5f0;
+  --rt-paper-sunk: #f1eee5;
+  --rt-paper-hover: #eeeae0;
+  --rt-ink: #1c1b18;
+  --rt-ink-2: rgb(28 27 24 / 70%);
+  --rt-ink-3: rgb(28 27 24 / 62%);
+  --rt-hairline: #e4ded2;
+  --rt-hairline-strong: #d3c9b6;
+  --rt-gold: #b0812f;
+  --rt-gold-ink: #8a6320;
+  --rt-gold-soft: rgb(176 129 47 / 12%);
+  --rt-danger: #a4392a;
+
+  --surface: var(--rt-paper);
+  --surface-raised: var(--rt-paper);
+  --surface-subtle: var(--rt-paper-sunk);
+  --surface-hover: var(--rt-paper-hover);
+  --ink: var(--rt-ink);
+  --ink-soft: var(--rt-ink-2);
+  --muted: var(--rt-ink-3);
+  --muted-dark: var(--rt-ink-3);
+  --line: var(--rt-hairline);
+  --line-light: var(--rt-hairline);
+  --line-strong: var(--rt-hairline-strong);
+  --accent: var(--rt-gold);
+  --accent-hover: var(--rt-gold-ink);
+  --accent-soft: var(--rt-gold-soft);
+  --primary: var(--rt-gold);
+  --primary-hover: var(--rt-gold-ink);
+  --primary-soft: var(--rt-gold-soft);
+  --focus: var(--rt-gold);
+  --warning: var(--rt-gold-ink);
+  --warning-soft: var(--rt-gold-soft);
+  --danger: var(--rt-danger);
+  --danger-soft: rgb(164 57 42 / 9%);
+
+  display: block;
+  padding: 0;
+  border: 1px solid var(--rt-hairline);
+  border-radius: 3px;
+  background: var(--rt-paper);
+  color: var(--rt-ink);
+  color-scheme: light;
+}
+
+/* —— The surfaces nobody drew: selection, caret, focus ring, scrollbars —— */
+.runtime-settings ::selection {
+  background: var(--rt-gold-soft);
+  color: var(--rt-ink);
+}
+.runtime-settings input,
+.runtime-settings textarea {
+  caret-color: var(--rt-gold);
+}
+.runtime-settings :focus-visible {
+  outline: 2px solid var(--rt-gold);
+  outline-offset: 1px;
+}
+.runtime-settings * {
+  scrollbar-color: var(--rt-hairline-strong) transparent;
+  scrollbar-width: thin;
+}
+.runtime-settings ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.runtime-settings ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.runtime-settings ::-webkit-scrollbar-thumb {
+  border: 3px solid var(--rt-paper);
+  border-radius: 999px;
+  background: var(--rt-hairline-strong);
+}
+
+/* —— Head: title, the two facts a save cannot express, one quiet action —— */
+.runtime-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 22px 10px;
+  border-bottom: 2px solid var(--rt-hairline-strong);
+}
+.runtime-head-main {
+  min-width: 0;
+}
+.runtime-head-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.runtime-head-title {
+  margin: 0;
+  color: var(--rt-ink);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+.runtime-head-meta {
+  display: flex;
+  align-items: center;
+  margin: 5px 0 0;
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+.runtime-head-meta > span + span::before {
+  content: "·";
+  margin: 0 8px;
+  color: var(--rt-hairline-strong);
+}
+.runtime-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+.runtime-settings .runtime-save-status {
+  justify-content: flex-end;
+  color: var(--rt-ink-3);
+  font-size: 11px;
+}
+.runtime-settings .runtime-save-status:empty {
+  display: none;
+}
+.runtime-settings .runtime-settings-unsaved {
+  color: var(--rt-gold-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* —— Layout: index and pane, separated by one hairline —— */
+.runtime-layout {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  align-items: start;
+}
+.runtime-index {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100dvh - 300px);
+  padding: 10px 14px 14px 16px;
+  border-right: 1px solid var(--rt-hairline);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.runtime-index-group {
+  display: flex;
+  flex-direction: column;
+}
+.runtime-index-label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.runtime-index-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--rt-ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+/* The index mark is a rule in the gutter that lengthens and turns gold on the
+   current entry — an index tick, not a coloured stripe bolted to the row. */
+.runtime-index-mark {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 1px;
+  background: var(--rt-hairline-strong);
+  transition:
+    width 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+.runtime-index-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runtime-index-item:hover {
+  color: var(--rt-ink);
+}
+.runtime-index-item:hover .runtime-index-mark {
+  width: 14px;
+  background: var(--rt-ink-3);
+}
+.runtime-index-item.is-active {
+  color: var(--rt-gold-ink);
+  font-weight: 650;
+}
+.runtime-index-item.is-active .runtime-index-mark {
+  width: 18px;
+  height: 2px;
+  background: var(--rt-gold);
+}
+.runtime-settings .runtime-nav-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--rt-gold);
+}
+
+/* —— Pane: the page's one authored moment is the section switch —— */
+.runtime-section-body {
+  min-width: 0;
+  padding: 16px 22px 26px;
+  animation: runtime-pane-in 160ms var(--ease-out) both;
+}
+@keyframes runtime-pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* —— Section head: the pane's own title rule —— */
+.runtime-section + .runtime-section {
+  margin-top: 26px;
+}
+.runtime-section-head,
+.runtime-section > .panel-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 0 0 6px;
+  padding: 0 0 9px;
+  border-bottom: 2px solid var(--rt-hairline-strong);
+}
+.runtime-section-title,
+.runtime-section-head strong,
+.runtime-section > .panel-header strong {
+  margin: 0;
+  color: var(--rt-ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.runtime-section-spacer {
+  flex: 1;
+  min-width: 0;
+}
+.runtime-section > .panel-header .icon-button {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border: 1px solid var(--rt-hairline);
+  border-radius: 2px;
+  background: none;
+  color: var(--rt-ink-2);
+  font-size: 14px;
+  line-height: 1;
+}
+.runtime-section > .panel-header .icon-button:hover:not(:disabled) {
+  border-color: var(--rt-gold);
+  background: none;
+  color: var(--rt-gold-ink);
+}
+
+/* —— Rows: one line each, hairline between, tabular readouts —— */
+.runtime-rows {
+  display: flex;
+  flex-direction: column;
+}
+.runtime-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 30px;
+  padding: 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+.runtime-row:last-child,
+.runtime-rows > .runtime-row:last-child,
+.runtime-setting-row:last-child {
+  border-bottom: 0;
+}
+.runtime-row > .setting-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 0;
+  gap: 7px;
+  color: var(--rt-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.runtime-row-value {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+/* Label left and value right leave a wide gap on a 1000px surface. A hairline
+   leader carries the eye across it — the gauge/index device, not a divider. */
+.runtime-row-leader {
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 1px;
+  background: var(--rt-hairline);
+}
+.runtime-row.is-wide > .runtime-row-leader,
+.runtime-row.is-text > .runtime-row-leader {
+  display: none;
+}
+.runtime-row-unit {
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+/* Wide rows own the full width: a textarea, a cron picker or a JSON matrix has
+   nothing to sit beside. Text rows stay on one line and hand the input the
+   room that is left. */
+.runtime-row.is-wide {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+.runtime-row.is-wide > .runtime-row-value {
+  width: 100%;
+  margin-left: 0;
+}
+.runtime-row.is-text > .runtime-row-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* —— Controls, re-cut for 30px rows and the paper palette —— */
+.runtime-settings .button {
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 2px;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.runtime-settings .button:hover:not(:disabled) {
+  box-shadow: none;
+}
+.runtime-settings .button-quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--rt-ink-2);
+}
+.runtime-settings .button-quiet:hover:not(:disabled) {
+  border-color: var(--rt-hairline);
+  background: var(--rt-paper-hover);
+  color: var(--rt-ink);
+}
+/* system.css sizes every control at 36px with a 8/11 padding; the paper rows
+   are 30px, so the box has to be re-cut. Two class tokens on the scope: a
+   single one only ties with `input:not(...):not(...):not(...)`, and system.css
+   is imported after this sheet, so a tie would hand the size back. */
+.runtime-settings.runtime-settings input:not([type="checkbox"]):not([type="radio"]),
+.runtime-settings.runtime-settings select,
+.runtime-settings.runtime-settings textarea {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--rt-hairline-strong);
+  border-radius: 2px;
+  background: var(--rt-paper);
+  color: var(--rt-ink);
+  font-family: var(--font);
+  font-size: 12px;
+  box-shadow: none;
+}
+.runtime-settings.runtime-settings textarea {
+  height: auto;
+  min-height: 92px;
+  padding: 8px 9px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.runtime-settings.runtime-settings input:hover:not(:disabled),
+.runtime-settings.runtime-settings select:hover:not(:disabled) {
+  border-color: var(--rt-ink-3);
+}
+.runtime-settings.runtime-settings input:focus,
+.runtime-settings.runtime-settings select:focus,
+.runtime-settings.runtime-settings textarea:focus {
+  border-color: var(--rt-gold);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--rt-gold-soft);
+}
+.runtime-settings.runtime-settings input:disabled,
+.runtime-settings.runtime-settings select:disabled {
+  border-color: var(--rt-hairline);
+  background: var(--rt-paper-sunk);
+  color: var(--rt-ink-3);
+  opacity: 1;
+}
+.runtime-settings.runtime-settings input::placeholder,
+.runtime-settings.runtime-settings textarea::placeholder {
+  color: var(--rt-ink-3);
+  opacity: 1;
+}
+.runtime-settings.runtime-settings .runtime-row .runtime-row-value input[type="number"] {
+  width: 92px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.runtime-settings.runtime-settings .runtime-row.is-text .runtime-row-value input {
+  width: 100%;
+  font-family: var(--font);
+  font-size: 12px;
+  text-align: left;
+}
+.runtime-settings.runtime-settings .runtime-row .runtime-row-value input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--rt-gold);
+  cursor: pointer;
+}
+.runtime-row-value select {
+  min-width: 132px;
+}
+.runtime-settings .setting-input-wrap {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.runtime-settings .setting-input-wrap > input {
+  flex: 0 0 auto;
+  width: 92px;
+  max-width: none;
+}
+.runtime-settings .setting-validation {
+  flex: 0 1 auto;
+  padding-top: 0;
+  color: var(--rt-danger);
+  font-size: 11px;
+}
+
+/* —— 已改 / 默认 —— */
+.runtime-settings .setting-state {
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.runtime-settings .setting-state.is-default {
+  border-color: var(--rt-hairline);
+  color: var(--rt-ink-3);
+  opacity: 1;
+}
+.runtime-settings .setting-state.is-changed {
+  border-color: color-mix(in srgb, var(--rt-gold) 42%, var(--rt-hairline));
+  background: var(--rt-gold-soft);
+  color: var(--rt-gold-ink);
+}
+.runtime-settings .info-tip {
+  color: var(--rt-ink-3);
+}
+.runtime-settings .info-tip:hover,
+.runtime-settings .info-tip:focus-visible {
+  color: var(--rt-gold-ink);
+}
+.runtime-settings .info-tip-bubble {
+  border-color: var(--rt-hairline-strong);
+  background: var(--rt-paper);
+  color: var(--rt-ink);
+  font-size: 11.5px;
+}
+
+/* —— Read-only readouts (build, paths, metrics token) —— */
+.runtime-settings .runtime-setting-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 30px;
+  padding: 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+.runtime-settings .runtime-setting-label {
+  flex: 0 0 auto;
+  color: var(--rt-ink-2);
+  font-size: 12.5px;
+}
+.runtime-settings .runtime-setting-value {
+  max-width: min(72ch, 100%);
+  margin-left: auto;
+  color: var(--rt-ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+/* —— Sub-headings and prose inside a section —— */
+.runtime-settings .runtime-setting-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 16px 0 6px;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+.runtime-settings .runtime-setting-subtitle {
+  flex: 0 0 auto;
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.runtime-settings .runtime-setting-sub .field-hint {
+  min-width: 0;
+}
+.runtime-settings .panel-lede,
+.runtime-settings .runtime-rows > .muted,
+.runtime-settings .runtime-section > .panel-lede,
+.runtime-settings .runtime-section > .panel-note,
+.runtime-settings .runtime-section > .maintenance-result {
+  margin: 10px 0 8px;
+  max-width: 82ch;
+  color: var(--rt-ink-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.runtime-settings .field-hint {
+  color: var(--rt-ink-3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.runtime-settings .runtime-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* —— Update check —— */
+.runtime-settings .runtime-update-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+.runtime-settings .runtime-update-result {
+  color: var(--rt-ink-2);
+  font-size: 12px;
+}
+.runtime-settings .runtime-update-link {
+  border-bottom: 1px solid var(--rt-gold-soft);
+  color: var(--rt-gold-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.runtime-settings .runtime-update-link:hover {
+  border-bottom-color: var(--rt-gold);
+  color: var(--rt-gold);
+}
+
+/* —— Deployment parameters: folded, monospaced, three columns —— */
+.runtime-settings .runtime-subblock {
+  margin-top: 16px;
+  border: 0;
+  border-top: 1px solid var(--rt-hairline);
+  border-radius: 0;
+  background: transparent;
+}
+.runtime-settings .runtime-subblock-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--rt-ink-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  text-align: left;
+  cursor: pointer;
+}
+.runtime-settings .runtime-subblock-toggle:hover {
+  color: var(--rt-ink);
+}
+.runtime-settings .runtime-subblock-chevron {
+  color: var(--rt-ink-3);
+}
+.runtime-settings .runtime-subblock-count {
+  margin-left: auto;
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.runtime-settings .runtime-subblock-body {
+  display: grid;
+  gap: 8px;
+  padding: 4px 0 6px;
+}
+.runtime-settings .runtime-param-filter {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.runtime-settings .runtime-param-list {
+  max-height: 22rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.runtime-settings .runtime-param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+.runtime-settings .runtime-param-row:last-of-type {
+  border-bottom: 0;
+}
+.runtime-settings .runtime-param-key {
+  color: var(--rt-ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.runtime-settings .runtime-param-value {
+  justify-self: end;
+  color: var(--rt-ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.runtime-settings .runtime-param-source {
+  padding: 0 6px;
+  border: 1px solid var(--rt-hairline);
+  border-radius: 2px;
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.runtime-settings .runtime-param-source.is-env {
+  border-color: color-mix(in srgb, var(--rt-gold) 40%, var(--rt-hairline));
+  color: var(--rt-gold-ink);
+}
+.runtime-settings .runtime-param-empty {
+  padding: 8px 0;
+}
+
+/* —— Danger: a folded block, not a peer section —— */
+.runtime-fold {
+  border-top: 1px solid var(--rt-hairline);
+}
+.runtime-fold-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.runtime-fold-chevron {
+  display: grid;
+  flex: 0 0 18px;
+  place-items: center;
+  color: var(--rt-ink-3);
+  transition: transform 160ms var(--ease-out);
+}
+.runtime-fold.is-open .runtime-fold-chevron {
+  transform: rotate(90deg);
+}
+.runtime-fold-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.runtime-fold-title {
+  color: var(--rt-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+.runtime-fold-desc {
+  color: var(--rt-ink-3);
+  font-size: 11.5px;
+}
+.runtime-fold.is-danger .runtime-fold-title {
+  color: var(--rt-danger);
+}
+.runtime-fold-body {
+  padding: 4px 0 8px;
+}
+
+/* —— Embedded tool panels: sections here, not cards —— */
+.runtime-settings .runtime-tool-factory-reset.is-danger-zone {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.runtime-settings .error-rules-list {
+  display: flex;
+  flex-direction: column;
+}
+.runtime-settings .error-rule-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+.runtime-settings .error-rule-row:last-child {
+  border-bottom: 0;
+}
+.runtime-settings .error-rule-name {
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.runtime-settings .error-rule-cond {
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+/* —— Remote-change notice —— */
+.runtime-settings .runtime-settings-notice {
+  align-items: center;
+  gap: 10px;
+  margin: 14px 22px 18px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--rt-gold) 34%, var(--rt-hairline));
+  border-left-width: 1px;
+  border-radius: 2px;
+  background: var(--rt-gold-soft);
+  color: var(--rt-ink);
+  font-size: 12px;
+}
+.runtime-settings .runtime-settings-notice-copy {
+  display: grid;
+  gap: 3px;
+  max-width: 70ch;
+}
+.runtime-settings .runtime-settings-notice-copy p {
+  margin: 0;
+}
+
+/* —— Responsive: the index turns into a bounded list above the pane —— */
+@media (max-width: 900px) {
+  .runtime-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .runtime-index {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    max-height: none;
+    padding: 12px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rt-hairline);
+  }
+  .runtime-index-group {
+    min-width: 150px;
+  }
+  .runtime-section-body {
+    padding: 14px 16px 22px;
+  }
+}
+@media (max-width: 640px) {
+  .runtime-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .runtime-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 0;
+  }
+  .runtime-row > .runtime-row-value {
+    margin-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runtime-section-body {
+    animation: none;
+  }
+  .runtime-index-mark,
+  .runtime-fold-chevron {
+    transition: none;
+  }
 }

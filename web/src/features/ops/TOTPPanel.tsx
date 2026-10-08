@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { Button, Panel, StatusBadge } from "../../components/ui";
+import { Button, StatusBadge } from "../../components/ui";
 
 export // Admin TOTP 2FA panel: setup (show secret + otpauth URI), enable with a
 // code, and disable with a current code.
@@ -43,7 +43,7 @@ function TOTPPanel() {
     }
   };
   return (
-    <Panel className="runtime-card runtime-tool-totp" id="runtime-totp">
+    <section className="runtime-section runtime-tool-totp" id="runtime-totp">
       <div className="panel-header">
         <strong>{t("ops.runtime.totpTitle")}</strong>
         {enabled ? (
@@ -131,6 +131,6 @@ function TOTPPanel() {
         </div>
       ) : null}
       {error ? <div className="inline-error">{error}</div> : null}
-    </Panel>
+    </section>
   );
 }

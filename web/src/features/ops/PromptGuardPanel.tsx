@@ -5,7 +5,7 @@ import type { PromptGuardRule } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { ConfirmDialog, Dialog, Field, Panel } from "../../components/ui";
+import { ConfirmDialog, Dialog, Field } from "../../components/ui";
 import { RuleEditorFooter } from "./RuleEditorFooter";
 
 export // Sensitive prompt guards: regex rules that mask, reject, or channel-exclude
@@ -33,7 +33,7 @@ function PromptGuardPanel() {
   });
   const items = query.data?.items ?? [];
   return (
-    <Panel className="runtime-card runtime-tool-prompt-guard" id="runtime-prompt-guards">
+    <section className="runtime-section runtime-tool-prompt-guard" id="runtime-prompt-guards">
       <div className="panel-header">
         <strong>{t("ops.guard.title")}</strong>
         <button
@@ -115,7 +115,7 @@ function PromptGuardPanel() {
           onClose={() => setConfirmDelete(null)}
         />
       ) : null}
-    </Panel>
+    </section>
   );
 }
 

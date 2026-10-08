@@ -5,7 +5,7 @@ import type { AlertRule } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { ConfirmDialog, Dialog, Field, Panel } from "../../components/ui";
+import { ConfirmDialog, Dialog, Field } from "../../components/ui";
 import { RuleEditorFooter } from "./RuleEditorFooter";
 
 export // Alert rules: metric/operator/threshold/window/sustained → webhook.
@@ -33,7 +33,7 @@ function AlertRulesPanel() {
   const items = query.data?.items ?? [];
   const metrics = query.data?.metrics ?? {};
   return (
-    <Panel className="runtime-card runtime-tool-alert-rules" id="runtime-alert-rules">
+    <section className="runtime-section runtime-tool-alert-rules" id="runtime-alert-rules">
       <div className="panel-header">
         <strong>{t("ops.alertRules.title")}</strong>
         <button
@@ -122,7 +122,7 @@ function AlertRulesPanel() {
           onClose={() => setConfirmDelete(null)}
         />
       ) : null}
-    </Panel>
+    </section>
   );
 }
 

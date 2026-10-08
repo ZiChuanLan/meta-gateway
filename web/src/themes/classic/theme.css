@@ -12830,3 +12830,349 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   Classic — the runtime settings page keeps the instrument-panel world
+
+   The page owns its palette (see the block at the end of styles.css): paper,
+   ink and amber, hairlines, no cards. Classic restyles the *shared* primitives
+   it inherits — controls are 38px here, `.panel-header` is top-aligned,
+   `.info-tip` is a blue chip, buttons sweep a highlight — and every one of
+   those selectors outranks the unprefixed page rules. This block re-states the
+   page's own decisions at classic's specificity, so switching appearance
+   changes the frame around the page and nothing inside it.
+
+   Squared corners come from classic's `--radius: 0`; the 2px the page asks for
+   is declared explicitly, so both appearances keep the same instrument look.
+   ========================================================================== */
+:root[data-appearance="classic"] .runtime-settings.runtime-settings input:not([type="checkbox"]):not([type="radio"]),
+:root[data-appearance="classic"] .runtime-settings.runtime-settings select,
+:root[data-appearance="classic"] .runtime-settings.runtime-settings textarea {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--rt-hairline-strong);
+  border-radius: 2px;
+  background: var(--rt-paper);
+  color: var(--rt-ink);
+  font-size: 12px;
+  box-shadow: none;
+}
+:root[data-appearance="classic"] .runtime-settings.runtime-settings textarea {
+  height: auto;
+  min-height: 92px;
+  padding: 8px 9px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+:root[data-appearance="classic"] .runtime-settings.runtime-settings input:focus,
+:root[data-appearance="classic"] .runtime-settings.runtime-settings select:focus,
+:root[data-appearance="classic"] .runtime-settings.runtime-settings textarea:focus {
+  border-color: var(--rt-gold);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--rt-gold-soft);
+  animation: none;
+}
+:root[data-appearance="classic"] .runtime-row-value input[type="checkbox"],
+:root[data-appearance="classic"] .runtime-settings input[type="radio"] {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  accent-color: var(--rt-gold);
+}
+:root[data-appearance="classic"] .runtime-settings :focus-visible {
+  outline: 2px solid var(--rt-gold);
+  outline-offset: 1px;
+}
+:root[data-appearance="classic"] .runtime-settings ::selection {
+  background: var(--rt-gold-soft);
+  color: var(--rt-ink);
+}
+:root[data-appearance="classic"] .runtime-settings *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+:root[data-appearance="classic"] .runtime-settings *::-webkit-scrollbar-thumb {
+  border: 3px solid var(--rt-paper);
+  border-radius: 999px;
+  background: var(--rt-hairline-strong);
+  background-clip: padding-box;
+}
+:root[data-appearance="classic"] .runtime-settings *::-webkit-scrollbar-thumb:hover {
+  background: var(--rt-hairline-strong);
+  background-clip: padding-box;
+}
+
+/* Head, index and pane re-assert their own metrics. */
+:root[data-appearance="classic"] .runtime-settings .runtime-head-title {
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-section-title,
+:root[data-appearance="classic"] .runtime-settings .runtime-section-head strong,
+:root[data-appearance="classic"] .runtime-settings .runtime-section > .panel-header strong {
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-section-head,
+:root[data-appearance="classic"] .runtime-settings .runtime-section > .panel-header {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  min-height: 0;
+  margin: 0 0 6px;
+  padding: 0 0 9px;
+  border-bottom: 2px solid var(--rt-hairline-strong);
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-section-head .button-quiet,
+:root[data-appearance="classic"] .runtime-settings .runtime-section > .panel-header .button-quiet {
+  margin-left: auto;
+}
+
+/* Rows and readouts. */
+:root[data-appearance="classic"] .runtime-settings .runtime-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 30px;
+  padding: 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-row > .setting-label {
+  min-height: 0;
+  gap: 7px;
+  color: var(--rt-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-row.is-wide {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-setting-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 30px;
+  padding: 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-setting-row:last-child,
+:root[data-appearance="classic"] .runtime-settings .runtime-row:last-child {
+  border-bottom: 0;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-setting-label {
+  flex: 0 0 auto;
+  color: var(--rt-ink-2);
+  font-size: 12.5px;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-setting-value {
+  justify-self: auto;
+  max-width: min(72ch, 100%);
+  margin-left: auto;
+  color: var(--rt-ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+:root[data-appearance="classic"] .runtime-settings .setting-input-wrap {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+:root[data-appearance="classic"] .runtime-settings .setting-input-wrap > input {
+  flex: 0 0 auto;
+  width: 92px;
+  max-width: none;
+}
+:root[data-appearance="classic"] .runtime-settings .setting-validation {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-top: 0;
+  color: var(--rt-danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+:root[data-appearance="classic"] .runtime-settings .setting-state {
+  padding: 0 5px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+:root[data-appearance="classic"] .runtime-settings .setting-state.is-default {
+  border-color: var(--rt-hairline);
+  color: var(--rt-ink-3);
+  opacity: 1;
+}
+:root[data-appearance="classic"] .runtime-settings .setting-state.is-changed {
+  border-color: color-mix(in srgb, var(--rt-gold) 42%, var(--rt-hairline));
+  background: var(--rt-gold-soft);
+  color: var(--rt-gold-ink);
+}
+
+/* InfoTip: paper bubble, amber hover — not a powder-blue chip. */
+:root[data-appearance="classic"] .runtime-settings .info-tip {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  color: var(--rt-ink-3);
+  border-radius: 2px;
+}
+:root[data-appearance="classic"] .runtime-settings .info-tip:hover,
+:root[data-appearance="classic"] .runtime-settings .info-tip:focus-visible {
+  color: var(--rt-gold-ink);
+  background: var(--rt-gold-soft);
+}
+:root[data-appearance="classic"] .runtime-settings .info-tip-bubble {
+  border: 1px solid var(--rt-hairline-strong);
+  border-radius: 2px;
+  background: var(--rt-paper);
+  color: var(--rt-ink);
+  box-shadow: none;
+  font-size: 11.5px;
+}
+:root[data-appearance="classic"] .runtime-settings .info-tip-bubble::after {
+  background: var(--rt-paper);
+  border-color: var(--rt-hairline-strong);
+}
+
+/* Buttons: 26px on the row rhythm, no shimmer sweep. */
+:root[data-appearance="classic"] .runtime-settings .button {
+  height: 26px;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 2px;
+  box-shadow: none;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+:root[data-appearance="classic"] .runtime-settings .button::before {
+  content: none;
+}
+:root[data-appearance="classic"] .runtime-settings .button:not(:disabled):hover,
+:root[data-appearance="classic"] .runtime-settings .icon-button:not(:disabled):hover,
+:root[data-appearance="classic"] .runtime-settings .button:not(:disabled):active,
+:root[data-appearance="classic"] .runtime-settings .icon-button:not(:disabled):active {
+  transform: none;
+}
+:root[data-appearance="classic"] .runtime-settings .button-secondary {
+  border-color: var(--rt-hairline-strong);
+  background: var(--rt-paper);
+  color: var(--rt-ink);
+  backdrop-filter: none;
+}
+:root[data-appearance="classic"] .runtime-settings .button-secondary:hover:not(:disabled) {
+  border-color: var(--rt-gold);
+  background: var(--rt-paper-hover);
+  color: var(--rt-ink);
+  box-shadow: none;
+}
+:root[data-appearance="classic"] .runtime-settings .button-quiet {
+  border-color: transparent;
+  background: none;
+  color: var(--rt-ink-2);
+}
+:root[data-appearance="classic"] .runtime-settings .button-quiet:hover:not(:disabled) {
+  border-color: var(--rt-hairline);
+  background: var(--rt-paper-hover);
+  color: var(--rt-ink);
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-section > .panel-header .icon-button {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border: 1px solid var(--rt-hairline);
+  border-radius: 2px;
+  background: none;
+  color: var(--rt-ink-2);
+  box-shadow: none;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-section > .panel-header .icon-button:hover:not(:disabled) {
+  border-color: var(--rt-gold);
+  background: none;
+  color: var(--rt-gold-ink);
+  box-shadow: none;
+}
+:root[data-appearance="classic"] .runtime-settings a {
+  color: inherit;
+  text-decoration: none;
+}
+:root[data-appearance="classic"] .runtime-settings a:hover {
+  color: var(--rt-ink);
+  text-decoration: none;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-update-link {
+  border-bottom: 1px solid var(--rt-gold-soft);
+  color: var(--rt-gold-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-update-link:hover {
+  border-bottom-color: var(--rt-gold);
+  color: var(--rt-gold);
+  text-decoration: none;
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-update-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+:root[data-appearance="classic"] .runtime-settings .runtime-update-result {
+  color: var(--rt-ink-2);
+  font-size: 12px;
+}
+
+/* The embedded tool panels keep their row rhythm inside the pane. */
+:root[data-appearance="classic"] .runtime-settings .error-rules-list {
+  gap: 0;
+  margin-top: 4px;
+}
+:root[data-appearance="classic"] .runtime-settings .error-rule-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--rt-hairline);
+}
+:root[data-appearance="classic"] .runtime-settings .error-rule-row:last-child {
+  border-bottom: 0;
+}
+:root[data-appearance="classic"] .runtime-settings .error-rule-name {
+  min-width: 0;
+  color: var(--rt-ink);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+:root[data-appearance="classic"] .runtime-settings .error-rule-cond {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--rt-ink-3);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}

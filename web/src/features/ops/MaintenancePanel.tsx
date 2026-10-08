@@ -3,7 +3,7 @@ import { api } from "../../api/client";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { Button, Panel, formatBytes } from "../../components/ui";
+import { Button, formatBytes } from "../../components/ui";
 
 export // Database maintenance: scheduled orphan GC + VACUUM (cron) and a manual
 // run button with the last pass summary.
@@ -35,7 +35,7 @@ function MaintenancePanel() {
       res.error_passthrough_rules
     : 0;
   return (
-    <Panel className="runtime-card runtime-tool-maintenance" id="runtime-db-maintenance">
+    <section className="runtime-section runtime-tool-maintenance" id="runtime-db-maintenance">
       <div className="panel-header">
         <strong>{t("ops.maintenance.title")}</strong>
         <span className="flex-spacer" />
@@ -74,6 +74,6 @@ function MaintenancePanel() {
           })}
         </p>
       ) : null}
-    </Panel>
+    </section>
   );
 }

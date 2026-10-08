@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { Button, Panel } from "../../components/ui";
+import { Button } from "../../components/ui";
 
 export // Factory reset: wipe all business data (channels, keys, routes, logs,
 // histories, rules) while preserving configuration. Requires typing RESET.
@@ -24,8 +24,8 @@ function FactoryResetPanel() {
     },
   });
   return (
-    <Panel
-      className="runtime-card runtime-tool-factory-reset is-danger-zone"
+    <section
+      className="runtime-section runtime-tool-factory-reset is-danger-zone"
       id="runtime-factory-reset"
     >
       <div className="panel-header">
@@ -61,6 +61,6 @@ function FactoryResetPanel() {
       {reset.error instanceof Error ? (
         <div className="inline-error">{reset.error.message}</div>
       ) : null}
-    </Panel>
+    </section>
   );
 }

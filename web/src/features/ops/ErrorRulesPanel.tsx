@@ -5,7 +5,7 @@ import type { ErrorPassRule } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { ConfirmDialog, Dialog, Field, Panel } from "../../components/ui";
+import { ConfirmDialog, Dialog, Field } from "../../components/ui";
 import { RuleEditorFooter } from "./RuleEditorFooter";
 
 export // Error passthrough rules: status/keyword → passthrough / rewrite /
@@ -33,7 +33,7 @@ function ErrorRulesPanel() {
   });
   const items = query.data?.items ?? [];
   return (
-    <Panel className="runtime-card runtime-tool-error-rules" id="runtime-error-rules">
+    <section className="runtime-section runtime-tool-error-rules" id="runtime-error-rules">
       <div className="panel-header">
         <strong>{t("ops.errorRules.title")}</strong>
         <button
@@ -116,7 +116,7 @@ function ErrorRulesPanel() {
           onClose={() => setConfirmDelete(null)}
         />
       ) : null}
-    </Panel>
+    </section>
   );
 }
 
