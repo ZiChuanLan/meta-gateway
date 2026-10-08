@@ -26,6 +26,14 @@ const SourceWatchbot = "watchbot"
 // schedule.
 const externalSyncInterval = 15 * time.Minute
 
+// externalFetchTimeout bounds the directory snapshot fetch. It is deliberately
+// shorter than collectTimeout: the snapshot is a fallback source, and a
+// directory that has gone dark must cost a round this much rather than the whole
+// client timeout it used to inherit — the round, and the operator's "collect
+// now", used to sit on a dead host for 30s before any site was read. 15s still
+// leaves the shipped multi-megabyte payload room on any usable link.
+const externalFetchTimeout = 15 * time.Second
+
 // externalCatalog is the subset of a monitoring directory's snapshot the gateway
 // reads. It carries health only: prices come from the sites themselves, which is
 // first-hand and per-group, while the directory's price is a copy of theirs.
@@ -150,6 +158,10 @@ func hostNameOf(rawURL string) string {
 // SyncExternal fetches the directory snapshot and replaces the stored one. A
 // failure keeps the previous snapshot: a directory that is temporarily
 // unreachable must not erase the readings we already have.
+//
+// An empty catalogURL means the shipped directory (DefaultCatalogURL) — the
+// scheduler passes the configured address, and this is the one place the default
+// is applied, so a deployment that never sets it keeps the behaviour it had.
 func (s *Service) SyncExternal(ctx context.Context, catalogURL string) (int, error) {
 	sites, err := s.db.Site.List()
 	if err != nil {
@@ -158,6 +170,8 @@ func (s *Service) SyncExternal(ctx context.Context, catalogURL string) (int, err
 	if strings.TrimSpace(catalogURL) == "" {
 		catalogURL = DefaultCatalogURL
 	}
+	ctx, cancel := context.WithTimeout(ctx, s.externalFetchTimeout)
+	defer cancel()
 	readings, err := FetchExternalCatalog(ctx, s.client, catalogURL, sites)
 	if err != nil {
 		return 0, err

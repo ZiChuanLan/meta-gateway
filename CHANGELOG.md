@@ -27,6 +27,17 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
   （`COMPOSE_PROJECT_NAME` 可覆盖；`docker run` 起的侧车没有该标签，回退到目录名并记一行日志）。
 - **`docker-compose.yml` 把这条挂载的两点代价写进注释**：工程名必须靠 `-p` 钉；相对宿主路径
   （`./x:/y`）在侧车里会解析成 `/work/…`，要加这类挂载就把本服务改成挂宿主机同路径。
+- **站点探针不再被一个不响应的第三方目录拖住，目录地址也能配了。** 每一轮采集的第一件事是抓第三方目录快照
+  （内置默认 `https://watchbot.cfd/api/v1/public/dashboard`），而 `Scheduler.catalogURL` 这个字段**从未被赋值**
+  —— `NewScheduler` 没有这个参数，运行设置里也没有这一项，所以注释里的「空 = 包默认」是它唯一可能的状态，目录是硬编码的。
+  后果落在效果上：那次抓取继承采集客户端的 30s 超时，而它排在站点采集**之前**，于是目录不可达时每一轮
+  （以及控制台「立即采集」不带 `site_ids` 的那次，走的是同一个 `CollectNow`）都要先空转 30s 才读到任何站点。
+  本机实测：目录抓取 **30.001s 超时**、站点采集 16ms、自动应用 0s。同一个原因让单元测试
+  `TestSchedulerCollectsOnTheConfiguredCadence` 变成联网测试（窗口 10s，在拿不到该站的网络里必然失败），
+  而它在 CI 上是绿的 —— 该站一慢，`release.yml` 的 `wait-for-ci` 就会拒绝为 tag 构建镜像。现在：
+  目录地址取新的 `SITE_PROBE_CATALOG_URL`（留空仍是内置默认，现网行为不变）；快照抓取有自己的 15s 预算，
+  目录不响应只记一行日志、**同一轮的站点采集照常进行**；测试改为指向 httptest 桩目录并断言轮次确实读了它。
+  整个 `internal/siteprobe` 包从 33s 带一个失败变成 **2.8s 全绿、且不再联网**。
 
 ### Changed
 

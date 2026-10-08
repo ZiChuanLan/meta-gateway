@@ -265,6 +265,11 @@ type Service struct {
 	logger *slog.Logger
 	now    func() time.Time
 
+	// externalFetchTimeout bounds the third-party directory snapshot (see
+	// externalFetchTimeout). It is a field rather than a constant read at the
+	// call site so a test can shrink it instead of waiting 15 seconds.
+	externalFetchTimeout time.Duration
+
 	// externalMu guards the last third-party snapshot sync, which is rate-limited
 	// independently of the site cadence.
 	externalMu       sync.Mutex
@@ -295,10 +300,11 @@ func NewService(db *store.DB, logger *slog.Logger, proxyHook func(*http.Request)
 		},
 	}
 	return &Service{
-		db:     db,
-		client: &http.Client{Timeout: collectTimeout, Transport: transport},
-		logger: logger,
-		now:    func() time.Time { return time.Now().UTC() },
+		db:                   db,
+		client:               &http.Client{Timeout: collectTimeout, Transport: transport},
+		logger:               logger,
+		now:                  func() time.Time { return time.Now().UTC() },
+		externalFetchTimeout: externalFetchTimeout,
 	}
 }
 

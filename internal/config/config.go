@@ -155,12 +155,16 @@ type Config struct {
 	// bootstrap for a hot-reloadable runtime setting, so an operator can speed
 	// the round up for sites that publish heartbeats every minute without a
 	// restart.
-	SiteProbeIntervalSeconds int    `env:"SITE_PROBE_INTERVAL_SECONDS"`
-	SiteProbeJitterSeconds   int    `env:"SITE_PROBE_JITTER_SECONDS"`
-	BackupRetentionCount     int    `env:"BACKUP_RETENTION_COUNT"`
-	BackupDir                string `env:"BACKUP_DIR"`
-	PluginsDir               string `env:"PLUGINS_DIR"`
-	PluginCatalogURL         string `env:"PLUGIN_CATALOG_URL"`
+	SiteProbeIntervalSeconds int `env:"SITE_PROBE_INTERVAL_SECONDS"`
+	SiteProbeJitterSeconds   int `env:"SITE_PROBE_JITTER_SECONDS"`
+	// SiteProbeCatalogURL is the third-party monitoring directory the scheduled
+	// third-party health snapshot is read from. Empty keeps the shipped default
+	// (siteprobe.DefaultCatalogURL).
+	SiteProbeCatalogURL  string `env:"SITE_PROBE_CATALOG_URL"`
+	BackupRetentionCount int    `env:"BACKUP_RETENTION_COUNT"`
+	BackupDir            string `env:"BACKUP_DIR"`
+	PluginsDir           string `env:"PLUGINS_DIR"`
+	PluginCatalogURL     string `env:"PLUGIN_CATALOG_URL"`
 	// PluginMarketURLs appends extra plugin market registry URLs
 	// (comma-separated; the built-in official registry is always included).
 	PluginMarketURLs []string `env:"PLUGIN_MARKET_URLS"`
@@ -451,6 +455,7 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	siteProbeCatalogURL := envStr("SITE_PROBE_CATALOG_URL", "")
 	modelChangeAutoIgnoreDays, err := envInt("MODEL_CHANGE_AUTO_IGNORE_DAYS", 0, 0, 36500)
 	if err != nil {
 		return nil, err
@@ -587,6 +592,7 @@ func Load() (*Config, error) {
 		SiteProbeRetentionDays:     siteProbeRetentionDays,
 		SiteProbeIntervalSeconds:   siteProbeIntervalSeconds,
 		SiteProbeJitterSeconds:     siteProbeJitterSeconds,
+		SiteProbeCatalogURL:        siteProbeCatalogURL,
 		BackupRetentionCount:       backupRetentionCount,
 		BackupDir:                  envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
 		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),

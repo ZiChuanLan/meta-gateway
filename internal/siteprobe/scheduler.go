@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,8 +27,9 @@ type Scheduler struct {
 	// change lands on the next one without restarting the loop.
 	intervalNanos atomic.Int64
 	jitterNanos   atomic.Int64
-	// catalogURL is the third-party directory snapshot; empty means the package
-	// default.
+	// catalogURL is the third-party directory snapshot, normally
+	// SITE_PROBE_CATALOG_URL; empty means the package default, which
+	// Service.SyncExternal applies.
 	catalogURL string
 
 	startOnce sync.Once
@@ -38,16 +40,19 @@ type Scheduler struct {
 }
 
 // NewScheduler builds the loop; Start begins firing. interval/jitter are the
-// bootstrap cadence, normally the env values resolved by runtime settings.
-func NewScheduler(service *Service, interval, jitter time.Duration, logger *slog.Logger) *Scheduler {
+// bootstrap cadence, normally the env values resolved by runtime settings, and
+// catalogURL is the third-party directory the round's snapshot sync reads
+// ("" = the shipped default).
+func NewScheduler(service *Service, interval, jitter time.Duration, catalogURL string, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	scheduler := &Scheduler{
-		service: service,
-		logger:  logger,
-		stop:    make(chan struct{}),
-		done:    make(chan struct{}),
+		service:    service,
+		logger:     logger,
+		catalogURL: strings.TrimSpace(catalogURL),
+		stop:       make(chan struct{}),
+		done:       make(chan struct{}),
 	}
 	scheduler.SetSchedule(interval, jitter)
 	return scheduler

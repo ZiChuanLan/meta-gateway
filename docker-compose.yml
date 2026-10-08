@@ -70,6 +70,10 @@ services:
       SITE_PROBE_RETENTION_DAYS: "${SITE_PROBE_RETENTION_DAYS:-7}"
       SITE_PROBE_INTERVAL_SECONDS: "${SITE_PROBE_INTERVAL_SECONDS:-900}"
       SITE_PROBE_JITTER_SECONDS: "${SITE_PROBE_JITTER_SECONDS:-120}"
+      # Third-party monitoring directory the scheduled health snapshot is read
+      # from. Empty keeps the shipped default; set it when that host is not
+      # reachable from this network (e.g. an internal mirror).
+      SITE_PROBE_CATALOG_URL: "${SITE_PROBE_CATALOG_URL:-}"
       RETRY_TIMES: "${RETRY_TIMES:-2}"
       CHANNEL_RETRY_TIMES: "${CHANNEL_RETRY_TIMES:-1}"
       CROSS_CHANNEL_FAILOVER_ENABLED: "${CROSS_CHANNEL_FAILOVER_ENABLED:-true}"

@@ -461,7 +461,8 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	})
 	siteProbeScheduler := siteprobe.NewScheduler(siteProbeService,
 		time.Duration(cfg.SiteProbeIntervalSeconds)*time.Second,
-		time.Duration(cfg.SiteProbeJitterSeconds)*time.Second, logger)
+		time.Duration(cfg.SiteProbeJitterSeconds)*time.Second,
+		cfg.SiteProbeCatalogURL, logger)
 	siteProbeScheduler.Start()
 	RegisterStopper(siteProbeScheduler.Stop)
 	NewSiteProbeHandler(db, siteProbeService, siteProbeScheduler).Register(adminGroup)
