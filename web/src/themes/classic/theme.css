@@ -5714,10 +5714,15 @@
   border-radius: var(--radius);
   padding: 14px 16px;
 }
-:root[data-appearance="classic"] .field small,
-  :root[data-appearance="classic"] .field-hint {
-    max-width: 48ch;
-  }
+/* No max-width on hints: a hint is a caption for the control above it, and that
+   control's own container already sets the measure. Capping it at 48ch made every
+   hint inside a full-width card wrap into a narrow column with the right half of
+   the card empty — visible in the probe dialog, the runtime settings cards and
+   anywhere else a hint sits in a wide row (reported 2026-10-08; one panel had
+   already patched itself with `max-width: none`). */
+:root[data-appearance="classic"] .field small {
+  max-width: 48ch;
+}
 
   /* —— Panel prose & control rhythm ——
      Every ops panel opens with a lede paragraph and may close with a quiet

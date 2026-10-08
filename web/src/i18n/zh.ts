@@ -2962,6 +2962,8 @@ export const zh: Dict = {
   "workbench.cap.kindRerank": "重排",
   "workbench.cap.kindModeration": "审核",
   "logsPage.search": "搜索模型 / 错误 / 路径 / 请求 ID",
+  "logsPage.loadLimit": "载入条数",
+  "logsPage.loadLimitOption": "{count} 条",
 
   "timeRange.label": "时间区间",
   "timeRange.preset15m": "15 分钟",

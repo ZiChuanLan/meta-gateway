@@ -56,6 +56,13 @@ const HISTOGRAM_LABELS = [
 const HISTOGRAM_SLOW_FROM = 6;
 
 /**
+ * How many rows one query may pull. The list paginates in the browser, so this
+ * is the window the operator can page through; 100 used to be the whole window,
+ * which is not enough when one incident spans a few hundred requests.
+ */
+const LOG_LIMITS = [100, 200, 500, 1000] as const;
+
+/**
  * Rows pulled for the distribution. An explicit window asks for a large sample
  * so a busy hour is not judged by its newest thousand requests; "all time"
  * stays small because it has no upper bound to narrow the scan.
@@ -381,6 +388,12 @@ export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapab
   const [upstreamIdDraft, setUpstreamIdDraft] = useState(upstreamIdParam);
   const queryParam = params.get("q")?.trim() || "";
   const [queryDraft, setQueryDraft] = useState(queryParam);
+  // How many rows one query pulls. The list paginates in the browser, so this is
+  // the window an operator can page through; 100 used to be the whole window,
+  // which is not enough when one incident spans a few hundred requests. It lives
+  // in the URL, so a shared link opens the same window.
+  const limitParam = Number(params.get("limit"));
+  const limit = (LOG_LIMITS as readonly number[]).includes(limitParam) ? limitParam : LOG_LIMITS[0];
   const [slowOnly, setSlowOnly] = useState(false);
   const [showExactFilters, setShowExactFilters] = useState(
     Boolean(modelParam || upstreamIdParam || keyIdParam),
@@ -414,7 +427,7 @@ export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapab
       q: queryParam || undefined,
       since: range.since,
       until: range.until,
-      limit: 100,
+      limit,
     }),
     [
       channelId,
@@ -425,6 +438,7 @@ export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapab
       queryParam,
       range.since,
       range.until,
+      limit,
     ],
   );
 
@@ -776,6 +790,19 @@ export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapab
               });
             }}
           >
+            {caps.upstream ? (
+              <select
+                aria-label={t("logsPage.loadLimit")}
+                value={limit}
+                onChange={(e) => setFilter({ limit: e.target.value })}
+              >
+                {LOG_LIMITS.map((value) => (
+                  <option key={value} value={value}>
+                    {t("logsPage.loadLimitOption", { count: value })}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             {caps.upstream ? (
               <select
                 aria-label={t("ops.filterChannel")}

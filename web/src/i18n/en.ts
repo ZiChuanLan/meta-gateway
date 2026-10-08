@@ -3187,6 +3187,8 @@ export const en: Dict = {
   "workbench.cap.kindRerank": "Rerank",
   "workbench.cap.kindModeration": "Moderation",
   "logsPage.search": "Search model, error, path, request ID",
+  "logsPage.loadLimit": "Rows loaded",
+  "logsPage.loadLimitOption": "{count} rows",
 
   "timeRange.label": "Time range",
   "timeRange.preset15m": "15 min",
