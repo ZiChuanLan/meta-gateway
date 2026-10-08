@@ -9901,6 +9901,26 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 .runtime-cards-grid > .is-wide-section {
   grid-column: 1 / -1;
 }
+/* A card's bottom edge is the panel's own padding. The form grid was built for a
+   page — its trailing margin separates the fields from the submit button — so
+   inside a card that 22px plus the last row's field margin left ~38px of nothing
+   under the last control. Only the last row is trimmed: in an odd-count grid the
+   second-to-last field shares its row with a sibling that keeps its margin, so
+   the row height — and the spacing between rows — is unchanged. */
+.runtime-cards-grid .runtime-rows {
+  margin-bottom: 0;
+}
+.runtime-cards-grid .runtime-rows > .field:nth-last-child(-n + 2),
+.runtime-cards-grid .runtime-rows > :last-child {
+  margin-bottom: 0;
+}
+/* A numeric setting is two or three digits wide; stretched to the column it
+   reads as an empty box. The control sits in .setting-input-wrap, so the cap goes
+   on the wrapper — capping the .field would squeeze the label with it. */
+.runtime-cards-grid .runtime-rows > .field:not(.wide) > input[type="number"],
+.runtime-cards-grid .runtime-rows > .field:not(.wide) > .setting-input-wrap:has(> input[type="number"]) {
+  max-width: 160px;
+}
 @keyframes runtime-pane-in {
   from {
     opacity: 0;
