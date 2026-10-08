@@ -21,6 +21,15 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 - **`docker-compose.yml` 把这条挂载的两点代价写进注释**：工程名必须靠 `-p` 钉；相对宿主路径
   （`./x:/y`）在侧车里会解析成 `/work/…`，要加这类挂载就把本服务改成挂宿主机同路径。
 
+### Added
+
+- **控制台「设置 → 运行设置」多了只读的「部署参数（环境变量）」卡片。** 它列出进程启动时读到的每个环境变量、
+  实际生效的取值，以及这个值是来自环境还是代码默认 —— compose 忘了透传的变量与刻意的默认值在容器里长得
+  一模一样，而「请求为什么正好 60 秒死」这类问题的答案就藏在这个区别里（例如 `OUTBOUND_HEADER_TIMEOUT_SECONDS`
+  与图像专用的 `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`）。表由 `internal/config/params.go` 的字段绑定生成，
+  `params_test.go` 解析 `config.go` 双向核对：Load 读到的每个变量都在表里、表里没有死项、绑定字段与 Load
+  的赋值一致、凭据类变量一律打码。密钥值只以打码形式下发，前端拿到的是 `••••••`。
+
 ### Verification
 
 - 本地用一个记录调用的假 `docker` 跑脚本：HEAD 的脚本是 `docker compose pull/up …`（没有 `-p`），

@@ -2416,6 +2416,13 @@ export const zh: Dict = {
   "ops.runtime.stickyTTL": "粘性 TTL（分钟）",
   "ops.runtime.stickyTTLHint": "会话绑定在未续期情况下的有效时长（1-1440）。",
   "ops.runtime.section.server": "服务与网络",
+  "ops.runtime.section.deployment": "部署参数（环境变量）",
+  "ops.runtime.deploymentLede":
+    "进程启动时读到的环境变量与它实际生效的取值，只读。标「默认」表示容器里没有这个变量——compose 没透传或 .env 没写；改这些值要改部署文件并重建容器。",
+  "ops.runtime.paramFilter": "筛选变量名",
+  "ops.runtime.paramFromEnv": "环境",
+  "ops.runtime.paramDefault": "默认",
+  "ops.runtime.paramEmpty": "没有匹配的变量",
   "ops.runtime.sectionNav": "跳转到分组",
   "ops.runtime.navGroup.routing": "路由调度",
   "ops.runtime.navGroup.health": "健康自愈",

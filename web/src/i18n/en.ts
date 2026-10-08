@@ -2622,6 +2622,13 @@ export const en: Dict = {
   "ops.runtime.stickyTTL": "Sticky TTL (minutes)",
   "ops.runtime.stickyTTLHint": "How long a session binding stays valid without renewal (1-1440).",
   "ops.runtime.section.server": "Service & network",
+  "ops.runtime.section.deployment": "Deployment parameters (env)",
+  "ops.runtime.deploymentLede":
+    'The environment variables this process read at startup and the value each one produced, read-only. "default" means the variable is not in the container — compose never passed it, or .env does not set it. Changing one needs a deployment file edit and a container rebuild.',
+  "ops.runtime.paramFilter": "Filter variables",
+  "ops.runtime.paramFromEnv": "env",
+  "ops.runtime.paramDefault": "default",
+  "ops.runtime.paramEmpty": "No matching variables",
   "ops.runtime.sectionNav": "Jump to section",
   "ops.runtime.navGroup.routing": "Routing",
   "ops.runtime.navGroup.health": "Health",

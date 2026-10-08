@@ -3695,6 +3695,61 @@ td.actions {
 .runtime-setting-row:last-of-type {
   border-bottom: 0;
 }
+/* The deployment parameters are a read-only table, not a form: three columns so
+   a long variable name cannot push its value out of alignment, and the source
+   chip stays on the right edge. */
+.runtime-param-filter {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.runtime-param-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 24rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.runtime-param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+.runtime-param-row:last-of-type {
+  border-bottom: 0;
+}
+.runtime-param-key {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.runtime-param-value {
+  justify-self: end;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.runtime-param-source {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.runtime-param-source.is-env {
+  border-color: var(--info);
+  color: var(--info);
+}
+.runtime-param-empty {
+  padding: 10px 0;
+  font-size: 12px;
+}
 .runtime-setting-label {
   color: var(--muted);
   font-size: 12px;

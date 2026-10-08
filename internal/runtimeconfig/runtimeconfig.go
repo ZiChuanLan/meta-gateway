@@ -156,6 +156,12 @@ type Snapshot struct {
 	PluginsDir     string `json:"plugins_dir"`
 	// MetricsTokenMasked shows whether a metrics token is configured ("" = none).
 	MetricsTokenMasked string `json:"metrics_token_masked"`
+	// DeploymentParameters is every environment variable the process read at
+	// startup with the value it is actually running with. Read-only: an
+	// environment variable cannot be changed without recreating the container,
+	// and this is where an operator sees what the running process really uses
+	// (a variable compose never passed is indistinguishable from a default).
+	DeploymentParameters []config.EnvParam `json:"deployment_parameters"`
 }
 
 // Appliers are optional hot-reload targets. Nil entries are skipped.
@@ -331,6 +337,8 @@ func (c *Controller) Snapshot() Snapshot {
 		BackupDir:          c.cfg.BackupDir,
 		PluginsDir:         c.cfg.PluginsDir,
 		MetricsTokenMasked: maskToken(c.cfg.MetricsToken),
+
+		DeploymentParameters: c.cfg.DeploymentParameters(),
 	}
 }
 

@@ -1229,6 +1229,17 @@ export interface UpdateCheckStatus {
   error?: string;
 }
 
+/** One environment variable the process read at startup, with the value it is
+ *  actually running with. Read-only: the environment layer is fixed for the
+ *  life of the container. */
+export interface DeploymentParameter {
+  key: string;
+  kind: string;
+  value: string;
+  from_env: boolean;
+  secret: boolean;
+}
+
 export interface RuntimeSettings {
   source: "environment" | "admin_override" | string;
   has_override: boolean;
@@ -1241,6 +1252,7 @@ export interface RuntimeSettings {
   backup_dir: string;
   plugins_dir: string;
   metrics_token_masked: string;
+  deployment_parameters: DeploymentParameter[];
 }
 
 export interface RoutingCandidate {

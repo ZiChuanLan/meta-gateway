@@ -125,3 +125,51 @@ it("keeps the local draft when the operator chooses their side", async () => {
   // The unsaved marker stays: the draft is still uncommitted.
   expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
 });
+
+it("shows the environment layer read-only, with the source of each value", async () => {
+  vi.stubGlobal(
+    "fetch",
+    runtimeFetcher(() => ({
+      ...settings({
+        // The ops group renders the check-in card too, which reads these.
+        checkin_cron: "0 8 * * *",
+        checkin_enabled: false,
+        update_check_enabled: false,
+      }),
+      deployment_parameters: [
+        {
+          key: "OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS",
+          kind: "duration",
+          value: "5m0s",
+          from_env: false,
+          secret: false,
+        },
+        {
+          key: "OUTBOUND_HEADER_TIMEOUT_SECONDS",
+          kind: "duration",
+          value: "1m0s",
+          from_env: true,
+          secret: false,
+        },
+        { key: "MASTER_KEY", kind: "string", value: "••••••", from_env: true, secret: true },
+      ],
+    })),
+  );
+  mount(<RuntimeSettingsPanel />);
+  fireEvent.click(await screen.findByRole("button", { name: /Alerts & Ops/, expanded: false }));
+
+  // Both the value and whether it came from the environment are shown: a
+  // variable compose never passed is how a request ends up dying at a ceiling
+  // nobody remembers configuring.
+  expect(await screen.findByText("OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS")).toBeInTheDocument();
+  expect(screen.getByText("5m0s")).toBeInTheDocument();
+  expect(screen.getAllByText("env", { selector: ".runtime-param-source" })).toHaveLength(2);
+  expect(screen.getAllByText("default", { selector: ".runtime-param-source" })).toHaveLength(1);
+
+  // Filtering is presentation only: the draft stays clean, so the page never
+  // asks about unsaved changes.
+  fireEvent.change(screen.getByLabelText("Filter variables"), { target: { value: "image" } });
+  expect(screen.queryByText("OUTBOUND_HEADER_TIMEOUT_SECONDS")).toBeNull();
+  expect(screen.getByText("OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS")).toBeInTheDocument();
+  expect(screen.queryByText("Unsaved changes")).toBeNull();
+});

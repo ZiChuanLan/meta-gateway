@@ -589,6 +589,10 @@ docker compose pull meta-gateway
 docker compose up -d --no-build --force-recreate meta-gateway   # 装上侧车 + 补齐 32 个变量
 ```
 
+> **想确认一次部署真的带上了某个变量，看控制台**：「设置 → 运行设置 → 部署参数（环境变量）」列出进程启动时读到的
+> 每个变量与实际取值，标「默认」的就是 compose 没传进容器的（与 `docs/reference/environment.md` 的默认值对照即可）；
+> 取值由 `internal/config/params.go` 的字段绑定生成，`params_test.go` 守着它不与 `config.go` 漂移。
+
 之后日常升级都在控制台点一下（会自动先备份数据库）。**没做过那次重建的部署，控制台会弹提示**：
 `GET /admin/self-update` 的 `deployment_step` 非空 = “这个容器的环境早于部署文件”（判据是 compose 声明的
 `SELFUPDATE_TRACK_TAG` 在不在；侧车心跳也算证据），前端据此弹出一次性提示 + 要跑的命令，执行完自动消失。

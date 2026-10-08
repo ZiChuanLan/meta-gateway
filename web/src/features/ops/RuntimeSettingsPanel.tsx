@@ -78,6 +78,7 @@ const RUNTIME_SECTION_GROUPS = [
       ["maintenance", "ops.runtime.section.maintenance"],
       ["checkin", "ops.runtime.section.checkin"],
       ["server", "ops.runtime.section.server"],
+      ["deployment", "ops.runtime.section.deployment"],
     ],
   },
   {
@@ -205,6 +206,10 @@ export function RuntimeSettingsPanel({
   // the page only when someone asks for it. The security group (self-saving
   // tools) and the danger zone fold the same way.
   const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(new Set());
+  // The deployment parameters are read-only facts read off the query, so their
+  // filter lives outside the draft: narrowing the list must not mark the page
+  // dirty or block a tab switch.
+  const [paramFilter, setParamFilter] = useState("");
   const toggleGroup = (key: string) => {
     setOpenGroups((current) => {
       const next = new Set(current);
@@ -244,6 +249,9 @@ export function RuntimeSettingsPanel({
     );
   }
   const data = query.data!;
+  const deploymentParams = (data.deployment_parameters ?? []).filter((param) =>
+    param.key.toLowerCase().includes(paramFilter.trim().toLowerCase()),
+  );
   const busy = save.isPending || reset.isPending;
   const patch = <K extends keyof RuntimeEditableSettings>(
     key: K,
@@ -1304,6 +1312,39 @@ export function RuntimeSettingsPanel({
                 {t("updates.dialogTitle")}
               </Button>
             ) : null}
+          </Panel>
+
+          {/* The environment layer: what the process actually read at startup.
+              Without it, "the gateway timed out at 60s" is unanswerable from the
+              console — the ceiling is in a deployment file, and a variable
+              compose never passed looks exactly like a deliberate default. */}
+          <Panel className="runtime-card runtime-card-deployment" id="runtime-deployment">
+            <div className="panel-header">
+              <strong>{t("ops.runtime.section.deployment")}</strong>
+            </div>
+            <p className="muted panel-lede">{t("ops.runtime.deploymentLede")}</p>
+            <input
+              className="runtime-param-filter"
+              type="search"
+              value={paramFilter}
+              placeholder={t("ops.runtime.paramFilter")}
+              aria-label={t("ops.runtime.paramFilter")}
+              onChange={(event) => setParamFilter(event.target.value)}
+            />
+            <div className="runtime-param-list">
+              {deploymentParams.map((param) => (
+                <div className="runtime-param-row" key={param.key}>
+                  <code className="runtime-param-key">{param.key}</code>
+                  <span className="runtime-param-value mono">{param.value || "—"}</span>
+                  <span className={`runtime-param-source${param.from_env ? " is-env" : ""}`}>
+                    {param.from_env ? t("ops.runtime.paramFromEnv") : t("ops.runtime.paramDefault")}
+                  </span>
+                </div>
+              ))}
+              {deploymentParams.length === 0 ? (
+                <p className="muted runtime-param-empty">{t("ops.runtime.paramEmpty")}</p>
+              ) : null}
+            </div>
           </Panel>
         </RuntimeSettingsColumns>
       </CollapsibleGroup>
