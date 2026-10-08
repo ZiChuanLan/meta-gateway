@@ -24,9 +24,9 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 ### Added
 
 - **控制台「设置 → 运行设置」多了只读的「部署参数（环境变量）」卡片。** 它列出进程启动时读到的每个环境变量、
-  实际生效的取值，以及这个值是来自环境还是代码默认 —— compose 忘了透传的变量与刻意的默认值在容器里长得
+  它取到的值，以及这个值是来自环境还是代码默认 —— compose 忘了透传的变量与刻意的默认值在容器里长得
   一模一样，而「请求为什么正好 60 秒死」这类问题的答案就藏在这个区别里（例如 `OUTBOUND_HEADER_TIMEOUT_SECONDS`
-  与图像专用的 `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`）。表由 `internal/config/params.go` 的字段绑定生成，
+  与图像专用的 `OUTBOUND_IMAGE_HEADER_TIMEOUT_SECONDS`）。能被「运行设置」覆盖的项以覆盖值为准。表由 `internal/config/params.go` 的字段绑定生成，
   `params_test.go` 解析 `config.go` 双向核对：Load 读到的每个变量都在表里、表里没有死项、绑定字段与 Load
   的赋值一致、凭据类变量一律打码。密钥值只以打码形式下发，前端拿到的是 `••••••`。
 

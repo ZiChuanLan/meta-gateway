@@ -2624,7 +2624,7 @@ export const en: Dict = {
   "ops.runtime.section.server": "Service & network",
   "ops.runtime.section.deployment": "Deployment parameters (env)",
   "ops.runtime.deploymentLede":
-    'The environment variables this process read at startup and the value each one produced, read-only. "default" means the variable is not in the container — compose never passed it, or .env does not set it. Changing one needs a deployment file edit and a container rebuild.',
+    'The environment variables this process read at startup and the value each one produced, read-only. "default" means the variable is not in the container — compose never passed it, or .env does not set it; where Runtime settings override one, the override wins. Changing a variable needs a deployment file edit and a container rebuild.',
   "ops.runtime.paramFilter": "Filter variables",
   "ops.runtime.paramFromEnv": "env",
   "ops.runtime.paramDefault": "default",
