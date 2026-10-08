@@ -139,6 +139,14 @@ type Editable struct {
 	// that polls every 15 minutes gains nothing from a faster round.
 	SiteProbeIntervalSeconds int `json:"site_probe_interval_seconds"`
 	SiteProbeJitterSeconds   int `json:"site_probe_jitter_seconds"`
+	// KeepaliveEnabled is the keepalive master switch; the per-site window and
+	// the per-channel switch live in the database, because the window is the
+	// site's own rule (15 days here, 30 there). DefaultIdleDays is the fallback
+	// window for a site that was never given one, and CheckIntervalSeconds is how
+	// often a round asks whether anything is due.
+	KeepaliveEnabled              bool `json:"keepalive_enabled"`
+	KeepaliveCheckIntervalSeconds int  `json:"keepalive_check_interval_seconds"`
+	KeepaliveDefaultIdleDays      int  `json:"keepalive_default_idle_days"`
 	// Outbound client limits. They are runtime settings because the header
 	// ceiling is what decides whether a slow upstream dies at 60s: the image
 	// endpoints needed 5 minutes and the fix used to require a .env edit and a
@@ -237,6 +245,9 @@ type Appliers struct {
 	// loop only reads pages the sites publish themselves, so the only knobs are
 	// how often to read them.
 	SetSiteProbeSchedule func(interval, jitter time.Duration)
+	// SetKeepalive hot-applies the keepalive master switch, its round cadence
+	// and the fallback window for a site without one.
+	SetKeepalive func(enabled bool, checkInterval time.Duration, defaultIdleDays int)
 	// SetChannelRetryTimes hot-applies the same-key re-send count.
 	SetChannelRetryTimes func(times int)
 }
@@ -301,6 +312,11 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		// setting, so an operator can speed the round up without a restart.
 		SiteProbeIntervalSeconds: cfg.SiteProbeIntervalSeconds,
 		SiteProbeJitterSeconds:   cfg.SiteProbeJitterSeconds,
+		// Keepalive: off until an operator turns it on, and the window fallback
+		// comes from the environment so a deployment can state its own default.
+		KeepaliveEnabled:              false,
+		KeepaliveCheckIntervalSeconds: cfg.KeepaliveCheckIntervalSeconds,
+		KeepaliveDefaultIdleDays:      cfg.KeepaliveDefaultIdleDays,
 		// Outbound limits: env bootstrap, same contract as the site-probe cadence.
 		OutboundConnectTimeoutSeconds:     int(cfg.OutboundConnectTimeout / time.Second),
 		OutboundHeaderTimeoutSeconds:      int(cfg.OutboundResponseHeaderTimeout / time.Second),
@@ -445,6 +461,9 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		DefaultModelSyncMode:              next.DefaultModelSyncMode,
 		SiteProbeIntervalSeconds:          unsetIfZero(next.SiteProbeIntervalSeconds),
 		SiteProbeJitterSeconds:            next.SiteProbeJitterSeconds,
+		KeepaliveEnabled:                  next.KeepaliveEnabled,
+		KeepaliveCheckIntervalSeconds:     unsetIfZero(next.KeepaliveCheckIntervalSeconds),
+		KeepaliveDefaultIdleDays:          next.KeepaliveDefaultIdleDays,
 		OutboundConnectTimeoutSeconds:     next.OutboundConnectTimeoutSeconds,
 		OutboundHeaderTimeoutSeconds:      next.OutboundHeaderTimeoutSeconds,
 		OutboundImageHeaderTimeoutSeconds: next.OutboundImageHeaderTimeoutSeconds,
@@ -667,6 +686,14 @@ func (c *Controller) applyWithError(values Editable) error {
 			time.Duration(values.SiteProbeIntervalSeconds)*time.Second,
 			time.Duration(values.SiteProbeJitterSeconds)*time.Second,
 		)
+	}
+	// Keepalive: the switch, the round cadence and the fallback window all apply
+	// without a restart. The loop re-reads them every wake, so turning it off
+	// stops the next round rather than the one after a restart.
+	if c.appliers.SetKeepalive != nil {
+		c.appliers.SetKeepalive(values.KeepaliveEnabled,
+			time.Duration(values.KeepaliveCheckIntervalSeconds)*time.Second,
+			values.KeepaliveDefaultIdleDays)
 	}
 	// Outbound limits hot reload: the relays and every other outbound holder keep
 	// one client whose transport is rebuilt here, so the next request picks up the
@@ -1010,6 +1037,14 @@ func Validate(values Editable) error {
 	}
 	if values.SiteProbeIntervalSeconds > 0 && values.SiteProbeJitterSeconds > values.SiteProbeIntervalSeconds {
 		return fmt.Errorf("site_probe_jitter_seconds must not exceed site_probe_interval_seconds")
+	}
+	// Keepalive: a round cadence below a minute would wake up for nothing, and a
+	// window is a number of days a site states (0 = the deployment default).
+	if values.KeepaliveCheckIntervalSeconds != 0 && (values.KeepaliveCheckIntervalSeconds < 60 || values.KeepaliveCheckIntervalSeconds > 86400) {
+		return fmt.Errorf("keepalive_check_interval_seconds must be between 60 and 86400")
+	}
+	if values.KeepaliveDefaultIdleDays < 0 || values.KeepaliveDefaultIdleDays > 3650 {
+		return fmt.Errorf("keepalive_default_idle_days must be between 0 and 3650")
 	}
 	// Outbound limits: 0 means "deployment default", so the floor is 0 and the
 	// ceilings keep a typo from turning every request into an instant failure.

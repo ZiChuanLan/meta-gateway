@@ -118,7 +118,50 @@ func (s *Service) recordMemberSuccess(channelID int64) {
 // credential that served it (empty/0 when the attempt failed before reaching a
 // key): the fingerprint identifies the key material, the id names the row the
 // console shows. The secret itself is never passed here.
+// markRealCall records the moment the upstream last received a request on this
+// channel — the clock a site's "no call for N days" ban counts against, and the
+// input the keepalive scheduler reads.
+//
+// It is called from recordAttempt, the one place every attempt passes through,
+// so client traffic, model probes and keepalives all feed one clock with no
+// per-path wiring to forget. An HTTP status is the test for "it arrived": a
+// transport failure (no status) never reached the upstream, while a 429 arrived
+// just as much as a 200 did.
+//
+// The write is throttled per channel in memory: the window is measured in days,
+// and one UPDATE per attempt would serialise SQLite's single writer for a value
+// a minute-old row already answers.
+func (s *Service) markRealCall(channelID int64, at time.Time) {
+	if channelID <= 0 || s.db == nil {
+		return
+	}
+	s.realCallMu.Lock()
+	if s.lastRealCallAt == nil {
+		s.lastRealCallAt = make(map[int64]time.Time)
+	}
+	if last, ok := s.lastRealCallAt[channelID]; ok && at.Sub(last) < realCallMarkInterval {
+		s.realCallMu.Unlock()
+		return
+	}
+	s.lastRealCallAt[channelID] = at
+	s.realCallMu.Unlock()
+
+	if err := s.db.Channel.MarkRealCall(channelID, at); err != nil {
+		log.Printf("proxy: mark real call channel=%d: %v", channelID, err)
+	}
+}
+
+// realCallMarkInterval is how stale the recorded clock may be. A minute keeps a
+// 15-day window exact while collapsing a burst of traffic into a single write.
+const realCallMarkInterval = time.Minute
+
 func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, attempt int, result *relay.Result, category string, keyFP string, keyID int64) {
+	// The idle clock starts here, before the probe early-return below: a probe is
+	// synthetic to us but it is a real request to the site, and it resets the
+	// same counter a client request would.
+	if result != nil && result.StatusCode > 0 {
+		s.markRealCall(candidate.Channel.ID, s.now())
+	}
 	// Probes are synthetic; logging them would flood the proxy log with
 	// traffic no client asked for. Their outcome lives in probe_results.
 	if req.Probe {

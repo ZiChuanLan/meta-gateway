@@ -88,8 +88,15 @@ type Service struct {
 	slowRelay Relay
 	// nativeResponsesMiss records the channels that answered 404/405 for
 	// /v1/responses, so the native probe is paid once instead of per request.
-	nativeResponsesMu           sync.Mutex
-	nativeResponsesMiss         map[int64]time.Time
+	nativeResponsesMu   sync.Mutex
+	nativeResponsesMiss map[int64]time.Time
+	// lastRealCallAt throttles the write of channels.last_real_call_at, the
+	// clock a site's "no call for N days" ban counts against. In memory on
+	// purpose: the window is measured in days, and a write per attempt would
+	// serialise SQLite's single writer for a value a one-minute-old row already
+	// answers.
+	realCallMu                  sync.Mutex
+	lastRealCallAt              map[int64]time.Time
 	db                          *store.DB
 	enc                         *crypto.Encrypter
 	retryTimes                  atomic.Int64

@@ -109,9 +109,94 @@ type KeepaliveConfig struct {
 	QuietHours       string
 }
 
-// KeepaliveReady reports whether this channel should be called now given how
-// long it has been idle. Zero idle days means "no window configured", which is
-// never ready — an unconfigured site must not be pinged.
+// IdleSince is the moment the idle clock starts: the last real call, or the
+// channel's creation when there has never been one.
+func (t KeepaliveTarget) IdleSince(now time.Time) time.Time {
+	if t.LastCallAt != nil {
+		return *t.LastCallAt
+	}
+	if !t.CreatedAt.IsZero() {
+		return t.CreatedAt
+	}
+	return now
+}
+
+// IdleDays is how long this account has gone without a call, which is what the
+// site's ban counts.
+func (t KeepaliveTarget) IdleDays(now time.Time) float64 {
+	return now.Sub(t.IdleSince(now)).Hours() / 24
+}
+
+// InQuietHours reports whether now falls inside a "22:00-07:00" window, during
+// which a keepalive is deferred.
+//
+// The comparison uses the time's own location, so "22:00" means 22:00 where the
+// process runs. That is the honest reading of a setting an operator types next
+// to their own clock, and it is stated in the console rather than guessed per
+// site: a window is a property of the operator's night, not of the upstream.
+// Empty, malformed or degenerate values never match, because a typo must not
+// silently switch a keepalive off.
+func InQuietHours(spec string, now time.Time) bool {
+	start, end, ok := parseQuietHours(spec)
+	if !ok || start == end {
+		return false
+	}
+	minute := now.Hour()*60 + now.Minute()
+	if start < end {
+		return minute >= start && minute < end
+	}
+	// Wrapping midnight (22:00-07:00).
+	return minute >= start || minute < end
+}
+
+// ValidQuietHours reports whether a quiet-hours spec is well formed AND can ever
+// match. It is the console's validation and shares the parser with
+// InQuietHours, so the two cannot disagree about what "valid" means.
+//
+// A degenerate window (00:00-00:00) parses but never matches; treating it as
+// invalid is the difference between "rejected, fix your typo" and "saved,
+// silently does nothing".
+func ValidQuietHours(spec string) bool {
+	if strings.TrimSpace(spec) == "" {
+		return true
+	}
+	start, end, ok := parseQuietHours(spec)
+	return ok && start != end
+}
+
+func parseQuietHours(spec string) (int, int, bool) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return 0, 0, false
+	}
+	parts := strings.SplitN(spec, "-", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	start, okStart := parseClock(parts[0])
+	end, okEnd := parseClock(parts[1])
+	if !okStart || !okEnd {
+		return 0, 0, false
+	}
+	return start, end, true
+}
+
+func parseClock(raw string) (int, bool) {
+	fields := strings.Split(strings.TrimSpace(raw), ":")
+	if len(fields) != 2 {
+		return 0, false
+	}
+	hour, errHour := strconv.Atoi(fields[0])
+	minute, errMinute := strconv.Atoi(fields[1])
+	if errHour != nil || errMinute != nil || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return 0, false
+	}
+	return hour*60 + minute, true
+}
+
+// Ready reports whether this channel should be called now, given how long it has
+// been idle. Zero idle days means "no window configured", which is never ready —
+// a channel nobody gave a window to must not be pinged.
 func (k KeepaliveConfig) Ready(idleDays float64) bool {
 	if !k.Enabled || k.IdleDays <= 0 {
 		return false
@@ -142,6 +227,7 @@ type KeepaliveEvent struct {
 	ID           int64     `json:"id"`
 	CredentialID int64     `json:"credential_id"`
 	SiteID       int64     `json:"site_id"`
+	SiteName     string    `json:"site_name"`
 	ChannelID    int64     `json:"channel_id"`
 	ChannelName  string    `json:"channel_name"`
 	Model        string    `json:"model"`
@@ -172,6 +258,10 @@ type KeepaliveTarget struct {
 	// credential. nil means "never called" — which is not the same as "idle
 	// forever", so it is reported rather than treated as day zero.
 	LastCallAt *time.Time
+	// CreatedAt is the channel's own age, the idle clock's floor when there has
+	// never been a call: a channel added yesterday must not be called today just
+	// because it has no history.
+	CreatedAt time.Time
 	// SendsToday counts this credential's successful keepalive calls since UTC
 	// midnight, for the daily cap.
 	SendsToday int

@@ -27,6 +27,7 @@ import (
 	"github.com/lan/meta-gateway/internal/exchange"
 	"github.com/lan/meta-gateway/internal/financesweep"
 	"github.com/lan/meta-gateway/internal/healthsweep"
+	"github.com/lan/meta-gateway/internal/keepalive"
 	"github.com/lan/meta-gateway/internal/livetrace"
 	"github.com/lan/meta-gateway/internal/maintenance"
 	"github.com/lan/meta-gateway/internal/modelcatalog"
@@ -448,6 +449,21 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	probeScheduler := probe.NewScheduler(db, probeService, probe.Schedule{}, logger, nil)
 	RegisterStopper(probeScheduler.Stop)
 
+	// Keepalive: one small call to an account that has gone quiet, before the
+	// site's own "no call for N days" rule becomes a ban. It shares the probe's
+	// call plan (internal/callplan) so a site that bans probing is called in the
+	// shape it asked for, and it is idle-driven because the window is a property
+	// of the site (15 days here, 30 there). Off until an operator turns it on.
+	keepaliveService := keepalive.NewService(db, proxyService, webhookNotifier, logger)
+	keepaliveService.SetConfig(keepalive.Config{
+		Interval:        time.Duration(cfg.KeepaliveCheckIntervalSeconds) * time.Second,
+		DefaultIdleDays: cfg.KeepaliveDefaultIdleDays,
+	})
+	keepaliveCtx, stopKeepalive := context.WithCancel(context.Background())
+	go keepaliveService.Run(keepaliveCtx)
+	RegisterStopper(stopKeepalive)
+	NewKeepaliveHandler(db, keepaliveService).Register(adminGroup)
+
 	// External site probe sources: read the probe data a public-benefit site
 	// publishes itself (Uptime Kuma status page / New-API price table) so
 	// availability can be judged without spending upstream tokens. Collection is
@@ -595,6 +611,15 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			// settings change takes effect on the next one.
 			SetSiteProbeSchedule: func(interval, jitter time.Duration) {
 				siteProbeScheduler.SetSchedule(interval, jitter)
+			},
+			// Keepalive master switch + cadence + fallback window. The loop re-reads
+			// these every wake, so turning the switch off stops the next round.
+			SetKeepalive: func(enabled bool, checkInterval time.Duration, defaultIdleDays int) {
+				keepaliveService.SetConfig(keepalive.Config{
+					Enabled:         enabled,
+					Interval:        checkInterval,
+					DefaultIdleDays: defaultIdleDays,
+				})
 			},
 			// Outbound limits hot reload. The two relays share one client each, so the
 			// transport underneath them is rebuilt here and the next request picks up

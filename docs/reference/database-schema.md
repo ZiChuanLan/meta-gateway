@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **126** 个 `.sql` 文件，其中 **126** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **127** 个 `.sql` 文件，其中 **127** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -26,7 +26,7 @@
 
 ## 表
 
-共 **57** 个表。
+共 **58** 个表。
 
 ### admin_totp · 4 列
 
@@ -128,7 +128,7 @@
 | `reason` | TEXT | 是 | '' | — |
 | `created_at` | TEXT | 是 | — | — |
 
-### channels · 42 列
+### channels · 46 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -174,6 +174,10 @@
 | `upstream_path_map` | TEXT | 是 | '' | — |
 | `upstream_request_map` | TEXT | 是 | '' | — |
 | `upstream_response_map` | TEXT | 是 | '' | — |
+| `call_policy` | TEXT | 是 | '' | — |
+| `keepalive_enabled` | INTEGER | — | — | — |
+| `keepalive_idle_days` | INTEGER | 是 | 0 | — |
+| `last_real_call_at` | TEXT | — | — | — |
 
 ### checkin_batch_state · 2 列
 
@@ -300,6 +304,24 @@
 | `enabled` | INTEGER | 是 | 1 | — |
 | `created_at` | TEXT | 是 | — | — |
 | `updated_at` | TEXT | 是 | — | — |
+
+### keepalive_events · 13 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `credential_id` | INTEGER | 是 | 0 | — |
+| `site_id` | INTEGER | 是 | 0 | — |
+| `site_name` | TEXT | 是 | '' | — |
+| `channel_id` | INTEGER | 是 | — | — |
+| `channel_name` | TEXT | 是 | '' | — |
+| `model` | TEXT | 是 | '' | — |
+| `form` | TEXT | 是 | '' | — |
+| `reason` | TEXT | 是 | '' | — |
+| `ok` | INTEGER | 是 | 0 | — |
+| `status_code` | INTEGER | 是 | 0 | — |
+| `error` | TEXT | 是 | '' | — |
+| `created_at` | TEXT | 是 | datetime('now') | — |
 
 ### key_groups · 9 列
 
@@ -485,7 +507,7 @@
 | `created_at` | TEXT | 是 | — | — |
 | `last_used_at` | TEXT | — | — | — |
 
-### probe_results · 9 列
+### probe_results · 10 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -498,6 +520,7 @@
 | `latency_ms` | INTEGER | — | — | — |
 | `error` | TEXT | — | — | — |
 | `probed_at` | TEXT | 是 | — | — |
+| `form` | TEXT | 是 | '' | — |
 
 ### probe_tasks · 11 列
 
@@ -635,7 +658,7 @@
 | `image_edit_shim` | INTEGER | 是 | 0 | — |
 | `sticky_session` | INTEGER | — | — | — |
 
-### runtime_settings · 67 列
+### runtime_settings · 70 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -706,6 +729,9 @@
 | `outbound_tls_timeout_seconds` | INTEGER | 是 | 0 | — |
 | `outbound_max_idle_conns` | INTEGER | 是 | 0 | — |
 | `outbound_max_idle_conns_per_host` | INTEGER | 是 | 0 | — |
+| `keepalive_enabled` | INTEGER | 是 | 0 | — |
+| `keepalive_check_interval_seconds` | INTEGER | 是 | 0 | — |
+| `keepalive_default_idle_days` | INTEGER | 是 | 0 | — |
 
 ### schema_migrations · 2 列
 
@@ -785,7 +811,7 @@
 | `price_unparsed` | INTEGER | 是 | 0 | — |
 | `price_currency_symbol` | TEXT | 是 | '' | — |
 
-### sites · 14 列
+### sites · 23 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -803,6 +829,15 @@
 | `probe_last_run_at` | TEXT | — | — | — |
 | `probe_last_error` | TEXT | 是 | '' | — |
 | `probe_auto` | INTEGER | 是 | 1 | — |
+| `call_policy` | TEXT | 是 | '' | — |
+| `keepalive_enabled` | INTEGER | 是 | 0 | — |
+| `keepalive_idle_days` | INTEGER | 是 | 0 | — |
+| `keepalive_safety_margin_days` | INTEGER | 是 | 2 | — |
+| `keepalive_model` | TEXT | 是 | '' | — |
+| `keepalive_prompt` | TEXT | 是 | '' | — |
+| `keepalive_max_tokens` | INTEGER | 是 | 0 | — |
+| `keepalive_daily_cap` | INTEGER | 是 | 0 | — |
+| `keepalive_quiet_hours` | TEXT | 是 | '' | — |
 
 ### team_code_redemptions · 6 列
 
@@ -968,7 +1003,7 @@
 
 ## 索引
 
-共 **69** 个索引。
+共 **71** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -999,6 +1034,8 @@
 | `downstream_keys_user` | `downstream_keys` | — |
 | `idx_downstream_keys_token` | `downstream_keys` | — |
 | `idx_error_rules_enabled` | `error_passthrough_rules` | — |
+| `idx_keepalive_events_channel` | `keepalive_events` | — |
+| `idx_keepalive_events_credential` | `keepalive_events` | — |
 | `idx_model_capabilities_kind` | `model_capabilities` | — |
 | `idx_model_changes_channel_status` | `model_changes` | — |
 | `idx_model_health_probed` | `model_health` | — |

@@ -7,7 +7,7 @@
 默认值列来自 `internal/config/config.go` 里的字面量。显示为空表示该变量没有字面量默认值（例如 `MASTER_KEY` 必须显式提供）；显示为包限定名（如 `time.Minute`）表示默认值在代码里是计算得出的。
 必填项（`ADMIN_TOKEN`、`MASTER_KEY`）由启动校验强制，缺失会让进程直接退出——compose 文件刻意没有兜底凭据。
 
-共 **97** 个环境变量。
+共 **99** 个环境变量。
 
 | 变量 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -45,6 +45,8 @@
 | `HEALTH_SWEEP_JITTER_SECONDS` | 整数 | 30 | HealthSweepJitterSeconds is the per-round random jitter ceiling. |
 | `HEALTH_SWEEP_TIMEOUT_SECONDS` | 整数 | 15 | HealthSweepTimeoutSeconds bounds one probe. |
 | `HTTP_ADDR` | 字符串 | :4100 | — |
+| `KEEPALIVE_CHECK_INTERVAL_SECONDS` | 整数 | 3600 | KeepaliveCheckIntervalSeconds / KeepaliveDefaultIdleDays are the env bootstrap for the hot-reloadable keepalive settings: how often a round asks whether anything is due, and the window used by a site that was never given one. The per-site window itself is data, not configuration — 15 days here and 30 days there is the site's rule, not the deployment's. |
+| `KEEPALIVE_DEFAULT_IDLE_DAYS` | 整数 | 15 | — |
 | `MASTER_KEY` | 字符串 | "" | — |
 | `MAX_ADMIN_BODY_BYTES` | 整数 | — | — |
 | `MAX_HEADER_BYTES` | 整数 | — | — |
@@ -112,6 +114,6 @@
 ## 怎么读这张表
 
 - **类型** 列决定值的写法：`逗号分隔列表` 不是 JSON 数组，`整数（秒）` 是秒数而不是 Go duration 字符串。
-- **说明** 列取自 `Config` 结构体字段的文档注释。本表共 97 个变量，42 个在代码里带注释，其余 55 个显示为 `—`——那是代码里的文档缺口，不是生成器失败。
+- **说明** 列取自 `Config` 结构体字段的文档注释。本表共 99 个变量，43 个在代码里带注释，其余 56 个显示为 `—`——那是代码里的文档缺口，不是生成器失败。
 - `0` 在多数保留期与阈值项里表示「关闭该功能」，具体见各项说明。
 

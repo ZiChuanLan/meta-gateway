@@ -92,7 +92,7 @@ func (s *ChannelStore) KeepaliveTargets(globalIdleDays int) ([]domain.KeepaliveT
 		COALESCE(site.keepalive_model, ''), COALESCE(site.keepalive_prompt, ''),
 		COALESCE(site.keepalive_max_tokens, 0), COALESCE(site.keepalive_daily_cap, 0),
 		COALESCE(site.keepalive_quiet_hours, ''),
-		c.models_csv, c.last_real_call_at
+		c.models_csv, c.last_real_call_at, c.created_at
 		FROM channels c
 		LEFT JOIN sites site ON site.id = c.site_id
 		WHERE c.status = ?
@@ -112,7 +112,7 @@ func (s *ChannelStore) KeepaliveTargets(globalIdleDays int) ([]domain.KeepaliveT
 		var lastCall sql.NullString
 		if err := rows.Scan(&t.ChannelID, &t.ChannelName, &t.SiteID, &t.SiteName, &t.CredentialID,
 			&policy, &enabled, &idleDays, &margin, &model, &prompt, &maxTokens, &dailyCap, &quiet,
-			&modelsCSV, &lastCall); err != nil {
+			&modelsCSV, &lastCall, scanTime(&t.CreatedAt)); err != nil {
 			return nil, fmt.Errorf("keepalive target scan: %w", err)
 		}
 		t.Policy = domain.NormalizeCallPolicy(policy)
@@ -221,9 +221,9 @@ func (s *ChannelStore) keepaliveSendsToday() (map[int64]int, error) {
 // RecordKeepaliveEvent appends one keepalive call to the footprint log.
 func (s *ChannelStore) RecordKeepaliveEvent(event domain.KeepaliveEvent) error {
 	_, err := s.db.Exec(`INSERT INTO keepalive_events
-		(credential_id, site_id, channel_id, channel_name, model, form, reason, ok, status_code, error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		event.CredentialID, event.SiteID, event.ChannelID, event.ChannelName, event.Model,
+		(credential_id, site_id, site_name, channel_id, channel_name, model, form, reason, ok, status_code, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		event.CredentialID, event.SiteID, event.SiteName, event.ChannelID, event.ChannelName, event.Model,
 		event.Form, event.Reason, boolInt(event.OK), event.StatusCode, event.Error)
 	if err != nil {
 		return fmt.Errorf("keepalive event: %w", err)
@@ -237,7 +237,7 @@ func (s *ChannelStore) RecentKeepaliveEvents(limit int) ([]domain.KeepaliveEvent
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
-	rows, err := s.db.Query(`SELECT id, credential_id, site_id, channel_id, channel_name, model,
+	rows, err := s.db.Query(`SELECT id, credential_id, site_id, site_name, channel_id, channel_name, model,
 			form, reason, ok, status_code, error, created_at
 		FROM keepalive_events ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
@@ -248,7 +248,7 @@ func (s *ChannelStore) RecentKeepaliveEvents(limit int) ([]domain.KeepaliveEvent
 	for rows.Next() {
 		var event domain.KeepaliveEvent
 		var ok int
-		if err := rows.Scan(&event.ID, &event.CredentialID, &event.SiteID, &event.ChannelID,
+		if err := rows.Scan(&event.ID, &event.CredentialID, &event.SiteID, &event.SiteName, &event.ChannelID,
 			&event.ChannelName, &event.Model, &event.Form, &event.Reason, &ok, &event.StatusCode,
 			&event.Error, scanTime(&event.CreatedAt)); err != nil {
 			return nil, fmt.Errorf("keepalive event scan: %w", err)

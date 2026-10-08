@@ -70,6 +70,12 @@ services:
       SITE_PROBE_RETENTION_DAYS: "${SITE_PROBE_RETENTION_DAYS:-7}"
       SITE_PROBE_INTERVAL_SECONDS: "${SITE_PROBE_INTERVAL_SECONDS:-900}"
       SITE_PROBE_JITTER_SECONDS: "${SITE_PROBE_JITTER_SECONDS:-120}"
+      # Keepalive: the env bootstrap for the hot-reloadable runtime settings
+      # (round cadence and the fallback window). The per-site window itself is
+      # data — 15 days here and 30 there is the site's rule — and the master
+      # switch lives in the console and defaults to off.
+      KEEPALIVE_CHECK_INTERVAL_SECONDS: "${KEEPALIVE_CHECK_INTERVAL_SECONDS:-3600}"
+      KEEPALIVE_DEFAULT_IDLE_DAYS: "${KEEPALIVE_DEFAULT_IDLE_DAYS:-15}"
       # Third-party monitoring directory the scheduled health snapshot is read
       # from. Empty keeps the shipped default; set it when that host is not
       # reachable from this network (e.g. an internal mirror).

@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **232** 条注册、**187** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **237** 条注册、**192** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -207,6 +207,16 @@
 | 方法 | 路径 | handler |
 | --- | --- | --- |
 | `Get` | `/admin/healthz` | — |
+
+## /admin/keepalive · 5 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/keepalive` | status |
+| `Post` | `/admin/keepalive/channels/{id}/send` | send |
+| `Get` | `/admin/keepalive/events` | events |
+| `Post` | `/admin/keepalive/run` | run |
+| `Put` | `/admin/keepalive/sites/{id}` | updateSite |
 
 ## /admin/landing · 1 条
 

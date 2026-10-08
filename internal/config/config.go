@@ -157,6 +157,13 @@ type Config struct {
 	// restart.
 	SiteProbeIntervalSeconds int `env:"SITE_PROBE_INTERVAL_SECONDS"`
 	SiteProbeJitterSeconds   int `env:"SITE_PROBE_JITTER_SECONDS"`
+	// KeepaliveCheckIntervalSeconds / KeepaliveDefaultIdleDays are the env
+	// bootstrap for the hot-reloadable keepalive settings: how often a round asks
+	// whether anything is due, and the window used by a site that was never given
+	// one. The per-site window itself is data, not configuration — 15 days here
+	// and 30 days there is the site's rule, not the deployment's.
+	KeepaliveCheckIntervalSeconds int `env:"KEEPALIVE_CHECK_INTERVAL_SECONDS"`
+	KeepaliveDefaultIdleDays      int `env:"KEEPALIVE_DEFAULT_IDLE_DAYS"`
 	// SiteProbeCatalogURL is the third-party monitoring directory the scheduled
 	// third-party health snapshot is read from. Empty keeps the shipped default
 	// (siteprobe.DefaultCatalogURL).
@@ -455,6 +462,14 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	keepaliveCheckIntervalSeconds, err := envInt("KEEPALIVE_CHECK_INTERVAL_SECONDS", 3600, 60, 86400)
+	if err != nil {
+		return nil, err
+	}
+	keepaliveDefaultIdleDays, err := envInt("KEEPALIVE_DEFAULT_IDLE_DAYS", 15, 0, 3650)
+	if err != nil {
+		return nil, err
+	}
 	siteProbeCatalogURL := envStr("SITE_PROBE_CATALOG_URL", "")
 	modelChangeAutoIgnoreDays, err := envInt("MODEL_CHANGE_AUTO_IGNORE_DAYS", 0, 0, 36500)
 	if err != nil {
@@ -587,27 +602,29 @@ func Load() (*Config, error) {
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,
 		AuditRetentionRows: auditRows, HealthHistoryRetentionDays: healthHistoryDays,
 		BalanceHistoryRetentionDays: balanceHistoryDays, DecisionSnapshotRetentionDays: decisionSnapshotDays,
-		ModelChangeRetentionDays:   modelChangeRetentionDays,
-		ModelChangeAutoIgnoreDays:  modelChangeAutoIgnoreDays,
-		SiteProbeRetentionDays:     siteProbeRetentionDays,
-		SiteProbeIntervalSeconds:   siteProbeIntervalSeconds,
-		SiteProbeJitterSeconds:     siteProbeJitterSeconds,
-		SiteProbeCatalogURL:        siteProbeCatalogURL,
-		BackupRetentionCount:       backupRetentionCount,
-		BackupDir:                  envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
-		PluginsDir:                 envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
-		PluginCatalogURL:           envStr("PLUGIN_CATALOG_URL", ""),
-		ModelCatalogSources:        modelCatalogSources,
-		ModelCatalogInterval:       time.Duration(modelCatalogHours) * time.Hour,
-		ModelCatalogSyncPrices:     modelCatalogPrices,
-		PluginMarketURLs:           envList("PLUGIN_MARKET_URLS"),
-		ExchangeAllowSecretExport:  exchangeAllowSecretExport,
-		HealthSweepEnabled:         healthSweepEnabled,
-		HealthSweepIntervalSeconds: healthSweepInterval,
-		HealthSweepJitterSeconds:   healthSweepJitter,
-		HealthSweepDegradedMs:      healthSweepDegraded,
-		HealthSweepConcurrency:     healthSweepConcurrency,
-		HealthSweepTimeoutSeconds:  healthSweepTimeout,
+		ModelChangeRetentionDays:      modelChangeRetentionDays,
+		ModelChangeAutoIgnoreDays:     modelChangeAutoIgnoreDays,
+		SiteProbeRetentionDays:        siteProbeRetentionDays,
+		SiteProbeIntervalSeconds:      siteProbeIntervalSeconds,
+		SiteProbeJitterSeconds:        siteProbeJitterSeconds,
+		KeepaliveCheckIntervalSeconds: keepaliveCheckIntervalSeconds,
+		KeepaliveDefaultIdleDays:      keepaliveDefaultIdleDays,
+		SiteProbeCatalogURL:           siteProbeCatalogURL,
+		BackupRetentionCount:          backupRetentionCount,
+		BackupDir:                     envStr("BACKUP_DIR", filepath.Join(dataDir, "backups")),
+		PluginsDir:                    envStr("PLUGINS_DIR", filepath.Join(dataDir, "plugins")),
+		PluginCatalogURL:              envStr("PLUGIN_CATALOG_URL", ""),
+		ModelCatalogSources:           modelCatalogSources,
+		ModelCatalogInterval:          time.Duration(modelCatalogHours) * time.Hour,
+		ModelCatalogSyncPrices:        modelCatalogPrices,
+		PluginMarketURLs:              envList("PLUGIN_MARKET_URLS"),
+		ExchangeAllowSecretExport:     exchangeAllowSecretExport,
+		HealthSweepEnabled:            healthSweepEnabled,
+		HealthSweepIntervalSeconds:    healthSweepInterval,
+		HealthSweepJitterSeconds:      healthSweepJitter,
+		HealthSweepDegradedMs:         healthSweepDegraded,
+		HealthSweepConcurrency:        healthSweepConcurrency,
+		HealthSweepTimeoutSeconds:     healthSweepTimeout,
 	}, nil
 }
 
