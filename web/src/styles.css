@@ -144,95 +144,6 @@ code,
 .mobile-header {
   display: none;
 }
-.search-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 14px;
-  right: 14px;
-  z-index: 90;
-  background: var(--surface-raised);
-  border: 1px solid var(--line-light);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  max-height: 60vh;
-  overflow-y: auto;
-  padding: 8px;
-  animation: search-drop 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  backdrop-filter: blur(16px);
-}
-@keyframes search-drop {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.search-status {
-  padding: 12px 10px;
-  font-size: 11px;
-  font-family: var(--mono);
-  color: var(--sidebar-muted);
-}
-.search-group h4 {
-  margin: 8px 8px 4px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--primary);
-  font-family: var(--mono);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.search-group h4::before {
-  content: "";
-  display: inline-block;
-  width: 4px;
-  height: 4px;
-  background: var(--primary);
-}
-.search-hit {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  text-align: left;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: var(--radius);
-  cursor: pointer;
-  color: var(--sidebar-ink);
-  transition: all var(--dur-hover) var(--ease-hover);
-}
-.search-hit:hover {
-  background: rgba(124, 196, 240, 0.08);
-  border-color: rgba(124, 196, 240, 0.25);
-  transform: translateX(3px);
-}
-.search-hit-name {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.search-hit-meta {
-  font-size: 11px;
-  font-family: var(--mono);
-  color: var(--sidebar-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.search-hit-meta.is-ok {
-  color: var(--success);
-}
-.search-hit-meta.is-off {
-  color: var(--muted);
-}
 .sidebar {
   position: fixed;
   top: 0;
@@ -691,177 +602,6 @@ a.button {
   .toast-dismiss {
     min-height: 44px;
   }
-}
-
-/* —— Avant-Garde Panels & Volumetric Surfaces —— */
-.telemetry-grid,
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(var(--telemetry-cols, var(--stat-cols, 4)), minmax(0, 1fr));
-  align-items: stretch;
-  gap: 1px;
-  background: var(--line);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  margin-bottom: 20px;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-.stat-card {
-  position: relative;
-  overflow: hidden;
-  padding: 16px 20px;
-  border: none;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-  width: 100%;
-  box-shadow: none;
-  transition:
-    background-color var(--dur-hover) var(--ease-hover),
-    border-color var(--dur-hover) var(--ease-hover),
-    box-shadow var(--dur-hover) var(--ease-hover),
-    transform var(--dur-hover) var(--ease-hover);
-  cursor: default;
-}
-.stat-card.is-interactive {
-}
-.stat-card.is-interactive:hover {
-  background: var(--surface-subtle);
-}
-.stat-card.is-active {
-}
-
-.stat-card-top {
-}
-.telemetry-index {
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-.telemetry-icon,
-.stat-icon {
-  display: grid;
-  place-items: center;
-  color: var(--primary);
-}
-.telemetry-label,
-.stat-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: -0.01em;
-}
-.telemetry-value,
-.stat-card strong {
-  font-family: var(--font-serif);
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-.telemetry-indicator {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--primary);
-  opacity: 0.6;
-}
-.tone-success .telemetry-indicator { background: var(--success); }
-.tone-warning .telemetry-indicator { background: var(--warning); }
-.tone-danger .telemetry-indicator { background: var(--danger); }
-.tone-info .telemetry-indicator { background: var(--info); }
-.stat-card:nth-child(2) { animation-delay: 40ms; }
-.stat-card:nth-child(3) { animation-delay: 80ms; }
-.stat-card:nth-child(4) { animation-delay: 120ms; }
-.stat-card:nth-child(5) { animation-delay: 160ms; }
-.stat-card:nth-child(6) { animation-delay: 200ms; }
-.stat-card:nth-child(7) { animation-delay: 240ms; }
-.stat-card:nth-child(n + 8) { animation-delay: 280ms; }
-.stat-card:disabled {
-  opacity: 1;
-  cursor: default;
-}
-/* Cyber kinetic cursor spotlight */
-.stat-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    circle 240px at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    var(--spotlight-color, rgba(124, 196, 240, 0.12)),
-    transparent 80%
-  );
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-.stat-card:hover::before,
-.stat-card:focus-within::before {
-  opacity: 1;
-}
-.stat-card.is-interactive {
-  cursor: pointer;
-  --spotlight-color: rgba(124, 196, 240, 0.18);
-}
-.stat-card.is-interactive:hover {
-  border-color: var(--primary-hairline);
-  box-shadow: 0 0 0 1px var(--primary-hairline), 0 14px 36px rgba(124, 196, 240, 0.16);
-  transform: translateY(-2px);
-}
-.stat-card.is-interactive:hover .stat-icon {
-  color: var(--on-primary);
-  background: var(--primary);
-  box-shadow: 0 0 12px var(--primary-glow);
-}
-.stat-card.is-active {
-  border-color: var(--primary);
-  background: var(--surface-subtle);
-  box-shadow: 0 0 0 1px var(--primary), var(--shadow-md);
-}
-.stat-card-top {
-}
-.stat-icon {
-  place-items: center;
-  border: 1px solid var(--line-light);
-  transition: all var(--dur-hover) var(--ease-hover);
-}
-.stat-label {
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.stat-trend {
-  font-family: var(--mono);
-}
-.stat-trend.is-up {
-}
-.stat-trend.is-down {
-}
-.stat-card strong {
-  font-family: var(--font-serif);
-  font-size: clamp(28px, 2.8vw, 36px);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.0;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
 }
 
 /* —— Cyber Data Grid & Precision Tables —— */
@@ -3775,9 +3515,66 @@ td.actions {
 }
 .runtime-section-body > .runtime-card {
   margin: 0;
-  /* One form column: a settings card stretched across a 1400px viewport puts
-     every label a screen away from its input. */
-  max-width: 820px;
+  /* Density. A settings pane is a control surface: fields sit two-to-a-row in a
+     column wide enough that a label, its help button and its 已改/默认 badge stay
+     on one line beside the control. Stretching three fields across a 1132px row
+     reads as scattered, not dense; stacking them in one 820px column while the
+     rest of the window sits empty reads as a form on a page. Two columns of
+     ~430px is the shape that is actually both. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  align-content: start;
+  gap: 0 28px;
+  max-width: 940px;
+}
+.runtime-section-body > .runtime-card > .panel-header {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+}
+/* Label left, control right: the shape every dense settings list uses, and the
+   one that keeps a label and its input on the same line of sight. */
+.runtime-section-body > .runtime-card > .field,
+.runtime-section-body > .runtime-card > .check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, 148px);
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line-light);
+}
+.runtime-section-body > .runtime-card > .field > input,
+.runtime-section-body > .runtime-card > .field > select,
+.runtime-section-body > .runtime-card > .field > .setting-input-wrap,
+.runtime-section-body > .runtime-card > .field > .runtime-inline-fields {
+  width: 100%;
+  min-width: 0;
+}
+.runtime-section-body > .runtime-card > .field > .setting-input-wrap > input,
+.runtime-section-body > .runtime-card > .field > input,
+.runtime-section-body > .runtime-card > .field > select {
+  text-align: right;
+}
+/* Wide controls own the full width: a textarea, a cron picker or the alert JSON
+   squeezed into the control column is unusable. */
+.runtime-section-body > .runtime-card > .field:has(textarea),
+.runtime-section-body > .runtime-card > .field:has(.cron-schedule-picker),
+.runtime-section-body > .runtime-card > .field:has(.checkin-time-picker),
+.runtime-section-body > .runtime-card > .field.is-wide {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+}
+.runtime-section-body > .runtime-card > .field:has(textarea) > .setting-input-wrap > input,
+.runtime-section-body > .runtime-card > .field:has(textarea) > textarea {
+  text-align: left;
+}
+/* A checkbox row is a switch with a label, not a labelled field. */
+.runtime-section-body > .runtime-card > .check.is-stacked {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.runtime-section-body > .runtime-card > .field:last-of-type,
+.runtime-section-body > .runtime-card > .check:last-of-type {
+  border-bottom: 0;
 }
 @media (max-width: 900px) {
   .runtime-settings-layout {
@@ -3966,15 +3763,20 @@ td.actions {
   position: sticky;
   top: 12px;
   display: grid;
-  gap: 16px;
+  gap: 8px;
   align-content: start;
+  /* Twenty-two sections must not stretch the page past the fold: the rail scrolls
+     inside its own column instead. */
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .runtime-nav-group {
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 .runtime-nav-group-label {
-  padding: 0 0 5px 10px;
+  padding: 0 0 3px 8px;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 9.5px;
@@ -3987,14 +3789,15 @@ td.actions {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 4px 8px;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 550;
+  line-height: 1.45;
   text-align: left;
   cursor: pointer;
   transition:
@@ -9523,7 +9326,6 @@ a.log-chain-value:hover { text-decoration: underline; }
   .cockpit-log-item,
   .member-row,
   .table tbody tr,
-  .search-hit,
   .model-rank li,
   .dashboard-list li {
     animation: none !important;
