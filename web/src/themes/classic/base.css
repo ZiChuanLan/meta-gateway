@@ -12,7 +12,7 @@
 
 :root[data-appearance="classic"] {
   /* —— Alabaster-sky base + Powder Blue & Gilt Gold (默认) —— */
-  --bg: #f4f6f8;
+  --bg: #ffffff;
   --bg-deep: #e9eef2;
   --bg-canvas: #f7f9fb;
   --surface: #ffffff;

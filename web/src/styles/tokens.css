@@ -1,13 +1,13 @@
 /* Meta Gateway — Paper / Cobalt. Shared by every product surface. */
 :root {
-  --bg: #f3f4f6;
-  --bg-deep: #e8eaee;
-  --bg-canvas: #f8f9fb;
+  --bg: #ffffff;
+  --bg-deep: #fbfbfc;
+  --bg-canvas: #ffffff;
   --surface: #ffffff;
   --surface-raised: #ffffff;
   --surface-subtle: #f6f7f9;
-  --surface-hover: #eef0f4;
-  --surface-active: #e5e9f2;
+  --surface-hover: #f5f6f8;
+  --surface-active: #eceef2;
   --surface-glass: rgba(255, 255, 255, .88);
   --surface-glass-border: rgba(255, 255, 255, .78);
   --ink: #252730;
@@ -16,8 +16,8 @@
   --muted: #707683;
   --muted-strong: #5b6270;
   --muted-dark: #9298a4;
-  --line: rgba(29, 35, 52, .085);
-  --line-light: rgba(29, 35, 52, .055);
+  --line: rgba(17, 20, 24, .07);
+  --line-light: rgba(17, 20, 24, .045);
   --line-strong: rgba(29, 35, 52, .17);
   --line-glow: rgba(51, 87, 232, .17);
   --primary: #3357e8;
