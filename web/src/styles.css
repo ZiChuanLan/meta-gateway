@@ -947,6 +947,92 @@ td.status-col {
   gap: 6px;
   min-width: 0;
 }
+
+/* "已改 / 默认": with instant save there is no Save button to compare against,
+   so every field states whether it overrides the deployment default. The
+   "default" chip is deliberately quiet — it is the answer most rows give. */
+.setting-state {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.setting-state.is-default {
+  color: var(--muted);
+  opacity: 0.75;
+}
+.setting-state.is-changed {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* The save status sits with the source pill: one line for "saving", "saved"
+   and "failed", instead of a page-bottom button that had to be pressed. */
+.runtime-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 18px;
+}
+
+/* The deployment parameters: a read-only fact about the deployment, folded
+   inside the section that owns the process's own settings. */
+.runtime-subblock {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.runtime-subblock-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+.runtime-subblock-toggle:hover {
+  background: var(--surface-hover);
+}
+.runtime-subblock-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 160ms ease;
+}
+.runtime-subblock.is-open .runtime-subblock-chevron {
+  transform: rotate(90deg);
+}
+.runtime-subblock-title {
+  min-width: 0;
+}
+.runtime-subblock-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.runtime-subblock-body {
+  display: grid;
+  gap: 6px;
+  padding: 2px 12px 12px;
+}
 .info-tip {
   position: relative;
   padding: 0;
@@ -3673,17 +3759,40 @@ td.actions {
   color: var(--muted);
   font-size: 11px;
 }
-.runtime-settings-grid {
-  columns: 2;
-  column-gap: 14px;
+/* Master-detail: the sidebar picks one section, the body shows it. The page
+   used to be a chip index over nineteen open cards in one scroll, which
+   answered "what exists" and never "where is what I need". */
+.runtime-settings-layout {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
 }
-.runtime-settings-grid > .runtime-card {
-  display: flex;
-  flex-direction: column;
+.runtime-section-body {
+  display: grid;
+  gap: 14px;
   min-width: 0;
-  margin: 0 0 14px;
-  overflow: visible;
-  break-inside: avoid;
+}
+.runtime-section-body > .runtime-card {
+  margin: 0;
+  /* One form column: a settings card stretched across a 1400px viewport puts
+     every label a screen away from its input. */
+  max-width: 820px;
+}
+@media (max-width: 900px) {
+  .runtime-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  /* Stacked, the full section list would push the selected card below the
+     fold: bound it and let it scroll on its own instead. */
+  .runtime-section-nav {
+    position: static;
+    max-height: 38vh;
+    overflow-y: auto;
+    padding-right: 4px;
+    overscroll-behavior: contain;
+  }
 }
 .runtime-setting-row {
   display: grid;
@@ -3760,11 +3869,6 @@ td.actions {
   font-size: 12px;
   font-weight: 600;
   word-break: break-word;
-}
-@media (max-width: 860px) {
-  .runtime-settings-grid {
-    columns: 1;
-  }
 }
 @media (max-width: 600px) {
   .runtime-settings-context {
@@ -3859,48 +3963,68 @@ td.actions {
   gap: 10px;
 }
 .runtime-section-nav {
+  position: sticky;
+  top: 12px;
   display: grid;
-  gap: 8px;
+  gap: 16px;
+  align-content: start;
 }
 .runtime-nav-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  gap: 2px;
 }
 .runtime-nav-group-label {
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  padding: 0 0 5px 10px;
   color: var(--muted);
-  padding-right: 2px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
-.runtime-section-nav button {
-  flex: 0 0 auto;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
+.runtime-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: transparent;
   color: var(--ink-soft);
-  font-size: 12px;
+  font: inherit;
+  font-size: 12.5px;
   font-weight: 550;
+  text-align: left;
+  cursor: pointer;
   transition:
     background 120ms ease,
     border-color 120ms ease,
     color 120ms ease;
 }
-.runtime-section-nav button:hover {
+.runtime-nav-item:hover {
   background: var(--surface-hover);
-  border-color: var(--line-strong);
   color: var(--ink);
+}
+.runtime-nav-item.is-active {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-weight: 650;
+}
+/* A change made three sections ago has to stay visible from here. */
+.runtime-nav-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--warning);
 }
 .runtime-card {
   scroll-margin-top: 14px;
 }
-.runtime-settings-grid .runtime-card input[type="number"] {
+.runtime-section-body .runtime-card input[type="number"] {
   max-width: 160px;
 }
 
@@ -6909,21 +7033,9 @@ label.check input[type="checkbox"] {
   cursor: not-allowed;
 }
 
-/* —— Settings panels: staggered entrance —— */
-.runtime-settings-grid .panel {
+/* —— Section entrance: the card rises when the sidebar switches to it —— */
+.runtime-section-body > .runtime-card {
   animation: panel-rise 0.32s var(--ease-out) backwards;
-}
-.runtime-settings-grid .panel:nth-child(2) {
-  animation-delay: 0.05s;
-}
-.runtime-settings-grid .panel:nth-child(3) {
-  animation-delay: 0.1s;
-}
-.runtime-settings-grid .panel:nth-child(4) {
-  animation-delay: 0.15s;
-}
-.runtime-settings-grid .panel:nth-child(n + 5) {
-  animation-delay: 0.2s;
 }
 @keyframes panel-rise {
   from {
@@ -6998,7 +7110,7 @@ label.check input[type="checkbox"] {
 
 /* —— Page-level entrance already exists (.route-enter); keep exits fast —— */
 @media (prefers-reduced-motion: reduce) {
-  .runtime-settings-grid .panel,
+  .runtime-section-body > .runtime-card,
   .runtime-settings-banner::after,
   .result-strip {
     animation: none !important;
@@ -7586,17 +7698,6 @@ label.check input[type="checkbox"] {
   margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-/* Keep each settings column independent so short cards stay close together. */
-.runtime-settings-grid {
-  align-items: start;
-}
-
-.runtime-settings-column > .runtime-card {
-  align-self: stretch;
-  height: auto;
-  min-height: 0;
 }
 
 .routing-policy-card {

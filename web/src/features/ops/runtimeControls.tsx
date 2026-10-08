@@ -8,12 +8,40 @@ import { useI18n } from "../../i18n";
 // 1,400-line component: the page keeps its state, the controls keep their looks,
 // and nothing here reads or writes settings.
 
-/** One labelled setting: the label plus its hint as an InfoTip. */
-export function SettingLabel({ label, hint }: { label: string; hint: string }) {
+/**
+ * The "已改 / 默认" badge. Instant save means there is no Save button to
+ * compare against, so every field states whether it overrides the deployment
+ * default it inherited — otherwise "I changed this" and "this is what the
+ * environment already said" look identical on screen.
+ */
+export function SettingState({ state }: { state: "changed" | "default" }) {
+  const { t } = useI18n();
+  return (
+    <span className={`setting-state is-${state}`}>
+      {t(state === "changed" ? "ops.runtime.changed" : "ops.runtime.isDefault")}
+    </span>
+  );
+}
+
+/**
+ * One labelled setting: the label, its hint as an InfoTip, and — when the
+ * caller compares against the deployment default — the resulting badge.
+ */
+export function SettingLabel({
+  label,
+  hint,
+  changed,
+}: {
+  label: string;
+  hint: string;
+  /** Omit for labels that do not map to a single setting (sub-labels). */
+  changed?: boolean;
+}) {
   return (
     <span className="setting-label">
       <span>{label}</span>
       <InfoTip label={hint} />
+      {changed === undefined ? null : <SettingState state={changed ? "changed" : "default"} />}
     </span>
   );
 }
@@ -94,19 +122,11 @@ export function ValidatedNumberInput({
   );
 }
 
-/** Masonry container: CSS columns balance the cards by height. */
-export function RuntimeSettingsColumns({ children }: { children: ReactNode }) {
-  return <div className="runtime-settings-grid">{children}</div>;
-}
-
 /**
- * One collapsible settings group. The page renders every group collapsed by
- * default — the old always-open layout was ~20 cards of form controls in one
- * scroll, and the section nav was the only way to make sense of it. A group's
- * header is the toggle: chevron, title, description, and how many cards live
- * inside, so a collapsed row still says what it is hiding. Which groups are
- * open is page state, not per-group state, so the section nav can open a group
- * from anywhere.
+ * A folded block whose header is the toggle. The runtime page now selects one
+ * section from the sidebar at a time, so the only thing left that needs to
+ * start folded is the danger zone: an irreversible wipe should take a second,
+ * deliberate click to reveal, not a single nav click.
  */
 export function CollapsibleGroup({
   id,

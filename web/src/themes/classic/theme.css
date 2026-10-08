@@ -6075,18 +6075,6 @@
   color: var(--muted);
   font-size: 11px;
 }
-:root[data-appearance="classic"] .runtime-settings-grid {
-  columns: 2;
-  column-gap: 14px;
-}
-:root[data-appearance="classic"] .runtime-settings-grid > .runtime-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  margin: 0 0 14px;
-  overflow: visible;
-  break-inside: avoid;
-}
 :root[data-appearance="classic"] .runtime-setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
@@ -6107,11 +6095,6 @@
   font-size: 12px;
   font-weight: 600;
   word-break: break-word;
-}
-@media (max-width: 860px) {
-  :root[data-appearance="classic"] .runtime-settings-grid {
-    columns: 1;
-  }
 }
 @media (max-width: 600px) {
   :root[data-appearance="classic"] .runtime-settings-context {
@@ -6205,49 +6188,10 @@
   flex-wrap: wrap;
   gap: 10px;
 }
-:root[data-appearance="classic"] .runtime-section-nav {
-  display: grid;
-  gap: 8px;
-}
-:root[data-appearance="classic"] .runtime-nav-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-:root[data-appearance="classic"] .runtime-nav-group-label {
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding-right: 2px;
-}
-:root[data-appearance="classic"] .runtime-section-nav button {
-  flex: 0 0 auto;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 550;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
-}
-:root[data-appearance="classic"] .runtime-section-nav button:hover {
-  background: var(--surface-hover);
-  border-color: var(--line-strong);
-  color: var(--ink);
-}
 :root[data-appearance="classic"] .runtime-card {
   scroll-margin-top: 14px;
 }
-:root[data-appearance="classic"] .runtime-settings-grid .runtime-card input[type="number"] {
+:root[data-appearance="classic"] .runtime-section-body .runtime-card input[type="number"] {
   max-width: 160px;
 }
 
@@ -9051,21 +8995,9 @@
   cursor: not-allowed;
 }
 
-/* —— Settings panels: staggered entrance —— */
-:root[data-appearance="classic"] .runtime-settings-grid .panel {
+/* —— Section entrance: the card rises when the sidebar switches to it —— */
+:root[data-appearance="classic"] .runtime-section-body > .runtime-card {
   animation: classic-panel-rise 0.32s var(--ease-out) backwards;
-}
-:root[data-appearance="classic"] .runtime-settings-grid .panel:nth-child(2) {
-  animation-delay: 0.05s;
-}
-:root[data-appearance="classic"] .runtime-settings-grid .panel:nth-child(3) {
-  animation-delay: 0.1s;
-}
-:root[data-appearance="classic"] .runtime-settings-grid .panel:nth-child(4) {
-  animation-delay: 0.15s;
-}
-:root[data-appearance="classic"] .runtime-settings-grid .panel:nth-child(n + 5) {
-  animation-delay: 0.2s;
 }
 @keyframes classic-panel-rise {
   from {
@@ -9140,7 +9072,7 @@
 
 /* —— Page-level entrance already exists (.route-enter); keep exits fast —— */
 @media (prefers-reduced-motion: reduce) {
-  :root[data-appearance="classic"] .runtime-settings-grid .panel,
+  :root[data-appearance="classic"] .runtime-section-body > .runtime-card,
   :root[data-appearance="classic"] .runtime-settings-banner::after,
   :root[data-appearance="classic"] .result-strip {
     animation: none !important;
@@ -9787,17 +9719,6 @@
   margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-/* Keep each settings column independent so short cards stay close together. */
-:root[data-appearance="classic"] .runtime-settings-grid {
-  align-items: start;
-}
-
-:root[data-appearance="classic"] .runtime-settings-column > .runtime-card {
-  align-self: stretch;
-  height: auto;
-  min-height: 0;
 }
 
 :root[data-appearance="classic"] .routing-policy-card {
