@@ -32,6 +32,32 @@ const routeSelectColumns = `id, model_pattern, enabled, routing_mode, mapping_js
 	stable_first_promote_requests, stable_first_requests, sticky_session, model_group,
 	image_edit_shim, created_at, updated_at`
 
+// routeMemberChannelColumns is the one projection of a routing candidate:
+// member routing/pricing facts plus every channel column the relay reads. The
+// console's overview and the relay's candidate pool both select exactly this,
+// and scanRoutingCandidate below is its only reader.
+const routeMemberChannelColumns = `rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
+	rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
+	rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k, rm.price_per_request,
+	rm.price_tiers, rm.price_schedule,
+	c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
+	c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
+	c.stable_first, c.stable_first_requests,
+	c.upstream_path_override, c.upstream_path_map, c.upstream_request_map, c.upstream_response_map,
+	c.created_at, c.updated_at,
+	CASE WHEN (
+		cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
+		AND cred.site_id = c.site_id
+		AND lower(cred.kind) IN ('api_key','session','access_token')
+	) OR EXISTS (
+		SELECT 1 FROM credentials pool_cred
+		WHERE pool_cred.site_id = c.site_id
+		  AND pool_cred.status = 'enabled'
+		  AND pool_cred.secret_enc <> ''
+		  AND lower(pool_cred.kind) IN ('api_key','session','access_token')
+	) THEN 1 ELSE 0 END,
+	COALESCE(rt.model_pattern, '')`
+
 // RouteMemberStore provides CRUD operations for route members.
 //
 // Cooldown policy: each failed attempt parks the member for the configured
@@ -388,28 +414,51 @@ func (s *RouteMemberStore) ListRouteOverviews() ([]domain.RouteOverview, error) 
 	return result, nil
 }
 
+// scanRoutingCandidate reads one row of routeMemberChannelColumns. Both
+// projections of a routing candidate — the console's overview list and the
+// relay's candidate pool — go through this function, so a channel column added
+// to the projection cannot be read by one of them and silently stay zero for
+// the other (the failure mode this file has hit twice).
+func scanRoutingCandidate(rows *sql.Rows) (domain.RoutingCandidate, error) {
+	var candidate domain.RoutingCandidate
+	var enabled, auto, manual, autoDisabled, credentialUsable, stableFirst int
+	if err := rows.Scan(
+		&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
+		&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
+		&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
+		scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
+		&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k, &candidate.Member.PricePerRequest,
+		&candidate.Member.PriceTiers, &candidate.Member.PriceSchedule,
+		&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
+		&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
+		&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
+		&candidate.Channel.Status, &candidate.Channel.TypeHint,
+		&candidate.Channel.MaxReasoningEffort,
+		&candidate.Channel.PayloadRules,
+		&candidate.Channel.MaxConcurrent,
+		&candidate.Channel.NonStreamTimeoutSeconds, &candidate.Channel.StreamPolicy,
+		&candidate.Channel.ProxyURL,
+		&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
+		&candidate.Channel.RetryConfig,
+		&stableFirst, &candidate.Channel.StableFirstRequests,
+		&candidate.Channel.UpstreamPathOverride, &candidate.Channel.UpstreamPathMap,
+		&candidate.Channel.UpstreamRequestMap, &candidate.Channel.UpstreamResponseMap,
+		scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
+		&credentialUsable, &candidate.ModelPattern,
+	); err != nil {
+		return domain.RoutingCandidate{}, err
+	}
+	candidate.Member.Enabled = enabled != 0
+	candidate.Member.Auto = auto != 0
+	candidate.Member.ManualOverride = manual != 0
+	candidate.Member.AutoDisabled = autoDisabled != 0
+	candidate.CredentialUsable = credentialUsable != 0
+	candidate.Channel.StableFirst = stableFirst != 0
+	return candidate, nil
+}
+
 func (s *RouteMemberStore) listOverviewCandidates(routes map[int64]domain.Route) (map[int64][]domain.RoutingCandidate, error) {
-	rows, err := s.db.Query(`SELECT
-			rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
-			rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
-			rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k, rm.price_per_request,
-			rm.price_tiers, rm.price_schedule,
-		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
-		c.stable_first, c.stable_first_requests,
-		c.upstream_path_override, c.upstream_path_map, c.upstream_request_map, c.upstream_response_map,
-		c.created_at, c.updated_at,
-		CASE WHEN (
-			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
-			AND cred.site_id = c.site_id AND lower(cred.kind) IN ('api_key','session','access_token')
-		) OR EXISTS (
-			SELECT 1 FROM credentials pool_cred
-			WHERE pool_cred.site_id = c.site_id
-			  AND pool_cred.status = 'enabled'
-			  AND pool_cred.secret_enc <> ''
-			  AND lower(pool_cred.kind) IN ('api_key','session','access_token')
-		) THEN 1 ELSE 0 END,
-		COALESCE(rt.model_pattern, '')
+	rows, err := s.db.Query(`SELECT ` + routeMemberChannelColumns + `
 		FROM route_members rm JOIN channels c ON c.id = rm.channel_id
 		LEFT JOIN credentials cred ON cred.id = c.credential_id
 		LEFT JOIN routes rt ON rt.id = rm.route_id
@@ -423,40 +472,10 @@ func (s *RouteMemberStore) listOverviewCandidates(routes map[int64]domain.Route)
 		result[id] = []domain.RoutingCandidate{}
 	}
 	for rows.Next() {
-		var candidate domain.RoutingCandidate
-		var enabled, auto, manual, autoDisabled, credentialUsable, stableFirst int
-		if err := rows.Scan(
-			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
-			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
-			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
-			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
-			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k, &candidate.Member.PricePerRequest,
-			&candidate.Member.PriceTiers, &candidate.Member.PriceSchedule,
-			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
-			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
-			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
-			&candidate.Channel.Status, &candidate.Channel.TypeHint,
-			&candidate.Channel.MaxReasoningEffort,
-			&candidate.Channel.PayloadRules,
-			&candidate.Channel.MaxConcurrent,
-			&candidate.Channel.NonStreamTimeoutSeconds, &candidate.Channel.StreamPolicy,
-			&candidate.Channel.ProxyURL,
-			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
-			&candidate.Channel.RetryConfig,
-			&stableFirst, &candidate.Channel.StableFirstRequests,
-			&candidate.Channel.UpstreamPathOverride, &candidate.Channel.UpstreamPathMap,
-			&candidate.Channel.UpstreamRequestMap, &candidate.Channel.UpstreamResponseMap,
-			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
-			&credentialUsable, &candidate.ModelPattern,
-		); err != nil {
-			return nil, fmt.Errorf("route overview member scan: %w", err)
+		candidate, scanErr := scanRoutingCandidate(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("route overview member scan: %w", scanErr)
 		}
-		candidate.Member.Enabled = enabled != 0
-		candidate.Member.Auto = auto != 0
-		candidate.Member.ManualOverride = manual != 0
-		candidate.Member.AutoDisabled = autoDisabled != 0
-		candidate.CredentialUsable = credentialUsable != 0
-		candidate.Channel.StableFirst = stableFirst != 0
 		route, exists := routes[candidate.Member.RouteID]
 		if !exists {
 			continue
@@ -519,28 +538,7 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 			return nil, nil, fmt.Errorf("routing route: %w", err)
 		}
 	}
-	rows, err := s.db.Query(`SELECT
-		rm.id, rm.route_id, rm.channel_id, rm.priority, rm.weight, rm.enabled, rm.auto, rm.manual_override, rm.auto_disabled,
-		rm.mapping_json, rm.group_name, rm.fail_count, rm.cooldown_until, rm.last_error, rm.created_at, rm.updated_at,
-		rm.price_prompt_per_1k, rm.price_completion_per_1k, rm.price_cache_per_1k, rm.price_per_request,
-		rm.price_tiers, rm.price_schedule,
-		c.id, c.site_id, c.credential_id, c.name, c.base_url, c.models_csv, c.group_name,
-		c.priority, c.weight, c.status, c.type_hint, c.max_reasoning_effort, c.payload_rules, c.max_concurrent, c.non_stream_timeout_seconds, c.stream_policy, c.proxy_url, c.header_override, c.system_prompt, c.retry_config,
-		c.stable_first, c.stable_first_requests,
-		c.upstream_path_override, c.upstream_path_map, c.upstream_request_map, c.upstream_response_map,
-		c.created_at, c.updated_at,
-		CASE WHEN (
-			cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
-			AND cred.site_id = c.site_id
-			AND lower(cred.kind) IN ('api_key','session','access_token')
-		) OR EXISTS (
-			SELECT 1 FROM credentials pool_cred
-			WHERE pool_cred.site_id = c.site_id
-			  AND pool_cred.status = 'enabled'
-			  AND pool_cred.secret_enc <> ''
-			  AND lower(pool_cred.kind) IN ('api_key','session','access_token')
-		) THEN 1 ELSE 0 END,
-		COALESCE(rt.model_pattern, '')
+	rows, err := s.db.Query(`SELECT `+routeMemberChannelColumns+`
 		FROM route_members rm JOIN channels c ON c.id = rm.channel_id
 		LEFT JOIN credentials cred ON cred.id = c.credential_id
 		LEFT JOIN routes rt ON rt.id = rm.route_id
@@ -553,40 +551,10 @@ func (s *RouteMemberStore) RoutingCandidates(model, group string) (*domain.Route
 	defer rows.Close()
 	var result []domain.RoutingCandidate
 	for rows.Next() {
-		var candidate domain.RoutingCandidate
-		var enabled, auto, manual, autoDisabled, credentialUsable, stableFirst int
-		if err := rows.Scan(
-			&candidate.Member.ID, &candidate.Member.RouteID, &candidate.Member.ChannelID,
-			&candidate.Member.Priority, &candidate.Member.Weight, &enabled, &auto, &manual, &autoDisabled,
-			&candidate.Member.MappingJSON, &candidate.Member.GroupName, &candidate.Member.FailCount, scanNullTime(&candidate.Member.CooldownUntil), &candidate.Member.LastError,
-			scanTime(&candidate.Member.CreatedAt), scanTime(&candidate.Member.UpdatedAt),
-			&candidate.Member.PricePromptPer1k, &candidate.Member.PriceCompletionPer1k, &candidate.Member.PriceCachePer1k, &candidate.Member.PricePerRequest,
-			&candidate.Member.PriceTiers, &candidate.Member.PriceSchedule,
-			&candidate.Channel.ID, &candidate.Channel.SiteID, &candidate.Channel.CredentialID,
-			&candidate.Channel.Name, &candidate.Channel.BaseURL, &candidate.Channel.ModelsCSV,
-			&candidate.Channel.GroupName, &candidate.Channel.Priority, &candidate.Channel.Weight,
-			&candidate.Channel.Status, &candidate.Channel.TypeHint,
-			&candidate.Channel.MaxReasoningEffort,
-			&candidate.Channel.PayloadRules,
-			&candidate.Channel.MaxConcurrent,
-			&candidate.Channel.NonStreamTimeoutSeconds, &candidate.Channel.StreamPolicy,
-			&candidate.Channel.ProxyURL,
-			&candidate.Channel.HeaderOverride, &candidate.Channel.SystemPrompt,
-			&candidate.Channel.RetryConfig,
-			&stableFirst, &candidate.Channel.StableFirstRequests,
-			&candidate.Channel.UpstreamPathOverride, &candidate.Channel.UpstreamPathMap,
-			&candidate.Channel.UpstreamRequestMap, &candidate.Channel.UpstreamResponseMap,
-			scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
-			&credentialUsable, &candidate.ModelPattern,
-		); err != nil {
-			return nil, nil, fmt.Errorf("routing candidate scan: %w", err)
+		candidate, scanErr := scanRoutingCandidate(rows)
+		if scanErr != nil {
+			return nil, nil, fmt.Errorf("routing candidate scan: %w", scanErr)
 		}
-		candidate.Member.Enabled = enabled != 0
-		candidate.Member.Auto = auto != 0
-		candidate.Member.ManualOverride = manual != 0
-		candidate.Member.AutoDisabled = autoDisabled != 0
-		candidate.CredentialUsable = credentialUsable != 0
-		candidate.Channel.StableFirst = stableFirst != 0
 		applyRouteModelOverrides(&candidate.Channel, route)
 		result = append(result, candidate)
 	}
@@ -1125,44 +1093,74 @@ func findBestWildcardRoute(db *sql.DB, model string) (*domain.Route, error) {
 	return &best, nil
 }
 
+// GlobOptions are the two ways a glob match legitimately differs between call
+// sites.
+type GlobOptions struct {
+	// CaseInsensitive folds case before matching. Error-passthrough rules match
+	// a model name an operator typed, so they fold; route and payload patterns
+	// do not.
+	CaseInsensitive bool
+	// EmptyMatchesAll makes an empty pattern match every subject. A model
+	// pattern names a model, so an empty one matches only an empty name — an
+	// operator writes "*" to mean "all".
+	EmptyMatchesAll bool
+}
+
+// GlobMatch reports whether subject matches a pattern where '*' matches any run
+// of characters and '?' matches exactly one.
+//
+// One implementation stands behind the three places that need glob matching —
+// route model patterns, payload/upstream-map rules, and error-passthrough
+// rules. Those were three copies and had already drifted apart (case folding,
+// the meaning of an empty pattern, and byte- vs rune-based '?'), which is
+// exactly the disagreement MatchModelPattern was exported to prevent.
+func GlobMatch(pattern, subject string, opts GlobOptions) bool {
+	if pattern == "" {
+		return opts.EmptyMatchesAll || subject == ""
+	}
+	if opts.CaseInsensitive {
+		pattern = strings.ToLower(pattern)
+		subject = strings.ToLower(subject)
+	}
+	if !strings.ContainsAny(pattern, "*?") {
+		return pattern == subject
+	}
+	return globMatchRunes([]rune(pattern), []rune(subject))
+}
+
 // MatchModelPattern supports '*' (any run of runes) and '?' (single rune).
 // Exported because plugin hook declarations match models with the same
 // semantics as route patterns do: two matchers would eventually disagree, and
 // an operator would have no way to tell which one an entry obeyed.
 func MatchModelPattern(pattern, model string) bool {
-	pattern = strings.TrimSpace(pattern)
-	model = strings.TrimSpace(model)
-	if pattern == "" || (!strings.Contains(pattern, "*") && !strings.Contains(pattern, "?")) {
-		return pattern == model
-	}
-	return matchModelPatternRunes([]rune(pattern), []rune(model))
+	return GlobMatch(strings.TrimSpace(pattern), strings.TrimSpace(model), GlobOptions{})
 }
 
-func matchModelPatternRunes(pattern, model []rune) bool {
-	// Dynamic programming keeps wildcard matching O(pattern*model). The old
+func globMatchRunes(pattern, subject []rune) bool {
+	// Dynamic programming keeps wildcard matching O(pattern*subject). The old
 	// recursive '*' branch explored every split and could become exponential
 	// for attacker-controlled patterns such as *a*a*a*.
-	matched := make([]bool, len(model)+1)
+	matched := make([]bool, len(subject)+1)
 	matched[0] = true
 	for _, token := range pattern {
-		next := make([]bool, len(model)+1)
+		next := make([]bool, len(subject)+1)
 		if token == '*' {
 			// '*' may consume zero characters (the old state) or extend a
 			// previously matched prefix by one character.
-			for index := 0; index <= len(model); index++ {
+			for index := 0; index <= len(subject); index++ {
 				next[index] = matched[index]
 				if index > 0 && next[index-1] {
 					next[index] = true
 				}
 			}
 		} else {
-			for index := 1; index <= len(model); index++ {
-				if matched[index-1] && (token == '?' || token == model[index-1]) {
+			for index := 1; index <= len(subject); index++ {
+				if matched[index-1] && (token == '?' || token == subject[index-1]) {
 					next[index] = true
 				}
 			}
 		}
 		matched = next
 	}
-	return matched[len(model)]
+	return matched[len(subject)]
 }

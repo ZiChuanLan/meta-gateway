@@ -115,37 +115,6 @@ func (s *ErrorPassRuleStore) Delete(id int64) error {
 	return nil
 }
 
-// matchErrorRuleGlob supports * and ? like the payload-rule glob.
-func matchErrorRuleGlob(pattern, value string) bool {
-	if pattern == "" {
-		return true
-	}
-	pattern = strings.ToLower(pattern)
-	value = strings.ToLower(value)
-	var p, si, star, mark int
-	star = -1
-	for si < len(value) {
-		if p < len(pattern) && (pattern[p] == '?' || pattern[p] == value[si]) {
-			p++
-			si++
-		} else if p < len(pattern) && pattern[p] == '*' {
-			star = p
-			mark = si
-			p++
-		} else if star >= 0 {
-			p = star + 1
-			mark++
-			si = mark
-		} else {
-			return false
-		}
-	}
-	for p < len(pattern) && pattern[p] == '*' {
-		p++
-	}
-	return p == len(pattern)
-}
-
 // MatchErrorRule finds the first enabled rule that applies to the upstream
 // error (status + body text) for this model/channel. Nil = no rule.
 func (s *ErrorPassRuleStore) MatchErrorRule(status int, bodyText, model string, channelID int64) (*ErrorPassRule, error) {
@@ -164,7 +133,9 @@ func (s *ErrorPassRuleStore) MatchErrorRule(status int, bodyText, model string, 
 		if r.Keyword != "" && !strings.Contains(strings.ToLower(bodyText), strings.ToLower(r.Keyword)) {
 			continue
 		}
-		if !matchErrorRuleGlob(r.ModelGlob, model) {
+		// Model globs fold case (an operator typing "GPT-4*" means "gpt-4*") and
+		// an empty glob means every model.
+		if !GlobMatch(r.ModelGlob, model, GlobOptions{CaseInsensitive: true, EmptyMatchesAll: true}) {
 			continue
 		}
 		if r.ChannelID != 0 && r.ChannelID != channelID {

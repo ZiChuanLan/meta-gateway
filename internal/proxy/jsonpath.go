@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/lan/meta-gateway/internal/store"
 )
 
 // JSON-path helpers shared by the channel-level body rewriting features:
@@ -76,34 +78,11 @@ func ValidateJSONPath(path string) error {
 	return nil
 }
 
-// globMatch matches * (any run) and ? (single char) against s.
+// globMatch is the payload-rule glob: '*' and '?' with an empty pattern
+// matching every model, case-sensitive. The engine lives in store so the route,
+// payload and error-rule matchers cannot drift apart (they already had).
 func globMatch(pattern, s string) bool {
-	if pattern == "" {
-		return true
-	}
-	// Iterative wildcard match (no backtracking blowup).
-	var p, si, star, mark int
-	star = -1
-	for si < len(s) {
-		if p < len(pattern) && (pattern[p] == '?' || pattern[p] == s[si]) {
-			p++
-			si++
-		} else if p < len(pattern) && pattern[p] == '*' {
-			star = p
-			mark = si
-			p++
-		} else if star >= 0 {
-			p = star + 1
-			mark++
-			si = mark
-		} else {
-			return false
-		}
-	}
-	for p < len(pattern) && pattern[p] == '*' {
-		p++
-	}
-	return p == len(pattern)
+	return store.GlobMatch(pattern, s, store.GlobOptions{EmptyMatchesAll: true})
 }
 
 // jsonPathGet resolves a dot/bracket path ("messages.0.content", "a[0].b",

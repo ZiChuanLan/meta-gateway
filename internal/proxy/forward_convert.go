@@ -78,24 +78,13 @@ func convertSuccessBody(result *relay.Result, in convertInput) *relay.Result {
 	convertible := result.Err == nil && result.Body != nil
 	if convertible && in.translation != nil {
 		if in.clientStream && in.translation.Stream != nil {
-			wrapped, wrapErr := in.translation.Stream(in.effectivePath, result.Body)
-			if wrapErr != nil {
-				_ = result.Body.Close()
-				result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
-			} else {
-				result.Body = wrapped
-				if result.Header == nil {
-					result.Header = make(http.Header)
-				}
-				if !isBinaryResponsePath(in.effectivePath) {
-					result.Header.Set("Content-Type", "text/event-stream")
-				}
-			}
+			result = wrapStreamBody(result, in.effectivePath, func() (io.ReadCloser, error) {
+				return in.translation.Stream(in.effectivePath, result.Body)
+			})
 		} else if !in.clientStream && in.translation.Response != nil {
-			raw, readErr := readResponseBody(result.Body, preserveBodyReadLimit)
-			_ = result.Body.Close()
-			if readErr != nil {
-				result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
+			raw, failed := readBodyForConversion(result)
+			if failed != nil {
+				result = failed
 			} else if converted, convErr := in.translation.Response(in.effectivePath, raw); convErr != nil {
 				result = &relay.Result{
 					StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
@@ -104,36 +93,19 @@ func convertSuccessBody(result *relay.Result, in convertInput) *relay.Result {
 					Err:        fmt.Errorf("proxy: anthropic response: %w", convErr),
 				}
 			} else {
-				result.Body = io.NopCloser(bytes.NewReader(converted))
-				if result.Header == nil {
-					result.Header = make(http.Header)
-				}
-				result.Header.Set("Content-Type", transformedContentType(in.effectivePath, in.adapter.Name(), result.Header.Get("Content-Type")))
+				result = replaceBody(result, in.effectivePath, in.adapter.Name(), converted)
 			}
 		}
 	} else if convertible && in.clientStream {
 		// Reshape native/upstream SSE into the downstream contract (the composed
 		// adapter pivots through OpenAI SSE internally).
-		wrapped, wrapErr := in.adapter.WrapStream(in.effectivePath, result.Body)
-		if wrapErr != nil {
-			// The upstream stream is not handed to the client; close it so the
-			// connection returns to the pool instead of leaking.
-			_ = result.Body.Close()
-			result = &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: wrapErr}
-		} else {
-			result.Body = wrapped
-			if result.Header == nil {
-				result.Header = make(http.Header)
-			}
-			if !isBinaryResponsePath(in.effectivePath) {
-				result.Header.Set("Content-Type", "text/event-stream")
-			}
-		}
+		result = wrapStreamBody(result, in.effectivePath, func() (io.ReadCloser, error) {
+			return in.adapter.WrapStream(in.effectivePath, result.Body)
+		})
 	} else if convertible {
-		raw, readErr := readResponseBody(result.Body, preserveBodyReadLimit)
-		_ = result.Body.Close()
-		if readErr != nil {
-			result = &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: readErr}
+		raw, failed := readBodyForConversion(result)
+		if failed != nil {
+			result = failed
 		} else if converted, convErr := in.channelMap.ReshapeResponse(raw, in.effectivePath, in.adapter); convErr != nil {
 			result = &relay.Result{
 				StatusCode: adapterErrorStatus(convErr, http.StatusBadGateway),
@@ -141,25 +113,62 @@ func convertSuccessBody(result *relay.Result, in convertInput) *relay.Result {
 				LatencyMs:  result.LatencyMs,
 				Err:        fmt.Errorf("proxy: %s response: %w", in.adapter.Name(), convErr),
 			}
-		} else {
+		} else if in.effectivePath == "chat/completions" && isEmptyChatSuccess(converted) {
 			// Empty-success check: a 2xx chat completion with no choices or an
 			// empty message is a silent upstream failure — fail over instead of
 			// returning emptiness.
-			if in.effectivePath == "chat/completions" && isEmptyChatSuccess(converted) {
-				result = &relay.Result{
-					StatusCode: result.StatusCode,
-					Header:     result.Header,
-					LatencyMs:  result.LatencyMs,
-					Err:        ErrEmptyCompletion,
-				}
-			} else {
-				result.Body = io.NopCloser(bytes.NewReader(converted))
-				if result.Header == nil {
-					result.Header = make(http.Header)
-				}
-				result.Header.Set("Content-Type", transformedContentType(in.effectivePath, in.adapter.Name(), result.Header.Get("Content-Type")))
+			result = &relay.Result{
+				StatusCode: result.StatusCode,
+				Header:     result.Header,
+				LatencyMs:  result.LatencyMs,
+				Err:        ErrEmptyCompletion,
 			}
+		} else {
+			result = replaceBody(result, in.effectivePath, in.adapter.Name(), converted)
 		}
 	}
+	return result
+}
+
+// wrapStreamBody swaps in a reshaped stream and labels it as SSE — unless the
+// path is binary, where the payload is not SSE at all. A wrap failure closes the
+// upstream body: it is never handed to the client, so closing it is what returns
+// the connection to the pool instead of leaking it.
+func wrapStreamBody(result *relay.Result, path string, wrap func() (io.ReadCloser, error)) *relay.Result {
+	wrapped, err := wrap()
+	if err != nil {
+		_ = result.Body.Close()
+		return &relay.Result{Header: result.Header, LatencyMs: result.LatencyMs, Err: err}
+	}
+	result.Body = wrapped
+	if result.Header == nil {
+		result.Header = make(http.Header)
+	}
+	if !isBinaryResponsePath(path) {
+		result.Header.Set("Content-Type", "text/event-stream")
+	}
+	return result
+}
+
+// readBodyForConversion drains and closes the upstream body so it can be
+// rewritten. A read failure becomes a body-less error result carrying the
+// upstream status; the bytes are nil in that case.
+func readBodyForConversion(result *relay.Result) ([]byte, *relay.Result) {
+	raw, err := readResponseBody(result.Body, preserveBodyReadLimit)
+	_ = result.Body.Close()
+	if err != nil {
+		return nil, &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: err}
+	}
+	return raw, nil
+}
+
+// replaceBody installs converted bytes and re-labels the response for the
+// downstream contract.
+func replaceBody(result *relay.Result, path, adapterName string, converted []byte) *relay.Result {
+	result.Body = io.NopCloser(bytes.NewReader(converted))
+	if result.Header == nil {
+		result.Header = make(http.Header)
+	}
+	result.Header.Set("Content-Type", transformedContentType(path, adapterName, result.Header.Get("Content-Type")))
 	return result
 }

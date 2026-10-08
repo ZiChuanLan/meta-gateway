@@ -14,6 +14,12 @@ type ChannelStore struct {
 	db *sql.DB
 }
 
+// channelSelectColumns is the one projection of a channel row: exactly the
+// columns scanChannel reads. Every query that returns a whole channel selects
+// this constant, so a column added to the table cannot be read by one query and
+// silently stay zero for another.
+const channelSelectColumns = `id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, created_at, updated_at`
+
 func scanChannel(scanner interface {
 	Scan(dest ...any) error
 }, r *domain.Channel) error {
@@ -58,7 +64,7 @@ func scanChannel(scanner interface {
 }
 
 func (s *ChannelStore) List() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, created_at, updated_at FROM channels ORDER BY id`)
+	rows, err := s.db.Query(`SELECT ` + channelSelectColumns + ` FROM channels ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("channel list: %w", err)
 	}
@@ -259,7 +265,7 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 
 // ListEnabled returns all enabled channels.
 func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, created_at, updated_at FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
+	rows, err := s.db.Query(`SELECT `+channelSelectColumns+` FROM channels WHERE status = ? ORDER BY priority, id`, domain.StatusEnabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list enabled: %w", err)
 	}
@@ -279,7 +285,7 @@ func (s *ChannelStore) ListEnabled() ([]domain.Channel, error) {
 // ListAutoDisabled returns channels currently parked by the auto-disable
 // circuit (recovery-probe candidates).
 func (s *ChannelStore) ListAutoDisabled() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, created_at, updated_at FROM channels WHERE status = ? ORDER BY id`, domain.StatusAutoDisabled)
+	rows, err := s.db.Query(`SELECT `+channelSelectColumns+` FROM channels WHERE status = ? ORDER BY id`, domain.StatusAutoDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list auto disabled: %w", err)
 	}
@@ -300,7 +306,7 @@ func (s *ChannelStore) ListAutoDisabled() ([]domain.Channel, error) {
 // channels plus auto-disabled ones (passive recovery candidates). Manually
 // disabled channels are never probed — manual intent wins.
 func (s *ChannelStore) ListProbeable() ([]domain.Channel, error) {
-	rows, err := s.db.Query(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, created_at, updated_at FROM channels WHERE status IN (?, ?) ORDER BY priority, id`, domain.StatusEnabled, domain.StatusAutoDisabled)
+	rows, err := s.db.Query(`SELECT `+channelSelectColumns+` FROM channels WHERE status IN (?, ?) ORDER BY priority, id`, domain.StatusEnabled, domain.StatusAutoDisabled)
 	if err != nil {
 		return nil, fmt.Errorf("channel list probeable: %w", err)
 	}
@@ -318,7 +324,7 @@ func (s *ChannelStore) ListProbeable() ([]domain.Channel, error) {
 }
 
 func (s *ChannelStore) GetByID(id int64) (*domain.Channel, error) {
-	row := s.db.QueryRow(`SELECT id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, created_at, updated_at FROM channels WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT `+channelSelectColumns+` FROM channels WHERE id = ?`, id)
 	var r domain.Channel
 	if err := scanChannel(row, &r); err != nil {
 		if err == sql.ErrNoRows {

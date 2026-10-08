@@ -19,11 +19,24 @@ type UsageStore struct {
 
 // Insert writes one usage record.
 func (s *UsageStore) Insert(record *domain.UsageRecord) (int64, error) {
+	id, err := insertUsage(s.db, record)
+	if err != nil {
+		return 0, fmt.Errorf("usage insert: %w", err)
+	}
+	return id, nil
+}
+
+// insertUsage writes one usage_records row through ex (the pool or a caller's
+// transaction) and returns the new row id. Both the standalone insert and the
+// relay transaction go through it: the column list and its arguments have to
+// stay in the same order, and two copies of a fourteen-column INSERT is how
+// they stop doing that.
+func insertUsage(ex sqlExecutor, record *domain.UsageRecord) (int64, error) {
 	stream := 0
 	if record.Stream {
 		stream = 1
 	}
-	res, err := s.db.Exec(
+	res, err := ex.Exec(
 		`INSERT INTO usage_records (
 			request_id, downstream_key_id, channel_id, model, path, stream,
 			prompt_tokens, completion_tokens, total_tokens,
@@ -45,7 +58,7 @@ func (s *UsageStore) Insert(record *domain.UsageRecord) (int64, error) {
 		record.UserID,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("usage insert: %w", err)
+		return 0, err
 	}
 	return res.LastInsertId()
 }
@@ -488,31 +501,7 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	stream := 0
-	if record.Stream {
-		stream = 1
-	}
-	if _, err := tx.Exec(
-		`INSERT INTO usage_records (
-			request_id, downstream_key_id, channel_id, model, path, stream,
-			prompt_tokens, completion_tokens, total_tokens,
-			cache_read_tokens, cache_creation_tokens, status, cost, user_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.RequestID,
-		record.DownstreamKeyID,
-		record.ChannelID,
-		record.Model,
-		record.Path,
-		stream,
-		record.PromptTokens,
-		record.CompletionTokens,
-		record.TotalTokens,
-		record.CacheReadTokens,
-		record.CacheCreationTokens,
-		record.Status,
-		record.Cost,
-		record.UserID,
-	); err != nil {
+	if _, err := insertUsage(tx, record); err != nil {
 		return fmt.Errorf("usage record insert: %w", err)
 	}
 
