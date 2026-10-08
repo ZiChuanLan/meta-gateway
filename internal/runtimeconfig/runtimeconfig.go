@@ -463,7 +463,7 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		SiteProbeJitterSeconds:            next.SiteProbeJitterSeconds,
 		KeepaliveEnabled:                  next.KeepaliveEnabled,
 		KeepaliveCheckIntervalSeconds:     unsetIfZero(next.KeepaliveCheckIntervalSeconds),
-		KeepaliveDefaultIdleDays:          next.KeepaliveDefaultIdleDays,
+		KeepaliveDefaultIdleDays:          unsetIfZero(next.KeepaliveDefaultIdleDays),
 		OutboundConnectTimeoutSeconds:     next.OutboundConnectTimeoutSeconds,
 		OutboundHeaderTimeoutSeconds:      next.OutboundHeaderTimeoutSeconds,
 		OutboundImageHeaderTimeoutSeconds: next.OutboundImageHeaderTimeoutSeconds,
@@ -899,6 +899,15 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	}
 	if editable.SiteProbeJitterSeconds < 0 {
 		editable.SiteProbeJitterSeconds = c.env.SiteProbeJitterSeconds
+	}
+	// Keepalive: a stored 0 is "no override", so the console shows the deployment
+	// value the process is actually running with instead of a value that is not
+	// the one in effect (and a 0 interval would fail its own validation).
+	if editable.KeepaliveCheckIntervalSeconds <= 0 {
+		editable.KeepaliveCheckIntervalSeconds = c.env.KeepaliveCheckIntervalSeconds
+	}
+	if editable.KeepaliveDefaultIdleDays <= 0 {
+		editable.KeepaliveDefaultIdleDays = c.env.KeepaliveDefaultIdleDays
 	}
 	// Outbound limits: a stored 0 is "no override", so the console shows the
 	// deployment value the process is actually running with instead of a limit
