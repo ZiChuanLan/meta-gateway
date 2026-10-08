@@ -6,7 +6,6 @@
 package adapters
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -382,20 +381,7 @@ func OpenAIChatToMessages(openaiBody []byte) ([]byte, error) {
 	if text != "" || len(toolCalls) == 0 {
 		blocks = append(blocks, map[string]any{"type": "text", "text": text})
 	}
-	for _, call := range toolCalls {
-		name := strings.TrimSpace(call.Function.Name)
-		if name == "" {
-			continue
-		}
-		id := strings.TrimSpace(call.ID)
-		if id == "" {
-			id = "toolu_" + name
-		}
-		blocks = append(blocks, map[string]any{
-			"type": "tool_use", "id": id, "name": name,
-			"input": json.RawMessage(jsonObjectOrEmpty(json.RawMessage(call.Function.Arguments))),
-		})
-	}
+	blocks = append(blocks, anthropicToolUseBlocks(toolCalls)...)
 	stopReason := mapOpenAIStopReason(finishReason)
 	if len(toolCalls) > 0 {
 		// A turn that carries tool_use blocks must say so: the client decides
@@ -478,8 +464,8 @@ type anthropicStreamBlock struct {
 // with no content at all. Both events therefore get emitted no matter what the
 // upstream stream looks like.
 type OpenAIStreamToAnthropicStream struct {
-	source io.ReadCloser
-	reader *bufio.Reader
+	streamSource
+	frames sseFrameReader
 
 	pending bytes.Buffer
 
@@ -487,7 +473,6 @@ type OpenAIStreamToAnthropicStream struct {
 	model     string
 	created   int64
 	done      bool
-	closed    bool
 	sourceErr error
 
 	started   bool                          // message_start already written
@@ -508,11 +493,11 @@ type OpenAIStreamToAnthropicStream struct {
 
 func NewOpenAIStreamToAnthropicStream(source io.ReadCloser) *OpenAIStreamToAnthropicStream {
 	return &OpenAIStreamToAnthropicStream{
-		source:  source,
-		reader:  bufio.NewReader(source),
-		model:   "claude",
-		created: nowUnix(),
-		tools:   map[int]*anthropicStreamBlock{},
+		streamSource: newStreamSource(source),
+		frames:       newSSEFrameReader(source, false),
+		model:        "claude",
+		created:      nowUnix(),
+		tools:        map[int]*anthropicStreamBlock{},
 	}
 }
 
@@ -551,39 +536,13 @@ func (s *OpenAIStreamToAnthropicStream) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *OpenAIStreamToAnthropicStream) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if s.source != nil {
-		return s.source.Close()
-	}
-	return nil
-}
-
 func (s *OpenAIStreamToAnthropicStream) pullEvent() error {
-	var dataLines []string
-	for {
-		line, err := s.reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF && len(dataLines) > 0 {
-				s.handleFrame(strings.Join(dataLines, "\n"))
-				return nil
-			}
-			return err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			if len(dataLines) > 0 {
-				s.handleFrame(strings.Join(dataLines, "\n"))
-			}
-			return nil
-		}
-		if strings.HasPrefix(line, "data:") {
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
+	_, data, err := s.frames.next()
+	if err != nil {
+		return err
 	}
+	s.handleFrame(data)
+	return nil
 }
 
 func (s *OpenAIStreamToAnthropicStream) handleFrame(data string) {

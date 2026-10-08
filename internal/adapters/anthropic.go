@@ -137,20 +137,7 @@ func ChatToAnthropicMessages(openaiBody []byte) ([]byte, error) {
 			if text != "" {
 				blocks = append(blocks, map[string]any{"type": "text", "text": text})
 			}
-			for _, call := range message.ToolCalls {
-				name := strings.TrimSpace(call.Function.Name)
-				if name == "" {
-					continue
-				}
-				id := strings.TrimSpace(call.ID)
-				if id == "" {
-					id = "toolu_" + name
-				}
-				blocks = append(blocks, map[string]any{
-					"type": "tool_use", "id": id, "name": name,
-					"input": json.RawMessage(jsonObjectOrEmpty(json.RawMessage(call.Function.Arguments))),
-				})
-			}
+			blocks = append(blocks, anthropicToolUseBlocks(message.ToolCalls)...)
 			if len(blocks) == 0 {
 				blocks = append(blocks, map[string]any{"type": "text", "text": ""})
 			}

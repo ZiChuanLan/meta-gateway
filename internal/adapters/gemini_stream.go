@@ -14,7 +14,7 @@ import (
 // (one complete JSON object per "data:" line) into OpenAI chat.completion.chunk
 // SSE so OpenAI-compatible clients can stream through Gemini channels.
 type GeminiToOpenAIStream struct {
-	source io.ReadCloser
+	streamSource
 	reader *bufio.Reader
 
 	pending bytes.Buffer
@@ -23,16 +23,15 @@ type GeminiToOpenAIStream struct {
 	created   int64
 	roleSent  bool
 	done      bool
-	closed    bool
 	sourceErr error
 }
 
 func NewGeminiToOpenAIStream(source io.ReadCloser) *GeminiToOpenAIStream {
 	return &GeminiToOpenAIStream{
-		source:  source,
-		reader:  bufio.NewReader(source),
-		model:   "gemini",
-		created: nowUnix(),
+		streamSource: newStreamSource(source),
+		reader:       bufio.NewReader(source),
+		model:        "gemini",
+		created:      nowUnix(),
 	}
 }
 
@@ -69,17 +68,6 @@ func (s *GeminiToOpenAIStream) Read(p []byte) (int, error) {
 		s.pending.Reset()
 	}
 	return n, nil
-}
-
-func (s *GeminiToOpenAIStream) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if s.source != nil {
-		return s.source.Close()
-	}
-	return nil
 }
 
 // pullEvent reads one SSE line, parses the Gemini JSON payload, and enqueues

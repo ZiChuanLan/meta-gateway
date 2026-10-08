@@ -1,7 +1,6 @@
 package adapters
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -14,8 +13,8 @@ import (
 // chat.completion.chunk SSE so OpenAI-compatible clients can stream through
 // Anthropic-family channels.
 type AnthropicToOpenAIStream struct {
-	source io.ReadCloser
-	reader *bufio.Reader
+	streamSource
+	frames sseFrameReader
 
 	// pending holds already-formatted OpenAI SSE bytes ready to return.
 	pending bytes.Buffer
@@ -25,7 +24,6 @@ type AnthropicToOpenAIStream struct {
 	created   int64
 	roleSent  bool
 	done      bool
-	closed    bool
 	sourceErr error
 
 	// tools maps an Anthropic content-block index onto the OpenAI tool_calls
@@ -38,9 +36,9 @@ type AnthropicToOpenAIStream struct {
 // NewAnthropicToOpenAIStream wraps an Anthropic SSE body.
 func NewAnthropicToOpenAIStream(source io.ReadCloser) *AnthropicToOpenAIStream {
 	return &AnthropicToOpenAIStream{
-		source:  source,
-		reader:  bufio.NewReader(source),
-		created: time.Now().Unix(),
+		streamSource: newStreamSource(source),
+		frames:       newSSEFrameReader(source, true),
+		created:      time.Now().Unix(),
 	}
 }
 
@@ -75,46 +73,13 @@ func (s *AnthropicToOpenAIStream) Read(p []byte) (int, error) {
 	return 0, io.EOF
 }
 
-func (s *AnthropicToOpenAIStream) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if s.source != nil {
-		return s.source.Close()
-	}
-	return nil
-}
-
 func (s *AnthropicToOpenAIStream) pullEvent() error {
-	var dataLines []string
-	var eventType string
-	for {
-		line, err := s.reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF && (len(dataLines) > 0 || eventType != "") {
-				s.handleEvent(eventType, strings.Join(dataLines, "\n"))
-				return nil
-			}
-			return err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			if len(dataLines) > 0 || eventType != "" {
-				s.handleEvent(eventType, strings.Join(dataLines, "\n"))
-			}
-			return nil
-		}
-		if strings.HasPrefix(line, "event:") {
-			eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-			continue
-		}
-		// Ignore id:/comment lines.
+	event, data, err := s.frames.next()
+	if err != nil {
+		return err
 	}
+	s.handleEvent(event, data)
+	return nil
 }
 
 func (s *AnthropicToOpenAIStream) handleEvent(eventType, data string) {

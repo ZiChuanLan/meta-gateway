@@ -34,6 +34,29 @@ type chatConvCall struct {
 	} `json:"function"`
 }
 
+// anthropicToolUseBlocks renders OpenAI tool_calls as Anthropic tool_use blocks.
+// A nameless call is dropped — Anthropic rejects a tool_use without a name, and
+// nothing could answer it anyway — and a missing id gets the "toolu_<name>"
+// placeholder both directions of the Anthropic translation use.
+func anthropicToolUseBlocks(calls []chatConvCall) []map[string]any {
+	blocks := make([]map[string]any, 0, len(calls))
+	for _, call := range calls {
+		name := strings.TrimSpace(call.Function.Name)
+		if name == "" {
+			continue
+		}
+		id := strings.TrimSpace(call.ID)
+		if id == "" {
+			id = "toolu_" + name
+		}
+		blocks = append(blocks, map[string]any{
+			"type": "tool_use", "id": id, "name": name,
+			"input": json.RawMessage(jsonObjectOrEmpty(json.RawMessage(call.Function.Arguments))),
+		})
+	}
+	return blocks
+}
+
 // responsesRequest is the subset of the Responses request document the
 // translator round-trips. Unknown fields are dropped, never forwarded
 // half-way: a chat upstream would reject them anyway.

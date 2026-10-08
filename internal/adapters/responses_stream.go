@@ -14,7 +14,6 @@
 package adapters
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -37,8 +36,8 @@ type streamedToolCall struct {
 // ChatStreamToResponsesStream converts an OpenAI chat SSE body into the
 // OpenAI Responses SSE event contract.
 type ChatStreamToResponsesStream struct {
-	source io.ReadCloser
-	reader *bufio.Reader
+	streamSource
+	frames sseFrameReader
 
 	pending bytes.Buffer
 
@@ -50,7 +49,6 @@ type ChatStreamToResponsesStream struct {
 	preambleSent bool
 	finished     bool
 	completed    bool
-	closed       bool
 	usage        map[string]any
 
 	// outputText accumulates every streamed text delta. The terminal events
@@ -73,8 +71,8 @@ type ChatStreamToResponsesStream struct {
 // NewChatStreamToResponsesStream wraps an OpenAI chat-completion SSE body.
 func NewChatStreamToResponsesStream(source io.ReadCloser) *ChatStreamToResponsesStream {
 	return &ChatStreamToResponsesStream{
-		source:          source,
-		reader:          bufio.NewReader(source),
+		streamSource:    newStreamSource(source),
+		frames:          newSSEFrameReader(source, false),
 		respID:          "resp_" + hexString(randomIDBytes(16)),
 		msgID:           "msg_" + hexString(randomIDBytes(12)),
 		started:         time.Now().Unix(),
@@ -111,41 +109,14 @@ func (s *ChatStreamToResponsesStream) Read(p []byte) (int, error) {
 	return 0, io.EOF
 }
 
-func (s *ChatStreamToResponsesStream) Close() error {
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	if s.source != nil {
-		return s.source.Close()
-	}
-	return nil
-}
-
 // pullEvent reads one SSE frame from the chat stream.
 func (s *ChatStreamToResponsesStream) pullEvent() error {
-	var dataLines []string
-	for {
-		line, err := s.reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF && len(dataLines) > 0 {
-				s.handleFrame(strings.Join(dataLines, "\n"))
-				return nil
-			}
-			return err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			if len(dataLines) > 0 {
-				s.handleFrame(strings.Join(dataLines, "\n"))
-			}
-			return nil
-		}
-		if strings.HasPrefix(line, "data:") {
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
-		// event:/id:/comments are not used by chat streams.
+	_, data, err := s.frames.next()
+	if err != nil {
+		return err
 	}
+	s.handleFrame(data)
+	return nil
 }
 
 type chatStreamToolCall struct {
