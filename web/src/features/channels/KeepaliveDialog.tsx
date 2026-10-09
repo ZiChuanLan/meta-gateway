@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import type { KeepaliveTarget, SiteKeepaliveInput } from "../../api/types";
 import { Button, Dialog, Empty, ErrorState, Field, InfoTip, Loading } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
+import { useAutomationMaster, type AutomationMaster } from "../../hooks/useAutomationMaster";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
 
@@ -64,6 +65,9 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
   });
 
   const targets = status.data?.targets ?? [];
+  // The master switch: the per-site one only decides whether this site takes
+  // part, so it has to be visible on the page that turns sites on.
+  const master = useAutomationMaster("keepalive_enabled");
 
   const toggleSettings = (siteId: number, row: KeepaliveTarget) =>
     setEditing((current) =>
@@ -113,6 +117,17 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
               >
                 {t("channels.keepalive.refresh")}
               </Button>
+              <label className="check keepalive-master">
+                <input
+                  className="switch"
+                  type="checkbox"
+                  checked={master.enabled}
+                  disabled={!master.ready || master.saving}
+                  onChange={(e) => void master.setEnabled(e.target.checked)}
+                />
+                <span>{t("channels.keepalive.masterSwitch")}</span>
+              </label>
+              <InfoTip label={t("channels.keepalive.masterSwitchHint")} />
               <span className="muted keepalive-clock">
                 {t("channels.keepalive.serverTime")}: {formatTime(status.data.now)}
               </span>
@@ -133,11 +148,13 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
                   siteId={editing.siteId}
                   rows={targets.filter((target) => target.site_id === editing.siteId)}
                   row={editing.row}
+                  master={master}
                   sending={sendNow.isPending}
                   onSendNow={() => {
                     setNotice(null);
                     sendNow.mutate(editing.row.channel_id);
                   }}
+                  onNotice={setNotice}
                   onDone={() => {
                     setEditing(null);
                     void status.refetch();
@@ -289,21 +306,29 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
  * sits here with it, because a call is made *with* these settings — and it is
  * disabled while the form is dirty, so nobody sends with settings they can still
  * see are unsaved.
+ *
+ * Saving with 本站保活 on also turns the master switch on when it is off: a site
+ * that is a participant while the scheduler is off is a site that never gets
+ * called, and the operator reads that as a broken feature.
  */
 function SiteSettings({
   siteId,
   rows,
   row,
+  master,
   sending,
   onSendNow,
+  onNotice,
   onDone,
   onCancel,
 }: {
   siteId: number;
   rows: KeepaliveTarget[];
   row: KeepaliveTarget;
+  master: AutomationMaster;
   sending: boolean;
   onSendNow: () => void;
+  onNotice: (message: string) => void;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -333,10 +358,19 @@ function SiteSettings({
   const autoModel = rows.map((target) => target.candidates?.[0]).find(Boolean) ?? "";
   const listId = `keepalive-models-${siteId}`;
 
-  const save = useAdminMutation({
-    mutationFn: (input: SiteKeepaliveInput) => api(client!).keepaliveSaveSite(siteId, input),
-    invalidateKeys: [["keepalive"]],
-    onSuccess: onDone,
+  const save = useAdminMutation<{ masterTurned: boolean }, SiteKeepaliveInput>({
+    mutationFn: async (input) => {
+      await api(client!).keepaliveSaveSite(siteId, input);
+      // A site that takes part while the master switch is off is never called;
+      // turn it on and let the notice say so.
+      const masterTurned = input.keepalive_enabled ? await master.enable() : false;
+      return { masterTurned };
+    },
+    invalidateKeys: [["keepalive"], ["runtime-settings"]],
+    onSuccess: ({ masterTurned }) => {
+      if (masterTurned) onNotice(t("channels.keepalive.masterAutoOn"));
+      onDone();
+    },
   });
 
   return (
@@ -458,25 +492,24 @@ function SiteSettings({
           {t("common.cancel")}
         </Button>
         {save.error ? <span className="inline-error">{String(save.error)}</span> : null}
-        <span className="muted keepalive-send-hint">
-          {dirty
-            ? t("channels.keepalive.sendNowDirty")
-            : t("channels.keepalive.sendNowHint", {
-                channel: row.channel_name,
-                model: form.keepalive_model || autoModel || "—",
-              })}
-        </span>
         <Button
           type="button"
           variant="secondary"
           className="keepalive-send"
           icon={<BellRing size={14} />}
+          title={t("channels.keepalive.sendNowHint", {
+            channel: row.channel_name,
+            model: form.keepalive_model || autoModel || "—",
+          })}
           disabled={dirty || sending || Boolean(row.skip_reason)}
           onClick={onSendNow}
         >
           {t("channels.keepalive.sendNow")}
         </Button>
       </div>
+      {dirty ? (
+        <p className="wide muted keepalive-send-note">{t("channels.keepalive.sendNowDirty")}</p>
+      ) : null}
     </form>
   );
 }

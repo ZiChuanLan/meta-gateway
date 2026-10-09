@@ -9,6 +9,7 @@ import { ResultStrip } from "../components/ResultStrip";
 import { TelemetryStrip } from "../components/TelemetryStrip";
 import { Button, Page } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
+import { useAutomationMaster } from "../hooks/useAutomationMaster";
 import { useClientPagination } from "../hooks/useClientPagination";
 import { useI18n } from "../i18n";
 import { useToast } from "../toast";
@@ -543,10 +544,19 @@ export function Channels() {
     },
   });
 
+  const checkinMaster = useAutomationMaster("checkin_enabled");
   const setCheckin = useAdminMutation({
-    mutationFn: (input: { credentialId: number; enabled: boolean }) =>
-      service.setCheckin(input.credentialId, input.enabled),
-    invalidateKeys: [["credentials"], ["channel-overviews"]],
+    mutationFn: async (input: { credentialId: number; enabled: boolean }) => {
+      const result = await service.setCheckin(input.credentialId, input.enabled);
+      // An account that is "scheduled" while the console's scheduler is off would
+      // never be checked in, which reads as a broken switch; turn the master on
+      // and say so rather than leave the two switches disagreeing.
+      if (input.enabled && (await checkinMaster.enable())) {
+        toast.push({ tone: "success", message: t("channels.checkinMasterAutoOn") });
+      }
+      return result;
+    },
+    invalidateKeys: [["credentials"], ["channel-overviews"], ["runtime-settings"]],
     pendingIdOf: (input) => input.credentialId,
   });
   const runCheckin = useAdminMutation({

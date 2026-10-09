@@ -10,6 +10,8 @@ import { Drawer } from "../../components/Drawer";
 import { SearchableSelect } from "../../components/SearchableSelect";
 import { Button, ErrorState, Field, InfoTip } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
+import { useAutomationMaster } from "../../hooks/useAutomationMaster";
+import { useToast } from "../../toast";
 import { useI18n } from "../../i18n";
 import {
   UA_PRESETS,
@@ -135,6 +137,7 @@ export function EditChannelDialog({
   onManageKeys?: () => void;
 }) {
   const { t } = useI18n();
+  const toast = useToast();
   const inheritedBase = !value.base_url.trim();
   const initialBase = value.base_url || site?.base_url || "";
   const [name, setName] = useState(value.name);
@@ -314,14 +317,21 @@ export function EditChannelDialog({
     queryFn: ({ signal }) => service.discoveredModels(value.id, signal),
   });
   const editModels = discovered.data ?? [];
+  const checkinMaster = useAutomationMaster("checkin_enabled");
   const toggleCheckin = useAdminMutation({
-    mutationFn: (next: boolean) => {
+    mutationFn: async (next: boolean) => {
       if (!userCredential?.id) {
         throw new Error(t("channels.checkinNeedsUserCredential"));
       }
-      return service.setCheckin(userCredential.id, next);
+      const result = await service.setCheckin(userCredential.id, next);
+      // "Scheduled" while the console's scheduler is off means never checked in:
+      // turn the master on too, and say so.
+      if (next && (await checkinMaster.enable())) {
+        toast.push({ tone: "success", message: t("channels.checkinMasterAutoOn") });
+      }
+      return result;
     },
-    invalidateKeys: [["credentials"], ["channel-overviews"]],
+    invalidateKeys: [["credentials"], ["channel-overviews"], ["runtime-settings"]],
   });
   const aliasOf = (realModel: string) =>
     routeOverviews?.find((overview) => {

@@ -162,8 +162,13 @@ export const zh: Dict = {
   "channels.keepalive.fieldDailyCap": "每日上限（0 = 不限）",
   "channels.keepalive.fieldQuietHours": "免打扰时段（可选）",
   "channels.keepalive.fieldQuietHoursHint": "如 22:00-07:00，按服务器本地时间；留空为不限制",
-  "channels.keepalive.fieldPrompt": "自定义提问（可选）",
-  "channels.keepalive.fieldPromptPlaceholder": "留空则由系统从提问池中挑选",
+  "channels.keepalive.fieldPrompt": "自定义提示词（可选）",
+  "channels.keepalive.fieldPromptPlaceholder":
+    "留空则由系统从内置提问池中挑选（仅真实调用形态会用到）",
+  "channels.keepalive.masterSwitch": "启用保活",
+  "channels.keepalive.masterSwitchHint":
+    "保活总开关。本站保活只决定这个站点是否参与；巡检节奏与默认窗口在「设置 → 运行设置 → 保活」。保存时若本站保活是开着的而总开关关着，会自动打开它。",
+  "channels.keepalive.masterAutoOn": "已同时打开保活总开关（否则本网站点不会被巡检）。",
   "common.create": "创建",
   "common.delete": "删除",
   "common.edit": "编辑",
@@ -1059,6 +1064,7 @@ export const zh: Dict = {
   "channels.editBaseUrlInherited": "此连接使用站点 Base URL。保存将更新该上游站点地址。",
   "channels.checkinEnable": "开启定时签到",
   "channels.checkinDisable": "关闭定时签到",
+  "channels.checkinMasterAutoOn": "已同时打开定时签到总开关（否则该账号不会被签到）。",
   "channels.checkinRun": "立即签到",
   "channels.checkinSection": "签到",
   "channels.checkinLogs": "日志",

@@ -178,7 +178,13 @@ export const en: Dict = {
   "channels.keepalive.fieldQuietHoursHint":
     "e.g. 22:00-07:00, in the server's local time; empty means no restriction",
   "channels.keepalive.fieldPrompt": "Custom prompt (optional)",
-  "channels.keepalive.fieldPromptPlaceholder": "Empty picks one from the built-in pool",
+  "channels.keepalive.fieldPromptPlaceholder":
+    "Empty picks one from the built-in pool (only the real-call form uses it)",
+  "channels.keepalive.masterSwitch": "Keepalive on",
+  "channels.keepalive.masterSwitchHint":
+    "The master switch. The per-site one only decides whether this site takes part; the round cadence and the default window live in Settings → Runtime settings → Keepalive. Saving with this site on while the master is off turns the master on.",
+  "channels.keepalive.masterAutoOn":
+    "Also turned on the keepalive master switch, or this site would never be checked.",
   "common.create": "Create",
   "common.delete": "Delete",
   "common.edit": "Edit",
@@ -1139,6 +1145,8 @@ export const en: Dict = {
     "This connection uses the site base URL. Saving updates the site URL for this upstream.",
   "channels.checkinEnable": "Enable scheduled check-in",
   "channels.checkinDisable": "Disable scheduled check-in",
+  "channels.checkinMasterAutoOn":
+    "Also turned on the check-in master switch, or this account would never be checked in.",
   "channels.checkinRun": "Check in now",
   "channels.checkinSection": "Check-in",
   "channels.checkinLogs": "Logs",
