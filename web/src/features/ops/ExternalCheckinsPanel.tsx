@@ -13,7 +13,6 @@ import {
   Dialog,
   ErrorState,
   Field,
-  InfoTip,
   Loading,
   Panel,
 } from "../../components/ui";
@@ -67,6 +66,7 @@ export function ExternalCheckinsPanel() {
   return (
     <Panel
       title={t("ops.external.title")}
+      lede={t("ops.external.lede")}
       titleHelp={t("ops.external.titleHint")}
       actions={
         <Button
@@ -78,10 +78,6 @@ export function ExternalCheckinsPanel() {
         </Button>
       }
     >
-      <div className="ops-panel-context">
-        <span>{t("ops.external.hint")}</span>
-        <InfoTip label={t("ops.external.hint")} />
-      </div>
       {list.isPending ? (
         <Loading />
       ) : list.isError ? (

@@ -285,6 +285,8 @@ interface SectionCardProps {
   sectionKey?: string;
   busy: boolean;
   actions?: ReactNode;
+  /** Panel mechanics, shown behind the (i) in the header. */
+  info?: string;
   className?: string;
   children: ReactNode;
   changed: boolean;
@@ -298,6 +300,7 @@ function SectionCard({
   onRestore,
   busy,
   actions,
+  info,
   className = "",
   children,
 }: SectionCardProps) {
@@ -313,6 +316,9 @@ function SectionCard({
         <div className="panel-header">
           <div className="panel-title">
             <h3>{t(section.label)}</h3>
+            {/* Mechanics go behind the (i): as a paragraph above the controls they
+                wrap to two or three lines and end up louder than the settings. */}
+            {info ? <InfoTip label={info} /> : null}
             <SettingState state={changed ? "changed" : "default"} />
           </div>
           <div className="toolbar">
@@ -1411,9 +1417,10 @@ export function RuntimeSettingsPanel({
               sectionKey="probe"
               changed={isSectionChanged("probe")}
               busy={busy}
+              info={t("ops.runtime.probeIntro")}
               onRestore={() => restoreSectionByKey("probe")}
             >
-              <p className="muted panel-lede">{t("ops.runtime.probeIntro")}</p>
+              <p className="muted panel-lede">{t("ops.runtime.probeLede")}</p>
               {/* The scope is chosen where the pick lists are (模型 → 模型工具 → 模型探测),
                   so this card states it instead of offering a second editor for it. */}
               <p className="muted" role="status">
@@ -1508,9 +1515,10 @@ export function RuntimeSettingsPanel({
               sectionKey="siteProbe"
               changed={isSectionChanged("siteProbe")}
               busy={busy}
+              info={t("ops.runtime.siteProbeIntro")}
               onRestore={() => restoreSectionByKey("siteProbe")}
             >
-              <p className="muted panel-lede">{t("ops.runtime.siteProbeIntro")}</p>
+              <p className="muted panel-lede">{t("ops.runtime.siteProbeLede")}</p>
               <RuntimeRow
                 label={t("ops.runtime.siteProbeInterval")}
                 hint={t("ops.runtime.siteProbeIntervalHint")}
@@ -1563,6 +1571,7 @@ export function RuntimeSettingsPanel({
               sectionKey="keepalive"
               changed={isSectionChanged("keepalive")}
               busy={busy}
+              info={t("ops.runtime.keepaliveIntro")}
               onRestore={() => restoreSectionByKey("keepalive")}
               actions={
                 <Link className="button button-quiet" to="/channels">
@@ -1570,7 +1579,7 @@ export function RuntimeSettingsPanel({
                 </Link>
               }
             >
-              <p className="muted panel-lede">{t("ops.runtime.keepaliveIntro")}</p>
+              <p className="muted panel-lede">{t("ops.runtime.keepaliveLede")}</p>
               <RuntimeRow
                 label={t("ops.runtime.keepaliveEnabled")}
                 hint={t("ops.runtime.keepaliveEnabledHint")}
@@ -2095,9 +2104,10 @@ export function RuntimeSettingsPanel({
                 <header className="panel-header">
                   <div className="panel-title">
                     <h2>{t("ops.runtime.section.users")}</h2>
+                    <InfoTip label={t("ops.runtime.multiUserHint")} />
                   </div>
                 </header>
-                <p className="muted panel-lede">{t("ops.runtime.multiUserHint")}</p>
+                <p className="muted panel-lede">{t("ops.runtime.multiUserLede")}</p>
                 <div className="runtime-actions">
                   <Link className="button button-quiet" to="/users">
                     {t("ops.runtime.openUsers")}

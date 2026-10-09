@@ -3,7 +3,7 @@ import { api } from "../../api/client";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { Button, formatBytes } from "../../components/ui";
+import { Button, InfoTip, formatBytes } from "../../components/ui";
 
 export // Database maintenance: scheduled orphan GC + VACUUM (cron) and a manual
 // run button with the last pass summary.
@@ -38,12 +38,13 @@ function MaintenancePanel() {
     <section className="panel runtime-section runtime-tool-maintenance" id="runtime-db-maintenance">
       <div className="panel-header">
         <strong>{t("ops.maintenance.title")}</strong>
+        <InfoTip label={t("ops.maintenance.hint")} />
         <span className="flex-spacer" />
         <Button variant="secondary" disabled={run.isPending} onClick={() => run.mutate()}>
           {run.isPending ? t("common.working") : t("ops.maintenance.run")}
         </Button>
       </div>
-      <p className="muted panel-lede">{t("ops.maintenance.hint")}</p>
+      <p className="muted panel-lede">{t("ops.maintenance.lede")}</p>
       {run.data ? (
         <p className="maintenance-result">
           {t("ops.maintenance.result", {

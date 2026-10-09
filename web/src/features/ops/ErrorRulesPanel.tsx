@@ -5,7 +5,7 @@ import type { ErrorPassRule } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { ConfirmDialog, Dialog, Field } from "../../components/ui";
+import { ConfirmDialog, Dialog, Field, InfoTip } from "../../components/ui";
 import { RuleEditorFooter } from "./RuleEditorFooter";
 
 export // Error passthrough rules: status/keyword → passthrough / rewrite /
@@ -36,6 +36,9 @@ function ErrorRulesPanel() {
     <section className="panel runtime-section runtime-tool-error-rules" id="runtime-error-rules">
       <div className="panel-header">
         <strong>{t("ops.errorRules.title")}</strong>
+        {/* The actions and their meanings are mechanics: they belong behind the
+            (i), not as three wrapped lines above the list they describe. */}
+        <InfoTip label={t("ops.errorRules.hint")} />
         <button
           type="button"
           className="icon-button"
@@ -56,7 +59,7 @@ function ErrorRulesPanel() {
           +
         </button>
       </div>
-      <p className="muted panel-lede">{t("ops.errorRules.hint")}</p>
+      <p className="muted panel-lede">{t("ops.errorRules.lede")}</p>
       {items.length === 0 ? (
         <p className="is-quiet panel-note">{t("ops.errorRules.empty")}</p>
       ) : (

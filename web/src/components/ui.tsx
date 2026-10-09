@@ -142,6 +142,7 @@ export function Panel({
   defaultOpen = true,
   storageKey,
   summary,
+  lede,
 }: {
   title?: string;
   titleHelp?: string;
@@ -158,6 +159,12 @@ export function Panel({
   storageKey?: string;
   /** Compact readout shown beside the title while the body is folded. */
   summary?: ReactNode;
+  /**
+   * One short line in the body saying what this panel is for. A lede is read at a
+   * glance; a paragraph is skipped, and two paragraphs of explanation stacked in
+   * one card is how a page starts looking like documentation.
+   */
+  lede?: string;
 }) {
   const { t } = useI18n();
   const bodyId = useId();
@@ -190,24 +197,26 @@ export function Panel({
               ) : (
                 <h2>{title}</h2>
               )}
+              {/* Panel-level help stays behind the (i): it is mechanics (an env
+                  variable, what a container rebuild does), it applies whether or
+                  not you are reading this card right now, and as a paragraph it
+                  competes with the controls it is supposed to stay out of the way
+                  of. Field-level hints are the opposite case and stay visible. */}
+              {titleHelp ? <InfoTip label={titleHelp} /> : null}
               {folded && summary ? <span className="panel-summary">{summary}</span> : null}
             </div>
           ) : null}
           <div className="toolbar">{actions}</div>
         </header>
       )}
-      {/* The panel's explanation is part of its body, not a tooltip in the header:
-          a sentence behind an (i) is invisible in a screenshot, on a printed page
-          and to anyone scanning — and a panel that needs explaining usually needs
-          it read. Inside the body it also folds away with the content it explains. */}
       {collapsible ? (
         <div className="panel-body" id={bodyId} hidden={folded}>
-          {titleHelp ? <p className="panel-lede muted">{titleHelp}</p> : null}
+          {lede ? <p className="panel-lede muted">{lede}</p> : null}
           {children}
         </div>
       ) : (
         <>
-          {titleHelp ? <p className="panel-lede muted">{titleHelp}</p> : null}
+          {lede ? <p className="panel-lede muted">{lede}</p> : null}
           {children}
         </>
       )}

@@ -91,7 +91,9 @@ describe("scheduled check-in panel", () => {
   it("says when the schedule still comes from the environment", async () => {
     setup(settings({}));
     expect(await screen.findByText(/定时设置来源：环境变量/)).toBeInTheDocument();
-    expect(screen.getByText(/当前跟随环境变量/)).toBeInTheDocument();
+    // One short line, not a paragraph: the mechanics behind it (which env vars,
+    // what a compose rebuild re-reads) live in the panel's (i).
+    expect(screen.getByText(/重建容器会读回 .env/)).toBeInTheDocument();
   });
 
   it("drops the environment warning once the console saved an override", async () => {
@@ -110,7 +112,7 @@ describe("scheduled check-in panel", () => {
       }),
     );
     expect(await screen.findByText("定时设置来源：管理端覆盖")).toBeInTheDocument();
-    expect(screen.queryByText(/当前跟随环境变量/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/重建容器会读回 .env/)).not.toBeInTheDocument();
   });
 
   it("saves the schedule as a console override", async () => {

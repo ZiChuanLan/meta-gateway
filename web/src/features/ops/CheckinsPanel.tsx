@@ -166,7 +166,11 @@ export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
 
   return (
     <>
-      <Panel title={t("ops.checkin.scheduleTitle")} titleHelp={t("ops.checkin.scheduleHint")}>
+      <Panel
+        title={t("ops.checkin.scheduleTitle")}
+        lede={t("ops.checkin.scheduleLede")}
+        titleHelp={t("ops.checkin.scheduleHint")}
+      >
         <label className="check">
           <input
             className="switch"
@@ -239,18 +243,21 @@ export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
         </div>
         {/* Where the schedule comes from decides whether a container rebuild
             keeps it: an admin override lives in the database, the environment
-            does not. Showing it here is the difference between "the update
-            erased my setting" and "it was never saved here". */}
+            does not. One short line, in the same type as everything else — the
+            mechanics behind it are in the panel's (i) rather than repeated here
+            as a paragraph the reader has to skip. */}
         {runtime.data ? (
-          <p className="detail-section-empty is-quiet">
-            {t("ops.checkin.scheduleSource", {
-              source: t(
-                runtime.data.source === "admin_override"
-                  ? "ops.runtime.sourceAdmin"
-                  : "ops.runtime.sourceEnvironment",
-              ),
-            })}
-            {runtime.data.has_override ? null : ` — ${t("ops.checkin.scheduleEnvHint")}`}
+          <p className="ops-panel-context">
+            <span>
+              {t("ops.checkin.scheduleSource", {
+                source: t(
+                  runtime.data.source === "admin_override"
+                    ? "ops.runtime.sourceAdmin"
+                    : "ops.runtime.sourceEnvironment",
+                ),
+              })}
+              {runtime.data.has_override ? "" : ` ${t("ops.checkin.scheduleEnvHint")}`}
+            </span>
           </p>
         ) : null}
       </Panel>

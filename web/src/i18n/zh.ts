@@ -2254,20 +2254,20 @@ export const zh: Dict = {
   "ops.statusFilter": "状态筛选",
   "ops.runEnabled": "运行已启用项",
   "ops.checkin.scheduleTitle": "定时签到",
+  "ops.checkin.scheduleLede": "按计划自动对已启用站点的登录态凭证签到。",
   "ops.checkin.scheduleHint":
-    "按计划自动对已启用站点的登录态凭证执行签到。定时任务保存在数据库里：在这里保存一次就写入管理端覆盖，以后重建容器（含一键更新）也不会被环境变量改回去。",
+    "保存在这里即写入管理端覆盖，容器重建（含一键更新）也不会丢。不改则跟随环境变量 CHECKIN_ENABLED / CHECKIN_CRON——按 compose 重建容器时会重新读 .env（compose 里的默认值是关闭），这里就会变回关闭。",
   "ops.checkin.scheduleSource": "定时设置来源：{source}",
-  "ops.checkin.scheduleEnvHint":
-    "当前跟随环境变量（CHECKIN_ENABLED / CHECKIN_CRON）。若容器是按 compose 重建的（会重新读 .env，compose 里默认 CHECKIN_ENABLED=false），这里就会变回关闭——在这里保存一次即改为管理端覆盖，不再受环境影响。",
+  "ops.checkin.scheduleEnvHint": "· 重建容器会读回 .env",
   "ops.checkin.scheduleEnabled": "启用定时签到",
   "ops.checkin.schedulePreset": "频率",
   "ops.checkin.scheduleCron": "Cron 表达式",
   "ops.checkin.scheduleSave": "保存计划",
   "ops.checkin.scheduleSaved": "签到计划已保存。",
   "ops.external.title": "外部签到站点",
+  "ops.external.lede": "非 New-API 家族站点的通用 Cookie 每日签到。",
   "ops.external.titleHint":
-    "面向非 New-API 家族平台的通用 Cookie 每日签到（如薄荷公益站）。与常规签到共用同一调度与日志。",
-  "ops.external.hint": "添加站点、粘贴登录 Cookie，调度器即会每日自动签到。",
+    "添加站点、粘贴登录 Cookie 后，调度器会每日自动签到；与常规签到共用同一套调度与日志。",
   "ops.external.empty": "暂无外部签到站点。",
   "ops.external.add": "添加站点",
   "ops.external.addTitle": "新增外部签到站点",
@@ -2446,14 +2446,15 @@ export const zh: Dict = {
     "新建渠道时若未选择同步模式则采用此模式，不影响已有渠道。自动同步 = 探测到的模型自动接入路由；按需勾选 = 只进候选列表，到模型页手动接入。",
   "ops.maintenance.title": "数据库维护",
   "ops.maintenance.run": "立即运行",
+  "ops.maintenance.lede": "清理孤儿数据并在空闲页较多时压缩数据库。",
   "ops.maintenance.hint":
-    "清理孤儿数据（已删除渠道/路由/Key 的残留行）并在空闲页较多时执行 VACUUM 压缩。",
+    "孤儿数据指已删除渠道 / 路由 / Key 的残留行；VACUUM 会重写数据库文件，期间占用磁盘瞬时会翻倍。",
   "ops.maintenance.cron": "维护计划",
   "ops.maintenance.cronHint": "定时维护的五段 cron（默认 0 4 * * * = 每天 04:00）；留空 = 关闭。",
   "ops.runtime.section.sync": "模型同步",
   "ops.runtime.section.probe": "定时模型探测",
-  "ops.runtime.probeIntro":
-    "按计划对所有路由的模型发起真实调用，提前发现不可用的成员。探测会消耗上游额度，请留意频率与范围。",
+  "ops.runtime.probeLede": "按计划对模型发起真实调用，提前发现不可用成员。",
+  "ops.runtime.probeIntro": "探测会消耗上游额度，频率与范围在模型页的「模型探测」里设置。",
   "ops.runtime.probeCron": "探测计划",
   "ops.runtime.probeCronHint":
     "五段 cron（如 0 */6 * * * = 每 6 小时）定时探测全部渠道的全部模型；留空 = 关闭。",
@@ -2477,8 +2478,9 @@ export const zh: Dict = {
   "ops.runtime.probeAutoDisableHint":
     "连续失败达到该次数的成员会被自动移出路由，探测成功后自动恢复；0 = 只记录不改动路由。人工禁用的成员不会被自动恢复。",
   "ops.runtime.section.siteProbe": "站点探针",
+  "ops.runtime.siteProbeLede": "读取站点自己公开的探针数据，不消耗 token。",
   "ops.runtime.siteProbeIntro":
-    "读取公益站自己公开的探针数据（Uptime Kuma 状态页 / New-API 价格表），不消耗上游 token。采集节奏要按站点公布数据的快慢来定：状态页每分钟轮询一次的站点，15 分钟一轮基本看不到变化；每 15 分钟才出一条心跳的站点，跑得更快也没有新数据。",
+    "数据源是站点自己公布的 Uptime Kuma 状态页或 New-API 价格表。采集节奏要跟着数据更新的快慢走：每分钟轮询一次的站点，15 分钟一轮基本看不到变化；每 15 分钟才出一条心跳的站点，跑得更快也没有新数据。",
   "ops.runtime.siteProbeInterval": "采集间隔（秒）",
   "ops.runtime.siteProbeIntervalHint":
     "多久采集一轮所有已启用的站点数据源，最少 60 秒。改完在下一轮生效，不需要重启。",
@@ -2487,8 +2489,9 @@ export const zh: Dict = {
     "每轮随机延迟的上限，避免多个网关同一秒一起打同一个状态页；不能大于采集间隔。",
   "ops.runtime.section.keepalive": "保活",
   "ops.runtime.openKeepalive": "打开连接页",
+  "ops.runtime.keepaliveLede": "按账号空闲时间保活，避开「连续 N 天无调用」封号。",
   "ops.runtime.keepaliveIntro":
-    "公益站多数按「连续 N 天无调用」封号，所以保活不是定时器，而是看账号空闲了多久：只有快到期且确实没人用的渠道才会被调用一次。每个站点的窗口（15 天/30 天）在连接页按站点设置。",
+    "保活不是定时器：只有快到期且确实没人用的渠道会被调用一次，有正常流量的渠道不会被碰。每个站点的窗口（15 天 / 30 天）在连接页按站点设置。",
   "ops.runtime.keepaliveEnabled": "启用保活",
   "ops.runtime.keepaliveEnabledHint":
     "总开关。关闭时任何一轮都不发请求，站点自己的设置不受影响；开启后按站点窗口与渠道开关逐一判断。默认关闭。",
@@ -2577,8 +2580,8 @@ export const zh: Dict = {
   "ops.runtime.updateCheck": "检查更新",
   "ops.runtime.updateCheckHint":
     "定期向 GitHub 查询最新 Release，有新版本时在顶栏提示。关闭后不做任何外呼。环境变量：UPDATE_CHECK_ENABLED。",
-  "ops.runtime.multiUserHint":
-    "成员账户、他们的额度、登录方式与成员界面都在这里管理。开关本身放在该区域的「概览」里，所以一个人自用时不占用任何位置。",
+  "ops.runtime.multiUserLede": "成员账户、额度与登录方式。",
+  "ops.runtime.multiUserHint": "开关本身在该区域的「概览」里，一个人自用时不占用任何位置。",
   "ops.runtime.openUsers": "打开用户管理",
   "ops.runtime.group.danger": "危险操作",
   "ops.runtime.group.dangerDesc": "不可逆操作，执行前请先备份",
@@ -2647,8 +2650,9 @@ export const zh: Dict = {
   "ops.factoryReset.confirm": "清空一切",
   "ops.factoryReset.done": "工厂重置完成——网关已回到干净初始状态。",
   "ops.alertRules.title": "告警规则",
+  "ops.alertRules.lede": "指标超阈值时通过已配置的通道告警。",
   "ops.alertRules.hint":
-    "指标规则每 60 秒评估一次；告警通过已配置的 webhook/bark/serverchan/telegram/smtp 通道发送。",
+    "指标规则每 60 秒评估一次；告警通过已配置的 webhook / bark / serverchan / telegram / smtp 通道发送。",
   "ops.alertRules.empty": "还没有规则。添加一条，指标越阈值时就会收到通知。",
   "ops.alertRules.deleteTitle": "删除告警规则",
   "ops.alertRules.deleteConfirm": "删除后该指标越过阈值时不再通知。此操作不可恢复。",
@@ -2662,8 +2666,8 @@ export const zh: Dict = {
   "ops.alertRules.sustained": "持续（秒）",
   "ops.alertRules.cooldown": "冷却（秒）",
   "ops.guard.title": "敏感 prompt 保护",
-  "ops.guard.hint":
-    "作用于对话体每个字符串值的正则规则：mask 替换命中内容，reject 直接拒绝请求（400），exclude 命中时跳过指定渠道。",
+  "ops.guard.lede": "对对话体里的字符串值应用正则规则。",
+  "ops.guard.hint": "mask 替换命中内容，reject 直接拒绝请求（400），exclude 命中时跳过指定渠道。",
   "ops.guard.empty": "还没有保护规则。",
   "ops.guard.deleteTitle": "删除保护规则",
   "ops.guard.deleteConfirm": "删除后该规则当前拦下的 prompt 将直接通过。此操作不可恢复。",
@@ -2677,8 +2681,9 @@ export const zh: Dict = {
   "ops.guard.actionExclude": "排除渠道",
   "ops.guard.replacement": "替换文本",
   "ops.guard.excludeChannels": "渠道 ID（逗号分隔）",
+  "ops.errorRules.lede": "按上游 4xx 错误覆盖默认 failover。",
   "ops.errorRules.hint":
-    "按上游 4xx 错误（状态码 + 错误体关键词）覆盖默认 failover：passthrough 直接透传错误（不重试）、rewrite 改写状态码、ignore_monitor 继续 failover 但跳过熔断/冷却/失败计数。规则对下一个请求立即生效。",
+    "匹配状态码加错误体关键词；passthrough 直接透传错误（不重试），rewrite 改写状态码，ignore_monitor 继续 failover 但跳过熔断 / 冷却 / 失败计数。规则对下一个请求立即生效。",
   "ops.errorRules.empty": "无规则——所有 4xx 错误都会 failover 到下一个渠道。",
   "ops.errorRules.deleteTitle": "删除错误规则",
   "ops.errorRules.deleteConfirm": "删除后匹配的错误将回到默认 failover 行为。此操作不可恢复。",

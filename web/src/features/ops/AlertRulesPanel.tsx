@@ -5,7 +5,7 @@ import type { AlertRule } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { ConfirmDialog, Dialog, Field } from "../../components/ui";
+import { ConfirmDialog, Dialog, Field, InfoTip } from "../../components/ui";
 import { RuleEditorFooter } from "./RuleEditorFooter";
 
 export // Alert rules: metric/operator/threshold/window/sustained → webhook.
@@ -36,6 +36,7 @@ function AlertRulesPanel() {
     <section className="panel runtime-section runtime-tool-alert-rules" id="runtime-alert-rules">
       <div className="panel-header">
         <strong>{t("ops.alertRules.title")}</strong>
+        <InfoTip label={t("ops.alertRules.hint")} />
         <button
           type="button"
           className="icon-button"
@@ -57,7 +58,7 @@ function AlertRulesPanel() {
           +
         </button>
       </div>
-      <p className="muted panel-lede">{t("ops.alertRules.hint")}</p>
+      <p className="muted panel-lede">{t("ops.alertRules.lede")}</p>
       {items.length === 0 ? (
         <p className="is-quiet panel-note">{t("ops.alertRules.empty")}</p>
       ) : (

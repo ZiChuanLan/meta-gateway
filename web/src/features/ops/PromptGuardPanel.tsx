@@ -5,7 +5,7 @@ import type { PromptGuardRule } from "../../api/types";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
-import { ConfirmDialog, Dialog, Field } from "../../components/ui";
+import { ConfirmDialog, Dialog, Field, InfoTip } from "../../components/ui";
 import { RuleEditorFooter } from "./RuleEditorFooter";
 
 export // Sensitive prompt guards: regex rules that mask, reject, or channel-exclude
@@ -36,6 +36,7 @@ function PromptGuardPanel() {
     <section className="panel runtime-section runtime-tool-prompt-guard" id="runtime-prompt-guards">
       <div className="panel-header">
         <strong>{t("ops.guard.title")}</strong>
+        <InfoTip label={t("ops.guard.hint")} />
         <button
           type="button"
           className="icon-button"
@@ -55,7 +56,7 @@ function PromptGuardPanel() {
           +
         </button>
       </div>
-      <p className="muted panel-lede">{t("ops.guard.hint")}</p>
+      <p className="muted panel-lede">{t("ops.guard.lede")}</p>
       {items.length === 0 ? (
         <p className="is-quiet panel-note">{t("ops.guard.empty")}</p>
       ) : (

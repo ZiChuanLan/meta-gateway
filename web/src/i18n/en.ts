@@ -2442,21 +2442,21 @@ export const en: Dict = {
   "ops.statusFilter": "Status filter",
   "ops.runEnabled": "Run enabled",
   "ops.checkin.scheduleTitle": "Scheduled check-in",
+  "ops.checkin.scheduleLede": "Runs check-in for enabled sites' session credentials on a schedule.",
   "ops.checkin.scheduleHint":
-    "Runs check-in for enabled sites' session credentials on a schedule. The schedule lives in the database: saving here writes an admin override, so a container rebuild (including the one-click update) can no longer change it back with an environment variable.",
+    "Saving here writes an admin override that a container rebuild (including the one-click update) cannot change back. Left unsaved it follows the environment (CHECKIN_ENABLED / CHECKIN_CRON) — a container recreated from compose re-reads .env, where the default is off, and this goes back to off.",
   "ops.checkin.scheduleSource": "Schedule source: {source}",
-  "ops.checkin.scheduleEnvHint":
-    "This currently follows the environment (CHECKIN_ENABLED / CHECKIN_CRON). A container recreated from compose re-reads .env — where the default is CHECKIN_ENABLED=false — and the schedule goes back to off. Saving here pins it as an admin override instead.",
+  "ops.checkin.scheduleEnvHint": "· a container rebuild re-reads .env",
   "ops.checkin.scheduleEnabled": "Enable scheduled check-in",
   "ops.checkin.schedulePreset": "Frequency",
   "ops.checkin.scheduleCron": "Cron expression",
   "ops.checkin.scheduleSave": "Save schedule",
   "ops.checkin.scheduleSaved": "Check-in schedule saved.",
   "ops.external.title": "External check-in sites",
+  "ops.external.lede":
+    "Cookie-authenticated daily check-in for platforms outside the New-API family.",
   "ops.external.titleHint":
-    "Generic cookie-authenticated daily check-in for platforms outside the New-API family (e.g. 薄荷公益站). Runs on the same schedule and appears in the same logs.",
-  "ops.external.hint":
-    "Add a site, paste its login Cookie, and the scheduler checks it in every day.",
+    "Add a site and paste its login Cookie; the scheduler checks it in every day, on the same schedule and into the same logs as the built-in check-in.",
   "ops.external.empty": "No external check-in sites yet.",
   "ops.external.add": "Add site",
   "ops.external.addTitle": "New external check-in site",
@@ -2647,15 +2647,17 @@ export const en: Dict = {
     "Applied when a newly created channel does not pick a sync mode; existing channels are unaffected. Auto sync = discovered models are routed automatically; pick on demand = candidates only, adopted from the models page.",
   "ops.maintenance.title": "Database maintenance",
   "ops.maintenance.run": "Run now",
+  "ops.maintenance.lede": "Cleans orphaned rows and compacts the database.",
   "ops.maintenance.hint":
-    "Deletes orphaned rows (channels/routes/keys already deleted) and VACUUMs when the freelist is large.",
+    "Orphaned rows are leftovers of already-deleted channels, routes and keys. VACUUM rewrites the database file, so disk usage briefly doubles.",
   "ops.maintenance.cron": "Maintenance schedule",
   "ops.maintenance.cronHint":
     "Five-field cron for the daily maintenance pass (default 0 4 * * *); empty = disabled.",
   "ops.runtime.section.sync": "Model sync",
   "ops.runtime.section.probe": "Scheduled model probing",
+  "ops.runtime.probeLede": "Calls models on a schedule to catch broken members early.",
   "ops.runtime.probeIntro":
-    "Calls every model of every route on a schedule to catch broken members before traffic reaches them. Probing spends upstream quota, so watch the cadence.",
+    "Probing spends upstream quota; the cadence and scope are set under 模型 → 模型工具 → 模型探测.",
   "ops.runtime.probeCron": "Probe schedule",
   "ops.runtime.probeCronHint":
     "Five-field cron (e.g. 0 */6 * * * = every 6 hours) probing every model on every channel; empty = disabled.",
@@ -2679,8 +2681,9 @@ export const en: Dict = {
   "ops.runtime.probeAutoDisableHint":
     "A member failing this many times in a row is pulled from routing, and returns as soon as a probe succeeds. 0 = record only. Members you disabled by hand are never re-enabled.",
   "ops.runtime.section.siteProbe": "Site probe",
+  "ops.runtime.siteProbeLede": "Reads the probe data sites publish themselves; no tokens spent.",
   "ops.runtime.siteProbeIntro":
-    "Reads the probe data public-benefit sites publish themselves (an Uptime Kuma status page, a New-API price table) and spends no upstream tokens. The cadence has to follow how fast those pages change: a status page polling every minute is wasted on a 15-minute round, while one publishing a heartbeat every 15 minutes gains nothing from a faster one.",
+    "The source is a site's own Uptime Kuma status page or New-API price table. The cadence has to follow how fast those pages change: a status page polling every minute shows nothing new on a 15-minute round, while one publishing a heartbeat every 15 minutes gains nothing from a faster one.",
   "ops.runtime.siteProbeInterval": "Collection interval (seconds)",
   "ops.runtime.siteProbeIntervalHint":
     "How often every enabled site source is collected, minimum 60 seconds. A change lands on the next round; no restart needed.",
@@ -2689,8 +2692,9 @@ export const en: Dict = {
     "Upper bound on the random delay added to each round, so a fleet of gateways does not hit one status page in the same second. Cannot exceed the interval.",
   "ops.runtime.section.keepalive": "Keepalive",
   "ops.runtime.openKeepalive": "Open connections",
+  "ops.runtime.keepaliveLede": "Keeps accounts inside their no-call window, without a timer.",
   "ops.runtime.keepaliveIntro":
-    'Most public-benefit sites ban an account for "no call for N days", so keepalive is not a timer: it looks at how long the account has really been idle and calls only the channels that are both close to their window and genuinely unused. The per-site window (15 days, 30 days) is set on the connections page.',
+    "Keepalive is not a timer: only channels that are close to their window and genuinely unused are called once; channels with real traffic are never touched. The per-site window (15 days, 30 days) is set on the connections page.",
   "ops.runtime.keepaliveEnabled": "Enable keepalive",
   "ops.runtime.keepaliveEnabledHint":
     "Master switch. Off means no round sends anything, whatever the sites say; on means every channel is judged by its own window and switch. Off by default.",
@@ -2784,8 +2788,9 @@ export const en: Dict = {
   "ops.runtime.updateCheck": "Check for updates",
   "ops.runtime.updateCheckHint":
     "Periodically query GitHub for the latest release and flag new versions in the top bar. Off = no outbound calls at all. Env: UPDATE_CHECK_ENABLED.",
+  "ops.runtime.multiUserLede": "Member accounts, credit and sign-in methods.",
   "ops.runtime.multiUserHint":
-    "Member accounts, their credit, their sign-in methods and the member interface are managed in this area. Its switch lives on its own overview board, so a one-person gateway never has to look at it.",
+    "Its switch lives on the area's own overview board, so a one-person gateway never has to look at it.",
   "ops.runtime.openUsers": "Open user management",
   "ops.runtime.group.danger": "Danger zone",
   "ops.runtime.group.dangerDesc": "Irreversible actions. Take a backup first.",
@@ -2858,8 +2863,9 @@ export const en: Dict = {
   "ops.factoryReset.confirm": "Wipe everything",
   "ops.factoryReset.done": "Factory reset complete — the gateway is back to a clean slate.",
   "ops.alertRules.title": "Alert rules",
+  "ops.alertRules.lede": "Alerts on metric thresholds through the configured channels.",
   "ops.alertRules.hint":
-    "Metric rules evaluated every 60s; alerts go through the configured webhook/bark/serverchan/telegram/smtp channels.",
+    "Metric rules are evaluated every 60s; alerts go through the configured webhook / bark / serverchan / telegram / smtp channels.",
   "ops.alertRules.empty":
     "No rules yet. Add one to get notified when a metric crosses its threshold.",
   "ops.alertRules.deleteTitle": "Delete alert rule",
@@ -2875,8 +2881,9 @@ export const en: Dict = {
   "ops.alertRules.sustained": "Sustained (s)",
   "ops.alertRules.cooldown": "Cooldown (s)",
   "ops.guard.title": "Sensitive prompt guards",
+  "ops.guard.lede": "Regex rules for the string values in chat bodies.",
   "ops.guard.hint":
-    "Regex rules applied to every string value in chat bodies: mask replaces matches, reject refuses the request (400), exclude skips the listed channels for matched requests.",
+    "mask replaces matches, reject refuses the request (400), exclude skips the listed channels for matched requests.",
   "ops.guard.empty": "No guard rules yet.",
   "ops.guard.deleteTitle": "Delete guard rule",
   "ops.guard.deleteConfirm":
@@ -2891,8 +2898,9 @@ export const en: Dict = {
   "ops.guard.actionExclude": "Exclude channels",
   "ops.guard.replacement": "Replacement text",
   "ops.guard.excludeChannels": "Channel ids (comma-separated)",
+  "ops.errorRules.lede": "Overrides the default failover for upstream 4xx errors.",
   "ops.errorRules.hint":
-    "Match upstream 4xx errors (status + error-body keyword) and override failover: passthrough returns the error directly, rewrite changes its status code, ignore_monitor keeps failover but skips breaker/cooldown/counters. Rules apply to the very next request.",
+    "Matches on status code plus an error-body keyword: passthrough returns the error directly, rewrite changes its status code, ignore_monitor keeps failover but skips breaker, cooldown and counters. Rules apply to the very next request.",
   "ops.errorRules.empty": "No rules — all 4xx errors fail over to the next channel.",
   "ops.errorRules.deleteTitle": "Delete error rule",
   "ops.errorRules.deleteConfirm":
