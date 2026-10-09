@@ -290,11 +290,13 @@ func TestKeepaliveSendsTodayCountsSuccessfulCallsOnly(t *testing.T) {
 	}
 }
 
-// A channel no route points at has no dispatcher, so the console must say so
-// rather than let a failed call repeat every round.
-func TestKeepaliveTargetsReportAChannelWithNoRoute(t *testing.T) {
+// A keepalive is not a client: it goes straight to the channel, so a model no
+// route serves is still callable — keeping an account alive must not require
+// putting its model on offer. The model is the first one the channel advertised,
+// unless the site pinned one.
+func TestKeepaliveTargetsCallTheFirstFetchedModelWithoutARoute(t *testing.T) {
 	db := openTestDB(t)
-	_, _, channels := keepaliveFixture(t, db, domain.CallPolicyAllowProbe, 30)
+	siteID, _, _ := keepaliveFixture(t, db, domain.CallPolicyAllowProbe, 30)
 
 	targets, err := db.Channel.KeepaliveTargets(0)
 	if err != nil {
@@ -303,42 +305,30 @@ func TestKeepaliveTargetsReportAChannelWithNoRoute(t *testing.T) {
 	if len(targets) != 1 {
 		t.Fatalf("targets = %d, want 1", len(targets))
 	}
-	if targets[0].SkipReason != "no_route" {
-		t.Fatalf("skip reason = %q, want no_route (nothing routes to this channel)", targets[0].SkipReason)
+	if targets[0].SkipReason != "" {
+		t.Fatalf("skip reason = %q: nothing routes to this channel, which must not block a call", targets[0].SkipReason)
+	}
+	if targets[0].Model != "model-keepalive" {
+		t.Errorf("model = %q, want the channel's own first model", targets[0].Model)
+	}
+	if len(targets[0].Candidates) != 1 || targets[0].Candidates[0] != "model-keepalive" {
+		t.Errorf("candidates = %v, want the fetched list the console picks from", targets[0].Candidates)
 	}
 
-	// Once a route serves one of the channel's models, the target becomes
-	// callable and the model is the one routing reaches it with.
-	routeID, err := db.Route.Create(&domain.Route{
-		ModelPattern: "model-routed", Enabled: true, RoutingMode: domain.RoutingModeAuto,
-	})
+	// A site-level pin still wins: it is what the console's model field writes.
+	site, err := db.Site.GetByID(siteID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.RouteMember.Create(&domain.RouteMember{
-		RouteID: routeID, ChannelID: channels[0], Weight: 100, Enabled: true, GroupName: "default",
-	}); err != nil {
+	site.KeepaliveModel = "pinned-by-operator"
+	if err := db.Site.UpdateCallPolicy(site); err != nil {
 		t.Fatal(err)
 	}
-	// keepaliveFixture makes two channels sharing a credential; both need a
-	// route member for the group to be callable.
-	if _, err := db.RouteMember.Create(&domain.RouteMember{
-		RouteID: routeID, ChannelID: channels[1], Weight: 100, Enabled: true, GroupName: "default",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
 	targets, err = db.Channel.KeepaliveTargets(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(targets) != 1 {
-		t.Fatalf("targets = %d, want 1", len(targets))
-	}
-	if targets[0].SkipReason != "" {
-		t.Fatalf("skip reason = %q, want empty once a route reaches the channel", targets[0].SkipReason)
-	}
-	if targets[0].Model != "model-routed" {
-		t.Errorf("model = %q, want the routed pattern", targets[0].Model)
+	if len(targets) != 1 || targets[0].Model != "pinned-by-operator" {
+		t.Fatalf("targets = %+v, want the site's pinned model", targets)
 	}
 }

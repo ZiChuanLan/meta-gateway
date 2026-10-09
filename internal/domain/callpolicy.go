@@ -244,18 +244,27 @@ type KeepaliveEvent struct {
 //
 // The counting unit is the credential — a ban counts calls to one account, and
 // two channels sharing a key would otherwise be called twice — while the sending
-// unit stays a single channel x model, so the request goes somewhere real.
+// unit stays a single channel x model: the call goes straight to that channel,
+// so routing has no say in whether an account can be kept alive.
 type KeepaliveTarget struct {
 	// CredentialID is plumbing (the ban counts per account, and two channels can
 	// share one), not a fact an operator reads, so it stays out of the payload.
-	CredentialID int64           `json:"-"`
-	SiteID       int64           `json:"site_id"`
-	SiteName     string          `json:"site_name"`
-	ChannelID    int64           `json:"channel_id"`
-	ChannelName  string          `json:"channel_name"`
-	Model        string          `json:"model"`
-	Policy       string          `json:"call_policy"`
-	Config       KeepaliveConfig `json:"config"`
+	CredentialID int64  `json:"-"`
+	SiteID       int64  `json:"site_id"`
+	SiteName     string `json:"site_name"`
+	ChannelID    int64  `json:"channel_id"`
+	ChannelName  string `json:"channel_name"`
+	Model        string `json:"model"`
+	// SiteModel is the site's own setting, empty when nothing is pinned: the
+	// console shows it in the field, while Model shows what a call would send.
+	SiteModel string          `json:"site_model,omitempty"`
+	Policy    string          `json:"call_policy"`
+	Config    KeepaliveConfig `json:"config"`
+	// Candidates are the models this channel advertised when its list was last
+	// fetched (models_csv). Empty means "nothing fetched yet", which is also why
+	// the target has no model to call: the console offers them as the picklist
+	// behind the site's keepalive model field.
+	Candidates []string `json:"candidates,omitempty"`
 	// LastCallAt is the newest real call across every channel of this
 	// credential. nil means "never called" — which is not the same as "idle
 	// forever", so it is reported rather than treated as day zero.
@@ -267,7 +276,8 @@ type KeepaliveTarget struct {
 	// SendsToday counts this credential's successful keepalive calls since UTC
 	// midnight, for the daily cap.
 	SendsToday int `json:"sends_today"`
-	// SkipReason names why a target cannot be called at all (no model), so the
-	// console can show "cannot keepalive" instead of leaving a silent gap.
+	// SkipReason names why a target cannot be called at all (no model fetched and
+	// none configured), so the console can show "cannot keepalive" instead of
+	// leaving a silent gap.
 	SkipReason string `json:"skip_reason,omitempty"`
 }

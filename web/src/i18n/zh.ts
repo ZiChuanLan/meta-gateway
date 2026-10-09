@@ -140,11 +140,14 @@ export const zh: Dict = {
   "channels.keepalive.footprint": "调用足迹",
   "channels.keepalive.footprintCount": "最近 {count} 条",
   "channels.keepalive.siteChannels": "{count} 个渠道",
-  "channels.keepalive.digestDue": "{count} 个该发了",
-  "channels.keepalive.digestRemaining": "最近剩余 {days}",
-  "channels.keepalive.digestOff": "保活未开启",
-  "channels.keepalive.digestNoModel": "无可用模型",
-  "channels.keepalive.digestNoRoute": "未接入路由",
+  "channels.keepalive.fieldModel": "保活模型",
+  "channels.keepalive.fieldModelAuto":
+    "留空即自动：对该渠道第一个已获取的模型（{model}）发一次真实调用。",
+  "channels.keepalive.fieldModelNone":
+    "留空即自动，但该渠道还没有已获取的模型：先在渠道里刷新模型，或在这里直接填一个。",
+  "channels.keepalive.sendNowHint":
+    "立即保活：对 {channel} 发一次真实调用（模型 {model}），不经过路由。",
+  "channels.keepalive.sendNowDirty": "有未保存的修改，先保存再发送。",
   "channels.keepalive.footprintHint":
     "每次保活调用的记录：什么时候、发给了谁、用的什么形态、因为什么（如「idle 19 天 >= 阈值 13 天」）。站点管理员问起时，这就是直接能摆出来的证据。",
   "channels.keepalive.noEvents": "还没有保活调用记录。",

@@ -1,6 +1,6 @@
 import { BellRing, ChevronRight, Play, RefreshCw, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { KeepaliveTarget, SiteKeepaliveInput } from "../../api/types";
 import { Button, Dialog, Empty, ErrorState, Field, InfoTip, Loading } from "../../components/ui";
@@ -16,20 +16,18 @@ import { useSession } from "../../session";
  * what matters is the idle age of each account against its own window; a channel
  * that already has traffic is never listed as "due", and the page says so
  * instead of implying a timer is running.
+ *
+ * Every site's rows are on screen at once (no folding): the question this page
+ * answers — "which account is about to be banned" — is answered by scanning the
+ * 剩余 column, and a folded row would hide exactly the number that answers it.
  */
 export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
   const { client } = useSession();
-  const [editingSite, setEditingSite] = useState<number | null>(null);
+  // Which site's settings are open, and which of its channels the send button
+  // belongs to: the settings are the site's, the call is one channel's.
+  const [editing, setEditing] = useState<{ siteId: number; row: KeepaliveTarget } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  // A site folds away unless it has something to do; the operator's own clicks
-  // win over that default for as long as the dialog is open.
-  const [siteFold, setSiteFold] = useState<Record<number, boolean>>({});
-  const siteOpen = (siteId: number, rows: KeepaliveTarget[]) =>
-    siteFold[siteId] ?? siteNeedsAttention(rows);
-  const toggleSite = (siteId: number, rows: KeepaliveTarget[]) =>
-    setSiteFold((fold) => ({ ...fold, [siteId]: !siteOpen(siteId, rows) }));
-  const openSite = (siteId: number) => setSiteFold((fold) => ({ ...fold, [siteId]: true }));
 
   const status = useQuery({
     queryKey: ["keepalive", client],
@@ -68,11 +66,17 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
   const targets = status.data?.targets ?? [];
   const grouped = groupBySite(targets);
 
+  const toggleSettings = (siteId: number, row: KeepaliveTarget) =>
+    setEditing((current) =>
+      current?.siteId === siteId && current.row.channel_id === row.channel_id
+        ? null
+        : { siteId, row },
+    );
+
   return (
     <Dialog title={t("channels.keepalive.title")} onClose={onClose} busy={runRound.isPending}>
-      {/* A stable marker for the width rule: keying it off the table would make
-          the dialog narrow the moment every site is folded, since a folded site
-          renders no table. */}
+      {/* A stable marker for the width rule: the table sizes the dialog, and the
+          marker must not depend on what happens to be rendered inside it. */}
       <div className="keepalive-workspace">
         <p className="muted panel-lede">
           {t("channels.keepalive.intro")}
@@ -113,130 +117,103 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
             {targets.length === 0 ? (
               <Empty>{t("channels.keepalive.empty")}</Empty>
             ) : (
-              grouped.map(([siteId, rows]) => {
-                const open = siteOpen(siteId, rows);
-                return (
-                  <section className={`keepalive-site${open ? " is-open" : ""}`} key={siteId}>
-                    <header className="keepalive-site-head">
-                      <button
-                        type="button"
-                        className="keepalive-site-toggle"
-                        aria-expanded={open}
-                        aria-controls={`keepalive-site-${siteId}`}
-                        onClick={() => toggleSite(siteId, rows)}
-                      >
-                        <ChevronRight
-                          size={14}
-                          className="keepalive-site-chevron"
-                          aria-hidden="true"
-                        />
-                        <span className="keepalive-site-name">
-                          {rows[0]!.site_name || `#${siteId}`}
-                        </span>
-                        <span className={policyClass(rows[0]!)}>{policyLabel(rows[0]!, t)}</span>
-                        <span className="muted keepalive-site-count">
-                          {t("channels.keepalive.siteChannels", { count: String(rows.length) })}
-                        </span>
-                        <span className="muted keepalive-site-digest">{siteDigest(rows, t)}</span>
-                      </button>
-                      <Button
-                        variant="quiet"
-                        icon={<Settings2 size={14} />}
-                        onClick={() => {
-                          openSite(siteId);
-                          setEditingSite(editingSite === siteId ? null : siteId);
-                        }}
-                      >
-                        {t("channels.keepalive.configureSite")}
-                      </Button>
-                    </header>
+              grouped.map(([siteId, rows]) => (
+                <section className="keepalive-site" key={siteId}>
+                  <header className="keepalive-site-head">
+                    <h3 className="keepalive-site-name">{rows[0]!.site_name || `#${siteId}`}</h3>
+                    <span className={policyClass(rows[0]!)}>{policyLabel(rows[0]!, t)}</span>
+                    <span className="muted keepalive-site-count">
+                      {t("channels.keepalive.siteChannels", { count: String(rows.length) })}
+                    </span>
+                  </header>
 
-                    {open ? (
-                      <div className="keepalive-site-body" id={`keepalive-site-${siteId}`}>
-                        {editingSite === siteId ? (
-                          <SitePolicyForm
-                            siteId={siteId}
-                            target={rows[0]!}
-                            onDone={() => {
-                              setEditingSite(null);
-                              void status.refetch();
-                            }}
-                            onCancel={() => setEditingSite(null)}
-                          />
-                        ) : null}
+                  {editing?.siteId === siteId ? (
+                    <SiteSettings
+                      siteId={siteId}
+                      rows={rows}
+                      row={editing.row}
+                      sending={sendNow.isPending}
+                      onSendNow={() => {
+                        setNotice(null);
+                        sendNow.mutate(editing.row.channel_id);
+                      }}
+                      onDone={() => {
+                        setEditing(null);
+                        void status.refetch();
+                      }}
+                      onCancel={() => setEditing(null)}
+                    />
+                  ) : null}
 
-                        <table className="keepalive-table">
-                          <thead>
-                            <tr>
-                              <th>{t("channels.keepalive.columnChannel")}</th>
-                              <th>{t("channels.keepalive.columnWindow")}</th>
-                              <th>{t("channels.keepalive.columnIdle")}</th>
-                              <th>{t("channels.keepalive.columnRemaining")}</th>
-                              <th>{t("channels.keepalive.columnState")}</th>
-                              <th />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rows.map((row) => (
-                              <tr key={row.channel_id}>
-                                <td>
-                                  <span className="keepalive-channel">{row.channel_name}</span>
-                                  <span className="muted keepalive-model">
-                                    {row.model || t("channels.keepalive.noModel")}
-                                  </span>
-                                </td>
-                                <td>
-                                  {row.config.idle_days > 0
-                                    ? t("channels.keepalive.windowValue", {
-                                        days: String(row.config.idle_days),
-                                        margin: String(row.config.safety_margin_days),
-                                      })
-                                    : t("channels.keepalive.noWindow")}
-                                </td>
-                                <td>
-                                  {row.never_called
-                                    ? t("channels.keepalive.neverCalled")
-                                    : days(row.idle_days)}
-                                </td>
-                                <td
-                                  className={
-                                    row.remaining_days <= 3 ? "keepalive-urgent" : undefined
-                                  }
-                                >
-                                  {row.config.idle_days > 0 ? days(row.remaining_days) : "—"}
-                                </td>
-                                <td>
-                                  <span className={stateClass(row)}>{stateLabel(row, t)}</span>
-                                  {row.sends_today > 0 ? (
-                                    <span className="muted keepalive-today">
-                                      {t("channels.keepalive.sentToday", {
-                                        count: String(row.sends_today),
-                                      })}
-                                    </span>
-                                  ) : null}
-                                </td>
-                                <td className="keepalive-actions">
-                                  <Button
-                                    variant="quiet"
-                                    icon={<BellRing size={14} />}
-                                    disabled={Boolean(row.skip_reason) || sendNow.isPending}
-                                    onClick={() => {
-                                      setNotice(null);
-                                      sendNow.mutate(row.channel_id);
-                                    }}
-                                  >
-                                    {t("channels.keepalive.sendNow")}
-                                  </Button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : null}
-                  </section>
-                );
-              })
+                  <div className="keepalive-site-body">
+                    <table className="keepalive-table">
+                      {/* A one-row table does not need a header: the site's own
+                          line already anchors the columns. */}
+                      {rows.length > 1 ? (
+                        <thead>
+                          <tr>
+                            <th>{t("channels.keepalive.columnChannel")}</th>
+                            <th>{t("channels.keepalive.columnWindow")}</th>
+                            <th>{t("channels.keepalive.columnIdle")}</th>
+                            <th>{t("channels.keepalive.columnRemaining")}</th>
+                            <th>{t("channels.keepalive.columnState")}</th>
+                            <th />
+                          </tr>
+                        </thead>
+                      ) : null}
+                      <tbody>
+                        {rows.map((row) => (
+                          <tr key={row.channel_id}>
+                            <td>
+                              <span className="keepalive-channel">{row.channel_name}</span>
+                              <span className="muted keepalive-model">
+                                {row.model || t("channels.keepalive.noModel")}
+                              </span>
+                            </td>
+                            <td>
+                              {row.config.idle_days > 0
+                                ? t("channels.keepalive.windowValue", {
+                                    days: String(row.config.idle_days),
+                                    margin: String(row.config.safety_margin_days),
+                                  })
+                                : t("channels.keepalive.noWindow")}
+                            </td>
+                            <td>
+                              {row.never_called
+                                ? t("channels.keepalive.neverCalled")
+                                : days(row.idle_days)}
+                            </td>
+                            <td
+                              className={row.remaining_days <= 3 ? "keepalive-urgent" : undefined}
+                            >
+                              {row.config.idle_days > 0 ? days(row.remaining_days) : "—"}
+                            </td>
+                            <td>
+                              <span className={stateClass(row)}>{stateLabel(row, t)}</span>
+                              {row.sends_today > 0 ? (
+                                <span className="muted keepalive-today">
+                                  {t("channels.keepalive.sentToday", {
+                                    count: String(row.sends_today),
+                                  })}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="keepalive-actions">
+                              <Button
+                                variant="quiet"
+                                icon={<Settings2 size={14} />}
+                                onClick={() => toggleSettings(siteId, row)}
+                              >
+                                {t("channels.keepalive.configureSite")}
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ))
             )}
 
             <details className="keepalive-footprint">
@@ -288,34 +265,58 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * The per-site editor. The window is the site's rule, so it is edited here once
- * for the whole site rather than per channel — a channel only overrides whether
- * it participates.
+ * The per-site editor, opened from a channel row's 站点设置.
+ *
+ * The window is the site's rule, so it is edited once for the whole site rather
+ * than per channel — a channel only overrides whether it participates. The model
+ * is the site's too, and the one thing the operator does not have to fill in:
+ * left empty, the channel is called on the first model it advertised. 立即保活
+ * sits here with it, because a call is made *with* these settings — and it is
+ * disabled while the form is dirty, so nobody sends with settings they can still
+ * see are unsaved.
  */
-function SitePolicyForm({
+function SiteSettings({
   siteId,
-  target,
+  rows,
+  row,
+  sending,
+  onSendNow,
   onDone,
   onCancel,
 }: {
   siteId: number;
-  target: KeepaliveTarget;
+  rows: KeepaliveTarget[];
+  row: KeepaliveTarget;
+  sending: boolean;
+  onSendNow: () => void;
   onDone: () => void;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
   const { client } = useSession();
   const [form, setForm] = useState<SiteKeepaliveInput>({
-    call_policy: target.call_policy || "allow_probe",
-    keepalive_enabled: target.config.enabled,
-    keepalive_idle_days: target.config.idle_days,
-    keepalive_safety_margin_days: target.config.safety_margin_days,
-    keepalive_model: "",
-    keepalive_prompt: target.config.prompt ?? "",
-    keepalive_max_tokens: target.config.max_tokens ?? 0,
-    keepalive_daily_cap: target.config.daily_cap ?? 0,
-    keepalive_quiet_hours: target.config.quiet_hours ?? "",
+    call_policy: row.call_policy || "allow_probe",
+    keepalive_enabled: row.config.enabled,
+    keepalive_idle_days: row.config.idle_days,
+    keepalive_safety_margin_days: row.config.safety_margin_days,
+    // The site's own setting, not the resolved model: empty means "automatic",
+    // and writing the resolved one back would pin it forever.
+    keepalive_model: row.site_model ?? "",
+    keepalive_prompt: row.config.prompt ?? "",
+    keepalive_max_tokens: row.config.max_tokens ?? 0,
+    keepalive_daily_cap: row.config.daily_cap ?? 0,
+    keepalive_quiet_hours: row.config.quiet_hours ?? "",
   });
+  const initial = useRef(form);
+  const dirty = !sameSettings(form, initial.current);
+
+  // Everything the site's channels advertised, so the field offers real names
+  // instead of an empty box; the operator can still type one that is not here.
+  const models = [...new Set(rows.flatMap((target) => target.candidates ?? []))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const autoModel = rows.map((target) => target.candidates?.[0]).find(Boolean) ?? "";
+  const listId = `keepalive-models-${siteId}`;
 
   const save = useAdminMutation({
     mutationFn: (input: SiteKeepaliveInput) => api(client!).keepaliveSaveSite(siteId, input),
@@ -372,6 +373,27 @@ function SitePolicyForm({
           }
         />
       </Field>
+      <Field
+        label={t("channels.keepalive.fieldModel")}
+        hint={
+          autoModel
+            ? t("channels.keepalive.fieldModelAuto", { model: autoModel })
+            : t("channels.keepalive.fieldModelNone")
+        }
+      >
+        <input
+          type="text"
+          list={listId}
+          placeholder={autoModel || undefined}
+          value={form.keepalive_model}
+          onChange={(e) => setForm((f) => ({ ...f, keepalive_model: e.target.value }))}
+        />
+        <datalist id={listId}>
+          {models.map((model) => (
+            <option key={model} value={model} />
+          ))}
+        </datalist>
+      </Field>
       <Field label={t("channels.keepalive.fieldMaxTokens")}>
         <input
           type="number"
@@ -421,53 +443,42 @@ function SitePolicyForm({
           {t("common.cancel")}
         </Button>
         {save.error ? <span className="inline-error">{String(save.error)}</span> : null}
+        <span className="muted keepalive-send-hint">
+          {dirty
+            ? t("channels.keepalive.sendNowDirty")
+            : t("channels.keepalive.sendNowHint", {
+                channel: row.channel_name,
+                model: form.keepalive_model || autoModel || "—",
+              })}
+        </span>
+        <Button
+          type="button"
+          variant="secondary"
+          className="keepalive-send"
+          icon={<BellRing size={14} />}
+          disabled={dirty || sending || Boolean(row.skip_reason)}
+          onClick={onSendNow}
+        >
+          {t("channels.keepalive.sendNow")}
+        </Button>
       </div>
     </form>
   );
 }
 
-/**
- * A site opens itself only when there is something to do: a call is due now, or
- * a window closes within three days. Everything else starts folded, so a
- * deployment with thirty sites is still one screen of lines to scan — the
- * digest on each line says what the folded rows would have shown.
- */
-function siteNeedsAttention(rows: KeepaliveTarget[]): boolean {
-  return rows.some(
-    (row) =>
-      row.ready ||
-      (!row.skip_reason &&
-        row.config.enabled &&
-        row.config.idle_days > 0 &&
-        row.remaining_days <= 3),
+/** Whether the operator still has edits the server has not seen. */
+function sameSettings(a: SiteKeepaliveInput, b: SiteKeepaliveInput): boolean {
+  return (
+    a.call_policy === b.call_policy &&
+    a.keepalive_enabled === b.keepalive_enabled &&
+    a.keepalive_idle_days === b.keepalive_idle_days &&
+    a.keepalive_safety_margin_days === b.keepalive_safety_margin_days &&
+    a.keepalive_model === b.keepalive_model &&
+    a.keepalive_prompt === b.keepalive_prompt &&
+    a.keepalive_max_tokens === b.keepalive_max_tokens &&
+    a.keepalive_daily_cap === b.keepalive_daily_cap &&
+    a.keepalive_quiet_hours === b.keepalive_quiet_hours
   );
-}
-
-/** The one line a folded site shows: due count, days left, or why it cannot call. */
-function siteDigest(
-  rows: KeepaliveTarget[],
-  t: (key: string, vars?: Record<string, string>) => string,
-): string {
-  const due = rows.filter((row) => row.ready).length;
-  if (due > 0) return t("channels.keepalive.digestDue", { count: String(due) });
-  const callable = rows.filter(
-    (row) => !row.skip_reason && row.config.enabled && row.config.idle_days > 0,
-  );
-  if (callable.length > 0) {
-    return t("channels.keepalive.digestRemaining", {
-      days: days(Math.min(...callable.map((row) => row.remaining_days))),
-    });
-  }
-  if (rows.every((row) => !row.config.enabled)) {
-    return t("channels.keepalive.digestOff");
-  }
-  if (rows.every((row) => row.skip_reason === "no_usable_model")) {
-    return t("channels.keepalive.digestNoModel");
-  }
-  if (rows.every((row) => row.skip_reason === "no_route")) {
-    return t("channels.keepalive.digestNoRoute");
-  }
-  return t("channels.keepalive.noWindow");
 }
 
 /** Grouping keeps a site's channels together, because the window belongs to the site. */
@@ -513,12 +524,12 @@ function policyClass(row: KeepaliveTarget): string {
 
 function days(value: number): string {
   if (!Number.isFinite(value)) return "—";
-  const rounded = Math.round(value * 10) / 10;
-  return `${rounded} ${"d"}`;
+  if (Math.abs(value) < 0.05) return "0 d";
+  return `${value.toFixed(1)} d`;
 }
 
 function formatTime(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }

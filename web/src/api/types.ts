@@ -1798,12 +1798,16 @@ export interface KeepaliveTarget {
   channel_name: string;
   /** The model a keepalive call would use; empty means "cannot keepalive". */
   model: string;
+  /** The site's own keepalive model, empty when nothing is pinned (automatic). */
+  site_model?: string;
+  /** What this channel advertised when its list was last fetched. */
+  candidates?: string[];
   call_policy: string;
   config: KeepaliveConfig;
   /** The newest real call on this account. Absent = never called. */
   last_call_at?: string;
   sends_today: number;
-  /** Set when the channel cannot be called at all (no usable model). */
+  /** Set when the channel cannot be called at all (nothing fetched, none set). */
   skip_reason?: string;
 
   // Computed by the server against its own clock, so the page cannot disagree

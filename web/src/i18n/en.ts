@@ -154,11 +154,14 @@ export const en: Dict = {
   "channels.keepalive.footprint": "Call footprint",
   "channels.keepalive.footprintCount": "{count} latest",
   "channels.keepalive.siteChannels": "{count} channels",
-  "channels.keepalive.digestDue": "{count} due",
-  "channels.keepalive.digestRemaining": "{days} left",
-  "channels.keepalive.digestOff": "Keepalive off",
-  "channels.keepalive.digestNoModel": "No usable model",
-  "channels.keepalive.digestNoRoute": "Not routed",
+  "channels.keepalive.fieldModel": "Keepalive model",
+  "channels.keepalive.fieldModelAuto":
+    "Left empty: the channel's first fetched model ({model}) is called.",
+  "channels.keepalive.fieldModelNone":
+    "Left empty it is automatic, but this channel has no fetched model yet: refresh its models, or type one here.",
+  "channels.keepalive.sendNowHint":
+    "Send now: one real call to {channel} (model {model}), straight to the channel.",
+  "channels.keepalive.sendNowDirty": "You have unsaved changes — save before sending.",
   "channels.keepalive.footprintHint":
     'Every keepalive call: when, to whom, in which form, and why (for example "idle 19d >= threshold 13d"). It is the evidence to show a site administrator who asks why the gateway called them.',
   "channels.keepalive.noEvents": "No keepalive calls recorded yet.",

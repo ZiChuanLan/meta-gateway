@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -25,7 +24,6 @@ import (
 	"github.com/lan/meta-gateway/internal/callplan"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/proxy"
-	"github.com/lan/meta-gateway/internal/relay"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/webhook"
 )
@@ -38,9 +36,15 @@ const DefaultPrompt = "hi"
 // ErrorDetailLimit caps how much of an upstream error body is kept.
 const ErrorDetailLimit = 256
 
-// Relay is the slice of the proxy a keepalive needs. Satisfied by *proxy.Service.
-type Relay interface {
-	ChatCompletionsWithMeta(ctx context.Context, req proxy.Request) (*relay.Result, *proxy.AttemptMeta)
+// Caller sends one prepared chat body straight to one channel, whatever the
+// routes say. Satisfied by *proxy.Service (DirectChat).
+//
+// A keepalive is not a client: it exists for one account, not for a model the
+// gateway offers. Going through routing would make a quiet account reachable
+// only by publishing a route for the model it is called on, so keeping twenty
+// accounts alive would mean offering twenty models.
+type Caller interface {
+	DirectChat(ctx context.Context, channelID int64, model string, body []byte) proxy.DirectTestResult
 }
 
 // Config is the global layer of keepalive configuration. The per-site window and
@@ -69,7 +73,7 @@ type Round struct {
 // Service decides and sends keepalive calls.
 type Service struct {
 	db      *store.DB
-	relay   Relay
+	caller  Caller
 	logger  *slog.Logger
 	now     func() time.Time
 	mutex   sync.RWMutex
@@ -80,11 +84,11 @@ type Service struct {
 }
 
 // NewService builds the keepalive service. notifier may be nil (alerts off).
-func NewService(db *store.DB, relay Relay, notifier *webhook.Notifier, logger *slog.Logger) *Service {
+func NewService(db *store.DB, caller Caller, notifier *webhook.Notifier, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{db: db, relay: relay, notifier: notifier, logger: logger, now: time.Now}
+	return &Service{db: db, caller: caller, notifier: notifier, logger: logger, now: time.Now}
 }
 
 // SetConfig hot-applies the runtime settings.
@@ -203,6 +207,7 @@ func (s *Service) send(ctx context.Context, target domain.KeepaliveTarget, reaso
 	event := domain.KeepaliveEvent{
 		CredentialID: target.CredentialID,
 		SiteID:       target.SiteID,
+		SiteName:     target.SiteName,
 		ChannelID:    target.ChannelID,
 		ChannelName:  target.ChannelName,
 		Model:        target.Model,
@@ -225,41 +230,17 @@ func (s *Service) send(ctx context.Context, target domain.KeepaliveTarget, reaso
 
 	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
 	defer cancel()
-	started := s.now()
-	result, _ := s.relay.ChatCompletionsWithMeta(ctx, proxy.Request{
-		RequestID: fmt.Sprintf("keepalive-%d-%d", target.ChannelID, started.Unix()),
-		Model:     target.Model,
-		Body:      plan.Body,
-		Stream:    false,
-		// The channel is pinned: this call exists for one specific account.
-		PreferChannelID: target.ChannelID,
-		// Synthetic traffic, like a probe: it must not cool the channel down or
-		// count toward auto-disabling. A keepalive failing tells us the account
-		// is unreachable, which its own event row and alert already say.
-		Probe: true,
-	})
-	if result == nil {
-		event.Error = "empty result from proxy"
-		s.record(event)
-		return event
-	}
+	// Route-free on purpose (see Caller): the call belongs to this account, not
+	// to a model the gateway serves.
+	result := s.caller.DirectChat(ctx, target.ChannelID, target.Model, plan.Body)
 	event.StatusCode = result.StatusCode
-	detail := ""
-	if result.Body != nil {
-		snippet, _ := io.ReadAll(io.LimitReader(result.Body, ErrorDetailLimit))
-		_ = result.Body.Close()
-		detail = string(snippet)
-	}
 	switch {
-	case result.Err != nil:
-		event.Error = result.Err.Error()
-	case result.StatusCode >= 200 && result.StatusCode < 300:
+	case result.OK:
 		event.OK = true
+	case result.Error != "":
+		event.Error = result.Error
 	default:
 		event.Error = fmt.Sprintf("upstream status %d", result.StatusCode)
-		if detail != "" {
-			event.Error += ": " + detail
-		}
 	}
 	s.record(event)
 	return event

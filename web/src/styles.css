@@ -9959,9 +9959,10 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   color: var(--ink);
   font-size: 12px;
 }
-/* A site is a folded line inside the dialog, not a card inside a card: the name
-   line carries the policy badge, the channel count and what the folded rows
-   would have said, and the next site is one hairline away. */
+/* A site is a block inside the dialog, not a card inside a card: the title line
+   carries the policy badge and the channel count, and the next site is one
+   hairline away. The rows are always on screen — the question this page answers
+   is answered by scanning them. */
 .keepalive-site {
   border-top: 1px solid var(--line);
 }
@@ -9973,33 +9974,10 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-.keepalive-site-toggle {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 8px;
-  padding: 9px 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.keepalive-site-toggle:hover .keepalive-site-name {
-  color: var(--primary);
-}
-.keepalive-site-chevron {
-  flex: 0 0 auto;
-  color: var(--muted);
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.keepalive-site.is-open .keepalive-site-chevron {
-  transform: rotate(90deg);
+  padding: 9px 0 5px;
 }
 .keepalive-site-name {
+  margin: 0;
   font: 600 14px/1.45 var(--font);
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -10008,15 +9986,10 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   font-size: 11px;
   white-space: nowrap;
 }
-.keepalive-site-digest {
-  margin-left: auto;
-  font-size: 11px;
-  white-space: nowrap;
-}
 /* Narrow dialogs scroll the table itself instead of squeezing six columns into
    three characters per cell (the site-probe dialog sets the precedent). */
 .keepalive-site-body {
-  padding: 2px 0 12px;
+  padding: 0 0 12px;
   overflow-x: auto;
 }
 .keepalive-table {
@@ -10105,6 +10078,13 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 .keepalive-form-actions {
   align-items: center;
 }
+/* The send button belongs to the form it sends with: the hint sits next to it so
+   the model it will use is readable at the moment of clicking. */
+.keepalive-send-hint {
+  margin-left: auto;
+  font-size: 11px;
+  text-align: right;
+}
 /* The footprint is an audit trail, not the thing an operator opens this dialog
    for: it starts folded and shows only how much is on record. */
 .keepalive-footprint {
@@ -10153,7 +10133,6 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   margin: 0 0 10px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .keepalive-site-chevron,
   .keepalive-footprint-chevron {
     transition: none;
   }

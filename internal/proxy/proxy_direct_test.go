@@ -235,3 +235,35 @@ func pointChannelAt(t *testing.T, db *store.DB, channelID int64, baseURL string)
 		t.Fatal(err)
 	}
 }
+
+// DirectChat is the entry point for a caller that brings its own body (the
+// keepalive scheduler, whose body internal/callplan shapes). The body must reach
+// the upstream as built — the shape is the caller's decision, not this method's.
+func TestDirectChatSendsAPreparedBody(t *testing.T) {
+	seen, server := newRecordingUpstream(t, http.StatusOK, `{"id":"chatcmpl-1"}`)
+	service, db, highMemberID, _ := setupProxy(t, relay.NewWithClient(server.Client()))
+
+	channelID := channelOfMember(t, db, highMemberID)
+	pointChannelAt(t, db, channelID, server.URL)
+
+	body := []byte(`{"model":"candidate-model","messages":[` +
+		`{"role":"system","content":"You are a helpful assistant."},` +
+		`{"role":"user","content":"用一句话说明什么是 API。"}],` +
+		`"stream":false,"max_tokens":192}`)
+	result := service.DirectChat(context.Background(), channelID, "candidate-model", body)
+	if !result.OK {
+		t.Fatalf("direct chat failed: %+v", result)
+	}
+	if got, _ := seen.body["max_tokens"].(float64); got != 192 {
+		t.Fatalf("upstream max_tokens=%v want the caller's 192", seen.body["max_tokens"])
+	}
+	if got, _ := seen.body["messages"].([]any); len(got) != 2 {
+		t.Fatalf("upstream messages=%v want the caller's system+user pair", seen.body["messages"])
+	}
+
+	// A caller with no body is a caller bug, and it must not reach the network.
+	empty := service.DirectChat(context.Background(), channelID, "candidate-model", nil)
+	if empty.OK || empty.Error == "" {
+		t.Fatalf("empty body = %+v, want a rejection", empty)
+	}
+}

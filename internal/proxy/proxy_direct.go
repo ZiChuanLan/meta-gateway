@@ -63,6 +63,42 @@ type DirectTestResult struct {
 // an operator poking at a half-configured channel must not be able to take
 // anything out of rotation.
 func (s *Service) DirectChatTest(ctx context.Context, channelID int64, model, prompt string, maxTokens int) DirectTestResult {
+	if prompt == "" {
+		prompt = DirectTestPrompt
+	}
+	if maxTokens <= 0 {
+		maxTokens = DirectTestDefaultTokens
+	}
+	if maxTokens > DirectTestMaxTokens {
+		maxTokens = DirectTestMaxTokens
+	}
+	body, err := json.Marshal(map[string]any{
+		"model": strings.TrimSpace(model),
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"stream":     false,
+		"max_tokens": maxTokens,
+	})
+	if err != nil {
+		return DirectTestResult{Model: strings.TrimSpace(model), Error: "build request: " + err.Error()}
+	}
+	return s.DirectChat(ctx, channelID, model, body)
+}
+
+// DirectChat sends one already-built chat body straight to one channel,
+// bypassing route selection.
+//
+// It is the route-free transport behind the two callers that own a channel
+// instead of a model name: the drawer's smoke test above, and the keepalive
+// scheduler (internal/keepalive). A keepalive needs it for the reason the
+// drawer does, one step stronger — routing is how a CLIENT finds a channel, and
+// a keepalive is not a client. Reaching a quiet account through a route would
+// mean publishing a route for a model nobody asked to serve, so keeping twenty
+// accounts alive would mean offering twenty models. The body is still shaped by
+// internal/callplan, so a site that bans probing is called in the shape it asked
+// for.
+func (s *Service) DirectChat(ctx context.Context, channelID int64, model string, body []byte) DirectTestResult {
 	result := DirectTestResult{Model: strings.TrimSpace(model)}
 	model = result.Model
 
@@ -80,6 +116,10 @@ func (s *Service) DirectChatTest(ctx context.Context, channelID int64, model, pr
 	}
 	if s.db == nil {
 		result.Error = strings.TrimPrefix(ErrCredential.Error(), "proxy: ")
+		return result
+	}
+	if len(body) == 0 {
+		result.Error = "request body is required"
 		return result
 	}
 	channel, err := s.db.Channel.GetByID(channelID)
@@ -100,28 +140,6 @@ func (s *Service) DirectChatTest(ctx context.Context, channelID int64, model, pr
 	keys, err := s.resolveAPIKeyPool(*channel, model)
 	if err != nil || len(keys) == 0 {
 		result.Error = strings.TrimPrefix(ErrCredential.Error(), "proxy: ")
-		return result
-	}
-
-	if prompt == "" {
-		prompt = DirectTestPrompt
-	}
-	if maxTokens <= 0 {
-		maxTokens = DirectTestDefaultTokens
-	}
-	if maxTokens > DirectTestMaxTokens {
-		maxTokens = DirectTestMaxTokens
-	}
-	body, err := json.Marshal(map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"stream":     false,
-		"max_tokens": maxTokens,
-	})
-	if err != nil {
-		result.Error = "build request: " + err.Error()
 		return result
 	}
 
