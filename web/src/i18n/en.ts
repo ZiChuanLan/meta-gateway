@@ -153,7 +153,8 @@ export const en: Dict = {
   "channels.keepalive.policyRealCallsOnly": "Probing banned (real calls)",
   "channels.keepalive.footprint": "Call footprint",
   "channels.keepalive.footprintCount": "{count} latest",
-  "channels.keepalive.siteChannels": "{count} channels",
+  "channels.keepalive.columnSite": "Site",
+  "channels.keepalive.settingsFor": "Site settings: {site}",
   "channels.keepalive.fieldModel": "Keepalive model",
   "channels.keepalive.fieldModelAuto":
     "Left empty: the channel's first fetched model ({model}) is called.",

@@ -9959,41 +9959,44 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   color: var(--ink);
   font-size: 12px;
 }
-/* A site is a block inside the dialog, not a card inside a card: the title line
-   carries the policy badge and the channel count, and the next site is one
-   hairline away. The rows are always on screen — the question this page answers
-   is answered by scanning them. */
-.keepalive-site {
-  border-top: 1px solid var(--line);
-}
-.keepalive-site:first-of-type {
-  border-top: 0;
-}
-.keepalive-site-head {
+/* One flat list, one row per account: the question this page answers — which
+   account is about to be banned — is answered by scanning the 剩余 column, and a
+   per-site title line only pushed the rows apart. */
+.keepalive-site-cell {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 0 5px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
-.keepalive-site-name {
-  margin: 0;
-  font: 600 14px/1.45 var(--font);
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-}
-.keepalive-site-count {
-  font-size: 11px;
+.keepalive-site-label {
+  color: var(--ink);
+  font-weight: 500;
   white-space: nowrap;
 }
 /* Narrow dialogs scroll the table itself instead of squeezing six columns into
    three characters per cell (the site-probe dialog sets the precedent). */
-.keepalive-site-body {
-  padding: 0 0 12px;
+.keepalive-list {
   overflow-x: auto;
 }
 .keepalive-table {
-  min-width: 560px;
+  min-width: 620px;
+}
+/* The settings form opens above the list; the row that opened it is marked, so
+   the editor and the account it belongs to stay connected. */
+.keepalive-settings {
+  margin: 0 0 14px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.keepalive-settings-head h3 {
+  margin: 0 0 10px;
+  font: 600 13px/1.4 var(--font);
+  letter-spacing: -0.02em;
+}
+.keepalive-table tr.is-editing > td {
+  background: var(--surface-subtle);
 }
 .keepalive-policy {
   padding: 1px 8px;

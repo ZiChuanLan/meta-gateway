@@ -1,6 +1,6 @@
 import { BellRing, ChevronRight, Play, RefreshCw, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import type { KeepaliveTarget, SiteKeepaliveInput } from "../../api/types";
 import { Button, Dialog, Empty, ErrorState, Field, InfoTip, Loading } from "../../components/ui";
@@ -64,7 +64,6 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
   });
 
   const targets = status.data?.targets ?? [];
-  const grouped = groupBySite(targets);
 
   const toggleSettings = (siteId: number, row: KeepaliveTarget) =>
     setEditing((current) =>
@@ -72,6 +71,13 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
         ? null
         : { siteId, row },
     );
+
+  // The settings form opens above the list, so it must be brought into view when
+  // the row that opened it sits at the bottom of a long dialog.
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (editing) settingsRef.current?.scrollIntoView({ block: "nearest" });
+  }, [editing]);
 
   return (
     <Dialog title={t("channels.keepalive.title")} onClose={onClose} busy={runRound.isPending}>
@@ -114,106 +120,113 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
 
             {notice ? <p className="keepalive-notice">{notice}</p> : null}
 
+            {editing ? (
+              <div className="keepalive-settings" ref={settingsRef}>
+                <header className="keepalive-settings-head">
+                  <h3>
+                    {t("channels.keepalive.settingsFor", {
+                      site: editing.row.site_name || `#${editing.siteId}`,
+                    })}
+                  </h3>
+                </header>
+                <SiteSettings
+                  siteId={editing.siteId}
+                  rows={targets.filter((target) => target.site_id === editing.siteId)}
+                  row={editing.row}
+                  sending={sendNow.isPending}
+                  onSendNow={() => {
+                    setNotice(null);
+                    sendNow.mutate(editing.row.channel_id);
+                  }}
+                  onDone={() => {
+                    setEditing(null);
+                    void status.refetch();
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              </div>
+            ) : null}
+
             {targets.length === 0 ? (
               <Empty>{t("channels.keepalive.empty")}</Empty>
             ) : (
-              grouped.map(([siteId, rows]) => (
-                <section className="keepalive-site" key={siteId}>
-                  <header className="keepalive-site-head">
-                    <h3 className="keepalive-site-name">{rows[0]!.site_name || `#${siteId}`}</h3>
-                    <span className={policyClass(rows[0]!)}>{policyLabel(rows[0]!, t)}</span>
-                    <span className="muted keepalive-site-count">
-                      {t("channels.keepalive.siteChannels", { count: String(rows.length) })}
-                    </span>
-                  </header>
-
-                  {editing?.siteId === siteId ? (
-                    <SiteSettings
-                      siteId={siteId}
-                      rows={rows}
-                      row={editing.row}
-                      sending={sendNow.isPending}
-                      onSendNow={() => {
-                        setNotice(null);
-                        sendNow.mutate(editing.row.channel_id);
-                      }}
-                      onDone={() => {
-                        setEditing(null);
-                        void status.refetch();
-                      }}
-                      onCancel={() => setEditing(null)}
-                    />
-                  ) : null}
-
-                  <div className="keepalive-site-body">
-                    <table className="keepalive-table">
-                      {/* A one-row table does not need a header: the site's own
-                          line already anchors the columns. */}
-                      {rows.length > 1 ? (
-                        <thead>
-                          <tr>
-                            <th>{t("channels.keepalive.columnChannel")}</th>
-                            <th>{t("channels.keepalive.columnWindow")}</th>
-                            <th>{t("channels.keepalive.columnIdle")}</th>
-                            <th>{t("channels.keepalive.columnRemaining")}</th>
-                            <th>{t("channels.keepalive.columnState")}</th>
-                            <th />
-                          </tr>
-                        </thead>
-                      ) : null}
-                      <tbody>
-                        {rows.map((row) => (
-                          <tr key={row.channel_id}>
-                            <td>
-                              <span className="keepalive-channel">{row.channel_name}</span>
-                              <span className="muted keepalive-model">
-                                {row.model || t("channels.keepalive.noModel")}
-                              </span>
-                            </td>
-                            <td>
-                              {row.config.idle_days > 0
-                                ? t("channels.keepalive.windowValue", {
-                                    days: String(row.config.idle_days),
-                                    margin: String(row.config.safety_margin_days),
-                                  })
-                                : t("channels.keepalive.noWindow")}
-                            </td>
-                            <td>
-                              {row.never_called
-                                ? t("channels.keepalive.neverCalled")
-                                : days(row.idle_days)}
-                            </td>
-                            <td
-                              className={row.remaining_days <= 3 ? "keepalive-urgent" : undefined}
-                            >
-                              {row.config.idle_days > 0 ? days(row.remaining_days) : "—"}
-                            </td>
-                            <td>
-                              <span className={stateClass(row)}>{stateLabel(row, t)}</span>
-                              {row.sends_today > 0 ? (
-                                <span className="muted keepalive-today">
-                                  {t("channels.keepalive.sentToday", {
-                                    count: String(row.sends_today),
-                                  })}
-                                </span>
-                              ) : null}
-                            </td>
-                            <td className="keepalive-actions">
-                              <Button
-                                variant="quiet"
-                                icon={<Settings2 size={14} />}
-                                onClick={() => toggleSettings(siteId, row)}
-                              >
-                                {t("channels.keepalive.configureSite")}
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              ))
+              <div className="keepalive-list">
+                <table className="keepalive-table">
+                  <thead>
+                    <tr>
+                      <th>{t("channels.keepalive.columnSite")}</th>
+                      <th>{t("channels.keepalive.columnChannel")}</th>
+                      <th>{t("channels.keepalive.columnWindow")}</th>
+                      <th>{t("channels.keepalive.columnIdle")}</th>
+                      <th>{t("channels.keepalive.columnRemaining")}</th>
+                      <th>{t("channels.keepalive.columnState")}</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {targets.map((row) => (
+                      <tr
+                        key={row.channel_id}
+                        className={
+                          editing?.row.channel_id === row.channel_id ? "is-editing" : undefined
+                        }
+                      >
+                        <td className="keepalive-site-cell">
+                          <span className="keepalive-site-label">
+                            {row.site_name || `#${row.site_id}`}
+                          </span>
+                          {/* Worth its space only where the site forbids probing:
+                              the default needs no badge. */}
+                          {row.call_policy === "real_calls_only" ? (
+                            <span className={policyClass(row)}>{policyLabel(row, t)}</span>
+                          ) : null}
+                        </td>
+                        <td>
+                          <span className="keepalive-channel">{row.channel_name}</span>
+                          <span className="muted keepalive-model">
+                            {row.model || t("channels.keepalive.noModel")}
+                          </span>
+                        </td>
+                        <td>
+                          {row.config.idle_days > 0
+                            ? t("channels.keepalive.windowValue", {
+                                days: String(row.config.idle_days),
+                                margin: String(row.config.safety_margin_days),
+                              })
+                            : t("channels.keepalive.noWindow")}
+                        </td>
+                        <td>
+                          {row.never_called
+                            ? t("channels.keepalive.neverCalled")
+                            : days(row.idle_days)}
+                        </td>
+                        <td className={row.remaining_days <= 3 ? "keepalive-urgent" : undefined}>
+                          {row.config.idle_days > 0 ? days(row.remaining_days) : "—"}
+                        </td>
+                        <td>
+                          <span className={stateClass(row)}>{stateLabel(row, t)}</span>
+                          {row.sends_today > 0 ? (
+                            <span className="muted keepalive-today">
+                              {t("channels.keepalive.sentToday", {
+                                count: String(row.sends_today),
+                              })}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="keepalive-actions">
+                          <Button
+                            variant="quiet"
+                            icon={<Settings2 size={14} />}
+                            onClick={() => toggleSettings(row.site_id, row)}
+                          >
+                            {t("channels.keepalive.configureSite")}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             <details className="keepalive-footprint">
@@ -479,17 +492,6 @@ function sameSettings(a: SiteKeepaliveInput, b: SiteKeepaliveInput): boolean {
     a.keepalive_daily_cap === b.keepalive_daily_cap &&
     a.keepalive_quiet_hours === b.keepalive_quiet_hours
   );
-}
-
-/** Grouping keeps a site's channels together, because the window belongs to the site. */
-function groupBySite(targets: KeepaliveTarget[]): Array<[number, KeepaliveTarget[]]> {
-  const groups = new Map<number, KeepaliveTarget[]>();
-  for (const target of targets) {
-    const rows = groups.get(target.site_id);
-    if (rows) rows.push(target);
-    else groups.set(target.site_id, [target]);
-  }
-  return [...groups.entries()];
 }
 
 function stateLabel(
