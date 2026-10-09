@@ -1,13 +1,7 @@
-import {
-  cloneElement,
-  isValidElement,
-  useId,
-  type InputHTMLAttributes,
-  type ReactNode,
-} from "react";
+import { useId, type InputHTMLAttributes, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { useI18n } from "../../i18n";
-import { HINT_INLINE_MAX, InfoTip } from "../../components/ui";
+import { InfoTip } from "../../components/ui";
 
 // The presentational controls the runtime settings page is built from. They were
 // the first ~150 lines of RuntimeSettingsPanel.tsx, which is otherwise a single
@@ -107,36 +101,18 @@ export function RuntimeRow({
   wide?: boolean;
   children: ReactNode;
 }) {
-  const hintId = useId();
-  // Same rule as the shared Field: a hint that fits one line stays visible under
-  // the control, a longer one is mechanics and goes behind the (i) — see
-  // HINT_INLINE_MAX. The settings page is where this matters most: a paragraph
-  // per row is what turns a form into documentation.
-  const hintInline = hint.length <= HINT_INLINE_MAX;
-  // Same association as the shared Field: the hint is written onto the control so
-  // a screen reader hears the explanation the eye can see. Children that are not a
-  // single element (a segmented control, a picker that ignores extra props) simply
-  // keep their own semantics — the hint is still on screen and still a description
-  // of the row.
-  const control =
-    hintInline && isValidElement<Record<string, unknown>>(children) && children.type !== "label"
-      ? cloneElement(children, { "aria-describedby": hintId })
-      : children;
+  // Every hint rides in the (i) beside the label — same rule as the shared Field
+  // (see its comment): a settings page where some rows explain themselves inline
+  // and others behind the (i) reads as two different kinds of row. The tip carries
+  // the text as its accessible name, so nothing is lost by moving it there, and
+  // there is no inline node left for `aria-describedby` to point at.
   return (
     <div className={`field runtime-row${wide ? " wide" : ""}`}>
-      {/* The label wraps the control so clicking its name still focuses the field.
-          The hint is a sibling rather than part of the label, because a wrapping
-          label's text IS the control's accessible name — and "Retry rounds"
-          followed by two sentences of explanation is not a name. */}
+      {/* The label wraps the control so clicking its name still focuses the field. */}
       <label className="runtime-row-label-wrap">
-        <SettingLabel label={label} changed={changed} tip={hintInline ? undefined : hint} />
-        {control}
+        <SettingLabel label={label} changed={changed} tip={hint} />
+        {children}
       </label>
-      {hintInline ? (
-        <span className="field-hint runtime-row-hint" id={hintId}>
-          {hint}
-        </span>
-      ) : null}
     </div>
   );
 }

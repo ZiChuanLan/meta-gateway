@@ -922,6 +922,7 @@ export const en: Dict = {
     "Fill in the base URL and key, then pull the upstream model list. Nothing has been created yet at this point.",
   "channels.modelsFetchedCount": "{n} models upstream",
   "channels.modelsFetchedEmpty": "The upstream returned no models.",
+  "channels.modelsFetchNeedsInput": "Fill in the base URL and key first",
   "channels.modelsAutoNote": "Auto sync adopts every model.",
   "channels.retryVerify": "Retry verify",
   "channels.createdOnly": "{name} saved. Verify when you are ready.",
@@ -1056,7 +1057,8 @@ export const en: Dict = {
     "HTTP(S) proxy for this channel's upstream requests. Empty = inherit the global proxy (settings page).",
   "channels.callPolicy": "Call policy",
   "channels.callPolicyInheritUnknown": "Follow the site",
-  "channels.callPolicyHint": "How automated calls (probes, keep-alive) look on this channel.",
+  "channels.callPolicyHint":
+    'How automated calls (model probes, keep-alive) look on this channel. "Follow the site" uses the site\'s own declaration: a site marked as banning probes gets a real small request instead (a real question, a normal token ceiling). A new site allows probing by default.',
   "channels.callPolicyInherit": "Follow the site (now: {policy})",
   "channels.modelBlocks": "Model not found (auto-blocked)",
   "channels.modelBlockClear": "Clear",

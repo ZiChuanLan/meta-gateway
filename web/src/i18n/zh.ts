@@ -980,9 +980,11 @@ export const zh: Dict = {
   "channels.mapValueNull": "null",
   "channels.proxyUrlHint": "该渠道上游请求的 HTTP(S) 代理。留空 = 继承全局代理（设置页）。",
   "channels.callPolicy": "调用策略",
-  "channels.callPolicyHint": "自动调用（模型探测 / 保活）在本渠道的请求形态。",
+  "channels.callPolicyHint":
+    "自动调用（模型探测 / 保活）在本渠道的请求形态。「跟随站点」= 用站点自己的声明：站点标为禁止测活时，探测与保活改发真实小请求（正常 token 上限、真实提问）；新建站点默认允许测活。",
   "channels.callPolicyInherit": "跟随站点（当前：{policy}）",
   "channels.callPolicyInheritUnknown": "跟随站点",
+  "channels.modelsFetchNeedsInput": "先填好 Base URL 与密钥",
   "channels.modelBlocks": "模型不存在（自动拉黑）",
   "channels.modelBlockClear": "解除",
   "channels.headerOverrideHint":

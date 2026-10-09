@@ -10,7 +10,12 @@ import { PROVIDER_BASE_URLS } from "../../connectionTypes";
 import { apiKeyLooksWrong, keyHintFor } from "../../lib/apiKeyPaste";
 import { useSession } from "../../session";
 import { TYPE_OPTIONS } from "./helpers";
-import { TYPE_GROUPS, type ConnectionAdvancedPatch, type CreateConnectionInput } from "./helpers";
+import {
+  TYPE_GROUPS,
+  normalizeBase,
+  type ConnectionAdvancedPatch,
+  type CreateConnectionInput,
+} from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
 
 export function AddChannelDialog({
@@ -78,6 +83,26 @@ export function AddChannelDialog({
     queryFn: ({ signal }) => service.runtimeSettings(signal),
     retry: false,
   });
+  // Sites are looked up only to answer one question in the interface: when this
+  // base URL already exists as a site, "follow the site" can name the policy it
+  // would actually follow instead of showing a blank inheritance.
+  const sites = useQuery({
+    queryKey: ["sites"],
+    queryFn: ({ signal }) => service.sites(signal),
+    retry: false,
+  });
+  const matchedSite = (sites.data ?? []).find(
+    (site) => normalizeBase(site.base_url) === normalizeBase(baseUrl),
+  );
+  const inheritedPolicyLabel = matchedSite
+    ? t("channels.callPolicyInherit", {
+        policy: t(
+          matchedSite.call_policy === "real_calls_only"
+            ? "channels.keepalive.policyRealCallsOnly"
+            : "channels.keepalive.policyAllowProbe",
+        ),
+      })
+    : t("channels.callPolicyInheritUnknown");
   const defaultSyncMode: ModelSyncMode =
     runtimeSettings.data?.editable.default_model_sync_mode === "auto" ? "auto" : "manual";
   const [syncMode, setSyncMode] = useState<ModelSyncMode | null>(null);
@@ -249,17 +274,25 @@ export function AddChannelDialog({
       >
         <div className="detail-section-head">
           <h3>{t("channels.modelsSection")}</h3>
-          {/* Fetching before saving is the whole point: a wrong URL or key costs
-              a retry here, not a site + credential + channel to clean up. */}
-          <Button
-            variant="secondary"
-            icon={<ListPlus size={15} className={fetchingModels ? "spin" : ""} />}
-            disabled={!canFetchModels}
-            title={canFetchModels ? undefined : t("channels.modelsFetchHint")}
-            onClick={fetchModels}
-          >
-            {fetchingModels ? t("common.working") : t("channels.modelsFetch")}
-          </Button>
+          {upstreamModels ? (
+            <span className="detail-section-count">{upstreamModels.length}</span>
+          ) : null}
+          {/* Same header shape as the channel detail's model block: the title on
+              the left, the thing you can do about it on the right. */}
+          <div className="detail-section-actions">
+            <button
+              type="button"
+              className="detail-section-expand connection-manage-button"
+              onClick={fetchModels}
+              disabled={!canFetchModels}
+              title={
+                canFetchModels ? t("channels.modelsFetchHint") : t("channels.modelsFetchNeedsInput")
+              }
+            >
+              <ListPlus size={12} className={fetchingModels ? "spin" : undefined} />
+              {fetchingModels ? t("common.working") : t("channels.modelsFetch")}
+            </button>
+          </div>
         </div>
         <SyncModePicker
           value={effectiveSyncMode}
@@ -441,7 +474,7 @@ export function AddChannelDialog({
                 }
                 disabled={pending}
               >
-                <option value="">{t("channels.callPolicyInheritUnknown")}</option>
+                <option value="">{inheritedPolicyLabel}</option>
                 <option value="allow_probe">{t("channels.keepalive.policyAllowProbe")}</option>
                 <option value="real_calls_only">
                   {t("channels.keepalive.policyRealCallsOnly")}

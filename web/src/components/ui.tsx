@@ -335,17 +335,6 @@ export function ConfirmDialog({
 
 type InfoTipPlacement = "above" | "below" | "left" | "right";
 
-/**
- * A hint at or under this length fits on one line in a two-column form — the
- * narrowest place a `Field` renders (~34 CJK chars at 330px, 11px type). Longer
- * text is a paragraph wearing a caption's clothes: under the control it pushes
- * the rest of the form down and competes with the thing it explains. Those go
- * behind the (i) beside the label, where the reader who wants the mechanics
- * looks; the short ones stay visible, because "what goes in this box" is not
- * mechanics.
- */
-export const HINT_INLINE_MAX = 36;
-
 type InfoTipPosition = {
   top: number;
   left: number;
@@ -496,16 +485,16 @@ export function Field({
   required?: boolean;
   className?: string;
 }) {
-  const hintId = useId();
   const errorId = useId();
-  // A hint that does not fit one line goes behind the (i) next to the label; a
-  // one-liner stays under the control. See HINT_INLINE_MAX.
-  const hintInline = Boolean(hint && hint.length <= HINT_INLINE_MAX);
-  // The control is the caller's element, so the association is written onto it
-  // rather than hoped for: a hint nobody announces is a caption, and a screen
-  // reader should hear the same explanation the eye gets. A wrapping <label>
-  // child is skipped — it is not the described element.
-  const described = [hintInline ? hintId : null, error ? errorId : null].filter(Boolean).join(" ");
+  // Every hint rides in the (i) beside the label. A paragraph under the control
+  // pushed the form down and competed with the thing it explained, and splitting
+  // hints into "short enough to show" and "long enough to hide" made two fields
+  // side by side look like different kinds of field. One rule, one look:
+  // the label names the control, the (i) explains it. The tip carries the text as
+  // its accessible name, so it is still announced and still keyboard-reachable.
+  // A message about the current *state* (loading, nothing found yet, an error) is
+  // not a field explanation and stays on screen where it can be seen.
+  const described = [error ? errorId : null].filter(Boolean).join(" ");
   const describedChild =
     isValidElement<Record<string, unknown>>(children) && children.type !== "label"
       ? cloneElement(children, {
@@ -517,9 +506,7 @@ export function Field({
   return (
     <div className={["field", error ? "is-invalid" : null, className].filter(Boolean).join(" ")}>
       {/* The label wraps the control so clicking its name still focuses the field.
-          A long hint rides in the label row as the (i) — it carries the text as
-          its accessible name, so it is announced and keyboard-reachable — while
-          a one-line hint stays under the control, visible rather than hovered. */}
+          The hint is the (i) in this row, not a paragraph below it. */}
       <label className="field-label-wrap">
         <span className="field-label">
           <span>{label}</span>
@@ -528,15 +515,10 @@ export function Field({
               *
             </span>
           ) : null}
-          {hint && !hintInline ? <InfoTip label={hint} /> : null}
+          {hint ? <InfoTip label={hint} /> : null}
         </span>
         {describedChild}
       </label>
-      {hintInline ? (
-        <span className="field-hint" id={hintId}>
-          {hint}
-        </span>
-      ) : null}
       {error ? (
         <span className="field-error" id={errorId} role="alert">
           {error}
