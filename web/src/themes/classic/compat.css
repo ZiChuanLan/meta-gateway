@@ -315,3 +315,20 @@
 :root[data-appearance="classic"] .button-danger {
   color: var(--on-danger);
 }
+
+/* —— Sticky, which never worked in this appearance ——
+   `overflow-x: hidden` on `body` (base.css) and on `.authenticated-stage`
+   (theme.css) turns each of those boxes into a scroll container — and a
+   `position: sticky` element resolves against its nearest scroll container,
+   which here is one that never scrolls, so the element simply travels with the
+   page. The settings rail, the top bar and every `position: sticky` table header
+   in this appearance were written to pin and could not.
+
+   `overflow-x: clip` is the same cut without the scroll container, and `visible`
+   on body is safe because the root still clips sideways overflow. */
+:root[data-appearance="classic"] body {
+  overflow-x: visible;
+}
+:root[data-appearance="classic"] .authenticated-stage {
+  overflow-x: clip;
+}

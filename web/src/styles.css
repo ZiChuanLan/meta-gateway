@@ -1,17 +1,23 @@
 /* Feature-specific layouts. Shared tokens, components, shell and workspace composition live in styles/. */
 
-/* Dark mode — deep ink-blue night (kept for preference) */
-
-* {
-  box-sizing: border-box;
-}
 html,
 body,
 #root {
   min-height: 100%;
 }
-html,
-body {
+
+/* Dark mode — deep ink-blue night (kept for preference) */
+
+* {
+  box-sizing: border-box;
+}
+/* `overflow-x: hidden` belongs on the root only. Put on `body` as well, it makes
+   body a scroll container — and every `position: sticky` inside it then resolves
+   against a box that never scrolls, so it simply travels with the page. That is
+   what happened to the settings rail (and to the top bar): both were written as
+   sticky and neither could stick. The root still clips sideways overflow, so no
+   page can be dragged sideways for it. */
+html {
   overflow-x: hidden;
 }
 body {
