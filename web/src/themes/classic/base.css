@@ -228,23 +228,11 @@
   font: inherit;
   letter-spacing: 0;
 }
-/* Bare controls (outside .field/.panel) must never fall back to UA dark
-   widgets — the console is a light surface. Scoped overrides such as
-   .exchange-search input keep their own transparent treatment. */
-:root[data-appearance="classic"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-:root[data-appearance="classic"] select,
-:root[data-appearance="classic"] textarea {
-  background: var(--surface-subtle);
-  border: 1px solid var(--line-light);
-  border-radius: var(--radius);
-  color: var(--ink);
-}
-:root[data-appearance="classic"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
-:root[data-appearance="classic"] select:focus,
-:root[data-appearance="classic"] textarea:focus {
-  border-color: var(--primary);
-  outline: none;
-}
+/* Controls: the console's control language is stated once, in
+   styles/system.css, with zero specificity so it acts as a floor. This sheet used
+   to carry a second copy of it (grey well, faint border) — and being more
+   specific, that copy is what every field in this appearance actually rendered.
+   A snapshot is where the layer came from, not a licence to restate it. */
 :root[data-appearance="classic"] button {
   cursor: pointer;
 }
@@ -358,7 +346,7 @@
   width: 100%;
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-  transition: left 400ms ease;
+  transition: left var(--dur-slower) var(--ease-in-out);
   pointer-events: none;
 }
 :root[data-appearance="classic"] .button:hover:not(:disabled)::before {

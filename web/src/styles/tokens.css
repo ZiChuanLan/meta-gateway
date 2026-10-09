@@ -86,12 +86,18 @@
   --font-body: var(--font);
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --focus: #3357e8;
-  --dur-fast: 120ms;
-  --dur-base: 180ms;
-  --dur-slow: 300ms;
-  --dur-hover: 180ms;
+  /* One motion ladder: interactions snap, surfaces settle. The authored entrance
+     sequences (the cinematic and login sheets under themes/) keep their own longer
+     timings on purpose — a cinematic cover is not a hover. */
+  --dur-instant: 90ms; /* a chip, a caret, a row highlight */
+  --dur-fast: 120ms; /* hover and press feedback */
+  --dur-base: 180ms; /* a state change: a toggle, a disclosure, a badge */
+  --dur-slow: 240ms; /* a surface: dropdown, dialog, drawer, sidebar */
+  --dur-slower: 320ms; /* the largest surfaces, and panels arriving */
+  --dur-hover: var(--dur-base);
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(.4, 0, .2, 1);
   --ease-hover: cubic-bezier(.2, .7, .3, 1);
   --ambient-a: rgba(92, 113, 190, .07);
   --ambient-b: rgba(160, 166, 180, .04);

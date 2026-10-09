@@ -110,9 +110,9 @@
   font: 600 12px/1 var(--font);
   cursor: pointer;
   transition:
-    border-color 150ms ease-out,
-    color 150ms ease-out,
-    background-color 150ms ease-out;
+    border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
 }
 .member-home-copy-button:hover {
   border-color: var(--primary);
@@ -141,10 +141,10 @@
   font-weight: 600;
   text-decoration: none;
   transition:
-    border-color 150ms ease-out,
-    color 150ms ease-out,
-    transform 150ms ease-out,
-    box-shadow 150ms ease-out;
+    border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 .member-action:hover {
   border-color: var(--line-strong);
@@ -436,8 +436,8 @@
   border-radius: var(--radius);
   background: var(--surface);
   transition:
-    border-color 150ms ease-out,
-    box-shadow 150ms ease-out;
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 .key-card:hover {
   border-color: var(--line-strong);
@@ -511,8 +511,8 @@
   font: 600 11px/1 var(--font);
   cursor: pointer;
   transition:
-    border-color 140ms ease-out,
-    color 140ms ease-out;
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 .key-card-copy:hover:not(:disabled) {
   border-color: var(--primary);

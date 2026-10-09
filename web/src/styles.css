@@ -56,23 +56,10 @@ textarea {
   font: inherit;
   letter-spacing: 0;
 }
-/* Bare controls (outside .field/.panel) must never fall back to UA dark
-   widgets — the console is a light surface. Scoped overrides such as
-   .exchange-search input keep their own transparent treatment. */
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-select,
-textarea {
-  background: var(--surface-subtle);
-  border: 1px solid var(--line-light);
-  border-radius: var(--radius);
-  color: var(--ink);
-}
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
-select:focus,
-textarea:focus {
-  border-color: var(--primary);
-  outline: none;
-}
+/* The console's control language lives in styles/system.css — one definition for
+   both appearances. This sheet grew a competing copy of it (a grey well with a
+   faint border) whose higher specificity then enforced it over that definition,
+   which is why every field in the console looked flatter than its own panel. */
 button {
   cursor: pointer;
 }
@@ -147,7 +134,7 @@ code,
   background: var(--primary);
   border: 1px solid var(--primary);
   box-shadow: 0 2px 8px rgba(15, 42, 66, 0.12);
-  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 
 /* 顶部全景战术水平仪 (Top Horizon HUD) */
@@ -177,7 +164,7 @@ code,
   border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 6px var(--success-glow);
-  animation: horizon-pulse 3s ease-in-out infinite;
+  animation: horizon-pulse 3s var(--ease-in-out) infinite;
 }
 @keyframes horizon-pulse {
   0%, 100% { opacity: 0.65; transform: scale(1); }
@@ -266,7 +253,7 @@ code,
 .dot {
   background: var(--warning);
   box-shadow: 0 0 10px var(--warning-glow);
-  animation: pulse-warn 2s infinite ease-in-out;
+  animation: pulse-warn 2s infinite var(--ease-in-out);
 }
 .dot.healthy {
   background: var(--success);
@@ -444,7 +431,7 @@ td.status-col {
 .runtime-subblock-chevron {
   flex: 0 0 auto;
   color: var(--muted);
-  transition: transform 160ms ease;
+  transition: transform var(--dur-base) var(--ease-in-out);
 }
 .runtime-subblock.is-open .runtime-subblock-chevron {
   transform: rotate(90deg);
@@ -502,7 +489,7 @@ td.status-col {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease, visibility 120ms ease;
+  transition: opacity var(--dur-fast) var(--ease-in-out), visibility var(--dur-fast) var(--ease-in-out);
 }
 .info-tip-bubble[data-visible="true"] {
   visibility: visible;
@@ -697,22 +684,8 @@ label.directory-search input:focus {
   font-weight: 600;
   user-select: none;
 }
-.glossary summary::-webkit-details-marker {
-  display: none;
-}
-.glossary summary::after {
-  content: "";
-  width: 7px;
-  height: 7px;
-  margin-left: auto;
-  border-right: 1.5px solid var(--muted);
-  border-bottom: 1.5px solid var(--muted);
-  transform: rotate(45deg);
-  transition: transform var(--dur-hover) var(--ease-hover);
-}
-.glossary[open] summary::after {
-  transform: rotate(225deg);
-}
+/* The marker and the chevron are shared now (see system.css): one disclosure
+   treatment for the whole console, instead of each <details> inventing its own. */
 .glossary summary small {
   font-weight: 400;
 }
@@ -1122,9 +1095,9 @@ label.directory-search input:focus {
   font-size: 13px;
   font-weight: 600;
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
+    background var(--dur-fast) var(--ease-in-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out);
 }
 .routing-mode-select:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -1219,6 +1192,32 @@ td.actions {
   margin-top: 16px;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+/* 高级设置：折叠区本身就是一张卡，头部一行标签，展开后才占版面。
+   summary 用负外边距铺满整张卡，正文留在内缩区里，所以底下的细线横贯卡片。 */
+.advanced-section {
+  margin-top: 14px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.advanced-section > summary {
+  margin: 0 -14px;
+  padding: 11px 14px;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background var(--dur-base) var(--ease-out);
+}
+.advanced-section > summary:hover {
+  background: var(--surface-hover);
+}
+.advanced-section[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.advanced-section > p.field-hint {
+  margin: 12px 0 0;
 }
 .advanced-toggle {
   display: inline-flex;
@@ -1868,9 +1867,9 @@ td.actions {
   background: var(--surface-subtle);
   cursor: pointer;
   transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    color 140ms ease;
+    border-color var(--dur-fast) var(--ease-in-out),
+    background var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out);
 }
 .drop-zone:hover,
 .drop-zone.is-dragging {
@@ -2366,7 +2365,7 @@ td.actions {
   background: var(--surface);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   color: var(--ink);
-  animation: toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: toast-in var(--dur-base) var(--ease-out);
 }
 .toast-error {
   border-left: 1px solid var(--danger);
@@ -2656,8 +2655,8 @@ td.actions {
   border-radius: var(--radius);
   background: var(--surface-subtle);
   transition:
-    border-color 280ms ease,
-    box-shadow 280ms ease;
+    border-color var(--dur-slow) var(--ease-in-out),
+    box-shadow var(--dur-slow) var(--ease-in-out);
 }
 .webdav-direction-card.is-active {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
@@ -2718,9 +2717,9 @@ td.actions {
   background: var(--surface-subtle);
   cursor: pointer;
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease;
+    border-color var(--dur-base) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out),
+    background-color var(--dur-base) var(--ease-in-out);
 }
 .webdav-mode-card:hover {
   border-color: var(--line-strong);
@@ -3218,7 +3217,7 @@ td.actions {
 .endpoint-dot.is-healthy {
   background: var(--success);
   box-shadow: 0 0 12px var(--success-glow);
-  animation: pulse-health 2.5s infinite ease-in-out;
+  animation: pulse-health 2.5s infinite var(--ease-in-out);
 }
 .endpoint-copy {
   display: flex;
@@ -3391,7 +3390,7 @@ td.actions {
   color: inherit;
   text-decoration: none;
   border-bottom: 1px dashed transparent;
-  transition: border-color 0.12s ease, color 0.12s ease;
+  transition: border-color 0.12s var(--ease-in-out), color 0.12s var(--ease-in-out);
 }
 .upstream-link:hover {
   border-bottom-color: currentColor;
@@ -3503,8 +3502,8 @@ td.actions {
   border: 1px solid var(--line);
   background: var(--surface-subtle);
   transition:
-    border-color 280ms ease,
-    opacity 280ms ease;
+    border-color var(--dur-slow) var(--ease-in-out),
+    opacity var(--dur-slow) var(--ease-in-out);
 }
 .unify-group.is-loose {
   border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
@@ -3610,32 +3609,51 @@ td.actions {
   font-size: 11px;
   color: var(--accent);
 }
+/* A search shell: one box with the icon inside it. The control inside is not a
+   field of its own — no border, no background, no UA search decorations — so the
+   shell's box is the only one the eye reads. */
 .probe-search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--line-light);
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--muted);
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+}
+/* Focus belongs to the control, so the ring is drawn on the shell — the input
+   inside has no border of its own to light up. */
+.probe-search:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .probe-search input {
   width: 100%;
   min-width: 0;
-  height: 32px;
+  height: 100%;
+  padding: 0;
   border: 0;
+  border-radius: 0;
   background: none;
+  box-shadow: none;
   color: var(--ink);
   font-family: var(--font);
   font-size: 12.5px;
+  appearance: none;
 }
-  /* Suppress the ring for pointer focus only. A bare `:focus { outline: none }`
-     also matches keyboard focus, which cancelled the global :focus-visible ring
-     and left this field with no focus indication at all. */
-  .probe-search input:focus:not(:focus-visible) {
-    outline: none;
-  }
+.probe-search input::-webkit-search-decoration,
+.probe-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+/* The shell draws the ring; the bare input must not draw a second one. */
+.probe-search input:focus,
+.probe-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .probe-picker-actions {
   display: flex;
   gap: 12px;
@@ -5080,7 +5098,7 @@ td.actions {
   font-size: 12px;
   color: var(--muted-strong);
   cursor: pointer;
-  transition: background 0.16s ease, color 0.16s ease;
+  transition: background 0.16s var(--ease-in-out), color 0.16s var(--ease-in-out);
 }
 .channel-models-syncbar-option + .channel-models-syncbar-option {
   border-left: 1px solid var(--line);
@@ -5418,7 +5436,7 @@ td.actions {
 }
 .credential-key-model-editor {
   padding: 4px 0 2px;
-  animation: credential-model-editor-in 160ms ease-out both;
+  animation: credential-model-editor-in var(--dur-base) var(--ease-out) both;
 }
 @keyframes credential-model-editor-in {
   from {
@@ -5515,8 +5533,8 @@ td.actions {
   color: var(--sidebar-muted);
   cursor: pointer;
   transition:
-    background 140ms ease,
-    color 140ms ease;
+    background var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out);
 }
 .theme-toggle:hover {
   background: rgba(23, 35, 48, 0.06);
@@ -5526,7 +5544,7 @@ td.actions {
 /* Theme toggle in sidebar footer */
 /* —— Route transition + row stagger + card micro-interactions —— */
 .route-enter {
-  animation: page-enter 200ms ease-out both;
+  animation: page-enter var(--dur-base) var(--ease-out) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5642,7 +5660,7 @@ td.actions {
   gap: 10px;
   font-size: 12px;
   transition: background var(--dur-hover) var(--ease-hover);
-  animation: item-rise 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: item-rise var(--dur-slower) var(--ease-out) both;
 }
 .dashboard-list li:nth-child(2) { animation-delay: 32ms; }
 .dashboard-list li:nth-child(3) { animation-delay: 64ms; }
@@ -5729,9 +5747,9 @@ td.actions {
   color: var(--ink-soft);
   cursor: pointer;
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+    background-color var(--dur-fast) var(--ease-in-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    transform var(--dur-fast) var(--ease-in-out);
 }
 .chart-back-button:hover {
   background: var(--primary);
@@ -5757,7 +5775,7 @@ td.actions {
   white-space: nowrap;
 }
 .chart-block {
-  animation: chart-view-in 260ms var(--ease-out, ease-out) both;
+  animation: chart-view-in var(--dur-slow) var(--ease-out, var(--ease-out)) both;
 }
 .chart-block.is-zoomed {
   animation-name: chart-zoom-in;
@@ -6691,7 +6709,7 @@ label.check input[type="checkbox"]:not(.switch) {
   padding: 12vh 16px 16px;
   background: rgba(3, 3, 5, 0.66);
   backdrop-filter: blur(6px) saturate(1.1);
-  animation: command-fade 140ms ease-out;
+  animation: command-fade var(--dur-fast) var(--ease-out);
   overflow-y: auto;
 }
 .command-panel {
@@ -6701,7 +6719,7 @@ label.check input[type="checkbox"]:not(.switch) {
   background: var(--surface-raised);
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow-lg);
-  animation: command-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: command-pop var(--dur-base) var(--ease-out) both;
   overflow: hidden;
 }
 .command-panel::before {
@@ -6781,9 +6799,9 @@ label.check input[type="checkbox"]:not(.switch) {
   font-size: 14px;
   cursor: pointer;
   transition:
-    background 90ms ease,
-    color 90ms ease,
-    border-color 90ms ease;
+    background var(--dur-instant) var(--ease-in-out),
+    color var(--dur-instant) var(--ease-in-out),
+    border-color var(--dur-instant) var(--ease-in-out);
 }
 .command-item-icon {
   flex: none;
@@ -6795,8 +6813,8 @@ label.check input[type="checkbox"]:not(.switch) {
   background: var(--surface-subtle);
   color: var(--muted);
   transition:
-    background 90ms ease,
-    color 90ms ease;
+    background var(--dur-instant) var(--ease-in-out),
+    color var(--dur-instant) var(--ease-in-out);
 }
 .command-item-title {
   flex: 1;
@@ -6866,14 +6884,14 @@ label.check input[type="checkbox"]:not(.switch) {
 
 /* —— Sidebar: heartbeat brand LED + nav micro-motion —— */
 .brand-mark {
-  animation: led-breathe 3.4s ease-in-out infinite;
+  animation: led-breathe 3.4s var(--ease-in-out) infinite;
 }
 @keyframes led-breathe {
   0%, 100% { box-shadow: 0 0 12px rgba(212, 175, 55, 0.2); }
   50% { box-shadow: 0 0 26px rgba(212, 175, 55, 0.55); }
 }
 .dot.healthy {
-  animation: led-pulse 2.4s ease-in-out infinite;
+  animation: led-pulse 2.4s var(--ease-in-out) infinite;
 }
 @keyframes led-pulse {
   0%, 100% { box-shadow: 0 0 0 4px rgba(59, 209, 108, 0.12); }
@@ -6983,7 +7001,7 @@ label.check input[type="checkbox"]:not(.switch) {
 .mission-led.is-on {
   background: var(--success);
   box-shadow: 0 0 0 4px rgba(72, 199, 142, 0.14), 0 0 12px rgba(72, 199, 142, 0.6);
-  animation: led-pulse 2.4s ease-in-out infinite;
+  animation: led-pulse 2.4s var(--ease-in-out) infinite;
 }
 .mission-led.is-warn {
   background: var(--warning);
@@ -7056,9 +7074,9 @@ label.check input[type="checkbox"]:not(.switch) {
   gap: 10px;
   padding: 14px;
   transition:
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 140ms ease,
-    box-shadow 180ms ease;
+    transform var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out);
 }
 .market-card::before {
   content: "";
@@ -7124,7 +7142,7 @@ label.check input[type="checkbox"]:not(.switch) {
 /* Live-ready badges breathe gently — a "channel online" heartbeat. */
 .badge-healthy,
 .badge-ready {
-  animation: badge-live 3.2s ease-in-out infinite;
+  animation: badge-live 3.2s var(--ease-in-out) infinite;
 }
 @keyframes badge-live {
   0%, 100% { box-shadow: 0 0 0 0 rgba(72, 199, 142, 0); }
@@ -7209,7 +7227,7 @@ label.check input[type="checkbox"]:not(.switch) {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow-lg);
-  animation: search-drop 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: search-drop var(--dur-base) var(--ease-out);
 }
 .bg-picker input[type="text"] {
   width: 100%;
@@ -7416,8 +7434,8 @@ label.check input[type="checkbox"]:not(.switch) {
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   transition:
-    border-color 220ms ease,
-    box-shadow 220ms ease;
+    border-color var(--dur-slow) var(--ease-in-out),
+    box-shadow var(--dur-slow) var(--ease-in-out);
 }
 .ops-detail-card:hover {
   border-color: var(--line-strong);
@@ -7426,8 +7444,8 @@ label.check input[type="checkbox"]:not(.switch) {
 
 .table tr.is-clickable {
   transition:
-    background-color 160ms ease,
-    box-shadow 160ms ease;
+    background-color var(--dur-base) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out);
 }
 .table tr.is-clickable:hover {
   background: var(--surface-subtle);
@@ -7476,8 +7494,8 @@ label.check input[type="checkbox"]:not(.switch) {
    ============================================================ */
 .member-row {
   transition:
-    background-color 160ms ease,
-    border-color 160ms ease;
+    background-color var(--dur-base) var(--ease-in-out),
+    border-color var(--dur-base) var(--ease-in-out);
 }
 .member-row:hover {
   background: var(--surface-subtle);
@@ -8040,7 +8058,7 @@ a.log-chain-value:hover { text-decoration: underline; }
 .external-checkin-lamp.is-on {
   background: var(--success);
   box-shadow: 0 0 8px var(--success-glow);
-  animation: deck-pulse 3s ease-in-out infinite;
+  animation: deck-pulse 3s var(--ease-in-out) infinite;
 }
 .external-checkin-card-actions {
   display: flex;
@@ -8770,7 +8788,7 @@ a.log-chain-value:hover { text-decoration: underline; }
 }
 .is-running .live-trace-pulse {
   background: var(--success);
-  animation: live-trace-pulse 1.6s ease-in-out infinite;
+  animation: live-trace-pulse 1.6s var(--ease-in-out) infinite;
 }
 .is-success .live-trace-pulse { background: var(--success); }
 .is-failed .live-trace-pulse { background: var(--danger); }
@@ -9397,9 +9415,9 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   text-align: left;
   cursor: pointer;
   transition:
-    color var(--dur-fast, 120ms),
-    border-color var(--dur-fast, 120ms),
-    background var(--dur-fast, 120ms);
+    color var(--dur-fast, var(--dur-fast)),
+    border-color var(--dur-fast, var(--dur-fast)),
+    background var(--dur-fast, var(--dur-fast));
 }
 .runtime-rail-item:hover {
   background: var(--surface-subtle);
@@ -9467,7 +9485,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   /* Cards in a row end on the same line: the shorter one takes the slack, which
      is what "aligned" means to an eye looking down the seam between them. */
   align-items: stretch;
-  animation: runtime-pane-in 150ms var(--ease-out) both;
+  animation: runtime-pane-in var(--dur-base) var(--ease-out) both;
 }
 @media (max-width: 960px) {
   .runtime-cards-grid {
@@ -9583,8 +9601,8 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   background: var(--surface-subtle);
   cursor: pointer;
   transition:
-    background var(--dur-fast, 120ms),
-    border-color var(--dur-fast, 120ms);
+    background var(--dur-fast, var(--dur-fast)),
+    border-color var(--dur-fast, var(--dur-fast));
 }
 .switch::before,
 .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]::before {
@@ -9597,7 +9615,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   height: 16px;
   border: 1px solid var(--line-strong, var(--line));
   background: var(--surface);
-  transition: transform var(--dur-fast, 120ms);
+  transition: transform var(--dur-fast, var(--dur-fast));
 }
 .switch:checked,
 .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]:checked {

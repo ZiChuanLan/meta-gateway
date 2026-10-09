@@ -239,8 +239,7 @@
   gap: 10px;
   margin: 12px 0;
   padding: 10px 14px;
-  border: 1px solid var(--team-line, #e1e8ef);
-  border-left: 3px solid var(--team-accent, #275b85);
+  border: 1px solid color-mix(in srgb, var(--team-accent, #275b85) 30%, var(--team-line, #e1e8ef));
   border-radius: 6px;
   background: var(--team-soft, #f5f8fb);
 }

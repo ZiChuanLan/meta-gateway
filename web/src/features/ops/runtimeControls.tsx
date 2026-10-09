@@ -1,4 +1,10 @@
-import { useId, type InputHTMLAttributes, type ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useId,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from "react";
 import { ChevronRight } from "lucide-react";
 import { useI18n } from "../../i18n";
 
@@ -96,6 +102,16 @@ export function RuntimeRow({
   wide?: boolean;
   children: ReactNode;
 }) {
+  const hintId = useId();
+  // Same association as the shared Field: the hint is written onto the control so
+  // a screen reader hears the explanation the eye can see. Children that are not a
+  // single element (a segmented control, a picker that ignores extra props) simply
+  // keep their own semantics — the hint is still on screen and still a description
+  // of the row.
+  const control =
+    isValidElement<Record<string, unknown>>(children) && children.type !== "label"
+      ? cloneElement(children, { "aria-describedby": hintId })
+      : children;
   return (
     <div className={`field runtime-row${wide ? " wide" : ""}`}>
       {/* The label wraps the control so clicking its name still focuses the field.
@@ -104,9 +120,13 @@ export function RuntimeRow({
           followed by two sentences of explanation is not a name. */}
       <label className="runtime-row-label-wrap">
         <SettingLabel label={label} changed={changed} />
-        {children}
+        {control}
       </label>
-      {hint ? <span className="field-hint runtime-row-hint">{hint}</span> : null}
+      {hint ? (
+        <span className="field-hint runtime-row-hint" id={hintId}>
+          {hint}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -164,6 +184,11 @@ export function ValidatedNumberInput({
     disabled || !Number.isFinite(numericValue)
       ? undefined
       : numberValidationError(numericValue, min, max, customError, t);
+  // A control can be described by more than one thing: its row's hint and its own
+  // range violation. Stating `aria-describedby` here without merging would drop
+  // whichever the caller passed.
+  const describedBy =
+    [props["aria-describedby"], error ? errorId : null].filter(Boolean).join(" ") || undefined;
 
   return (
     <span className={`setting-input-wrap${error ? " is-invalid" : ""}`}>
@@ -176,7 +201,7 @@ export function ValidatedNumberInput({
         disabled={disabled}
         value={value}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
+        aria-describedby={describedBy}
       />
       {error ? (
         <span id={errorId} className="setting-validation" role="alert">

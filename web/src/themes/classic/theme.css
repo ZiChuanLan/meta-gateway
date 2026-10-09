@@ -16,7 +16,7 @@
   background: var(--primary);
   border: 1px solid var(--primary);
   box-shadow: 0 2px 8px rgba(15, 42, 66, 0.12);
-  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 
 /* 顶部全景战术水平仪 (Top Horizon HUD) */
@@ -46,7 +46,7 @@
   border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 6px var(--success-glow);
-  animation: classic-horizon-pulse 3s ease-in-out infinite;
+  animation: classic-horizon-pulse 3s var(--ease-in-out) infinite;
 }
 @keyframes classic-horizon-pulse {
   0%, 100% { opacity: 0.65; transform: scale(1); }
@@ -135,7 +135,7 @@
 :root[data-appearance="classic"] .dot {
   background: var(--warning);
   box-shadow: 0 0 10px var(--warning-glow);
-  animation: classic-pulse-warn 2s infinite ease-in-out;
+  animation: classic-pulse-warn 2s infinite var(--ease-in-out);
 }
 :root[data-appearance="classic"] .dot.healthy {
   background: var(--success);
@@ -155,7 +155,7 @@
   padding: 36px 36px 64px;
   max-width: 1680px;
   margin: 0 auto;
-  animation: classic-page-enter 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: classic-page-enter var(--dur-slower) var(--ease-out);
 }
 :root[data-appearance="classic"] .page-header {
   display: flex;
@@ -633,7 +633,7 @@
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease, visibility 120ms ease;
+  transition: opacity var(--dur-fast) var(--ease-in-out), visibility var(--dur-fast) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .info-tip-bubble[data-visible="true"] {
   visibility: visible;
@@ -681,27 +681,10 @@
     transition: none;
   }
 }
-/* Text fields get the box; a checkbox or a switch is not one. Without the
-   exclusion the shared `.switch` primitive (42x22) came out 42x38 — the height
-   here outranks it — and a plain checkbox inside a panel was given 38px of
-   invisible padding around its 14px glyph. */
-:root[data-appearance="classic"] .field input:not([type="checkbox"]):not([type="radio"]),
-:root[data-appearance="classic"] .field select,
-:root[data-appearance="classic"] .field textarea,
-:root[data-appearance="classic"] .panel input:not([type="checkbox"]):not([type="radio"]),
-:root[data-appearance="classic"] .panel select,
-:root[data-appearance="classic"] .panel textarea,
-:root[data-appearance="classic"] .toolbar input:not([type="checkbox"]):not([type="radio"]),
-:root[data-appearance="classic"] .toolbar select {
-  height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--line-light);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  color: var(--ink);
-  font-family: var(--font);
-  font-size: 13px;
-}
+/* Field geometry comes from the shared control language (styles/system.css) with
+   the appearance's own corner radius. This block used to restate height, padding
+   and surface for classic, at a weight that overrode every compound field: a
+   search shell's input was painted with a second border inside the shell's box. */
 /* Coarse pointers (touch) need a larger hit area — WCAG 2.5.5 / 2.5.8. */
 @media (pointer: coarse) {
   :root[data-appearance="classic"] .field input:not([type="checkbox"]):not([type="radio"]),
@@ -844,7 +827,7 @@
   padding: 24px;
   background: rgba(1, 3, 10, 0.78);
   backdrop-filter: blur(12px);
-  animation: classic-dialog-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: classic-dialog-in var(--dur-slow) var(--ease-out);
 }
 :root[data-appearance="classic"] .dialog {
   width: min(720px, 100%);
@@ -945,7 +928,7 @@
   position: relative;
 }
 :root[data-appearance="classic"] .drawer.is-left {
-  animation: classic-drawer-slide-left 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: classic-drawer-slide-left var(--dur-slower) var(--ease-out);
 }
 @keyframes classic-drawer-slide-left {
   from { transform: translateX(-100%); }
@@ -1505,9 +1488,9 @@
   font-size: 13px;
   font-weight: 600;
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
+    background var(--dur-fast) var(--ease-in-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .routing-mode-select:hover:not(:disabled) {
   background: var(--surface-hover);
@@ -1585,7 +1568,7 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   transform-origin: top right;
-  animation: classic-menu-pop 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: classic-menu-pop var(--dur-fast) var(--ease-out);
 }
 :root[data-appearance="classic"] .action-menu-panel.action-menu-panel-floating {
   position: fixed;
@@ -2289,9 +2272,9 @@
   background: var(--surface-subtle);
   cursor: pointer;
   transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    color 140ms ease;
+    border-color var(--dur-fast) var(--ease-in-out),
+    background var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .drop-zone:hover,
 :root[data-appearance="classic"] .drop-zone.is-dragging {
@@ -2614,7 +2597,7 @@
   backdrop-filter: blur(1.5px);
   box-shadow: 0 12px 40px rgba(15, 42, 66, 0.03);
   pointer-events: none;
-  transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--dur-slower) var(--ease-out);
 }
 /* 中央主花瓣晶片：大面积铺满视区中心，与前景交相辉映 */
 :root[data-appearance="classic"] .impact-shard-center {
@@ -3287,16 +3270,16 @@
 /* Keep the desk visible under the doors so we never flash an empty frame. */
 :root[data-appearance="classic"] .connect-page.is-sealing-out .connect-ambient {
   opacity: 0.5;
-  transition: opacity 220ms ease;
+  transition: opacity var(--dur-slow) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .connect-page.is-sealing-out .connect-panel {
   opacity: 0.25;
   transform: translateY(10px) scale(0.985);
   filter: blur(1px);
   transition:
-    opacity 220ms ease,
-    transform 220ms ease,
-    filter 220ms ease;
+    opacity var(--dur-slow) var(--ease-in-out),
+    transform var(--dur-slow) var(--ease-in-out),
+    filter var(--dur-slow) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .connect-page.is-sealing-out .connect-panel form .button {
   box-shadow: 0 0 0 1px rgba(124, 196, 240, 0.6), 0 0 22px rgba(124, 196, 240, 0.4);
@@ -3319,7 +3302,7 @@
   border: 1px solid transparent;
   box-shadow: none;
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity var(--dur-base) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .connect-panel:focus-within::after {
   opacity: 1;
@@ -3407,7 +3390,7 @@
     transparent 100%
   );
   transform: translateX(-130%);
-  animation: classic-connect-scan-run 1050ms cubic-bezier(0.35, 0, 0.25, 1) 120ms forwards;
+  animation: classic-connect-scan-run 1050ms var(--ease-in-out) var(--dur-fast) forwards;
 }
 @keyframes classic-connect-scan-run {
   0% {
@@ -3429,7 +3412,7 @@
   opacity: 0;
   filter: blur(9px);
   transform: translateY(18px);
-  animation: classic-masthead-char-in 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: classic-masthead-char-in 720ms var(--ease-out) forwards;
   animation-delay: calc(var(--i, 0) * 44ms + 220ms);
 }
 @keyframes classic-masthead-char-in {
@@ -3447,11 +3430,11 @@
 :root[data-appearance="classic"] .connect-edition {
   opacity: 0;
   transform: translateY(12px);
-  animation: classic-hud-rise 640ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: classic-hud-rise 640ms var(--ease-out) forwards;
 }
 :root[data-appearance="classic"] .connect-brand {
   opacity: 0;
-  animation: classic-hud-fade 640ms cubic-bezier(0.16, 1, 0.3, 1) 80ms forwards;
+  animation: classic-hud-fade 640ms var(--ease-out) var(--dur-instant) forwards;
 }
 :root[data-appearance="classic"] .connect-kicker {
   animation-delay: 300ms;
@@ -3484,8 +3467,8 @@
     calc(var(--scene-shift-y) * 0.45),
     0
   );
-  transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  animation: classic-connect-panel-fade 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: transform var(--dur-slower) var(--ease-hover);
+  animation: classic-connect-panel-fade 700ms var(--ease-out) both;
 }
 @keyframes classic-connect-panel-fade {
   from {
@@ -3501,12 +3484,12 @@
     calc(var(--scene-shift-y) * -0.24),
     0
   );
-  transition: transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform var(--dur-slower) var(--ease-hover);
 }
 
 /* 5. 面板金顶线呼吸（常驻微光） */
 :root[data-appearance="classic"] .connect-panel::before {
-  animation: classic-accent-breathe 5s ease-in-out 2.2s infinite;
+  animation: classic-accent-breathe 5s var(--ease-in-out) 2.2s infinite;
 }
 @keyframes classic-accent-breathe {
   0%,
@@ -3548,8 +3531,8 @@
   opacity: 0;
   pointer-events: none;
   transition:
-    transform 460ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 320ms ease;
+    transform var(--dur-slow) var(--ease-hover),
+    opacity var(--dur-slower) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .connect-panel form .field:focus-within::after {
   transform: scaleX(1);
@@ -3628,10 +3611,10 @@
   letter-spacing: 0.18em;
   text-transform: uppercase;
   transition:
-    background 120ms ease,
-    color 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+    background var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    box-shadow var(--dur-fast) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .connect-panel form .button::after {
   content: "";
@@ -3645,7 +3628,7 @@
     transparent
   );
   transform: translateX(-140%) skewX(-22deg);
-  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--dur-slow) var(--ease-out);
   pointer-events: none;
 }
 :root[data-appearance="classic"] .connect-panel form .button:hover:not(:disabled),
@@ -3701,7 +3684,7 @@
 :root[data-appearance="classic"] .connect-heading,
 :root[data-appearance="classic"] .connect-panel form,
 :root[data-appearance="classic"] .connect-footer {
-  animation: classic-connect-rise 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: classic-connect-rise 640ms var(--ease-out) both;
 }
 :root[data-appearance="classic"] .connect-panel-meta { animation-delay: 140ms; }
 :root[data-appearance="classic"] .connect-toolbar { animation-delay: 200ms; }
@@ -3759,7 +3742,7 @@
   background: var(--bg);
 }
 :root[data-appearance="classic"] .authenticated-stage.is-revealing {
-  animation: classic-authenticated-resolve 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: classic-authenticated-resolve 1100ms var(--ease-out) both;
 }
 :root[data-appearance="classic"] .gateway-transition {
   position: fixed;
@@ -3825,18 +3808,18 @@
   transform: translate3d(100%, 0, 0);
 }
 :root[data-appearance="classic"] .gateway-transition.is-sealing .gateway-door-left {
-  animation: classic-gateway-door-seal-left 1200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: classic-gateway-door-seal-left 1200ms var(--ease-out) both;
 }
 :root[data-appearance="classic"] .gateway-transition.is-sealing .gateway-door-right {
-  animation: classic-gateway-door-seal-right 1200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: classic-gateway-door-seal-right 1200ms var(--ease-out) both;
 }
 :root[data-appearance="classic"] .gateway-transition.is-revealing .gateway-door-left {
   transform: translate3d(0, 0, 0);
-  animation: classic-gateway-door-reveal-left 1000ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: classic-gateway-door-reveal-left 1000ms var(--ease-out) both;
 }
 :root[data-appearance="classic"] .gateway-transition.is-revealing .gateway-door-right {
   transform: translate3d(0, 0, 0);
-  animation: classic-gateway-door-reveal-right 1000ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: classic-gateway-door-reveal-right 1000ms var(--ease-out) both;
 }
 
 /* simple solid plane + a few diagonal strokes */
@@ -3919,13 +3902,13 @@
 }
 :root[data-appearance="classic"] .gateway-transition.is-sealing .gateway-transition-lock {
   /* ready under doors before they part; opacity-only for smoothness */
-  animation: classic-gateway-lock-in 900ms cubic-bezier(0.22, 0.61, 0.36, 1) 1300ms both;
+  animation: classic-gateway-lock-in 900ms var(--ease-hover) 1300ms both;
 }
 :root[data-appearance="classic"] .gateway-transition.is-revealing .gateway-transition-lock {
   /* stay under doors, hold, then slow opacity fade — no blur/scale thrash */
   opacity: 1;
   transform: translate3d(-50%, -50%, 0);
-  animation: classic-gateway-lock-out 1600ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: classic-gateway-lock-out 1600ms var(--ease-hover) both;
 }
 :root[data-appearance="classic"] .gateway-transition-lock > span {
   display: block;
@@ -3980,10 +3963,10 @@
     8px 0 rgba(124, 196, 240, 0.55);
 }
 :root[data-appearance="classic"] .gateway-transition.is-sealing .gateway-transition-axis {
-  animation: classic-gateway-axis-lock 430ms ease-out 220ms both;
+  animation: classic-gateway-axis-lock 430ms var(--ease-out) var(--dur-slow) both;
 }
 :root[data-appearance="classic"] .gateway-transition.is-revealing .gateway-transition-axis {
-  animation: classic-gateway-axis-release 420ms ease-in both;
+  animation: classic-gateway-axis-release 420ms var(--ease-in) both;
 }
 
 /* 収刀入鞘 — disconnect: light veil covers, blade retracts into its sheath */
@@ -3995,7 +3978,7 @@
   inset: 0;
   background: var(--bg-canvas);
   opacity: 0;
-  animation: classic-sheath-veil 1000ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: classic-sheath-veil 1000ms var(--ease-out) both;
 }
 :root[data-appearance="classic"] .sheath-blade {
   position: absolute;
@@ -4014,7 +3997,7 @@
     var(--accent) 74%,
     transparent
   );
-  animation: classic-sheath-blade 1000ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: classic-sheath-blade 1000ms var(--ease-out) both;
 }
 :root[data-appearance="classic"] .sheath-point {
   position: absolute;
@@ -4026,7 +4009,7 @@
   border-radius: 9999px;
   background: var(--accent);
   opacity: 0;
-  animation: classic-sheath-point 1000ms ease both;
+  animation: classic-sheath-point 1000ms var(--ease-in-out) both;
 }
 :root[data-appearance="classic"] .sheath-word {
   position: absolute;
@@ -4039,7 +4022,7 @@
   text-align: center;
   font-family: var(--mono);
   opacity: 0;
-  animation: classic-sheath-word 1000ms ease both;
+  animation: classic-sheath-word 1000ms var(--ease-in-out) both;
 }
 :root[data-appearance="classic"] .sheath-word span {
   font-size: 11px;
@@ -4547,7 +4530,7 @@
   background: var(--surface);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   color: var(--ink);
-  animation: classic-toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: classic-toast-in var(--dur-base) var(--ease-out);
 }
 :root[data-appearance="classic"] .toast-error {
   border-left: 1px solid var(--danger);
@@ -4935,8 +4918,8 @@
   border-radius: var(--radius);
   background: var(--surface-subtle);
   transition:
-    border-color 280ms ease,
-    box-shadow 280ms ease;
+    border-color var(--dur-slow) var(--ease-in-out),
+    box-shadow var(--dur-slow) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .webdav-direction-card.is-active {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
@@ -4993,9 +4976,9 @@
   background: var(--surface-subtle);
   cursor: pointer;
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease;
+    border-color var(--dur-base) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out),
+    background-color var(--dur-base) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .webdav-mode-card:hover {
   border-color: var(--line-strong);
@@ -5513,7 +5496,7 @@
 :root[data-appearance="classic"] .endpoint-dot.is-healthy {
   background: var(--success);
   box-shadow: 0 0 12px var(--success-glow);
-  animation: classic-pulse-health 2.5s infinite ease-in-out;
+  animation: classic-pulse-health 2.5s infinite var(--ease-in-out);
 }
 :root[data-appearance="classic"] .endpoint-copy {
   display: flex;
@@ -5684,7 +5667,7 @@
   color: inherit;
   text-decoration: none;
   border-bottom: 1px dashed transparent;
-  transition: border-color 0.12s ease, color 0.12s ease;
+  transition: border-color 0.12s var(--ease-in-out), color 0.12s var(--ease-in-out);
 }
 :root[data-appearance="classic"] .upstream-link:hover {
   border-bottom-color: currentColor;
@@ -5789,8 +5772,8 @@
   border: 1px solid var(--line);
   background: var(--surface-subtle);
   transition:
-    border-color 280ms ease,
-    opacity 280ms ease;
+    border-color var(--dur-slow) var(--ease-in-out),
+    opacity var(--dur-slow) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .unify-group.is-loose {
   border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
@@ -5896,32 +5879,8 @@
   font-size: 11px;
   color: var(--accent);
 }
-:root[data-appearance="classic"] .probe-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--line-light);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--muted);
-}
-:root[data-appearance="classic"] .probe-search input {
-  width: 100%;
-  min-width: 0;
-  height: 32px;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font-family: var(--font);
-  font-size: 12.5px;
-}
-  /* Suppress the ring for pointer focus only. A bare `:focus { outline: none }`
-     also matches keyboard focus, which cancelled the global :focus-visible ring
-     and left this field with no focus indication at all. */
-  :root[data-appearance="classic"] .probe-search input:focus:not(:focus-visible) {
-    outline: none;
-  }
+/* The shell and its input are defined once, in styles.css; this appearance reads
+   that rule the way the modern one does. */
 :root[data-appearance="classic"] .probe-picker-actions {
   display: flex;
   gap: 12px;
@@ -6408,7 +6367,7 @@
   background: rgba(3, 3, 5, 0.6);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
-  animation: classic-dialog-in 0.16s ease-out;
+  animation: classic-dialog-in 0.16s var(--ease-out);
 }
 :root[data-appearance="classic"] .drawer-backdrop.is-left {
   justify-content: flex-start;
@@ -6432,7 +6391,7 @@
   background: var(--surface-raised);
   border-left: 1px solid var(--line-strong);
   box-shadow: var(--shadow-lg);
-  animation: classic-drawer-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: classic-drawer-in 0.32s var(--ease-out);
 }
 :root[data-appearance="classic"] .drawer.is-left {
   position: fixed;
@@ -6501,8 +6460,8 @@
   font-size: 14px;
   text-align: left;
   transition:
-    border-color 0.12s ease,
-    background 0.12s ease;
+    border-color 0.12s var(--ease-in-out),
+    background 0.12s var(--ease-in-out);
 }
 :root[data-appearance="classic"] .searchable-select-trigger:hover:not(:disabled) {
   border-color: var(--line-strong);
@@ -6526,7 +6485,7 @@
   box-shadow:
     0 6px 16px 0 rgba(0, 0, 0, 0.12),
     0 3px 6px -4px rgba(0, 0, 0, 0.08);
-  animation: classic-dialog-in 0.12s ease-out;
+  animation: classic-dialog-in 0.12s var(--ease-out);
 }
 :root[data-appearance="classic"] .searchable-select-search {
   display: flex;
@@ -6578,8 +6537,8 @@
   font-size: 14px;
   text-align: left;
   transition:
-    background 0.1s ease,
-    color 0.1s ease;
+    background 0.1s var(--ease-in-out),
+    color 0.1s var(--ease-in-out);
 }
 :root[data-appearance="classic"] .searchable-select-item:hover {
   background: var(--surface-hover);
@@ -7169,7 +7128,7 @@
   font-size: 12px;
   color: var(--muted-strong);
   cursor: pointer;
-  transition: background 0.16s ease, color 0.16s ease;
+  transition: background 0.16s var(--ease-in-out), color 0.16s var(--ease-in-out);
 }
 :root[data-appearance="classic"] .channel-models-syncbar-option + .channel-models-syncbar-option {
   border-left: 1px solid var(--line);
@@ -7415,7 +7374,7 @@
 }
 :root[data-appearance="classic"] .credential-key-model-editor {
   padding: 4px 0 2px;
-  animation: classic-credential-model-editor-in 160ms ease-out both;
+  animation: classic-credential-model-editor-in var(--dur-base) var(--ease-out) both;
 }
 @keyframes classic-credential-model-editor-in {
   from {
@@ -7515,8 +7474,8 @@
   color: var(--sidebar-muted);
   cursor: pointer;
   transition:
-    background 140ms ease,
-    color 140ms ease;
+    background var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .theme-toggle:hover {
   background: rgba(23, 35, 48, 0.06);
@@ -7526,7 +7485,7 @@
 /* Theme toggle in sidebar footer */
 /* —— Route transition + row stagger + card micro-interactions —— */
 :root[data-appearance="classic"] .route-enter {
-  animation: classic-page-enter 200ms ease-out both;
+  animation: classic-page-enter var(--dur-base) var(--ease-out) both;
 }
 @keyframes classic-row-in {
   from {
@@ -7540,7 +7499,7 @@
 }
 
 :root[data-appearance="classic"] .table-wrap tbody tr {
-  animation: classic-row-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: classic-row-in var(--dur-slow) var(--ease-out) both;
 }
 :root[data-appearance="classic"] .table-wrap tbody tr:nth-child(2) {
   animation-delay: 24ms;
@@ -7683,7 +7642,7 @@
   gap: 10px;
   font-size: 12px;
   transition: background var(--dur-hover) var(--ease-hover);
-  animation: classic-item-rise 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: classic-item-rise var(--dur-slower) var(--ease-out) both;
 }
 :root[data-appearance="classic"] .dashboard-list li:nth-child(2) { animation-delay: 32ms; }
 :root[data-appearance="classic"] .dashboard-list li:nth-child(3) { animation-delay: 64ms; }
@@ -7770,9 +7729,9 @@
   color: var(--ink-soft);
   cursor: pointer;
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+    background-color var(--dur-fast) var(--ease-in-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    transform var(--dur-fast) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .chart-back-button:hover {
   background: var(--primary);
@@ -7798,7 +7757,7 @@
   white-space: nowrap;
 }
 :root[data-appearance="classic"] .chart-block {
-  animation: classic-chart-view-in 260ms var(--ease-out, ease-out) both;
+  animation: classic-chart-view-in var(--dur-slow) var(--ease-out, var(--ease-out)) both;
 }
 :root[data-appearance="classic"] .chart-block.is-zoomed {
   animation-name: classic-chart-zoom-in;
@@ -8037,15 +7996,10 @@
    Rationale: motion.csv #1/#2 (hover 150-300ms, power1/2.out),
    ux-guidelines #8/#14/#28/#30, styles.csv #46 elevation scale.
    ============================================================ */
-:root[data-appearance="classic"] {
-  --dur-fast: 150ms;
-  --dur-base: 200ms;
-  --dur-slow: 300ms;
-  --dur-hover: 280ms;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
-  --ease-hover: cubic-bezier(0.22, 0.61, 0.36, 1);
-}
+/* This skin used to keep its own ladder (150/200/300/280ms with three private
+   curves), so the two appearances did not merely look different — they moved at
+   different speeds for the same interaction. The ladder lives once, in
+   tokens.css, and both skins read it. */
 
 /* —— Buttons: gentle hover lift + press settle —— */
 :root[data-appearance="classic"] .icon-button:hover:not(:disabled) {
@@ -8937,7 +8891,7 @@
   padding: 12vh 16px 16px;
   background: rgba(3, 3, 5, 0.66);
   backdrop-filter: blur(6px) saturate(1.1);
-  animation: classic-command-fade 140ms ease-out;
+  animation: classic-command-fade var(--dur-fast) var(--ease-out);
   overflow-y: auto;
 }
 :root[data-appearance="classic"] .command-panel {
@@ -8947,7 +8901,7 @@
   background: var(--surface-raised);
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow-lg);
-  animation: classic-command-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: classic-command-pop var(--dur-base) var(--ease-out) both;
   overflow: hidden;
 }
 :root[data-appearance="classic"] .command-panel::before {
@@ -9027,9 +8981,9 @@
   font-size: 14px;
   cursor: pointer;
   transition:
-    background 90ms ease,
-    color 90ms ease,
-    border-color 90ms ease;
+    background var(--dur-instant) var(--ease-in-out),
+    color var(--dur-instant) var(--ease-in-out),
+    border-color var(--dur-instant) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .command-item-icon {
   flex: none;
@@ -9041,8 +8995,8 @@
   background: var(--surface-subtle);
   color: var(--muted);
   transition:
-    background 90ms ease,
-    color 90ms ease;
+    background var(--dur-instant) var(--ease-in-out),
+    color var(--dur-instant) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .command-item-title {
   flex: 1;
@@ -9112,14 +9066,14 @@
 
 /* —— Sidebar: heartbeat brand LED + nav micro-motion —— */
 :root[data-appearance="classic"] .brand-mark {
-  animation: classic-led-breathe 3.4s ease-in-out infinite;
+  animation: classic-led-breathe 3.4s var(--ease-in-out) infinite;
 }
 @keyframes classic-led-breathe {
   0%, 100% { box-shadow: 0 0 12px rgba(212, 175, 55, 0.2); }
   50% { box-shadow: 0 0 26px rgba(212, 175, 55, 0.55); }
 }
 :root[data-appearance="classic"] .dot.healthy {
-  animation: classic-led-pulse 2.4s ease-in-out infinite;
+  animation: classic-led-pulse 2.4s var(--ease-in-out) infinite;
 }
 @keyframes classic-led-pulse {
   0%, 100% { box-shadow: 0 0 0 4px rgba(59, 209, 108, 0.12); }
@@ -9138,7 +9092,7 @@
   width: 46%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
   transform: translateX(-160%) skewX(-22deg);
-  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--dur-slow) var(--ease-out);
   pointer-events: none;
 }
 :root[data-appearance="classic"] .button-primary:hover::before {
@@ -9164,7 +9118,7 @@
 :root[data-appearance="classic"] .panel input:focus,
 :root[data-appearance="classic"] .panel select:focus {
   border-color: var(--primary) !important;
-  animation: classic-focus-breathe 1.8s ease-in-out infinite;
+  animation: classic-focus-breathe 1.8s var(--ease-in-out) infinite;
 }
 
 /* —— Panel: hover lift + soft glow —— */
@@ -9325,7 +9279,7 @@
 :root[data-appearance="classic"] .mission-led.is-on {
   background: var(--success);
   box-shadow: 0 0 0 4px rgba(72, 199, 142, 0.14), 0 0 12px rgba(72, 199, 142, 0.6);
-  animation: classic-led-pulse 2.4s ease-in-out infinite;
+  animation: classic-led-pulse 2.4s var(--ease-in-out) infinite;
 }
 :root[data-appearance="classic"] .mission-led.is-warn {
   background: var(--warning);
@@ -9398,9 +9352,9 @@
   gap: 10px;
   padding: 14px;
   transition:
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 140ms ease,
-    box-shadow 180ms ease;
+    transform var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .market-card::before {
   content: "";
@@ -9480,7 +9434,7 @@
 /* Live-ready badges breathe gently — a "channel online" heartbeat. */
 :root[data-appearance="classic"] .badge-healthy,
 :root[data-appearance="classic"] .badge-ready {
-  animation: classic-badge-live 3.2s ease-in-out infinite;
+  animation: classic-badge-live 3.2s var(--ease-in-out) infinite;
 }
 @keyframes classic-badge-live {
   0%, 100% { box-shadow: 0 0 0 0 rgba(72, 199, 142, 0); }
@@ -9536,7 +9490,7 @@
   background: linear-gradient(90deg, rgba(124, 196, 240, 0.25), rgba(212, 175, 55, 0.45));
   box-shadow: 0 0 15px rgba(124, 196, 240, 0.6);
   z-index: 1;
-  transition: transform 80ms linear;
+  transition: transform var(--dur-instant) linear;
   pointer-events: none;
 }
 
@@ -9560,7 +9514,7 @@
 }
 :root[data-appearance="classic"] .katana-submit-btn:hover::before {
   opacity: 1;
-  animation: classic-katana-draw-metal 1400ms cubic-bezier(0.62, 0.05, 0.9, 0.28) infinite;
+  animation: classic-katana-draw-metal 1400ms var(--ease-in-out) infinite;
 }
 @keyframes classic-katana-draw-metal {
   0% {
@@ -9629,7 +9583,7 @@
   z-index: 5000;
   border-radius: 50%;
   pointer-events: none;
-  animation: classic-katana-spark-fly var(--sd, 220ms) ease-out forwards;
+  animation: classic-katana-spark-fly var(--sd, var(--dur-slow)) var(--ease-out) forwards;
 }
 @keyframes classic-katana-spark-fly {
   0% {
@@ -9730,7 +9684,7 @@
   background: var(--surface);
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow-lg);
-  animation: classic-search-drop 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: classic-search-drop var(--dur-base) var(--ease-out);
 }
 :root[data-appearance="classic"] .bg-picker input[type="text"] {
   width: 100%;
@@ -9937,8 +9891,8 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   transition:
-    border-color 220ms ease,
-    box-shadow 220ms ease;
+    border-color var(--dur-slow) var(--ease-in-out),
+    box-shadow var(--dur-slow) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .ops-detail-card:hover {
   border-color: var(--line-strong);
@@ -9947,8 +9901,8 @@
 
 :root[data-appearance="classic"] .table tr.is-clickable {
   transition:
-    background-color 160ms ease,
-    box-shadow 160ms ease;
+    background-color var(--dur-base) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .table tr.is-clickable:hover {
   background: var(--surface-subtle);
@@ -9997,8 +9951,8 @@
    ============================================================ */
 :root[data-appearance="classic"] .member-row {
   transition:
-    background-color 160ms ease,
-    border-color 160ms ease;
+    background-color var(--dur-base) var(--ease-in-out),
+    border-color var(--dur-base) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .member-row:hover {
   background: var(--surface-subtle);
@@ -10163,9 +10117,9 @@
   font-weight: 600;
   border-radius: var(--radius-sm);
   transition:
-    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+    color var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out);
   white-space: nowrap;
 }
 :root[data-appearance="classic"] .deck-nav-pill:hover {
@@ -10224,7 +10178,7 @@
   border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 6px var(--success-glow);
-  animation: classic-deck-pulse 3s ease-in-out infinite;
+  animation: classic-deck-pulse 3s var(--ease-in-out) infinite;
 }
 @keyframes classic-deck-pulse {
   0%, 100% { transform: scale(1); opacity: 0.7; }
@@ -10245,7 +10199,7 @@
   min-height: calc(100vh - 52px);
 }
 :root[data-appearance="classic"] .tactical-viewport.route-enter {
-  animation: classic-viewport-enter 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: classic-viewport-enter var(--dur-slow) var(--ease-out) both;
 }
 @keyframes classic-viewport-enter {
   from {
@@ -10507,7 +10461,7 @@
   z-index: 1;
 }
 :root[data-appearance="classic"] .gate-console-viewport.route-enter {
-  animation: classic-viewport-enter 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: classic-viewport-enter var(--dur-slow) var(--ease-out) both;
 }
 
 /* 移动端收窄 */
@@ -10904,7 +10858,7 @@
 :root[data-appearance="classic"] .external-checkin-lamp.is-on {
   background: var(--success);
   box-shadow: 0 0 8px var(--success-glow);
-  animation: classic-deck-pulse 3s ease-in-out infinite;
+  animation: classic-deck-pulse 3s var(--ease-in-out) infinite;
 }
 :root[data-appearance="classic"] .external-checkin-card-actions {
   display: flex;
@@ -11729,7 +11683,7 @@
 }
 :root[data-appearance="classic"] .is-running .live-trace-pulse {
   background: var(--success);
-  animation: classic-live-trace-pulse 1.6s ease-in-out infinite;
+  animation: classic-live-trace-pulse 1.6s var(--ease-in-out) infinite;
 }
 :root[data-appearance="classic"] .is-success .live-trace-pulse { background: var(--success); }
 :root[data-appearance="classic"] .is-failed .live-trace-pulse { background: var(--danger); }

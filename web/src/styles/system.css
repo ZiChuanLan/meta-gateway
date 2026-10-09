@@ -407,15 +407,26 @@ tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size
 .key-toggle { border: 0; font: inherit; cursor: pointer; }
 .key-toggle:hover:not(:disabled) { filter: brightness(0.96); }
 .key-toggle:disabled { cursor: progress; opacity: 0.6; }
-input, select, textarea { color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font: 12px/1.5 var(--font); box-shadow: inset 0 1px 2px #171d2e05; transition: border-color var(--dur-base), box-shadow var(--dur-base); }
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { min-height: 36px; padding: 8px 11px; }
-textarea { padding: 11px 13px; resize: vertical; }
+/* One control language for the console: a field is white, separated from its card
+   by a hairline, with the corner radius the appearance defines (10px modern, 0
+   classic — the one place the skins disagree on purpose).
+
+   The subject is wrapped in :where(), so this rule carries *no* specificity: it is
+   a floor, not a competitor. Appearance sheets had each copied it at a higher
+   weight, which is how a compound field — a search shell whose box already exists
+   — ended up with a second border and a grey well painted inside itself. */
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) { color: var(--ink); height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); font: 12.5px/1.5 var(--font); box-shadow: none; transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
+:where(textarea) { height: auto; min-height: 96px; padding: 11px 13px; resize: vertical; }
 input::placeholder, textarea::placeholder { color: var(--muted-dark); }
-input:focus, select:focus, textarea:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
-input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 14px; min-height: 0; padding: 0; accent-color: var(--primary); }
+/* Focus is where the eye already is: one ring, drawn outside the border so the
+   field does not move when it appears. */
+:where(input, select, textarea):focus-visible { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
+:where(input[type="checkbox"], input[type="radio"]):not(.switch) { width: 14px; height: 14px; min-height: 0; padding: 0; accent-color: var(--primary); }
 .field { display: flex; flex-direction: column; min-width: 0; gap: 8px; margin: 0; }
 .field-label { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); font: 550 12px/1.5 var(--font); }
 .field-hint { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.field-required { color: var(--danger); font-weight: 600; }
+.field-error { color: var(--danger); font-size: 11.5px; line-height: 1.6; }
 /* `.switch` is excluded from these three: a switch is 42x22, and the box rules
    here are for the checkboxes that select rows in a list. Without the exclusion
    the shared primitive loses to these more specific selectors and a switch
@@ -426,13 +437,33 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
    itself, not only the message below it. */
 .field.is-invalid input, .field.is-invalid select, .field.is-invalid textarea { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent); }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 18px; margin-bottom: 22px; }
+/* A disclosure triangle is a browser glyph, and it was the one control the
+   console's styling never reached: a dozen dialogs and panels render a <details>
+   and each looked like the browser's default. The marker becomes the console's
+   own chevron, which turns as the section opens — one rule, so every future
+   <details> arrives already styled. */
+summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+summary::-webkit-details-marker { display: none; }
+summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+details[open] > summary::after { transform: rotate(45deg); }
+summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--primary-soft); border-radius: 4px; }
 .form-grid-single { grid-template-columns: 1fr; }
 .form-grid .wide { grid-column: 1/-1; }
 .overlay-fields, .overlay-actions { min-width: 0; width: 100%; margin: 0; padding: 0; border: 0; }
 .overlay-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
-.dialog-backdrop, .drawer-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(16, 21, 35, .3); backdrop-filter: blur(7px); animation: surface-veil 160ms ease-out; }
+.dialog-backdrop, .drawer-backdrop { position: fixed; inset: 0; z-index: 1000; background: rgba(16, 21, 35, .3); backdrop-filter: blur(7px); animation: surface-veil var(--dur-base) var(--ease-out); }
 .dialog-backdrop { display: grid; place-items: center; padding: 24px; }
-.dialog { width: min(700px, 100%); max-height: min(88dvh, 820px); display: flex; flex-direction: column; overflow: hidden; position: relative; border: 1px solid var(--surface-glass-border); border-radius: 22px; background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow-lg); animation: surface-arrive 240ms var(--ease-out); }
+.dialog { width: min(700px, 100%); max-height: min(88dvh, 820px); display: flex; flex-direction: column; overflow: hidden; position: relative; border: 1px solid var(--surface-glass-border); border-radius: 22px; background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow-lg); animation: surface-arrive var(--dur-slow) var(--ease-out); }
 .dialog > header, .drawer > header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; padding: 21px 24px; border-bottom: 1px solid var(--line); }
 .dialog header h2, .drawer header h2 { margin: 0; color: var(--ink-primary); font: 600 17px/1.4 var(--font); letter-spacing: -.03em; }
 .dialog .danger-title { display: flex; align-items: center; gap: 10px; color: var(--danger); }
@@ -444,12 +475,12 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
 .drawer-backdrop.is-plain { background: transparent; backdrop-filter: none; pointer-events: none; }
 .drawer-backdrop.is-plain .drawer { pointer-events: auto; }
 .drawer-backdrop.is-left { justify-content: flex-start; }
-.drawer { display: flex; flex-direction: column; height: calc(100dvh - 24px); max-width: calc(100vw - 24px); overflow: hidden; position: relative; border: 1px solid var(--surface-glass-border); border-radius: 20px; background: var(--surface-raised); box-shadow: var(--shadow-lg); animation: drawer-arrive 280ms var(--ease-out); }
+.drawer { display: flex; flex-direction: column; height: calc(100dvh - 24px); max-width: calc(100vw - 24px); overflow: hidden; position: relative; border: 1px solid var(--surface-glass-border); border-radius: 20px; background: var(--surface-raised); box-shadow: var(--shadow-lg); animation: drawer-arrive var(--dur-slow) var(--ease-out); }
 .drawer.is-left { position: fixed; right: 0; left: auto; max-width: calc(100vw - var(--drawer-offset, 0px) - 24px); }
 .drawer-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px; }
 .action-menu { display: inline-flex; position: relative; }
 .action-menu-trigger { width: 30px; height: 30px; background: transparent; }
-.action-menu-panel { padding: 6px; border: 1px solid var(--surface-glass-border); border-radius: 14px; background: var(--surface-glass); backdrop-filter: blur(24px) saturate(1.2); box-shadow: var(--shadow-md); transform-origin: top right; animation: menu-arrive 160ms var(--ease-out); }
+.action-menu-panel { padding: 6px; border: 1px solid var(--surface-glass-border); border-radius: 14px; background: var(--surface-glass); backdrop-filter: blur(24px) saturate(1.2); box-shadow: var(--shadow-md); transform-origin: top right; animation: menu-arrive var(--dur-base) var(--ease-out); }
 .action-menu-panel.action-menu-panel-floating { position: fixed; top: 0; left: 0; right: auto; z-index: 1100; width: max-content; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .action-menu-item { display: flex; align-items: center; width: 100%; gap: 10px; min-height: 36px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-soft); text-align: left; font: 500 12px/1.5 var(--font); cursor: pointer; }
 .action-menu-item:hover, .action-menu-item:focus-visible { outline: none; background: var(--surface-hover); color: var(--ink); }
@@ -838,7 +869,7 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
   transform-origin: left center;
   border-radius: inherit;
   background: var(--primary);
-  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 @media (prefers-reduced-motion: reduce) {
   .quota-bar-fill {

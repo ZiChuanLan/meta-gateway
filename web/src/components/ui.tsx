@@ -1,6 +1,8 @@
 import { AlertTriangle, ChevronDown, Info, LoaderCircle, X } from "lucide-react";
 import {
+  cloneElement,
   createContext,
+  isValidElement,
   useContext,
   useCallback,
   useEffect,
@@ -471,15 +473,35 @@ export function Field({
   label,
   children,
   hint,
+  error,
+  required,
   className,
 }: {
   label: string;
   children: ReactNode;
   hint?: string;
+  /** Shown under the control when the value fails validation. Announced. */
+  error?: string;
+  required?: boolean;
   className?: string;
 }) {
+  const hintId = useId();
+  const errorId = useId();
+  // The control is the caller's element, so the association is written onto it
+  // rather than hoped for: a hint nobody announces is a caption, and a screen
+  // reader should hear the same explanation the eye gets. A wrapping <label>
+  // child is skipped — it is not the described element.
+  const described = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ");
+  const describedChild =
+    isValidElement<Record<string, unknown>>(children) && children.type !== "label"
+      ? cloneElement(children, {
+          "aria-describedby": described || undefined,
+          "aria-invalid": error ? true : undefined,
+          "aria-required": required ? true : undefined,
+        })
+      : children;
   return (
-    <div className={["field", className].filter(Boolean).join(" ")}>
+    <div className={["field", error ? "is-invalid" : null, className].filter(Boolean).join(" ")}>
       {/* The label wraps the control so clicking its name still focuses the field.
           The hint is a sibling of that label rather than part of it: a wrapping
           label's text IS the control's accessible name, and "Basic URL" followed
@@ -489,10 +511,24 @@ export function Field({
       <label className="field-label-wrap">
         <span className="field-label">
           <span>{label}</span>
+          {required ? (
+            <span className="field-required" aria-hidden="true">
+              *
+            </span>
+          ) : null}
         </span>
-        {children}
+        {describedChild}
       </label>
-      {hint ? <span className="field-hint">{hint}</span> : null}
+      {hint ? (
+        <span className="field-hint" id={hintId}>
+          {hint}
+        </span>
+      ) : null}
+      {error ? (
+        <span className="field-error" id={errorId} role="alert">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

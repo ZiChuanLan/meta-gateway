@@ -58,7 +58,7 @@
 .console-action-divider { width: 1px; height: 16px; background: var(--line); margin: 0 2px; }
 .console-update { display: flex; align-items: center; gap: 4px; color: var(--primary-active); text-decoration: none; font-size: 11px; padding: 5px 9px; background: var(--primary-soft); border-radius: 20px; }
 .console-content { width: 100%; flex: 1; min-width: 0; max-width: 1760px; margin: 0 auto; padding: 32px 38px 24px; }
-.console-content.route-enter { animation: workspace-arrive 260ms var(--ease-out) both; }
+.console-content.route-enter { animation: workspace-arrive var(--dur-slow) var(--ease-out) both; }
 .console-page-foot { display: flex; align-items: center; gap: 12px; padding: 16px 38px 24px; color: var(--muted); font-size: 11px; }
 .console-page-foot > span:first-child { color: var(--muted); font-weight: 550; }
 .console-foot-dot { width: 4px; height: 4px; background: var(--accent); border-radius: 50%; margin-left: auto; }

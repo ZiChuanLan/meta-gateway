@@ -1202,9 +1202,9 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   transition:
-    border-color 160ms ease-out,
-    transform 160ms ease-out,
-    box-shadow 160ms ease-out;
+    border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 
 .model-card.is-clickable {
@@ -1469,8 +1469,12 @@
   align-items: center;
   gap: 6px;
 }
-.site-probe-number-input input {
+.field .site-probe-number-input input {
+  /* The control is a member of this row, not a full-width field: without the extra
+     weight the shared `.field input { width: 100% }` wins, the row is all input,
+     and the unit drops to the line below the box it belongs to. */
   width: 84px;
+  flex: 0 0 auto;
 }
 .site-probe-number-input em {
   font-style: normal;
