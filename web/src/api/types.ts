@@ -289,6 +289,11 @@ export interface UsageSummary {
   other_count?: number;
   /** Persisted billing amount for the selected window (or all time). */
   cost: number;
+  /**
+   * Mean latency of the successful calls in the same window, in milliseconds.
+   * Zero when nothing succeeded (read ok_count to tell that from a 0 ms answer).
+   */
+  avg_latency_ms?: number;
   /** Legacy field returned by older gateways. */
   estimated_cost?: number;
 }

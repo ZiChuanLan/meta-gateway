@@ -774,6 +774,13 @@ type UsageSummary struct {
 	ServerErrorCount int64   `json:"server_error_count"`
 	OtherCount       int64   `json:"other_count"`
 	Cost             float64 `json:"cost"`
+	// AvgLatencyMs is the mean latency of the SUCCESSFUL calls in the same
+	// window. It cannot come from usage_records (that table has no latency) but
+	// from proxy_logs, which records one row per attempt — filtering on 2xx is
+	// what makes it per-request rather than per-attempt, since a failed attempt
+	// does not carry a 2xx status. Zero when nothing succeeded; the caller
+	// already has OkCount to tell "no successes" from "instant responses".
+	AvgLatencyMs int64 `json:"avg_latency_ms"`
 }
 
 // ModelRatio is the per-model billing markup (1.0 = no markup).

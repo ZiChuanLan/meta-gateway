@@ -223,7 +223,49 @@ func (s *UsageStore) SummaryRange(scope UsageScope, since, until *time.Time) (do
 	); err != nil {
 		return domain.UsageSummary{}, fmt.Errorf("usage summary: %w", err)
 	}
+	if err := s.attachAvgLatency(&summary, scope, since, until); err != nil {
+		return domain.UsageSummary{}, err
+	}
 	return summary, nil
+}
+
+// attachAvgLatency fills AvgLatencyMs from proxy_logs.
+//
+// Latency is not metered alongside tokens: usage_records has no latency column,
+// because a request can fail over through several upstream attempts while
+// producing one billable record. proxy_logs records one row per attempt, so the
+// average is taken over the rows that actually answered with 2xx — a request
+// that failed over reads once, not twice.
+//
+// The scope is honoured through the two columns proxy_logs shares with the
+// summary: downstream_key_id directly, and user_id by way of the request ids
+// that usage_records assigns to that user (proxy_logs has no user column).
+func (s *UsageStore) attachAvgLatency(summary *domain.UsageSummary, scope UsageScope, since, until *time.Time) error {
+	if summary.OkCount == 0 {
+		// Nothing succeeded in the window: skip the query rather than report a
+		// latency of zero milliseconds.
+		return nil
+	}
+	query := `SELECT CAST(COALESCE(AVG(latency_ms),0) AS INTEGER) FROM proxy_logs`
+	where := []string{"status >= 200", "status < 300"}
+	args := []any{}
+	if scope.DownstreamKeyID != nil {
+		where = append(where, "downstream_key_id = ?")
+		args = append(args, *scope.DownstreamKeyID)
+	}
+	if scope.UserID != nil {
+		where = append(where, "request_id IN (SELECT request_id FROM usage_records WHERE user_id = ?)")
+		args = append(args, *scope.UserID)
+	}
+	if clauses, rangeArgs := createdRange("created_at", since, until); len(clauses) > 0 {
+		where = append(where, clauses...)
+		args = append(args, rangeArgs...)
+	}
+	query += ` WHERE ` + strings.Join(where, " AND ")
+	if err := s.db.QueryRow(query, args...).Scan(&summary.AvgLatencyMs); err != nil {
+		return fmt.Errorf("usage summary latency: %w", err)
+	}
+	return nil
 }
 
 // seriesBucketUnits are the bucket sizes the console chart understands, in

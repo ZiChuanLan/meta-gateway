@@ -202,3 +202,82 @@ func TestProxyLogFilterTimeRange(t *testing.T) {
 		t.Fatalf("sample size = %d, want 1000", all.SampleSize)
 	}
 }
+
+// The average response time cannot come from usage_records (it has no latency):
+// it is averaged from proxy_logs over the rows that answered 2xx, so a request
+// that failed over into a success reads once instead of twice, and the failed
+// attempt's timeout does not drag the number up.
+func TestUsageSummaryAverageLatency(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now().UTC().Truncate(time.Minute)
+	since := now.Add(-time.Hour)
+	until := now
+
+	insertLog := func(requestID string, status, latency int, at time.Time) {
+		t.Helper()
+		id, err := db.ProxyLog.Insert(&domain.ProxyLog{
+			RequestID: requestID, ChannelID: 1, Model: "gpt-a",
+			Status: status, LatencyMs: latency, Attempt: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		backdate(t, db, "proxy_logs", id, at)
+	}
+	// Two successes inside the window, one of them after a failed attempt.
+	seedUsage(t, db, "req-fast", "gpt-a", 10, 200, 0.01, now.Add(-30*time.Minute))
+	seedUsage(t, db, "req-slow", "gpt-a", 10, 200, 0.01, now.Add(-20*time.Minute))
+	insertLog("req-fast", 200, 100, now.Add(-30*time.Minute))
+	insertLog("req-slow", 500, 9000, now.Add(-21*time.Minute))
+	insertLog("req-slow", 200, 300, now.Add(-20*time.Minute))
+	// A failure and an out-of-window success must not contribute.
+	insertLog("req-dead", 502, 60000, now.Add(-10*time.Minute))
+	insertLog("req-old", 200, 5000, now.Add(-3*time.Hour))
+	// A different key's traffic is out of scope when the summary is scoped.
+	// Both tables are written for it: usage_records is what carries the scope
+	// (and its own success count), proxy_logs is what carries the latency.
+	otherKeyUsage, err := db.Usage.Insert(&domain.UsageRecord{
+		RequestID: "req-other", ChannelID: 1, Model: "gpt-a", Path: "chat/completions",
+		TotalTokens: 10, Status: 200, Cost: 0.01, DownstreamKeyID: 99,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backdate(t, db, "usage_records", otherKeyUsage, now.Add(-15*time.Minute))
+	otherKeyLog, err := db.ProxyLog.Insert(&domain.ProxyLog{
+		RequestID: "req-other", ChannelID: 1, Model: "gpt-a", Status: 200, LatencyMs: 4000,
+		DownstreamKeyID: 99,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backdate(t, db, "proxy_logs", otherKeyLog, now.Add(-15*time.Minute))
+
+	summary, err := db.Usage.SummaryRange(store.UsageScope{}, &since, &until)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.AvgLatencyMs != 1466 {
+		t.Fatalf("avg latency = %d, want 1466 ((100+300+4000)/3)", summary.AvgLatencyMs)
+	}
+	keyID := int64(99)
+	scoped, err := db.Usage.SummaryRange(store.UsageScope{DownstreamKeyID: &keyID}, &since, &until)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scoped.AvgLatencyMs != 4000 {
+		t.Fatalf("scoped avg latency = %d, want the other key's 4000", scoped.AvgLatencyMs)
+	}
+
+	// Nothing succeeded in this window: the summary reports no latency at all
+	// instead of a confident zero.
+	emptyWindow := now.Add(-5 * time.Minute)
+	none, err := db.Usage.SummaryRange(store.UsageScope{}, &until, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = emptyWindow
+	if none.OkCount != 0 || none.AvgLatencyMs != 0 {
+		t.Fatalf("empty window = %+v, want no samples", none)
+	}
+}

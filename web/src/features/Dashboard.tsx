@@ -11,9 +11,9 @@ import {
   Coins,
   Copy,
   Database,
-  HeartPulse,
   Play,
   ScrollText,
+  Timer,
   TrendingUp,
   Wallet,
   Zap,
@@ -29,15 +29,11 @@ import type {
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { SetupGuide } from "./SetupGuide";
-import {
-  TelemetrySecondary,
-  TelemetryStrip,
-  type TelemetryItem,
-} from "../components/TelemetryStrip";
+import { TelemetrySecondary, TelemetryStrip } from "../components/TelemetryStrip";
 import { TimeRangePicker, describeRange, useUrlTimeRange } from "../components/TimeRangePicker";
 import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
-import { formatCost, formatTokens, relativeTime } from "../lib/format";
+import { formatCost, formatLatency, formatTokens, relativeTime } from "../lib/format";
 import { channelHealthState } from "./channelHealth";
 import { DashboardAura } from "../components/DashboardAura";
 import { GatewayPreview } from "../components/GatewayTransition";
@@ -428,16 +424,6 @@ export function DashboardView({
           ? "warning"
           : "danger";
 
-  const healthyRatio = channelCounts.total > 0 ? channelCounts.healthy / channelCounts.total : 1;
-  const healthTone =
-    channelCounts.total === 0
-      ? "warning"
-      : healthyRatio >= 1
-        ? "success"
-        : healthyRatio >= 0.5
-          ? "warning"
-          : "danger";
-
   const bucketSeconds = series.data?.bucket_seconds ?? 3600;
   const labels = useMemo(
     () =>
@@ -495,38 +481,33 @@ export function DashboardView({
 
         {/* 2. 一体化遥测读数条 (Instrument Telemetry Band) */}
         <div className="telemetry-stack">
+          {/* 四张卡回答的是个人运维真正在看的四件事：用了多少次、花了多少钱、
+              烧了多少 token、失败没有。累计请求与健康渠道属于网关自身的指标，
+              它们在同页的流量图与渠道健康面板里都有，不占这四个格子。 */}
           <TelemetryStrip
             items={[
-              {
-                label: t("dashboard.totalRequests"),
-                value: allTime.data?.request_count ?? "—",
-                hint: t("dashboard.totalRequestsHint"),
-                icon: <Activity size={13} />,
-                tone: "primary",
-              },
               {
                 label: t("dashboard.recentRequests"),
                 value: rangeSummary.isPending ? "—" : windowRequests,
                 hint: t("dashboard.recentRequestsHint"),
                 icon: <ScrollText size={13} />,
-                tone: "success",
+                tone: "primary",
                 trend: requestTrend,
               },
-              // Only a host that can read channel health shows the readout;
-              // "0/0" would be a worse answer than no card at all.
-              ...(caps.channels
-                ? ([
-                    {
-                      label: t("dashboard.healthyChannels"),
-                      value: channels.isPending
-                        ? "—"
-                        : `${channelCounts.healthy}/${channelCounts.total}`,
-                      hint: t("dashboard.healthyChannelsHint"),
-                      icon: <HeartPulse size={13} />,
-                      tone: healthTone,
-                    },
-                  ] satisfies TelemetryItem[])
-                : []),
+              {
+                label: t("dashboard.rangeCost"),
+                value: rangeSummary.isPending ? "—" : formatCost(summary?.cost ?? 0),
+                hint: t("dashboard.rangeCostHint"),
+                icon: <Wallet size={13} />,
+                tone: "success",
+              },
+              {
+                label: t("dashboard.rangeTokensLabel"),
+                value: rangeSummary.isPending ? "—" : formatTokens(summary?.total_tokens ?? 0),
+                hint: t("dashboard.rangeTokensHint"),
+                icon: <Coins size={13} />,
+                tone: "primary",
+              },
               {
                 label: t("dashboard.successRate"),
                 value:
@@ -542,16 +523,19 @@ export function DashboardView({
           <TelemetrySecondary
             items={[
               {
+                label: t("dashboard.avgLatency"),
+                value:
+                  rangeSummary.isPending || !summary || summary.ok_count === 0
+                    ? "—"
+                    : formatLatency(summary.avg_latency_ms ?? 0),
+                hint: t("dashboard.avgLatencyHint"),
+                icon: <Timer size={13} />,
+              },
+              {
                 label: t("dashboard.totalTokens"),
                 value: allTime.data ? formatTokens(allTime.data.total_tokens) : "—",
                 hint: t("dashboard.totalTokensHint"),
-                icon: <Coins size={13} />,
-              },
-              {
-                label: t("dashboard.rangeCost"),
-                value: rangeSummary.isPending ? "—" : formatCost(summary?.cost ?? 0),
-                hint: t("dashboard.rangeCostHint"),
-                icon: <Wallet size={13} />,
+                icon: <Activity size={13} />,
               },
               {
                 label: t("dashboard.cacheRead"),

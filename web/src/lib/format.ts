@@ -102,3 +102,19 @@ export function relativeTime(
   if (ms < 24 * 3_600_000) return t("dashboard.hoursAgo", { n: Math.floor(ms / 3_600_000) });
   return t("dashboard.daysAgo", { n: Math.floor(ms / (24 * 3_600_000)) });
 }
+
+/**
+ * A millisecond reading as a person reads it: "420 ms", "1.4 s", "2 分 5 秒".
+ *
+ * Latency arrives in milliseconds everywhere (proxy_logs, health sweeps), but a
+ * window average can be seconds — printing "12480 ms" makes the reader do the
+ * division themselves.
+ */
+export function formatLatency(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
