@@ -33,7 +33,7 @@
 .gateway-cinematic { position: fixed; inset: 0; z-index: 10000; overflow: hidden; isolation: isolate; color: #e9f6f3; outline: none; }
 .cinematic-scene { position: absolute; inset: 0; pointer-events: none; }
 .cinematic-field { position: absolute; inset: 0; background: #101116; animation: cinematic-cover 140ms ease-out both; }
-.cinematic-grid { position: absolute; inset: -10%; background-image: linear-gradient(rgba(157,176,168,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(157,176,168,.12) 1px,transparent 1px); background-size: 88px 88px; transform: rotate(-8deg); mask-image: linear-gradient(90deg,transparent,#000); }
+
 .cinematic-registration { position: absolute; top: 5vh; left: 7vw; right: 7vw; z-index: 1; display: flex; align-items: center; gap: 22px; font: 10px var(--mono); letter-spacing: .2em; color: #45514b; }
 .cinematic-registration > i { flex: 1; height: 1px; background: linear-gradient(90deg,#9ba89e,rgba(167,184,175,.3)); }
 .cinematic-registration > span:last-child { color: #becdc4; }
@@ -43,13 +43,10 @@
 .cinematic-pane > span { position: absolute; top: 59%; left: -3%; color: transparent; -webkit-text-stroke: 1px rgba(56,79,67,.13); font: 800 clamp(80px,24vw,350px)/1 var(--font); letter-spacing: -.08em; }
 .cinematic-pane.is-right > span { top: 25%; left: auto; right: -12%; -webkit-text-stroke-color: rgba(181,203,189,.12); writing-mode: vertical-rl; }
 .cinematic-pane > i { position: absolute; top: 0; left: 48%; width: 1px; height: 120%; transform: rotate(21deg); background: linear-gradient(transparent,rgba(124,215,221,.24),transparent); }
-.cinematic-orbits { position: absolute; right: -4vw; top: 42%; width: min(40vw,500px); aspect-ratio: 1; transform: translateY(-50%) rotate(-18deg); }
-.cinematic-orbits > i { position: absolute; inset: 0; border: 1px solid rgba(176,202,186,.25); border-radius: 0; }
-.cinematic-orbits > i:nth-child(2) { inset: 12%; border-style: dashed; border-color: rgba(204,186,128,.17); }
-.cinematic-orbits > i:nth-child(3) { inset: 24%; transform: rotate(45deg); border-color: rgba(212,217,126,.45); }
+
 .cinematic-core { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; text-align: left; gap: 15px; padding: 8vh 12vw; animation: core-charge var(--entry-charge) cubic-bezier(.2,.7,.3,1) both; }
 .cinematic-eyebrow { color: #294ccf; background: #e7ecff; font: 550 10px var(--font); letter-spacing: .19em; padding: 7px 12px; transform: rotate(-4deg); }
-.cinematic-emblem { position: absolute; right: 12vw; top: 19vh; display: grid; place-items: center; width: 78px; height: 78px; border: 1px solid #8e98b1; border-radius: 2px; color: #f1f3ff; background: #181d31; box-shadow: 7px 7px 0 #536eff; transform: rotate(-9deg); }
+
 .cinematic-core > strong { display: grid; justify-items: start; gap: 4px; font: 800 clamp(54px,10vw,148px)/.94 var(--font); letter-spacing: -.07em; transform: rotate(-5deg); margin: 8px 0 16px; }
 .cinematic-core > strong > span { display: block; padding: 4px 22px 11px 13px; background: #f7f8fc; color: #1b1d26; clip-path: polygon(0 0,97% 0,100% 100%,2% 100%); }
 .cinematic-core > strong > span:last-child { color: #f7f8fc; background: #1b1d26; margin-left: 38px; padding-right: 34px; }
@@ -64,7 +61,7 @@
 .cinematic-slash { position: absolute; top: 50%; left: -35%; width: 170%; height: 6px; transform: rotate(-22deg) scaleX(0); background: #5578ff; box-shadow: 0 9px 0 #f06553; }
 .cinematic-trail { position: absolute; width: 46vw; height: 7vh; left: 35%; top: 50%; opacity: 0; background: #3357e8; transform: rotate(-22deg); }
 .cinematic-trail.is-right { left: 48%; top: 53%; height: 3vh; background: #ff6754; }
-.cinematic-axis-label { position: absolute; right: 4vw; top: 18vh; writing-mode: vertical-rl; color: #9bA5ba; font: 10px var(--mono); letter-spacing: .18em; }
+
 .cinematic-skip { position: absolute; right: 30px; bottom: 26px; display: inline-flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid rgba(160,204,189,.3); border-radius: 2px; background: #1b2134; color: #e4e9ff; font: 11px var(--font); cursor: pointer; z-index: 2; }
 .cinematic-skip:hover { background: #303b5f; }
 .cinematic-skip:focus-visible { outline: 2px solid #91a6ff; outline-offset: 3px; }
@@ -75,8 +72,8 @@
 .gateway-cinematic.is-revealing .cinematic-core { animation: core-release var(--entry-reveal) ease-out both; }
 .gateway-cinematic.is-revealing .cinematic-seam { animation: seam-release var(--entry-reveal) ease-out both; }
 .gateway-cinematic.is-revealing .cinematic-slash { animation: light-slash var(--entry-reveal) cubic-bezier(.12,.75,.25,1) both; }
-.gateway-cinematic.is-revealing .cinematic-grid, .gateway-cinematic.is-revealing .cinematic-orbits { animation: field-release var(--entry-reveal) ease-out both; }
-.gateway-cinematic.is-revealing .cinematic-registration, .gateway-cinematic.is-revealing .cinematic-axis-label { animation: field-release var(--entry-reveal) ease-out both; }
+
+.gateway-cinematic.is-revealing .cinematic-registration { animation: field-release var(--entry-reveal) ease-out both; }
 .gateway-cinematic.is-revealing .cinematic-trail.is-left { animation: trail-left var(--entry-reveal) ease-out both; }
 .gateway-cinematic.is-revealing .cinematic-trail.is-right { animation: trail-right var(--entry-reveal) ease-out both; }
 .gateway-cinematic.is-sheathing .cinematic-core { animation: exit-core var(--entry-exit) ease-out both; }
@@ -148,15 +145,13 @@
 @keyframes aura-flow { to { stroke-dashoffset: -635; } }
 @keyframes node-breathe { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
 @media (max-width: 760px) {
-  .cinematic-emblem { width: 48px; height: 48px; right: 12vw; top: 15vh; box-shadow: 4px 4px 0 #536eff; }
-  .cinematic-emblem svg { width: 29px; }
   .cinematic-core { gap: 14px; padding: 9vh 7vw; }
   .cinematic-core > strong { font-size: clamp(43px,12vw,75px); }
   .cinematic-core > strong > span { padding: 5px 14px 9px 9px; }
   .cinematic-core > strong > span:last-child { margin-left: 12px; padding-right: 20px; }
   .cinematic-caption { max-width: 54vw; color: #464f69; }
   .cinematic-registration { font-size: var(--text-xs); gap: 14px; }
-  .cinematic-orbits { width: 66vw; right: -32vw; }
+
   .cinematic-skip { right: 18px; bottom: max(20px,env(safe-area-inset-bottom)); min-height: 44px; }
   .cinematic-eyebrow { font-size: var(--text-xs); }
   .cinematic-caption { font-size: var(--text-xs); }

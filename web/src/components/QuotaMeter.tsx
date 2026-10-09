@@ -33,9 +33,11 @@ export function quotaPercent(used: number, total: number): number {
 export function QuotaBar({ percent, label }: { percent: number; label?: string }) {
   return (
     <span className="quota-bar" role={label ? "img" : undefined} aria-label={label}>
+      {/* Scale, not width: the track is full width and the fill is transformed, so a
+            changing percentage never triggers layout. */}
       <span
         className={`quota-bar-fill is-${quotaLevel(percent)}`}
-        style={{ width: `${percent}%` }}
+        style={{ transform: `scaleX(${percent / 100})` }}
       />
     </span>
   );

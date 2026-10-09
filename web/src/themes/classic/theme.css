@@ -3,82 +3,7 @@
 /* Tokens, element baselines and shared primitives live in base.css.
    Console component selectors and animations stay in this sheet. */
 @import "./base.css";
-
-/* —— Shell Architecture —— */
-:root[data-appearance="classic"] .app-shell {
-  min-height: 100vh;
-  background: var(--bg);
-  position: relative;
-}
 /* Mobile drawer header: only visible below 860px (media query restores it). */
-:root[data-appearance="classic"] .mobile-header {
-  display: none;
-}
-:root[data-appearance="classic"] .sidebar {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 40;
-  width: var(--sidebar-w);
-  display: flex;
-  flex-direction: column;
-  color: var(--sidebar-ink);
-  background: var(--surface);
-  border-right: 1px solid var(--line);
-  box-shadow: var(--shadow-sm);
-  transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 240ms ease;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-:root[data-appearance="classic"] .sidebar:hover,
-:root[data-appearance="classic"] .sidebar.open {
-  width: var(--sidebar-expanded-w);
-  box-shadow: var(--shadow-lg);
-}
-:root[data-appearance="classic"] .sidebar-brand {
-  min-height: 60px;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid var(--line);
-  position: relative;
-  flex-shrink: 0;
-}
-:root[data-appearance="classic"] .sidebar-brand-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 180ms ease 40ms;
-}
-:root[data-appearance="classic"] .sidebar:hover .sidebar-brand-copy,
-:root[data-appearance="classic"] .sidebar.open .sidebar-brand-copy {
-  opacity: 1;
-}
-:root[data-appearance="classic"] .sidebar-brand-copy strong {
-  color: var(--ink);
-  font-family: var(--font-serif);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-:root[data-appearance="classic"] .sidebar-brand-copy span {
-  color: var(--primary);
-  font-family: var(--mono);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-:root[data-appearance="classic"] .sidebar-brand .icon-button {
-  display: none;
-  margin-left: auto;
-}
 
 :root[data-appearance="classic"] .brand-mark {
   position: relative;
@@ -92,195 +17,6 @@
   border: 1px solid var(--primary);
   box-shadow: 0 2px 8px rgba(15, 42, 66, 0.12);
   transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-:root[data-appearance="classic"] .sidebar:hover .brand-mark {
-  transform: scale(1.04);
-}
-
-:root[data-appearance="classic"] .sidebar-telemetry-tag {
-  padding: 10px 16px 4px;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--text-xs);
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 180ms ease;
-}
-:root[data-appearance="classic"] .sidebar:hover .sidebar-telemetry-tag,
-:root[data-appearance="classic"] .sidebar.open .sidebar-telemetry-tag {
-  opacity: 0.8;
-}
-
-:root[data-appearance="classic"] .sidebar-nav {
-  padding: 8px 8px;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 3px;
-}
-:root[data-appearance="classic"] .sidebar-nav a {
-  position: relative;
-  height: 40px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  transition:
-    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 180ms ease,
-    border-color 180ms ease;
-  white-space: nowrap;
-}
-:root[data-appearance="classic"] .sidebar-nav a:hover {
-  color: var(--ink);
-  background: var(--surface-subtle);
-  border-color: var(--line-light);
-}
-:root[data-appearance="classic"] .sidebar-nav a.active,
-:root[data-appearance="classic"] .sidebar-nav a[aria-current="page"] {
-  color: var(--ink-primary);
-  background: var(--surface-subtle);
-  border-color: var(--line-strong);
-  font-weight: 700;
-}
-
-:root[data-appearance="classic"] .nav-icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border-radius: var(--radius);
-  color: inherit;
-  transition: transform 180ms ease;
-}
-:root[data-appearance="classic"] .sidebar-nav a:hover .nav-icon {
-  color: var(--primary);
-}
-:root[data-appearance="classic"] .sidebar-nav a.active .nav-icon {
-  color: var(--primary);
-}
-
-:root[data-appearance="classic"] .nav-label {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 180ms ease 40ms;
-}
-:root[data-appearance="classic"] .sidebar:hover .nav-label,
-:root[data-appearance="classic"] .sidebar.open .nav-label {
-  opacity: 1;
-}
-
-:root[data-appearance="classic"] .nav-num {
-  font-family: var(--mono);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--muted);
-  opacity: 0;
-  transition: opacity 180ms ease;
-}
-:root[data-appearance="classic"] .sidebar:hover .nav-num,
-:root[data-appearance="classic"] .sidebar.open .nav-num {
-  opacity: 0.65;
-}
-:root[data-appearance="classic"] .sidebar-nav a.active .nav-num {
-  color: var(--primary);
-  opacity: 1;
-}
-
-:root[data-appearance="classic"] .nav-active-pill {
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  background: var(--primary);
-  opacity: 0;
-  transform: scaleY(0);
-  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
-}
-:root[data-appearance="classic"] .sidebar-nav a.active .nav-active-pill {
-  opacity: 1;
-  transform: scaleY(1);
-}
-
-:root[data-appearance="classic"] .sidebar-settings {
-  flex: 0 0 auto;
-  padding: 8px 8px 4px;
-  border-top: 1px solid var(--line);
-}
-:root[data-appearance="classic"] .sidebar-settings a {
-  position: relative;
-  height: 40px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  transition: all var(--dur-hover) var(--ease-hover);
-  white-space: nowrap;
-}
-:root[data-appearance="classic"] .sidebar-settings a:hover {
-  color: var(--ink);
-  background: var(--surface-subtle);
-  border-color: var(--line-light);
-}
-:root[data-appearance="classic"] .sidebar-settings a.active {
-  color: var(--ink-primary);
-  background: var(--surface-subtle);
-  border-color: var(--line-strong);
-  font-weight: 700;
-}
-:root[data-appearance="classic"] .sidebar:hover .sidebar-settings .nav-label,
-:root[data-appearance="classic"] .sidebar.open .sidebar-settings .nav-label,
-:root[data-appearance="classic"] .sidebar:hover .sidebar-settings .nav-num,
-:root[data-appearance="classic"] .sidebar.open .sidebar-settings .nav-num {
-  opacity: 1;
-}
-
-:root[data-appearance="classic"] .sidebar-footer {
-  margin-top: auto;
-  padding: 8px;
-  border-top: 1px solid var(--line);
-  background: var(--surface-raised);
-}
-:root[data-appearance="classic"] .sidebar-footer > button {
-  cursor: pointer;
-  white-space: nowrap;
-}
-:root[data-appearance="classic"] .sidebar-footer > button:hover {
-}
-:root[data-appearance="classic"] .sidebar-footer > button span {
-  opacity: 0;
-  transition: opacity 180ms ease;
-}
-:root[data-appearance="classic"] .sidebar:hover .sidebar-footer > button span,
-:root[data-appearance="classic"] .sidebar.open .sidebar-footer > button span {
-  opacity: 1;
-}
-
-/* —— 主视区内容架构 (Main Content Container) —— */
-:root[data-appearance="classic"] .content {
-  transition: margin-left 240ms cubic-bezier(0.16, 1, 0.3, 1);
-  display: flex;
-  flex-direction: column;
 }
 
 /* 顶部全景战术水平仪 (Top Horizon HUD) */
@@ -412,46 +148,6 @@
 @keyframes classic-pulse-warn {
   0%, 100% { transform: scale(1); opacity: 0.9; box-shadow: 0 0 6px var(--warning-glow); }
   50% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 14px var(--warning-glow); }
-}
-:root[data-appearance="classic"] .sidebar-footer > button {
-  width: 100%;
-  padding: 10px 10px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--sidebar-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  font-size: 12px;
-  font-weight: 600;
-  transition: all var(--dur-hover) var(--ease-hover);
-}
-:root[data-appearance="classic"] .sidebar-footer > button:hover {
-  color: var(--danger-hover);
-  background: var(--danger-soft);
-  border-color: rgba(124, 196, 240, 0.2);
-}
-:root[data-appearance="classic"] .content {
-  position: relative;
-  min-height: 100vh;
-  margin-left: var(--sidebar-w);
-  isolation: isolate;
-  background: linear-gradient(180deg, var(--surface) 0%, var(--bg-deep) 100%);
-}
-:root[data-appearance="classic"] .content::before {
-  /* Dynamic horizon line with cyber neon glow */
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, var(--primary) 30%, var(--accent) 70%, transparent 100%);
-  opacity: 0.6;
-  pointer-events: none;
-  z-index: 2;
-  box-shadow: 0 0 12px var(--primary-glow);
 }
 :root[data-appearance="classic"] .page {
   position: relative;
@@ -2652,8 +2348,7 @@
 :root[data-appearance="classic"] .exchange-unlock {
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid var(--line-light);
-  border-left: 2px solid var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--line));
   border-radius: var(--radius);
   background: var(--warning-soft);
 }
@@ -3938,19 +3633,6 @@
     border-color 120ms ease,
     box-shadow 120ms ease;
 }
-:root[data-appearance="classic"] .connect-panel form .button::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.2),
-    transparent
-  );
-  transition: width 260ms ease;
-}
 :root[data-appearance="classic"] .connect-panel form .button::after {
   content: "";
   position: absolute;
@@ -4049,22 +3731,6 @@
   background: var(--surface-subtle);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  font-size: 11px;
-}
-
-:root[data-appearance="classic"] .sidebar-lang {
-  display: block;
-  margin: 0 0 10px;
-}
-:root[data-appearance="classic"] .sidebar-lang select {
-  width: 100%;
-  color: var(--sidebar-ink);
-  background: var(--sidebar-raised);
-  border-color: var(--sidebar-line);
-}
-:root[data-appearance="classic"] .mobile-lang select {
-  min-width: 88px;
-  min-height: 30px;
   font-size: 11px;
 }
 :root[data-appearance="classic"] .sr-only {
@@ -4555,43 +4221,8 @@
 }
 
 @media (max-width: 860px) {
-  :root[data-appearance="classic"] .sidebar {
-    transform: translate3d(-100%, 0, 0);
-    transition: transform var(--dur-hover) var(--ease-hover);
-  }
-  :root[data-appearance="classic"] .sidebar.open {
-    transform: translateX(0);
-  }
-  :root[data-appearance="classic"] .sidebar-brand .icon-button {
-    display: grid;
-    color: var(--sidebar-muted);
-  }
   :root[data-appearance="classic"] .drawer-scrim {
     display: block;
-  }
-  :root[data-appearance="classic"] .content {
-    margin-left: 0;
-  }
-  :root[data-appearance="classic"] .content::after {
-    left: 0;
-  }
-  :root[data-appearance="classic"] .mobile-header {
-    position: fixed;
-    inset: 0 0 auto;
-    z-index: 15;
-    padding: 0 14px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--sidebar);
-    color: var(--sidebar-ink);
-    border-bottom: 2px solid var(--accent);
-  }
-  :root[data-appearance="classic"] .mobile-header strong {
-    flex: 1;
-    font-family: var(--font-serif);
-    font-size: 15px;
-    font-weight: 800;
   }
   :root[data-appearance="classic"] .page {
   }
@@ -4697,10 +4328,6 @@
   }
   :root[data-appearance="classic"] .connect-panel h1 {
     font-size: 25px;
-  }
-  :root[data-appearance="classic"] .mobile-header .badge {
-  }
-  :root[data-appearance="classic"] .mobile-header .badge::before {
   }
 }
 
@@ -7081,8 +6708,7 @@
   flex: 0 1 420px;
   min-width: 260px;
   max-width: 100%;
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
   border-radius: var(--radius);
   background: var(--surface-raised);
   padding: 8px 12px;
@@ -7115,7 +6741,8 @@
    the audit panel matches the row's 通道 column at a glance. */
 :root[data-appearance="classic"] .log-decision-candidates li.is-picked {
   padding-left: 8px;
-  border-left: 2px solid var(--accent, var(--primary, #4a7dff));
+  border-radius: 2px;
+  background: var(--accent-soft);
 }
 :root[data-appearance="classic"] .log-decision-candidates li.is-picked .log-decision-channel::after {
   content: " ●";
@@ -7507,11 +7134,11 @@
   margin-bottom: 10px;
   padding: 9px 12px;
   background: var(--surface-raised);
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 :root[data-appearance="classic"] .channel-models-syncbar.is-auto {
-  border-left-color: var(--primary-active);
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
+  background: var(--primary-soft);
 }
 :root[data-appearance="classic"] .channel-models-syncbar-copy {
   display: flex;
@@ -8782,18 +8409,12 @@
 }
 
 /* UI stabilization: a single layout contract for all feature pages. */
-:root[data-appearance="classic"] .app-shell,
-:root[data-appearance="classic"] .content,
 :root[data-appearance="classic"] .page,
 :root[data-appearance="classic"] .panel,
 :root[data-appearance="classic"] .split > *,
 :root[data-appearance="classic"] .stack > *,
 :root[data-appearance="classic"] .ops-canvas > * {
   min-width: 0;
-}
-
-:root[data-appearance="classic"] .content {
-  overflow: visible;
 }
 
 :root[data-appearance="classic"] .page {
@@ -9121,21 +8742,6 @@
 }
 
 @media (max-width: 860px) {
-  :root[data-appearance="classic"] .sidebar {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    height: 100dvh;
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  :root[data-appearance="classic"] .content {
-    padding-top: calc(57px + env(safe-area-inset-top));
-  }
-
-  :root[data-appearance="classic"] .mobile-header {
-    height: calc(57px + env(safe-area-inset-top));
-    padding-top: env(safe-area-inset-top);
-  }
 
   :root[data-appearance="classic"] .page {
     padding: 20px 14px calc(36px + env(safe-area-inset-bottom));
@@ -9317,28 +8923,6 @@
   :root[data-appearance="classic"] .pagination-controls {
     width: 100%;
     justify-content: space-between;
-  }
-
-  :root[data-appearance="classic"] .mobile-header .badge {
-    position: relative;
-    width: 14px;
-    height: 14px;
-    min-height: 14px;
-    padding: 0;
-    overflow: visible;
-    border: 0;
-    background: transparent;
-    font-size: 0;
-  }
-
-  :root[data-appearance="classic"] .mobile-header .badge::before {
-    content: "";
-    display: block;
-    width: 9px;
-    height: 9px;
-    margin: 2px;
-    border-radius: 50%;
-    background: currentColor;
   }
 }
 /* ============================================================
@@ -9534,22 +9118,6 @@
   0%, 100% { box-shadow: 0 0 12px rgba(212, 175, 55, 0.2); }
   50% { box-shadow: 0 0 26px rgba(212, 175, 55, 0.55); }
 }
-:root[data-appearance="classic"] .sidebar-nav a {
-  transition:
-    color 140ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 140ms ease,
-    border-color 140ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-:root[data-appearance="classic"] .sidebar-nav a:hover {
-  transform: translateX(2px);
-}
-:root[data-appearance="classic"] .sidebar-nav a .nav-icon {
-  transition: transform var(--dur-hover) var(--ease-hover);
-}
-:root[data-appearance="classic"] .sidebar-nav a:hover .nav-icon {
-  transform: scale(1.12);
-}
 :root[data-appearance="classic"] .dot.healthy {
   animation: classic-led-pulse 2.4s ease-in-out infinite;
 }
@@ -9638,8 +9206,7 @@
     animation: none !important;
   }
   :root[data-appearance="classic"] .button:not(.button-primary):not(:disabled):hover,
-  :root[data-appearance="classic"] .icon-button:not(:disabled):hover,
-  :root[data-appearance="classic"] .sidebar-nav a:hover {
+  :root[data-appearance="classic"] .icon-button:not(:disabled):hover {
     transform: none;
   }
 }/* ============================================================
@@ -9647,53 +9214,8 @@
    ============================================================ */
 
 /* Nav section labels — a numbered, gilded index above each group. */
-:root[data-appearance="classic"] .sidebar-nav {
-  padding-top: 18px;
-}
-:root[data-appearance="classic"] .sidebar-nav::before {
-  content: "OPERATIONS · 01";
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.18em;
-}
-:root[data-appearance="classic"] .sidebar-settings::before {
-  content: "SYSTEM · 02";
-  display: block;
-  padding: 0 10px 8px;
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.18em;
-}
 
 /* Growing left indicator on hover; active keeps its own full bar. */
-:root[data-appearance="classic"] .sidebar-nav a::before,
-:root[data-appearance="classic"] .sidebar-settings a::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 2px;
-  background: var(--primary);
-  transform: scaleY(0);
-  transform-origin: center;
-  transition: transform var(--dur-hover) var(--ease-hover);
-  pointer-events: none;
-}
-:root[data-appearance="classic"] .sidebar-nav a:hover::before,
-:root[data-appearance="classic"] .sidebar-settings a:hover::before {
-  transform: scaleY(1);
-}
-:root[data-appearance="classic"] .sidebar-nav a.active::before,
-:root[data-appearance="classic"] .sidebar-nav a[aria-current="page"]::before,
-:root[data-appearance="classic"] .sidebar-settings a.active::before,
-:root[data-appearance="classic"] .sidebar-settings a[aria-current="page"]::before {
-  transform: scaleY(0);
-}
 
 /* Connection card — a quieter "live" readout. */
 :root[data-appearance="classic"] .connection {
@@ -11966,8 +11488,7 @@
 :root[data-appearance="classic"] .setup-wizard-skipped {
   margin-top: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--line-light);
-  border-left: 2px solid var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--line));
   border-radius: 8px;
   background: var(--warning-soft);
 }

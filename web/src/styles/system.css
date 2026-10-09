@@ -332,10 +332,11 @@ tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size
 .team-notice {
   margin-bottom: 18px;
   padding: 12px 15px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--primary);
+  /* The tint carries the role: this notice owns a surface of its own instead of a
+     coloured bar on the left edge. */
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--line));
   border-radius: var(--radius-sm);
-  background: var(--surface-subtle);
+  background: var(--primary-soft);
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.6;
@@ -831,9 +832,13 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
 .quota-bar-fill {
   display: block;
   height: 100%;
+  /* The track is full width and the fill scales inside it, so this transition runs
+     on the compositor instead of laying out the bar on every frame. */
+  width: 100%;
+  transform-origin: left center;
   border-radius: inherit;
   background: var(--primary);
-  transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .quota-bar-fill {

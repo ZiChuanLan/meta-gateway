@@ -501,6 +501,16 @@ export function KeysView({
   // confirm in place. If the clipboard is unavailable the dialog opens instead,
   // which is the one path that still lets them see it.
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  // The in-place "copied" confirmation is a timer, and a timer that outlives its
+  // component is a leak: it fired into a torn-down tree, which showed up as a test
+  // run reporting 526 passed and exit code 1. Cleared on unmount and on each copy.
+  const copyResetTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+    },
+    [],
+  );
   const copy = useAdminMutation({
     mutationFn: (key: { id: number; name: string }) => source.revealKey!(key.id),
     pendingIdOf: (key) => key.id,
@@ -518,10 +528,11 @@ export function KeysView({
         .writeText(result.token)
         .then(() => {
           setCopiedId(variables.id);
-          window.setTimeout(
-            () => setCopiedId((current) => (current === variables.id ? null : current)),
-            1800,
-          );
+          if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
+          copyResetTimer.current = window.setTimeout(() => {
+            copyResetTimer.current = null;
+            setCopiedId((current) => (current === variables.id ? null : current));
+          }, 1800);
         })
         .catch(() => {
           setViewedToken(result.token);
