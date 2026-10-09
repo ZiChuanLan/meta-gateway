@@ -302,6 +302,7 @@ export function Channels() {
       upstream_request_map?: string;
       upstream_response_map?: string;
       stable_first?: boolean;
+      call_policy?: "" | "allow_probe" | "real_calls_only";
       userToken: string;
       userCookie: string;
       /** New-API family numeric user id (`New-Api-User`). Empty = unknown. */
@@ -440,6 +441,9 @@ export function Channels() {
         upstream_response_map: input.upstream_response_map ?? "",
         ...(input.model_sync_mode ? { model_sync_mode: input.model_sync_mode } : {}),
         stable_first: input.stable_first ?? false,
+        // "" is a value here, not a missing one: it hands the policy back to the
+        // site, which is how the operator undoes a per-channel override.
+        call_policy: input.call_policy ?? input.channel.call_policy ?? "",
         site_id: siteId,
         credential_id: relayCredentialId,
       });

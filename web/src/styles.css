@@ -486,6 +486,10 @@ td.status-col {
   font-weight: 400;
   line-height: 1.5;
   text-align: left;
+  /* Tips carry the mechanics that used to sit as a paragraph on the page, and
+     some of them have two parts; a blank line in the source should be a blank
+     line in the bubble, not a run-on. */
+  white-space: pre-line;
   visibility: hidden;
   opacity: 0;
   pointer-events: none;

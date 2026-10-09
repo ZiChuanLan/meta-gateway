@@ -124,6 +124,7 @@ export function EditChannelDialog({
     upstream_request_map?: string;
     upstream_response_map?: string;
     stable_first?: boolean;
+    call_policy?: "" | "allow_probe" | "real_calls_only";
     userToken: string;
     userCookie: string;
     /** New-API family numeric user id (`New-Api-User`). Empty = unknown. */
@@ -156,6 +157,9 @@ export function EditChannelDialog({
   const [maxConcurrent, setMaxConcurrent] = useState(value.max_concurrent ?? 0);
   const [nonStreamTimeout, setNonStreamTimeout] = useState(value.non_stream_timeout_seconds ?? 0);
   const [streamPolicy, setStreamPolicy] = useState(value.stream_policy ?? "");
+  const [callPolicy, setCallPolicy] = useState<"" | "allow_probe" | "real_calls_only">(
+    value.call_policy ?? "",
+  );
   const [priority, setPriority] = useState(value.priority);
   const [weight, setWeight] = useState(value.weight);
   const [headerOverride, setHeaderOverride] = useState(value.header_override ?? "");
@@ -259,6 +263,7 @@ export function EditChannelDialog({
     maxConcurrent > 0 ? t("channels.maxConcurrent") : "",
     nonStreamTimeout > 0 ? t("channels.nonStreamTimeout") : "",
     streamPolicy ? t("channels.streamPolicy") : "",
+    callPolicy ? t("channels.callPolicy") : "",
     proxyUrl.trim() ? t("channels.proxyUrl") : "",
     headerOverride.trim() ? t("channels.headerOverride") : "",
     systemPrompt.trim() ? t("channels.systemPrompt") : "",
@@ -404,6 +409,7 @@ export function EditChannelDialog({
                   upstream_response_map: responseMap,
                   ...(syncModeDirty ? { model_sync_mode: syncMode } : {}),
                   stable_first: stableFirst,
+                  call_policy: callPolicy,
                   userToken,
                   userCookie,
                   userID,
@@ -816,6 +822,32 @@ export function EditChannelDialog({
                     onChange={(e) => setProxyUrl(e.target.value)}
                     disabled={pending}
                   />
+                </Field>
+                {/* The call policy belongs here rather than in the main body: it
+                    is not what the channel *is* (name, URL, models), it is how it
+                    behaves when the gateway itself knocks. Empty is the normal
+                    state — the site owns this decision — and the option spells
+                    out which way it currently inherits. */}
+                <Field label={t("channels.callPolicy")} hint={t("channels.callPolicyHint")}>
+                  <select
+                    value={callPolicy}
+                    onChange={(e) => setCallPolicy(e.target.value as typeof callPolicy)}
+                    disabled={pending}
+                  >
+                    <option value="">
+                      {t("channels.callPolicyInherit", {
+                        policy: t(
+                          site?.call_policy === "real_calls_only"
+                            ? "channels.keepalive.policyRealCallsOnly"
+                            : "channels.keepalive.policyAllowProbe",
+                        ),
+                      })}
+                    </option>
+                    <option value="allow_probe">{t("channels.keepalive.policyAllowProbe")}</option>
+                    <option value="real_calls_only">
+                      {t("channels.keepalive.policyRealCallsOnly")}
+                    </option>
+                  </select>
                 </Field>
               </div>
 

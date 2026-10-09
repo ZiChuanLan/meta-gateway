@@ -23,6 +23,9 @@ export interface Site {
   probe_source_enabled: boolean;
   probe_last_run_at?: string;
   probe_last_error?: string;
+  /** How automated calls (probes, keep-alive) may look on this site. Their
+   *  channels inherit it unless they carry a policy of their own. */
+  call_policy?: "" | "allow_probe" | "real_calls_only";
 }
 export interface Credential {
   id: number;
@@ -78,6 +81,9 @@ export interface Channel {
   upstream_response_map?: string;
   stable_first?: boolean;
   stable_first_requests?: number;
+  /** How automated calls (model probes, keep-alive) may look on this site's
+   *  channels. "" = inherit the site's policy; see site.call_policy. */
+  call_policy?: "" | "allow_probe" | "real_calls_only";
   created_at: string;
   updated_at: string;
 }

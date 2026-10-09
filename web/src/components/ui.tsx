@@ -335,6 +335,17 @@ export function ConfirmDialog({
 
 type InfoTipPlacement = "above" | "below" | "left" | "right";
 
+/**
+ * A hint at or under this length fits on one line in a two-column form — the
+ * narrowest place a `Field` renders (~34 CJK chars at 330px, 11px type). Longer
+ * text is a paragraph wearing a caption's clothes: under the control it pushes
+ * the rest of the form down and competes with the thing it explains. Those go
+ * behind the (i) beside the label, where the reader who wants the mechanics
+ * looks; the short ones stay visible, because "what goes in this box" is not
+ * mechanics.
+ */
+export const HINT_INLINE_MAX = 36;
+
 type InfoTipPosition = {
   top: number;
   left: number;
@@ -487,11 +498,14 @@ export function Field({
 }) {
   const hintId = useId();
   const errorId = useId();
+  // A hint that does not fit one line goes behind the (i) next to the label; a
+  // one-liner stays under the control. See HINT_INLINE_MAX.
+  const hintInline = Boolean(hint && hint.length <= HINT_INLINE_MAX);
   // The control is the caller's element, so the association is written onto it
   // rather than hoped for: a hint nobody announces is a caption, and a screen
   // reader should hear the same explanation the eye gets. A wrapping <label>
   // child is skipped — it is not the described element.
-  const described = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ");
+  const described = [hintInline ? hintId : null, error ? errorId : null].filter(Boolean).join(" ");
   const describedChild =
     isValidElement<Record<string, unknown>>(children) && children.type !== "label"
       ? cloneElement(children, {
@@ -503,11 +517,9 @@ export function Field({
   return (
     <div className={["field", error ? "is-invalid" : null, className].filter(Boolean).join(" ")}>
       {/* The label wraps the control so clicking its name still focuses the field.
-          The hint is a sibling of that label rather than part of it: a wrapping
-          label's text IS the control's accessible name, and "Basic URL" followed
-          by a sentence of explanation is not a name. It is read rather than
-          hovered — behind a tooltip it is invisible in a screenshot, on a printed
-          page, and to anyone scanning rather than hunting for the (i). */}
+          A long hint rides in the label row as the (i) — it carries the text as
+          its accessible name, so it is announced and keyboard-reachable — while
+          a one-line hint stays under the control, visible rather than hovered. */}
       <label className="field-label-wrap">
         <span className="field-label">
           <span>{label}</span>
@@ -516,10 +528,11 @@ export function Field({
               *
             </span>
           ) : null}
+          {hint && !hintInline ? <InfoTip label={hint} /> : null}
         </span>
         {describedChild}
       </label>
-      {hint ? (
+      {hintInline ? (
         <span className="field-hint" id={hintId}>
           {hint}
         </span>

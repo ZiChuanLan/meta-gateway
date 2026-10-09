@@ -7,6 +7,7 @@ import {
 } from "react";
 import { ChevronRight } from "lucide-react";
 import { useI18n } from "../../i18n";
+import { HINT_INLINE_MAX, InfoTip } from "../../components/ui";
 
 // The presentational controls the runtime settings page is built from. They were
 // the first ~150 lines of RuntimeSettingsPanel.tsx, which is otherwise a single
@@ -41,10 +42,13 @@ export function SettingState({ state }: { state: "changed" | "default" }) {
 export function SettingLabel({
   label,
   changed,
+  tip,
 }: {
   label: string;
   /** Omit for labels that do not map to a single setting (sub-labels). */
   changed?: boolean;
+  /** Long explanation, shown behind the (i) in this row's label line. */
+  tip?: string;
 }) {
   const { name, unit } = splitUnit(label);
   return (
@@ -55,6 +59,7 @@ export function SettingLabel({
           answer is noise, and on a page with instant save the one answer worth a
           mark is "I overrode the default". */}
       {changed ? <SettingState state="changed" /> : null}
+      {tip ? <InfoTip label={tip} /> : null}
     </span>
   );
 }
@@ -103,13 +108,18 @@ export function RuntimeRow({
   children: ReactNode;
 }) {
   const hintId = useId();
+  // Same rule as the shared Field: a hint that fits one line stays visible under
+  // the control, a longer one is mechanics and goes behind the (i) — see
+  // HINT_INLINE_MAX. The settings page is where this matters most: a paragraph
+  // per row is what turns a form into documentation.
+  const hintInline = hint.length <= HINT_INLINE_MAX;
   // Same association as the shared Field: the hint is written onto the control so
   // a screen reader hears the explanation the eye can see. Children that are not a
   // single element (a segmented control, a picker that ignores extra props) simply
   // keep their own semantics — the hint is still on screen and still a description
   // of the row.
   const control =
-    isValidElement<Record<string, unknown>>(children) && children.type !== "label"
+    hintInline && isValidElement<Record<string, unknown>>(children) && children.type !== "label"
       ? cloneElement(children, { "aria-describedby": hintId })
       : children;
   return (
@@ -119,10 +129,10 @@ export function RuntimeRow({
           label's text IS the control's accessible name — and "Retry rounds"
           followed by two sentences of explanation is not a name. */}
       <label className="runtime-row-label-wrap">
-        <SettingLabel label={label} changed={changed} />
+        <SettingLabel label={label} changed={changed} tip={hintInline ? undefined : hint} />
         {control}
       </label>
-      {hint ? (
+      {hintInline ? (
         <span className="field-hint runtime-row-hint" id={hintId}>
           {hint}
         </span>

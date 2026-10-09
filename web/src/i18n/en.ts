@@ -123,9 +123,9 @@ export const en: Dict = {
   "channels.keepalive.open": "Keepalive",
   "channels.keepalive.title": "Keepalive and call policy",
   "channels.keepalive.intro":
-    'Most public-benefit sites ban an account for "no call for N days", so this is not a timer: it shows how long each account has really been idle. The window is the site\'s rule (15 or 30 days) and is set per site here; a call only happens when the window is actually reached.',
+    "Idle-driven: what matters is how long each account really went unused, not a timer.",
   "channels.keepalive.introTip":
-    "A keepalive shares the model probe's request plan: where a site permits probing it sends the cheapest probe, and a site that bans probing gets a real small request instead (a real question, a normal token budget). Every call is recorded in the footprint below, with its form and its reason.",
+    "Public sites usually ban an account for \"no call for N days\", and the window is the site's rule (15 or 30 days) — set it per site below; a call goes out only when it is actually due.\n\nA keepalive shares the model probe's request plan: where a site permits probing it sends the cheapest probe, and a site that bans probing gets a real small request instead (a real question, a normal token budget). Every call is recorded in the footprint below, with its form and its reason.",
   "channels.keepalive.runNow": "Check now",
   "channels.keepalive.refresh": "Refresh",
   "channels.keepalive.serverTime": "Server time",
@@ -1048,6 +1048,9 @@ export const en: Dict = {
   "channels.mapValueNull": "null",
   "channels.proxyUrlHint":
     "HTTP(S) proxy for this channel's upstream requests. Empty = inherit the global proxy (settings page).",
+  "channels.callPolicy": "Call policy",
+  "channels.callPolicyHint": "How automated calls (probes, keep-alive) look on this channel.",
+  "channels.callPolicyInherit": "Follow the site (now: {policy})",
   "channels.modelBlocks": "Model not found (auto-blocked)",
   "channels.modelBlockClear": "Clear",
   "channels.headerOverrideHint":

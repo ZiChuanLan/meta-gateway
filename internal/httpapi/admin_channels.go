@@ -259,6 +259,7 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		UpstreamRequestMap      *string `json:"upstream_request_map"`
 		UpstreamResponseMap     *string `json:"upstream_response_map"`
 		StableFirst             *bool   `json:"stable_first"`
+		CallPolicy              *string `json:"call_policy"`
 	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -392,6 +393,18 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if patch.StableFirst != nil {
 		ch.StableFirst = *patch.StableFirst
 	}
+	// CallPolicy: how automated traffic (model probes, keep-alive) may look on
+	// this site. An empty value is not "no policy" — it means inherit the
+	// site's, which the store resolves with COALESCE (see store/keepalive.go),
+	// so clearing it hands the decision back to the site.
+	if patch.CallPolicy != nil {
+		policy := strings.TrimSpace(*patch.CallPolicy)
+		if policy != "" && domain.NormalizeCallPolicy(policy) != policy {
+			writeError(w, http.StatusBadRequest, "call_policy must be empty, allow_probe or real_calls_only")
+			return
+		}
+		ch.CallPolicy = policy
+	}
 	// Custom endpoint / field mapping. An explicit empty value clears the
 	// mapping, so a channel can be returned to plain passthrough without a
 	// manual DB edit.
@@ -508,6 +521,15 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	}
 	if ch.ModelSyncMode != "" && ch.ModelSyncMode != domain.ModelSyncModeAuto && ch.ModelSyncMode != domain.ModelSyncModeManual {
 		return errors.New("invalid model_sync_mode")
+	}
+	// The channel's call policy is "" (inherit the site) or one of the two
+	// declared values. It is validated rather than normalized: normalize maps
+	// unknown input onto allow_probe, which is the right default for a site
+	// (there is nothing to inherit) and the wrong one here — a typo would
+	// silently authorize probing on a site that bans it.
+	ch.CallPolicy = strings.TrimSpace(ch.CallPolicy)
+	if ch.CallPolicy != "" && domain.NormalizeCallPolicy(ch.CallPolicy) != ch.CallPolicy {
+		return errors.New("invalid call_policy")
 	}
 	if ch.PayloadRules == "[]" {
 		ch.PayloadRules = ""

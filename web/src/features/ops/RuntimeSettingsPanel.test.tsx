@@ -227,7 +227,11 @@ it("marks the fields that override the deployment default, and their section", a
   expect(changedRow.textContent).toContain("Changed");
   const defaultRow = screen.getByLabelText(/Same-key re-sends/).closest(".field")!;
   expect(defaultRow.querySelector(".setting-state")).toBeNull();
-  expect(defaultRow.querySelector(".runtime-row-hint")).not.toBeNull();
+  // The row keeps its explanation, but only a one-line hint stays visible: this
+  // one is a paragraph, so it rides in the (i) beside the label. What must not
+  // happen is the explanation disappearing — hence "a hint or a tip", and the
+  // tip carries the text as its accessible name.
+  expect(defaultRow.querySelector(".field-hint, .info-tip")).not.toBeNull();
 });
 
 it("restores one section to the deployment defaults without touching the rest", async () => {

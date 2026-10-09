@@ -109,10 +109,9 @@ export const zh: Dict = {
   "common.save": "保存",
   "channels.keepalive.open": "保活",
   "channels.keepalive.title": "保活与调用策略",
-  "channels.keepalive.intro":
-    "公益站多数按「连续 N 天无调用」封号，所以这里看的不是定时器，而是每个账号真实空闲了多久。窗口是站点的规则（15 天/30 天），在这里按站点设置；真正到期才会发一次调用。",
+  "channels.keepalive.intro": "空闲驱动：看的是每个账号真实空闲了多久，而不是定时器。",
   "channels.keepalive.introTip":
-    "保活调用与模型探测共用同一套请求形态：站点允许测活时用最便宜的一次探测，声明禁止测活的站点改用真实小请求（真实提问、正常 token 上限）。每次调用都会记在下面的足迹里，含形态与触发原因。",
+    "公益站多数按「连续 N 天无调用」封号，窗口是站点的规则（如 15 天 / 30 天），在下面按站点设置；真正到期才会发一次调用。\n\n保活调用与模型探测共用同一套请求形态：站点允许测活时用最便宜的一次探测，声明禁止测活的站点改用真实小请求（真实提问、正常 token 上限）。每次调用都会记在下面的足迹里，含形态与触发原因。",
   "channels.keepalive.runNow": "检查一轮",
   "channels.keepalive.refresh": "刷新",
   "channels.keepalive.serverTime": "服务器时间",
@@ -974,6 +973,9 @@ export const zh: Dict = {
   "channels.mapValueBool": "布尔",
   "channels.mapValueNull": "null",
   "channels.proxyUrlHint": "该渠道上游请求的 HTTP(S) 代理。留空 = 继承全局代理（设置页）。",
+  "channels.callPolicy": "调用策略",
+  "channels.callPolicyHint": "自动调用（模型探测 / 保活）在本渠道的请求形态。",
+  "channels.callPolicyInherit": "跟随站点（当前：{policy}）",
   "channels.modelBlocks": "模型不存在（自动拉黑）",
   "channels.modelBlockClear": "解除",
   "channels.headerOverrideHint":
