@@ -23,7 +23,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .button:active:not(:disabled), .icon-button:active:not(:disabled) { transform: translateY(1px); }
 .button-primary { border-color: var(--primary); background: var(--primary); color: var(--on-primary); box-shadow: inset 0 1px #ffffff20, 0 2px 5px var(--primary-glow); }
 .button-primary:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
-.button-danger { border-color: var(--danger); background: var(--danger); color: #fff; }
+.button-danger { border-color: var(--danger); background: var(--danger); color: var(--on-danger); }
 .button-danger:hover:not(:disabled) { border-color: var(--danger-hover); background: var(--danger-hover); }
 .button-quiet { border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); }
 .button-quiet:hover:not(:disabled) { border-color: transparent; background: var(--surface-hover); }
@@ -53,7 +53,7 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .panel-summary-sep { color: var(--line-strong); }
 .table-wrap { width: 100%; min-width: 0; overflow-x: auto; border: 0; border-radius: 0; background: transparent; box-shadow: none; scrollbar-width: thin; }
 table { width: 100%; border-collapse: collapse; font: 12px/1.5 var(--font); }
-thead th { padding: 13px 16px; text-align: left; font: 500 10px/1.5 var(--font); color: var(--muted); text-transform: none; letter-spacing: .015em; background: var(--surface-subtle); border: 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+thead th { padding: 13px 16px; text-align: left; font: 500 var(--text-xs)/1.5 var(--font); color: var(--muted); text-transform: none; letter-spacing: .015em; background: var(--surface-subtle); border: 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 tbody td { padding: 16px; color: var(--ink-soft); border-bottom: 1px solid var(--line-light); line-height: 1.55; vertical-align: middle; overflow-wrap: anywhere; transition: background var(--dur-base); }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr { animation: none; }
@@ -61,7 +61,7 @@ tbody tr:hover { background: color-mix(in srgb, var(--surface-hover) 65%, transp
 tbody tr.is-selected { background: var(--primary-soft); box-shadow: inset 2px 0 var(--primary); }
 tbody tr.is-clickable { cursor: pointer; }
 tbody td strong { display: block; color: var(--ink); font-weight: 550; letter-spacing: -.01em; }
-tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size: var(--text-xs); line-height: 1.55; }
 .table-wrap[data-columns="6"] table, .table-wrap[data-columns="7"] table { min-width: 720px; }
 .table-wrap[data-columns="10"] table, .table-wrap[data-columns="11"] table, .table-wrap[data-columns="12"] table { min-width: 1120px; }
 .list-shell { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
@@ -224,7 +224,9 @@ tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size
 .empty-hero-kicker {
   position: relative;
   margin: 0;
-  color: var(--primary);
+  /* --primary-ink, not --primary: the brand hue is a fill, and as 11px uppercase
+     text it measures 1.9:1 on a light card. */
+  color: var(--primary-ink);
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 700;
@@ -255,7 +257,7 @@ tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size
   gap: 10px;
   justify-content: center;
 }
-.badge { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 5px; min-height: 22px; height: auto; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; font: 500 10px/1.35 var(--font); letter-spacing: 0; box-shadow: none; white-space: nowrap; }
+.badge { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 5px; min-height: 22px; height: auto; padding: 3px 8px; border: 1px solid transparent; border-radius: 6px; font: 500 var(--text-xs)/1.35 var(--font); letter-spacing: 0; box-shadow: none; white-space: nowrap; }
 .badge::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; flex-shrink: 0; opacity: .7; box-shadow: none; }
 /* Status tints for every `StatusBadge` value. Also hoisted from the console
    feature sheet: the user app renders the same badges (an enabled key, a
@@ -398,7 +400,7 @@ tbody td small { display: block; margin-top: 4px; color: var(--muted); font-size
 .tabs.is-grouped { gap: 2px 6px; flex-wrap: wrap; width: 100%; }
 .tabs.is-grouped .tabs-group { display: flex; align-items: center; gap: 4px; }
 .tabs.is-grouped .tabs-group + .tabs-group { padding-left: 10px; border-left: 1px solid var(--line-light); }
-.tabs.is-grouped .tabs-group-label { padding: 0 4px 0 6px; color: var(--muted-subtle, var(--muted)); font: 600 10px/1 var(--font); letter-spacing: .06em; text-transform: uppercase; }
+.tabs.is-grouped .tabs-group-label { padding: 0 4px 0 6px; color: var(--muted-subtle, var(--muted)); font: 600 var(--text-xs)/1 var(--font); letter-spacing: .06em; text-transform: uppercase; }
 /* A status badge the operator can act on (a token's on/off switch). Same
    anatomy as the read-only badge, so the column keeps one visual language. */
 .key-toggle { border: 0; font: inherit; cursor: pointer; }
@@ -455,9 +457,9 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
 .action-menu-item.is-danger:hover { background: var(--danger-soft); }
 .action-menu-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 16px; opacity: .8; }
 .action-menu-copy { display: grid; gap: 3px; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.action-menu-copy small { color: var(--muted); font: 10px/1.5 var(--font); }
+.action-menu-copy small { color: var(--muted); font: var(--text-xs)/1.5 var(--font); }
 .action-menu-title { padding: 10px 11px 12px; color: var(--ink); font-size: 11px; font-weight: 600; overflow-wrap: anywhere; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
-.action-menu-group-label { padding: 7px 10px 3px; color: var(--muted); font-size: 10px; font-weight: 400; }
+.action-menu-group-label { padding: 7px 10px 3px; color: var(--muted); font-size: var(--text-xs); font-weight: 400; }
 .action-menu-separator { height: 1px; margin: 5px; background: var(--line); }
 .searchable-select { position: relative; width: 100%; }
 .searchable-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 38px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); font: 12px var(--font); cursor: pointer; }
@@ -475,7 +477,7 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
 .telemetry-segment-head { display: flex; align-items: center; gap: 7px; color: var(--muted); font: 500 11px/1.4 var(--font); letter-spacing: 0; }
 .telemetry-segment-read { display: flex; align-items: baseline; gap: 8px; }
 .telemetry-segment-value { color: var(--ink-primary); font: 550 28px/1.15 var(--font); letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
-.telemetry-segment-hint { color: var(--muted); font: 10px/1.5 var(--font); }
+.telemetry-segment-hint { color: var(--muted); font: var(--text-xs)/1.5 var(--font); }
 .telemetry-segment-edge { display: none; }
 .telemetry-segment-icon { color: var(--muted-dark); }
 .telemetry-segment.is-interactive { cursor: pointer; }
@@ -508,8 +510,8 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
   .telemetry-segment { padding-right: 12px; margin-right: 12px; }
   .telemetry-segment:nth-child(2n) { border-right: 0; }
   .telemetry-segment-value { font-size: 25px; }
-  .telemetry-segment-head { font-size: 10px; }
-  .telemetry-segment-hint { font-size: 9px; }
+  .telemetry-segment-head { font-size: var(--text-xs); }
+  .telemetry-segment-hint { font-size: var(--text-xs); }
   .form-grid { grid-template-columns: 1fr; gap: 18px; }
   .dialog-backdrop { padding: 12px; }
   .dialog { max-height: calc(100dvh - 24px); border-radius: 18px; }
@@ -541,7 +543,7 @@ input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 
 .map-editor-mode.is-active { color: var(--ink); border-color: var(--line-strong); background: var(--surface); font-weight: 600; }
 .map-editor-mode:disabled { cursor: not-allowed; opacity: .6; }
 .map-editor-badges { display: flex; flex-wrap: wrap; gap: 6px; }
-.map-badge { padding: 1px 6px; font: 10.5px/1.7 var(--mono, var(--font)); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+.map-badge { padding: 1px 6px; font: var(--text-xs)/1.7 var(--mono, var(--font)); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
 .map-badge.is-key { color: var(--accent, var(--ink)); border-color: var(--line-strong); }
 .map-badge.is-invalid { color: var(--danger, #b4453a); border-color: currentColor; }
 .map-badge.is-quiet { opacity: .7; }

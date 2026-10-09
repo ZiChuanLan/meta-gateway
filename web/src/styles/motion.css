@@ -155,11 +155,11 @@
   .cinematic-core > strong > span { padding: 5px 14px 9px 9px; }
   .cinematic-core > strong > span:last-child { margin-left: 12px; padding-right: 20px; }
   .cinematic-caption { max-width: 54vw; color: #464f69; }
-  .cinematic-registration { font-size: 8px; gap: 14px; }
+  .cinematic-registration { font-size: var(--text-xs); gap: 14px; }
   .cinematic-orbits { width: 66vw; right: -32vw; }
   .cinematic-skip { right: 18px; bottom: max(20px,env(safe-area-inset-bottom)); min-height: 44px; }
-  .cinematic-eyebrow { font-size: 10px; }
-  .cinematic-caption { font-size: 10px; }
+  .cinematic-eyebrow { font-size: var(--text-xs); }
+  .cinematic-caption { font-size: var(--text-xs); }
   .dashboard-page .page-header { min-height: 0; gap: 12px; padding-bottom: 18px; }
   .dashboard-page .page-header > .toolbar { width: auto; }
   .dashboard-aura { width: 78%; opacity: .5; height: 185px; }

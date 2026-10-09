@@ -274,3 +274,58 @@
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-soft);
 }
+
+/* —— Readability on this appearance's own palette ——
+   Three token corrections, all measured rather than felt. They live here because
+   base.css is a snapshot of the upstream palette and console-side differences
+   belong in this layer.
+
+   --muted: the snapshot's #5d7188 measures 4.49:1 on a white card and 4.29:1 on
+   the #eef3f7 panels that hint text, tab labels and badges actually sit on. A
+   hair under AA is still under AA, so this is the value that clears it on every
+   surface the token is used against (5.2 on #eef3f7, 4.85 on the hover tint).
+
+   --primary-ink / --accent-ink: the powder blue (#7cc4f0) and the gilt gold
+   (#d4af37) are fill colours — as text on a light surface they measure 1.9:1 and
+   1.9:1. These are the same brand hues, at text weight: 5.6 and 6.0 on white,
+   4.7 and 5.0 on the darkest surface they appear on.
+
+   In dark, the brand fills are already light enough to read as text, so the ink
+   tokens resolve to them; the danger fill is light red, where white text is
+   3.3:1 — hence --on-danger flipping to dark ink instead. */
+:root[data-appearance="classic"] {
+  --muted: #55677c;
+  --primary-ink: #276d99;
+  --accent-ink: #7d5f1a;
+}
+:root.dark[data-appearance="classic"] {
+  --muted: #93a8bd;
+  --primary-ink: #7cc4f0;
+  --accent-ink: #d4af37;
+  --on-danger: #2a1417;
+}
+
+/* —— Text-safe brand hues, in this appearance's own layer ——
+   theme.css carries its own copies of these rules and outranks the shared ones,
+   so the same two corrections are stated once more where they win. Both are the
+   brand hue at text weight rather than fill weight: measured 1.9:1 and 1.9:1 as
+   they stood, 5.6:1 and 6.0:1 here. */
+:root[data-appearance="classic"] .empty-hero-kicker,
+:root[data-appearance="classic"] .endpoint-copy strong,
+:root[data-appearance="classic"] .endpoint-mono {
+  color: var(--primary-ink);
+}
+:root[data-appearance="classic"] .exchange-format-badge.is-primary {
+  color: var(--accent-ink);
+}
+:root[data-appearance="classic"] .setup-guide-go {
+  color: var(--primary-ink);
+}
+:root[data-appearance="classic"] .setup-guide-dismiss {
+  color: var(--muted);
+}
+/* The classic danger button paints its label white; on this appearance's dark
+   scheme the danger fill is light red, where white measures 3.3:1. */
+:root[data-appearance="classic"] .button-danger {
+  color: var(--on-danger);
+}

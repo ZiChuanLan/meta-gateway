@@ -13,7 +13,7 @@
   --ink: #252730;
   --ink-primary: #14161c;
   --ink-soft: #464b58;
-  --muted: #707683;
+  --muted: #697080;
   --muted-strong: #5b6270;
   --muted-dark: #9298a4;
   --line: rgba(17, 20, 24, .07);
@@ -32,6 +32,15 @@
   --accent-glow: rgba(229, 93, 73, .12);
   --on-primary: #ffffff;
   --on-accent: #ffffff;
+  /* Text-safe brand colours. The brand hues themselves are fills: in the classic
+     appearance the powder blue is #7cc4f0, which is 1.9:1 as text on white. These
+     two are the same brand, dark enough to read (light) or light enough to read on
+     a dark surface (below). */
+  --primary-ink: #2b4fd0;
+  --accent-ink: #b8442f;
+  /* Text on a saturated danger fill. White on the dark red works; on the lighter
+     red the dark scheme uses it does not, so the pair is stated per scheme. */
+  --on-danger: #ffffff;
   --danger: #bc3443;
   --danger-hover: #a02735;
   --danger-soft: #faf0f0;
@@ -123,6 +132,9 @@
   --primary-glow: rgba(108, 138, 255, .1);
   --primary-hairline: rgba(143, 164, 255, .3);
   --on-primary: #11162b;
+  --primary-ink: #a7b7ff;
+  --accent-ink: #fa8b78;
+  --on-danger: #2a1417;
   --accent: #fa8b78;
   --accent-soft: #3e2829;
   --danger: #f18b99;

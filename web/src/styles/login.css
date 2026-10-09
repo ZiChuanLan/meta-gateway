@@ -56,13 +56,13 @@
 .login-card .check { margin: 0; color: var(--muted); font-size: 11px; }
 .login-submit { width: 100%; min-height: 42px; }
 .login-submit .btn-content { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.login-private { display: flex; align-items: center; justify-content: center; gap: 6px; padding-top: 22px; margin: 22px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
-.login-footer { position: relative; padding: 22px 5vw; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
+.login-private { display: flex; align-items: center; justify-content: center; gap: 6px; padding-top: 22px; margin: 22px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--text-xs); }
+.login-footer { position: relative; padding: 22px 5vw; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--muted); font-size: var(--text-xs); }
 @keyframes sculpture-arrive { from { opacity: 0; translate: 0 15px; } to { opacity: 1; translate: 0 0; } }
 @media (max-width: 760px) { .login-header { padding: 22px; } .login-stage { grid-template-columns: 1fr; padding: 25px 24px 40px; gap: 30px; max-width: 490px; } .login-introduction h1 { font-size: 35px; } .login-introduction > p { max-width: none; margin-top: 15px; font-size: 12px; } .login-edition { margin-bottom: 15px; } .login-sculpture { display: none; } .login-card { padding: 28px; } /* The second layer's tab hangs past the card's right edge; give the slot room
      for it so the page's own overflow:hidden does not clip it. */
   .login-card-slot { padding-right: 34px; }
-  .login-tools { gap: 6px; } .login-tools select { width: 78px; } .login-brand strong { font-size: 15px; } .login-footer { font-size: 9px; padding: 20px 24px; } .login-card input[type=password], .login-card input[type=text] { font-size: 16px; } }
+  .login-tools { gap: 6px; } .login-tools select { width: 78px; } .login-brand strong { font-size: 15px; } .login-footer { font-size: var(--text-xs); padding: 20px 24px; } .login-card input[type=password], .login-card input[type=text] { font-size: 16px; } }
 @media (prefers-reduced-motion: reduce) { .login-tile { animation: none; } }
 @media (prefers-reduced-transparency: reduce) { .login-card, .login-tile { background: var(--surface); backdrop-filter: none; } }
 

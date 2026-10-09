@@ -70,7 +70,7 @@
 :root[data-appearance="classic"] .sidebar-brand-copy span {
   color: var(--primary);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -101,7 +101,7 @@
   padding: 10px 16px 4px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.18em;
   white-space: nowrap;
@@ -185,7 +185,7 @@
 
 :root[data-appearance="classic"] .nav-num {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--muted);
   opacity: 0;
@@ -319,7 +319,7 @@
 :root[data-appearance="classic"] .horizon-tag {
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -332,7 +332,7 @@
 :root[data-appearance="classic"] .horizon-time {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.08em;
 }
 :root[data-appearance="classic"] .horizon-search-trigger {
@@ -358,7 +358,7 @@
 :root[data-appearance="classic"] .horizon-kbd {
   padding: 0 4px;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--muted);
   background: var(--surface);
@@ -393,7 +393,7 @@
 }
 :root[data-appearance="classic"] .connection span {
   color: var(--sidebar-muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-family: var(--mono);
 }
 :root[data-appearance="classic"] .dot {
@@ -1545,7 +1545,7 @@
 :root[data-appearance="classic"] .detail-kicker {
   margin: 0 0 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1657,7 +1657,7 @@
   display: flex;
   gap: 3px;
   margin-top: 4px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--muted, #6e645c);
 }
 :root[data-appearance="classic"] .latency-histogram-labels span {
@@ -1685,7 +1685,7 @@
   gap: 2px;
 }
 :root[data-appearance="classic"] .latency-readout > span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1796,7 +1796,7 @@
 }
 :root[data-appearance="classic"] .routing-policy-value small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-variant-numeric: normal;
 }
 :root[data-appearance="classic"] .routing-mode-select {
@@ -2400,7 +2400,7 @@
 }
 :root[data-appearance="classic"] .exchange-support-kicker {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -2449,7 +2449,7 @@
   border: 1px solid var(--line);
   background: var(--surface-subtle);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3176,7 +3176,7 @@
 }
 :root[data-appearance="classic"] .impact-stamp span {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.16em;
   color: var(--accent);
@@ -3192,7 +3192,7 @@
 }
 :root[data-appearance="classic"] .impact-stamp em {
   display: block;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-style: normal;
   letter-spacing: 0.1em;
   color: var(--muted);
@@ -3205,7 +3205,7 @@
   background: rgba(255, 255, 255, 0.78);
   color: var(--ink-soft);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   -webkit-backdrop-filter: blur(3px);
@@ -3265,7 +3265,7 @@
   display: block;
   margin-bottom: 8px;
   color: #b8952a;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.14em;
 }
@@ -3350,7 +3350,7 @@
   display: block;
   margin-top: 2px;
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--text-xs);
   letter-spacing: 0.12em;
   color: var(--muted);
   text-align: center;
@@ -3378,7 +3378,7 @@
 :root[data-appearance="classic"] .ambient-unlock-mid > span {
   display: block;
   color: #b8952a;
-  font-size: 8px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.16em;
 }
@@ -3407,14 +3407,14 @@
 }
 :root[data-appearance="classic"] .ambient-unlock-mid i {
   color: var(--ink);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-style: normal;
   letter-spacing: 0.08em;
 }
 :root[data-appearance="classic"] .ambient-unlock-mid small {
   display: block;
   color: var(--muted);
-  font-size: 8px;
+  font-size: var(--text-xs);
   letter-spacing: 0.1em;
 }
 :root[data-appearance="classic"] .ambient-pointer-glow {
@@ -3479,7 +3479,7 @@
   padding-top: 18px;
   border-top: 1px solid var(--line-strong);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.16em;
   color: var(--muted);
@@ -3546,7 +3546,7 @@
   z-index: 2;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   letter-spacing: 0.12em;
   pointer-events: none;
 }
@@ -3565,20 +3565,20 @@
   border: 1px solid rgba(124, 196, 240, 0.28);
 }
 :root[data-appearance="classic"] .connect-panel-meta span {
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.14em;
   color: var(--accent);
 }
 :root[data-appearance="classic"] .connect-panel-meta strong {
   flex: 1;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.12em;
 }
 :root[data-appearance="classic"] .connect-panel-meta em {
   font-style: normal;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.12em;
   color: var(--on-primary);
@@ -3667,7 +3667,7 @@
 }
 :root[data-appearance="classic"] .connect-brand-copy small {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.1em;
   color: var(--muted);
 }
@@ -3680,7 +3680,7 @@
   margin: 0 0 8px;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.16em;
 }
@@ -3689,7 +3689,7 @@
   margin-bottom: 14px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.14em;
 }
 
@@ -3989,14 +3989,14 @@
 }
 :root[data-appearance="classic"] .connect-footer small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 1.6;
 }
 :root[data-appearance="classic"] .connect-footer span {
   flex: 0 0 auto;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-align: right;
@@ -4142,7 +4142,7 @@
   line-height: 0.9;
 }
 :root[data-appearance="classic"] .gateway-door small {
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.14em;
   opacity: 0.72;
 }
@@ -4264,7 +4264,7 @@
 :root[data-appearance="classic"] .gateway-transition-lock > span {
   display: block;
   color: var(--accent);
-  font-size: 8px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.16em;
 }
@@ -4297,7 +4297,7 @@
 :root[data-appearance="classic"] .gateway-transition-lock small {
   display: block;
   color: #5d7188;
-  font-size: 8px;
+  font-size: var(--text-xs);
   letter-spacing: 0.1em;
 }
 :root[data-appearance="classic"] .gateway-transition-axis {
@@ -4382,7 +4382,7 @@
   color: var(--ink-soft);
 }
 :root[data-appearance="classic"] .sheath-word small {
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.14em;
   color: var(--muted);
 }
@@ -4843,7 +4843,7 @@
   min-width: 17px;
   padding: 3px 5px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   line-height: 1;
   text-align: center;
@@ -5213,7 +5213,7 @@
   min-width: 0;
 }
 :root[data-appearance="classic"] .detail-meta.is-compact > div > .label {
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -5267,7 +5267,7 @@
 }
 :root[data-appearance="classic"] .capability-stack.is-compact .capability-chip {
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 :root[data-appearance="classic"] .ops-detail-card .detail-head {
   margin-bottom: 14px;
@@ -5869,7 +5869,7 @@
   background: var(--primary-soft);
   color: var(--primary-active);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 800;
   letter-spacing: 0.14em;
   border: 1px solid var(--primary-hairline);
@@ -6066,7 +6066,7 @@
 :root[data-appearance="classic"] .model-meta-badge {
   padding: 1px 6px;
   border-radius: var(--radius);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--ink-soft);
   background: var(--surface-subtle);
@@ -6997,7 +6997,7 @@
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--warning, #e6a23c) 18%, transparent);
   color: var(--warning, #e6a23c);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   vertical-align: middle;
@@ -7009,7 +7009,7 @@
   border-radius: var(--radius);
   background: var(--danger-soft);
   color: var(--danger);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 650;
   vertical-align: middle;
   white-space: nowrap;
@@ -7119,7 +7119,7 @@
 }
 :root[data-appearance="classic"] .log-decision-candidates li.is-picked .log-decision-channel::after {
   content: " ●";
-  font-size: 9px;
+  font-size: var(--text-xs);
   color: var(--accent, var(--primary, #4a7dff));
 }
 :root[data-appearance="classic"] .log-decision-channel {
@@ -7129,7 +7129,7 @@
   white-space: nowrap;
 }
 :root[data-appearance="classic"] .log-decision-tag {
-  font-size: 10px;
+  font-size: var(--text-xs);
   padding: 1px 6px;
   border-radius: var(--radius);
 }
@@ -7362,7 +7362,7 @@
   white-space: nowrap;
 }
 :root[data-appearance="classic"] .channel-model-group-count {
-  font-size: 10px;
+  font-size: var(--text-xs);
   line-height: 16px;
   padding: 0 6px;
   border-radius: 999px;
@@ -8162,7 +8162,7 @@
   border: 1px solid color-mix(in srgb, var(--info) 28%, var(--line));
   background: var(--info-soft);
   color: var(--info);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -8311,11 +8311,11 @@
 }
 :root[data-appearance="classic"] .chart-tick {
   fill: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-family: var(--mono);
 }
 :root[data-appearance="classic"] .chart-tick-y {
-  font-size: 8.5px;
+  font-size: var(--text-xs);
 }
 :root[data-appearance="classic"] .chart-tip {
   position: absolute;
@@ -9072,7 +9072,7 @@
   border: 1px solid var(--info);
   background: var(--info-soft);
   color: var(--info);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -9423,7 +9423,7 @@
 :root[data-appearance="classic"] .command-group-label {
   padding: 10px 10px 4px;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -9501,7 +9501,7 @@
   padding: 10px 18px;
   border-top: 1px solid var(--line);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 :root[data-appearance="classic"] .command-footer span {
@@ -9654,7 +9654,7 @@
   content: "OPERATIONS · 01";
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.18em;
 }
@@ -9664,7 +9664,7 @@
   padding: 0 10px 8px;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.18em;
 }
@@ -9761,7 +9761,7 @@
   border-right: 1px solid var(--line-strong);
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -9789,7 +9789,7 @@
 }
 :root[data-appearance="classic"] .mission-readout small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.02em;
 }
 :root[data-appearance="classic"] .mission-led {
@@ -9909,7 +9909,7 @@
 }
 :root[data-appearance="classic"] .market-card-tag {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 0.04em;
 }
 :root[data-appearance="classic"] .market-card-icon {
@@ -10370,7 +10370,7 @@
 :root[data-appearance="classic"] .cockpit-log-time {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -10442,7 +10442,7 @@
   gap: 4px;
   padding: 1px 6px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   border-radius: var(--radius-sm);
   background: var(--surface-subtle);
@@ -10611,7 +10611,7 @@
 }
 :root[data-appearance="classic"] .deck-brand-tag {
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--primary);
   letter-spacing: 0.14em;
@@ -10662,7 +10662,7 @@
 }
 :root[data-appearance="classic"] .deck-nav-num {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   opacity: 0.65;
 }
@@ -10691,7 +10691,7 @@
   align-items: center;
   gap: 6px;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--success);
   letter-spacing: 0.1em;
@@ -10817,7 +10817,7 @@
 :root[data-appearance="classic"] .deck-identity-copy span {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -10914,7 +10914,7 @@
 }
 :root[data-appearance="classic"] .deck-telemetry-label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 :root[data-appearance="classic"] .deck-divider {
@@ -10945,7 +10945,7 @@
 :root[data-appearance="classic"] .deck-kbd {
   padding: 0 4px;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--muted);
   background: var(--surface);
@@ -11081,7 +11081,7 @@
   gap: 6px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -11160,7 +11160,7 @@
   gap: 2px;
   padding: 1px 5px;
   border-radius: var(--radius);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 700;
   font-family: var(--mono);
 }
@@ -11471,7 +11471,7 @@
 }
 :root[data-appearance="classic"] .detail-meta .label {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -11547,7 +11547,7 @@
   flex-wrap: wrap;
 }
 :root[data-appearance="classic"] .detail-meta .detail-health-value small {
-  font-size: 10px;
+  font-size: var(--text-xs);
 }
 
 /* ============================================================
@@ -12183,7 +12183,7 @@
   max-width: 200px;
 }
 :root[data-appearance="classic"] .live-trace-model small {
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -12221,7 +12221,7 @@
 :root[data-appearance="classic"] .live-trace-key {
   margin-left: 6px;
   color: var(--ink-soft);
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -12276,7 +12276,7 @@
   background: var(--warning-soft);
   padding: 1px 5px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: var(--text-xs);
   cursor: help;
   white-space: nowrap;
 }

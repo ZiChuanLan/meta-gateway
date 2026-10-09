@@ -23,7 +23,7 @@
 .workspace-caption {
   flex: 0 0 auto;
   color: var(--muted);
-  font: 600 10px/1.5 var(--font);
+  font: 600 var(--text-xs)/1.5 var(--font);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -173,7 +173,7 @@
 }
 .route-order-name small {
   color: var(--muted);
-  font: 10.5px/1.4 var(--mono);
+  font: var(--text-xs)/1.4 var(--mono);
   overflow-wrap: anywhere;
 }
 .route-order-weight {
@@ -191,7 +191,7 @@
 }
 .route-order-weight small {
   color: var(--muted-dark);
-  font: 9.5px/1.3 var(--font);
+  font: var(--text-xs)/1.3 var(--font);
   white-space: nowrap;
 }
 .route-order-toggle {
