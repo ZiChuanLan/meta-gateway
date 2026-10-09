@@ -218,3 +218,125 @@ describe("ChannelKeysDrawer model allowlist", () => {
     await waitFor(() => expect(added).toEqual(["unrelated-token"]));
   });
 });
+
+// —— 批量测活 / 批量删除 ——
+// The operator's loop: test every key, look at which ones are dead, delete
+// exactly those. The three steps share one selection, so the middle one has to
+// keep its promise about the first, and the last one must hit the server only
+// for the key it claims to delete.
+const DEAD_KEY = { ...GEMINI_KEY, id: 144, models_csv: "", models: [], model_count: -1 };
+
+const TEST_REPORT = {
+  tested: 2,
+  ok: 1,
+  failed: 1,
+  results: [
+    {
+      credential_id: 143,
+      ok: true,
+      model_count: 12,
+      sample: ["gemini-2.5-pro", "gemini-3.1-flash-lite"],
+      latency_ms: 348,
+    },
+    {
+      credential_id: 144,
+      ok: false,
+      category: "upstream_unauthorized",
+      error: "model discovery failed: upstream_status (401)",
+      model_count: 0,
+      latency_ms: 121,
+    },
+  ],
+};
+
+describe("ChannelKeysDrawer batch keys", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "zh-CN");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function renderBatchDrawer() {
+    const deletes: string[] = [];
+    const testBodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        const method = (init?.method ?? "GET").toUpperCase();
+        if (method === "DELETE") {
+          deletes.push(path);
+          return jsonResponse({ status: "deleted" });
+        }
+        if (method === "POST" && path.includes("/keys/test")) {
+          testBodies.push(init?.body ? JSON.parse(String(init.body)) : null);
+          return jsonResponse(TEST_REPORT);
+        }
+        if (path.includes("/admin/discovery/models")) return jsonResponse(CHANNEL_MODELS);
+        if (path.includes("/credentials")) return jsonResponse([GEMINI_KEY, DEAD_KEY]);
+        return jsonResponse({ error: "unexpected" }, 500);
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <I18nProvider>
+          <ToastProvider>
+            <SessionProvider>
+              <ChannelKeysDrawer
+                channel={CHANNEL as never}
+                apiKeys={[GEMINI_KEY, DEAD_KEY] as never}
+                pending={false}
+                onToggleKey={() => {}}
+                onUpdateKeyModels={() => {}}
+                onUpdateKeyPriority={() => {}}
+                onDeleteKey={() => {}}
+                onAddApiKey={() => {}}
+                onSyncKeys={() => {}}
+                onClose={() => {}}
+              />
+            </SessionProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </QueryClientProvider>,
+    );
+    return { deletes, testBodies };
+  }
+
+  it("tests every key and reports each one separately", async () => {
+    const { testBodies } = renderBatchDrawer();
+    expect(await screen.findByText("已选 0 个")).toBeTruthy();
+
+    // Nothing selected: the button means "every key in this list".
+    fireEvent.click(screen.getByRole("button", { name: "测活全部" }));
+    await waitFor(() => expect(testBodies).toEqual([{ credential_ids: [143, 144] }]));
+
+    expect(await screen.findByText(/正常 · 12 个模型 · 348 ms/)).toBeTruthy();
+    expect(await screen.findByText(/密钥不可用：API Key 失效（401\/403）/)).toBeTruthy();
+    expect(await screen.findByText(/测活完成：1 个正常 · 1 个失效（共 2 个）/)).toBeTruthy();
+  });
+
+  it("selects the dead keys and deletes exactly those", async () => {
+    const { deletes } = renderBatchDrawer();
+    fireEvent.click(await screen.findByRole("button", { name: "测活全部" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "选中 1 个失效的" }));
+    expect(await screen.findByText("已选 1 个")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "删除选中（1）" }));
+    expect(await screen.findByText("将永久删除 1 个 API 密钥，且无法恢复。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    await waitFor(() => expect(deletes).toHaveLength(1));
+    expect(deletes[0]).toContain("/admin/credentials/144");
+    expect(await screen.findByText("已删除 1 个")).toBeTruthy();
+  });
+});

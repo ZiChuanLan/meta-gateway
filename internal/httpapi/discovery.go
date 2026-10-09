@@ -31,6 +31,7 @@ func (h *DiscoveryHandler) SetModelsCache(cache *modelsCache) {
 func (h *DiscoveryHandler) Register(r chi.Router) {
 	r.Post("/discovery/channels/{id}/probe", h.probeChannel)
 	r.Post("/discovery/channels/{id}/refresh", h.refreshChannel)
+	r.Post("/discovery/channels/{id}/keys/test", h.testChannelKeys)
 	r.Post("/discovery/refresh", h.refreshAll)
 	r.Post("/discovery/models-preview", h.previewModels)
 	r.Get("/discovery/models", h.listModels)
@@ -131,6 +132,49 @@ func (h *DiscoveryHandler) refreshChannel(w http.ResponseWriter, r *http.Request
 	}
 	h.modelsCache.Invalidate()
 	writeJSON(w, http.StatusOK, result)
+}
+
+// channelKeyTestRequest names the keys to try. Empty means every key the
+// channel can use, which is what the batch button sends.
+type channelKeyTestRequest struct {
+	CredentialIDs []int64 `json:"credential_ids,omitempty"`
+}
+
+// keyTestBudget bounds one 测活 round. The service tries keys four at a time with
+// a per-key timeout, so this only has to cover the tail of a long pool.
+const keyTestBudget = 90 * time.Second
+
+// testChannelKeys reports whether each named API key still works, by asking the
+// upstream for its model list with that key. Read-only: no probe record, no
+// health history, no adoption — the operator decides what to do with a dead key.
+func (h *DiscoveryHandler) testChannelKeys(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var request channelKeyTestRequest
+	if err := decodeJSON(w, r, &request, 0, false); err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), keyTestBudget)
+	defer cancel()
+	results, err := h.service.TestKeys(ctx, id, request.CredentialIDs)
+	if err != nil {
+		writeDiscoveryError(w, err)
+		return
+	}
+	okCount := 0
+	for i := range results {
+		if results[i].OK {
+			okCount++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results": results,
+		"ok":      okCount,
+		"failed":  len(results) - okCount,
+		"tested":  len(results),
+	})
 }
 
 func (h *DiscoveryHandler) refreshAll(w http.ResponseWriter, r *http.Request) {

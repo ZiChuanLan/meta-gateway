@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **240** 条注册、**195** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **241** 条注册、**196** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -135,10 +135,11 @@
 | --- | --- | --- |
 | `Get` | `/admin/decision-snapshot` | decisionSnapshot |
 
-## /admin/discovery · 7 条
+## /admin/discovery · 8 条
 
 | 方法 | 路径 | handler |
 | --- | --- | --- |
+| `Post` | `/admin/discovery/channels/{id}/keys/test` | testChannelKeys |
 | `Post` | `/admin/discovery/channels/{id}/probe` | probeChannel |
 | `Post` | `/admin/discovery/channels/{id}/refresh` | refreshChannel |
 | `Get` | `/admin/discovery/missing-models` | missingModels |

@@ -3094,6 +3094,66 @@ td.actions {
   resize: vertical;
 }
 
+/* —— 批量：勾选、测活、删除 —— */
+/* The batch bar sits between the list and its head: selection first (what the
+   buttons act on), then the actions, then what the last round said. */
+.credential-key-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 10px;
+}
+.credential-key-bulk .check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.credential-key-bulk-count,
+.credential-key-bulk-notice {
+  font-size: 11.5px;
+}
+.credential-key-bulk-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 11.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.credential-key-bulk-delete {
+  margin-left: auto;
+}
+/* One checkbox column, aligned with the row's own head. */
+.credential-key-select {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-top: 2px;
+}
+/* The 测活 answer per key: "正常 · 12 个模型 · 320 ms" or the translated reason
+   it is dead. A row that has never been tested says nothing. */
+.credential-key-test {
+  margin: -4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.credential-key-test.is-ok {
+  color: var(--success);
+}
+.credential-key-test.is-failed {
+  color: var(--danger);
+}
+.credential-key-test.is-pending {
+  color: var(--muted);
+}
+.credential-key-test-sample {
+  margin-left: 6px;
+  color: var(--muted);
+}
+
 .ops-panel-context { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; color: var(--muted); font-size: 12px; }
 .ops-panel-context > span { max-width: 60ch; }
 .ops-panel-context .info-tip { flex: 0 0 18px; }

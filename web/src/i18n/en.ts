@@ -651,6 +651,7 @@ export const en: Dict = {
   "status.degraded": "Degraded",
   "status.token_invalid": "API key invalid",
   "status.upstream_unauthorized": "API key invalid (401/403)",
+  "status.credential_unavailable": "Key unavailable",
   "status.upstream_failure": "Unreachable (network error)",
   "status.upstream_status": "Unreachable (upstream HTTP error)",
   "status.invalid_base_url": "Invalid base URL",
@@ -1143,7 +1144,8 @@ export const en: Dict = {
   "channels.apiKeyAdd": "API key",
   "channels.apiKeyNamePlaceholder": "Name (optional)",
   "channels.apiKeyAddSave": "Add",
-  "channels.apiKeyAddHint": "Added keys join the site pool immediately.",
+  "channels.apiKeyAddHint":
+    "Added keys join the site pool immediately. Paste several at once — one per line, or comma/space separated; duplicates are dropped.",
   "channels.apiKeyPlaceholder": "API key used for model sync (optional)",
   "channels.keyFormatHint": "Keys for this type look like {hint}",
   "channels.keyFormatMismatch":
@@ -3405,4 +3407,23 @@ export const en: Dict = {
   "keys.card.neverExpires": "never",
   "keys.card.ips": "IPs",
   "keys.card.ipsAny": "any",
+  "channels.keySelectAll": "Select all",
+  "channels.keySelectOne": "Select {name}",
+  "channels.keySelectedCount": "{n} selected",
+  "channels.keyTestAll": "Test all",
+  "channels.keyTestSelected": "Test selected ({n})",
+  "channels.keyTesting": "Testing…",
+  "channels.keyTestHint":
+    "Asks the upstream for its model list once per key (read-only, no tokens) to see which keys still work. The result is a report: nothing is disabled or deleted.",
+  "channels.keyTestOk": "OK · {count} models · {ms} ms",
+  "channels.keyTestOkEmpty": "OK · no models listed · {ms} ms",
+  "channels.keyTestFailed": "Not usable: {reason}",
+  "channels.keyTestSummary": "Done: {ok} ok · {failed} dead (of {total})",
+  "channels.keySelectFailed": "Select the {n} dead ones",
+  "channels.keyDeleteSelected": "Delete selected ({n})",
+  "channels.keyDeleteSelectedTitle": "Delete the selected API keys",
+  "channels.keyDeleteSelectedConfirm":
+    "This permanently deletes {n} API keys. They cannot be recovered.",
+  "channels.keyDeleteDone": "Deleted {deleted}",
+  "channels.keyDeletePartial": "Deleted {deleted}, {failed} failed",
 };

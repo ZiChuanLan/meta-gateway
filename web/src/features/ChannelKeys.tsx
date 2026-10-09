@@ -1,8 +1,8 @@
-import { ChevronDown, ChevronUp, Eye, Trash2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp, Eye, HeartPulse, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
-import type { Channel, Credential } from "../api/types";
+import type { Channel, ChannelKeyTestResult, Credential } from "../api/types";
 import { ModelPicker } from "../components/ModelPicker";
 import { SecretRevealDialog } from "../components/SecretRevealDialog";
 import { Button, ConfirmDialog, Field, InfoTip } from "../components/ui";
@@ -79,8 +79,9 @@ export function ChannelKeysDrawer({
   onClose: () => void;
 }) {
   const { client } = useSession();
-  const { t } = useI18n();
+  const { t, status } = useI18n();
   const service = api(client!);
+  const queryClient = useQueryClient();
   const [apiKeyName, setApiKeyName] = useState("");
   const [apiKey, setApiKey] = useState("");
   // What the last paste added, so a multi-key submit cannot look like a no-op.
@@ -105,6 +106,93 @@ export function ChannelKeysDrawer({
     mutationFn: (v: { siteId: number; id: number }) => service.revealCredential(v.siteId, v.id),
     toastOnError: false,
     onSuccess: (result) => setRevealedSecret(result.secret),
+  });
+
+  // —— 批量操作：勾选、测活、删除 ——
+  // Selection is the operator's own; a round of 测活 then decides what to do
+  // with it (the dead ones are usually what they came to delete).
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  const [testResults, setTestResults] = useState<Record<number, ChannelKeyTestResult>>({});
+  const [testingIds, setTestingIds] = useState<Set<number>>(() => new Set());
+  const [testNotice, setTestNotice] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const [confirmingBatch, setConfirmingBatch] = useState(false);
+
+  const toggleSelected = (id: number) => {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const allSelected = apiKeys.length > 0 && apiKeys.every((key) => selected.has(key.id));
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(apiKeys.map((key) => key.id)));
+  const failedIds = apiKeys.filter((key) => testResults[key.id]?.ok === false).map((key) => key.id);
+
+  // 测活 is a read-only diagnostic: one request per key against the upstream's
+  // model list. It reports; it never disables or deletes anything.
+  const testKeys = useMutation({
+    mutationFn: (ids: number[]) => service.testChannelKeys(channel.id, ids),
+    onMutate: (ids: number[]) => {
+      setTestingIds(new Set(ids));
+      setTestNotice(null);
+      setDeleteNotice(null);
+    },
+    onSuccess: (report) => {
+      setTestResults((previous) => {
+        const next = { ...previous };
+        for (const result of report.results) next[result.credential_id] = result;
+        return next;
+      });
+      setTestingIds(new Set());
+      setTestNotice(
+        t("channels.keyTestSummary", {
+          ok: report.ok,
+          failed: report.failed,
+          total: report.tested,
+        }),
+      );
+    },
+    onError: () => setTestingIds(new Set()),
+  });
+
+  // Deleting in bulk is the same call the single-row trash icon makes, repeated.
+  // The loop is here rather than server-side so one refusal cannot take the rest
+  // of the batch with it; the counts say what actually happened.
+  const deleteSelected = useMutation({
+    mutationFn: async (ids: number[]) => {
+      let deleted = 0;
+      const failed: number[] = [];
+      for (const id of ids) {
+        try {
+          await service.deleteCredential(id);
+          deleted += 1;
+        } catch {
+          failed.push(id);
+        }
+      }
+      return { deleted, failed };
+    },
+    onSuccess: ({ deleted, failed }) => {
+      void queryClient.invalidateQueries({ queryKey: ["credentials"] });
+      void queryClient.invalidateQueries({ queryKey: ["channel-overviews"] });
+      setSelected(new Set(failed));
+      setTestResults((previous) => {
+        const next: Record<number, ChannelKeyTestResult> = {};
+        for (const [key, result] of Object.entries(previous)) {
+          if (failed.includes(Number(key))) next[Number(key)] = result;
+        }
+        return next;
+      });
+      setDeleteNotice(
+        failed.length > 0
+          ? t("channels.keyDeletePartial", { deleted, failed: failed.length })
+          : t("channels.keyDeleteDone", { deleted }),
+      );
+      setConfirmingBatch(false);
+    },
   });
 
   const discovered = useQuery({
@@ -163,6 +251,59 @@ export function ChannelKeysDrawer({
           </Button>
         </div>
 
+        {apiKeys.length > 0 ? (
+          <div className="credential-key-bulk">
+            <label className="check credential-key-bulk-all">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                disabled={pending}
+                onChange={toggleAll}
+              />
+              <span>{t("channels.keySelectAll")}</span>
+            </label>
+            <span className="muted credential-key-bulk-count">
+              {t("channels.keySelectedCount", { n: selected.size })}
+            </span>
+            <Button
+              variant="quiet"
+              icon={<HeartPulse size={14} />}
+              disabled={pending || testingIds.size > 0 || deleteSelected.isPending}
+              title={t("channels.keyTestHint")}
+              onClick={() =>
+                testKeys.mutate(selected.size > 0 ? [...selected] : apiKeys.map((key) => key.id))
+              }
+            >
+              {testingIds.size > 0
+                ? t("channels.keyTesting")
+                : selected.size > 0
+                  ? t("channels.keyTestSelected", { n: selected.size })
+                  : t("channels.keyTestAll")}
+            </Button>
+            {failedIds.length > 0 ? (
+              <button
+                type="button"
+                className="credential-key-bulk-link"
+                onClick={() => setSelected(new Set(failedIds))}
+              >
+                {t("channels.keySelectFailed", { n: failedIds.length })}
+              </button>
+            ) : null}
+            {testNotice || deleteNotice ? (
+              <span className="muted credential-key-bulk-notice">{deleteNotice ?? testNotice}</span>
+            ) : null}
+            <Button
+              variant="quiet"
+              icon={<Trash2 size={14} />}
+              className="credential-key-bulk-delete"
+              disabled={pending || selected.size === 0 || deleteSelected.isPending}
+              onClick={() => setConfirmingBatch(true)}
+            >
+              {t("channels.keyDeleteSelected", { n: selected.size })}
+            </Button>
+          </div>
+        ) : null}
+
         {apiKeys.length === 0 ? (
           <p className="exchange-panel-note">{t("channels.apiKeysEmpty")}</p>
         ) : (
@@ -200,6 +341,15 @@ export function ChannelKeysDrawer({
                     .join(" ")}
                 >
                   <div className="credential-key-row-head">
+                    <label className="credential-key-select">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(item.id)}
+                        disabled={pending}
+                        aria-label={t("channels.keySelectOne", { name: label })}
+                        onChange={() => toggleSelected(item.id)}
+                      />
+                    </label>
                     <div className="credential-key-main">
                       <strong>{label}</strong>
                       <small>
@@ -290,6 +440,40 @@ export function ChannelKeysDrawer({
                       </span>
                     </div>
                   </div>
+                  {testingIds.has(item.id) ? (
+                    <p className="credential-key-test is-pending">{t("channels.keyTesting")}</p>
+                  ) : testResults[item.id] ? (
+                    <p
+                      className={`credential-key-test ${
+                        testResults[item.id]!.ok ? "is-ok" : "is-failed"
+                      }`}
+                    >
+                      {testResults[item.id]!.ok
+                        ? testResults[item.id]!.model_count > 0
+                          ? t("channels.keyTestOk", {
+                              count: testResults[item.id]!.model_count,
+                              ms: testResults[item.id]!.latency_ms,
+                            })
+                          : t("channels.keyTestOkEmpty", { ms: testResults[item.id]!.latency_ms })
+                        : t("channels.keyTestFailed", {
+                            reason: status(testResults[item.id]!.category || "upstream_failure"),
+                          })}
+                      {testResults[item.id]!.ok &&
+                      (testResults[item.id]!.sample?.length ?? 0) > 0 ? (
+                        <span className="credential-key-test-sample">
+                          {testResults[item.id]!.sample!.join(", ")}
+                          {testResults[item.id]!.model_count > testResults[item.id]!.sample!.length
+                            ? " …"
+                            : ""}
+                        </span>
+                      ) : null}
+                      {!testResults[item.id]!.ok && testResults[item.id]!.error ? (
+                        <span className="credential-key-test-sample">
+                          {testResults[item.id]!.error}
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
                   <div className="credential-key-model-control">
                     <div className="credential-key-model-toggle-row">
                       <span className="credential-key-model-label">
@@ -456,6 +640,15 @@ export function ChannelKeysDrawer({
             onDeleteKey(confirmingDelete.id);
             setConfirmingDelete(null);
           }}
+        />
+      ) : null}
+      {confirmingBatch ? (
+        <ConfirmDialog
+          title={t("channels.keyDeleteSelectedTitle")}
+          message={t("channels.keyDeleteSelectedConfirm", { n: selected.size })}
+          pending={deleteSelected.isPending}
+          onClose={() => setConfirmingBatch(false)}
+          onConfirm={() => deleteSelected.mutate([...selected])}
         />
       ) : null}
     </Drawer>

@@ -29,6 +29,7 @@ import type {
   PluginConfigResponse,
   PluginRecord,
   AccountProbeResult,
+  ChannelKeyTestReport,
   ChannelPingResult,
   FinanceItem,
   SiteProbeAction,
@@ -1062,6 +1063,14 @@ export const api = (client: ApiClient) => ({
     client.get<{ groups: string[] }>(`/admin/channels/${id}/account/token-groups`, signal),
   refreshChannel: (id: number) =>
     client.post<RefreshResult>(`/admin/discovery/channels/${id}/refresh`),
+  /**
+   * 测活: ask the upstream for its model list once per key — read-only, no
+   * tokens, nothing stored. Names no ids to test the channel's whole pool.
+   */
+  testChannelKeys: (id: number, credentialIds?: number[]) =>
+    client.post<ChannelKeyTestReport>(`/admin/discovery/channels/${id}/keys/test`, {
+      credential_ids: credentialIds ?? [],
+    }),
   refreshAll: () => client.post<RefreshSummary>("/admin/discovery/refresh"),
   pingChannel: (id: number) => client.post<ChannelPingResult>(`/admin/channels/${id}/ping`),
   checkinLogs: (query: string, signal?: AbortSignal) =>

@@ -1893,3 +1893,28 @@ export interface SiteNewsRefresh {
   errors?: string[];
   at: string;
 }
+
+/**
+ * One API key's answer to "does the upstream still take you"
+ * (POST /admin/discovery/channels/{id}/keys/test).
+ *
+ * `category` uses the same vocabulary a failed probe publishes, so the console
+ * translates it with the one map it already has.
+ */
+export interface ChannelKeyTestResult {
+  credential_id: number;
+  ok: boolean;
+  category?: string;
+  error?: string;
+  model_count: number;
+  sample?: string[];
+  latency_ms: number;
+}
+
+/** What one 测活 round did across the keys it was asked about. */
+export interface ChannelKeyTestReport {
+  results: ChannelKeyTestResult[];
+  ok: number;
+  failed: number;
+  tested: number;
+}
