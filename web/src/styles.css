@@ -3028,7 +3028,11 @@ td.actions {
   cursor: pointer;
   min-width: 0;
 }
-.webdav-direction-toggle input {
+/* `:not(.switch)`: this sizes the plain checkbox that toggles a direction card.
+   A switch is 42x22 by definition, and this selector (0,1,1) outranks the shared
+   `.switch` primitive (0,1,0) — measured in the served stylesheet, where the
+   switch rendered 16px wide until this exclusion existed. */
+.webdav-direction-toggle input:not(.switch) {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
@@ -9990,17 +9994,33 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   max-width: 78ch;
   margin-top: -2px;
 }
+/* Every form's label block: the label and the control stay one unit (clicking the
+   name focuses the control), and the hint sits outside that unit so it never
+   becomes part of the control's accessible name. */
+.field-label-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 /* A boolean is a switch, and it is a square one: this console has no rounded
    corners, so a pill would be a borrowed accent. Track 42x22 with an 18px knob
    and 2px of slack on both ends. Geometry is stated in border-box terms on both
    elements so the knob lands flush against the far wall whatever the global
-   box-sizing is — flush is what makes a switch read as "on" at a glance. */
+   box-sizing is — flush is what makes a switch read as "on" at a glance.
+
+   Opt-in, via `.switch` on the input. A blanket rule over every checkbox would
+   also restyle the ones that select rows in a list, where a checkbox is the right
+   control. The settings page's own rows are listed alongside so one geometry has
+   exactly one definition. */
+.switch,
 .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"] {
   position: relative;
   /* Without this the platform widget paints over the track and a 42px switch
      comes out looking like a stretched native checkbox. */
   appearance: none;
   -webkit-appearance: none;
+  flex: none;
   box-sizing: border-box;
   width: 42px;
   height: 22px;
@@ -10013,6 +10033,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
     background var(--dur-fast, 120ms),
     border-color var(--dur-fast, 120ms);
 }
+.switch::before,
 .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]::before {
   content: "";
   position: absolute;
@@ -10025,19 +10046,24 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   background: var(--surface);
   transition: transform var(--dur-fast, 120ms);
 }
+.switch:checked,
 .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]:checked {
   border-color: var(--primary);
   background: var(--primary);
 }
+.switch:checked::before,
 .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]:checked::before {
   transform: translateX(20px);
   border-color: transparent;
 }
+.switch:focus-visible,
 .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--primary-soft);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
+  .switch,
+  .switch::before,
   .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"],
   .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]::before {
     transition: none;

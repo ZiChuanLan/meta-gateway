@@ -16,7 +16,6 @@ import {
   Dialog,
   ErrorState,
   Field,
-  InfoTip,
   Page,
   Panel,
   StatusBadge,
@@ -523,6 +522,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
             <div className="webdav-direction-head">
               <label className="webdav-direction-toggle">
                 <input
+                  className="switch"
                   type="checkbox"
                   checked={webdavForm.download}
                   onChange={(event) =>
@@ -534,8 +534,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
                 />
                 <strong>{t("exchange.webdavImportTitle")}</strong>
               </label>
-              <InfoTip label={t("exchange.webdavImportHint")} />
             </div>
+            <p className="field-hint">{t("exchange.webdavImportHint")}</p>
             <div className="webdav-connection">
               <Field label={t("exchange.webdavUrl")} hint={t("exchange.webdavUrlHint")}>
                 <input
@@ -598,7 +598,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
                   />
                   <span>
                     <strong>{t("exchange.webdavMode.incremental")}</strong>
-                    <InfoTip label={t("exchange.webdavMode.incrementalHint")} />
+                    <span className="field-hint">{t("exchange.webdavMode.incrementalHint")}</span>
                   </span>
                 </label>
                 <label
@@ -617,7 +617,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
                   />
                   <span>
                     <strong>{t("exchange.webdavMode.replace")}</strong>
-                    <InfoTip label={t("exchange.webdavMode.replaceHint")} />
+                    <span className="field-hint">{t("exchange.webdavMode.replaceHint")}</span>
                   </span>
                 </label>
               </div>
@@ -660,6 +660,7 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
             <div className="webdav-direction-head">
               <label className="webdav-direction-toggle">
                 <input
+                  className="switch"
                   type="checkbox"
                   checked={webdavForm.upload}
                   onChange={(event) =>
@@ -671,8 +672,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
                 />
                 <strong>{t("exchange.webdavBackupTitle")}</strong>
               </label>
-              <InfoTip label={t("exchange.webdavBackupHint")} />
             </div>
+            <p className="field-hint">{t("exchange.webdavBackupHint")}</p>
             <div className="webdav-connection">
               <Field label={t("exchange.webdavUrl")} hint={t("exchange.webdavUrlHint")}>
                 <input

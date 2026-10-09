@@ -463,13 +463,21 @@ export function Field({
   className?: string;
 }) {
   return (
-    <label className={["field", className].filter(Boolean).join(" ")}>
-      <span className="field-label">
-        <span>{label}</span>
-        {hint ? <InfoTip label={hint} /> : null}
-      </span>
-      {children}
-    </label>
+    <div className={["field", className].filter(Boolean).join(" ")}>
+      {/* The label wraps the control so clicking its name still focuses the field.
+          The hint is a sibling of that label rather than part of it: a wrapping
+          label's text IS the control's accessible name, and "Basic URL" followed
+          by a sentence of explanation is not a name. It is read rather than
+          hovered — behind a tooltip it is invisible in a screenshot, on a printed
+          page, and to anyone scanning rather than hunting for the (i). */}
+      <label className="field-label-wrap">
+        <span className="field-label">
+          <span>{label}</span>
+        </span>
+        {children}
+      </label>
+      {hint ? <span className="field-hint">{hint}</span> : null}
+    </div>
   );
 }
 

@@ -5326,7 +5326,7 @@
   cursor: pointer;
   min-width: 0;
 }
-:root[data-appearance="classic"] .webdav-direction-toggle input {
+:root[data-appearance="classic"] .webdav-direction-toggle input:not(.switch) {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
@@ -8457,9 +8457,9 @@
 }
 
 /* —— Checkboxes: native, small, theme-tinted —— */
-:root[data-appearance="classic"] .check input[type="checkbox"],
-:root[data-appearance="classic"] .setting-check-label input[type="checkbox"],
-:root[data-appearance="classic"] label.check input[type="checkbox"] {
+:root[data-appearance="classic"] .check input[type="checkbox"]:not(.switch),
+:root[data-appearance="classic"] .setting-check-label input[type="checkbox"]:not(.switch),
+:root[data-appearance="classic"] label.check input[type="checkbox"]:not(.switch) {
   width: 13px;
   height: 13px;
   margin: 0;

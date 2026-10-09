@@ -409,12 +409,16 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { m
 textarea { padding: 11px 13px; resize: vertical; }
 input::placeholder, textarea::placeholder { color: var(--muted-dark); }
 input:focus, select:focus, textarea:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
-input[type="checkbox"], input[type="radio"] { width: 14px; height: 14px; min-height: 0; padding: 0; accent-color: var(--primary); }
+input[type="checkbox"]:not(.switch), input[type="radio"] { width: 14px; height: 14px; min-height: 0; padding: 0; accent-color: var(--primary); }
 .field { display: flex; flex-direction: column; min-width: 0; gap: 8px; margin: 0; }
 .field-label { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); font: 550 12px/1.5 var(--font); }
 .field-hint { color: var(--muted); font-size: 11px; line-height: 1.6; }
-.field input, .field select, .field textarea { width: 100%; min-width: 0; }
-.field input[type="checkbox"], .field input[type="radio"] { width: 14px; }
+/* `.switch` is excluded from these three: a switch is 42x22, and the box rules
+   here are for the checkboxes that select rows in a list. Without the exclusion
+   the shared primitive loses to these more specific selectors and a switch
+   renders as a 14px box that merely looks painted. */
+.field input:not(.switch), .field select, .field textarea { width: 100%; min-width: 0; }
+.field input[type="checkbox"]:not(.switch), .field input[type="radio"] { width: 14px; }
 /* Invalid form field (e.g. a non-numeric New-API user id): mark the control
    itself, not only the message below it. */
 .field.is-invalid input, .field.is-invalid select, .field.is-invalid textarea { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent); }
