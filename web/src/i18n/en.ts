@@ -2695,6 +2695,12 @@ export const en: Dict = {
   "ops.runtime.outboundMaxIdleConnsPerHost": "Idle connections (per host)",
   "ops.runtime.outboundMaxIdleConnsPerHostHint":
     "Idle connections per upstream host — Go's default is 2, which throttles a busy gateway. 0 = deployment default (64).",
+  "ops.runtime.relayMaxBodyMB": "Request body limit (MB)",
+  "ops.runtime.relayMaxBodyMBHint":
+    "Ceiling for the JSON surfaces (chat, responses, embeddings). A chat call with inlined base64 screenshots is megabytes by nature. 0 = deployment default ({env}).",
+  "ops.runtime.relayMaxImageMB": "Image body limit (MB)",
+  "ops.runtime.relayMaxImageMBHint":
+    "Ceiling for image generation/edits and audio uploads, which carry large files by definition. 0 = deployment default ({env}).",
   "ops.runtime.discoveryCron": "Scheduled model refresh",
   "ops.runtime.discoveryCronHint":
     "Five-field cron (e.g. 0 3 * * * = daily 03:00) to re-scan channel model lists automatically; empty = disabled.",

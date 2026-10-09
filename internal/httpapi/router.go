@@ -551,6 +551,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// Core: audit + online backups are always available (not store-gated).
 	NewBackupHandler(backupService).Register(adminGroup)
 
+	// The relay handler is built further down (it needs the mounted /v1 router),
+	// but the runtime appliers are constructed here: this is where the body-ceiling
+	// applier stores its value until the handler exists, and where it finds it
+	// again on every later change.
+	var relayHandler *RelayHandler
+
 	runtimeController := dependencies.RuntimeController
 	if runtimeController == nil {
 		runtimeController = runtimeconfig.New(cfg, db.RuntimeSettings, runtimeconfig.Appliers{
@@ -659,6 +665,14 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 					})
 				}
 			},
+			// Request-body ceilings hot reload. The handler reads them per request,
+			// so nothing is rebuilt: the next call accepts (or refuses) the bigger
+			// body. Nil before the handler exists — see relayHandler above.
+			SetRelayBodyLimits: func(jsonBytes, imageBytes int64) {
+				if relayHandler != nil {
+					relayHandler.SetBodyLimits(jsonBytes, imageBytes)
+				}
+			},
 		})
 	}
 	// Bootstrap every controller, including one supplied by an embedder. The
@@ -732,11 +746,18 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	r.Mount("/admin", adminGroup)
 
 	// Relay routes (v1)
-	relayHandler := NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst), newGroupRateLimiter(), modelsCache)
-	// Request-body ceilings are configuration, not a constant: what a client
-	// sends (base64 images in a chat request, multi-image edits) is the input the
-	// gateway has to accept, and the operator is the one who knows how big it is.
-	relayHandler.SetBodyLimits(cfg.RelayMaxBodyBytes, cfg.RelayMaxImageBytes)
+	relayHandler = NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst), newGroupRateLimiter(), modelsCache)
+	// Request-body ceilings are configuration, not a constant: what a client sends
+	// (base64 images in a chat request, multi-image edits) is the input the gateway
+	// has to accept. They are also runtime settings, so the handler starts from the
+	// EFFECTIVE values (console override when there is one, deployment default
+	// otherwise) rather than from the environment: the applier installed above has
+	// already run during Bootstrap, when this handler did not exist yet.
+	effective := runtimeController.Snapshot().Editable
+	relayHandler.SetBodyLimits(
+		int64(effective.RelayMaxBodyMB)<<20,
+		int64(effective.RelayMaxImageMB)<<20,
+	)
 	if pluginService != nil {
 		// A router plugin's match_models make a model name reachable that has
 		// no route of its own ("auto"): list it so clients can discover it.

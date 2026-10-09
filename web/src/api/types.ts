@@ -1232,6 +1232,10 @@ export interface RuntimeEditableSettings {
   outbound_tls_timeout_seconds: number;
   outbound_max_idle_conns: number;
   outbound_max_idle_conns_per_host: number;
+  // /v1 request-body ceilings in MB: 0 = the deployment default
+  // (RELAY_MAX_BODY_MB / RELAY_MAX_IMAGE_MB), non-zero = live override.
+  relay_max_body_mb: number;
+  relay_max_image_mb: number;
 }
 
 export interface SelfUpdateStatus {

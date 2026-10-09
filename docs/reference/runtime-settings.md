@@ -7,7 +7,7 @@
 「字段」列是 Go 结构体字段名，用于在代码里定位该设置；「键」列是持久化与 API 使用的名字。
 没有出现在这张表里的开关只存在于环境变量层——想彻底关掉某个后台任务，两处都要看。
 
-共 **59** 个运行设置键。
+共 **61** 个运行设置键。
 
 | 键 | 字段 | 类型 | 说明 |
 | --- | --- | --- | --- |
@@ -70,6 +70,8 @@
 | `outbound_tls_timeout_seconds` | OutboundTLSTimeoutSeconds | int | — |
 | `outbound_max_idle_conns` | OutboundMaxIdleConns | int | — |
 | `outbound_max_idle_conns_per_host` | OutboundMaxIdleConnsPerHost | int | — |
+| `relay_max_body_mb` | RelayMaxBodyMB | int | RelayMaxBodyMB / RelayMaxImageMB are the /v1 request-body ceilings in megabytes, for the same reason as the outbound limits above: the ceiling is what refuses an ordinary request (a chat call with inlined base64 screenshots), and 0 means the deployment default (RELAY_MAX_*_MB) applies. |
+| `relay_max_image_mb` | RelayMaxImageMB | int | — |
 
 ## 环境变量与运行设置的关系
 

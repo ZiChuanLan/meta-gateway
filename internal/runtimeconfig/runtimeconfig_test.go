@@ -527,3 +527,115 @@ func TestOutboundLimitsFollowEditableAndFallBackToEnv(t *testing.T) {
 		t.Fatalf("cleared console value = %d, want 60", cleared.Editable.OutboundHeaderTimeoutSeconds)
 	}
 }
+
+// The body ceilings are runtime settings for the same reason the outbound
+// limits are: the number decides whether an ordinary request is refused, and it
+// has to be changeable without recreating the container. 0 stays "no override"
+// and must resolve to the deployment bytes, never to a zero ceiling.
+func TestRelayBodyLimitsHotReload(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cfg := &config.Config{
+		AdminToken:         "admin-test",
+		MetricsToken:       "metrics-test",
+		MaxAdminBodyBytes:  1 << 20,
+		RelayMaxBodyBytes:  32 << 20,
+		RelayMaxImageBytes: 64 << 20,
+	}
+	var appliedJSON, appliedImage int64
+	applied := 0
+	controller := New(cfg, db.RuntimeSettings, Appliers{
+		SetRelayBodyLimits: func(jsonBytes, imageBytes int64) {
+			appliedJSON, appliedImage = jsonBytes, imageBytes
+			applied++
+		},
+	})
+	if err := controller.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if appliedJSON != 32<<20 || appliedImage != 64<<20 {
+		t.Fatalf("bootstrap ceilings = %d/%d, want the deployment 32/64 MB", appliedJSON, appliedImage)
+	}
+
+	// A minimal config leaves fields Validate insists on (a denominator, a pool
+	// limit, a throttle) at zero, so the baseline is the console's own document
+	// with those filled in — the subject here is the two ceilings.
+	next := controller.Snapshot().Editable
+	next.StableFirstDenominator = 25
+	next.StableFirstPromoteRequests = 100
+	next.RoutingConcurrencyLimit = 64
+	next.WebhookThrottleSeconds = 300
+	next.StickyTTLMinutes = 60
+	next.RelayMaxBodyMB = 96
+	next.RelayMaxImageMB = 0 // untouched: the deployment value must still win
+	snap, err := controller.Update(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appliedJSON != 96<<20 {
+		t.Fatalf("json ceiling = %d, want the saved 96 MB", appliedJSON)
+	}
+	if appliedImage != 64<<20 {
+		t.Fatalf("image ceiling = %d, want the deployment 64 MB (0 is not a ceiling)", appliedImage)
+	}
+	// The console reads back the effective values, so a later save re-sends what
+	// is actually in force instead of a stored zero.
+	if snap.Editable.RelayMaxBodyMB != 96 || snap.Editable.RelayMaxImageMB != 64 {
+		t.Fatalf("console values = %d/%d, want 96/64",
+			snap.Editable.RelayMaxBodyMB, snap.Editable.RelayMaxImageMB)
+	}
+	if snap.EnvBootstrap.RelayMaxBodyMB != 32 {
+		t.Fatalf("env bootstrap = %d, want the deployment 32", snap.EnvBootstrap.RelayMaxBodyMB)
+	}
+
+	// Clearing the override goes back to the deployment bytes.
+	cleared, err := controller.ClearOverride()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appliedJSON != 32<<20 || appliedImage != 64<<20 {
+		t.Fatalf("after clear = %d/%d, want the deployment 32/64 MB", appliedJSON, appliedImage)
+	}
+	if cleared.Editable.RelayMaxBodyMB != 32 {
+		t.Fatalf("cleared console value = %d, want 32", cleared.Editable.RelayMaxBodyMB)
+	}
+
+	// Out of range is refused before anything is applied or stored.
+	tooBig := cleared.Editable
+	tooBig.RelayMaxBodyMB = 4096
+	before := applied
+	if _, err := controller.Update(tooBig); err == nil {
+		t.Fatal("a 4 GB ceiling must be refused")
+	}
+	if applied != before {
+		t.Fatal("a refused save must not reach the applier")
+	}
+}
+
+// megabytesOrZero is the bridge between the byte ceilings the process starts
+// with and the whole megabytes the console speaks. Collapsing a positive byte
+// value to 0 would read as "no override" and hand the request back to the
+// handler's built-in default — the exact silent-limit mistake this setting
+// exists to remove.
+func TestMegabytesOrZero(t *testing.T) {
+	cases := []struct {
+		bytes int64
+		want  int
+	}{
+		{0, 0},
+		{1, 1},
+		{300 << 10, 1},
+		{1 << 20, 1},
+		{32 << 20, 32},
+		{96<<20 + 1, 96},
+		{512 << 20, 512},
+	}
+	for _, tc := range cases {
+		if got := megabytesOrZero(tc.bytes); got != tc.want {
+			t.Errorf("megabytesOrZero(%d) = %d, want %d", tc.bytes, got, tc.want)
+		}
+	}
+}

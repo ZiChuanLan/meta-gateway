@@ -16,9 +16,10 @@ import (
 )
 
 // setupRelayWithBodyLimits builds the standard relay wiring with explicit
-// request-body ceilings, so a test can send a body that is over the limit
-// without allocating tens of megabytes.
-func setupRelayWithBodyLimits(t *testing.T, baseURL string, jsonBytes, imageBytes int64) (string, string) {
+// request-body ceilings, in whole megabytes (the unit the console speaks), so a
+// test can send a body that is over the limit without allocating tens of
+// megabytes.
+func setupRelayWithBodyLimits(t *testing.T, baseURL string, jsonMB, imageMB int64) (string, string) {
 	t.Helper()
 	dataDir := t.TempDir()
 	db, err := store.OpenTest(dataDir)
@@ -35,7 +36,7 @@ func setupRelayWithBodyLimits(t *testing.T, baseURL string, jsonBytes, imageByte
 		BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20,
 		AuditRetentionDays: 90, AuditRetentionRows: 100000, ExchangeAllowSecretExport: true,
 		OutboundAllowCIDRs: []string{"127.0.0.1/32"},
-		RelayMaxBodyBytes:  jsonBytes, RelayMaxImageBytes: imageBytes,
+		RelayMaxBodyBytes:  jsonMB << 20, RelayMaxImageBytes: imageMB << 20,
 	}
 	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
 	t.Cleanup(server.Close)
@@ -62,7 +63,7 @@ func setupRelayWithBodyLimits(t *testing.T, baseURL string, jsonBytes, imageByte
 	})
 	var key struct{ Token string }
 	json.Unmarshal(post(t, server.URL+"/admin/downstream-keys", map[string]any{
-		"name": "limit-key", "scopes": "relay",
+		"name": "limit-key", "scopes": "relay,images",
 	}), &key)
 	return server.URL, key.Token
 }
@@ -89,7 +90,7 @@ func relayPost(t *testing.T, serverURL, token, path, body string) (int, []byte) 
 func TestRelayBodyLimitIsConfiguredAndExplained(t *testing.T) {
 	upstream := mockOpenAIUpstream(t)
 	defer upstream.Close()
-	serverURL, token := setupRelayWithBodyLimits(t, upstream.URL, 64<<10, 128<<10)
+	serverURL, token := setupRelayWithBodyLimits(t, upstream.URL, 1, 2)
 
 	// Just under the JSON limit: the gateway's own ceiling lets it through.
 	small := `{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"hi"}]}`
@@ -100,7 +101,7 @@ func TestRelayBodyLimitIsConfiguredAndExplained(t *testing.T) {
 	// Over it: 413 (not 400 — the request is understood, it is too big), with
 	// the limit and the endpoint named.
 	oversized := `{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"` +
-		strings.Repeat("x", 80<<10) + `"}]}`
+		strings.Repeat("x", 1500<<10) + `"}]}`
 	status, body := relayPost(t, serverURL, token, "/v1/chat/completions", oversized)
 	if status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized request status %d body %s, want 413", status, body)
@@ -119,13 +120,13 @@ func TestRelayBodyLimitIsConfiguredAndExplained(t *testing.T) {
 	if payload.Error.Type != "body_too_large" {
 		t.Errorf("type = %q, want body_too_large", payload.Error.Type)
 	}
-	if payload.Error.Limit != 64<<10 {
-		t.Errorf("limit_bytes = %d, want the configured %d", payload.Error.Limit, 64<<10)
+	if payload.Error.Limit != 1<<20 {
+		t.Errorf("limit_bytes = %d, want the configured %d", payload.Error.Limit, 1<<20)
 	}
 	if payload.Error.Path != "/v1/chat/completions" {
 		t.Errorf("endpoint = %q, want the path that refused", payload.Error.Path)
 	}
-	for _, want := range []string{"64 KB", "RELAY_MAX_BODY_MB"} {
+	for _, want := range []string{"1 MB", "RELAY_MAX_BODY_MB"} {
 		if !strings.Contains(payload.Error.Message, want) {
 			t.Errorf("message %q does not mention %q", payload.Error.Message, want)
 		}
@@ -136,11 +137,14 @@ func TestRelayBodyLimitIsConfiguredAndExplained(t *testing.T) {
 		t.Fatalf("custom path status %d body %s, want 413", status, body)
 	}
 
-	// ...while the image surface has its own, larger one: the same 80 KB body
+	// ...while the image surface has its own, larger one: the same 1.5 MB body
 	// is accepted there, so a single "raise the limit" knob cannot quietly cut
 	// image uploads in half.
-	status, body = relayPost(t, serverURL, token, "/v1/images/generations", `{"model":"gemini-2.5-flash","prompt":"`+strings.Repeat("x", 100<<10)+`"}`)
+	status, body = relayPost(t, serverURL, token, "/v1/images/generations", `{"model":"gemini-2.5-flash","prompt":"`+strings.Repeat("x", 1500<<10)+`"}`)
 	if status == http.StatusRequestEntityTooLarge {
 		t.Fatalf("image request status 413 body %s, want it accepted under its own limit", body)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("image request status %d body %s, want 200 under its own limit", status, body)
 	}
 }

@@ -69,6 +69,8 @@ const ZERO_MEANS_DEFAULT: ReadonlySet<EditableKey> = new Set<EditableKey>([
   "outbound_tls_timeout_seconds",
   "outbound_max_idle_conns",
   "outbound_max_idle_conns_per_host",
+  "relay_max_body_mb",
+  "relay_max_image_mb",
   "site_probe_interval_seconds",
 ]);
 
@@ -248,6 +250,8 @@ const RUNTIME_GROUPS: readonly RuntimeGroup[] = [
           "outbound_tls_timeout_seconds",
           "outbound_max_idle_conns",
           "outbound_max_idle_conns_per_host",
+          "relay_max_body_mb",
+          "relay_max_image_mb",
           "update_check_enabled",
         ],
       },
@@ -1959,6 +1963,38 @@ export function RuntimeSettingsPanel({
                   onChange={(e) =>
                     patch("outbound_max_idle_conns_per_host", Number(e.target.value))
                   }
+                />
+              </RuntimeRow>
+              <RuntimeRow
+                label={t("ops.runtime.relayMaxBodyMB")}
+                hint={t("ops.runtime.relayMaxBodyMBHint", {
+                  env: bootstrap.relay_max_body_mb ?? 0,
+                })}
+                changed={isChanged("relay_max_body_mb")}
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={512}
+                  disabled={busy}
+                  value={draft.relay_max_body_mb ?? 0}
+                  onChange={(e) => patch("relay_max_body_mb", Number(e.target.value))}
+                />
+              </RuntimeRow>
+              <RuntimeRow
+                label={t("ops.runtime.relayMaxImageMB")}
+                hint={t("ops.runtime.relayMaxImageMBHint", {
+                  env: bootstrap.relay_max_image_mb ?? 0,
+                })}
+                changed={isChanged("relay_max_image_mb")}
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={1024}
+                  disabled={busy}
+                  value={draft.relay_max_image_mb ?? 0}
+                  onChange={(e) => patch("relay_max_image_mb", Number(e.target.value))}
                 />
               </RuntimeRow>
 

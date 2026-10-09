@@ -104,6 +104,13 @@ type RuntimeSettingsRow struct {
 	OutboundMaxIdleConns              int
 	OutboundMaxIdleConnsPerHost       int
 
+	// /v1 request-body ceilings in megabytes. 0 means "no override": the
+	// deployment default (RELAY_MAX_BODY_MB / RELAY_MAX_IMAGE_MB) applies. They
+	// are runtime settings for the same reason as the outbound limits — the
+	// ceiling is what refuses an ordinary request with inlined base64 images.
+	RelayMaxBodyMB  int
+	RelayMaxImageMB int
+
 	UpdatedAt time.Time
 }
 
@@ -141,6 +148,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       outbound_connect_timeout_seconds, outbound_header_timeout_seconds,
 		       outbound_image_header_timeout_seconds, outbound_tls_timeout_seconds,
 		       outbound_max_idle_conns, outbound_max_idle_conns_per_host,
+		       relay_max_body_mb, relay_max_image_mb,
 		       updated_at
 		FROM runtime_settings WHERE id = 1`)
 	var (
@@ -169,6 +177,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		keepaliveEnabled, keepaliveCheckInterval, keepaliveDefaultIdle                     sql.NullInt64
 		outboundConnect, outboundHeader, outboundImageHeader                               sql.NullInt64
 		outboundTLS, outboundIdle, outboundIdlePerHost                                     sql.NullInt64
+		relayBodyMB, relayImageMB                                                          sql.NullInt64
 		cron, updated                                                                      sql.NullString
 	)
 	if err := row.Scan(
@@ -191,6 +200,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&keepaliveEnabled, &keepaliveCheckInterval, &keepaliveDefaultIdle,
 		&outboundConnect, &outboundHeader, &outboundImageHeader,
 		&outboundTLS, &outboundIdle, &outboundIdlePerHost,
+		&relayBodyMB, &relayImageMB,
 		&updated,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -442,6 +452,12 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	if outboundIdlePerHost.Valid {
 		out.OutboundMaxIdleConnsPerHost = int(outboundIdlePerHost.Int64)
 	}
+	if relayBodyMB.Valid {
+		out.RelayMaxBodyMB = int(relayBodyMB.Int64)
+	}
+	if relayImageMB.Valid {
+		out.RelayMaxImageMB = int(relayImageMB.Int64)
+	}
 	if updated.Valid {
 		if parsed, err := time.Parse("2006-01-02 15:04:05", updated.String); err == nil {
 			out.UpdatedAt = parsed.UTC()
@@ -497,6 +513,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			outbound_connect_timeout_seconds, outbound_header_timeout_seconds,
 			outbound_image_header_timeout_seconds, outbound_tls_timeout_seconds,
 			outbound_max_idle_conns, outbound_max_idle_conns_per_host,
+			relay_max_body_mb, relay_max_image_mb,
 			updated_at
 		) VALUES (
 			1, ?, ?, ?, ?, ?, ?,
@@ -523,6 +540,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?, ?,
 			?, ?, ?,
 			?, ?, ?, ?, ?, ?,
+			?, ?,
 			datetime('now')
 		)
 		ON CONFLICT(id) DO UPDATE SET
@@ -587,6 +605,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			outbound_tls_timeout_seconds = excluded.outbound_tls_timeout_seconds,
 			outbound_max_idle_conns = excluded.outbound_max_idle_conns,
 			outbound_max_idle_conns_per_host = excluded.outbound_max_idle_conns_per_host,
+			relay_max_body_mb = excluded.relay_max_body_mb,
+			relay_max_image_mb = excluded.relay_max_image_mb,
 			updated_at = datetime('now')`,
 		hasOverride,
 		settings.RetryTimes,
@@ -649,6 +669,8 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.OutboundTLSTimeoutSeconds,
 		settings.OutboundMaxIdleConns,
 		settings.OutboundMaxIdleConnsPerHost,
+		settings.RelayMaxBodyMB,
+		settings.RelayMaxImageMB,
 	)
 	if err != nil {
 		return fmt.Errorf("runtime settings save: %w", err)

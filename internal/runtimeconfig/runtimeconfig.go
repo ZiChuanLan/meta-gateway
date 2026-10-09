@@ -158,6 +158,12 @@ type Editable struct {
 	OutboundTLSTimeoutSeconds         int `json:"outbound_tls_timeout_seconds"`
 	OutboundMaxIdleConns              int `json:"outbound_max_idle_conns"`
 	OutboundMaxIdleConnsPerHost       int `json:"outbound_max_idle_conns_per_host"`
+	// RelayMaxBodyMB / RelayMaxImageMB are the /v1 request-body ceilings in
+	// megabytes, for the same reason as the outbound limits above: the ceiling is
+	// what refuses an ordinary request (a chat call with inlined base64
+	// screenshots), and 0 means the deployment default (RELAY_MAX_*_MB) applies.
+	RelayMaxBodyMB  int `json:"relay_max_body_mb"`
+	RelayMaxImageMB int `json:"relay_max_image_mb"`
 }
 
 // OutboundLimits is the resolved outbound client configuration: timeouts and
@@ -250,6 +256,10 @@ type Appliers struct {
 	SetKeepalive func(enabled bool, checkInterval time.Duration, defaultIdleDays int)
 	// SetChannelRetryTimes hot-applies the same-key re-send count.
 	SetChannelRetryTimes func(times int)
+	// SetRelayBodyLimits hot-applies the /v1 request-body ceilings (bytes).
+	// Nothing has to be rebuilt: the limit is read from the handler on every
+	// request, so the next one uses the new ceiling.
+	SetRelayBodyLimits func(jsonBytes, imageBytes int64)
 }
 
 // Controller loads, validates, persists, and applies runtime settings.
@@ -324,6 +334,12 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		OutboundTLSTimeoutSeconds:         int(cfg.OutboundTLSHandshakeTimeout / time.Second),
 		OutboundMaxIdleConns:              cfg.OutboundMaxIdleConns,
 		OutboundMaxIdleConnsPerHost:       cfg.OutboundMaxIdleConnsPerHost,
+		// Body ceilings: env bootstrap, same contract as the limits above. The
+		// console states them in whole megabytes; a deployment that set a
+		// sub-megabyte ceiling (only reachable from a test or an embedder) is
+		// rounded up rather than collapsed to "no ceiling at all".
+		RelayMaxBodyMB:  megabytesOrZero(cfg.RelayMaxBodyBytes),
+		RelayMaxImageMB: megabytesOrZero(cfg.RelayMaxImageBytes),
 	}
 	c := &Controller{
 		env:      env,
@@ -470,6 +486,8 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		OutboundTLSTimeoutSeconds:         next.OutboundTLSTimeoutSeconds,
 		OutboundMaxIdleConns:              next.OutboundMaxIdleConns,
 		OutboundMaxIdleConnsPerHost:       next.OutboundMaxIdleConnsPerHost,
+		RelayMaxBodyMB:                    next.RelayMaxBodyMB,
+		RelayMaxImageMB:                   next.RelayMaxImageMB,
 	}
 	previousRow, err := c.store.Get()
 	if err != nil {
@@ -524,7 +542,28 @@ func (c *Controller) withOutboundDefaults(values Editable) Editable {
 	if values.OutboundMaxIdleConnsPerHost <= 0 {
 		values.OutboundMaxIdleConnsPerHost = c.cfg.OutboundMaxIdleConnsPerHost
 	}
+	if values.RelayMaxBodyMB <= 0 {
+		values.RelayMaxBodyMB = megabytesOrZero(c.cfg.RelayMaxBodyBytes)
+	}
+	if values.RelayMaxImageMB <= 0 {
+		values.RelayMaxImageMB = megabytesOrZero(c.cfg.RelayMaxImageBytes)
+	}
 	return values
+}
+
+// megabytesOrZero converts a byte ceiling to the whole megabytes the console
+// speaks, rounding up: 0 means "nothing configured" and must stay 0, while any
+// positive value below 1 MB must not become 0 (which would read as "no
+// override" and silently hand the request to the handler's built-in default).
+func megabytesOrZero(bytes int64) int {
+	if bytes <= 0 {
+		return 0
+	}
+	megabytes := int(bytes >> 20)
+	if megabytes < 1 {
+		return 1
+	}
+	return megabytes
 }
 
 // ClearOverride removes Admin override and re-applies env bootstrap.
@@ -708,6 +747,16 @@ func (c *Controller) applyWithError(values Editable) error {
 			MaxIdleConnsPerHost: intOrEnv(values.OutboundMaxIdleConnsPerHost, c.cfg.OutboundMaxIdleConnsPerHost),
 		})
 	}
+	// Request-body ceilings hot reload for the same reason as the outbound
+	// limits: the handler reads the limit per request, so nothing is rebuilt and
+	// the next call accepts (or refuses) the bigger body. 0 means "no override"
+	// and resolves to the deployment value.
+	if c.appliers.SetRelayBodyLimits != nil {
+		c.appliers.SetRelayBodyLimits(
+			int64(intOrEnv(values.RelayMaxBodyMB, megabytesOrZero(c.cfg.RelayMaxBodyBytes)))<<20,
+			int64(intOrEnv(values.RelayMaxImageMB, megabytesOrZero(c.cfg.RelayMaxImageBytes)))<<20,
+		)
+	}
 	return nil
 }
 
@@ -802,6 +851,8 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		OutboundTLSTimeoutSeconds:         row.OutboundTLSTimeoutSeconds,
 		OutboundMaxIdleConns:              row.OutboundMaxIdleConns,
 		OutboundMaxIdleConnsPerHost:       row.OutboundMaxIdleConnsPerHost,
+		RelayMaxBodyMB:                    row.RelayMaxBodyMB,
+		RelayMaxImageMB:                   row.RelayMaxImageMB,
 	}
 }
 
@@ -1074,6 +1125,15 @@ func Validate(values Editable) error {
 	}
 	if values.OutboundMaxIdleConnsPerHost < 0 || values.OutboundMaxIdleConnsPerHost > 100000 {
 		return fmt.Errorf("outbound_max_idle_conns_per_host must be between 0 and 100000")
+	}
+	// Body ceilings: 0 means the deployment default, and the ceiling matches the
+	// environment knob's own range so a console save cannot set a limit the
+	// process could never be started with.
+	if values.RelayMaxBodyMB < 0 || values.RelayMaxBodyMB > 512 {
+		return fmt.Errorf("relay_max_body_mb must be between 0 and 512")
+	}
+	if values.RelayMaxImageMB < 0 || values.RelayMaxImageMB > 1024 {
+		return fmt.Errorf("relay_max_image_mb must be between 0 and 1024")
 	}
 	return nil
 }

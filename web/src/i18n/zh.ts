@@ -2491,6 +2491,12 @@ export const zh: Dict = {
   "ops.runtime.outboundMaxIdleConnsPerHost": "空闲连接上限（单上游）",
   "ops.runtime.outboundMaxIdleConnsPerHostHint":
     "同一上游主机的空闲连接上限（Go 默认只有 2，高并发下会拖慢）。0 = 部署默认（默认 64）。",
+  "ops.runtime.relayMaxBodyMB": "/v1 请求体上限（MB）",
+  "ops.runtime.relayMaxBodyMBHint":
+    "对话/响应/嵌入等 JSON 接口的请求体上限。聊天里内联 base64 截图很常见，几 MB 是常态。0 = 部署默认（当前 {env}）。",
+  "ops.runtime.relayMaxImageMB": "图像请求体上限（MB）",
+  "ops.runtime.relayMaxImageMBHint":
+    "图像生成/编辑与音频上传的上限，比上面的更大（这类请求天生带大文件）。0 = 部署默认（当前 {env}）。",
   "ops.runtime.discoveryCron": "定时模型同步",
   "ops.runtime.discoveryCronHint":
     "五段 cron（如 0 3 * * * = 每天 03:00）定时重新扫描渠道模型列表；留空 = 关闭。",
