@@ -83,3 +83,22 @@ export function formatUnitPrice(value: number) {
     return `${symbol}${Number(shown.toPrecision(10)).toString()}`;
   return `${symbol}${Number(shown.toPrecision(10)).toLocaleString("en-US", { minimumFractionDigits: Math.abs(shown) >= 1 || shown === 0 ? 2 : 0, maximumFractionDigits: 10 })}`;
 }
+
+/**
+ * "3 分钟前" for a timestamp the server already normalized to UTC.
+ *
+ * Shared by the dashboard's request stream and the upstream-news panel: two
+ * copies of this drifted apart the moment one of them changed its wording, and
+ * the i18n keys are the same either way.
+ */
+export function relativeTime(
+  iso: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const minute = 60_000;
+  if (ms < minute) return t("dashboard.justNow");
+  if (ms < 3_600_000) return t("dashboard.minutesAgo", { n: Math.floor(ms / minute) });
+  if (ms < 24 * 3_600_000) return t("dashboard.hoursAgo", { n: Math.floor(ms / 3_600_000) });
+  return t("dashboard.daysAgo", { n: Math.floor(ms / (24 * 3_600_000)) });
+}

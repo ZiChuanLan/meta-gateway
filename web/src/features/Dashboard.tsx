@@ -37,13 +37,12 @@ import {
 import { TimeRangePicker, describeRange, useUrlTimeRange } from "../components/TimeRangePicker";
 import { HourlyTrafficChart } from "../components/charts";
 import { Button, Page, Panel } from "../components/ui";
-import { formatCost, formatTokens } from "../lib/format";
+import { formatCost, formatTokens, relativeTime } from "../lib/format";
 import { channelHealthState } from "./channelHealth";
 import { DashboardAura } from "../components/DashboardAura";
 import { GatewayPreview } from "../components/GatewayTransition";
 import { MemberHome } from "../member/MemberHome";
-
-const MINUTE_MS = 60_000;
+import { SiteNewsPanel } from "./SiteNewsPanel";
 
 /** Bucket labels are formatted here so they follow the viewer's timezone. */
 function seriesLabels(since: string, bucketSeconds: number, count: number): string[] {
@@ -64,19 +63,9 @@ function granularity(seconds: number): { key: string; n: number } {
   return { key: "dashboard.unitMinute", n: Math.max(1, Math.round(seconds / 60)) };
 }
 
-function relativeTime(
-  iso: string,
-  t: (key: string, vars?: Record<string, string | number>) => string,
-) {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < MINUTE_MS) return t("dashboard.justNow");
-  if (ms < 3600_000) return t("dashboard.minutesAgo", { n: Math.floor(ms / MINUTE_MS) });
-  if (ms < 24 * 3600_000) return t("dashboard.hoursAgo", { n: Math.floor(ms / 3600_000) });
-  return t("dashboard.daysAgo", { n: Math.floor(ms / (24 * 3600_000)) });
-}
-
-/** HTTP status → semantic tone for log badges. */
-function statusTone(status: number): "ok" | "warn" | "danger" | "neutral" {
+/** HTTP status → semantic tone for log badges. */ function statusTone(
+  status: number,
+): "ok" | "warn" | "danger" | "neutral" {
   if (status >= 200 && status < 300) return "ok";
   if (status >= 400 && status < 500) return "warn";
   if (status >= 500) return "danger";
@@ -226,6 +215,8 @@ export interface DashboardSource {
 export interface DashboardCapabilities {
   /** The channel-health matrix. */
   channels: boolean;
+  /** The upstream-site notice board: a fleet fact, not the reader's own. */
+  siteNews: boolean;
   /** The first-run setup guide, which configures the gateway itself. */
   setup: boolean;
   /** Links into the console's own pages (connections, models). */
@@ -240,6 +231,7 @@ export interface DashboardCapabilities {
 
 export const ADMIN_DASHBOARD_CAPS: DashboardCapabilities = {
   channels: true,
+  siteNews: true,
   setup: true,
   consoleLinks: true,
   memberHome: false,
@@ -254,6 +246,7 @@ export const ADMIN_DASHBOARD_CAPS: DashboardCapabilities = {
  */
 export const MEMBER_DASHBOARD_CAPS: DashboardCapabilities = {
   channels: false,
+  siteNews: false,
   setup: false,
   consoleLinks: false,
   memberHome: true,
@@ -750,67 +743,71 @@ export function DashboardView({
           </Panel>
         </div>
 
-        {/* 5. 模型负载消耗排行（SQL 聚合，不受列表行数上限影响） */}
-        <Panel className="cockpit-panel cockpit-usage-panel">
-          <div className="panel-header">
-            <div className="cockpit-panel-title">
-              <TrendingUp size={14} />
-              <strong>{t("dashboard.topModels")}</strong>
+        {/* 5. 模型负载消耗排行（SQL 聚合，不受列表行数上限影响）与上游站点消息：
+            一个是模型名单，一个是站点原话，各占一半比各占满宽更好读。 */}
+        <div className={`cockpit-dual-grid${caps.siteNews ? "" : " is-single"}`}>
+          <Panel className="cockpit-panel cockpit-usage-panel">
+            <div className="panel-header">
+              <div className="cockpit-panel-title">
+                <TrendingUp size={14} />
+                <strong>{t("dashboard.topModels")}</strong>
+              </div>
+              <span className="panel-muted">
+                {t("dashboard.rangeTokens", { n: formatTokens(windowTokens) })}
+              </span>
             </div>
-            <span className="panel-muted">
-              {t("dashboard.rangeTokens", { n: formatTokens(windowTokens) })}
-            </span>
-          </div>
-          <div className="cockpit-usage-body">
-            <div className="cockpit-subcol">
-              {ranked.length === 0 ? (
-                <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
-              ) : (
-                <ul className="model-rank">
-                  {ranked.map((m) => (
-                    <li key={m.model}>
-                      {caps.consoleLinks ? (
-                        <Link
-                          className="model-rank-name"
-                          to={`/models?model=${encodeURIComponent(m.model)}`}
-                          title={m.model}
-                        >
-                          {m.model}
-                        </Link>
-                      ) : (
-                        <span className="model-rank-name" title={m.model}>
-                          {m.model}
+            <div className="cockpit-usage-body">
+              <div className="cockpit-subcol">
+                {ranked.length === 0 ? (
+                  <p className="dashboard-empty">{t("dashboard.topModelsEmpty")}</p>
+                ) : (
+                  <ul className="model-rank">
+                    {ranked.map((m) => (
+                      <li key={m.model}>
+                        {caps.consoleLinks ? (
+                          <Link
+                            className="model-rank-name"
+                            to={`/models?model=${encodeURIComponent(m.model)}`}
+                            title={m.model}
+                          >
+                            {m.model}
+                          </Link>
+                        ) : (
+                          <span className="model-rank-name" title={m.model}>
+                            {m.model}
+                          </span>
+                        )}
+                        <span className="model-rank-track">
+                          <span
+                            className="model-rank-fill"
+                            style={{
+                              transform: `scaleX(${m.requests / maxModelRequests})`,
+                            }}
+                          />
                         </span>
-                      )}
-                      <span className="model-rank-track">
-                        <span
-                          className="model-rank-fill"
-                          style={{
-                            transform: `scaleX(${m.requests / maxModelRequests})`,
-                          }}
-                        />
-                      </span>
-                      <span className="model-rank-meta">
-                        <strong>{m.requests}</strong>
-                        <small>{t("dashboard.colRequests")}</small>
-                        <i>·</i>
-                        <strong>{formatTokens(m.total_tokens)}</strong>
-                        <small>{t("dashboard.colTokens")}</small>
-                        {m.failed > 0 ? (
-                          <>
-                            <i>·</i>
-                            <strong className="is-warn">{m.failed}</strong>
-                            <small>{t("dashboard.colFailed")}</small>
-                          </>
-                        ) : null}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                        <span className="model-rank-meta">
+                          <strong>{m.requests}</strong>
+                          <small>{t("dashboard.colRequests")}</small>
+                          <i>·</i>
+                          <strong>{formatTokens(m.total_tokens)}</strong>
+                          <small>{t("dashboard.colTokens")}</small>
+                          {m.failed > 0 ? (
+                            <>
+                              <i>·</i>
+                              <strong className="is-warn">{m.failed}</strong>
+                              <small>{t("dashboard.colFailed")}</small>
+                            </>
+                          ) : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-          </div>
-        </Panel>
+          </Panel>
+          {caps.siteNews ? <SiteNewsPanel /> : null}
+        </div>
       </div>
     </Page>
   );

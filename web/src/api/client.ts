@@ -37,6 +37,8 @@ import type {
   SiteProbeDetection,
   SiteProbePolicy,
   SiteProbeReport,
+  SiteNewsFeed,
+  SiteNewsRefresh,
   KeepaliveEvent,
   KeepaliveRound,
   KeepaliveStatus,
@@ -741,6 +743,14 @@ export const api = (client: ApiClient) => ({
     config?: string;
   }) => client.put<Site>("/admin/site-probe/source", body),
   clearSiteProbeSource: (siteId: number) => client.delete(`/admin/site-probe/source/${siteId}`),
+  /**
+   * What the upstream sites publish on their own notice boards. The gateway
+   * reads them on a cadence, so this is a database read; refreshing is the
+   * button's own request.
+   */
+  siteNews: (limit = 60, signal?: AbortSignal) =>
+    client.get<SiteNewsFeed>(`/admin/site-news?limit=${limit}`, signal),
+  refreshSiteNews: () => client.post<SiteNewsRefresh>("/admin/site-news/refresh", {}),
   unifyApply: (groups: UnifyGroup[], deleteOriginals = true) =>
     client.post<UnifyApplyResult>("/admin/models/unify/apply", {
       // Removing the originals is what actually unifies a name: a parked

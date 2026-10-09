@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **127** 个 `.sql` 文件，其中 **127** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **128** 个 `.sql` 文件，其中 **128** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -26,7 +26,7 @@
 
 ## 表
 
-共 **58** 个表。
+共 **59** 个表。
 
 ### admin_totp · 4 列
 
@@ -740,6 +740,20 @@
 | `name` | TEXT | — | — | 是 |
 | `applied_at` | TEXT | 是 | datetime('now') | — |
 
+### site_announcements · 9 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `site_id` | INTEGER | 是 | — | — |
+| `upstream_id` | TEXT | 是 | — | — |
+| `content` | TEXT | 是 | — | — |
+| `extra` | TEXT | 是 | '' | — |
+| `kind` | TEXT | 是 | '' | — |
+| `published_at` | TEXT | 是 | — | — |
+| `first_seen_at` | TEXT | 是 | — | — |
+| `fetched_at` | TEXT | 是 | — | — |
+
 ### site_display_settings · 4 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
@@ -1003,7 +1017,7 @@
 
 ## 索引
 
-共 **71** 个索引。
+共 **72** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -1061,6 +1075,7 @@
 | `idx_route_members_route_channel_unique` | `route_members` | 是 |
 | `idx_route_members_route_enabled_priority` | `route_members` | — |
 | `idx_routes_model_pattern_unique` | `routes` | 是 |
+| `idx_site_announcements_order` | `site_announcements` | — |
 | `idx_site_probe_external_site` | `site_probe_external` | — |
 | `idx_site_probe_runs_site` | `site_probe_runs` | — |
 | `idx_site_probe_samples_model` | `site_probe_samples` | — |

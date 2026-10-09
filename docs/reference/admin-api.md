@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **238** 条注册、**193** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **240** 条注册、**195** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -442,6 +442,13 @@
 | --- | --- | --- |
 | `Get` | `/admin/self-update` | status |
 | `Post` | `/admin/self-update/apply` | apply |
+
+## /admin/site-news · 2 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/site-news` | feed |
+| `Post` | `/admin/site-news/refresh` | refresh |
 
 ## /admin/site-probe · 9 条
 

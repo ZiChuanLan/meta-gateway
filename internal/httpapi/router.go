@@ -41,6 +41,7 @@ import (
 	"github.com/lan/meta-gateway/internal/routing"
 	"github.com/lan/meta-gateway/internal/runtimeconfig"
 	"github.com/lan/meta-gateway/internal/selfupdate"
+	"github.com/lan/meta-gateway/internal/sitenews"
 	"github.com/lan/meta-gateway/internal/siteprobe"
 	"github.com/lan/meta-gateway/internal/store"
 	"github.com/lan/meta-gateway/internal/updatecheck"
@@ -482,6 +483,18 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	siteProbeScheduler.Start()
 	RegisterStopper(siteProbeScheduler.Stop)
 	NewSiteProbeHandler(db, siteProbeService, siteProbeScheduler).Register(adminGroup)
+
+	// Site news: what each upstream publishes on its own notice board (New-API's
+	// /api/status → data.announcements). Read-only, public endpoints, no token —
+	// the same network view as the probe collector, bound to the console's global
+	// proxy the same way and never to the environment's.
+	siteNewsService := sitenews.NewService(db, logger, func(req *http.Request) (*url.URL, error) {
+		return globalProxy.ForRequest(req, outboundPolicy)
+	})
+	siteNewsScheduler := sitenews.NewScheduler(siteNewsService, sitenews.DefaultInterval, 0, logger)
+	siteNewsScheduler.Start()
+	RegisterStopper(siteNewsScheduler.Stop)
+	NewSiteNewsHandler(siteNewsService, siteNewsScheduler).Register(adminGroup)
 
 	// Plugin catalog + add-on gates. Optional modules (exchange, checkin) must be
 	// enabled to expose their Admin surfaces. Core audit/backup stay always-on.

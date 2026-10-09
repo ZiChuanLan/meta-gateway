@@ -1858,3 +1858,38 @@ export interface SiteKeepaliveInput {
   keepalive_daily_cap: number;
   keepalive_quiet_hours: string;
 }
+
+/**
+ * What one upstream site published on its own notice board, as the gateway read
+ * it. The site owns the text and the date; `first_seen_at` is the gateway's own
+ * clock and is what the console marks as new.
+ */
+export interface SiteAnnouncement {
+  id: number;
+  site_id: number;
+  site_name: string;
+  upstream_id: string;
+  content: string;
+  extra?: string;
+  kind?: string;
+  published_at: string;
+  first_seen_at: string;
+  fetched_at: string;
+}
+
+/** GET /admin/site-news: the feed plus what it covers. */
+export interface SiteNewsFeed {
+  items: SiteAnnouncement[];
+  sites: { readable: number; reported: number };
+  last_fetched?: string;
+}
+
+/** POST /admin/site-news/refresh: what one read of every board did. */
+export interface SiteNewsRefresh {
+  sites: number;
+  fetched: number;
+  failed: number;
+  added: number;
+  errors?: string[];
+  at: string;
+}
