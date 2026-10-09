@@ -629,123 +629,83 @@ export function DashboardView({
         </Panel>
 
         {/* 4. 双轨联动作战区：渠道健康状态阵列 + 实时遥测日志流 */}
-        {/* Single column when the host has no channel matrix, so the request
-            stream keeps the panel's own width instead of half a grid. */}
-        <div className={`cockpit-dual-grid${caps.channels ? "" : " is-single"}`}>
-          {/* 左轨：渠道健康雷达点阵（只有宿主能看到渠道时才渲染） */}
-          {caps.channels ? (
-            <Panel className="cockpit-panel cockpit-health-panel">
-              <div className="panel-header">
-                <div className="cockpit-panel-title">
-                  <Boxes size={14} />
-                  <strong>{t("dashboard.channelHealth")}</strong>
+        {/* 这一排两个面板都是运维信息：成员的总览直接跳过整行，而不是渲染一个空网格。
+            只有两个面板都在时才是双轨，否则单列满宽。 */}
+        {caps.channels || caps.siteNews ? (
+          <div className={`cockpit-dual-grid${caps.channels && caps.siteNews ? "" : " is-single"}`}>
+            {/* 左轨：渠道健康雷达点阵（只有宿主能看到渠道时才渲染） */}
+            {caps.channels ? (
+              <Panel className="cockpit-panel cockpit-health-panel">
+                <div className="panel-header">
+                  <div className="cockpit-panel-title">
+                    <Boxes size={14} />
+                    <strong>{t("dashboard.channelHealth")}</strong>
+                  </div>
+                  <span className="panel-muted">
+                    {t("dashboard.enabledOf", {
+                      n: channelCounts.enabled,
+                      total: channelCounts.total,
+                    })}
+                  </span>
                 </div>
-                <span className="panel-muted">
-                  {t("dashboard.enabledOf", {
-                    n: channelCounts.enabled,
-                    total: channelCounts.total,
-                  })}
-                </span>
-              </div>
-              <ul className="cockpit-channel-list">
-                {(channels.data ?? []).map((c) => {
-                  const health = channelHealthState(c);
-                  const tone =
-                    health === "healthy"
-                      ? "ok"
-                      : health === "unhealthy"
-                        ? "danger"
-                        : health === "disabled"
-                          ? "off"
-                          : "warn";
-                  return (
-                    <li key={c.channel.id} className={`cockpit-channel-item is-${tone}`}>
-                      {caps.consoleLinks ? (
-                        <Link
-                          className="cockpit-channel-name"
-                          to={`/channels?id=${c.channel.id}`}
-                          title={c.channel.name}
-                        >
-                          {c.channel.name}
-                        </Link>
-                      ) : (
-                        <span className="cockpit-channel-name" title={c.channel.name}>
-                          {c.channel.name}
-                        </span>
-                      )}
-                      <span className="cockpit-channel-meta">
-                        {health === "healthy" ? (
-                          <span className="badge badge-ok">
-                            <Zap size={10} /> {t("dashboard.ready")}
-                          </span>
-                        ) : health === "disabled" ? (
-                          <span className="badge badge-neutral">{t("dashboard.disabled")}</span>
-                        ) : (
-                          <span
-                            className={`badge badge-${health === "unhealthy" ? "danger" : "warn"}`}
+                <ul className="cockpit-channel-list">
+                  {(channels.data ?? []).map((c) => {
+                    const health = channelHealthState(c);
+                    const tone =
+                      health === "healthy"
+                        ? "ok"
+                        : health === "unhealthy"
+                          ? "danger"
+                          : health === "disabled"
+                            ? "off"
+                            : "warn";
+                    return (
+                      <li key={c.channel.id} className={`cockpit-channel-item is-${tone}`}>
+                        {caps.consoleLinks ? (
+                          <Link
+                            className="cockpit-channel-name"
+                            to={`/channels?id=${c.channel.id}`}
+                            title={c.channel.name}
                           >
-                            <AlertTriangle size={10} />
-                            {t(`channels.healthState.${health}`)}
+                            {c.channel.name}
+                          </Link>
+                        ) : (
+                          <span className="cockpit-channel-name" title={c.channel.name}>
+                            {c.channel.name}
                           </span>
                         )}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Panel>
-          ) : null}
+                        <span className="cockpit-channel-meta">
+                          {health === "healthy" ? (
+                            <span className="badge badge-ok">
+                              <Zap size={10} /> {t("dashboard.ready")}
+                            </span>
+                          ) : health === "disabled" ? (
+                            <span className="badge badge-neutral">{t("dashboard.disabled")}</span>
+                          ) : (
+                            <span
+                              className={`badge badge-${health === "unhealthy" ? "danger" : "warn"}`}
+                            >
+                              <AlertTriangle size={10} />
+                              {t(`channels.healthState.${health}`)}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Panel>
+            ) : null}
 
-          {/* 右轨：最近代理请求流（跟随所选区间） */}
-          <Panel className="cockpit-panel cockpit-logs-panel">
-            <div className="panel-header">
-              <div className="cockpit-panel-title">
-                <ScrollText size={14} />
-                <strong>{t("dashboard.recentLogs")}</strong>
-              </div>
-              <span className="panel-muted">{rangeCaption}</span>
-            </div>
-            {recentLogs.length === 0 ? (
-              <p className="dashboard-empty">{t("dashboard.noLogs")}</p>
-            ) : (
-              <ul className="cockpit-log-list">
-                {recentLogs.map((log: ProxyLog) => {
-                  const tone = statusTone(log.status);
-                  return (
-                    <li key={log.id} className="cockpit-log-item">
-                      <span className={`cockpit-log-status is-${tone}`} aria-hidden="true" />
-                      {caps.consoleLinks ? (
-                        <Link
-                          className="cockpit-log-model"
-                          to={`/models?model=${encodeURIComponent(log.model)}`}
-                        >
-                          {log.model}
-                          {log.route_id ? ` #${log.route_id}` : ""}
-                        </Link>
-                      ) : (
-                        // The route id is the gateway's internal handle for a
-                        // model; a member gets the model name and nothing more.
-                        <span className="cockpit-log-model">{log.model}</span>
-                      )}
-                      <div className="cockpit-log-right">
-                        {(log.total_tokens ?? 0) > 0 ? (
-                          <span className="mono-value">{formatTokens(log.total_tokens ?? 0)}</span>
-                        ) : null}
-                        <span className={`badge badge-${tone}`}>{log.status}</span>
-                        <span className="mono-value">{log.latency_ms}ms</span>
-                        <span className="cockpit-log-time">{relativeTime(log.created_at, t)}</span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Panel>
-        </div>
+            {/* 右轨：上游站点消息（各站点自己发的公告）。它和渠道健康同一排：
+              两件事都是“网关外面发生了什么”。 */}
+            {caps.siteNews ? <SiteNewsPanel /> : null}
+          </div>
+        ) : null}
 
-        {/* 5. 模型负载消耗排行（SQL 聚合，不受列表行数上限影响）与上游站点消息：
-            一个是模型名单，一个是站点原话，各占一半比各占满宽更好读。 */}
-        <div className={`cockpit-dual-grid${caps.siteNews ? "" : " is-single"}`}>
+        {/* 5. 模型负载消耗排行（SQL 聚合，不受列表行数上限影响）与最近代理请求流：
+            一个是模型名单，一个是刚刚发生的事，各占一半比各占满宽更好读。 */}
+        <div className="cockpit-dual-grid">
           <Panel className="cockpit-panel cockpit-usage-panel">
             <div className="panel-header">
               <div className="cockpit-panel-title">
@@ -806,7 +766,52 @@ export function DashboardView({
               </div>
             </div>
           </Panel>
-          {caps.siteNews ? <SiteNewsPanel /> : null}
+
+          {/* 右轨：最近代理请求流（跟随所选区间） */}
+          <Panel className="cockpit-panel cockpit-logs-panel">
+            <div className="panel-header">
+              <div className="cockpit-panel-title">
+                <ScrollText size={14} />
+                <strong>{t("dashboard.recentLogs")}</strong>
+              </div>
+              <span className="panel-muted">{rangeCaption}</span>
+            </div>
+            {recentLogs.length === 0 ? (
+              <p className="dashboard-empty">{t("dashboard.noLogs")}</p>
+            ) : (
+              <ul className="cockpit-log-list">
+                {recentLogs.map((log: ProxyLog) => {
+                  const tone = statusTone(log.status);
+                  return (
+                    <li key={log.id} className="cockpit-log-item">
+                      <span className={`cockpit-log-status is-${tone}`} aria-hidden="true" />
+                      {caps.consoleLinks ? (
+                        <Link
+                          className="cockpit-log-model"
+                          to={`/models?model=${encodeURIComponent(log.model)}`}
+                        >
+                          {log.model}
+                          {log.route_id ? ` #${log.route_id}` : ""}
+                        </Link>
+                      ) : (
+                        // The route id is the gateway's internal handle for a
+                        // model; a member gets the model name and nothing more.
+                        <span className="cockpit-log-model">{log.model}</span>
+                      )}
+                      <div className="cockpit-log-right">
+                        {(log.total_tokens ?? 0) > 0 ? (
+                          <span className="mono-value">{formatTokens(log.total_tokens ?? 0)}</span>
+                        ) : null}
+                        <span className={`badge badge-${tone}`}>{log.status}</span>
+                        <span className="mono-value">{log.latency_ms}ms</span>
+                        <span className="cockpit-log-time">{relativeTime(log.created_at, t)}</span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
         </div>
       </div>
     </Page>
