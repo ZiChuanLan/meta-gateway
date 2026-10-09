@@ -903,7 +903,7 @@
   gap: 10px;
   padding: 14px 16px;
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line-light);
 }
@@ -1252,15 +1252,6 @@
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-:root[data-appearance="classic"] .detail-pricing-list {
-  max-height: 176px;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
-}
 :root[data-appearance="classic"] .detail-pricing-list::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -1460,18 +1451,6 @@
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
-}
-:root[data-appearance="classic"] .routing-policy-value {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  min-height: 20px;
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--surface-subtle);
-  color: var(--ink-soft);
-  font-variant-numeric: tabular-nums;
 }
 :root[data-appearance="classic"] .routing-policy-value small {
   color: var(--muted);
@@ -2097,17 +2076,6 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
-:root[data-appearance="classic"] .exchange-format-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  min-height: 92px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-}
 :root[data-appearance="classic"] .exchange-format-card strong {
   display: block;
   margin-top: 6px;
@@ -2257,25 +2225,6 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-:root[data-appearance="classic"] .drop-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 168px;
-  padding: 24px 16px;
-  border: 1.5px dashed var(--line-strong);
-  border-radius: var(--radius);
-  text-align: center;
-  color: var(--muted);
-  background: var(--surface-subtle);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-in-out),
-    background var(--dur-fast) var(--ease-in-out),
-    color var(--dur-fast) var(--ease-in-out);
-}
 :root[data-appearance="classic"] .drop-zone:hover,
 :root[data-appearance="classic"] .drop-zone.is-dragging {
   border-color: var(--accent);
@@ -2320,13 +2269,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-}
-:root[data-appearance="classic"] .exchange-preview {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
 }
 :root[data-appearance="classic"] .exchange-unlock {
   margin-top: 12px;
@@ -4909,18 +4851,6 @@
   gap: 12px;
   margin-top: 14px;
 }
-:root[data-appearance="classic"] .webdav-direction-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  transition:
-    border-color var(--dur-slow) var(--ease-in-out),
-    box-shadow var(--dur-slow) var(--ease-in-out);
-}
 :root[data-appearance="classic"] .webdav-direction-card.is-active {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   box-shadow:
@@ -4964,21 +4894,6 @@
   :root[data-appearance="classic"] .webdav-directions {
     grid-template-columns: 1fr;
   }
-}
-:root[data-appearance="classic"] .webdav-mode-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 76px;
-  padding: 16px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-base) var(--ease-in-out),
-    box-shadow var(--dur-base) var(--ease-in-out),
-    background-color var(--dur-base) var(--ease-in-out);
 }
 :root[data-appearance="classic"] .webdav-mode-card:hover {
   border-color: var(--line-strong);
@@ -8581,13 +8496,6 @@
   justify-content: flex-end;
 }
 
-:root[data-appearance="classic"] .routing-policy-card {
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-}
 
 :root[data-appearance="classic"] .routing-policy-card .routing-policy-summary,
 :root[data-appearance="classic"] .routing-policy-card .routing-retry-summary {

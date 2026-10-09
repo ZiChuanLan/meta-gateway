@@ -651,7 +651,7 @@ label.directory-search input:focus {
   gap: 10px;
   padding: 14px 16px;
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line-light);
 }
@@ -852,7 +852,7 @@ label.directory-search input:focus {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
@@ -1076,7 +1076,7 @@ label.directory-search input:focus {
   padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: 0;
-  background: var(--surface-subtle);
+  background: var(--surface);
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
@@ -1700,7 +1700,7 @@ td.actions {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
 }
 .exchange-format-card strong {
   display: block;
@@ -1864,7 +1864,7 @@ td.actions {
   border-radius: var(--radius);
   text-align: center;
   color: var(--muted);
-  background: var(--surface-subtle);
+  background: var(--surface);
   cursor: pointer;
   transition:
     border-color var(--dur-fast) var(--ease-in-out),
@@ -1921,7 +1921,7 @@ td.actions {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
 }
 .exchange-unlock {
   margin-top: 12px;
@@ -2653,7 +2653,7 @@ td.actions {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
   transition:
     border-color var(--dur-slow) var(--ease-in-out),
     box-shadow var(--dur-slow) var(--ease-in-out);
@@ -2714,7 +2714,7 @@ td.actions {
   padding: 16px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
   cursor: pointer;
   transition:
     border-color var(--dur-base) var(--ease-in-out),
@@ -6498,7 +6498,7 @@ label.check input[type="checkbox"]:not(.switch) {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
 }
 
 .routing-policy-card .routing-policy-summary,
@@ -9290,7 +9290,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--surface-subtle);
+  background: var(--surface);
   color: var(--ink-soft);
   font-size: 11px;
   line-height: 1.6;
@@ -10038,7 +10038,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface-subtle);
+  background: var(--surface);
 }
 .keepalive-form-actions {
   align-items: center;
