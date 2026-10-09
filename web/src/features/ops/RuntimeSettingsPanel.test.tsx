@@ -74,25 +74,9 @@ function runtimeServer(read: () => Record<string, unknown>) {
   return { fetcher, puts };
 }
 
-/** The navigation owns sections: a section is one click away, always. */
+/** The rail owns the page: any section is one click away, from any group. */
 async function openSection(name: string) {
-  await screen.findByRole("tablist");
-  const pill = screen.queryByRole("button", { name });
-  if (pill) {
-    fireEvent.click(pill);
-    return;
-  }
-  for (const cat of [/Forwarding & routing/, /Health & automation/, /Data & operations/]) {
-    const tab = screen.queryByRole("tab", { name: cat });
-    if (tab) {
-      fireEvent.click(tab);
-      const target = screen.queryByRole("button", { name });
-      if (target) {
-        fireEvent.click(target);
-        return;
-      }
-    }
-  }
+  fireEvent.click(await screen.findByRole("button", { name }));
 }
 
 it("shows an initial load failure with a working retry instead of endless loading", async () => {
@@ -111,27 +95,32 @@ it("shows an initial load failure with a working retry instead of endless loadin
   await waitFor(() => expect(reads()).toBeGreaterThan(before));
 });
 
-// The page used to be nineteen peer cards behind a chip index; the sidebar
-// states which three groups they fall into and shows one section at a time.
-it("groups the sections semantically into category tabs with high information density", async () => {
+// The page used to be nineteen peer cards behind a chip index, then a tab bar
+// plus an anchor row. There is one navigation level now: the rail lists every
+// group and section, and the flow beside it shows the group you are in.
+it("navigates from one grouped rail, showing a group's sections continuously", async () => {
   vi.stubGlobal("fetch", runtimeServer(() => payload()).fetcher);
   mount(<RuntimeSettingsPanel />);
 
+  // Every group is named in the rail, and so is every section — including the
+  // ones whose group is not being rendered right now.
   expect(await screen.findByText("Forwarding & routing")).toBeInTheDocument();
   expect(screen.getByText("Health & automation")).toBeInTheDocument();
   expect(screen.getByText("Data & operations")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Keepalive" })).toBeInTheDocument();
 
-  // In the active category, sections are visible together in the dense grid!
+  // The active group renders its sections continuously — not one card at a time.
   expect(screen.getByRole("heading", { name: "Relay failover" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Routing" })).toBeInTheDocument();
   expect(screen.getByText("Per-channel concurrency ceiling")).toBeInTheDocument();
 
-  // Switch to Health & automation tab
-  fireEvent.click(screen.getByRole("tab", { name: /Health & automation/ }));
+  // A rail entry from another group moves the flow to that group.
+  fireEvent.click(screen.getByRole("button", { name: "Keepalive" }));
   expect(
     await screen.findByRole("heading", { name: /Failure cooldown|Cooldown/ }),
   ).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Relay failover" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Keepalive" })).toHaveAttribute("aria-current", "true");
 });
 
 // I04's other half: a background refetch used to replace the draft whenever the
@@ -231,10 +220,14 @@ it("marks the fields that override the deployment default, and their section", a
     screen.getByRole("button", { name: "Routing" }).querySelector(".runtime-nav-dot"),
   ).toBeNull();
 
-  const changedRow = screen.getByLabelText(/Retry rounds/).closest("label")!;
+  // A row that differs from the deployment default says so; a row that does not
+  // says nothing. A "Default" chip on every untouched row was noise — the answer
+  // worth a mark is "I changed this".
+  const changedRow = screen.getByLabelText(/Retry rounds/).closest(".field")!;
   expect(changedRow.textContent).toContain("Changed");
-  const defaultRow = screen.getByLabelText(/Same-key re-sends/).closest("label")!;
-  expect(defaultRow.textContent).toContain("Default");
+  const defaultRow = screen.getByLabelText(/Same-key re-sends/).closest(".field")!;
+  expect(defaultRow.querySelector(".setting-state")).toBeNull();
+  expect(defaultRow.querySelector(".runtime-row-hint")).not.toBeNull();
 });
 
 it("restores one section to the deployment defaults without touching the rest", async () => {

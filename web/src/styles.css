@@ -9796,84 +9796,107 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   font-weight: 600;
 }
 
-/* —— Category Tabs & Anchors —— */
-.runtime-category-bar {
+/* —— The rail: one index for the whole page ——
+   A settings page is read by scrolling, so the index has to be an index: pinned,
+   grouped, and honest about where you are. The item's own type is stated here
+   because appearance sheets style bare `button` elements, and without it every
+   entry renders at body size in link colour. */
+.runtime-layout {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  align-items: start;
+  gap: 22px;
+}
+.runtime-rail {
+  position: sticky;
+  top: 76px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin: 16px 0 20px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
+  gap: 14px;
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-/* Three peers of one choice: a single track with a moving selection, not three
-   floating buttons that each look like they belong somewhere else. */
-.runtime-category-tabs {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
+.runtime-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
-.runtime-category-tab {
-  display: inline-flex;
+.runtime-rail-label {
+  padding: 0 8px 4px;
+  color: var(--muted);
+  font: 600 10.5px/1.5 var(--font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.runtime-rail-item {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 14px;
+  width: 100%;
+  padding: 5px 8px;
   border: 0;
-  border-radius: calc(var(--radius) - 2px);
-  background: transparent;
+  border-left: 2px solid transparent;
+  background: none;
   color: var(--muted);
-  font: 550 12.5px/1.45 var(--font);
+  font: 500 12.5px/1.5 var(--font);
+  text-align: left;
   cursor: pointer;
   transition:
-    background var(--dur-fast),
-    color var(--dur-fast);
+    color var(--dur-fast, 120ms),
+    border-color var(--dur-fast, 120ms),
+    background var(--dur-fast, 120ms);
 }
-.runtime-category-tab:hover {
-  color: var(--ink);
-}
-.runtime-category-tab.is-active {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow-sm);
-}
-.runtime-category-count {
-  color: var(--muted);
-  font: 500 11px/1 var(--font);
-  font-variant-numeric: tabular-nums;
-}
-.runtime-category-tab.is-active .runtime-category-count {
-  color: var(--primary);
-}
-/* The anchors are an index of what the category holds, not a second row of
-   buttons competing with the selector above them: quiet text, one hairline
-   apart from the track. */
-.runtime-anchors-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1px 2px;
-}
-.runtime-anchor-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font: 500 12px/1.5 var(--font);
-  cursor: pointer;
-  transition:
-    background var(--dur-fast),
-    color var(--dur-fast);
-}
-.runtime-anchor-pill:hover {
+.runtime-rail-item:hover {
   background: var(--surface-subtle);
   color: var(--ink);
+}
+/* The current item is held by a marker at the reading edge, not by a filled box:
+   a column of filled boxes competes with the settings themselves. */
+.runtime-rail-item.is-active {
+  border-left-color: var(--primary);
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-weight: 600;
+}
+.runtime-rail-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Narrow: the rail lies down above the settings instead of squeezing them into a
+   column too narrow for a form. */
+@media (max-width: 1080px) {
+  .runtime-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .runtime-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    max-height: none;
+  }
+  .runtime-rail-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+  }
+  .runtime-rail-label {
+    padding: 0 6px 0 0;
+  }
+  .runtime-rail-item {
+    width: auto;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .runtime-rail-item.is-active {
+    border-left-color: transparent;
+    border-bottom-color: var(--primary);
+  }
 }
 .runtime-nav-dot {
   flex: 0 0 auto;
@@ -9914,6 +9937,10 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 .runtime-cards-grid > .is-wide-section {
   grid-column: 1 / -1;
 }
+/* A jumped-to section clears the sticky header instead of hiding under it. */
+.runtime-section {
+  scroll-margin-top: 84px;
+}
 /* A card that owns the whole width would strand its fields in two half-metre
    columns; four across is the same density the half-width cards have. */
 .runtime-cards-grid > .is-wide-section .runtime-rows {
@@ -9942,11 +9969,19 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 .runtime-cards-grid .runtime-rows > .field {
   margin-bottom: 0;
 }
+/* The label wraps the control so its text still focuses the field; the row's own
+   layout treats the two as one block and the hint as a separate line. */
+.runtime-row-label-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 /* A control fills its column: a settings control is a place to type, and a
    160px box inside a 440px card reads as a placeholder rather than a field. */
-.runtime-cards-grid .runtime-rows > .field > input,
-.runtime-cards-grid .runtime-rows > .field > select,
-.runtime-cards-grid .runtime-rows > .field > .setting-input-wrap {
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input,
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > select,
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > .setting-input-wrap {
   width: 100%;
   max-width: none;
 }
@@ -9960,7 +9995,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
    and 2px of slack on both ends. Geometry is stated in border-box terms on both
    elements so the knob lands flush against the far wall whatever the global
    box-sizing is — flush is what makes a switch read as "on" at a glance. */
-.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"] {
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"] {
   position: relative;
   /* Without this the platform widget paints over the track and a 42px switch
      comes out looking like a stretched native checkbox. */
@@ -9978,7 +10013,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
     background var(--dur-fast, 120ms),
     border-color var(--dur-fast, 120ms);
 }
-.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]::before {
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]::before {
   content: "";
   position: absolute;
   top: 2px;
@@ -9990,21 +10025,21 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   background: var(--surface);
   transition: transform var(--dur-fast, 120ms);
 }
-.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]:checked {
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]:checked {
   border-color: var(--primary);
   background: var(--primary);
 }
-.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]:checked::before {
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]:checked::before {
   transform: translateX(20px);
   border-color: transparent;
 }
-.runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]:focus-visible {
+.runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]:focus-visible {
   outline: 2px solid var(--primary-soft);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .runtime-cards-grid .runtime-rows > .field > input[type="checkbox"],
-  .runtime-cards-grid .runtime-rows > .field > input[type="checkbox"]::before {
+  .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"],
+  .runtime-cards-grid .runtime-rows .runtime-row-label-wrap > input[type="checkbox"]::before {
     transition: none;
   }
 }

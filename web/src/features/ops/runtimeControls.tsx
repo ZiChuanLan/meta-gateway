@@ -97,16 +97,17 @@ export function RuntimeRow({
   children: ReactNode;
 }) {
   return (
-    <label className={`field runtime-row${wide ? " wide" : ""}`}>
-      <SettingLabel label={label} changed={changed} />
-      {children}
-      {/* The hint is read, not hovered. Behind a tooltip it is invisible on a
-          printed page, in a screenshot, and to anyone scanning rather than
-          studying — and the page loses the one line that says what the field
-          does. It sits under the control it explains, like every other form in
-          the console. */}
+    <div className={`field runtime-row${wide ? " wide" : ""}`}>
+      {/* The label wraps the control so clicking its name still focuses the field.
+          The hint is a sibling rather than part of the label, because a wrapping
+          label's text IS the control's accessible name — and "Retry rounds"
+          followed by two sentences of explanation is not a name. */}
+      <label className="runtime-row-label-wrap">
+        <SettingLabel label={label} changed={changed} />
+        {children}
+      </label>
       {hint ? <span className="field-hint runtime-row-hint">{hint}</span> : null}
-    </label>
+    </div>
   );
 }
 
