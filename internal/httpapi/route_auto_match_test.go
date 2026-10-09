@@ -232,6 +232,8 @@ func TestRouteAutoMatchRelatedScope(t *testing.T) {
 	}
 	base := newChannel("base", "mimo-v2.5")
 	variant := newChannel("variant", "mimo-v2.5-flash")
+	// The name a prefix rule cannot reach: the term sits in the middle.
+	namespaced := newChannel("namespaced", "cn:mimo-v2.5-r1")
 
 	// The preview answers for the requested scope, and names what matched.
 	var preview struct {
@@ -253,9 +255,19 @@ func TestRouteAutoMatchRelatedScope(t *testing.T) {
 			t.Fatalf("variant matched as %q", item.Model)
 		}
 	}
+	// Contains reaches the namespaced name the prefix scope misses.
+	json.Unmarshal(get(t, server.URL+"/admin/discovery/model-channels?model=mimo-v2.5&match=contains"), &preview)
+	if len(preview.Items) != 3 {
+		t.Fatalf("contains preview = %+v, want every channel serving the family", preview)
+	}
+	for _, item := range preview.Items {
+		if item.ChannelID == namespaced && item.Model != "cn:mimo-v2.5-r1" {
+			t.Fatalf("namespaced matched as %q", item.Model)
+		}
+	}
 
-	// Creating with the related scope attaches both, and the variant member
-	// rewrites its upstream name.
+	// Creating with the related scope attaches base + variant, and the variant
+	// member rewrites its upstream name.
 	var route struct{ ID int64 }
 	json.Unmarshal(post(t, server.URL+"/admin/routes", map[string]any{"model_pattern": "mimo-v2.5", "enabled": true, "auto_match_mode": "related", "auto_match_channel_ids": []int64{base, variant}}), &route)
 	members := listMembers(t, server.URL, route.ID)
@@ -278,6 +290,22 @@ func TestRouteAutoMatchRelatedScope(t *testing.T) {
 				t.Fatalf("variant member mapping = %q", member.MappingJSON)
 			}
 		}
+	}
+
+	// The same request with the contains scope picks up the namespaced channel,
+	// and its member forwards the name that upstream actually serves.
+	var wide struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/routes", map[string]any{"model_pattern": "mimo", "enabled": true, "auto_match_mode": "contains", "auto_match_channel_ids": []int64{base, variant, namespaced}}), &wide)
+	json.Unmarshal(get(t, fmt.Sprintf("%s/admin/routes/%d/members", server.URL, wide.ID)), &detail)
+	seen := map[int64]string{}
+	for _, member := range detail {
+		seen[member.ChannelID] = member.MappingJSON
+	}
+	if len(detail) != 3 {
+		t.Fatalf("contains members = %+v, want all three channels", detail)
+	}
+	if seen[namespaced] != `{"real":"cn:mimo-v2.5-r1"}` {
+		t.Fatalf("namespaced member mapping = %q, want the upstream name", seen[namespaced])
 	}
 }
 

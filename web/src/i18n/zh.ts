@@ -764,7 +764,12 @@ export const zh: Dict = {
   "maintain.title": "设置",
   "maintain.description": "管理运行策略、外观偏好与备份。模型和连接变更在各自工作区完成。",
   "maintain.tab.exchange": "交换",
-  "channels.searchPlaceholder": "搜索连接",
+  "channels.searchPlaceholder": "搜索连接名、地址或模型名",
+  "channels.modelMatchHead": "另有 {n} 个渠道的模型里含「{term}」",
+  "channels.modelMatchHit": "命中 {model}",
+  "channels.modelMatchSource.models_csv": "渠道模型清单",
+  "channels.modelMatchSource.discovered": "探测快照",
+  "channels.modelMatchSource.routed": "已通过路由服务",
   "channels.title": "上游连接",
   "channels.description": "接入上游服务，验证凭证并同步模型。这里的优先级和权重是连接级默认值。",
   "channels.add": "添加连接",
@@ -1482,10 +1487,15 @@ export const zh: Dict = {
   "modelsPage.autoMatch.modeLabel": "匹配范围",
   "modelsPage.autoMatch.modeExact": "精确：只挂模型清单里有这个完整名字的渠道",
   "modelsPage.autoMatch.modeRelated":
-    "相关：同时挂提供以 {name} 开头的其他模型（如 {name}-flash、{name}.1）的渠道",
+    "前缀：同时挂提供以 {name} 开头的其他模型（如 {name}-flash、{name}.1）的渠道",
+  "modelsPage.autoMatch.modeContains":
+    "包含：把模型名里任何位置含 {name} 的都算上（如 {name}-chat、{name}-ai/{name}-v4、cn:{name}-r1）",
   "modelsPage.autoMatch.modeRewriteHint":
-    "相关匹配挂上的成员会把转发模型名改写为渠道上实际命中的那一条（例如 {name}-flash），避免上游不认基础名。",
+    "匹配放宽后，挂上的成员会把转发模型名改写为渠道上实际命中的那一条（例如 deepseek-ai/deepseek-v4-flash），避免上游不认基础名；渠道模型清单里就有完整名字的那一条不改写。",
   "modelsPage.autoMatch.matchesModel": "命中 {model}",
+  "modelsPage.autoMatch.sourceModels": "渠道模型清单",
+  "modelsPage.autoMatch.sourceDiscovered": "探测快照",
+  "modelsPage.autoMatch.sourceRouted": "已通过路由服务",
   "modelsPage.autoMatch.desc":
     "只列出启用中、且模型列表里确实包含该模型的渠道；已在本分组的渠道不会重复添加。",
   "modelsPage.autoMatch.group": "目标分组：{name}",

@@ -341,6 +341,16 @@ func TestRelatedMatchAttachesSiblings(t *testing.T) {
 	if byID[exact].Model != "mimo-v2.5" {
 		t.Fatalf("exact match = %q", byID[exact].Model)
 	}
+	// The exact scope is unchanged: it attaches only the channel that really
+	// lists the base name, which is what existing callers rely on. Checked
+	// before the attach, so the members it creates cannot colour the answer.
+	strict, strictErr := db.ChannelsMatchingModel("mimo-v2.5", store.ModelMatchExact)
+	if strictErr != nil {
+		t.Fatal(strictErr)
+	}
+	if len(strict) != 1 || strict[0].ChannelID != exact {
+		t.Fatalf("exact matches = %+v, want only the base-name channel", strict)
+	}
 
 	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "mimo-v2.5", Enabled: true})
 	if err != nil {
@@ -364,14 +374,28 @@ func TestRelatedMatchAttachesSiblings(t *testing.T) {
 		t.Fatalf("dotted variant member mapping = %q, want the matched prefix sibling", members[dotted].MappingJSON)
 	}
 
-	// The exact scope is unchanged: it attaches only the channel that really
-	// lists the base name, which is what existing callers rely on.
-	strict, err := db.ChannelsMatchingModel("mimo-v2.5", store.ModelMatchExact)
+	// Once a member exists, the channel serves the route name — so a later
+	// search finds it under that name, reports it as routed, and keeps naming
+	// the upstream model the member must forward. This is what makes a renamed
+	// model findable at all: the channel's own list still says
+	// "mimo-v2.5-flash", and the operator is searching "mimo-v2.5".
+	after, err := db.ChannelsMatchingModel("mimo-v2.5", store.ModelMatchExact)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(strict) != 1 || strict[0].ChannelID != exact {
-		t.Fatalf("exact matches = %+v, want only the base-name channel", strict)
+	afterByID := map[int64]store.ModelChannelMatch{}
+	for _, match := range after {
+		afterByID[match.ChannelID] = match
+	}
+	if len(after) != 3 {
+		t.Fatalf("exact matches after attach = %+v, want every channel now serving that route", after)
+	}
+	if byID := afterByID[variant]; byID.Source != "routed" || byID.Model != "mimo-v2.5-flash" {
+		t.Fatalf("routed match = %+v, want the alias source and the upstream name", byID)
+	}
+	// The channel that lists the name itself keeps reporting its own list.
+	if byID := afterByID[exact]; byID.Source != "models_csv" {
+		t.Fatalf("own-list match = %+v, want models_csv", byID)
 	}
 
 	// A pattern the operator already wrote as a wildcard keeps its own
@@ -382,5 +406,182 @@ func TestRelatedMatchAttachesSiblings(t *testing.T) {
 	}
 	if len(wild) != 3 {
 		t.Fatalf("wildcard pattern matches = %+v, want the same three channels", wild)
+	}
+}
+
+// TestContainsMatchFindsTheFamily covers the widest scope: a real catalog
+// prefixes and namespaces, so "deepseek" has to reach "deepseek-ai/deepseek-v4-flash"
+// and "cn:deepseek-r1" — names a prefix rule never touches.
+func TestContainsMatchFindsTheFamily(t *testing.T) {
+	db := openTestDB(t)
+
+	prefixed := newAutoMatchChannel(t, db, "prefixed", "deepseek-chat", domain.StatusEnabled, domain.ModelSyncModeAuto)
+	namespaced := newAutoMatchChannel(t, db, "namespaced", "deepseek-ai/deepseek-v4-flash", domain.StatusEnabled, domain.ModelSyncModeAuto)
+	tagged := newAutoMatchChannel(t, db, "tagged", "cn:deepseek-r1", domain.StatusEnabled, domain.ModelSyncModeAuto)
+	bare := newAutoMatchChannel(t, db, "bare", "deepseek,deepseek-chat", domain.StatusEnabled, domain.ModelSyncModeAuto)
+	unrelated := newAutoMatchChannel(t, db, "unrelated", "gpt-4o,o1-mini", domain.StatusEnabled, domain.ModelSyncModeAuto)
+
+	byChannel := func(matches []store.ModelChannelMatch) map[int64]store.ModelChannelMatch {
+		t.Helper()
+		out := map[int64]store.ModelChannelMatch{}
+		for _, match := range matches {
+			out[match.ChannelID] = match
+		}
+		return out
+	}
+
+	// Prefix scope reaches a name that STARTS with the pattern — including a
+	// vendor prefix, which is why it looks broad already — but not one that
+	// carries the term in the middle, and that is the gap contains fills.
+	related, err := db.ChannelsMatchingModel("deepseek", store.ModelMatchRelated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relatedIDs := byChannel(related)
+	if len(related) != 3 {
+		t.Fatalf("related matches = %+v, want the prefix hits only", related)
+	}
+	if _, ok := relatedIDs[tagged]; ok {
+		t.Fatalf("a namespaced name must not match as a prefix: %+v", related)
+	}
+
+	contains, err := db.ChannelsMatchingModel("deepseek", store.ModelMatchContains)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := byChannel(contains)
+	if len(contains) != 4 {
+		t.Fatalf("contains matches = %+v, want every channel serving the family", contains)
+	}
+	if _, ok := found[unrelated]; ok {
+		t.Fatalf("an unrelated catalog must not match: %+v", contains)
+	}
+	if found[namespaced].Model != "deepseek-ai/deepseek-v4-flash" {
+		t.Fatalf("namespaced match = %+v, want the namespaced name", found[namespaced])
+	}
+	if found[tagged].Model != "cn:deepseek-r1" {
+		t.Fatalf("tagged match = %+v", found[tagged])
+	}
+	// A channel that also lists the bare name keeps forwarding that one: the
+	// pattern as written wins over a widening.
+	if found[bare].Model != "deepseek" {
+		t.Fatalf("bare match = %+v, want the exact name preferred", found[bare])
+	}
+
+	// The write side agrees with the preview and redirects every widened member
+	// to the name its upstream actually serves.
+	routeID, err := db.Route.Create(&domain.Route{ModelPattern: "deepseek", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added, skipped, err := db.AttachChannelsToRoute(routeID, "deepseek", store.ModelMatchContains,
+		[]int64{prefixed, namespaced, tagged, bare, unrelated}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 4 || skipped != 1 {
+		t.Fatalf("contains attach = (added %d, skipped %d), want (4, 1)", added, skipped)
+	}
+	members := memberChannelIDs(t, db, routeID)
+	if members[namespaced].MappingJSON != `{"real":"deepseek-ai/deepseek-v4-flash"}` {
+		t.Fatalf("namespaced member mapping = %q", members[namespaced].MappingJSON)
+	}
+	if members[tagged].MappingJSON != `{"real":"cn:deepseek-r1"}` {
+		t.Fatalf("tagged member mapping = %q", members[tagged].MappingJSON)
+	}
+	if members[bare].MappingJSON != "" {
+		t.Fatalf("the channel serving the exact name must forward it unchanged: %+v", members[bare])
+	}
+	if members[prefixed].MappingJSON != `{"real":"deepseek-chat"}` {
+		t.Fatalf("prefixed member mapping = %q", members[prefixed].MappingJSON)
+	}
+
+	// A wildcard the operator wrote is used as written in every mode: no second
+	// wildcard is stacked onto it, so "deepseek-*" still means "starts with".
+	wild, err := db.ChannelsMatchingModel("deepseek-*", store.ModelMatchContains)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wild) != 3 {
+		t.Fatalf("wildcard matches = %+v, want the prefix hits only", wild)
+	}
+}
+
+// TestRenamedModelStaysFindable is the rename case: after unifying
+// "deepseek-ai/deepseek-v4-flash" into "deepseek-v4-flash", the channel's own
+// list still says the upstream name. Searching the name the OPERATOR now uses
+// must still find the channel that already serves it — and the member that
+// search produces must forward the upstream name, not the alias.
+func TestRenamedModelStaysFindable(t *testing.T) {
+	db := openTestDB(t)
+
+	channel := newAutoMatchChannel(t, db, "wong", "deepseek-ai/deepseek-v4-flash,gpt-4o", domain.StatusEnabled, domain.ModelSyncModeAuto)
+	other := newAutoMatchChannel(t, db, "fresh", "deepseek-v4-flash", domain.StatusEnabled, domain.ModelSyncModeAuto)
+
+	// The rename: a route named after the console's name, whose member rewrites
+	// to the upstream model.
+	aliasRoute, err := db.Route.Create(&domain.Route{ModelPattern: "deepseek-v4-flash", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.Create(&domain.RouteMember{
+		RouteID: aliasRoute, ChannelID: channel, Enabled: true, Weight: 100,
+		MappingJSON: `{"real":"deepseek-ai/deepseek-v4-flash"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Search by the alias: the channel's own list cannot answer this.
+	matches, err := db.ChannelsMatchingModel("deepseek-v4-flash", store.ModelMatchExact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[int64]store.ModelChannelMatch{}
+	for _, match := range matches {
+		byID[match.ChannelID] = match
+	}
+	if len(matches) != 2 {
+		t.Fatalf("matches = %+v, want the renamed channel and the one listing it", matches)
+	}
+	renamed := byID[channel]
+	if renamed.Source != "routed" {
+		t.Fatalf("renamed match = %+v, want it found through the route", renamed)
+	}
+	if renamed.Model != "deepseek-ai/deepseek-v4-flash" {
+		t.Fatalf("renamed match forwards %q, want the upstream name", renamed.Model)
+	}
+	if byID[other].Source != "models_csv" {
+		t.Fatalf("own-list match = %+v, want models_csv", byID[other])
+	}
+
+	// Searching the upstream name finds it too, through the channel's own list.
+	upstream, err := db.ChannelsMatchingModel("deepseek-ai/deepseek-v4-flash", store.ModelMatchExact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upstream) != 1 || upstream[0].ChannelID != channel {
+		t.Fatalf("upstream search = %+v, want the channel that lists it", upstream)
+	}
+
+	// Attaching the renamed channel to another group of the same route keeps
+	// forwarding the upstream name.
+	added, skipped, err := db.AttachChannelsToRoute(aliasRoute, "deepseek-v4-flash", store.ModelMatchExact,
+		[]int64{channel}, "team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added != 1 || skipped != 0 {
+		t.Fatalf("attach = (added %d, skipped %d), want (1, 0)", added, skipped)
+	}
+	members, err := db.RouteMember.ListByRoute(aliasRoute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, member := range members {
+		seen[member.GroupName] = member.MappingJSON
+	}
+	if seen["team"] != `{"real":"deepseek-ai/deepseek-v4-flash"}` {
+		t.Fatalf("group map = %+v, want the upstream name in the new group", seen)
 	}
 }

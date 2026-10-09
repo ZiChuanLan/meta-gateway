@@ -116,7 +116,9 @@ describe("auto-match members dialog", () => {
     expect(backend.attach.mock.calls[0]?.[0]).toEqual({
       channel_ids: [11, 12],
       group_name: "default",
-      match: "exact",
+      // The widest scope is the default: the dialog exists to find every
+      // channel that can serve the family.
+      match: "contains",
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
@@ -134,7 +136,7 @@ describe("auto-match members dialog", () => {
     expect(backend.attach.mock.calls[0]?.[0]).toEqual({
       channel_ids: [11],
       group_name: "blue",
-      match: "exact",
+      match: "contains",
     });
   });
 
@@ -157,7 +159,9 @@ describe("auto-match members dialog", () => {
     renderDialog();
     await screen.findByText("serving");
 
-    fireEvent.click(screen.getByRole("radio", { name: /Related:/ }));
+    // Narrowing is still available, and it is what the operator picks when the
+    // wildcard would reach too far.
+    fireEvent.click(screen.getByRole("radio", { name: /Prefix:/ }));
     expect(await screen.findByText("matched deepseek-v4-flash-free")).toBeInTheDocument();
     // The scope reaches the server on the preview request, not only on attach.
     await waitFor(() => expect(backend.previews.at(-1)?.searchParams.get("match")).toBe("related"));
@@ -168,6 +172,43 @@ describe("auto-match members dialog", () => {
       channel_ids: [11, 13],
       match: "related",
     });
+  });
+
+  // A real catalog prefixes and namespaces, so the term is often not at the
+  // start of the name: "deepseek" has to reach "deepseek-ai/deepseek-v4-flash"
+  // and "cn:deepseek-r1", which the prefix scope never touches.
+  it("reaches a namespaced name under the default contains scope", async () => {
+    const backend = mockBackend({
+      items: [
+        { channel_id: 11, channel_name: "serving", source: "models_csv" },
+        {
+          channel_id: 14,
+          channel_name: "namespaced",
+          source: "models_csv",
+          model: "deepseek-ai/deepseek-v4-flash",
+        },
+        {
+          channel_id: 15,
+          // Found through a route the channel already serves, with no redirect
+          // behind it: nothing to rewrite, so the row says where it came from.
+          channel_name: "renamed",
+          source: "routed",
+        },
+      ],
+    });
+    renderDialog();
+    await screen.findByText("namespaced");
+
+    // Asked for the widest scope without the operator touching anything, and
+    // the scope reaches the server on the preview, not only on attach.
+    await waitFor(() =>
+      expect(backend.previews.at(-1)?.searchParams.get("match")).toBe("contains"),
+    );
+    expect(screen.getByRole("radio", { name: /Contains:/ })).toBeChecked();
+    expect(screen.getByText("matched deepseek-ai/deepseek-v4-flash")).toBeInTheDocument();
+    // A channel found through a route it already serves says so, instead of
+    // looking like one more entry in its own model list.
+    expect(screen.getByText("already routed")).toBeInTheDocument();
   });
 
   it("does not offer a channel the group already has, and never sends an empty list", async () => {

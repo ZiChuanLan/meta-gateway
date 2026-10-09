@@ -1526,3 +1526,150 @@ describe("Channels key-pool deep-link", () => {
     await waitFor(() => expect(workBuddyRow()).toHaveClass("is-selected"));
   });
 });
+
+describe("Channels search reaches models", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function overviewNamed(id: number, name: string): Record<string, unknown> {
+    return {
+      channel: {
+        id,
+        name,
+        base_url: "https://api.example.com",
+        models_csv: "",
+        group_name: "default",
+        priority: 0,
+        weight: 100,
+        status: "enabled",
+        created_at: "",
+        updated_at: "",
+      },
+      credential_kind: "api_key",
+      checkin_enabled: false,
+      has_user_credential: false,
+      has_platform_user_id: false,
+      has_api_key: true,
+      site_usable: true,
+      credential_usable: true,
+      model_count: 0,
+      discovered_model_count: 0,
+      last_latency_ms: 0,
+      route_count: 0,
+      enabled_member_count: 0,
+      cooling_member_count: 0,
+      failure_count: 0,
+      checkin_supported: false,
+      account_supported: false,
+    };
+  }
+
+  it("lists name matches first, then the channels the term reached through a model", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input).split("?")[0] ?? "";
+        switch (path) {
+          case "/admin/channels/overview":
+            return jsonResponse([
+              overviewNamed(1, "deepseek-official"),
+              overviewNamed(2, "wong"),
+              overviewNamed(3, "unrelated"),
+            ]);
+          case "/admin/discovery/model-channels":
+            // The server answers the same way for the page and for a dialog:
+            // here it is the model search's answer.
+            return jsonResponse({
+              items: [
+                {
+                  channel_id: 2,
+                  channel_name: "wong",
+                  source: "models_csv",
+                  model: "deepseek-ai/deepseek-v4-flash",
+                },
+              ],
+            });
+          case "/admin/sites":
+          case "/admin/channels":
+          case "/admin/routes/overview":
+          case "/admin/plugins/status":
+            return jsonResponse([]);
+          default:
+            return jsonResponse({ error: `unexpected ${path}` }, 500);
+        }
+      }),
+    );
+
+    renderChannels();
+    await screen.findByText("deepseek-official");
+
+    fireEvent.change(screen.getByLabelText("Search names, addresses or models"), {
+      target: { value: "deepseek" },
+    });
+
+    // The name match is the table's answer...
+    await waitFor(() => expect(screen.queryByText("unrelated")).not.toBeInTheDocument());
+    expect(screen.getByText("deepseek-official")).toBeInTheDocument();
+
+    // ...and the model match is the section under it, naming the entry that
+    // matched so the operator can see WHY that channel is there.
+    expect(await screen.findByText(/1 more channels serve a model containing/)).toBeInTheDocument();
+    expect(screen.getByText("matched deepseek-ai/deepseek-v4-flash")).toBeInTheDocument();
+    expect(screen.getByText("wong")).toBeInTheDocument();
+  });
+
+  // The common case is that NOTHING is named after the model: the operator
+  // searched a model family, not a connection. Showing "no connections yet"
+  // over a list of channels that do serve it would be a lie.
+  it("still answers when no channel name matches the term", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input).split("?")[0] ?? "";
+        switch (path) {
+          case "/admin/channels/overview":
+            return jsonResponse([overviewNamed(1, "wong"), overviewNamed(2, "nl-relay")]);
+          case "/admin/discovery/model-channels":
+            return jsonResponse({
+              items: [
+                {
+                  channel_id: 1,
+                  channel_name: "wong",
+                  source: "models_csv",
+                  model: "deepseek-ai/deepseek-v4-flash",
+                },
+              ],
+            });
+          case "/admin/sites":
+          case "/admin/channels":
+          case "/admin/routes/overview":
+          case "/admin/plugins/status":
+            return jsonResponse([]);
+          default:
+            return jsonResponse({ error: `unexpected ${path}` }, 500);
+        }
+      }),
+    );
+
+    renderChannels();
+    await screen.findByText("wong");
+    fireEvent.change(screen.getByLabelText("Search names, addresses or models"), {
+      target: { value: "deepseek" },
+    });
+
+    expect(await screen.findByText(/1 more channels serve a model containing/)).toBeInTheDocument();
+    expect(screen.getByText("matched deepseek-ai/deepseek-v4-flash")).toBeInTheDocument();
+    // Neither the empty-state hero nor a header row with nothing under it.
+    expect(screen.queryByText("Add your first upstream connection")).not.toBeInTheDocument();
+    expect(document.querySelector(".channels-directory thead")).toBeNull();
+  });
+});

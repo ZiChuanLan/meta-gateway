@@ -824,7 +824,12 @@ export const en: Dict = {
   "maintain.description":
     "Manage runtime policy, appearance, and backups. Model and connection changes stay in their workspaces.",
   "maintain.tab.exchange": "Exchange",
-  "channels.searchPlaceholder": "Search connections",
+  "channels.searchPlaceholder": "Search names, addresses or models",
+  "channels.modelMatchHead": "{n} more channels serve a model containing “{term}”",
+  "channels.modelMatchHit": "matched {model}",
+  "channels.modelMatchSource.models_csv": "channel list",
+  "channels.modelMatchSource.discovered": "discovery snapshot",
+  "channels.modelMatchSource.routed": "already routed",
   "channels.title": "Connections",
   "channels.description":
     "Connect an upstream, verify credentials, and sync its model inventory. Priority and weight here are connection defaults.",
@@ -1723,10 +1728,15 @@ export const en: Dict = {
   "modelsPage.autoMatch.modeLabel": "Match scope",
   "modelsPage.autoMatch.modeExact": "Exact: only channels listing this full model name",
   "modelsPage.autoMatch.modeRelated":
-    "Related: also channels serving any model starting with {name} (e.g. {name}-flash, {name}.1)",
+    "Prefix: also channels serving any model starting with {name} (e.g. {name}-flash, {name}.1)",
+  "modelsPage.autoMatch.modeContains":
+    "Contains: any model with {name} anywhere in its name ({name}-chat, {name}-ai/{name}-v4, cn:{name}-r1)",
   "modelsPage.autoMatch.modeRewriteHint":
-    "A related match rewrites the member's upstream name to the entry the channel actually serves (e.g. {name}-flash), so an upstream that does not know the base name still answers.",
+    "A widened match rewrites the member's upstream name to the entry the channel actually serves (e.g. deepseek-ai/deepseek-v4-flash), so an upstream that does not know the base name still answers; a channel listing the full name itself is left unchanged.",
   "modelsPage.autoMatch.matchesModel": "matched {model}",
+  "modelsPage.autoMatch.sourceModels": "channel list",
+  "modelsPage.autoMatch.sourceDiscovered": "discovery snapshot",
+  "modelsPage.autoMatch.sourceRouted": "already routed",
   "modelsPage.autoMatch.desc":
     "Only enabled channels whose model list really contains this model are listed; channels already in this group are not added twice.",
   "modelsPage.autoMatch.group": "Target group: {name}",

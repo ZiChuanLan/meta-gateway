@@ -1,5 +1,6 @@
 import { HeartPulse, Plus, RefreshCw, UserCheck } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Channel, ChannelOverview, Site } from "../api/types";
@@ -577,22 +578,26 @@ export function Channels() {
     const groups = [...new Set(list.map((item) => item.channel.group_name).filter(Boolean))].sort();
     return { types, groups };
   }, [overviews.data]);
+  // The filters an overview has to pass whatever the search says. Kept in one
+  // place because the model group below has to obey them too.
+  const passesFilters = useCallback(
+    (overview: ChannelOverview) => {
+      const ch = overview.channel;
+      if (typeFilter !== "all" && ch.type_hint !== typeFilter) return false;
+      if (groupFilter !== "all" && ch.group_name !== groupFilter) return false;
+      if (healthFilter === "ready" && !isChannelReady(overview)) return false;
+      if (healthFilter === "missing_key" && !isMissingAPIKey(overview)) return false;
+      if (healthFilter === "attention" && !channelNeedsAttention(overview)) return false;
+      return true;
+    },
+    [typeFilter, groupFilter, healthFilter],
+  );
   const rows = useMemo(() => {
     const list = overviews.data ?? [];
     const term = query.trim().toLowerCase();
     return list.filter((overview) => {
       const ch = overview.channel;
-      if (typeFilter !== "all" && ch.type_hint !== typeFilter) return false;
-      if (groupFilter !== "all" && ch.group_name !== groupFilter) return false;
-      if (healthFilter === "ready" && !isChannelReady(overview)) {
-        return false;
-      }
-      if (healthFilter === "missing_key" && !isMissingAPIKey(overview)) {
-        return false;
-      }
-      if (healthFilter === "attention" && !channelNeedsAttention(overview)) {
-        return false;
-      }
+      if (!passesFilters(overview)) return false;
       if (!term) return true;
       const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
       const base = (ch.base_url || site?.base_url || "").toLowerCase();
@@ -600,7 +605,41 @@ export function Channels() {
         ch.name.toLowerCase().includes(term) || base.includes(term) || String(ch.id).includes(term)
       );
     });
-  }, [overviews.data, query, siteById, healthFilter, typeFilter, groupFilter]);
+  }, [overviews.data, query, siteById, passesFilters]);
+
+  // The same term also searches MODELS, and that answer needs the catalog rather
+  // than the loaded page: it arrives debounced and lands in its own group below
+  // the name matches. A name match stays instant, because it is the one the
+  // operator is usually typing towards.
+  const [modelTerm, setModelTerm] = useState("");
+  useEffect(() => {
+    const handle = setTimeout(() => setModelTerm(query.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [query]);
+  const modelSearch = useQuery({
+    queryKey: ["model-channels", modelTerm, "contains"],
+    queryFn: ({ signal }) => service.modelChannels(modelTerm, "contains", signal),
+    enabled: modelTerm.length >= 2,
+  });
+  const modelMatches = useMemo(() => {
+    if (modelTerm.length < 2) return [];
+    const shown = new Set(rows.map((overview) => overview.channel.id));
+    const byId = new Map((overviews.data ?? []).map((overview) => [overview.channel.id, overview]));
+    const out: Array<{ channelId: number; name: string; model: string; source: string }> = [];
+    for (const match of modelSearch.data?.items ?? []) {
+      // A channel already listed above is not listed twice.
+      if (shown.has(match.channel_id)) continue;
+      const overview = byId.get(match.channel_id);
+      if (!overview || !passesFilters(overview)) continue;
+      out.push({
+        channelId: match.channel_id,
+        name: overview.channel.name,
+        model: match.model ?? "",
+        source: match.source,
+      });
+    }
+    return out;
+  }, [modelSearch.data, modelTerm, rows, overviews.data, passesFilters]);
 
   const pagination = useClientPagination(rows, 20, "channels");
   const pageRows = pagination.pageItems;
@@ -934,6 +973,7 @@ export function Channels() {
             setHealthFilter={setHealthFilter}
             overviews={overviews}
             rows={rows}
+            modelMatches={modelMatches}
             pageRows={pageRows}
             siteById={siteById}
             selected={selected}

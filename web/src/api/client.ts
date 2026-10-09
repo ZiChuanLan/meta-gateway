@@ -614,9 +614,11 @@ export const api = (client: ApiClient) => ({
         source: "models_csv" | "discovered";
       }>;
     }>("/admin/discovery/missing-models", signal),
-  // Live preview for the add-route dialog's auto-match: enabled channels whose
-  // models.csv or discovery snapshot matches the pattern. "related" also
-  // accepts the pattern's -sibling models.
+  // Live preview for the add-route dialog's auto-match: enabled channels that
+  // serve the pattern — their own model list, the discovery snapshot, or a name
+  // this gateway already serves through them (a renamed alias included).
+  // "related" widens to the pattern's prefix siblings, "contains" to any name
+  // containing it.
   modelChannels: (model: string, match: ModelMatchMode = "exact", signal?: AbortSignal) =>
     client.get<{ items: ModelChannelMatch[] }>(
       `/admin/discovery/model-channels?model=${encodeURIComponent(model)}&match=${match}`,

@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
+import { MatchScopeFieldset } from "./MatchScopeFieldset";
 
 const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -48,7 +49,7 @@ export function RouteDialog({
   const [autoMatch, setAutoMatch] = useState(true);
   // Which channels the auto-match accepts: the exact name, or its -siblings
   // too (the member then forwards the sibling name it found).
-  const [matchMode, setMatchMode] = useState<ModelMatchMode>("exact");
+  const [matchMode, setMatchMode] = useState<ModelMatchMode>("contains");
   const pattern = (form.model_pattern ?? "").trim();
   // Live candidates: enabled channels serving this pattern, so the checkbox
   // states its consequence before saving instead of surprising afterwards.
@@ -141,38 +142,15 @@ export function RouteDialog({
             </span>
           </label>
           {autoMatch && pattern ? (
-            <fieldset className="match-mode">
-              <legend className="ops-panel-context">{t("modelsPage.autoMatch.modeLabel")}</legend>
-              <label className="check">
-                <input
-                  type="radio"
-                  name="route-match-mode"
-                  checked={matchMode === "exact"}
-                  onChange={() => {
-                    setMatchMode("exact");
-                    setSelection(null);
-                  }}
-                />
-                <span>{t("modelsPage.autoMatch.modeExact")}</span>
-              </label>
-              <label className="check">
-                <input
-                  type="radio"
-                  name="route-match-mode"
-                  checked={matchMode === "related"}
-                  onChange={() => {
-                    setMatchMode("related");
-                    setSelection(null);
-                  }}
-                />
-                <span>{t("modelsPage.autoMatch.modeRelated", { name: pattern })}</span>
-              </label>
-              {matchMode === "related" ? (
-                <p className="ops-panel-context">
-                  {t("modelsPage.autoMatch.modeRewriteHint", { name: pattern })}
-                </p>
-              ) : null}
-            </fieldset>
+            <MatchScopeFieldset
+              radioName="route-match-mode"
+              pattern={pattern}
+              value={matchMode}
+              onChange={(next) => {
+                setMatchMode(next);
+                setSelection(null);
+              }}
+            />
           ) : null}
           {autoMatch && pattern ? (
             matches.isPending ? (

@@ -8,6 +8,7 @@ import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
 import { useToast } from "../../toast";
+import { MatchScopeFieldset, matchSourceLabel } from "./MatchScopeFieldset";
 
 /** Same fan-out the Models page uses after a routing write. */
 const ROUTING_INVALIDATE_KEYS = [
@@ -51,7 +52,9 @@ export function AutoMatchMembersDialog({
 
   // The match mode decides which channels even qualify, so switching it drops
   // the hand-picked selection rather than carrying ids across two match sets.
-  const [mode, setMode] = useState<ModelMatchMode>("exact");
+  // The widest scope by default: the dialog exists to find every channel that
+  // can serve the family, and the list shows what it would attach.
+  const [mode, setMode] = useState<ModelMatchMode>("contains");
   const pickMode = (next: ModelMatchMode) => {
     setMode(next);
     setKept(null);
@@ -126,34 +129,12 @@ export function AutoMatchMembersDialog({
           name: group || t("routing.groupDefault"),
         })}
       </p>
-      <fieldset className="match-mode">
-        <legend className="ops-panel-context">{t("modelsPage.autoMatch.modeLabel")}</legend>
-        <label className="check">
-          <input
-            type="radio"
-            name="auto-match-mode"
-            checked={mode === "exact"}
-            onChange={() => pickMode("exact")}
-          />
-          <span>{t("modelsPage.autoMatch.modeExact")}</span>
-        </label>
-        <label className="check">
-          <input
-            type="radio"
-            name="auto-match-mode"
-            checked={mode === "related"}
-            onChange={() => pickMode("related")}
-          />
-          <span>{t("modelsPage.autoMatch.modeRelated", { name: route.model_pattern })}</span>
-        </label>
-        {mode === "related" ? (
-          <p className="ops-panel-context">
-            {t("modelsPage.autoMatch.modeRewriteHint", {
-              name: route.model_pattern,
-            })}
-          </p>
-        ) : null}
-      </fieldset>
+      <MatchScopeFieldset
+        radioName="auto-match-mode"
+        pattern={route.model_pattern}
+        value={mode}
+        onChange={pickMode}
+      />
       {matches.isPending ? (
         <p className="muted" role="status">
           {t("common.loading")}
@@ -198,9 +179,9 @@ export function AutoMatchMembersDialog({
                   onChange={() => toggle(item.channel_id)}
                 />
                 <span>{item.channel_name}</span>
-                {/* A related match attaches the channel under the sibling name;
-                    showing it is the difference between "why is this channel
-                    here" and "that is exactly what I wanted". */}
+                {/* A widened match attaches the channel under the name it
+                    actually serves; showing it is the difference between "why
+                    is this channel here" and "that is what I wanted". */}
                 {item.model && item.model !== route.model_pattern ? (
                   <span className="pg-chip mono">
                     {t("modelsPage.autoMatch.matchesModel", {
@@ -208,7 +189,7 @@ export function AutoMatchMembersDialog({
                     })}
                   </span>
                 ) : (
-                  <span className="pg-chip">{item.source}</span>
+                  <span className="pg-chip">{matchSourceLabel(item.source, t)}</span>
                 )}
               </label>
             ))}

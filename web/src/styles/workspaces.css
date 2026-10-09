@@ -1496,3 +1496,15 @@
   font-size: var(--text-xs);
   color: var(--muted-dark);
 }
+
+/* The search's second answer: channels that do not have the term in their name
+   but do serve a model by it. Separated from the table by a labelled rule so it
+   reads as another section rather than more rows of the first. */
+.model-match-group { border-top: 1px dashed var(--line); padding: 10px 16px 14px; }
+.model-match-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: var(--muted); font: 600 var(--text-xs)/1.6 var(--font); }
+.model-match-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.model-match-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: var(--radius-sm); background: none; color: inherit; font: 500 13px/1.5 var(--font); text-align: left; cursor: pointer; }
+.model-match-row:hover { background: var(--surface-hover); }
+.model-match-row.is-selected { background: var(--primary-soft); }
+.model-match-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-match-source { margin-left: auto; flex: 0 0 auto; font-size: var(--text-xs); }

@@ -463,24 +463,36 @@ export interface LiveTraceRequest {
   history?: LiveTraceRound[];
 }
 
-/** One enabled channel able to serve a route pattern (models.csv or discovery snapshot). */
+/**
+ * One enabled channel able to serve a route pattern: its own model list, the
+ * discovery snapshot, or a name this gateway already serves through it.
+ */
 export interface ModelChannelMatch {
   channel_id: number;
   channel_name: string;
-  source: "models_csv" | "discovered";
   /**
-   * The model name that matched. On a related match it is the sibling the
-   * member will forward as ("mimo-v2.5-flash" for a route named "mimo-v2.5").
+   * `routed` means the channel serves the name through an existing route — the
+   * matched name is then an alias this gateway renamed, and the forward name is
+   * the upstream's own.
+   */
+  source: "models_csv" | "discovered" | "routed";
+  /**
+   * The model name the attached member must FORWARD: the matched name for a
+   * sibling or a substring hit ("mimo-v2.5-flash" for a route named
+   * "mimo-v2.5"), and the upstream name behind a renamed alias.
    */
   model?: string;
 }
 
 /**
- * How a route pattern is matched against a channel's model list.
- * `related` also accepts the pattern's -sibling models and rewrites the
- * upstream name to whichever the channel actually serves.
+ * How a route pattern is matched against what a channel serves.
+ *
+ * `related` accepts the pattern's prefix siblings ("mimo-v2.5-flash");
+ * `contains` accepts any name containing it, wherever it sits
+ * ("deepseek-ai/deepseek-v4-flash", "cn:deepseek-r1"). Both rewrite the
+ * upstream name to whichever name the channel actually serves.
  */
-export type ModelMatchMode = "exact" | "related";
+export type ModelMatchMode = "exact" | "related" | "contains";
 
 export interface UnifyVariant {
   channel_id: number;

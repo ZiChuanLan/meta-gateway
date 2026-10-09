@@ -1,4 +1,4 @@
-import { Plus, Search } from "lucide-react";
+import { Boxes, Plus, Search } from "lucide-react";
 import type { ChannelOverview, Site } from "../../api/types";
 import type { ActionMenuItem } from "../../components/ActionMenu";
 import { ActionMenu } from "../../components/ActionMenu";
@@ -62,6 +62,11 @@ export type ChannelDirectoryProps = {
     refetch: () => void;
   };
   rows: ChannelOverview[];
+  /**
+   * Channels the same search term reached through their MODELS rather than
+   * their name. They are listed under the table, never twice inside it.
+   */
+  modelMatches: Array<{ channelId: number; name: string; model: string; source: string }>;
   pageRows: ChannelOverview[];
   siteById: Map<number, Site>;
   selected: ChannelOverview | null;
@@ -125,6 +130,7 @@ export function ChannelDirectory(props: ChannelDirectoryProps) {
     setHealthFilter,
     overviews,
     rows,
+    modelMatches,
     pageRows,
     siteById,
     selected,
@@ -205,7 +211,7 @@ export function ChannelDirectory(props: ChannelDirectoryProps) {
         isLoading={overviews.isPending}
         isError={overviews.isError}
         error={overviews.error}
-        isEmpty={!rows.length}
+        isEmpty={!rows.length && modelMatches.length === 0}
         empty={
           <EmptyHero
             kicker={
@@ -274,168 +280,214 @@ export function ChannelDirectory(props: ChannelDirectoryProps) {
         ) : null}
         <ListShell
           footer={
-            <PaginationBar
-              page={pagination.page}
-              totalPages={pagination.totalPages}
-              total={pagination.total}
-              pageSize={pagination.pageSize}
-              rangeStart={pagination.rangeStart}
-              rangeEnd={pagination.rangeEnd}
-              hasPrev={pagination.hasPrev}
-              hasNext={pagination.hasNext}
-              onPageChange={pagination.setPage}
-              onPageSizeChange={pagination.setPageSize}
-            />
+            rows.length > 0 ? (
+              <PaginationBar
+                page={pagination.page}
+                totalPages={pagination.totalPages}
+                total={pagination.total}
+                pageSize={pagination.pageSize}
+                rangeStart={pagination.rangeStart}
+                rangeEnd={pagination.rangeEnd}
+                hasPrev={pagination.hasPrev}
+                hasNext={pagination.hasNext}
+                onPageChange={pagination.setPage}
+                onPageSizeChange={pagination.setPageSize}
+              />
+            ) : null
           }
         >
-          <DataTable
-            headers={[
-              ...(bulkMode ? [bulkHeader] : []),
-              t("common.name"),
-              t("common.status"),
-              t("common.models"),
-              t("channels.modelsSelectedCol"),
-              t("common.latency"),
-              t("common.actions"),
-            ]}
-          >
-            {pageRows.map((overview) => {
-              const ch = overview.channel;
-              const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
-              const displayBase = ch.base_url || site?.base_url || "";
-              const caps = capabilityFlags(overview);
-              const active = selected?.channel.id === ch.id;
-              const rowBusy =
-                pending.refresh.pendingId === ch.id ||
-                pending.probe.pendingId === ch.id ||
-                pending.accountProbe.pendingId === ch.id ||
-                pending.syncKeys.pendingId === ch.id ||
-                pending.toggle.pendingId === ch.id ||
-                pending.del.pendingId === ch.id;
-              return (
-                <tr
-                  key={ch.id}
-                  tabIndex={0}
-                  className={`is-clickable${active ? " is-selected" : ""}`}
-                  onClick={() => {
-                    selectRow(ch.id);
-                    setInspectorOpen(true);
-                  }}
-                  onContextMenu={(event) => {
-                    const point = rowContextPoint(event);
-                    if (!point) return;
-                    selectRow(ch.id);
-                    setContextMenu({ channelId: ch.id, ...point });
-                  }}
-                  onKeyDown={(event) => {
-                    const point = rowKeyboardContextPoint(event);
-                    if (point) {
+          {/* The table only exists when the search matched a NAME: with no such
+              row the model group below is the whole answer, and a lone header
+              row above it would only suggest the list failed to load. */}
+          {pageRows.length > 0 ? (
+            <DataTable
+              headers={[
+                ...(bulkMode ? [bulkHeader] : []),
+                t("common.name"),
+                t("common.status"),
+                t("common.models"),
+                t("channels.modelsSelectedCol"),
+                t("common.latency"),
+                t("common.actions"),
+              ]}
+            >
+              {pageRows.map((overview) => {
+                const ch = overview.channel;
+                const site = ch.site_id != null ? siteById.get(ch.site_id) : undefined;
+                const displayBase = ch.base_url || site?.base_url || "";
+                const caps = capabilityFlags(overview);
+                const active = selected?.channel.id === ch.id;
+                const rowBusy =
+                  pending.refresh.pendingId === ch.id ||
+                  pending.probe.pendingId === ch.id ||
+                  pending.accountProbe.pendingId === ch.id ||
+                  pending.syncKeys.pendingId === ch.id ||
+                  pending.toggle.pendingId === ch.id ||
+                  pending.del.pendingId === ch.id;
+                return (
+                  <tr
+                    key={ch.id}
+                    tabIndex={0}
+                    className={`is-clickable${active ? " is-selected" : ""}`}
+                    onClick={() => {
+                      selectRow(ch.id);
+                      setInspectorOpen(true);
+                    }}
+                    onContextMenu={(event) => {
+                      const point = rowContextPoint(event);
+                      if (!point) return;
                       selectRow(ch.id);
                       setContextMenu({ channelId: ch.id, ...point });
-                    }
-                  }}
-                >
-                  {bulkMode ? (
-                    <td className="bulk-cell" onClick={(event) => event.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        aria-label={t("channels.bulkSelectOne", { name: ch.name })}
-                        checked={bulkSelected.has(ch.id)}
-                        onChange={() => toggleBulkSelected(ch.id)}
-                      />
-                    </td>
-                  ) : null}
-                  <td>
-                    <strong>{ch.name}</strong>
-                    {ch.group_name ? (
-                      <span className="capability-chip is-group">{ch.group_name}</span>
+                    }}
+                    onKeyDown={(event) => {
+                      const point = rowKeyboardContextPoint(event);
+                      if (point) {
+                        selectRow(ch.id);
+                        setContextMenu({ channelId: ch.id, ...point });
+                      }
+                    }}
+                  >
+                    {bulkMode ? (
+                      <td className="bulk-cell" onClick={(event) => event.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={t("channels.bulkSelectOne", { name: ch.name })}
+                          checked={bulkSelected.has(ch.id)}
+                          onChange={() => toggleBulkSelected(ch.id)}
+                        />
+                      </td>
                     ) : null}
-                    {displayBase ? (
-                      <a
-                        className="mono truncate base-url-link"
-                        href={displayBase}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={displayBase}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {displayBase}
-                      </a>
-                    ) : (
-                      <small className="mono truncate">{t("channels.inheritsSite")}</small>
-                    )}
-                  </td>
-                  <td className="status-col">
-                    <div className="capability-stack is-compact">
-                      <ChannelStatusBadges overview={overview} />
-                      {caps.tokenProblem ? (
-                        <span className="capability-chip is-warn">
-                          {t("channels.badge.tokenProblem")}
-                        </span>
+                    <td>
+                      <strong>{ch.name}</strong>
+                      {ch.group_name ? (
+                        <span className="capability-chip is-group">{ch.group_name}</span>
                       ) : null}
-                      {caps.checkinScheduled ? (
-                        <span className="capability-chip is-checkin">
-                          {t("channels.badge.checkinOn")}
-                        </span>
-                      ) : caps.checkinNeedsUserID ? (
-                        <span className="capability-chip is-warn">
-                          {t("channels.badge.needsUserId")}
-                        </span>
-                      ) : null}
-                      {caps.modelsReady ? (
-                        <span className="capability-chip is-models">
-                          {t("channels.badge.models")}
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td title={t("channels.modelsTotalHint")}>
-                    {overview.last_checked_at ? (
-                      overview.discovered_model_count > 0 ? (
-                        <strong>{overview.discovered_model_count}</strong>
+                      {displayBase ? (
+                        <a
+                          className="mono truncate base-url-link"
+                          href={displayBase}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={displayBase}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {displayBase}
+                        </a>
+                      ) : (
+                        <small className="mono truncate">{t("channels.inheritsSite")}</small>
+                      )}
+                    </td>
+                    <td className="status-col">
+                      <div className="capability-stack is-compact">
+                        <ChannelStatusBadges overview={overview} />
+                        {caps.tokenProblem ? (
+                          <span className="capability-chip is-warn">
+                            {t("channels.badge.tokenProblem")}
+                          </span>
+                        ) : null}
+                        {caps.checkinScheduled ? (
+                          <span className="capability-chip is-checkin">
+                            {t("channels.badge.checkinOn")}
+                          </span>
+                        ) : caps.checkinNeedsUserID ? (
+                          <span className="capability-chip is-warn">
+                            {t("channels.badge.needsUserId")}
+                          </span>
+                        ) : null}
+                        {caps.modelsReady ? (
+                          <span className="capability-chip is-models">
+                            {t("channels.badge.models")}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td title={t("channels.modelsTotalHint")}>
+                      {overview.last_checked_at ? (
+                        overview.discovered_model_count > 0 ? (
+                          <strong>{overview.discovered_model_count}</strong>
+                        ) : (
+                          <span className="muted">0</span>
+                        )
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td
+                      title={
+                        overview.model_count > 0
+                          ? t("channels.modelsAdoptedHint")
+                          : t("channels.modelsNoneAdoptedHint")
+                      }
+                    >
+                      {overview.model_count > 0 ? (
+                        <strong>{overview.model_count}</strong>
                       ) : (
                         <span className="muted">0</span>
-                      )
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td
-                    title={
-                      overview.model_count > 0
-                        ? t("channels.modelsAdoptedHint")
-                        : t("channels.modelsNoneAdoptedHint")
-                    }
-                  >
-                    {overview.model_count > 0 ? (
-                      <strong>{overview.model_count}</strong>
-                    ) : (
-                      <span className="muted">0</span>
-                    )}
-                  </td>
-                  <td>
-                    {overview.last_checked_at
-                      ? t("common.ms", { n: overview.last_latency_ms })
-                      : "—"}
-                  </td>
-                  <td className="actions row-actions" onClick={(event) => event.stopPropagation()}>
-                    <ActionMenu
-                      compact
-                      label={t("common.moreActions")}
-                      title={ch.name}
-                      disabled={rowBusy}
-                      onOpenChange={(open) => {
-                        // Ensure credentials for this row's site are loaded so the
-                        // check-in toggle label matches the overview badge.
-                        if (open) selectRow(ch.id);
+                      )}
+                    </td>
+                    <td>
+                      {overview.last_checked_at
+                        ? t("common.ms", { n: overview.last_latency_ms })
+                        : "—"}
+                    </td>
+                    <td
+                      className="actions row-actions"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <ActionMenu
+                        compact
+                        label={t("common.moreActions")}
+                        title={ch.name}
+                        disabled={rowBusy}
+                        onOpenChange={(open) => {
+                          // Ensure credentials for this row's site are loaded so the
+                          // check-in toggle label matches the overview badge.
+                          if (open) selectRow(ch.id);
+                        }}
+                        items={connectionActions(overview)}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </DataTable>
+          ) : null}
+          {modelMatches.length > 0 ? (
+            <div className="model-match-group">
+              <div className="model-match-head">
+                <Boxes size={13} aria-hidden="true" />
+                <span>
+                  {t("channels.modelMatchHead", { n: modelMatches.length, term: query.trim() })}
+                </span>
+              </div>
+              <ul className="model-match-list">
+                {modelMatches.map((match) => (
+                  <li key={match.channelId}>
+                    <button
+                      type="button"
+                      className={`model-match-row${
+                        selected?.channel.id === match.channelId ? " is-selected" : ""
+                      }`}
+                      onClick={() => {
+                        selectRow(match.channelId);
+                        setInspectorOpen(true);
                       }}
-                      items={connectionActions(overview)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </DataTable>
+                    >
+                      <span className="model-match-name">{match.name}</span>
+                      {match.model ? (
+                        <span className="pg-chip mono">
+                          {t("channels.modelMatchHit", { model: match.model })}
+                        </span>
+                      ) : null}
+                      <span className="muted model-match-source">
+                        {t(`channels.modelMatchSource.${match.source}`)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </ListShell>
         {contextMenu
           ? (() => {
