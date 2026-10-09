@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lan/meta-gateway/internal/discovery"
@@ -30,9 +32,44 @@ func (h *DiscoveryHandler) Register(r chi.Router) {
 	r.Post("/discovery/channels/{id}/probe", h.probeChannel)
 	r.Post("/discovery/channels/{id}/refresh", h.refreshChannel)
 	r.Post("/discovery/refresh", h.refreshAll)
+	r.Post("/discovery/models-preview", h.previewModels)
 	r.Get("/discovery/models", h.listModels)
 	r.Get("/discovery/missing-models", h.missingModels)
 	r.Get("/discovery/model-channels", h.modelChannels)
+}
+
+// modelsPreviewRequest is a connection that has not been saved yet: the add-channel
+// dialog's 获取模型 asks what an upstream would serve before anything is stored.
+type modelsPreviewRequest struct {
+	BaseURL  string `json:"base_url"`
+	Secret   string `json:"secret"`
+	TypeHint string `json:"type_hint"`
+}
+
+// previewModels lists the models behind a base URL and a key that are not stored
+// anywhere. Read-only: no probe record, no health history, no model adoption. The
+// alternative — create the channel, then discover — leaves a site, a credential
+// and a channel behind every time the URL or the key turns out wrong.
+func (h *DiscoveryHandler) previewModels(w http.ResponseWriter, r *http.Request) {
+	var req modelsPreviewRequest
+	if err := decodeJSON(w, r, &req, 0, false); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if strings.TrimSpace(req.Secret) == "" {
+		writeError(w, http.StatusBadRequest, "secret is required")
+		return
+	}
+	// Bounded: the dialog blocks on this, and an upstream that accepts the
+	// connection and then says nothing must not hold the form open.
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	result, err := h.service.PreviewModels(ctx, req.BaseURL, req.TypeHint, req.Secret)
+	if err != nil {
+		writeDiscoveryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // missingModels reports channel-exposed models no enabled route covers.

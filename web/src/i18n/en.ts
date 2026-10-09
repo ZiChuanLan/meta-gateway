@@ -917,6 +917,12 @@ export const en: Dict = {
   "channels.saveAndVerify": "Save & verify",
   "channels.saveOnly": "Save only",
   "channels.saveOnlyHint": "Save without verifying the connection.",
+  "channels.modelsFetch": "Fetch models",
+  "channels.modelsFetchHint":
+    "Fill in the base URL and key, then pull the upstream model list. Nothing has been created yet at this point.",
+  "channels.modelsFetchedCount": "{n} models upstream",
+  "channels.modelsFetchedEmpty": "The upstream returned no models.",
+  "channels.modelsAutoNote": "Auto sync adopts every model.",
   "channels.retryVerify": "Retry verify",
   "channels.createdOnly": "{name} saved. Verify when you are ready.",
   "channels.verifyFailed": "{name} was saved, but model sync failed. Retry without creating again.",
@@ -1049,6 +1055,7 @@ export const en: Dict = {
   "channels.proxyUrlHint":
     "HTTP(S) proxy for this channel's upstream requests. Empty = inherit the global proxy (settings page).",
   "channels.callPolicy": "Call policy",
+  "channels.callPolicyInheritUnknown": "Follow the site",
   "channels.callPolicyHint": "How automated calls (probes, keep-alive) look on this channel.",
   "channels.callPolicyInherit": "Follow the site (now: {policy})",
   "channels.modelBlocks": "Model not found (auto-blocked)",

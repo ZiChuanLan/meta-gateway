@@ -99,6 +99,24 @@ export type CreateConnectionInput = {
   group_name?: string;
   /** Empty/undefined = inherit the Admin-configured default. */
   model_sync_mode?: "auto" | "manual";
+  /** The models this channel serves. Omitted when the dialog never fetched a
+   *  list, which is different from "fetched and picked none". */
+  models_csv?: string;
+  /** Per-channel behaviour the dialog can set up front. Only the keys the
+   *  operator actually touched are present, so an untouched field keeps the
+   *  backend default instead of pinning whatever the form rendered. */
+  advanced?: ConnectionAdvancedPatch;
+};
+
+export type ConnectionAdvancedPatch = {
+  priority?: number;
+  weight?: number;
+  max_reasoning_effort?: string;
+  max_concurrent?: number;
+  non_stream_timeout_seconds?: number;
+  stream_policy?: "" | "force_stream" | "force_non_stream";
+  proxy_url?: string;
+  call_policy?: "" | "allow_probe" | "real_calls_only";
 };
 
 export function normalizeBase(url: string) {

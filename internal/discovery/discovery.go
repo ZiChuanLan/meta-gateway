@@ -217,24 +217,11 @@ func (s *Service) Probe(ctx context.Context, channelID int64) (*ProbeResult, err
 		if errors.Is(lastErr, context.Canceled) || errors.Is(lastErr, context.DeadlineExceeded) {
 			return nil, lastErr
 		}
-		category := domain.CategoryUpstreamFailure
-		var adapterErr *adapters.Error
-		if errors.As(lastErr, &adapterErr) {
-			category = string(adapterErr.Kind)
-			// 401/403 on /v1/models with a user access_token is expected on many New API hosts.
-			if adapterErr.Kind == adapters.ErrorStatus &&
-				(adapterErr.Status == 401 || adapterErr.Status == 403) {
-				kind := ""
-				if lastCredential != nil {
-					kind = strings.ToLower(strings.TrimSpace(lastCredential.Kind))
-				}
-				if kind == "access_token" || kind == "session" {
-					category = domain.CategoryUserTokenNotForModels
-				} else {
-					category = domain.CategoryUpstreamUnauthorized
-				}
-			}
+		credentialKind := ""
+		if lastCredential != nil {
+			credentialKind = lastCredential.Kind
 		}
+		category := categoryForListError(lastErr, credentialKind)
 		if persist {
 			checkedAt := s.now()
 			_ = s.db.Channel.RecordProbeFailure(channel.ID, checkedAt, category)

@@ -142,18 +142,28 @@ export function Channels() {
   const [keepaliveOpen, setKeepaliveOpen] = useState(false);
 
   const createConnection = useAdminMutation({
-    mutationFn: (input: CreateConnectionInput) =>
-      service.createConnection({
+    // The advanced fields the dialog collects go through the same update path an
+    // existing channel uses, and they go BEFORE the verify step: 调用策略 decides
+    // whether this site may be probed at all, so a create-then-verify that ran the
+    // probe first would knock on a door the operator just declared off limits.
+    mutationFn: async (input: CreateConnectionInput) => {
+      const created = await service.createConnection({
         name: input.name.trim(),
         base_url: normalizeBase(input.base_url),
         secret: input.secret.trim(),
         type_hint: input.type_hint || "openai-compatible",
         group_name: input.group_name?.trim() || "default",
         status: "enabled",
+        ...(input.models_csv !== undefined ? { models_csv: input.models_csv } : {}),
         // Explicit choice from the dialog; undefined would silently inherit
         // the system default, which is exactly what used to confuse people.
         model_sync_mode: input.model_sync_mode,
-      }),
+      });
+      if (input.advanced && Object.keys(input.advanced).length > 0) {
+        await service.updateChannel(created.channel.id, input.advanced);
+      }
+      return created;
+    },
     invalidateKeys: [...INVALIDATE],
     toastOnError: false,
     onSuccess: (result) => {

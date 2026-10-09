@@ -775,6 +775,13 @@ export const api = (client: ApiClient) => ({
   unifyRestoreRoute: (id: number) =>
     client.post<{ status: string }>(`/admin/models/unify/deleted/${id}/restore`),
   probeChannel: (id: number) => client.post<ProbeResult>(`/admin/discovery/channels/${id}/probe`),
+  /**
+   * What an upstream would serve, from a base URL and key that are not stored
+   * yet — the add-channel dialog's 「获取模型」. Read-only: no channel, no probe
+   * record, no adoption.
+   */
+  previewChannelModels: (body: { base_url: string; secret: string; type_hint?: string }) =>
+    client.post<{ adapter: string; models: string[] }>("/admin/discovery/models-preview", body),
   tryChat: (body: {
     model: string;
     prompt?: string;

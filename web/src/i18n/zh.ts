@@ -850,6 +850,12 @@ export const zh: Dict = {
   "channels.saveAndVerify": "保存并验证",
   "channels.saveOnly": "仅保存",
   "channels.saveOnlyHint": "保存但不验证连接。",
+  "channels.modelsFetch": "获取模型",
+  "channels.modelsFetchHint":
+    "先填好 Base URL 与密钥，再拉取上游模型清单。此时还没有创建任何东西。",
+  "channels.modelsFetchedCount": "上游共 {n} 个模型",
+  "channels.modelsFetchedEmpty": "上游没有返回任何模型。",
+  "channels.modelsAutoNote": "自动同步会采纳全部模型。",
   "channels.retryVerify": "重试验证",
   "channels.createdOnly": "已保存 {name}。需要时再验证。",
   "channels.verifyFailed": "{name} 已保存，但模型同步失败。可直接重试，不会重复创建。",
@@ -976,6 +982,7 @@ export const zh: Dict = {
   "channels.callPolicy": "调用策略",
   "channels.callPolicyHint": "自动调用（模型探测 / 保活）在本渠道的请求形态。",
   "channels.callPolicyInherit": "跟随站点（当前：{policy}）",
+  "channels.callPolicyInheritUnknown": "跟随站点",
   "channels.modelBlocks": "模型不存在（自动拉黑）",
   "channels.modelBlockClear": "解除",
   "channels.headerOverrideHint":
