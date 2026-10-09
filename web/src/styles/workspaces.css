@@ -18,8 +18,17 @@
 .time-range-invalid { font-size: 11px; color: var(--danger, #b42318); }
 .time-range-meta { display: inline-flex; align-items: center; gap: 6px; }
 .time-range-caption { font: 11px var(--font); color: var(--muted); font-variant-numeric: tabular-nums; }
-.logs-overview { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.logs-overview .telemetry-strip { flex: 1; margin: 0; max-width: 650px; }
+.logs-overview { display: flex; align-items: center; justify-content: space-between; gap: 24px; container-type: inline-size; }
+/* One row while the band has room for five figures: it answers "how much is on
+   this page" at a glance, and a wrapped 3+2 band re-asks that with a second row
+   of dividers and a hole where the actions are. The question is the band's own
+   width, not the window's, so it is a container query — `minmax(0, 1fr)` lets the
+   tracks shrink to fit instead of wrapping. */
+.logs-overview .telemetry-strip { flex: 1; margin: 0; max-width: 820px; }
+.logs-overview .telemetry-segment { padding-right: 14px; margin-right: 14px; }
+@container (min-width: 640px) {
+  .logs-overview .telemetry-strip { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+}
 .logs-overview .telemetry-segment-value { font-size: 24px; }
 .logs-overview-actions { display: inline-flex; align-items: center; gap: 8px; }
 .log-quick-filters { padding: 0 17px 15px; border-bottom: 1px solid var(--line); font-size: 11px; }
@@ -166,6 +175,12 @@
 .theme-modern .workbench-grid { gap: 24px; }
 .theme-modern .workbench-preview { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-subtle); }
 .console-atmosphere:after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 44%, transparent); }
+@media (max-width: 820px) {
+  /* Tablets and phones: the band wraps to two columns. Its breakpoint is a little
+     wider than the console's mobile layer (760px), because a scrollbar can hide
+     that exact width and the band would then be five squeezed columns. */
+  .logs-overview .telemetry-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
   .logs-overview { gap: 16px; flex-direction: column; align-items: stretch; }
   .logs-overview .telemetry-strip { width: 100%; max-width: none; }

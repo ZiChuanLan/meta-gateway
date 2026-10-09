@@ -332,3 +332,22 @@
 :root[data-appearance="classic"] .authenticated-stage {
   overflow-x: clip;
 }
+
+/* The logs band stays one row in this appearance too. The shared rules live in
+   styles/workspaces.css, which this appearance's own telemetry-strip block (a
+   bordered card with a 180px segment minimum) is imported after and would
+   otherwise win, wrapping five figures into 2+2+1. Mirrored here for the three
+   cases the shared layer handles: room for a row, not enough room, phones. */
+:root[data-appearance="classic"] .logs-overview .telemetry-strip {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+@container (min-width: 640px) {
+  :root[data-appearance="classic"] .logs-overview .telemetry-strip {
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  }
+}
+@media (max-width: 820px) {
+  :root[data-appearance="classic"] .logs-overview .telemetry-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
