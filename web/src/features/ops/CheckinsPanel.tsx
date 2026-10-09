@@ -169,6 +169,7 @@ export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
       <Panel title={t("ops.checkin.scheduleTitle")} titleHelp={t("ops.checkin.scheduleHint")}>
         <label className="check">
           <input
+            className="switch"
             type="checkbox"
             disabled={saveSchedule.isPending || scheduleDraft == null}
             checked={schedule.preset !== "off"}

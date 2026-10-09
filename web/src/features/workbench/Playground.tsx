@@ -575,6 +575,7 @@ export default function Playground({
           <Field label={t("playground.stream")} hint={t("playground.streamHint")}>
             <label className="check marginless">
               <input
+                className="switch"
                 type="checkbox"
                 checked={stream}
                 onChange={(event) => setStream(event.target.checked)}

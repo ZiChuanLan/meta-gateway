@@ -11,15 +11,7 @@ import type {
 } from "../api/types";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
-import {
-  Button,
-  Dialog,
-  ErrorState,
-  Field,
-  Page,
-  Panel,
-  StatusBadge,
-} from "../components/ui";
+import { Button, Dialog, ErrorState, Field, Page, Panel, StatusBadge } from "../components/ui";
 import { useToast } from "../toast";
 import {
   scheduleFromSettings,

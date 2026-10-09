@@ -985,13 +985,17 @@
     transition: none;
   }
 }
-:root[data-appearance="classic"] .field input,
+/* Text fields get the box; a checkbox or a switch is not one. Without the
+   exclusion the shared `.switch` primitive (42x22) came out 42x38 — the height
+   here outranks it — and a plain checkbox inside a panel was given 38px of
+   invisible padding around its 14px glyph. */
+:root[data-appearance="classic"] .field input:not([type="checkbox"]):not([type="radio"]),
 :root[data-appearance="classic"] .field select,
 :root[data-appearance="classic"] .field textarea,
-:root[data-appearance="classic"] .panel input,
+:root[data-appearance="classic"] .panel input:not([type="checkbox"]):not([type="radio"]),
 :root[data-appearance="classic"] .panel select,
 :root[data-appearance="classic"] .panel textarea,
-:root[data-appearance="classic"] .toolbar input,
+:root[data-appearance="classic"] .toolbar input:not([type="checkbox"]):not([type="radio"]),
 :root[data-appearance="classic"] .toolbar select {
   height: 38px;
   padding: 0 14px;
@@ -1059,7 +1063,7 @@
   color: var(--ink-soft);
   cursor: pointer;
 }
-:root[data-appearance="classic"] .check input[type="checkbox"],
+:root[data-appearance="classic"] .check input[type="checkbox"]:not(.switch),
 :root[data-appearance="classic"] .check input[type="radio"] {
   accent-color: var(--primary);
   width: 16px;

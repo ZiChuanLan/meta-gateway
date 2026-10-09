@@ -881,7 +881,11 @@ td.status-col {
   color: var(--ink-soft);
   cursor: pointer;
 }
-.check input[type="checkbox"],
+/* A switch is 42x22 by definition; these size the plain checkboxes that mark a
+   row in a list. `:not(.switch)` is what keeps the shared primitive from losing
+   to these more specific selectors — measured 29x16 on the check-in page until
+   the exclusion existed. */
+.check input[type="checkbox"]:not(.switch),
 .check input[type="radio"] {
   accent-color: var(--primary);
   width: 16px;
@@ -6345,9 +6349,9 @@ td.actions {
 }
 
 /* —— Checkboxes: native, small, theme-tinted —— */
-.check input[type="checkbox"],
-.setting-check-label input[type="checkbox"],
-label.check input[type="checkbox"] {
+.check input[type="checkbox"]:not(.switch),
+.setting-check-label input[type="checkbox"]:not(.switch),
+label.check input[type="checkbox"]:not(.switch) {
   width: 13px;
   height: 13px;
   margin: 0;
@@ -10024,6 +10028,10 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   box-sizing: border-box;
   width: 42px;
   height: 22px;
+  /* A control, not a text field: the appearance sheets give `.field input` 14px of
+     side padding for typing, which on a border-box switch eats the track (measured
+     29.14px wide instead of 42). */
+  padding: 0;
   margin: 0;
   border: 1px solid var(--line-strong, var(--line));
   border-radius: 0;

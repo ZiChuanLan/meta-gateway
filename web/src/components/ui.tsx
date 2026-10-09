@@ -190,19 +190,26 @@ export function Panel({
               ) : (
                 <h2>{title}</h2>
               )}
-              {titleHelp ? <InfoTip label={titleHelp} /> : null}
               {folded && summary ? <span className="panel-summary">{summary}</span> : null}
             </div>
           ) : null}
           <div className="toolbar">{actions}</div>
         </header>
       )}
+      {/* The panel's explanation is part of its body, not a tooltip in the header:
+          a sentence behind an (i) is invisible in a screenshot, on a printed page
+          and to anyone scanning — and a panel that needs explaining usually needs
+          it read. Inside the body it also folds away with the content it explains. */}
       {collapsible ? (
         <div className="panel-body" id={bodyId} hidden={folded}>
+          {titleHelp ? <p className="panel-lede muted">{titleHelp}</p> : null}
           {children}
         </div>
       ) : (
-        children
+        <>
+          {titleHelp ? <p className="panel-lede muted">{titleHelp}</p> : null}
+          {children}
+        </>
       )}
     </section>
   );
