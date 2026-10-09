@@ -154,7 +154,6 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
                 <table className="keepalive-table">
                   <thead>
                     <tr>
-                      <th>{t("channels.keepalive.columnSite")}</th>
                       <th>{t("channels.keepalive.columnChannel")}</th>
                       <th>{t("channels.keepalive.columnWindow")}</th>
                       <th>{t("channels.keepalive.columnIdle")}</th>
@@ -171,19 +170,22 @@ export function KeepaliveDialog({ onClose }: { onClose: () => void }) {
                           editing?.row.channel_id === row.channel_id ? "is-editing" : undefined
                         }
                       >
-                        <td className="keepalive-site-cell">
-                          <span className="keepalive-site-label">
-                            {row.site_name || `#${row.site_id}`}
-                          </span>
-                          {/* Worth its space only where the site forbids probing:
-                              the default needs no badge. */}
-                          {row.call_policy === "real_calls_only" ? (
-                            <span className={policyClass(row)}>{policyLabel(row, t)}</span>
-                          ) : null}
-                        </td>
                         <td>
-                          <span className="keepalive-channel">{row.channel_name}</span>
+                          <span className="keepalive-channel">
+                            {row.channel_name}
+                            {/* Worth its space only where the site forbids probing:
+                                the default needs no badge. */}
+                            {row.call_policy === "real_calls_only" ? (
+                              <span className={policyClass(row)}>{policyLabel(row, t)}</span>
+                            ) : null}
+                          </span>
                           <span className="muted keepalive-model">
+                            {/* The site earns a place on the row only when it is
+                                not already the channel's own name — otherwise
+                                the row would say it twice. */}
+                            {row.site_name && row.site_name !== row.channel_name
+                              ? `${row.site_name} · `
+                              : ""}
                             {row.model || t("channels.keepalive.noModel")}
                           </span>
                         </td>

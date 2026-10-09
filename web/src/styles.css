@@ -9959,27 +9959,15 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   color: var(--ink);
   font-size: 12px;
 }
-/* One flat list, one row per account: the question this page answers — which
-   account is about to be banned — is answered by scanning the 剩余 column, and a
-   per-site title line only pushed the rows apart. */
-.keepalive-site-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-.keepalive-site-label {
-  color: var(--ink);
-  font-weight: 500;
-  white-space: nowrap;
-}
+/* One row per account, and the row says it once: the channel is the thing being
+   called, the site joins it on the second line only when the two names differ. */
 /* Narrow dialogs scroll the table itself instead of squeezing six columns into
    three characters per cell (the site-probe dialog sets the precedent). */
 .keepalive-list {
   overflow-x: auto;
 }
 .keepalive-table {
-  min-width: 620px;
+  min-width: 560px;
 }
 /* The settings form opens above the list; the row that opened it is marked, so
    the editor and the account it belongs to stay connected. */
@@ -9999,11 +9987,14 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   background: var(--surface-subtle);
 }
 .keepalive-policy {
+  margin-left: 6px;
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--surface-subtle);
   color: var(--muted);
   font-size: 11px;
+  font-weight: 500;
+  vertical-align: 1px;
   white-space: nowrap;
 }
 /* The one badge worth a colour: this site forbids probing, so every automated

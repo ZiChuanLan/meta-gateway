@@ -139,7 +139,6 @@ export const zh: Dict = {
   "channels.keepalive.policyRealCallsOnly": "禁止测活（真实调用）",
   "channels.keepalive.footprint": "调用足迹",
   "channels.keepalive.footprintCount": "最近 {count} 条",
-  "channels.keepalive.columnSite": "站点",
   "channels.keepalive.settingsFor": "站点设置：{site}",
   "channels.keepalive.fieldModel": "保活模型",
   "channels.keepalive.fieldModelAuto":
