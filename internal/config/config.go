@@ -126,9 +126,18 @@ type Config struct {
 	// CORSAllowedOrigins opens the downstream /v1 surface to browser callers.
 	// Empty means any origin ("*"), which is the zero-config default; entries
 	// are exact origins or "*.example.com" subdomain patterns.
-	CORSAllowedOrigins      []string      `env:"CORS_ALLOWED_ORIGINS"`
-	MaxHeaderBytes          int           `env:"MAX_HEADER_BYTES"`
-	MaxAdminBodyBytes       int64         `env:"MAX_ADMIN_BODY_BYTES"`
+	CORSAllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS"`
+	MaxHeaderBytes     int      `env:"MAX_HEADER_BYTES"`
+	MaxAdminBodyBytes  int64    `env:"MAX_ADMIN_BODY_BYTES"`
+	// RelayMaxBodyBytes caps a /v1 request body for the JSON surfaces (chat,
+	// responses, embeddings, audio, custom paths). It has to cover what a real
+	// client sends: a chat request with an inlined base64 screenshot is routinely
+	// several megabytes, and a 10 MB ceiling turned that into a bare
+	// "body too large" on every retry. Raise it with RELAY_MAX_BODY_MB.
+	RelayMaxBodyBytes int64 `env:"RELAY_MAX_BODY_MB"`
+	// RelayMaxImageBytes caps the image surfaces, which carry base64 or multipart
+	// payloads by definition (RELAY_MAX_IMAGE_MB).
+	RelayMaxImageBytes      int64         `env:"RELAY_MAX_IMAGE_MB"`
 	ServerReadHeaderTimeout time.Duration `env:"SERVER_READ_HEADER_TIMEOUT_SECONDS"`
 	ServerReadTimeout       time.Duration `env:"SERVER_READ_TIMEOUT_SECONDS"`
 	ServerIdleTimeout       time.Duration `env:"SERVER_IDLE_TIMEOUT_SECONDS"`
@@ -406,6 +415,18 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The relay surfaces are sized for what clients actually send, not for what
+	// the gateway would prefer to parse: it forwards bytes without reading the
+	// images inside a chat request, so the ceiling only has to protect memory.
+	// These are megabytes (RELAY_MAX_BODY_MB), stored as bytes for the readers.
+	maxRelayBodyMB, err := envInt("RELAY_MAX_BODY_MB", 32, 1, 512)
+	if err != nil {
+		return nil, err
+	}
+	maxRelayImageMB, err := envInt("RELAY_MAX_IMAGE_MB", 64, 1, 1024)
+	if err != nil {
+		return nil, err
+	}
 	readHeaderTimeout, err := envDurationSeconds("SERVER_READ_HEADER_TIMEOUT_SECONDS", 10, 1, 300)
 	if err != nil {
 		return nil, err
@@ -597,6 +618,7 @@ func Load() (*Config, error) {
 		MetricsToken: metricsToken, TrustedScraperCIDRs: trustedScrapers,
 		CORSAllowedOrigins: corsOrigins,
 		MaxHeaderBytes:     maxHeaderBytes, MaxAdminBodyBytes: int64(maxAdminBodyBytes),
+		RelayMaxBodyBytes: int64(maxRelayBodyMB) << 20, RelayMaxImageBytes: int64(maxRelayImageMB) << 20,
 		ServerReadHeaderTimeout: readHeaderTimeout, ServerReadTimeout: readTimeout,
 		ServerIdleTimeout: idleTimeout, ServerShutdownTimeout: shutdownTimeout,
 		ReadinessTimeout: readinessTimeout, AuditRetentionDays: auditDays,

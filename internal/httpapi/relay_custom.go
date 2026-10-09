@@ -41,10 +41,6 @@ import (
 // and answers 404 without any outbound request). Anything else keeps the
 // historical 404.
 
-// maxCustomPathBodyBytes bounds a custom-path request body. It matches the
-// model-request limit: these are ordinary JSON API calls, not uploads.
-const maxCustomPathBodyBytes = 10 << 20
-
 // upstreamPathPinHeader lets a client state which upstream path it wants when
 // it cannot change the URL it calls (SDKs that hardcode /v1/chat/completions).
 // The value is validated by the same allowlist as a real path and, crucially,
@@ -84,9 +80,9 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 		path = pin
 	}
 
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxCustomPathBodyBytes))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes()))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "body too large")
+		h.rejectTooLarge(w, r, h.maxBodyBytes())
 		return
 	}
 	defer r.Body.Close()

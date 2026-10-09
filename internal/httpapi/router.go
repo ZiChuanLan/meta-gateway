@@ -733,6 +733,10 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 
 	// Relay routes (v1)
 	relayHandler := NewRelayHandler(db, proxyService, ratelimit.New(cfg.RelayModelRatePerMinute, cfg.RelayModelRateBurst), newGroupRateLimiter(), modelsCache)
+	// Request-body ceilings are configuration, not a constant: what a client
+	// sends (base64 images in a chat request, multi-image edits) is the input the
+	// gateway has to accept, and the operator is the one who knows how big it is.
+	relayHandler.SetBodyLimits(cfg.RelayMaxBodyBytes, cfg.RelayMaxImageBytes)
 	if pluginService != nil {
 		// A router plugin's match_models make a model name reachable that has
 		// no route of its own ("auto"): list it so clients can discover it.

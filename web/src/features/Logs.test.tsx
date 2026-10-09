@@ -511,3 +511,51 @@ describe("shared alias attribution", () => {
     expect(screen.queryByText("origin plain")).not.toBeInTheDocument();
   });
 });
+
+// 刷新 has to mean "now". A rolling window resolved at the last minute tick
+// leaves a request made a second ago outside it, so the button looked dead
+// exactly when the operator had just sent something.
+describe("logs refresh", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-10-09T12:00:00.000Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("re-anchors the rolling window so the newest rows are inside it", async () => {
+    const { requests } = renderLogs();
+    await screen.findByText("fast-model");
+    expect(requests.at(-1)?.get("until")).toBe("2026-10-09T12:00:00.000Z");
+
+    // Five minutes later the operator presses 刷新: the window must end NOW.
+    vi.setSystemTime(new Date("2026-10-09T12:05:00.000Z"));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(requests.at(-1)?.get("until")).toBe("2026-10-09T12:05:00.000Z"));
+    // ...and it is still the same 24-hour span, not a window that slid halfway.
+    expect(requests.at(-1)?.get("since")).toBe("2026-10-08T12:05:00.000Z");
+    // The re-anchor is the refresh, so it is one request per query — not two.
+    expect(requests).toHaveLength(2);
+  });
+
+  it("still refreshes an absolute window, which cannot re-anchor", async () => {
+    const { requests } = renderLogs(
+      "/logs?range=custom&from=2026-10-01T00:00:00&to=2026-10-02T00:00:00",
+    );
+    await screen.findByText("fast-model");
+    const before = requests.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(requests.length).toBeGreaterThan(before));
+    // Same window, forced fetch: a fixed range must not drift just because the
+    // operator asked to see it again.
+    expect(requests.at(-1)?.get("until")).toBe(requests[0]?.get("until"));
+  });
+});

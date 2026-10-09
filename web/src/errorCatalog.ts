@@ -69,6 +69,11 @@ const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
   identity_conflict: "config",
   unsupported_format: "config",
   config_incomplete: "config",
+  // A request body over the gateway's own ceiling (413, type body_too_large).
+  // The fix is operator configuration — RELAY_MAX_BODY_MB / RELAY_MAX_IMAGE_MB —
+  // which is why it belongs with the other "your settings decide this" classes
+  // rather than with the upstream's rejections.
+  body_too_large: "config",
 
   // — Request conversion failed on our side (still the operator's config) —
   // These four come from `proxy_classify.go`'s `adapterErrorCategory`, which

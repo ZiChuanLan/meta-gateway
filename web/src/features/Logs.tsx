@@ -657,10 +657,20 @@ export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapab
           </Button>
           <Button
             variant="secondary"
-            icon={<RefreshCw size={16} />}
+            icon={<RefreshCw size={16} className={logs.isFetching ? "spin" : ""} />}
             onClick={() => {
-              void logs.refetch();
-              if (source.latencyHistogram) void histogram.refetch();
+              // Re-anchor a rolling window first: "刷新" means "show me the
+              // latest", and refetching with the window as of the last minute
+              // tick would leave a request made a second ago outside it — the
+              // button would look dead exactly when the operator just sent
+              // something. Re-anchoring moves the query keys, so the fetch
+              // follows; only a window that CANNOT move (a custom range, or "all
+              // time") needs the forced fetch.
+              range.refresh();
+              if (!range.rolling) {
+                void logs.refetch();
+                if (source.latencyHistogram) void histogram.refetch();
+              }
             }}
           >
             {t("common.refresh")}

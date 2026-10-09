@@ -30,7 +30,7 @@
 
 下表由 `web/src/errorCatalog.ts` 生成。它是跨服务层的分类总表——后端新产出一个分类而这里没有对应项时，控制台会把它渲染成通用兜底文案。
 
-共 **100** 个已知分类。
+共 **101** 个已知分类。
 
 | 分类 | 错误类 |
 | --- | --- |
@@ -64,6 +64,7 @@
 | `identity_conflict` | `config` |
 | `unsupported_format` | `config` |
 | `config_incomplete` | `config` |
+| `body_too_large` | `config` |
 | `unsupported_path` | `config` |
 | `unsupported_feature` | `config` |
 | `adapter_request` | `config` |

@@ -79,10 +79,79 @@ type RelayHandler struct {
 	// are answered by a plugin hook (the "auto" a router plugin intercepts).
 	// Nil when no plugin host is wired.
 	virtualModels func() []string
+	// bodyLimit / imageLimit are the configured request-body ceilings in bytes
+	// (0 = built-in defaults, see maxBodyBytes / maxImageBodyBytes).
+	bodyLimit  int64
+	imageLimit int64
 }
 
 func NewRelayHandler(db *store.DB, service RelayProxy, modelLimiter *ratelimit.Limiter, groupLimiter *groupRateLimiter, modelsCache *modelsCache) *RelayHandler {
 	return &RelayHandler{db: db, proxy: service, modelLimiter: modelLimiter, groupLimiter: groupLimiter, modelsCache: modelsCache}
+}
+
+// SetBodyLimits installs the configured request-body ceilings (bytes). Zero
+// keeps the built-in defaults, so a handler built without config (tests,
+// embedders) behaves as before.
+func (h *RelayHandler) SetBodyLimits(jsonBytes, imageBytes int64) {
+	h.bodyLimit = jsonBytes
+	h.imageLimit = imageBytes
+}
+
+// maxBodyBytes is the ceiling for a JSON relay surface.
+func (h *RelayHandler) maxBodyBytes() int64 {
+	if h.bodyLimit > 0 {
+		return h.bodyLimit
+	}
+	return defaultRelayBodyBytes
+}
+
+// maxImageBodyBytes is the ceiling for the image surfaces, which carry base64 or
+// multipart payloads by definition.
+func (h *RelayHandler) maxImageBodyBytes() int64 {
+	if h.imageLimit > 0 {
+		return h.imageLimit
+	}
+	return defaultRelayImageBytes
+}
+
+const (
+	// defaultRelayBodyBytes covers a chat request with inlined base64 images,
+	// which is what real clients send.
+	defaultRelayBodyBytes = 32 << 20
+	// defaultRelayImageBytes covers multi-image edits and generations.
+	defaultRelayImageBytes = 64 << 20
+	// defaultPassthroughBodyBytes covers the small JSON surfaces (moderations).
+	defaultPassthroughBodyBytes = 2 << 20
+)
+
+// rejectTooLarge answers an over-limit body. It names the limit and the endpoint
+// — a bare "body too large" leaves the operator guessing at both, and the
+// console can then explain how to raise it.
+func (h *RelayHandler) rejectTooLarge(w http.ResponseWriter, r *http.Request, limit int64) {
+	log.Printf("relay: %s rejected: body over the %s limit", r.URL.Path, humanBytes(limit))
+	writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{
+		"error": map[string]any{
+			"message": fmt.Sprintf(
+				"request body exceeds this gateway's limit for %s (%s); raise RELAY_MAX_BODY_MB / RELAY_MAX_IMAGE_MB to accept larger payloads",
+				r.URL.Path, humanBytes(limit)),
+			"type":        "body_too_large",
+			"limit_bytes": limit,
+			"endpoint":    r.URL.Path,
+		},
+	})
+}
+
+// humanBytes renders a limit the way an operator reads it ("32 MB").
+func humanBytes(bytes int64) string {
+	const mb = 1 << 20
+	if bytes >= mb {
+		value := float64(bytes) / mb
+		if value == float64(int64(value)) {
+			return fmt.Sprintf("%d MB", int64(value))
+		}
+		return fmt.Sprintf("%.1f MB", value)
+	}
+	return fmt.Sprintf("%d KB", bytes>>10)
 }
 
 // SetLiveTrace installs the live-trace registry (nil disables).
@@ -405,31 +474,31 @@ func (h *RelayHandler) countTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RelayHandler) imagesGenerations(w http.ResponseWriter, r *http.Request) {
-	h.forwardPassthrough(w, r, "images/generations", auth.ScopeImages, false, 20<<20)
+	h.forwardPassthrough(w, r, "images/generations", auth.ScopeImages, false, h.maxImageBodyBytes())
 }
 
 func (h *RelayHandler) imagesEdits(w http.ResponseWriter, r *http.Request) {
-	h.forwardPassthrough(w, r, "images/edits", auth.ScopeImages, true, 30<<20)
+	h.forwardPassthrough(w, r, "images/edits", auth.ScopeImages, true, h.maxImageBodyBytes())
 }
 
 func (h *RelayHandler) imagesVariations(w http.ResponseWriter, r *http.Request) {
-	h.forwardPassthrough(w, r, "images/variations", auth.ScopeImages, true, 30<<20)
+	h.forwardPassthrough(w, r, "images/variations", auth.ScopeImages, true, h.maxImageBodyBytes())
 }
 
 func (h *RelayHandler) audioSpeech(w http.ResponseWriter, r *http.Request) {
-	h.forwardPassthrough(w, r, "audio/speech", auth.ScopeAudio, false, 10<<20)
+	h.forwardPassthrough(w, r, "audio/speech", auth.ScopeAudio, false, h.maxBodyBytes())
 }
 
 func (h *RelayHandler) audioTranscriptions(w http.ResponseWriter, r *http.Request) {
-	h.forwardPassthrough(w, r, "audio/transcriptions", auth.ScopeAudio, true, 30<<20)
+	h.forwardPassthrough(w, r, "audio/transcriptions", auth.ScopeAudio, true, h.maxImageBodyBytes())
 }
 
 func (h *RelayHandler) audioTranslations(w http.ResponseWriter, r *http.Request) {
-	h.forwardPassthrough(w, r, "audio/translations", auth.ScopeAudio, true, 30<<20)
+	h.forwardPassthrough(w, r, "audio/translations", auth.ScopeAudio, true, h.maxImageBodyBytes())
 }
 
 func (h *RelayHandler) moderations(w http.ResponseWriter, r *http.Request) {
-	h.forwardPassthrough(w, r, "moderations", auth.ScopeModerations, false, 2<<20)
+	h.forwardPassthrough(w, r, "moderations", auth.ScopeModerations, false, defaultPassthroughBodyBytes)
 }
 
 // forwardPassthrough relays OpenAI-compatible paths that may be JSON or multipart.
@@ -450,7 +519,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBytes))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "body too large")
+		h.rejectTooLarge(w, r, maxBytes)
 		return
 	}
 	defer r.Body.Close()
@@ -715,9 +784,9 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	if !h.ensureGroupRate(w, r) {
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 10*1024*1024))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes()))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "body too large")
+		h.rejectTooLarge(w, r, h.maxBodyBytes())
 		return
 	}
 	defer r.Body.Close()

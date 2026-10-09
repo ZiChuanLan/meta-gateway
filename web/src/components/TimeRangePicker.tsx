@@ -41,6 +41,13 @@ export type TimeRangeController = {
   draftUntil: string;
   /** True when both drafts parse and are ordered. */
   draftValid: boolean;
+  /**
+   * True when the window follows the clock (a preset with a length), so a
+   * re-anchor moves the resolved bounds — and with them every query key that
+   * carries them. Absolute and open-ended windows do not move, which is why a
+   * caller that wants "refresh now" must still fetch explicitly there.
+   */
+  rolling: boolean;
   setPreset: (id: string) => void;
   setDraft: (patch: { since?: string; until?: string }) => void;
   /** Re-anchor rolling presets to the current wall clock. */
@@ -114,6 +121,11 @@ export function useTimeRange(
     };
   }, [preset, draftSince, draftUntil, draftValid, now]);
 
+  // A window with a length is re-anchored to `now` on every tick; an absolute or
+  // open-ended one resolves to the same strings no matter how often this runs.
+  const rolling =
+    preset !== CUSTOM_PRESET && (TIME_PRESETS.find((p) => p.id === preset)?.minutes ?? 1440) > 0;
+
   const setDraft = useCallback((patch: { since?: string; until?: string }) => {
     setDrafts((prev) => ({ ...prev, ...patch }));
     setPresetState(CUSTOM_PRESET);
@@ -123,6 +135,7 @@ export function useTimeRange(
     preset,
     since: bounds.since,
     until: bounds.until,
+    rolling,
     draftSince: drafts.since,
     draftUntil: drafts.until,
     draftValid,

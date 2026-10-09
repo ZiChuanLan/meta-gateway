@@ -37,6 +37,8 @@ it("keeps time filters and refresh without a phantom histogram or upstream filte
   expect(screen.queryByText("All channels")).not.toBeInTheDocument();
   expect(container.querySelector("input[aria-label='Upstream request ID']")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  // One fetch: re-anchoring a rolling window moves the query key, and that IS
+  // the refresh.
   await waitFor(() => expect(logs).toHaveBeenCalledTimes(2));
   expect(qc.getQueryState(["proxy-log-histogram"])?.error).toBeUndefined();
 });
