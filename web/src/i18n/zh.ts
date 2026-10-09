@@ -138,6 +138,13 @@ export const zh: Dict = {
   "channels.keepalive.policyAllowProbe": "允许测活",
   "channels.keepalive.policyRealCallsOnly": "禁止测活（真实调用）",
   "channels.keepalive.footprint": "调用足迹",
+  "channels.keepalive.footprintCount": "最近 {count} 条",
+  "channels.keepalive.siteChannels": "{count} 个渠道",
+  "channels.keepalive.digestDue": "{count} 个该发了",
+  "channels.keepalive.digestRemaining": "最近剩余 {days}",
+  "channels.keepalive.digestOff": "保活未开启",
+  "channels.keepalive.digestNoModel": "无可用模型",
+  "channels.keepalive.digestNoRoute": "未接入路由",
   "channels.keepalive.footprintHint":
     "每次保活调用的记录：什么时候、发给了谁、用的什么形态、因为什么（如「idle 19 天 >= 阈值 13 天」）。站点管理员问起时，这就是直接能摆出来的证据。",
   "channels.keepalive.noEvents": "还没有保活调用记录。",

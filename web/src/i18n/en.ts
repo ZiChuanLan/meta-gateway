@@ -152,6 +152,13 @@ export const en: Dict = {
   "channels.keepalive.policyAllowProbe": "Probing allowed",
   "channels.keepalive.policyRealCallsOnly": "Probing banned (real calls)",
   "channels.keepalive.footprint": "Call footprint",
+  "channels.keepalive.footprintCount": "{count} latest",
+  "channels.keepalive.siteChannels": "{count} channels",
+  "channels.keepalive.digestDue": "{count} due",
+  "channels.keepalive.digestRemaining": "{days} left",
+  "channels.keepalive.digestOff": "Keepalive off",
+  "channels.keepalive.digestNoModel": "No usable model",
+  "channels.keepalive.digestNoRoute": "Not routed",
   "channels.keepalive.footprintHint":
     'Every keepalive call: when, to whom, in which form, and why (for example "idle 19d >= threshold 13d"). It is the evidence to show a site administrator who asks why the gateway called them.',
   "channels.keepalive.noEvents": "No keepalive calls recorded yet.",

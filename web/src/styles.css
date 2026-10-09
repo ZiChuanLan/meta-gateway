@@ -9934,11 +9934,13 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 }
 
 /* —— Keepalive workspace —— */
-/* A table needs more room than the default 700px dialog, and the same rule has
-   to outrank both skins' own .dialog widths (the site-probe dialog sets the
-   precedent). */
-:root[data-appearance] .dialog:has(.keepalive-table) {
-  width: min(1120px, calc(100vw - 32px));
+/* The table is six short columns; the dialog only has to be wide enough for
+   them to breathe, not as wide as the viewport allows. 880px leaves the widest
+   cell (the window text) its own column and nothing more, and still outranks
+   both skins' own .dialog widths. The marker is the workspace wrapper, not the
+   table: a folded site renders no table at all. */
+:root[data-appearance] .dialog:has(.keepalive-workspace) {
+  width: min(880px, calc(100vw - 32px));
 }
 .keepalive-toolbar {
   margin-bottom: 14px;
@@ -9957,13 +9959,68 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   color: var(--ink);
   font-size: 12px;
 }
+/* A site is a folded line inside the dialog, not a card inside a card: the name
+   line carries the policy badge, the channel count and what the folded rows
+   would have said, and the next site is one hairline away. */
 .keepalive-site {
-  margin-bottom: 16px;
+  border-top: 1px solid var(--line);
 }
-.keepalive-site > .panel-header h3 {
-  margin: 0;
+.keepalive-site:first-of-type {
+  border-top: 0;
+}
+.keepalive-site-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.keepalive-site-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 9px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.keepalive-site-toggle:hover .keepalive-site-name {
+  color: var(--primary);
+}
+.keepalive-site-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.keepalive-site.is-open .keepalive-site-chevron {
+  transform: rotate(90deg);
+}
+.keepalive-site-name {
   font: 600 14px/1.45 var(--font);
   letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.keepalive-site-count {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.keepalive-site-digest {
+  margin-left: auto;
+  font-size: 11px;
+  white-space: nowrap;
+}
+/* Narrow dialogs scroll the table itself instead of squeezing six columns into
+   three characters per cell (the site-probe dialog sets the precedent). */
+.keepalive-site-body {
+  padding: 2px 0 12px;
+  overflow-x: auto;
+}
+.keepalive-table {
+  min-width: 560px;
 }
 .keepalive-policy {
   padding: 1px 8px;
@@ -9971,6 +10028,7 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   background: var(--surface-subtle);
   color: var(--muted);
   font-size: 11px;
+  white-space: nowrap;
 }
 /* The one badge worth a colour: this site forbids probing, so every automated
    call is reshaped and the operator should be able to see that at a glance. */
@@ -9984,14 +10042,14 @@ Whole-app render guard — see components/ErrorBoundary.tsx
   font-size: 12.5px;
 }
 .keepalive-table th {
-  padding: 0 10px 6px 0;
+  padding: 0 10px 5px 0;
   color: var(--muted);
   font: 500 11px/1.6 var(--font);
   text-align: left;
   white-space: nowrap;
 }
 .keepalive-table td {
-  padding: 9px 10px 9px 0;
+  padding: 7px 10px 7px 0;
   border-top: 1px solid var(--line-light);
   vertical-align: top;
 }
@@ -10046,6 +10104,59 @@ Whole-app render guard — see components/ErrorBoundary.tsx
 }
 .keepalive-form-actions {
   align-items: center;
+}
+/* The footprint is an audit trail, not the thing an operator opens this dialog
+   for: it starts folded and shows only how much is on record. */
+.keepalive-footprint {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.keepalive-footprint > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  color: var(--ink);
+  font: 600 12.5px/1.5 var(--font);
+  list-style: none;
+  cursor: pointer;
+}
+.keepalive-footprint > summary::-webkit-details-marker {
+  display: none;
+}
+.keepalive-footprint > summary:hover {
+  background: var(--surface-hover);
+  border-radius: var(--radius);
+}
+.keepalive-footprint[open] > summary {
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.keepalive-footprint-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.keepalive-footprint[open] .keepalive-footprint-chevron {
+  transform: rotate(90deg);
+}
+.keepalive-footprint-count {
+  color: var(--muted);
+  font-weight: 500;
+}
+.keepalive-footprint-body {
+  padding: 12px 14px 14px;
+}
+.keepalive-footprint-body > .panel-lede {
+  margin: 0 0 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .keepalive-site-chevron,
+  .keepalive-footprint-chevron {
+    transition: none;
+  }
 }
 .keepalive-events {
   margin: 0;
