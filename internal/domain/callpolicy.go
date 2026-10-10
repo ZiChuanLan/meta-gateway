@@ -11,7 +11,8 @@ import (
 // It exists because "do not probe us" and "do not call us" are different
 // requests, and a one-token `hi` is exactly the signature some sites ban. A
 // policy therefore decides the *shape* of an automated call, never whether one
-// happens.
+// happens. The channel > site > default inheritance chain is applied in SQL
+// (internal/store/keepalive.go), next to the rows it reads.
 //
 // Untyped string constants, following ModelSyncModeAuto/Manual: the columns and
 // the console payloads are plain strings, and a named type here would only buy
@@ -37,14 +38,6 @@ func NormalizeCallPolicy(raw string) string {
 	default:
 		return CallPolicyAllowProbe
 	}
-}
-
-// ResolveCallPolicy applies the inheritance chain channel > site > default.
-func ResolveCallPolicy(channelPolicy, sitePolicy string) string {
-	if strings.TrimSpace(channelPolicy) != "" {
-		return NormalizeCallPolicy(channelPolicy)
-	}
-	return NormalizeCallPolicy(sitePolicy)
 }
 
 // CallForm is the shape one automated call takes.

@@ -65,8 +65,13 @@ grep -q '"exit_code":0' "$STATE/result.json" || fail "success path reported a fa
 grep -q '"up":"ok"' "$STATE/result.json" || fail "up step not marked ok"
 grep -q '"target":"v4.0.0"' "$STATE/result.json" || fail "result lost the target"
 [ -f "$STATE/request.json" ] && fail "the request was not claimed"
-grep -q 'compose pull meta-gateway' "$CALLS" || fail "compose pull was not run"
-grep -q 'compose up -d --no-build --no-deps meta-gateway' "$CALLS" || fail "compose up was not run with the service scope"
+# The project name must be pinned with -p: without it compose derives the project
+# from the directory this sidecar mounts the deployment at (/work), which is a
+# PARALLEL stack with its own empty data volume. The sidecar falls back to the
+# directory name when its container carries no compose label — which is this test's
+# situation, so the fallback name is what the calls must carry.
+grep -q 'compose -p project pull meta-gateway' "$CALLS" || fail "compose pull was not run with the project pinned: $(cat "$CALLS")"
+grep -q 'compose -p project up -d --no-build --no-deps meta-gateway' "$CALLS" || fail "compose up was not run with the service scope: $(cat "$CALLS")"
 
 # --- failure path -----------------------------------------------------------
 rm -f "$STATE/result.json"
