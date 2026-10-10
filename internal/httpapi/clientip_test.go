@@ -7,7 +7,7 @@ import (
 )
 
 func TestClientIPIgnoresUntrustedForwardingHeader(t *testing.T) {
-	resolver, _ := newClientIPResolver([]string{"10.0.0.0/8"})
+	resolver, _ := newClientIPResolver([]string{"10.0.0.0/8"}, nil)
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.RemoteAddr = "198.51.100.10:1234"
 	request.Header.Set("X-Forwarded-For", "203.0.113.7")
@@ -19,7 +19,7 @@ func TestClientIPIgnoresUntrustedForwardingHeader(t *testing.T) {
 }
 
 func TestClientIPWalksTrustedProxyChain(t *testing.T) {
-	resolver, _ := newClientIPResolver([]string{"10.0.0.0/8"})
+	resolver, _ := newClientIPResolver([]string{"10.0.0.0/8"}, nil)
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.RemoteAddr = "10.0.0.2:1234"
 	request.Header.Set("X-Forwarded-For", "203.0.113.7, 10.0.0.1")
@@ -31,7 +31,7 @@ func TestClientIPWalksTrustedProxyChain(t *testing.T) {
 }
 
 func TestClientIPFallsBackOnMalformedChain(t *testing.T) {
-	resolver, _ := newClientIPResolver([]string{"10.0.0.0/8"})
+	resolver, _ := newClientIPResolver([]string{"10.0.0.0/8"}, nil)
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.RemoteAddr = "10.0.0.2:1234"
 	request.Header.Set("X-Forwarded-For", "not-an-ip")

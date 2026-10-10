@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"github.com/lan/meta-gateway/internal/auth"
 )
@@ -14,10 +16,14 @@ type clientIPKey struct{}
 
 type clientIPResolver struct {
 	trusted []netip.Prefix
+	logger  *slog.Logger
+	// warned keeps the ignored-forwarding notice to one line per process: it
+	// describes a deployment fact, not a per-request event.
+	warned sync.Once
 }
 
-func newClientIPResolver(values []string) (*clientIPResolver, error) {
-	result := &clientIPResolver{}
+func newClientIPResolver(values []string, logger *slog.Logger) (*clientIPResolver, error) {
+	result := &clientIPResolver{logger: logger}
 	for _, value := range values {
 		prefix, err := netip.ParsePrefix(value)
 		if err != nil {
@@ -30,8 +36,9 @@ func newClientIPResolver(values []string) (*clientIPResolver, error) {
 
 func (c *clientIPResolver) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := remoteIP(r.RemoteAddr)
-		if c.contains(ip) {
+		peer := remoteIP(r.RemoteAddr)
+		ip := peer
+		if c.contains(peer) {
 			chain := forwardedChain(r.Header.Get("X-Forwarded-For"))
 			for i := len(chain) - 1; i >= 0; i-- {
 				if !c.contains(chain[i]) {
@@ -40,9 +47,35 @@ func (c *clientIPResolver) Middleware(next http.Handler) http.Handler {
 				}
 			}
 		}
+		c.warnIgnoredForwarding(r, peer, ip)
 		ctx := context.WithValue(r.Context(), clientIPKey{}, ip)
 		ctx = auth.WithClientIP(ctx, ip.String())
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// warnIgnoredForwarding reports the deployment mistake that hides behind a proxy
+// nobody trusts: forwarding headers arrive, they are ignored on purpose, and the
+// client turns out to be the proxy — so every caller shares one rate-limit bucket
+// and one audit identity. The header value is never logged (a caller controls it);
+// the peer is what the operator has to add to TRUSTED_PROXY_CIDRS.
+func (c *clientIPResolver) warnIgnoredForwarding(r *http.Request, peer, resolved netip.Addr) {
+	if c.logger == nil || resolved != peer {
+		return
+	}
+	header := ""
+	for _, name := range []string{"X-Forwarded-For", "X-Real-IP", "Forwarded"} {
+		if strings.TrimSpace(r.Header.Get(name)) != "" {
+			header = name
+			break
+		}
+	}
+	if header == "" {
+		return
+	}
+	c.warned.Do(func() {
+		c.logger.Warn("forwarding header ignored: every client behind this proxy shares one identity",
+			"peer", peer.String(), "header", header, "trusted_proxy_cidrs", len(c.trusted))
 	})
 }
 

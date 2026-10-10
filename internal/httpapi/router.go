@@ -92,7 +92,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		state = new(atomic.Bool)
 		state.Store(true)
 	}
-	clientIPs, err := newClientIPResolver(cfg.TrustedProxyCIDRs)
+	clientIPs, err := newClientIPResolver(cfg.TrustedProxyCIDRs, logger)
 	if err != nil {
 		panic("httpapi: invalid trusted proxy policy")
 	}
