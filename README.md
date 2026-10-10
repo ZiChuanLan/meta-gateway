@@ -87,7 +87,7 @@
 # docker-compose.yml
 services:
   meta-gateway:
-      image: zichuanlan/meta-gateway:${IMAGE_TAG:-latest}   # latest = 正式版；beta = 预发布
+    image: zichuanlan/meta-gateway:${IMAGE_TAG:-latest}   # latest = 正式版；beta = 预发布
     container_name: meta-gateway
     restart: unless-stopped
     ports:
@@ -112,21 +112,37 @@ curl --fail http://127.0.0.1:4100/readyz
 > [!IMPORTANT]
 > **`MASTER_KEY` 必须随数据库一起备份、一起迁移。** 换一个 `MASTER_KEY` 打开同一个库，所有已存凭据都解不开。
 
-> [!NOTE]
-> **`:latest` 是稳定版（当前 `v4.0.0`）；`:beta` 是预发布。渠道由部署的 `IMAGE_TAG` 决定**：控制台只读展示它，
-> 不提供切换（它改变不了容器跑的标签）。换渠道就是改 `.env` 并重建，**也不支持自动降级**：
->
-> ```bash
-> export IMAGE_TAG=beta
-> docker compose pull meta-gateway && docker compose up -d --no-build --force-recreate meta-gateway
-> ```
->
-> **升级**：控制台点一下「更新」就行——会先自动备份数据库，然后由 `compose-updater` 侧车在宿主机上跑
-> `docker compose pull` + `docker compose up -d`，所以**镜像和环境变量的改动一起生效**。
-> 从 v3 或任何旧 compose 文件升上来的第一次要手动跑一次上面的 `up -d`（侧车是新增服务，旧文件里没有它）。
-> 详见[升级与更新渠道](https://zichuanlan.github.io/meta-gateway/guide/upgrade)。
+### AI 一键部署
 
-单行 `docker run`、源码构建、AI 一键部署提示词、从 v3 升级到 V4 —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。
+在用 Cursor / Claude Code / Windsurf / ChatGPT 这类助手？把下面整段发给它，它自己检测宿主机环境、生成高强度密钥、写 compose 并拉起容器。
+
+<details>
+<summary>展开提示词，复制</summary>
+
+```markdown
+请帮我在当前服务器/本机部署 Meta Gateway（高性能 AI 统一中继网关）。
+项目仓库：https://github.com/ZiChuanLan/meta-gateway
+
+部署要求：
+1. 采用 Docker Compose 方式部署，使用官方镜像 `zichuanlan/meta-gateway:latest`；
+2. 宿主机服务端口映射为 4100（即 `4100:4100`）；
+3. 数据持久化挂载至当前目录下的 `./data` 目录（映射容器内 `/data`）；
+4. 环境变量要求：
+   - 自动生成一个高强度的 `ADMIN_TOKEN` 作为后台控制台登录密码；
+   - 自动生成一个 32 位的强随机字符串作为 AES 密钥 `MASTER_KEY`（必须 ≥ 32 字符）；
+   - 开启自动重启策略 `restart: unless-stopped`；
+5. 生成完整的 `docker-compose.yml` 文件后，自动执行 `docker compose up -d` 命令拉起容器；
+6. 检查容器运行状态，并在控制台清晰输出：
+   - 控制台 WebUI 访问地址（`http://<IP或localhost>:4100/console`）；
+   - API 中继调用地址（`http://<IP或localhost>:4100/v1`）；
+   - 随机生成的 ADMIN_TOKEN 密码与 MASTER_KEY 明文记录。
+```
+
+</details>
+
+部署完成后自己核对三件事：`curl --fail http://127.0.0.1:4100/readyz` 成功、**`MASTER_KEY` 已单独记录**、`./data` 属主可写（容器以 UID/GID `10001` 运行）。详见[AI 一键部署](https://zichuanlan.github.io/meta-gateway/guide/ai-deploy-prompt)。
+
+单行 `docker run`、源码构建、从 v3 升级到 V4 —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。
 
 ## 接入
 
