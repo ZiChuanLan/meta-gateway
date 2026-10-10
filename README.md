@@ -62,6 +62,8 @@
 
 ## 界面预览
 
+<div align="center">
+
 <img src="docs/marketing/feature-appearance.png" alt="经典与现代两种外观同框" width="100%">
 
 **经典 Classic** 紧凑信息密度，适合长时间盯盘运维 ｜ **现代 Modern** 卡片式工作台，层次更舒展
@@ -70,47 +72,16 @@
 
 两套外观 × 明暗两种主题共 4 种组合，随时切换，偏好按浏览器维度记忆。
 
-<img src="docs/screenshots/login.png" alt="安全控制台 · 登录" width="100%">
+| <img src="docs/screenshots/login.png" width="480" /><br><b>安全控制台</b> · 统一登录，暗色 / 明亮双主题 | <img src="docs/screenshots/dashboard.png" width="480" /><br><b>数据总览</b> · 区间请求 / 成本 / Token / 成功率一屏看完 |
+| :---: | :---: |
+| <img src="docs/screenshots/channels.png" width="480" /><br><b>上游连接</b> · 渠道、模型数、延迟与健康度；右侧是实时画像 | <img src="docs/screenshots/models.png" width="480" /><br><b>模型路由</b> · 成员优先级与权重、别名归一、一键挂载渠道 |
+| <img src="docs/screenshots/workbench.png" width="480" /><br><b>模型工作台</b> · 图像生成编辑、文字流式对话（走真实转发链路） | <img src="docs/screenshots/keys.png" width="480" /><br><b>令牌管理</b> · 独立额度（token / 金额）与路由分组绑定 |
+| <img src="docs/screenshots/logs.png" width="480" /><br><b>日志观测</b> · 延迟分布、失败率与代理审计（含真实上游地址） | <img src="docs/screenshots/settings.png" width="480" /><br><b>运行参数</b> · 故障转移、失败冷却、自动恢复与限流 |
+| <img src="docs/screenshots/store.png" width="480" /><br><b>拓展</b> · 模块化扩展、沙箱隔离与托管进程 | <img src="docs/screenshots/exchange.png" width="480" /><br><b>资产交换</b> · 拓扑快照、加密导入导出与 WebDAV 备份 |
 
-**安全控制台** · 统一登录，暗色 / 明亮双主题，管理员与团队成员共用一套入口
+截图全部来自一份演示数据（虚构站点与模型名），不是真实部署。
 
-<img src="docs/screenshots/dashboard.png" alt="数据总览" width="100%">
-
-**数据总览** · 区间请求 / 成本 / Token / 成功率，渠道健康矩阵、上游站点消息与最近请求流一屏看完
-
-<img src="docs/screenshots/channels.png" alt="上游连接" width="100%">
-
-**上游连接** · 每个站点的渠道、模型数、延迟与健康度；右侧是这条连接的实时画像与探测结果
-
-<img src="docs/screenshots/models.png" alt="模型路由" width="100%">
-
-**模型路由** · 成员优先级与权重负载、别名归一、一键挂载能提供该模型的渠道
-
-<img src="docs/screenshots/workbench.png" alt="模型工作台" width="100%">
-
-**模型工作台** · 图像生成与编辑、文字流式对话，都用真实的转发链路跑（可核对模型能力）
-
-<img src="docs/screenshots/keys.png" alt="令牌管理" width="100%">
-
-**令牌管理** · 独立额度（token / 金额）、路由分组绑定与调用统计
-
-<img src="docs/screenshots/logs.png" alt="日志观测" width="100%">
-
-**日志观测** · 延迟分布、失败率与代理审计，可核到真实上游地址与上游凭据
-
-<img src="docs/screenshots/settings.png" alt="运行参数" width="100%">
-
-**运行参数** · 故障转移、失败冷却、自动恢复、限流与部署参数，改完即时生效
-
-<img src="docs/screenshots/store.png" alt="拓展" width="100%">
-
-**拓展** · 模块化扩展、沙箱隔离与托管进程
-
-<img src="docs/screenshots/exchange.png" alt="资产交换" width="100%">
-
-**资产交换** · 拓扑快照、加密导入导出与 WebDAV 备份
-
-> 截图全部来自一份演示数据（虚构站点与模型名），不是真实部署。
+</div>
 
 ## 快速开始
 
