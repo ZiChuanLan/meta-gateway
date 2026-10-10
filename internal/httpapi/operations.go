@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/lan/meta-gateway/internal/observability"
+	"github.com/lan/meta-gateway/internal/ratelimit"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
@@ -57,7 +58,25 @@ func recoverMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-func auditAdmin(logger *slog.Logger, events *store.AuditEventStore) func(http.Handler) http.Handler {
+// auditRequestIDLimit caps the client-supplied X-Request-Id that chi copies into
+// an audit row: the header may be as large as MaxHeaderBytes (1 MiB by default),
+// so a single probe could otherwise record that whole value as one row.
+const auditRequestIDLimit = 128
+
+func auditRequestID(value string) string {
+	if len(value) <= auditRequestIDLimit {
+		return value
+	}
+	return value[:auditRequestIDLimit]
+}
+
+// auditAdmin writes the admin-surface audit trail. Rejected requests (401/403) are
+// the one audited class an unauthenticated client drives, and the admin rate
+// limiter sits behind AdminAuth, so this middleware applies its own per-client
+// budget to that class: a client's first failures are recorded, a flood from the
+// same client stops growing the table, every other client keeps its telemetry, and
+// authenticated traffic is never affected.
+func auditAdmin(logger *slog.Logger, events *store.AuditEventStore, failureLimiter *ratelimit.Limiter, metrics *observability.Registry) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			wrapped := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
@@ -69,6 +88,13 @@ func auditAdmin(logger *slog.Logger, events *store.AuditEventStore) func(http.Ha
 			if r.Method == http.MethodGet && status != http.StatusUnauthorized && status != http.StatusForbidden {
 				return
 			}
+			if status == http.StatusUnauthorized || status == http.StatusForbidden {
+				allowed, _ := failureLimiter.Allow(hashLoginKey("audit:" + ClientIP(r).String()))
+				if !allowed {
+					metrics.RateLimited("admin_audit")
+					return
+				}
+			}
 			route := chi.RouteContext(r.Context()).RoutePattern()
 			action := auditAction(r.Method, route, status)
 			resourceKind, resourceID := auditResource(r)
@@ -78,7 +104,7 @@ func auditAdmin(logger *slog.Logger, events *store.AuditEventStore) func(http.Ha
 				outcome = "failure"
 				category = auditCategory(status)
 			}
-			event := &store.AuditEvent{RequestID: chimw.GetReqID(r.Context()), ActorKind: "admin", Action: action,
+			event := &store.AuditEvent{RequestID: auditRequestID(chimw.GetReqID(r.Context())), ActorKind: "admin", Action: action,
 				ResourceKind: resourceKind, ResourceID: resourceID, Outcome: outcome, StatusCode: status, Category: category}
 			if principal := teamActor(r); principal != nil && principal.User != nil {
 				event.ActorKind = "user"

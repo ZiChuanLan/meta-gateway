@@ -130,7 +130,12 @@ func (h *AdminHandler) listModelRatios(w http.ResponseWriter, r *http.Request) {
 // — without it a markup could be raised but never taken off. The previous check
 // rejected every negative value, which left the delete path unreachable.
 func (h *AdminHandler) setModelRatio(w http.ResponseWriter, r *http.Request) {
-	model := strings.TrimSpace(chi.URLParam(r, "model"))
+	rawModel, err := url.PathUnescape(chi.URLParam(r, "model"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid model")
+		return
+	}
+	model := strings.TrimSpace(rawModel)
 	if model == "" {
 		writeError(w, http.StatusBadRequest, "model is required")
 		return

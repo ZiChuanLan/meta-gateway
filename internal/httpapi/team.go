@@ -85,7 +85,20 @@ func teamActor(r *http.Request) *teamPrincipal {
 	p, _ := r.Context().Value(teamPrincipalKey{}).(*teamPrincipal)
 	return p
 }
-func chiParam(r *http.Request, name string) string { return chi.URLParam(r, name) }
+// chiParam returns one path segment with its percent-encoding resolved. chi
+// matches the escaped path, so a model named "cn:auto" arrives as "cn%3Aauto":
+// handing that on undecoded would name a model the caller never asked for.
+func chiParam(r *http.Request, name string) string {
+	raw := chi.URLParam(r, name)
+	if raw == "" {
+		return ""
+	}
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		return raw
+	}
+	return decoded
+}
 
 type TeamHandler struct {
 	db                 *store.DB
@@ -109,7 +122,7 @@ type TeamHandler struct {
 }
 
 func NewTeamHandler(db *store.DB, enc *crypto.Encrypter) *TeamHandler {
-	return &TeamHandler{db: db, enc: enc, loginLimiter: ratelimit.New(15, 5), globalLoginLimiter: ratelimit.New(120, 20), userLimiter: newGroupRateLimiter()}
+	return &TeamHandler{db: db, enc: enc, loginLimiter: ratelimit.New(15, 5), globalLoginLimiter: ratelimit.New(loginGlobalRatePerMinute, loginGlobalBurst), userLimiter: newGroupRateLimiter()}
 }
 func (h *TeamHandler) settings() (TeamSettings, error) {
 	s := TeamSettings{Branding: TeamBranding{Name: "Meta Gateway", Accent: "#275b85", ShowUsage: true, ShowRouting: true}}

@@ -10,6 +10,22 @@ import (
 	"github.com/lan/meta-gateway/internal/ratelimit"
 )
 
+// Global login ceilings are flood breaks, not per-source throttles: they must sit
+// far above what a single source can spend, because a ceiling one unauthenticated
+// client can drain turns a shared bucket into a deployment-wide login lockout. The
+// per-source control is the per-IP limiter next to each of these.
+const (
+	loginGlobalRatePerMinute = 600
+	loginGlobalBurst         = 60
+)
+
+// Rejected admin probes are audited, and an unauthenticated client is what drives
+// them, so the audit writer keeps its own per-client budget (see auditAdmin).
+const (
+	auditFailureRatePerMinute = 30
+	auditFailureBurst         = 10
+)
+
 func rateLimitMiddleware(limiter *ratelimit.Limiter, key func(*http.Request) int64, scope string, metrics *observability.Registry) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

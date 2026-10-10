@@ -269,10 +269,36 @@ func TestTeamMemberAdministration(t *testing.T) {
 		t.Fatal("bulk pause paused the owner account")
 	}
 
+	// An account that left data behind must still be deletable: its key row and
+	// its code redemption both reference team_users, and neither foreign key
+	// carries an ON DELETE rule — the revoked key row alone used to fail the whole
+	// bulk action with a 500.
+	b2.login("direct", made.Password)
+	memberKeyID, memberToken := b2.key("left-behind")
+	_, creditCodes := mintCodes(t, e, map[string]any{"kind": "credit", "count": 1, "quota_tokens": 500})
+	b2.request("POST", "/me/redeem", map[string]any{"code": creditCodes[0]}, 200)
+	adminKeyCount := func() int {
+		t.Helper()
+		var rows []struct {
+			ID int64 `json:"id"`
+		}
+		json.Unmarshal(e.admin("GET", "/admin/downstream-keys", nil, 200), &rows)
+		return len(rows)
+	}
+	if got := adminKeyCount(); got != 1 {
+		t.Fatalf("admin key list = %d before the delete, want the member's one key", got)
+	}
+
 	// Delete removes the account and neutralizes its keys.
 	e.admin("POST", "/admin/team/users/bulk", map[string]any{"ids": []int64{directID}, "action": "delete"}, 200)
 	if item := userByID(t, e, directID); item != nil {
 		t.Fatal("deleted account is still listed")
+	}
+	// The revoked key row outlives the account on purpose (history), so the two
+	// things that must hold are: it is gone from the live list, and it no longer
+	// authenticates anywhere.
+	if code, _, _ := e.call(http.DefaultClient, "GET", "/v1/models", nil, memberToken, ""); code == 200 {
+		t.Fatalf("deleted account's key %d still authenticates at the relay", memberKeyID)
 	}
 	var keys []struct {
 		ID        int64  `json:"id"`

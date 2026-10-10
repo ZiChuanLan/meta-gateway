@@ -237,7 +237,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// Admin routes
 	adminGroup := chi.NewRouter()
 	adminGroup.Use(teamHandler.PrincipalSlot)
-	adminGroup.Use(auditAdmin(logger, db.AuditEvent))
+	adminGroup.Use(auditAdmin(logger, db.AuditEvent, ratelimit.New(auditFailureRatePerMinute, auditFailureBurst), metrics))
 	// Session-token verification uses the master-key-derived HMAC key (with a
 	// fallback to the raw key material when the encrypter is unavailable).
 	sessionKey := auth.SessionSigningKey(enc.KeyMaterial(), cfg.AdminTokenList())
@@ -250,7 +250,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 		enc:           enc,
 		// Keep the public TOTP exchange independently bounded from the admin
 		// limiter, which does not cover this route.
-		globalLoginLimiter: ratelimit.New(30, 5),
+		globalLoginLimiter: ratelimit.New(loginGlobalRatePerMinute, loginGlobalBurst),
 		loginLimiter:       ratelimit.New(30, 5),
 		// Empty (the default) keeps the upgrade path open only until the
 		// deployment claims an owner account; "break-glass" forces it open for

@@ -406,6 +406,12 @@ func ownerGuard(owner bool) string {
 // deleteUsers removes accounts for good. Their keys are neutralized first: a
 // key row that outlives its account would keep authenticating at the relay,
 // which is the one failure mode this action must never have.
+//
+// Every table that references team_users has to let go of the account before the
+// row itself goes: those foreign keys carry no ON DELETE rule, so one surviving
+// reference fails the delete (the fully revoked key row was exactly that). Keys
+// and invitations keep their rows for history and lose the owner; identities and
+// code redemptions belong to the account alone and go with it.
 func (h *TeamHandler) deleteUsers(ids []int64) (int64, error) {
 	tx, err := h.db.Begin()
 	if err != nil {
@@ -414,7 +420,7 @@ func (h *TeamHandler) deleteUsers(ids []int64) (int64, error) {
 	defer tx.Rollback()
 	args := int64sToAny(ids)
 	list := placeholders(len(ids))
-	if _, err := tx.Exec(`UPDATE downstream_keys SET enabled=0,token_enc='',token_hash='revoked-user-key-'||id,team_deleted_at=datetime('now')
+	if _, err := tx.Exec(`UPDATE downstream_keys SET enabled=0,token_enc='',token_hash='revoked-user-key-'||id,team_deleted_at=datetime('now'),user_id=NULL
 		WHERE user_id IN (`+list+`)`, args...); err != nil {
 		return 0, err
 	}
@@ -424,7 +430,18 @@ func (h *TeamHandler) deleteUsers(ids []int64) (int64, error) {
 	if _, err := tx.Exec(`DELETE FROM team_route_plans WHERE user_id IN (`+list+`)`, args...); err != nil {
 		return 0, err
 	}
+	if _, err := tx.Exec(`DELETE FROM team_code_redemptions WHERE user_id IN (`+list+`)`, args...); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(`DELETE FROM team_identities WHERE user_id IN (`+list+`)`, args...); err != nil {
+		return 0, err
+	}
 	if _, err := tx.Exec(`DELETE FROM team_invites WHERE kind='recovery' AND user_id IN (`+list+`)`, args...); err != nil {
+		return 0, err
+	}
+	// Invitations of other kinds may name the account (a credit code handed to
+	// one person): they stay usable but must stop pointing at a row that is gone.
+	if _, err := tx.Exec(`UPDATE team_invites SET user_id=NULL WHERE user_id IN (`+list+`)`, args...); err != nil {
 		return 0, err
 	}
 	res, err := tx.Exec(`DELETE FROM team_users WHERE id IN (`+list+`) AND role <> 'owner'`, args...)
