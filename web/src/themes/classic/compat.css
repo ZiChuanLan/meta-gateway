@@ -361,3 +361,17 @@
 :root[data-appearance="classic"] .site-news-list {
   max-height: none;
 }
+
+/* The classic pack sizes a drawer at `height: 100vh`, but the backdrop around it
+   adds 12px of padding top and bottom — so the drawer was 24px taller than the
+   viewport and its footer (取消 / 保存) hung below the fold: the form looked like
+   it had no save button. The shared layer already subtracts the padding; this
+   brings the binding back in line. */
+:root[data-appearance="classic"] .drawer {
+  height: calc(100dvh - 24px);
+}
+@media (max-width: 860px) {
+  :root[data-appearance="classic"] .drawer {
+    height: 100dvh;
+  }
+}

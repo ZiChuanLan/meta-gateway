@@ -167,3 +167,18 @@ export function capabilityFlags(overview: ChannelOverview) {
     needsKeyForRelay: !hasAPIKey,
   };
 }
+
+/**
+ * The type picker's "Custom…" marker mapped onto the id the gateway understands.
+ *
+ * The picker's sentinel (`__custom__`) is a UI concept — it means "none of the
+ * listed families, I am wiring this endpoint on my own terms". The backend's id
+ * for exactly that is `custom`: it is in `OpenAICompatibleBrands()` and
+ * `CanonicalType()` maps it to the OpenAI-compatible passthrough, which is the
+ * honest default for an unknown protocol family (the endpoint/field mapping is
+ * what bends it into shape). Saving the sentinel instead would leave the channel
+ * resolving to no adapter at all.
+ */
+export function normalizeTypeChoice(value: string): string {
+  return value === "__custom__" ? "custom" : value;
+}

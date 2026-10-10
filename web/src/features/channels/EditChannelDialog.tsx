@@ -26,6 +26,7 @@ import {
   TYPE_GROUPS,
   TYPE_OPTIONS,
   isCustomChannelType,
+  normalizeTypeChoice,
   userAuthFieldsFor,
 } from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
@@ -456,7 +457,7 @@ export function EditChannelDialog({
                 options={TYPE_OPTIONS}
                 groups={TYPE_GROUPS}
                 value={typeHint}
-                onChange={setTypeHint}
+                onChange={(next) => setTypeHint(normalizeTypeChoice(next))}
                 disabled={pending}
                 allowCustom
                 placeholder={t("common.type")}

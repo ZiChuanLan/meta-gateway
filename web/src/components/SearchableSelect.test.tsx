@@ -95,3 +95,58 @@ describe("searchable select", () => {
     expect(trigger).toHaveFocus();
   });
 });
+
+describe("SearchableSelect custom entry", () => {
+  function Harness({ onChange }: { onChange: (value: string) => void }) {
+    const [value, setValue] = useState("typesafe");
+    return (
+      <SearchableSelect
+        options={[
+          { value: "typesafe", label: "TypeSafe", group: "other" },
+          { value: "openai-compatible", label: "OpenAI Compatible", group: "core" },
+          { value: "__custom__", label: "Custom…", group: "other" },
+        ]}
+        groups={["core", "other"]}
+        value={value}
+        onChange={(next) => {
+          setValue(next);
+          onChange(next);
+        }}
+        allowCustom
+        placeholder="类型"
+      />
+    );
+  }
+
+  // Choosing "Custom…" means "none of the listed families". Keeping the previous
+  // type made the option look like it did nothing — the mapping panel opened
+  // while the type still read `typesafe`, and the console saved that back.
+  it("emits the custom marker instead of the previously selected type", () => {
+    const seen: string[] = [];
+    render(
+      <I18nProvider>
+        <Harness onChange={(value) => seen.push(value)} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "TypeSafe" }));
+    fireEvent.click(screen.getByText("Custom…"));
+    expect(seen.at(-1)).toBe("__custom__");
+    // The free-text field starts empty, ready for the real type id.
+    expect((screen.getByPlaceholderText("custom-type-id") as HTMLInputElement).value).toBe("");
+  });
+
+  it("still lets a typed id become the value", () => {
+    const seen: string[] = [];
+    render(
+      <I18nProvider>
+        <Harness onChange={(value) => seen.push(value)} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "TypeSafe" }));
+    fireEvent.click(screen.getByText("Custom…"));
+    fireEvent.change(screen.getByPlaceholderText("custom-type-id"), {
+      target: { value: "my-gateway" },
+    });
+    expect(seen.at(-1)).toBe("my-gateway");
+  });
+});

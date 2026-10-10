@@ -221,8 +221,15 @@ export function SearchableSelect({
   };
   const enterCustom = () => {
     if (disabled || triggerRef.current?.matches(":disabled")) return;
-    const next = query.trim() || (value === "__custom__" ? "" : value);
-    setCustomValue(next);
+    // Nothing typed: the operator picked "Custom…" itself, so the value becomes the
+    // custom marker — NOT whatever was selected before. Keeping the previous type
+    // made "Custom…" look like it did nothing: the endpoint/field mapping panel
+    // opened while the type still read, say, typesafe (and the console then saved
+    // that type back). The marker is what callers map onto their own "I am on my
+    // own terms" id.
+    const typed = query.trim();
+    const next = typed || "__custom__";
+    setCustomValue(typed);
     setCustomMode(true);
     setQuery("");
     onChange(next);

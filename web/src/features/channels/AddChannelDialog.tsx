@@ -13,6 +13,7 @@ import { TYPE_OPTIONS } from "./helpers";
 import {
   TYPE_GROUPS,
   normalizeBase,
+  normalizeTypeChoice,
   type ConnectionAdvancedPatch,
   type CreateConnectionInput,
 } from "./helpers";
@@ -175,7 +176,7 @@ export function AddChannelDialog({
             groups={TYPE_GROUPS}
             value={typeHint}
             onChange={(next) => {
-              const provider = next ?? "openai-compatible";
+              const provider = normalizeTypeChoice(next ?? "") || "openai-compatible";
               // Auto-fill the provider default base URL when the field is
               // empty or still holds the previous provider's default.
               setBaseUrl((current) => {

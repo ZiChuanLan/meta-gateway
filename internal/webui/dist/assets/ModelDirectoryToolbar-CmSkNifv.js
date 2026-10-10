@@ -1,0 +1,1 @@
+import{j as e,v as i}from"./index-kC5E58U9.js";function c({value:a,onChange:s,label:r,children:o}){return e.jsxs("div",{className:"models-simple-toolbar",children:[e.jsxs("label",{className:"directory-search models-search",children:[e.jsx(i,{size:14,"aria-hidden":"true"}),e.jsx("input",{value:a,onChange:l=>s(l.target.value),placeholder:r,"aria-label":r})]}),o]})}export{c as M};
