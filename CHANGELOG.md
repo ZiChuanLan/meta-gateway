@@ -6,6 +6,25 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ## [Unreleased]
 
+### Fixed
+
+- **站点探针：自动源站点在「按站点采集」路径上全部失败，而且报成“数据库错误”。** 两段代码各有一半问题：
+  - `CollectSite` 直接读 `site.ProbeSourceKind/URL`，但**自动源站点这两个字段本来就是空的**（源由平台推导：
+    new-api → `/api/pricing`，sub2api → 公开 transit 发现），只有 `EnabledSites()`（定时轮）先调 `resolveProbeSource`。
+    于是定时轮能采到同一个站点，而**目录导入的首轮**（“已匹配并启用 12 个站点”后）与**控制台对单个站点的采集**
+    全部回答 `site N has no probe source`——现场实测：导入返回 `collected 0 / failed 12`，日志里 12 行同一原因。
+    现在 `CollectSite` 自己先解析自动源，所有调用方行为一致（新增回归测试：按 id 采集一个自动源站点必须成功，
+    去掉修复则失败）。
+  - 采集时“这个站点没有可读源”是**站点的事实，不是数据库故障**，而 `collect` 把它丢给了 `writeStoreError` →
+    控制台看到的是 500 `database operation failed`（正是用户看到的那句）。现在回 409 + 原话。
+  - 另外：导入首轮失败以前**不留任何日志**（计数归零、原因无处可查，`writeStoreError` 只记数据库错误）。现在每个失败
+    都记一行（站点 id/名 + 原因），导入轮提前中断也记一行。
+  - 实测（:4100）：修复前导入 `collected 0 / failed 12`；修复后 `collected 9 / failed 3`，三个失败是站点自己的
+    530/401/404（与定时轮一致）；按 id 采集返回 200 且 `source_kind=newapi`（修复前是 500）。
+- **站点探针的「同名未挂载」看不懂。** 它是“这个站点也发布了与我们某条路由同名的模型，但该路由里没挂这个站点的渠道”，
+  于是改名为「本站也提供」（英文 “Also offered”），筛选栏是「全部 / 已接入 / 本站也提供 / 只看异常」，说明也重写成
+  先讲“能拿它做什么”（想用就把这个站点的渠道挂到那条路由上）。
+
 ### Added
 
 - **渠道用量上限：累计成本或 Token 达到设定值就自动停用，并显示是哪一项到了。** 渠道编辑抽屉新增

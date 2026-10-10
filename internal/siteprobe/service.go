@@ -319,6 +319,14 @@ func (s *Service) HTTPClient() *http.Client { return s.client }
 // with no samples there is no verdict, so a broken source can never disable a
 // healthy member.
 func (s *Service) CollectSite(ctx context.Context, site domain.Site) (*store.SiteProbeRun, error) {
+	// An auto-mode site stores an empty kind/url on purpose: the source is derived
+	// from the platform (new-api -> its pricing table, sub2api -> its transit
+	// discovery). Resolving it here rather than in each caller is what makes the
+	// per-site paths — the catalog import's first round, the console's collect of
+	// one chosen site — behave exactly like the scheduled round. Without it every
+	// auto site answered "has no probe source" while the scheduled round, which
+	// resolves first, collected the same sites happily.
+	site = resolveProbeSource(site)
 	kind := strings.TrimSpace(site.ProbeSourceKind)
 	if kind == "" || strings.TrimSpace(site.ProbeSourceURL) == "" {
 		return nil, fmt.Errorf("site %d has no probe source", site.ID)

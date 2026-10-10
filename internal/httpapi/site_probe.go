@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	neturl "net/url"
 	"sort"
@@ -115,7 +116,11 @@ func (h *SiteProbeHandler) collect(w http.ResponseWriter, r *http.Request) {
 		}
 		run, err := h.service.CollectSite(ctx, *site)
 		if err != nil {
-			writeStoreError(w, err)
+			// "This site has no readable probe source" is a fact about the site, not
+			// a database failure: routing it through writeStoreError answered 500
+			// "database operation failed", which sent the operator looking for a
+			// broken database instead of an empty source.
+			writeError(w, http.StatusConflict, "site probe: "+err.Error())
 			return
 		}
 		if run != nil {
@@ -427,6 +432,12 @@ func (h *SiteProbeHandler) applyCatalogEntry(site domain.Site, entry siteprobe.C
 // collectSites reads the sites an import just touched, and only those: a global
 // round would also hammer every other configured site for a request the
 // operator made about the directory.
+//
+// Every failure is logged with its reason. The counts alone ("0 collected, 12
+// failed") are what the operator sees, and without a line here the reason for a
+// whole round failing exists nowhere: the collector only logs the failures it
+// reaches itself, so a failure BEFORE it (a site row that cannot be read, a run
+// row that cannot be written) would be counted and then vanish.
 func (h *SiteProbeHandler) collectSites(r *http.Request, siteIDs []int64) (int, int) {
 	if len(siteIDs) == 0 {
 		return 0, 0
@@ -436,16 +447,19 @@ func (h *SiteProbeHandler) collectSites(r *http.Request, siteIDs []int64) (int, 
 	collected, failed := 0, 0
 	for _, siteID := range siteIDs {
 		if ctx.Err() != nil {
+			log.Printf("site probe: import round stopped early: %v", ctx.Err())
 			break
 		}
 		site, err := h.db.Site.GetByID(siteID)
 		if err != nil || site == nil {
 			failed++
+			log.Printf("site probe: import round cannot read site %d: site=%v err=%v", siteID, site, err)
 			continue
 		}
 		run, err := h.service.CollectSite(ctx, *site)
 		if err != nil {
 			failed++
+			log.Printf("site probe: import round failed for site %d (%s): %v", siteID, site.Name, err)
 			continue
 		}
 		if run != nil && run.Status == store.SiteProbeRunFailed {

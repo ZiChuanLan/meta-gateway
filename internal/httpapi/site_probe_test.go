@@ -711,3 +711,68 @@ func TestSiteProbeAutoSourceCollects(t *testing.T) {
 type siteProbePriceView struct {
 	InputPerMillion float64 `json:"input_per_million"`
 }
+
+// An auto-mode site stores an empty kind/url on purpose — the source is derived
+// from the platform — and the per-site collect path (the console's 采集 on a
+// chosen site, the catalog import's first round) used to refuse it with
+// "site N has no probe source", which the handler then reported as HTTP 500
+// "database operation failed". The scheduled round resolved the source first and
+// collected the same site happily, which is why this only ever showed up when a
+// site was collected BY ID.
+func TestSiteProbePerSiteCollectResolvesAutoSource(t *testing.T) {
+	dataDir := t.TempDir()
+	db, _ := store.OpenTest(dataDir)
+	defer db.Close()
+	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
+	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
+	defer server.Close()
+
+	pricing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/pricing" {
+			_, _ = w.Write([]byte(`{"data":[{"model_name":"glm-5.2","quota_type":0,"model_ratio":0.25,"completion_ratio":4}],
+				"group_ratio":{"default":1},"success":true}`))
+			return
+		}
+		if r.URL.Path == "/api/status" {
+			_, _ = w.Write([]byte(`{"success":true,"data":{"quota_per_unit":500000}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer pricing.Close()
+
+	var site struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/sites", map[string]any{"name": "自动站", "base_url": pricing.URL, "platform": "new-api", "status": "enabled"}), &site)
+	// Auto mode: no kind, no URL — just the flag. This is what the catalog
+	// import writes for every entry it matches.
+	json.Unmarshal(putJSON(t, server.URL+"/admin/site-probe/source", map[string]any{"site_id": site.ID, "kind": "", "url": "", "auto": true, "enabled": true}), &struct{}{})
+
+	var collect struct {
+		Runs []struct {
+			Status       string `json:"status"`
+			MonitorCount int    `json:"monitor_count"`
+			SourceKind   string `json:"source_kind"`
+		} `json:"runs"`
+		Failed int `json:"failed"`
+	}
+	// The status is asserted through the body: the failure this covers answered
+	// {"error":"database operation failed"}, which unmarshals into an empty
+	// result — the "one successful run" check is what catches it, and the raw body
+	// comes along when it does.
+	body := post(t, server.URL+"/admin/site-probe/collect", map[string]any{"site_ids": []int64{site.ID}})
+	if err := json.Unmarshal(body, &collect); err != nil {
+		t.Fatalf("per-site collect: %v (body %s)", err, body)
+	}
+	if collect.Failed != 0 || len(collect.Runs) != 1 {
+		t.Fatalf("collect = %+v (body %s), want one successful run", collect, body)
+	}
+	if collect.Runs[0].Status != "ok" || collect.Runs[0].MonitorCount == 0 {
+		t.Fatalf("run = %+v, want an ok run with samples", collect.Runs[0])
+	}
+	// The resolved source is what ran, so the run names it.
+	if collect.Runs[0].SourceKind != "newapi" {
+		t.Fatalf("source kind = %q, want the derived newapi", collect.Runs[0].SourceKind)
+	}
+}
