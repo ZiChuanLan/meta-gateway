@@ -4,6 +4,19 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [Unreleased]
+
+### Fixed
+
+- **站点探针的「站点模型数据」只列同名冲突，站点公布了 32 个模型时只能看到其中一个子集。** 详情面板那块列表读的是
+  `name_only`（与我们某条路由同名、但本地还没挂渠道的候选），于是只有同名冲突的那几个模型出现——32 个里只列 6 个，
+  而且列出来的每一行长得都一样。现在它是**这个站点采集到的全部模型**（`rows` ∪ `name_only` ∪ `unmatched`，按站点公布的
+  名字去重），一张表、一行一个模型：已接渠道的走原有读数行（可用率、连续、价格、成员、「采纳价格」），其余模型在同一张表
+  里补齐可用率与价格，并在**渠道列**写明是「本站未挂渠道」（同名候选，想用就把这个站点挂上去）还是「没有同名路由」。
+  表头给出「本次采集读到 N 个模型 · 已接渠道 M 个」，站点栏与卡片上的数字同口径。
+  （顺带修掉同一块的两个渲染问题：说明文字原先放在会横向滚动的表格容器里，窄面板下被按滚动宽度排版而**视觉截断**；
+  只公布价格、没有可用率样本的行不再在「暂无样本」旁边挂一个「站点自报」的来源标签。）
+
 ## [v4.5.1] - 2026-10-11
 
 ### Security

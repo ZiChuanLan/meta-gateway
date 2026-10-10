@@ -1425,43 +1425,24 @@
   background: var(--surface-hover);
 }
 
-/* Candidates, maintenance and the unmatched list: the three places the redesign
-   replaced "dump everything" with "say what it is first". */
-.site-probe-candidates {
-  margin: var(--space-3) 0;
-  border: 1px solid var(--line-light);
-  background: var(--surface-subtle);
-  padding: 8px var(--space-3);
-}
-.site-probe-candidates > summary {
-  cursor: pointer;
-  font-size: var(--text-xs);
-  color: var(--muted-strong);
-}
-.site-probe-candidate-list,
+/* The unmatched list and maintenance: two places the redesign replaced "dump
+   everything" with "say what it is first". */
 .site-probe-unmatched-list {
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
 }
-.site-probe-candidate-list > li,
 .site-probe-unmatched-list > li {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) auto 84px 96px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 84px 96px auto;
   align-items: center;
   gap: var(--space-3);
   padding: 5px 0;
   border-top: 1px solid var(--line-light);
   font-size: var(--text-xs);
 }
-.site-probe-unmatched-list > li {
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 84px 96px auto;
-}
 .site-probe-unmatched-list > li > .field-hint {
   margin: 0;
-  text-align: right;
-}
-.site-probe-candidate-reading {
   text-align: right;
 }
 .site-probe-maintenance {

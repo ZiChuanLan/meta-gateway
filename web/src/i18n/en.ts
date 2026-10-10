@@ -1430,12 +1430,14 @@ export const en: Dict = {
   "modelsPage.siteProbe.railAttached": "Attached",
   "modelsPage.siteProbe.railCandidates": "Site model data",
   "modelsPage.siteProbe.railIssues": "Issues only",
-  "modelsPage.siteProbe.railCounts": "{attached} attached · {candidates} site model data",
+  "modelsPage.siteProbe.railCounts": "{attached} attached · {collected} site model data",
   "modelsPage.siteProbe.railNoMatch": "No site matches the filter",
   "modelsPage.siteProbe.detailPick": "Pick a site on the left, or search for a model name above.",
-  "modelsPage.siteProbe.candidates": "This site's model data ({count})",
-  "modelsPage.siteProbe.candidatesHint":
-    "This is the model data the site publishes itself (from its price table / status page), as we collected it. Where a name matches one of our routes, the site can serve that model too — but no channel from this site is attached to that route yet, so this is neither a reading nor an availability: to use it, attach this site's channel to the route.",
+  "modelsPage.siteProbe.collectedSummary":
+    "{collected} models read by the last collection · {attached} already attached",
+  "modelsPage.siteProbe.collectedHint":
+    'This table is everything the site publishes (its price table / status page), one line per model. A line that names a channel is already attached — we serve that route through this site; "no member here" means the name matches one of our routes but no channel from this site is on it (attach this site to use it); "no route with this name" means we do not use the model at all.',
+  "modelsPage.siteProbe.collectedNoMember": "no member here",
   "modelsPage.siteProbe.candidateAttach": "Attach in the route",
   "modelsPage.siteProbe.unmatchedSummary": "{count} unmatched models from {sites} sites",
   "modelsPage.siteProbe.unmatchedReason": "no route with this name",
@@ -1449,7 +1451,7 @@ export const en: Dict = {
   "modelsPage.siteProbe.unitRounds": "rounds",
   "modelsPage.siteProbe.unitSamples": "samples",
   "modelsPage.siteProbe.cardNoReadings":
-    "Nothing matched your model routes (the site publishes other models), or nothing has been collected yet.",
+    "Nothing is routed through this site yet, and no model data has been collected from it.",
   "modelsPage.siteProbe.cardOff": "Probe off — this site is no longer collected.",
   "modelsPage.siteProbe.neverCollected": "never collected",
   "modelsPage.siteProbe.collecting": "Collecting…",

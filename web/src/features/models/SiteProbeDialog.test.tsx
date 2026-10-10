@@ -625,9 +625,11 @@ describe("site probe row identity", () => {
     expect(cell?.textContent).toContain("→");
   });
 
-  // A name-only match is a candidate, not a reading: the route has no member on
-  // this site, so there is nothing to judge, disable or price here.
-  it("reports a name-only match as a candidate instead of a reading", async () => {
+  // The list is the SITE's list — everything its collection read — not only the
+  // names that happen to collide with one of our routes. A name-only collision
+  // stays a candidate inside that line (there is nothing to judge or price), but
+  // it no longer filters the list down to collisions.
+  it("lists every collected model, attached or not", async () => {
     const data = report();
     data.name_only = [
       {
@@ -640,15 +642,47 @@ describe("site probe row identity", () => {
         samples: 10,
       },
     ];
+    data.unmatched = [
+      { site_id: 1, site_name: "公益站A", raw_model: "kimi-k3", ratio: 1, samples: 10 },
+      { site_id: 1, site_name: "公益站A", raw_model: "no-route-model", ratio: 1, samples: 10 },
+    ];
     mockBackend({ report: data });
     renderDialog();
     await screen.findByText("z-ai/glm-5.2");
-    // The rail counts it separately from the attached rows…
-    expect(screen.getByText(/1 已接入 · 1 当前站点模型数据/)).toBeInTheDocument();
-    // …and the detail names the collision rather than hiding it.
-    fireEvent.click(screen.getByText("当前站点模型数据（1）"));
-    const list = within(document.querySelector(".site-probe-candidate-list") as HTMLElement);
+    // The rail counts the site's collected models next to what is attached; the
+    // collision is one model even though two arrays report it.
+    expect(screen.getByText(/1 已接入 · 3 站点模型数据/)).toBeInTheDocument();
+    // One table, one line per collected model: the attached reading leads, the
+    // two models we have no reading for follow with their reason in the channel
+    // column — never a second list repeating the same names.
+    expect(screen.getByText(/本次采集读到 3 个模型 · 已接渠道 1 个/)).toBeInTheDocument();
+    const list = within(document.querySelector(".site-probe-model-list") as HTMLElement);
     expect(list.getByText("kimi-k3")).toBeInTheDocument();
     expect(list.getByText(/→ STRRX/)).toBeInTheDocument();
+    expect(list.getByText("no-route-model")).toBeInTheDocument();
+    expect(list.getByText("本站未挂渠道")).toBeInTheDocument();
+    expect(list.getByText("没有同名路由")).toBeInTheDocument();
+    expect(list.getAllByRole("listitem")).toHaveLength(3);
+  });
+
+  // The defect this pins (2026-10-10): the pane listed name collisions only, so a
+  // site whose last round read 32 models showed the six that matched a route and
+  // nothing else. The collected list is the site's list: 32 read, 32 listed.
+  it("lists all 32 models a site's collection read", async () => {
+    const data = report();
+    data.rows = [];
+    data.name_only = [];
+    data.unmatched = Array.from({ length: 32 }, (_, index) => ({
+      site_id: 1,
+      site_name: "公益站A",
+      raw_model: `site-model-${String(index + 1).padStart(2, "0")}`,
+      ratio: 1,
+      samples: 10,
+    }));
+    mockBackend({ report: data });
+    renderDialog();
+    expect(await screen.findByText(/本次采集读到 32 个模型/)).toBeInTheDocument();
+    const list = within(document.querySelector(".site-probe-model-list") as HTMLElement);
+    expect(list.getAllByRole("listitem")).toHaveLength(32);
   });
 });

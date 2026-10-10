@@ -11,6 +11,7 @@ import type {
   SiteProbePrice,
   SiteProbeRow,
   SiteProbeSiteStatus,
+  SiteProbeUnmatched,
 } from "../../api/types";
 import { Button, Dialog, Empty, ErrorState, InfoTip } from "../../components/ui";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
@@ -255,20 +256,43 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
     }
     return grouped;
   }, [visibleRows]);
-  const candidatesBySite = useMemo(() => {
-    const grouped = new Map<number, SiteProbeNameOnly[]>();
+  // Every model this site's collection read, one line each — the union of the
+  // three report arrays. The pane used to list name collisions only, so a site
+  // whose last round read 32 models showed the handful that happened to collide
+  // with a route. The site's own list is what an operator opens this pane for,
+  // and the union is that list; each line still says which case it is, because
+  // the three are acted on differently.
+  const collectedBySite = useMemo(() => {
+    const grouped = new Map<number, Map<string, SiteCollectedModel>>();
+    const lineFor = (siteID: number, rawModel: string, groupName?: string) => {
+      let siteLines = grouped.get(siteID);
+      if (!siteLines) {
+        siteLines = new Map<string, SiteCollectedModel>();
+        grouped.set(siteID, siteLines);
+      }
+      let line = siteLines.get(rawModel);
+      if (!line) {
+        line = { rawModel, groupName, attached: [], candidates: [], unmatched: [] };
+        siteLines.set(rawModel, line);
+      }
+      return line;
+    };
+    const matches = (text: string) => needle === "" || text.toLowerCase().includes(needle);
+    for (const row of rows) {
+      if (!matches(`${row.raw_model} ${row.route} ${row.site_name}`)) continue;
+      lineFor(row.site_id, row.raw_model, row.group_name).attached.push(row);
+    }
     for (const candidate of nameOnlyRows) {
-      if (
-        needle !== "" &&
-        !`${candidate.raw_model} ${candidate.route}`.toLowerCase().includes(needle)
-      )
-        continue;
-      const bucket = grouped.get(candidate.site_id) ?? [];
-      bucket.push(candidate);
-      grouped.set(candidate.site_id, bucket);
+      if (!matches(`${candidate.raw_model} ${candidate.route} ${candidate.site_name}`)) continue;
+      const line = lineFor(candidate.site_id, candidate.raw_model, candidate.group_name);
+      line.candidates.push(candidate);
+    }
+    for (const row of unmatchedRows) {
+      if (!matches(`${row.raw_model} ${row.site_name}`)) continue;
+      lineFor(row.site_id, row.raw_model, row.group_name).unmatched.push(row);
     }
     return grouped;
-  }, [nameOnlyRows, needle]);
+  }, [rows, nameOnlyRows, unmatchedRows, needle]);
   const railFiltered = useMemo(() => {
     const list = siteRows
       .filter((site) => !scopeSite || site.site_id === Number(scopeSite))
@@ -276,9 +300,9 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
     if (railFilter === "all") return list;
     return list.filter((site) => {
       const attached = rowsBySite.get(site.site_id) ?? [];
-      const candidates = candidatesBySite.get(site.site_id) ?? [];
+      const collected = collectedBySite.get(site.site_id)?.size ?? 0;
       if (railFilter === "attached") return attached.length > 0;
-      if (railFilter === "candidates") return candidates.length > 0;
+      if (railFilter === "candidates") return collected > 0;
       return (
         !!site.probe_last_error ||
         attached.some(
@@ -287,7 +311,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
         )
       );
     });
-  }, [siteRows, rowsBySite, candidatesBySite, railFilter, scopeSite]);
+  }, [siteRows, rowsBySite, collectedBySite, railFilter, scopeSite]);
   // The rail is the site list; the detail pane follows the selection. A search
   // narrows the list without stealing the selection, so typing never blanks the
   // pane the operator is reading.
@@ -295,6 +319,16 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
     const inScope = railFiltered.length > 0 ? railFiltered : siteRows;
     return inScope.find((site) => site.site_id === activeSiteId) ?? inScope[0];
   }, [railFiltered, siteRows, activeSiteId]);
+  // Sorted by the name the site publishes: the list keeps its shape between
+  // rounds, so a model stays where the operator last found it.
+  const activeSiteCollected = useMemo(() => {
+    if (!activeSite) return [];
+    const siteLines = collectedBySite.get(activeSite.site_id);
+    if (!siteLines) return [];
+    return [...siteLines.values()].sort((left, right) =>
+      left.rawModel.localeCompare(right.rawModel),
+    );
+  }, [collectedBySite, activeSite]);
   // Cards follow the report's site list (so a configured site with no reading
   // yet still gets its card and its switch), ordered by name for a stable page.
   const cards = useMemo(() => {
@@ -620,7 +654,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
                     <span className="site-probe-rail-meta mono">
                       {t("modelsPage.siteProbe.railCounts", {
                         attached: rowsBySite.get(site.site_id)?.length ?? 0,
-                        candidates: candidatesBySite.get(site.site_id)?.length ?? 0,
+                        collected: collectedBySite.get(site.site_id)?.size ?? 0,
                       })}
                     </span>
                     {site.probe_last_error ? (
@@ -644,7 +678,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
               <SiteProbeDetail
                 site={activeSite}
                 rows={rowsBySite.get(activeSite.site_id) ?? []}
-                candidates={candidatesBySite.get(activeSite.site_id) ?? []}
+                collected={activeSiteCollected}
                 sourcePending={busy}
                 autoApplyPending={busy}
                 collectPending={busy}
@@ -967,7 +1001,7 @@ export function SiteProbeDialog({ onClose }: { onClose: () => void }) {
 function SiteProbeDetail({
   site,
   rows,
-  candidates,
+  collected,
   sourcePending,
   autoApplyPending,
   collectPending,
@@ -980,7 +1014,7 @@ function SiteProbeDetail({
 }: {
   site: SiteProbeSiteStatus;
   rows: SiteProbeRow[];
-  candidates: SiteProbeNameOnly[];
+  collected: SiteCollectedModel[];
   sourcePending: boolean;
   autoApplyPending: boolean;
   collectPending: boolean;
@@ -992,6 +1026,14 @@ function SiteProbeDetail({
   adoptPending: boolean;
 }) {
   const { t } = useI18n();
+  // The list below is the site's own list — everything its collection read — so
+  // the card counts that list, not the rows we happen to have members for. Rows
+  // that are already attached lead it (they carry the verdict, the members and
+  // the adopt button); the rest of the collected models follow in the same table
+  // instead of a second list that showed the same names twice.
+  const collectedCount = collected.length;
+  const attachedCount = collected.filter((line) => line.attached.length > 0).length;
+  const publishedOnly = collected.filter((line) => line.attached.length === 0);
   const low = rows.filter((row) => row.verdict === "low").length;
   const parked = rows.reduce(
     (total, row) => total + (row.members ?? []).filter((member) => member.auto_disabled).length,
@@ -1059,7 +1101,7 @@ function SiteProbeDetail({
       <div className="site-probe-card-meta">
         <span>
           {t("modelsPage.siteProbe.cardMeta", {
-            models: rows.length,
+            models: collectedCount,
             low,
             parked,
           })}
@@ -1080,48 +1122,107 @@ function SiteProbeDetail({
         </button>
       </div>
       {site.probe_last_error ? <div className="inline-error">{site.probe_last_error}</div> : null}
-      {candidates.length > 0 ? (
-        <details className="site-probe-candidates">
-          <summary>{t("modelsPage.siteProbe.candidates", { count: candidates.length })}</summary>
-          <p className="field-hint">{t("modelsPage.siteProbe.candidatesHint")}</p>
-          <ul className="site-probe-candidate-list">
-            {candidates.map((candidate, index) => (
-              <li key={`${candidate.raw_model}-${candidate.route}-${index}`}>
-                <span className="mono">{candidate.raw_model}</span>
-                <span className="site-probe-route-chip mono">
-                  {t("modelsPage.siteProbe.routeChip", { route: candidate.route })}
-                </span>
-                <span className="mono site-probe-candidate-reading">
-                  {formatRatio(candidate.ratio, candidate.samples, t)}
-                </span>
-                <span className="mono">{formatPrice(candidate.price, t)}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-      {rows.length === 0 ? (
+      {collectedCount === 0 && rows.length === 0 ? (
         <p className="field-hint site-probe-card-empty">
           {site.probe_source_enabled
             ? t("modelsPage.siteProbe.cardNoReadings")
             : t("modelsPage.siteProbe.cardOff")}
         </p>
       ) : (
-        <div className="site-probe-models">
-          <ModelListHeader />
-          <ul className="site-probe-model-list">
-            {rows.map((row, index) => (
-              <ModelLine
-                key={`${row.route}-${row.site_id}-${row.raw_model}-${row.group_name}-${index}`}
-                row={row}
-                onAdopt={onAdopt}
-                adoptPending={adoptPending}
-              />
-            ))}
-          </ul>
-        </div>
+        <>
+          {collectedCount > 0 ? (
+            <>
+              <p className="field-hint site-probe-collected-note">
+                {t("modelsPage.siteProbe.collectedSummary", {
+                  collected: collectedCount,
+                  attached: attachedCount,
+                })}
+              </p>
+              <p className="field-hint">{t("modelsPage.siteProbe.collectedHint")}</p>
+            </>
+          ) : null}
+          <div className="site-probe-models">
+            <ModelListHeader />
+            <ul className="site-probe-model-list">
+              {rows.map((row, index) => (
+                <ModelLine
+                  key={`${row.route}-${row.site_id}-${row.raw_model}-${row.group_name}-${index}`}
+                  row={row}
+                  onAdopt={onAdopt}
+                  adoptPending={adoptPending}
+                />
+              ))}
+              {publishedOnly.map((line) => (
+                <CollectedModelLine key={line.rawModel} line={line} />
+              ))}
+            </ul>
+          </div>
+        </>
       )}
     </section>
+  );
+}
+
+/**
+ * One model a site's collection read but we have no reading row for: the name the
+ * SITE publishes, the route it collides with (a candidate we could attach), the
+ * reading and price its own page reported, and — in the column where an attached
+ * model names its channels — why there is no member here.
+ *
+ * These lines share the reading table's columns on purpose: an operator scanning
+ * "what does this site offer" reads one table, and the only difference between a
+ * line and a reading is whether a channel of ours is on it.
+ */
+interface SiteCollectedModel {
+  rawModel: string;
+  groupName?: string;
+  attached: SiteProbeRow[];
+  candidates: SiteProbeNameOnly[];
+  unmatched: SiteProbeUnmatched[];
+}
+
+function CollectedModelLine({ line }: { line: SiteCollectedModel }) {
+  const { t } = useI18n();
+  const reading = line.candidates[0] ?? line.unmatched[0];
+  return (
+    <li className="site-probe-model">
+      <div className="site-probe-model-name">
+        <span className="mono" title={line.rawModel}>
+          {line.rawModel}
+        </span>
+        {line.candidates
+          .filter((candidate, index, all) => all.indexOf(candidate) === index)
+          .map((candidate) => (
+            <span key={candidate.route} className="site-probe-route-chip mono">
+              {t("modelsPage.siteProbe.routeChip", { route: candidate.route })}
+            </span>
+          ))}
+      </div>
+      <span className="site-probe-cell is-value">
+        {reading && reading.samples > 0 ? (
+          <>
+            <span className="mono">{formatRatio(reading.ratio, reading.samples, t)}</span>
+            <span className="site-probe-tag">{t("modelsPage.siteProbe.sourceSite")}</span>
+          </>
+        ) : (
+          <span className="mono">{t("modelsPage.siteProbe.noSamples")}</span>
+        )}
+      </span>
+      <span className="site-probe-cell is-value">
+        <span className="mono">—</span>
+      </span>
+      <span className="site-probe-cell is-value">
+        <span className="mono">{formatPrice(reading?.price, t)}</span>
+      </span>
+      <span className="site-probe-cell is-value">
+        <span className="site-probe-match">
+          {line.candidates.length > 0
+            ? t("modelsPage.siteProbe.collectedNoMember")
+            : t("modelsPage.siteProbe.unmatchedReason")}
+        </span>
+      </span>
+      <span className="site-probe-cell is-action" />
+    </li>
   );
 }
 

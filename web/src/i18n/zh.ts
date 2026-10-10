@@ -1571,14 +1571,16 @@ export const zh: Dict = {
   "modelsPage.siteProbe.railTitle": "站点",
   "modelsPage.siteProbe.railAll": "全部",
   "modelsPage.siteProbe.railAttached": "已接入",
-  "modelsPage.siteProbe.railCandidates": "当前站点模型数据",
+  "modelsPage.siteProbe.railCandidates": "站点模型数据",
   "modelsPage.siteProbe.railIssues": "只看异常",
-  "modelsPage.siteProbe.railCounts": "{attached} 已接入 · {candidates} 当前站点模型数据",
+  "modelsPage.siteProbe.railCounts": "{attached} 已接入 · {collected} 站点模型数据",
   "modelsPage.siteProbe.railNoMatch": "没有符合筛选的站点",
   "modelsPage.siteProbe.detailPick": "从左侧选一个站点，或直接在上面搜索模型名。",
-  "modelsPage.siteProbe.candidates": "当前站点模型数据（{count}）",
-  "modelsPage.siteProbe.candidatesHint":
-    "这些是**这个站点自己公布的模型数据**（来自它的价格表 / 状态页），我们已经采集到。其中与我们某条路由同名的，说明这个站点也能提供那个模型——但那条路由里还没挂它的渠道，所以现在既不是读数也不是可用率：想用它，就把这个站点的渠道挂到那条路由上。",
+  "modelsPage.siteProbe.collectedSummary":
+    "本次采集读到 {collected} 个模型 · 已接渠道 {attached} 个",
+  "modelsPage.siteProbe.collectedHint":
+    "这一张表就是这个站点公布的全部模型（来自它自己公开的价格表 / 状态页）。带渠道名的行表示我们已经把本站渠道接上去了；「本站未挂渠道」表示名字与我们的某条路由相同、但那条路由上还没挂它的渠道（想用它就把这个站点挂上去）；「没有同名路由」表示我们并不使用这个模型。",
+  "modelsPage.siteProbe.collectedNoMember": "本站未挂渠道",
   "modelsPage.siteProbe.candidateAttach": "到路由里挂载",
   "modelsPage.siteProbe.unmatchedSummary": "共 {count} 个未匹配模型，来自 {sites} 个站点",
   "modelsPage.siteProbe.unmatchedReason": "没有同名路由",
@@ -1591,8 +1593,7 @@ export const zh: Dict = {
   "modelsPage.siteProbe.unitPercent": "%",
   "modelsPage.siteProbe.unitRounds": "轮",
   "modelsPage.siteProbe.unitSamples": "样本",
-  "modelsPage.siteProbe.cardNoReadings":
-    "没有匹配到你的模型路由（站点公布了其它模型），或还没采集到数据。",
+  "modelsPage.siteProbe.cardNoReadings": "这个站点还没有挂到任何路由上，也还没采集到模型数据。",
   "modelsPage.siteProbe.cardOff": "探针已关闭，不再采集这个站点。",
   "modelsPage.siteProbe.neverCollected": "还没采集过",
   "modelsPage.siteProbe.collecting": "采集中…",
