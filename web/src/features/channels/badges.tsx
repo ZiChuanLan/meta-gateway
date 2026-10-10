@@ -1,6 +1,7 @@
 import type { ChannelPingResult, ChannelOverview } from "../../api/types";
 import { StatusBadge } from "../../components/ui";
 import { useI18n } from "../../i18n";
+import { formatCost, formatTokens } from "../../lib/format";
 import {
   channelAccountState,
   channelConnectivityState,
@@ -106,7 +107,36 @@ function ChannelStatusBadges({ overview }: { overview: ChannelOverview }) {
     <>
       <ChannelHealthBadge overview={overview} />
       <ChannelReadinessBadge overview={overview} />
+      <ChannelUsageLimitBadge overview={overview} />
     </>
+  );
+}
+
+/**
+ * The budget badge: this channel is parked because the operator's own limit came
+ * due, which is a different answer from "the upstream broke" — the tooltip names
+ * the limit and the amount, so the row says why it stopped and what to raise.
+ */
+export function ChannelUsageLimitBadge({ overview }: { overview: ChannelOverview }) {
+  const { t } = useI18n();
+  const channel = overview.channel;
+  const hit = (channel.usage_limit_hit ?? "").split(",").filter(Boolean);
+  if (hit.length === 0) return null;
+  const reasons = hit.map((kind) =>
+    kind === "cost"
+      ? t("channels.usageLimitHitCost", { limit: formatCost(channel.usage_limit_cost ?? 0) })
+      : t("channels.usageLimitHitTokens", {
+          limit: formatTokens(channel.usage_limit_tokens ?? 0),
+        }),
+  );
+  return (
+    <span
+      className="badge badge-unhealthy"
+      data-testid="channel-usage-limit-badge"
+      title={reasons.join(" · ")}
+    >
+      {t("channels.usageLimitBadge")}
+    </span>
   );
 }
 

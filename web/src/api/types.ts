@@ -84,6 +84,17 @@ export interface Channel {
   /** How automated calls (model probes, keep-alive) may look on this site's
    *  channels. "" = inherit the site's policy; see site.call_policy. */
   call_policy?: "" | "allow_probe" | "real_calls_only";
+  /** Cumulative spend ceiling for this account (0 = no limit). Reaching it parks
+   *  the channel instead of failing it: the operator's own budget came due. */
+  usage_limit_cost?: number;
+  /** Cumulative token ceiling for this account (0 = no limit). */
+  usage_limit_tokens?: number;
+  /** What the account has spent / consumed so far, per the ledger. */
+  usage_used_cost?: number;
+  usage_used_tokens?: number;
+  /** Which limit came due ("cost" | "tokens" | "cost,tokens"); empty = not parked. */
+  usage_limit_hit?: string;
+  usage_limit_hit_at?: string;
   created_at: string;
   updated_at: string;
 }

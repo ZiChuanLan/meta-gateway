@@ -951,6 +951,15 @@ export const zh: Dict = {
   "channels.nonStreamTimeoutHint":
     "该通道非流式请求的总时长上限（请求+完整响应读取）；0 使用全局默认（5 分钟）。流式请求不受此限制，适合推理输出很慢的通道。",
   "channels.maxConcurrentHint": "渠道硬并发上限；超限请求 FIFO 排队等待。0 = 不限。",
+  "channels.usageLimitCost": "累计成本上限",
+  "channels.usageLimitCostHint":
+    "该渠道累计成本达到这个金额就自动停用（按账单实际结算额累加，0 = 不限）。已用 {used}；调高或清零会把它重新启用。",
+  "channels.usageLimitTokens": "累计 Token 上限",
+  "channels.usageLimitTokensHint":
+    "该渠道累计 Token 达到这个数量就自动停用（0 = 不限）。已用 {used}；调高或清零会把它重新启用。",
+  "channels.usageLimitBadge": "已达用量上限",
+  "channels.usageLimitHitCost": "已达最大设定价格（{limit}）",
+  "channels.usageLimitHitTokens": "已达最大设定 Token 数（{limit}）",
   "channels.payloadRulesHint":
     "JSON 规则数组：match（模型通配、协议、请求头子串、payload JSON path 条件）+ actions（set / delete / filter）。不匹配的请求原样透传。路径用点和索引：messages.0.content、messages.#.image_url（任意元素）。",
   "channels.endpointMap": "自定义端点与字段映射",

@@ -13,6 +13,7 @@ import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useAutomationMaster } from "../../hooks/useAutomationMaster";
 import { useToast } from "../../toast";
 import { useI18n } from "../../i18n";
+import { formatCost, formatTokens } from "../../lib/format";
 import {
   UA_PRESETS,
   isValidUserAgent,
@@ -127,6 +128,10 @@ export function EditChannelDialog({
     upstream_response_map?: string;
     stable_first?: boolean;
     call_policy?: "" | "allow_probe" | "real_calls_only";
+    /** Cumulative spend / token ceilings (0 = none). Reaching one parks the
+     *  channel: the operator's own budget came due, not an upstream failure. */
+    usage_limit_cost?: number;
+    usage_limit_tokens?: number;
     userToken: string;
     userCookie: string;
     /** New-API family numeric user id (`New-Api-User`). Empty = unknown. */
@@ -163,6 +168,10 @@ export function EditChannelDialog({
   const [callPolicy, setCallPolicy] = useState<"" | "allow_probe" | "real_calls_only">(
     value.call_policy ?? "",
   );
+  // The usage budget. The counters are the store's (it re-derives them from the
+  // ledger when a limit changes), so they are only shown, never sent back.
+  const [usageLimitCost, setUsageLimitCost] = useState(value.usage_limit_cost ?? 0);
+  const [usageLimitTokens, setUsageLimitTokens] = useState(value.usage_limit_tokens ?? 0);
   const [priority, setPriority] = useState(value.priority);
   const [weight, setWeight] = useState(value.weight);
   const [headerOverride, setHeaderOverride] = useState(value.header_override ?? "");
@@ -420,6 +429,8 @@ export function EditChannelDialog({
                   ...(syncModeDirty ? { model_sync_mode: syncMode } : {}),
                   stable_first: stableFirst,
                   call_policy: callPolicy,
+                  usage_limit_cost: usageLimitCost,
+                  usage_limit_tokens: usageLimitTokens,
                   userToken,
                   userCookie,
                   userID,
@@ -807,6 +818,49 @@ export function EditChannelDialog({
                     value={nonStreamTimeout}
                     onChange={(e) =>
                       setNonStreamTimeout(Math.max(0, Math.min(86400, Number(e.target.value) || 0)))
+                    }
+                    disabled={pending}
+                  />
+                </Field>
+                <Field
+                  label={t("channels.usageLimitCost")}
+                  hint={
+                    value.usage_limit_hit
+                      ? t("channels.usageLimitHitCost", {
+                          limit: formatCost(usageLimitCost),
+                        })
+                      : t("channels.usageLimitCostHint", {
+                          used: formatCost(value.usage_used_cost ?? 0),
+                        })
+                  }
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={usageLimitCost}
+                    onChange={(e) => setUsageLimitCost(Math.max(0, Number(e.target.value) || 0))}
+                    disabled={pending}
+                  />
+                </Field>
+                <Field
+                  label={t("channels.usageLimitTokens")}
+                  hint={
+                    value.usage_limit_hit
+                      ? t("channels.usageLimitHitTokens", {
+                          limit: formatTokens(usageLimitTokens),
+                        })
+                      : t("channels.usageLimitTokensHint", {
+                          used: formatTokens(value.usage_used_tokens ?? 0),
+                        })
+                  }
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    value={usageLimitTokens}
+                    onChange={(e) =>
+                      setUsageLimitTokens(Math.max(0, Math.floor(Number(e.target.value) || 0)))
                     }
                     disabled={pending}
                   />

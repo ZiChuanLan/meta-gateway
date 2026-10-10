@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ type ChannelStore struct {
 // columns scanChannel reads. Every query that returns a whole channel selects
 // this constant, so a column added to the table cannot be read by one query and
 // silently stay zero for another.
-const channelSelectColumns = `id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, call_policy, keepalive_enabled, keepalive_idle_days, last_real_call_at, created_at, updated_at`
+const channelSelectColumns = `id, site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, header_override, system_prompt, retry_config, consecutive_failures, stable_first, stable_first_requests, model_sync_mode, COALESCE(upstream_path_override, ''), upstream_path_map, upstream_request_map, upstream_response_map, call_policy, keepalive_enabled, keepalive_idle_days, last_real_call_at, usage_limit_cost, usage_limit_tokens, usage_used_cost, usage_used_tokens, usage_limit_hit, usage_limit_hit_at, created_at, updated_at`
 
 func scanChannel(scanner interface {
 	Scan(dest ...any) error
@@ -58,6 +59,12 @@ func scanChannel(scanner interface {
 		&keepaliveEnabled,
 		&r.KeepaliveIdleDays,
 		scanNullTime(&r.LastRealCallAt),
+		&r.UsageLimitCost,
+		&r.UsageLimitTokens,
+		&r.UsageUsedCost,
+		&r.UsageUsedTokens,
+		&r.UsageLimitHit,
+		&r.UsageLimitHitAt,
 		scanTime(&r.CreatedAt),
 		scanTime(&r.UpdatedAt),
 	); err != nil {
@@ -119,6 +126,9 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 		-- The call policy and keepalive window are edited in the connection drawer,
 		-- so they must round-trip here or saving the drawer would blank them.
 		c.call_policy, c.keepalive_enabled, c.keepalive_idle_days, c.last_real_call_at,
+		-- The usage budget is edited in the connection drawer, so it must round-trip
+		-- here too (the counters and the hit marker are the drawer's read-out).
+		c.usage_limit_cost, c.usage_limit_tokens, c.usage_used_cost, c.usage_used_tokens, c.usage_limit_hit, c.usage_limit_hit_at,
 		c.stable_first, c.created_at, c.updated_at,
 		COALESCE(cred.kind, ''),
 		CASE WHEN EXISTS (
@@ -240,6 +250,12 @@ func (s *ChannelStore) ListOverviews(now time.Time) ([]domain.ChannelOverview, e
 			&keepaliveEnabled,
 			&overview.Channel.KeepaliveIdleDays,
 			scanNullTime(&overview.Channel.LastRealCallAt),
+			&overview.Channel.UsageLimitCost,
+			&overview.Channel.UsageLimitTokens,
+			&overview.Channel.UsageUsedCost,
+			&overview.Channel.UsageUsedTokens,
+			&overview.Channel.UsageLimitHit,
+			&overview.Channel.UsageLimitHitAt,
 			&stableFirst,
 			scanTime(&overview.Channel.CreatedAt),
 			scanTime(&overview.Channel.UpdatedAt),
@@ -374,8 +390,8 @@ func (s *ChannelStore) Create(c *domain.Channel) (int64, error) {
 	if strings.TrimSpace(c.ModelSyncMode) == "" {
 		syncMode = s.defaultModelSyncMode()
 	}
-	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, upstream_path_override, upstream_path_map, upstream_request_map, upstream_response_map, header_override, system_prompt, retry_config, stable_first, model_sync_mode, call_policy, keepalive_enabled, keepalive_idle_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.NonStreamTimeoutSeconds, c.StreamPolicy, c.ProxyURL, c.UpstreamPathOverride, c.UpstreamPathMap, c.UpstreamRequestMap, c.UpstreamResponseMap, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, boolInt(c.StableFirst), syncMode, c.CallPolicy, optionalBoolValue(c.KeepaliveEnabled), c.KeepaliveIdleDays)
+	res, err := s.db.Exec(`INSERT INTO channels (site_id, credential_id, name, base_url, models_csv, group_name, priority, weight, status, type_hint, max_reasoning_effort, payload_rules, max_concurrent, non_stream_timeout_seconds, stream_policy, proxy_url, upstream_path_override, upstream_path_map, upstream_request_map, upstream_response_map, header_override, system_prompt, retry_config, stable_first, model_sync_mode, call_policy, keepalive_enabled, keepalive_idle_days, usage_limit_cost, usage_limit_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.NonStreamTimeoutSeconds, c.StreamPolicy, c.ProxyURL, c.UpstreamPathOverride, c.UpstreamPathMap, c.UpstreamRequestMap, c.UpstreamResponseMap, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, boolInt(c.StableFirst), syncMode, c.CallPolicy, optionalBoolValue(c.KeepaliveEnabled), c.KeepaliveIdleDays, c.UsageLimitCost, c.UsageLimitTokens)
 	if err != nil {
 		return 0, fmt.Errorf("channel create: %w", err)
 	}
@@ -399,8 +415,32 @@ func (s *ChannelStore) Update(c *domain.Channel) error {
 		return fmt.Errorf("channel update begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, max_reasoning_effort=?, payload_rules=?, max_concurrent=?, non_stream_timeout_seconds=?, stream_policy=?, proxy_url=?, upstream_path_override=?, upstream_path_map=?, upstream_request_map=?, upstream_response_map=?, header_override=?, system_prompt=?, retry_config=?, stable_first=?, model_sync_mode=?, call_policy=?, keepalive_enabled=?, keepalive_idle_days=?, updated_at=datetime('now') WHERE id=?`,
-		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, c.Status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.NonStreamTimeoutSeconds, c.StreamPolicy, c.ProxyURL, c.UpstreamPathOverride, c.UpstreamPathMap, c.UpstreamRequestMap, c.UpstreamResponseMap, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, boolInt(c.StableFirst), domain.NormalizeModelSyncMode(c.ModelSyncMode), c.CallPolicy, optionalBoolValue(c.KeepaliveEnabled), c.KeepaliveIdleDays, c.ID); err != nil {
+
+	// The budget columns are not the caller's to send. The counters are a cache
+	// of the ledger and the hit marker says whether this channel was parked by
+	// its own limit, so read what is stored; when the limits changed, re-derive
+	// the counters from usage_records and release a channel whose new limit is
+	// not exceeded (otherwise raising a limit would leave it parked forever).
+	var prevLimitCost, usedCost float64
+	var prevLimitTokens, usedTokens int64
+	var prevStatus, hit, hitAt string
+	if err := tx.QueryRow(`SELECT usage_limit_cost, usage_limit_tokens, usage_used_cost, usage_used_tokens, status, usage_limit_hit, usage_limit_hit_at FROM channels WHERE id = ?`, c.ID).
+		Scan(&prevLimitCost, &prevLimitTokens, &usedCost, &usedTokens, &prevStatus, &hit, &hitAt); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("channel update budget: %w", err)
+	}
+	status := c.Status
+	if prevLimitCost != c.UsageLimitCost || prevLimitTokens != c.UsageLimitTokens {
+		if err := tx.QueryRow(`SELECT COALESCE(SUM(cost), 0), COALESCE(SUM(total_tokens), 0) FROM usage_records WHERE channel_id = ?`, c.ID).
+			Scan(&usedCost, &usedTokens); err != nil {
+			return fmt.Errorf("channel update usage: %w", err)
+		}
+		hit, hitAt = "", ""
+		if prevStatus == domain.StatusAutoDisabled && !ExceedsUsageLimit(usedCost, usedTokens, c.UsageLimitCost, c.UsageLimitTokens) {
+			status = domain.StatusEnabled
+		}
+	}
+	if _, err = tx.Exec(`UPDATE channels SET site_id=?, credential_id=?, name=?, base_url=?, models_csv=?, group_name=?, priority=?, weight=?, status=?, type_hint=?, max_reasoning_effort=?, payload_rules=?, max_concurrent=?, non_stream_timeout_seconds=?, stream_policy=?, proxy_url=?, upstream_path_override=?, upstream_path_map=?, upstream_request_map=?, upstream_response_map=?, header_override=?, system_prompt=?, retry_config=?, stable_first=?, model_sync_mode=?, call_policy=?, keepalive_enabled=?, keepalive_idle_days=?, usage_limit_cost=?, usage_limit_tokens=?, usage_used_cost=?, usage_used_tokens=?, usage_limit_hit=?, usage_limit_hit_at=?, updated_at=datetime('now') WHERE id=?`,
+		c.SiteID, c.CredentialID, c.Name, c.BaseURL, c.ModelsCSV, c.GroupName, c.Priority, c.Weight, status, c.TypeHint, c.MaxReasoningEffort, c.PayloadRules, c.MaxConcurrent, c.NonStreamTimeoutSeconds, c.StreamPolicy, c.ProxyURL, c.UpstreamPathOverride, c.UpstreamPathMap, c.UpstreamRequestMap, c.UpstreamResponseMap, c.HeaderOverride, c.SystemPrompt, c.RetryConfig, boolInt(c.StableFirst), domain.NormalizeModelSyncMode(c.ModelSyncMode), c.CallPolicy, optionalBoolValue(c.KeepaliveEnabled), c.KeepaliveIdleDays, c.UsageLimitCost, c.UsageLimitTokens, usedCost, usedTokens, hit, hitAt, c.ID); err != nil {
 		return fmt.Errorf("channel update: %w", err)
 	}
 	if _, err = tx.Exec(`UPDATE route_members SET priority=?, weight=?, updated_at=datetime('now')

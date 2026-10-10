@@ -581,6 +581,29 @@ func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
 		}
 	}
 
+	// Channel budget: the same transaction that writes the ledger row accrues the
+	// account's counters and parks the channel when the operator's own limit comes
+	// due. Doing it here (rather than in a sweep) is what makes "reached the limit"
+	// exact: the request that crossed it is the one that turns the channel off.
+	if record.ChannelID > 0 {
+		var usedCost, limitCost float64
+		var usedTokens, limitTokens int64
+		var channelStatus string
+		if err := tx.QueryRow(`UPDATE channels SET usage_used_tokens = usage_used_tokens + ?, usage_used_cost = usage_used_cost + ?
+			WHERE id = ? RETURNING usage_used_tokens, usage_used_cost, usage_limit_tokens, usage_limit_cost, status`,
+			record.TotalTokens, record.Cost, record.ChannelID,
+		).Scan(&usedTokens, &usedCost, &limitTokens, &limitCost, &channelStatus); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("usage record channel budget: %w", err)
+		} else if err == nil && channelStatus == domain.StatusEnabled {
+			if hit := UsageLimitHit(usedCost, usedTokens, limitCost, limitTokens); hit != "" {
+				if _, err := tx.Exec(`UPDATE channels SET status = ?, usage_limit_hit = ?, usage_limit_hit_at = datetime('now')
+					WHERE id = ?`, domain.StatusAutoDisabled, hit, record.ChannelID); err != nil {
+					return fmt.Errorf("usage record channel limit: %w", err)
+				}
+			}
+		}
+	}
+
 	if strings.TrimSpace(record.RequestID) != "" {
 		if _, err := tx.Exec(
 			`UPDATE proxy_logs

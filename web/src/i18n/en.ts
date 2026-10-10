@@ -1023,6 +1023,15 @@ export const en: Dict = {
     "Total cap for a non-streaming upstream attempt on this channel (request + full body read); 0 = global default (5 minutes). Streaming requests are exempt. Raise it for slow deep-reasoning upstreams.",
   "channels.maxConcurrentHint":
     "Hard per-channel concurrency ceiling; requests beyond it queue FIFO. 0 = unlimited.",
+  "channels.usageLimitCost": "Cumulative cost limit",
+  "channels.usageLimitCostHint":
+    "Park this channel once its cumulative cost reaches this amount (summed from the settled ledger; 0 = no limit). Used so far: {used}. Raising or clearing it enables the channel again.",
+  "channels.usageLimitTokens": "Cumulative token limit",
+  "channels.usageLimitTokensHint":
+    "Park this channel once its cumulative tokens reach this amount (0 = no limit). Used so far: {used}. Raising or clearing it enables the channel again.",
+  "channels.usageLimitBadge": "Usage limit reached",
+  "channels.usageLimitHitCost": "Cost limit reached ({limit})",
+  "channels.usageLimitHitTokens": "Token limit reached ({limit})",
   "channels.payloadRulesHint":
     "JSON array of rules: match (model glob, protocol, header substring, payload JSON-path conditions) + actions (set / delete / filter). Non-matching requests pass through untouched. Paths use dots and indexes: messages.0.content, messages.#.image_url (any element).",
   "channels.endpointMap": "Custom endpoint and field mapping",

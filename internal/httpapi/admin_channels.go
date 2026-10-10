@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -260,6 +261,10 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		UpstreamResponseMap     *string `json:"upstream_response_map"`
 		StableFirst             *bool   `json:"stable_first"`
 		CallPolicy              *string `json:"call_policy"`
+		// The channel's usage budget. Both are absolute totals in the ledger's own
+		// units; 0 clears the limit (and releases a channel the old limit parked).
+		UsageLimitCost   *float64 `json:"usage_limit_cost"`
+		UsageLimitTokens *int64   `json:"usage_limit_tokens"`
 	}
 	if err := decodeJSON(w, r, &patch, 0, false); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
@@ -405,6 +410,23 @@ func (h *AdminHandler) updateChannel(w http.ResponseWriter, r *http.Request) {
 		}
 		ch.CallPolicy = policy
 	}
+	// The usage budget. The store re-derives the counters from the ledger and
+	// releases a channel the old limit parked when these change, so the numbers
+	// here are the operator's intent, never a cache to echo back.
+	if patch.UsageLimitCost != nil {
+		if math.IsNaN(*patch.UsageLimitCost) || math.IsInf(*patch.UsageLimitCost, 0) || *patch.UsageLimitCost < 0 {
+			writeError(w, http.StatusBadRequest, "usage_limit_cost must be a non-negative number")
+			return
+		}
+		ch.UsageLimitCost = *patch.UsageLimitCost
+	}
+	if patch.UsageLimitTokens != nil {
+		if *patch.UsageLimitTokens < 0 {
+			writeError(w, http.StatusBadRequest, "usage_limit_tokens must be >= 0")
+			return
+		}
+		ch.UsageLimitTokens = *patch.UsageLimitTokens
+	}
 	// Custom endpoint / field mapping. An explicit empty value clears the
 	// mapping, so a channel can be returned to plain passthrough without a
 	// manual DB edit.
@@ -513,10 +535,20 @@ func (h *AdminHandler) validateChannel(ch *domain.Channel) error {
 	if ch.NonStreamTimeoutSeconds < 0 {
 		return errors.New("non_stream_timeout_seconds must be non-negative")
 	}
+	if math.IsNaN(ch.UsageLimitCost) || math.IsInf(ch.UsageLimitCost, 0) || ch.UsageLimitCost < 0 {
+		return errors.New("usage_limit_cost must be a non-negative number")
+	}
+	if ch.UsageLimitTokens < 0 {
+		return errors.New("usage_limit_tokens must be non-negative")
+	}
 	if domain.NormalizeStreamPolicy(ch.StreamPolicy) != ch.StreamPolicy {
 		return errors.New("invalid stream_policy")
 	}
-	if ch.Status != domain.StatusEnabled && ch.Status != domain.StatusDisabled {
+	if ch.Status != domain.StatusEnabled && ch.Status != domain.StatusDisabled && ch.Status != domain.StatusAutoDisabled {
+		// auto_disabled is a stored state, not a client's request: a PATCH that
+		// preserves it (raise the usage limit, fix a typo) must not be refused as
+		// "invalid status" — that would make a parked channel uneditable, which is
+		// exactly when the operator needs to edit it.
 		return errors.New("invalid channel status")
 	}
 	if ch.ModelSyncMode != "" && ch.ModelSyncMode != domain.ModelSyncModeAuto && ch.ModelSyncMode != domain.ModelSyncModeManual {

@@ -45,6 +45,9 @@ const routeMemberChannelColumns = `rm.id, rm.route_id, rm.channel_id, rm.priorit
 	c.stable_first, c.stable_first_requests,
 	c.upstream_path_override, c.upstream_path_map, c.upstream_request_map, c.upstream_response_map,
 	c.created_at, c.updated_at,
+	-- The relay has to know the budget: a channel parked by its own limit must not
+	-- be chosen, and the console shows the counters next to the limits.
+	c.usage_limit_cost, c.usage_limit_tokens, c.usage_used_cost, c.usage_used_tokens, c.usage_limit_hit, c.usage_limit_hit_at,
 	CASE WHEN (
 		cred.id IS NOT NULL AND cred.status = 'enabled' AND cred.secret_enc <> ''
 		AND cred.site_id = c.site_id
@@ -444,6 +447,9 @@ func scanRoutingCandidate(rows *sql.Rows) (domain.RoutingCandidate, error) {
 		&candidate.Channel.UpstreamPathOverride, &candidate.Channel.UpstreamPathMap,
 		&candidate.Channel.UpstreamRequestMap, &candidate.Channel.UpstreamResponseMap,
 		scanTime(&candidate.Channel.CreatedAt), scanTime(&candidate.Channel.UpdatedAt),
+		&candidate.Channel.UsageLimitCost, &candidate.Channel.UsageLimitTokens,
+		&candidate.Channel.UsageUsedCost, &candidate.Channel.UsageUsedTokens,
+		&candidate.Channel.UsageLimitHit, &candidate.Channel.UsageLimitHitAt,
 		&credentialUsable, &candidate.ModelPattern,
 	); err != nil {
 		return domain.RoutingCandidate{}, err

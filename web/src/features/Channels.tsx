@@ -315,6 +315,10 @@ export function Channels() {
       upstream_response_map?: string;
       stable_first?: boolean;
       call_policy?: "" | "allow_probe" | "real_calls_only";
+      /** Cumulative spend / token ceilings (0 = none); see the drawer's
+       *  「累计成本上限」. The counters and the hit marker are the store's. */
+      usage_limit_cost?: number;
+      usage_limit_tokens?: number;
       userToken: string;
       userCookie: string;
       /** New-API family numeric user id (`New-Api-User`). Empty = unknown. */
@@ -456,6 +460,10 @@ export function Channels() {
         // "" is a value here, not a missing one: it hands the policy back to the
         // site, which is how the operator undoes a per-channel override.
         call_policy: input.call_policy ?? input.channel.call_policy ?? "",
+        // The budget travels with the save; the counters and the hit marker do
+        // not (the store re-derives them from the ledger when a limit changes).
+        usage_limit_cost: input.usage_limit_cost ?? input.channel.usage_limit_cost ?? 0,
+        usage_limit_tokens: input.usage_limit_tokens ?? input.channel.usage_limit_tokens ?? 0,
         site_id: siteId,
         credential_id: relayCredentialId,
       });

@@ -272,6 +272,25 @@ type Channel struct {
 	// including failures: the ban counts requests that arrived, not requests
 	// that succeeded.
 	LastRealCallAt *time.Time `json:"last_real_call_at,omitempty"`
+	// UsageLimitCost / UsageLimitTokens are this account's budget: stop sending
+	// once the channel has cost (or consumed) more than this, cumulative from the
+	// account's start. 0 = no limit, and either limit can trip on its own.
+	UsageLimitCost   float64 `json:"usage_limit_cost,omitempty"`
+	UsageLimitTokens int64   `json:"usage_limit_tokens,omitempty"`
+	// UsageUsedCost / UsageUsedTokens are the counters behind those limits,
+	// accrued in the same transaction as the usage row (and re-derived from
+	// usage_records whenever a limit is saved, so they cannot drift away from
+	// the ledger).
+	UsageUsedCost   float64 `json:"usage_used_cost,omitempty"`
+	UsageUsedTokens int64   `json:"usage_used_tokens,omitempty"`
+	// UsageLimitReason is set when the budget trips and the channel is parked:
+	// which limit came due ("cost", "tokens", "cost,tokens") — the console
+	// phrases it in the reader's language, because this is the operator's own
+	// decision coming due rather than an upstream failure.
+	UsageLimitHit string `json:"usage_limit_hit,omitempty"`
+	// UsageLimitHitAt is when that happened. A non-empty value is also the marker
+	// for "parked by this budget", which is what lets a higher limit release it.
+	UsageLimitHitAt string `json:"usage_limit_hit_at,omitempty"`
 	// ConsecutiveFailures counts failed relay attempts (auto-disable input).
 	ConsecutiveFailures int       `json:"-"`
 	CreatedAt           time.Time `json:"created_at"`
