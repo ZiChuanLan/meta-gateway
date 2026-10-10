@@ -35,9 +35,11 @@
 </div>
 
 > [!TIP]
-> **在线体验** · <https://mg.015201314.xyz> —  用户名 `admin` 登录密码 `123456`
+> **在线体验** · <https://mg.015201314.xyz> — 用户名 `admin`，登录密码 `123456`
 >
 > 公开演示环境，请勿存放生产敏感密钥。控制台内置 **经典 / 现代** 双外观与明暗主题，登录后即可切换体验。
+
+---
 
 ## 它是什么
 
@@ -60,53 +62,31 @@
 
 > 完整的功能说明、每条规则的边界与踩坑记录都在[文档站](https://zichuanlan.github.io/meta-gateway/)。本文件只做门面。
 
+---
+
 ## 界面预览
 
 <img src="docs/marketing/feature-appearance.png" alt="经典与现代两种外观同框" width="100%">
 
 **经典 Classic** 紧凑信息密度，适合长时间盯盘运维 ｜ **现代 Modern** 卡片式工作台，层次更舒展
 
-<img src="docs/screenshots/dashboard.png" alt="数据总览" width="100%">
+| 数据总览 | 上游连接 |
+| :---: | :---: |
+| [![数据总览：区间请求、成本、Token 用量与成功率](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![上游连接：渠道、模型数、延迟与健康度](docs/screenshots/channels.png)](docs/screenshots/channels.png) |
+| <sub>区间请求 / 成本 / Token / 成功率一行读完；下面是渠道健康矩阵、上游站点消息与最近请求流</sub> | <sub>每个站点的渠道、模型数、延迟与健康度；右侧是这条连接的实时画像与探测结果</sub> |
+| **模型路由** | **模型工作台** |
+| [![模型路由：成员优先级、权重与别名归一](docs/screenshots/models.png)](docs/screenshots/models.png) | [![模型工作台：图像生成与编辑、文字流式对话](docs/screenshots/workbench.png)](docs/screenshots/workbench.png) |
+| <sub>成员优先级与权重负载、别名归一；一键挂载能提供该模型的渠道，重命名后仍搜得到</sub> | <sub>图像生成与编辑、文字流式对话，都走真实转发链路（这张图就是网关自己生成的）</sub> |
+| **令牌管理** | **日志观测** |
+| [![令牌管理：额度、分组绑定与调用统计](docs/screenshots/keys.png)](docs/screenshots/keys.png) | [![日志观测：延迟分布、失败率与代理审计](docs/screenshots/logs.png)](docs/screenshots/logs.png) |
+| <sub>独立额度（token / 金额）、路由分组绑定与调用统计</sub> | <sub>延迟分布、失败率与代理审计，可核到真实上游地址与上游凭据</sub> |
+| **运行参数** | **资产交换** |
+| [![运行参数：路由与转发、健康与自动化、数据与运维](docs/screenshots/settings.png)](docs/screenshots/settings.png) | [![资产交换：拓扑快照、加密导入导出与 WebDAV 备份](docs/screenshots/exchange.png)](docs/screenshots/exchange.png) |
+| <sub>路由与转发、健康与自动化、数据与运维三段，改完即时生效</sub> | <sub>拓扑快照、加密导入导出与 WebDAV 备份，可作为站点间迁移的中间格式</sub> |
 
-**数据总览** — 区间请求 / 成本 / Token / 成功率一行读完；下面是渠道健康矩阵、上游站点消息、用量排行与最近请求流。
+> 截图均为 1440×960 视口（2× 像素密度），来自一份演示数据（虚构站点、模型与流量），不是真实部署；点击任意图片可打开原始文件。
 
-<img src="docs/screenshots/channels.png" alt="上游连接" width="100%">
-
-**上游连接** — 每个站点的渠道、模型数、延迟与健康度；右侧是这条连接的实时画像与探测结果。
-
-<img src="docs/screenshots/models.png" alt="模型路由" width="100%">
-
-**模型路由** — 成员优先级与权重负载、别名归一、一键挂载能提供该模型的渠道（按名称包含匹配，重命名后仍搜得到）。
-
-<img src="docs/screenshots/site-probe.png" alt="站点探针" width="100%">
-
-**站点探针** — 读站点自己公开的状态页与价格表（**零 token**），先预览影响再决定禁用 / 恢复渠道。
-
-<img src="docs/screenshots/workbench.png" alt="模型工作台" width="100%">
-
-**模型工作台** — 图像生成与编辑、文字流式对话，都走真实转发链路（这张图就是网关自己生成的）。
-
-<img src="docs/screenshots/keys.png" alt="令牌管理" width="100%">
-
-**令牌管理** — 独立额度（token / 金额）、路由分组绑定与调用统计。
-
-<img src="docs/screenshots/logs.png" alt="日志观测" width="100%">
-
-**日志观测** — 延迟分布、失败率与代理审计，可核到真实上游地址与上游凭据。
-
-<img src="docs/screenshots/settings.png" alt="运行参数" width="100%">
-
-**运行参数** — 路由与转发、健康与自动化、数据与运维三段；改完即时生效（总览、渠道、日志等页面同理）。
-
-<img src="docs/screenshots/exchange.png" alt="资产交换" width="100%">
-
-**资产交换** — 拓扑快照、加密导入导出与 WebDAV 备份，可作为站点间迁移的中间格式。
-
-<img src="docs/screenshots/login.png" alt="登录" width="100%">
-
-**登录** — 管理员与团队成员共用入口，暗色 / 明亮双主题；还有一套独立的移动端布局。
-
-> 截图尺寸一致（全为 1440×960），来自一份演示数据（虚构站点、模型与流量），不是真实部署。
+---
 
 ## 快速开始
 
@@ -135,6 +115,10 @@ curl --fail http://127.0.0.1:4100/readyz
 ```
 
 访问 `http://localhost:4100/console/`，输入 `ADMIN_TOKEN` 进入控制台。
+
+<img src="docs/screenshots/login.png" alt="控制台登录页" width="100%">
+
+管理员与团队成员共用同一个登录入口，按账号角色隔离权限；支持暗色 / 明亮双主题，另有独立的移动端布局。
 
 > [!IMPORTANT]
 > **`MASTER_KEY` 必须随数据库一起备份、一起迁移。** 换一个 `MASTER_KEY` 打开同一个库，所有已存凭据都解不开。
@@ -171,6 +155,8 @@ curl --fail http://127.0.0.1:4100/readyz
 
 单行 `docker run`、源码构建、从 v3 升级到 V4 —— 见[文档站 / 入门](https://zichuanlan.github.io/meta-gateway/guide/)。
 
+---
+
 ## 接入
 
 把 API Base URL 指向网关，API Key 填管理后台颁发的**下游令牌**：
@@ -188,6 +174,8 @@ curl http://localhost:4100/v1/chat/completions \
 | Claude Code 等原生客户端 | `http://<网关>:4100/v1` | Anthropic Messages |
 | Open WebUI / LibreChat | `http://<网关>:4100/v1` | OpenAI 兼容 |
 
+---
+
 ## 文档
 
 | 章节 | 内容 |
@@ -204,6 +192,8 @@ curl http://localhost:4100/v1/chat/completions \
 | [参考](https://zichuanlan.github.io/meta-gateway/reference/) | **由代码生成**的配置、接口、错误码与数据结构全表 |
 
 参考层由 `tools/docsgen` 从代码生成，CI 会校验生成结果与代码一致 —— 代码改了而文档没跟上，构建就红。
+
+---
 
 ## 常见问题
 
@@ -239,6 +229,8 @@ Nginx 是纯传输层转发，无法理解 AI 模型的语义。Meta Gateway 运
 两套是完整界面包，切换后布局、过场与控件风格整体变化。**明暗与配色是彼此独立的两个维度**——可以只切明暗、只换配色，也可以整套换包，互不干扰。偏好存在浏览器本地。
 </details>
 
+---
+
 ## Star History
 
 <div align="center">
@@ -252,6 +244,8 @@ Nginx 是纯传输层转发，无法理解 AI 模型的语义。Meta Gateway 运
 </a>
 
 </div>
+
+---
 
 ## 贡献
 
@@ -280,6 +274,8 @@ go run ./tools/docsgen && npm ci && npm run build
 涉及界面改动的 PR，请顺手贴一张改前 / 改后截图（本项目同时维护**经典 / 现代**两套界面包，两边都要看一眼）。
 
 更细的约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+---
 
 ## 许可
 
