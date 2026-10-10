@@ -89,27 +89,20 @@ func (h *sessionHandler) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if h.loginLimiter != nil || h.globalLoginLimiter != nil {
-		ip := ClientIP(r).String()
-		allowedGlobal, waitGlobal := true, time.Duration(0)
-		if h.globalLoginLimiter != nil {
-			allowedGlobal, waitGlobal = h.globalLoginLimiter.Allow(0)
+	// The per-source bucket is spent first and the shared ceiling only by the
+	// requests that bucket admitted: charging refused attempts to the shared
+	// bucket as well would let one client drain the deployment-wide ceiling and
+	// lock everybody else out — the opposite of what that ceiling is for.
+	// operator_profile.go already orders its two buckets this way.
+	if h.loginLimiter != nil {
+		if allowed, wait := h.loginLimiter.Allow(hashLoginKey("ip:" + ClientIP(r).String())); !allowed {
+			loginRateLimited(w, wait)
+			return
 		}
-		allowedIP, waitIP := true, time.Duration(0)
-		if h.loginLimiter != nil {
-			allowedIP, waitIP = h.loginLimiter.Allow(hashLoginKey("ip:" + ip))
-		}
-		if !allowedGlobal || !allowedIP {
-			wait := waitIP
-			if waitGlobal > wait {
-				wait = waitGlobal
-			}
-			seconds := int(wait.Seconds())
-			if seconds < 1 {
-				seconds = 1
-			}
-			w.Header().Set("Retry-After", strconv.Itoa(seconds))
-			writeError(w, http.StatusTooManyRequests, "login rate limit exceeded")
+	}
+	if h.globalLoginLimiter != nil {
+		if allowed, wait := h.globalLoginLimiter.Allow(0); !allowed {
+			loginRateLimited(w, wait)
 			return
 		}
 	}
@@ -203,6 +196,16 @@ func hashLoginKey(value string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(value))
 	return int64(h.Sum64() & 0x7fffffffffffffff)
+}
+
+// loginRateLimited answers a throttled sign-in attempt.
+func loginRateLimited(w http.ResponseWriter, wait time.Duration) {
+	seconds := int(wait.Seconds())
+	if seconds < 1 {
+		seconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	writeError(w, http.StatusTooManyRequests, "login rate limit exceeded")
 }
 
 // status reports whether TOTP is enabled (never leaks the secret).

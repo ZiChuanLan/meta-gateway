@@ -124,9 +124,20 @@ func (h *TeamHandler) publicAuthRequest(w http.ResponseWriter, r *http.Request) 
 		teamFail(w, 403, "csrf_failed")
 		return false
 	}
-	ok, _ := h.globalLoginLimiter.Allow(0)
-	ipok, _ := h.loginLimiter.Allow(hashLoginKey("team:" + ClientIP(r).String()))
-	if !ok || !ipok {
+	return h.admitLoginRate(w, r)
+}
+
+// admitLoginRate spends one token from the per-source bucket first and reaches for
+// the shared ceiling only when that bucket admitted the request: charging refused
+// attempts to the shared bucket too would let one client drain it and lock every
+// other member out of signing in.
+func (h *TeamHandler) admitLoginRate(w http.ResponseWriter, r *http.Request) bool {
+	if ok, _ := h.loginLimiter.Allow(hashLoginKey("team:" + ClientIP(r).String())); !ok {
+		w.Header().Set("Retry-After", "30")
+		teamFail(w, 429, "login_rate_limited")
+		return false
+	}
+	if ok, _ := h.globalLoginLimiter.Allow(0); !ok {
 		w.Header().Set("Retry-After", "30")
 		teamFail(w, 429, "login_rate_limited")
 		return false
@@ -147,14 +158,7 @@ func (h *TeamHandler) publicAuthNavigate(w http.ResponseWriter, r *http.Request)
 		teamFail(w, 403, "csrf_failed")
 		return false
 	}
-	ok, _ := h.globalLoginLimiter.Allow(0)
-	ipok, _ := h.loginLimiter.Allow(hashLoginKey("team:" + ClientIP(r).String()))
-	if !ok || !ipok {
-		w.Header().Set("Retry-After", "30")
-		teamFail(w, 429, "login_rate_limited")
-		return false
-	}
-	return true
+	return h.admitLoginRate(w, r)
 }
 
 // startSession opens a session for one member and sets its cookie, without

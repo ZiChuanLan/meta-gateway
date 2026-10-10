@@ -146,9 +146,11 @@ func TestLoginLockoutIsPerClientNotGlobal(t *testing.T) {
 		return response.StatusCode
 	}
 
-	// One source spends its own budget (per-IP burst is 5)...
+	// One source spends its own budget (per-IP burst is 5) and keeps knocking:
+	// attempts refused by that bucket must not also drain the shared ceiling, or
+	// the flood simply moves the lockout onto everybody else.
 	var last int
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 150; i++ {
 		last = login("203.0.113.9")
 	}
 	if last != http.StatusTooManyRequests {
