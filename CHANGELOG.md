@@ -8,6 +8,17 @@ Docker image (`zichuanlan/meta-gateway:<version>`).
 
 ### Fixed
 
+- **连接抽屉里选「Custom…」不再把类型留在原来那个上面。** `SearchableSelect` 进入自定义模式时会把**当前选中值**填进输入框（“让你接着改”），
+  于是在一个 TypeSafe 渠道上选 Custom… 之后，类型依旧读作 `typesafe` 并被保存回去——映射面板打开了，类型却没变。现在选 Custom…
+  会发出自定义标记（输入框留空等你填真实 id），两处类型选择器都把它映射为 `custom`：这是后端对“这一家我不属于任何已知家族”
+  的正式 id（在 `OpenAICompatibleBrands()` 里，`CanonicalType` 解析为 OpenAI 兼容透传——协议家族未知时最诚实的默认，
+  剩下的事交给端点/字段映射）。若把 UI 的标记本身存进去，渠道会解析不到任何适配器。
+- **经典外观抽屉的保存按钮在视口之外。** 抽屉按 `height: 100vh` 计高，而外层遮罩还有上下各 12px 内边距——比视口高 24px，
+  于是底部的「取消 / 保存」正好被推到屏幕外，看起来像“没有保存按钮”。共享层早就减了这段内边距，经典层现在也减
+  （手机上抽屉仍占满整屏）。实测：900px 视口里抽屉高 863px，页脚完整可见，正文自己滚动。
+
+### Fixed
+
 - **站点探针：自动源站点在「按站点采集」路径上全部失败，而且报成“数据库错误”。** 两段代码各有一半问题：
   - `CollectSite` 直接读 `site.ProbeSourceKind/URL`，但**自动源站点这两个字段本来就是空的**（源由平台推导：
     new-api → `/api/pricing`，sub2api → 公开 transit 发现），只有 `EnabledSites()`（定时轮）先调 `resolveProbeSource`。
