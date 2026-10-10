@@ -37,6 +37,11 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 0 0 20px; padding: 0; border: 0; }
 .panel-title { display: flex; align-items: center; gap: 8px; }
 .panel-title h2, .panel-header h2 { margin: 0; color: var(--ink); font: 600 14px/1.45 var(--font); letter-spacing: -.02em; }
+/* A heading in a title row is one item on a flex line, and a flex line centres
+   MARGIN boxes. The UA's default `margin-bottom: 1em` (13px at the settings
+   page's 13px h3) therefore pushed the 已改 badge 6.5px below the title's own
+   centre — the badge looked sunk next to every section name. */
+.panel-title h3 { margin: 0; }
 .panel-header > .toolbar { justify-content: flex-end; }
 /* Collapsible panels: the title itself is the disclosure handle, and a folded
    panel shrinks to its header so a live-state block stops owning the page. */

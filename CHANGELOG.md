@@ -4,6 +4,19 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [Unreleased]
+
+### Fixed
+
+- **运行设置每个分区标题旁的「已改 / 默认」徽章比标题低了 6.5px。** 标题行是 flex 行，而 flex 行按 **margin box**
+  对齐：`h3` 只有 `margin-top: 0` 被重置，UA 默认的 `margin-bottom: 1em`（13px）把徽章压到标题视觉中心以下——
+  每个分区名旁边都是这个下沉的徽章。现在标题行内的 `h3` 归零（实测两个外观下 5 个分区的 `deltaCenters` 从 6.5 → 0）。
+- **总览第一排两个面板的底部不再一高一低。** 渠道健康列表写死 `max-height: 220px`，而右侧「上游站点消息」
+  撑起整行（458px），于是渠道列表下方留了约 150px 的空洞——消息一加载完，空洞就更显眼。现在两个列表都占满
+  各自面板的剩余高度并各自滚动（渠道列表 353px / 消息列表 320px，行高一致 458px），列表底部只剩面板自己的
+  内边距（27px / 43px，后者是消息面板自己那行脚注）。实现上 `flex: 1 1 0` 是关键：用 `auto` 时列表的全部内在
+  高度（27 个渠道）会把面板撑到 1300px。经典包自己的 `max-height` 覆盖在 compat 层里归零。
+
 ## [v4.5.0] - 2026-10-10
 
 > **上游站点公告进了总览；保活改为直达渠道，不必再为它建路由；API Key 可批量测活与删除。**

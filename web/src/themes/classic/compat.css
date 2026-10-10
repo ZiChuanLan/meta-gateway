@@ -351,3 +351,13 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* The classic pack caps the cockpit lists itself (max-height 220px on the
+   channel/log lists, 320px on the news list). The shared layer sizes them to
+   the panel now, so a row of two panels ends level instead of leaving a hole
+   under the shorter list. */
+:root[data-appearance="classic"] .cockpit-channel-list,
+:root[data-appearance="classic"] .cockpit-log-list,
+:root[data-appearance="classic"] .site-news-list {
+  max-height: none;
+}

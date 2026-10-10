@@ -7386,6 +7386,10 @@ label.check input[type="checkbox"]:not(.switch) {
     border-color var(--dur-hover) var(--ease-hover),
     box-shadow var(--dur-hover) var(--ease-hover),
     transform var(--dur-hover) var(--ease-hover);
+  /* Two panels in a row are one band: the column lets a list fill whatever
+     height the row ends up with, so the two never end at different depths. */
+  display: flex;
+  flex-direction: column;
 }
 .cockpit-panel:hover {
   border-color: var(--line-strong);
@@ -7412,7 +7416,16 @@ label.check input[type="checkbox"]:not(.switch) {
   padding: 0;
   display: flex;
   flex-direction: column;
-  max-height: 220px;
+  /* The list owns the panel's leftover height (min-height keeps the panel
+     usable when the sibling panel is short). `flex-basis: 0` is load-bearing:
+     with `auto` the list's full intrinsic height (all 27 channels) drove the
+     panel and the row grew to 1300px. The old `max-height: 220px` capped the
+     channel list while the news panel decided the row's height, so the row
+     ended level but the channel panel ended 150px early — the hole the operator
+     saw under the channel list, which grew as soon as the news arrived. */
+  flex: 1 1 0;
+  min-height: 220px;
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -7514,7 +7527,13 @@ label.check input[type="checkbox"]:not(.switch) {
   padding: 0;
   display: flex;
   flex-direction: column;
-  max-height: 320px;
+  /* 320px was this list's cap; it is its floor now, so the news keep the room
+     they had and the panel on the other side of the row grows to match.
+     `flex-basis: 0` keeps the list from demanding its full height (see the
+     channel list above). */
+  flex: 1 1 0;
+  min-height: 320px;
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
