@@ -62,26 +62,51 @@
 
 ## 界面预览
 
-<div align="center">
-
 <img src="docs/marketing/feature-appearance.png" alt="经典与现代两种外观同框" width="100%">
 
 **经典 Classic** 紧凑信息密度，适合长时间盯盘运维 ｜ **现代 Modern** 卡片式工作台，层次更舒展
 
-<img src="docs/marketing/appearance-matrix.png" alt="两套外观 × 明暗两种主题" width="100%">
+<img src="docs/screenshots/dashboard.png" alt="数据总览" width="100%">
 
-两套外观 × 明暗两种主题共 4 种组合，随时切换，偏好按浏览器维度记忆。
+**数据总览** — 区间请求 / 成本 / Token / 成功率一行读完；下面是渠道健康矩阵、上游站点消息、用量排行与最近请求流。
 
-| <img src="docs/screenshots/login.png" width="480" /><br><b>安全控制台</b> · 统一登录，暗色 / 明亮双主题 | <img src="docs/screenshots/dashboard.png" width="480" /><br><b>数据总览</b> · 区间请求 / 成本 / Token / 成功率一屏看完 |
-| :---: | :---: |
-| <img src="docs/screenshots/channels.png" width="480" /><br><b>上游连接</b> · 渠道、模型数、延迟与健康度；右侧是实时画像 | <img src="docs/screenshots/models.png" width="480" /><br><b>模型路由</b> · 成员优先级与权重、别名归一、一键挂载渠道 |
-| <img src="docs/screenshots/workbench.png" width="480" /><br><b>模型工作台</b> · 图像生成编辑、文字流式对话（走真实转发链路） | <img src="docs/screenshots/keys.png" width="480" /><br><b>令牌管理</b> · 独立额度（token / 金额）与路由分组绑定 |
-| <img src="docs/screenshots/logs.png" width="480" /><br><b>日志观测</b> · 延迟分布、失败率与代理审计（含真实上游地址） | <img src="docs/screenshots/settings.png" width="480" /><br><b>运行参数</b> · 故障转移、失败冷却、自动恢复与限流 |
-| <img src="docs/screenshots/store.png" width="480" /><br><b>拓展</b> · 模块化扩展、沙箱隔离与托管进程 | <img src="docs/screenshots/exchange.png" width="480" /><br><b>资产交换</b> · 拓扑快照、加密导入导出与 WebDAV 备份 |
+<img src="docs/screenshots/channels.png" alt="上游连接" width="100%">
 
-截图全部来自一份演示数据（虚构站点与模型名），不是真实部署。
+**上游连接** — 每个站点的渠道、模型数、延迟与健康度；右侧是这条连接的实时画像与探测结果。
 
-</div>
+<img src="docs/screenshots/models.png" alt="模型路由" width="100%">
+
+**模型路由** — 成员优先级与权重负载、别名归一、一键挂载能提供该模型的渠道（按名称包含匹配，重命名后仍搜得到）。
+
+<img src="docs/screenshots/site-probe.png" alt="站点探针" width="100%">
+
+**站点探针** — 读站点自己公开的状态页与价格表（**零 token**），先预览影响再决定禁用 / 恢复渠道。
+
+<img src="docs/screenshots/workbench.png" alt="模型工作台" width="100%">
+
+**模型工作台** — 图像生成与编辑、文字流式对话，都走真实转发链路（这张图就是网关自己生成的）。
+
+<img src="docs/screenshots/keys.png" alt="令牌管理" width="100%">
+
+**令牌管理** — 独立额度（token / 金额）、路由分组绑定与调用统计。
+
+<img src="docs/screenshots/logs.png" alt="日志观测" width="100%">
+
+**日志观测** — 延迟分布、失败率与代理审计，可核到真实上游地址与上游凭据。
+
+<img src="docs/screenshots/settings.png" alt="运行参数" width="100%">
+
+**运行参数** — 路由与转发、健康与自动化、数据与运维三段；改完即时生效（总览、渠道、日志等页面同理）。
+
+<img src="docs/screenshots/exchange.png" alt="资产交换" width="100%">
+
+**资产交换** — 拓扑快照、加密导入导出与 WebDAV 备份，可作为站点间迁移的中间格式。
+
+<img src="docs/screenshots/login.png" alt="登录" width="100%">
+
+**登录** — 管理员与团队成员共用入口，暗色 / 明亮双主题；还有一套独立的移动端布局。
+
+> 截图尺寸一致（全为 1440×960），来自一份演示数据（虚构站点、模型与流量），不是真实部署。
 
 ## 快速开始
 
