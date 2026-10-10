@@ -4,7 +4,34 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [Unreleased]
+## [v4.5.1] - 2026-10-11
+
+### Security
+
+- **未授权请求不再能把审计表写成磁盘耗尽。** `auditAdmin` 挂在 `AdminAuth` **之前**，而限流挂在它**之后**——任何**没有凭据**的
+  `/admin/*` 请求（非 GET 一律触发，GET 的 401/403 也触发）都会写一行 `audit_events`，且永远碰不到限流；清理只在启动时和每 24h
+  跑一次（上限 10 万行），两个窗口之间行数与体积无界增长。唯一由调用方控制的字段 `X-Request-Id` 还直接入库（`MaxHeaderBytes`
+  默认 1 MiB，实测单请求塞 8000 字节的头被接受）。现在这一类写入（401/403，正是未授权客户端唯一能驱动的审计行）按客户端
+  分桶限流（30/min，burst 10），已认证审计与其它流量不受影响；`request_id` 入库前截断到 128 字节。实测：200 次无凭据 POST
+  只新增 **11 行**（修复前每次请求都写一行）；4096 字节的 `X-Request-Id` 入库 **128 字节**。
+- **单个来源不能再把全站登录限流抽干。** 两个桶原先**无条件依次扣减**——被 per-IP 桶拒绝的请求照样消耗共享的全局桶，于是
+  单个客户端（一次 60 并发，或持续 >10 req/s＝全局回填率）就能把全局桶打空，让**其他所有人**的登录一起 429。团队侧
+  （`/auth/login`、`/auth/oauth/{provider}/start`）是同一写法的第二处。现在两个桶**按序**扣：先 per-IP，只有被它放行的请求才
+  动全局桶（与 `operator_profile.go` 既有语义一致），团队侧两处合并为一个 `admitLoginRate`；同时把共享上限从 30/min 提到
+  600/min——它的定位是防洪上限，不是每来源节流。实测：单身份 150 次并发后，另一身份的登录仍是 **401**（修复前会一起 429）。
+- **删除有过 Key 的成员不再 500。** `downstream_keys.user_id`、`team_code_redemptions.user_id`、`team_identities.user_id`、
+  `team_invites.user_id` 都是**没有 ON DELETE 规则**的外键，批量删除时被引用挡住 → `500 save_failed`（本地实测可复现）。
+  现在撤回的 Key 与邀请**保留行但解除归属**（`user_id=NULL`，历史与审计还在），身份与兑换记录随账号删除。
+- **模型名不再被当成另一个模型。** chi 匹配的是**转义后**的路径，所以 `cn%3Aauto` 会被原样当作模型名：`/me/routes/{model}`
+  会落到一个不存在的名字，`/admin/ratios/{model}` 会把比例存成一个取不到的条目。现在 `chiParam` 统一做 `PathUnescape`
+  （覆盖所有 `/me/*` 调用点），ratio 处理器同样解码。
+
+### Operations
+
+- **代理背后的「所有人共用一个身份」有了诊断。** `TRUSTED_PROXY_CIDRS` 为空而请求又带着转发头时，客户端地址解析器会
+  **每个进程警告一次**（报出需要被信任的 peer 地址，绝不记录调用方给的头值）。这正是线上部署踩到的坑：网关看到的每个外部
+  客户端都是 `127.0.0.1`，于是登录限流桶、审计归属与 IP 白名单一起退化成「全世界一个桶」。部署在反代 / CDN 之后请按
+  [docs/operations/security.md](docs/operations/security.md) 把**每一跳**代理地址都列进去——只列一环，身份仍会落到上游那一跳上。
 
 ### Fixed
 
