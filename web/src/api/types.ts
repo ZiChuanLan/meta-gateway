@@ -1235,6 +1235,13 @@ export interface RuntimeEditableSettings {
   keepalive_default_idle_days: number;
   site_probe_interval_seconds: number;
   site_probe_jitter_seconds: number;
+  /**
+   * Upstream notice-board reader cadence (internal/sitenews), in seconds.
+   * Unlike the site-probe pair, 0 is a real value: the scheduled read is off
+   * and only the overview's refresh button reads boards. -1 means unset and
+   * resolves server-side to the deployment default.
+   */
+  site_news_interval_seconds: number;
   // Outbound client limits: 0 = the deployment default (OUTBOUND_* in the env),
   // and a non-zero value is a live override.
   outbound_connect_timeout_seconds: number;

@@ -491,7 +491,8 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	siteNewsService := sitenews.NewService(db, logger, func(req *http.Request) (*url.URL, error) {
 		return globalProxy.ForRequest(req, outboundPolicy)
 	})
-	siteNewsScheduler := sitenews.NewScheduler(siteNewsService, sitenews.DefaultInterval, 0, logger)
+	siteNewsScheduler := sitenews.NewScheduler(siteNewsService,
+		time.Duration(cfg.SiteNewsIntervalSeconds)*time.Second, 0, logger)
 	siteNewsScheduler.Start()
 	RegisterStopper(siteNewsScheduler.Stop)
 	NewSiteNewsHandler(siteNewsService, siteNewsScheduler).Register(adminGroup)
@@ -630,6 +631,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 			// settings change takes effect on the next one.
 			SetSiteProbeSchedule: func(interval, jitter time.Duration) {
 				siteProbeScheduler.SetSchedule(interval, jitter)
+			},
+			// Upstream notice-board cadence: 0 turns the scheduled read off (the
+			// dashboard's refresh button keeps working), and any change re-arms the
+			// wait in flight instead of waiting out the old interval.
+			SetSiteNewsSchedule: func(interval time.Duration) {
+				siteNewsScheduler.SetSchedule(interval, 0)
 			},
 			// Keepalive master switch + cadence + fallback window. The loop re-reads
 			// these every wake, so turning the switch off stops the next round.

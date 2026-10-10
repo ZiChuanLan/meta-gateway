@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **130** 个 `.sql` 文件，其中 **130** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **131** 个 `.sql` 文件，其中 **131** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -664,7 +664,7 @@
 | `image_edit_shim` | INTEGER | 是 | 0 | — |
 | `sticky_session` | INTEGER | — | — | — |
 
-### runtime_settings · 72 列
+### runtime_settings · 73 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -740,6 +740,7 @@
 | `keepalive_default_idle_days` | INTEGER | 是 | 0 | — |
 | `relay_max_body_mb` | INTEGER | 是 | 0 | — |
 | `relay_max_image_mb` | INTEGER | 是 | 0 | — |
+| `site_news_interval_seconds` | INTEGER | — | — | — |
 
 ### schema_migrations · 2 列
 

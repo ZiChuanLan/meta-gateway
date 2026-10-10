@@ -166,6 +166,12 @@ type Config struct {
 	// restart.
 	SiteProbeIntervalSeconds int `env:"SITE_PROBE_INTERVAL_SECONDS"`
 	SiteProbeJitterSeconds   int `env:"SITE_PROBE_JITTER_SECONDS"`
+	// SiteNewsIntervalSeconds is the env bootstrap for the upstream notice-board
+	// reader (internal/sitenews; default 300 = 5 minutes). Same contract as the
+	// site-probe cadence next door — a hot-reloadable runtime setting — except
+	// that the console may also set it to 0, which turns the background reader
+	// off rather than falling back here.
+	SiteNewsIntervalSeconds int `env:"SITE_NEWS_INTERVAL_SECONDS"`
 	// KeepaliveCheckIntervalSeconds / KeepaliveDefaultIdleDays are the env
 	// bootstrap for the hot-reloadable keepalive settings: how often a round asks
 	// whether anything is due, and the window used by a site that was never given
@@ -483,6 +489,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	siteNewsIntervalSeconds, err := envInt("SITE_NEWS_INTERVAL_SECONDS", 300, 60, 86400)
+	if err != nil {
+		return nil, err
+	}
 	keepaliveCheckIntervalSeconds, err := envInt("KEEPALIVE_CHECK_INTERVAL_SECONDS", 3600, 60, 86400)
 	if err != nil {
 		return nil, err
@@ -629,6 +639,7 @@ func Load() (*Config, error) {
 		SiteProbeRetentionDays:        siteProbeRetentionDays,
 		SiteProbeIntervalSeconds:      siteProbeIntervalSeconds,
 		SiteProbeJitterSeconds:        siteProbeJitterSeconds,
+		SiteNewsIntervalSeconds:       siteNewsIntervalSeconds,
 		KeepaliveCheckIntervalSeconds: keepaliveCheckIntervalSeconds,
 		KeepaliveDefaultIdleDays:      keepaliveDefaultIdleDays,
 		SiteProbeCatalogURL:           siteProbeCatalogURL,

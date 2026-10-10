@@ -2761,6 +2761,14 @@ export const en: Dict = {
   "ops.runtime.siteProbeJitter": "Collection jitter (seconds)",
   "ops.runtime.siteProbeJitterHint":
     "Upper bound on the random delay added to each round, so a fleet of gateways does not hit one status page in the same second. Cannot exceed the interval.",
+  "ops.runtime.section.siteNews": "Site news",
+  "ops.runtime.siteNewsLede":
+    "Reads what each upstream site publishes on its own notice board; no tokens spent.",
+  "ops.runtime.siteNewsIntro":
+    "Boards come from the sites' own public /api/status (New-API family), read on a fixed cadence and cached locally: the overview renders stored messages only, so opening it never waits on twenty-odd sites. Platforms whose board cannot be derived are skipped.",
+  "ops.runtime.siteNewsInterval": "Collection interval (seconds)",
+  "ops.runtime.siteNewsIntervalHint":
+    "How often every readable board is fetched. 0 turns the scheduled read off (the overview's refresh button keeps working); a running cadence needs at least 60 seconds. A change lands immediately; no restart needed.",
   "ops.runtime.section.keepalive": "Keepalive",
   "ops.runtime.openKeepalive": "Open connections",
   "ops.runtime.keepaliveLede": "Keeps accounts inside their no-call window, without a timer.",
@@ -2804,6 +2812,8 @@ export const en: Dict = {
   "ops.runtime.validation.min": "Must be at least {min}.",
   "ops.runtime.validation.max": "Must be at most {max}.",
   "ops.runtime.validation.between": "Enter a value from {min} to {max}.",
+  "ops.runtime.validation.siteNewsIntervalFloor":
+    "0 turns the scheduled read off; a running cadence must be at least 60 seconds.",
   "ops.runtime.validation.jitterExceedsInterval":
     "Cannot exceed the probe interval ({interval} seconds).",
   "ops.runtime.healthSweepJitter": "Jitter (s)",

@@ -190,7 +190,7 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	// Keep this in step with the newest NNN_*.sql file: it is the tripwire that
 	// catches a migration that silently failed to apply (or applied twice).
-	const wantMigrations = 130
+	const wantMigrations = 131
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -1807,13 +1807,17 @@ func TestChannelStableFirstNonGrayNoop(t *testing.T) {
 // to change (sites publish their probe data at very different rates), so the two
 // columns are covered the same way the health-sweep columns are: a real
 // round-trip, and an unset row that must fall back to the env bootstrap instead
-// of zeroing the loop.
+// of zeroing the loop. The notice-board column next door is covered here too,
+// because it is the one place where 0 is a value rather than the unset sentinel.
 func TestRuntimeSettingsSiteProbeScheduleRoundTrip(t *testing.T) {
 	db := openTestDB(t)
 	row := &store.RuntimeSettingsRow{
 		HasOverride:              true,
 		SiteProbeIntervalSeconds: 300,
 		SiteProbeJitterSeconds:   30,
+		// "Off" as the operator picked it: Save must keep it as 0 and Get must
+		// hand it back as 0, not as the unset sentinel that means "use the env".
+		SiteNewsIntervalSeconds: 0,
 	}
 	if err := db.RuntimeSettings.Save(row); err != nil {
 		t.Fatal(err)
@@ -1824,6 +1828,9 @@ func TestRuntimeSettingsSiteProbeScheduleRoundTrip(t *testing.T) {
 	}
 	if !got.HasOverride || got.SiteProbeIntervalSeconds != 300 || got.SiteProbeJitterSeconds != 30 {
 		t.Fatalf("site probe schedule round trip mismatch: %+v", got)
+	}
+	if got.SiteNewsIntervalSeconds != 0 {
+		t.Fatalf("stored 0 (off) read back as %d, want 0", got.SiteNewsIntervalSeconds)
 	}
 	// A row written before these columns existed reads back as -1, which is what
 	// makes the env bootstrap win rather than the loop falling to zero.
@@ -1836,5 +1843,8 @@ func TestRuntimeSettingsSiteProbeScheduleRoundTrip(t *testing.T) {
 	}
 	if got.SiteProbeIntervalSeconds != -1 || got.SiteProbeJitterSeconds != -1 {
 		t.Fatalf("unset columns must read -1, got %d/%d", got.SiteProbeIntervalSeconds, got.SiteProbeJitterSeconds)
+	}
+	if got.SiteNewsIntervalSeconds != -1 {
+		t.Fatalf("unset notice-board cadence must read -1, got %d", got.SiteNewsIntervalSeconds)
 	}
 }

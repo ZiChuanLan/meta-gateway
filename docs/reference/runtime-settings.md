@@ -7,7 +7,7 @@
 「字段」列是 Go 结构体字段名，用于在代码里定位该设置；「键」列是持久化与 API 使用的名字。
 没有出现在这张表里的开关只存在于环境变量层——想彻底关掉某个后台任务，两处都要看。
 
-共 **61** 个运行设置键。
+共 **62** 个运行设置键。
 
 | 键 | 字段 | 类型 | 说明 |
 | --- | --- | --- | --- |
@@ -61,6 +61,7 @@
 | `default_model_sync_mode` | DefaultModelSyncMode | string | DefaultModelSyncMode is the sync mode ("auto"\|"manual") new channels get when the create request omits model_sync_mode. Existing channels keep their own mode. |
 | `site_probe_interval_seconds` | SiteProbeIntervalSeconds | int | SiteProbeIntervalSeconds / SiteProbeJitterSeconds drive the external site-probe collection loop. The cadence has to be configurable because sites publish their own probe data at wildly different rates: a status page that polls every 60s is useless at the 15-minute default, while one that polls every 15 minutes gains nothing from a faster round. |
 | `site_probe_jitter_seconds` | SiteProbeJitterSeconds | int | — |
+| `site_news_interval_seconds` | SiteNewsIntervalSeconds | int | SiteNewsIntervalSeconds drives the upstream notice-board reader (internal/sitenews). It differs from the site-probe pair on one point: 0 means OFF — the scheduled read stops and only the dashboard's refresh button reads boards — while -1 (unset) resolves to the env bootstrap. |
 | `keepalive_enabled` | KeepaliveEnabled | bool | KeepaliveEnabled is the keepalive master switch; the per-site window and the per-channel switch live in the database, because the window is the site's own rule (15 days here, 30 there). DefaultIdleDays is the fallback window for a site that was never given one, and CheckIntervalSeconds is how often a round asks whether anything is due. |
 | `keepalive_check_interval_seconds` | KeepaliveCheckIntervalSeconds | int | — |
 | `keepalive_default_idle_days` | KeepaliveDefaultIdleDays | int | — |

@@ -86,6 +86,11 @@ type RuntimeSettingsRow struct {
 	SiteProbeIntervalSeconds int
 	SiteProbeJitterSeconds   int
 
+	// Upstream notice-board reader cadence. NULL (which reads back as -1) means
+	// "not overridden" and resolves to the env bootstrap; a stored 0 is the
+	// operator's "off" and must stay distinguishable from unset.
+	SiteNewsIntervalSeconds int
+
 	// Keepalive: the master switch, how often a round asks whether anything is
 	// due, and the window used by a site that has none of its own. The per-site
 	// window and the per-channel switch live on their own rows, because the
@@ -144,6 +149,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 		       probe_auto_disable, probe_channels, probe_models,
 		       site_probe_interval_seconds, site_probe_jitter_seconds,
+		       site_news_interval_seconds,
 		       keepalive_enabled, keepalive_check_interval_seconds, keepalive_default_idle_days,
 		       outbound_connect_timeout_seconds, outbound_header_timeout_seconds,
 		       outbound_image_header_timeout_seconds, outbound_tls_timeout_seconds,
@@ -173,7 +179,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		probeCron, probePrompt                                                             sql.NullString
 		probeMaxTokens, probeConcurrency, probeAutoDisable                                 sql.NullInt64
 		probeChannels, probeModels                                                         sql.NullString
-		siteProbeInterval, siteProbeJitter                                                 sql.NullInt64
+		siteProbeInterval, siteProbeJitter, siteNewsInterval                               sql.NullInt64
 		keepaliveEnabled, keepaliveCheckInterval, keepaliveDefaultIdle                     sql.NullInt64
 		outboundConnect, outboundHeader, outboundImageHeader                               sql.NullInt64
 		outboundTLS, outboundIdle, outboundIdlePerHost                                     sql.NullInt64
@@ -196,7 +202,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&defaultSyncMode,
 		&probeCron, &probePrompt, &probeMaxTokens, &probeConcurrency, &probeAutoDisable,
 		&probeChannels, &probeModels,
-		&siteProbeInterval, &siteProbeJitter,
+		&siteProbeInterval, &siteProbeJitter, &siteNewsInterval,
 		&keepaliveEnabled, &keepaliveCheckInterval, &keepaliveDefaultIdle,
 		&outboundConnect, &outboundHeader, &outboundImageHeader,
 		&outboundTLS, &outboundIdle, &outboundIdlePerHost,
@@ -418,6 +424,13 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	} else {
 		out.SiteProbeIntervalSeconds = -1
 	}
+	// Unlike the site-probe pair, 0 is a value the operator can pick ("off"),
+	// so only NULL/-1 resolves to the env bootstrap.
+	if siteNewsInterval.Valid {
+		out.SiteNewsIntervalSeconds = int(siteNewsInterval.Int64)
+	} else {
+		out.SiteNewsIntervalSeconds = -1
+	}
 	out.KeepaliveEnabled = keepaliveEnabled.Int64 != 0
 	if keepaliveCheckInterval.Valid {
 		out.KeepaliveCheckIntervalSeconds = int(keepaliveCheckInterval.Int64)
@@ -509,6 +522,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			probe_cron, probe_prompt, probe_max_tokens, probe_concurrency,
 			probe_auto_disable, probe_channels, probe_models,
 			site_probe_interval_seconds, site_probe_jitter_seconds,
+			site_news_interval_seconds,
 			keepalive_enabled, keepalive_check_interval_seconds, keepalive_default_idle_days,
 			outbound_connect_timeout_seconds, outbound_header_timeout_seconds,
 			outbound_image_header_timeout_seconds, outbound_tls_timeout_seconds,
@@ -537,7 +551,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?,
 			?, ?, ?, ?,
 			?, ?, ?,
-			?, ?,
+			?, ?, ?,
 			?, ?, ?,
 			?, ?, ?, ?, ?, ?,
 			?, ?,
@@ -596,6 +610,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			probe_models = excluded.probe_models,
 			site_probe_interval_seconds = excluded.site_probe_interval_seconds,
 			site_probe_jitter_seconds = excluded.site_probe_jitter_seconds,
+			site_news_interval_seconds = excluded.site_news_interval_seconds,
 			keepalive_enabled = excluded.keepalive_enabled,
 			keepalive_check_interval_seconds = excluded.keepalive_check_interval_seconds,
 			keepalive_default_idle_days = excluded.keepalive_default_idle_days,
@@ -660,6 +675,7 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		encodeStringList(settings.ProbeModels),
 		settings.SiteProbeIntervalSeconds,
 		settings.SiteProbeJitterSeconds,
+		settings.SiteNewsIntervalSeconds,
 		settings.KeepaliveEnabled,
 		settings.KeepaliveCheckIntervalSeconds,
 		settings.KeepaliveDefaultIdleDays,

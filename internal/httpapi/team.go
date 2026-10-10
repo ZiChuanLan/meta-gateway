@@ -85,6 +85,7 @@ func teamActor(r *http.Request) *teamPrincipal {
 	p, _ := r.Context().Value(teamPrincipalKey{}).(*teamPrincipal)
 	return p
 }
+
 // chiParam returns one path segment with its percent-encoding resolved. chi
 // matches the escaped path, so a model named "cn:auto" arrives as "cn%3Aauto":
 // handing that on undecoded would name a model the caller never asked for.

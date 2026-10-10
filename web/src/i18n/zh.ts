@@ -2555,6 +2555,13 @@ export const zh: Dict = {
   "ops.runtime.siteProbeJitter": "采集抖动（秒）",
   "ops.runtime.siteProbeJitterHint":
     "每轮随机延迟的上限，避免多个网关同一秒一起打同一个状态页；不能大于采集间隔。",
+  "ops.runtime.section.siteNews": "站点消息",
+  "ops.runtime.siteNewsLede": "读取上游站点自己公告板上的消息，不消耗 token。",
+  "ops.runtime.siteNewsIntro":
+    "公告板来自站点公开的 /api/status（New-API 系站点），网关按固定节奏读取后缓存在本地，总览页渲染的是已存的消息——打开总览永远不会等二十几个站点。平台推导不出公告板的站点直接跳过。",
+  "ops.runtime.siteNewsInterval": "采集间隔（秒）",
+  "ops.runtime.siteNewsIntervalHint":
+    "多久读一轮所有可读站点的公告板。0 = 关闭定时读取（总览面板上的手动刷新仍可用）；开启时最少 60 秒。改完立即生效，不需要重启。",
   "ops.runtime.section.keepalive": "保活",
   "ops.runtime.openKeepalive": "打开连接页",
   "ops.runtime.keepaliveLede": "按账号空闲时间保活，避开「连续 N 天无调用」封号。",
@@ -2597,6 +2604,7 @@ export const zh: Dict = {
   "ops.runtime.validation.min": "不能小于 {min}。",
   "ops.runtime.validation.max": "不能大于 {max}。",
   "ops.runtime.validation.between": "请输入 {min}-{max} 之间的值。",
+  "ops.runtime.validation.siteNewsIntervalFloor": "0 表示关闭定时读取；开启时不能小于 60 秒。",
   "ops.runtime.validation.jitterExceedsInterval": "不能大于探测间隔（{interval} 秒）。",
   "ops.runtime.healthSweepJitter": "抖动（秒）",
   "ops.runtime.healthSweepJitterHint":

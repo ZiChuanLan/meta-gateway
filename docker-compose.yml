@@ -74,6 +74,10 @@ services:
       SITE_PROBE_RETENTION_DAYS: "${SITE_PROBE_RETENTION_DAYS:-7}"
       SITE_PROBE_INTERVAL_SECONDS: "${SITE_PROBE_INTERVAL_SECONDS:-900}"
       SITE_PROBE_JITTER_SECONDS: "${SITE_PROBE_JITTER_SECONDS:-120}"
+      # Upstream notice-board reader (dashboard "站点消息"). Env bootstrap for the
+      # hot-reloadable runtime setting, which the console may also set to 0 to
+      # turn the scheduled read off entirely.
+      SITE_NEWS_INTERVAL_SECONDS: "${SITE_NEWS_INTERVAL_SECONDS:-300}"
       # Keepalive: the env bootstrap for the hot-reloadable runtime settings
       # (round cadence and the fallback window). The per-site window itself is
       # data — 15 days here and 30 there is the site's rule — and the master

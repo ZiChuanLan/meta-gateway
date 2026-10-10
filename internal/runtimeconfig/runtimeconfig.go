@@ -139,6 +139,11 @@ type Editable struct {
 	// that polls every 15 minutes gains nothing from a faster round.
 	SiteProbeIntervalSeconds int `json:"site_probe_interval_seconds"`
 	SiteProbeJitterSeconds   int `json:"site_probe_jitter_seconds"`
+	// SiteNewsIntervalSeconds drives the upstream notice-board reader
+	// (internal/sitenews). It differs from the site-probe pair on one point: 0
+	// means OFF — the scheduled read stops and only the dashboard's refresh
+	// button reads boards — while -1 (unset) resolves to the env bootstrap.
+	SiteNewsIntervalSeconds int `json:"site_news_interval_seconds"`
 	// KeepaliveEnabled is the keepalive master switch; the per-site window and
 	// the per-channel switch live in the database, because the window is the
 	// site's own rule (15 days here, 30 there). DefaultIdleDays is the fallback
@@ -251,6 +256,11 @@ type Appliers struct {
 	// loop only reads pages the sites publish themselves, so the only knobs are
 	// how often to read them.
 	SetSiteProbeSchedule func(interval, jitter time.Duration)
+	// SetSiteNewsSchedule hot-applies the upstream notice-board cadence. A zero
+	// interval turns the scheduled read off — a notice board is background
+	// reading, not a routing input — while the dashboard's refresh button keeps
+	// working either way.
+	SetSiteNewsSchedule func(interval time.Duration)
 	// SetKeepalive hot-applies the keepalive master switch, its round cadence
 	// and the fallback window for a site without one.
 	SetKeepalive func(enabled bool, checkInterval time.Duration, defaultIdleDays int)
@@ -322,6 +332,10 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		// setting, so an operator can speed the round up without a restart.
 		SiteProbeIntervalSeconds: cfg.SiteProbeIntervalSeconds,
 		SiteProbeJitterSeconds:   cfg.SiteProbeJitterSeconds,
+		// Upstream notice-board cadence: env bootstrap for a hot-reloadable
+		// setting, so an operator can turn the scheduled read off (0) or move it
+		// without a restart.
+		SiteNewsIntervalSeconds: cfg.SiteNewsIntervalSeconds,
 		// Keepalive: off until an operator turns it on, and the window fallback
 		// comes from the environment so a deployment can state its own default.
 		KeepaliveEnabled:              false,
@@ -426,57 +440,60 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	row := &store.RuntimeSettingsRow{
-		HasOverride:                       true,
-		RetryTimes:                        next.RetryTimes,
-		CrossChannelFailoverEnabled:       boolInt(next.CrossChannelFailoverEnabled),
-		CooldownSeconds:                   next.CooldownSeconds,
-		CheckinEnabled:                    next.CheckinEnabled,
-		CheckinCron:                       next.CheckinCron,
-		RelayRatePerMinute:                next.RelayRatePerMinute,
-		RelayRateBurst:                    next.RelayRateBurst,
-		AdminRatePerMinute:                next.AdminRatePerMinute,
-		AdminRateBurst:                    next.AdminRateBurst,
-		AuditRetentionDays:                next.AuditRetentionDays,
-		AuditRetentionRows:                next.AuditRetentionRows,
-		ChannelAutoDisableThreshold:       next.ChannelAutoDisableThreshold,
-		RoutingLatencyAware:               boolInt(next.RoutingLatencyAware),
-		RoutingErrorAware:                 boolInt(next.RoutingErrorAware),
-		RoutingConcurrencyEnabled:         boolInt(next.RoutingConcurrencyEnabled),
-		RoutingConcurrencyLimit:           next.RoutingConcurrencyLimit,
-		WebhookURL:                        next.WebhookURL,
-		ProxyURL:                          next.ProxyURL,
-		DiscoveryCron:                     next.DiscoveryCron,
-		DBGCCron:                          next.DBGCCron,
-		ProbeCron:                         next.ProbeCron,
-		ProbePrompt:                       next.ProbePrompt,
-		ProbeMaxTokens:                    next.ProbeMaxTokens,
-		ProbeConcurrency:                  next.ProbeConcurrency,
-		ProbeAutoDisable:                  next.ProbeAutoDisable,
-		ProbeChannels:                     next.ProbeChannels,
-		ProbeModels:                       next.ProbeModels,
-		WebhookThrottleSeconds:            next.WebhookThrottleSeconds,
-		StableFirstEnabled:                boolInt(next.StableFirstEnabled),
-		StableFirstDenominator:            next.StableFirstDenominator,
-		StableFirstPromoteRequests:        next.StableFirstPromoteRequests,
-		RecoveryProbeEnabled:              boolInt(next.RecoveryProbeEnabled),
-		RecoveryProbeIntervalSeconds:      next.RecoveryProbeIntervalSeconds,
-		FaultProtectionEnabled:            boolInt(next.FaultProtectionEnabled),
-		StickyEnabled:                     boolInt(next.StickyEnabled),
-		StickyTTLMinutes:                  next.StickyTTLMinutes,
-		AlertConfigJSON:                   next.AlertConfigJSON,
-		AlertSweepIntervalSeconds:         next.AlertSweepIntervalSeconds,
-		AlertDailySummaryIntervalSeconds:  next.AlertDailySummaryIntervalSeconds,
-		HealthSweepEnabled:                boolInt(next.HealthSweepEnabled),
-		HealthSweepIntervalSeconds:        next.HealthSweepIntervalSeconds,
-		HealthSweepJitterSeconds:          next.HealthSweepJitterSeconds,
-		HealthSweepDegradedMs:             next.HealthSweepDegradedMs,
-		HealthSweepConcurrency:            next.HealthSweepConcurrency,
-		HealthSweepTimeoutSeconds:         next.HealthSweepTimeoutSeconds,
-		ChannelRetryTimes:                 next.ChannelRetryTimes,
-		UpdateCheckEnabled:                boolInt(next.UpdateCheckEnabled),
-		DefaultModelSyncMode:              next.DefaultModelSyncMode,
-		SiteProbeIntervalSeconds:          unsetIfZero(next.SiteProbeIntervalSeconds),
-		SiteProbeJitterSeconds:            next.SiteProbeJitterSeconds,
+		HasOverride:                      true,
+		RetryTimes:                       next.RetryTimes,
+		CrossChannelFailoverEnabled:      boolInt(next.CrossChannelFailoverEnabled),
+		CooldownSeconds:                  next.CooldownSeconds,
+		CheckinEnabled:                   next.CheckinEnabled,
+		CheckinCron:                      next.CheckinCron,
+		RelayRatePerMinute:               next.RelayRatePerMinute,
+		RelayRateBurst:                   next.RelayRateBurst,
+		AdminRatePerMinute:               next.AdminRatePerMinute,
+		AdminRateBurst:                   next.AdminRateBurst,
+		AuditRetentionDays:               next.AuditRetentionDays,
+		AuditRetentionRows:               next.AuditRetentionRows,
+		ChannelAutoDisableThreshold:      next.ChannelAutoDisableThreshold,
+		RoutingLatencyAware:              boolInt(next.RoutingLatencyAware),
+		RoutingErrorAware:                boolInt(next.RoutingErrorAware),
+		RoutingConcurrencyEnabled:        boolInt(next.RoutingConcurrencyEnabled),
+		RoutingConcurrencyLimit:          next.RoutingConcurrencyLimit,
+		WebhookURL:                       next.WebhookURL,
+		ProxyURL:                         next.ProxyURL,
+		DiscoveryCron:                    next.DiscoveryCron,
+		DBGCCron:                         next.DBGCCron,
+		ProbeCron:                        next.ProbeCron,
+		ProbePrompt:                      next.ProbePrompt,
+		ProbeMaxTokens:                   next.ProbeMaxTokens,
+		ProbeConcurrency:                 next.ProbeConcurrency,
+		ProbeAutoDisable:                 next.ProbeAutoDisable,
+		ProbeChannels:                    next.ProbeChannels,
+		ProbeModels:                      next.ProbeModels,
+		WebhookThrottleSeconds:           next.WebhookThrottleSeconds,
+		StableFirstEnabled:               boolInt(next.StableFirstEnabled),
+		StableFirstDenominator:           next.StableFirstDenominator,
+		StableFirstPromoteRequests:       next.StableFirstPromoteRequests,
+		RecoveryProbeEnabled:             boolInt(next.RecoveryProbeEnabled),
+		RecoveryProbeIntervalSeconds:     next.RecoveryProbeIntervalSeconds,
+		FaultProtectionEnabled:           boolInt(next.FaultProtectionEnabled),
+		StickyEnabled:                    boolInt(next.StickyEnabled),
+		StickyTTLMinutes:                 next.StickyTTLMinutes,
+		AlertConfigJSON:                  next.AlertConfigJSON,
+		AlertSweepIntervalSeconds:        next.AlertSweepIntervalSeconds,
+		AlertDailySummaryIntervalSeconds: next.AlertDailySummaryIntervalSeconds,
+		HealthSweepEnabled:               boolInt(next.HealthSweepEnabled),
+		HealthSweepIntervalSeconds:       next.HealthSweepIntervalSeconds,
+		HealthSweepJitterSeconds:         next.HealthSweepJitterSeconds,
+		HealthSweepDegradedMs:            next.HealthSweepDegradedMs,
+		HealthSweepConcurrency:           next.HealthSweepConcurrency,
+		HealthSweepTimeoutSeconds:        next.HealthSweepTimeoutSeconds,
+		ChannelRetryTimes:                next.ChannelRetryTimes,
+		UpdateCheckEnabled:               boolInt(next.UpdateCheckEnabled),
+		DefaultModelSyncMode:             next.DefaultModelSyncMode,
+		SiteProbeIntervalSeconds:         unsetIfZero(next.SiteProbeIntervalSeconds),
+		SiteProbeJitterSeconds:           next.SiteProbeJitterSeconds,
+		// No unsetIfZero here: 0 is the operator's "off", not "unset". The store
+		// keeps it as a value and only NULL resolves to the env bootstrap.
+		SiteNewsIntervalSeconds:           next.SiteNewsIntervalSeconds,
 		KeepaliveEnabled:                  next.KeepaliveEnabled,
 		KeepaliveCheckIntervalSeconds:     unsetIfZero(next.KeepaliveCheckIntervalSeconds),
 		KeepaliveDefaultIdleDays:          unsetIfZero(next.KeepaliveDefaultIdleDays),
@@ -726,6 +743,13 @@ func (c *Controller) applyWithError(values Editable) error {
 			time.Duration(values.SiteProbeJitterSeconds)*time.Second,
 		)
 	}
+	// Upstream notice-board cadence hot reload. 0 = off: the loop stops reading
+	// boards until a positive value re-arms it, and either way the wait in
+	// flight is re-armed here, so the change lands now rather than after the old
+	// interval.
+	if c.appliers.SetSiteNewsSchedule != nil {
+		c.appliers.SetSiteNewsSchedule(time.Duration(values.SiteNewsIntervalSeconds) * time.Second)
+	}
 	// Keepalive: the switch, the round cadence and the fallback window all apply
 	// without a restart. The loop re-reads them every wake, so turning it off
 	// stops the next round rather than the one after a restart.
@@ -845,6 +869,7 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		DefaultModelSyncMode:              row.DefaultModelSyncMode,
 		SiteProbeIntervalSeconds:          row.SiteProbeIntervalSeconds,
 		SiteProbeJitterSeconds:            row.SiteProbeJitterSeconds,
+		SiteNewsIntervalSeconds:           row.SiteNewsIntervalSeconds,
 		OutboundConnectTimeoutSeconds:     row.OutboundConnectTimeoutSeconds,
 		OutboundHeaderTimeoutSeconds:      row.OutboundHeaderTimeoutSeconds,
 		OutboundImageHeaderTimeoutSeconds: row.OutboundImageHeaderTimeoutSeconds,
@@ -950,6 +975,11 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	}
 	if editable.SiteProbeJitterSeconds < 0 {
 		editable.SiteProbeJitterSeconds = c.env.SiteProbeJitterSeconds
+	}
+	// A stored 0 is the operator's "off" and must survive: only the unset
+	// sentinel (-1) resolves to the deployment value.
+	if editable.SiteNewsIntervalSeconds < 0 {
+		editable.SiteNewsIntervalSeconds = c.env.SiteNewsIntervalSeconds
 	}
 	// Keepalive: a stored 0 is "no override", so the console shows the deployment
 	// value the process is actually running with instead of a value that is not
@@ -1097,6 +1127,13 @@ func Validate(values Editable) error {
 	}
 	if values.SiteProbeIntervalSeconds > 0 && values.SiteProbeJitterSeconds > values.SiteProbeIntervalSeconds {
 		return fmt.Errorf("site_probe_jitter_seconds must not exceed site_probe_interval_seconds")
+	}
+	// Notice-board cadence: 0 is a real value here ("off"), so unlike the
+	// site-probe columns only a positive value has a floor. The ceiling keeps a
+	// value that would read as "never again" out of the console.
+	if values.SiteNewsIntervalSeconds < 0 || (values.SiteNewsIntervalSeconds > 0 &&
+		(values.SiteNewsIntervalSeconds < 60 || values.SiteNewsIntervalSeconds > 86400)) {
+		return fmt.Errorf("site_news_interval_seconds must be 0 (off) or between 60 and 86400")
 	}
 	// Keepalive: a round cadence below a minute would wake up for nothing, and a
 	// window is a number of days a site states (0 = the deployment default).

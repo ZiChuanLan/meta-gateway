@@ -27,10 +27,10 @@ import (
 )
 
 const (
-	// DefaultInterval is the shipped cadence. A notice board changes when a site
-	// has something to say — hours apart at most — so this is fast enough to
-	// count as live, and the console's refresh button covers "now".
-	DefaultInterval = 5 * time.Minute
+	// The shipped cadence is SITE_NEWS_INTERVAL_SECONDS (internal/config,
+	// default 5 minutes) and is hot-reloadable from the console. A notice board
+	// changes when a site has something to say — hours apart at most — so five
+	// minutes counts as live, and the console's refresh button covers "now".
 	// fetchTimeout bounds one site's /api/status. Announcement boards ride along
 	// the same endpoint as the site's other public config, which is a small
 	// document; anything slower is a site in trouble, not a slow answer.

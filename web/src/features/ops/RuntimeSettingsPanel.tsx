@@ -202,6 +202,11 @@ const RUNTIME_GROUPS: readonly RuntimeGroup[] = [
         fields: ["site_probe_interval_seconds", "site_probe_jitter_seconds"],
       },
       {
+        key: "siteNews",
+        label: "ops.runtime.section.siteNews",
+        fields: ["site_news_interval_seconds"],
+      },
+      {
         key: "keepalive",
         label: "ops.runtime.section.keepalive",
         fields: [
@@ -1563,6 +1568,41 @@ export function RuntimeSettingsPanel({
                     patch(
                       "site_probe_jitter_seconds",
                       numberOr(e.target.value, draft.site_probe_jitter_seconds),
+                    )
+                  }
+                />
+              </RuntimeRow>
+            </SectionCard>
+          ) : null}
+
+          {isSectionVisible("siteNews") ? (
+            <SectionCard
+              sectionKey="siteNews"
+              changed={isSectionChanged("siteNews")}
+              busy={busy}
+              info={t("ops.runtime.siteNewsIntro")}
+              onRestore={() => restoreSectionByKey("siteNews")}
+            >
+              <p className="muted panel-lede">{t("ops.runtime.siteNewsLede")}</p>
+              <RuntimeRow
+                label={t("ops.runtime.siteNewsInterval")}
+                hint={t("ops.runtime.siteNewsIntervalHint")}
+                changed={isChanged("site_news_interval_seconds")}
+              >
+                <ValidatedNumberInput
+                  min={0}
+                  max={86400}
+                  disabled={busy}
+                  customError={
+                    draft.site_news_interval_seconds > 0 && draft.site_news_interval_seconds < 60
+                      ? t("ops.runtime.validation.siteNewsIntervalFloor")
+                      : undefined
+                  }
+                  value={draft.site_news_interval_seconds}
+                  onChange={(e) =>
+                    patch(
+                      "site_news_interval_seconds",
+                      numberOr(e.target.value, draft.site_news_interval_seconds),
                     )
                   }
                 />

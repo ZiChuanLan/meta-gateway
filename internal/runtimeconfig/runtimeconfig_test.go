@@ -639,3 +639,106 @@ func TestMegabytesOrZero(t *testing.T) {
 		}
 	}
 }
+
+// The notice-board cadence differs from the site-probe pair next door: 0 is a
+// value the operator picks ("off"), not the unset sentinel, so it has to survive
+// a restart and must not be replaced by the env bootstrap.
+func TestSiteNewsCadenceOffSurvivesRestart(t *testing.T) {
+	cfg := &config.Config{SiteNewsIntervalSeconds: 300, HTTPAddr: ":0", DataDir: "."}
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	var applied time.Duration
+	apply := func(d time.Duration) { applied = d }
+	controller := New(cfg, db.RuntimeSettings, Appliers{SetSiteNewsSchedule: apply})
+	if err := controller.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 300*time.Second {
+		t.Fatalf("bootstrap cadence = %v, want the env value 5m", applied)
+	}
+
+	next := Editable{
+		RetryTimes:                  5,
+		CrossChannelFailoverEnabled: false,
+		CooldownSeconds:             60,
+		CheckinEnabled:              true,
+		CheckinCron:                 "15 7 * * 1-5",
+		RelayRatePerMinute:          100,
+		RelayRateBurst:              10,
+		AdminRatePerMinute:          50,
+		AdminRateBurst:              5,
+		AuditRetentionDays:          7,
+		AuditRetentionRows:          500,
+		StableFirstDenominator:      25,
+		StableFirstPromoteRequests:  100,
+		RoutingConcurrencyLimit:     64,
+		WebhookThrottleSeconds:      300,
+		StickyEnabled:               true,
+		StickyTTLMinutes:            60,
+		HealthSweepEnabled:          true,
+		HealthSweepIntervalSeconds:  120,
+		HealthSweepJitterSeconds:    5,
+		HealthSweepDegradedMs:       1000,
+		HealthSweepConcurrency:      2,
+		HealthSweepTimeoutSeconds:   10,
+		ChannelRetryTimes:           3,
+		DefaultModelSyncMode:        "auto",
+		SiteProbeIntervalSeconds:    300,
+		SiteProbeJitterSeconds:      15,
+		SiteNewsIntervalSeconds:     0, // off
+	}
+	if _, err := controller.Update(next); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatalf("cadence after switching off = %v, want 0", applied)
+	}
+	persisted, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.SiteNewsIntervalSeconds != 0 {
+		t.Fatalf("stored cadence = %d, want 0 (off is a value, not unset)", persisted.SiteNewsIntervalSeconds)
+	}
+
+	// A restart reads the stored 0 back and must hand 0 to the loop rather than
+	// the env bootstrap.
+	applied = -1
+	restarted := New(cfg, db.RuntimeSettings, Appliers{SetSiteNewsSchedule: apply})
+	if err := restarted.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatalf("cadence after restart = %v, want the stored 0", applied)
+	}
+
+	// Clearing the override hands the cadence back to the deployment value.
+	cleared, err := controller.ClearOverride()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Editable.SiteNewsIntervalSeconds != 300 {
+		t.Fatalf("cleared cadence = %d, want the env 300", cleared.Editable.SiteNewsIntervalSeconds)
+	}
+	if applied != 300*time.Second {
+		t.Fatalf("cadence after clear = %v, want 5m", applied)
+	}
+
+	// 0 (off) validates; a cadence under a minute or past a day does not.
+	if err := Validate(next); err != nil {
+		t.Fatalf("0 (off) failed validation: %v", err)
+	}
+	tooFast := next
+	tooFast.SiteNewsIntervalSeconds = 30
+	if err := Validate(tooFast); err == nil {
+		t.Fatal("30s passed validation, want an error")
+	}
+	tooSlow := next
+	tooSlow.SiteNewsIntervalSeconds = 90000
+	if err := Validate(tooSlow); err == nil {
+		t.Fatal("90000s passed validation, want an error")
+	}
+}
