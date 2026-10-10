@@ -644,9 +644,9 @@ describe("site probe row identity", () => {
     renderDialog();
     await screen.findByText("z-ai/glm-5.2");
     // The rail counts it separately from the attached rows…
-    expect(screen.getByText(/1 已接入 · 1 本站也提供/)).toBeInTheDocument();
+    expect(screen.getByText(/1 已接入 · 1 当前站点模型数据/)).toBeInTheDocument();
     // …and the detail names the collision rather than hiding it.
-    fireEvent.click(screen.getByText("本站也提供（1）"));
+    fireEvent.click(screen.getByText("当前站点模型数据（1）"));
     const list = within(document.querySelector(".site-probe-candidate-list") as HTMLElement);
     expect(list.getByText("kimi-k3")).toBeInTheDocument();
     expect(list.getByText(/→ STRRX/)).toBeInTheDocument();
