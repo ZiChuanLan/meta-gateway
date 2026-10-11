@@ -1,4 +1,5 @@
 import { Activity, Pencil, RefreshCw, UserCheck } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { AccountProbeResult, ChannelPingResult, ChannelOverview, Site } from "../../api/types";
@@ -219,10 +220,15 @@ export function ChannelDetail({
         );
       })()}
 
+      {ch.site_id ? (
+        <Link className="button button-quiet" to={`/channels?view=observations&site=${ch.site_id}`}>
+          {t("availability.openSite")}
+        </Link>
+      ) : null}
       <ChannelModelBlocks channelId={ch.id} />
 
       <div className="detail-pricing">
-        <span className="label">{t("channels.healthTitle")}</span>
+        <span className="label">{t("availability.channelChecks")}</span>
         <div className="health-summary-row">
           <strong
             className={

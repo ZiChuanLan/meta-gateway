@@ -115,13 +115,16 @@ type Round struct {
 
 // MemberState is what the tool shows about a member it may act on.
 type MemberState struct {
-	MemberID     int64  `json:"member_id"`
-	ChannelID    int64  `json:"channel_id"`
-	ChannelName  string `json:"channel_name"`
-	GroupName    string `json:"group_name,omitempty"`
-	Enabled      bool   `json:"enabled"`
-	AutoDisabled bool   `json:"auto_disabled"`
-	SingleMember bool   `json:"single_member,omitempty"`
+	RealModel      string          `json:"real_model,omitempty"`
+	ManualOverride bool            `json:"manual_override,omitempty"`
+	Traffic        *TrafficReading `json:"traffic,omitempty"`
+	MemberID       int64           `json:"member_id"`
+	ChannelID      int64           `json:"channel_id"`
+	ChannelName    string          `json:"channel_name"`
+	GroupName      string          `json:"group_name,omitempty"`
+	Enabled        bool            `json:"enabled"`
+	AutoDisabled   bool            `json:"auto_disabled"`
+	SingleMember   bool            `json:"single_member,omitempty"`
 	// HasPrice marks a member that already carries a price in the billing
 	// layer. Adopting an observed price fills empty fields only, so this tells
 	// the operator whether the button would do anything.
@@ -345,6 +348,9 @@ func (s *Service) CollectSite(ctx context.Context, site domain.Site) (*store.Sit
 			return s.failRun(site, runID, started, fetchErr)
 		}
 		samples = source.Samples(site.ID, runID, started)
+		if err := s.persistHeartbeats(site, source); err != nil {
+			return s.failRun(site, runID, started, err)
+		}
 	case SourceNewAPI:
 		snapshot, fetchErr := FetchPublicPrices(ctx, s.client, site.ProbeSourceURL)
 		if fetchErr != nil {
@@ -365,6 +371,9 @@ func (s *Service) CollectSite(ctx context.Context, site domain.Site) (*store.Sit
 		return s.failRun(site, runID, started, fmt.Errorf("unsupported probe source kind %q", kind))
 	}
 
+	for i := range samples {
+		samples[i].SourceKey = sourceIdentity(site)
+	}
 	if err := s.db.InsertSiteProbeSamples(samples); err != nil {
 		return s.failRun(site, runID, started, err)
 	}
@@ -607,7 +616,10 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 	order := []string{}
 	byModel := map[string]*bucket{}
 	for _, sample := range samples {
-		key := sample.RawModel
+		if sample.SourceKey != "" && sample.SourceKey != sourceIdentity(site) {
+			continue
+		}
+		key := sample.RawModel + "|" + sample.GroupName + "|" + sample.MonitorID
 		entry, ok := byModel[key]
 		if !ok {
 			entry = &bucket{rawModel: sample.RawModel, groupName: sample.GroupName}
@@ -635,7 +647,7 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 		}
 		observed := observablePrice(entry.rawModel, entry.rounds)
 		for _, match := range matches {
-			members := resolver.MembersFor(match.Route, site.ID)
+			members := resolver.MembersForModel(match.Route, site.ID, entry.rawModel)
 			// A match by name with no member on this site is not something this
 			// site serves for us: report the published model as a candidate and
 			// leave the routing table alone. (The second pass below covers the
@@ -662,6 +674,7 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 			for _, member := range members {
 				row.Members = append(row.Members, MemberState{
 					MemberID: member.MemberID, ChannelID: member.ChannelID, ChannelName: member.ChannelName,
+					RealModel: member.RealName, ManualOverride: member.ManualOverride,
 					GroupName: member.GroupName, Enabled: member.Enabled, AutoDisabled: member.AutoDisabled,
 					SingleMember: member.SingleMember, HasPrice: member.HasPrice,
 				})
@@ -670,6 +683,9 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 			// several members of this site on this route, so their totals are
 			// summed rather than averaged. It is resolved BEFORE the verdict:
 			// it is the fallback evidence for a site that publishes none.
+			for i := range row.Members {
+				row.Members[i].Traffic = trafficFor([]MemberState{row.Members[i]}, row.Route, traffic, trafficWindowHours())
+			}
 			row.Traffic = trafficFor(row.Members, match.Route, traffic, trafficWindowHours())
 			row.External = externalFor(site.ID, entry.rawModel, external)
 			// The site's own price wins; the catalog only fills a hole.
@@ -701,9 +717,13 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 		for _, member := range resolver.MembersFor(route, site.ID) {
 			row.Members = append(row.Members, MemberState{
 				MemberID: member.MemberID, ChannelID: member.ChannelID, ChannelName: member.ChannelName,
+				RealModel: member.RealName, ManualOverride: member.ManualOverride,
 				GroupName: member.GroupName, Enabled: member.Enabled, AutoDisabled: member.AutoDisabled,
 				SingleMember: member.SingleMember, HasPrice: member.HasPrice,
 			})
+		}
+		for i := range row.Members {
+			row.Members[i].Traffic = trafficFor([]MemberState{row.Members[i]}, row.Route, traffic, trafficWindowHours())
 		}
 		row.Traffic = trafficFor(row.Members, route, traffic, trafficWindowHours())
 		row.External = externalFor(site.ID, route, external)
@@ -761,6 +781,12 @@ func observablePrice(rawModel string, rounds []Round) *adapters.PriceQuote {
 // Rounds without enough samples break a streak instead of counting as either up
 // or down.
 func evaluate(policy Policy, rounds []Round, traffic *TrafficReading, external *ExternalReading, now time.Time) (verdict string, lowStreak, okStreak int, source string) {
+	if traffic != nil && traffic.Samples >= policy.MinSamples {
+		if traffic.Ratio < policy.RatioThreshold {
+			return VerdictLow, 0, 0, SourceTraffic
+		}
+		return VerdictOK, 0, 0, SourceTraffic
+	}
 	if len(rounds) > 0 {
 		if !rounds[0].ObservedAt.IsZero() && now.Sub(rounds[0].ObservedAt) > StaleAfter {
 			return VerdictStale, 0, 0, SourceSite
@@ -790,12 +816,6 @@ func evaluate(policy Policy, rounds []Round, traffic *TrafficReading, external *
 			return VerdictPending, lowStreak, okStreak, SourceSite
 		}
 	}
-	if traffic != nil && traffic.Samples >= policy.MinSamples {
-		if traffic.Ratio < policy.RatioThreshold {
-			return VerdictLow, 0, 0, SourceTraffic
-		}
-		return VerdictOK, 0, 0, SourceTraffic
-	}
 	if external != nil {
 		// The directory's number is already an aggregate over its own window,
 		// so the sample floor does not apply — but it is third-party evidence
@@ -817,19 +837,40 @@ func trafficFor(members []MemberState, route string, traffic map[string]store.Tr
 		return nil
 	}
 	reading := TrafficReading{WindowHours: windowHours}
+	seen := map[string]bool{}
+	latencySum, latencyWeight := 0, 0
 	for _, member := range members {
-		stat, found := traffic[store.TrafficKey(member.ChannelID, route)]
+		real := member.RealModel
+		if real == "" {
+			real = route
+		}
+		stat, found := traffic[store.MemberTrafficKey(member.MemberID, real)]
+		if !found {
+			stat, found = traffic[store.TrafficKey(member.ChannelID, real)]
+		}
 		if !found {
 			continue
 		}
+		key := store.TrafficKey(stat.ChannelID, stat.Model)
+		if stat.MemberID > 0 {
+			key = store.MemberTrafficKey(stat.MemberID, stat.Model)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		reading.Samples += stat.Samples
 		reading.Failures += stat.Failures
 		if stat.AvgFirstByteMS > 0 {
-			reading.AvgFirstByteMS = stat.AvgFirstByteMS
+			latencySum += stat.AvgFirstByteMS * stat.Samples
+			latencyWeight += stat.Samples
 		}
 	}
 	if reading.Samples == 0 {
 		return nil
+	}
+	if latencyWeight > 0 {
+		reading.AvgFirstByteMS = latencySum / latencyWeight
 	}
 	reading.Ratio = float64(reading.Samples-reading.Failures) / float64(reading.Samples)
 	return &reading
@@ -985,20 +1026,40 @@ func (s *Service) Apply(ctx context.Context, req ApplyRequest) ([]Action, error)
 		case VerdictOK:
 			kind = "recover"
 		default:
-			continue
+			kind = ""
 		}
-		newest := row.Rounds[0]
+		newest := Round{}
+		if len(row.Rounds) > 0 {
+			newest = row.Rounds[0]
+		}
 		for _, member := range row.Members {
+			verdict, _, _, source := evaluate(policy, row.Rounds, member.Traffic, row.External, s.now())
+			memberRow := row
+			memberRow.Traffic = member.Traffic
+			memberRow.AvailabilitySource = source
+			kind = ""
+			if verdict == VerdictLow {
+				kind = "disable"
+			} else if verdict == VerdictOK {
+				kind = "recover"
+			} else {
+				continue
+			}
 			if kind == "disable" && !member.Enabled {
 				continue
 			}
 			if kind == "recover" && !member.AutoDisabled {
 				continue
 			}
-			reason := describeAction(kind, member, row, newest, policy)
+			reason := describeAction(kind, member, memberRow, newest, policy)
 			action := Action{
 				Route: row.Route, SiteID: row.SiteID, SiteName: row.SiteName,
 				ChannelID: member.ChannelID, ChannelName: member.ChannelName, Kind: kind, Reason: reason,
+			}
+			if member.ManualOverride {
+				action.Skipped = "manual_override"
+				actions = append(actions, action)
+				continue
 			}
 			if member.SingleMember && kind == "disable" {
 				action.Skipped = "single_member"
@@ -1010,7 +1071,7 @@ func (s *Service) Apply(ctx context.Context, req ApplyRequest) ([]Action, error)
 				continue
 			}
 			if kind == "disable" {
-				moved, err := s.db.RouteMember.AutoDisableByPair(member.ChannelID, row.Route, reason)
+				moved, err := s.db.RouteMember.AutoDisableMember(member.MemberID, reason)
 				if err != nil {
 					return actions, err
 				}
@@ -1019,7 +1080,7 @@ func (s *Service) Apply(ctx context.Context, req ApplyRequest) ([]Action, error)
 					action.Skipped = "not_disableable"
 				}
 			} else {
-				moved, err := s.db.RouteMember.AutoRecoverByPair(member.ChannelID, row.Route)
+				moved, err := s.db.RouteMember.AutoRecoverMember(member.MemberID)
 				if err != nil {
 					return actions, err
 				}

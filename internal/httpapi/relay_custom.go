@@ -162,8 +162,8 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 	}
 	result, meta := h.proxy.ForwardWithMeta(watchCtx, proxyReq)
 	setHookDecisionHeader(w.Header(), meta)
-	writeUpstreamResult(
-		w, watchCtx, requestID, result, request.Stream,
+	h.writeObservedUpstreamResult(
+		w, watchCtx, proxyReq, meta, result, request.Stream,
 		h.attemptAccountant(proxyReq, meta, requestID, clientFamily),
 		func(int64) {
 			// Custom paths carry no known stream contract, so the live view gets

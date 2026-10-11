@@ -50,6 +50,7 @@ const (
 type Pair struct {
 	ChannelID int64  `json:"channel_id"`
 	Model     string `json:"model"`
+	MemberID  int64  `json:"member_id,omitempty"`
 }
 
 // Options is one probe run's configuration. A struct rather than positional
@@ -204,7 +205,12 @@ func (s *Service) run(ctx context.Context, task *store.ProbeTask, pairs []Pair, 
 			}
 			failures, err := s.db.UpsertModelHealth(&store.ModelHealth{
 				ChannelID: result.ChannelID,
-				Model:     result.Model,
+				Model: func() string {
+					if result.UpstreamModel != "" {
+						return result.UpstreamModel
+					}
+					return result.Model
+				}(),
 				OK:        result.OK,
 				LatencyMS: result.LatencyMS,
 				Source:    "probe",
@@ -212,6 +218,13 @@ func (s *Service) run(ctx context.Context, task *store.ProbeTask, pairs []Pair, 
 			if err != nil {
 				s.logger.Warn("probe: record health", "task", task.ID, "error", err)
 			} else if opts.AutoDisableAfter > 0 {
+				if pair.MemberID > 0 && result.UpstreamModel != "" {
+					failures, err = s.db.ConsecutiveMemberProbeFailures(pair.MemberID, result.UpstreamModel)
+					if err != nil {
+						s.logger.Warn("probe: member history", "error", err)
+						failures = 0
+					}
+				}
 				s.applyHealthAction(pair, result.OK, failures, opts.AutoDisableAfter)
 			}
 
@@ -259,7 +272,12 @@ func (s *Service) run(ctx context.Context, task *store.ProbeTask, pairs []Pair, 
 // stays off no matter how green the probes come back.
 func (s *Service) applyHealthAction(pair Pair, ok bool, failures, threshold int) {
 	if ok {
-		restored, err := s.db.RouteMember.AutoRecoverByPair(pair.ChannelID, pair.Model)
+		restored, err := func() (int, error) {
+			if pair.MemberID > 0 {
+				return s.db.RouteMember.AutoRecoverMember(pair.MemberID)
+			}
+			return s.db.RouteMember.AutoRecoverByPair(pair.ChannelID, pair.Model)
+		}()
 		if err != nil {
 			s.logger.Warn("probe: recover member", "channel", pair.ChannelID, "model", pair.Model, "error", err)
 			return
@@ -274,7 +292,12 @@ func (s *Service) applyHealthAction(pair Pair, ok bool, failures, threshold int)
 		return
 	}
 	reason := fmt.Sprintf("probe failed %d times in a row", failures)
-	disabled, err := s.db.RouteMember.AutoDisableByPair(pair.ChannelID, pair.Model, reason)
+	disabled, err := func() (int, error) {
+		if pair.MemberID > 0 {
+			return s.db.RouteMember.AutoDisableMember(pair.MemberID, reason)
+		}
+		return s.db.RouteMember.AutoDisableByPair(pair.ChannelID, pair.Model, reason)
+	}()
 	if err != nil {
 		s.logger.Warn("probe: disable member", "channel", pair.ChannelID, "model", pair.Model, "error", err)
 		return
@@ -288,7 +311,7 @@ func (s *Service) applyHealthAction(pair Pair, ok bool, failures, threshold int)
 // probeOne sends a single chat completion to one channel, in the shape that
 // channel's call policy asks for.
 func (s *Service) probeOne(ctx context.Context, taskID int64, pair Pair, maxTokens int, prompt string) store.ProbeResult {
-	result := store.ProbeResult{TaskID: taskID, ChannelID: pair.ChannelID, Model: pair.Model}
+	result := store.ProbeResult{TaskID: taskID, ChannelID: pair.ChannelID, Model: pair.Model, MemberID: pair.MemberID}
 
 	// The one gate for this path: the target's policy decides the shape of the
 	// call, never whether it happens. On a lookup error the real form is used —
@@ -322,15 +345,20 @@ func (s *Service) probeOne(ctx context.Context, taskID int64, pair Pair, maxToke
 	defer cancel()
 
 	started := time.Now()
-	res, _ := s.relay.ChatCompletionsWithMeta(ctx, proxy.Request{
-		RequestID:       fmt.Sprintf("probe-%d-%d", taskID, pair.ChannelID),
+	res, meta := s.relay.ChatCompletionsWithMeta(ctx, proxy.Request{
+		RequestID:       fmt.Sprintf("probe-%d-%d-%d", taskID, pair.ChannelID, pair.MemberID),
 		Model:           pair.Model,
 		Body:            body,
 		Stream:          false,
 		PreferChannelID: pair.ChannelID,
+		PreferMemberID:  pair.MemberID,
 		// The flag that keeps probe traffic out of the health bookkeeping.
 		Probe: true,
 	})
+	if meta != nil {
+		result.MemberID = meta.MemberID
+		result.UpstreamModel = meta.UpstreamModel
+	}
 	latency := int(time.Since(started).Milliseconds())
 	if latency < 0 {
 		latency = 0
@@ -346,9 +374,12 @@ func (s *Service) probeOne(ctx context.Context, taskID int64, pair Pair, maxToke
 	// Always drain and close: the upstream connection is pooled.
 	detail := ""
 	if res.Body != nil {
-		snippet, _ := io.ReadAll(io.LimitReader(res.Body, ErrorDetailLimit))
+		snippet, readErr := io.ReadAll(io.LimitReader(res.Body, ErrorDetailLimit))
 		_ = res.Body.Close()
 		detail = string(snippet)
+		if readErr != nil && res.Err == nil {
+			res.Err = readErr
+		}
 	}
 
 	switch {

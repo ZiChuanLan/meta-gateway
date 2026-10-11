@@ -16,6 +16,7 @@ import "./styles/theme-gallery.css";
 // Last on purpose: a palette ties on specificity with the theme token blocks,
 // so cascade order is what lets it win. See styles/palettes.css.
 import "./styles/palettes.css";
+import "./styles/availability.css";
 // The member views' own styles: the sheets the member app used to carry, kept
 // only for the few controls that are genuinely a member's own (the credit
 // block, the arrangement editor's handle/rank columns, the redeem box). The

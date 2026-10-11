@@ -127,6 +127,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 	// of their own. Without it the trail would die here: req is a value copy, so
 	// the caller's Request never sees the decisions taken on its behalf.
 	defer func() {
+		if finalResult != nil && finalMeta != nil {
+			finalMeta.AttemptLogID = finalResult.AttemptLogID
+			finalMeta.ResolvedModel = req.Model
+		}
 		if len(req.HookDecisions) == 0 {
 			return
 		}
@@ -154,7 +158,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		// selector about that pin keeps a single-mode route from reporting its
 		// non-pinned rows as ineligible — the pin is the more specific choice,
 		// and pickPreferred below needs the row to still be selectable.
-		PinnedMemberID:  req.PreferMemberID,
+		PinnedMemberID: req.PreferMemberID, RecoveryProbe: req.Probe,
 		PinnedChannelID: req.PreferChannelID,
 	}
 	// Resolve the sticky session key: an explicit client header wins;
@@ -306,7 +310,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		// upstream permanently reported as unknown before spending an attempt.
 		// Only the affected VARIANT retires — sibling names on the channel stay
 		// eligible, and the fallback walk prefers their remaining ones.
-		if blocked, err := s.db.IsModelBlocked(candidate.Channel.ID, effectiveModel); err == nil && blocked {
+		if blocked, err := s.db.IsModelBlocked(candidate.Channel.ID, effectiveModel); err == nil && blocked && !req.Probe {
 			excludedMembers[candidate.Member.ID] = struct{}{}
 			constraint.PreferChannel = candidate.Channel.ID
 			if last != nil && last.Body != nil {
@@ -337,7 +341,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		}
 		defer releaseAttempt()
 		meta := &AttemptMeta{
-			RouteID:       decision.RouteID,
+			RouteID: decision.RouteID, RouteGroup: candidate.Member.GroupName,
 			GrayAttempt:   req.GrayAttempt,
 			ChannelID:     candidate.Channel.ID,
 			ChannelName:   candidate.Channel.Name,

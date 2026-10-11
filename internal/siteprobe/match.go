@@ -1,10 +1,10 @@
 package siteprobe
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 
+	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
@@ -30,16 +30,17 @@ const (
 
 // MemberRef is one route member we may act on.
 type MemberRef struct {
-	MemberID     int64
-	RouteID      int64
-	Route        string
-	ChannelID    int64
-	ChannelName  string
-	SiteID       int64
-	GroupName    string
-	Enabled      bool
-	AutoDisabled bool
-	RealName     string
+	ManualOverride bool
+	MemberID       int64
+	RouteID        int64
+	Route          string
+	ChannelID      int64
+	ChannelName    string
+	SiteID         int64
+	GroupName      string
+	Enabled        bool
+	AutoDisabled   bool
+	RealName       string
 	// HasPrice marks a member that already carries a price in the billing
 	// layer, which decides whether adopting an observed price changes anything.
 	HasPrice bool
@@ -55,13 +56,13 @@ type Resolver struct {
 	patterns []string
 	// byMemberReal maps a member's exact upstream name (mapping_json.real) to its
 	// route: that mapping is the authoritative link and outranks name folding.
-	byMemberReal map[string]string
+	byMemberReal map[string][]string
 	// byMemberNormalized is the same index keyed by the folded name, used only
 	// after the literal passes have failed.
-	byMemberNormalized map[string]string
+	byMemberNormalized map[string][]string
 	// byMemberCore is the same index keyed by the name with both its vendor
 	// prefix and its catalog namespace stripped.
-	byMemberCore map[string]string
+	byMemberCore map[string][]string
 }
 
 // BuildResolver reads routes and channels and returns the matching index.
@@ -79,9 +80,9 @@ func BuildResolver(db *store.DB) (*Resolver, error) {
 		names[channel.ID] = channel.Name
 	}
 	resolver := &Resolver{
-		byMemberReal:       make(map[string]string),
-		byMemberNormalized: make(map[string]string),
-		byMemberCore:       make(map[string]string),
+		byMemberReal:       make(map[string][]string),
+		byMemberNormalized: make(map[string][]string),
+		byMemberCore:       make(map[string][]string),
 	}
 	seenRoute := make(map[string]bool)
 	for _, overview := range overviews {
@@ -95,53 +96,38 @@ func BuildResolver(db *store.DB) (*Resolver, error) {
 		}
 		for _, candidate := range overview.Members {
 			member := candidate.Member
-			real := realNameOf(member.MappingJSON)
+			real := domain.ResolveUpstreamModel(pattern, member.MappingJSON, overview.Route.MappingJSON)
 			siteID := int64(0)
 			if candidate.Channel.SiteID != nil {
 				siteID = *candidate.Channel.SiteID
 			}
 			singleMember := overview.Route.SingleMemberID != nil && *overview.Route.SingleMemberID == member.ID
 			ref := MemberRef{
-				MemberID:     member.ID,
-				RouteID:      overview.Route.ID,
-				Route:        pattern,
-				ChannelID:    member.ChannelID,
-				ChannelName:  names[member.ChannelID],
-				SiteID:       siteID,
-				GroupName:    member.GroupName,
-				Enabled:      member.Enabled,
-				AutoDisabled: member.AutoDisabled,
-				RealName:     real,
+				MemberID:       member.ID,
+				RouteID:        overview.Route.ID,
+				Route:          pattern,
+				ChannelID:      member.ChannelID,
+				ChannelName:    names[member.ChannelID],
+				SiteID:         siteID,
+				GroupName:      member.GroupName,
+				Enabled:        member.Enabled,
+				AutoDisabled:   member.AutoDisabled,
+				RealName:       real,
+				ManualOverride: member.ManualOverride,
 				HasPrice: member.PricePromptPer1k > 0 || member.PriceCompletionPer1k > 0 ||
 					member.PriceCachePer1k > 0 || member.PricePerRequest > 0,
 				SingleMember: singleMember,
 			}
 			resolver.members = append(resolver.members, ref)
-			if real != "" {
-				resolver.byMemberReal[real] = pattern
-				resolver.byMemberNormalized[normalizeModelName(real)] = pattern
-				resolver.byMemberCore[coreModelName(real)] = pattern
+			if real != "" && real != pattern {
+				resolver.byMemberReal[real] = append(resolver.byMemberReal[real], pattern)
+				resolver.byMemberNormalized[normalizeModelName(real)] = append(resolver.byMemberNormalized[normalizeModelName(real)], pattern)
+				resolver.byMemberCore[coreModelName(real)] = append(resolver.byMemberCore[coreModelName(real)], pattern)
 			}
 		}
 	}
 	sort.Strings(resolver.patterns)
 	return resolver, nil
-}
-
-// realNameOf reads the {"real": "<upstream model name>"} mapping a route member
-// carries when it forwards to a differently named upstream model.
-func realNameOf(mappingJSON string) string {
-	trimmed := strings.TrimSpace(mappingJSON)
-	if trimmed == "" || trimmed == "{}" {
-		return ""
-	}
-	var mapping struct {
-		Real string `json:"real"`
-	}
-	if err := json.Unmarshal([]byte(trimmed), &mapping); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(mapping.Real)
 }
 
 // ModelMatch is one route a site's model name resolves to, with the evidence
@@ -193,7 +179,7 @@ func (r *Resolver) MatchAll(raw string) []ModelMatch {
 	strategy := []struct {
 		kind  string
 		has   func(pattern string) bool
-		index map[string]string
+		index map[string][]string
 	}{
 		// 1. the site calls the model exactly what we do
 		{MatchExact, func(pattern string) bool { return name == pattern }, nil},
@@ -227,9 +213,7 @@ func (r *Resolver) MatchAll(raw string) []ModelMatch {
 				}
 			}
 		} else if step.index != nil {
-			if route, found := step.index[nameOf(raw, step.kind)]; found {
-				hits = append(hits, route)
-			}
+			hits = append(hits, step.index[nameOf(raw, step.kind)]...)
 		}
 		for _, route := range hits {
 			if seen[route] {
@@ -324,4 +308,27 @@ func coreModelName(name string) string {
 		return folded
 	}
 	return folded[index+1:]
+}
+
+// Prefer exact upstream identities; namespace folding is only a fallback when
+// a site publishes a bare name, never a way to mix different model variants.
+func (r *Resolver) MembersForModel(route string, siteID int64, model string) []MemberRef {
+	members := r.MembersFor(route, siteID)
+	var exact, folded []MemberRef
+	for _, m := range members {
+		real := m.RealName
+		if real == "" {
+			real = m.Route
+		}
+		if normalizeModelName(real) == normalizeModelName(model) {
+			exact = append(exact, m)
+		}
+		if coreModelName(real) == coreModelName(model) {
+			folded = append(folded, m)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	return folded
 }

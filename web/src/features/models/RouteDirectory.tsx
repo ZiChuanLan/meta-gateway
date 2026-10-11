@@ -1,5 +1,7 @@
 import type React from "react";
 import { Link } from "react-router-dom";
+import { useAvailability } from "../../hooks/useAvailability";
+import { AvailabilityIndicator } from "../../components/AvailabilityIndicator";
 import { Plus } from "lucide-react";
 import type { Channel, Route, RouteOverview } from "../../api/types";
 import { ActionMenu, type ActionMenuItem } from "../../components/ActionMenu";
@@ -149,6 +151,7 @@ export function RouteDirectory(props: RouteDirectoryProps) {
     resetRouteDraft,
     startNewRoute,
   } = props;
+  const availability = useAvailability({ routeIds: pageRows.map((item) => item.route.id!) });
   return (
     <Panel className="ops-list-panel model-directory" title={t("modelsPage.listTitle")}>
       <ModelDirectoryToolbar
@@ -370,6 +373,16 @@ export function RouteDirectory(props: RouteDirectoryProps) {
                   return {
                     name: item.route.model_pattern,
                     group,
+                    facts: (
+                      <AvailabilityIndicator
+                        compact
+                        item={availability.data?.routes.find(
+                          (row) => row.route_id === item.route.id,
+                        )}
+                        loading={availability.isPending}
+                        error={availability.isError}
+                      />
+                    ),
                     provider: (
                       <small className="model-nav-provider">
                         {head ? head.channel.name : t("modelsPage.noUpstream")}

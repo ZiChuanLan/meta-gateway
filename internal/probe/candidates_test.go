@@ -55,7 +55,7 @@ func TestCandidatePairsKeepsProbeDisabledPairsReachable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("candidate pairs: %v", err)
 	}
-	if len(pairs) != 1 || pairs[0] != (Pair{ChannelID: chID, Model: "m1"}) {
+	if len(pairs) != 1 || pairs[0].ChannelID != chID || pairs[0].Model != "m1" || pairs[0].MemberID <= 0 {
 		t.Fatalf("pairs = %+v, want the auto-disabled pair to stay probeable", pairs)
 	}
 

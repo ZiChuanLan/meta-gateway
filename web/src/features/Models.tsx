@@ -195,7 +195,7 @@ function ModelsWorkspace({
   const tools = useModelTools();
   const {
     setProbeOpen,
-    setSiteProbeOpen,
+
     setCapabilitiesOpen,
     setUnifyOpen,
     setUnifyHistoryOpen,
@@ -882,12 +882,7 @@ function ModelsWorkspace({
               icon: <SlidersHorizontal size={14} />,
               onSelect: () => setCapabilitiesOpen(true),
             },
-            {
-              key: "site-probe",
-              label: t("modelsPage.siteProbe.title"),
-              icon: <Activity size={14} />,
-              onSelect: () => setSiteProbeOpen(true),
-            },
+
             {
               key: "unify",
               label: t("modelsPage.unify.action"),

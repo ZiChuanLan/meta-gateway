@@ -2,6 +2,8 @@ import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useMemo, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useAvailability } from "../hooks/useAvailability";
+import { AvailabilityIndicator } from "../components/AvailabilityIndicator";
 import { api } from "../api/client";
 import { useToast } from "../toast";
 import type { Channel, DiscoveredModel, RouteMember, RouteOverview } from "../api/types";
@@ -62,6 +64,7 @@ export function ChannelModelsPanel({
     queryFn: ({ signal }) => service.routeOverviews(signal),
   });
 
+  const availability = useAvailability({ channelId });
   const models = useMemo<DiscoveredModel[]>(() => discovered.data ?? [], [discovered.data]);
   const [customName, setCustomName] = useState("");
   const [aliasInputs, setAliasInputs] = useState<Record<number, string>>({});
@@ -749,7 +752,10 @@ export function ChannelModelsPanel({
                           ? (aliasInputs[discoveredModel.id] ?? alias)
                           : alias;
                         return (
-                          <li key={item.key} className="channel-model-row is-alias">
+                          <li
+                            key={item.key}
+                            className="channel-model-row is-alias has-availability"
+                          >
                             {bulkMode ? (
                               <label
                                 className="channel-model-select"
@@ -787,6 +793,13 @@ export function ChannelModelsPanel({
                             <span className="mono truncate" title={item.name}>
                               {item.name}
                             </span>
+                            <AvailabilityIndicator
+                              item={availability.data?.models.find(
+                                (model) => model.model === item.name,
+                              )}
+                              loading={availability.isPending}
+                              error={availability.isError}
+                            />
                             <span className="channel-model-alias">
                               {discoveredModel ? (
                                 <>

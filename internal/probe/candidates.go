@@ -50,7 +50,7 @@ func CandidatePairs(db *store.DB, channelIDs []int64, models []string) ([]Pair, 
 			if len(wantChannels) > 0 && !wantChannels[member.ChannelID] {
 				continue
 			}
-			pair := Pair{ChannelID: member.ChannelID, Model: pattern}
+			pair := Pair{ChannelID: member.ChannelID, Model: pattern, MemberID: member.ID}
 			if seen[pair] {
 				continue
 			}

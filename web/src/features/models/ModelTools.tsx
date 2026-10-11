@@ -3,13 +3,13 @@ import type { Route, RouteOverview } from "../../api/types";
 import { UnifyDialog } from "./UnifyDialog";
 import { UnifyHistory } from "./UnifyHistory";
 import { ProbeDialog } from "./ProbeDialog";
-import { SiteProbeDialog } from "./SiteProbeDialog";
+
 import { CapabilityRegistryDialog } from "./CapabilityRegistry";
 import { AutoMatchMembersDialog } from "./AutoMatchMembersDialog";
 
 /**
  * The models board's tools: the five panels that answer questions *about* the
- * catalogue rather than edit it (capabilities, site probe, unify, unify history,
+ * catalogue rather than edit it (capabilities, unify, unify history,
  * upstream changes), plus the auto-match dialog that attaches channels to a route.
  *
  * They were six open/close flags spread through the page plus their dialog mounts
@@ -21,8 +21,7 @@ import { AutoMatchMembersDialog } from "./AutoMatchMembersDialog";
 export type ModelTools = {
   probeOpen: boolean;
   setProbeOpen: (open: boolean) => void;
-  siteProbeOpen: boolean;
-  setSiteProbeOpen: (open: boolean) => void;
+
   capabilitiesOpen: boolean;
   setCapabilitiesOpen: (open: boolean) => void;
   unifyOpen: boolean;
@@ -36,7 +35,7 @@ export type ModelTools = {
 
 export function useModelTools(): ModelTools {
   const [probeOpen, setProbeOpen] = useState(false);
-  const [siteProbeOpen, setSiteProbeOpen] = useState(false);
+
   const [capabilitiesOpen, setCapabilitiesOpen] = useState(false);
   const [unifyOpen, setUnifyOpen] = useState(false);
   const [unifyHistoryOpen, setUnifyHistoryOpen] = useState(false);
@@ -44,8 +43,7 @@ export function useModelTools(): ModelTools {
   return {
     probeOpen,
     setProbeOpen,
-    siteProbeOpen,
-    setSiteProbeOpen,
+
     capabilitiesOpen,
     setCapabilitiesOpen,
     unifyOpen,
@@ -79,9 +77,7 @@ export function ModelToolDialogs({
         <UnifyHistory onClose={() => tools.setUnifyHistoryOpen(false)} />
       ) : null}
       {tools.probeOpen ? <ProbeDialog onClose={() => tools.setProbeOpen(false)} /> : null}
-      {tools.siteProbeOpen ? (
-        <SiteProbeDialog onClose={() => tools.setSiteProbeOpen(false)} />
-      ) : null}
+
       {tools.capabilitiesOpen ? (
         <CapabilityRegistryDialog onClose={() => tools.setCapabilitiesOpen(false)} />
       ) : null}

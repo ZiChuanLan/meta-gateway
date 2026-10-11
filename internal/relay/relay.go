@@ -36,10 +36,11 @@ func NewWithClient(client *http.Client) *Relay {
 
 // Result captures the outcome of a relayed request.
 type Result struct {
-	StatusCode int
-	Body       io.ReadCloser
-	Header     http.Header
-	LatencyMs  int
+	AttemptLogID int64
+	StatusCode   int
+	Body         io.ReadCloser
+	Header       http.Header
+	LatencyMs    int
 	// FirstByteMs is the time from relay start to the first streamed byte
 	// (stream responses only; 0 when unknown). Populated by the proxy after
 	// its first-chunk peek.

@@ -2,6 +2,8 @@ import { ApiError } from "../lib/apiError";
 export { ApiError } from "../lib/apiError";
 import type {
   AuditEvent,
+  AvailabilityReport,
+  SiteObservations,
   BackupRecord,
   CatalogPolicyInput,
   CatalogPreview,
@@ -637,6 +639,18 @@ export const api = (client: ApiClient) => ({
   probeResults: (id: number, signal?: AbortSignal) =>
     client.get<ModelProbeResult[]>(`/admin/probes/${id}/results`, signal),
   probeCancel: (id: number) => client.post<{ status: string }>(`/admin/probes/${id}/cancel`, {}),
+  availability: (
+    options: { routeIds?: number[]; channelId?: number; group?: string; hours?: number },
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams({ hours: String(options.hours ?? 24) });
+    if (options.routeIds?.length) params.set("route_ids", options.routeIds.join(","));
+    if (options.channelId) params.set("channel_id", String(options.channelId));
+    if (options.group) params.set("group", options.group);
+    return client.get<AvailabilityReport>(`/admin/availability?${params}`, signal);
+  },
+  siteObservations: (hours = 24, signal?: AbortSignal) =>
+    client.get<SiteObservations>(`/admin/site-probe/observations?hours=${hours}`, signal),
   modelHealth: (signal?: AbortSignal) => client.get<ModelHealth[]>("/admin/model-health", signal),
 
   /**

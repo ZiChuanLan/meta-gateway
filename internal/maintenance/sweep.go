@@ -191,6 +191,9 @@ func (s *BalanceSweeper) run(parent context.Context) {
 		return
 	}
 	if s.healthRetentionDays > 0 {
+		if err := s.db.PruneRouteOutcomes(s.healthRetentionDays); err != nil {
+			s.logger.Warn("availability outcomes prune failed", "error", err)
+		}
 		if _, err := s.db.HealthHistory.Prune(time.Now().AddDate(0, 0, -s.healthRetentionDays)); err != nil {
 			s.logger.Warn("health history prune failed", "error", err)
 		}

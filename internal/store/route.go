@@ -1170,3 +1170,26 @@ func globMatchRunes(pattern, subject []rune) bool {
 	}
 	return matched[len(subject)]
 }
+
+// Individual observations must never change sibling aliases on the same channel.
+func (s *RouteMemberStore) AutoDisableMember(id int64, reason string) (int, error) {
+	res, err := s.db.Exec(`UPDATE route_members SET enabled=0,auto_disabled=1,last_error=?,updated_at=datetime('now')
+ WHERE id=? AND enabled=1 AND manual_override=0
+ AND id NOT IN (SELECT single_member_id FROM routes WHERE single_member_id IS NOT NULL)
+ AND route_id IN (SELECT id FROM routes WHERE enabled=1)`, reason, id)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+func (s *RouteMemberStore) AutoRecoverMember(id int64) (int, error) {
+	res, err := s.db.Exec(`UPDATE route_members SET enabled=1,auto_disabled=0,last_error='',updated_at=datetime('now')
+ WHERE id=? AND enabled=0 AND auto_disabled=1 AND manual_override=0
+ AND route_id IN (SELECT id FROM routes WHERE enabled=1)`, id)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}

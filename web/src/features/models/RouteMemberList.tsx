@@ -1,5 +1,7 @@
 import { GripVertical, Power, RotateCcw, Shield, Target } from "lucide-react";
 import type { Route, RoutingCandidate } from "../../api/types";
+import { useAvailability } from "../../hooks/useAvailability";
+import { AvailabilityIndicator } from "../../components/AvailabilityIndicator";
 import { ActionMenu } from "../../components/ActionMenu";
 import { StatusBadge } from "../../components/ui";
 import { CooldownHint } from "./CooldownHint";
@@ -98,6 +100,7 @@ export function RouteMemberList(props: RouteMemberListProps) {
     setRemoveMember,
   } = props;
 
+  const availability = useAvailability({ routeIds: [route.id!] });
   const applyOrder = (next: RoutingCandidate[]) => reorderMembers.mutate(next);
 
   return members.map((candidate, rowIndex) => {
@@ -136,7 +139,7 @@ export function RouteMemberList(props: RouteMemberListProps) {
     };
     return (
       <div
-        className={`member-row${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
+        className={`member-row has-availability${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
         key={entry.id}
         draggable={!reorderMembers.isPending && !bulkSelect}
         onDragStart={(event) => {
@@ -276,6 +279,13 @@ export function RouteMemberList(props: RouteMemberListProps) {
               </>
             ) : null}
           </small>
+        </div>
+        <div className="member-availability">
+          <AvailabilityIndicator
+            item={availability.data?.members.find((item) => item.member_id === entry.id)}
+            loading={availability.isPending}
+            error={availability.isError}
+          />
         </div>
         <div className="member-controls">
           {route.routing_mode === "single" && route.single_member_id === entry.id ? (

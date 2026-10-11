@@ -151,16 +151,18 @@ type KumaGroup struct {
 // KumaMonitor is one monitored model, with the availability computed from its
 // heartbeats inside the aggregation window.
 type KumaMonitor struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Type         string    `json:"type"`
-	GroupName    string    `json:"group_name"`
-	Samples      int       `json:"samples"`
-	UpCount      int       `json:"up_count"`
-	Ratio        float64   `json:"ratio"`
-	AvgPingMS    *int      `json:"avg_ping_ms,omitempty"`
-	WeakEvidence bool      `json:"weak_evidence"`
-	LastBeatAt   time.Time `json:"last_beat_at"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Type         string     `json:"type"`
+	GroupName    string     `json:"group_name"`
+	Samples      int        `json:"samples"`
+	UpCount      int        `json:"up_count"`
+	Ratio        float64    `json:"ratio"`
+	AvgPingMS    *int       `json:"avg_ping_ms,omitempty"`
+	WeakEvidence bool       `json:"weak_evidence"`
+	LastBeatAt   time.Time  `json:"last_beat_at"`
+	Heartbeats   []kumaBeat `json:"-"`
+	RatioKnown   bool       `json:"-"`
 }
 
 // Ratio is the availability over the aggregation window; a monitor with no
@@ -211,6 +213,7 @@ func FetchKuma(ctx context.Context, client *http.Client, statusURL string, windo
 			}
 			seen[id] = true
 			computed := computeMonitor(id, monitor.Name, monitor.Type, groupOf[id], heartbeats.HeartbeatList[id], cutoff)
+			computed.Heartbeats = heartbeats.HeartbeatList[id]
 			source.Monitors = append(source.Monitors, computed)
 		}
 	}
@@ -233,6 +236,9 @@ func computeMonitor(id, name, monitorType, groupName string, beats []kumaBeat, c
 	pingSum, pingCount := 0, 0
 	for _, beat := range beats {
 		at := parseKumaTime(beat.Time)
+		if at.IsZero() {
+			continue
+		}
 		if !at.IsZero() {
 			if at.After(monitor.LastBeatAt) {
 				monitor.LastBeatAt = at
@@ -244,12 +250,14 @@ func computeMonitor(id, name, monitorType, groupName string, beats []kumaBeat, c
 		switch beat.Status {
 		case kumaStatusUp:
 			monitor.Samples++
+			monitor.RatioKnown = true
 			monitor.UpCount++
 			if beat.Ping != nil {
 				pingSum += *beat.Ping
 				pingCount++
 			}
 		case kumaStatusDown:
+			monitor.RatioKnown = true
 			monitor.Samples++
 		default:
 			// pending / maintenance: excluded from the denominator
@@ -284,17 +292,23 @@ func (s *KumaSource) Samples(siteID, runID int64, observedAt time.Time) []store.
 			continue
 		}
 		out = append(out, store.SiteProbeSample{
-			RunID:        runID,
-			SiteID:       siteID,
-			MonitorID:    monitor.ID,
-			MonitorName:  monitor.Name,
-			MonitorType:  monitor.Type,
-			GroupName:    monitor.GroupName,
-			RawModel:     monitor.Name,
-			ObservedAt:   observedAt,
+			RunID:       runID,
+			SiteID:      siteID,
+			MonitorID:   monitor.ID,
+			MonitorName: monitor.Name,
+			MonitorType: monitor.Type,
+			GroupName:   monitor.GroupName,
+			RawModel:    monitor.Name,
+			ObservedAt: func() time.Time {
+				if !monitor.LastBeatAt.IsZero() {
+					return monitor.LastBeatAt
+				}
+				return observedAt
+			}(),
 			Samples:      monitor.Samples,
 			UpCount:      monitor.UpCount,
 			Ratio:        monitor.Ratio,
+			RatioKnown:   monitor.RatioKnown || monitor.Samples > 0,
 			AvgPingMS:    monitor.AvgPingMS,
 			WeakEvidence: monitor.WeakEvidence,
 		})

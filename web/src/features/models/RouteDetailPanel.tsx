@@ -3,6 +3,8 @@ import { ChevronDown, Pencil, Plus, Target, Trash2, Wand2 } from "lucide-react";
 import type { Route, RoutingCandidate } from "../../api/types";
 import { ActionMenu } from "../../components/ActionMenu";
 import { Button, Empty, InfoTip } from "../../components/ui";
+import { useAvailability } from "../../hooks/useAvailability";
+import { AvailabilityIndicator } from "../../components/AvailabilityIndicator";
 import { RouteDetailHeader, type RouteDetailHeaderProps } from "./RouteDetailHeader";
 import { RouteMemberList, type RouteMemberListProps } from "./RouteMemberList";
 import { RoutePolicyCard, type RoutePolicyCardProps } from "./RoutePolicyCard";
@@ -99,9 +101,18 @@ export function RouteDetailPanel(props: RouteDetailPanelProps) {
     list,
   } = props;
 
+  const availability = useAvailability({ routeIds: [route.id!], group: activeGroup });
   return (
     <>
       <RouteDetailHeader {...props.header} />
+      <div className="route-availability-summary">
+        <span>{t("availability.scope", { group: activeGroup })}</span>
+        <AvailabilityIndicator
+          item={availability.data?.routes.find((item) => item.route_id === route.id)}
+          loading={availability.isPending}
+          error={availability.isError}
+        />
+      </div>
 
       {props.singleModeActive && route ? (
         <div className="single-mode-banner">

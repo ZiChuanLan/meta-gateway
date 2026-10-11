@@ -97,7 +97,7 @@ type TransitPassiveAggregate struct {
 	Model       string   `json:"model"`
 	Group       string   `json:"group,omitempty"`
 	Requests    int64    `json:"requests,omitempty"`
-	Successes   int64    `json:"successes,omitempty"`
+	Successes   *int64   `json:"successes,omitempty"`
 	Errors      int64    `json:"errors,omitempty"`
 	SuccessRate *float64 `json:"success_rate,omitempty"`
 	AvgLatency  *float64 `json:"avg_latency_ms,omitempty"`
@@ -153,105 +153,125 @@ func FetchTransit(ctx context.Context, client *http.Client, snapshotURL string) 
 // reading per model, preferring V2 (real traffic) over V1 (active probe) when a
 // model appears in both. Exported so the admin detect endpoint can preview what
 // the site currently reports.
+func transitReadingKey(model, group string) string {
+	if group == "" {
+		return model
+	}
+	return model + "\x00" + group
+}
+
 func TransitAvailability(snapshot *TransitSnapshot) map[string]KumaMonitor {
-	readings := make(map[string]KumaMonitor)
+	readings := map[string]KumaMonitor{}
 	for _, aggregate := range snapshot.PassiveMonitoring {
-		model := strings.TrimSpace(aggregate.Model)
+		model, group := strings.TrimSpace(aggregate.Model), strings.TrimSpace(aggregate.Group)
 		if model == "" {
 			continue
 		}
-		samples := aggregate.Requests
-		up := aggregate.Successes
-		if up == 0 && aggregate.SuccessRate != nil {
-			up = int64(*aggregate.SuccessRate * float64(samples))
-		}
-		reading := KumaMonitor{Name: model, GroupName: aggregate.Group, Type: MonitorTypePassive}
-		if samples > 0 {
-			reading.Samples = int(samples)
-			reading.UpCount = int(up)
-			reading.Ratio = float64(up) / float64(samples)
+		reading := KumaMonitor{ID: transitReadingKey(model, group), Name: model, GroupName: group, Type: MonitorTypePassive}
+		if aggregate.Successes != nil && aggregate.Requests > 0 && *aggregate.Successes >= 0 && *aggregate.Successes <= aggregate.Requests {
+			reading.Samples = int(aggregate.Requests)
+			reading.UpCount = int(*aggregate.Successes)
+			reading.Ratio = float64(reading.UpCount) / float64(reading.Samples)
+			reading.RatioKnown = true
+		} else if aggregate.SuccessRate != nil && *aggregate.SuccessRate >= 0 && *aggregate.SuccessRate <= 1 {
+			// A ratio without a published numerator is a ratio, never a fake count.
+			reading.Ratio = *aggregate.SuccessRate
+			reading.RatioKnown = true
 		}
 		if aggregate.AvgTTFT != nil {
 			ms := int(*aggregate.AvgTTFT)
 			reading.AvgPingMS = &ms
 		}
-		// Real traffic is the site's own users' experience — the strongest
-		// evidence a site can publish about itself, and still not a measurement
-		// of our keys.
-		reading.WeakEvidence = false
-		readings[model] = reading
+		reading.LastBeatAt = parseTransitTime(aggregate.LastSeenAt, snapshot.GeneratedAt)
+		readings[reading.ID] = reading
 	}
 	for _, monitor := range snapshot.Monitors {
-		model := strings.TrimSpace(monitor.Name)
+		model, group := strings.TrimSpace(monitor.Name), strings.TrimSpace(monitor.Group)
 		if model == "" {
 			continue
 		}
-		if _, hasPassive := readings[model]; hasPassive {
+		key := transitReadingKey(model, group)
+		if _, exists := readings[key]; exists {
 			continue
 		}
-		reading := KumaMonitor{Name: model, GroupName: monitor.Group, Type: MonitorTypeActive}
-		switch {
-		case monitor.Availability != nil:
-			reading.Samples = 100
-			reading.UpCount = int(*monitor.Availability * 100)
+		reading := KumaMonitor{ID: key, Name: model, GroupName: group, Type: MonitorTypeActive, LastBeatAt: parseTransitTime(snapshot.GeneratedAt, "")}
+		if monitor.Availability != nil && *monitor.Availability >= 0 && *monitor.Availability <= 1 {
 			reading.Ratio = *monitor.Availability
-		case monitor.Available != nil:
-			// A bare up/down flag: one sample. It proves the site answered once,
-			// which is weak evidence — never enough to park a member on its own.
+			reading.RatioKnown = true
+		} else if monitor.Available != nil {
+			reading.Samples = 1
+			reading.WeakEvidence = true
+			reading.RatioKnown = true
 			if *monitor.Available {
 				reading.UpCount = 1
 				reading.Ratio = 1
 			}
-			reading.Samples = 1
-			reading.WeakEvidence = true
 		}
 		if monitor.LatencyMS != nil {
 			ms := int(*monitor.LatencyMS)
 			reading.AvgPingMS = &ms
 		}
-		readings[model] = reading
+		readings[key] = reading
 	}
 	return readings
 }
+func parseTransitTime(value, fallback string) time.Time {
+	if value == "" {
+		value = fallback
+	}
+	at, _ := time.Parse(time.RFC3339Nano, value)
+	return at
+}
 
-// TransitSamples converts a snapshot into storable samples: prices for every
-// published model, availability for every monitored one.
-func TransitSamples(snapshot *TransitSnapshot, siteID, runID int64, observedAt time.Time) []store.SiteProbeSample {
-	out := make([]store.SiteProbeSample, 0, len(snapshot.Models)+len(snapshot.Monitors))
-	availability := TransitAvailability(snapshot)
-	priced := make(map[string]bool, len(snapshot.Models))
-	for _, model := range snapshot.Models {
-		priced[model.Name] = true
-		sample := store.SiteProbeSample{
-			RunID: runID, SiteID: siteID,
-			MonitorName: model.Name, MonitorType: MonitorTypePrice,
-			RawModel: model.Name, ObservedAt: observedAt,
-			Price: transitPrice(model),
-		}
-		if reading, ok := availability[model.Name]; ok {
+// Preserve each published group/monitor instead of taking an arbitrary group's
+// ratio. Snapshots without point history remain aggregate-only evidence.
+func TransitSamples(snapshot *TransitSnapshot, siteID, runID int64, collectedAt time.Time) []store.SiteProbeSample {
+	readings := TransitAvailability(snapshot)
+	byModel := map[string][]KumaMonitor{}
+	for _, reading := range readings {
+		byModel[reading.Name] = append(byModel[reading.Name], reading)
+	}
+	out := []store.SiteProbeSample{}
+	priced := map[string]bool{}
+	appendSample := func(model string, price store.SiteProbePrice, reading *KumaMonitor, group string) {
+		sample := store.SiteProbeSample{RunID: runID, SiteID: siteID, RawModel: model, MonitorName: model, MonitorType: MonitorTypePrice,
+			ObservedAt: collectedAt, GroupName: group, Price: price}
+		if reading != nil {
+			sample.MonitorID = reading.ID
 			sample.MonitorType = reading.Type
+			sample.GroupName = reading.GroupName
 			sample.Samples = reading.Samples
 			sample.UpCount = reading.UpCount
 			sample.Ratio = reading.Ratio
-			sample.AvgPingMS = reading.AvgPingMS
+			sample.RatioKnown = reading.RatioKnown
 			sample.WeakEvidence = reading.WeakEvidence
-			sample.GroupName = reading.GroupName
+			sample.AvgPingMS = reading.AvgPingMS
+			// A fetched old snapshot must not look new just because we polled it again.
+			sample.ObservedAt = reading.LastBeatAt
 		}
 		out = append(out, sample)
 	}
-	// Monitors without a published price still carry availability evidence.
-	for name, reading := range availability {
-		if priced[name] {
-			continue
+	for _, model := range snapshot.Models {
+		priced[model.Name] = true
+		price := transitPrice(model)
+		if rs := byModel[model.Name]; len(rs) > 0 {
+			for i := range rs {
+				appendSample(model.Name, price, &rs[i], rs[i].GroupName)
+			}
+		} else if len(model.Groups) > 0 {
+			for _, group := range model.Groups {
+				appendSample(model.Name, price, nil, group)
+			}
+		} else {
+			appendSample(model.Name, price, nil, "")
 		}
-		out = append(out, store.SiteProbeSample{
-			RunID: runID, SiteID: siteID,
-			MonitorID: name, MonitorName: name, MonitorType: reading.Type,
-			RawModel: name, ObservedAt: observedAt,
-			Samples: reading.Samples, UpCount: reading.UpCount, Ratio: reading.Ratio,
-			AvgPingMS: reading.AvgPingMS, WeakEvidence: reading.WeakEvidence,
-			GroupName: reading.GroupName,
-		})
+	}
+	for model, rs := range byModel {
+		if !priced[model] {
+			for i := range rs {
+				appendSample(model, store.SiteProbePrice{}, &rs[i], rs[i].GroupName)
+			}
+		}
 	}
 	return out
 }

@@ -1,0 +1,117 @@
+/* One readout shared by site observations, channel models and route members. */
+.connection-view-tabs { display: flex; gap: 22px; margin: 0 0 20px; border-bottom: 1px solid var(--line-strong); }
+.connection-view-tabs > button { color: var(--muted-strong); font: inherit; font-size: 13px; border: 0; border-bottom: 2px solid transparent; padding: 10px 0; background: none; cursor: pointer; }
+.connection-view-tabs > button[aria-pressed="true"] { color: var(--primary-ink); border-bottom-color: var(--primary); font-weight: 650; }
+.availability-indicator { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; border: 0; padding: 4px 0; border-radius: 4px; background: transparent; color: var(--ink); text-align: left; font: inherit; font-size: 12px; cursor: pointer; min-width: 0; }
+.availability-indicator:hover:not(:disabled) .availability-caption { color: var(--primary-ink); }
+.availability-indicator:focus-visible { outline: 2px solid var(--focus); outline-offset: 5px; }
+.availability-indicator:disabled { cursor: default; }
+.availability-readout { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.availability-readout > strong { font-size: 11px; font-variant-numeric: tabular-nums; min-width: 34px; font-weight: 600; }
+.availability-bars, .availability-empty-bars { display: inline-flex; gap: 1px; height: 14px; align-items: center; flex: none; }
+.availability-bar, .availability-empty-bars > i { display: block; width: 2px; height: 12px; background: var(--line-strong); border-radius: 1px; }
+.availability-bar.is-ok { background: var(--success); }
+.availability-bar.is-failed { background: var(--danger); }
+.availability-bar.is-mixed { background: var(--warning); }
+.availability-caption { color: var(--muted-strong); font-size: 11px; line-height: 1.4; }
+.availability-indicator.is-compact { gap: 3px; margin-top: 6px; }
+.availability-indicator.is-compact .availability-bars, .availability-indicator.is-compact .availability-empty-bars { height: 12px; gap: 1px; }
+.availability-indicator.is-compact .availability-bar, .availability-indicator.is-compact .availability-empty-bars > i { height: 10px; width: 2px; }
+.availability-indicator.is-error .availability-caption { color: var(--danger); }
+.availability-evidence { display: grid; gap: 22px; }
+.availability-source { padding: 14px 0; border-top: 1px solid var(--line); }
+.availability-source > header { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; font-size: 13px; }
+.availability-source > header > span { font-variant-numeric: tabular-nums; }
+.availability-source > small { display: block; margin-top: 5px; color: var(--muted-strong); }
+.availability-source > p, .availability-explanation { color: var(--muted-strong); font-size: 12px; line-height: 1.6; }
+.availability-stale { color: var(--warning); }
+.availability-history { margin-top: 12px; font-size: 12px; }
+.availability-history > summary { cursor: pointer; color: var(--muted-strong); }
+.route-availability-summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted-strong); font-size: 12px; }
+.member-row.has-availability { grid-template-columns: auto minmax(120px,1fr) 116px auto; column-gap: 16px; }
+.member-row.has-availability .member-row-main > strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.member-row.has-availability .member-origin-badge { margin-left: 0; }
+.member-availability { min-width: 0; }
+.channel-model-row.is-alias.has-availability { display: grid; grid-template-columns: auto minmax(100px,1fr) 116px minmax(130px,1fr); gap: 12px; }
+.channel-model-row.is-alias.has-availability > .mono { min-width: 0; }
+.site-observation-workspace { min-width: 0; }
+.observation-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.observation-search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 0 10px; height: 36px; flex: 1; min-width: 180px; color: var(--muted-strong); }
+.observation-search input { border: 0; background: none; outline: none; padding: 0; min-width: 0; width: 100%; color: var(--ink); font: inherit; font-size: 13px; }
+.observation-search:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.observation-period, .observation-site-filters { display: flex; align-items: center; gap: 4px; }
+.observation-period button, .observation-site-filters button { padding: 7px 10px; font: inherit; font-size: 12px; background: none; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--muted-strong); cursor: pointer; white-space: nowrap; }
+.observation-period button[aria-pressed="true"], .observation-site-filters button[aria-pressed="true"] { background: var(--surface-subtle); border-color: var(--line-strong); color: var(--ink); }
+.observation-cadence { font-size: 11px; color: var(--muted-strong); margin: 8px 0 22px; }
+.observation-cadence a { margin-left: 8px; }
+.observation-layout { display: grid; grid-template-columns: 218px minmax(0,1fr); min-height: 430px; border-top: 1px solid var(--line); }
+.observation-sites { border-right: 1px solid var(--line); padding: 14px 12px 0 0; min-width: 0; }
+.observation-site-filters { margin-bottom: 14px; }
+.observation-site-filters button { padding: 5px 9px; font-size: 11px; }
+.observation-site { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px; margin: 2px 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.observation-site strong { padding-right: 10px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.observation-site span { font-size: 11px; color: var(--muted-strong); }
+.observation-site:hover { background: var(--surface-hover); }
+.observation-site.is-selected { background: var(--surface-subtle); border-color: var(--line-strong); }
+.observation-site i { position: absolute; top: 17px; right: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--muted-dark); }
+.observation-site i.is-enabled { background: var(--success); }
+.observation-site i.is-failed { background: var(--danger); }
+.observation-detail { min-width: 0; padding: 20px 0 0 26px; }
+.observation-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.observation-detail-head h2 { margin: 0 0 7px; font-size: 20px; font-weight: 650; }
+.observation-detail-head p { margin: 0; font-size: 11px; color: var(--muted-strong); }
+.observation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.observation-switches { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 20px 0; }
+.observation-switches .check { font-size: 12px; }
+.observation-catalogue > summary { padding: 12px 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+.observation-list-hint { font-size: 11px; color: var(--muted-strong); line-height: 1.6; margin: 2px 0 16px; }
+.observation-model { display: grid; grid-template-columns: minmax(145px,1fr) 116px minmax(100px,.7fr) minmax(80px,.6fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.observation-model.is-header { font-size: 11px; color: var(--muted-strong); padding-top: 8px; padding-bottom: 8px; }
+.observation-model-name { min-width: 0; }
+.observation-model-name code { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.observation-model-name small, .observation-price small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted-strong); }
+.observation-price { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 0; }
+.observation-model-links { display: flex; gap: 7px; flex-direction: column; align-items: flex-start; font-size: 11px; min-width: 0; overflow-wrap: anywhere; }
+.observation-model-links .button { font-size: 11px; min-height: 26px; padding: 4px 0; }
+.observation-policy, .observation-maintenance { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 24px; font-size: 12px; }
+.observation-policy > summary, .observation-maintenance > summary { cursor: pointer; color: var(--muted-strong); }
+.observation-policy-fields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin: 18px 0; }
+.observation-policy-fields .field > span { font-size: 12px; }
+.observation-policy-fields input { min-width: 0; }
+.observation-source-url { display: flex; gap: 12px; align-items: flex-end; }
+.observation-source-url .field { flex: 1; }
+.observation-impact-results p { border-bottom: 1px solid var(--line); padding: 12px 0; }
+.observation-impact-results small { display: block; margin-top: 6px; color: var(--muted-strong); }
+.observation-collection-error { padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--warning); font-size: 12px; line-height: 1.6; }
+:root[data-appearance="classic"] .member-row.has-availability { grid-template-columns: auto minmax(120px,1fr) 116px auto; }
+@media (max-width: 1200px) {
+  .member-row.has-availability, :root[data-appearance="classic"] .member-row.has-availability { grid-template-columns: auto minmax(0,1fr) auto; }
+  .member-availability { grid-column: 2; grid-row: 2; }
+  .member-row.has-availability .member-controls { grid-column: 3; grid-row: 1 / span 2; }
+  .observation-model { grid-template-columns: minmax(140px,1fr) 116px minmax(80px,.65fr); }
+  .observation-model-links { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+  .observation-model.is-header > :last-child { display: none; }
+}
+@media (max-width: 760px) {
+  .observation-layout { grid-template-columns: 1fr; }
+  .observation-sites { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; border-right: 0; padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+  .observation-site-filters { display: none; }
+  .observation-site { flex: 0 0 150px; margin: 0; }
+  .observation-detail { padding: 20px 0 0; }
+  .observation-detail-head { flex-wrap: wrap; }
+  .observation-model { grid-template-columns: minmax(0,1fr) 116px; gap: 10px; }
+  .observation-model.is-header > :nth-child(n+3) { display: none; }
+  .observation-price { grid-column: 1; }
+  .observation-model-links { grid-column: 2; flex-direction: column; align-items: flex-start; }
+  .observation-policy-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .channel-model-row.is-alias.has-availability { grid-template-columns: auto minmax(0,1fr); }
+  .channel-model-row.is-alias.has-availability .availability-indicator, .channel-model-row.is-alias.has-availability .channel-model-alias { grid-column: 2; }
+  .route-availability-summary { flex-wrap: wrap; gap: 8px; }
+}
+@media (max-width: 520px) {
+  .member-row.has-availability .member-controls { flex-wrap: wrap; max-width: 116px; }
+  .observation-toolbar > .button { flex: 1; }
+  .observation-period { flex: 1; }
+  .availability-readout { gap: 6px; }
+  .availability-readout > strong { min-width: 34px; }
+}

@@ -628,8 +628,8 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	// Binary / non-JSON responses: do not force SSE content-type unless stream.
 	forceSSE := stream
 	var lastProgress time.Time
-	writeUpstreamResult(
-		w, watchCtx, requestID, result, forceSSE,
+	h.writeObservedUpstreamResult(
+		w, watchCtx, proxyReq, meta, result, forceSSE,
 		h.attemptAccountant(proxyReq, meta, requestID, clientFamily),
 		func(bytesSent int64) {
 			// Throttled stream progress for the live view (~1 update/s).
@@ -893,8 +893,8 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 		result, imageTokens = imageEditChatResult(watchCtx, result, modelName, stream, h.mediaFetcher())
 	}
 	var lastProgress time.Time
-	writeUpstreamResult(
-		w, watchCtx, requestID, result, stream,
+	h.writeObservedUpstreamResult(
+		w, watchCtx, proxyReq, meta, result, stream,
 		func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
 			if imageEditShim {
 				// Base64 image bytes and image counts are not token estimates.

@@ -17,6 +17,8 @@ type GCResult struct {
 	ModelBlocks      int64 `json:"channel_model_blocks"`
 	Redemptions      int64 `json:"redemption_codes"`
 	ErrorRules       int64 `json:"error_passthrough_rules"`
+	SiteHeartbeats   int64 `json:"site_probe_heartbeats"`
+	RouteOutcomes    int64 `json:"route_request_outcomes"`
 	SiteProbeRuns    int64 `json:"site_probe_runs"`
 	SiteProbeSamples int64 `json:"site_probe_samples"`
 	FreelistPages    int64 `json:"freelist_pages"`
@@ -48,6 +50,8 @@ func (db *DB) GC() (*GCResult, error) {
 		field *int64
 	}
 	jobs := []job{
+		{"site_probe_heartbeats", `DELETE FROM site_probe_heartbeats WHERE site_id NOT IN (SELECT id FROM sites)`, &res.SiteHeartbeats},
+		{"route_request_outcomes", `DELETE FROM route_request_outcomes WHERE route_id NOT IN (SELECT id FROM routes)`, &res.RouteOutcomes},
 		{"route_members", `DELETE FROM route_members WHERE route_id NOT IN (SELECT id FROM routes) OR channel_id NOT IN (SELECT id FROM channels)`, &res.RouteMembers},
 		{"proxy_logs", `DELETE FROM proxy_logs WHERE channel_id NOT IN (SELECT id FROM channels)`, &res.ProxyLogs},
 		{"discovered_models", `DELETE FROM discovered_models WHERE channel_id NOT IN (SELECT id FROM channels)`, &res.Discovered},

@@ -114,7 +114,7 @@ func TestReportUsesDirectoryReadingsWhenNothingElseExists(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	siteID, _ := db.Site.Create(&domain.Site{Name: "价格站", BaseURL: "https://price.example", Platform: "new-api", Status: domain.StatusEnabled})
+	siteID, _ := db.Site.Create(&domain.Site{Name: "价格站", BaseURL: upstream.URL, Platform: "new-api", Status: domain.StatusEnabled})
 	if err := db.UpdateSiteProbeSourceWithAuto(siteID, "", "", "{}", true, true); err != nil {
 		t.Fatalf("configure source: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestCatalogPriceFillsTheGapTheSiteLeaves(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	siteID, _ := db.Site.Create(&domain.Site{Name: "价格站", BaseURL: "https://price.example", Platform: "new-api", Status: domain.StatusEnabled})
+	siteID, _ := db.Site.Create(&domain.Site{Name: "价格站", BaseURL: upstream.URL, Platform: "new-api", Status: domain.StatusEnabled})
 	if err := db.UpdateSiteProbeSourceWithAuto(siteID, "", "", "{}", true, true); err != nil {
 		t.Fatalf("configure source: %v", err)
 	}

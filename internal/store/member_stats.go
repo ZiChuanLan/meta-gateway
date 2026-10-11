@@ -213,7 +213,7 @@ type MemberModelProbe struct {
 // says so rather than assuming the best.
 func (db *DB) MemberModelProbes(since *time.Time) ([]MemberModelProbe, error) {
 	history := `SELECT channel_id, model, COUNT(*) AS samples, SUM(ok) AS ok_samples, COALESCE(AVG(latency_ms),0) AS avg_latency
-		FROM probe_results WHERE 1=1`
+		FROM probe_results WHERE member_id=0`
 	args := []any{}
 	if since != nil {
 		history += ` AND probed_at >= ?`
@@ -221,15 +221,29 @@ func (db *DB) MemberModelProbes(since *time.Time) ([]MemberModelProbe, error) {
 	}
 	history += ` GROUP BY channel_id, model`
 
+	cutoff := ""
+	if since != nil {
+		cutoff = sqliteUTC(*since)
+	}
+	args = append(args, cutoff, cutoff)
 	rows, err := db.Query(`SELECT rm.id, r.model_pattern, rm.channel_id,
 		mh.ok, mh.latency_ms, COALESCE(mh.probed_at,''), COALESCE(mh.source,''),
-		COALESCE(hist.samples,0), COALESCE(hist.ok_samples,0), hist.avg_latency
+		COALESCE(newhist.samples,hist.samples,0), COALESCE(newhist.ok_samples,hist.ok_samples,0), COALESCE(newhist.avg_latency,hist.avg_latency)
 		FROM route_members rm
 		JOIN routes r ON r.id = rm.route_id
 		JOIN channels c ON c.id = rm.channel_id
-		LEFT JOIN model_health mh ON mh.channel_id = rm.channel_id AND mh.model = r.model_pattern
+		LEFT JOIN model_health mh ON mh.channel_id = rm.channel_id AND mh.model = CASE
+ WHEN json_valid(rm.mapping_json) AND COALESCE(json_extract(rm.mapping_json,'$.real'),'')<>'' THEN json_extract(rm.mapping_json,'$.real')
+ WHEN trim(COALESCE(rm.mapping_json,''))='' AND json_valid(r.mapping_json) AND COALESCE(json_extract(r.mapping_json,'$.real'),'')<>'' THEN json_extract(r.mapping_json,'$.real')
+ ELSE r.model_pattern END
 		LEFT JOIN (`+history+`) hist ON hist.channel_id = rm.channel_id AND hist.model = r.model_pattern
-		WHERE rm.enabled = 1 AND r.enabled = 1 AND c.status = 'enabled'
+		LEFT JOIN (SELECT member_id,upstream_model,COUNT(*) AS samples,SUM(ok) AS ok_samples,AVG(latency_ms) AS avg_latency
+ FROM probe_results WHERE member_id>0 AND (?='' OR probed_at>=?) GROUP BY member_id,upstream_model) newhist
+ ON newhist.member_id=rm.id AND newhist.upstream_model=CASE
+ WHEN json_valid(rm.mapping_json) AND COALESCE(json_extract(rm.mapping_json,'$.real'),'')<>'' THEN json_extract(rm.mapping_json,'$.real')
+ WHEN trim(COALESCE(rm.mapping_json,''))='' AND json_valid(r.mapping_json) AND COALESCE(json_extract(r.mapping_json,'$.real'),'')<>'' THEN json_extract(r.mapping_json,'$.real')
+ ELSE r.model_pattern END
+ WHERE rm.enabled = 1 AND r.enabled = 1 AND c.status = 'enabled'
 		ORDER BY r.model_pattern, rm.id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("member model probes: %w", err)

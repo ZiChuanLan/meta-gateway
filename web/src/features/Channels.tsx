@@ -33,6 +33,7 @@ import {
   credentialShouldBeRemoved,
 } from "./channels/credentialPatch";
 import { ChannelDialogs } from "./channels/ChannelDialogs";
+import { SiteObservationWorkspace } from "./channels/SiteObservationWorkspace";
 import { KeepaliveDialog } from "./channels/KeepaliveDialog";
 import { useChannelBoard } from "./channels/useChannelBoard";
 import {
@@ -773,6 +774,36 @@ export function Channels() {
     runVerifyRef.current(channelId, name);
   };
 
+  const observationView = params.get("view") === "observations";
+  const connectionViews = (
+    <div className="connection-view-tabs" role="group" aria-label={t("observation.views")}>
+      {[false, true].map((value) => (
+        <button
+          type="button"
+          key={String(value)}
+          aria-pressed={observationView === value}
+          onClick={() => {
+            const next = new URLSearchParams(params);
+            if (value) next.set("view", "observations");
+            else next.delete("view");
+            setParams(next);
+          }}
+        >
+          {t(value ? "observation.title" : "observation.connections")}
+        </button>
+      ))}
+    </div>
+  );
+  if (observationView)
+    return (
+      <Page title={t("channels.title")} description={t("observation.description")}>
+        {connectionViews}
+        <SiteObservationWorkspace
+          initialSiteId={Number(params.get("site")) || undefined}
+          initialModel={params.get("model") || ""}
+        />
+      </Page>
+    );
   return (
     <Page
       title={t("channels.title")}
@@ -815,6 +846,7 @@ export function Channels() {
         </>
       }
     >
+      {connectionViews}
       <div className="ops-canvas">
         {bulkFailures.length > 0 ? (
           <div role="alert" className="inline-error">

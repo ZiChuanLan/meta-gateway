@@ -81,7 +81,7 @@ func TestFetchTransitReadsDiscoveryAndSnapshot(t *testing.T) {
 	if sonner := sonnet; sonner.Price.InputPerMillion != 3 || sonnet.Price.OutputPerMillion != 15 || sonnet.Price.CacheReadPerMillion != 0.3 {
 		t.Fatalf("sonnet price = %+v", sonnet.Price)
 	}
-	if sonnet.Samples != 100 || sonnet.UpCount != 87 || sonnet.WeakEvidence {
+	if sonnet.Samples != 0 || sonnet.UpCount != 0 || !sonnet.RatioKnown || sonnet.Ratio != 0.87 || sonnet.WeakEvidence {
 		t.Fatalf("sonnet availability = %+v", sonnet)
 	}
 	if sonnet.GroupName != "default" {
@@ -137,7 +137,7 @@ func TestTransitPrefersPassiveAggregatesOverActiveProbes(t *testing.T) {
 		Mode:   "v2",
 		Models: []TransitModel{{Name: "glm-5.2", InputPrice: 0.5}},
 		PassiveMonitoring: []TransitPassiveAggregate{{
-			Model: "glm-5.2", Requests: 1000, Successes: 991, SuccessRate: floatPtr(0.991),
+			Model: "glm-5.2", Requests: 1000, Successes: int64Ptr(991), SuccessRate: floatPtr(0.991),
 			AvgTTFT: floatPtr(412),
 		}},
 		Monitors: []TransitMonitor{{Name: "glm-5.2", Availability: floatPtr(0.5)}},
@@ -183,3 +183,5 @@ func domainSite(platform, baseURL, kind, url string, auto bool) domain.Site {
 		ProbeSourceEnabled: true,
 	}
 }
+
+func int64Ptr(n int64) *int64 { return &n }

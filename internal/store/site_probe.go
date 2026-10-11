@@ -73,6 +73,8 @@ type SiteProbeSample struct {
 	AvgPingMS    *int      `json:"avg_ping_ms,omitempty"`
 	WeakEvidence bool      `json:"weak_evidence,omitempty"`
 	Price        SiteProbePrice
+	RatioKnown   bool
+	SourceKey    string
 }
 
 // probeTimeFormat matches the datetime() text format used by the probe tables.
@@ -116,8 +118,8 @@ func (db *DB) InsertSiteProbeSamples(samples []SiteProbeSample) error {
 		(run_id, site_id, monitor_id, monitor_name, monitor_type, group_name, raw_model, observed_at,
 		 samples, up_count, ratio, avg_ping_ms, weak_evidence,
 		 price_mode, price_currency, price_currency_symbol, price_input_per_million, price_output_per_million,
-		 price_cache_read_per_million, price_per_request, price_group_ratio, price_raw, price_unparsed)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		 price_cache_read_per_million, price_per_request, price_group_ratio, price_raw, price_unparsed, ratio_known, source_key)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("site probe: prepare sample insert: %w", err)
 	}
@@ -130,7 +132,7 @@ func (db *DB) InsertSiteProbeSamples(samples []SiteProbeSample) error {
 		if _, err := stmt.Exec(s.RunID, s.SiteID, s.MonitorID, s.MonitorName, s.MonitorType, s.GroupName, s.RawModel,
 			formatProbeTime(s.ObservedAt), s.Samples, s.UpCount, s.Ratio, ping, boolInt(s.WeakEvidence),
 			s.Price.Mode, s.Price.Currency, s.Price.CurrencySymbol, s.Price.InputPerMillion, s.Price.OutputPerMillion,
-			s.Price.CacheReadPerMillion, s.Price.PerRequest, s.Price.GroupRatio, s.Price.Raw, boolInt(s.Price.Unparsed)); err != nil {
+			s.Price.CacheReadPerMillion, s.Price.PerRequest, s.Price.GroupRatio, s.Price.Raw, boolInt(s.Price.Unparsed), boolInt(s.RatioKnown), s.SourceKey); err != nil {
 			return fmt.Errorf("site probe: insert sample: %w", err)
 		}
 	}
@@ -194,7 +196,7 @@ func (db *DB) LatestSiteProbeRun(siteID int64) (*SiteProbeRun, error) {
 const siteProbeSampleColumns = `id, run_id, site_id, monitor_id, monitor_name, monitor_type, group_name, raw_model, observed_at,
 	samples, up_count, ratio, avg_ping_ms, weak_evidence,
 	price_mode, price_currency, price_currency_symbol, price_input_per_million, price_output_per_million,
-	price_cache_read_per_million, price_per_request, price_group_ratio, price_raw, price_unparsed`
+	price_cache_read_per_million, price_per_request, price_group_ratio, price_raw, price_unparsed, ratio_known, source_key`
 
 func scanSiteProbeSample(rows *sql.Rows) (SiteProbeSample, error) {
 	var s SiteProbeSample
@@ -203,7 +205,7 @@ func scanSiteProbeSample(rows *sql.Rows) (SiteProbeSample, error) {
 	if err := rows.Scan(&s.ID, &s.RunID, &s.SiteID, &s.MonitorID, &s.MonitorName, &s.MonitorType, &s.GroupName, &s.RawModel,
 		scanTime(&s.ObservedAt), &s.Samples, &s.UpCount, &s.Ratio, &ping, &weak,
 		&s.Price.Mode, &s.Price.Currency, &s.Price.CurrencySymbol, &s.Price.InputPerMillion, &s.Price.OutputPerMillion,
-		&s.Price.CacheReadPerMillion, &s.Price.PerRequest, &s.Price.GroupRatio, &s.Price.Raw, &unparsed); err != nil {
+		&s.Price.CacheReadPerMillion, &s.Price.PerRequest, &s.Price.GroupRatio, &s.Price.Raw, &unparsed, &s.RatioKnown, &s.SourceKey); err != nil {
 		return s, err
 	}
 	if ping.Valid {
@@ -273,10 +275,13 @@ func (db *DB) ListRecentSamplesBySite(rounds int) (map[int64][]SiteProbeSample, 
 			SELECT s.id, s.run_id, s.site_id, s.monitor_id, s.monitor_name, s.monitor_type, s.group_name, s.raw_model, s.observed_at,
 				s.samples, s.up_count, s.ratio, s.avg_ping_ms, s.weak_evidence,
 				s.price_mode, s.price_currency, s.price_currency_symbol, s.price_input_per_million, s.price_output_per_million,
-				s.price_cache_read_per_million, s.price_per_request, s.price_group_ratio, s.price_raw, s.price_unparsed,
-				ROW_NUMBER() OVER (PARTITION BY s.site_id, s.raw_model ORDER BY s.run_id DESC) AS rn
+				s.price_cache_read_per_million, s.price_per_request, s.price_group_ratio, s.price_raw, s.price_unparsed, s.ratio_known, s.source_key,
+				ROW_NUMBER() OVER (PARTITION BY s.site_id, s.raw_model, s.group_name, s.monitor_id, s.source_key ORDER BY s.run_id DESC) AS rn
 			FROM site_probe_samples s
 			JOIN site_probe_runs r ON r.id = s.run_id AND r.status = ?
+ WHERE EXISTS (SELECT 1 FROM site_probe_samples current WHERE current.site_id=s.site_id
+ AND current.run_id=(SELECT MAX(id) FROM site_probe_runs WHERE site_id=s.site_id AND status='ok')
+ AND current.raw_model=s.raw_model AND current.monitor_id=s.monitor_id AND current.group_name=s.group_name AND current.source_key=s.source_key)
 		) WHERE rn <= ? ORDER BY site_id, raw_model, run_id DESC`, SiteProbeRunOK, rounds)
 	if err != nil {
 		return nil, fmt.Errorf("site probe: recent samples by site: %w", err)
@@ -480,6 +485,9 @@ func (db *DB) PruneSiteProbe(retentionDays int) (runs int64, samples int64, err 
 	}
 	//nolint:errcheck
 	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM site_probe_heartbeats WHERE probed_at < ?`, cutoff); err != nil {
+		return 0, 0, err
+	}
 	sampleResult, err := tx.Exec(`DELETE FROM site_probe_samples WHERE run_id IN (SELECT id FROM site_probe_runs WHERE started_at < ?)`, cutoff)
 	if err != nil {
 		return 0, 0, fmt.Errorf("site probe: prune samples: %w", err)

@@ -37,9 +37,9 @@ func preserve(result *relay.Result) *relay.Result {
 	// handing the replay buffer to the caller so the connection is released.
 	_ = result.Body.Close()
 	if err != nil {
-		return &relay.Result{StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("proxy: preserve upstream response: %w", err)}
+		return &relay.Result{AttemptLogID: result.AttemptLogID, StatusCode: result.StatusCode, Header: result.Header, LatencyMs: result.LatencyMs, Err: fmt.Errorf("proxy: preserve upstream response: %w", err)}
 	}
-	return &relay.Result{StatusCode: result.StatusCode, Header: result.Header.Clone(), LatencyMs: result.LatencyMs, Body: io.NopCloser(bytes.NewReader(body))}
+	return &relay.Result{AttemptLogID: result.AttemptLogID, StatusCode: result.StatusCode, Header: result.Header.Clone(), LatencyMs: result.LatencyMs, Body: io.NopCloser(bytes.NewReader(body))}
 }
 
 // streamFirstByteTimeout bounds how long a 200 stream may stay silent before

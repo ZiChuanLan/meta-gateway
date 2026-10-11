@@ -177,10 +177,23 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 	if result.Err != nil || isRetryableStatus(result.StatusCode) || category == "refresh_retry" {
 		errorBrief = category
 	}
-	_, err := s.db.ProxyLog.Insert(&domain.ProxyLog{
-		RequestID:             req.RequestID,
-		ChannelID:             candidate.Channel.ID,
-		RouteID:               candidate.Member.RouteID,
+	logID, err := s.db.ProxyLog.Insert(&domain.ProxyLog{
+		RequestID: req.RequestID,
+		ChannelID: candidate.Channel.ID,
+		RouteID:   candidate.Member.RouteID,
+		MemberID:  candidate.Member.ID,
+		CompletionOutcome: func() string {
+			if result.Err != nil || status < 200 || status >= 300 {
+				return "failed"
+			}
+			return "pending"
+		}(),
+		RequestKind: func() string {
+			if req.Diagnostic {
+				return "diagnostic"
+			}
+			return "traffic"
+		}(),
 		Model:                 req.Model,
 		UpstreamModel:         req.UpstreamModel,
 		UpstreamURL:           req.UpstreamURLActual,
@@ -205,6 +218,7 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
 	}
+	result.AttemptLogID = logID
 	// Live-trace failover chain: finalize this round's entry so the console
 	// shows A✗ → B✗ → C instead of only the current channel.
 	if observer := s.liveTraceObserver.Load(); observer != nil && req.RequestID != "" {

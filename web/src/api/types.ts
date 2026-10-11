@@ -1957,3 +1957,58 @@ export interface ChannelKeyTestReport {
   failed: number;
   tested: number;
 }
+
+export interface AvailabilityBucket {
+  at: string;
+  samples: number;
+  ok: number;
+  failed: number;
+  ignored: number;
+}
+export interface AvailabilitySeries {
+  source: "traffic" | "probe" | "site" | "watchbot" | "requests";
+  scope: string;
+  samples: number;
+  ok: number;
+  failed: number;
+  ignored: number;
+  ratio: number | null;
+  last_at?: string;
+  stale: boolean;
+  buckets: AvailabilityBucket[];
+  paths: string[];
+}
+export interface AvailabilityItem {
+  member_id?: number;
+  route_id?: number;
+  channel_id?: number;
+  site_id?: number;
+  model: string;
+  primary: AvailabilitySeries | null;
+  evidence: AvailabilitySeries[];
+  ambiguous?: boolean;
+}
+export interface AvailabilityReport {
+  members: AvailabilityItem[];
+  models: AvailabilityItem[];
+  routes: AvailabilityItem[];
+  since: string;
+  until: string;
+}
+export interface SiteObservation {
+  id: string;
+  site_id: number;
+  raw_model: string;
+  monitor_id?: string;
+  group_name?: string;
+  price: SiteProbePrice;
+  observed_at: string;
+  series: AvailabilitySeries;
+  weak_evidence: boolean;
+}
+export interface SiteObservations {
+  items: SiteObservation[];
+  sites: SiteProbeSiteStatus[];
+  since: string;
+  until: string;
+}

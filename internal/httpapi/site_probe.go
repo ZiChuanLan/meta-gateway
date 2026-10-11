@@ -32,6 +32,8 @@ func NewSiteProbeHandler(db *store.DB, service *siteprobe.Service, scheduler *si
 
 func (h *SiteProbeHandler) Register(r chi.Router) {
 	r.Get("/site-probe/report", h.report)
+	r.Get("/site-probe/observations", h.observations)
+	r.Get("/availability", h.availability)
 	r.Post("/site-probe/catalog/import", h.catalogImport)
 	r.Post("/site-probe/catalog/prune", h.catalogPrune)
 	r.Post("/site-probe/collect", h.collect)

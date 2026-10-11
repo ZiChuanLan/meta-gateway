@@ -60,6 +60,7 @@ type SelectionConstraint struct {
 	// specific than the route's own single-mode pin, so the named row stays
 	// selectable on a single-mode route instead of the caller being told
 	// "preferred channel unavailable" about the row it just picked.
+	RecoveryProbe   bool
 	PinnedMemberID  int64
 	PinnedChannelID int64
 }
@@ -506,7 +507,8 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 	for _, candidate := range candidates {
 		candidate.UpstreamModel = domain.ResolveUpstreamModel(model, candidate.Member.MappingJSON, route.MappingJSON)
 		reasons := make([]Reason, 0, 2)
-		if !candidate.Member.Enabled {
+		recovery := constraint != nil && constraint.RecoveryProbe && pinnedBy(constraint, candidate) && candidate.Member.AutoDisabled && !candidate.Member.ManualOverride
+		if !candidate.Member.Enabled && !recovery {
 			reasons = append(reasons, ReasonMemberDisabled)
 		}
 		if candidate.Channel.Status != domain.StatusEnabled {
@@ -515,7 +517,7 @@ func (s *Selector) evaluate(ctx context.Context, model string, excluded map[int6
 		if !candidate.CredentialUsable {
 			reasons = append(reasons, ReasonCredentialAbsent)
 		}
-		if candidate.Member.CooldownUntil != nil && candidate.Member.CooldownUntil.After(now) {
+		if !recovery && candidate.Member.CooldownUntil != nil && candidate.Member.CooldownUntil.After(now) {
 			reasons = append(reasons, ReasonCoolingDown)
 		}
 		if _, ok := excluded[candidate.Channel.ID]; ok {
