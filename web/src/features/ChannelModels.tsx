@@ -799,6 +799,7 @@ export function ChannelModelsPanel({
                               )}
                               loading={availability.isPending}
                               error={availability.isError}
+                              caption={false}
                             />
                             <span className="channel-model-alias">
                               {discoveredModel ? (

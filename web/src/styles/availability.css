@@ -18,6 +18,9 @@
 .availability-ratio.is-mixed > i { background: var(--warning); }
 .availability-ratio.is-failed > i { background: var(--danger); }
 .availability-caption { color: var(--muted-strong); font-size: 11px; line-height: 1.4; }
+.availability-readout > strong.is-ok { color: var(--success); }
+.availability-readout > strong.is-mixed { color: var(--warning); }
+.availability-readout > strong.is-failed { color: var(--danger); }
 .availability-indicator.is-compact { gap: 3px; margin-top: 6px; }
 .availability-indicator.is-compact .availability-bars { height: 12px; gap: 1px; }
 .availability-indicator.is-compact .availability-bar { height: 10px; width: 2px; }

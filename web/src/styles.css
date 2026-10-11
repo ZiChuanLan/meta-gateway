@@ -2603,6 +2603,22 @@ td.actions {
   padding-top: 14px;
   border-top: 1px solid var(--line);
 }
+/* The compact detail card scrolls (max-height). Keep its action row reachable at
+   the card's bottom edge and opaque, so the card edge stops slicing whatever is
+   at the fold instead of hiding it behind the bar. The negative bottom offset
+   cancels the card's own bottom padding so the bar reaches the border. */
+.ops-detail-card.is-compact > .detail-primary-bar {
+  position: sticky;
+  bottom: -12px;
+  z-index: 2;
+  margin: 0;
+  padding-bottom: 12px;
+  background: var(--surface);
+}
+.models-split > .ops-detail-card.is-compact > .detail-primary-bar {
+  bottom: -18px;
+  padding-bottom: 18px;
+}
 .detail-primary-bar.is-compact .button {
   height: 34px;
   padding: 0 11px;

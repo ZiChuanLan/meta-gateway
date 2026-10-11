@@ -9,19 +9,29 @@ export function availabilityPercent(ratio: number | null | undefined) {
   // Never round a partial success up to 100%.
   return `${(Math.floor(Math.max(0, Math.min(1, ratio)) * 1000) / 10).toFixed(1)}%`;
 }
+// Bands, applied to the ratio bar, the ticks and the figure alike: green means
+// healthy, amber degraded, red broken. A window with 96% success is healthy.
+export function availabilityBand(series: AvailabilitySeries | null | undefined) {
+  if (!series || series.ratio == null) return "unknown";
+  const ratio = series.ratio;
+  if (ratio >= 0.95 || series.failed === 0) return "ok";
+  if (ratio >= 0.8) return "mixed";
+  return "failed";
+}
 export function AvailabilityBars({ series }: { series: AvailabilitySeries }) {
   const { t } = useI18n();
   return (
     <span className="availability-bars" aria-hidden="true">
       {series.buckets.map((bucket, index) => {
+        const rate = bucket.samples > 0 ? bucket.ok / bucket.samples : 0;
         const state =
           bucket.samples === 0
             ? "empty"
-            : bucket.failed === 0
+            : bucket.failed === 0 || rate >= 0.95
               ? "ok"
-              : bucket.ok === 0
-                ? "failed"
-                : "mixed";
+              : rate >= 0.8
+                ? "mixed"
+                : "failed";
         return (
           <span
             key={bucket.at}
@@ -37,7 +47,9 @@ export function AvailabilityBars({ series }: { series: AvailabilitySeries }) {
 // One proportional bar, for a reading that has no time shape to show: too few
 // busy buckets for a history, or a source that only publishes an aggregate.
 export function AvailabilityRatio({ series }: { series: AvailabilitySeries }) {
-  const state = series.failed === 0 ? "ok" : series.ok === 0 ? "failed" : "mixed";
+  // Same bands as the figure and the ticks: a 96% window is healthy, and the
+  // bar must not contradict the number printed next to it.
+  const state = availabilityBand(series);
   const share = Math.round(Math.max(0, Math.min(1, series.ratio ?? 0)) * 100);
   return (
     <span className={`availability-ratio is-${state}`} aria-hidden="true">
@@ -50,17 +62,20 @@ export function AvailabilityIndicator({
   loading = false,
   error = false,
   compact = false,
+  caption = true,
 }: {
   item?: AvailabilityItem;
   loading?: boolean;
   error?: boolean;
   compact?: boolean;
+  caption?: boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const series = item?.primary;
   const busyBuckets = series ? series.buckets.filter((bucket) => bucket.samples > 0).length : 0;
   const shape = !series || series.ratio == null ? "none" : busyBuckets >= 3 ? "history" : "ratio";
+  const band = availabilityBand(series);
   const state = error
     ? "error"
     : loading
@@ -94,15 +109,17 @@ export function AvailabilityIndicator({
         <span className="availability-readout">
           {shape === "history" && series ? <AvailabilityBars series={series} /> : null}
           {shape === "ratio" && series ? <AvailabilityRatio series={series} /> : null}
-          <strong>{availabilityPercent(series?.ratio)}</strong>
+          <strong className={`is-${band}`}>{availabilityPercent(series?.ratio)}</strong>
         </span>
-        <span className="availability-caption">
-          {label}
-          {series?.stale ? ` · ${t("availability.stale")}` : ""}
-          {series?.paths.length && series.paths.length > 1
-            ? ` · ${t("availability.mixedPaths")}`
-            : ""}
-        </span>
+        {caption ? (
+          <span className="availability-caption">
+            {label}
+            {series?.stale ? ` · ${t("availability.stale")}` : ""}
+            {series?.paths.length && series.paths.length > 1
+              ? ` · ${t("availability.mixedPaths")}`
+              : ""}
+          </span>
+        ) : null}
       </button>
       {open && item ? <AvailabilityDetails item={item} onClose={() => setOpen(false)} /> : null}
     </>
