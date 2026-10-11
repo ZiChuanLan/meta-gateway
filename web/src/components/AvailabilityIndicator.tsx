@@ -14,7 +14,7 @@ export function availabilityPercent(ratio: number | null | undefined) {
 export function availabilityBand(series: AvailabilitySeries | null | undefined) {
   if (!series || series.ratio == null) return "unknown";
   const ratio = series.ratio;
-  if (ratio >= 0.95 || series.failed === 0) return "ok";
+  if (ratio >= 0.95) return "ok";
   if (ratio >= 0.8) return "mixed";
   return "failed";
 }
@@ -44,16 +44,15 @@ export function AvailabilityBars({ series }: { series: AvailabilitySeries }) {
     </span>
   );
 }
-// One proportional bar, for a reading that has no time shape to show: too few
-// busy buckets for a history, or a source that only publishes an aggregate.
-export function AvailabilityRatio({ series }: { series: AvailabilitySeries }) {
-  // Same bands as the figure and the ticks: a 96% window is healthy, and the
-  // bar must not contradict the number printed next to it.
+// One short vertical bar, for a source that publishes a number without a
+// timeline. Vertical on purpose: it reads as the same kind of object as the
+// history ticks, and it never implies time buckets that do not exist.
+export function AvailabilityGauge({ series }: { series: AvailabilitySeries }) {
   const state = availabilityBand(series);
-  const share = Math.round(Math.max(0, Math.min(1, series.ratio ?? 0)) * 100);
+  const share = Math.max(0, Math.min(1, series.ratio ?? 0)) * 100;
   return (
-    <span className={`availability-ratio is-${state}`} aria-hidden="true">
-      <i style={{ width: `${share}%` }} />
+    <span className={`availability-gauge is-${state}`} aria-hidden="true">
+      <i style={{ height: `${share}%` }} />
     </span>
   );
 }
@@ -62,19 +61,19 @@ export function AvailabilityIndicator({
   loading = false,
   error = false,
   compact = false,
-  caption = true,
 }: {
   item?: AvailabilityItem;
   loading?: boolean;
   error?: boolean;
   compact?: boolean;
-  caption?: boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const series = item?.primary;
-  const busyBuckets = series ? series.buckets.filter((bucket) => bucket.samples > 0).length : 0;
-  const shape = !series || series.ratio == null ? "none" : busyBuckets >= 3 ? "history" : "ratio";
+  // Ticks only where a timeline really exists; a source that publishes just a
+  // number gets the gauge instead of a row of empty ticks.
+  const timeline = series && series.buckets.some((bucket) => bucket.samples > 0);
+  const shape = !series || series.ratio == null ? "none" : timeline ? "history" : "gauge";
   const band = availabilityBand(series);
   const state = error
     ? "error"
@@ -94,6 +93,29 @@ export function AvailabilityIndicator({
         : item?.ambiguous
           ? t("availability.ambiguous")
           : t("availability.noData");
+  const title = error
+    ? t("availability.loadFailed")
+    : loading
+      ? t("common.loading")
+      : !series
+        ? item?.ambiguous
+          ? `${t("availability.ambiguous")} · ${t("availability.ambiguousHint")}`
+          : t("availability.noDataHint")
+        : [
+            label,
+            series.samples > 0
+              ? t("availability.counts", {
+                  ok: series.ok,
+                  total: series.samples,
+                  failed: series.failed,
+                })
+              : t("availability.aggregateOnly"),
+            series.stale ? t("availability.stale") : "",
+            series.paths.length > 1 ? t("availability.mixedPaths") : "",
+            t("availability.explanation"),
+          ]
+            .filter(Boolean)
+            .join(" · ");
   return (
     <>
       <button
@@ -105,21 +127,13 @@ export function AvailabilityIndicator({
           setOpen(true);
         }}
         aria-label={`${t("availability.details")} ${item?.model ?? ""}`}
+        title={title}
       >
         <span className="availability-readout">
           {shape === "history" && series ? <AvailabilityBars series={series} /> : null}
-          {shape === "ratio" && series ? <AvailabilityRatio series={series} /> : null}
+          {shape === "gauge" && series ? <AvailabilityGauge series={series} /> : null}
           <strong className={`is-${band}`}>{availabilityPercent(series?.ratio)}</strong>
         </span>
-        {caption ? (
-          <span className="availability-caption">
-            {label}
-            {series?.stale ? ` · ${t("availability.stale")}` : ""}
-            {series?.paths.length && series.paths.length > 1
-              ? ` · ${t("availability.mixedPaths")}`
-              : ""}
-          </span>
-        ) : null}
       </button>
       {open && item ? <AvailabilityDetails item={item} onClose={() => setOpen(false)} /> : null}
     </>
