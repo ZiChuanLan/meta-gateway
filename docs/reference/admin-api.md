@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **241** 条注册、**196** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **243** 条注册、**198** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -55,6 +55,12 @@
 | 方法 | 路径 | handler |
 | --- | --- | --- |
 | `Get` | `/admin/auth/upgrade` | authUpgrade |
+
+## /admin/availability · 1 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/availability` | availability |
 
 ## /admin/backups · 2 条
 
@@ -451,7 +457,7 @@
 | `Get` | `/admin/site-news` | feed |
 | `Post` | `/admin/site-news/refresh` | refresh |
 
-## /admin/site-probe · 9 条
+## /admin/site-probe · 10 条
 
 | 方法 | 路径 | handler |
 | --- | --- | --- |
@@ -461,6 +467,7 @@
 | `Post` | `/admin/site-probe/catalog/prune` | catalogPrune |
 | `Post` | `/admin/site-probe/collect` | collect |
 | `Post` | `/admin/site-probe/detect` | detect |
+| `Get` | `/admin/site-probe/observations` | observations |
 | `Get` | `/admin/site-probe/report` | report |
 | `Put` | `/admin/site-probe/source` | saveSource |
 | `Delete` | `/admin/site-probe/source/{siteId}` | clearSource |

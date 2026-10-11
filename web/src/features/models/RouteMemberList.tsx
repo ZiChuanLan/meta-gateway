@@ -218,6 +218,25 @@ export function RouteMemberList(props: RouteMemberListProps) {
             <span title={t("routing.weightHint")}>
               {t("routing.weightLabel")}: {entry.weight}
             </span>
+            {entry.price_source ? (
+              <>
+                {" · "}
+                <span
+                  className={`member-price-source is-${entry.price_source}`}
+                  title={t(
+                    entry.price_source === "site"
+                      ? "routing.priceSourceSiteHint"
+                      : "routing.priceSourceManualHint",
+                  )}
+                >
+                  {t(
+                    entry.price_source === "site"
+                      ? "routing.priceSourceSite"
+                      : "routing.priceSourceManual",
+                  )}
+                </span>
+              </>
+            ) : null}
             {(() => {
               const score = evaluation?.score;
               if (score == null || Math.abs(score - entry.weight) < 0.01) {

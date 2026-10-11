@@ -58,6 +58,9 @@ func (s *RouteMemberStore) PatchConfiguration(r *domain.RouteMember, fields map[
 			updates = append(updates, "fail_count=0", "cooldown_until=NULL", "last_error=''")
 		}
 	}
+	if fields["price_prompt_per_1k"] || fields["price_completion_per_1k"] || fields["price_cache_per_1k"] || fields["price_per_request"] || fields["price_tiers"] || fields["price_schedule"] {
+		updates = append(updates, "price_source='manual'", "price_updated_at=datetime('now')")
+	}
 	updates = append(updates, "updated_at=datetime('now')")
 	args = append(args, r.ID)
 	_, err := s.db.Exec("UPDATE route_members SET "+strings.Join(updates, ",")+" WHERE id=?", args...)

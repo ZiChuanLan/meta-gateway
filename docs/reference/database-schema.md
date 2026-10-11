@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **131** 个 `.sql` 文件，其中 **131** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **133** 个 `.sql` 文件，其中 **133** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -26,7 +26,7 @@
 
 ## 表
 
-共 **59** 个表。
+共 **61** 个表。
 
 ### admin_totp · 4 列
 
@@ -513,7 +513,7 @@
 | `created_at` | TEXT | 是 | — | — |
 | `last_used_at` | TEXT | — | — | — |
 
-### probe_results · 10 列
+### probe_results · 12 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -527,6 +527,8 @@
 | `error` | TEXT | — | — | — |
 | `probed_at` | TEXT | 是 | — | — |
 | `form` | TEXT | 是 | '' | — |
+| `member_id` | INTEGER | 是 | 0 | — |
+| `upstream_model` | TEXT | 是 | '' | — |
 
 ### probe_tasks · 11 列
 
@@ -559,7 +561,7 @@
 | `created_at` | TEXT | 是 | — | — |
 | `updated_at` | TEXT | 是 | — | — |
 
-### proxy_logs · 30 列
+### proxy_logs · 33 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -593,6 +595,9 @@
 | `upstream_model` | TEXT | — | — | — |
 | `upstream_url` | TEXT | 是 | '' | — |
 | `upstream_key_id` | INTEGER | 是 | 0 | — |
+| `completion_outcome` | TEXT | 是 | '' | — |
+| `member_id` | INTEGER | 是 | 0 | — |
+| `request_kind` | TEXT | 是 | 'traffic' | — |
 
 ### redemption_codes · 8 列
 
@@ -607,7 +612,7 @@
 | `redeemed_by_key_id` | INTEGER | 是 | 0 | — |
 | `redeemed_at` | TEXT | — | — | — |
 
-### route_members · 22 列
+### route_members · 24 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -633,6 +638,25 @@
 | `price_per_request` | REAL | 是 | 0 | — |
 | `price_tiers` | TEXT | 是 | '' | — |
 | `price_schedule` | TEXT | 是 | '' | — |
+| `price_source` | TEXT | 是 | '' | — |
+| `price_updated_at` | TEXT | 是 | '' | — |
+
+### route_request_outcomes · 12 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `request_id` | TEXT | 是 | — | — |
+| `route_id` | INTEGER | 是 | — | — |
+| `member_id` | INTEGER | 是 | 0 | — |
+| `channel_id` | INTEGER | 是 | 0 | — |
+| `model` | TEXT | 是 | — | — |
+| `upstream_model` | TEXT | 是 | '' | — |
+| `group_name` | TEXT | 是 | '' | — |
+| `path` | TEXT | 是 | '' | — |
+| `outcome` | TEXT | 是 | — | — |
+| `status` | INTEGER | 是 | — | — |
+| `created_at` | TEXT | 是 | datetime('now') | — |
 
 ### routes · 25 列
 
@@ -792,6 +816,19 @@
 | `observed_at` | TEXT | 是 | '' | — |
 | `collected_at` | TEXT | 是 | datetime('now') | — |
 
+### site_probe_heartbeats · 8 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `site_id` | INTEGER | 是 | — | 是 |
+| `source_key` | TEXT | 是 | — | 是 |
+| `monitor_id` | TEXT | 是 | — | 是 |
+| `raw_model` | TEXT | 是 | — | — |
+| `group_name` | TEXT | 是 | '' | — |
+| `probed_at` | TEXT | 是 | — | 是 |
+| `status` | INTEGER | 是 | — | — |
+| `ping_ms` | INTEGER | — | — | — |
+
 ### site_probe_runs · 8 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
@@ -805,7 +842,7 @@
 | `monitor_count` | INTEGER | 是 | 0 | — |
 | `error` | TEXT | 是 | '' | — |
 
-### site_probe_samples · 24 列
+### site_probe_samples · 26 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -833,6 +870,8 @@
 | `price_raw` | TEXT | 是 | '' | — |
 | `price_unparsed` | INTEGER | 是 | 0 | — |
 | `price_currency_symbol` | TEXT | 是 | '' | — |
+| `source_key` | TEXT | 是 | '' | — |
+| `ratio_known` | INTEGER | 是 | 0 | — |
 
 ### sites · 23 列
 
@@ -1026,7 +1065,7 @@
 
 ## 索引
 
-共 **72** 个索引。
+共 **78** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -1068,13 +1107,16 @@
 | `idx_plugins_enabled` | `plugins` | — |
 | `idx_portal_credentials_key_kind` | `portal_credentials` | 是 |
 | `idx_portal_credentials_subject` | `portal_credentials` | 是 |
+| `idx_probe_results_member_time` | `probe_results` | — |
 | `idx_probe_results_pair` | `probe_results` | — |
 | `idx_probe_results_task` | `probe_results` | — |
+| `idx_probe_results_time` | `probe_results` | — |
 | `idx_probe_tasks_started` | `probe_tasks` | — |
 | `idx_proxy_logs_channel_id` | `proxy_logs` | — |
 | `idx_proxy_logs_created` | `proxy_logs` | — |
 | `idx_proxy_logs_downstream_key` | `proxy_logs` | — |
 | `idx_proxy_logs_id` | `proxy_logs` | — |
+| `idx_proxy_logs_member_time` | `proxy_logs` | — |
 | `idx_proxy_logs_model` | `proxy_logs` | — |
 | `idx_proxy_logs_request_id` | `proxy_logs` | — |
 | `idx_proxy_logs_route_id` | `proxy_logs` | — |
@@ -1083,9 +1125,12 @@
 | `idx_route_members_cooldown` | `route_members` | — |
 | `idx_route_members_route_channel_unique` | `route_members` | 是 |
 | `idx_route_members_route_enabled_priority` | `route_members` | — |
+| `idx_route_outcomes_route_time` | `route_request_outcomes` | — |
+| `idx_route_outcomes_time` | `route_request_outcomes` | — |
 | `idx_routes_model_pattern_unique` | `routes` | 是 |
 | `idx_site_announcements_order` | `site_announcements` | — |
 | `idx_site_probe_external_site` | `site_probe_external` | — |
+| `idx_site_beats_time` | `site_probe_heartbeats` | — |
 | `idx_site_probe_runs_site` | `site_probe_runs` | — |
 | `idx_site_probe_samples_model` | `site_probe_samples` | — |
 | `idx_site_probe_samples_run` | `site_probe_samples` | — |

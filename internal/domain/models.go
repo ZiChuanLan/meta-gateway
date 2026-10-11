@@ -605,6 +605,12 @@ type RouteMember struct {
 	// empty means flat pricing. See pricing_tiers.go.
 	PriceTiers    string `json:"price_tiers,omitempty"`
 	PriceSchedule string `json:"price_schedule,omitempty"`
+	// PriceSource says who owns this member's billing price -- "manual" when an
+	// operator submitted it, "site" when it was adopted from the site's own
+	// price table. Billing itself never reads it; it only explains an invoice.
+	PriceSource string `json:"price_source,omitempty"`
+	// PriceUpdatedAt is when that price last changed, as SQLite datetime text.
+	PriceUpdatedAt string `json:"price_updated_at,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

@@ -205,6 +205,10 @@ export interface RouteMember {
    *  JSON text, empty when unset. See api/pricingText.ts for the helpers. */
   price_tiers?: string;
   price_schedule?: string;
+  // Who wrote this member's billing price: "manual" (operator) or "site"
+  // (adopted from the site's own price table), plus when it last changed.
+  price_source?: string;
+  price_updated_at?: string;
 }
 
 /**

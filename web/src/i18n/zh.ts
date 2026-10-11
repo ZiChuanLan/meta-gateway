@@ -1677,7 +1677,7 @@ export const zh: Dict = {
   "modelsPage.siteProbe.skip.nothing_to_recover": "跳过（无需恢复）",
   "modelsPage.siteProbe.skip.no_price": "跳过（该站点没有发布这个模型的价格）",
   "modelsPage.siteProbe.skip.already_priced": "跳过（成员已有价格，未被覆盖）",
-  "modelsPage.siteProbe.adoptPrice": "采用价格",
+  "modelsPage.siteProbe.adoptPrice": "设为成员计费价",
   "modelsPage.siteProbe.adopted":
     "已把站点公布价写入成员的空缺价格字段；已有价格未被覆盖。可在路由成员里核对。",
   "modelsPage.siteProbe.readings": "探针读数",
@@ -3305,4 +3305,9 @@ export const zh: Dict = {
   "observation.kind.newapi": "公开价格表",
   "observation.kind.sub2api_transit": "上游公开快照",
   "observation.kind.none": "未配置来源",
+  "routing.priceSourceSite": "站点价",
+  "routing.priceSourceManual": "手动价",
+  "routing.priceSourceSiteHint":
+    "这条计费价来自站点公开价格表（采用后写入本成员）；模型默认价在「模型能力注册表」里。",
+  "routing.priceSourceManualHint": "这条计费价由操作员填写；未设成员价时会回落到模型默认价。",
 };

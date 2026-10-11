@@ -1128,6 +1128,15 @@ label.directory-search input:focus {
   color: var(--muted);
   opacity: 0.6;
 }
+/* Who owns a member's billing price. Quiet by default: it explains an invoice,
+   it is not a status. */
+.member-price-source {
+  color: var(--muted-strong);
+  font-size: 11px;
+}
+.member-price-source.is-site {
+  color: var(--primary-ink);
+}
 .member-effective-weight {
   display: inline;
   color: var(--info);

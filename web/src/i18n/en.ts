@@ -1540,7 +1540,7 @@ export const en: Dict = {
   "modelsPage.siteProbe.skip.no_price": "skipped (the site publishes no price for this model)",
   "modelsPage.siteProbe.skip.already_priced":
     "skipped (the member already carries prices; nothing was overwritten)",
-  "modelsPage.siteProbe.adoptPrice": "Adopt price",
+  "modelsPage.siteProbe.adoptPrice": "Set as member price",
   "modelsPage.siteProbe.adopted":
     "The published price was written into the members' empty billing fields; existing prices were left alone. Check them in the route members view.",
   "modelsPage.siteProbe.readings": "Probe readings",
@@ -3541,4 +3541,10 @@ export const en: Dict = {
   "observation.kind.newapi": "Public prices",
   "observation.kind.sub2api_transit": "Public upstream snapshot",
   "observation.kind.none": "No source",
+  "routing.priceSourceSite": "Site price",
+  "routing.priceSourceManual": "Manual price",
+  "routing.priceSourceSiteHint":
+    "This billing price was adopted from the site's published table onto this member. The model default lives in the capability registry.",
+  "routing.priceSourceManualHint":
+    "This billing price was entered by an operator. Without a member price, billing falls back to the model default.",
 };
