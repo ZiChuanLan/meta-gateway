@@ -975,6 +975,23 @@
 }
 .site-probe-pill.is-pending,
 .site-probe-pill.is-insufficient { color: var(--warning); background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
+/* The collected-model table folds: the counts line is its summary, so the pane can
+   show either the whole catalogue or just the switches above it. */
+.site-probe-collected {
+  margin: var(--space-3) 0 0;
+}
+.site-probe-collected > summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--muted-strong);
+  margin-bottom: var(--space-2);
+}
+.site-probe-collected > summary:hover {
+  color: var(--ink);
+}
+.site-probe-collected-hint {
+  margin: 0 0 var(--space-2);
+}
 .site-probe-match,
 .site-probe-tag {
   font-size: var(--text-xs);

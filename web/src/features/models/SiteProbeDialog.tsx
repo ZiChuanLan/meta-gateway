@@ -1129,18 +1129,18 @@ function SiteProbeDetail({
             : t("modelsPage.siteProbe.cardOff")}
         </p>
       ) : (
-        <>
-          {collectedCount > 0 ? (
-            <>
-              <p className="field-hint site-probe-collected-note">
-                {t("modelsPage.siteProbe.collectedSummary", {
-                  collected: collectedCount,
-                  attached: attachedCount,
-                })}
-              </p>
-              <p className="field-hint">{t("modelsPage.siteProbe.collectedHint")}</p>
-            </>
-          ) : null}
+        <details className="site-probe-collected" open>
+          {/* Every reading row is one collected model, so this line always counts
+              at least as many models as there are rows here. */}
+          <summary>
+            {t("modelsPage.siteProbe.collectedSummary", {
+              collected: collectedCount,
+              attached: attachedCount,
+            })}
+          </summary>
+          <p className="field-hint site-probe-collected-hint">
+            {t("modelsPage.siteProbe.collectedHint")}
+          </p>
           <div className="site-probe-models">
             <ModelListHeader />
             <ul className="site-probe-model-list">
@@ -1157,7 +1157,7 @@ function SiteProbeDetail({
               ))}
             </ul>
           </div>
-        </>
+        </details>
       )}
     </section>
   );

@@ -682,6 +682,12 @@ describe("site probe row identity", () => {
     mockBackend({ report: data });
     renderDialog();
     expect(await screen.findByText(/本次采集读到 32 个模型/)).toBeInTheDocument();
+    // …and it is foldable: the counts line is the summary, open by default so the
+    // full catalogue stays the view the pane opens with.
+    const fold = document.querySelector("details.site-probe-collected") as HTMLDetailsElement;
+    expect(fold).not.toBeNull();
+    expect(fold.open).toBe(true);
+    expect(fold.querySelector("summary")?.textContent).toContain("本次采集读到 32 个模型");
     const list = within(document.querySelector(".site-probe-model-list") as HTMLElement);
     expect(list.getAllByRole("listitem")).toHaveLength(32);
   });
