@@ -34,6 +34,17 @@ export function AvailabilityBars({ series }: { series: AvailabilitySeries }) {
     </span>
   );
 }
+// One proportional bar, for a reading that has no time shape to show: too few
+// busy buckets for a history, or a source that only publishes an aggregate.
+export function AvailabilityRatio({ series }: { series: AvailabilitySeries }) {
+  const state = series.failed === 0 ? "ok" : series.ok === 0 ? "failed" : "mixed";
+  const share = Math.round(Math.max(0, Math.min(1, series.ratio ?? 0)) * 100);
+  return (
+    <span className={`availability-ratio is-${state}`} aria-hidden="true">
+      <i style={{ width: `${share}%` }} />
+    </span>
+  );
+}
 export function AvailabilityIndicator({
   item,
   loading = false,
@@ -48,6 +59,8 @@ export function AvailabilityIndicator({
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const series = item?.primary;
+  const busyBuckets = series ? series.buckets.filter((bucket) => bucket.samples > 0).length : 0;
+  const shape = !series || series.ratio == null ? "none" : busyBuckets >= 3 ? "history" : "ratio";
   const state = error
     ? "error"
     : loading
@@ -79,15 +92,8 @@ export function AvailabilityIndicator({
         aria-label={`${t("availability.details")} ${item?.model ?? ""}`}
       >
         <span className="availability-readout">
-          {series ? (
-            <AvailabilityBars series={series} />
-          ) : (
-            <span className="availability-empty-bars" aria-hidden="true">
-              {Array.from({ length: 24 }, (_, i) => (
-                <i key={i} />
-              ))}
-            </span>
-          )}
+          {shape === "history" && series ? <AvailabilityBars series={series} /> : null}
+          {shape === "ratio" && series ? <AvailabilityRatio series={series} /> : null}
           <strong>{availabilityPercent(series?.ratio)}</strong>
         </span>
         <span className="availability-caption">

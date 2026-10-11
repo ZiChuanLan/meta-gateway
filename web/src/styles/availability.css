@@ -8,15 +8,19 @@
 .availability-indicator:disabled { cursor: default; }
 .availability-readout { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .availability-readout > strong { font-size: 11px; font-variant-numeric: tabular-nums; min-width: 34px; font-weight: 600; }
-.availability-bars, .availability-empty-bars { display: inline-flex; gap: 1px; height: 14px; align-items: center; flex: none; }
-.availability-bar, .availability-empty-bars > i { display: block; width: 2px; height: 12px; background: var(--line-strong); border-radius: 1px; }
+.availability-bars { display: inline-flex; gap: 1px; height: 14px; align-items: center; flex: none; }
+.availability-bar { display: block; width: 2px; height: 12px; background: var(--line-strong); border-radius: 1px; }
 .availability-bar.is-ok { background: var(--success); }
 .availability-bar.is-failed { background: var(--danger); }
 .availability-bar.is-mixed { background: var(--warning); }
+.availability-ratio { display: block; width: 64px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; flex: none; }
+.availability-ratio > i { display: block; height: 100%; border-radius: 2px; background: var(--success); }
+.availability-ratio.is-mixed > i { background: var(--warning); }
+.availability-ratio.is-failed > i { background: var(--danger); }
 .availability-caption { color: var(--muted-strong); font-size: 11px; line-height: 1.4; }
 .availability-indicator.is-compact { gap: 3px; margin-top: 6px; }
-.availability-indicator.is-compact .availability-bars, .availability-indicator.is-compact .availability-empty-bars { height: 12px; gap: 1px; }
-.availability-indicator.is-compact .availability-bar, .availability-indicator.is-compact .availability-empty-bars > i { height: 10px; width: 2px; }
+.availability-indicator.is-compact .availability-bars { height: 12px; gap: 1px; }
+.availability-indicator.is-compact .availability-bar { height: 10px; width: 2px; }
 .availability-indicator.is-error .availability-caption { color: var(--danger); }
 .availability-evidence { display: grid; gap: 22px; }
 .availability-source { padding: 14px 0; border-top: 1px solid var(--line); }

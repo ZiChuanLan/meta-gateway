@@ -2414,10 +2414,10 @@ export const en: Dict = {
     "The channel was auto-disabled by the consecutive-failure guard. Re-enable it to restore routing.",
   "routing.memberDialogIntro":
     "These fields control which upstream is tried first when several channels serve the same model.",
-  "routing.priorityLabel": "Priority (order)",
+  "routing.priorityLabel": "Priority",
   "routing.priorityHint":
     "Higher number is tried first. Different priorities = strict order (like a ranked list).",
-  "routing.weightLabel": "Weight (same priority)",
+  "routing.weightLabel": "Weight",
   "routing.memberPricePrompt": "Input price /1k",
   "routing.memberPriceCompletion": "Output price /1k",
   "routing.memberPriceCache": "Cache-read price /1k",

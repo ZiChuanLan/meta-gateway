@@ -211,9 +211,13 @@ export function RouteMemberList(props: RouteMemberListProps) {
           <small>
             #{rowIndex + 1}
             {" · "}
-            {t("routing.priorityLabel")}: {entry.priority}
+            <span title={t("routing.priorityHint")}>
+              {t("routing.priorityLabel")}: {entry.priority}
+            </span>
             {" · "}
-            {t("routing.weightLabel")}: {entry.weight}
+            <span title={t("routing.weightHint")}>
+              {t("routing.weightLabel")}: {entry.weight}
+            </span>
             {(() => {
               const score = evaluation?.score;
               if (score == null || Math.abs(score - entry.weight) < 0.01) {
