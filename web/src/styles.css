@@ -547,7 +547,7 @@ td.status-col {
     transition: none;
   }
 }
-.toolbar input,
+.toolbar input:not(.switch),
 .toolbar select {
   height: 38px;
   padding: 0 14px;
@@ -560,7 +560,7 @@ td.status-col {
 }
 /* Coarse pointers (touch) need a larger hit area — WCAG 2.5.5 / 2.5.8. */
 @media (pointer: coarse) {
-  .toolbar input,
+  .toolbar input:not(.switch),
   .toolbar select {
     height: 44px;
   }

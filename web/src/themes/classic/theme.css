@@ -694,7 +694,7 @@
   :root[data-appearance="classic"] .field select,
   :root[data-appearance="classic"] .panel input,
   :root[data-appearance="classic"] .panel select,
-  :root[data-appearance="classic"] .toolbar input,
+  :root[data-appearance="classic"] .toolbar input:not(.switch),
   :root[data-appearance="classic"] .toolbar select {
     height: 44px;
   }
