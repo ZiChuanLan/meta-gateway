@@ -1434,9 +1434,9 @@ export const en: Dict = {
   "modelsPage.siteProbe.railNoMatch": "No site matches the filter",
   "modelsPage.siteProbe.detailPick": "Pick a site on the left, or search for a model name above.",
   "modelsPage.siteProbe.collectedSummary":
-    "{collected} models read by the last collection · {attached} already attached",
+    "{collected} models read · {attached} attached · {noMember} name-only · {noRoute} without a route",
   "modelsPage.siteProbe.collectedHint":
-    'This table is everything the site publishes (its price table / status page), one line per model. A line that names a channel is already attached — we serve that route through this site; "no member here" means the name matches one of our routes but no channel from this site is on it (attach this site to use it); "no route with this name" means we do not use the model at all.',
+    'This table is everything the site publishes (its price table / status page), one line per model. A line that names a channel is already attached — we serve that route through this site; "no member here" means the name matches one of our routes but no channel from this site is on it (attach this site to use it); the remaining lines are models this site sells that no route of ours names, so they cannot be called through the gateway until a route is created for them on the models page.',
   "modelsPage.siteProbe.collectedNoMember": "no member here",
   "modelsPage.siteProbe.candidateAttach": "Attach in the route",
   "modelsPage.siteProbe.unmatchedSummary": "{count} unmatched models from {sites} sites",

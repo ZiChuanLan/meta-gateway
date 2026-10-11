@@ -1577,9 +1577,9 @@ export const zh: Dict = {
   "modelsPage.siteProbe.railNoMatch": "没有符合筛选的站点",
   "modelsPage.siteProbe.detailPick": "从左侧选一个站点，或直接在上面搜索模型名。",
   "modelsPage.siteProbe.collectedSummary":
-    "本次采集读到 {collected} 个模型 · 已接渠道 {attached} 个",
+    "本次采集读到 {collected} 个模型 · 已接渠道 {attached} · 同名未挂渠道 {noMember} · 没有同名路由 {noRoute}",
   "modelsPage.siteProbe.collectedHint":
-    "这一张表就是这个站点公布的全部模型（来自它自己公开的价格表 / 状态页）。带渠道名的行表示我们已经把本站渠道接上去了；「本站未挂渠道」表示名字与我们的某条路由相同、但那条路由上还没挂它的渠道（想用它就把这个站点挂上去）；「没有同名路由」表示我们并不使用这个模型。",
+    "这一张表就是这个站点公布的全部模型（来自它自己公开的价格表 / 状态页），一行一个。带渠道名的行表示我们已经把本站渠道接上去了；「本站未挂渠道」表示名字与我们的某条路由相同、但那条路由上还没挂它的渠道（想用它就把这个站点挂上去）；其余行代表这个站点在卖、而我们没有任何同名路由的模型——现在调不到它们，要调就得先在模型页给这些名字建路由。",
   "modelsPage.siteProbe.collectedNoMember": "本站未挂渠道",
   "modelsPage.siteProbe.candidateAttach": "到路由里挂载",
   "modelsPage.siteProbe.unmatchedSummary": "共 {count} 个未匹配模型，来自 {sites} 个站点",

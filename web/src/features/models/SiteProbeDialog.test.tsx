@@ -655,13 +655,18 @@ describe("site probe row identity", () => {
     // One table, one line per collected model: the attached reading leads, the
     // two models we have no reading for follow with their reason in the channel
     // column — never a second list repeating the same names.
-    expect(screen.getByText(/本次采集读到 3 个模型 · 已接渠道 1 个/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/本次采集读到 3 个模型 · 已接渠道 1 · 同名未挂渠道 1 · 没有同名路由 1/),
+    ).toBeInTheDocument();
     const list = within(document.querySelector(".site-probe-model-list") as HTMLElement);
     expect(list.getByText("kimi-k3")).toBeInTheDocument();
     expect(list.getByText(/→ STRRX/)).toBeInTheDocument();
     expect(list.getByText("no-route-model")).toBeInTheDocument();
+    // The label only appears where there is something to do (a name collision we
+    // could attach); the count of unrouted models is stated once, in the summary.
     expect(list.getByText("本站未挂渠道")).toBeInTheDocument();
-    expect(list.getByText("没有同名路由")).toBeInTheDocument();
+    expect(list.queryByText("没有同名路由")).toBeNull();
+    expect(screen.getByText(/没有同名路由 1/)).toBeInTheDocument();
     expect(list.getAllByRole("listitem")).toHaveLength(3);
   });
 

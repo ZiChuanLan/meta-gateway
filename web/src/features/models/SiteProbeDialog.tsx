@@ -1131,11 +1131,14 @@ function SiteProbeDetail({
       ) : (
         <details className="site-probe-collected" open>
           {/* Every reading row is one collected model, so this line always counts
-              at least as many models as there are rows here. */}
+              at least as many models as there are rows here. The three cases are
+              counted once, here, instead of repeating a label on every row. */}
           <summary>
             {t("modelsPage.siteProbe.collectedSummary", {
               collected: collectedCount,
               attached: attachedCount,
+              noMember: collected.filter((line) => line.candidates.length > 0).length,
+              noRoute: publishedOnly.filter((line) => line.candidates.length === 0).length,
             })}
           </summary>
           <p className="field-hint site-probe-collected-hint">
@@ -1215,11 +1218,9 @@ function CollectedModelLine({ line }: { line: SiteCollectedModel }) {
         <span className="mono">{formatPrice(reading?.price, t)}</span>
       </span>
       <span className="site-probe-cell is-value">
-        <span className="site-probe-match">
-          {line.candidates.length > 0
-            ? t("modelsPage.siteProbe.collectedNoMember")
-            : t("modelsPage.siteProbe.unmatchedReason")}
-        </span>
+        {line.candidates.length > 0 ? (
+          <span className="site-probe-match">{t("modelsPage.siteProbe.collectedNoMember")}</span>
+        ) : null}
       </span>
       <span className="site-probe-cell is-action" />
     </li>
