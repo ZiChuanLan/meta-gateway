@@ -376,7 +376,16 @@ function LogDetails({ log }: { log: ProxyLog }) {
   );
 }
 
-export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapabilities }) {
+export function LogsView({
+  source,
+  caps,
+  member = false,
+}: {
+  source: LogsSource;
+  caps: LogsCapabilities;
+  /** A member sees their own requests: their entry points, not the gateway's. */
+  member?: boolean;
+}) {
   const { t } = useI18n();
   const [params, setParams] = useSearchParams();
   const channelId = caps.upstream ? positiveId(params.get("channel_id")) : undefined;
@@ -946,14 +955,25 @@ export function LogsView({ source, caps }: { source: LogsSource; caps: LogsCapab
                   title={t("logsPage.emptyTitle")}
                   body={t("logsPage.empty")}
                   actions={
-                    <>
-                      <Link className="button button-primary" to="/channels">
-                        {t("logsPage.ctaChannels")}
-                      </Link>
-                      <Link className="button button-secondary" to="/keys?create=1">
-                        {t("logsPage.ctaKeys")}
-                      </Link>
-                    </>
+                    member ? (
+                      <>
+                        <Link className="button button-primary" to="/keys?create=1">
+                          {t("logsPage.ctaMemberToken")}
+                        </Link>
+                        <Link className="button button-secondary" to="/workbench">
+                          {t("logsPage.ctaWorkbench")}
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <Link className="button button-primary" to="/channels">
+                          {t("logsPage.ctaChannels")}
+                        </Link>
+                        <Link className="button button-secondary" to="/keys?create=1">
+                          {t("logsPage.ctaKeys")}
+                        </Link>
+                      </>
+                    )
                   }
                 />
               )
@@ -1240,7 +1260,11 @@ export function Logs() {
       <div className="ops-canvas">
         <Tabs items={tabItems} active={active} onChange={changeTab} />
         {active === "proxy" ? (
-          <LogsView source={source} caps={member ? MEMBER_LOG_CAPS : ADMIN_LOG_CAPS} />
+          <LogsView
+            source={source}
+            caps={member ? MEMBER_LOG_CAPS : ADMIN_LOG_CAPS}
+            member={member}
+          />
         ) : null}
         {active === "live" ? <LiveTracePanel /> : null}
         {active === "discovery" ? <DiscoveryPanel /> : null}

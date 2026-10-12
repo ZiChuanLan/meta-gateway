@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { categorizeError } from "./errorCatalog";
-import { formatErrorMessage } from "./formatError";
+import { formatErrorObject, formatErrorMessage } from "./formatError";
+import { ApiError } from "./lib/apiError";
 import { translate } from "./i18n";
 
 const t = (key: string, vars?: Record<string, string | number>) => translate("zh-CN", key, vars);
@@ -71,5 +72,40 @@ describe("plugin market errors", () => {
   it("blames the package, not the gateway, when a manifest is wrong", () => {
     expect(categorizeError("plugin_manifest_entrypoint_missing").class).toBe("config");
     expect(categorizeError("plugin_stage_create").class).toBe("server");
+  });
+});
+
+/**
+ * A 429 from the console's own /admin calls was dressed in the upstream
+ * vocabulary ("the upstream is throttling requests"), sending the operator to
+ * inspect a channel that never saw the request. The origin, not the status, is
+ * what separates the two.
+ */
+describe("local gateway rate limiting", () => {
+  it("names the console rate limit instead of blaming the upstream", () => {
+    const error = new ApiError(429, "rate_limited", 30, "gateway_admin");
+    const formatted = formatErrorObject(error, t);
+    expect(formatted.class).toBe("rate_limited");
+    expect(formatted.cause).toBe("控制台请求过于频繁，网关暂时限制了管理接口。");
+    expect(formatted.cause).not.toContain("上游");
+    // The backend string survives for diagnostics.
+    expect(formatted.raw).toBe("rate_limited");
+    expect(formatted.status).toBe(429);
+    expect(formatted.fix).toContain("30");
+  });
+
+  it("says only to retry when the gateway gives no Retry-After", () => {
+    const formatted = formatErrorObject(
+      new ApiError(429, "rate_limited", undefined, "gateway_admin"),
+      t,
+    );
+    expect(formatted.class).toBe("rate_limited");
+    expect(formatted.fix).toContain("稍后重试");
+  });
+
+  it("keeps an upstream 429 on the upstream message", () => {
+    const formatted = formatErrorObject(new ApiError(429, "upstream_status_429"), t);
+    expect(formatted.class).toBe("rate_limited");
+    expect(formatted.cause).toContain("上游");
   });
 });

@@ -53,7 +53,7 @@ export async function accountRequest<T>(path: string, init: RequestInit = {}): P
         error.name === "AbortError")
     )
       throw error;
-    throw new ApiError(0, "network_unavailable");
+    throw new ApiError(0, "network_unavailable", undefined, "gateway_admin");
   }
   // A response sent under the old account must not populate the new account's
   // cache or expire its session after login/logout has changed the generation.
@@ -70,7 +70,7 @@ export async function accountRequest<T>(path: string, init: RequestInit = {}): P
     }
     if (code === "team_disabled" && generation === sessionGeneration)
       window.dispatchEvent(new Event("meta-team-disabled"));
-    throw new ApiError(response.status, code);
+    throw new ApiError(response.status, code, undefined, "gateway_admin");
   }
   const data = (await response.json()) as T;
   if (generation !== sessionGeneration) throw new DOMException("Session changed", "AbortError");

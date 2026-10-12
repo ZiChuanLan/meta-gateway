@@ -559,3 +559,104 @@ describe("logs refresh", () => {
     expect(requests.at(-1)?.get("until")).toBe(requests[0]?.get("until"));
   });
 });
+
+/**
+ * The unfiltered empty state is the first-run door for whoever opened it. A
+ * member has no upstream connections to visit, so offering "Go to connections"
+ * sent them to a staff-only page; a token and the workbench are the two things
+ * they can actually act on.
+ */
+function renderMemberLogs(initialEntry = "/logs") {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      let body: unknown = [];
+      if (url.pathname === "/me") {
+        body = { user: { id: 7, role: "member" }, csrf: "member-csrf" };
+      } else if (url.pathname.endsWith("/latency-histogram")) {
+        body = {
+          buckets: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          total: 0,
+          slow_count: 0,
+          p50_ms: 0,
+          p95_ms: 0,
+          p99_ms: 0,
+          matched: 0,
+          sample_size: 1000,
+        };
+      }
+      return new Response(JSON.stringify(body), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }),
+  );
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <SessionProvider>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <Logs />
+          </MemoryRouter>
+        </SessionProvider>
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
+}
+
+describe("log empty-state entry points", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the operator's connections and token actions", async () => {
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+    renderLogs("/logs", []);
+    await screen.findByText("No proxy traffic yet");
+    expect(screen.getByRole("link", { name: "Go to connections" })).toHaveAttribute(
+      "href",
+      "/channels",
+    );
+    expect(screen.getByRole("link", { name: "Create a token" })).toHaveAttribute(
+      "href",
+      "/keys?create=1",
+    );
+    expect(screen.queryByRole("link", { name: "Open workbench" })).not.toBeInTheDocument();
+  });
+
+  it("offers a member a token and the workbench, not a staff-only connection page", async () => {
+    // A team cookie session, no deployment token: SessionProvider restores the
+    // member role from /me and Logs binds the member source.
+    localStorage.setItem("meta-gateway.team-console", "1");
+    renderMemberLogs();
+    await screen.findByText("No proxy traffic yet");
+    expect(screen.getByRole("link", { name: "Create a token" })).toHaveAttribute(
+      "href",
+      "/keys?create=1",
+    );
+    expect(screen.getByRole("link", { name: "Open workbench" })).toHaveAttribute(
+      "href",
+      "/workbench",
+    );
+    expect(screen.queryByRole("link", { name: "Go to connections" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the filtered empty state on clearing filters, never on connections", async () => {
+    localStorage.setItem("meta-gateway.team-console", "1");
+    renderMemberLogs("/logs?model=not-a-model");
+    await screen.findByText("No log rows match this filter");
+    // Both the filter bar and the empty hero offer the exit; what matters is
+    // that it is the exit, not a connections door.
+    expect(screen.getAllByRole("button", { name: "Clear filters" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Create a token" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open workbench" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Go to connections" })).not.toBeInTheDocument();
+  });
+});

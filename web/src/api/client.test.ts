@@ -239,3 +239,25 @@ it("sends CSRF on a cookie-authenticated streaming write", async () => {
   expect(headers.get("X-Meta-CSRF")).toBe("write-csrf");
   expect(headers.has("Authorization")).toBe(false);
 });
+
+// A 429 from an /admin call is the gateway throttling the console, not an
+// upstream throttling a model. Without this the page blamed the upstream and
+// the operator went looking at a channel that was never involved.
+describe("local gateway error attribution", () => {
+  it("marks a console 429 as a local gateway error with its Retry-After", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "rate_limited" }), {
+        status: 429,
+        headers: { "Retry-After": "30" },
+      }),
+    );
+    const error = await new ApiClient("token").get("/admin/sites").catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 429,
+      message: "rate_limited",
+      retryAfter: 30,
+      origin: "gateway_admin",
+    });
+  });
+});

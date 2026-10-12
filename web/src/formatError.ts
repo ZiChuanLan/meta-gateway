@@ -61,6 +61,24 @@ export function formatErrorObject(error: unknown, t: Translate): FormattedError 
   const raw =
     error instanceof ApiError ? error.message : typeof error === "string" ? error : "common.error";
 
+  // A 429 answered by the gateway's own admin API is the console being
+  // throttled, not an upstream channel. The upstream class still applies, but
+  // its "the upstream is throttling" cause sent the operator to a channel that
+  // never saw the request; the origin is what tells the two apart.
+  if (error instanceof ApiError && error.origin === "gateway_admin" && error.status === 429) {
+    return {
+      title: t("err.rateLimited.title"),
+      cause: t("err.adminRateLimited.cause"),
+      fix:
+        error.retryAfter && error.retryAfter > 0
+          ? t("err.adminRateLimited.wait", { seconds: error.retryAfter })
+          : t("err.adminRateLimited.fix"),
+      raw,
+      class: "rate_limited",
+      status: 429,
+    };
+  }
+
   // Keep special-cased messages that carry their own guidance.
   if (raw === "api.unreachable" || raw === "Unable to reach Meta Gateway") {
     return {

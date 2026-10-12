@@ -1,4 +1,4 @@
-import { ApiError } from "../lib/apiError";
+import { ApiError, type ApiErrorOrigin } from "../lib/apiError";
 export { ApiError } from "../lib/apiError";
 import type {
   AuditEvent,
@@ -141,7 +141,7 @@ export class ApiClient {
           error.name === "AbortError")
       )
         throw error;
-      throw new ApiError(0, "Unable to reach Meta Gateway");
+      throw new ApiError(0, "Unable to reach Meta Gateway", undefined, localGatewayOrigin(path));
     }
     this.checkSession(generation);
     if (!response.ok) {
@@ -161,7 +161,12 @@ export class ApiClient {
         /* Stable status fallback. */
       }
       const retry = Number.parseInt(response.headers.get("Retry-After") ?? "", 10);
-      throw new ApiError(response.status, message, Number.isFinite(retry) ? retry : undefined);
+      throw new ApiError(
+        response.status,
+        message,
+        Number.isFinite(retry) ? retry : undefined,
+        localGatewayOrigin(path),
+      );
     }
     if (response.status === 204) return undefined as T;
     const data = (await response.json()) as T;
@@ -208,7 +213,7 @@ export class ApiClient {
           error.name === "AbortError")
       )
         throw error;
-      throw new ApiError(0, "Unable to reach Meta Gateway");
+      throw new ApiError(0, "Unable to reach Meta Gateway", undefined, localGatewayOrigin(path));
     }
     if (this.authMode === "cookie" && generation !== teamSessionGeneration()) {
       void response.body?.cancel().catch(() => {});
@@ -223,7 +228,7 @@ export class ApiClient {
       } catch {
         /* Stable status fallback. */
       }
-      throw new ApiError(response.status, message);
+      throw new ApiError(response.status, message, undefined, localGatewayOrigin(path));
     }
     return response;
   }
@@ -292,6 +297,19 @@ export class ApiClient {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The console's own requests (the admin API and the member `/me` API) are
+ * answered by the local gateway, so a 429/5xx they return is the gateway's
+ * verdict, never an upstream channel's. Only those paths are attributed;
+ * anything else keeps `origin` unset rather than guessing from the status.
+ */
+function localGatewayOrigin(path: string): ApiErrorOrigin | undefined {
+  const pathname = path.split("?")[0] ?? "";
+  if (pathname === "/me" || pathname.startsWith("/me/")) return "gateway_admin";
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return "gateway_admin";
+  return undefined;
 }
 
 function isErrorBody(value: unknown): value is { error: string } {

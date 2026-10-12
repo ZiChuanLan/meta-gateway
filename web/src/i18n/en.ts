@@ -280,6 +280,10 @@ export const en: Dict = {
   "err.rateLimited.title": "Rate limited",
   "err.rateLimited.cause": "The upstream is throttling requests (429 / 408).",
   "err.rateLimited.fix": "Wait and retry later, or reduce request frequency.",
+  "err.adminRateLimited.cause":
+    "The console is sending requests too quickly; the gateway is temporarily rate limiting the admin API.",
+  "err.adminRateLimited.fix": "Retry in a moment.",
+  "err.adminRateLimited.wait": "Retry in {seconds} seconds; avoid refreshing repeatedly.",
   "err.upstreamReject.title": "Upstream rejected the request",
   "err.upstreamReject.cause": "The upstream returned an HTTP error for this request.",
   "err.upstreamReject.fix": "Review the request, the model, and the key permissions.",
@@ -1730,7 +1734,7 @@ export const en: Dict = {
   "modelsPage.hideRouting": "Hide routing options",
   "modelsPage.routingHint": "Use these controls when multiple connections serve the same model.",
   "modelsPage.addRouteHint":
-    "Synced models appear automatically. Add a route only for a model name that is not discovered upstream.",
+    "Refreshing the model list is the sync; auto mode wires routes for you, manual mode asks you to adopt each model.",
   "modelsPage.rowActionsHint":
     "Use the row action menu to test, enable, inspect logs, or edit this model.",
   "modelsPage.autoMatchAdd": "Attach every channel serving this model",
@@ -1991,6 +1995,8 @@ export const en: Dict = {
   "logsPage.failedOnly": "Failures only",
   "logsPage.ctaChannels": "Go to connections",
   "logsPage.ctaKeys": "Create a token",
+  "logsPage.ctaMemberToken": "Create a token",
+  "logsPage.ctaWorkbench": "Open workbench",
   "logsLive.keyUsed": "Downstream key",
   "logsLive.interrupt": "Interrupt",
   "logsLive.interrupted":
@@ -2176,7 +2182,8 @@ export const en: Dict = {
   "keys.revokeMsg": "Clients using this key will immediately lose gateway access.",
   "keys.revokeConfirm": "Revoke key",
   "keys.copyTitle": "Copy your downstream key",
-  "keys.copyWarning": "This token is shown once. It cannot be recovered after this dialog closes.",
+  "keys.copyWarning":
+    "Keep it safe. The gateway stores the token encrypted — you can view or rotate it again from the list.",
   "keys.copyToken": "Copy token",
   "keys.stored": "I have stored it",
   "keys.view": "View token",
