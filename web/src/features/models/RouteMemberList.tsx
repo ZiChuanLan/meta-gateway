@@ -110,6 +110,7 @@ export function RouteMemberList(props: RouteMemberListProps) {
           memberId={billing.member.id}
           siteId={billing.channel.site_id}
           upstreamModel={originModelOf(billing.member, route) || selectedModel}
+          channelName={billing.channel.name}
           onClose={() => setBilling(null)}
         />
       ) : null}

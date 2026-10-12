@@ -7,14 +7,6 @@ import { useI18n } from "../../i18n";
 import { nativeAmount, type BillingView, type PriceQuote } from "./pricingTypes";
 
 type CopyTarget = { scope: string; key: string; revision: number };
-type Estimate = { status: string; reason?: string; cost_per_call?: number; calls?: number };
-const workloadLabels = [
-  "billing.inputCount",
-  "billing.outputCount",
-  "billing.readCount",
-  "billing.writeCount",
-];
-const workloadKeys = ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"];
 
 /** A quote is read-only evidence until a versioned copy is explicitly submitted. */
 export function QuoteActions({
@@ -33,9 +25,6 @@ export function QuoteActions({
     (CopyTarget & { quote: PriceQuote; current?: BillingView["effective_rates"] }) | null
   >(null);
   const [conversion, setConversion] = useState("");
-  const [workload, setWorkload] = useState(["1000", "200", "0", "0"]);
-  const [balance, setBalance] = useState("");
-  const [estimateInput, setEstimateInput] = useState("");
   const expired = Boolean(quote.expires_at && new Date(quote.expires_at).getTime() <= Date.now());
   const calculable = quote.status === "calculable" && !expired;
   const values = quote.values;
@@ -72,29 +61,6 @@ export function QuoteActions({
       );
     },
   });
-  const inputSignature = JSON.stringify([workload, balance]);
-  const estimate = useMutation({
-    mutationFn: (signature: string) => {
-      const [counts, available] = JSON.parse(signature) as [string[], string];
-      return client!.request<Estimate>("/admin/price-quotes/estimate", {
-        method: "POST",
-        body: JSON.stringify({
-          quote_id: quote.id,
-          workload: Object.fromEntries(workloadKeys.map((key, i) => [key, Number(counts[i])])),
-          ...(available.trim()
-            ? { balance: Number(available), balance_unit: quote.unit.code }
-            : {}),
-        }),
-      });
-    },
-    onSuccess: (_data, signature) => setEstimateInput(signature),
-  });
-  const scenarioValid =
-    workload.every(
-      (v) =>
-        v.trim() !== "" && Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 100000000,
-    ) &&
-    (!balance.trim() || (Number.isFinite(Number(balance)) && Number(balance) >= 0));
   const copyUSD = copyTarget?.quote.unit.kind === "iso" && copyTarget.quote.unit.code === "USD";
   const multiplier = copyUSD ? 1 : Number(conversion);
   const copyFields = copyTarget
@@ -174,61 +140,6 @@ export function QuoteActions({
           </Button>
         ) : null}
       </div>
-      <details className="quote-estimate">
-        <summary>{t("billing.estimate")}</summary>
-        <p className="field-hint">{t("billing.estimateHint")}</p>
-        <div className="billing-rate-grid">
-          {workloadLabels.map((key, i) => (
-            <Field key={key} label={t(key)}>
-              <input
-                type="number"
-                min={0}
-                step={1}
-                value={workload[i]}
-                onChange={(e) =>
-                  setWorkload((values) =>
-                    values.map((v, index) => (i === index ? e.target.value : v)),
-                  )
-                }
-              />
-            </Field>
-          ))}
-        </div>
-        <Field label={t("billing.balance")}>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
-          />
-        </Field>
-        <Button
-          variant="secondary"
-          loading={estimate.isPending}
-          disabled={!calculable || !scenarioValid}
-          onClick={() => estimate.mutate(inputSignature)}
-        >
-          {t("billing.calculate")}
-        </Button>
-        {estimate.isError ? <ErrorState error={estimate.error} /> : null}
-        {estimate.data && estimateInput === inputSignature ? (
-          <p role="status" className="estimate-result">
-            {estimate.data.status !== "estimated"
-              ? t("billing.estimateUnavailable", {
-                  reason: t(`billing.reason.${estimate.data.reason}`),
-                })
-              : estimate.data.calls === undefined
-                ? estimate.data.reason
-                  ? t("billing.zeroEstimate")
-                  : amount(estimate.data.cost_per_call)
-                : t("billing.estimateResult", {
-                    cost: amount(estimate.data.cost_per_call),
-                    calls: estimate.data.calls,
-                  })}
-          </p>
-        ) : null}
-      </details>
       {copyTarget ? (
         <Dialog
           title={t("billing.copyTitle")}

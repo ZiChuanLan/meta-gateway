@@ -18,7 +18,14 @@ import { ManualQuoteDialog } from "./ManualQuoteDialog";
 import { QuoteActions } from "./QuoteActions";
 import type { BillingRule, BillingView, PriceQuote } from "./pricingTypes";
 
-type Target = { model: string; memberId?: number; siteId?: number; upstreamModel?: string };
+type Target = {
+  model: string;
+  memberId?: number;
+  siteId?: number;
+  upstreamModel?: string;
+  /** The channel this member belongs to, for the layer explanation. */
+  channelName?: string;
+};
 const tokenFields = [
   "input_per_1k",
   "output_per_1k",
@@ -54,6 +61,7 @@ export function BillingRulePanel({
   memberId,
   siteId,
   upstreamModel,
+  channelName,
   onClose,
   onDirtyChange,
   onBusyChange,
@@ -116,6 +124,8 @@ export function BillingRulePanel({
           view={view.data}
           scope={scope}
           url={url}
+          model={model}
+          channelName={channelName}
           onClose={onClose}
           onDirtyChange={updateDirty}
           onBusyChange={onBusyChange}
@@ -165,6 +175,8 @@ function BillingEditor({
   view,
   scope,
   url,
+  model,
+  channelName,
   onClose,
   onDirtyChange,
   onBusyChange,
@@ -172,6 +184,8 @@ function BillingEditor({
   view: BillingView;
   scope: string;
   url: string;
+  model: string;
+  channelName?: string;
   onClose?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onBusyChange?: (busy: boolean) => void;
@@ -302,9 +316,18 @@ function BillingEditor({
           })}
         </small>
         {view.owner ? <small>{t("billing.owner", { owner: view.owner })}</small> : null}
+        {/* Two layers, and what a layer is for: the model default prices every
+            channel serving this model; a member override exists for the one
+            channel that must be priced differently. */}
+        <small className="billing-layers">
+          {t(scope === "member" ? "billing.layers.member" : "billing.layers.model", {
+            name: model,
+            channel: channelName ?? "",
+          })}
+        </small>
       </div>
       <fieldset disabled={save.isPending}>
-        <Field label={t("billing.state")}>
+        <Field label={t("billing.state")} hint={t("billing.inheritHint")}>
           <select
             value={draft.state}
             onChange={(e) => setDraft({ ...draft, state: e.target.value as BillingRule["state"] })}

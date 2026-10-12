@@ -10,7 +10,7 @@
 .billing-rate-grid .field { margin: 0; }
 .billing-rate-grid input { font-variant-numeric: tabular-nums; }
 .billing-advanced { margin: 20px 0; border-top: 1px solid var(--line); padding-top: 16px; }
-.billing-advanced > summary, .quote-estimate > summary { cursor: pointer; color: var(--ink-soft); font-size: 13px; font-weight: 550; padding: 8px 0; }
+.billing-advanced > summary { cursor: pointer; color: var(--ink-soft); font-size: 13px; font-weight: 550; padding: 8px 0; }
 .billing-advanced .pricing-row-tier { grid-template-columns: repeat(2,minmax(0,1fr)); align-items: end; }
 .billing-advanced .pricing-row-tier label:first-child { grid-column: 1/-1; }
 .billing-workspace .editor-footer { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; background: var(--surface); padding: 16px 0 8px; border-top: 1px solid var(--line); z-index: 2; }
@@ -25,9 +25,8 @@
 .quote-rate-list dt { font-size:12px; color:var(--muted); }
 .quote-rate-list dd { margin:4px 0 0; font-size:14px; font-weight:550; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .quote-entry-actions { margin:12px 0; }
-.quote-estimate { margin-top:12px; }
-.quote-estimate .billing-rate-grid { margin:12px 0; }
-.estimate-result { padding:12px; background:var(--surface-subtle); color:var(--ink); border-radius:var(--radius-sm); font-variant-numeric:tabular-nums; }
+/* The layer explanation is the answer to “which of the two prices applies?” */
+.billing-layers { flex: 1 1 100%; max-width: 78ch; line-height: 1.5; }
 .billing-copy-table th, .billing-copy-table td { padding:12px 10px; font-size:13px; font-variant-numeric:tabular-nums; white-space:normal; }
 .billing-copy-table tbody th { text-align:left; font-weight:500; }
 .billing-copy-table td small { display:block; }

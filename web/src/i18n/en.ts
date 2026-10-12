@@ -43,7 +43,13 @@ export const en: Dict = {
   "billing.state": "Rule state",
   "billing.explicit": "Custom billing",
   "billing.free": "Explicitly free",
-  "billing.inherit": "Inherit next layer",
+  "billing.inherit": "Not priced at this layer (use the layer above)",
+  "billing.inheritHint":
+    "“Not priced at this layer” is not free: billing looks one layer up, and only falls back to the legacy price if that layer has none either.",
+  "billing.layers.model":
+    "The model default applies to every connection that can serve {name}. Price one connection differently with its member override.",
+  "billing.layers.member":
+    "Affects only {channel}; anything not set here still uses {name}'s model default.",
   "billing.legacy": "Legacy rule",
   "billing.unpriced": "Unpriced",
   "billing.mode": "Billing mode",
@@ -85,18 +91,6 @@ export const en: Dict = {
   "billing.observed": "Observed {time}",
   "billing.group": "Upstream group: {group}",
   "billing.account": "Account #{id}",
-  "billing.estimate": "Scenario estimate",
-  "billing.estimateHint":
-    "Input excludes cached tokens. Enter cache reads/writes separately; balance must use the quote unit. Shared or external usage can reduce remaining calls.",
-  "billing.balance": "Available balance (quote unit)",
-  "billing.inputCount": "Ordinary input tokens",
-  "billing.outputCount": "Output tokens",
-  "billing.readCount": "Cached read tokens",
-  "billing.writeCount": "Cache creation tokens",
-  "billing.calculate": "Calculate",
-  "billing.estimateResult": "Estimated {cost} per call · scenario budget {calls} calls",
-  "billing.estimateUnavailable": "Estimate unavailable: {reason}",
-  "billing.zeroEstimate": "Zero price does not remove other quota or time limits.",
   "billing.priceLocation": "Edit pricing from Billing rule in model details.",
   "billing.nativeBalance": "Account balance: {value}",
   "billing.balanceUnknown": "Account balance unknown",
