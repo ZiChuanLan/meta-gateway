@@ -1,4 +1,5 @@
-import type { FocusEvent } from "react";
+import { useState, type FocusEvent } from "react";
+import { BillingRuleDialog } from "./BillingRulePanel";
 import { ChevronDown, Pencil, Plus, Target, Trash2, Wand2 } from "lucide-react";
 import type { Route, RoutingCandidate } from "../../api/types";
 import { ActionMenu } from "../../components/ActionMenu";
@@ -101,10 +102,19 @@ export function RouteDetailPanel(props: RouteDetailPanelProps) {
     list,
   } = props;
 
+  const [billingOpen, setBillingOpen] = useState(false);
   const availability = useAvailability({ routeIds: [route.id!], group: activeGroup });
   return (
     <>
       <RouteDetailHeader {...props.header} />
+      <div className="route-billing-entry">
+        <Button variant="secondary" onClick={() => setBillingOpen(true)}>
+          {t("billing.open")}
+        </Button>
+      </div>
+      {billingOpen ? (
+        <BillingRuleDialog model={route.model_pattern} onClose={() => setBillingOpen(false)} />
+      ) : null}
       <div className="route-availability-summary">
         <span>{t("availability.scope", { group: activeGroup })}</span>
         <AvailabilityIndicator

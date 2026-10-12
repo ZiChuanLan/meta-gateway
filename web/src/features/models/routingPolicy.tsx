@@ -1,10 +1,4 @@
-import type {
-  FinanceItem,
-  Route,
-  RouteMember,
-  RouteOverview,
-  RoutingCandidate,
-} from "../../api/types";
+import type { Route, RouteMember, RouteOverview, RoutingCandidate } from "../../api/types";
 import { mappingRealName } from "../../lib/alias";
 
 export function primaryMember(
@@ -156,48 +150,6 @@ export function formatCooldownLeft(iso: string, now = Date.now()) {
     return `${mins}m${seconds % 60 > 0 ? ` ${seconds % 60}s` : ""}`;
   }
   return `${seconds}s`;
-}
-
-export /**
- * memberFinance resolves a member's call price and affordable call count on a
- * model from the finance overview. The upstream price table is quoted in quota
- * per 1M tokens; dividing by quota_per_unit yields the site-currency price.
- * Returns null when the channel has no finance data or the model is not priced.
- */
-function memberFinance(
-  member: RouteMember,
-  model: string,
-  items: FinanceItem[],
-): { priceUsd: string; calls: string; fixed: boolean; overdrawn: boolean } | null {
-  if (!member || !model || !items.length) return null;
-  const item = items.find((entry) => entry.channel_id === member.channel_id);
-  if (!item || item.quota_per_unit <= 0) return null;
-  const price = item.prices?.[model];
-  if (!price || !price.price_usd || price.price_usd <= 0) return null;
-  const quotaPerUnit = item.quota_per_unit;
-  const priceUsd = price.price_usd;
-  const balanceUsd = item.balance / quotaPerUnit;
-  const fixed = price.mode === "fixed";
-  // fixed: price per request → affordable request count.
-  // token: price per 1M tokens → affordable 1M-token units (shown as M).
-  // A negative balance (overdrawn upstream) affords nothing; show 0 instead
-  // of a misleading negative count and let the caller render the overdrawn state.
-  const rawCalls = balanceUsd <= 0 ? 0 : Math.floor(balanceUsd / priceUsd);
-  const formatUsd = (value: number) => {
-    if (value >= 1) return value.toFixed(2);
-    if (value >= 0.01) return value.toFixed(4);
-    return value.toFixed(6);
-  };
-  const formatCount = (value: number) =>
-    value >= 1000 ? `${Math.round(value / 1000)}k` : String(value);
-  return {
-    priceUsd: formatUsd(priceUsd),
-    // Pure count — the render layer appends the unit (" 次" for fixed,
-    // "M" for per-1M-token) exactly once.
-    calls: formatCount(rawCalls),
-    fixed,
-    overdrawn: balanceUsd < 0,
-  };
 }
 
 export function getEffectiveRoutingPolicy(

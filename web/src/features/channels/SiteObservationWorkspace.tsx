@@ -15,6 +15,7 @@ import { Button, ConfirmDialog, Dialog, Empty, ErrorState, InfoTip } from "../..
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
+import { BillingRuleDialog } from "../models/BillingRulePanel";
 
 const DEFAULT_POLICY: SiteProbePolicy = {
   ratio_threshold: 0.9,
@@ -49,7 +50,8 @@ export function validObservationPolicy(value: SiteProbePolicy) {
 export function formatObservedPrice(price: SiteObservation["price"]) {
   if (!price.mode && !price.unparsed) return "—";
   if (price.unparsed) return price.raw || "—";
-  const currency = price.currency_symbol || price.currency || "";
+  const currency =
+    price.unit?.kind === "site_credit" ? "" : price.currency_symbol || price.currency || "";
   const amount = (value: number | undefined) =>
     value == null ? "—" : `${currency}${Number(value.toPrecision(8))}`;
   return price.mode === "fixed"
@@ -124,10 +126,12 @@ export function SiteObservationWorkspace({
     },
     invalidateKeys: INVALIDATE,
   });
-  const adopt = useAdminMutation({
-    mutationFn: (ids: number[]) => service.siteProbeAdoptPrice(ids),
-    invalidateKeys: [...INVALIDATE, ["model-pricing"]],
-  });
+  const [billing, setBilling] = useState<{
+    model: string;
+    memberId: number;
+    siteId: number;
+    upstreamModel: string;
+  } | null>(null);
   const selected =
     (observations.data?.sites ?? []).find((item) => item.site_id === selectedId) ??
     observations.data?.sites[0];
@@ -148,12 +152,7 @@ export function SiteObservationWorkspace({
       }
     },
   });
-  const busy =
-    collect.isPending ||
-    importCatalog.isPending ||
-    toggle.isPending ||
-    apply.isPending ||
-    adopt.isPending;
+  const busy = collect.isPending || importCatalog.isPending || toggle.isPending || apply.isPending;
   useEffect(() => {
     setSelectedId(initialSiteId);
     setQuery(initialModel);
@@ -396,8 +395,14 @@ export function SiteObservationWorkspace({
                             row.raw_model === item.raw_model &&
                             (!row.group_name || row.group_name === item.group_name),
                         )}
-                        onAdopt={adopt.mutate}
-                        busy={busy}
+                        onOpenBilling={(member) =>
+                          setBilling({
+                            model: member.route,
+                            memberId: member.member_id,
+                            siteId: item.site_id,
+                            upstreamModel: item.raw_model,
+                          })
+                        }
                       />
                     ))}
                     {!visible.length ? (
@@ -405,12 +410,7 @@ export function SiteObservationWorkspace({
                     ) : null}
                   </div>
                 </details>
-                {adopt.error ? <ErrorState error={adopt.error} /> : null}
-                {adopt.data ? (
-                  <p role="status" className="field-hint">
-                    {t("modelsPage.siteProbe.adopted")}
-                  </p>
-                ) : null}
+
                 <details
                   className="observation-policy"
                   open={routeRowsOpen}
@@ -495,6 +495,7 @@ export function SiteObservationWorkspace({
         </Button>
         <p className="field-hint">{t("modelsPage.siteProbe.pruneHint")}</p>
       </details>
+      {billing ? <BillingRuleDialog {...billing} onClose={() => setBilling(null)} /> : null}
       {pruneOpen ? (
         <ConfirmDialog
           title={t("modelsPage.siteProbe.prune")}
@@ -525,22 +526,23 @@ export function SiteObservationWorkspace({
 function ObservationRow({
   item,
   links,
-  onAdopt,
-  busy,
+  onOpenBilling,
 }: {
   item: SiteObservation;
   links: import("../../api/types").SiteProbeRow[];
-  onAdopt: (ids: number[]) => void;
-  busy: boolean;
+  onOpenBilling: (
+    member: import("../../api/types").SiteProbeRow["members"][number] & { route: string },
+  ) => void;
 }) {
   const { t } = useI18n();
   const linked = new Set(links.map((row) => row.route));
-  const members = links.flatMap((row) => row.members).filter((member) => !member.has_price);
-  const adoptable =
-    item.price.mode &&
-    !item.price.unparsed &&
-    (!item.price.currency || item.price.currency.toUpperCase() === "USD") &&
-    members.length > 0;
+  const members = [
+    ...new Map(
+      links
+        .flatMap((row) => row.members.map((member) => ({ ...member, route: row.route })))
+        .map((member) => [member.member_id, member]),
+    ).values(),
+  ];
   return (
     <div className="observation-model">
       <div className="observation-model-name">
@@ -557,7 +559,10 @@ function ObservationRow({
         }}
       />
       <div className="observation-price">
-        <span>{formatObservedPrice(item.price)}</span>
+        <span>
+          {formatObservedPrice(item.price)}
+          {item.price.unit?.kind === "site_credit" ? ` ${t("billing.credit")}` : ""}
+        </span>
         {item.price.mode ? (
           <small>
             {t(item.price.mode === "fixed" ? "observation.perRequest" : "observation.perMillion")}
@@ -570,15 +575,11 @@ function ObservationRow({
             {route}
           </Link>
         ))}
-        {adoptable ? (
-          <Button
-            variant="quiet"
-            disabled={busy}
-            onClick={() => onAdopt([...new Set(members.map((member) => member.member_id))])}
-          >
-            {t("modelsPage.siteProbe.adoptPrice")}
+        {members.map((member) => (
+          <Button key={member.member_id} variant="quiet" onClick={() => onOpenBilling(member)}>
+            {t("billing.open")} · {member.channel_name}
           </Button>
-        ) : null}
+        ))}
       </div>
     </div>
   );

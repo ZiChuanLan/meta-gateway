@@ -33,13 +33,17 @@ function mount() {
   );
   return save;
 }
-it("changing price does not freeze inherited weights or resend enabled/health state", () => {
+it("routing edits never resend legacy price or health values", () => {
   const save = mount();
-  const input = document.querySelector<HTMLInputElement>(".form-grid input[min='0'][step='any']")!;
-  expect(input).toBeTruthy();
-  fireEvent.change(input, { target: { value: "2" } });
+  expect(screen.queryByLabelText(/Input price/)).toBeNull();
+  fireEvent.change(screen.getByLabelText(/Upstream model name/), {
+    target: { value: "actual-model" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  expect(save).toHaveBeenCalledWith({ id: 17, price_prompt_per_1k: 2 });
+  expect(save).toHaveBeenCalledWith({
+    id: 17,
+    mapping_json: JSON.stringify({ real: "actual-model" }),
+  });
 });
 it("changing weight explicitly opts into a member weight override", () => {
   const save = mount();

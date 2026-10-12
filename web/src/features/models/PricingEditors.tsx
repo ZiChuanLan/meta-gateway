@@ -156,10 +156,12 @@ export function PriceTiersEditor({
   value,
   onChange,
   disabled,
+  displayScale = 1,
 }: {
   value: PriceTier[];
   onChange: (next: PriceTier[]) => void;
   disabled?: boolean;
+  displayScale?: number;
 }) {
   const { t } = useI18n();
   const patch = (index: number, partial: Partial<PriceTier>) =>
@@ -188,36 +190,42 @@ export function PriceTiersEditor({
             />
           </label>
           <label>
-            <span>{t("pricing.tierPrompt")}</span>
+            <span>{t(displayScale === 1000 ? "billing.input" : "pricing.tierPrompt")}</span>
             <input
               type="number"
               min={0}
               step="any"
-              value={Number.isFinite(tier.prompt) ? tier.prompt : ""}
+              value={Number.isFinite(tier.prompt) ? tier.prompt * displayScale : ""}
               disabled={disabled}
-              onChange={(event) => patch(index, { prompt: pricingNumber(event.target.value) })}
+              onChange={(event) =>
+                patch(index, { prompt: pricingNumber(event.target.value) / displayScale })
+              }
             />
           </label>
           <label>
-            <span>{t("pricing.tierCompletion")}</span>
+            <span>{t(displayScale === 1000 ? "billing.output" : "pricing.tierCompletion")}</span>
             <input
               type="number"
               min={0}
               step="any"
-              value={Number.isFinite(tier.completion) ? tier.completion : ""}
+              value={Number.isFinite(tier.completion) ? tier.completion * displayScale : ""}
               disabled={disabled}
-              onChange={(event) => patch(index, { completion: pricingNumber(event.target.value) })}
+              onChange={(event) =>
+                patch(index, { completion: pricingNumber(event.target.value) / displayScale })
+              }
             />
           </label>
           <label>
-            <span>{t("pricing.tierCache")}</span>
+            <span>{t(displayScale === 1000 ? "billing.cacheRead" : "pricing.tierCache")}</span>
             <input
               type="number"
               min={0}
               step="any"
-              value={Number.isFinite(tier.cache) ? tier.cache : ""}
+              value={Number.isFinite(tier.cache) ? tier.cache * displayScale : ""}
               disabled={disabled}
-              onChange={(event) => patch(index, { cache: pricingNumber(event.target.value) })}
+              onChange={(event) =>
+                patch(index, { cache: pricingNumber(event.target.value) / displayScale })
+              }
             />
           </label>
           <label>

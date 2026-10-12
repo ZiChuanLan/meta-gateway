@@ -1,18 +1,7 @@
-import { PriceFields, PricingRules } from "./PriceFields";
 import { useState } from "react";
 import type { ModelMetadata } from "../../api/types";
 import { Button, Dialog, Field } from "../../components/ui";
 import { useI18n } from "../../i18n";
-import {
-  PriceTiersEditor,
-  PriceWindowsEditor,
-  encodeTiers,
-  encodeWindows,
-  parseTiers,
-  parseWindows,
-  validTiers,
-  validWindows,
-} from "./PricingEditors";
 
 export // Compact token-count rendering for metadata badges (128000 → 128K).
 // Capability annotation editor for one canonical model name (context window,
@@ -33,22 +22,19 @@ function ModelMetadataDialog({
   onDelete?: () => void;
 }) {
   const { t } = useI18n();
-  const [pricesValid, setPricesValid] = useState(true);
   const [form, setForm] = useState<ModelMetadata>(value);
   const patch = (partial: Partial<ModelMetadata>) =>
     setForm((current) => ({ ...current, ...partial }));
-  // The ladder and the schedule are arrays while editing and JSON text on the
-  // wire; keeping them in their own state is what lets the editors work on real
-  // objects instead of parsing on every keystroke.
-  const [tiersEdited, setTiersEdited] = useState(false);
-  const [windowsEdited, setWindowsEdited] = useState(false);
-  const [tiers, setTiers] = useState(() => parseTiers(value.price_tiers));
-  const [windows, setWindows] = useState(() => parseWindows(value.price_schedule));
+  // Capability edits preserve legacy rates. Pricing is managed by BillingRulePanel.
   const submit = () =>
     onSave({
-      ...form,
-      price_tiers: tiersEdited ? encodeTiers(tiers) : (value.price_tiers ?? ""),
-      price_schedule: windowsEdited ? encodeWindows(windows) : (value.price_schedule ?? ""),
+      model_name: form.model_name,
+      context_window: form.context_window,
+      input_modalities: form.input_modalities,
+      output_modalities: form.output_modalities,
+      supports_thinking: form.supports_thinking,
+      vendor: form.vendor,
+      notes: form.notes,
     });
   const thinkingOptions = [
     { value: -1, label: t("modelsPage.metaThinkingUnknown") },
@@ -116,29 +102,7 @@ function ModelMetadataDialog({
             disabled={pending}
           />
         </Field>
-        <PriceFields
-          value={form}
-          onChange={patch}
-          onValidityChange={setPricesValid}
-          disabled={pending}
-        />
-        <PricingRules />
-        <PriceTiersEditor
-          value={tiers}
-          onChange={(next) => {
-            setTiersEdited(true);
-            setTiers(next);
-          }}
-          disabled={pending}
-        />
-        <PriceWindowsEditor
-          value={windows}
-          onChange={(next) => {
-            setWindowsEdited(true);
-            setWindows(next);
-          }}
-          disabled={pending}
-        />
+        <p className="field-hint">{t("billing.priceLocation")}</p>
       </div>
       {error ? <div className="inline-error">{String(error)}</div> : null}
       <div className="dialog-actions">
@@ -157,10 +121,7 @@ function ModelMetadataDialog({
         <Button variant="secondary" disabled={pending} onClick={onClose}>
           {t("common.cancel")}
         </Button>
-        <Button
-          disabled={pending || !pricesValid || !validTiers(tiers) || !validWindows(windows)}
-          onClick={submit}
-        >
+        <Button disabled={pending} onClick={submit}>
           {pending ? t("common.working") : t("common.save")}
         </Button>
       </div>

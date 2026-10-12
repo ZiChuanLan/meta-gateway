@@ -1,0 +1,41 @@
+/* Pricing is an editor plus separate observations, not another dashboard. */
+.dialog:has(.billing-workspace) { width: min(840px, calc(100vw - 32px)); }
+.billing-workspace { min-width: 0; display: grid; gap: 24px; }
+.billing-workspace > .panel-hint { margin: 0; max-width: 70ch; }
+.billing-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; padding: 0 0 16px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.billing-readout > span { color: var(--ink); font-weight: 600; font-size: 15px; }
+.billing-readout small { color: var(--muted); font-size: 12px; }
+.billing-editor > fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.billing-rate-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px 20px; }
+.billing-rate-grid .field { margin: 0; }
+.billing-rate-grid input { font-variant-numeric: tabular-nums; }
+.billing-advanced { margin: 20px 0; border-top: 1px solid var(--line); padding-top: 16px; }
+.billing-advanced > summary, .quote-estimate > summary { cursor: pointer; color: var(--ink-soft); font-size: 13px; font-weight: 550; padding: 8px 0; }
+.billing-advanced .pricing-row-tier { grid-template-columns: repeat(2,minmax(0,1fr)); align-items: end; }
+.billing-advanced .pricing-row-tier label:first-child { grid-column: 1/-1; }
+.billing-workspace .editor-footer { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; background: var(--surface); padding: 16px 0 8px; border-top: 1px solid var(--line); z-index: 2; }
+.billing-quotes { border-top: 1px solid var(--line); padding-top: 24px; }
+.billing-quotes .panel-header { gap: 12px; margin: 0 0 12px; }
+.quote-entry { padding: 20px 0; border-top: 1px solid var(--line-light); min-width: 0; }
+.quote-entry-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.quote-entry-head > div { display:flex; align-items:baseline; gap:12px; }
+.quote-entry-head strong { font-size:14px; }
+.quote-entry-head small, .quote-entry-head > span { color:var(--muted); font-size:12px; }
+.quote-rate-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; margin:16px 0; }
+.quote-rate-list dt { font-size:12px; color:var(--muted); }
+.quote-rate-list dd { margin:4px 0 0; font-size:14px; font-weight:550; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.quote-entry-actions { margin:12px 0; }
+.quote-estimate { margin-top:12px; }
+.quote-estimate .billing-rate-grid { margin:12px 0; }
+.estimate-result { padding:12px; background:var(--surface-subtle); color:var(--ink); border-radius:var(--radius-sm); font-variant-numeric:tabular-nums; }
+.billing-copy-table th, .billing-copy-table td { padding:12px 10px; font-size:13px; font-variant-numeric:tabular-nums; white-space:normal; }
+.billing-copy-table tbody th { text-align:left; font-weight:500; }
+.billing-copy-table td small { display:block; }
+.route-billing-entry { margin:12px 0; }
+@media (max-width:760px) {
+ .dialog:has(.billing-workspace) { width:calc(100vw - 16px); max-height:calc(100dvh - 16px); }
+ .billing-rate-grid, .quote-rate-list { grid-template-columns:minmax(0,1fr); }
+ .billing-workspace input, .billing-workspace select { font-size:16px; min-height:44px; }
+ .billing-workspace .editor-footer { margin-left:-2px; margin-right:-2px; padding:12px 0; }
+ .quote-entry-actions .button { min-height:44px; }
+}

@@ -1,3 +1,5 @@
+import type { PriceQuote, QuoteUnit } from "../features/models/pricingTypes";
+
 type Status = "enabled" | "disabled" | "auto_disabled";
 
 type ChannelHealthState = "disabled" | "unhealthy" | "degraded" | "healthy" | "unknown";
@@ -629,6 +631,10 @@ export type SiteProbeVerdict = "ok" | "low" | "pending" | "insufficient" | "stal
 
 /** A price the site publishes for one model, normalized to USD. */
 export interface SiteProbePrice {
+  quote_id?: number;
+  status?: string;
+  unit?: QuoteUnit;
+  cache_write_per_million?: number;
   mode?: "token" | "fixed";
   /**
    * The currency the site declares for its own price table. The amounts below
@@ -1417,6 +1423,15 @@ interface ModelPrice {
 }
 export interface FinanceItem {
   channel_id: number;
+  account_id?: number;
+  site_id?: number;
+  balance_known?: boolean;
+  balance_status?: "known" | "unknown" | "stale" | "refresh_failed";
+  unit?: QuoteUnit;
+  observed_at?: string;
+  refresh_error?: string;
+  upstream_group?: string;
+  quotes?: Record<string, PriceQuote>;
   balance: number;
   quota_total?: number;
   quota_used?: number;

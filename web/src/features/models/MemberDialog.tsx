@@ -1,19 +1,8 @@
-import { PriceFields, PricingRules } from "./PriceFields";
 import { useState } from "react";
 import type { RouteMember } from "../../api/types";
 import { Button, Dialog, ErrorState, Field, InfoTip } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { memberRealName, serializeMemberMapping } from "../../lib/alias";
-import {
-  PriceTiersEditor,
-  PriceWindowsEditor,
-  encodeTiers,
-  encodeWindows,
-  parseTiers,
-  parseWindows,
-  validTiers,
-  validWindows,
-} from "./PricingEditors";
 
 export function MemberDialog({
   value,
@@ -33,7 +22,6 @@ export function MemberDialog({
   onSave: (value: Partial<RouteMember>) => void;
 }) {
   const { t } = useI18n();
-  const [pricesValid, setPricesValid] = useState(true);
   const [form, setForm] = useState(value);
   // The upstream model this member rewrites to. Unified aliases depend on it,
   // and without an editor the redirect was invisible in the UI.
@@ -44,12 +32,6 @@ export function MemberDialog({
   // values preserves the previous state.
   const [valuesTouched, setValuesTouched] = useState(false);
   const markTouched = () => setValuesTouched(true);
-  // This member's ladder and schedule. Arrays while editing, JSON text on the
-  // wire — the conversion belongs to the editors, not to every keystroke here.
-  const [tiersEdited, setTiersEdited] = useState(false);
-  const [windowsEdited, setWindowsEdited] = useState(false);
-  const [tiers, setTiers] = useState(() => parseTiers(value.price_tiers));
-  const [windows, setWindows] = useState(() => parseWindows(value.price_schedule));
   return (
     <Dialog
       title={value.id ? t("routing.editMember") : t("routing.addMember")}
@@ -61,18 +43,10 @@ export function MemberDialog({
             {t("common.cancel")}
           </Button>
           <Button
-            disabled={
-              pending ||
-              !form.channel_id ||
-              !pricesValid ||
-              !validTiers(tiers) ||
-              !validWindows(windows)
-            }
+            disabled={pending || !form.channel_id}
             onClick={() => {
               const next: Partial<RouteMember> = {
                 ...form,
-                ...(tiersEdited ? { price_tiers: encodeTiers(tiers) } : {}),
-                ...(windowsEdited ? { price_schedule: encodeWindows(windows) } : {}),
                 ...(valuesTouched &&
                 (form.priority !== value.priority || form.weight !== value.weight)
                   ? { manual_override: true }
@@ -146,29 +120,7 @@ export function MemberDialog({
           />
           <InfoTip label={t("routing.weightHint")} />
         </Field>
-        <PriceFields
-          value={form}
-          onChange={(partial) => setForm({ ...form, ...partial })}
-          onValidityChange={setPricesValid}
-          disabled={pending}
-        />
-        <PricingRules />
-        <PriceTiersEditor
-          value={tiers}
-          onChange={(next) => {
-            setTiersEdited(true);
-            setTiers(next);
-          }}
-          disabled={pending}
-        />
-        <PriceWindowsEditor
-          value={windows}
-          onChange={(next) => {
-            setWindowsEdited(true);
-            setWindows(next);
-          }}
-          disabled={pending}
-        />
+        <p className="field-hint">{t("billing.priceLocation")}</p>
       </div>
       <Field label={t("routing.memberGroupLabel")}>
         <select

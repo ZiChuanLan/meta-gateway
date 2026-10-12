@@ -6,6 +6,7 @@ import type { AccountProbeResult, ChannelPingResult, ChannelOverview, Site } fro
 import { Button, formatDate } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
+import { nativeAmount } from "../models/pricingTypes";
 import { channelAccountState } from "../channelHealth";
 import {
   ChannelAccountBadge,
@@ -53,21 +54,12 @@ export function ChannelDetail({
     staleTime: 120_000,
   });
   const financeItem = (finance.data?.items ?? []).find((item) => item.channel_id === ch.id);
-  const quotaPerUnit =
-    financeItem?.quota_per_unit && financeItem.quota_per_unit > 0
-      ? financeItem.quota_per_unit
-      : 500000;
-  const balance =
-    accountData?.quota != null && accountData.used_quota != null
-      ? accountData.quota - accountData.used_quota
-      : null;
+  const quotaPerUnit = financeItem?.quota_per_unit;
+  const balance = accountData?.quota ?? (financeItem?.balance_known ? financeItem.balance : null);
   const formatCurrency = (value: number) =>
-    (value / quotaPerUnit).toLocaleString("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    quotaPerUnit && quotaPerUnit > 0 && financeItem?.unit
+      ? nativeAmount(value / quotaPerUnit, financeItem.unit, t("billing.credit"))
+      : t("billing.quotaPoints", { value });
 
   // Health probe history: availability over 24h + recent probe dots.
   const healthSummary = useQuery({
