@@ -9181,6 +9181,14 @@ a.log-chain-value:hover { text-decoration: underline; }
   margin-top: 0;
 }
 
+/* Same trap as .cockpit-dual-grid and .exchange-grid: the skins' vertical
+   `.panel + .panel` spacing rule also matches the second panel of a
+   side-by-side grid, which pushed the result panel 18px below the request
+   panel. The grid gap already spaces the columns. */
+.workbench-grid > .panel + .panel {
+  margin-top: 0;
+}
+
 .workbench-form {
   display: grid;
   gap: 14px;

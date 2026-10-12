@@ -269,6 +269,11 @@
 :root[data-appearance="classic"] .panel + .panel {
   margin-top: 18px;
 }
+/* Side-by-side grids space their columns with the grid gap, so the vertical
+   panel-to-panel margin must not apply to the second column. */
+:root[data-appearance="classic"] .workbench-grid > .panel + .panel {
+  margin-top: 0;
+}
 :root[data-appearance="classic"] .panel-header {
   display: flex;
   /* flex-start + wrap is the single layout contract for every feature page:
