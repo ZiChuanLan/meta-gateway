@@ -406,6 +406,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	})
 	accountService := account.New(db, enc, registry)
 	accountService.SetNotifier(webhookNotifier)
+	RegisterStopper(accountService.Stop)
 	checkinService.SetNotifier(webhookNotifier)
 	// Proactive sweep: refresh finance (balance-low) + probe tokens (expired)
 	// on a timer so alerts fire without an operator opening the admin pages.

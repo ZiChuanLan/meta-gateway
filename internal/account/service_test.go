@@ -16,41 +16,67 @@ import (
 	"github.com/lan/meta-gateway/internal/store"
 )
 
-func TestFinanceCacheUsesServiceClockAndReturnsCopies(t *testing.T) {
+func TestFinanceSnapshotUsesServiceClockAndReturnsCopies(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	svc := &Service{
-		now: func() time.Time { return now },
-		financeCache: &financeCache{
-			at: now.Add(-time.Minute),
-			items: []FinanceItem{{
+		now:         func() time.Time { return now },
+		refreshedAt: now.Add(-time.Minute),
+		snapshots: map[int64]FinanceItem{
+			1: {
 				ChannelID: 1,
 				Prices:    map[string]adapters.ModelPrice{"model": {Model: "model", PriceUSD: 1}},
-			}},
+			},
 		},
 	}
-	svc.financeMu.Lock()
-	fresh := svc.financeCacheFreshLocked()
-	svc.financeMu.Unlock()
+	items, fresh := svc.snapshotItems()
 	if !fresh {
-		t.Fatal("fresh cache reported stale")
+		t.Fatal("fresh snapshot reported stale")
 	}
-	now = now.Add(-time.Hour)
-	svc.financeMu.Lock()
-	fresh = svc.financeCacheFreshLocked()
-	svc.financeMu.Unlock()
-	if fresh {
-		t.Fatal("cache must expire after a clock rollback")
+	if len(items) != 1 {
+		t.Fatalf("items=%+v", items)
+	}
+	items[0].Prices["model"] = adapters.ModelPrice{Model: "changed"}
+	if got := svc.snapshots[1].Prices["model"].Model; got != "model" {
+		t.Fatalf("cached price mutated through caller copy: %q", got)
 	}
 
-	copyItems := cloneFinanceItems(svc.financeCache.items)
-	copyItems[0].Prices["model"] = adapters.ModelPrice{Model: "changed"}
-	if got := svc.financeCache.items[0].Prices["model"].Model; got != "model" {
-		t.Fatalf("cached price mutated through caller copy: %q", got)
+	now = now.Add(-time.Hour)
+	if _, fresh = svc.snapshotItems(); fresh {
+		t.Fatal("snapshot must expire after a clock rollback")
+	}
+}
+
+func TestFinanceSnapshotCloneIsolatesMapsAndPointers(t *testing.T) {
+	rate, usd, input, cache := 0.5, 1.5, 2.0, 0.1
+	item := FinanceItem{
+		ChannelID: 1,
+		Unit:      domain.QuoteUnit{Kind: "site_credit", Code: "credit:site/1", DisplayRate: &rate, USDPerUnit: &usd},
+		Prices:    map[string]adapters.ModelPrice{"m": {Model: "m", PriceUSD: 1}},
+		Quotes: map[string]domain.PriceQuoteSnapshot{
+			"m": {Model: "m", Unit: domain.QuoteUnit{Kind: "site_credit", Code: "credit:site/1"}, Values: domain.QuoteValues{Mode: "token", Input: &input, CacheRead: &cache}},
+		},
+	}
+	copied := cloneFinanceItem(item)
+	*copied.Unit.DisplayRate = 9
+	*copied.Unit.USDPerUnit = 9
+	copiedQuote := copied.Quotes["m"]
+	*copiedQuote.Values.Input = 9
+	*copiedQuote.Values.CacheRead = 9
+	copied.Prices["m"] = adapters.ModelPrice{Model: "changed"}
+	copied.Quotes["m"] = domain.PriceQuoteSnapshot{Model: "changed"}
+	if item.Prices["m"].Model != "m" || item.Quotes["m"].Model != "m" {
+		t.Fatalf("map entry leaked: prices=%+v quotes=%+v", item.Prices, item.Quotes)
+	}
+	if *item.Unit.DisplayRate != 0.5 || *item.Unit.USDPerUnit != 1.5 {
+		t.Fatalf("unit pointers leaked: %+v", item.Unit)
+	}
+	if *item.Quotes["m"].Values.Input != 2 || *item.Quotes["m"].Values.CacheRead != 0.1 {
+		t.Fatalf("quote value pointers leaked: %+v", item.Quotes["m"].Values)
 	}
 }
 
 // TestPricingNormalizesAAHFormula covers the All API Hub normalization in
-// financeForChannel: group_ratio multiplier, direct USD override, per-call.
+// probeFinanceGroup: group_ratio multiplier, direct USD override, per-call.
 func TestPricingNormalizesAAHFormula(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -97,7 +123,7 @@ func TestPricingNormalizesAAHFormula(t *testing.T) {
 		t.Fatalf("unpriced must be skipped")
 	}
 
-	// Service-level normalization (financeForChannel path).
+	// Service-level normalization (probeFinanceGroup path).
 	db, err := store.OpenTest(filepath.Join(t.TempDir()))
 	if err != nil {
 		t.Fatal(err)

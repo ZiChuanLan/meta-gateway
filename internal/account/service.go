@@ -126,13 +126,60 @@ type Service struct {
 	// notifier delivers operational alerts (token expired / balance low).
 	notifier atomic.Pointer[webhook.Notifier]
 
-	financeMu        sync.Mutex
-	financeRefreshMu sync.Mutex
-	financeCache     *financeCache
+	// lifeCtx bounds every refresh this service starts. Stop cancels it and
+	// waits, so a shutdown never leaves an upstream probe running (the old
+	// detached context.Background() had no owner).
+	lifeCtx    context.Context
+	lifeCancel context.CancelFunc
+
+	// refreshWorkMu serializes the actual upstream refresh (sync and async).
+	refreshWorkMu sync.Mutex
+	// refreshGateMu is a short guard for the single-flight gate and Stop; it is
+	// never held across upstream I/O, so a read never blocks behind a refresh.
+	refreshGateMu sync.Mutex
+	refreshing    bool
+	stopped       bool
+	refreshWG     sync.WaitGroup
+
+	snapMu      sync.Mutex
+	snapshots   map[int64]FinanceItem
+	loaded      bool
+	refreshedAt time.Time
 }
 
 func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Service {
-	return &Service{db: db, enc: enc, registry: registry, now: time.Now}
+	lifeCtx, lifeCancel := context.WithCancel(context.Background())
+	return &Service{
+		db: db, enc: enc, registry: registry, now: time.Now,
+		lifeCtx: lifeCtx, lifeCancel: lifeCancel,
+		snapshots: map[int64]FinanceItem{},
+	}
+}
+
+// Stop cancels any background finance refresh and waits for it to finish. It
+// is idempotent and is registered as a router stopper.
+func (s *Service) Stop() {
+	s.refreshGateMu.Lock()
+	if s.stopped {
+		s.refreshGateMu.Unlock()
+		return
+	}
+	s.stopped = true
+	cancel := s.lifeCancel
+	s.refreshGateMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	s.refreshWG.Wait()
+}
+
+// lifeContext returns the service lifecycle context, falling back to a plain
+// context for a zero-value Service built directly in tests.
+func (s *Service) lifeContext() context.Context {
+	if s.lifeCtx != nil {
+		return s.lifeCtx
+	}
+	return context.Background()
 }
 
 // SetNotifier attaches the operational alert notifier (token expired / low
@@ -488,136 +535,541 @@ func (s *Service) GetPricing(ctx context.Context, channelID int64) ([]adapters.M
 	return prices, nil
 }
 
-// FinanceItem is one channel's account finances: balance (in quota), the
-// quota-per-unit conversion, and the model price table (quota per 1M tokens).
+// FinanceItem is one channel's account finances: the observed balance (in
+// site credit), the quota-per-unit conversion, the normalized quotes, and the
+// legacy price table kept for compatibility. BalanceKnown is false whenever
+// the upstream did not report a quota — a missing balance must never be
+// presented as a zero one.
 type FinanceItem struct {
-	ChannelID    int64                          `json:"channel_id"`
-	Balance      int64                          `json:"balance"`
-	QuotaTotal   int64                          `json:"quota_total,omitempty"`
-	QuotaUsed    int64                          `json:"quota_used,omitempty"`
-	QuotaPerUnit int64                          `json:"quota_per_unit"`
-	Prices       map[string]adapters.ModelPrice `json:"prices"`
+	ChannelID     int64                                `json:"channel_id"`
+	AccountID     int64                                `json:"account_id,omitempty"`
+	SiteID        int64                                `json:"site_id,omitempty"`
+	UpstreamGroup string                               `json:"upstream_group,omitempty"`
+	Balance       int64                                `json:"balance"`
+	BalanceKnown  bool                                 `json:"balance_known"`
+	BalanceStatus string                               `json:"balance_status"`
+	QuotaTotal    int64                                `json:"quota_total,omitempty"`
+	QuotaUsed     int64                                `json:"quota_used,omitempty"`
+	QuotaPerUnit  int64                                `json:"quota_per_unit"`
+	Unit          domain.QuoteUnit                     `json:"unit"`
+	ObservedAt    string                               `json:"observed_at,omitempty"`
+	RefreshError  string                               `json:"refresh_error,omitempty"`
+	Prices        map[string]adapters.ModelPrice       `json:"prices"`
+	Quotes        map[string]domain.PriceQuoteSnapshot `json:"quotes,omitempty"`
 }
 
-const financeCacheTTL = 2 * time.Minute
-
-// financeCache holds the last FinanceOverview result with its timestamp.
-type financeCache struct {
-	items []FinanceItem
-	at    time.Time
+// FinanceSnapshot is the console's finance read model: the last known
+// per-channel observations plus whether a refresh is currently in flight. It
+// is always served from memory or disk and never waits on an upstream.
+// BalanceStatus is one of known | unknown | stale | refresh_failed.
+type FinanceSnapshot struct {
+	Items      []FinanceItem `json:"items"`
+	Refreshing bool          `json:"refreshing"`
+	ObservedAt string        `json:"observed_at,omitempty"`
 }
 
-// FinanceOverview returns balance + model pricing for every enabled channel
-// that has a user credential, cached for a short TTL so the models page does
-// not hammer upstreams on every visit. It runs on a detached context so a
-// client disconnect does not abort every in-flight upstream probe.
-func (s *Service) FinanceOverview(_ context.Context) ([]FinanceItem, error) {
-	s.financeMu.Lock()
-	if s.financeCacheFreshLocked() {
-		items := cloneFinanceItems(s.financeCache.items)
-		s.financeMu.Unlock()
-		return items, nil
-	}
-	s.financeMu.Unlock()
-	// Serialize cache misses so several dashboard clients arriving together do
-	// not launch duplicate upstream finance probes. Re-check after waiting in
-	// case another caller filled the cache while we were blocked.
-	s.financeRefreshMu.Lock()
-	defer s.financeRefreshMu.Unlock()
-	s.financeMu.Lock()
-	if s.financeCacheFreshLocked() {
-		items := cloneFinanceItems(s.financeCache.items)
-		s.financeMu.Unlock()
-		return items, nil
-	}
-	s.financeMu.Unlock()
+const (
+	// financeCacheTTL is how long an observation is served without triggering
+	// another refresh.
+	financeCacheTTL = 2 * time.Minute
+	// financeProbeTimeout bounds a single upstream finance call.
+	financeProbeTimeout = 8 * time.Second
+	// financeRefreshTimeout bounds one whole sweep.
+	financeRefreshTimeout = 90 * time.Second
+	// financeProbeConcurrency caps simultaneous upstream finance probes.
+	financeProbeConcurrency = 4
 
-	// Detach from the request context: finance is read-only and the cache
-	// serves the next visitor; a browser/curl timeout must not cancel the
-	// whole sweep mid-flight.
-	workCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	balanceStatusKnown         = "known"
+	balanceStatusUnknown       = "unknown"
+	balanceStatusStale         = "stale"
+	balanceStatusRefreshFailed = "refresh_failed"
+)
+
+// financeGroupKey identifies the account group that shares one probe: the
+// same credential, site, base URL and upstream group.
+type financeGroupKey struct {
+	credentialID int64
+	siteID       int64
+	baseURL      string
+	group        string
+}
+
+// financeTarget is one dedupe group's resolved account and its channels.
+type financeTarget struct {
+	resolved   *resolvedTarget
+	channelIDs []int64
+}
+
+// financeFacts are the probed values shared by every channel in one dedupe
+// group (same credential, site, base URL and upstream group).
+type financeFacts struct {
+	failed        bool
+	refreshError  string
+	balanceKnown  bool
+	balanceStatus string
+	balance       int64
+	quotaTotal    int64
+	quotaUsed     int64
+	quotaPerUnit  int64
+	unit          domain.QuoteUnit
+	prices        map[string]adapters.ModelPrice
+	quotes        map[string]domain.PriceQuoteSnapshot
+	observedAt    time.Time
+}
+
+// FinanceSnapshot returns the console's finance view from the last
+// observation, triggering a background refresh when it has gone stale. It
+// never waits on an upstream.
+func (s *Service) FinanceSnapshot(context.Context) (FinanceSnapshot, error) {
+	if err := s.ensureLoaded(); err != nil {
+		return FinanceSnapshot{}, internalError("snapshot_unavailable")
+	}
+	items, fresh := s.snapshotItems()
+	if !fresh {
+		s.triggerRefresh()
+	}
+	return s.snapshotResult(items), nil
+}
+
+// RefreshFinance starts a single-flight background refresh and returns the
+// current snapshot with its refresh status. It never blocks on an upstream.
+func (s *Service) RefreshFinance(context.Context) (FinanceSnapshot, error) {
+	if err := s.ensureLoaded(); err != nil {
+		return FinanceSnapshot{}, internalError("snapshot_unavailable")
+	}
+	s.triggerRefresh()
+	items, _ := s.snapshotItems()
+	return s.snapshotResult(items), nil
+}
+
+// FinanceOverview synchronously refreshes and returns every channel's finance
+// item. It is kept for the alert sweep and the daily balance snapshot, which
+// run outside the request path. The work is bounded by the service lifecycle
+// context so Stop still cancels it.
+func (s *Service) FinanceOverview(context.Context) ([]FinanceItem, error) {
+	if err := s.ensureLoaded(); err != nil {
+		return nil, internalError("snapshot_unavailable")
+	}
+	if items, fresh := s.snapshotItems(); fresh {
+		return items, nil
+	}
+	ctx, cancel := context.WithTimeout(s.lifeContext(), financeRefreshTimeout)
 	defer cancel()
+	s.refreshLocked(ctx)
+	items, _ := s.snapshotItems()
+	return items, nil
+}
 
+// ensureLoaded reads the last persisted snapshots once, so a restart can serve
+// the console before the first refresh completes.
+func (s *Service) ensureLoaded() error {
+	s.snapMu.Lock()
+	defer s.snapMu.Unlock()
+	if s.loaded {
+		return nil
+	}
+	rows, err := s.db.LatestFinanceSnapshots()
+	if err != nil {
+		return err
+	}
+	if s.snapshots == nil {
+		s.snapshots = map[int64]FinanceItem{}
+	}
+	for _, row := range rows {
+		var item FinanceItem
+		if json.Unmarshal(row.Payload, &item) != nil {
+			continue
+		}
+		if !row.ObservedAt.IsZero() {
+			item.ObservedAt = row.ObservedAt.UTC().Format(time.RFC3339Nano)
+		}
+		s.snapshots[row.ChannelID] = item
+	}
+	s.loaded = true
+	return nil
+}
+
+// snapshotItems returns a fresh copy of the in-memory snapshots and whether
+// the last refresh is still within the TTL.
+func (s *Service) snapshotItems() ([]FinanceItem, bool) {
+	s.snapMu.Lock()
+	items := make([]FinanceItem, 0, len(s.snapshots))
+	for _, item := range s.snapshots {
+		items = append(items, cloneFinanceItem(item))
+	}
+	at := s.refreshedAt
+	s.snapMu.Unlock()
+	sort.Slice(items, func(i, j int) bool { return items[i].ChannelID < items[j].ChannelID })
+	age := s.now().Sub(at)
+	fresh := !at.IsZero() && age >= 0 && age < financeCacheTTL
+	return items, fresh
+}
+
+func (s *Service) snapshotResult(items []FinanceItem) FinanceSnapshot {
+	s.snapMu.Lock()
+	at := s.refreshedAt
+	s.snapMu.Unlock()
+	if items == nil {
+		items = []FinanceItem{}
+	}
+	observed := ""
+	if !at.IsZero() {
+		observed = at.UTC().Format(time.RFC3339Nano)
+	}
+	return FinanceSnapshot{Items: items, Refreshing: s.isRefreshing(), ObservedAt: observed}
+}
+
+func (s *Service) isRefreshing() bool {
+	s.refreshGateMu.Lock()
+	defer s.refreshGateMu.Unlock()
+	return s.refreshing
+}
+
+// triggerRefresh starts one background refresh if none is running and the
+// service has not stopped. The gate is checked and the WaitGroup incremented
+// under the same short lock, so Stop can never race a late WaitGroup.Add.
+func (s *Service) triggerRefresh() {
+	s.refreshGateMu.Lock()
+	if s.refreshing || s.stopped {
+		s.refreshGateMu.Unlock()
+		return
+	}
+	s.refreshing = true
+	s.refreshWG.Add(1)
+	s.refreshGateMu.Unlock()
+	go func() {
+		defer s.refreshWG.Done()
+		defer func() {
+			s.refreshGateMu.Lock()
+			s.refreshing = false
+			s.refreshGateMu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(s.lifeContext(), financeRefreshTimeout)
+		defer cancel()
+		s.refreshLocked(ctx)
+	}()
+}
+
+func (s *Service) refreshLocked(ctx context.Context) {
+	s.refreshWorkMu.Lock()
+	defer s.refreshWorkMu.Unlock()
+	s.refresh(ctx)
+}
+
+// refresh probes every enabled channel that has a user credential, persists
+// the observations, and stores them in memory. Channels sharing one account
+// credential, site, base URL and upstream group are probed once.
+func (s *Service) refresh(ctx context.Context) {
 	channels, err := s.db.Channel.ListEnabled()
 	if err != nil {
-		return nil, internalError("channel_list")
+		return
 	}
-	// Only channels with a usable user credential are worth probing.
-	targets := make([]*resolvedTarget, 0, len(channels))
+	groups := make(map[financeGroupKey]*financeTarget)
+	order := make([]financeGroupKey, 0, len(channels))
 	for index := range channels {
-		resolved, resolveErr := s.resolveUserTarget(channels[index].ID)
+		channel := channels[index]
+		resolved, resolveErr := s.resolveUserTarget(channel.ID)
 		if resolveErr != nil {
 			continue
 		}
-		targets = append(targets, resolved)
-	}
-	if len(targets) == 0 {
-		items := []FinanceItem{}
-		s.financeMu.Lock()
-		s.financeCache = &financeCache{items: items, at: s.now()}
-		s.financeMu.Unlock()
-		return cloneFinanceItems(items), nil
+		key := financeGroupKey{
+			credentialID: resolved.credential.ID,
+			siteID:       resolved.site.ID,
+			baseURL:      resolved.input.BaseURL,
+			group:        financeGroupName(channel.GroupName),
+		}
+		if existing, ok := groups[key]; ok {
+			// Same account/group/URL: one probe serves every channel, so the
+			// duplicate decrypted input is released immediately.
+			zeroAccountInput(&resolved.input)
+			existing.channelIDs = append(existing.channelIDs, channel.ID)
+			continue
+		}
+		groups[key] = &financeTarget{resolved: resolved, channelIDs: []int64{channel.ID}}
+		order = append(order, key)
 	}
 
-	sem := make(chan struct{}, 4)
-	items := make([]FinanceItem, 0, len(targets))
-	var itemMu sync.Mutex
+	sem := make(chan struct{}, financeProbeConcurrency)
 	var wg sync.WaitGroup
-	for index := range targets {
-		resolved := targets[index]
+	var itemMu sync.Mutex
+	items := make([]FinanceItem, 0)
+	for _, key := range order {
+		target := groups[key]
 		wg.Add(1)
-		go func() {
+		go func(key financeGroupKey, target *financeTarget) {
 			defer wg.Done()
+			acquired := false
 			select {
 			case sem <- struct{}{}:
-			case <-workCtx.Done():
-				return
+				acquired = true
+			case <-ctx.Done():
 			}
-			defer func() { <-sem }()
-			item := s.financeForChannel(workCtx, resolved)
-			if item == nil {
-				return
+			if acquired {
+				defer func() { <-sem }()
 			}
-			itemMu.Lock()
-			items = append(items, *item)
-			itemMu.Unlock()
-		}()
+			facts := s.probeFinanceGroup(ctx, target.resolved)
+			for _, channelID := range target.channelIDs {
+				item := s.financeItemForChannel(channelID, key, facts)
+				itemMu.Lock()
+				items = append(items, item)
+				itemMu.Unlock()
+			}
+		}(key, target)
 	}
 	wg.Wait()
-	sort.Slice(items, func(i, j int) bool { return items[i].ChannelID < items[j].ChannelID })
-
-	s.financeMu.Lock()
-	s.financeCache = &financeCache{items: items, at: s.now()}
-	s.financeMu.Unlock()
-	return cloneFinanceItems(items), nil
+	s.storeSnapshots(items)
 }
 
-// financeCacheFreshLocked uses the service clock consistently with cache
-// writes. A clock rollback invalidates the entry instead of extending it for
-// an unbounded period. The caller must hold financeMu.
-func (s *Service) financeCacheFreshLocked() bool {
-	if s.financeCache == nil {
-		return false
+// storeSnapshots replaces the in-memory readings for the channels just probed
+// and persists each as an append-only observation. A channel that vanished
+// from the enabled list keeps its last reading rather than silently dropping.
+func (s *Service) storeSnapshots(items []FinanceItem) {
+	s.snapMu.Lock()
+	if s.snapshots == nil {
+		s.snapshots = map[int64]FinanceItem{}
 	}
-	age := s.now().Sub(s.financeCache.at)
-	return age >= 0 && age < financeCacheTTL
+	for _, item := range items {
+		s.snapshots[item.ChannelID] = cloneFinanceItem(item)
+	}
+	s.refreshedAt = s.now()
+	s.loaded = true
+	s.snapMu.Unlock()
+	for _, item := range items {
+		s.persistSnapshot(item)
+	}
 }
 
-func cloneFinanceItems(items []FinanceItem) []FinanceItem {
-	if items == nil {
-		return nil
+func (s *Service) persistSnapshot(item FinanceItem) {
+	payload, err := json.Marshal(item)
+	if err != nil {
+		return
 	}
-	out := make([]FinanceItem, len(items))
-	for i, item := range items {
-		out[i] = item
-		if item.Prices != nil {
-			out[i].Prices = make(map[string]adapters.ModelPrice, len(item.Prices))
-			for model, price := range item.Prices {
-				out[i].Prices[model] = price
-			}
+	observedAt := s.now()
+	if parsed, parseErr := time.Parse(time.RFC3339Nano, item.ObservedAt); parseErr == nil {
+		observedAt = parsed
+	}
+	_ = s.db.SaveFinanceSnapshot(item.ChannelID, payload, observedAt)
+}
+
+func (s *Service) previousItem(channelID int64) (FinanceItem, bool) {
+	s.snapMu.Lock()
+	defer s.snapMu.Unlock()
+	item, ok := s.snapshots[channelID]
+	if !ok {
+		return FinanceItem{}, false
+	}
+	return cloneFinanceItem(item), true
+}
+
+// probeFinanceGroup makes one probe of an account group: identity, balance,
+// pricing and quota-per-unit. A transport/auth failure is reported as facts
+// with failed=true rather than an error, so the caller keeps the last reading.
+func (s *Service) probeFinanceGroup(ctx context.Context, resolved *resolvedTarget) financeFacts {
+	defer zeroAccountInput(&resolved.input)
+	now := s.now()
+	facts := financeFacts{
+		observedAt:    now,
+		balanceStatus: balanceStatusUnknown,
+		prices:        map[string]adapters.ModelPrice{},
+		quotes:        map[string]domain.PriceQuoteSnapshot{},
+	}
+	callCtx, cancel := context.WithTimeout(ctx, financeProbeTimeout)
+	defer cancel()
+	self, selfErr := resolved.adapter.ProbeSelf(callCtx, resolved.input)
+	if selfErr != nil {
+		facts.failed = true
+		facts.balanceStatus = balanceStatusRefreshFailed
+		facts.refreshError = errorCategory(mapAdapterError(selfErr))
+		return facts
+	}
+	if self.Quota != nil {
+		facts.balanceKnown = true
+		facts.balanceStatus = balanceStatusKnown
+		facts.balance = *self.Quota
+	} else {
+		// A missing quota is unknown, never a zero balance: reporting 0 would
+		// fabricate a low-balance alert for a site that simply omits the field.
+		facts.balanceKnown = false
+		facts.balanceStatus = balanceStatusUnknown
+	}
+	facts.quotaTotal = int64Value(self.Quota)
+	facts.quotaUsed = int64Value(self.UsedQuota)
+
+	prices, priceErr := resolved.adapter.Pricing(callCtx, resolved.input)
+	if priceErr != nil {
+		prices = nil
+	}
+	quotaPerUnit, quotaErr := resolved.adapter.QuotaPerUnit(callCtx, resolved.input)
+	if quotaErr != nil || quotaPerUnit <= 0 {
+		quotaPerUnit = 500000 // New-API default: 1 unit = 500k quota.
+	}
+	facts.quotaPerUnit = quotaPerUnit
+	facts.unit = financeCreditUnit(resolved.site.ID, quotaPerUnit)
+
+	siteID := resolved.site.ID
+	accountID := resolved.credential.ID
+	group := financeGroupName(resolved.channel.GroupName)
+	for _, published := range prices {
+		// One shared normalizer (internal/adapters/pricing.go) owns every
+		// published shape; the group is the channel's upstream group, so two
+		// groups never share a rate.
+		quote, ok := adapters.NormalizePrice(adapters.WithPricingGroup(published, group), quotaPerUnit)
+		if !ok {
+			continue
+		}
+		quote.Unit = financeQuoteUnit(siteID, quotaPerUnit, published)
+		if price, priced := legacyPrice(quote); priced {
+			facts.prices[quote.Model] = price
+		}
+		snapshot := adapters.SnapshotQuote(quote, siteID, accountID, "site_account", now)
+		if id, saveErr := s.db.SavePriceQuote(snapshot); saveErr == nil {
+			snapshot.ID = id
+		}
+		facts.quotes[quote.Model] = snapshot
+	}
+
+	// Low-balance alert: only a known balance below one unit (site credit).
+	if facts.balanceKnown && facts.balance < quotaPerUnit {
+		if notifier := s.notifier.Load(); notifier != nil {
+			notifier.SendAlert(context.Background(), webhook.AlertWarning, "余额不足", fmt.Sprintf("连接 #%d (%s) 余额仅剩 %d 额度（低于 1 单位），请及时充值。", resolved.channel.ID, resolved.channel.Name, facts.balance))
+		}
+	}
+	return facts
+}
+
+// financeItemForChannel builds one channel's item from a group's facts. A
+// failed probe keeps the channel's last good reading and observation time
+// instead of reporting a false zero.
+func (s *Service) financeItemForChannel(channelID int64, key financeGroupKey, facts financeFacts) FinanceItem {
+	item := FinanceItem{
+		ChannelID:     channelID,
+		AccountID:     key.credentialID,
+		SiteID:        key.siteID,
+		UpstreamGroup: key.group,
+		Balance:       facts.balance,
+		BalanceKnown:  facts.balanceKnown,
+		BalanceStatus: facts.balanceStatus,
+		QuotaTotal:    facts.quotaTotal,
+		QuotaUsed:     facts.quotaUsed,
+		QuotaPerUnit:  facts.quotaPerUnit,
+		Unit:          facts.unit,
+		ObservedAt:    facts.observedAt.UTC().Format(time.RFC3339Nano),
+		RefreshError:  facts.refreshError,
+		Prices:        facts.prices,
+		Quotes:        facts.quotes,
+	}
+	if facts.failed {
+		if prev, ok := s.previousItem(channelID); ok {
+			item.Balance = prev.Balance
+			item.BalanceKnown = prev.BalanceKnown
+			item.QuotaTotal = prev.QuotaTotal
+			item.QuotaUsed = prev.QuotaUsed
+			item.QuotaPerUnit = prev.QuotaPerUnit
+			item.Unit = prev.Unit
+			item.Prices = prev.Prices
+			item.Quotes = prev.Quotes
+			item.ObservedAt = prev.ObservedAt
+		}
+	}
+	return item
+}
+
+func financeGroupName(group string) string {
+	trimmed := strings.TrimSpace(group)
+	if trimmed == "" {
+		return "default"
+	}
+	return trimmed
+}
+
+// financeCreditUnit is the native unit of a site-credit quote: quota-per-unit
+// ties the amount to the site's own currency, which the operator may later
+// declare as USD. It never dresses a native amount as USD.
+func financeCreditUnit(siteID, quotaPerUnit int64) domain.QuoteUnit {
+	return domain.QuoteUnit{Kind: "site_credit", Code: fmt.Sprintf("credit:site/%d", siteID), QuotaPerUnit: quotaPerUnit}
+}
+
+// financeQuoteUnit marks a direct USD-per-1M quote as ISO/USD; everything else
+// stays native site credit. Cosmetic currencies never overwrite the unit.
+func financeQuoteUnit(siteID, quotaPerUnit int64, published adapters.ModelPrice) domain.QuoteUnit {
+	if published.TokenUSD != nil && published.TokenUSD.Input > 0 {
+		return domain.QuoteUnit{Kind: "iso", Code: "USD"}
+	}
+	return financeCreditUnit(siteID, quotaPerUnit)
+}
+
+// legacyPrice keeps the pre-existing Prices map populated for compatibility;
+// the Quotes map carries the unit-aware observations the console now uses.
+func legacyPrice(quote adapters.PriceQuote) (adapters.ModelPrice, bool) {
+	price := adapters.ModelPrice{
+		Model:       quote.Model,
+		Currency:    quote.Currency,
+		Mode:        quote.Mode,
+		BillingExpr: quote.Raw,
+	}
+	if quote.Unparsed {
+		return price, true
+	}
+	if quote.Mode == "fixed" {
+		if quote.PerRequest <= 0 {
+			return price, false
+		}
+		price.PriceUSD = quote.PerRequest
+		return price, true
+	}
+	if quote.InputPerMillion <= 0 {
+		return price, false
+	}
+	price.PriceUSD = quote.InputPerMillion
+	price.OutputUSD = quote.OutputPerMillion
+	return price, true
+}
+
+func cloneFinanceItem(item FinanceItem) FinanceItem {
+	out := item
+	out.Unit = cloneQuoteUnit(item.Unit)
+	if item.Prices != nil {
+		out.Prices = make(map[string]adapters.ModelPrice, len(item.Prices))
+		for model, price := range item.Prices {
+			out.Prices[model] = price
+		}
+	}
+	if item.Quotes != nil {
+		out.Quotes = make(map[string]domain.PriceQuoteSnapshot, len(item.Quotes))
+		for model, quote := range item.Quotes {
+			out.Quotes[model] = cloneQuoteSnapshot(quote)
 		}
 	}
 	return out
+}
+
+func cloneQuoteUnit(unit domain.QuoteUnit) domain.QuoteUnit {
+	out := unit
+	out.DisplayRate = cloneFloat(unit.DisplayRate)
+	out.USDPerUnit = cloneFloat(unit.USDPerUnit)
+	return out
+}
+
+func cloneQuoteSnapshot(quote domain.PriceQuoteSnapshot) domain.PriceQuoteSnapshot {
+	out := quote
+	out.Unit = cloneQuoteUnit(quote.Unit)
+	out.Values = domain.QuoteValues{
+		Mode:       quote.Values.Mode,
+		Input:      cloneFloat(quote.Values.Input),
+		Output:     cloneFloat(quote.Values.Output),
+		CacheRead:  cloneFloat(quote.Values.CacheRead),
+		CacheWrite: cloneFloat(quote.Values.CacheWrite),
+		PerRequest: cloneFloat(quote.Values.PerRequest),
+	}
+	return out
+}
+
+func cloneFloat(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 // RecordBalanceHistory snapshots every channel's current balance into
@@ -629,14 +1081,40 @@ func (s *Service) RecordBalanceHistory(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// One credential backs every channel of the same site account (often with
+	// several upstream groups), and the balance belongs to the account, not the
+	// channel. Record it once per account, using the lowest channel id as the
+	// stable representative; an unknown / stale / failed reading is skipped
+	// rather than written as a false zero.
+	representative := map[int64]FinanceItem{}
+	direct := make([]FinanceItem, 0)
+	for _, item := range items {
+		if !item.BalanceKnown || item.BalanceStatus != balanceStatusKnown {
+			continue
+		}
+		if item.AccountID <= 0 {
+			direct = append(direct, item)
+			continue
+		}
+		if current, ok := representative[item.AccountID]; !ok || item.ChannelID < current.ChannelID {
+			representative[item.AccountID] = item
+		}
+	}
+	ordered := make([]FinanceItem, 0, len(representative)+len(direct))
+	for _, item := range representative {
+		ordered = append(ordered, item)
+	}
+	ordered = append(ordered, direct...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ChannelID < ordered[j].ChannelID })
+
 	now := s.now()
 	written := 0
-	for _, item := range items {
+	for _, item := range ordered {
 		name := ""
-		if channel, err := s.db.Channel.GetByID(item.ChannelID); err == nil && channel != nil {
+		if channel, getErr := s.db.Channel.GetByID(item.ChannelID); getErr == nil && channel != nil {
 			name = channel.Name
 		}
-		if err := s.db.InsertBalanceHistory(item.ChannelID, name, item.Balance, now); err != nil {
+		if insertErr := s.db.InsertBalanceHistory(item.ChannelID, name, item.Balance, now); insertErr != nil {
 			continue // one bad row must not abort the whole snapshot
 		}
 		written++
@@ -653,87 +1131,6 @@ func (s *Service) BalanceHistory(ctx context.Context, days int) ([]store.Balance
 // PruneBalanceHistory removes snapshots older than retentionDays.
 func (s *Service) PruneBalanceHistory(ctx context.Context, retentionDays int) (int, error) {
 	return s.db.PruneBalanceHistory(retentionDays)
-}
-
-func (s *Service) financeForChannel(ctx context.Context, resolved *resolvedTarget) *FinanceItem {
-	defer zeroAccountInput(&resolved.input)
-	// Bound each upstream call so a slow public site cannot stall the sweep.
-	callCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	self, selfErr := resolved.adapter.ProbeSelf(callCtx, resolved.input)
-	if selfErr != nil {
-		return nil
-	}
-	prices, priceErr := resolved.adapter.Pricing(callCtx, resolved.input)
-	if priceErr != nil {
-		prices = nil
-	}
-	quotaPerUnit, quotaErr := resolved.adapter.QuotaPerUnit(callCtx, resolved.input)
-	if quotaErr != nil || quotaPerUnit <= 0 {
-		quotaPerUnit = 500000 // New-API default: 1 unit = 500k quota.
-	}
-	// New-API family semantics: /api/user/self returns quota as the remaining
-	// balance (site currency × quota_per_unit) and used_quota as historical
-	// cumulative usage. Subtracting used_quota would double-count past
-	// consumption and turn a healthy balance negative (42 API case), so the
-	// balance is the quota field as-is.
-	balance := self.Quota
-	if balance == nil {
-		zero := int64(0)
-		balance = &zero
-	}
-	// Low-balance alert: remaining quota below one unit (site currency).
-	if balance != nil && *balance < quotaPerUnit {
-		if notifier := s.notifier.Load(); notifier != nil {
-			notifier.SendAlert(context.Background(), webhook.AlertWarning, "余额不足", fmt.Sprintf("连接 #%d (%s) 余额仅剩 %d 额度（低于 1 单位），请及时充值。", resolved.channel.ID, resolved.channel.Name, *balance))
-		}
-	}
-	priceMap := make(map[string]adapters.ModelPrice, len(prices))
-	for _, p := range prices {
-		// One shared normalizer (internal/adapters/pricing.go) owns every
-		// published shape: a tiered billing expression, a direct USD/1M quote, a
-		// token ratio, a legacy quota-per-1M map, or a per-call price. The
-		// site-probe collector calls the same function, so the two views of a
-		// site's prices can never drift apart.
-		quote, ok := adapters.NormalizePrice(p, quotaPerUnit)
-		if !ok {
-			continue
-		}
-		price := adapters.ModelPrice{
-			Model:       quote.Model,
-			Currency:    quote.Currency,
-			Mode:        quote.Mode,
-			BillingExpr: quote.Raw,
-		}
-		if quote.Unparsed {
-			// The site prices this model with a tiered expression we cannot
-			// evaluate. Leave the numbers at zero so nothing shows a guessed
-			// price; BillingExpr carries the raw expression for display.
-			priceMap[quote.Model] = price
-			continue
-		}
-		if quote.Mode == "fixed" {
-			if quote.PerRequest <= 0 {
-				continue
-			}
-			price.PriceUSD = quote.PerRequest
-		} else {
-			if quote.InputPerMillion <= 0 {
-				continue
-			}
-			price.PriceUSD = quote.InputPerMillion
-			price.OutputUSD = quote.OutputPerMillion
-		}
-		priceMap[quote.Model] = price
-	}
-	return &FinanceItem{
-		ChannelID:    resolved.channel.ID,
-		Balance:      int64Value(balance),
-		QuotaTotal:   int64Value(self.Quota),
-		QuotaUsed:    int64Value(self.UsedQuota),
-		QuotaPerUnit: quotaPerUnit,
-		Prices:       priceMap,
-	}
 }
 
 func int64Value(value *int64) int64 {

@@ -23,6 +23,7 @@ func NewAccountHandler(service *account.Service) *AccountHandler {
 func (h *AccountHandler) Register(r chi.Router) {
 	r.Post("/channels/account/probe-all", h.probeAll)
 	r.Get("/channels/account/finance", h.finance)
+	r.Post("/channels/account/finance", h.financeRefresh)
 	r.Post("/channels/{id}/account/probe", h.probeAccount)
 	r.Post("/channels/{id}/account/sync-keys", h.syncKeys)
 	r.Post("/channels/{id}/account/create-key", h.createKey)
@@ -47,13 +48,27 @@ func (h *AccountHandler) balanceHistory(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"items": points})
 }
 
+// finance serves the last known account finance snapshot immediately and
+// kicks off a background refresh when it has gone stale. It never waits on an
+// upstream, so a slow site cannot stall the console.
 func (h *AccountHandler) finance(w http.ResponseWriter, r *http.Request) {
-	items, err := h.service.FinanceOverview(r.Context())
+	snapshot, err := h.service.FinanceSnapshot(r.Context())
 	if err != nil {
 		writeAccountError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+// financeRefresh triggers a single-flight background refresh (non-blocking)
+// and returns the current snapshot with its refresh status.
+func (h *AccountHandler) financeRefresh(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := h.service.RefreshFinance(r.Context())
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
 }
 
 func (h *AccountHandler) probeAll(w http.ResponseWriter, r *http.Request) {
