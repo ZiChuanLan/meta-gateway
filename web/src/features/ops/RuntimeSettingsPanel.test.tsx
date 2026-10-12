@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -121,6 +121,48 @@ it("navigates from one grouped rail, showing a group's sections continuously", a
   ).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Relay failover" })).toBeNull();
   expect(screen.getByRole("button", { name: "Keepalive" })).toHaveAttribute("aria-current", "true");
+});
+
+// The rail is an index, and a phone needs that index as one control: a column of
+// three grouped label rows is a wall of small type. The select is a second
+// presentation of the same one selection, so moving between sections from it must
+// change the flow — and only the flow: no write, and no reset of a draft that is
+// still being typed.
+it("moves between sections from the phone index without writing or losing the draft", async () => {
+  const server = runtimeServer(() => payload());
+  vi.stubGlobal("fetch", server.fetcher);
+  mount(<RuntimeSettingsPanel />);
+
+  // Two distinct accessible names: the rail and the picker are two presentations
+  // of one index, not two landmarks answering to the same label.
+  expect(await screen.findByRole("navigation", { name: "Sections" })).toBeInTheDocument();
+  const picker = screen.getByLabelText("Settings section") as HTMLSelectElement;
+  // One selection: the select reports the section the rail already shows, and the
+  // groups travel with it as <optgroup>.
+  expect(picker).toHaveValue("relay");
+  expect(within(picker).getByRole("group", { name: "Forwarding & routing" })).toBeInTheDocument();
+
+  const rounds = screen.getByLabelText(/Retry rounds/) as HTMLInputElement;
+  fireEvent.change(rounds, { target: { value: "40" } });
+  // The picker says which sections differ in words, not with a colour dot: a
+  // state the operator must be able to read, not only see.
+  expect(
+    within(picker).getByRole("option", { name: "Relay failover · Changed" }),
+  ).toBeInTheDocument();
+  expect(within(picker).getByRole("option", { name: "Routing" })).toBeInTheDocument();
+
+  fireEvent.change(picker, { target: { value: "keepalive" } });
+  expect(await screen.findByRole("heading", { name: "Keepalive" })).toBeInTheDocument();
+  expect(picker).toHaveValue("keepalive");
+  // Navigation is not a save.
+  expect(server.puts).toHaveLength(0);
+  // ...and the rail follows the same selection, moved from the picker this time.
+  expect(screen.getByRole("button", { name: "Keepalive" })).toHaveAttribute("aria-current", "true");
+
+  // Coming back re-renders the flow, not the draft.
+  fireEvent.change(picker, { target: { value: "relay" } });
+  expect((screen.getByLabelText(/Retry rounds/) as HTMLInputElement).value).toBe("40");
+  expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
 });
 
 // I04's other half: a background refetch used to replace the draft whenever the

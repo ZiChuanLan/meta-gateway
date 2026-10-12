@@ -841,6 +841,32 @@ export function RuntimeSettingsPanel({
           setting. The rail is that index: every group, every section, the one you
           are reading, and the ones that differ from the deployment default. */}
       <div className="runtime-layout">
+        {/* The same one selection, as a native select. On a phone a column of
+            three grouped label rows is a wall of small type; `<optgroup>` keeps
+            that grouping without a second navigation surface to keep in sync.
+            CSS shows exactly one of the two entries at a time (see
+            styles/workspaces.css), so only one is in the accessibility tree. */}
+        <div className="runtime-mobile-index">
+          <select
+            className="runtime-index-select"
+            aria-label={t("ops.runtime.sectionPicker")}
+            value={activeSectionKey}
+            onChange={(event) => selectSection(event.target.value)}
+          >
+            {RUNTIME_GROUPS.map((group) => (
+              <optgroup key={group.key} label={t(group.label)}>
+                {group.sections.map((section) => (
+                  <option key={section.key} value={section.key}>
+                    {sectionChanged(section)
+                      ? `${t(section.label)} · ${t("ops.runtime.changed")}`
+                      : t(section.label)}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
         <nav className="runtime-rail" aria-label={t("ops.runtime.sectionNav")}>
           {RUNTIME_GROUPS.map((group) => (
             <div className="runtime-rail-group" key={group.key}>

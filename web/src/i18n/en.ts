@@ -2960,6 +2960,7 @@ export const en: Dict = {
   "ops.runtime.deploymentShowAll": "Show all {count}",
   "ops.runtime.deploymentEnvOnly": "Environment only",
   "ops.runtime.sectionNav": "Sections",
+  "ops.runtime.sectionPicker": "Settings section",
   "ops.runtime.navGroup.forwarding": "Forwarding & routing",
   "ops.runtime.navGroup.automation": "Health & automation",
   "ops.runtime.navGroup.data": "Data & operations",

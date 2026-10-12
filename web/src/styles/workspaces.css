@@ -1219,6 +1219,41 @@
   color: var(--warning);
 }
 
+/* The runtime settings index, on a phone. The rail is three groups of small
+   labels — a wall of type where the operator wants one control — so below the
+   console's mobile layer it steps aside for a native select that carries the
+   same groups as <optgroup>. Both entries drive the one selection (and render
+   only one of them on screen at a time), so a screen reader never finds the
+   same destination twice. */
+.runtime-mobile-index {
+  display: none;
+}
+@media (max-width: 760px) {
+  .runtime-rail {
+    display: none;
+  }
+  .runtime-mobile-index {
+    display: block;
+    margin-bottom: 16px;
+  }
+  .runtime-index-select {
+    width: 100%;
+    min-height: 44px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 14px;
+  }
+  .runtime-index-select:focus-visible {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Model card grid (features/models/ModelCard) + the notice bar
    (components/NoticeBar).

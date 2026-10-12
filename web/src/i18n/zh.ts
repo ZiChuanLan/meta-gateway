@@ -2739,6 +2739,7 @@ export const zh: Dict = {
   "ops.runtime.deploymentShowAll": "显示全部 {count} 项",
   "ops.runtime.deploymentEnvOnly": "只看环境变量",
   "ops.runtime.sectionNav": "分区导航",
+  "ops.runtime.sectionPicker": "设置分区",
   "ops.runtime.navGroup.forwarding": "转发与路由",
   "ops.runtime.navGroup.automation": "健康与自动化",
   "ops.runtime.navGroup.data": "数据与运维",
