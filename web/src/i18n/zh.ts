@@ -433,6 +433,7 @@ export const zh: Dict = {
   "modelsPage.memberTipTitle": "这把令牌可直接用于任意 OpenAI 兼容客户端",
   "modelsPage.memberTipBody": "Base URL 与接入方法在「接入」里；用量与花费只记在你自己名下。",
   "modelsPage.cardDetails": "模型详情与操作",
+  "modelsPage.backToDirectory": "返回模型目录",
   "modelsPage.cardPriceNote": "已含模型倍率 ×{ratio} · 单价按实际所选通道结算",
   "modelsPage.cardVariablePrice": "存在阶梯或时段价，此处显示当前首档价格。",
   "modelsPage.cardDescription": "浏览模型能力与单价，选择模型后接入或管理。",

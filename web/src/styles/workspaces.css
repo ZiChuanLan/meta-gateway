@@ -58,12 +58,12 @@
 .sticky-entries { max-height: 264px; overflow-y: auto; }
 .sticky-entries thead th { position: sticky; top: 0; z-index: 2; }
 .route-policy-disclosure { margin: 15px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.route-policy-disclosure > summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; color: var(--muted); font-size: 11px; list-style: none; cursor: pointer; }
+.route-policy-disclosure > summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; color: var(--muted); font-size: 12px; list-style: none; cursor: pointer; }
 .route-policy-disclosure > summary::-webkit-details-marker { display: none; }
 .route-policy-disclosure[open] > summary { border-bottom: 1px solid var(--line); }
 .theme-modern .route-policy-disclosure .routing-policy-card { margin: 0; border-radius: 0; }
 .member-section-heading { display: flex; align-items: center; gap: 9px; margin: 25px 0 14px; }
-.member-section-heading button { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: var(--ink); font: 600 13px var(--font); cursor: pointer; }
+.member-section-heading button { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: var(--ink); font: 600 14px var(--font); cursor: pointer; }
 .theme-modern .models-advanced { margin-top: 0; }
 .theme-modern .models-advanced-bar { justify-content: flex-end; margin-bottom: 4px; padding: 0; }
 .theme-modern .models-catalog > .model-changes { padding: 10px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
@@ -99,8 +99,8 @@
 .theme-modern .model-directory-table td.model-row-name { padding-left: 11px; }
 .theme-modern .model-directory-table td.model-row-upstream { display: none; }
 .theme-modern .model-directory-table .model-upstream-header { display: none; }
-.theme-modern .model-directory-table .model-row-name strong { font-size: 11px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.theme-modern .model-directory-table .model-nav-provider { margin: 5px 0; font: 10px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.theme-modern .model-directory-table .model-row-name strong { font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-modern .model-directory-table .model-nav-provider { margin: 5px 0; font: 12px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .theme-modern .model-directory-table .model-row-status .badge { font-size: var(--text-xs); padding: 3px 5px; }
 .theme-modern .model-directory .list-shell-footer { padding: 12px; background: transparent; }
 .theme-modern .model-directory .pagination-bar { flex-wrap: wrap; gap: 9px; }
@@ -108,7 +108,7 @@
 .theme-modern .models-split > .ops-detail-card .detail-head > div:first-child { display: block; }
 .theme-modern .models-split > .ops-detail-card .detail-kicker { display: none; }
 .theme-modern .models-split > .ops-detail-card .detail-head h2 { font-size: 21px; }
-.theme-modern .models-split > .ops-detail-card .detail-head small { font: 11px/1.65 var(--font); }
+.theme-modern .models-split > .ops-detail-card .detail-head small { font: 12px/1.65 var(--font); }
 .theme-modern .ops-list-panel { padding: 0; max-height: none; overflow: hidden; }
 .theme-modern .ops-list-panel > .panel-header { padding: 19px 20px; margin: 0; border-bottom: 1px solid var(--line); }
 .theme-modern .ops-list-panel > .models-simple-toolbar { margin: 0; padding: 14px 18px; border-bottom: 1px solid var(--line); gap: 8px; }
@@ -130,7 +130,7 @@
 .theme-modern .channel-model-list > * { padding: 8px 10px; border: 0; font-size: 11px; }
 .theme-modern .routing-policy-card { background: var(--surface); border: 0; border-radius: 11px; padding: 14px; }
 .theme-modern .routing-policy-card .routing-policy-summary + .routing-policy-summary { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
-.theme-modern .routing-policy-title { font-size: 11px; color: var(--ink-soft); }
+.theme-modern .routing-policy-title { font-size: 12px; color: var(--ink-soft); }
 .theme-modern .routing-signal, .theme-modern .routing-policy-source, .theme-modern .routing-policy-value small { background: transparent; border: 0; padding: 0 3px; font: 10px var(--font); }
 .theme-modern .single-mode-banner { border: 1px solid var(--primary-hairline); border-radius: 11px; background: var(--primary-soft); padding: 15px; margin: 16px 0; }
 .theme-modern .single-mode-banner strong { font-size: 12px; }
@@ -193,7 +193,12 @@
   .theme-modern .logs-split .log-filter-bar .log-search-input { width: 100%; min-width: 0; }
   .log-exact-filters { grid-column: 1/-1; }
   .theme-modern .models-split { grid-template-columns: 1fr; }
-  .theme-modern .models-split > .model-directory { position: static; min-height: 0; max-height: 330px; }
+  /* The directory is the whole page on a phone: the 330px cap left it a ~123px
+     scroll window with barely one row visible. Let it grow to its content, and
+     drop the inner scroll region — the page scrolls instead, so the footer
+     (pagination) stays reachable. */
+  .theme-modern .models-split > .model-directory { position: static; min-height: 0; max-height: none; }
+  .theme-modern .models-split .list-shell-body { overflow: visible; }
   .models-workspace-actions { flex-wrap: wrap; justify-content: flex-start; }
   .workspace-filter-row { padding: 14px; }
   .workspace-filter-row .directory-search { flex: 1 1 100%; width: 100%; }
@@ -1116,6 +1121,21 @@
    and a 16-character model name plus its route chip, verdict and match tag could
    not fit on one line (measured in the running console, 2026-10-08). */
 :root[data-appearance] .dialog:has(.site-probe-workflow) { width: min(1320px, calc(100vw - 32px)); }
+
+/* Phone: the model detail is the page the operator came for, so its dialog
+   takes the screen instead of the shared 700px card. `:has()` scopes the size
+   to this workspace's own dialog — the member card dialog, whose marker this is
+   not, keeps the shared dimension. The header (and its close button) stays put
+   because the dialog body is the only scroll region. */
+@media (max-width: 760px) {
+  :root[data-appearance] .dialog-backdrop:has(.model-mobile-detail) { padding: 8px; }
+  :root[data-appearance] .dialog:has(.model-mobile-detail) {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  :root[data-appearance] .dialog:has(.model-mobile-detail) .dialog-body { max-height: 80dvh; }
+}
 .site-probe-card-kind, .site-probe-card-run { overflow-wrap: anywhere; }
 
 /* Shared model details and billing reference, never a member-only skin. */

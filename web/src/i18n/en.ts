@@ -471,6 +471,7 @@ export const en: Dict = {
   "modelsPage.memberTipBody":
     "The Base URL and setup live behind Connect; usage and cost are recorded against you alone.",
   "modelsPage.cardDetails": "Model details and actions",
+  "modelsPage.backToDirectory": "Back to model directory",
   "modelsPage.cardPriceNote": "Includes model ratio ×{ratio} · billed by the selected route member",
   "modelsPage.cardVariablePrice": "Tiered or scheduled pricing: current first-tier rates shown.",
   "modelsPage.cardDescription":
