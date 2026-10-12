@@ -40,6 +40,7 @@ import type {
   SiteProbeDetection,
   SiteProbePolicy,
   SiteProbeReport,
+  SiteProbeRun,
   SiteNewsFeed,
   SiteNewsRefresh,
   KeepaliveEvent,
@@ -706,10 +707,13 @@ export const api = (client: ApiClient) => ({
   },
   /** Collect now: one site when ids are given, every enabled site otherwise. */
   siteProbeCollect: (siteIds?: number[]) =>
-    client.post<{ collected?: number; failed: number }>(
-      "/admin/site-probe/collect",
-      siteIds && siteIds.length > 0 ? { site_ids: siteIds } : {},
-    ),
+    client.post<{
+      /** Per-site rounds: present when specific sites were asked for. */
+      runs?: SiteProbeRun[];
+      /** Round totals: present when every enabled site was collected. */
+      collected?: number;
+      failed: number;
+    }>("/admin/site-probe/collect", siteIds && siteIds.length > 0 ? { site_ids: siteIds } : {}),
   /** dry_run lists what would change; the caller confirms before applying. */
   siteProbeApply: (body: {
     routes?: string[];

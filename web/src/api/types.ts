@@ -798,6 +798,18 @@ export interface SiteProbeUnmatched {
   price?: SiteProbePrice;
 }
 
+/** One collection round for one site, as the collect endpoint reports it. */
+export interface SiteProbeRun {
+  site_id: number;
+  source_kind?: string;
+  /** "ok" | "failed" | "running". */
+  status: string;
+  /** Model records this round stored; 0 with status "ok" is an empty source. */
+  monitor_count: number;
+  /** Why a failed round failed, in the upstream's own words. */
+  error?: string;
+}
+
 export interface SiteProbeSiteStatus {
   site_id: number;
   site_name: string;

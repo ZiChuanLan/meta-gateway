@@ -50,9 +50,19 @@
 .observation-period button[aria-pressed="true"], .observation-site-filters button[aria-pressed="true"] { background: var(--surface-subtle); border-color: var(--line-strong); color: var(--ink); }
 .observation-cadence { font-size: 11px; color: var(--muted-strong); margin: 8px 0 22px; }
 .observation-cadence a { margin-left: 8px; }
-.observation-layout { display: grid; grid-template-columns: 218px minmax(0,1fr); min-height: 430px; border-top: 1px solid var(--line); }
-.observation-sites { border-right: 1px solid var(--line); padding: 14px 12px 0 0; min-width: 0; }
-.observation-site-filters { margin-bottom: 14px; }
+/* Both panes of the observation board follow the console's fixed-height
+   convention (the same shape as `.models-split > .model-directory`: a capped
+   box with an inner scroll region). 195 collected models used to stretch the
+   whole page and drag the site column along with it; now the page stops at the
+   viewport and each pane scrolls on its own. The constant is this page's own
+   chrome — 338px above the board (title, view tabs, toolbar, cadence line) plus
+   137px below it (page foot and padding), measured at 1440px — so the board
+   fills the screen exactly. `min-height: 0` is what lets a grid item shrink;
+   without it a tall list resizes its row instead of scrolling. */
+.observation-layout { display: grid; grid-template-columns: 218px minmax(0,1fr); height: calc(100dvh - 475px); min-height: 430px; border-top: 1px solid var(--line); }
+.observation-sites { border-right: 1px solid var(--line); padding: 14px 12px 0 0; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+/* The filters stay put while the site list scrolls under them. */
+.observation-site-filters { position: sticky; top: 0; z-index: 1; margin-bottom: 14px; padding-bottom: 4px; background: var(--bg); }
 .observation-site-filters button { padding: 5px 9px; font-size: 11px; }
 .observation-site { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px; margin: 2px 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .observation-site strong { padding-right: 10px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
@@ -62,7 +72,7 @@
 .observation-site i { position: absolute; top: 17px; right: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--muted-dark); }
 .observation-site i.is-enabled { background: var(--success); }
 .observation-site i.is-failed { background: var(--danger); }
-.observation-detail { min-width: 0; padding: 20px 0 0 26px; }
+.observation-detail { min-width: 0; min-height: 0; padding: 20px 0 20px 26px; overflow-y: auto; scrollbar-width: thin; }
 .observation-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .observation-detail-head h2 { margin: 0 0 7px; font-size: 20px; font-weight: 650; }
 .observation-detail-head p { margin: 0; font-size: 11px; color: var(--muted-strong); }
@@ -71,8 +81,10 @@
 .observation-switches .check { font-size: 12px; }
 .observation-catalogue > summary { padding: 12px 0; font-size: 13px; font-weight: 600; cursor: pointer; }
 .observation-list-hint { font-size: 11px; color: var(--muted-strong); line-height: 1.6; margin: 2px 0 16px; }
+/* "0 collected" with a reason: quiet, but the first thing under the count. */
+.observation-zero-reason { margin: 2px 0 10px; font-size: 12px; line-height: 1.6; color: var(--muted-strong); }
 .observation-model { display: grid; grid-template-columns: minmax(145px,1fr) 124px minmax(100px,.7fr) minmax(80px,.6fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.observation-model.is-header { font-size: 11px; color: var(--muted-strong); padding-top: 8px; padding-bottom: 8px; }
+.observation-model.is-header { position: sticky; top: 0; z-index: 1; background: var(--bg); font-size: 11px; color: var(--muted-strong); padding-top: 8px; padding-bottom: 8px; }
 .observation-model-name { min-width: 0; }
 .observation-model-name code { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .observation-model-name small, .observation-price small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted-strong); }
@@ -99,11 +111,13 @@
   .observation-model.is-header > :last-child { display: none; }
 }
 @media (max-width: 760px) {
-  .observation-layout { grid-template-columns: 1fr; }
-  .observation-sites { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; border-right: 0; padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+  /* One column on a phone: the page scrolls, the panes do not. */
+  .observation-layout { grid-template-columns: 1fr; height: auto; min-height: 0; }
+  .observation-sites { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; overflow-y: visible; border-right: 0; padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
   .observation-site-filters { display: none; }
   .observation-site { flex: 0 0 150px; margin: 0; }
-  .observation-detail { padding: 20px 0 0; }
+  .observation-detail { padding: 20px 0 0; overflow-y: visible; }
+  .observation-model.is-header { position: static; }
   .observation-detail-head { flex-wrap: wrap; }
   .observation-model { grid-template-columns: minmax(0,1fr) 124px; gap: 10px; }
   .observation-model.is-header > :nth-child(n+3) { display: none; }

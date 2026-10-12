@@ -40,6 +40,11 @@ export const en: Dict = {
   "billing.open": "Charge settings",
   "billing.description":
     "A price set here only affects later requests; changing it never rewrites past bills.",
+  "billing.currentPrice": "Charging now: {rates}",
+  "billing.ratesToken": "{input} / 1M input · {output} / 1M output",
+  "billing.ratesRequest": "{fee} per call",
+  "billing.change": "Change the price",
+  "billing.changeHint": "Free, the default price, or rates of your own",
   "billing.state": "How it is charged",
   "billing.explicit": "Set a price here",
   "billing.explicitModel": "Custom price",
@@ -80,6 +85,8 @@ export const en: Dict = {
   "billing.quoteHint":
     "All of these are prices somebody else published. They are reference only and never change what you charge.",
   "billing.noQuotes": "No reference price copied yet — you can just type one.",
+  "billing.evidenceMore": "{count} more",
+  "billing.inUse": "This is what you charge now",
   "billing.credit": "site credit",
   "billing.copy": "Use as my price",
   "billing.copyTitle": "Use a reference price as your price",
@@ -3645,10 +3652,33 @@ export const en: Dict = {
   "observation.day": "Last 24 hours",
   "observation.week": "Last 7 days",
   "observation.import": "Import public directory",
+  "observation.importRun": "Start import",
+  "observation.importing": "Importing…",
+  "observation.importConfirm":
+    "Reads the site addresses from {url}, writes only to sites you already have (matched by domain), then runs one collection round right away.",
+  "observation.importHint":
+    "Sites the directory has and you do not are never created; a source you typed yourself is left exactly as it is.",
   "observation.collectAll": "Collect now",
+  "observation.collecting": "Collecting…",
+  "observation.collectSite": "Collected {count} models from “{name}”",
+  "observation.collectSiteEmpty": "“{name}” collected fine but returned no model records",
+  "observation.collectSiteFailed": "“{name}” failed to collect: {reason}",
+  "observation.collectRound": "Round finished: {collected} sites collected, {failed} failed",
   "observation.cadence": "Scheduled collection every {seconds}s",
   "observation.schedule": "Change schedule",
-  "observation.imported": "Matched {count} sites · {failed} failed",
+  "observation.imported":
+    "Import finished: updated {matched} sites · skipped {skipped} (they carry a source of their own) · {unmatched} directory sites not created · then {collected} collected and {failed} failed",
+  "observation.collectedNone": "No model collected in this period",
+  "observation.noMatch": "No model matches “{query}”",
+  "observation.zero.sourceOff":
+    "Scheduled collection is off for this site — switch it on to collect.",
+  "observation.zero.failed": "The last collection failed; the reason is in the notice above.",
+  "observation.zero.never": "Never collected — click Collect now to start.",
+  "observation.zero.emptyCatalogue":
+    "The last collection succeeded, but the site publishes no model records.",
+  "observation.zero.outsideWindow":
+    "The last collection stored {count} models, none of them inside the selected period — try Last 7 days.",
+  "observation.zero.unknown": "Nothing collected in this period.",
   "observation.sites": "Observed sites",
   "observation.filter.all": "All",
   "observation.filter.issues": "Issues",
@@ -3667,7 +3697,6 @@ export const en: Dict = {
   "observation.collected": "{count} models in the latest successful collection",
   "observation.listHint":
     "This is the site's published model list. Route links are secondary and never change the collection count.",
-  "observation.noModels": "The successful collection returned no model records",
   "observation.availability": "Availability",
   "observation.links": "Route links",
   "observation.perRequest": "per request",

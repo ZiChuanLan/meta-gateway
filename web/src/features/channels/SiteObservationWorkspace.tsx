@@ -7,6 +7,7 @@ import type {
   SiteObservation,
   SiteProbeAction,
   SiteProbePolicy,
+  SiteProbeRun,
   SiteProbeSiteStatus,
   Site,
 } from "../../api/types";
@@ -16,6 +17,7 @@ import { ActionMenu } from "../../components/ActionMenu";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
+import { useToast } from "../../toast";
 import { BillingRuleDialog } from "../models/BillingRulePanel";
 
 const DEFAULT_POLICY: SiteProbePolicy = {
@@ -69,6 +71,7 @@ export function SiteObservationWorkspace({
 }) {
   const { client } = useSession();
   const { t } = useI18n();
+  const toast = useToast();
   const service = api(client!);
   const [hours, setHours] = useState(24);
   const [query, setQuery] = useState(initialModel);
@@ -97,13 +100,97 @@ export function SiteObservationWorkspace({
     queryFn: ({ signal }) => service.siteProbeReport(policy, signal),
   });
   const [routeRowsOpen, setRouteRowsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  // The scope of the last collect, so the retry under a failure banner repeats
+  // the same request (one site or the whole fleet) instead of widening it.
+  const collectScope = useRef<number[] | undefined>(undefined);
+
+  // "0 collected" is the answer an operator cannot act on. Name the state
+  // instead: collection off, the last round failed (the upstream's own message
+  // is above), never collected, or collected fine with an empty catalogue. The
+  // window case is the one that misleads most — the site did publish models,
+  // just not inside the selected period.
+  const zeroReason = (site: SiteProbeSiteStatus | undefined): string | null => {
+    if (!site) return null;
+    if (!site.probe_source_enabled) return t("observation.zero.sourceOff");
+    if (site.probe_last_error) return t("observation.zero.failed");
+    if (!site.probe_last_run_at) return t("observation.zero.never");
+    if (site.last_run_status === "running") return t("observation.collecting");
+    if (site.last_run_status === "ok" && site.monitor_count === 0)
+      return t("observation.zero.emptyCatalogue");
+    if (site.monitor_count > 0)
+      return t("observation.zero.outsideWindow", { count: site.monitor_count });
+    return t("observation.zero.unknown");
+  };
+
+  /** One line for what a finished round did — the count a click used to swallow. */
+  const collectOutcome = (data: {
+    runs?: SiteProbeRun[];
+    collected?: number;
+    failed: number;
+  }): string => {
+    const runs = data.runs ?? [];
+    if (runs.length === 1) {
+      const run = runs[0]!;
+      const name =
+        (observations.data?.sites ?? []).find((site) => site.site_id === run.site_id)?.site_name ??
+        `#${run.site_id}`;
+      if (run.status === "failed")
+        return t("observation.collectSiteFailed", {
+          name,
+          reason: run.error || t("observation.zero.unknown"),
+        });
+      if (run.monitor_count === 0) return t("observation.collectSiteEmpty", { name });
+      return t("observation.collectSite", { name, count: run.monitor_count });
+    }
+    if (runs.length > 1) {
+      return t("observation.collectRound", {
+        collected: runs.filter((run) => run.status === "ok").length,
+        failed: data.failed,
+      });
+    }
+    return t("observation.collectRound", { collected: data.collected ?? 0, failed: data.failed });
+  };
+
+  /** The directory's own receipt: what it matched, left alone, and collected. */
+  const importOutcome = (data: {
+    matched: number;
+    skipped: number;
+    unmatched: number;
+    created: number;
+    collected?: number;
+    failed?: number;
+  }): string =>
+    t("observation.imported", {
+      matched: data.matched,
+      skipped: data.skipped,
+      unmatched: data.unmatched,
+      created: data.created,
+      collected: data.collected ?? 0,
+      failed: data.failed ?? 0,
+    });
+
   const collect = useAdminMutation({
     mutationFn: (ids?: number[]) => service.siteProbeCollect(ids),
     invalidateKeys: INVALIDATE,
+    onSuccess: (data, ids) => {
+      collectScope.current = ids;
+      toast.push({
+        tone: data.failed > 0 ? "error" : "success",
+        message: collectOutcome(data),
+      });
+    },
+    onError: (_error, ids) => {
+      collectScope.current = ids;
+    },
   });
   const importCatalog = useAdminMutation({
     mutationFn: () => service.siteProbeCatalogImport({ url: CATALOG_URL }),
     invalidateKeys: INVALIDATE,
+    onSuccess: (data) => {
+      setImportOpen(false);
+      toast.push({ tone: "success", message: importOutcome(data) });
+    },
   });
   const prune = useAdminMutation({
     mutationFn: () => service.siteProbeCatalogPrune(),
@@ -132,6 +219,7 @@ export function SiteObservationWorkspace({
     memberId: number;
     siteId: number;
     upstreamModel: string;
+    channelName?: string;
   } | null>(null);
   const selected =
     (observations.data?.sites ?? []).find((item) => item.site_id === selectedId) ??
@@ -186,6 +274,10 @@ export function SiteObservationWorkspace({
         selected?.site_name.toLowerCase().includes(term)),
   );
   const links = (report.data?.rows ?? []).filter((row) => row.site_id === selected?.site_id);
+  const siteModels = selected
+    ? items.filter((item) => item.site_id === selected.site_id).length
+    : 0;
+  const reason = siteModels === 0 ? zeroReason(selected) : null;
   return (
     <section className="site-observation-workspace">
       <div className="observation-toolbar">
@@ -215,9 +307,9 @@ export function SiteObservationWorkspace({
           variant="quiet"
           icon={<Download size={14} />}
           disabled={busy}
-          onClick={() => importCatalog.mutate(undefined)}
+          onClick={() => setImportOpen(true)}
         >
-          {t("observation.import")}
+          {importCatalog.isPending ? t("observation.importing") : t("observation.import")}
         </Button>
         <Button
           variant="secondary"
@@ -225,7 +317,7 @@ export function SiteObservationWorkspace({
           disabled={busy}
           onClick={() => collect.mutate(undefined)}
         >
-          {t("observation.collectAll")}
+          {collect.isPending ? t("observation.collecting") : t("observation.collectAll")}
         </Button>
       </div>
       {runtime.data?.editable?.site_probe_interval_seconds ? (
@@ -234,15 +326,12 @@ export function SiteObservationWorkspace({
           <Link to="/settings?tab=runtime">{t("observation.schedule")}</Link>
         </p>
       ) : null}
-      {collect.error || importCatalog.error ? (
-        <ErrorState error={collect.error || importCatalog.error} />
+      {collect.error ? (
+        <ErrorState error={collect.error} retry={() => collect.mutate(collectScope.current)} />
       ) : null}
       {importCatalog.data ? (
         <p role="status" className="field-hint">
-          {t("observation.imported", {
-            count: importCatalog.data.matched,
-            failed: importCatalog.data.failed ?? 0,
-          })}
+          {importOutcome(importCatalog.data)}
         </p>
       ) : null}
       {observations.isPending ? (
@@ -330,7 +419,9 @@ export function SiteObservationWorkspace({
                       disabled={busy || !selected.probe_source_enabled}
                       onClick={() => collect.mutate([selected.site_id])}
                     >
-                      {t("modelsPage.siteProbe.collectNow")}
+                      {collect.isPending
+                        ? t("observation.collecting")
+                        : t("modelsPage.siteProbe.collectNow")}
                     </Button>
                   </div>
                 </header>
@@ -369,9 +460,9 @@ export function SiteObservationWorkspace({
                 ) : null}
                 <details className="observation-catalogue" open>
                   <summary>
-                    {t("observation.collected", {
-                      count: items.filter((item) => item.site_id === selected.site_id).length,
-                    })}
+                    {siteModels > 0
+                      ? t("observation.collected", { count: siteModels })
+                      : t("observation.collectedNone")}
                     {query.trim() ? (
                       <span className="observation-filter-count">
                         {" "}
@@ -379,6 +470,11 @@ export function SiteObservationWorkspace({
                       </span>
                     ) : null}
                   </summary>
+                  {reason ? (
+                    <p className="observation-zero-reason" role="status">
+                      {reason}
+                    </p>
+                  ) : null}
                   <p className="observation-list-hint">{t("observation.listHint")}</p>
                   <div className="observation-table">
                     <div className="observation-model is-header">
@@ -402,12 +498,17 @@ export function SiteObservationWorkspace({
                             memberId: member.member_id,
                             siteId: item.site_id,
                             upstreamModel: item.raw_model,
+                            // Without the channel name the member panel explains
+                            // its scope as “only affects 「」”, which names nothing.
+                            channelName: member.channel_name,
                           })
                         }
                       />
                     ))}
-                    {!visible.length ? (
-                      <p className="field-hint">{t("observation.noModels")}</p>
+                    {!visible.length && siteModels > 0 ? (
+                      <p className="field-hint">
+                        {t("observation.noMatch", { query: query.trim() })}
+                      </p>
                     ) : null}
                   </div>
                 </details>
@@ -496,6 +597,34 @@ export function SiteObservationWorkspace({
         </Button>
         <p className="field-hint">{t("modelsPage.siteProbe.pruneHint")}</p>
       </details>
+      {importOpen ? (
+        <Dialog
+          title={t("observation.import")}
+          onClose={() => setImportOpen(false)}
+          busy={importCatalog.isPending}
+          actions={
+            <>
+              <Button
+                variant="secondary"
+                disabled={importCatalog.isPending}
+                onClick={() => setImportOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                loading={importCatalog.isPending}
+                onClick={() => importCatalog.mutate(undefined)}
+              >
+                {t("observation.importRun")}
+              </Button>
+            </>
+          }
+        >
+          <p>{t("observation.importConfirm", { url: CATALOG_URL })}</p>
+          <p className="field-hint">{t("observation.importHint")}</p>
+          {importCatalog.error ? <ErrorState error={importCatalog.error} /> : null}
+        </Dialog>
+      ) : null}
       {billing ? <BillingRuleDialog {...billing} onClose={() => setBilling(null)} /> : null}
       {pruneOpen ? (
         <ConfirmDialog
