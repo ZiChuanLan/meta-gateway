@@ -96,6 +96,13 @@ docker compose config --quiet   # 再跑 Compose E2E（见 ci.yml 第 11 步）
 **测试里开库一律用 `store.OpenTest(t.TempDir())`。** 它拷贝一份「每进程只迁移一次」的模板库
 （`internal/store/template.go`：`sync.Once` 建模板 → 每测试文件拷贝，拷贝时**跳过 `Migrate`**）。
 
+> **本地复跑 Compose E2E 前必须先删数据卷。** `docker-compose.yml` 的数据卷没有钉固定 `name:`，所以
+> **同工程名复用同一个卷**：上一轮（你或别的会话）留下的 `routes` 会让 `e2e-runner` 的
+> `POST /admin/routes` 收到 **409 resource already exists**，栈就 panic 在 `setup()` 里——看上去像回归，
+> 实际只是脏数据。先 `docker compose -f docker-compose.yml -f docker-compose.e2e.yml down --volumes`
+> （必要时再 `docker volume rm meta-gateway_meta-gateway-data meta-gateway_meta-gateway-e2e-state`），
+> 起来后用 `/admin/routes` 计数为 0 确认是空库。CI 每次都是干净 runner，不受这条影响。
+
 **只有断言迁移行为的测试才用 `store.Open`**：重开一个已经写入的目录、从旧 schema 升级、
 断言某个迁移会重放。目前必须保留 `Open` 的位置：`internal/store/store_test.go` 的
 `TestP0P2DatabaseUpgradesWithoutDataLoss` / `TestP0P4DatabaseUpgradesToCheckin…`、
@@ -534,7 +541,10 @@ CI 会跑一遍生成器再 `git diff --exit-code docs/reference`。所以：
 
 1. 在 `CHANGELOG.md` 写好 `## [vX.Y.Z]` 段落；
 2. commit（`feat(scope): ...` 英文，见 CONTRIBUTING.md）；
-3. 打**轻量** tag（本仓库现有 tag 全是轻量，**不要加 `-a`**）；
+3. 打 tag（自 v4.5.1 起打**附注** tag，`git tag -a vX.Y.Z -m "vX.Y.Z：一句话（详见 CHANGELOG）"`——
+   release workflow 用 `CHANGELOG.md` 里 `## [vX.Y.Z]` 那一节当 GitHub Release 正文，tag 说明只是摘要）；
+   ⚠️ 早先这里写的是「一律轻量、不要 `-a`」，已经被实际发布推翻：`v4.5.1` 与 `v4.6.0` 都是附注 tag，
+   而轻量 tag 的 Release 名字只有 tag 名、没有摘要。
 4. `git push origin master && git push origin vX.Y.Z`。
 
 **推 tag 才会触发 release workflow**（构建 Docker 镜像 + 发 GitHub Release）。只推分支不会发版。
