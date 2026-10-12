@@ -119,7 +119,9 @@ export function AddChannelDialog({
         type_hint: typeHint,
       });
       setUpstreamModels(result.models);
-      setPicked(result.models);
+      // Fetching lists what the upstream serves; it is not a decision to serve
+      // all of it. Nothing is ticked until the operator ticks it.
+      setPicked([]);
     } catch (err) {
       setModelsError(err);
       setUpstreamModels(null);
