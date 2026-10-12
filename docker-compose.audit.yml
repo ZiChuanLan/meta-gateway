@@ -23,9 +23,15 @@ services:
       BACKUP_DIR: /data/backups
       NO_PROXY: "127.0.0.1,localhost,host.docker.internal"
       ADMIN_USERNAME: admin
-      ADMIN_TOKEN: local-ui-audit-only
+      # The team-mode owner is auto-created from these two, so the walkthrough
+      # login (admin / 123456) works straight after a fresh volume.
+      ADMIN_TOKEN: "123456"
       MASTER_KEY: local-ui-audit-isolated-master-key
       METRICS_TOKEN: local-metrics-audit-only
+      # Declared so the console does not show the “apply your deployment file”
+      # banner: that notice fires when compose never passed the update-tracking
+      # variable, which is noise in a walkthrough stack.
+      SELFUPDATE_TRACK_TAG: audit
       # Everything that would reach the network on its own stays off: this stack
       # is for reading the console, not for probing third parties.
       UPDATE_CHECK_ENABLED: "false"
