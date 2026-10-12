@@ -122,7 +122,7 @@ it("keeps dirty input after a version conflict", async () => {
   const input = await screen.findByLabelText("Ordinary input (USD / 1M tokens)");
   fireEvent.change(input, { target: { value: "3" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
-  await screen.findByText(/rule or quote changed/);
+  await screen.findByText(/price list changed/);
   expect(input).toHaveValue(3);
 });
 it("guards escape-close of a dirty billing dialog", async () => {
@@ -149,9 +149,9 @@ it("freezes a copy target, requires native conversion and submits the reviewed r
       qc,
     ),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Compare and copy" }));
-  expect(screen.getByRole("button", { name: "Copy and activate" })).toBeDisabled();
-  fireEvent.change(screen.getByLabelText("USD per native pricing unit"), {
+  fireEvent.click(screen.getByRole("button", { name: "Use as my price" }));
+  expect(screen.getByRole("button", { name: "Confirm and use it" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("USD per 1 site credit"), {
     target: { value: ".5" },
   });
   ui.rerender(
@@ -164,7 +164,7 @@ it("freezes a copy target, requires native conversion and submits the reviewed r
       qc,
     ),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Copy and activate" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and use it" }));
   await waitFor(() => expect(calls).toHaveLength(1));
   expect(calls[0]!.body).toEqual({ quote_id: 1, expected_revision: 2, usd_per_unit: 0.5 });
 });
