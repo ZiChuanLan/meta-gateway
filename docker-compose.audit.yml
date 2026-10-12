@@ -1,0 +1,63 @@
+# Isolated acceptance stack: own project name, ports and volumes, so it can never
+# touch a deployment that is already running (the 4100 stack included).
+#
+#   docker compose -p mg-audit -f docker-compose.audit.yml up -d --build --wait
+#   docker compose -p mg-audit -f docker-compose.audit.yml down -v
+#
+# The mock upstream runs beside it so channels, quotes and balances are
+# deterministic and never leave the host.
+services:
+  meta-gateway:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-audit}
+        COMMIT: ${COMMIT:-unknown}
+    image: mg-audit/meta-gateway:local
+    init: true
+    ports:
+      - "4318:4100"
+    environment:
+      HTTP_ADDR: ":4100"
+      DATA_DIR: /data
+      BACKUP_DIR: /data/backups
+      NO_PROXY: "127.0.0.1,localhost,host.docker.internal"
+      ADMIN_USERNAME: admin
+      ADMIN_TOKEN: local-ui-audit-only
+      MASTER_KEY: local-ui-audit-isolated-master-key
+      METRICS_TOKEN: local-metrics-audit-only
+      # Everything that would reach the network on its own stays off: this stack
+      # is for reading the console, not for probing third parties.
+      UPDATE_CHECK_ENABLED: "false"
+      CHECKIN_ENABLED: "false"
+      HEALTH_SWEEP_ENABLED: "false"
+      RECOVERY_PROBE_ENABLED: "false"
+      MODEL_CATALOG_SYNC_INTERVAL_HOURS: "0"
+      MODEL_CATALOG_SYNC_PRICES: "false"
+      SITE_PROBE_INTERVAL_SECONDS: "86400"
+      SITE_NEWS_INTERVAL_SECONDS: "86400"
+      KEEPALIVE_CHECK_INTERVAL_SECONDS: "86400"
+      ALERT_SWEEP_INTERVAL_SECONDS: "0"
+      ALERT_DAILY_SUMMARY_INTERVAL_SECONDS: "0"
+      WEBHOOK_THROTTLE_SECONDS: "86400"
+      # The seeded channels point at the mock over the compose network. The
+      # gateway denies private/loopback destinations by default (SSRF guard), so
+      # the audit network itself has to be allow-listed explicitly.
+      OUTBOUND_ALLOW_CIDRS: "172.16.0.0/12"
+      OUTBOUND_ALLOW_HOSTS: ""
+      # Room for the console walkthrough without tripping the admin limiter.
+      ADMIN_RATE_PER_MINUTE: "100000"
+      ADMIN_RATE_BURST: "10000"
+    volumes:
+      - mg-audit-data:/data
+
+  mock-upstream:
+    image: python:3.12-alpine
+    command: ["python", "/audit/mock.py"]
+    ports:
+      - "4319:4319"
+    volumes:
+      - ./tools/audit-mock:/audit:ro
+
+volumes:
+  mg-audit-data:
