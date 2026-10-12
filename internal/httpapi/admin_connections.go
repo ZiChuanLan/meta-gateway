@@ -171,6 +171,19 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "connection vanished after create")
 		return
 	}
+	// Checking a model while adding the connection adopts it: the checklist on
+	// this dialog is the routing state (see the console's adopt hint), so the
+	// names picked here must land as routes and members. Storing them as a mere
+	// candidate list would make the operator tick the same boxes twice and read
+	// "已选 0" on the connection they just created.
+	adopted := make([]string, 0)
+	adoptErrors := map[string]string{}
+	if domain.NormalizeModelSyncMode(channel.ModelSyncMode) == domain.ModelSyncModeManual {
+		adopted, adoptErrors = h.adoptChannelModels(channel.ID, channel.ModelsCSV)
+	}
+	if len(adopted) > 0 {
+		h.modelsCache.Invalidate()
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"channel":           channel,
 		"site":              site,
@@ -179,7 +192,83 @@ func (h *AdminHandler) createConnection(w http.ResponseWriter, r *http.Request) 
 		"has_secret":        true,
 		"platform":          platform,
 		"detection_matched": false,
+		"adopted_models":    adopted,
+		"adopt_errors":      adoptErrors,
 	})
+}
+
+// adoptChannelModels wires a freshly created manual-sync channel's picked
+// models into routing: every name gets an exact route (reused when the name is
+// already routed — routes are global, and a disabled one is on purpose) plus
+// one enabled member for this channel.
+//
+// Two properties the add path depends on. It never fails as a whole: the
+// connection already exists, so a name that cannot be adopted is reported back
+// and the remaining names are still wired. And re-running is a no-op: the route
+// is looked up before it is created, and a member that is already there is left
+// exactly as stored (its enabled flag and group belong to the operator, not to
+// the add dialog). Auto-sync channels never come through here — what they serve
+// is whatever discovery probes.
+func (h *AdminHandler) adoptChannelModels(channelID int64, modelsCSV string) ([]string, map[string]string) {
+	adopted := make([]string, 0)
+	failures := make(map[string]string)
+	seen := make(map[string]struct{})
+	for _, raw := range strings.Split(modelsCSV, ",") {
+		model := strings.TrimSpace(raw)
+		if model == "" {
+			continue
+		}
+		if _, duplicate := seen[model]; duplicate {
+			continue
+		}
+		seen[model] = struct{}{}
+		route, err := h.db.Route.GetByModelAny(model)
+		if err != nil {
+			failures[model] = err.Error()
+			continue
+		}
+		routeID := int64(0)
+		if route == nil {
+			routeID, err = h.db.Route.Create(&domain.Route{ModelPattern: model, Enabled: true})
+			if err != nil {
+				failures[model] = err.Error()
+				continue
+			}
+		} else {
+			routeID = route.ID
+		}
+		members, err := h.db.RouteMember.ListByRoute(routeID)
+		if err != nil {
+			failures[model] = err.Error()
+			continue
+		}
+		bound := false
+		for i := range members {
+			if members[i].ChannelID == channelID {
+				bound = true
+				break
+			}
+		}
+		if !bound {
+			if _, err := h.db.RouteMember.Create(&domain.RouteMember{
+				RouteID:   routeID,
+				ChannelID: channelID,
+				Priority:  0,
+				Weight:    100,
+				Enabled:   true,
+				Auto:      true,
+			}); err != nil {
+				failures[model] = err.Error()
+				continue
+			}
+		}
+		adopted = append(adopted, model)
+		// Same follow-up as creating a route by hand: the capability registry
+		// answers "how do I call it" right away instead of at the next catalog
+		// sweep, and the queue drops rather than fails when it is full.
+		h.bootstrapNewModel(model)
+	}
+	return adopted, failures
 }
 
 // findSiteByBaseURL returns the first site whose normalized base URL equals
