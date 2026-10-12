@@ -1,14 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { I18nProvider } from "./i18n";
 import { SessionProvider } from "./session";
 import { ToastProvider } from "./toast";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installPreloadRecovery } from "./lib/preloadRecovery";
-import { UnsavedChangesBoundary } from "./lib/unsavedChanges";
+import { UnsavedChangesBoundary } from "./lib/RouterBoundary";
 import "./styles.css";
 import "./themes/modern/theme.css";
 import "./themes/classic/theme.css";
@@ -37,22 +37,33 @@ const queryClient = new QueryClient({
 // new chunks; reloading once picks up the shell that matches them.
 installPreloadRecovery();
 
+// A data router, not `BrowserRouter`: it is what lets the unsaved-changes guard
+// hold back a navigation the app did not start (the browser's Back/Forward
+// buttons). The single splat route keeps App's own <Routes> in charge of the
+// page tree, so no page had to change — see lib/RouterBoundary.tsx.
+const router = createBrowserRouter(
+  [
+    {
+      path: "*",
+      element: (
+        <UnsavedChangesBoundary>
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </UnsavedChangesBoundary>
+      ),
+    },
+  ],
+  { basename: "/console" },
+);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <ToastProvider>
           <SessionProvider>
-            <BrowserRouter basename="/console">
-              {/* Inside the router, above the app: it wraps the router's
-                  navigator so an in-app move cannot drop a draft the operator
-                  never saved. See lib/unsavedChanges.ts. */}
-              <UnsavedChangesBoundary>
-                <ErrorBoundary>
-                  <App />
-                </ErrorBoundary>
-              </UnsavedChangesBoundary>
-            </BrowserRouter>
+            <RouterProvider router={router} />
           </SessionProvider>
         </ToastProvider>
       </I18nProvider>

@@ -14,6 +14,33 @@ if (typeof HTMLDialogElement !== "undefined" && !HTMLDialogElement.prototype.sho
   };
 }
 
+// react-router's data router builds a `Request` for every navigation, handing it
+// the signal from an `AbortController`. This environment mixes realms: jsdom
+// supplies `AbortController`/`AbortSignal`, while the WHATWG `Request` comes
+// from Node — and Node's `Request` rejects a signal created outside it
+// ("Expected signal to be an instance of AbortSignal"). A browser is a single
+// realm, so this only ever bites in tests; and only the data router constructs
+// a request per navigation, which is why the declarative router never hit it.
+//
+// The bridge drops that foreign signal. No test here registers a loader or
+// fetcher, so there is nothing for the router's abort to reach.
+const NativeRequest = globalThis.Request;
+function domAbortSignalIsAccepted() {
+  try {
+    new NativeRequest("http://localhost/", { signal: new AbortController().signal });
+    return true;
+  } catch {
+    return false;
+  }
+}
+if (typeof NativeRequest === "function" && !domAbortSignalIsAccepted()) {
+  globalThis.Request = class CompatibleRequest extends NativeRequest {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      super(input, init?.signal ? { ...init, signal: undefined } : init);
+    }
+  } as typeof Request;
+}
+
 // `findBy*` and `waitFor` default to a 1000ms wait, which is a figure measured
 // against a test file running on its own. This suite runs 52 files in
 // parallel, and `App.test.tsx`'s "hides a navigation entry on request" mounts

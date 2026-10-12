@@ -1,8 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createContext, useContext, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, Route, Routes, createMemoryRouter, RouterProvider } from "react-router-dom";
 import { I18nProvider } from "../i18n";
-import { UnsavedChangesBoundary } from "../lib/unsavedChanges";
+import { UnsavedChangesBoundary } from "../lib/RouterBoundary";
 import { OAuthPanel } from "./OAuthPanel";
 import { teamText } from "./text";
 import type { OAuthSettings, TeamRequest } from "./types";
@@ -72,32 +73,50 @@ function stub(options: { settings?: OAuthSettings; failSave?: boolean } = {}): S
   return { request, calls };
 }
 
-/** The panel on its board, with the sidebar link that prompted the fix. */
-function board(request: TeamRequest) {
+const RequestContext = createContext<TeamRequest | null>(null);
+
+/**
+ * The board on the production shape: a data router whose splat route renders
+ * the guard and the module's own <Routes>, with the sidebar link that prompted
+ * the fix. The router lives in state so a new transport can be handed in
+ * without remounting the panel.
+ */
+function Board({ request }: { request: TeamRequest }) {
+  const [router] = useState(() =>
+    createMemoryRouter([{ path: "*", element: <BoardRoutes /> }], {
+      initialEntries: ["/team/oauth"],
+    }),
+  );
   return (
     <I18nProvider>
-      <MemoryRouter initialEntries={["/team/oauth"]}>
-        <UnsavedChangesBoundary>
-          <Link to="/team/members">members</Link>
-          <Routes>
-            <Route
-              path="/team/oauth"
-              element={
-                <OAuthPanel request={request} policies={[]} locale="en" t={teamText("en")} />
-              }
-            />
-            <Route path="/team/members" element={<span data-testid="page">members</span>} />
-          </Routes>
-        </UnsavedChangesBoundary>
-      </MemoryRouter>
+      <RequestContext.Provider value={request}>
+        <RouterProvider router={router} />
+      </RequestContext.Provider>
     </I18nProvider>
+  );
+}
+
+function BoardRoutes() {
+  const request = useContext(RequestContext);
+  if (!request) throw new Error("Board needs a transport");
+  return (
+    <UnsavedChangesBoundary>
+      <Link to="/team/members">members</Link>
+      <Routes>
+        <Route
+          path="/team/oauth"
+          element={<OAuthPanel request={request} policies={[]} locale="en" t={teamText("en")} />}
+        />
+        <Route path="/team/members" element={<span data-testid="page">members</span>} />
+      </Routes>
+    </UnsavedChangesBoundary>
   );
 }
 
 it("keeps a half-typed provider field when the operator leaves the board", async () => {
   const confirm = vi.fn(() => false);
   vi.stubGlobal("confirm", confirm);
-  render(board(stub().request));
+  render(<Board request={stub().request} />);
 
   fireEvent.change(await screen.findByLabelText("Client ID"), { target: { value: "gh-client" } });
   fireEvent.click(screen.getByRole("link", { name: "members" }));
@@ -110,7 +129,7 @@ it("keeps a half-typed provider field when the operator leaves the board", async
 it("leaves without a prompt once the board is saved", async () => {
   const confirm = vi.fn(() => true);
   vi.stubGlobal("confirm", confirm);
-  render(board(stub().request));
+  render(<Board request={stub().request} />);
 
   fireEvent.change(await screen.findByLabelText("Client ID"), { target: { value: "gh-client" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -124,7 +143,7 @@ it("leaves without a prompt once the board is saved", async () => {
 it("keeps the draft and the guard when a save fails", async () => {
   const confirm = vi.fn(() => false);
   vi.stubGlobal("confirm", confirm);
-  render(board(stub({ failSave: true }).request));
+  render(<Board request={stub({ failSave: true }).request} />);
 
   fireEvent.change(await screen.findByLabelText("Client ID"), { target: { value: "gh-client" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -145,12 +164,12 @@ it("does not let a late server document overwrite an unsaved edit", async () => 
     });
   };
 
-  const view = render(board(stub().request));
+  const view = render(<Board request={stub().request} />);
   fireEvent.change(await screen.findByLabelText("Client ID"), { target: { value: "typed" } });
 
-  // A second fetch — the transport prop changed while the operator was typing.
+  // A second fetch — the transport changed while the operator was typing.
   await act(async () => {
-    view.rerender(board(late));
+    view.rerender(<Board request={late} />);
   });
   await act(async () => {
     land(document_({ providers: [provider({ client_id: "server-value" })] }));
