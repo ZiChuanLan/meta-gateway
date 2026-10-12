@@ -8,9 +8,9 @@ import {
 import { useI18n } from "../i18n";
 import { leavesDirtyZone } from "./unsavedChanges";
 
-/** A move is held back only when it would leave a surface holding edits. */
-const shouldBlockLeave: BlockerFunction = ({ nextLocation }) =>
-  leavesDirtyZone(nextLocation.pathname);
+/** A move is held back only when it would leave the page the operator is on. */
+const shouldBlockLeave: BlockerFunction = ({ currentLocation, nextLocation }) =>
+  leavesDirtyZone(currentLocation.pathname, nextLocation.pathname);
 
 /**
  * The router-level half of the unsaved-changes contract; `unsavedChanges.ts`

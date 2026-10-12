@@ -45,14 +45,22 @@ interface DirtyZone {
 const dirtyZones = new Set<DirtyZone>();
 
 /**
- * True when navigating to `nextPathname` would leave a dirty surface behind.
+ * True when leaving `currentPathname` for `nextPathname` would abandon edits.
+ *
+ * Both sides matter. The registry can hold zones for surfaces that are mounted
+ * but not on screen (a settings tab that keeps its panels alive), so a move has
+ * to be judged against where the operator actually is: blocking on "the target
+ * differs from some dirty zone" made an off-screen draft freeze navigation from
+ * every other page — "I changed nothing, why is it asking?".
+ *
  * `nextPathname` arrives stripped of the router's basename — the same form
- * `useLocation().pathname` uses — because `useBlocker` strips it before
- * calling the guard.
+ * `useLocation().pathname` uses — because `useBlocker` strips it before calling
+ * the guard.
  */
-export function leavesDirtyZone(nextPathname: string): boolean {
+export function leavesDirtyZone(currentPathname: string, nextPathname: string): boolean {
+  if (currentPathname === nextPathname) return false;
   for (const zone of dirtyZones) {
-    if (zone.pathname !== nextPathname) return true;
+    if (zone.pathname === currentPathname) return true;
   }
   return false;
 }

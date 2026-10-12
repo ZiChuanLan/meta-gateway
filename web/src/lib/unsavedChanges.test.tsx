@@ -77,17 +77,21 @@ it("asks before letting an in-app navigation discard the draft", () => {
 });
 
 it("registers a dirty surface against its pathname, and drops it on unmount", () => {
-  // This is the seam the router guard reads: a dirty surface blocks a move to
-  // another pathname, not one within its own (a tab switch the page guards).
-  expect(leavesDirtyZone("/elsewhere")).toBe(false);
+  // This is the seam the router guard reads: leaving the dirty page blocks, a
+  // move within it (a tab switch the page guards itself) does not, and a move
+  // from any other page is not this zone's business.
+  expect(leavesDirtyZone("/settings", "/elsewhere")).toBe(false);
   const view = mount(true);
-  expect(leavesDirtyZone("/settings")).toBe(false);
-  expect(leavesDirtyZone("/elsewhere")).toBe(true);
+  expect(leavesDirtyZone("/settings", "/settings")).toBe(false);
+  expect(leavesDirtyZone("/settings", "/elsewhere")).toBe(true);
+  // A dirty page that is mounted but off-screen must not freeze navigation
+  // from the page the operator is actually looking at.
+  expect(leavesDirtyZone("/somewhere-else", "/third")).toBe(false);
   view.unmount();
-  expect(leavesDirtyZone("/elsewhere")).toBe(false);
+  expect(leavesDirtyZone("/settings", "/elsewhere")).toBe(false);
 });
 
 it("does not register a surface that has nothing unsaved", () => {
   mount(false);
-  expect(leavesDirtyZone("/elsewhere")).toBe(false);
+  expect(leavesDirtyZone("/settings", "/elsewhere")).toBe(false);
 });
