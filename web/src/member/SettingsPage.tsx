@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Field, Page, Panel } from "../components/ui";
 import { QuotaMeter } from "../components/QuotaMeter";
+import { useUnsavedChanges } from "../lib/unsavedChanges";
 import { formatCost } from "../lib/format";
 import { accountRequest } from "../team/transport";
 import { teamError, type TeamText } from "../team/text";
@@ -56,6 +57,12 @@ export function SettingsPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const dirty = baseline !== null && JSON.stringify(draft) !== baseline;
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+  useUnsavedChanges(dirty);
+  const qc = useQueryClient();
 
   const preferences = useQuery({
     queryKey: ["user", userID, "preferences"],
@@ -65,7 +72,10 @@ export function SettingsPage({
   const [redeemNotice, setRedeemNotice] = useState("");
   const [credit, setCredit] = useState(account.credit);
   useEffect(() => {
-    if (preferences.data) setDraft(preferences.data.preferences);
+    if (preferences.data && !dirtyRef.current) {
+      setDraft(preferences.data.preferences);
+      setBaseline(JSON.stringify(preferences.data.preferences));
+    }
   }, [preferences.data]);
 
   const sessions = useQuery({
@@ -79,11 +89,13 @@ export function SettingsPage({
     setError(null);
     setSaved(false);
     try {
-      await accountRequest("/me/preferences", {
+      const result = await accountRequest<PreferencesView>("/me/preferences", {
         method: "PUT",
         body: JSON.stringify(draft),
       });
-      await preferences.refetch();
+      setDraft(result.preferences);
+      setBaseline(JSON.stringify(result.preferences));
+      qc.setQueryData(["user", userID, "preferences"], result);
       setSaved(true);
     } catch (e) {
       setError(e);

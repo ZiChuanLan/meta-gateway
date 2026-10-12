@@ -32,7 +32,9 @@ const Dashboard = lazy(() =>
 const GuidedTour = lazy(() =>
   import("./features/GuidedTour").then((module) => ({ default: module.GuidedTour })),
 );
-import { SetupWizard } from "./features/SetupWizard";
+const SetupWizard = lazy(() =>
+  import("./features/SetupWizard").then((module) => ({ default: module.SetupWizard })),
+);
 import { channelHealthState } from "./features/channelHealth";
 import { KatanaCanvas } from "./components/KatanaCanvas";
 import { createEdgeSparkHost } from "./lib/katanafx";
@@ -49,7 +51,9 @@ import { isStaff, type ConsoleRole } from "./session";
 import { accountRequest, COOKIE_SESSION, refreshAnonymousCSRF } from "./team/transport";
 import { teamText } from "./team/text";
 import { AcceptFlow } from "./features/AcceptFlow";
-import { AccountPage } from "./features/AccountPage";
+const AccountPage = lazy(() =>
+  import("./features/AccountPage").then((module) => ({ default: module.AccountPage })),
+);
 import { AppearanceProvider, useAppearance } from "./appearance";
 import { LoginShell } from "./components/LoginShell";
 // The multi-user module (its own area of the console) and the sign-in screen a

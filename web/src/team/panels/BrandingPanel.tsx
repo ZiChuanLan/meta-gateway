@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button, Field, Panel } from "../../components/ui";
+import { useUnsavedChanges } from "../../lib/unsavedChanges";
 import { teamError } from "../text";
 import { useTeamMutation } from "../useTeamMutation";
 import { useUsers } from "../UsersContext";
@@ -19,14 +20,12 @@ export function BrandingPanel() {
   const { busy, error, run } = useTeamMutation(request, t);
   return (
     <BrandingForm
-      // Remount when the stored settings change: the form is a draft, and a
-      // remount is what makes an external update visible instead of silently
-      // stale in the fields.
-      key={JSON.stringify(settings)}
       value={settings}
       busy={busy}
       error={error}
-      onSave={(value) => void run("/admin/team/settings", "PUT", value)}
+      onSave={async (value) => {
+        return run<TeamSettings>("/admin/team/settings", "PUT", value);
+      }}
     />
   );
 }
@@ -40,16 +39,29 @@ function BrandingForm({
   value: TeamSettings;
   busy: boolean;
   error?: unknown;
-  onSave: (value: TeamSettings) => void;
+  onSave: (value: TeamSettings) => Promise<TeamSettings | undefined>;
 }) {
   const { t, locale } = useUsers();
   const [draft, setDraft] = useState(value);
+  const [baseline, setBaseline] = useState(JSON.stringify(value));
+  const dirty = JSON.stringify(draft) !== baseline;
+  useUnsavedChanges(dirty);
+  useEffect(() => {
+    if (!dirty && !busy) {
+      setDraft(value);
+      setBaseline(JSON.stringify(value));
+    }
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
   const b = draft.branding;
   const patch = (partial: Partial<typeof b>) =>
     setDraft({ ...draft, branding: { ...b, ...partial } });
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    onSave(draft);
+    const result = await onSave(draft);
+    if (result) {
+      setDraft(result);
+      setBaseline(JSON.stringify(result));
+    }
   };
   return (
     <form onSubmit={submit}>
@@ -124,7 +136,7 @@ function BrandingForm({
           </p>
         ) : null}
         <div className="form-actions">
-          <Button type="submit" loading={busy}>
+          <Button type="submit" loading={busy} disabled={!dirty}>
             {t("save")}
           </Button>
         </div>

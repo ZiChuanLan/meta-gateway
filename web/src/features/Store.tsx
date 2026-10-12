@@ -26,7 +26,7 @@ import { HookSection } from "./store/HookSection";
 import { PluginConfigForm } from "./plugins/PluginConfigForm";
 import { useGatewayModels } from "./plugins/useGatewayModels";
 import { Drawer } from "../components/Drawer";
-import { Button, Dialog, Page, StatusBadge } from "../components/ui";
+import { Button, Dialog, ErrorState, Page, StatusBadge } from "../components/ui";
 
 // Only invalidate always-safe keys here. Gated add-on queries (checkin-logs,
 // webdav-*) are owned by their panels with enabled: moduleOn — invalidating them
@@ -220,7 +220,9 @@ function StoreExtensions() {
         </Button>
       }
     >
-      <div className="ops-canvas store-layout">
+      <div
+        className={`ops-canvas store-layout${enabledAddons.length === 0 ? " is-empty-installed" : ""}`}
+      >
         <div className="store-col store-col-side">
           <section className="store-section">
             <header className="store-section-head">
@@ -336,7 +338,7 @@ function StoreExtensions() {
             {market.isLoading ? (
               <p className="detail-empty">{t("common.loading")}</p>
             ) : market.isError ? (
-              <p className="detail-empty is-danger">{t("store.marketFailed")}</p>
+              <ErrorState error={market.error} retry={() => void market.refetch()} />
             ) : (market.data?.plugins ?? []).length === 0 ? (
               <p className="detail-empty">{t("store.marketEmpty")}</p>
             ) : (

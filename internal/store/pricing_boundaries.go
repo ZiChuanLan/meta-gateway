@@ -65,12 +65,8 @@ func (db *DB) SaveBillingRule(scope, key string, r domain.BillingRule, expected 
 		if quoteErr != nil || quote == nil {
 			return nil, fmt.Errorf("quote missing")
 		}
-		var latest int64
-		if err = tx.QueryRow("SELECT MAX(id) FROM price_quotes WHERE scope_key=?", quote.ScopeKey).Scan(&latest); err != nil {
+		if err = quoteCopyable(*quote); err != nil {
 			return nil, err
-		}
-		if latest != r.QuoteID {
-			return nil, ErrPriceConflict
 		}
 		if _, err = quoteConversion(*quote, r.USDPerUnit); err != nil {
 			return nil, err
@@ -290,21 +286,34 @@ func quoteConversion(q domain.PriceQuoteSnapshot, usdPerUnit *float64) (float64,
 
 // CopyQuoteRule copies exactly one immutable quote, under a latest-version gate.
 // Future observations do not update the resulting billing rule.
+// A quote is copyable when the operator could rely on it: it must describe a
+// calculable price and must not have expired. "Is it the newest row" is
+// deliberately not part of this check — the copied payload is immutable, the
+// confirmation shows the exact values, and a background refresh must not turn a
+// reviewed quote into a conflict.
+func quoteCopyable(q domain.PriceQuoteSnapshot) error {
+	if q.Status != "calculable" {
+		return fmt.Errorf("quote is not calculable: %s", q.Status)
+	}
+	if q.ExpiresAt != "" {
+		if expires, err := time.Parse(time.RFC3339Nano, q.ExpiresAt); err == nil && !expires.After(time.Now()) {
+			return ErrPriceConflict
+		}
+	}
+	return nil
+}
+
 func (db *DB) CopyQuoteRule(scope, key string, quoteID, expected int64, usdPerUnit *float64) (*domain.BillingRule, error) {
 	q, err := db.PriceQuote(quoteID)
 	if err != nil || q == nil {
 		return nil, fmt.Errorf("quote missing")
 	}
+	if err = quoteCopyable(*q); err != nil {
+		return nil, err
+	}
 	factor, err := quoteConversion(*q, usdPerUnit)
 	if err != nil {
 		return nil, err
-	}
-	var latest int64
-	if err = db.QueryRow("SELECT MAX(id) FROM price_quotes WHERE scope_key=?", q.ScopeKey).Scan(&latest); err != nil {
-		return nil, err
-	}
-	if latest != quoteID {
-		return nil, ErrPriceConflict
 	}
 	if scope == "member" {
 		var siteID int64

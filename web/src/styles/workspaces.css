@@ -1561,3 +1561,8 @@
 .model-match-row.is-selected { background: var(--primary-soft); }
 .model-match-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-match-source { margin-left: auto; flex: 0 0 auto; font-size: var(--text-xs); }
+
+/* Empty plugin installations do not reserve the whole viewport. */
+.store-layout.is-empty-installed { min-height:0; }
+.store-layout.is-empty-installed .store-col-main { flex:0 0 auto; }
+.store-layout.is-empty-installed .store-col-main .store-section:first-child { flex:0 0 auto; }

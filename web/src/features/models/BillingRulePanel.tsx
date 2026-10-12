@@ -13,6 +13,7 @@ import {
   validTiers,
   validWindows,
 } from "./PricingEditors";
+import { ModelRatioDialog } from "./ModelRatioDialog";
 import { ManualQuoteDialog } from "./ManualQuoteDialog";
 import { QuoteActions } from "./QuoteActions";
 import type { BillingRule, BillingView, PriceQuote } from "./pricingTypes";
@@ -66,6 +67,7 @@ export function BillingRulePanel({
 
   const [editorDirty, setEditorDirty] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [ratioOpen, setRatioOpen] = useState(false);
   const scope = memberId ? "member" : "model";
   const key = memberId ? String(memberId) : model;
   const updateDirty = useCallback(
@@ -98,6 +100,12 @@ export function BillingRulePanel({
         />
       ) : null}
       <p className="panel-hint">{t("billing.description")}</p>
+      <div>
+        <Button variant="quiet" disabled={editorDirty} onClick={() => setRatioOpen(true)}>
+          {t("billing.multiplier")}
+        </Button>
+      </div>
+      {ratioOpen ? <ModelRatioDialog model={model} onClose={() => setRatioOpen(false)} /> : null}
       {view.isPending ? (
         <Loading />
       ) : view.isError ? (
@@ -189,7 +197,11 @@ function BillingEditor({
         r ? (r[k] === undefined ? "" : String(r[k]! * 1000)) : String(rates[k] * 1000),
       ),
       fee: String(r?.per_request ?? rates.per_request),
-      timezone: r?.timezone ?? rates.timezone ?? "UTC",
+      timezone:
+        r?.timezone ??
+        (rates.timezone && rates.timezone !== "Local"
+          ? rates.timezone
+          : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
       tiers: r?.tiers ?? view.tiers ?? [],
       windows: r?.windows ?? view.windows ?? [],
     };

@@ -372,7 +372,7 @@ const zh = {
   memberQuotasHint: "每个账户的两个预算；在成员详情里修改，与令牌、分组额度同时生效。",
   rateBurst: "突发额度",
   pricingIntro:
-    "计价顺序：路由成员单价 → 模型单价（取最具体且有价的一层，整层替换），再乘以模型倍率。缓存读取未设单价时按输入价计费。",
+    "计价顺序：成员规则 → 模型默认规则，整层替换，再乘模型倍率。新规则区分继承、免费与未知缓存价；参考报价不会自动改价。",
   billingRatios: "计费倍率",
   billingRatiosHint: "倍率乘在该模型的最终单价上，影响全站账单；1 表示不加价，留空即不设置。",
   newRatio: "新增倍率",
@@ -383,7 +383,7 @@ const zh = {
   noRatios: "还没有模型倍率，所有模型都按 1 倍计价。",
   unitPrices: "单价在哪里改",
   unitPricesHint:
-    "模型单价在模型页的「能力与元数据」里；渠道专属单价（含按次计费）在模型页的路由成员对话框里。两者优先级：成员单价优先于模型单价。",
+    "模型默认规则和成员覆盖都在模型页的「计费规则」里。能力与路由编辑不改价；此入口保留旧链接，倍率也可在计费面板中修改。",
 
   // 工作台（成员用自己的令牌试调；走真实转发，正常计费）。
   workbench: "工作台",
@@ -805,7 +805,7 @@ const en: Record<keyof typeof zh, string> = {
     "Each account's two budgets. Edited on the member's own page, and enforced together with the token's and the group's.",
   rateBurst: "Burst",
   pricingIntro:
-    "Pricing order: the route member's unit price, then the model's (the most specific layer that is priced wins outright), multiplied by the model's billing multiplier. Cache reads fall back to the input price when no cache price is set.",
+    "Member rules override model defaults as a whole, then apply the model multiplier. New rules distinguish inherit, free and unknown cache prices; reference quotes never change billing automatically.",
   billingRatios: "Billing multiplier",
   billingRatiosHint:
     "The multiplier applies on top of that model's final unit price and changes every account's bill; 1 means no markup. A model with no multiplier is billed at 1.",
@@ -817,7 +817,7 @@ const en: Record<keyof typeof zh, string> = {
   noRatios: "No multipliers yet — every model is billed at 1×.",
   unitPrices: "Where unit prices live",
   unitPricesHint:
-    "A model's unit price is on the Models page under capability & metadata; a channel-specific price (including per-request billing) is in that model's route member dialog. A member price wins over a model price.",
+    "Model defaults and member overrides share the Models billing-rule editor. Capability and routing edits do not change prices. This old link remains compatible; multipliers are also editable in the billing panel.",
 
   // Workbench: a member probing with their own token (real relay, real billing).
   workbench: "Workbench",

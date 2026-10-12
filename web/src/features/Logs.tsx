@@ -352,23 +352,27 @@ function BillingEntry({ explanation }: { explanation: BillingExplanation }) {
     // so rather than printing nothing or the raw stored text.
     items.push({ label: t("logsPage.billing.snapshot"), value: t("logsPage.billing.noSnapshot") });
   } else {
-    if (evidence.owner) {
+    if (typeof evidence.owner === "string") {
       items.push({ label: t("logsPage.billing.owner"), value: <code>{evidence.owner}</code> });
     }
     if (typeof evidence.revision === "number") {
       items.push({ label: t("logsPage.billing.revision"), value: String(evidence.revision) });
     }
-    if (evidence.source) {
+    if (typeof evidence.source === "string") {
       items.push({ label: t("logsPage.billing.source"), value: <code>{evidence.source}</code> });
     }
-    if (evidence.usage_source) {
+    if (typeof evidence.usage_source === "string") {
       const usageKey = USAGE_SOURCE_KEYS[evidence.usage_source];
       items.push({
         label: t("logsPage.billing.usageSource"),
         value: usageKey ? t(usageKey) : evidence.usage_source,
       });
     }
-    if (evidence.rates) {
+    if (
+      typeof evidence.rates === "object" &&
+      evidence.rates !== null &&
+      !Array.isArray(evidence.rates)
+    ) {
       pushRate(items, t("logsPage.billing.rate.input"), evidence.rates.input_per_1k, 1000);
       pushRate(items, t("logsPage.billing.rate.output"), evidence.rates.output_per_1k, 1000);
       pushRate(items, t("logsPage.billing.rate.cacheRead"), evidence.rates.cache_per_1k, 1000);
@@ -379,7 +383,22 @@ function BillingEntry({ explanation }: { explanation: BillingExplanation }) {
         1000,
       );
       pushRate(items, t("logsPage.billing.rate.perRequest"), evidence.rates.per_request, 1);
+      if (
+        typeof evidence.rates.multiplier === "number" &&
+        Number.isFinite(evidence.rates.multiplier)
+      )
+        items.push({
+          label: t("logsPage.billing.timeMultiplier"),
+          value: String(evidence.rates.multiplier),
+        });
+      if (typeof evidence.rates.timezone === "string")
+        items.push({ label: t("logsPage.billing.timezone"), value: evidence.rates.timezone });
     }
+    if (typeof evidence.ordinary_input_tokens === "number")
+      items.push({
+        label: t("logsPage.billing.ordinaryInput"),
+        value: String(evidence.ordinary_input_tokens),
+      });
     if (typeof evidence.ratio === "number") {
       items.push({ label: t("logsPage.billing.ratio"), value: String(evidence.ratio) });
     }
@@ -392,7 +411,7 @@ function BillingEntry({ explanation }: { explanation: BillingExplanation }) {
         value: `${evidence.cache_read_tokens ?? 0} / ${evidence.cache_write_tokens ?? 0}`,
       });
     }
-    if (evidence.evaluated_at) {
+    if (typeof evidence.evaluated_at === "string") {
       items.push({
         label: t("logsPage.billing.evaluatedAt"),
         value: formatDate(evidence.evaluated_at),

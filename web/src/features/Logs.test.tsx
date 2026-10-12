@@ -694,7 +694,10 @@ describe("log billing explanation", () => {
       cache_per_1k: 0.3,
       cache_write_per_1k: 1.4,
       per_request: 0.02,
+      multiplier: 0.75,
+      timezone: "Asia/Shanghai",
     },
+    ordinary_input_tokens: 300,
     cache_read_tokens: 100,
     cache_write_tokens: 0,
   };
@@ -723,6 +726,9 @@ describe("log billing explanation", () => {
     // Rates are stored per 1k and read per 1M: 1.5 → $1,500.00.
     expect(within(billing).getByText("$1,500.00")).toBeInTheDocument();
     expect(within(billing).getByText("1.25")).toBeInTheDocument();
+    expect(within(billing).getByText("0.75")).toBeInTheDocument();
+    expect(within(billing).getByText("Asia/Shanghai")).toBeInTheDocument();
+    expect(within(billing).getByText("300")).toBeInTheDocument();
     // The explanation came with the list; expanding must not fetch per row.
     expect(paths.filter((path) => /billing|usage/.test(path))).toEqual([]);
   });

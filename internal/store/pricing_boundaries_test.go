@@ -76,8 +76,19 @@ func TestQuoteCopyFreeCacheAndVersion(t *testing.T) {
 	if err != nil || layer.Prompt != .002 {
 		t.Fatal("quote refresh repriced rule")
 	}
-	if _, err = db.CopyQuoteRule("member", key, id, r.Revision, nil); !errors.Is(err, store.ErrPriceConflict) {
-		t.Fatalf("old quote copied: %v", err)
+	rule, err := db.CopyQuoteRule("member", key, id, r.Revision, nil)
+	if err != nil {
+		t.Fatalf("reviewed quote must stay copyable after a refresh: %v", err)
+	}
+	stale := q
+	stale.Values.Input = rate(1)
+	stale.ExpiresAt = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)
+	staleID, err := db.SavePriceQuote(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.CopyQuoteRule("member", key, staleID, rule.Revision, nil); !errors.Is(err, store.ErrPriceConflict) {
+		t.Fatalf("expired quote copied: %v", err)
 	}
 	q.Unit = domain.QuoteUnit{Kind: "site_credit", Code: "site:1"}
 	q.ScopeKey = "site:1:glm-5.2"
@@ -85,10 +96,10 @@ func TestQuoteCopyFreeCacheAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.CopyQuoteRule("member", key, id, r.Revision, nil); err == nil {
+	if _, err = db.CopyQuoteRule("member", key, id, rule.Revision, nil); err == nil {
 		t.Fatal("native credit silently assumed USD")
 	}
-	if _, err = db.CopyQuoteRule("member", key, newID, r.Revision, nil); err != nil {
+	if _, err = db.CopyQuoteRule("member", key, newID, rule.Revision, nil); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -1,6 +1,10 @@
 import type { Dict } from "./types";
 
 export const en: Dict = {
+  "billing.multiplier": "Model multiplier",
+  "billing.multiplierTitle": "Model multiplier · {model}",
+  "billing.multiplierHint":
+    "Applies to this model across all members, without changing upstream quotes. Range 0–1000; 1 keeps the price. Zero makes charges free while token quotas still apply.",
   "billing.manual": "Add upstream quote",
   "billing.manualTitle": "Manual upstream quote · {model}",
   "billing.manualHint":
@@ -604,11 +608,11 @@ export const en: Dict = {
     "Configuration is stored in USD. Blank values cannot be saved; enter 0 explicitly for zero. Display currency settings do not convert these inputs.",
   "pricing.rulesTitle": "How billing and quotas work",
   "pricing.ruleLayer":
-    "Member pricing overrides model pricing as a whole, not field by field. Zero flat prices without tiers inherit the next layer; no price in either layer bills at zero.",
+    "Member rules override model defaults as a whole. Inherit, explicitly free and unpriced are distinct states; quote refreshes never change gateway rules.",
   "pricing.ruleFactors":
     "Select the input tier, then multiply by the first matching time window and model ratio. Per-call charges add to token charges; a zero ratio makes the cost zero.",
   "pricing.ruleCache":
-    "A zero cache-read price inherits input pricing. Cache creation bills as input. Missing usage must not be fabricated.",
+    "In new rules, zero cache rates are free and blanks are unknown. Cache reads and writes are charged separately, without duplicating ordinary input. Legacy fallback is preserved; never invent missing usage.",
   "pricing.ruleQuota":
     "Key, tenant group and member quotas independently limit access. Token and money limits are separate; reaching either blocks subsequent calls.",
   "logsPage.memberHistogramScope": "Latest {n} requests for your account",
@@ -2076,6 +2080,9 @@ export const en: Dict = {
   "logsPage.billing.rate.cacheRead": "Cache read /1M",
   "logsPage.billing.rate.cacheWrite": "Cache write /1M",
   "logsPage.billing.rate.perRequest": "Per request",
+  "logsPage.billing.timeMultiplier": "Time-window multiplier",
+  "logsPage.billing.timezone": "Billing timezone",
+  "logsPage.billing.ordinaryInput": "Ordinary input tokens",
   "logsPage.billing.ratio": "Model ratio",
   "logsPage.billing.evaluatedAt": "Evaluated at",
   "logsPage.billing.cacheTokens": "Cache read / write",

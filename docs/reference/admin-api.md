@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **243** 条注册、**198** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **251** 条注册、**203** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -75,13 +75,22 @@
 | --- | --- | --- |
 | `Get` | `/admin/balance-history` | balanceHistory |
 
-## /admin/channels · 16 条
+## /admin/billing-rule · 3 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/billing-rule` | billingRule |
+| `Put` | `/admin/billing-rule` | saveBillingRule |
+| `Post` | `/admin/billing-rule/copy-quote` | copyBillingQuote |
+
+## /admin/channels · 17 条
 
 | 方法 | 路径 | handler |
 | --- | --- | --- |
 | `Get` | `/admin/channels` | listChannels |
 | `Post` | `/admin/channels` | createChannel |
 | `Get` | `/admin/channels/account/finance` | finance |
+| `Post` | `/admin/channels/account/finance` | financeRefresh |
 | `Post` | `/admin/channels/account/probe-all` | probeAll |
 | `Get` | `/admin/channels/overview` | listChannelOverviews |
 | `Delete` | `/admin/channels/{id}` | deleteChannel |
@@ -280,11 +289,12 @@
 | `Delete` | `/admin/model-metadata/{name}` | deleteModelMetadata |
 | `Put` | `/admin/model-metadata/{name}` | upsertModelMetadata |
 
-## /admin/model-pricing · 1 条
+## /admin/model-pricing · 2 条
 
 | 方法 | 路径 | handler |
 | --- | --- | --- |
 | `Get` | `/admin/model-pricing` | modelPricing |
+| `Get` | `/admin/model-pricing/batch` | modelPricingBatch |
 
 ## /admin/models · 12 条
 
@@ -336,6 +346,14 @@
 | `Post` | `/admin/plugins/{id}/disable` | disable |
 | `Post` | `/admin/plugins/{id}/enable` | enable |
 | `Post` | `/admin/plugins/{id}/install` | install |
+
+## /admin/price-quotes · 3 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/price-quotes` | priceQuotes |
+| `Post` | `/admin/price-quotes` | manualPriceQuote |
+| `Post` | `/admin/price-quotes/estimate` | estimatePriceQuote |
 
 ## /admin/probes · 5 条
 

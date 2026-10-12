@@ -1251,47 +1251,11 @@ func QuoteToMemberPrices(quote adapters.PriceQuote) (prompt, completion, cache, 
 	}
 }
 
-// AdoptPricesResult reports what adopting an observed price changed.
+// AdoptPricesResult keeps the batch-copy response compatible; writes now use
+// immutable quote IDs and version-checked BillingRule updates.
 type AdoptPricesResult struct {
 	MemberID    int64    `json:"member_id"`
 	ChannelName string   `json:"channel_name"`
 	Adopted     []string `json:"adopted,omitempty"`
-	// Skipped explains why nothing was written (no price, unparsed expression,
-	// or the member already carries every field the quote could fill).
-	Skipped string `json:"skipped,omitempty"`
-}
-
-// AdoptPrices writes a site's published price into the members the operator
-// picked.
-//
-// The billing layers are "most specific wins": a value on the member silently
-// outranks the model catalog and the observed price alike. That is exactly why
-// this is an operator action and never an automatic one, and why the store
-// helper only fills fields that are still empty — a price someone typed must not
-// be replaced by whatever a status page published.
-func (s *Service) AdoptPrices(memberIDs []int64, quote *adapters.PriceQuote) ([]AdoptPricesResult, error) {
-	if len(memberIDs) == 0 {
-		return nil, nil
-	}
-	if quote == nil {
-		return nil, fmt.Errorf("no observed price for this model")
-	}
-	prompt, completion, cache, perRequest, ok := QuoteToMemberPrices(*quote)
-	if !ok {
-		return nil, fmt.Errorf("the published price cannot be converted: %s", quote.Raw)
-	}
-	results := make([]AdoptPricesResult, 0, len(memberIDs))
-	for _, memberID := range memberIDs {
-		result := AdoptPricesResult{MemberID: memberID}
-		adopted, err := s.db.RouteMember.AdoptObservedPrices(memberID, prompt, completion, cache, perRequest)
-		if err != nil {
-			return results, err
-		}
-		result.Adopted = adopted
-		if len(adopted) == 0 {
-			result.Skipped = "already_priced"
-		}
-		results = append(results, result)
-	}
-	return results, nil
+	Skipped     string   `json:"skipped,omitempty"`
 }

@@ -467,7 +467,7 @@ func TestFinanceSnapshotPartialRefreshRetainsQuoteAndReportsStale(t *testing.T) 
 			fmt.Fprint(w, `{"success":true,"data":{"id":1,"username":"audit","quota":1200000}}`)
 		case "/api/pricing":
 			if failed.Load() {
-				http.Error(w, "error", 503)
+				http.Error(w, "error", http.StatusServiceUnavailable)
 				return
 			}
 			fmt.Fprint(w, `{"success":true,"data":[{"model_name":"m","quota_type":0,"model_ratio":1,"completion_ratio":2}]}`)

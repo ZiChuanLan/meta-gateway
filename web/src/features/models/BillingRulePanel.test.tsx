@@ -66,7 +66,13 @@ beforeEach(() => {
         return new Response(JSON.stringify({ ...body.rule, revision: 1 }), { status: 200 });
       }
       return new Response(
-        JSON.stringify(path.startsWith("/admin/price-quotes") ? { items: [] } : view),
+        JSON.stringify(
+          path.startsWith("/admin/price-quotes")
+            ? { items: [] }
+            : path === "/admin/ratios"
+              ? []
+              : view,
+        ),
         { status: 200 },
       );
     }),
@@ -180,4 +186,39 @@ it("stores manual upstream observations without writing the gateway rule", async
     values: { mode: "token", input_per_million: 2, output_per_million: 0 },
   });
   expect(calls[0]!.body).not.toHaveProperty("rule");
+});
+
+it("promotes a legacy Local timezone into a supported IANA zone", async () => {
+  const original = fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, init?: RequestInit) =>
+      path.startsWith("/admin/billing-rule") && !init?.method
+        ? new Response(
+            JSON.stringify({
+              ...view,
+              effective_rates: { ...view.effective_rates, timezone: "Local" },
+            }),
+          )
+        : original(path, init),
+    ),
+  );
+  render(wrap(<BillingRulePanel model="m" />));
+  const zone = await screen.findByLabelText("Billing timezone");
+  expect(zone).not.toHaveValue("Local");
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect((calls[0]!.body.rule as Record<string, unknown>).timezone).toBe(
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  );
+});
+
+it("edits the model multiplier without altering a member rule", async () => {
+  render(wrap(<BillingRulePanel model="m" memberId={17} />));
+  fireEvent.click(screen.getByRole("button", { name: "Model multiplier" }));
+  const input = await screen.findByLabelText("Model multiplier");
+  fireEvent.change(input, { target: { value: "1.5" } });
+  fireEvent.click(screen.getByRole("dialog").querySelector("button[type=submit]")!);
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect(calls[0]).toEqual({ path: "/admin/ratios/m", body: { ratio: 1.5 } });
 });

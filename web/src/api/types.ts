@@ -396,6 +396,7 @@ export interface BillingEvidence {
   rates?: BillingEvidenceRates;
   cache_read_tokens?: number;
   cache_write_tokens?: number;
+  ordinary_input_tokens?: number;
 }
 
 /** Rates are USD per 1k tokens (per_request is USD per call). */
@@ -406,6 +407,7 @@ export interface BillingEvidenceRates {
   cache_write_per_1k?: number;
   per_request?: number;
   multiplier?: number;
+  timezone?: string;
 }
 
 export interface ProxyLog {

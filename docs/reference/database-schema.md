@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **133** 个 `.sql` 文件，其中 **133** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **135** 个 `.sql` 文件，其中 **135** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -26,7 +26,7 @@
 
 ## 表
 
-共 **61** 个表。
+共 **64** 个表。
 
 ### admin_totp · 4 列
 
@@ -105,6 +105,16 @@
 | `channel_name` | TEXT | 是 | '' | — |
 | `balance` | INTEGER | 是 | 0 | — |
 | `probed_at` | TEXT | 是 | — | — |
+
+### billing_rules · 5 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `scope` | TEXT | 是 | — | 是 |
+| `scope_key` | TEXT | 是 | — | 是 |
+| `revision` | INTEGER | 是 | — | — |
+| `payload` | TEXT | 是 | — | — |
+| `updated_at` | TEXT | 是 | — | — |
 
 ### channel_health_history · 7 列
 
@@ -311,6 +321,15 @@
 | `created_at` | TEXT | 是 | — | — |
 | `updated_at` | TEXT | 是 | — | — |
 
+### finance_snapshots · 4 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `channel_id` | INTEGER | 是 | — | — |
+| `observed_at` | TEXT | 是 | — | — |
+| `payload` | TEXT | 是 | — | — |
+
 ### keepalive_events · 13 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
@@ -512,6 +531,22 @@
 | `label` | TEXT | 是 | '' | — |
 | `created_at` | TEXT | 是 | — | — |
 | `last_used_at` | TEXT | — | — | — |
+
+### price_quotes · 11 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `scope_key` | TEXT | 是 | — | — |
+| `source` | TEXT | 是 | — | — |
+| `purpose` | TEXT | 是 | — | — |
+| `model` | TEXT | 是 | — | — |
+| `site_id` | INTEGER | 是 | 0 | — |
+| `account_id` | INTEGER | 是 | 0 | — |
+| `upstream_group` | TEXT | 是 | '' | — |
+| `observed_at` | TEXT | 是 | — | — |
+| `expires_at` | TEXT | 是 | '' | — |
+| `payload` | TEXT | 是 | — | — |
 
 ### probe_results · 12 列
 
@@ -1021,7 +1056,7 @@
 | `quota_total_cost` | REAL | 是 | 0 | — |
 | `quota_used_cost` | REAL | 是 | 0 | — |
 
-### usage_records · 16 列
+### usage_records · 18 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -1041,6 +1076,8 @@
 | `cache_creation_tokens` | INTEGER | 是 | 0 | — |
 | `cost` | REAL | 是 | 0 | — |
 | `user_id` | INTEGER | 是 | 0 | — |
+| `billing_status` | TEXT | 是 | 'legacy' | — |
+| `billing_evidence` | TEXT | 是 | '' | — |
 
 ### webdav_settings · 16 列
 
@@ -1065,7 +1102,7 @@
 
 ## 索引
 
-共 **78** 个索引。
+共 **81** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -1096,6 +1133,7 @@
 | `downstream_keys_user` | `downstream_keys` | — |
 | `idx_downstream_keys_token` | `downstream_keys` | — |
 | `idx_error_rules_enabled` | `error_passthrough_rules` | — |
+| `finance_snapshots_channel` | `finance_snapshots` | — |
 | `idx_keepalive_events_channel` | `keepalive_events` | — |
 | `idx_keepalive_events_credential` | `keepalive_events` | — |
 | `idx_model_capabilities_kind` | `model_capabilities` | — |
@@ -1107,6 +1145,8 @@
 | `idx_plugins_enabled` | `plugins` | — |
 | `idx_portal_credentials_key_kind` | `portal_credentials` | 是 |
 | `idx_portal_credentials_subject` | `portal_credentials` | 是 |
+| `price_quotes_lookup` | `price_quotes` | — |
+| `price_quotes_model` | `price_quotes` | — |
 | `idx_probe_results_member_time` | `probe_results` | — |
 | `idx_probe_results_pair` | `probe_results` | — |
 | `idx_probe_results_task` | `probe_results` | — |

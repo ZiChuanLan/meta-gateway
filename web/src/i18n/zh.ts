@@ -1,6 +1,10 @@
 import type { Dict } from "./types";
 
 export const zh: Dict = {
+  "billing.multiplier": "模型倍率",
+  "billing.multiplierTitle": "模型倍率 · {model}",
+  "billing.multiplierHint":
+    "乘在此模型所有成员的网关账单上，不改上游报价。范围 0–1000，1 表示原价；0 令金额为零，token 配额照常扣减。",
   "billing.manual": "补充上游报价",
   "billing.manualTitle": "手工上游报价 · {model}",
   "billing.manualHint": "此处记录站点实际扣费规则，不修改网关收费。保存后仍需明确复制才会生效。",
@@ -556,11 +560,11 @@ export const zh: Dict = {
     "配置统一以 USD 写入；留空不能保存，明确填写 0 才表示零值。显示货币设置不会换算这里的输入。",
   "pricing.rulesTitle": "如何计费与扣减额度",
   "pricing.ruleLayer":
-    "成员价优先于模型价，整层替换，不逐字段补齐。平价全 0 且无阶梯表示继承下一层；两层均无价按 0 计。",
+    "成员规则优先于模型默认规则，整层替换。继承、明确免费、未定价分别表示不同状态；报价刷新不会改变网关规则。",
   "pricing.ruleFactors":
     "先按计价输入量选择阶梯，再乘命中的首个时段倍率与模型倍率。每次调用费可与 token 费叠加；倍率 0 会使费用为 0。",
   "pricing.ruleCache":
-    "缓存读取单价为 0 时沿用输入单价；缓存写入按输入价计。不提供用量时不得伪造 token。",
+    "新规则中缓存价 0 表示免费、空白表示未知；缓存读写分别计价，不重复计普通输入。旧兼容规则保留原有回退；缺少用量不得伪造 token。",
   "pricing.ruleQuota":
     "令牌、租户分组和成员额度分别限制请求；token 与金额上限独立生效，任一达到上限均会拒绝后续调用。",
   "logsPage.memberHistogramScope": "当前账号最近 {n} 次请求",
@@ -1549,6 +1553,9 @@ export const zh: Dict = {
   "logsPage.billing.rate.cacheRead": "缓存读 /1M",
   "logsPage.billing.rate.cacheWrite": "缓存写 /1M",
   "logsPage.billing.rate.perRequest": "每次调用",
+  "logsPage.billing.timeMultiplier": "时段倍率",
+  "logsPage.billing.timezone": "计费时区",
+  "logsPage.billing.ordinaryInput": "普通输入 token",
   "logsPage.billing.ratio": "计费倍率",
   "logsPage.billing.evaluatedAt": "计价时间",
   "logsPage.billing.cacheTokens": "缓存读 / 写",

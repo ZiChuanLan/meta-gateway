@@ -56,9 +56,16 @@ func TestBillingRulesHTTPSeparateQuotesAndPolicy(t *testing.T) {
 	if err != nil || saved.QuoteID != id || saved.Input == nil || *saved.Input != .0001 {
 		t.Fatalf("refresh changed billing: %+v %v", saved, err)
 	}
-	status, _, _ = adminCall(t, srv.URL, http.MethodPost, "/admin/billing-rule/copy-quote?scope=model&key=priced-model", map[string]any{"quote_id": id, "expected_revision": 2})
-	if status != 409 {
-		t.Fatalf("old quote copied=%d", status)
+	// A reviewed quote stays copyable after a background refresh wrote a newer
+	// observation for the same scope: the payload is immutable, the operator saw
+	// the values, and the copy records which quote it came from.
+	status, _, raw = adminCall(t, srv.URL, http.MethodPost, "/admin/billing-rule/copy-quote?scope=model&key=priced-model", map[string]any{"quote_id": id, "expected_revision": 2})
+	if status != 200 {
+		t.Fatalf("reviewed quote=%d %s", status, raw)
+	}
+	saved, err = db.BillingRule("model", "priced-model")
+	if err != nil || saved.QuoteID != id || saved.Input == nil || *saved.Input != .0001 {
+		t.Fatalf("reviewed quote not re-applied: %+v %v", saved, err)
 	}
 	// No anonymous caller gets private price/account evidence.
 	resp, err := http.Get(srv.URL + "/admin/price-quotes")

@@ -346,8 +346,7 @@ func planMetadata(found bool, entry Entry, existing *domain.ModelMetadata, enabl
 	return domain.CatalogActionFill, changes
 }
 
-// planPrices is metadata's twin, kept separate because a price write changes
-// what a request costs.
+// planPrices previews reference observations without changing gateway billing.
 func planPrices(found bool, entry Entry, existing *domain.ModelMetadata, pricesEnabled, metadataEnabled bool) (string, []domain.CatalogFieldChange) {
 	if !metadataEnabled {
 		return domain.CatalogActionUnchanged, nil
@@ -358,13 +357,9 @@ func planPrices(found bool, entry Entry, existing *domain.ModelMetadata, pricesE
 	if !found || !entry.HasPrice {
 		return domain.CatalogActionUnchanged, nil
 	}
-	current := domain.ModelMetadata{ModelName: entry.Model, SupportsThinking: -1}
-	if existing != nil {
-		current = *existing
-	}
 	// Compare reference values only. Existing billing columns are legacy policy
 	// and must never be filled by a catalog refresh.
-	current = domain.ModelMetadata{ModelName: entry.Model}
+	current := domain.ModelMetadata{ModelName: entry.Model}
 	next := mergePrices(current, entry)
 	changes := priceDiff(current, next)
 	if len(changes) == 0 {
