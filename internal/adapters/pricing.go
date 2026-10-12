@@ -10,6 +10,7 @@
 package adapters
 
 import (
+	"math"
 	"strconv"
 	"strings"
 )
@@ -27,8 +28,16 @@ type PriceQuote struct {
 	InputPerMillion     float64 `json:"input_per_million,omitempty"`
 	OutputPerMillion    float64 `json:"output_per_million,omitempty"`
 	CacheReadPerMillion float64 `json:"cache_read_per_million,omitempty"`
-	PerRequest          float64 `json:"per_request,omitempty"`
-	GroupRatio          float64 `json:"group_ratio,omitempty"`
+	// CacheWritePerMillion is the cache-creation price (New-API's cw / a direct
+	// cache_write). It is a separate dimension from the cache read price.
+	CacheWritePerMillion float64 `json:"cache_write_per_million,omitempty"`
+	PerRequest           float64 `json:"per_request,omitempty"`
+	GroupRatio           float64 `json:"group_ratio,omitempty"`
+	// HasCacheRead / HasCacheWrite record whether the upstream actually
+	// published a cache price. A missing cache price is not the same as a free
+	// one, so callers must not read 0 without checking the flag.
+	HasCacheRead  bool `json:"-"`
+	HasCacheWrite bool `json:"-"`
 	// Raw is the published expression this quote came from (billing_expr),
 	// empty when the site published plain numbers.
 	Raw string `json:"raw,omitempty"`
@@ -43,6 +52,11 @@ type BillingCoefs struct {
 	Completion float64
 	CacheRead  float64
 	CacheWrite float64
+	// HasCacheRead / HasCacheWrite record whether the expression named the
+	// variable at all: an expression without cr does not price cache reads, so a
+	// zero coefficient must not be mistaken for a published free price.
+	HasCacheRead  bool
+	HasCacheWrite bool
 }
 
 // billingVariables maps the expression's variable names to their slot. These
@@ -95,6 +109,12 @@ func ParseBillingExpr(raw string) (BillingCoefs, bool) {
 			return BillingCoefs{}, false
 		}
 		*slots[slot] += number
+		switch slot {
+		case 2:
+			coefs.HasCacheRead = true
+		case 3:
+			coefs.HasCacheWrite = true
+		}
 		found = true
 	}
 	if !found {
@@ -141,22 +161,35 @@ func parseBillingTerm(term string) (string, float64, bool) {
 // NormalizePrice converts one published price into the gateway's storage units.
 //
 // The order matters and mirrors what New-API itself bills:
-//  1. a tiered expression, when the site publishes one — it is the authoritative
+//  1. a per-call declaration (quota_type=1, or the parser's legacy
+//     model_price-without-ratio heuristic) — a residual model_ratio or a stale
+//     direct quote beside it must not pull the row into token billing;
+//  2. a tiered expression, when the site publishes one — it is the authoritative
 //     price there, and the plain ratios beside it are placeholders (measured:
 //     every model of one such site carries model_ratio 37.5 while the real
 //     prices differ by model);
-//  2. a direct USD-per-1M quote;
-//  3. a token ratio: ratio × 1e6 / quota_per_unit × group_ratio;
-//  4. a legacy quota-per-1M quote: quota_per_1M / quota_per_unit;
-//  5. a per-call price: model_price × group_ratio.
+//  3. a direct USD-per-1M quote;
+//  4. a token ratio: ratio × 1e6 / quota_per_unit × group_ratio;
+//  5. a legacy quota-per-1M quote: quota_per_1M / quota_per_unit;
+//  6. a per-call price: model_price × group_ratio.
 //
-// Returns ok=false when the item carries no price at all.
+// Returns ok=false when the item carries no price at all, when an explicitly
+// token-declared row has no token price to offer, or when the declared
+// completion_ratio is not a usable price (negative / NaN / infinite).
 func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 	groupRatio := item.GroupRatio
 	if groupRatio <= 0 {
 		groupRatio = 1
 	}
 	quote := PriceQuote{Model: item.Model, Currency: strings.TrimSpace(item.Currency), GroupRatio: groupRatio}
+
+	// A declared per-call row stays fixed even with a placeholder ratio or a
+	// direct quote beside it; only a missing model_price lets it fall through.
+	if declaredFixed(item) && item.ModelPrice > 0 {
+		quote.Mode = "fixed"
+		quote.PerRequest = item.ModelPrice * groupRatio
+		return quote, true
+	}
 
 	if expr := strings.TrimSpace(item.BillingExpr); expr != "" {
 		quote.Mode = "token"
@@ -165,6 +198,9 @@ func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 			quote.InputPerMillion = coefs.Prompt * groupRatio
 			quote.OutputPerMillion = coefs.Completion * groupRatio
 			quote.CacheReadPerMillion = coefs.CacheRead * groupRatio
+			quote.CacheWritePerMillion = coefs.CacheWrite * groupRatio
+			quote.HasCacheRead = coefs.HasCacheRead
+			quote.HasCacheWrite = coefs.HasCacheWrite
 			return quote, true
 		}
 		quote.Unparsed = true
@@ -174,21 +210,40 @@ func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 	if quotaPerUnit <= 0 {
 		quotaPerUnit = 500000
 	}
+	unit := float64(quotaPerUnit)
 	switch {
 	case item.TokenUSD != nil && item.TokenUSD.Input > 0:
 		quote.Mode = "token"
 		quote.InputPerMillion = item.TokenUSD.Input
 		quote.OutputPerMillion = item.TokenUSD.Output
 		quote.CacheReadPerMillion = item.TokenUSD.CacheRead
+		quote.CacheWritePerMillion = item.TokenUSD.CacheWrite
+		quote.HasCacheRead = item.TokenUSD.HasCacheRead
+		quote.HasCacheWrite = item.TokenUSD.HasCacheWrite
 	case item.Ratio > 0:
 		quote.Mode = "token"
-		quote.InputPerMillion = item.Ratio * 1_000_000 / float64(quotaPerUnit) * groupRatio
-		quote.OutputPerMillion = quote.InputPerMillion * completionMultiplier(item.CompletionRatio)
+		quote.InputPerMillion = item.Ratio * 1_000_000 / unit * groupRatio
+		multiplier, usable := completionMultiplier(item)
+		if !usable {
+			return quote, false
+		}
+		quote.OutputPerMillion = quote.InputPerMillion * multiplier
+		quote.CacheReadPerMillion, quote.HasCacheRead = cacheRatioPrice(item.CacheRatio, item.HasCacheRatio, quote.InputPerMillion)
+		quote.CacheWritePerMillion, quote.HasCacheWrite = cacheRatioPrice(item.CacheWriteRatio, item.HasCacheWriteRatio, quote.InputPerMillion)
 	case item.QuotaPer1M > 0:
 		quote.Mode = "token"
-		quote.InputPerMillion = item.QuotaPer1M / float64(quotaPerUnit)
-		quote.OutputPerMillion = quote.InputPerMillion * completionMultiplier(item.CompletionRatio)
+		quote.InputPerMillion = item.QuotaPer1M / unit
+		multiplier, usable := completionMultiplier(item)
+		if !usable {
+			return quote, false
+		}
+		quote.OutputPerMillion = quote.InputPerMillion * multiplier
 	case item.ModelPrice > 0:
+		// A row that says token billing (quota_type=0) must not be reclassified
+		// as per-call from a residual model_price.
+		if declaredToken(item) {
+			return quote, false
+		}
 		quote.Mode = "fixed"
 		quote.PerRequest = item.ModelPrice * groupRatio
 	default:
@@ -197,11 +252,48 @@ func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 	return quote, true
 }
 
-// completionMultiplier: a completion ratio of 0 means "same as prompt", which is
-// how New-API treats an unset ratio.
-func completionMultiplier(ratio float64) float64 {
-	if ratio <= 0 {
-		return 1
+// declaredFixed reports whether the row declares per-call billing: the parser
+// sets Mode="fixed" from quota_type=1 or the legacy model_price heuristic, and
+// a hand-built row may set QuotaType directly.
+func declaredFixed(item ModelPrice) bool {
+	return item.Mode == "fixed" || item.QuotaType == 1
+}
+
+// declaredToken reports an explicit quota_type=0 declaration. Such a row must
+// not fall back to a per-call price just because a stale model_price remains.
+func declaredToken(item ModelPrice) bool {
+	return item.HasQuotaType && item.QuotaType == 0
+}
+
+// cacheRatioPrice turns a New-API cache ratio (a multiple of the input price)
+// into a per-1M amount. The presence flag rides through: a missing cache price
+// is not a free one, so a zero value without presence stays unset. A negative,
+// NaN, or infinite ratio is refused rather than dressed up as a real price.
+func cacheRatioPrice(ratio float64, present bool, inputPerMillion float64) (float64, bool) {
+	if !present || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 {
+		return 0, false
 	}
-	return ratio
+	return inputPerMillion * ratio, true
+}
+
+// completionMultiplier returns the token output multiplier and whether it is
+// usable. A missing completion_ratio means "same as input" (1); an explicit 0
+// means a free output (0). A negative, NaN, or infinite ratio is not a price at
+// all and is refused rather than quietly promoted to 1 (which would invent a
+// valid positive output price).
+func completionMultiplier(item ModelPrice) (float64, bool) {
+	if item.HasCompletionRatio {
+		switch {
+		case math.IsNaN(item.CompletionRatio), math.IsInf(item.CompletionRatio, 0), item.CompletionRatio < 0:
+			return 0, false
+		default:
+			return item.CompletionRatio, true
+		}
+	}
+	// Rows without a presence flag (hand-built callers, legacy data) keep the
+	// historical rule: zero or negative means "same as input".
+	if item.CompletionRatio <= 0 {
+		return 1, true
+	}
+	return item.CompletionRatio, true
 }
