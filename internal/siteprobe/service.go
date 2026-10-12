@@ -356,6 +356,17 @@ func (s *Service) CollectSite(ctx context.Context, site domain.Site) (*store.Sit
 		if fetchErr != nil {
 			return s.failRun(site, runID, started, fetchErr)
 		}
+		for model, quote := range snapshot.Quotes {
+			if quote.Unit.Kind == "site_credit" {
+				quote.Unit.Code = fmt.Sprintf("credit:site/%d", site.ID)
+			}
+			q := adapters.SnapshotQuote(quote, site.ID, 0, "site_public", started)
+			quote.QuoteID, fetchErr = s.db.SavePriceQuote(q)
+			if fetchErr != nil {
+				return s.failRun(site, runID, started, fetchErr)
+			}
+			snapshot.Quotes[model] = quote
+		}
 		samples = priceSamples(site.ID, runID, started, snapshot)
 	case SourceSub2APITransit:
 		_, snapshotURL, fetchErr := ResolveTransitDiscovery(ctx, s.client, site.ProbeSourceURL)
@@ -755,6 +766,8 @@ func observablePrice(rawModel string, rounds []Round) *adapters.PriceQuote {
 			GroupRatio:          round.Price.GroupRatio,
 			Raw:                 round.Price.Raw,
 			Unparsed:            round.Price.Unparsed,
+			Unit:                round.Price.Unit, QuoteID: round.Price.QuoteID, Status: round.Price.Status, UpstreamGroup: round.Price.UpstreamGroup,
+			CacheWritePerMillion: round.Price.CacheWritePerMillion, HasCacheRead: round.Price.HasCacheRead, HasCacheWrite: round.Price.HasCacheWrite,
 		}
 	}
 	return nil
@@ -1134,37 +1147,35 @@ func describeAction(kind string, member MemberState, row Row, newest Round, poli
 	return fmt.Sprintf("site probe: recovered, %s on %s", readings, row.SiteName)
 }
 
-// CatalogPrices converts the model catalog's per-1k prices into the per-1M USD
-// shape probe rows use, keyed by the catalog's own model name.
-//
-// It exists for one case: a site publishes prices for the models it is proud of
-// and nothing for the rest, and an operator looking at "no price" wants to know
-// what that model costs in general. The catalog's numbers are already the
-// gateway's billing fallback (billing reads them when a member has none), so this
-// surfaces what would be charged rather than adding a price source.
 func (s *Service) CatalogPrices() (map[string]adapters.PriceQuote, error) {
-	models, err := s.db.ModelMetadata.List()
+	items, err := s.db.PriceQuotes("")
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]adapters.PriceQuote, len(models))
-	for _, model := range models {
-		if model.PricePromptPer1k <= 0 && model.PriceCompletionPer1k <= 0 &&
-			model.PriceCachePer1k <= 0 && model.PricePerRequest <= 0 {
+	out := map[string]adapters.PriceQuote{}
+	for _, q := range items {
+		if q.Purpose != "reference" {
 			continue
 		}
-		quote := adapters.PriceQuote{
-			Model: model.ModelName, Mode: "token", Currency: "USD", CurrencySymbol: "$",
-			// Stored per 1k, shown per 1M like every other published price.
-			InputPerMillion:     model.PricePromptPer1k * 1000,
-			OutputPerMillion:    model.PriceCompletionPer1k * 1000,
-			CacheReadPerMillion: model.PriceCachePer1k * 1000,
+		quote := adapters.PriceQuote{Model: q.Model, Mode: q.Values.Mode, Unit: q.Unit, Currency: q.Unit.Code, CurrencySymbol: defaultCurrencySymbol(q.Unit.Code), QuoteID: q.ID, Status: q.Status, Unparsed: q.Status != "calculable"}
+		if q.Values.Input != nil {
+			quote.InputPerMillion = *q.Values.Input
 		}
-		if quote.InputPerMillion == 0 && model.PricePerRequest > 0 {
-			quote.Mode = "fixed"
-			quote.PerRequest = model.PricePerRequest
+		if q.Values.Output != nil {
+			quote.OutputPerMillion = *q.Values.Output
 		}
-		out[model.ModelName] = quote
+		if q.Values.CacheRead != nil {
+			quote.CacheReadPerMillion = *q.Values.CacheRead
+			quote.HasCacheRead = true
+		}
+		if q.Values.CacheWrite != nil {
+			quote.CacheWritePerMillion = *q.Values.CacheWrite
+			quote.HasCacheWrite = true
+		}
+		if q.Values.PerRequest != nil {
+			quote.PerRequest = *q.Values.PerRequest
+		}
+		out[q.Model] = quote
 	}
 	return out, nil
 }
@@ -1202,6 +1213,8 @@ func priceSamples(siteID, runID int64, observedAt time.Time, snapshot *PriceSnap
 				InputPerMillion: quote.InputPerMillion, OutputPerMillion: quote.OutputPerMillion,
 				CacheReadPerMillion: quote.CacheReadPerMillion, PerRequest: quote.PerRequest,
 				GroupRatio: quote.GroupRatio, Raw: quote.Raw, Unparsed: quote.Unparsed,
+				Unit: quote.Unit, QuoteID: quote.QuoteID, Status: quote.Status, UpstreamGroup: quote.UpstreamGroup,
+				CacheWritePerMillion: quote.CacheWritePerMillion, HasCacheRead: quote.HasCacheRead, HasCacheWrite: quote.HasCacheWrite,
 			},
 		})
 	}
@@ -1216,7 +1229,7 @@ func priceSamples(siteID, runID int64, observedAt time.Time, snapshot *PriceSnap
 // would silently under- or over-charge every request, so a non-USD quote is
 // simply not adoptable.
 func QuoteToMemberPrices(quote adapters.PriceQuote) (prompt, completion, cache, perRequest float64, ok bool) {
-	if quote.Unparsed {
+	if quote.Unparsed || quote.Unit.Kind == "site_credit" || quote.Status == "unknown_group" {
 		return 0, 0, 0, 0, false
 	}
 	if currency := strings.ToUpper(strings.TrimSpace(quote.Currency)); currency != "" && currency != "USD" {

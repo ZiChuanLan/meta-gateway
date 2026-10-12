@@ -40,8 +40,8 @@ func insertUsage(ex sqlExecutor, record *domain.UsageRecord) (int64, error) {
 		`INSERT INTO usage_records (
 			request_id, downstream_key_id, channel_id, model, path, stream,
 			prompt_tokens, completion_tokens, total_tokens,
-			cache_read_tokens, cache_creation_tokens, status, cost, user_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cache_read_tokens, cache_creation_tokens, status, cost, user_id, billing_status, billing_evidence
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.RequestID,
 		record.DownstreamKeyID,
 		record.ChannelID,
@@ -56,6 +56,7 @@ func insertUsage(ex sqlExecutor, record *domain.UsageRecord) (int64, error) {
 		record.Status,
 		record.Cost,
 		record.UserID,
+		usageBillingStatus(record), record.BillingEvidence,
 	)
 	if err != nil {
 		return 0, err
@@ -131,7 +132,7 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 	args = append(args, limit)
 	query := `SELECT id, request_id, downstream_key_id, channel_id, model, path, stream,
 	prompt_tokens, completion_tokens, total_tokens,
-	cache_read_tokens, cache_creation_tokens, status, cost, created_at
+	cache_read_tokens, cache_creation_tokens, status, cost, created_at, billing_status, billing_evidence
 	FROM usage_records WHERE ` + strings.Join(where, " AND ") + `
 	ORDER BY id DESC LIMIT ?`
 	rows, err := s.db.Query(query, args...)
@@ -159,6 +160,7 @@ func (s *UsageStore) List(filter UsageFilter) ([]domain.UsageRecord, error) {
 			&record.Status,
 			&record.Cost,
 			scanTime(&record.CreatedAt),
+			&record.BillingStatus, &record.BillingEvidence,
 		); err != nil {
 			return nil, fmt.Errorf("usage scan: %w", err)
 		}
@@ -531,7 +533,7 @@ func (s *UsageStore) CostByRequestIDs(ids []string) (map[string]float64, error) 
 // not (or vice versa) and cuts the hot-path write round-trips from three
 // to one. Rows with no measurable tokens are a no-op.
 func (db *DB) RecordRelayUsage(record *domain.UsageRecord, keyID int64) error {
-	if record == nil || (record.TotalTokens <= 0 && record.Cost <= 0) {
+	if record == nil || (record.TotalTokens <= 0 && record.Cost <= 0 && record.BillingStatus == "") {
 		return nil
 	}
 	keyEpoch := db.DownstreamKey.mutationEpochSnapshot()
@@ -742,4 +744,11 @@ func (s *ModelRatioStore) ListRatios() ([]domain.ModelRatio, error) {
 		result = append(result, r)
 	}
 	return result, rows.Err()
+}
+
+func usageBillingStatus(record *domain.UsageRecord) string {
+	if record.BillingStatus == "" {
+		return "legacy"
+	}
+	return record.BillingStatus
 }

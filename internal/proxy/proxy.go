@@ -168,12 +168,19 @@ type channelModel struct {
 	model     string
 }
 
+type BillingSnapshot struct {
+	Layer domain.PriceLayer
+	Ratio float64
+	At    time.Time
+}
+
 type Request struct {
-	RequestID string
-	Model     string
-	Body      []byte
-	Stream    bool
-	Method    string
+	BillingSnapshot *BillingSnapshot
+	RequestID       string
+	Model           string
+	Body            []byte
+	Stream          bool
+	Method          string
 	// OpenAIPath is the path under the upstream OpenAI root, e.g. "chat/completions".
 	OpenAIPath string
 	// DownstreamProtocol is the client-side wire contract: "openai" (default)
@@ -270,16 +277,17 @@ type Request struct {
 
 // AttemptMeta describes which upstream was used for an admin try / last attempt.
 type AttemptMeta struct {
-	AttemptLogID  int64  `json:"-"`
-	RouteGroup    string `json:"route_group,omitempty"`
-	ResolvedModel string `json:"resolved_model,omitempty"`
-	RouteID       int64  `json:"route_id,omitempty"`
-	GrayAttempt   bool   `json:"gray_attempt,omitempty"`
-	ChannelID     int64  `json:"channel_id"`
-	ChannelName   string `json:"channel_name"`
-	MemberID      int64  `json:"member_id"`
-	Priority      int    `json:"priority"`
-	Weight        int    `json:"weight"`
+	BillingSnapshot *BillingSnapshot `json:"-"`
+	AttemptLogID    int64            `json:"-"`
+	RouteGroup      string           `json:"route_group,omitempty"`
+	ResolvedModel   string           `json:"resolved_model,omitempty"`
+	RouteID         int64            `json:"route_id,omitempty"`
+	GrayAttempt     bool             `json:"gray_attempt,omitempty"`
+	ChannelID       int64            `json:"channel_id"`
+	ChannelName     string           `json:"channel_name"`
+	MemberID        int64            `json:"member_id"`
+	Priority        int              `json:"priority"`
+	Weight          int              `json:"weight"`
 	// UpstreamModel is the name this attempt actually sent upstream. An alias
 	// shared by several upstream names looks identical in the channel name, so
 	// the console needs this to say WHAT it just tested.

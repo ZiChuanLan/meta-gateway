@@ -39,6 +39,7 @@ func (h *RelayHandler) attemptAccountant(
 			req.MemberID = meta.MemberID
 			req.UpstreamModel = meta.UpstreamModel
 			req.GrayAttempt = meta.GrayAttempt
+			req.BillingSnapshot = meta.BillingSnapshot
 		}
 		h.proxy.RecordUsage(req, channelID, status, tokens)
 		if h.db != nil && h.db.ProxyLog != nil && requestID != "" {

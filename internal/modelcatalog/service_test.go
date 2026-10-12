@@ -117,8 +117,12 @@ func TestSyncCreatesCapabilitiesAndFillsMetadataWithPrices(t *testing.T) {
 	if err != nil || image == nil {
 		t.Fatalf("flux metadata: %v %v", image, err)
 	}
-	if image.PriceCompletionPer1k != 0.04 {
-		t.Errorf("flux completion price = %v, want 0.04", image.PriceCompletionPer1k)
+	if image.PriceCompletionPer1k != 0 {
+		t.Errorf("catalog must not write billing price: %v", image.PriceCompletionPer1k)
+	}
+	quotes, err := db.PriceQuotes("flux-pro-1.1")
+	if err != nil || len(quotes) != 1 || quotes[0].Purpose != "reference" {
+		t.Fatalf("reference quote=%+v err=%v", quotes, err)
 	}
 	if image.Vendor != "blackforestlabs" {
 		t.Errorf("flux vendor = %q, want the name-derived vendor", image.Vendor)
@@ -167,8 +171,8 @@ func TestSyncNeverOverwritesAManualOverrideOrAnExistingPrice(t *testing.T) {
 	if item.MetadataAction != domain.CatalogActionUnchanged {
 		t.Errorf("metadata action = %q, want unchanged (changes %v)", item.MetadataAction, item.MetadataChanges)
 	}
-	if item.PriceAction != domain.CatalogActionUnchanged {
-		t.Errorf("price action = %q, want unchanged (changes %v)", item.PriceAction, item.PriceChanges)
+	if item.PriceAction != domain.CatalogActionFill {
+		t.Errorf("reference quote action = %q, want fill", item.PriceAction)
 	}
 
 	state, err := service.Sync(context.Background(), []string{"gpt-5"}, DefaultPolicy)
@@ -178,8 +182,8 @@ func TestSyncNeverOverwritesAManualOverrideOrAnExistingPrice(t *testing.T) {
 	if state.SkippedManual != 1 {
 		t.Errorf("skipped_manual = %d, want 1", state.SkippedManual)
 	}
-	if state.Prices != 0 {
-		t.Errorf("prices written = %d, want 0", state.Prices)
+	if state.Prices != 1 {
+		t.Errorf("reference quotes written = %d, want 1", state.Prices)
 	}
 
 	stored, err := db.ModelCapability.Get("gpt-5")
@@ -250,7 +254,7 @@ func TestSyncRefreshesItsOwnRowsButLeavesPricesDisabledAlone(t *testing.T) {
 	}
 }
 
-func TestSyncFillsOnlyThePriceColumnsThatAreUnset(t *testing.T) {
+func TestSyncStoresReferenceWithoutFillingLegacyZeroPrices(t *testing.T) {
 	service, db := newTestService(t)
 
 	// The operator priced the prompt side by hand and left the rest at zero.
@@ -268,8 +272,8 @@ func TestSyncFillsOnlyThePriceColumnsThatAreUnset(t *testing.T) {
 	}
 	item := findItem(t, preview, "gpt-5")
 	fields := changeFields(item.PriceChanges)
-	if _, ok := fields["price_prompt_per_1k"]; ok {
-		t.Error("an operator-set prompt price must not be proposed for change")
+	if fields["price_prompt_per_1k"].To != "0.00125" {
+		t.Error("reference preview must show catalog input independently of local billing")
 	}
 	if fields["price_completion_per_1k"].To != "0.01" {
 		t.Errorf("completion change = %+v", fields["price_completion_per_1k"])
@@ -288,7 +292,7 @@ func TestSyncFillsOnlyThePriceColumnsThatAreUnset(t *testing.T) {
 	if meta.PricePromptPer1k != 9 {
 		t.Errorf("prompt price = %v, want the operator value", meta.PricePromptPer1k)
 	}
-	if meta.PriceCompletionPer1k != 0.01 || meta.PriceCachePer1k != 0.000125 {
+	if meta.PriceCompletionPer1k != 0 || meta.PriceCachePer1k != 0 {
 		t.Errorf("prices = %v/%v", meta.PriceCompletionPer1k, meta.PriceCachePer1k)
 	}
 }

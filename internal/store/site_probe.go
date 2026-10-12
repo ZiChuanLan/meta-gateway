@@ -53,7 +53,14 @@ type SiteProbePrice struct {
 	Raw string `json:"raw,omitempty"`
 	// Unparsed marks a quote we could not normalize; the number fields are then
 	// meaningless and must not be shown as a price.
-	Unparsed bool `json:"unparsed,omitempty"`
+	Unparsed             bool             `json:"unparsed,omitempty"`
+	Unit                 domain.QuoteUnit `json:"unit"`
+	QuoteID              int64            `json:"quote_id,omitempty"`
+	Status               string           `json:"status,omitempty"`
+	UpstreamGroup        string           `json:"upstream_group,omitempty"`
+	CacheWritePerMillion float64          `json:"cache_write_per_million,omitempty"`
+	HasCacheRead         bool             `json:"has_cache_read"`
+	HasCacheWrite        bool             `json:"has_cache_write"`
 }
 
 // SiteProbeSample is one monitor's reading for one round.

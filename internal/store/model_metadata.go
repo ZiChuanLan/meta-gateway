@@ -98,3 +98,17 @@ func (s *ModelMetadataStore) Delete(modelName string) error {
 	}
 	return nil
 }
+
+// MergeCatalogMetadata never writes billing columns, even if a manual price is
+// changed while the external download is in flight. Only unset metadata fills.
+func (s *ModelMetadataStore) MergeCatalogMetadata(m *domain.ModelMetadata) error {
+	_, err := s.db.Exec(`INSERT INTO model_metadata(model_name,context_window,input_modalities,output_modalities,supports_thinking,vendor,notes,updated_at)
+ VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(model_name) DO UPDATE SET
+ context_window=CASE WHEN model_metadata.context_window=0 THEN excluded.context_window ELSE model_metadata.context_window END,
+ input_modalities=CASE WHEN model_metadata.input_modalities='' THEN excluded.input_modalities ELSE model_metadata.input_modalities END,
+ output_modalities=CASE WHEN model_metadata.output_modalities='' THEN excluded.output_modalities ELSE model_metadata.output_modalities END,
+ supports_thinking=CASE WHEN model_metadata.supports_thinking=-1 THEN excluded.supports_thinking ELSE model_metadata.supports_thinking END,
+ vendor=CASE WHEN model_metadata.vendor='' THEN excluded.vendor ELSE model_metadata.vendor END,
+ updated_at=excluded.updated_at`, m.ModelName, m.ContextWindow, m.InputModalities, m.OutputModalities, m.SupportsThinking, m.Vendor, m.Notes, time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}

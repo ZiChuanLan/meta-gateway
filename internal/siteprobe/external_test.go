@@ -226,9 +226,8 @@ func TestCatalogPriceFillsTheGapTheSiteLeaves(t *testing.T) {
 			t.Fatalf("member: %v", err)
 		}
 	}
-	if err := db.ModelMetadata.Upsert(&domain.ModelMetadata{
-		ModelName: "kimi-k3", PricePromptPer1k: 0.0003, PriceCompletionPer1k: 0.0012,
-	}); err != nil {
+	input, output := .3, 1.2
+	if _, err := db.SavePriceQuote(domain.PriceQuoteSnapshot{ScopeKey: "catalog:kimi-k3", Source: "litellm", Purpose: "reference", Model: "kimi-k3", Status: "calculable", Unit: domain.QuoteUnit{Kind: "iso", Code: "USD"}, Values: domain.QuoteValues{Mode: "token", Input: &input, Output: &output}}); err != nil {
 		t.Fatalf("catalog row: %v", err)
 	}
 
@@ -309,14 +308,14 @@ func TestQuoteToMemberPricesRefusesNonUSD(t *testing.T) {
 
 // A site declares the currency its own table is denominated in; that declaration
 // is what the console prints, and it is never converted.
-func TestPublicPricesCarryTheDeclaredCurrency(t *testing.T) {
+func TestPublicPricesSeparateNativeCreditFromDisplayCurrency(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/pricing":
 			_, _ = w.Write([]byte(`{"data":[{"model_name":"glm-5.2","model_ratio":0.4,"completion_ratio":2}],"group_ratio":{"default":1},"success":true}`))
 		case "/api/status":
-			_, _ = w.Write([]byte(`{"success":true,"data":{"quota_per_unit":500000,"quota_display_type":"CNY","custom_currency_symbol":"¥","display_in_currency":true}}`))
+			_, _ = w.Write([]byte(`{"success":true,"data":{"quota_per_unit":500000,"quota_display_type":"CNY","usd_exchange_rate":7.3,"custom_currency_symbol":"¥","display_in_currency":true}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -331,10 +330,13 @@ func TestPublicPricesCarryTheDeclaredCurrency(t *testing.T) {
 	if !found {
 		t.Fatalf("quotes = %+v", snapshot.Quotes)
 	}
-	if quote.Currency != "CNY" || quote.CurrencySymbol != "¥" {
-		t.Fatalf("quote currency = %q/%q, want CNY/¥", quote.Currency, quote.CurrencySymbol)
+	if quote.Currency != "" || quote.Unit.Kind != "site_credit" || quote.Unit.DisplayCurrency != "CNY" || quote.Unit.DisplaySymbol != "¥" || quote.Unit.DisplayRate == nil || *quote.Unit.DisplayRate != 7.3 {
+		t.Fatalf("native unit/display conflated: %+v", quote)
 	}
-	// The amount is in the declared currency: 0.4 × 1e6/500000 × 1 = ¥0.8.
+	if _, _, _, _, ok := QuoteToMemberPrices(quote); ok {
+		t.Fatal("native credit was silently copied as USD")
+	}
+	// Protocol amount is native credit; the cosmetic CNY view is 0.8×7.3.
 	if quote.InputPerMillion != 0.8 {
 		t.Fatalf("input = %v, want 0.8 in the site's own currency", quote.InputPerMillion)
 	}

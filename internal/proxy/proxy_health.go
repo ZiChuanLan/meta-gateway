@@ -3,10 +3,10 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
-	"math"
-	"net/http"
+		"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -325,7 +325,7 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 			record.GroupName = key.GroupName
 		}
 	}
-	record.Cost = s.billingCost(req, tokens)
+	record.Cost, record.BillingStatus, record.BillingEvidence = s.billingDecision(req, tokens)
 	// Usage row, downstream-key quota increment, and proxy-log token backfill
 	// commit in one transaction (store.RecordRelayUsage), so a partial failure
 	// can never leave metered usage without its quota charge.
@@ -334,68 +334,60 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 	}
 }
 
-// billingCost computes the persisted cost for a usage record.
-//
-// Prices resolve from the most specific layer that HAS one: the route member
-// that actually served the request (upstreams price the same model
-// differently), then the model's metadata. "Has one" is answered by
-// PriceLayer.Priced, which counts a context-length ladder as a price even when
-// the flat columns are zero — an operator who configured a ladder and left the
-// flat fields empty means "price by rung", not "give it away".
-//
-// Three factors multiply into the final amount, and they answer three different
-// questions:
-//
-//   - the rung, chosen by how many prompt tokens the request carried;
-//   - the time window, chosen by when the request finished (the gateway's own
-//     local time — an operator sets a night band in their own clock);
-//   - the model's billing ratio, a blunt markup across every account.
-//
-// Cache-read tokens bill at the cache price (the prompt price when none is
-// set); cache-creation tokens bill at the prompt price. A request whose model
-// has no price at any layer bills at zero, and failures are never fatal — a
-// lookup error degrades to 0 cost rather than dropping the record.
 func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
+	cost, _, _ := s.billingDecision(req, tokens)
+	return cost
+}
+
+func (s *Service) billingDecision(req Request, tokens usage.Tokens) (float64, string, string) {
 	if s.db == nil {
-		return 0
-	}
-	ratio := 1.0
-	if s.db.ModelRatio != nil {
-		if r, err := s.db.ModelRatio.GetRatio(req.Model); err == nil {
-			ratio = r
-		} else {
-			log.Printf("proxy: billing ratio model=%s: %v", req.Model, err)
-		}
+		return 0, "calculation_error", ""
 	}
 	layer, priced := s.priceLayer(req)
-	if !priced {
-		return 0
-	}
-	// The rung is chosen by how much input the request carried, which is the
-	// same quantity the prompt tokens are billed on: prompt tokens plus whatever
-	// was written to cache. Cache READS are excluded on purpose — they reuse
-	// context that was already counted once, and they bill at the cache price.
-	inputTokens := tokens.BillingInputTokens()
-	pricePrompt, priceCompletion, priceCache, pricePerRequest := layer.EffectivePrices(inputTokens)
-	multiplier := layer.TimeMultiplier(time.Now())
-	prompt := float64(inputTokens)
-	completion := float64(tokens.CompletionTokens)
-	cacheRead := float64(tokens.CacheReadTokens)
-	if priceCache <= 0 {
-		priceCache = pricePrompt
-	}
-	for _, price := range []float64{pricePrompt, priceCompletion, priceCache, pricePerRequest, ratio, multiplier} {
-		if price < 0 || math.IsNaN(price) || math.IsInf(price, 0) {
-			log.Printf("proxy: invalid billing configuration model=%s", req.Model)
-			return 0
+	ratio, at := 1.0, time.Now()
+	if req.BillingSnapshot != nil {
+		layer, ratio, at = req.BillingSnapshot.Layer, req.BillingSnapshot.Ratio, req.BillingSnapshot.At
+		priced = layer.Priced()
+	} else if s.db.ModelRatio != nil {
+		if value, err := s.db.ModelRatio.GetRatio(req.Model); err == nil {
+			ratio = value
 		}
 	}
-	cost := (prompt/1000.0*pricePrompt + completion/1000.0*priceCompletion +
-		cacheRead/1000.0*priceCache + pricePerRequest) * ratio * multiplier
-	if cost < 0 || math.IsNaN(cost) || math.IsInf(cost, 0) {
-		return 0
+	if !priced {
+		return 0, "unpriced", ""
 	}
-	return cost
+	input := tokens.BillingInputTokens()
+	rates := layer.Rates(input, at)
+	ordinary := max(input-max(tokens.CacheCreationTokens, 0), 0)
+	cost, valid := domain.DecimalCharge(rates, ordinary, tokens.CompletionTokens, tokens.CacheReadTokens, tokens.CacheCreationTokens, ratio)
+	status := "settled"
+	if !valid {
+		cost, status = 0, "calculation_error"
+	} else if layer.State == "free" {
+		status = "explicitly_free"
+	} else if layer.State == "explicit" && layer.Mode != "request" && ((tokens.CacheReadTokens > 0 && !layer.CachePresent && len(layer.Tiers) == 0) || (tokens.CacheCreationTokens > 0 && layer.CacheWrite == nil)) {
+		cost, status = 0, "price_missing"
+	} else if tokens.Estimated {
+		status = "estimated"
+	} else if !tokens.Valid() && rates.PerRequest == 0 {
+		status = "usage_missing"
+	}
+	evidence, _ := json.Marshal(map[string]any{"owner": layer.Owner, "revision": layer.Revision, "source": layer.Source, "quote_id": layer.QuoteID, "rule_state": layer.State, "rates": rates, "ratio": ratio, "evaluated_at": at, "usage_source": tokens.Source(), "ordinary_input_tokens": ordinary, "cache_read_tokens": tokens.CacheReadTokens, "cache_write_tokens": tokens.CacheCreationTokens})
+	return cost, status, string(evidence)
+}
+
+// Explicit rules freeze when the serving member is chosen. Legacy rules keep
+// their historical finish-time behavior until the operator replaces them.
+func (s *Service) freezeBilling(req Request) *BillingSnapshot {
+	layer, priced := s.priceLayer(req)
+	if !priced || layer.State == "legacy" {
+		return nil
+	}
+	ratio := 1.0
+	if r, err := s.db.ModelRatio.GetRatio(req.Model); err == nil {
+		ratio = r
+	}
+	return &BillingSnapshot{Layer: layer, Ratio: ratio, At: time.Now()}
 }
 
 // priceLayer resolves the price layer in force for a request: the member that
@@ -405,15 +397,6 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 // second return value answers "is anything priced here", which is deliberately
 // NOT the same as "are the flat columns non-zero" — see billingCost.
 func (s *Service) priceLayer(req Request) (domain.PriceLayer, bool) {
-	if req.MemberID > 0 && s.db.RouteMember != nil {
-		layer, found, err := s.db.RouteMember.MemberPricing(req.MemberID)
-		if err != nil {
-			log.Printf("proxy: member prices member=%d: %v", req.MemberID, err)
-		}
-		if found && layer.Priced() {
-			return layer, true
-		}
-	}
 	if s.db.ModelMetadata == nil {
 		return domain.PriceLayer{}, false
 	}
@@ -431,7 +414,7 @@ func (s *Service) priceLayer(req Request) (domain.PriceLayer, bool) {
 			upstream = domain.ResolveUpstreamModel(req.Model, member.MappingJSON, routeMapping)
 		}
 	}
-	layer, priced, err := s.db.ModelMetadata.BillingLayer(req.Model, upstream)
+	layer, priced, err := s.db.ResolveBillingLayer(req.Model, upstream, req.MemberID)
 	if err != nil {
 		log.Printf("proxy: model prices model=%s: %v", req.Model, err)
 	}

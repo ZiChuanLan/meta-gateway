@@ -362,6 +362,9 @@ func planPrices(found bool, entry Entry, existing *domain.ModelMetadata, pricesE
 	if existing != nil {
 		current = *existing
 	}
+	// Compare reference values only. Existing billing columns are legacy policy
+	// and must never be filled by a catalog refresh.
+	current = domain.ModelMetadata{ModelName: entry.Model}
 	next := mergePrices(current, entry)
 	changes := priceDiff(current, next)
 	if len(changes) == 0 {
@@ -412,11 +415,19 @@ func (s *Service) apply(preview *domain.CatalogPreview, entries []Entry) (*domai
 		}
 		next := mergeMetadata(current, entry)
 		if item.PriceAction == domain.CatalogActionCreate || item.PriceAction == domain.CatalogActionFill {
-			next = mergePrices(next, entry)
-			state.Prices += len(item.PriceChanges)
+			input, output, cache := entry.PricePromptPer1k*1000, entry.PriceCompletionPer1k*1000, entry.PriceCachePer1k*1000
+			q := domain.PriceQuoteSnapshot{ScopeKey: "catalog:" + item.Model, Source: strings.Join(entry.Sources, "+"), Purpose: "reference", Model: item.Model, Unit: domain.QuoteUnit{Kind: "iso", Code: "USD"}, Status: "calculable", Values: domain.QuoteValues{Mode: "token", Input: &input, Output: &output, CacheRead: &cache}, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), ExpiresAt: time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339Nano)}
+			if entry.Kind != domain.CapabilityKindChat {
+				q.Status = "unsupported"
+				q.Values = domain.QuoteValues{Mode: "unsupported"}
+			}
+			if _, err := s.db.SavePriceQuote(q); err != nil {
+				return state, err
+			}
+			state.Prices++
 		}
 		if len(metadataDiff(current, next)) > 0 || len(priceDiff(current, next)) > 0 {
-			if err := s.db.ModelMetadata.Upsert(&next); err != nil {
+			if err := s.db.ModelMetadata.MergeCatalogMetadata(&next); err != nil {
 				return state, err
 			}
 			state.Metadata++
@@ -471,8 +482,7 @@ func mergeMetadata(current domain.ModelMetadata, entry Entry) domain.ModelMetada
 	return current
 }
 
-// mergePrices fills only the per-1k prices that are currently zero, so an
-// operator's own price always wins and a sync can never re-price a model.
+// mergePrices builds the catalog reference preview, never a billing write.
 func mergePrices(current domain.ModelMetadata, entry Entry) domain.ModelMetadata {
 	if !entry.HasPrice {
 		return current

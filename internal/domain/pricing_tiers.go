@@ -268,11 +268,24 @@ type PriceLayer struct {
 	PerRequest float64
 	Tiers      []PriceTier
 	Windows    []PriceWindow
+	// Explicit local policy is separate from legacy flat columns.
+	State        string
+	Mode         string
+	Revision     int64
+	Owner        string
+	Source       string
+	QuoteID      int64
+	Timezone     string
+	CachePresent bool
+	CacheWrite   *float64
 }
 
 // Priced reports whether this layer carries any price at all.
 func (l PriceLayer) Priced() bool {
-	return l.Prompt > 0 || l.Completion > 0 || l.PerRequest > 0 || len(l.Tiers) > 0
+	if l.State == "inherit" {
+		return false
+	}
+	return l.State == "free" || l.State == "explicit" || l.Prompt > 0 || l.Completion > 0 || l.PerRequest > 0 || len(l.Tiers) > 0
 }
 
 // ResolvePriceLayer parses a layer's stored JSON into a usable value.

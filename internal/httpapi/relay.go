@@ -909,6 +909,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 				proxyReq.MemberID = meta.MemberID
 				proxyReq.UpstreamModel = meta.UpstreamModel
 				proxyReq.GrayAttempt = meta.GrayAttempt
+				proxyReq.BillingSnapshot = meta.BillingSnapshot
 			}
 			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
 			if h.db != nil && h.db.ProxyLog != nil && requestID != "" {
@@ -1093,6 +1094,7 @@ func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requ
 		if allowEstimate && stream && copyErr != nil && !tokens.Valid() && bytesWritten > 0 {
 			tokens = usage.Tokens{
 				PromptTokens:     0,
+				Estimated:        true,
 				CompletionTokens: int(bytesWritten / streamEstimateBytesPerToken),
 				TotalTokens:      int(bytesWritten / streamEstimateBytesPerToken),
 			}

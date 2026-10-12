@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -92,34 +91,20 @@ func referenceModelPricing(db *store.DB, model string, input int, allowed func(i
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	metadata := map[string]domain.PriceLayer{}
 	for _, row := range prices {
-		layer, err := domain.ResolvePriceLayer(row.prompt, row.completion, row.cache, row.perRequest, row.tiers, row.schedule)
+		upstream := domain.ResolveUpstreamModel(model, row.memberMapping, row.routeMapping)
+		layer, _, err := db.ResolveBillingLayer(model, upstream, row.id)
 		if err != nil {
-			log.Printf("model pricing: discarded invalid member rules for %d: %v", row.id, err)
-		}
-		if !layer.Priced() {
-			upstream := domain.ResolveUpstreamModel(model, row.memberMapping, row.routeMapping)
-			cached, ok := metadata[upstream]
-			if !ok {
-				cached, _, err = db.ModelMetadata.BillingLayer(model, upstream)
-				if err != nil {
-					return nil, err
-				}
-				metadata[upstream] = cached
-			}
-			layer = cached
+			return nil, err
 		}
 		// An unpriced model is free in the existing ledger. A cache-only fallback
 		// must not invent a charge when the billing path considers it unpriced.
 		if !layer.Priced() {
 			layer = domain.PriceLayer{}
 		}
-		a, b, c, d := layer.EffectivePrices(input)
-		if c <= 0 {
-			c = a
-		}
-		multiplier := ratio * layer.TimeMultiplier(now)
+		rates := layer.Rates(input, now)
+		a, b, c, d := rates.Input, rates.Output, rates.CacheRead, rates.PerRequest
+		multiplier := ratio * rates.Multiplier
 		for _, value := range []float64{a * multiplier, b * multiplier, c * multiplier, d * multiplier} {
 			if math.IsInf(value, 0) || math.IsNaN(value) || value < 0 {
 				return nil, fmt.Errorf("invalid reference price for model")

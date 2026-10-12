@@ -780,7 +780,9 @@ type UsageRecord struct {
 	// Cost is the persisted monetary amount for this relay (key unit prices ×
 	// model ratio), computed at record time so bills never depend on later
 	// price edits.
-	Cost float64 `json:"cost"`
+	Cost            float64 `json:"cost"`
+	BillingStatus   string  `json:"billing_status"`
+	BillingEvidence string  `json:"billing_evidence,omitempty"`
 	// GroupName is the key's tenant group; used only to accrue group quota in
 	// the same transaction (not persisted on the usage row itself).
 	GroupName string    `json:"-"`

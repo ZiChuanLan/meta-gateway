@@ -24,11 +24,23 @@ type Tokens struct {
 	// already contains cache hits (OpenAI, Responses and Gemini). The original
 	// count remains intact for logs and token quotas; only billing subtracts it.
 	PromptIncludesCacheRead bool
+	Estimated               bool
 }
 
 // Valid reports whether any token field is present.
 func (t Tokens) Valid() bool {
 	return t.PromptTokens > 0 || t.CompletionTokens > 0 || t.TotalTokens > 0 || t.CacheReadTokens > 0 || t.CacheCreationTokens > 0
+}
+
+// Source identifies metered, estimated or missing usage without inventing counts.
+func (t Tokens) Source() string {
+	if t.Estimated {
+		return "estimated"
+	}
+	if t.Valid() {
+		return "upstream"
+	}
+	return "missing"
 }
 
 // Normalize fills TotalTokens when only prompt/completion are set.
@@ -187,24 +199,21 @@ func NewTee(source io.ReadCloser, stream bool) *Tee {
 	return &Tee{Source: source, Stream: stream}
 }
 
-// Read copies from Source and scans usage. The line buffer is only touched
-// here (single reader, same as the wrapped http body), so the mutex is
-// reduced to guarding the tokens snapshot observed by Tokens()/Close().
+// Read copies from Source, then scans under the accounting lock. Close may
+// run concurrently to interrupt an idle upstream; no buffer is touched by IO.
 func (t *Tee) Read(p []byte) (int, error) {
 	n, err := t.Source.Read(p)
 	if n > 0 {
 		chunk := p[:n]
+		t.mu.Lock()
 		if t.Stream {
 			if got := t.scanSSE(chunk); got.Valid() {
-				t.mu.Lock()
 				t.tokens = mergeTokens(t.tokens, got)
-				t.mu.Unlock()
 			}
 		} else {
-			t.mu.Lock()
 			t.buf.Write(chunk)
-			t.mu.Unlock()
 		}
+		t.mu.Unlock()
 	}
 	return n, err
 }
@@ -215,16 +224,14 @@ func (t *Tee) Close() error {
 }
 
 func (t *Tee) close() error {
+	t.mu.Lock()
 	// Flush any trailing SSE line without a final newline.
 	if t.Stream && t.line.Len() > 0 {
 		if got := t.consumeSSELine(t.line.String()); got.Valid() {
-			t.mu.Lock()
 			t.tokens = mergeTokens(t.tokens, got)
-			t.mu.Unlock()
 		}
 		t.line.Reset()
 	}
-	t.mu.Lock()
 	if !t.Stream && t.buf.Len() > 0 {
 		// Most upstreams answer without any usage block (or the response is a
 		// non-completions payload); skip the full-body JSON parse unless the

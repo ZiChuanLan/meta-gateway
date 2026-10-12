@@ -142,61 +142,48 @@ func (h *SiteProbeHandler) collect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"runs": runs, "failed": failed, "actions": actions})
 }
 
-// adoptPrice writes a site's published price into the billing layer for the
-// members the operator picked. The quote is NOT taken from the request: it comes
-// from the latest collected sample for the row that member belongs to, so a
-// client cannot write an invented number through this endpoint.
 func (h *SiteProbeHandler) adoptPrice(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		MemberIDs []int64 `json:"member_ids"`
+		MemberIDs  []int64          `json:"member_ids"`
+		QuoteID    int64            `json:"quote_id"`
+		Expected   map[string]int64 `json:"expected_revisions"`
+		USDPerUnit *float64         `json:"usd_per_unit"`
 	}
 	if err := decodeJSON(w, r, &request, 0, false); err != nil {
 		return
 	}
-	if len(request.MemberIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "missing member_ids")
+	if len(request.MemberIDs) == 0 || len(request.MemberIDs) > 100 {
+		writeError(w, 400, "1..100 member_ids required")
 		return
 	}
-	report, err := h.service.Report(siteprobe.DefaultPolicy())
-	if err != nil {
-		writeStoreError(w, err)
+	if request.QuoteID <= 0 || request.Expected == nil {
+		writeError(w, 409, "quote_id and expected_revisions required; review the quote before copying")
 		return
-	}
-	// One row per member: members of the same (site, model) share a quote, so
-	// they are adopted together and reported per member.
-	rowByMember := make(map[int64]*siteprobe.Row, len(request.MemberIDs))
-	for index := range report.Rows {
-		row := &report.Rows[index]
-		if row.ObservedPrice == nil {
-			continue
-		}
-		for _, member := range row.Members {
-			rowByMember[member.MemberID] = row
-		}
-	}
-	groupedByRow := make(map[*siteprobe.Row][]int64, len(request.MemberIDs))
-	noPrice := make([]int64, 0)
-	for _, memberID := range request.MemberIDs {
-		if row, ok := rowByMember[memberID]; ok {
-			groupedByRow[row] = append(groupedByRow[row], memberID)
-		} else {
-			noPrice = append(noPrice, memberID)
-		}
 	}
 	results := make([]siteprobe.AdoptPricesResult, 0, len(request.MemberIDs))
-	for _, memberID := range noPrice {
-		results = append(results, siteprobe.AdoptPricesResult{MemberID: memberID, Skipped: "no_price"})
-	}
-	for row, members := range groupedByRow {
-		adopted, err := h.service.AdoptPrices(members, row.ObservedPrice)
-		if err != nil {
-			writeStoreError(w, err)
-			return
+	seen := map[int64]bool{}
+	for _, id := range request.MemberIDs {
+		if seen[id] {
+			continue
 		}
-		results = append(results, adopted...)
+		seen[id] = true
+		key := strconv.FormatInt(id, 10)
+		revision, ok := request.Expected[key]
+		result := siteprobe.AdoptPricesResult{MemberID: id}
+		if !ok || revision < 0 {
+			result.Skipped = "expected_revision_required"
+		} else if _, err := h.db.CopyQuoteRule("member", key, request.QuoteID, revision, request.USDPerUnit); err != nil {
+			if errors.Is(err, store.ErrPriceConflict) {
+				result.Skipped = "pricing_conflict"
+			} else {
+				result.Skipped = "quote_not_applicable"
+			}
+		} else {
+			result.Adopted = []string{"billing_rule"}
+		}
+		results = append(results, result)
 	}
-	sort.Slice(results, func(i, j int) bool { return results[i].MemberID < results[j].MemberID })
-	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+	writeJSON(w, 200, map[string]any{"results": results})
 }
 
 // apply evaluates the policy over the collected data. dry_run returns exactly

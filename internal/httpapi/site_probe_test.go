@@ -422,7 +422,7 @@ func adoptStatus(t *testing.T, url string, payload any) int {
 // collector reads, so the billing layer and the tool can never disagree about
 // what a site costs. The quote itself is never taken from the request: it comes
 // from the collected sample of the row the member belongs to.
-func TestSiteProbeAdoptPriceWritesTheBillingColumns(t *testing.T) {
+func TestSiteProbeAdoptPriceRequiresReviewedQuoteAndRevision(t *testing.T) {
 	dataDir := t.TempDir()
 	db, _ := store.OpenTest(dataDir)
 	defer db.Close()
@@ -468,6 +468,17 @@ func TestSiteProbeAdoptPriceWritesTheBillingColumns(t *testing.T) {
 		t.Fatalf("adopt without members = %d, want 400", status)
 	}
 
+	if status := adoptStatus(t, server.URL+"/admin/site-probe/adopt-price", map[string]any{"member_ids": []int64{member.ID}}); status != http.StatusConflict {
+		t.Fatalf("unreviewed adoption=%d want409", status)
+	}
+	quotes, err := db.PriceQuotes("glm-5.3-flash")
+	if err != nil || len(quotes) != 1 {
+		t.Fatalf("quotes=%+v err=%v", quotes, err)
+	}
+	quote := quotes[0]
+	if quote.Unit.Kind != "site_credit" {
+		t.Fatalf("invented USD unit: %+v", quote)
+	}
 	var adopt struct {
 		Results []struct {
 			MemberID int64    `json:"member_id"`
@@ -475,34 +486,22 @@ func TestSiteProbeAdoptPriceWritesTheBillingColumns(t *testing.T) {
 			Skipped  string   `json:"skipped"`
 		} `json:"results"`
 	}
-	json.Unmarshal(post(t, server.URL+"/admin/site-probe/adopt-price", map[string]any{"member_ids": []int64{member.ID}}), &adopt)
-	if len(adopt.Results) != 1 || adopt.Results[0].MemberID != member.ID || adopt.Results[0].Skipped != "" {
-		t.Fatalf("adopt = %+v", adopt.Results)
+	body := map[string]any{"member_ids": []int64{member.ID}, "quote_id": quote.ID, "expected_revisions": map[string]int64{itoa(member.ID): 0}, "usd_per_unit": 1}
+	json.Unmarshal(post(t, server.URL+"/admin/site-probe/adopt-price", body), &adopt)
+	if len(adopt.Results) != 1 || adopt.Results[0].Skipped != "" || len(adopt.Results[0].Adopted) != 1 {
+		t.Fatalf("adopt=%+v", adopt)
 	}
-	if len(adopt.Results[0].Adopted) != 3 {
-		t.Fatalf("adopted = %v, want prompt+completion+cache", adopt.Results[0].Adopted)
+	layer, priced, err := db.ResolveBillingLayer("glm-5.3-flash", "", member.ID)
+	if err != nil || !priced || !closeTo(layer.Prompt, .00015) || !closeTo(layer.Completion, .0005) || !closeTo(layer.Cache, .00003) {
+		t.Fatalf("rule=%+v err=%v", layer, err)
 	}
-	// USD/1M published → USD/1k stored: 0.15 → 0.00015.
-	prompt, completion, cache, perRequest, found, err := db.RouteMember.MemberPrices(member.ID)
-	if err != nil || !found {
-		t.Fatalf("member prices: found=%v err=%v", found, err)
+	prompt, completion, cache, fixed, _, err := db.RouteMember.MemberPrices(member.ID)
+	if err != nil || prompt != 0 || completion != 0 || cache != 0 || fixed != 0 {
+		t.Fatalf("legacy columns changed")
 	}
-	if !closeTo(prompt, 0.00015) || !closeTo(completion, 0.0005) || !closeTo(cache, 0.00003) || perRequest != 0 {
-		t.Fatalf("billing columns = %v/%v/%v/%v", prompt, completion, cache, perRequest)
-	}
-
-	// A second adopt is a no-op: the operator's billing layer is not
-	// overwritten by whatever the status page published later.
-	var again struct {
-		Results []struct {
-			MemberID int64    `json:"member_id"`
-			Adopted  []string `json:"adopted"`
-			Skipped  string   `json:"skipped"`
-		} `json:"results"`
-	}
-	json.Unmarshal(post(t, server.URL+"/admin/site-probe/adopt-price", map[string]any{"member_ids": []int64{member.ID}}), &again)
-	if len(again.Results) != 1 || again.Results[0].Skipped != "already_priced" || len(again.Results[0].Adopted) != 0 {
-		t.Fatalf("second adopt = %+v, want already_priced", again.Results)
+	json.Unmarshal(post(t, server.URL+"/admin/site-probe/adopt-price", body), &adopt)
+	if len(adopt.Results) != 1 || adopt.Results[0].Skipped != "pricing_conflict" {
+		t.Fatalf("stale adopt=%+v", adopt)
 	}
 }
 

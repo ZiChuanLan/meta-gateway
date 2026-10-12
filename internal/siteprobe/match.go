@@ -101,6 +101,10 @@ func BuildResolver(db *store.DB) (*Resolver, error) {
 			if candidate.Channel.SiteID != nil {
 				siteID = *candidate.Channel.SiteID
 			}
+			pricing, _, priceErr := db.ResolveBillingLayer(pattern, real, member.ID)
+			if priceErr != nil {
+				return nil, priceErr
+			}
 			singleMember := overview.Route.SingleMemberID != nil && *overview.Route.SingleMemberID == member.ID
 			ref := MemberRef{
 				MemberID:       member.ID,
@@ -114,9 +118,8 @@ func BuildResolver(db *store.DB) (*Resolver, error) {
 				AutoDisabled:   member.AutoDisabled,
 				RealName:       real,
 				ManualOverride: member.ManualOverride,
-				HasPrice: member.PricePromptPer1k > 0 || member.PriceCompletionPer1k > 0 ||
-					member.PriceCachePer1k > 0 || member.PricePerRequest > 0,
-				SingleMember: singleMember,
+				HasPrice:       pricing.Priced(),
+				SingleMember:   singleMember,
 			}
 			resolver.members = append(resolver.members, ref)
 			if real != "" && real != pattern {

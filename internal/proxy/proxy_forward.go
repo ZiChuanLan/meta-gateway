@@ -350,6 +350,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			Weight:        candidate.Member.Weight,
 			UpstreamModel: effectiveModel,
 		}
+		billingRequest := req
+		billingRequest.MemberID = candidate.Member.ID
+		billingRequest.UpstreamModel = effectiveModel
+		meta.BillingSnapshot = s.freezeBilling(billingRequest)
 		if observer := s.liveTraceObserver.Load(); observer != nil && req.RequestID != "" {
 			(*observer).Attempt(req.RequestID, attempt+1, candidate.Channel.Name, req.DownstreamProtocol, "")
 		}

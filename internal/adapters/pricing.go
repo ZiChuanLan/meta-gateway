@@ -13,6 +13,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/lan/meta-gateway/internal/domain"
 )
 
 // PriceQuote is a normalized site price, denominated in the site's declared
@@ -43,7 +45,11 @@ type PriceQuote struct {
 	Raw string `json:"raw,omitempty"`
 	// Unparsed means the site published a price we could not normalize. The
 	// numeric fields are then meaningless: show Raw instead of a number.
-	Unparsed bool `json:"unparsed,omitempty"`
+	Unparsed      bool             `json:"unparsed,omitempty"`
+	Unit          domain.QuoteUnit `json:"unit"`
+	QuoteID       int64            `json:"quote_id,omitempty"`
+	Status        string           `json:"status,omitempty"`
+	UpstreamGroup string           `json:"upstream_group,omitempty"`
 }
 
 // BillingCoefs are the per-1M USD coefficients of a tiered billing expression.
@@ -178,10 +184,13 @@ func parseBillingTerm(term string) (string, float64, bool) {
 // completion_ratio is not a usable price (negative / NaN / infinite).
 func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 	groupRatio := item.GroupRatio
-	if groupRatio <= 0 {
+	if groupRatio <= 0 && len(item.GroupRatios) == 0 {
 		groupRatio = 1
 	}
-	quote := PriceQuote{Model: item.Model, Currency: strings.TrimSpace(item.Currency), GroupRatio: groupRatio}
+	quote := PriceQuote{Model: item.Model, Currency: strings.TrimSpace(item.Currency), GroupRatio: groupRatio, Status: "calculable", UpstreamGroup: item.UpstreamGroup}
+	if item.UnknownGroup {
+		quote.Status = "unknown_group"
+	}
 
 	// A declared per-call row stays fixed even with a placeholder ratio or a
 	// direct quote beside it; only a missing model_price lets it fall through.
@@ -214,6 +223,7 @@ func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 	switch {
 	case item.TokenUSD != nil && item.TokenUSD.Input > 0:
 		quote.Mode = "token"
+		quote.Currency = "USD"
 		quote.InputPerMillion = item.TokenUSD.Input
 		quote.OutputPerMillion = item.TokenUSD.Output
 		quote.CacheReadPerMillion = item.TokenUSD.CacheRead

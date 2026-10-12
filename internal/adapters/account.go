@@ -110,7 +110,10 @@ type ModelPrice struct {
 	TokenUSD *TokenUSDPerMillion `json:"token_usd,omitempty"`
 	// GroupRatio is the user-group multiplier from the pricing response
 	// (defaults to 1 when the site has no group ratios).
-	GroupRatio float64 `json:"group_ratio,omitempty"`
+	GroupRatio    float64            `json:"group_ratio,omitempty"`
+	GroupRatios   map[string]float64 `json:"-"`
+	UnknownGroup  bool               `json:"unknown_group,omitempty"`
+	UpstreamGroup string             `json:"upstream_group,omitempty"`
 	// QuotaPer1M is the raw quota price per 1M tokens (legacy map format).
 	QuotaPer1M float64 `json:"quota_per_1m,omitempty"`
 	// BillingExpr is the raw tiered billing expression some forks publish
@@ -230,17 +233,14 @@ func ParsePricingPayload(body []byte) ([]ModelPrice, error) {
 	if len(envelope.Data) == 0 {
 		return nil, nil
 	}
-	// Resolve the user-group multiplier: prefer "default", else the first
-	// group ratio present, else 1 (mirrors AAH resolveGroupRatio).
-	groupRatio := 1.0
-	if ratio, ok := envelope.GroupRatio["default"]; ok && ratio > 0 {
-		groupRatio = ratio
-	} else {
-		for _, ratio := range envelope.GroupRatio {
-			if ratio > 0 {
-				groupRatio = ratio
-				break
-			}
+	// Public pricing uses only an actual default group; never a random map
+	// entry. Account callers resolve their verified token group later.
+	groupRatio, unknownGroup := 1.0, false
+	if len(envelope.GroupRatio) > 0 {
+		if ratio, ok := envelope.GroupRatio["default"]; ok && ratio >= 0 {
+			groupRatio = ratio
+		} else {
+			unknownGroup = true
 		}
 	}
 	var table map[string]json.RawMessage
@@ -346,6 +346,9 @@ func ParsePricingPayload(body []byte) ([]ModelPrice, error) {
 			HasCacheWriteRatio: item.CacheCreationRatio != nil,
 			TokenUSD:           direct,
 			GroupRatio:         groupRatio,
+			GroupRatios:        envelope.GroupRatio,
+			UnknownGroup:       unknownGroup,
+			UpstreamGroup:      "default",
 			Mode:               mode,
 			BillingExpr:        strings.TrimSpace(item.BillingExpr),
 		})
@@ -1005,4 +1008,25 @@ func coercePositiveInt64(value any) (int64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// WithPricingGroup selects only the declared upstream group. A missing or
+// unusable multiplier is unknown, not an opportunity to pick another group.
+func WithPricingGroup(item ModelPrice, group string) ModelPrice {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		group = "default"
+	}
+	item.UpstreamGroup = group
+	if len(item.GroupRatios) == 0 {
+		item.GroupRatio = 1
+		item.UnknownGroup = false
+		return item
+	}
+	ratio, ok := item.GroupRatios[group]
+	item.UnknownGroup = !ok || ratio < 0
+	if ok && ratio >= 0 {
+		item.GroupRatio = ratio
+	}
+	return item
 }

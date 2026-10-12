@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/lan/meta-gateway/internal/domain"
+
 	"github.com/lan/meta-gateway/internal/adapters"
 )
 
@@ -23,8 +25,9 @@ type PriceSnapshot struct {
 	// (/api/status: quota_display_type + custom_currency_symbol). They are copied
 	// onto every quote: the same formula produces the amount in THAT currency,
 	// which is only USD when the site says so.
-	Currency string
-	Symbol   string
+	Currency    string
+	Symbol      string
+	DisplayRate *float64
 	// Unparsed counts quotes whose published form we refuse to guess at; they
 	// are kept in Quotes with Unparsed=true so the UI can show the raw
 	// expression instead of a number.
@@ -132,10 +135,12 @@ func FetchPublicPrices(ctx context.Context, client *http.Client, rawURL string) 
 	// it still gets the New-API default, which is what its own billing uses.
 	var status struct {
 		Data struct {
-			QuotaPerUnit int64  `json:"quota_per_unit"`
-			DisplayType  string `json:"quota_display_type"`
-			Symbol       string `json:"custom_currency_symbol"`
-			DisplayIn    bool   `json:"display_in_currency"`
+			QuotaPerUnit int64    `json:"quota_per_unit"`
+			DisplayType  string   `json:"quota_display_type"`
+			Symbol       string   `json:"custom_currency_symbol"`
+			DisplayIn    bool     `json:"display_in_currency"`
+			USDRate      *float64 `json:"usd_exchange_rate"`
+			CustomRate   *float64 `json:"custom_currency_exchange_rate"`
 		} `json:"data"`
 	}
 	if statusBody, statusErr := getBody(ctx, client, base+"/api/status"); statusErr == nil {
@@ -145,6 +150,15 @@ func FetchPublicPrices(ctx context.Context, client *http.Client, rawURL string) 
 			}
 			snapshot.Currency = strings.ToUpper(strings.TrimSpace(status.Data.DisplayType))
 			snapshot.Symbol = currencySymbolFor(snapshot.Currency, strings.TrimSpace(status.Data.Symbol))
+			switch snapshot.Currency {
+			case "CNY":
+				snapshot.DisplayRate = status.Data.USDRate
+			case "CUSTOM":
+				snapshot.DisplayRate = status.Data.CustomRate
+			case "USD":
+				rate := 1.0
+				snapshot.DisplayRate = &rate
+			}
 		}
 	}
 	for _, item := range items {
@@ -152,13 +166,22 @@ func FetchPublicPrices(ctx context.Context, client *http.Client, rawURL string) 
 		if !ok {
 			continue
 		}
-		// The site-level declaration wins over whatever the price row carried:
-		// one table, one currency, and the site is the authority on it.
-		if snapshot.Currency != "" {
-			quote.Currency = snapshot.Currency
-		}
-		if snapshot.Symbol != "" {
-			quote.CurrencySymbol = snapshot.Symbol
+		// Display currency does not change the protocol's numeric unit. Arbitrary
+		// forks use native credit until an operator declares its money basis.
+		quote.Unit = domain.QuoteUnit{Kind: "site_credit", Code: base, QuotaPerUnit: snapshot.QuotaPerUnit, DisplayCurrency: snapshot.Currency, DisplaySymbol: snapshot.Symbol, DisplayRate: snapshot.DisplayRate}
+		if item.TokenUSD != nil {
+			quote.Unit.Kind = "iso"
+			quote.Unit.Code = "USD"
+			quote.Currency = "USD"
+			quote.CurrencySymbol = "$"
+		} else if item.Currency != "" {
+			quote.Unit.Kind = "iso"
+			quote.Unit.Code = strings.ToUpper(item.Currency)
+			quote.Currency = quote.Unit.Code
+			quote.CurrencySymbol = defaultCurrencySymbol(quote.Currency)
+		} else {
+			quote.Currency = ""
+			quote.CurrencySymbol = ""
 		}
 		if quote.Unparsed {
 			snapshot.Unparsed++

@@ -260,6 +260,12 @@ func (h *AdminHandler) Register(r chi.Router) {
 	// Error passthrough rules (status/keyword → passthrough/rewrite/ignore).
 	r.Get("/error-rules", h.listErrorRules)
 	r.Get("/model-pricing", h.modelPricing)
+	r.Get("/billing-rule", h.billingRule)
+	r.Put("/billing-rule", h.saveBillingRule)
+	r.Post("/billing-rule/copy-quote", h.copyBillingQuote)
+	r.Get("/price-quotes", h.priceQuotes)
+	r.Post("/price-quotes", h.manualPriceQuote)
+	r.Post("/price-quotes/estimate", h.estimatePriceQuote)
 	r.Post("/error-rules", h.createErrorRule)
 	r.Put("/error-rules/{id}", h.updateErrorRule)
 	r.Delete("/error-rules/{id}", h.deleteErrorRule)

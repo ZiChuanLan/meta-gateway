@@ -101,3 +101,47 @@ func TestAccountingProtocolCacheBuckets(t *testing.T) {
 		})
 	}
 }
+
+func TestAccountingExplicitRuleSnapshotAndEvidence(t *testing.T) {
+	svc, db, req, ch := accountingFixture(t, domain.ModelMetadata{ModelName: "m", PricePromptPer1k: 9})
+	input, output, cache, write := 1.0, 2.0, 0.0, 1.25
+	r := domain.BillingRule{State: "explicit", Mode: "token", Input: &input, Output: &output, CacheRead: &cache, CacheWrite: &write, Timezone: "UTC", Source: "manual"}
+	saved, err := db.SaveBillingRule("model", "m", r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.BillingSnapshot = svc.freezeBilling(req)
+	if req.BillingSnapshot == nil {
+		t.Fatal("explicit rule not frozen")
+	}
+	r.Input = &output
+	if _, err = db.SaveBillingRule("model", "m", r, saved.Revision); err != nil {
+		t.Fatal(err)
+	}
+	tokens := usage.ExtractFromJSONBody([]byte(`{"usage":{"prompt_tokens":1000,"completion_tokens":100,"total_tokens":1100,"prompt_tokens_details":{"cached_tokens":800}}}`))
+	svc.RecordUsage(req, ch, 200, tokens)
+	var cost float64
+	var status, evidence string
+	if err = db.QueryRow("SELECT cost,billing_status,billing_evidence FROM usage_records WHERE request_id=?", req.RequestID).Scan(&cost, &status, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if cost != .4 || status != "settled" || evidence == "" {
+		t.Fatalf("snapshot cost=%v status=%q evidence=%q", cost, status, evidence)
+	}
+	records, err := db.Usage.List(store.UsageFilter{})
+	if err != nil || len(records) != 1 || records[0].BillingEvidence != evidence {
+		t.Fatalf("explanation not readable: %v", err)
+	}
+	req.BillingSnapshot = nil
+	req.RequestID = "free"
+	if _, err = db.SaveBillingRule("model", "m", domain.BillingRule{State: "free", Timezone: "UTC", Source: "manual"}, saved.Revision+1); err != nil {
+		t.Fatal(err)
+	}
+	svc.RecordUsage(req, ch, 200, usage.Tokens{})
+	if err = db.QueryRow("SELECT cost,billing_status FROM usage_records WHERE request_id=?", req.RequestID).Scan(&cost, &status); err != nil {
+		t.Fatal(err)
+	}
+	if cost != 0 || status != "explicitly_free" {
+		t.Fatalf("free=%v %s", cost, status)
+	}
+}
