@@ -208,7 +208,12 @@ func (h *AdminHandler) manualPriceQuote(w http.ResponseWriter, r *http.Request) 
 		priceWriteError(w, err)
 		return
 	}
-	estimate := domain.EstimateQuote(q, domain.PriceWorkload{}, nil, time.Now())
+	workload := domain.PriceWorkload{}
+	if q.Values.Mode == "token" || q.Values.Mode == "hybrid" {
+		workload.Input = 1
+		workload.Output = 1
+	}
+	estimate := domain.EstimateQuote(q, workload, nil, time.Now())
 	if estimate.Status != "estimated" {
 		writeError(w, 400, "unsupported price mode or missing rate")
 		return

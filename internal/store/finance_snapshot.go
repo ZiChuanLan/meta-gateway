@@ -15,19 +15,28 @@ type FinanceSnapshotRow struct {
 }
 
 // SaveFinanceSnapshot appends one channel's finance observation. History is
-// preserved (no overwrite), so a failed refresh cannot drop the last good row.
+// bounded to the last 20 observations per channel. Account balance_history is
+// the historical ledger; this table is the reloadable UI snapshot.
 func (s *DB) SaveFinanceSnapshot(channelID int64, payload []byte, observedAt time.Time) error {
 	if channelID <= 0 {
 		return fmt.Errorf("finance snapshot: channel id required")
 	}
-	_, err := s.Exec(
+	tx, err := s.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(
 		`INSERT INTO finance_snapshots (channel_id, observed_at, payload) VALUES (?, ?, ?)`,
 		channelID, observedAt.UTC().Format(time.RFC3339Nano), string(payload),
 	)
 	if err != nil {
 		return fmt.Errorf("finance snapshot insert: %w", err)
 	}
-	return nil
+	if _, err = tx.Exec(`DELETE FROM finance_snapshots WHERE channel_id=? AND id NOT IN (SELECT id FROM finance_snapshots WHERE channel_id=? ORDER BY id DESC LIMIT 20)`, channelID, channelID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // LatestFinanceSnapshots returns the most recent observation per channel so a

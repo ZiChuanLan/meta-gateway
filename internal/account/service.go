@@ -605,6 +605,7 @@ type financeTarget struct {
 type financeFacts struct {
 	failed        bool
 	refreshError  string
+	pricingFailed bool
 	balanceKnown  bool
 	balanceStatus string
 	balance       int64
@@ -695,7 +696,11 @@ func (s *Service) snapshotItems() ([]FinanceItem, bool) {
 	s.snapMu.Lock()
 	items := make([]FinanceItem, 0, len(s.snapshots))
 	for _, item := range s.snapshots {
-		items = append(items, cloneFinanceItem(item))
+		copy := cloneFinanceItem(item)
+		if observed, err := time.Parse(time.RFC3339Nano, item.ObservedAt); copy.BalanceStatus == balanceStatusKnown && (err != nil || s.now().Sub(observed) < 0 || s.now().Sub(observed) >= financeCacheTTL) {
+			copy.BalanceStatus = balanceStatusStale
+		}
+		items = append(items, copy)
 	}
 	at := s.refreshedAt
 	s.snapMu.Unlock()
@@ -898,6 +903,8 @@ func (s *Service) probeFinanceGroup(ctx context.Context, resolved *resolvedTarge
 	prices, priceErr := resolved.adapter.Pricing(callCtx, resolved.input)
 	if priceErr != nil {
 		prices = nil
+		facts.pricingFailed = true
+		facts.refreshError = "pricing_refresh_failed"
 	}
 	quotaPerUnit, quotaErr := resolved.adapter.QuotaPerUnit(callCtx, resolved.input)
 	if quotaErr != nil || quotaPerUnit <= 0 {
@@ -957,6 +964,12 @@ func (s *Service) financeItemForChannel(channelID int64, key financeGroupKey, fa
 		RefreshError:  facts.refreshError,
 		Prices:        facts.prices,
 		Quotes:        facts.quotes,
+	}
+	if facts.pricingFailed {
+		if prev, ok := s.previousItem(channelID); ok {
+			item.Prices = prev.Prices
+			item.Quotes = prev.Quotes
+		}
 	}
 	if facts.failed {
 		if prev, ok := s.previousItem(channelID); ok {

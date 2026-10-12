@@ -70,3 +70,25 @@ func TestBillingRulesHTTPSeparateQuotesAndPolicy(t *testing.T) {
 		t.Fatalf("anonymous quotes=%d", resp.StatusCode)
 	}
 }
+
+func TestManualQuoteCannotInventFreeRates(t *testing.T) {
+	srv, db, _ := revealTestServer(t)
+	site, err := db.Site.Create(&domain.Site{Name: "quote", BaseURL: "https://quotes.example", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"model": "m", "site_id": site, "unit": map[string]any{"kind": "site_credit", "code": "native"}, "values": map[string]any{"mode": "token"}}
+	status, _, _ := adminCall(t, srv.URL, http.MethodPost, "/admin/price-quotes", body)
+	if status != 400 {
+		t.Fatalf("missing values accepted: %d", status)
+	}
+	body["values"] = map[string]any{"mode": "token", "input_per_million": 1, "output_per_million": 0}
+	status, _, _ = adminCall(t, srv.URL, http.MethodPost, "/admin/price-quotes", body)
+	if status != 201 {
+		t.Fatalf("explicit free output rejected: %d", status)
+	}
+	rule, err := db.BillingRule("model", "m")
+	if err != nil || rule != nil {
+		t.Fatalf("observation changed billing: %+v %v", rule, err)
+	}
+}

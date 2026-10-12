@@ -267,6 +267,9 @@ func (db *DB) ResolveBillingLayer(model, upstream string, memberID int64) (domai
 }
 
 func quoteConversion(q domain.PriceQuoteSnapshot, usdPerUnit *float64) (float64, error) {
+	if q.Unit.Kind == "unknown" {
+		return 0, fmt.Errorf("unknown quote unit cannot be copied")
+	}
 	if q.Status != "calculable" {
 		return 0, fmt.Errorf("quote is not calculable")
 	}

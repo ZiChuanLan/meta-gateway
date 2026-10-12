@@ -25,7 +25,13 @@ type PriceEstimate struct {
 
 func EstimateQuote(q PriceQuoteSnapshot, w PriceWorkload, balance *float64, at time.Time) PriceEstimate {
 	result := PriceEstimate{Status: "unavailable", Unit: q.Unit, Workload: w, Assumption: "scenario; shared balance and external consumption may reduce remaining calls"}
-	unavailable := func(reason string) PriceEstimate { result.Reason = reason; return result }
+	unavailable := func(reason string) PriceEstimate {
+		result.Status = "unavailable"
+		result.Cost = nil
+		result.Calls = nil
+		result.Reason = reason
+		return result
+	}
 	if q.Status != "calculable" {
 		return unavailable(q.Status)
 	}

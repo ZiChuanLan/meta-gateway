@@ -458,3 +458,40 @@ func TestRecordBalanceHistoryDedupesSharedAccount(t *testing.T) {
 		t.Fatalf("unknown readings wrote %d history rows, want 0", written)
 	}
 }
+
+func TestFinanceSnapshotPartialRefreshRetainsQuoteAndReportsStale(t *testing.T) {
+	var failed atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/self":
+			fmt.Fprint(w, `{"success":true,"data":{"id":1,"username":"audit","quota":1200000}}`)
+		case "/api/pricing":
+			if failed.Load() {
+				http.Error(w, "error", 503)
+				return
+			}
+			fmt.Fprint(w, `{"success":true,"data":[{"model_name":"m","quota_type":0,"model_ratio":1,"completion_ratio":2}]}`)
+		case "/api/status":
+			fmt.Fprint(w, `{"success":true,"data":{"quota_per_unit":500000}}`)
+		}
+	}))
+	defer server.Close()
+	svc, db, site, cred := newFinanceService(t, server.URL)
+	ch := addFinanceChannel(t, db, site, cred, server.URL, "default", "c")
+	if _, err := svc.FinanceOverview(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first := svc.snapshots[ch].Quotes["m"]
+	failed.Store(true)
+	svc.refresh(context.Background())
+	item := svc.snapshots[ch]
+	if item.RefreshError != "pricing_refresh_failed" || item.Quotes["m"].ID != first.ID || !item.BalanceKnown {
+		t.Fatalf("partial=%+v", item)
+	}
+	item.ObservedAt = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)
+	svc.snapshots[ch] = item
+	items, _ := svc.snapshotItems()
+	if items[0].BalanceStatus != balanceStatusStale {
+		t.Fatalf("expired item looks current: %+v", items[0])
+	}
+}
