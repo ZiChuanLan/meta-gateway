@@ -86,6 +86,14 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle("dark", scheme === "dark");
   }, [appearance, palette, scheme]);
   useEffect(() => {
+    const sync = () => {
+      document.documentElement.dataset.visibility = document.hidden ? "hidden" : "visible";
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
+  useEffect(() => {
     const sync = (event: StorageEvent) => {
       if (event.storageArea && event.storageArea !== localStorage) return;
       if (event.key === STYLE_KEY || event.key === null)

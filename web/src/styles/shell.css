@@ -21,7 +21,7 @@
 .console-navigation { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; scrollbar-width: thin; padding: 2px; }
 .console-nav-group { display: grid; gap: 2px; }
 .console-nav-caption { padding: 0 12px 7px; color: var(--muted); font-size: var(--text-xs); font-weight: 550; letter-spacing: .08em; }
-.console-nav-link { display: flex; align-items: center; position: relative; gap: 11px; min-height: 35px; padding: 7px 11px; border: 1px solid transparent; border-radius: 10px; text-decoration: none; color: var(--muted-strong); font-size: 12px; font-weight: 500; transition: background var(--dur-base), color var(--dur-base), box-shadow var(--dur-base), transform var(--dur-fast); }
+.console-nav-link { display: flex; align-items: center; position: relative; gap: 11px; min-height: 35px; padding: 7px 11px; border: 1px solid transparent; border-radius: 10px; text-decoration: none; color: var(--muted-strong); font-size: 13px; font-weight: 500; transition: background var(--dur-base), color var(--dur-base), box-shadow var(--dur-base), transform var(--dur-fast); }
 .console-nav-link svg { flex: 0 0 auto; opacity: .83; }
 .console-nav-link:hover { color: var(--ink); background: var(--surface-hover); }
 .console-nav-link:active { transform: scale(.98); }
@@ -69,7 +69,7 @@
 .console-shell.is-collapsed .console-brand { padding-left: 4px; }
 .console-shell.is-collapsed .console-search, .console-shell.is-collapsed .console-nav-link { justify-content: center; padding-left: 0; padding-right: 0; }
 .console-shell.is-collapsed .console-sidebar-meta { justify-content: center; }
-@keyframes workspace-arrive { from { opacity: .35; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes workspace-arrive { from { opacity: .8; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @media (min-width: 761px) and (max-height: 780px) {
   .console-navigation { gap: 10px; }
   .console-nav-link { min-height: 32px; padding-top: 5px; padding-bottom: 5px; }

@@ -52,7 +52,8 @@ export function GuidedTour({ enabled = true }: { enabled?: boolean } = {}) {
     // never run under vitest — the overlay buries whatever the test asserts.
     if (import.meta.env.VITEST) return;
     const forced = new URLSearchParams(window.location.search).get("tour") === "1";
-    if (!forced && (localStorage.getItem(DISMISS_KEY) === "1" || location.pathname !== "/")) {
+    // Setup and account claim already provide first-run guidance. The tour is optional.
+    if (!forced) {
       return;
     }
     // Give the first page a beat to mount so its boxes measure correctly.

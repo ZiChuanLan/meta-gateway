@@ -62,7 +62,7 @@ const json = (body: unknown, status = 200) =>
 
 /** What the fake server answers on the next settings GET / PUT. */
 let settingsReply: () => WebDAVSettings = () => settings();
-let putReply: () => Response = () => json(settings());
+let putReply: () => Response | Promise<Response> = () => json(settings());
 let putBodies: unknown[] = [];
 
 function installFetch() {
@@ -228,8 +228,8 @@ describe("exchange task workspace", () => {
     await waitFor(() => expect(field).toHaveValue("https://stored.example/dav/"));
     fireEvent.change(field, { target: { value: "https://typed.example/dav/" } });
 
-    // The server answers with the normalised document (secrets cleared); the
-    // refetch that follows must return the same thing, not the stale one.
+    // The server confirms the save; a stale cached document must not immediately
+    // overwrite it while the refresh is still pending.
     const saved = settings({ url: "https://typed.example/dav/", has_password: true });
     settingsReply = () => saved;
     putReply = () => json(saved);
@@ -262,4 +262,33 @@ describe("exchange task workspace", () => {
     expect(screen.queryByTestId("other")).not.toBeInTheDocument();
     expect(downloadUrlField()).toHaveValue("https://typed.example/dav/");
   });
+});
+
+it("preserves newer input while testing a connection persists an earlier draft", async () => {
+  localStorage.setItem("meta-gateway.locale", "en");
+  localStorage.setItem("meta-gateway.admin-token", "test-token");
+  installFetch();
+  const original = fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes("/admin/webdav/test")
+        ? Promise.resolve(json({ ok: true }))
+        : original(input, init),
+    ),
+  );
+  mount({ initialEntries: ["/exchange?task=cloud"] });
+  const field = downloadUrlField();
+  await waitFor(() => expect(field).toHaveValue("https://stored.example/dav/"));
+  fireEvent.change(field, { target: { value: "https://first.example/dav/" } });
+  let finish!: (r: Response) => void;
+  putReply = () =>
+    new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+  fireEvent.click(within(directionCard(0)).getByRole("button", { name: /Test connection/ }));
+  await waitFor(() => expect(putBodies).toHaveLength(1));
+  fireEvent.change(field, { target: { value: "https://newer.example/dav/" } });
+  await act(async () => finish(json(settings({ url: "https://first.example/dav/" }))));
+  expect(field).toHaveValue("https://newer.example/dav/");
 });

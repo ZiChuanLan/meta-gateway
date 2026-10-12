@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
-import { useCountUp } from "../hooks/useCountUp";
 import { useI18n } from "../i18n";
 
 export type TelemetryItem = {
@@ -14,13 +13,8 @@ export type TelemetryItem = {
   trend?: number | null;
 };
 
-function RollingNumber({ value }: { value: number }) {
-  const display = useCountUp(value);
-  return <>{display}</>;
-}
-
+// Measurements render their true value immediately; motion never fabricates zero.
 function TelemetryValue({ value }: { value: ReactNode }) {
-  if (typeof value === "number") return <RollingNumber value={value} />;
   return <>{value}</>;
 }
 

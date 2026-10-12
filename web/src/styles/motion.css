@@ -84,7 +84,7 @@
 
 .dashboard-page { position: relative; isolation: isolate; }
 .dashboard-page .page-header { position: relative; min-height: 108px; padding: 4px 0 20px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
-.dashboard-page .page-heading h1 { font-size: clamp(28px,3vw,38px); letter-spacing: -.065em; }
+.dashboard-page .page-heading h1 { font-size:28px; letter-spacing:-.035em; }
 .dashboard-page .page-heading h1:after { display: none; }
 /* Confined to the page-header band: it used to bleed down over the first card
    and sideways under the title, which read as a stray gradient smear. */
@@ -92,7 +92,7 @@
 .dashboard-aura svg { width: 100%; height: 100%; }
 .aura-wordmark { position: absolute; top: 18px; right: 24px; color: transparent; -webkit-text-stroke: 1px color-mix(in srgb,var(--primary) 24%,transparent); font: 750 clamp(42px,7vw,100px)/1 var(--font); letter-spacing: -.06em; opacity: .72; }
 .aura-gate { color: var(--primary); }
-.aura-plane { animation: plane-drift 9s ease-in-out infinite; }
+.aura-plane { animation: none; }
 .aura-plane.is-second { animation-delay: -4s; }
 @keyframes plane-drift { 0%,100% { transform: translate(0,0); } 50% { transform: translate(4px,-9px); } }
 .aura-registration { position: absolute; bottom: 47px; right: 36px; color: var(--muted); font: 8px var(--mono); letter-spacing: .19em; opacity: .65; }
@@ -100,10 +100,10 @@
 .aura-flow { animation: aura-flow 8s linear infinite; }
 .aura-flow path:nth-child(2) { stroke-dashoffset: -170; }
 .aura-flow path:nth-child(3) { stroke-dashoffset: -350; }
-.aura-node { animation: node-breathe 4s ease-in-out infinite; }
+.aura-node { animation: none; }
 .dashboard-aura.is-paused * { animation-play-state: paused; }
 .console-content { position: relative; }
-.console-content.route-enter:before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 190px; pointer-events: none; z-index: 4; background: linear-gradient(112deg,transparent 37%,rgba(91,118,218,.07) 38%,rgba(77,112,245,.10) 40%,transparent 41%); background-size: 250% 100%; animation: route-cut 420ms cubic-bezier(.2,.65,.25,1) both; }
+.console-content.route-enter:before { content: none; }
 .console-nav-link.active .console-nav-indicator { animation: nav-mark 250ms var(--ease-out) both; }
 .console-nav-link > svg { transition: transform 180ms var(--ease-out); }
 .console-nav-link:hover > svg { transform: translateX(2px); }
@@ -112,8 +112,8 @@
 .action-menu-panel { animation-name: menu-cut; }
 ::view-transition-image-pair(root) { isolation: isolate; }
 ::view-transition-old(root) { animation: none; }
-::view-transition-new(root) { mix-blend-mode: normal; animation: theme-cut 520ms cubic-bezier(.22,.7,.15,1) both; }
-@keyframes theme-cut { from { clip-path: polygon(0 0,0 0,-20% 100%,0 100%); } to { clip-path: polygon(0 0,120% 0,100% 100%,0 100%); } }
+::view-transition-new(root) { mix-blend-mode: normal; animation: theme-fade 180ms ease-out both; }
+@keyframes theme-fade { from { opacity:.55; } to { opacity:1; } }
 @keyframes route-cut { from { background-position: 100% 0; opacity: .9; } to { background-position: 0 0; opacity: 0; } }
 @keyframes nav-mark { from { scale: 1 .2; opacity: 0; } to { scale: 1 1; opacity: .8; } }
 @keyframes tab-line { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -174,3 +174,8 @@
 
 .transition-art { position: absolute; inset: 0; pointer-events: none; }
 .cinematic-skip { pointer-events: auto; }
+
+/* Hidden pages pause decorative effects without changing request lifecycles. */
+:root[data-visibility="hidden"] :is(.login-motion,.dashboard-aura,.gateway-transition) *,
+:root[data-visibility="hidden"] :is(.login-motion,.dashboard-aura) *::before,
+:root[data-visibility="hidden"] :is(.login-motion,.dashboard-aura) *::after { animation-play-state:paused !important; }

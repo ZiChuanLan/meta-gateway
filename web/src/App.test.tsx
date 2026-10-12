@@ -11,7 +11,7 @@ import {
 import { MemoryRouter, RouterProvider, createMemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { ENTRANCE_CHARGE_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
+import { DAILY_REVEAL_MS } from "./lib/entranceMotion";
 import { I18nProvider } from "./i18n";
 import { UnsavedChangesBoundary } from "./lib/RouterBoundary";
 import { SessionProvider } from "./session";
@@ -211,7 +211,7 @@ describe("channel-first shell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses one account form and the same entrance animation for members", async () => {
+  it("uses one account form and immediately adopts a member session", async () => {
     vi.useFakeTimers();
     const requests: string[] = [];
     vi.stubGlobal(
@@ -232,11 +232,8 @@ describe("channel-first shell", () => {
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "member-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     await flushAsyncWork();
-    expect(document.querySelector(".gateway-transition.is-sealing")).toBeInTheDocument();
-    await act(async () => {
-      vi.advanceTimersByTime(ENTRANCE_CHARGE_MS);
-    });
-    expect(document.querySelector(".gateway-transition.is-revealing")).toBeInTheDocument();
+    expect(document.querySelector(".gateway-transition")).toBeNull();
+    await act(async () => vi.advanceTimersByTime(DAILY_REVEAL_MS));
     expect(
       requests.filter((path) => path.startsWith("/admin/") && path !== "/admin/session"),
     ).toEqual([]);
@@ -299,7 +296,9 @@ describe("channel-first shell", () => {
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent("/users/overview"),
     );
+    expect(document.querySelector(".console-shell")).toBeInTheDocument();
     expect(document.querySelector('a[href="/console/users/policies"]')).toBeNull();
+    expect(document.querySelector('a[href="/console/channels"]')).toBeNull();
     fireEvent.click(screen.getByRole("link", { name: "Members & invitations" }));
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/users/members"));
     expect(
@@ -345,46 +344,25 @@ describe("channel-first shell", () => {
     expect(JSON.parse(String(call[1]?.body))).toEqual({ token: "old-token", totp_code: "" });
   });
 
-  it("seals the request before mounting and revealing the channel workspace", async () => {
+  it("mounts the workspace immediately after authentication without a blocking entrance", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", stubAdminFetch());
-
+    const fetcher = stubAdminFetch();
+    vi.stubGlobal("fetch", fetcher);
     renderApp();
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "admin" } });
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "transition-token" },
-    });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "transition-token" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
-
     await flushAsyncWork();
-
-    // Authentication succeeds before the entrance transition publishes the session.
-    await act(async () => {
-      vi.advanceTimersByTime(100);
-      await Promise.resolve();
-    });
-
-    expect(document.querySelector(".gateway-transition.is-sealing")).toBeInTheDocument();
-    expect(sessionStorage.getItem("meta-gateway.admin-token")).toBeNull();
-    expect(localStorage.getItem("meta-gateway.admin-token")).toBeNull();
-    expect(screen.getByRole("button", { name: "Connecting..." })).toBeDisabled();
-
-    await act(async () => {
-      vi.advanceTimersByTime(ENTRANCE_CHARGE_MS);
-      await Promise.resolve();
-    });
-
-    expect(sessionStorage.getItem("meta-gateway.admin-token")).toBeNull();
     expect(localStorage.getItem("meta-gateway.admin-token")).toBe("mg-sess.test");
-    expect(document.querySelector(".gateway-transition.is-revealing")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Models" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Tokens" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Logs" })).toBeInTheDocument();
+    expect(document.querySelector(".gateway-transition")).toBeNull();
+    act(() => vi.advanceTimersByTime(DAILY_REVEAL_MS));
+    vi.useRealTimers();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
-
-    act(() => vi.advanceTimersByTime(ENTRANCE_REVEAL_MS));
-    expect(document.querySelector(".gateway-transition")).not.toBeInTheDocument();
+    expect(document.querySelector(".authenticated-stage.is-revealing")).toBeNull();
+    expect(fetcher.mock.calls.filter(([input]) => String(input) === "/admin/session")).toHaveLength(
+      1,
+    );
   });
 
   it("does not play the transition when authorization fails", async () => {
@@ -406,7 +384,7 @@ describe("channel-first shell", () => {
     expect(localStorage.getItem("meta-gateway.admin-token")).toBeNull();
   });
 
-  it("skips the visual sequence after successful authentication without logging in twice", async () => {
+  it("does not log in twice when the brief reveal finishes", async () => {
     vi.useFakeTimers();
     const fetch = stubAdminFetch();
     vi.stubGlobal("fetch", fetch);
@@ -415,12 +393,13 @@ describe("channel-first shell", () => {
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "skip-token" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     await flushAsyncWork();
-    fireEvent.click(screen.getByRole("button", { name: /Skip animation/ }));
+    act(() => vi.advanceTimersByTime(DAILY_REVEAL_MS));
     await flushAsyncWork();
     expect(screen.queryByRole("dialog", { name: "Workspace entrance" })).not.toBeInTheDocument();
     expect(localStorage.getItem("meta-gateway.admin-token")).toBe("mg-sess.test");
-    expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(5000));
+    vi.useRealTimers();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(fetch.mock.calls.filter(([input]) => String(input) === "/admin/session")).toHaveLength(
       1,
     );

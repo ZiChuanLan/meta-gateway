@@ -26,14 +26,17 @@ import { useModules } from "./hooks/useModules";
 import { Button, ErrorState, Dialog, Field, IconButton, Loading } from "./components/ui";
 import { CommandPalette } from "./components/CommandPalette";
 import { ConsoleShell } from "./components/ConsoleShell";
-import { Dashboard } from "./features/Dashboard";
-import { GuidedTour } from "./features/GuidedTour";
+const Dashboard = lazy(() =>
+  import("./features/Dashboard").then((module) => ({ default: module.Dashboard })),
+);
+const GuidedTour = lazy(() =>
+  import("./features/GuidedTour").then((module) => ({ default: module.GuidedTour })),
+);
 import { SetupWizard } from "./features/SetupWizard";
 import { channelHealthState } from "./features/channelHealth";
 import { KatanaCanvas } from "./components/KatanaCanvas";
-import { GatewayTransition } from "./components/GatewayTransition";
 import { createEdgeSparkHost } from "./lib/katanafx";
-import { ENTRANCE_CHARGE_MS, ENTRANCE_EXIT_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
+import { DAILY_REVEAL_MS } from "./lib/entranceMotion";
 import { useHiddenPlugins } from "./lib/pluginNav";
 import {
   CHROME_NAV_ITEMS,
@@ -98,12 +101,6 @@ type AuthorizedSession = {
   account?: AccountSession;
 };
 
-const SEAL_DURATION = ENTRANCE_CHARGE_MS;
-const REVEAL_DURATION = ENTRANCE_REVEAL_MS;
-const REDUCED_REVEAL_DURATION = 160;
-const SHEATH_COVER_MS = 300;
-const SHEATH_DURATION = ENTRANCE_EXIT_MS;
-
 export function App() {
   return (
     <AppearanceProvider>
@@ -114,7 +111,6 @@ export function App() {
 
 function GatewayApp() {
   useCurrency();
-  const { appearance } = useAppearance();
   const { client, connect, connectMember, disconnect, role } = useSession();
   // The standalone admin screen renders the shared user-management module, so
   // it passes the transport in — the module deliberately does not know about
@@ -144,7 +140,6 @@ function GatewayApp() {
   }, [currencySettings.data]);
   const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>("idle");
   const [bootstrapSites, setBootstrapSites] = useState<Site[]>();
-  const pendingSession = useRef<AuthorizedSession | null>(null);
   const timers = useRef<number[]>([]);
 
   const clearTransitionTimers = useCallback(() => {
@@ -183,72 +178,36 @@ function GatewayApp() {
   const authorize = useCallback(
     (token: string, remember: boolean, sites: Site[], account?: AccountSession) => {
       if (transitionPhase !== "idle") return;
-      const authorized = { token: token.trim(), remember, sites, account };
+      clearTransitionTimers();
       setBootstrapSites(sites);
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        adoptSession(authorized);
-        setTransitionPhase("revealing");
-        schedule(() => setTransitionPhase("idle"), REDUCED_REVEAL_DURATION);
-        return;
-      }
-      // Authentication has succeeded; the visual sequence now opens the workspace.
-      pendingSession.current = authorized;
-      setTransitionPhase("sealing");
-      schedule(() => {
-        const pending = pendingSession.current;
-        if (!pending) return;
-        adoptSession(pending);
-        pendingSession.current = null;
-        setTransitionPhase("revealing");
-        schedule(() => {
-          pendingSession.current = null;
-          setTransitionPhase("idle");
-        }, REVEAL_DURATION);
-      }, SEAL_DURATION);
+      // Authentication is never held by a visual timer. Replay owns the brand sequence.
+      adoptSession({ token: token.trim(), remember, sites, account });
+      setTransitionPhase("revealing");
+      schedule(
+        () => setTransitionPhase("idle"),
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : DAILY_REVEAL_MS,
+      );
     },
-    [adoptSession, schedule, transitionPhase],
+    [adoptSession, schedule, transitionPhase, clearTransitionTimers],
   );
 
   const handleDisconnect = useCallback(() => {
     clearTransitionTimers();
-    pendingSession.current = null;
     setBootstrapSites(undefined);
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setTransitionPhase("idle");
-      disconnect();
-      return;
-    }
-    setTransitionPhase("sheathing");
-    schedule(() => disconnect(), SHEATH_COVER_MS);
-    schedule(() => setTransitionPhase("idle"), SHEATH_DURATION);
-  }, [clearTransitionTimers, disconnect, schedule]);
-
-  const finishTransition = useCallback(() => {
-    clearTransitionTimers();
-    const pending = pendingSession.current;
-    pendingSession.current = null;
-    // Skip only completes a transition after authentication has succeeded.
-    if (transitionPhase === "sheathing") disconnect();
-    else if (pending) adoptSession(pending);
     setTransitionPhase("idle");
-  }, [clearTransitionTimers, adoptSession, disconnect, transitionPhase]);
+    disconnect();
+  }, [clearTransitionTimers, disconnect]);
 
   return (
     <>
       {client && role === "admin" ? (
-        <div>
-          <header style={{ padding: 16, display: "flex", justifyContent: "space-between" }}>
-            <strong>Meta Gateway</strong>
-            <Button onClick={handleDisconnect}>{t("app.disconnect")}</Button>
-          </header>
-          <Suspense fallback={<Loading />}>
-            <StandaloneAdmin request={adminRequest} />
-          </Suspense>
-        </div>
+        <Suspense fallback={<Loading />}>
+          <StandaloneAdmin request={adminRequest} onDisconnect={handleDisconnect} />
+        </Suspense>
       ) : client ? (
         <div
           className={`authenticated-stage${transitionPhase === "revealing" ? " is-revealing" : ""}`}
-          style={{ animationDuration: `${REVEAL_DURATION}ms` }}
+          style={{ animationDuration: `${DAILY_REVEAL_MS}ms` }}
         >
           <Authenticated
             clientKey={client}
@@ -264,13 +223,6 @@ function GatewayApp() {
           transitionPhase={transitionPhase}
         />
       )}
-      {transitionPhase !== "idle" && transitionPhase !== "fading" ? (
-        <GatewayTransition
-          appearance={appearance}
-          phase={transitionPhase}
-          onSkip={finishTransition}
-        />
-      ) : null}
     </>
   );
 }

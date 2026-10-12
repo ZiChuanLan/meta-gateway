@@ -311,7 +311,8 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
    * hydrate, a quiet refetch while nothing is unsaved, and a successful save.
    */
   const applyWebdavSettings = (settings: WebDAVSettings) => {
-    setWebdavForm(formFromSettings(settings));
+    webdavFormRef.current = formFromSettings(settings);
+    setWebdavForm(webdavFormRef.current);
     setWebdavBaseline(webdavBaselineOf(settings));
   };
 
@@ -323,7 +324,9 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
     if (webdavFormHydrated && webdavDirty) return;
     applyWebdavSettings(settings);
     setWebdavFormHydrated(true);
-  }, [webdavSettings.data, webdavFormHydrated, webdavDirty]);
+    // Rehydrate on a new server document, never just because a save made the draft clean.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webdavSettings.data]);
 
   const invalidateAfterWebdavImport = () => {
     void qc.invalidateQueries({ queryKey: ["sites"] });
@@ -361,8 +364,11 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
   // Test and sync run after a save so a typed password is not ignored; that
   // save is real, so it moves the baseline the same way the Save button does.
   const persistWebdavForm = async () => {
-    const settings = await s.updateWebdavSettings(webdavPayload(webdavFormRef.current));
-    applyWebdavSettings(settings);
+    const sent = webdavPayload(webdavFormRef.current);
+    const settings = await s.updateWebdavSettings(sent);
+    if (JSON.stringify(webdavPayload(webdavFormRef.current)) === JSON.stringify(sent))
+      applyWebdavSettings(settings);
+    else setWebdavBaseline(webdavBaselineOf(settings));
     void qc.invalidateQueries({ queryKey: ["webdav-status"] });
     void qc.invalidateQueries({ queryKey: ["webdav-settings"] });
     return settings;

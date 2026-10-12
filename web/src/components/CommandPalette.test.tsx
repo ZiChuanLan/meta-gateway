@@ -76,7 +76,7 @@ it("lets members search navigation without fetching or displaying administrator 
   expect(fetcher).not.toHaveBeenCalled();
 });
 
-it.each([null, "owner", "admin"] as const)("keeps gateway search for %s", async (role) => {
+it.each([null, "owner"] as const)("keeps gateway search for %s", async (role) => {
   const fetcher = vi.fn(
     async () =>
       new Response(
@@ -92,4 +92,16 @@ it.each([null, "owner", "admin"] as const)("keeps gateway search for %s", async 
   mount(role);
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "gateway" } });
   await waitFor(() => expect(fetcher).toHaveBeenCalled());
+});
+
+it("keeps a limited administrator on permitted navigation without gateway search", async () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  mount("admin");
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "Models" } });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  });
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(screen.queryByText("private-channel")).not.toBeInTheDocument();
 });

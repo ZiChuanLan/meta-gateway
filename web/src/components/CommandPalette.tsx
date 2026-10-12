@@ -44,7 +44,7 @@ export function CommandPalette({
   nav: NavDest[];
 }) {
   const { client, role } = useSession();
-  const canSearchGateway = Boolean(client) && isStaff(role);
+  const canSearchGateway = Boolean(client) && isStaff(role) && role !== "admin";
   const service = api(client!);
   const { t } = useI18n();
   const navigate = useNavigate();

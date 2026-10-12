@@ -1892,7 +1892,8 @@ export const en: Dict = {
   "keys.emptyKicker": "Client tokens",
   "keys.emptyTitle": "Issue a downstream token",
   "keys.ctaConnections": "Check connections",
-  "keys.createHint": "Clients use this token to call /v1. It is shown only once.",
+  "keys.createHint":
+    "Clients use this token to call /v1. The gateway keeps it encrypted; view or rotate it from the list.",
   "keys.namePlaceholder": "e.g. laptop, prod-app",
   "keys.group": "Tenant group",
   "keys.groupHint":
@@ -3435,16 +3436,16 @@ export const en: Dict = {
   "workbench.cap.catalog.desc":
     "Reads the LiteLLM price list and the models.dev index, then fills in the registry. Nothing is written until you confirm, and an operator-edited row is never touched.",
   "workbench.cap.catalog.lastSync":
-    "Last sync {when} · {matched} models matched · {capabilities} capabilities, {metadata} metadata rows and {prices} prices written",
+    "Last sync {when} · {matched} models matched · {capabilities} capabilities, {metadata} metadata rows and {prices} reference quotes recorded",
   "workbench.cap.catalog.neverSynced":
     "Never synced. A sync only covers models that an enabled route serves.",
   "workbench.cap.catalog.scheduled": "Refreshes on a schedule",
   "workbench.cap.catalog.manualOnly": "Manual sync only",
-  "workbench.cap.catalog.pricesOn": "Prices are filled automatically",
-  "workbench.cap.catalog.pricesOff": "Prices stay hand-managed",
+  "workbench.cap.catalog.pricesOn": "Reference quotes refresh automatically",
+  "workbench.cap.catalog.pricesOff": "Reference quotes do not refresh automatically",
   "workbench.cap.catalog.writeCapabilities": "Write capabilities",
   "workbench.cap.catalog.writeMetadata": "Write metadata",
-  "workbench.cap.catalog.writePrices": "Fill unset prices",
+  "workbench.cap.catalog.writePrices": "Update reference quotes (billing unchanged)",
   "workbench.cap.catalog.onlyChanges": "Only show models that would change",
   "workbench.cap.catalog.summary":
     "{matched} of {requested} models are in the catalogs · {missing} unknown · {changes} would change",
@@ -3454,7 +3455,7 @@ export const en: Dict = {
   "workbench.cap.catalog.apply": "Apply {n} change(s)",
   "workbench.cap.catalog.groupCapability": "How to call it",
   "workbench.cap.catalog.groupMetadata": "Model metadata",
-  "workbench.cap.catalog.groupPrices": "Prices (per 1k tokens)",
+  "workbench.cap.catalog.groupPrices": "Catalog reference quotes (USD /1k)",
   "workbench.cap.catalog.notFound": "not in any catalog",
   "workbench.cap.catalog.manualKept": "your override is kept",
   "workbench.cap.catalog.noChange": "Already up to date.",

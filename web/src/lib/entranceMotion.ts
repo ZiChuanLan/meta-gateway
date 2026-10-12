@@ -2,3 +2,6 @@
 export const ENTRANCE_CHARGE_MS = 920;
 export const ENTRANCE_REVEAL_MS = 1180;
 export const ENTRANCE_EXIT_MS = 650;
+
+/** Daily sign-in reveals content briefly; manual replay keeps the full entrance. */
+export const DAILY_REVEAL_MS = 180;
