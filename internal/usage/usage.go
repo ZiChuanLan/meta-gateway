@@ -20,11 +20,15 @@ type Tokens struct {
 	CacheReadTokens int
 	// CacheCreationTokens are tokens written into an upstream prompt cache.
 	CacheCreationTokens int
+	// PromptIncludesCacheRead identifies protocols whose prompt/input count
+	// already contains cache hits (OpenAI, Responses and Gemini). The original
+	// count remains intact for logs and token quotas; only billing subtracts it.
+	PromptIncludesCacheRead bool
 }
 
 // Valid reports whether any token field is present.
 func (t Tokens) Valid() bool {
-	return t.PromptTokens > 0 || t.CompletionTokens > 0 || t.TotalTokens > 0
+	return t.PromptTokens > 0 || t.CompletionTokens > 0 || t.TotalTokens > 0 || t.CacheReadTokens > 0 || t.CacheCreationTokens > 0
 }
 
 // Normalize fills TotalTokens when only prompt/completion are set.
@@ -33,6 +37,17 @@ func (t Tokens) Normalize() Tokens {
 		t.TotalTokens = t.PromptTokens + t.CompletionTokens
 	}
 	return t
+}
+
+// BillingInputTokens returns ordinary input plus cache creation, without
+// counting cache reads a second time. Zero-valued protocol metadata preserves
+// the legacy/internal Anthropic convention: prompt excludes cache detail.
+func (t Tokens) BillingInputTokens() int {
+	prompt := max(t.PromptTokens, 0)
+	if t.PromptIncludesCacheRead {
+		prompt = max(prompt-max(t.CacheReadTokens, 0), 0)
+	}
+	return prompt + max(t.CacheCreationTokens, 0)
 }
 
 // ExtractFromJSONBody parses usage from a non-stream OpenAI-style JSON body.
@@ -58,6 +73,9 @@ type usagePayload struct {
 	PromptTokensDetails *struct {
 		CachedTokens int `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	InputTokensDetails *struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
 }
 
 func ExtractFromJSONBody(body []byte) Tokens {
@@ -101,8 +119,16 @@ func ExtractFromJSONBody(body []byte) Tokens {
 		}
 		// OpenAI cached prompt tokens take precedence over Anthropic aliases
 		// (the OpenAI field is the authoritative cache-hit count).
-		if tokens.CacheReadTokens == 0 && rawUsage.PromptTokensDetails != nil {
-			tokens.CacheReadTokens = rawUsage.PromptTokensDetails.CachedTokens
+		if rawUsage.PromptTokensDetails != nil {
+			tokens.PromptIncludesCacheRead = true
+			if tokens.CacheReadTokens == 0 {
+				tokens.CacheReadTokens = rawUsage.PromptTokensDetails.CachedTokens
+			}
+		} else if rawUsage.InputTokensDetails != nil {
+			tokens.PromptIncludesCacheRead = true
+			if tokens.CacheReadTokens == 0 {
+				tokens.CacheReadTokens = rawUsage.InputTokensDetails.CachedTokens
+			}
 		}
 		// Anthropic cache accounting.
 		if tokens.CacheReadTokens == 0 {
@@ -123,6 +149,7 @@ func ExtractFromJSONBody(body []byte) Tokens {
 		// Gemini shape: usageMetadata at the top level of the response. Some
 		// compatible proxies omit totalTokenCount, so Normalize below must be
 		// allowed to derive it from prompt/completion counts.
+		tokens.PromptIncludesCacheRead = true
 		tokens.PromptTokens = payload.UsageMetadata.PromptTokenCount
 		tokens.CompletionTokens = payload.UsageMetadata.CandidatesTokenCount
 		tokens.TotalTokens = payload.UsageMetadata.TotalTokenCount
@@ -148,10 +175,12 @@ type Tee struct {
 	Source io.ReadCloser
 	Stream bool
 
-	mu     sync.Mutex
-	tokens Tokens
-	buf    bytes.Buffer
-	line   bytes.Buffer
+	mu        sync.Mutex
+	tokens    Tokens
+	buf       bytes.Buffer
+	line      bytes.Buffer
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func NewTee(source io.ReadCloser, stream bool) *Tee {
@@ -181,6 +210,11 @@ func (t *Tee) Read(p []byte) (int, error) {
 }
 
 func (t *Tee) Close() error {
+	t.closeOnce.Do(func() { t.closeErr = t.close() })
+	return t.closeErr
+}
+
+func (t *Tee) close() error {
 	// Flush any trailing SSE line without a final newline.
 	if t.Stream && t.line.Len() > 0 {
 		if got := t.consumeSSELine(t.line.String()); got.Valid() {
@@ -200,6 +234,7 @@ func (t *Tee) Close() error {
 		if bytes.Contains(t.buf.Bytes(), []byte("usage")) {
 			t.tokens = ExtractFromJSONBody(t.buf.Bytes())
 		}
+		t.buf = bytes.Buffer{}
 	}
 	t.mu.Unlock()
 	if t.Source != nil {
@@ -222,6 +257,10 @@ func (t *Tee) Tokens() Tokens {
 func mergeTokens(previous, next Tokens) Tokens {
 	if next.PromptTokens > 0 {
 		previous.PromptTokens = next.PromptTokens
+		previous.PromptIncludesCacheRead = next.PromptIncludesCacheRead
+	}
+	if next.PromptIncludesCacheRead {
+		previous.PromptIncludesCacheRead = true
 	}
 	if next.CompletionTokens > 0 {
 		previous.CompletionTokens = next.CompletionTokens

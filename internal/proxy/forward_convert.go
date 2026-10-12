@@ -8,6 +8,7 @@ import (
 
 	"github.com/lan/meta-gateway/internal/adapters"
 	"github.com/lan/meta-gateway/internal/relay"
+	"github.com/lan/meta-gateway/internal/usage"
 )
 
 // forward_convert.go turns an upstream 2xx body into the contract the client
@@ -36,6 +37,16 @@ type convertInput struct {
 func convertSuccessBody(result *relay.Result, in convertInput) *relay.Result {
 	if result == nil || result.Err != nil || result.StatusCode < 200 || result.StatusCode >= 300 || result.Body == nil {
 		return result
+	}
+	// Meter upstream bytes before reshaping: cache counts have protocol-specific
+	// semantics and response maps may omit usage entirely. Preserve that evidence
+	// independently of the downstream document.
+	upstreamStream := (in.clientStream || in.aggregateUpstreamStream) && !in.synthesizeClientStream
+	meter := usage.NewTee(result.Body, upstreamStream)
+	result.Body = meter
+	result.MeteredUsage = func() usage.Tokens {
+		_ = meter.Close()
+		return meter.Tokens()
 	}
 	// Stream policy: fold a forced upstream stream into one completion, or expand
 	// a forced non-stream answer into a single-chunk SSE replay — both before the

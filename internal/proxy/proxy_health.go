@@ -294,10 +294,15 @@ func (s *Service) RecordUsage(req Request, channelID int64, status int, tokens u
 	if total <= 0 {
 		total = tokens.PromptTokens + tokens.CompletionTokens
 	}
-	if total <= 0 || s.db == nil {
+	if s.db == nil {
 		return
 	}
-	// Billing: cost = key unit prices × model ratio, computed and persisted at
+	// Missing usage cannot suppress a successful fixed fee. Failed responses
+	// without measured usage never incur a call charge. Keep zero token quotas.
+	if total <= 0 && (!tokens.Valid() && (status < 200 || status >= 300)) {
+		return
+	}
+	// Billing: local unit prices × model ratio, computed and persisted at
 	// record time so bills are stable even if prices are edited later.
 	record := &domain.UsageRecord{
 		UserID:              req.UserID,
@@ -370,7 +375,7 @@ func (s *Service) billingCost(req Request, tokens usage.Tokens) float64 {
 	// same quantity the prompt tokens are billed on: prompt tokens plus whatever
 	// was written to cache. Cache READS are excluded on purpose — they reuse
 	// context that was already counted once, and they bill at the cache price.
-	inputTokens := tokens.PromptTokens + tokens.CacheCreationTokens
+	inputTokens := tokens.BillingInputTokens()
 	pricePrompt, priceCompletion, priceCache, pricePerRequest := layer.EffectivePrices(inputTokens)
 	multiplier := layer.TimeMultiplier(time.Now())
 	prompt := float64(inputTokens)

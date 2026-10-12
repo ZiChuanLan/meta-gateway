@@ -899,7 +899,7 @@ func (s *RouteMemberStore) AdoptObservedPrices(memberID int64, prompt, completio
 	if next[3] > 0 && perRequest == 0 {
 		return nil, nil
 	}
-	if next[3] == 0 && perRequest > 0 && (next[0] > 0 || next[1] > 0 || next[2] > 0) {
+	if perRequest > 0 && (current[0] > 0 || current[1] > 0 || current[2] > 0) {
 		return nil, nil
 	}
 	if len(adopted) == 0 {

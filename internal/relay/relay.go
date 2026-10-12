@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/lan/meta-gateway/internal/usage"
 )
 
 const maxModelsBodyBytes = 2 << 20
@@ -46,6 +48,9 @@ type Result struct {
 	// its first-chunk peek.
 	FirstByteMs int
 	Err         error
+	// MeteredUsage reads the original upstream usage before protocol/field
+	// conversion. It is transient and never changes the response sent onward.
+	MeteredUsage func() usage.Tokens
 }
 
 // ChatCompletions forwards a /v1/chat/completions request to the given upstream.

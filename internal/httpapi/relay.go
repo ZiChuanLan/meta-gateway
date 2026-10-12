@@ -1080,6 +1080,11 @@ func writeUpstreamResult(w http.ResponseWriter, requestCtx context.Context, requ
 	_ = tee.Close()
 	if onUsage != nil {
 		tokens := tee.Tokens()
+		if result.MeteredUsage != nil {
+			if original := result.MeteredUsage(); original.Valid() {
+				tokens = original
+			}
+		}
 		// An interrupted stream that never delivered its final usage chunk
 		// would otherwise meter nothing for bytes the client already received.
 		// Fall back to a conservative estimate from the written byte count so

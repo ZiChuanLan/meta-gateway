@@ -142,3 +142,15 @@ func TestAdoptObservedPricesFillsTheTokenFamilyTogether(t *testing.T) {
 		t.Fatalf("family not filled: completion %v cache %v", completion, cache)
 	}
 }
+
+func TestAdoptObservedPricesRejectsFixedQuoteOnTokenMember(t *testing.T) {
+	db, _, priced, _ := adoptFixture(t)
+	adopted, err := db.RouteMember.AdoptObservedPrices(priced, 0, 0, 0, 0.02)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, _, _, fixed := prices(t, db, priced)
+	if len(adopted) != 0 || fixed != 0 || prompt != 0.001 {
+		t.Fatalf("incompatible quote mixed into member: adopted=%v prompt=%v fixed=%v", adopted, prompt, fixed)
+	}
+}

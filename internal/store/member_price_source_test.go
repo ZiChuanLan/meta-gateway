@@ -52,23 +52,28 @@ func TestMemberPriceSourceRecordsItsWriter(t *testing.T) {
 		t.Fatalf("manual patch provenance: source=%q at=%q", got.PriceSource, got.PriceUpdatedAt)
 	}
 
-	// Adopting a site quote is the site speaking, and it fills a flat price only
-	// (the token family is already set, so the per-request slot is the free one).
-	if _, err := db.RouteMember.AdoptObservedPrices(memberID, 9, 9, 0, 0.02); err != nil {
+	// An incompatible per-call quote cannot change this token rule or claim
+	// ownership of the operator's prices.
+	if _, err := db.RouteMember.AdoptObservedPrices(memberID, 0, 0, 0, 0.02); err != nil {
 		t.Fatal(err)
 	}
 	got, err = db.RouteMember.GetByID(memberID)
 	if err != nil || got == nil {
 		t.Fatalf("member read after adopt: %v %v", got, err)
 	}
-	if got.PriceSource != "site" {
-		t.Fatalf("adopt provenance: source=%q want site", got.PriceSource)
-	}
-	if got.PricePerRequest != 0.02 {
-		t.Fatalf("adopt wrote price_per_request=%v want 0.02", got.PricePerRequest)
+	if got.PriceSource != "manual" || got.PricePerRequest != 0 {
+		t.Fatalf("incompatible adoption changed rule: source=%q fixed=%v", got.PriceSource, got.PricePerRequest)
 	}
 	if got.PricePromptPer1k != 1.5 {
 		t.Fatalf("adopt overwrote an existing prompt price: %v", got.PricePromptPer1k)
+	}
+
+	// An empty member can acquire a site quote and its provenance together.
+	if _, err := db.Exec(`UPDATE route_members SET price_prompt_per_1k=0, price_completion_per_1k=0, price_source='' WHERE id=?`, memberID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RouteMember.AdoptObservedPrices(memberID, 0, 0, 0, 0.02); err != nil {
+		t.Fatal(err)
 	}
 
 	// The relay's candidate pool and the console's overview share one scan: the
