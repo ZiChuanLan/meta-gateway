@@ -54,7 +54,7 @@
 .billing-copy-table th, .billing-copy-table td { padding:12px 10px; font-size:13px; font-variant-numeric:tabular-nums; white-space:normal; }
 .billing-copy-table tbody th { text-align:left; font-weight:500; }
 .billing-copy-table td small { display:block; }
-.route-billing-entry { margin:12px 0; }
+.route-billing-entry { margin: 0; }
 @media (max-width:760px) {
  .dialog:has(.billing-workspace) { width:calc(100vw - 16px); max-height:calc(100dvh - 16px); }
  .billing-rate-grid, .quote-rate-list { grid-template-columns:minmax(0,1fr); }

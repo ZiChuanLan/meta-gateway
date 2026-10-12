@@ -1844,7 +1844,7 @@ export const en: Dict = {
     "Refreshing the model list is the sync; auto mode wires routes for you, manual mode asks you to adopt each model.",
   "modelsPage.rowActionsHint":
     "Use the row action menu to test, enable, inspect logs, or edit this model.",
-  "modelsPage.autoMatchAdd": "Attach every channel serving this model",
+  "modelsPage.autoMatchAdd": "Auto-attach",
   "modelsPage.autoMatchAddHint":
     "Scan every enabled channel and attach the ones that really serve this model to the current group, in one step.",
   "modelsPage.autoMatch.title": "Attach every channel serving this model",

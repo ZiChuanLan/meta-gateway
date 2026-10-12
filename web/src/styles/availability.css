@@ -33,7 +33,9 @@
 .availability-stale { color: var(--warning); }
 .availability-history { margin-top: 12px; font-size: 12px; }
 .availability-history > summary { cursor: pointer; color: var(--muted-strong); }
-.route-availability-summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted-strong); font-size: 12px; }
+/* Where the route's availability chip sits now: with the status badge in the
+   detail head, so the board below starts one row earlier. */
+.detail-head-status { display: flex; align-items: center; gap: 8px; }
 .member-row.has-availability { grid-template-columns: auto minmax(120px,1fr) 124px auto; column-gap: 16px; }
 .member-row.has-availability .member-row-main > strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
 .member-row.has-availability .member-origin-badge { margin-left: 0; }
@@ -60,12 +62,12 @@
    fills the screen exactly. `min-height: 0` is what lets a grid item shrink;
    without it a tall list resizes its row instead of scrolling. */
 .observation-layout { display: grid; grid-template-columns: 218px minmax(0,1fr); height: calc(100dvh - 475px); min-height: 430px; border-top: 1px solid var(--line); }
-.observation-sites { border-right: 1px solid var(--line); padding: 14px 12px 0 0; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
-/* A sticky bar must read as a filled surface the list scrolls *under*, not as
-   a strip of buttons with rows sliding out from behind it. The fill covers the
-   bar's own padding, the hairline closes the band, and the shadow falls on the
-   content side so the rows underneath stay visibly underneath. */
-.observation-site-filters { position: sticky; top: 0; z-index: 2; margin: 0 0 10px; padding: 8px 0 10px; background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: 0 9px 12px -12px rgba(15, 42, 66, .5); }
+.observation-sites { display: flex; flex-direction: column; border-right: 1px solid var(--line); padding: 14px 12px 0 0; min-width: 0; min-height: 0; overflow: hidden; }
+/* The filter row keeps its place at the top of the pane and only the list below
+   it scrolls: a row can never end up half-hidden behind the filters, which is
+   what a sticky filter row always does at the fold. */
+.observation-site-filters { flex: 0 0 auto; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.observation-site-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .observation-site-filters button { padding: 5px 9px; font-size: 11px; }
 .observation-site { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px; margin: 2px 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .observation-site strong { padding-right: 10px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
@@ -87,7 +89,7 @@
 /* "0 collected" with a reason: quiet, but the first thing under the count. */
 .observation-zero-reason { margin: 2px 0 10px; font-size: 12px; line-height: 1.6; color: var(--muted-strong); }
 .observation-model { display: grid; grid-template-columns: minmax(145px,1fr) 124px minmax(100px,.7fr) minmax(80px,.6fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.observation-model.is-header { position: sticky; top: 0; z-index: 2; background: var(--surface-subtle); border-bottom: 1px solid var(--line-strong); font-size: 11px; color: var(--muted-strong); padding-top: 9px; padding-bottom: 9px; box-shadow: 0 9px 12px -12px rgba(15, 42, 66, .45); }
+.observation-model.is-header { position: sticky; top: 0; z-index: 2; background: var(--surface-subtle); border-bottom: 1px solid var(--line-strong); font-size: 11px; color: var(--muted-strong); padding-top: 9px; padding-bottom: 9px; }
 .observation-model-name { min-width: 0; }
 .observation-model-name code { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .observation-model-name small, .observation-price small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted-strong); }
@@ -116,8 +118,9 @@
 @media (max-width: 760px) {
   /* One column on a phone: the page scrolls, the panes do not. */
   .observation-layout { grid-template-columns: 1fr; height: auto; min-height: 0; }
-  .observation-sites { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; overflow-y: visible; border-right: 0; padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+  .observation-sites { flex-direction: row; align-items: center; flex-wrap: nowrap; border-right: 0; padding: 8px 0 12px; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: visible; }
   .observation-site-filters { display: none; }
+  .observation-site-list { display: flex; gap: 6px; flex: 0 0 auto; overflow: visible; }
   .observation-site { flex: 0 0 150px; margin: 0; }
   .observation-detail { padding: 20px 0 0; overflow-y: visible; }
   .observation-model.is-header { position: static; }

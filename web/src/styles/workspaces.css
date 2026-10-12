@@ -57,13 +57,20 @@
 .sticky-stats strong { color: var(--ink); font: 600 13px/1.35 var(--font); font-variant-numeric: tabular-nums; }
 .sticky-entries { max-height: 264px; overflow-y: auto; }
 .sticky-entries thead th { position: sticky; top: 0; z-index: 2; }
-.route-policy-disclosure { margin: 15px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.route-policy-disclosure > summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; color: var(--muted); font-size: 12px; list-style: none; cursor: pointer; }
+.route-policy-disclosure { margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.route-policy-disclosure > summary { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; color: var(--muted); font-size: 12px; list-style: none; cursor: pointer; }
 .route-policy-disclosure > summary::-webkit-details-marker { display: none; }
 .route-policy-disclosure[open] > summary { border-bottom: 1px solid var(--line); }
 .theme-modern .route-policy-disclosure .routing-policy-card { margin: 0; border-radius: 0; }
-.member-section-heading { display: flex; align-items: center; gap: 9px; margin: 25px 0 14px; }
+.member-section-heading { display: flex; align-items: center; gap: 9px; margin: 16px 0 10px; }
 .member-section-heading button { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: var(--ink); font: 600 14px var(--font); cursor: pointer; }
+/* The routing list's toolbar: which group you are looking at on the left, what
+   you can do to the list on the right. The tabs and the buttons used to be two
+   separate rows, which spent a whole line on air before the first member. */
+.member-group-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.member-group-toolbar .bar-spacer { flex: 1 1 auto; }
+.member-group-toolbar > .member-group-tabs { min-width: 0; }
+.member-group-toolbar .member-group-tablist { padding-bottom: 6px; }
 .theme-modern .models-advanced { margin-top: 0; }
 .theme-modern .models-advanced-bar { justify-content: flex-end; margin-bottom: 4px; padding: 0; }
 .theme-modern .models-catalog > .model-changes { padding: 10px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }

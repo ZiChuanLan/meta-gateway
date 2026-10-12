@@ -353,39 +353,44 @@ export function SiteObservationWorkspace({
                 </button>
               ))}
             </div>
-            {siteRows.map((site) => (
-              <button
-                type="button"
-                key={site.site_id}
-                className={`observation-site${site.site_id === selected?.site_id ? " is-selected" : ""}`}
-                aria-current={site.site_id === selected?.site_id ? "true" : undefined}
-                onClick={() => setSelectedId(site.site_id)}
-              >
-                <strong>{site.site_name}</strong>
-                <span>
-                  {t("observation.count", {
-                    count: items.filter((item) => item.site_id === site.site_id).length,
-                  })}
-                </span>
-                <i
-                  className={
-                    site.probe_last_error
-                      ? "is-failed"
-                      : site.probe_source_enabled
-                        ? "is-enabled"
-                        : "is-off"
-                  }
-                  aria-label={
-                    site.probe_last_error
-                      ? t("observation.collectionFailed")
-                      : site.probe_source_enabled
-                        ? t("observation.collectionOn")
-                        : t("observation.collectionOff")
-                  }
-                />
-              </button>
-            ))}
-            {!siteRows.length ? <p className="field-hint">{t("observation.noSites")}</p> : null}
+            {/* The list scrolls on its own so a row never slides under the
+                filter row above it — the pane's scrollbar belongs to the list,
+                not to the pane, so nothing is ever half-covered. */}
+            <div className="observation-site-list">
+              {siteRows.map((site) => (
+                <button
+                  type="button"
+                  key={site.site_id}
+                  className={`observation-site${site.site_id === selected?.site_id ? " is-selected" : ""}`}
+                  aria-current={site.site_id === selected?.site_id ? "true" : undefined}
+                  onClick={() => setSelectedId(site.site_id)}
+                >
+                  <strong>{site.site_name}</strong>
+                  <span>
+                    {t("observation.count", {
+                      count: items.filter((item) => item.site_id === site.site_id).length,
+                    })}
+                  </span>
+                  <i
+                    className={
+                      site.probe_last_error
+                        ? "is-failed"
+                        : site.probe_source_enabled
+                          ? "is-enabled"
+                          : "is-off"
+                    }
+                    aria-label={
+                      site.probe_last_error
+                        ? t("observation.collectionFailed")
+                        : site.probe_source_enabled
+                          ? t("observation.collectionOn")
+                          : t("observation.collectionOff")
+                    }
+                  />
+                </button>
+              ))}
+              {!siteRows.length ? <p className="field-hint">{t("observation.noSites")}</p> : null}
+            </div>
           </nav>
           <div className="observation-detail">
             {selected ? (

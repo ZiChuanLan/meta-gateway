@@ -1354,7 +1354,7 @@ td.actions {
   line-height: 1.45;
 }
 .member-group-tabs {
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 .member-group-tablist {
   display: flex;
@@ -2333,9 +2333,8 @@ td.actions {
   z-index: 1;
 }
 .models-advanced {
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  margin-top: 0;
+  padding-top: 0;
 }
 .models-advanced-help {
   display: inline-flex;
@@ -2624,7 +2623,6 @@ td.actions {
   margin: 0;
   padding-bottom: 12px;
   background: var(--surface);
-  box-shadow: 0 -10px 14px -14px rgba(15, 42, 66, .35);
 }
 .models-split > .ops-detail-card.is-compact > .detail-primary-bar {
   bottom: -18px;

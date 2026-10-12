@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Route, RoutingCandidate } from "../../api/types";
 import { ActionMenu, type ActionMenuItem } from "../../components/ActionMenu";
 import { Button, InfoTip, StatusBadge } from "../../components/ui";
@@ -40,6 +41,10 @@ export type RouteDetailHeaderProps = {
   actions: ActionMenuItem[];
   /** The members the mode control picks its default from. */
   candidates: RoutingCandidate[];
+  /** Which member group the board below is showing ("default" by default). */
+  scopeLabel?: string;
+  /** How the model has been answering lately; rides the status badge. */
+  availability?: ReactNode;
 };
 
 export function RouteDetailHeader({
@@ -54,6 +59,8 @@ export function RouteDetailHeader({
   toggleRoute,
   actions,
   candidates,
+  scopeLabel,
+  availability,
 }: RouteDetailHeaderProps) {
   return (
     <>
@@ -61,6 +68,8 @@ export function RouteDetailHeader({
         <div>
           <p className="detail-kicker">{t("modelsPage.detailKicker")}</p>
           <h2 className="mono">{route.model_pattern}</h2>
+          {/* Who serves it, how many paths are left, and which group the list
+              below is showing — one meta line instead of a row of its own. */}
           <small title={`${t("modelsPage.memberSummaryHint")} ${t("modelsPage.scopeHint")}`}>
             {primary
               ? t(singleModePinned ? "modelsPage.pinnedMember" : "modelsPage.servedBy", {
@@ -68,9 +77,13 @@ export function RouteDetailHeader({
                 })
               : t("modelsPage.noUpstream")}
             {memberCount > 1 ? ` · ${t("modelsPage.extraPaths", { n: memberCount - 1 })}` : ""}
+            {scopeLabel ? ` · ${scopeLabel}` : ""}
           </small>
         </div>
-        <StatusBadge value={route.enabled ? "enabled" : "disabled"} />
+        <div className="detail-head-status">
+          {availability}
+          <StatusBadge value={route.enabled ? "enabled" : "disabled"} />
+        </div>
       </div>
 
       <div className="detail-primary-bar">

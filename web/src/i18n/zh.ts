@@ -1625,7 +1625,7 @@ export const zh: Dict = {
   "modelsPage.routingHint": "当多个连接提供同一模型时，在这里调整路由成员。",
   "modelsPage.addRouteHint": "刷新模型清单；自动模式会接入路由，手动模式需选择采纳。",
   "modelsPage.rowActionsHint": "通过行操作菜单测试、启用、查看日志或编辑当前模型。",
-  "modelsPage.autoMatchAdd": "一键挂载提供此模型的渠道",
+  "modelsPage.autoMatchAdd": "一键挂载",
   "modelsPage.autoMatchAddHint":
     "扫描所有启用中的渠道，把确实提供此模型的渠道一次性挂载到当前分组。",
   "modelsPage.autoMatch.title": "挂载所有提供此模型的渠道",

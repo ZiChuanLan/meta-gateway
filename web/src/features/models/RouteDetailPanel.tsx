@@ -104,15 +104,17 @@ export function RouteDetailPanel(props: RouteDetailPanelProps) {
   const availability = useAvailability({ routeIds: [route.id!], group: activeGroup });
   return (
     <>
-      <RouteDetailHeader {...props.header} />
-      <div className="route-availability-summary">
-        <span>{t("availability.scope", { group: activeGroup })}</span>
-        <AvailabilityIndicator
-          item={availability.data?.routes.find((item) => item.route_id === route.id)}
-          loading={availability.isPending}
-          error={availability.isError}
-        />
-      </div>
+      <RouteDetailHeader
+        {...props.header}
+        scopeLabel={t("availability.scope", { group: activeGroup })}
+        availability={
+          <AvailabilityIndicator
+            item={availability.data?.routes.find((item) => item.route_id === route.id)}
+            loading={availability.isPending}
+            error={availability.isError}
+          />
+        }
+      />
 
       {props.singleModeActive && route ? (
         <div className="single-mode-banner">
@@ -164,32 +166,6 @@ export function RouteDetailPanel(props: RouteDetailPanelProps) {
       </div>
       {showAdvanced ? (
         <section className="models-advanced">
-          <div className="models-advanced-bar">
-            <Button variant="secondary" icon={<Plus size={14} />} onClick={openAddMember}>
-              {t("routing.addMember")}
-            </Button>
-            {/* The bulk of what "add member" does over and over: one click attaches
-                every enabled channel that really serves this model to the group
-                being viewed. */}
-            <Button
-              variant="secondary"
-              icon={<Wand2 size={14} />}
-              title={t("modelsPage.autoMatchAddHint")}
-              onClick={() => setAutoMatchRoute(route)}
-            >
-              {t("modelsPage.autoMatchAdd")}
-            </Button>
-            <span className="bar-spacer" />
-            <Button
-              variant={bulkSelect ? "primary" : "secondary"}
-              onClick={() => {
-                setBulkSelect((value) => !value);
-                setSelectedMemberIds(new Set());
-              }}
-            >
-              {t("routing.bulkSelect")}
-            </Button>
-          </div>
           {bulkSelect && list.members.length > 0 ? (
             <div className="routing-bulk-bar">
               <span className="routing-bulk-count">
@@ -222,96 +198,127 @@ export function RouteDetailPanel(props: RouteDetailPanelProps) {
               <span>{t("routing.savingOrder")}</span>
             </div>
           ) : null}
-          <div className="member-group-tabs">
-            <div
-              className="member-group-tablist"
-              role="tablist"
-              aria-label={t("routing.memberGroupLabel")}
-            >
-              {groupNames.map((name) => {
-                const active = name === activeGroup;
-                const count = groupCounts.get(name) ?? 0;
-                return (
-                  <div key={name} className={`member-group-tab${active ? " is-active" : ""}`}>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      title={count === 0 ? t("routing.groupEmptyHint") : undefined}
-                      onClick={() => setActiveGroup(name)}
-                    >
-                      <span className="member-group-tab-main">
-                        {name === "default" ? t("routing.groupDefault") : name}
-                        <span className="member-group-count">{count}</span>
-                      </span>
-                    </button>
-                    {name !== "default" ? (
-                      <ActionMenu
-                        compact
-                        label={t("common.moreActions")}
-                        items={[
-                          {
-                            key: "rename",
-                            icon: <Pencil size={14} />,
-                            label: t("routing.groupRename"),
-                            onSelect: () =>
-                              setGroupDraft({ mode: "rename", from: name, value: name }),
-                          },
-                          {
-                            key: "delete",
-                            icon: <Trash2 size={14} />,
-                            label: t("routing.groupDelete"),
-                            danger: true,
-                            onSelect: () => setRemoveGroup(name),
-                          },
-                        ]}
-                      />
-                    ) : null}
-                  </div>
-                );
-              })}
-              {groupDraft ? (
-                <input
-                  className="member-group-input"
-                  autoFocus
-                  value={groupDraft.value}
-                  maxLength={64}
-                  placeholder={
-                    groupDraft.mode === "new"
-                      ? t("routing.groupNewPlaceholder")
-                      : t("routing.groupRenamePlaceholder")
-                  }
-                  onChange={(event) => setGroupDraft({ ...groupDraft, value: event.target.value })}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") submitGroupDraft();
-                    if (event.key === "Escape") setGroupDraft(null);
-                  }}
-                  onBlur={groupEditorBlur}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="member-group-add"
-                  onClick={() => setGroupDraft({ mode: "new", value: "" })}
-                >
-                  <Plus size={12} />
-                  {t("routing.groupNew")}
-                </button>
-              )}
+          {/* One toolbar for the routing list: the group you are looking at on
+              the left, what you can do to it on the right. Two separate rows
+              spent a whole line on air before the first member appeared. */}
+          <div className="member-group-toolbar">
+            <div className="member-group-tabs">
+              <div
+                className="member-group-tablist"
+                role="tablist"
+                aria-label={t("routing.memberGroupLabel")}
+              >
+                {groupNames.map((name) => {
+                  const active = name === activeGroup;
+                  const count = groupCounts.get(name) ?? 0;
+                  return (
+                    <div key={name} className={`member-group-tab${active ? " is-active" : ""}`}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        title={count === 0 ? t("routing.groupEmptyHint") : undefined}
+                        onClick={() => setActiveGroup(name)}
+                      >
+                        <span className="member-group-tab-main">
+                          {name === "default" ? t("routing.groupDefault") : name}
+                          <span className="member-group-count">{count}</span>
+                        </span>
+                      </button>
+                      {name !== "default" ? (
+                        <ActionMenu
+                          compact
+                          label={t("common.moreActions")}
+                          items={[
+                            {
+                              key: "rename",
+                              icon: <Pencil size={14} />,
+                              label: t("routing.groupRename"),
+                              onSelect: () =>
+                                setGroupDraft({ mode: "rename", from: name, value: name }),
+                            },
+                            {
+                              key: "delete",
+                              icon: <Trash2 size={14} />,
+                              label: t("routing.groupDelete"),
+                              danger: true,
+                              onSelect: () => setRemoveGroup(name),
+                            },
+                          ]}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {groupDraft ? (
+                  <input
+                    className="member-group-input"
+                    autoFocus
+                    value={groupDraft.value}
+                    maxLength={64}
+                    placeholder={
+                      groupDraft.mode === "new"
+                        ? t("routing.groupNewPlaceholder")
+                        : t("routing.groupRenamePlaceholder")
+                    }
+                    onChange={(event) =>
+                      setGroupDraft({ ...groupDraft, value: event.target.value })
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitGroupDraft();
+                      if (event.key === "Escape") setGroupDraft(null);
+                    }}
+                    onBlur={groupEditorBlur}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="member-group-add"
+                    onClick={() => setGroupDraft({ mode: "new", value: "" })}
+                  >
+                    <Plus size={12} />
+                    {t("routing.groupNew")}
+                  </button>
+                )}
+              </div>
+              {groupDraft?.mode === "new" ? (
+                <label className="member-group-copy">
+                  <input
+                    type="checkbox"
+                    checked={groupDraft.copyDefault ?? false}
+                    onChange={(event) =>
+                      setGroupDraft({ ...groupDraft, copyDefault: event.target.checked })
+                    }
+                    onBlur={groupEditorBlur}
+                  />
+                  <span>{t("routing.groupCopyDefault")}</span>
+                </label>
+              ) : null}
             </div>
-            {groupDraft?.mode === "new" ? (
-              <label className="member-group-copy">
-                <input
-                  type="checkbox"
-                  checked={groupDraft.copyDefault ?? false}
-                  onChange={(event) =>
-                    setGroupDraft({ ...groupDraft, copyDefault: event.target.checked })
-                  }
-                  onBlur={groupEditorBlur}
-                />
-                <span>{t("routing.groupCopyDefault")}</span>
-              </label>
-            ) : null}
+            <span className="bar-spacer" />
+            <Button variant="secondary" icon={<Plus size={14} />} onClick={openAddMember}>
+              {t("routing.addMember")}
+            </Button>
+            {/* The bulk of what "add member" does over and over: one click attaches
+                every enabled channel that really serves this model to the group
+                being viewed. */}
+            <Button
+              variant="secondary"
+              icon={<Wand2 size={14} />}
+              title={t("modelsPage.autoMatchAddHint")}
+              onClick={() => setAutoMatchRoute(route)}
+            >
+              {t("modelsPage.autoMatchAdd")}
+            </Button>
+            <Button
+              variant={bulkSelect ? "primary" : "secondary"}
+              onClick={() => {
+                setBulkSelect((value) => !value);
+                setSelectedMemberIds(new Set());
+              }}
+            >
+              {t("routing.bulkSelect")}
+            </Button>
           </div>
           {groupFallback ? (
             <p className="member-group-hint" role="status">

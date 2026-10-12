@@ -1760,7 +1760,7 @@
   line-height: 1.45;
 }
 :root[data-appearance="classic"] .member-group-tabs {
-  margin-bottom: 10px;
+  margin-bottom: 0;
 }
 :root[data-appearance="classic"] .member-group-tablist {
   display: flex;
@@ -4429,9 +4429,8 @@
   z-index: 1;
 }
 :root[data-appearance="classic"] .models-advanced {
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  margin-top: 0;
+  padding-top: 0;
 }
 :root[data-appearance="classic"] .models-advanced-help {
   display: inline-flex;
