@@ -13,10 +13,13 @@ export function QuoteActions({
   quote,
   target,
   current,
+  inUse = false,
 }: {
   quote: PriceQuote;
   target?: CopyTarget;
   current?: BillingView["effective_rates"];
+  /** The rule now in force was copied from this quote. */
+  inUse?: boolean;
 }) {
   const { t } = useI18n();
   const { client } = useSession();
@@ -87,6 +90,7 @@ export function QuoteActions({
             {t(quote.purpose === "reference" ? "billing.reference" : "billing.upstream")}
           </strong>
           <small>{quote.source}</small>
+          {inUse ? <small className="quote-entry-inuse">{t("billing.inUse")}</small> : null}
         </div>
         <span>{quote.unit.kind === "iso" ? quote.unit.code : t("billing.credit")}</span>
       </header>

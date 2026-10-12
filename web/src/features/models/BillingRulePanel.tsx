@@ -4,6 +4,7 @@ import { ApiError } from "../../api/client";
 import { Button, Dialog, Empty, ErrorState, Field, Loading } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
+import { formatUnitPrice, relativeTime } from "../../lib/format";
 import { useUnsavedChanges } from "../../lib/unsavedChanges";
 import {
   PriceTiersEditor,
@@ -17,6 +18,7 @@ import { ModelRatioDialog } from "./ModelRatioDialog";
 import { ManualQuoteDialog } from "./ManualQuoteDialog";
 import { QuoteActions } from "./QuoteActions";
 import type { BillingRule, BillingView, PriceQuote } from "./pricingTypes";
+import { nativeAmount } from "./pricingTypes";
 
 type Target = {
   model: string;
@@ -98,6 +100,36 @@ export function BillingRulePanel({
         signal,
       ),
   });
+  // The three sources collapse into one line the operator can read without
+  // opening anything: what the newest price says, when it was read, and how
+  // many more there are. The list itself (with the explicit "use as my price"
+  // action) is one click away in the evidence area.
+  const quoteIsUsable = (quote: PriceQuote) =>
+    quote.status === "calculable" &&
+    (!quote.expires_at || new Date(quote.expires_at).getTime() > Date.now());
+  const quoteList = quotes.data?.items ?? [];
+  const newestQuote = [...quoteList].sort(
+    (a, b) => Date.parse(b.observed_at) - Date.parse(a.observed_at),
+  )[0];
+  const evidenceLine = (() => {
+    if (quotes.isPending) return t("common.loading");
+    if (!newestQuote) return t("billing.noQuotes");
+    const amount =
+      newestQuote.values.input_per_million !== undefined
+        ? `${nativeAmount(newestQuote.values.input_per_million, newestQuote.unit, t("billing.credit"))} /1M`
+        : nativeAmount(newestQuote.values.per_request, newestQuote.unit, t("billing.credit"));
+    return [
+      t(newestQuote.purpose === "reference" ? "billing.reference" : "billing.upstream"),
+      amount,
+      relativeTime(newestQuote.observed_at, t),
+      quoteList.length > 1 ? t("billing.evidenceMore", { count: quoteList.length - 1 }) : "",
+      quoteIsUsable(newestQuote)
+        ? ""
+        : t("billing.quoteUnavailable", { status: t(`billing.reason.${newestQuote.status}`) }),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  })();
   return (
     <section className="billing-workspace">
       {manualOpen && siteId ? (
@@ -131,9 +163,12 @@ export function BillingRulePanel({
           onBusyChange={onBusyChange}
         />
       ) : null}
-      <section className="billing-quotes">
-        <header className="panel-header">
+      <details className="billing-evidence">
+        <summary>
           <strong>{t("billing.quotes")}</strong>
+          <span>{evidenceLine}</span>
+        </summary>
+        <div className="billing-evidence-actions">
           {siteId ? (
             <Button variant="secondary" disabled={editorDirty} onClick={() => setManualOpen(true)}>
               {t("billing.manual")}
@@ -146,19 +181,22 @@ export function BillingRulePanel({
           >
             {t("common.refresh")}
           </Button>
-        </header>
+        </div>
         <p className="panel-hint">{t("billing.quoteHint")}</p>
         {quotes.isPending ? (
           <Loading />
         ) : quotes.isError ? (
           <ErrorState error={quotes.error} retry={() => void quotes.refetch()} />
-        ) : !quotes.data?.items.length ? (
+        ) : !quoteList.length ? (
           <Empty>{t("billing.noQuotes")}</Empty>
         ) : (
-          quotes.data.items.map((quote) => (
+          quoteList.map((quote) => (
             <QuoteActions
               key={quote.scope_key ?? quote.id}
               quote={quote}
+              inUse={
+                view.data?.rule?.source === "quote_copy" && view.data?.rule?.quote_id === quote.id
+              }
               target={
                 !editorDirty && view.data ? { scope, key, revision: view.data.revision } : undefined
               }
@@ -166,7 +204,7 @@ export function BillingRulePanel({
             />
           ))
         )}
-      </section>
+      </details>
     </section>
   );
 }
@@ -299,6 +337,29 @@ function BillingEditor({
     }
     save.mutate(rule);
   };
+  // The one question this panel exists to answer, in rates rather than in rule
+  // vocabulary: what a request costs right now. The rule's own words
+  // (inherit/free/explicit) move to the line underneath, where they explain the
+  // answer instead of being it.
+  const rates = view.effective_rates;
+  const currentPrice = (() => {
+    if (view.effective_state === "unpriced") return t("billing.unpriced");
+    if (view.effective_state === "free") return t("billing.free");
+    const pieces: string[] = [];
+    // A per-request-only rule says nothing through token rates, so they are
+    // shown only when they are the price (or when they are zero, which is still
+    // the honest answer for a rule that charges nothing per token).
+    if (rates.per_request === 0 || rates.input_per_1k > 0 || rates.output_per_1k > 0)
+      pieces.push(
+        t("billing.ratesToken", {
+          input: formatUnitPrice(rates.input_per_1k * 1000),
+          output: formatUnitPrice(rates.output_per_1k * 1000),
+        }),
+      );
+    if (rates.per_request > 0)
+      pieces.push(t("billing.ratesRequest", { fee: formatUnitPrice(rates.per_request) }));
+    return t("billing.currentPrice", { rates: pieces.join(" · ") });
+  })();
   return (
     <form
       className="billing-editor"
@@ -308,8 +369,9 @@ function BillingEditor({
       }}
     >
       <div className="billing-readout" role="status">
-        <span>{t(`billing.${view.effective_state}`)}</span>
+        <span>{currentPrice}</span>
         <small>
+          {t(`billing.${view.effective_state}`)} ·{" "}
           {t("billing.scope", {
             scope: t(scope === "member" ? "billing.memberScope" : "billing.modelScope"),
             revision,
@@ -326,158 +388,168 @@ function BillingEditor({
           })}
         </small>
       </div>
-      <fieldset disabled={save.isPending}>
-        <Field
-          label={t("billing.state")}
-          hint={t(scope === "member" ? "billing.inheritHint" : "billing.inheritHintModel")}
-        >
-          <select
-            value={draft.state}
-            onChange={(e) => setDraft({ ...draft, state: e.target.value as BillingRule["state"] })}
+      {/* One way in to change it: the rule editor opens here instead of filling
+          the panel before the operator asked for it. */}
+      <details className="billing-change">
+        <summary>
+          <strong>{t("billing.change")}</strong>
+          <span>{t("billing.changeHint")}</span>
+        </summary>
+        <fieldset disabled={save.isPending}>
+          <Field
+            label={t("billing.state")}
+            hint={t(scope === "member" ? "billing.inheritHint" : "billing.inheritHintModel")}
           >
-            <option value="inherit">
-              {t(scope === "member" ? "billing.inherit" : "billing.inheritModel")}
-            </option>
-            <option value="free">{t("billing.free")}</option>
-            <option value="explicit">
-              {t(scope === "member" ? "billing.explicit" : "billing.explicitModel")}
-            </option>
-          </select>
-        </Field>
-        {draft.state === "explicit" ? (
-          <>
-            <Field label={t("billing.mode")}>
-              <select
-                value={draft.mode}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    mode: e.target.value as BillingRule["mode"],
-                    tiers: e.target.value === "request" ? [] : draft.tiers,
-                  })
-                }
-              >
-                <option value="token">{t("billing.token")}</option>
-                <option value="request">{t("billing.request")}</option>
-                <option value="hybrid">{t("billing.hybrid")}</option>
-              </select>
-            </Field>
-            <div className="billing-rate-grid">
-              {draft.mode !== "request"
-                ? tokenFields.map((key, i) => (
-                    <Field key={key} label={t(fieldLabels[i]!)}>
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
-                        value={draft.rates[i]}
-                        placeholder={t("billing.missing")}
-                        aria-invalid={invalidNumber(
-                          draft.rates[i]!,
-                          i < 2 && draft.tiers.length === 0,
-                        )}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            rates: draft.rates.map((v, index) =>
-                              index === i ? e.target.value : v,
-                            ),
-                          })
-                        }
-                      />
-                    </Field>
-                  ))
-                : null}
-              {draft.mode !== "token" ? (
-                <Field label={t("billing.fee")}>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={draft.fee}
-                    onChange={(e) => setDraft({ ...draft, fee: e.target.value })}
-                  />
-                </Field>
-              ) : null}
-            </div>
-            <p className="field-hint">{t("billing.presenceHint")}</p>
-          </>
-        ) : null}
-        <Field label={t("billing.timezone")}>
-          <input
-            value={draft.timezone}
-            onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-            list={timezoneId}
-          />
-          <datalist id={timezoneId}>
-            <option value="UTC" />
-            <option value="Asia/Shanghai" />
-          </datalist>
-        </Field>
-        {draft.state === "explicit" ? (
-          <details className="billing-advanced">
-            <summary>{t("billing.advanced")}</summary>
-            {draft.mode !== "request" ? (
-              <PriceTiersEditor
-                value={draft.tiers}
-                onChange={(tiers) => setDraft({ ...draft, tiers })}
-                displayScale={1000}
-              />
-            ) : null}
-            <PriceWindowsEditor
-              value={draft.windows}
-              onChange={(windows) => setDraft({ ...draft, windows })}
+            <select
+              value={draft.state}
+              onChange={(e) =>
+                setDraft({ ...draft, state: e.target.value as BillingRule["state"] })
+              }
+            >
+              <option value="inherit">
+                {t(scope === "member" ? "billing.inherit" : "billing.inheritModel")}
+              </option>
+              <option value="free">{t("billing.free")}</option>
+              <option value="explicit">
+                {t(scope === "member" ? "billing.explicit" : "billing.explicitModel")}
+              </option>
+            </select>
+          </Field>
+          {draft.state === "explicit" ? (
+            <>
+              <Field label={t("billing.mode")}>
+                <select
+                  value={draft.mode}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      mode: e.target.value as BillingRule["mode"],
+                      tiers: e.target.value === "request" ? [] : draft.tiers,
+                    })
+                  }
+                >
+                  <option value="token">{t("billing.token")}</option>
+                  <option value="request">{t("billing.request")}</option>
+                  <option value="hybrid">{t("billing.hybrid")}</option>
+                </select>
+              </Field>
+              <div className="billing-rate-grid">
+                {draft.mode !== "request"
+                  ? tokenFields.map((key, i) => (
+                      <Field key={key} label={t(fieldLabels[i]!)}>
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={draft.rates[i]}
+                          placeholder={t("billing.missing")}
+                          aria-invalid={invalidNumber(
+                            draft.rates[i]!,
+                            i < 2 && draft.tiers.length === 0,
+                          )}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              rates: draft.rates.map((v, index) =>
+                                index === i ? e.target.value : v,
+                              ),
+                            })
+                          }
+                        />
+                      </Field>
+                    ))
+                  : null}
+                {draft.mode !== "token" ? (
+                  <Field label={t("billing.fee")}>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={draft.fee}
+                      onChange={(e) => setDraft({ ...draft, fee: e.target.value })}
+                    />
+                  </Field>
+                ) : null}
+              </div>
+              <p className="field-hint">{t("billing.presenceHint")}</p>
+            </>
+          ) : null}
+          <Field label={t("billing.timezone")}>
+            <input
+              value={draft.timezone}
+              onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
+              list={timezoneId}
             />
-          </details>
+            <datalist id={timezoneId}>
+              <option value="UTC" />
+              <option value="Asia/Shanghai" />
+            </datalist>
+          </Field>
+          {draft.state === "explicit" ? (
+            <details className="billing-advanced">
+              <summary>{t("billing.advanced")}</summary>
+              {draft.mode !== "request" ? (
+                <PriceTiersEditor
+                  value={draft.tiers}
+                  onChange={(tiers) => setDraft({ ...draft, tiers })}
+                  displayScale={1000}
+                />
+              ) : null}
+              <PriceWindowsEditor
+                value={draft.windows}
+                onChange={(windows) => setDraft({ ...draft, windows })}
+              />
+            </details>
+          ) : null}
+        </fieldset>
+        {save.isError ? (
+          save.error instanceof ApiError && save.error.status === 409 ? (
+            <p role="alert" className="inline-error">
+              {t("billing.conflict")}
+            </p>
+          ) : (
+            <ErrorState error={save.error} />
+          )
         ) : null}
-      </fieldset>
-      {save.isError ? (
-        save.error instanceof ApiError && save.error.status === 409 ? (
-          <p role="alert" className="inline-error">
-            {t("billing.conflict")}
+        {save.isSuccess && !dirty ? (
+          <p role="status" className="field-hint">
+            {t("billing.saved")}
           </p>
-        ) : (
-          <ErrorState error={save.error} />
-        )
-      ) : null}
-      {save.isSuccess && !dirty ? (
-        <p role="status" className="field-hint">
-          {t("billing.saved")}
-        </p>
-      ) : null}
-      <div className="editor-footer">
-        {onClose ? (
+        ) : null}
+        <div className="editor-footer">
+          {onClose ? (
+            <Button
+              variant="secondary"
+              disabled={save.isPending}
+              onClick={() => {
+                onClose();
+              }}
+            >
+              {t("common.close")}
+            </Button>
+          ) : null}
           <Button
-            variant="secondary"
+            variant="quiet"
             disabled={save.isPending}
             onClick={() => {
-              onClose();
+              if (!guardLeave()) return;
+              setDraft(initial);
+              setBaseline(JSON.stringify(initial));
+              setRevision(view.revision);
+              save.reset();
             }}
           >
-            {t("common.close")}
+            {t("billing.reload")}
           </Button>
-        ) : null}
-        <Button
-          variant="quiet"
-          disabled={save.isPending}
-          onClick={() => {
-            if (!guardLeave()) return;
-            setDraft(initial);
-            setBaseline(JSON.stringify(initial));
-            setRevision(view.revision);
-            save.reset();
-          }}
-        >
-          {t("billing.reload")}
-        </Button>
-        <Button
-          type="submit"
-          loading={save.isPending}
-          disabled={(!dirty && (Boolean(view.rule) || draft.state !== "explicit")) || !valid}
-        >
-          {t("common.save")}
-        </Button>
-      </div>
+          <Button
+            type="submit"
+            loading={save.isPending}
+            disabled={(!dirty && (Boolean(view.rule) || draft.state !== "explicit")) || !valid}
+          >
+            {t("common.save")}
+          </Button>
+        </div>
+      </details>
     </form>
   );
 }

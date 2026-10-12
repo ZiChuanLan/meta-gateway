@@ -16,6 +16,19 @@
 .billing-workspace .editor-footer { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; background: var(--surface); padding: 16px 0 8px; border-top: 1px solid var(--line); z-index: 2; }
 .billing-quotes { border-top: 1px solid var(--line); padding-top: 24px; }
 .billing-quotes .panel-header { gap: 12px; margin: 0 0 12px; }
+/* The evidence area: one line while closed, the full list when asked for. */
+.billing-evidence { border-top: 1px solid var(--line); padding-top: 18px; }
+.billing-evidence > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 14px; cursor: pointer; padding: 6px 0; }
+.billing-evidence > summary > strong { font-size: 14px; }
+.billing-evidence > summary > span { color: var(--muted); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+.billing-evidence-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+/* The price entry: closed by default, so the panel answers before it asks. */
+.billing-change { border-top: 1px solid var(--line); padding-top: 18px; margin-bottom: 8px; }
+.billing-change > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 14px; cursor: pointer; padding: 6px 0; }
+.billing-change > summary > strong { font-size: 14px; color: var(--primary-ink); }
+.billing-change > summary > span { color: var(--muted); font-size: 12px; }
+.billing-change[open] > summary { margin-bottom: 14px; }
+.quote-entry-inuse { color: var(--success) !important; }
 .quote-entry { padding: 20px 0; border-top: 1px solid var(--line-light); min-width: 0; }
 .quote-entry-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; }
 .quote-entry-head > div { display:flex; align-items:baseline; gap:12px; }

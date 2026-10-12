@@ -6,7 +6,7 @@ import { I18nProvider } from "../../i18n";
 import { ApiClient } from "../../api/client";
 import { BillingRulePanel, BillingRuleDialog } from "./BillingRulePanel";
 import { QuoteActions } from "./QuoteActions";
-import type { BillingView, PriceQuote } from "./pricingTypes";
+import type { BillingRule, BillingView, PriceQuote } from "./pricingTypes";
 const client = new ApiClient("local-test");
 vi.mock("../../session", () => ({ useSession: () => ({ client }) }));
 const view: BillingView = {
@@ -221,4 +221,58 @@ it("edits the model multiplier without altering a member rule", async () => {
   fireEvent.click(screen.getByRole("dialog").querySelector("button[type=submit]")!);
   await waitFor(() => expect(calls).toHaveLength(1));
   expect(calls[0]).toEqual({ path: "/admin/ratios/m", body: { ratio: 1.5 } });
+});
+
+const copiedRule: BillingRule = {
+  state: "explicit",
+  mode: "token",
+  input_per_1k: 0.002,
+  timezone: "UTC",
+  source: "quote_copy",
+  quote_id: 1,
+  revision: 4,
+};
+function withQuote(ruleView: BillingView = view) {
+  const original = fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, init?: RequestInit) =>
+      path.startsWith("/admin/price-quotes")
+        ? new Response(JSON.stringify({ items: [quote] }), { status: 200 })
+        : path.startsWith("/admin/billing-rule") && !init?.method
+          ? new Response(JSON.stringify(ruleView), { status: 200 })
+          : original(path, init),
+    ),
+  );
+}
+function toggle(details: HTMLDetailsElement, open: boolean) {
+  details.open = open;
+  fireEvent(details, new Event("toggle"));
+}
+it("answers with the price in force and folds the sources into one line", async () => {
+  withQuote();
+  render(wrap(<BillingRulePanel model="m" />));
+  // The panel's answer, in rates rather than in rule vocabulary.
+  expect(await screen.findByText(/Charging now: .*\/ 1M input/)).toBeInTheDocument();
+  // One line of evidence, closed by default; the rows live inside it.
+  const evidence = document.querySelector("details.billing-evidence") as HTMLDetailsElement;
+  expect(evidence.open).toBe(false);
+  expect(evidence.querySelector("summary")?.textContent).toMatch(/Price the site publishes/);
+  expect(evidence.querySelectorAll(".quote-entry")).toHaveLength(1);
+  // The price entry is folded too, and is the same editor behind the fold.
+  const change = document.querySelector("details.billing-change") as HTMLDetailsElement;
+  expect(change.open).toBe(false);
+  expect(change.querySelector("summary")?.textContent).toMatch(/Change the price/);
+  toggle(change, true);
+  expect(screen.getByLabelText("Ordinary input (USD / 1M tokens)")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  // Opening the evidence still leads to the explicit, versioned copy action.
+  toggle(evidence, true);
+  fireEvent.click(screen.getByRole("button", { name: "Use as my price" }));
+  expect(screen.getByRole("button", { name: "Confirm and use it" })).toBeInTheDocument();
+});
+it("marks the source the price in force was copied from", async () => {
+  withQuote({ ...view, rule: copiedRule, revision: copiedRule.revision });
+  render(wrap(<BillingRulePanel model="m" />));
+  expect(await screen.findByText("This is what you charge now")).toBeInTheDocument();
 });
