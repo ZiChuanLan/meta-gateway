@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Download, RefreshCw, Search, Settings2 } from "lucide-react";
+import { Download, RefreshCw, Search, Settings2, Wand2 } from "lucide-react";
 import { api } from "../../api/client";
 import type {
   SiteObservation,
   SiteProbeAction,
   SiteProbePolicy,
+  SiteProbeRow,
   SiteProbeRun,
   SiteProbeSiteStatus,
   Site,
@@ -101,6 +102,8 @@ export function SiteObservationWorkspace({
   });
   const [routeRowsOpen, setRouteRowsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [bulkSelect, setBulkSelect] = useState(false);
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   // The scope of the last collect, so the retry under a failure banner repeats
   // the same request (one site or the whole fleet) instead of widening it.
   const collectScope = useRef<number[] | undefined>(undefined);
@@ -169,6 +172,68 @@ export function SiteObservationWorkspace({
       collected: data.collected ?? 0,
       failed: data.failed ?? 0,
     });
+
+  /** Adopt observed models into routing: one route per name plus every enabled
+   *  channel that really serves it (the models page's one-click attach).
+   *  A name that already has a route is never sent here — the rows and the bulk
+   *  bar only offer adoption where there is no route yet. */
+  const adopt = useAdminMutation({
+    mutationFn: async (models: SiteObservation[]) => {
+      const results = await Promise.allSettled(
+        models.map((item) =>
+          service.createRoute({
+            model_pattern: item.raw_model,
+            enabled: true,
+            auto_match_mode: "exact",
+          }),
+        ),
+      );
+      const failed = results.filter((result) => result.status === "rejected").length;
+      return { created: results.length - failed, failed };
+    },
+    invalidateKeys: INVALIDATE,
+    onSuccess: (result) => {
+      setSelectedModels(new Set());
+      toast.push({
+        tone: result.failed > 0 ? "error" : "success",
+        message: result.failed
+          ? t("observation.adoptPartial", result)
+          : t("observation.adoptDone", result),
+      });
+    },
+  });
+  /** The manual counterpart of the site's automatic policy: the operator picks
+   *  the models whose member should be switched. */
+  const toggleMembers = useAdminMutation({
+    mutationFn: async (input: { ids: number[]; enabled: boolean }) => {
+      await Promise.all(
+        input.ids.map((id) => service.updateMember(id, { enabled: input.enabled })),
+      );
+      return input;
+    },
+    invalidateKeys: INVALIDATE,
+    onSuccess: (input) =>
+      toast.push({
+        tone: "success",
+        message: t("observation.memberToggle", {
+          count: input.ids.length,
+          state: t(input.enabled ? "routing.bulkEnable" : "routing.bulkDisable"),
+        }),
+      }),
+  });
+
+  const linksOf = (item: SiteObservation): SiteProbeRow[] =>
+    (report.data?.rows ?? []).filter(
+      (row) =>
+        row.raw_model === item.raw_model && (!row.group_name || row.group_name === item.group_name),
+    );
+  // Route names are global: a name that is already routed anywhere cannot be
+  // created again (the API answers 409), so adoption is only offered for names
+  // nobody routes yet — whether or not this site is the one serving them.
+  const routedNames = new Set([
+    ...(report.data?.rows ?? []).map((row) => row.route),
+    ...(report.data?.name_only ?? []).map((row) => row.route),
+  ]);
 
   const collect = useAdminMutation({
     mutationFn: (ids?: number[]) => service.siteProbeCollect(ids),
@@ -273,11 +338,94 @@ export function SiteObservationWorkspace({
         item.raw_model.toLowerCase().includes(term) ||
         selected?.site_name.toLowerCase().includes(term)),
   );
-  const links = (report.data?.rows ?? []).filter((row) => row.site_id === selected?.site_id);
   const siteModels = selected
     ? items.filter((item) => item.site_id === selected.site_id).length
     : 0;
   const reason = siteModels === 0 ? zeroReason(selected) : null;
+  // The availability column only exists where there is a reading to show: a
+  // column of dashes is a column of nothing, and it costs the width the model
+  // names and prices need.
+  const showsAvailability = visible.some((item) => item.series.ratio != null);
+  // What the bulk bar acts on: the routes the picked models already reach, and
+  // the ones they do not reach yet.
+  const selectedItems = items.filter((item) => selectedModels.has(item.id));
+  const selectedMembers = [
+    ...new Map(
+      selectedItems
+        .flatMap((item) => linksOf(item))
+        .flatMap((row) => row.members)
+        .map((member) => [member.member_id, member]),
+    ).values(),
+  ];
+  const membersToEnable = selectedMembers
+    .filter((member) => !member.enabled)
+    .map((m) => m.member_id);
+  const membersToDisable = selectedMembers
+    .filter((member) => member.enabled)
+    .map((m) => m.member_id);
+  const modelsToAdopt = selectedItems.filter(
+    (item) => !routedNames.has(item.raw_model) && linksOf(item).length === 0,
+  );
+  /* The site's routing policy leads the pane: it is the action this page exists
+     for (which of this site's models should keep serving), and it used to sit
+     under a 200-row list where nobody found it. */
+  const routeImpactBlock = selected ? (
+    <details
+      className="observation-policy"
+      open={routeRowsOpen}
+      onToggle={(event) => setRouteRowsOpen(event.currentTarget.open)}
+    >
+      <summary>{t("observation.routeImpact")}</summary>
+      <p className="field-hint">{t("observation.routeImpactHint")}</p>
+      <PolicyFields value={policy} onChange={setPolicy} disabled={busy} />
+      <div className="observation-actions">
+        <Button
+          variant="secondary"
+          disabled={busy || report.isFetching || report.isError || !validObservationPolicy(policy)}
+          onClick={() =>
+            apply.mutate({ dry: true, siteId: selected.site_id, key: previewKey, policy })
+          }
+        >
+          {t("modelsPage.siteProbe.preview")}
+        </Button>
+        <Button
+          disabled={
+            busy ||
+            report.isFetching ||
+            report.isError ||
+            !preview ||
+            preview.applied ||
+            preview.key !== previewKey ||
+            !preview.actions.some((action) => !action.skipped)
+          }
+          onClick={() =>
+            apply.mutate({ dry: false, siteId: selected.site_id, key: previewKey, policy })
+          }
+        >
+          {t("modelsPage.siteProbe.apply")}
+        </Button>
+      </div>
+      {apply.error ? <ErrorState error={apply.error} /> : null}
+      {preview ? (
+        <div className="observation-impact-results" role="status">
+          {preview.actions.length ? (
+            preview.actions.map((action, index) => (
+              <p key={`${action.channel_id}-${index}`}>
+                <strong>{action.channel_name}</strong> · {action.route} ·{" "}
+                {t(
+                  `modelsPage.siteProbe.action${action.kind === "disable" ? "Disable" : "Recover"}`,
+                )}
+                {action.skipped ? ` · ${action.skipped}` : ""}
+                <small>{action.reason}</small>
+              </p>
+            ))
+          ) : (
+            <p>{t("modelsPage.siteProbe.noActions")}</p>
+          )}
+        </div>
+      ) : null}
+    </details>
+  ) : null;
   return (
     <section className="site-observation-workspace">
       <div className="observation-toolbar">
@@ -430,6 +578,7 @@ export function SiteObservationWorkspace({
                     </Button>
                   </div>
                 </header>
+                {routeImpactBlock}
                 <div className="observation-switches">
                   <label className="check marginless">
                     <input
@@ -480,11 +629,64 @@ export function SiteObservationWorkspace({
                       {reason}
                     </p>
                   ) : null}
-                  <p className="observation-list-hint">{t("observation.listHint")}</p>
-                  <div className="observation-table">
+                  <div className="observation-table-bar">
+                    <p className="observation-list-hint">{t("observation.listHint")}</p>
+                    <span className="bar-spacer" />
+                    <Button
+                      variant={bulkSelect ? "primary" : "secondary"}
+                      onClick={() => {
+                        setBulkSelect((value) => !value);
+                        setSelectedModels(new Set());
+                      }}
+                    >
+                      {t("routing.bulkSelect")}
+                    </Button>
+                  </div>
+                  {bulkSelect ? (
+                    <div className="routing-bulk-bar">
+                      <span className="routing-bulk-count">
+                        {t("routing.bulkSelected", { count: selectedModels.size })}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        disabled={!modelsToAdopt.length || adopt.isPending}
+                        onClick={() => adopt.mutate(modelsToAdopt)}
+                      >
+                        {t("observation.bulkAdopt")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={!membersToEnable.length || toggleMembers.isPending}
+                        onClick={() =>
+                          toggleMembers.mutate({ ids: membersToEnable, enabled: true })
+                        }
+                      >
+                        {t("routing.bulkEnable")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={!membersToDisable.length || toggleMembers.isPending}
+                        onClick={() =>
+                          toggleMembers.mutate({ ids: membersToDisable, enabled: false })
+                        }
+                      >
+                        {t("routing.bulkDisable")}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => setSelectedModels(new Set(visible.map((item) => item.id)))}
+                      >
+                        {t("routing.bulkSelectAll")}
+                      </Button>
+                      <Button variant="secondary" onClick={() => setSelectedModels(new Set())}>
+                        {t("routing.bulkClear")}
+                      </Button>
+                    </div>
+                  ) : null}
+                  <div className="observation-table" data-columns={showsAvailability ? 4 : 3}>
                     <div className="observation-model is-header">
                       <span>{t("common.model")}</span>
-                      <span>{t("observation.availability")}</span>
+                      {showsAvailability ? <span>{t("observation.availability")}</span> : null}
                       <span>{t("modelsPage.siteProbe.colPrice")}</span>
                       <span>{t("observation.links")}</span>
                     </div>
@@ -492,11 +694,23 @@ export function SiteObservationWorkspace({
                       <ObservationRow
                         key={item.id}
                         item={item}
-                        links={links.filter(
-                          (row) =>
-                            row.raw_model === item.raw_model &&
-                            (!row.group_name || row.group_name === item.group_name),
-                        )}
+                        links={linksOf(item)}
+                        showsAvailability={showsAvailability}
+                        bulkSelect={bulkSelect}
+                        selected={selectedModels.has(item.id)}
+                        adopting={adopt.isPending}
+                        routedElsewhere={
+                          linksOf(item).length === 0 && routedNames.has(item.raw_model)
+                        }
+                        onToggleSelected={() =>
+                          setSelectedModels((current) => {
+                            const next = new Set(current);
+                            if (next.has(item.id)) next.delete(item.id);
+                            else next.add(item.id);
+                            return next;
+                          })
+                        }
+                        onAdopt={() => adopt.mutate([item])}
                         onOpenBilling={(member) =>
                           setBilling({
                             model: member.route,
@@ -516,77 +730,6 @@ export function SiteObservationWorkspace({
                       </p>
                     ) : null}
                   </div>
-                </details>
-
-                <details
-                  className="observation-policy"
-                  open={routeRowsOpen}
-                  onToggle={(event) => setRouteRowsOpen(event.currentTarget.open)}
-                >
-                  <summary>{t("observation.routeImpact")}</summary>
-                  <p className="field-hint">{t("observation.routeImpactHint")}</p>
-                  <PolicyFields value={policy} onChange={setPolicy} disabled={busy} />
-                  <div className="observation-actions">
-                    <Button
-                      variant="secondary"
-                      disabled={
-                        busy ||
-                        report.isFetching ||
-                        report.isError ||
-                        !validObservationPolicy(policy)
-                      }
-                      onClick={() =>
-                        apply.mutate({
-                          dry: true,
-                          siteId: selected.site_id,
-                          key: previewKey,
-                          policy,
-                        })
-                      }
-                    >
-                      {t("modelsPage.siteProbe.preview")}
-                    </Button>
-                    <Button
-                      disabled={
-                        busy ||
-                        report.isFetching ||
-                        report.isError ||
-                        !preview ||
-                        preview.applied ||
-                        preview.key !== previewKey ||
-                        !preview.actions.some((action) => !action.skipped)
-                      }
-                      onClick={() =>
-                        apply.mutate({
-                          dry: false,
-                          siteId: selected.site_id,
-                          key: previewKey,
-                          policy,
-                        })
-                      }
-                    >
-                      {t("modelsPage.siteProbe.apply")}
-                    </Button>
-                  </div>
-                  {apply.error ? <ErrorState error={apply.error} /> : null}
-                  {preview ? (
-                    <div className="observation-impact-results" role="status">
-                      {preview.actions.length ? (
-                        preview.actions.map((action, index) => (
-                          <p key={`${action.channel_id}-${index}`}>
-                            <strong>{action.channel_name}</strong> · {action.route} ·{" "}
-                            {t(
-                              `modelsPage.siteProbe.action${action.kind === "disable" ? "Disable" : "Recover"}`,
-                            )}
-                            {action.skipped ? ` · ${action.skipped}` : ""}
-                            <small>{action.reason}</small>
-                          </p>
-                        ))
-                      ) : (
-                        <p>{t("modelsPage.siteProbe.noActions")}</p>
-                      )}
-                    </div>
-                  ) : null}
                 </details>
               </>
             ) : (
@@ -661,13 +804,26 @@ export function SiteObservationWorkspace({
 function ObservationRow({
   item,
   links,
+  showsAvailability,
+  bulkSelect,
+  selected,
+  adopting,
+  routedElsewhere,
+  onToggleSelected,
+  onAdopt,
   onOpenBilling,
 }: {
   item: SiteObservation;
-  links: import("../../api/types").SiteProbeRow[];
-  onOpenBilling: (
-    member: import("../../api/types").SiteProbeRow["members"][number] & { route: string },
-  ) => void;
+  links: SiteProbeRow[];
+  showsAvailability: boolean;
+  bulkSelect: boolean;
+  selected: boolean;
+  adopting: boolean;
+  /** The name has a route somewhere, but not on this site. */
+  routedElsewhere: boolean;
+  onToggleSelected: () => void;
+  onAdopt: () => void;
+  onOpenBilling: (member: SiteProbeRow["members"][number] & { route: string }) => void;
 }) {
   const { t } = useI18n();
   const linked = new Set(links.map((row) => row.route));
@@ -679,20 +835,32 @@ function ObservationRow({
     ).values(),
   ];
   return (
-    <div className="observation-model">
+    <div className={`observation-model${bulkSelect && selected ? " is-selected" : ""}`}>
       <div className="observation-model-name">
-        <code title={item.raw_model}>{item.raw_model}</code>
-        {item.group_name ? <small>{item.group_name}</small> : null}
-        {item.weak_evidence ? <small>{t("modelsPage.siteProbe.weakEvidence")}</small> : null}
+        {bulkSelect ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={item.raw_model}
+            onChange={onToggleSelected}
+          />
+        ) : null}
+        <div>
+          <code title={item.raw_model}>{item.raw_model}</code>
+          {item.group_name ? <small>{item.group_name}</small> : null}
+          {item.weak_evidence ? <small>{t("modelsPage.siteProbe.weakEvidence")}</small> : null}
+        </div>
       </div>
-      <AvailabilityIndicator
-        item={{
-          model: item.raw_model,
-          site_id: item.site_id,
-          primary: item.series.ratio !== null ? item.series : null,
-          evidence: [item.series],
-        }}
-      />
+      {showsAvailability ? (
+        <AvailabilityIndicator
+          item={{
+            model: item.raw_model,
+            site_id: item.site_id,
+            primary: item.series.ratio !== null ? item.series : null,
+            evidence: [item.series],
+          }}
+        />
+      ) : null}
       <div className="observation-price">
         <span>
           {item.price.unparsed ? (
@@ -718,6 +886,22 @@ function ObservationRow({
             {route}
           </Link>
         ))}
+        {/* A model nothing routes yet is the one case where this column used to
+            be blank; it now offers the action it implies. */}
+        {linked.size === 0 && !routedElsewhere ? (
+          <Button
+            variant="quiet"
+            icon={<Wand2 size={13} />}
+            title={t("observation.adoptHint")}
+            disabled={adopting}
+            onClick={onAdopt}
+          >
+            {t("observation.adopt")}
+          </Button>
+        ) : null}
+        {routedElsewhere ? (
+          <span className="observation-routed-elsewhere">{t("observation.routedElsewhere")}</span>
+        ) : null}
         {/* One entry point, not one button per channel: the same model served by
             three channels used to stack three "billing rule" buttons and bury
             the row. A single menu names the channel when it asks which one. */}

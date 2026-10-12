@@ -86,6 +86,18 @@
 .observation-switches .check { font-size: 12px; }
 .observation-catalogue > summary { padding: 12px 0; font-size: 13px; font-weight: 600; cursor: pointer; }
 .observation-list-hint { font-size: 11px; color: var(--muted-strong); line-height: 1.6; margin: 2px 0 16px; }
+/* The list's own toolbar: the hint about what the columns mean, then the bulk
+   switch. The hint used to be a paragraph of its own with nothing beside it. */
+.observation-table-bar { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
+.observation-table-bar .observation-list-hint { margin: 0; }
+/* Only three of the four columns exist when no site publishes a reading; the
+   grid has to follow, or the price would land in the availability slot. */
+.observation-table[data-columns="3"] .observation-model { grid-template-columns: minmax(145px,1fr) minmax(100px,.7fr) minmax(80px,.6fr); }
+.observation-table[data-bulk="1"] .observation-model-name { gap: 8px; }
+.observation-model-name { display: flex; align-items: flex-start; gap: 8px; }
+.observation-model-name > div { min-width: 0; }
+.observation-model.is-selected { background: var(--surface-subtle); }
+.observation-routed-elsewhere { font-size: 11px; color: var(--muted-strong); }
 /* "0 collected" with a reason: quiet, but the first thing under the count. */
 .observation-zero-reason { margin: 2px 0 10px; font-size: 12px; line-height: 1.6; color: var(--muted-strong); }
 .observation-model { display: grid; grid-template-columns: minmax(145px,1fr) 124px minmax(100px,.7fr) minmax(80px,.6fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
@@ -112,6 +124,7 @@
   .member-availability { grid-column: 2; grid-row: 2; }
   .member-row.has-availability .member-controls { grid-column: 3; grid-row: 1 / span 2; }
   .observation-model { grid-template-columns: minmax(140px,1fr) 124px minmax(80px,.65fr); }
+  .observation-table[data-columns="3"] .observation-model { grid-template-columns: minmax(140px,1fr) minmax(80px,.65fr); }
   .observation-model-links { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
   .observation-model.is-header > :last-child { display: none; }
 }

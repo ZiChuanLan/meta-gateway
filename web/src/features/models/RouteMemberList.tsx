@@ -99,6 +99,12 @@ export function RouteMemberList(props: RouteMemberListProps) {
 
   const [billing, setBilling] = useState<RoutingCandidate | null>(null);
   const availability = useAvailability({ routeIds: [route.id!] });
+  // A column of dashes is a column of nothing: the availability cell only
+  // exists where the route has at least one reading. While the query is in
+  // flight the column stays, so the rows do not jump when it lands.
+  const showsAvailability =
+    availability.isPending ||
+    (availability.data?.members ?? []).some((item) => item.primary?.ratio != null);
   const applyOrder = (next: RoutingCandidate[]) => reorderMembers.mutate(next);
 
   return (
@@ -150,7 +156,7 @@ export function RouteMemberList(props: RouteMemberListProps) {
         };
         return (
           <div
-            className={`member-row has-availability${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
+            className={`member-row${showsAvailability ? " has-availability" : ""}${dragMemberId === entry.id ? " is-dragging" : ""}${autoDisabled ? " is-auto-disabled" : ""}${bulkSelect && selectedMemberIds.has(entry.id) ? " is-selected" : ""}`}
             key={entry.id}
             draggable={!reorderMembers.isPending && !bulkSelect}
             onDragStart={(event) => {
@@ -300,13 +306,15 @@ export function RouteMemberList(props: RouteMemberListProps) {
                 ) : null}
               </small>
             </div>
-            <div className="member-availability">
-              <AvailabilityIndicator
-                item={availability.data?.members.find((item) => item.member_id === entry.id)}
-                loading={availability.isPending}
-                error={availability.isError}
-              />
-            </div>
+            {showsAvailability ? (
+              <div className="member-availability">
+                <AvailabilityIndicator
+                  item={availability.data?.members.find((item) => item.member_id === entry.id)}
+                  loading={availability.isPending}
+                  error={availability.isError}
+                />
+              </div>
+            ) : null}
             <div className="member-controls">
               {route.routing_mode === "single" && route.single_member_id === entry.id ? (
                 <span

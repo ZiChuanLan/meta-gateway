@@ -3696,9 +3696,17 @@ export const en: Dict = {
   "observation.retainedSnapshot": "This collection failed; showing the last successful snapshot:",
   "observation.collected": "{count} models in the latest successful collection",
   "observation.listHint":
-    "This is the site's published model list. Route links are secondary and never change the collection count.",
+    "This is the site's published model list; “Route links” shows the routes already attached, and the ones without a route can be attached right here.",
   "observation.availability": "Availability",
   "observation.links": "Route links",
+  "observation.adopt": "Attach",
+  "observation.adoptHint":
+    "Create the route for this model and attach the channels that serve it (the same rule as the models page's one-click attach).",
+  "observation.bulkAdopt": "Attach routes",
+  "observation.adoptDone": "Attached {created} models",
+  "observation.adoptPartial": "Attached {created}, {failed} failed",
+  "observation.memberToggle": "{state}: {count} members",
+  "observation.routedElsewhere": "Routed elsewhere · not attached here",
   "observation.perRequest": "per request",
   "observation.perMillion": "per million tokens",
   "observation.routeImpact": "Route impact (expand when needed)",
