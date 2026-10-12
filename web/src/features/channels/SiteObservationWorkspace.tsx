@@ -12,6 +12,7 @@ import type {
 } from "../../api/types";
 import { AvailabilityIndicator } from "../../components/AvailabilityIndicator";
 import { Button, ConfirmDialog, Dialog, Empty, ErrorState, InfoTip } from "../../components/ui";
+import { ActionMenu } from "../../components/ActionMenu";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
@@ -575,11 +576,24 @@ function ObservationRow({
             {route}
           </Link>
         ))}
-        {members.map((member) => (
-          <Button key={member.member_id} variant="quiet" onClick={() => onOpenBilling(member)}>
-            {t("billing.open")} · {member.channel_name}
+        {/* One entry point, not one button per channel: the same model served by
+            three channels used to stack three "billing rule" buttons and bury
+            the row. A single menu names the channel when it asks which one. */}
+        {members.length === 1 ? (
+          <Button variant="quiet" onClick={() => onOpenBilling(members[0]!)}>
+            {t("billing.open")}
           </Button>
-        ))}
+        ) : members.length > 1 ? (
+          <ActionMenu
+            label={`${t("billing.open")} · ${members.length}`}
+            title={t("billing.open")}
+            items={members.map((member) => ({
+              key: String(member.member_id),
+              label: member.channel_name,
+              onSelect: () => onOpenBilling(member),
+            }))}
+          />
+        ) : null}
       </div>
     </div>
   );

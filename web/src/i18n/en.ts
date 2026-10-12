@@ -40,16 +40,19 @@ export const en: Dict = {
   "billing.open": "Billing rule",
   "billing.description":
     "Local rules price future requests. Quote refreshes never change billing or historical amounts.",
-  "billing.state": "Rule state",
-  "billing.explicit": "Custom billing",
-  "billing.free": "Explicitly free",
-  "billing.inherit": "Not priced at this layer (use the layer above)",
+  "billing.state": "How it is charged",
+  "billing.explicit": "Set a price here",
+  "billing.explicitModel": "Custom price",
+  "billing.free": "Free",
+  "billing.inherit": "Use the model default",
+  "billing.inheritModel": "Keep the old price",
   "billing.inheritHint":
-    "“Not priced at this layer” is not free: billing looks one layer up, and only falls back to the legacy price if that layer has none either.",
+    "Nothing is priced here, so the model default applies. If that is unset too, the pre-upgrade price keeps being used.",
+  "billing.inheritHintModel": "With no model default set, the pre-upgrade price keeps being used.",
   "billing.layers.model":
-    "The model default applies to every connection that can serve {name}. Price one connection differently with its member override.",
+    "Applies to every connection that can serve “{name}”. To price one connection differently, change it in that connection's billing rule.",
   "billing.layers.member":
-    "Affects only {channel}; anything not set here still uses {name}'s model default.",
+    "Affects only “{channel}”. Anything not set here is charged at “{name}”'s default.",
   "billing.legacy": "Legacy rule",
   "billing.unpriced": "Unpriced",
   "billing.mode": "Billing mode",

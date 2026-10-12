@@ -315,10 +315,10 @@ function BillingEditor({
             revision,
           })}
         </small>
-        {view.owner ? <small>{t("billing.owner", { owner: view.owner })}</small> : null}
         {/* Two layers, and what a layer is for: the model default prices every
             channel serving this model; a member override exists for the one
-            channel that must be priced differently. */}
+            channel that must be priced differently. The internal owner id is
+            deliberately not shown — it is not something an operator acts on. */}
         <small className="billing-layers">
           {t(scope === "member" ? "billing.layers.member" : "billing.layers.model", {
             name: model,
@@ -327,14 +327,21 @@ function BillingEditor({
         </small>
       </div>
       <fieldset disabled={save.isPending}>
-        <Field label={t("billing.state")} hint={t("billing.inheritHint")}>
+        <Field
+          label={t("billing.state")}
+          hint={t(scope === "member" ? "billing.inheritHint" : "billing.inheritHintModel")}
+        >
           <select
             value={draft.state}
             onChange={(e) => setDraft({ ...draft, state: e.target.value as BillingRule["state"] })}
           >
-            <option value="inherit">{t("billing.inherit")}</option>
+            <option value="inherit">
+              {t(scope === "member" ? "billing.inherit" : "billing.inheritModel")}
+            </option>
             <option value="free">{t("billing.free")}</option>
-            <option value="explicit">{t("billing.explicit")}</option>
+            <option value="explicit">
+              {t(scope === "member" ? "billing.explicit" : "billing.explicitModel")}
+            </option>
           </select>
         </Field>
         {draft.state === "explicit" ? (
