@@ -91,3 +91,46 @@
 - 工作区里另有一份**别的会话**未提交的改动（`web/src/features/models/{RouteDirectory,ModelDirectoryTable}.tsx`，
   去掉模型目录行的可用性指标）。本轮没有触碰、没有提交；`5187f6c` 的 dist 是在把那两个文件暂存出去后构建的，
   因此提交里的产物对应已提交的源码。
+
+---
+
+# UI 打磨一轮（2026-10-13 00:0x，操作员截图反馈）
+
+三张截图的两个诉求：**横条没填满，内容从边上漏出来**；**计费来源区没有层次**。提交 `cc846c0`（源码）+ `8dd491f`（dist）。
+
+## 1 连接卡的动作条：12px 的漏缝（截图 2 的真因）
+
+`web/src/themes/classic/compat.css` 里经典包把共享规则覆盖成了 `bottom: 0; padding-bottom: 4px`，
+而共享规则（`web/src/styles.css` 的 `.ops-detail-card.is-compact > .detail-primary-bar`）本身是
+`bottom: -12px; padding-bottom: 12px` —— 负偏移正是用来**抵消卡片自身 padding-bottom: 12px** 的。
+被覆盖之后，动作条的填充比卡片内边界早结束 12px，滚动到折叠处的内容（截图中那行
+「100.78 53/53 次探测成功」）就在按钮下方露出半行。
+
+- 经典包两处（连接卡、模型卡）改为保留 `position: sticky; margin-bottom: 0; background`，
+  不再覆盖 `bottom` / `padding-bottom`，交给共享规则；
+- 共享规则加 `box-shadow: 0 -10px 14px -14px rgba(15,42,66,.35)`，让「内容从下面滚过去」变成可见的层次。
+- 实测：`cardBottom=893 / barBottom=892`（原来相差 13px），条内点位上命中的元素就是动作条本身。
+
+## 2 观测页的两条粘性带（截图 1）
+
+- 站点筛选行：白底 + 底部发丝线 + 向下阴影 + `padding: 8px 0 10px`（原来只有 4px 底衬、无边界）；
+- 表格表头：`--surface-subtle` 底色 + 发丝线 + 向下阴影，成为真正的表头带。
+- 两套主题都验证（经典 #eef3f7 表头 / 现代 #f6f7f9 表头）。
+
+## 3 计费来源区（截图 3）
+
+原来是一条平坦列表：来源名、时间、数值同字号同字重，值之间只有一根分隔线，按钮孤零零跟在后面。
+
+现在每条来源是一张卡：
+- 头部：来源名（13.5px/600）+ 单位胶囊；当前生效的那条挂 `is-current` 胶囊（主色）；
+- 出处降为脚注：`site_public · 站点分组 default · 2026/10/12 23:27:38 抄到的 · 站点显示 CNY`；
+- 数值区：标签 11px 灰、数值 15px/600 tabular，`repeat(auto-fit, minmax(104px,1fr))` 自适应列；
+- 计价表达式不可解析时用 `--surface-subtle` 提示带 + 原文 code；
+- 动作独立成行（`设为收费价`，右对齐，上方发丝线；没有 target 时不渲染这一行）。
+- 顺带把孤零零的「模型倍率」按钮挪到「现在收费」那一行的右端（`margin-left: auto`），
+  不再单独占一行；打开倍率弹窗的功能在浏览器里复测通过。
+
+## 证据
+
+`audit/evidence/ui-before-*.png` / `ui-after-*.png`：观测页筛选带、表头、连接动作条、计费来源区（经典 + 现代）。
+门禁：web 六项（lint / format:check / audit:entrypoints / tsc / 596 测试 / build）全过。
