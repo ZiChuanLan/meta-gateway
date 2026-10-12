@@ -215,7 +215,9 @@ it("promotes a legacy Local timezone into a supported IANA zone", async () => {
 
 it("edits the model multiplier without altering a member rule", async () => {
   render(wrap(<BillingRulePanel model="m" memberId={17} />));
-  fireEvent.click(screen.getByRole("button", { name: "Model multiplier" }));
+  // The multiplier control sits with the price it scales, so it appears once
+  // the rule view has loaded.
+  fireEvent.click(await screen.findByRole("button", { name: "Model multiplier" }));
   const input = await screen.findByLabelText("Model multiplier");
   fireEvent.change(input, { target: { value: "1.5" } });
   fireEvent.click(screen.getByRole("dialog").querySelector("button[type=submit]")!);

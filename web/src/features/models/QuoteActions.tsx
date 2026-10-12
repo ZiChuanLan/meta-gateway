@@ -85,27 +85,29 @@ export function QuoteActions({
   return (
     <article className="quote-entry">
       <header className="quote-entry-head">
-        <div>
+        <div className="quote-entry-title">
           <strong>
             {t(quote.purpose === "reference" ? "billing.reference" : "billing.upstream")}
           </strong>
-          <small>{quote.source}</small>
-          {inUse ? <small className="quote-entry-inuse">{t("billing.inUse")}</small> : null}
+          {inUse ? <span className="quote-chip is-current">{t("billing.inUse")}</span> : null}
         </div>
-        <span>{quote.unit.kind === "iso" ? quote.unit.code : t("billing.credit")}</span>
+        <span className="quote-unit">
+          {quote.unit.kind === "iso" ? quote.unit.code : t("billing.credit")}
+        </span>
       </header>
-      {quote.unit.display_currency ? (
-        <p className="field-hint">
-          {t("billing.displayOnly", { currency: quote.unit.display_currency })}
-        </p>
-      ) : null}
-      <p className="field-hint">
-        {t("billing.observed", { time: new Date(quote.observed_at).toLocaleString() })}
+      {/* Who published this price, and when it was read — a footnote, so the
+          numbers below it keep the weight. */}
+      <p className="quote-entry-meta">
+        {quote.source}
         {quote.account_id ? ` · ${t("billing.account", { id: quote.account_id })}` : ""}
         {quote.upstream_group ? ` · ${t("billing.group", { group: quote.upstream_group })}` : ""}
+        {` · ${t("billing.observed", { time: new Date(quote.observed_at).toLocaleString() })}`}
+        {quote.unit.display_currency
+          ? ` · ${t("billing.displayOnly", { currency: quote.unit.display_currency })}`
+          : ""}
       </p>
       {!calculable ? (
-        <p role="status" className="field-hint">
+        <p role="status" className="quote-entry-note">
           {t("billing.quoteUnavailable", {
             status: t(`billing.reason.${expired ? "stale_quote" : quote.status}`),
           })}
@@ -125,8 +127,8 @@ export function QuoteActions({
             </div>
           ))}
       </dl>
-      <div className="quote-entry-actions">
-        {target ? (
+      {target ? (
+        <div className="quote-entry-actions">
           <Button
             variant="secondary"
             disabled={!calculable}
@@ -142,8 +144,8 @@ export function QuoteActions({
           >
             {t("billing.copy")}
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       {copyTarget ? (
         <Dialog
           title={t("billing.copyTitle")}

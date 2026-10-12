@@ -68,13 +68,13 @@
 :root[data-appearance="classic"] .theme-classic .channels-directory { max-height: none; height: auto; min-height: 0; }
 :root[data-appearance="classic"] .classic-channel-detail { min-height: 0; height: auto; }
 :root[data-appearance="classic"] .classic-channel-detail > .detail-card { flex: 1 1 auto; position: static; overflow-y: auto; overscroll-behavior: contain; }
-/* The card scrolls once the workspace is capped at short viewports, and its
-   action bar is the reason the card exists — scrolling must never hide it.
-   Pinning the bar to the card's bottom edge keeps `检测连接` / `编辑` reachable
-   while the metadata scrolls behind it. The bar carries the surface colour so
-   content passing underneath does not show through, and its bottom margin is
-   dropped because the card edge already provides that space. */
-:root[data-appearance="classic"] .classic-channel-detail > .detail-card > .detail-primary-bar { position: sticky; bottom: 0; margin-bottom: 0; padding-bottom: 4px; background: var(--surface); }
+/* The card's own bottom padding is the strip the fill has to cover too. With
+   `bottom: 0` the bar stopped 12px short of the card's border, and whatever
+   scrolled past the fold stayed visible in that strip — content showing through
+   the bar while its buttons sat on top of it. The shared rule's negative offset
+   cancels the card padding (`bottom: -12px` + `padding-bottom: 12px`), so the
+   surface reaches the border and the fold is no longer a window. */
+:root[data-appearance="classic"] .classic-channel-detail > .detail-card > .detail-primary-bar { position: sticky; margin-bottom: 0; background: var(--surface); }
 /* The directory's first row is already pushed down by its filter row, so the
    detail card needs the same lead-in — otherwise its first chip row sits flush
    against the frame and the two columns read as level but not aligned. Placed
@@ -91,7 +91,7 @@
    `overflow-y` (already set by `.ops-detail-card.is-compact`) because its
    content can exceed a short row. */
 :root[data-appearance="classic"] .theme-classic .models-split > .ops-detail-card { max-height: none; overflow-y: auto; overscroll-behavior: contain; }
-:root[data-appearance="classic"] .theme-classic .models-split > .ops-detail-card > .detail-primary-bar { position: sticky; bottom: 0; margin-bottom: 0; padding-bottom: 4px; background: var(--surface); }
+:root[data-appearance="classic"] .theme-classic .models-split > .ops-detail-card > .detail-primary-bar { position: sticky; margin-bottom: 0; background: var(--surface); }
 :root[data-appearance="classic"] .theme-classic .model-row-upstream,
 :root[data-appearance="classic"] .theme-classic .model-row-status { display: table-cell; }
 :root[data-appearance="classic"] .theme-classic .model-nav-provider { display: none; }

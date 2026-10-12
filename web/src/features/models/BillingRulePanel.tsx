@@ -140,11 +140,6 @@ export function BillingRulePanel({
         />
       ) : null}
       <p className="panel-hint">{t("billing.description")}</p>
-      <div>
-        <Button variant="quiet" disabled={editorDirty} onClick={() => setRatioOpen(true)}>
-          {t("billing.multiplier")}
-        </Button>
-      </div>
       {ratioOpen ? <ModelRatioDialog model={model} onClose={() => setRatioOpen(false)} /> : null}
       {view.isPending ? (
         <Loading />
@@ -161,6 +156,7 @@ export function BillingRulePanel({
           onClose={onClose}
           onDirtyChange={updateDirty}
           onBusyChange={onBusyChange}
+          onEditRatio={() => setRatioOpen(true)}
         />
       ) : null}
       <details className="billing-evidence">
@@ -218,6 +214,7 @@ function BillingEditor({
   onClose,
   onDirtyChange,
   onBusyChange,
+  onEditRatio,
 }: {
   view: BillingView;
   scope: string;
@@ -227,6 +224,7 @@ function BillingEditor({
   onClose?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onBusyChange?: (busy: boolean) => void;
+  onEditRatio?: () => void;
 }) {
   const { t } = useI18n();
   const { client } = useSession();
@@ -381,6 +379,18 @@ function BillingEditor({
             channel serving this model; a member override exists for the one
             channel that must be priced differently. The internal owner id is
             deliberately not shown — it is not something an operator acts on. */}
+        {/* The multiplier belongs with the price it scales: it rides the price
+            line's right edge, above the layer explanation. */}
+        {onEditRatio ? (
+          <Button
+            variant="quiet"
+            className="billing-ratio-button"
+            disabled={save.isPending}
+            onClick={onEditRatio}
+          >
+            {t("billing.multiplier")}
+          </Button>
+        ) : null}
         <small className="billing-layers">
           {t(scope === "member" ? "billing.layers.member" : "billing.layers.model", {
             name: model,

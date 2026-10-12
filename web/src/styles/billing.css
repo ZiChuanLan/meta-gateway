@@ -5,6 +5,9 @@
 .billing-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; padding: 0 0 16px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
 .billing-readout > span { color: var(--ink); font-weight: 600; font-size: 15px; }
 .billing-readout small { color: var(--muted); font-size: 12px; }
+/* The multiplier is a small side control of the price it scales, so it sits on
+   the price line's right edge instead of above the panel as a loose label. */
+.billing-ratio-button { margin-left: auto; align-self: center; }
 .billing-editor > fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
 .billing-rate-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px 20px; }
 .billing-rate-grid .field { margin: 0; }
@@ -19,25 +22,33 @@
 /* The evidence area: one line while closed, the full list when asked for. */
 .billing-evidence { border-top: 1px solid var(--line); padding-top: 18px; }
 .billing-evidence > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 14px; cursor: pointer; padding: 6px 0; }
-.billing-evidence > summary > strong { font-size: 14px; }
+.billing-evidence > summary > strong { font-size: 14px; color: var(--ink); }
 .billing-evidence > summary > span { color: var(--muted); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
-.billing-evidence-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+.billing-evidence-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+.billing-evidence > .panel-hint { margin: 8px 0 14px; }
 /* The price entry: closed by default, so the panel answers before it asks. */
 .billing-change { border-top: 1px solid var(--line); padding-top: 18px; margin-bottom: 8px; }
 .billing-change > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 14px; cursor: pointer; padding: 6px 0; }
 .billing-change > summary > strong { font-size: 14px; color: var(--primary-ink); }
 .billing-change > summary > span { color: var(--muted); font-size: 12px; }
 .billing-change[open] > summary { margin-bottom: 14px; }
-.quote-entry-inuse { color: var(--success) !important; }
-.quote-entry { padding: 20px 0; border-top: 1px solid var(--line-light); min-width: 0; }
-.quote-entry-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-.quote-entry-head > div { display:flex; align-items:baseline; gap:12px; }
-.quote-entry-head strong { font-size:14px; }
-.quote-entry-head small, .quote-entry-head > span { color:var(--muted); font-size:12px; }
-.quote-rate-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 24px; margin:16px 0; }
-.quote-rate-list dt { font-size:12px; color:var(--muted); }
-.quote-rate-list dd { margin:4px 0 0; font-size:14px; font-weight:550; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
-.quote-entry-actions { margin:12px 0; }
+/* A source reads as a card: who published it, as a footnote; then the numbers
+   at display weight. The flat list this replaces gave every line the same
+   weight, so nothing told the operator which number they came for. */
+.quote-entry { display: grid; gap: 0; min-width: 0; padding: 14px 16px 16px; margin: 0 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.quote-entry:last-child { margin-bottom: 0; }
+.quote-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.quote-entry-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.quote-entry-title strong { font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); }
+.quote-unit, .quote-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border: 1px solid var(--line-light); border-radius: var(--radius-pill); background: var(--surface-subtle); color: var(--muted-strong); font-size: 11px; line-height: 1.7; white-space: nowrap; }
+.quote-chip.is-current { border-color: var(--primary-hairline); background: var(--primary-soft); color: var(--primary-ink); font-weight: 550; }
+.quote-entry-meta { margin: 7px 0 0; font-size: 11px; line-height: 1.65; color: var(--muted); overflow-wrap: anywhere; }
+.quote-rate-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 14px 18px; margin: 14px 0 0; padding-top: 14px; border-top: 1px solid var(--line-light); }
+.quote-rate-list dt { font-size: 11px; color: var(--muted); }
+.quote-rate-list dd { margin: 5px 0 0; font-size: 15px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.quote-entry-note { margin: 12px 0 0; padding: 9px 11px; border-radius: var(--radius-sm); background: var(--surface-subtle); font-size: 11.5px; line-height: 1.65; color: var(--muted-strong); }
+.quote-entry-note code { display: block; margin-top: 5px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.quote-entry-actions { display: flex; justify-content: flex-end; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line-light); }
 /* The layer explanation is the answer to “which of the two prices applies?” */
 .billing-layers { flex: 1 1 100%; max-width: 78ch; line-height: 1.5; }
 .billing-copy-table th, .billing-copy-table td { padding:12px 10px; font-size:13px; font-variant-numeric:tabular-nums; white-space:normal; }
