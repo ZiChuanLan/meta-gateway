@@ -3393,6 +3393,7 @@ export const zh: Dict = {
   "availability.source.watchbot": "第三方参考",
   "availability.source.requests": "路由结果",
   "observation.title": "站点观测",
+  "observation.expressionPrice": "按表达式计费（暂不支持显示）",
   "observation.connections": "连接列表",
   "observation.views": "连接视图",
   "observation.description": "查看站点公开的模型观测、真实历史和路由影响。",

@@ -3636,6 +3636,7 @@ export const en: Dict = {
   "availability.source.watchbot": "Third-party reference",
   "availability.source.requests": "Route outcome",
   "observation.title": "Site observations",
+  "observation.expressionPrice": "Charged by expression (not shown yet)",
   "observation.connections": "Connections",
   "observation.views": "Connection views",
   "observation.description": "Review public site observations, real history and route impact.",

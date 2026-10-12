@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import type { AvailabilityItem, AvailabilitySeries } from "../api/types";
 import { useI18n } from "../i18n";
 import { Button, Dialog } from "./ui";
@@ -212,15 +211,6 @@ function AvailabilityDetails({ item, onClose }: { item: AvailabilityItem; onClos
           </section>
         ))}
       </div>
-      {item.site_id ? (
-        <Link
-          className="button button-quiet"
-          to={`/channels?view=observations&site=${item.site_id}&model=${encodeURIComponent(item.model)}`}
-          onClick={onClose}
-        >
-          {t("availability.openSite")}
-        </Link>
-      ) : null}
     </Dialog>
   );
 }

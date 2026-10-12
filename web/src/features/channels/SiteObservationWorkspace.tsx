@@ -561,7 +561,15 @@ function ObservationRow({
       />
       <div className="observation-price">
         <span>
-          {formatObservedPrice(item.price)}
+          {item.price.unparsed ? (
+            // A raw billing expression is not a price an operator can read.
+            // Keep it reachable as a tooltip instead of dumping it in the cell.
+            <span className="muted" title={item.price.raw ?? ""}>
+              {t("observation.expressionPrice")}
+            </span>
+          ) : (
+            formatObservedPrice(item.price)
+          )}
           {item.price.unit?.kind === "site_credit" ? ` ${t("billing.credit")}` : ""}
         </span>
         {item.price.mode ? (
