@@ -134,3 +134,46 @@
 
 `audit/evidence/ui-before-*.png` / `ui-after-*.png`：观测页筛选带、表头、连接动作条、计费来源区（经典 + 现代）。
 门禁：web 六项（lint / format:check / audit:entrypoints / tsc / 596 测试 / build）全过。
+
+---
+
+# 第二轮：全部覆盖 + 模型卡密度（2026-10-13 01:2x，操作员第二次反馈）
+
+操作员否掉了「让内容滚到条下面这件事有可见的层次」这个做法（阴影），要求"全部都覆盖住"，
+并指出模型详情页信息密度过高。提交 `74a25fb`（源码）+ `e92c00a`（dist）。
+
+## 1 覆盖：不重叠，而不是把重叠画得好看
+
+- **左栏筛选行**：原来是 sticky 筛选行 + 下方列表一起滚（列表行必然在筛选行下沿被切一半）。
+  现在 `.observation-sites` 是 `flex column + overflow: hidden`，筛选行 `flex: 0 0 auto` 静态占位，
+  `.observation-site-list` 自己 `overflow-y: auto` —— 列表视口从筛选行下面开始，**永远不会有行跑到条下面**。
+  实测 `list.scrollTop=500 / scrollHeight=1938`，筛选行不再是 sticky。
+- **全部阴影删除**：`.observation-site-filters`、`.observation-model.is-header`、
+  `.ops-detail-card.is-compact > .detail-primary-bar` 三处 `box-shadow` 去掉（那是"可见层次"的来源）。
+  条是"不透明底色 + 发丝线"，不靠投影解释内容从下面经过。
+- 连接卡动作条：填充仍覆盖到卡片边界（gap = 1px），无阴影（实测 `barShadow: none`、`barBg = cardBg`）。
+- 移动端（390px）：站点栏仍是横向 chips 滚动条，无横向溢出（`docScrollWidth 380 ≤ 390`）。
+
+## 2 模型详情页：五排 chrome 变三排
+
+同一张卡：**524px → 403px**（1 个成员）、**同一 524px 高度下可见成员 1 个 → 4 个**。
+
+| 原来 | 现在 |
+| --- | --- |
+| head（模型名 + 优先成员）56+14 | 同，但右侧多了可用性 chip；`分组 default` 进 meta 行 |
+| 动作条 80px（含"收费设置"上下各 12px 外边距） | 动作条 56px |
+| **`分组 default` + `—` 独占一行 50px** | 删除，chip 进 head |
+| 路由成员标题 24 + 上 25/下 14 | 24 + 上 16/下 10 |
+| `.models-advanced` 上 8 + 内 12 + 按钮行 38 + 下 10 | 0 + 0（标题即分区标记） |
+| 分组 tabs 单独一行 36 + 下 10 | 与按钮合为一条工具栏（`.member-group-toolbar`） |
+| `一键挂载提供此模型的渠道`（210px，撑到第三行） | `一键挂载`（+ 原文进 tooltip） |
+| 策略折叠 43 + 上下各 15 | 39 + 上下各 12 |
+
+功能一个没删：可用性 chip、分组 tab、添加通道、一键挂载、批量选择、路由模式、收费设置、试调、
+策略折叠都还在卡上，只是位置更省。经典与现代两套主题都实测过。
+
+## 证据
+
+`audit/evidence/ui-after-model-card-1member.png`、`ui-after-model-card-4members.png`、
+`ui-after-obs-rail-split.png`、`ui-after-obs-mobile.png`、`ui-after-conn-card-bottom.png`、
+`ui-after-model-modern.png`。门禁：web 六项全过（596 测试）。
