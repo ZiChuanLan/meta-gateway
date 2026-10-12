@@ -28,6 +28,8 @@ export type RouteDetailHeaderProps = {
   /** A single member is pinned as the only path. */
   singleModePinned: boolean;
   onOpenTry: () => void;
+  /** Opens the versioned billing editor for this route's model. */
+  onOpenBilling: () => void;
   saveRoutingMode: {
     pendingId?: number | string | null;
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -47,6 +49,7 @@ export function RouteDetailHeader({
   memberCount,
   singleModePinned,
   onOpenTry,
+  onOpenBilling,
   saveRoutingMode,
   toggleRoute,
   actions,
@@ -73,6 +76,9 @@ export function RouteDetailHeader({
       <div className="detail-primary-bar">
         <Button icon={<Sparkles size={14} />} onClick={onOpenTry}>
           {t("try.open")}
+        </Button>
+        <Button variant="secondary" className="route-billing-entry" onClick={onOpenBilling}>
+          {t("billing.open")}
         </Button>
         <span className="bar-spacer" />
         <div className="routing-mode-control" title={t("modelsPage.scopeHint")}>

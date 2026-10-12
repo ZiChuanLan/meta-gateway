@@ -102,6 +102,11 @@ it("uses the real unwrapped settings response and clears the leave guard after s
     "/admin/team/settings",
     expect.objectContaining({ method: "PUT" }),
   );
+  // Let the post-save refetch settle: it rewrites the baseline, and a
+  // navigation attempted before that would still look dirty.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
   fireEvent.click(screen.getByRole("link", { name: "leave" }));
   await screen.findByText("Other page");
   expect(confirm).not.toHaveBeenCalled();

@@ -1,7 +1,6 @@
 import { CheckCircle2, Download, FileJson, Search, ShieldAlert, Upload, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
   ImportResult,
@@ -14,16 +13,7 @@ import type {
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
 import { useUnsavedChanges } from "../lib/unsavedChanges";
-import {
-  Button,
-  Dialog,
-  ErrorState,
-  Field,
-  Page,
-  Panel,
-  StatusBadge,
-  Tabs,
-} from "../components/ui";
+import { Button, Dialog, ErrorState, Field, Page, Panel, StatusBadge } from "../components/ui";
 import { useToast } from "../toast";
 import {
   scheduleFromSettings,
@@ -38,19 +28,6 @@ import {
 } from "../lib/aahBackup";
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
-
-/**
- * The three jobs this page does. They used to be one long scroll — the format
- * legend, the WebDAV sync card and both local panels at once — which made the
- * page read as "everything" and put the file picker next to a backup schedule.
- * One task is on screen at a time; `task` in the URL is what makes the choice
- * shareable and survives a reload.
- */
-type ExchangeTask = "import" | "export" | "cloud";
-
-function isExchangeTask(value: string | null): value is ExchangeTask {
-  return value === "import" || value === "export" || value === "cloud";
-}
 
 /** One direction's secret input; typing replaces it, clearing removes it. */
 type WebDAVSecretKey =
@@ -194,13 +171,9 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
   webdavFormRef.current = webdavForm;
   const input = useRef<HTMLInputElement>(null);
   const toast = useToast();
-  const [params, setParams] = useSearchParams();
 
-  const requestedTask = params.get("task");
-  const activeTask: ExchangeTask = isExchangeTask(requestedTask) ? requestedTask : "import";
-
-  // Switching tasks keeps every form mounted, so nothing is thrown away; only a
-  // real page leave needs a prompt.
+  // Every form stays mounted on one page, so nothing is thrown away by a
+  // task switch; only a real page leave needs a prompt.
   const webdavPayloadNow = webdavPayload(webdavForm);
   const webdavDirty =
     webdavBaseline !== null && JSON.stringify(webdavPayloadNow) !== webdavBaseline;
@@ -1320,32 +1293,15 @@ export function Exchange({ embedded = false }: { embedded?: boolean } = {}) {
     </Dialog>
   ) : null;
 
-  const taskItems: Array<{ value: ExchangeTask; label: string }> = [
-    { value: "import", label: t("exchange.task.import") },
-    { value: "export", label: t("exchange.task.export") },
-    { value: "cloud", label: t("exchange.task.cloud") },
-  ];
-
-  const changeTask = (value: string) => {
-    const next = new URLSearchParams(params);
-    next.set("task", value);
-    setParams(next, { replace: true });
-  };
-
+  // One page again: the three concerns stack instead of hiding behind tabs.
+  // Tabs hid how much a task asks of you and forced a click to see the rest.
   const body = (
     <>
-      <div className="exchange-task-tabs">
-        <Tabs items={taskItems} active={activeTask} onChange={changeTask} />
-      </div>
-      <div className="exchange-task-content exchange-task-import" hidden={activeTask !== "import"}>
-        {formatSection}
-        {importPanel}
-      </div>
-      <div className="exchange-task-content exchange-task-export" hidden={activeTask !== "export"}>
+      {formatSection}
+      {webdavSection}
+      <div className="exchange-grid">
         {exportPanel}
-      </div>
-      <div className="exchange-task-content exchange-task-cloud" hidden={activeTask !== "cloud"}>
-        {webdavSection}
+        {importPanel}
       </div>
       {secretWarningDialog}
     </>

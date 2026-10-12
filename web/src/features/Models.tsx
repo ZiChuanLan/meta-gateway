@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FocusEvent } from "react";
+import { BillingRuleDialog } from "./models/BillingRulePanel";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
@@ -190,6 +191,7 @@ function ModelsWorkspace({
   const [member, setMember] = useState<Partial<RouteMember> | null>(null);
   const [removeMember, setRemoveMember] = useState<RouteMember | null>(null);
   const [tryOpen, setTryOpen] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
   // The tools' own panels (capabilities / site probe / unify / unify history /
   // upstream changes) own their open state; this page only opens them.
   const tools = useModelTools();
@@ -865,17 +867,15 @@ function ModelsWorkspace({
       ) : null}
 
       <PageActions>
-        <Button
-          variant="secondary"
-          icon={<Activity size={16} />}
-          onClick={() => setProbeOpen(true)}
-          title={t("modelsPage.probe.actionHint")}
-        >
-          {t("modelsPage.probe.action")}
-        </Button>
         <ActionMenu
           label={t("modelsPage.tools")}
           items={[
+            {
+              key: "probe",
+              label: t("modelsPage.probe.action"),
+              icon: <Activity size={14} />,
+              onSelect: () => setProbeOpen(true),
+            },
             {
               key: "capabilities",
               label: t("workbench.cap.title"),
@@ -980,6 +980,7 @@ function ModelsWorkspace({
                 memberCount: selectedMembers.length,
                 singleModePinned: Boolean(singleModePinned),
                 onOpenTry: () => setTryOpen(true),
+                onOpenBilling: () => setBillingOpen(true),
                 saveRoutingMode,
                 toggleRoute,
                 actions: modelActions(selectedRoute),
@@ -1149,6 +1150,12 @@ function ModelsWorkspace({
             onClose={() => setTryOpen(false)}
           />
         </Dialog>
+      ) : null}
+      {billingOpen && selectedRoute ? (
+        <BillingRuleDialog
+          model={selectedRoute.model_pattern}
+          onClose={() => setBillingOpen(false)}
+        />
       ) : null}
       {bulkDeleteOpen ? (
         <ConfirmDialog

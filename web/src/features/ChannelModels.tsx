@@ -9,7 +9,7 @@ import { useToast } from "../toast";
 import type { Channel, DiscoveredModel, RouteMember, RouteOverview } from "../api/types";
 import { EntityState } from "../components/EntityState";
 import { TelemetryStrip } from "../components/TelemetryStrip";
-import { Button, ConfirmDialog, ErrorState, Page, Panel, StatusBadge } from "../components/ui";
+import { Button, ConfirmDialog, ErrorState, Page, Panel } from "../components/ui";
 import { useAdminMutation } from "../hooks/useAdminMutation";
 import { useI18n } from "../i18n";
 import { useSession } from "../session";
@@ -362,20 +362,6 @@ export function ChannelModelsPanel({
         tone: "success",
         message: t("channels.customModelAdded", { name: trimmed }),
       });
-    },
-    invalidateKeys: [...INVALIDATE],
-  });
-
-  const removeCustom = useAdminMutation({
-    mutationFn: async (input: { routeId: number; memberId: number }) => {
-      await service.deleteMember(input.memberId);
-      const overview = (routeOverviews.data ?? []).find(
-        (entry) => entry.route.id === input.routeId,
-      );
-      const remaining = (overview?.members ?? []).filter((c) => c.member.channel_id !== channelId);
-      if ((overview?.members ?? []).length > 0 && remaining.length === 0) {
-        await service.deleteRoute(input.routeId);
-      }
     },
     invalidateKeys: [...INVALIDATE],
   });
@@ -740,10 +726,6 @@ export function ChannelModelsPanel({
                     {!isCollapsed &&
                       items.map((item) => {
                         const discoveredModel = models.find((m) => m.model_name === item.name);
-                        const isCustom = !discoveredModel;
-                        const custom = isCustom
-                          ? customModels.find((c) => c.name === item.name)
-                          : undefined;
                         const member = memberFor(item.name);
                         const enabled = member ? member.enabled : false;
                         const aliasInfo = aliasFor(item.name);
@@ -840,24 +822,8 @@ export function ChannelModelsPanel({
                                     </Button>
                                   ) : null}
                                 </>
-                              ) : custom ? (
-                                <Button
-                                  variant="quiet"
-                                  className="channel-alias-save"
-                                  icon={<Trash2 size={13} />}
-                                  disabled={removeCustom.isPending}
-                                  onClick={() =>
-                                    removeCustom.mutate({
-                                      routeId: custom.routeId,
-                                      memberId: custom.member.id,
-                                    })
-                                  }
-                                >
-                                  {t("channels.customModelRemove")}
-                                </Button>
                               ) : null}
                             </span>
-                            <StatusBadge value={enabled ? "enabled" : "disabled"} />
                           </li>
                         );
                       })}

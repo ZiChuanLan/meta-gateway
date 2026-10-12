@@ -154,43 +154,35 @@ describe("exchange task workspace", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows only the import task until another one is chosen", async () => {
+  it("puts every task on one page, with the format legend folded", async () => {
     mount();
+    // Import is where the file picker lives, so it is reachable without tabs.
     expect(await screen.findByRole("heading", { name: "Import assets" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Export channels" })).toBeVisible();
+    expect(screen.getByText("Cloud backup sync")).toBeVisible();
     // The format legend is reference material: mounted, folded and closed.
     expect(screen.getByText("What can I import?").closest("details")).not.toHaveAttribute("open");
-    // Export and cloud stay mounted so their state survives, but off the page.
-    expect(
-      screen.getByRole("heading", { name: "Export channels", hidden: true }),
-    ).not.toBeVisible();
-    expect(screen.getByText("Cloud backup sync")).not.toBeVisible();
   });
 
-  it("opens a task from the URL and keeps the WebDAV draft across switches", async () => {
-    const { router } = mount({ initialEntries: ["/exchange?task=cloud"] });
+  it("keeps the WebDAV draft without persisting on the way", async () => {
+    mount();
     const field = downloadUrlField();
     await waitFor(() => expect(field).toHaveValue("https://stored.example/dav/"));
     fireEvent.change(field, { target: { value: "https://typed.example/dav/" } });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Import" }));
-    expect(screen.getByRole("tab", { name: "Import" })).toHaveAttribute("aria-selected", "true");
-    expect(router.state.location.search).toBe("?task=import");
-    // Switching tasks is not a save: the form is never persisted on the way.
+    // Scrolling past the other panels is not a save: nothing is persisted.
     expect(putBodies).toHaveLength(0);
-
-    fireEvent.click(screen.getByRole("tab", { name: "Cloud sync" }));
-    // The cloud form never unmounted, so the typed value is still there.
+    // The form never unmounts, so the typed value is still there.
     expect(downloadUrlField()).toHaveValue("https://typed.example/dav/");
   });
 
-  it("keeps the export channel selection across task switches", async () => {
-    mount({ initialEntries: ["/exchange?task=export"] });
+  it("keeps the export channel selection while the rest of the page is in view", async () => {
+    mount();
     const alpha = await screen.findByRole("checkbox", { name: /Alpha site/ });
     fireEvent.click(alpha);
     expect(alpha).toBeChecked();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Import" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Export" }));
+    // Touching another panel does not remount the export selection.
+    fireEvent.change(downloadUrlField(), { target: { value: "https://typed.example/dav/" } });
     expect(screen.getByRole("checkbox", { name: /Alpha site/ })).toBeChecked();
   });
 
