@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/store"
+	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -181,4 +183,244 @@ func TestMemberHistogramUsesOnlyAccountRequests(t *testing.T) {
 	if _, err := e.db.ProxyLog.MemberLatencyHistogram(0, 10, nil, nil); err == nil {
 		t.Fatal("missing scope allowed")
 	}
+}
+
+func pricePtr(value float64) *float64 { return &value }
+
+// A batch must answer for every requested model without failing the whole call
+// on one denied or missing name, dedupe repeats, and keep an unpriced candidate
+// distinct from a layer that explicitly prices at zero.
+func TestModelPricingBatchDedupesAndDistinguishesUnpricedFromFree(t *testing.T) {
+	e := newTeamTestEnv(t)
+	channel, err := e.db.Channel.Create(&domain.Channel{Name: "batch-private-channel", BaseURL: "https://batch-private.example", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routeFor := func(pattern string) int64 {
+		t.Helper()
+		route, err := e.db.Route.Create(&domain.Route{ModelPattern: pattern, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return route
+	}
+	memberOn := func(route int64, group string) int64 {
+		t.Helper()
+		id, err := e.db.RouteMember.Create(&domain.RouteMember{RouteID: route, ChannelID: channel, GroupName: group, Enabled: true, Weight: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	// One priced candidate.
+	priced := memberOn(routeFor("batch-priced"), "default")
+	if _, err = e.db.Exec(`UPDATE route_members SET price_prompt_per_1k=2 WHERE id=?`, priced); err != nil {
+		t.Fatal(err)
+	}
+	// A free rule states a price of zero: priced, not unpriced.
+	freeMember := memberOn(routeFor("batch-free"), "default")
+	if _, err = e.db.SaveBillingRule("member", strconv.FormatInt(freeMember, 10), domain.BillingRule{State: "free", Timezone: "UTC"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	// Candidates exist but no layer prices them.
+	memberOn(routeFor("batch-unpriced"), "default")
+	// One priced and one unpriced candidate: the quote is partial.
+	partialRoute := routeFor("batch-partial")
+	partial := memberOn(partialRoute, "default")
+	if _, err = e.db.Exec(`UPDATE route_members SET price_prompt_per_1k=3 WHERE id=?`, partial); err != nil {
+		t.Fatal(err)
+	}
+	memberOn(partialRoute, "other")
+
+	raw := e.admin("GET", "/admin/model-pricing/batch?input_tokens=1000&model=batch-priced&model=batch-priced&model=batch-free&model=batch-unpriced&model=batch-partial&model=batch-missing", nil, 200)
+	var batch modelPricingBatch
+	if err = json.Unmarshal(raw, &batch); err != nil {
+		t.Fatal(err)
+	}
+	// The duplicate name is asked for once, and only the unrouted model is
+	// unavailable — the batch echoes back names the caller sent.
+	if len(batch.Items) != 4 {
+		t.Fatalf("batch items: %+v", batch)
+	}
+	if len(batch.Unavailable) != 1 || batch.Unavailable[0] != "batch-missing" {
+		t.Fatalf("batch unavailable: %+v", batch.Unavailable)
+	}
+	for _, item := range batch.Items {
+		if item.Model == "batch-missing" {
+			t.Fatal("unrouted model resolved")
+		}
+	}
+	byModel := map[string]*modelPriceView{}
+	for _, item := range batch.Items {
+		byModel[item.Model] = item
+	}
+	for model, want := range map[string]struct {
+		status     string
+		candidates int
+		priced     int
+	}{
+		"batch-priced":   {"priced", 1, 1},
+		"batch-free":     {"priced", 1, 1},
+		"batch-partial":  {"partially_priced", 2, 1},
+		"batch-unpriced": {"unpriced", 1, 0},
+	} {
+		got, ok := byModel[model]
+		if !ok {
+			t.Fatalf("%s missing from batch", model)
+		}
+		if got.Status != want.status || got.Candidates != want.candidates || got.PricedCandidates != want.priced {
+			t.Fatalf("%s status: %+v", model, got)
+		}
+	}
+	// The unpriced view keeps its zero range (Wire compatibility) but the free
+	// layer must not have invented a charge either.
+	if free := byModel["batch-free"]; free.Input.Min != 0 || free.Input.Max != 0 || free.Output.Max != 0 {
+		t.Fatalf("free layer invented a charge: %+v", free)
+	}
+	if unknown := byModel["batch-unpriced"]; unknown.Input.Min != 0 || unknown.Input.Max != 0 {
+		t.Fatalf("unpriced ranges must stay zero: %+v", unknown)
+	}
+	for _, secret := range []string{"batch-private-channel", "batch-private.example", "channel_id", "member_id", "quote_id"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("private detail leaked: %s", secret)
+		}
+	}
+}
+
+func TestModelPricingCacheKnownTracksDeclarations(t *testing.T) {
+	e := newTeamTestEnv(t)
+	channel, err := e.db.Channel.Create(&domain.Channel{Name: "cache-channel", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberOn := func(pattern string) int64 {
+		t.Helper()
+		route, err := e.db.Route.Create(&domain.Route{ModelPattern: pattern, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := e.db.RouteMember.Create(&domain.RouteMember{RouteID: route, ChannelID: channel, Enabled: true, Weight: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	quote := func(model string) modelPriceView {
+		t.Helper()
+		var view modelPriceView
+		if err := json.Unmarshal(e.admin("GET", "/admin/model-pricing?model="+model, nil, 200), &view); err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+
+	// A layer with no cache column falls back to the input price, which is not
+	// a declared cache price even though the range is populated.
+	fallback := memberOn("cache-fallback")
+	if _, err = e.db.Exec(`UPDATE route_members SET price_prompt_per_1k=4 WHERE id=?`, fallback); err != nil {
+		t.Fatal(err)
+	}
+	view := quote("cache-fallback")
+	if view.CacheKnown || view.CacheWriteKnown {
+		t.Fatalf("input-price cache fallback claimed as known: %+v", view)
+	}
+	if view.Cache.Min != 4 || view.Cache.Max != 4 {
+		t.Fatalf("fallback range changed unexpectedly: %+v", view)
+	}
+
+	// An explicit rule that declares a cache-read price is known; cache write
+	// stays unknown until it is declared too.
+	declared := memberOn("cache-declared")
+	if _, err = e.db.SaveBillingRule("member", strconv.FormatInt(declared, 10), domain.BillingRule{State: "explicit", Mode: "token", Input: pricePtr(1), Output: pricePtr(2), CacheRead: pricePtr(0.5), Timezone: "UTC"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if view = quote("cache-declared"); !view.CacheKnown || view.CacheWriteKnown {
+		t.Fatalf("declared cache read: %+v", view)
+	}
+
+	written := memberOn("cache-written")
+	if _, err = e.db.SaveBillingRule("member", strconv.FormatInt(written, 10), domain.BillingRule{State: "explicit", Mode: "token", Input: pricePtr(1), Output: pricePtr(2), CacheRead: pricePtr(0.5), CacheWrite: pricePtr(0.25), Timezone: "UTC"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if view = quote("cache-written"); !view.CacheKnown || !view.CacheWriteKnown {
+		t.Fatalf("declared cache write: %+v", view)
+	}
+
+	// A free layer is a price of zero, not an unknown one.
+	free := memberOn("cache-free")
+	if _, err = e.db.SaveBillingRule("member", strconv.FormatInt(free, 10), domain.BillingRule{State: "free", Timezone: "UTC"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if view = quote("cache-free"); !view.CacheKnown || !view.CacheWriteKnown || view.Status != "priced" {
+		t.Fatalf("free layer: %+v", view)
+	}
+}
+
+func TestMemberModelPricingBatchHonorsPolicyGrants(t *testing.T) {
+	e := newTeamTestEnv(t)
+	e.enable()
+	route, err := e.db.Route.Create(&domain.Route{ModelPattern: "grant-model", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := e.db.Channel.Create(&domain.Channel{Name: "grant-private-channel", BaseURL: "https://grant-private.example", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	granted, err := e.db.RouteMember.Create(&domain.RouteMember{RouteID: route, ChannelID: channel, Enabled: true, Weight: 100, PricePromptPer1k: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = e.db.RouteMember.Create(&domain.RouteMember{RouteID: route, ChannelID: channel, GroupName: "other", Enabled: true, Weight: 100, PricePromptPer1k: 9}); err != nil {
+		t.Fatal(err)
+	}
+	e.admin("PUT", "/admin/team/policies/1", TeamPolicy{ID: 1, Name: "Limited", AllModels: true, MemberIDs: []int64{granted}, MaxKeys: 2, RPM: 60}, 200)
+	alice := e.member("batch-alice", "member")
+
+	// The operator sees both candidates; the member only the granted one, and
+	// the member's batch still answers 200 when one name is denied.
+	var adminBatch modelPricingBatch
+	if err = json.Unmarshal(e.admin("GET", "/admin/model-pricing/batch?model=grant-model", nil, 200), &adminBatch); err != nil {
+		t.Fatal(err)
+	}
+	if len(adminBatch.Items) != 1 || adminBatch.Items[0].Candidates != 2 || adminBatch.Items[0].Input.Min != 1 || adminBatch.Items[0].Input.Max != 9 {
+		t.Fatalf("admin batch: %+v", adminBatch)
+	}
+
+	raw := alice.request("GET", "/me/model-pricing/batch?model=grant-model&model=hidden-model", nil, 200)
+	var memberBatch modelPricingBatch
+	if err = json.Unmarshal(raw, &memberBatch); err != nil {
+		t.Fatal(err)
+	}
+	if len(memberBatch.Items) != 1 || memberBatch.Items[0].Candidates != 1 || memberBatch.Items[0].Input.Min != 1 || memberBatch.Items[0].Input.Max != 1 {
+		t.Fatalf("member batch grants: %+v", memberBatch)
+	}
+	if len(memberBatch.Unavailable) != 1 || memberBatch.Unavailable[0] != "hidden-model" {
+		t.Fatalf("denied model leaked or failed the batch: %+v", memberBatch.Unavailable)
+	}
+	for _, secret := range []string{"grant-private-channel", "grant-private.example", "channel_id", "member_id", "quote_id"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("private detail leaked: %s", secret)
+		}
+	}
+
+	// Neither surface answers anonymously.
+	if code, _, _ := e.call(http.DefaultClient, "GET", "/admin/model-pricing/batch?model=grant-model", nil, "", ""); code != 401 {
+		t.Fatalf("anonymous admin batch: %d", code)
+	}
+	anon := e.browser()
+	if code, _, _ := e.call(anon.client, "GET", "/me/model-pricing/batch?model=grant-model", nil, "", anon.csrf); code != 401 {
+		t.Fatalf("anonymous member batch: %d", code)
+	}
+
+	// Parameter validation matches the single endpoint.
+	alice.request("GET", "/me/model-pricing/batch", nil, 400)
+	alice.request("GET", "/me/model-pricing/batch?model=grant-*", nil, 400)
+	alice.request("GET", "/me/model-pricing/batch?model=grant-model&input_tokens=-1", nil, 400)
+	over := "/me/model-pricing/batch?"
+	for i := 0; i <= maxBatchModels; i++ {
+		over += "model=m" + strconv.Itoa(i) + "&"
+	}
+	alice.request("GET", over, nil, 400)
 }

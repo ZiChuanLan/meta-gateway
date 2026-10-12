@@ -78,3 +78,81 @@ it("does not save an empty or negative price as zero but accepts explicit zero",
   expect(valid).toHaveBeenLastCalledWith(true);
   expect(change).toHaveBeenLastCalledWith({ price_prompt_per_1k: 0 });
 });
+
+it("renders a page batch without fetching the model on its own", async () => {
+  const calls = vi.fn();
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <I18nProvider>
+        <ModelPriceSummary
+          model="gpt-test"
+          scope="member"
+          request={calls as TeamRequest}
+          batch={{
+            data: { ...quote, status: "priced", priced_candidates: 2 },
+            pending: false,
+            retry: vi.fn(),
+          }}
+        />
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("$1.00 – $2.00")).toBeInTheDocument();
+  expect(screen.getByText("$3.00")).toBeInTheDocument();
+  // The batch owns the request: the per-model transport is never touched.
+  expect(calls).not.toHaveBeenCalled();
+});
+
+it("shows an unpriced model as unavailable, never as free", async () => {
+  const calls = vi.fn();
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <I18nProvider>
+        <ModelPriceSummary
+          model="gpt-test"
+          scope="member"
+          request={calls as TeamRequest}
+          batch={{
+            data: {
+              ...quote,
+              status: "unpriced",
+              priced_candidates: 0,
+              input_per_1k: { min: 0, max: 0 },
+              output_per_1k: { min: 0, max: 0 },
+              per_request: { min: 0, max: 0 },
+            },
+            pending: false,
+            retry: vi.fn(),
+          }}
+        />
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Pricing is unavailable. Please retry.")).toBeInTheDocument();
+  expect(screen.queryByText("$0.00")).not.toBeInTheDocument();
+  expect(calls).not.toHaveBeenCalled();
+});
+
+it("keeps a batch-resolved model with no quote unavailable", async () => {
+  const calls = vi.fn();
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <I18nProvider>
+        <ModelPriceSummary
+          model="gpt-test"
+          scope="member"
+          request={calls as TeamRequest}
+          batch={{ pending: false, retry: vi.fn() }}
+        />
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Pricing is unavailable. Please retry.")).toBeInTheDocument();
+  expect(calls).not.toHaveBeenCalled();
+});

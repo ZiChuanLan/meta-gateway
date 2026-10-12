@@ -1,6 +1,10 @@
 import { ModelFamilyFilters } from "../features/models/ModelFamilyFilters";
 import { ModelWorkspaceLayout } from "../features/models/ModelWorkspaceLayout";
-import { ModelPriceSummary } from "../features/models/ModelPriceSummary";
+import {
+  ModelPriceSummary,
+  type ModelPriceBatchResponse,
+  type ModelPriceQuote,
+} from "../features/models/ModelPriceSummary";
 import { ModelFacts } from "../features/models/ModelFacts";
 import { ModelDirectoryToolbar } from "../components/ModelDirectoryToolbar";
 import { useI18n } from "../i18n";
@@ -31,6 +35,38 @@ import { RouteOrderDialog } from "./RouteOrderDialog";
 
 /** The orderings a member picks between; the default is the catalogue's own. */
 type ModelSort = "default" | "usage" | "latency" | "recent";
+
+/** The gateway caps one reference-price batch at this many models. */
+const MODEL_PRICE_BATCH_LIMIT = 100;
+
+/**
+ * One reference-price batch per page, never one request per card. A page larger
+ * than the endpoint's cap is split and merged; a name the batch reports
+ * unavailable is simply absent from the map, which is what the card renders.
+ */
+async function fetchModelPrices(
+  models: string[],
+  signal: AbortSignal,
+): Promise<Map<string, ModelPriceQuote>> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < models.length; i += MODEL_PRICE_BATCH_LIMIT) {
+    chunks.push(models.slice(i, i + MODEL_PRICE_BATCH_LIMIT));
+  }
+  const responses = await Promise.all(
+    chunks.map((chunk) => {
+      const params = new URLSearchParams({ input_tokens: "0" });
+      for (const name of chunk) params.append("model", name);
+      return accountRequest<ModelPriceBatchResponse>(`/me/model-pricing/batch?${params}`, {
+        signal,
+      });
+    }),
+  );
+  const quotes = new Map<string, ModelPriceQuote>();
+  for (const response of responses) {
+    for (const item of response.items ?? []) quotes.set(item.model, item);
+  }
+  return quotes;
+}
 
 /**
  * The model catalogue, as this account may use it — and, when the owner allows
@@ -158,6 +194,21 @@ export function ModelsWorkspace({
     if (span === 168) return ui("modelsPage.stats.window7d");
     return ui("modelsPage.stats.windowRange");
   }, [stats.data, ui]);
+  // The current page's own models, deduped and free of matchers (a wildcard is
+  // not a model name, so nothing prices it).
+  const priceNames = useMemo(
+    () =>
+      [...new Set(pagination.pageItems.map((model) => model.name))].filter(
+        (name) => !/[*?]/.test(name),
+      ),
+    [pagination.pageItems],
+  );
+  const priceBatch = useQuery({
+    queryKey: ["user", userID, "model-pricing-batch", priceNames, 0],
+    queryFn: ({ signal }) => fetchModelPrices(priceNames, signal),
+    enabled: priceNames.length > 0,
+    staleTime: 60000,
+  });
 
   return (
     <Page
@@ -377,6 +428,12 @@ export function ModelsWorkspace({
                               model={model.name}
                               scope="member"
                               request={accountRequest}
+                              batch={{
+                                data: priceBatch.data?.get(model.name),
+                                pending: priceBatch.isPending,
+                                error: priceBatch.error,
+                                retry: () => void priceBatch.refetch(),
+                              }}
                             />
                           ) : null
                         }

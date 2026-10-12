@@ -411,6 +411,7 @@ func (h *TeamHandler) RegisterPublic(r chi.Router) {
 		me.Get("/requests", h.myRequests)
 		me.Get("/requests/latency-histogram", h.myLatencyHistogram)
 		me.Get("/model-pricing", h.myModelPricing)
+		me.Get("/model-pricing/batch", h.myModelPricingBatch)
 		// The member's own overview: the same aggregates the console reads,
 		// scoped to this account (see team_usage.go).
 		// Money display settings: a member's console renders the same amounts
