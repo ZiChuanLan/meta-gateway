@@ -966,13 +966,13 @@ func (s *Service) financeItemForChannel(channelID int64, key financeGroupKey, fa
 		Quotes:        facts.quotes,
 	}
 	if facts.pricingFailed {
-		if prev, ok := s.previousItem(channelID); ok {
+		if prev, ok := s.previousItem(channelID); ok && prev.AccountID == key.credentialID && prev.SiteID == key.siteID && prev.UpstreamGroup == key.group {
 			item.Prices = prev.Prices
 			item.Quotes = prev.Quotes
 		}
 	}
 	if facts.failed {
-		if prev, ok := s.previousItem(channelID); ok {
+		if prev, ok := s.previousItem(channelID); ok && prev.AccountID == key.credentialID && prev.SiteID == key.siteID && prev.UpstreamGroup == key.group {
 			item.Balance = prev.Balance
 			item.BalanceKnown = prev.BalanceKnown
 			item.QuotaTotal = prev.QuotaTotal

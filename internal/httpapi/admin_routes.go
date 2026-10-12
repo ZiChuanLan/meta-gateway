@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -345,6 +346,15 @@ func (h *AdminHandler) updateRouteMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if fields["price_tiers"] || fields["price_schedule"] || fields["price_prompt_per_1k"] || fields["price_completion_per_1k"] || fields["price_cache_per_1k"] || fields["price_per_request"] {
+		rule, err := h.db.BillingRule("member", strconv.FormatInt(id, 10))
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		if rule != nil {
+			writeError(w, 409, "versioned billing rule exists; use /admin/billing-rule")
+			return
+		}
 		if err := validateMemberPricing(&rm); err != nil {
 			writeError(w, 400, err.Error())
 			return

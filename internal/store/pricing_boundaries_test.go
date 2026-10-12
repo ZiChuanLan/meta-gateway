@@ -118,3 +118,51 @@ func TestBillingRuleConcurrentCAS(t *testing.T) {
 		t.Fatalf("CAS successes=%d conflicts=%d", ok, conflicts)
 	}
 }
+
+func TestQuoteCopyRejectsAnotherAccountAtTheSameSite(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	site, err := db.Site.Create(&domain.Site{Name: "site", BaseURL: "https://site.example", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := db.Credential.Create(&domain.Credential{SiteID: site, Kind: "access_token", Status: domain.StatusEnabled, SecretEnc: []byte("encrypted-fixture")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := db.Credential.Create(&domain.Credential{SiteID: site, Kind: "access_token", Status: domain.StatusEnabled, SecretEnc: []byte("encrypted-other")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := db.Channel.Create(&domain.Channel{Name: "channel", SiteID: &site, CredentialID: &account, Status: domain.StatusEnabled, GroupName: "default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := db.Route.Create(&domain.Route{ModelPattern: "m", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := db.RouteMember.Create(&domain.RouteMember{RouteID: route, ChannelID: channel, Enabled: true, Weight: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := domain.PriceQuoteSnapshot{ScopeKey: "account:m", Model: "m", Purpose: "upstream", Source: "site_account", SiteID: site, AccountID: other, UpstreamGroup: "default", Unit: domain.QuoteUnit{Kind: "site_credit", Code: "credit:site/1"}, Status: "calculable", Values: domain.QuoteValues{Mode: "token", Input: rate(2), Output: rate(3)}}
+	id, err := db.SavePriceQuote(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.CopyQuoteRule("member", strconv.FormatInt(member, 10), id, 0, rate(1)); err == nil {
+		t.Fatal("another account's quote was accepted")
+	}
+	q.AccountID = account
+	id, err = db.SavePriceQuote(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.CopyQuoteRule("member", strconv.FormatInt(member, 10), id, 0, rate(1)); err != nil {
+		t.Fatal(err)
+	}
+}

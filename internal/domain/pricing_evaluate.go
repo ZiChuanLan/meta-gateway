@@ -28,7 +28,7 @@ func (l PriceLayer) Rates(input int, at time.Time) BillingRates {
 	if l.State == "free" || l.State == "inherit" {
 		a, b, c, d = 0, 0, 0, 0
 	}
-	if !l.CachePresent && c <= 0 {
+	if l.State != "explicit" && !l.CachePresent && c <= 0 {
 		c = a
 	}
 	cw := a

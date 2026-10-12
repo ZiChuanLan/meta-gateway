@@ -145,3 +145,54 @@ func TestAccountingExplicitRuleSnapshotAndEvidence(t *testing.T) {
 		t.Fatalf("free=%v %s", cost, status)
 	}
 }
+
+func TestAccountingUnpricedSnapshotDoesNotFollowLaterPrice(t *testing.T) {
+	svc, db, req, ch := accountingFixture(t, domain.ModelMetadata{ModelName: "m"})
+	req.BillingSnapshot = svc.freezeBilling(req)
+	if req.BillingSnapshot == nil {
+		t.Fatal("unpriced snapshot missing")
+	}
+	fee := .05
+	if _, err := db.SaveBillingRule("model", "m", domain.BillingRule{State: "explicit", Mode: "request", PerRequest: &fee, Timezone: "UTC", Source: "manual"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	svc.RecordUsage(req, ch, 200, usage.Tokens{PromptTokens: 100, TotalTokens: 100})
+	var cost float64
+	var status string
+	if err := db.QueryRow("SELECT cost,billing_status FROM usage_records WHERE request_id=?", req.RequestID).Scan(&cost, &status); err != nil {
+		t.Fatal(err)
+	}
+	if cost != 0 || status != "unpriced" {
+		t.Fatalf("late rule repriced request: %v %s", cost, status)
+	}
+}
+func TestAccountingExplicitTierFreeCacheAndFixedFee(t *testing.T) {
+	svc, db, req, ch := accountingFixture(t, domain.ModelMetadata{ModelName: "m"})
+	write := 1.0
+	r := domain.BillingRule{State: "explicit", Mode: "token", Tiers: []domain.PriceTier{{Prompt: 1, Completion: 2, Cache: 0}}, CacheWrite: &write, Timezone: "UTC", Source: "manual"}
+	if _, err := db.SaveBillingRule("model", "m", r, 0); err != nil {
+		t.Fatal(err)
+	}
+	svc.RecordUsage(req, ch, 200, usage.Tokens{PromptTokens: 1000, CompletionTokens: 100, TotalTokens: 1100, CacheReadTokens: 800, PromptIncludesCacheRead: true})
+	var cost float64
+	var status string
+	if err := db.QueryRow("SELECT cost,billing_status FROM usage_records WHERE request_id=?", req.RequestID).Scan(&cost, &status); err != nil {
+		t.Fatal(err)
+	}
+	if cost != .4 || status != "settled" {
+		t.Fatalf("free cache=%v %s", cost, status)
+	}
+	fee := .05
+	r = domain.BillingRule{State: "explicit", Mode: "request", PerRequest: &fee, Timezone: "UTC", Source: "manual"}
+	if _, err := db.SaveBillingRule("model", "m", r, 1); err != nil {
+		t.Fatal(err)
+	}
+	req.RequestID = "fixed-with-cache"
+	svc.RecordUsage(req, ch, 200, usage.Tokens{PromptTokens: 1000, TotalTokens: 1000, CacheReadTokens: 800, PromptIncludesCacheRead: true})
+	if err := db.QueryRow("SELECT cost,billing_status FROM usage_records WHERE request_id=?", req.RequestID).Scan(&cost, &status); err != nil {
+		t.Fatal(err)
+	}
+	if cost != .05 || status != "settled" {
+		t.Fatalf("fixed cache=%v %s", cost, status)
+	}
+}

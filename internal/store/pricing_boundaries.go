@@ -361,11 +361,11 @@ func validateQuoteTarget(ex sqlExecutor, scope, key string, q domain.PriceQuoteS
 		return fmt.Errorf("quote group mismatch")
 	}
 	if q.AccountID > 0 {
-		var accountSite int64
-		if err = ex.QueryRow("SELECT site_id FROM credentials WHERE id=?", q.AccountID).Scan(&accountSite); err != nil {
+		var accountID int64
+		if err = ex.QueryRow(`SELECT COALESCE((SELECT a.id FROM credentials a WHERE a.id=c.credential_id AND a.site_id=c.site_id AND lower(trim(a.kind)) IN ('access_token','session') AND a.status='enabled' AND (length(a.secret_enc)>0 OR length(a.cookie_enc)>0)),(SELECT a.id FROM credentials a WHERE a.site_id=c.site_id AND lower(trim(a.kind)) IN ('access_token','session') AND a.status='enabled' AND (length(a.secret_enc)>0 OR length(a.cookie_enc)>0) ORDER BY a.id LIMIT 1),0) FROM route_members rm JOIN channels c ON c.id=rm.channel_id WHERE rm.id=?`, key).Scan(&accountID); err != nil {
 			return err
 		}
-		if accountSite != siteID {
+		if accountID != q.AccountID {
 			return fmt.Errorf("quote account mismatch")
 		}
 	}

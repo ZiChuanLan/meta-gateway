@@ -124,6 +124,17 @@ func (h *AdminHandler) upsertModelMetadata(w http.ResponseWriter, r *http.Reques
 		writeStoreError(w, err)
 		return
 	}
+	if req.PricePrompt != nil || req.PriceCompletion != nil || req.PriceCache != nil || req.PricePerRequest != nil || req.PriceTiers != nil || req.PriceSchedule != nil {
+		rule, err := h.db.BillingRule("model", name)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		if rule != nil {
+			writeError(w, 409, "versioned billing rule exists; use /admin/billing-rule")
+			return
+		}
+	}
 	meta := domain.ModelMetadata{ModelName: name}
 	if existing != nil {
 		meta = *existing

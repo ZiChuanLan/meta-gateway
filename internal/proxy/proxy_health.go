@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-		"net/http"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -343,7 +343,11 @@ func (s *Service) billingDecision(req Request, tokens usage.Tokens) (float64, st
 	if s.db == nil {
 		return 0, "calculation_error", ""
 	}
-	layer, priced := s.priceLayer(req)
+	var layer domain.PriceLayer
+	var priced bool
+	if req.BillingSnapshot == nil {
+		layer, priced = s.priceLayer(req)
+	}
 	ratio, at := 1.0, time.Now()
 	if req.BillingSnapshot != nil {
 		layer, ratio, at = req.BillingSnapshot.Layer, req.BillingSnapshot.Ratio, req.BillingSnapshot.At
@@ -379,8 +383,8 @@ func (s *Service) billingDecision(req Request, tokens usage.Tokens) (float64, st
 // Explicit rules freeze when the serving member is chosen. Legacy rules keep
 // their historical finish-time behavior until the operator replaces them.
 func (s *Service) freezeBilling(req Request) *BillingSnapshot {
-	layer, priced := s.priceLayer(req)
-	if !priced || layer.State == "legacy" {
+	layer, _ := s.priceLayer(req)
+	if layer.State == "legacy" {
 		return nil
 	}
 	ratio := 1.0
