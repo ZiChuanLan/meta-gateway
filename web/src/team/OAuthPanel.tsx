@@ -1,7 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, ErrorState, Field, Panel } from "../components/ui";
+import { useUnsavedChanges } from "../lib/unsavedChanges";
 import { teamError, type TeamText } from "./text";
 import type { OAuthSettings, Policy, TeamRequest } from "./types";
+
+/**
+ * Exactly the fields `save` sends. "Unsaved" is defined by this shape, so the
+ * dirty flag can never disagree with what the next PUT would change: a blank
+ * secret (the server keeps the stored one) is not an edit, and a save that
+ * succeeds returns this payload to clean in one step.
+ */
+function oauthPayload(settings: OAuthSettings, secrets: Record<string, string>) {
+  return {
+    auto_register: settings.auto_register,
+    default_policy_id: settings.default_policy_id,
+    providers: settings.providers.map((provider) => ({
+      id: provider.id,
+      enabled: provider.enabled,
+      client_id: provider.client_id,
+      client_secret: secrets[provider.id] ?? "",
+      authorize_url: provider.authorize_url,
+      token_url: provider.token_url,
+      userinfo_url: provider.userinfo_url,
+      scopes: provider.scopes,
+    })),
+  };
+}
 
 /**
  * Sign-in providers: which third parties may authenticate a member, and what
@@ -28,17 +52,25 @@ export function OAuthPanel({
   t: TeamText;
 }) {
   const [draft, setDraft] = useState<OAuthSettings | null>(null);
+  // The last server-confirmed document; dirty means the draft drifted from it.
+  const [baseline, setBaseline] = useState<OAuthSettings | null>(null);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState("");
   const [copied, setCopied] = useState("");
+  // A document that lands while the operator is mid-edit must not overwrite
+  // their input; only the first payload — or one arriving while nothing is
+  // unsaved — is adopted.
+  const editedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
     void request<OAuthSettings>("/admin/team/oauth")
       .then((data) => {
-        if (active) setDraft(data);
+        if (!active || editedRef.current) return;
+        setDraft(data);
+        setBaseline(data);
       })
       .catch((e) => {
         if (active) setError(e);
@@ -47,6 +79,15 @@ export function OAuthPanel({
       active = false;
     };
   }, [request]);
+
+  const dirty =
+    draft !== null &&
+    baseline !== null &&
+    JSON.stringify(oauthPayload(draft, secrets)) !== JSON.stringify(oauthPayload(baseline, {}));
+  editedRef.current = dirty;
+  // Leaving this board — through the sidebar, the command palette or any other
+  // in-app move — must not throw the half-filled form away without a word.
+  useUnsavedChanges(dirty);
 
   if (error && !draft) {
     return <ErrorState error={error} />;
@@ -69,23 +110,10 @@ export function OAuthPanel({
     try {
       const result = await request<OAuthSettings>("/admin/team/oauth", {
         method: "PUT",
-        body: JSON.stringify({
-          auto_register: draft.auto_register,
-          default_policy_id: draft.default_policy_id,
-          providers: draft.providers.map((item) => ({
-            id: item.id,
-            enabled: item.enabled,
-            client_id: item.client_id,
-            // Left blank on purpose: the server keeps the stored secret.
-            client_secret: secrets[item.id] ?? "",
-            authorize_url: item.authorize_url,
-            token_url: item.token_url,
-            userinfo_url: item.userinfo_url,
-            scopes: item.scopes,
-          })),
-        }),
+        body: JSON.stringify(oauthPayload(draft, secrets)),
       });
       setDraft(result);
+      setBaseline(result);
       setSecrets({});
       setNotice(t("success"));
     } catch (e) {

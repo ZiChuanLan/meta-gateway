@@ -8,6 +8,7 @@ import { ToastProvider } from "./toast";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installPreloadRecovery } from "./lib/preloadRecovery";
+import { UnsavedChangesBoundary } from "./lib/unsavedChanges";
 import "./styles.css";
 import "./themes/modern/theme.css";
 import "./themes/classic/theme.css";
@@ -43,9 +44,14 @@ createRoot(document.getElementById("root")!).render(
         <ToastProvider>
           <SessionProvider>
             <BrowserRouter basename="/console">
-              <ErrorBoundary>
-                <App />
-              </ErrorBoundary>
+              {/* Inside the router, above the app: it wraps the router's
+                  navigator so an in-app move cannot drop a draft the operator
+                  never saved. See lib/unsavedChanges.ts. */}
+              <UnsavedChangesBoundary>
+                <ErrorBoundary>
+                  <App />
+                </ErrorBoundary>
+              </UnsavedChangesBoundary>
             </BrowserRouter>
           </SessionProvider>
         </ToastProvider>
