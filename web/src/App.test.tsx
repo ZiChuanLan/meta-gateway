@@ -8,11 +8,12 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, RouterProvider, createMemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ENTRANCE_CHARGE_MS, ENTRANCE_REVEAL_MS } from "./lib/entranceMotion";
 import { I18nProvider } from "./i18n";
+import { UnsavedChangesBoundary } from "./lib/RouterBoundary";
 import { SessionProvider } from "./session";
 import { ToastProvider } from "./toast";
 
@@ -46,6 +47,46 @@ function renderApp(initialEntries: string[] = ["/"]) {
 
 /** Mirrors `basename` in main.tsx — the console is served under /console. */
 const BASENAME = "/console";
+
+/**
+ * The console under the shape main.tsx ships: one data router whose splat route
+ * carries the unsaved-changes guard, with App's own <Routes> underneath.
+ * `renderApp` keeps the declarative router the rest of this file was written
+ * against, so one test still exercises the real production router.
+ */
+function renderDataRouterApp(initialEntries: string[] = ["/"]) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const router = createMemoryRouter(
+    [
+      {
+        path: "*",
+        element: (
+          <UnsavedChangesBoundary>
+            <App />
+            <LocationProbe />
+          </UnsavedChangesBoundary>
+        ),
+      },
+    ],
+    {
+      basename: BASENAME,
+      initialEntries: initialEntries.map((entry) => `${BASENAME}${entry}`),
+    },
+  );
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <ToastProvider>
+          <SessionProvider>
+            <RouterProvider router={router} />
+          </SessionProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
+}
 
 // The shell mounts every page through a dynamic import, so the first assertion
 // after a render waits on a chunk rather than on the app. Testing Library's 1s
@@ -505,6 +546,24 @@ describe("channel-first shell", () => {
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Runtime" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Backups" })).toBeInTheDocument();
+  });
+
+  it("routes the console on the data-router shape main.tsx ships", async () => {
+    localStorage.setItem("meta-gateway.admin-token", "nav-token");
+    vi.stubGlobal("fetch", stubAdminFetch());
+
+    renderDataRouterApp(["/models"]);
+    expect(await screen.findByRole("heading", { level: 1, name: "Models" })).toBeInTheDocument();
+
+    // A push through the shell's own nav.
+    fireEvent.click(screen.getByRole("link", { name: "Logs" }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/logs"));
+    expect(await screen.findByRole("heading", { name: "Logs" })).toBeInTheDocument();
+
+    // A redirect App's own <Routes> performs, under the data router's splat.
+    cleanup();
+    renderDataRouterApp(["/account"]);
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/settings"));
   });
 
   it("uses the short safe path when reduced motion is requested", async () => {
