@@ -1,0 +1,54 @@
+/*
+ * Exchange task workspace.
+ *
+ * The page does three jobs — import, export and cloud sync — and shows one at
+ * a time under the shared `.tabs` strip. This sheet owns only the single-column
+ * body each task renders into, so the page stops presenting every form at once.
+ * Every rule is scoped to this page's own classes; the tab strip, panels,
+ * buttons and fields keep the shared primitives and tokens.
+ */
+.exchange-task-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1000px;
+  margin-top: 14px;
+}
+/* A hidden task stays mounted on purpose: the file input, the document draft,
+   the channel selection and the results all have to survive a tab switch. This
+   rule outranks the `display: flex` above so the attribute keeps its meaning. */
+.exchange-task-content[hidden] {
+  display: none;
+}
+.exchange-task-import {
+  max-width: 720px;
+}
+/* The format legend is reference material, so it starts folded and leaves the
+   import task focused on the drop zone. */
+.exchange-format-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.exchange-format-details[open] > summary {
+  margin-bottom: 12px;
+}
+/* Cloud sync: the two directions sit side by side on a desktop and stack on a
+   phone. The shared `.webdav-directions` rule breaks at 900px; this task's own
+   body is capped at 1000px, so its split point is that cap. */
+@media (max-width: 999px) {
+  .exchange-task-cloud .webdav-directions {
+    grid-template-columns: 1fr;
+  }
+}
+/* Phone layout: keep the three task switches comfortably tappable. The shared
+   `.tabs` primitive already scrolls horizontally when they no longer fit. */
+@media (max-width: 760px) {
+  .exchange-task-tabs .tabs button {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+}

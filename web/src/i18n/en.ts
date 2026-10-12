@@ -3119,6 +3119,9 @@ export const en: Dict = {
 
   "exchange.title": "Exchange",
   "exchange.description": "Move channel assets through the versioned Meta Gateway exchange format.",
+  "exchange.task.import": "Import",
+  "exchange.task.export": "Export",
+  "exchange.task.cloud": "Cloud sync",
   "exchange.exportTitle": "Export channels",
   "exchange.exportHint":
     "Metadata exports are safe to inspect but cannot be imported. Secret exports are importable and must be handled as credentials.",

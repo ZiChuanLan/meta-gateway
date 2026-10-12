@@ -2888,6 +2888,9 @@ export const zh: Dict = {
 
   "exchange.title": "交换",
   "exchange.description": "通过版本化的 Meta Gateway 交换格式迁移通道资产。",
+  "exchange.task.import": "导入",
+  "exchange.task.export": "导出",
+  "exchange.task.cloud": "云同步",
   "exchange.exportTitle": "导出通道",
   "exchange.exportHint": "元数据导出走查安全但不可导入。含密钥的导出可导入，必须按凭证妥善保管。",
   "exchange.allChannels": "全部通道",
