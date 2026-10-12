@@ -759,6 +759,25 @@ type ProxyLog struct {
 	// responses; the proxy_logs table carries no cost column and inserts
 	// never write this field.
 	Cost *float64 `json:"cost,omitempty"`
+	// Billing explains that amount: one entry per metered usage record for the
+	// request, in attempt order, so a request that failed over and billed more
+	// than once shows every decision instead of one summary that could not say
+	// which attempt charged. Like Cost it is a read-time annotation populated
+	// only in admin list responses, and it carries the pricing rule snapshot
+	// rather than any credential.
+	Billing []BillingExplanation `json:"billing,omitempty"`
+}
+
+// BillingExplanation is one usage record's billing decision, attached to an
+// admin proxy-log row at read time. Status is the relay's recorded
+// billing_status ("settled", "explicitly_free", "unpriced", "price_missing",
+// "usage_missing", "estimated", "legacy", "calculation_error"). Evidence is
+// the stored rule snapshot as opaque JSON, or null when the row predates rules
+// or its snapshot was unreadable — a reader decodes only the fields it knows
+// instead of being handed a blob to print.
+type BillingExplanation struct {
+	Status   string          `json:"status"`
+	Evidence json.RawMessage `json:"evidence"`
 }
 
 // UsageRecord is one metered relay completion used for billing summaries.

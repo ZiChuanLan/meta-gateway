@@ -465,6 +465,56 @@ func TestUsageCostAggregations(t *testing.T) {
 	}
 }
 
+func TestBillingByRequestIDs(t *testing.T) {
+	db := openTestDB(t)
+	// One request billed twice (two attempts), one legacy row with no snapshot,
+	// and one whose stored snapshot is not readable JSON.
+	records := []domain.UsageRecord{
+		{RequestID: "r-bill", ChannelID: 1, Model: "m", Status: 200, TotalTokens: 10, Cost: 0.5, BillingStatus: "settled", BillingEvidence: `{"owner":"model:m","revision":2}`},
+		{RequestID: "r-bill", ChannelID: 1, Model: "m", Status: 200, TotalTokens: 10, Cost: 0.25, BillingStatus: "estimated", BillingEvidence: `{"owner":"model:m","revision":3}`},
+		{RequestID: "r-legacy", ChannelID: 1, Model: "m", Status: 200, TotalTokens: 10},
+		{RequestID: "r-bad", ChannelID: 1, Model: "m", Status: 200, TotalTokens: 10, BillingStatus: "settled", BillingEvidence: "not json at all"},
+	}
+	for i := range records {
+		if _, err := db.Usage.Insert(&records[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	byRequest, err := db.Usage.BillingByRequestIDs([]string{"r-bill", "r-legacy", "r-bad", "missing", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bill := byRequest["r-bill"]
+	if len(bill) != 2 || bill[0].Status != "settled" || bill[1].Status != "estimated" {
+		t.Fatalf("r-bill explanations = %+v, want both attempts in order", bill)
+	}
+	if string(bill[0].Evidence) != `{"owner":"model:m","revision":2}` {
+		t.Fatalf("stored evidence changed: %s", bill[0].Evidence)
+	}
+	legacy := byRequest["r-legacy"]
+	if len(legacy) != 1 {
+		t.Fatalf("legacy explanations = %+v, want one", legacy)
+	}
+	if legacy[0].Status != "legacy" || legacy[0].Evidence != nil {
+		t.Fatalf("legacy must carry no snapshot: %+v (evidence %q)", legacy[0], legacy[0].Evidence)
+	}
+	bad := byRequest["r-bad"]
+	if len(bad) != 1 {
+		t.Fatalf("unreadable explanations = %+v, want one", bad)
+	}
+	if bad[0].Evidence != nil {
+		t.Fatalf("unreadable evidence must be dropped, got %q", bad[0].Evidence)
+	}
+	if _, ok := byRequest["missing"]; ok {
+		t.Fatalf("missing request must be absent: %+v", byRequest)
+	}
+
+	if empty, err := db.Usage.BillingByRequestIDs(nil); err != nil || len(empty) != 0 {
+		t.Fatalf("empty request ids = %+v err=%v", empty, err)
+	}
+}
+
 func TestGroupQuotaEnforcedAndAccrued(t *testing.T) {
 	db := openTestDB(t)
 	// Group with a 100-token quota.

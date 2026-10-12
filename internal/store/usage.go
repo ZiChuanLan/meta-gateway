@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -524,6 +525,74 @@ func (s *UsageStore) CostByRequestIDs(ids []string) (map[string]float64, error) 
 		}
 	}
 	return out, nil
+}
+
+// BillingByRequestIDs returns the persisted billing decisions for each request
+// id, one entry per usage record in attempt order. Missing ids are absent from
+// the map. Evidence that is empty or not a JSON object is dropped to nil — a
+// caller must never be handed an unreadable blob it would have to print raw.
+// Batched like CostByRequestIDs so a page of logs stays within SQLite's
+// bound-parameter limit.
+func (s *UsageStore) BillingByRequestIDs(ids []string) (map[string][]domain.BillingExplanation, error) {
+	out := make(map[string][]domain.BillingExplanation)
+	filtered := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if strings.TrimSpace(id) != "" {
+			filtered = append(filtered, id)
+		}
+	}
+	if len(filtered) == 0 {
+		return out, nil
+	}
+	const chunkSize = 400
+	for start := 0; start < len(filtered); start += chunkSize {
+		end := start + chunkSize
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		batch := filtered[start:end]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		args := make([]any, len(batch))
+		for i, id := range batch {
+			args[i] = id
+		}
+		rows, err := s.db.Query(
+			`SELECT request_id, billing_status, billing_evidence FROM usage_records WHERE request_id IN (`+placeholders+`) ORDER BY id`,
+			args...,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("usage billing by request: %w", err)
+		}
+		for rows.Next() {
+			var requestID, status, evidence string
+			if err := rows.Scan(&requestID, &status, &evidence); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("usage billing by request scan: %w", err)
+			}
+			out[requestID] = append(out[requestID], domain.BillingExplanation{
+				Status:   status,
+				Evidence: billingEvidenceJSON(evidence),
+			})
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, fmt.Errorf("usage billing by request rows: %w", err)
+		}
+	}
+	return out, nil
+}
+
+// billingEvidenceJSON accepts a stored snapshot only when it is a JSON object.
+// Anything else — an empty legacy row, a truncated write, a scalar — becomes
+// nil, which marshals to null: the caller is told "no snapshot" rather than
+// being handed text it would have to dump verbatim.
+func billingEvidenceJSON(evidence string) json.RawMessage {
+	trimmed := strings.TrimSpace(evidence)
+	if trimmed == "" || trimmed[0] != '{' || !json.Valid([]byte(trimmed)) {
+		return nil
+	}
+	return json.RawMessage(trimmed)
 }
 
 // RecordRelayUsage atomically persists one relay's usage accounting: the

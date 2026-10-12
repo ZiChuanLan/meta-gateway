@@ -370,6 +370,44 @@ export interface LatencyHistogram {
   matched: number;
   sample_size: number;
 }
+/**
+ * One usage record's billing decision, as the relay recorded it. Status is the
+ * stored billing_status; evidence is the frozen rule snapshot, or null when the
+ * row predates billing rules or its stored snapshot was unreadable.
+ */
+export interface BillingExplanation {
+  status: string;
+  evidence: BillingEvidence | null;
+}
+
+/**
+ * The pricing rule snapshot behind one charge. Every field is optional on
+ * purpose: the snapshot is opaque JSON written by whatever relay version
+ * metered the call, so the console reads the fields it understands and ignores
+ * the rest rather than failing to render a newer or older shape.
+ */
+export interface BillingEvidence {
+  owner?: string;
+  revision?: number;
+  source?: string;
+  usage_source?: string;
+  ratio?: number;
+  evaluated_at?: string;
+  rates?: BillingEvidenceRates;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+}
+
+/** Rates are USD per 1k tokens (per_request is USD per call). */
+export interface BillingEvidenceRates {
+  input_per_1k?: number;
+  output_per_1k?: number;
+  cache_per_1k?: number;
+  cache_write_per_1k?: number;
+  per_request?: number;
+  multiplier?: number;
+}
+
 export interface ProxyLog {
   id: number;
   request_id: string;
@@ -436,6 +474,13 @@ export interface ProxyLog {
   created_at: string;
   /** Persisted billing amount, joined from usage_records by request_id. */
   cost?: number;
+  /**
+   * How that amount was priced: one entry per metered attempt of the request,
+   * in attempt order, so a failed-over request that billed twice shows both the
+   * decisions. Read-time annotation present only in admin list responses; the
+   * member request list never receives it.
+   */
+  billing?: BillingExplanation[];
 }
 export interface DiscoveredModel {
   id: number;

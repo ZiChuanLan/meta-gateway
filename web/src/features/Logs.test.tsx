@@ -24,10 +24,12 @@ function LocationProbe() {
 function renderLogs(initialEntry = "/logs", rows?: unknown[]) {
   const requests: URLSearchParams[] = [];
   const histogramRequests: URLSearchParams[] = [];
+  const paths: string[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input), "http://localhost");
+      paths.push(url.pathname);
       let body: unknown = [];
       if (url.pathname === "/admin/proxy-logs") {
         requests.push(url.searchParams);
@@ -87,7 +89,7 @@ function renderLogs(initialEntry = "/logs", rows?: unknown[]) {
       </I18nProvider>
     </QueryClientProvider>,
   );
-  return { requests, histogramRequests, ...utils };
+  return { requests, histogramRequests, paths, ...utils };
 }
 
 describe("proxy log filters", () => {
@@ -658,5 +660,141 @@ describe("log empty-state entry points", () => {
     expect(screen.queryByRole("link", { name: "Create a token" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Open workbench" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Go to connections" })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The billing explanation rides in with the log list, decoded from the stored
+ * rule snapshot. It answers "why this amount" for the REQUEST, so a failed
+ * attempt sharing the request id shows the settlement without implying the
+ * failed attempt itself was charged.
+ */
+describe("log billing explanation", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem("meta-gateway.locale", "en");
+    localStorage.setItem("meta-gateway.admin-token", "test-token");
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const settledEvidence = {
+    owner: "model:gpt-test",
+    revision: 7,
+    source: "manual",
+    usage_source: "upstream",
+    ratio: 1.25,
+    evaluated_at: "2026-01-02T03:04:05Z",
+    rates: {
+      input_per_1k: 1.5,
+      output_per_1k: 6,
+      cache_per_1k: 0.3,
+      cache_write_per_1k: 1.4,
+      per_request: 0.02,
+    },
+    cache_read_tokens: 100,
+    cache_write_tokens: 0,
+  };
+
+  it("explains the request's amount from the list payload alone", async () => {
+    const { paths } = renderLogs("/logs", [
+      {
+        id: 1,
+        request_id: "req-bill",
+        model: "gpt-test",
+        status: 200,
+        latency_ms: 100,
+        attempt: 1,
+        cost: 0.5,
+        billing: [{ status: "settled", evidence: settledEvidence }],
+      },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-test"));
+
+    const billing = document.querySelector(".log-billing") as HTMLElement;
+    expect(billing).not.toBeNull();
+    expect(within(billing).getByText("Request billing explanation")).toBeInTheDocument();
+    expect(within(billing).getByText("Settled")).toBeInTheDocument();
+    expect(within(billing).getByText("model:gpt-test")).toBeInTheDocument();
+    expect(within(billing).getByText("7")).toBeInTheDocument();
+    // Rates are stored per 1k and read per 1M: 1.5 → $1,500.00.
+    expect(within(billing).getByText("$1,500.00")).toBeInTheDocument();
+    expect(within(billing).getByText("1.25")).toBeInTheDocument();
+    // The explanation came with the list; expanding must not fetch per row.
+    expect(paths.filter((path) => /billing|usage/.test(path))).toEqual([]);
+  });
+
+  it("marks an estimated settlement and says when a row has no snapshot", async () => {
+    renderLogs("/logs", [
+      {
+        id: 1,
+        request_id: "req-mixed",
+        model: "gpt-test",
+        status: 200,
+        latency_ms: 100,
+        attempt: 1,
+        billing: [
+          {
+            status: "estimated",
+            evidence: { owner: "model:gpt-test", revision: 9, rates: { input_per_1k: 2 } },
+          },
+          { status: "legacy", evidence: null },
+        ],
+      },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-test"));
+
+    const billing = document.querySelector(".log-billing") as HTMLElement;
+    expect(within(billing).getByText("Estimated")).toBeInTheDocument();
+    expect(within(billing).getByText("Legacy")).toBeInTheDocument();
+    expect(within(billing).getByText("$2,000.00")).toBeInTheDocument();
+    // A rate the snapshot does not carry is left out, never shown as $0.00.
+    expect(within(billing).queryByText("Output /1M")).not.toBeInTheDocument();
+    expect(
+      within(billing).getByText("No rule snapshot for this row (predates billing rules)"),
+    ).toBeInTheDocument();
+    // One snapshot per metered attempt.
+    expect(billing.querySelectorAll("dl")).toHaveLength(2);
+  });
+
+  it("leaves a row with no billing evidence unchanged", async () => {
+    renderLogs("/logs", [
+      {
+        id: 1,
+        request_id: "req-plain",
+        model: "gpt-test",
+        status: 200,
+        latency_ms: 100,
+        attempt: 1,
+      },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-test"));
+    await screen.findByText("Details");
+    expect(screen.queryByText("Request billing explanation")).not.toBeInTheDocument();
+  });
+
+  it("never dumps an unreadable snapshot", async () => {
+    renderLogs("/logs", [
+      {
+        id: 1,
+        request_id: "req-bad",
+        model: "gpt-test",
+        status: 200,
+        latency_ms: 100,
+        attempt: 1,
+        billing: [{ status: "settled", evidence: "raw-secret-snapshot" }],
+      },
+    ]);
+    fireEvent.click(await screen.findByText("gpt-test"));
+
+    const billing = document.querySelector(".log-billing") as HTMLElement;
+    expect(within(billing).getByText("Settled")).toBeInTheDocument();
+    expect(
+      within(billing).getByText("No rule snapshot for this row (predates billing rules)"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("raw-secret-snapshot")).not.toBeInTheDocument();
   });
 });

@@ -402,6 +402,20 @@ func (h *AdminHandler) listProxyLogs(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Printf("admin: proxy log costs: %v", costErr)
 		}
+		// The explanation behind the amount: one entry per metered attempt, so a
+		// request that failed over and billed twice shows both decisions rather
+		// than one summary that cannot say which attempt charged. Read-time
+		// annotation, admin only — a member's request list is a different query
+		// and never receives the rule snapshot.
+		if billing, billingErr := h.db.Usage.BillingByRequestIDs(requestIDs); billingErr == nil {
+			for i := range logs {
+				if explanations, ok := billing[logs[i].RequestID]; ok {
+					logs[i].Billing = explanations
+				}
+			}
+		} else {
+			log.Printf("admin: proxy log billing: %v", billingErr)
+		}
 	}
 	writeJSON(w, http.StatusOK, logs)
 }

@@ -4,7 +4,7 @@ import { Fragment, useMemo, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuditPanel, DiscoveryPanel } from "./ops";
 import { api } from "../api/client";
-import type { ProxyLog } from "../api/types";
+import type { BillingEvidence, BillingExplanation, ProxyLog } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -32,7 +32,7 @@ import {
   type LogsSource,
 } from "./logs/LogsSource";
 import { memberLogsSource } from "../member/MemberLogsSource";
-import { formatCost } from "../lib/format";
+import { formatCost, formatUnitPrice } from "../lib/format";
 import { positiveId } from "../lib/positiveId";
 import { downloadText, timestampedName, toCSV } from "../lib/csv";
 import { LiveTracePanel } from "./LiveTracePanel";
@@ -295,6 +295,141 @@ function LogChain({
 }
 
 /**
+ * The billing snapshot behind a request's cost, decoded defensively. The stored
+ * evidence is opaque JSON written by whatever relay version metered the call,
+ * so only the known fields are read and an unrecognised snapshot is simply not
+ * shown. The amount itself is the row's `cost`; this block answers "why".
+ */
+function billingEvidence(value: unknown): BillingEvidence | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as BillingEvidence;
+}
+
+const BILLING_STATUS_KEYS: Record<string, string> = {
+  settled: "logsPage.billing.status.settled",
+  explicitly_free: "logsPage.billing.status.explicitlyFree",
+  unpriced: "logsPage.billing.status.unpriced",
+  price_missing: "logsPage.billing.status.priceMissing",
+  usage_missing: "logsPage.billing.status.usageMissing",
+  estimated: "logsPage.billing.status.estimated",
+  legacy: "logsPage.billing.status.legacy",
+  calculation_error: "logsPage.billing.status.calculationError",
+};
+
+const USAGE_SOURCE_KEYS: Record<string, string> = {
+  upstream: "logsPage.billing.usage.upstream",
+  estimated: "logsPage.billing.usage.estimated",
+  missing: "logsPage.billing.usage.missing",
+};
+
+/**
+ * A rate renders only when it is a real number: a missing or malformed rate is
+ * left out, never shown as a zero price. The USD/1k dimensions are scaled to
+ * /1M to match how providers quote; per_request is already per call.
+ */
+function pushRate(
+  items: Array<{ label: string; value: ReactNode }>,
+  label: string,
+  value: number | undefined,
+  scale: number,
+) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return;
+  items.push({ label, value: formatUnitPrice(value * scale) });
+}
+
+function BillingEntry({ explanation }: { explanation: BillingExplanation }) {
+  const { t } = useI18n();
+  const statusKey = BILLING_STATUS_KEYS[explanation.status];
+  const items: Array<{ label: string; value: ReactNode }> = [
+    {
+      label: t("logsPage.billing.status"),
+      value: statusKey ? t(statusKey) : explanation.status,
+    },
+  ];
+  const evidence = billingEvidence(explanation.evidence);
+  if (!evidence) {
+    // A legacy row (predating rules) or one whose snapshot was unreadable. Say
+    // so rather than printing nothing or the raw stored text.
+    items.push({ label: t("logsPage.billing.snapshot"), value: t("logsPage.billing.noSnapshot") });
+  } else {
+    if (evidence.owner) {
+      items.push({ label: t("logsPage.billing.owner"), value: <code>{evidence.owner}</code> });
+    }
+    if (typeof evidence.revision === "number") {
+      items.push({ label: t("logsPage.billing.revision"), value: String(evidence.revision) });
+    }
+    if (evidence.source) {
+      items.push({ label: t("logsPage.billing.source"), value: <code>{evidence.source}</code> });
+    }
+    if (evidence.usage_source) {
+      const usageKey = USAGE_SOURCE_KEYS[evidence.usage_source];
+      items.push({
+        label: t("logsPage.billing.usageSource"),
+        value: usageKey ? t(usageKey) : evidence.usage_source,
+      });
+    }
+    if (evidence.rates) {
+      pushRate(items, t("logsPage.billing.rate.input"), evidence.rates.input_per_1k, 1000);
+      pushRate(items, t("logsPage.billing.rate.output"), evidence.rates.output_per_1k, 1000);
+      pushRate(items, t("logsPage.billing.rate.cacheRead"), evidence.rates.cache_per_1k, 1000);
+      pushRate(
+        items,
+        t("logsPage.billing.rate.cacheWrite"),
+        evidence.rates.cache_write_per_1k,
+        1000,
+      );
+      pushRate(items, t("logsPage.billing.rate.perRequest"), evidence.rates.per_request, 1);
+    }
+    if (typeof evidence.ratio === "number") {
+      items.push({ label: t("logsPage.billing.ratio"), value: String(evidence.ratio) });
+    }
+    if (
+      typeof evidence.cache_read_tokens === "number" ||
+      typeof evidence.cache_write_tokens === "number"
+    ) {
+      items.push({
+        label: t("logsPage.billing.cacheTokens"),
+        value: `${evidence.cache_read_tokens ?? 0} / ${evidence.cache_write_tokens ?? 0}`,
+      });
+    }
+    if (evidence.evaluated_at) {
+      items.push({
+        label: t("logsPage.billing.evaluatedAt"),
+        value: formatDate(evidence.evaluated_at),
+      });
+    }
+  }
+  return (
+    <dl className="log-details-grid">
+      {items.map((item) => (
+        <Fragment key={item.label}>
+          <dt>{item.label}</dt>
+          <dd>{item.value}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * The request's billing evidence, collapsed behind a summary: one entry per
+ * metered attempt. It is the REQUEST's settlement, not this attempt's — a
+ * failed attempt meters nothing, and showing the rule here must not read as if
+ * the failed attempt was charged.
+ */
+function BillingDetails({ billing }: { billing: BillingExplanation[] }) {
+  const { t } = useI18n();
+  return (
+    <details className="log-billing">
+      <summary>{t("logsPage.billing.explanation")}</summary>
+      {billing.map((explanation, index) => (
+        <BillingEntry key={index} explanation={explanation} />
+      ))}
+    </details>
+  );
+}
+
+/**
  * The rest of the row's forensics, in the order they get asked about: what the
  * upstream called this (ids), what was sent (effort, session), and what it cost
  * (token split, cache, speed, price, the credential that served it). Nothing
@@ -372,6 +507,7 @@ function LogDetails({ log }: { log: ProxyLog }) {
           </Fragment>
         ))}
       </dl>
+      {log.billing?.length ? <BillingDetails billing={log.billing} /> : null}
     </div>
   );
 }
