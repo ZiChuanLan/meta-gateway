@@ -2,6 +2,7 @@ package siteprobe
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -110,12 +111,35 @@ type RoundResult struct {
 	Actions   []Action `json:"actions"`
 }
 
+// ErrRoundInFlight reports that a collection round was already reading every
+// enabled site, so this request was not started. Two rounds at once read the
+// same pages twice and write duplicate verdicts; the caller is told instead of
+// silently getting a second sweep.
+var ErrRoundInFlight = errors.New("a collection round is already running")
+
 // CollectNow runs one round synchronously: collect every enabled site, let the
 // sites configured for it act on the verdicts, and refresh the third-party
 // snapshot on its own slower cadence. This is exactly what the background loop
 // does, so a manual "collect now" cannot behave differently from a scheduled
 // pass.
+//
+// It is single-flight with the background loop: a manual collect that lands in
+// the middle of a scheduled round returns ErrRoundInFlight rather than hitting
+// every site a second time. The gate has to live here rather than only in fire(),
+// because the manual paths (the console button and an import's follow-up
+// collection) are exactly the ones an operator triggers while a round runs.
 func (s *Scheduler) CollectNow(ctx context.Context) (RoundResult, error) {
+	if !s.busy.TryLock() {
+		s.logger.Info("site probe: manual collect skipped, a round is still running")
+		return RoundResult{}, ErrRoundInFlight
+	}
+	defer s.busy.Unlock()
+	return s.runRound(ctx)
+}
+
+// runRound is one collection pass, without the single-flight gate: fire() already
+// holds it.
+func (s *Scheduler) runRound(ctx context.Context) (RoundResult, error) {
 	// The third-party snapshot goes first: it is one request for every site the
 	// directory monitors, and putting it after the site collection would lose it
 	// whenever a slow or dead site eats the round's context budget.
@@ -177,7 +201,7 @@ func (s *Scheduler) fire() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	result, err := s.CollectNow(ctx)
+	result, err := s.runRound(ctx)
 	if err != nil {
 		s.logger.Warn("site probe: collection round", "error", err)
 	}

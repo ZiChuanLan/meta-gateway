@@ -2,6 +2,7 @@ package siteprobe
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -130,5 +131,62 @@ func TestSchedulerCadenceIsHotReloadable(t *testing.T) {
 	interval, jitter = scheduler.Cadence()
 	if jitter != interval {
 		t.Fatalf("oversized jitter = %v, want it clamped to the interval %v", jitter, interval)
+	}
+}
+
+// Two rounds at once read the same pages twice and write duplicate verdicts, and
+// the manual paths are exactly the ones an operator can fire while the scheduled
+// round is mid-sweep. The second caller has to be told, not served a second
+// sweep over every site.
+func TestCollectNowIsSingleFlight(t *testing.T) {
+	source := &ratioSource{}
+	f := newFixture(t, source, "z-ai/glm-5.2", "glm-5.2")
+	// The directory snapshot is one request for the whole fleet, and without a
+	// stub it reaches the real one before the round ever looks at a site.
+	catalogURL, _ := stubCatalog(t)
+	// A source that answers instantly would let the first round finish before the
+	// second caller arrives, so the site is held open until both calls are in.
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	if err := f.db.UpdateSiteProbeSource(f.siteID, SourceUptimeKuma, server.URL+"/status/ai", "{}", true); err != nil {
+		t.Fatalf("configure probe source: %v", err)
+	}
+	scheduler := NewScheduler(f.service, time.Hour, 0, catalogURL, nil)
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := scheduler.CollectNow(context.Background())
+		first <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first round never reached the site")
+	}
+
+	if _, err := scheduler.CollectNow(context.Background()); !errors.Is(err, ErrRoundInFlight) {
+		t.Fatalf("second collect = %v, want ErrRoundInFlight", err)
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatalf("first collect: %v", err)
+	}
+	// Once the round is done the gate is free again: a manual collect after a
+	// round is the normal case and must not be refused.
+	if _, err := scheduler.CollectNow(context.Background()); err != nil {
+		t.Fatalf("collect after the round finished: %v", err)
 	}
 }

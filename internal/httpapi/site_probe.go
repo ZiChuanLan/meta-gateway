@@ -99,6 +99,12 @@ func (h *SiteProbeHandler) collect(w http.ResponseWriter, r *http.Request) {
 	failed := 0
 	if len(request.SiteIDs) == 0 {
 		result, err := h.scheduler.CollectNow(ctx)
+		if errors.Is(err, siteprobe.ErrRoundInFlight) {
+			// Not a failure: the answer to "collect everything" is already being
+			// computed, and starting a second sweep would read every site twice.
+			writeError(w, http.StatusConflict, "a collection round is already running; try again when it finishes")
+			return
+		}
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return

@@ -3436,6 +3436,7 @@ export const zh: Dict = {
   "observation.importHint": "目录里有、而你没有的站点不会自动创建；已手填采集来源的站点保持原样。",
   "observation.collectAll": "立即采集",
   "observation.collecting": "采集中…",
+  "observation.collectBusy": "已有一次采集正在进行，等它结束后再点",
   "observation.collectSite": "「{name}」采集到 {count} 个模型",
   "observation.collectSiteEmpty": "「{name}」采集成功，但站点没有返回模型记录",
   "observation.collectSiteFailed": "「{name}」采集失败：{reason}",

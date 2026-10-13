@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Download, RefreshCw, Search, Settings2, Wand2 } from "lucide-react";
-import { api } from "../../api/client";
+import { ApiError, api } from "../../api/client";
 import type {
   SiteObservation,
   SiteProbeAction,
@@ -257,8 +257,13 @@ export function SiteObservationWorkspace({
         message: collectOutcome(data),
       });
     },
-    onError: (_error, ids) => {
+    onError: (error, ids) => {
       collectScope.current = ids;
+      // A round is already reading every site: the server refuses rather than
+      // reading them twice, and that is not a failure to retry blindly.
+      if (error instanceof ApiError && error.status === 409) {
+        toast.push({ tone: "error", message: t("observation.collectBusy") });
+      }
     },
   });
   const importCatalog = useAdminMutation({

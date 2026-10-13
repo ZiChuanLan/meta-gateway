@@ -3685,6 +3685,7 @@ export const en: Dict = {
     "Sites the directory has and you do not are never created; a source you typed yourself is left exactly as it is.",
   "observation.collectAll": "Collect now",
   "observation.collecting": "Collecting…",
+  "observation.collectBusy": "A collection round is already running — try again when it finishes",
   "observation.collectSite": "Collected {count} models from “{name}”",
   "observation.collectSiteEmpty": "“{name}” collected fine but returned no model records",
   "observation.collectSiteFailed": "“{name}” failed to collect: {reason}",
