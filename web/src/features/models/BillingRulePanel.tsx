@@ -446,7 +446,7 @@ function BillingEditor({
       <details className="billing-change">
         <summary>
           <strong>{t("billing.change")}</strong>
-          <span>{t("billing.changeHint")}</span>
+          <span>{t(scope === "member" ? "billing.changeHint" : "billing.changeHintModel")}</span>
         </summary>
         <fieldset disabled={save.isPending}>
           <Field

@@ -31,12 +31,14 @@ export function QuoteActions({
     catalog: t("billing.catalog"),
     upstream: t("billing.upstreamSite"),
   });
-  // Two Latin characters, one CJK one: "HongShi" and "Huan" are two sites and
-  // a single H would make them look like one.
-  const badgeChars = Array.from(publisher);
-  const badge = /[A-Za-z0-9]/.test(badgeChars[0] ?? "")
-    ? badgeChars.slice(0, 2).join("").trim()
-    : (badgeChars[0] ?? "?");
+  // The mark of the money this price is in: the site's own symbol (¥ / $ / €),
+  // the currency code when no symbol is known, or the protocol's credit mark.
+  // Two prices from two sites are told apart by their money, not by their name.
+  const moneyMark =
+    quote.unit.display_symbol?.trim() ||
+    (quote.unit.kind === "iso"
+      ? quote.unit.code
+      : quote.unit.display_currency?.trim() || t("billing.credit"));
   const [copyTarget, setCopyTarget] = useState<
     (CopyTarget & { quote: PriceQuote; current?: BillingView["effective_rates"] }) | null
   >(null);
@@ -111,15 +113,12 @@ export function QuoteActions({
           {ownSite ? <span className="quote-chip">{t("billing.ownSite")}</span> : null}
           {inUse ? <span className="quote-chip is-current">{t("billing.inUse")}</span> : null}
         </div>
-        {/* Where the unit used to sit alone: the publisher's own mark, so a list
-            of prices from one model reads as "this site, that site" instead of
-            "six different prices". The unit stays on every amount below. */}
+        {/* Where the unit chip used to sit: the money's own mark. */}
         <span
-          className={`quote-source-badge${quote.purpose === "reference" ? " is-catalog" : ""}`}
-          title={publisher}
-          aria-label={publisher}
+          className={`quote-source-badge${quote.unit.kind === "iso" ? " is-iso" : ""}`}
+          title={t("billing.moneyMark", { unit: moneyMark })}
         >
-          {badge}
+          {moneyMark}
         </span>
       </header>
       {/* Who published this price, and when it was read — a footnote, so the

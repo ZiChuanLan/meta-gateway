@@ -90,7 +90,7 @@ func TestPricingNormalizesAAHFormula(t *testing.T) {
 				{"model_name":"free-model","model_ratio":0,"model_price":0}
 			]}`))
 		case "/api/status":
-			_, _ = w.Write([]byte(`{"success":true,"data":{"quota_per_unit":500000}}`))
+			_, _ = w.Write([]byte(`{"success":true,"data":{"quota_per_unit":500000,"quota_display_type":"CNY","custom_currency_symbol":"¤","usd_exchange_rate":7.3}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -173,6 +173,25 @@ func TestPricingNormalizesAAHFormula(t *testing.T) {
 	// Per-call: 5 × 2 = 10 USD/request.
 	if got := pricesByModel["percall-model"].PriceUSD; math.Abs(got-10.0) > 1e-9 {
 		t.Fatalf("percall-model USD=%v want 10", got)
+	}
+	// The site's money basis rides the stored quote: CNY with 7.3 as its display
+	// rate, and the symbol resolved from the ISO code rather than the site's
+	// generic "¤". Without this an account price is an anonymous credit and the
+	// console cannot say whether it is ¥ or $.
+	quote := items[0].Quotes["ratio-model"]
+	if quote.Unit.DisplayCurrency != "CNY" || quote.Unit.DisplaySymbol != "¥" {
+		t.Fatalf("money basis: %+v", quote.Unit)
+	}
+	if quote.Unit.DisplayRate == nil || math.Abs(*quote.Unit.DisplayRate-7.3) > 1e-9 {
+		t.Fatalf("display rate: %+v", quote.Unit.DisplayRate)
+	}
+	if quote.Unit.QuotaPerUnit != 500000 {
+		t.Fatalf("quota per unit: %+v", quote.Unit)
+	}
+	// A published USD price is ISO, and its unit carries the sign as well.
+	usd := items[0].Quotes["direct-model"]
+	if usd.Unit.Kind != "iso" || usd.Unit.Code != "USD" || usd.Unit.DisplaySymbol != "$" {
+		t.Fatalf("iso unit: %+v", usd.Unit)
 	}
 }
 

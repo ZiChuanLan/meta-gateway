@@ -135,6 +135,17 @@ type TokenUSDPerMillion struct {
 	HasCacheWrite bool `json:"-"`
 }
 
+// CreditBasis is what a New-API site's money is denominated in: how much quota
+// one credit holds, and what the site prints for that money. The currency is
+// cosmetic — it never changes the protocol's numeric unit — but it is the only
+// thing that tells an operator whether a price is ¥ or $.
+type CreditBasis struct {
+	QuotaPerUnit int64
+	Currency     string
+	Symbol       string
+	DisplayRate  *float64
+}
+
 // AccountAdapter probes user identity and lists API keys for relay attachment.
 type AccountAdapter interface {
 	Name() string
@@ -144,7 +155,7 @@ type AccountAdapter interface {
 	RevealAPIKey(context.Context, AccountInput, int64) (string, error)
 	CreateAPIKey(context.Context, AccountInput, NewAPIKeyRequest) (UpstreamAPIKey, error)
 	Pricing(context.Context, AccountInput) ([]ModelPrice, error)
-	QuotaPerUnit(context.Context, AccountInput) (int64, error)
+	CreditBasis(context.Context, AccountInput) (CreditBasis, error)
 }
 
 // NewAPIAccountAdapter implements AccountAdapter for New API / One API style hosts.
@@ -163,37 +174,57 @@ func NewNewAPIAccountAdapter(name string, client *http.Client, userHeader bool) 
 
 func (a *NewAPIAccountAdapter) Name() string { return a.name }
 
-// QuotaPerUnit fetches the site's quota-per-unit conversion from /api/status
-// (public endpoint). New API sites define 1 unit = N quota; prices are quoted
-// in quota, so dividing by this value yields the price in site currency.
-func (a *NewAPIAccountAdapter) QuotaPerUnit(ctx context.Context, input AccountInput) (int64, error) {
+// CreditBasis fetches the site's money basis from /api/status (public endpoint):
+// New API sites define 1 unit = N quota, prices are quoted in quota, and the
+// site also declares what that unit is displayed as. The currency is read here
+// so a stored quote can say ¥ or $ — the account path used to drop it, which
+// left every price looking like an anonymous "credit".
+func (a *NewAPIAccountAdapter) CreditBasis(ctx context.Context, input AccountInput) (CreditBasis, error) {
 	endpoint, err := accountEndpoint(input.BaseURL, "/api/status")
 	if err != nil {
-		return 0, &Error{Kind: ErrorInvalidURL}
+		return CreditBasis{}, &Error{Kind: ErrorInvalidURL}
 	}
 	body, status, retryAfter, err := a.doJSON(ctx, http.MethodGet, endpoint, input)
 	if err != nil {
-		return 0, err
+		return CreditBasis{}, err
 	}
 	if status < 200 || status >= 300 {
-		return 0, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
+		return CreditBasis{}, &Error{Kind: ErrorStatus, Status: status, RetryAfter: retryAfter}
 	}
 	var envelope struct {
 		Success *bool `json:"success"`
 		Data    struct {
-			QuotaPerUnit int64 `json:"quota_per_unit"`
+			QuotaPerUnit int64    `json:"quota_per_unit"`
+			DisplayType  string   `json:"quota_display_type"`
+			Symbol       string   `json:"custom_currency_symbol"`
+			USDRate      *float64 `json:"usd_exchange_rate"`
+			CustomRate   *float64 `json:"custom_currency_exchange_rate"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return 0, &Error{Kind: ErrorPayload}
+		return CreditBasis{}, &Error{Kind: ErrorPayload}
 	}
 	if envelope.Success != nil && !*envelope.Success {
-		return 0, &Error{Kind: ErrorPayload}
+		return CreditBasis{}, &Error{Kind: ErrorPayload}
 	}
 	if envelope.Data.QuotaPerUnit <= 0 {
-		return 0, &Error{Kind: ErrorPayload}
+		return CreditBasis{}, &Error{Kind: ErrorPayload}
 	}
-	return envelope.Data.QuotaPerUnit, nil
+	basis := CreditBasis{
+		QuotaPerUnit: envelope.Data.QuotaPerUnit,
+		Currency:     strings.ToUpper(strings.TrimSpace(envelope.Data.DisplayType)),
+	}
+	basis.Symbol = CurrencySymbolFor(basis.Currency, strings.TrimSpace(envelope.Data.Symbol))
+	switch basis.Currency {
+	case "CNY":
+		basis.DisplayRate = envelope.Data.USDRate
+	case "CUSTOM":
+		basis.DisplayRate = envelope.Data.CustomRate
+	case "USD":
+		rate := 1.0
+		basis.DisplayRate = &rate
+	}
+	return basis, nil
 }
 
 // Pricing fetches the site-wide model price table from the New-API family's

@@ -89,7 +89,7 @@ func TestAccountAdapterPropagatesRetryAfter(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	adapter := NewNewAPIAccountAdapter("new-api", server.Client(), true)
-	_, err := adapter.QuotaPerUnit(context.Background(), AccountInput{
+	_, err := adapter.CreditBasis(context.Background(), AccountInput{
 		BaseURL: server.URL,
 		Secret:  "user-token",
 	})

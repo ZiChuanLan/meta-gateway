@@ -906,12 +906,13 @@ func (s *Service) probeFinanceGroup(ctx context.Context, resolved *resolvedTarge
 		facts.pricingFailed = true
 		facts.refreshError = "pricing_refresh_failed"
 	}
-	quotaPerUnit, quotaErr := resolved.adapter.QuotaPerUnit(callCtx, resolved.input)
-	if quotaErr != nil || quotaPerUnit <= 0 {
-		quotaPerUnit = 500000 // New-API default: 1 unit = 500k quota.
+	basis, basisErr := resolved.adapter.CreditBasis(callCtx, resolved.input)
+	if basisErr != nil || basis.QuotaPerUnit <= 0 {
+		basis.QuotaPerUnit = 500000 // New-API default: 1 unit = 500k quota.
 	}
+	quotaPerUnit := basis.QuotaPerUnit
 	facts.quotaPerUnit = quotaPerUnit
-	facts.unit = financeCreditUnit(resolved.site.ID, quotaPerUnit)
+	facts.unit = financeCreditUnit(resolved.site.ID, basis)
 
 	siteID := resolved.site.ID
 	accountID := resolved.credential.ID
@@ -924,7 +925,7 @@ func (s *Service) probeFinanceGroup(ctx context.Context, resolved *resolvedTarge
 		if !ok {
 			continue
 		}
-		quote.Unit = financeQuoteUnit(siteID, quotaPerUnit, published)
+		quote.Unit = financeQuoteUnit(siteID, basis, published)
 		if price, priced := legacyPrice(quote); priced {
 			facts.prices[quote.Model] = price
 		}
@@ -998,17 +999,28 @@ func financeGroupName(group string) string {
 // financeCreditUnit is the native unit of a site-credit quote: quota-per-unit
 // ties the amount to the site's own currency, which the operator may later
 // declare as USD. It never dresses a native amount as USD.
-func financeCreditUnit(siteID, quotaPerUnit int64) domain.QuoteUnit {
-	return domain.QuoteUnit{Kind: "site_credit", Code: fmt.Sprintf("credit:site/%d", siteID), QuotaPerUnit: quotaPerUnit}
+// financeCreditUnit names the money a site's prices are in. The quota-per-unit
+// is the protocol's numeric unit; the currency and symbol are what the site
+// prints, carried so a stored quote can show ¥ or $ instead of an anonymous
+// "credit".
+func financeCreditUnit(siteID int64, basis adapters.CreditBasis) domain.QuoteUnit {
+	return domain.QuoteUnit{
+		Kind:            "site_credit",
+		Code:            fmt.Sprintf("credit:site/%d", siteID),
+		QuotaPerUnit:    basis.QuotaPerUnit,
+		DisplayCurrency: basis.Currency,
+		DisplaySymbol:   basis.Symbol,
+		DisplayRate:     cloneFloat(basis.DisplayRate),
+	}
 }
 
 // financeQuoteUnit marks a direct USD-per-1M quote as ISO/USD; everything else
 // stays native site credit. Cosmetic currencies never overwrite the unit.
-func financeQuoteUnit(siteID, quotaPerUnit int64, published adapters.ModelPrice) domain.QuoteUnit {
+func financeQuoteUnit(siteID int64, basis adapters.CreditBasis, published adapters.ModelPrice) domain.QuoteUnit {
 	if published.TokenUSD != nil && published.TokenUSD.Input > 0 {
-		return domain.QuoteUnit{Kind: "iso", Code: "USD"}
+		return domain.QuoteUnit{Kind: "iso", Code: "USD", DisplayCurrency: "USD", DisplaySymbol: adapters.CurrencySymbolFor("USD", "")}
 	}
-	return financeCreditUnit(siteID, quotaPerUnit)
+	return financeCreditUnit(siteID, basis)
 }
 
 // legacyPrice keeps the pre-existing Prices map populated for compatibility;

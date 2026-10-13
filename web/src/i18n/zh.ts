@@ -42,16 +42,19 @@ export const zh: Dict = {
   "billing.ratesToken": "{input} / 1M 输入 · {output} / 1M 输出",
   "billing.ratesRequest": "每次 {fee}",
   "billing.change": "改价",
-  "billing.changeHint": "免费、用默认价，或自己填一组",
+  "billing.changeHint": "免费、跟随模型价，或自己填一组",
+  "billing.changeHintModel": "免费、不在这里定价，或自己填一组",
   "billing.state": "怎么收费",
   "billing.explicit": "单独定价",
   "billing.explicitModel": "自定义价格",
   "billing.free": "免费",
   "billing.inherit": "用模型默认价",
-  "billing.inheritModel": "沿用旧价格",
+  "billing.inheritModel": "不在这里定价",
+  "billing.moneyMark": "该站点按 {unit} 标价",
   "billing.inheritHint":
     "不在这里单独定价，就按该模型的默认价收。默认价也没设时，继续用升级前的旧价格。",
-  "billing.inheritHintModel": "模型默认价没设时，继续用升级前的旧价格。",
+  "billing.inheritHintModel":
+    "取消模型层的定价：升级前的旧单价列还有价就继续用旧价，没有就是未定价。",
   "billing.layers.model":
     "对每个能转到「{name}」的连接生效。想给某一条连接单独定价，在那条连接的计费规则里改。",
   "billing.layers.member":

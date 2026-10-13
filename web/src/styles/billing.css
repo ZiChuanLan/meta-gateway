@@ -38,25 +38,29 @@
 .quote-entry { display: grid; gap: 0; min-width: 0; padding: 14px 16px 16px; margin: 0 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .quote-entry:last-child { margin-bottom: 0; }
 .quote-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-/* The publisher's mark, where the unit chip used to sit alone: a list of prices
-   from one model is a list of sites, and the letter is what makes two rows two
-   publishers instead of one price sampled twice. */
+/* The money's mark, where the unit chip used to sit alone: ¥, $, USD, or the
+   protocol's credit mark when the site declares no currency at all. */
 .quote-source-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
+  min-width: 30px;
+  max-width: 96px;
   height: 26px;
+  padding: 0 7px;
   flex: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   border-radius: var(--radius-sm);
   background: var(--primary-soft);
   color: var(--primary-ink);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: -.02em;
+  letter-spacing: -.01em;
   line-height: 1;
 }
-.quote-source-badge.is-catalog { background: var(--surface-subtle); color: var(--muted-strong); }
+.quote-source-badge.is-iso { background: var(--surface-subtle); color: var(--muted-strong); }
 .quote-entry-account { color: var(--muted-strong); font-size: 12px; font-variant-numeric: tabular-nums; }
 .quote-entry-kind { color: var(--muted); font-size: 11px; text-transform: none; }
 .quote-entry-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }

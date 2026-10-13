@@ -289,22 +289,53 @@ it("answers with the price in force and folds the sources into one line", async 
   fireEvent.click(screen.getByRole("button", { name: "Use as my price" }));
   expect(screen.getByRole("button", { name: "Confirm and use it" })).toBeInTheDocument();
 });
-it("titles every price with the site that published it, this site first", async () => {
+it("titles every price with the site that published it, its own site first", async () => {
   withQuote(view, [
-    { ...quote, id: 1, site_id: 9, site_name: "Sandbox", observed_at: "2026-10-12T00:00:00Z" },
-    { ...quote, id: 2, site_id: 4, site_name: "Aurora", observed_at: "2026-10-11T00:00:00Z" },
+    {
+      ...quote,
+      id: 1,
+      site_id: 9,
+      site_name: "Sandbox",
+      observed_at: "2026-10-12T00:00:00Z",
+      unit: {
+        kind: "site_credit",
+        code: "credit:site/9",
+        display_currency: "CNY",
+        display_symbol: "¥",
+      },
+    },
+    {
+      ...quote,
+      id: 2,
+      site_id: 4,
+      site_name: "Aurora",
+      observed_at: "2026-10-11T00:00:00Z",
+      unit: { kind: "iso", code: "USD", display_currency: "USD", display_symbol: "$" },
+    },
+    // A catalog quote keeps the last place, and a unit with no symbol of its own
+    // falls back to printing the code.
+    {
+      ...quote,
+      id: 3,
+      scope_key: "catalog:m",
+      source: "litellm",
+      purpose: "reference",
+      site_id: undefined,
+      site_name: undefined,
+      unit: { kind: "iso", code: "USD" },
+    },
   ]);
   render(wrap(<BillingRulePanel model="m" memberId={17} siteId={4} />));
   await openEvidence();
   const names = [...document.querySelectorAll(".quote-entry-title strong")].map(
     (el) => el.textContent,
   );
-  // The member's own site leads, even though the other site was read later.
-  expect(names).toEqual(["Aurora", "Sandbox"]);
-  // Each row wears its publisher's mark instead of a generic unit chip, and two
-  // Latin initials keep two "H" sites apart.
-  const badges = [...document.querySelectorAll(".quote-source-badge")].map((el) => el.textContent);
-  expect(badges).toEqual(["Au", "Sa"]);
+  // The member's own site leads, then the other site, then the catalog.
+  expect(names).toEqual(["Aurora", "Sandbox", "Model catalog"]);
+  // Each row wears the mark of the money it is in, not a repeat of its own name:
+  // that is what tells a ¥ price from a $ one at a glance.
+  const marks = [...document.querySelectorAll(".quote-source-badge")].map((el) => el.textContent);
+  expect(marks).toEqual(["$", "¥", "USD"]);
   expect(document.querySelectorAll(".quote-chip")).toHaveLength(1);
 });
 it("names why there is no catalog price instead of showing an empty list", async () => {

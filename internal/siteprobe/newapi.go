@@ -56,42 +56,12 @@ func AutoSource(platform, baseURL string) (kind, sourceURL string, ok bool) {
 }
 
 // currencySymbolFor picks the sign to print for a declared currency.
-//
-// A known ISO code wins over the deployment's custom symbol: measured, sites
-// declare CNY while carrying custom_currency_symbol "¤" (the generic placeholder
-// meaning "unspecified"), "Ɇ" (a mis-encoded ¥) or even a fish-cake emoji, and
-// "¤30" tells an operator nothing. The custom symbol is only used when the
-// currency itself is unknown — that is the case it was meant for.
 func currencySymbolFor(currency, declared string) string {
-	if symbol := defaultCurrencySymbol(currency); symbol != "" {
-		return symbol
-	}
-	trimmed := strings.TrimSpace(declared)
-	if trimmed == "¤" {
-		return ""
-	}
-	return trimmed
+	return adapters.CurrencySymbolFor(currency, declared)
 }
 
-// defaultCurrencySymbol fills in the sign for the currencies the fleet actually
-// declares. It only applies when a site leaves custom_currency_symbol empty.
 func defaultCurrencySymbol(currency string) string {
-	switch strings.ToUpper(strings.TrimSpace(currency)) {
-	case "USD":
-		return "$"
-	case "CNY", "RMB", "JPY":
-		return "¥"
-	case "EUR":
-		return "€"
-	case "GBP":
-		return "£"
-	case "HKD":
-		return "HK$"
-	case "KRW":
-		return "₩"
-	default:
-		return ""
-	}
+	return adapters.DefaultCurrencySymbol(currency)
 }
 
 // ResolveNewAPIBase accepts either a site root or one of its public pricing
@@ -169,14 +139,21 @@ func FetchPublicPrices(ctx context.Context, client *http.Client, rawURL string) 
 		// Display currency does not change the protocol's numeric unit. Arbitrary
 		// forks use native credit until an operator declares its money basis.
 		quote.Unit = domain.QuoteUnit{Kind: "site_credit", Code: base, QuotaPerUnit: snapshot.QuotaPerUnit, DisplayCurrency: snapshot.Currency, DisplaySymbol: snapshot.Symbol, DisplayRate: snapshot.DisplayRate}
+		// An ISO quote knows its own currency, so the unit carries its sign too:
+		// the console shows the money's mark, and a unit without one falls back to
+		// printing the code.
 		if item.TokenUSD != nil {
 			quote.Unit.Kind = "iso"
 			quote.Unit.Code = "USD"
+			quote.Unit.DisplayCurrency = "USD"
+			quote.Unit.DisplaySymbol = adapters.CurrencySymbolFor("USD", "")
 			quote.Currency = "USD"
 			quote.CurrencySymbol = "$"
 		} else if item.Currency != "" {
 			quote.Unit.Kind = "iso"
 			quote.Unit.Code = strings.ToUpper(item.Currency)
+			quote.Unit.DisplayCurrency = quote.Unit.Code
+			quote.Unit.DisplaySymbol = adapters.CurrencySymbolFor(quote.Unit.Code, "")
 			quote.Currency = quote.Unit.Code
 			quote.CurrencySymbol = defaultCurrencySymbol(quote.Currency)
 		} else {

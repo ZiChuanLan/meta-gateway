@@ -44,16 +44,19 @@ export const en: Dict = {
   "billing.ratesToken": "{input} / 1M input · {output} / 1M output",
   "billing.ratesRequest": "{fee} per call",
   "billing.change": "Change the price",
-  "billing.changeHint": "Free, the default price, or rates of your own",
+  "billing.changeHint": "Free, the model's price, or rates of your own",
+  "billing.changeHintModel": "Free, unpriced here, or rates of your own",
   "billing.state": "How it is charged",
   "billing.explicit": "Set a price here",
   "billing.explicitModel": "Custom price",
   "billing.free": "Free",
   "billing.inherit": "Use the model default",
-  "billing.inheritModel": "Keep the old price",
+  "billing.inheritModel": "Leave it unpriced here",
+  "billing.moneyMark": "This site quotes in {unit}",
   "billing.inheritHint":
     "Nothing is priced here, so the model default applies. If that is unset too, the pre-upgrade price keeps being used.",
-  "billing.inheritHintModel": "With no model default set, the pre-upgrade price keeps being used.",
+  "billing.inheritHintModel":
+    "Clears the model-layer rule: the pre-upgrade price columns keep applying if they hold a price, otherwise the model is unpriced.",
   "billing.layers.model":
     "Applies to every connection that can serve “{name}”. To price one connection differently, change it in that connection's billing rule.",
   "billing.layers.member":
