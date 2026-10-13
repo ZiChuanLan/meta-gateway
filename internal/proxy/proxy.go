@@ -213,6 +213,11 @@ type Request struct {
 	// (see recordMemberFailure) but KEEPS its proxy_logs row, because "what did
 	// that 试调 do" is a question the log page has to be able to answer.
 	Diagnostic bool
+	// KeyRetries is filled by the forwarding walk itself: which same-key re-send
+	// the attempt being recorded is (0 = the first try on that key). It is not
+	// something a caller asks for — a caller asks once, and the walk decides how
+	// many times the same upstream key gets the request again.
+	KeyRetries int
 	// DownstreamKeyID is the authenticated client key, used for usage metering.
 	DownstreamKeyID int64
 	UserID          int64

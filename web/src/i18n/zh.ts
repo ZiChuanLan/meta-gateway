@@ -1560,6 +1560,7 @@ export const zh: Dict = {
   "logsPage.chainUnrouted": "未走路由",
   "logsPage.chainStream": "流式",
   "logsPage.chainAttempt": "第 {n} 次尝试",
+  "logsPage.chainKeyRetry": "同渠道重发 {n} 次",
   "logsPage.detailTitle": "明细",
   "logsPage.detail.session": "会话",
   "logsPage.detail.tokenSplit": "输入 / 输出",

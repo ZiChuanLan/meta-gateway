@@ -694,7 +694,12 @@ type ProxyLog struct {
 	Status            int    `json:"status"`
 	LatencyMs         int    `json:"latency_ms"`
 	Attempt           int    `json:"attempt"`
-	ErrorBrief        string `json:"error_brief,omitempty"`
+	// KeyRetries is which same-key re-send this attempt is (0 = the first try on
+	// that upstream key). `attempt` counts channel failovers; this counts the
+	// re-sends CHANNEL_RETRY_TIMES authorises inside one key, so the log can show
+	// whether that setting ever rescued a request instead of only costing latency.
+	KeyRetries int    `json:"key_retries,omitempty"`
+	ErrorBrief string `json:"error_brief,omitempty"`
 	// ErrorDetail is a truncated excerpt of what the upstream actually
 	// returned for a failed attempt (error body text, or the transport error
 	// string when no response arrived). Empty on success.

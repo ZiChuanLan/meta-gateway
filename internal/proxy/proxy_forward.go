@@ -422,6 +422,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		}
 
 	restartKeyPool:
+		// No key has been re-sent yet in this channel attempt: the same-key counter
+		// restarts with the pool (and with a credential refresh, which jumps back
+		// to this label).
+		req.KeyRetries = 0
 		// A non-idempotent write must never be replayed with another site key:
 		// the first upstream may have accepted/charged it before the transport
 		// error reached us. Re-apply this cap at the label because a successful
@@ -438,6 +442,11 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 				keyRetries = 0
 			}
 			for keyAttempt := 0; ; keyAttempt++ {
+				// What the log will say about this attempt: the first send on this key
+				// is 0, the CHANNEL_RETRY_TIMES re-sends are 1, 2, … A 200 with a
+				// non-zero value is a request the re-send budget rescued; a log full of
+				// zeros means the budget only costs latency.
+				req.KeyRetries = keyAttempt
 				headers := adapter.AuthHeaders(apiKey.Secret)
 				if headers.Get("Content-Type") == "" && strings.TrimSpace(req.ContentType) != "" {
 					headers.Set("Content-Type", req.ContentType)

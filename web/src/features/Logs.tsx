@@ -272,7 +272,12 @@ function LogChain({
     {
       label: t("logsPage.chainUpstream"),
       value: <code title={log.upstream_url || undefined}>{log.upstream_url || "—"}</code>,
-      note: t("logsPage.chainAttempt", { n: log.attempt }),
+      note:
+        log.key_retries && log.key_retries > 0
+          ? `${t("logsPage.chainAttempt", { n: log.attempt })} · ${t("logsPage.chainKeyRetry", {
+              n: log.key_retries,
+            })}`
+          : t("logsPage.chainAttempt", { n: log.attempt }),
     },
   ];
   return (

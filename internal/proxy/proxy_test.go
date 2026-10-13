@@ -693,6 +693,30 @@ func TestSameKeyResendCountsAreConfigurable(t *testing.T) {
 	if high.FailCount != 1 || high.CooldownUntil == nil {
 		t.Fatalf("failed channel must be cooled down after re-sends exhaust: %+v", high)
 	}
+	// The log has to say how many re-sends an attempt consumed, or the operator
+	// cannot tell whether CHANNEL_RETRY_TIMES ever rescues anything. Intermediate
+	// same-key failures are not separate rows (one row per channel attempt), so
+	// there are two: the busy channel gave up after its two re-sends (2), and the
+	// failover that finally worked was a first try (0). Newest first.
+	logs, err := db.ProxyLog.List(10)
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	rows := make([]domain.ProxyLog, 0, 2)
+	for _, row := range logs {
+		if row.RequestID == "req-resend" {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected one log row per channel attempt, got %d (%+v)", len(rows), rows)
+	}
+	if rows[0].KeyRetries != 0 || rows[0].Status != http.StatusOK {
+		t.Fatalf("the failover row should be a first-try success: %+v", rows[0])
+	}
+	if rows[1].KeyRetries != 2 || rows[1].Status != http.StatusServiceUnavailable {
+		t.Fatalf("the exhausted row should record its two re-sends: %+v", rows[1])
+	}
 }
 
 func TestTransportErrorFailsFastAfterSameKeyResend(t *testing.T) {

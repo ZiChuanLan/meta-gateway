@@ -2092,6 +2092,7 @@ export const en: Dict = {
   "logsPage.chainUnrouted": "No route",
   "logsPage.chainStream": "stream",
   "logsPage.chainAttempt": "attempt {n}",
+  "logsPage.chainKeyRetry": "same-key re-send #{n}",
   "logsPage.detailTitle": "Details",
   "logsPage.detail.session": "Session",
   "logsPage.detail.tokenSplit": "Input / output",

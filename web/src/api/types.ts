@@ -420,6 +420,12 @@ export interface ProxyLog {
   status: number;
   latency_ms: number;
   attempt: number;
+  /**
+   * Which same-key re-send this attempt is (0 = the first try on that key).
+   * `attempt` counts channel failovers; this counts the re-sends
+   * CHANNEL_RETRY_TIMES authorises inside one key.
+   */
+  key_retries?: number;
   error_brief?: string;
   error_detail?: string;
   downstream_key_id?: number;
