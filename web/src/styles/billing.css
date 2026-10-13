@@ -38,9 +38,30 @@
 .quote-entry { display: grid; gap: 0; min-width: 0; padding: 14px 16px 16px; margin: 0 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .quote-entry:last-child { margin-bottom: 0; }
 .quote-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* The publisher's mark, where the unit chip used to sit alone: a list of prices
+   from one model is a list of sites, and the letter is what makes two rows two
+   publishers instead of one price sampled twice. */
+.quote-source-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  color: var(--primary-ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+.quote-source-badge.is-catalog { background: var(--surface-subtle); color: var(--muted-strong); }
+.quote-entry-account { color: var(--muted-strong); font-size: 12px; font-variant-numeric: tabular-nums; }
+.quote-entry-kind { color: var(--muted); font-size: 11px; text-transform: none; }
 .quote-entry-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .quote-entry-title strong { font-size: 13.5px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); }
-.quote-unit, .quote-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border: 1px solid var(--line-light); border-radius: var(--radius-pill); background: var(--surface-subtle); color: var(--muted-strong); font-size: 11px; line-height: 1.7; white-space: nowrap; }
+.quote-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border: 1px solid var(--line-light); border-radius: var(--radius-pill); background: var(--surface-subtle); color: var(--muted-strong); font-size: 11px; line-height: 1.7; white-space: nowrap; }
 .quote-chip.is-current { border-color: var(--primary-hairline); background: var(--primary-soft); color: var(--primary-ink); font-weight: 550; }
 .quote-entry-meta { margin: 7px 0 0; font-size: 11px; line-height: 1.65; color: var(--muted); overflow-wrap: anywhere; }
 .quote-rate-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 14px 18px; margin: 14px 0 0; padding-top: 14px; border-top: 1px solid var(--line-light); }

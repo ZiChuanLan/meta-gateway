@@ -69,6 +69,12 @@ function backend({
   const apply = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     json({ actions: [], dry_run: true }),
   );
+  const createRoute = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+    json({ id: 77, model_pattern: "m", enabled: true }),
+  );
+  const autoMatch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+    json({ added: 2, skipped: 0 }),
+  );
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -97,10 +103,12 @@ function backend({
       if (path === "/admin/site-probe/source") return save(input, init);
       if (path === "/admin/site-probe/collect") return collect(input, init);
       if (path === "/admin/site-probe/apply") return apply(input, init);
+      if (path === "/admin/routes" && init?.method === "POST") return createRoute(input, init);
+      if (path.endsWith("/auto-match")) return autoMatch(input, init);
       return json({});
     }),
   );
-  return { save, collect, apply };
+  return { save, collect, apply, createRoute, autoMatch };
 }
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -275,4 +283,25 @@ it("explains the directory import before it writes anything", async () => {
   const dialog = await screen.findByRole("dialog");
   expect(dialog).toHaveTextContent(/writes only to sites you already have/);
   expect(dialog).toHaveTextContent(/are never created/);
+});
+
+it("adopts a model as two calls: create the route, then attach what serves it", async () => {
+  // Creating a route with an empty auto-match list attaches nothing, so the
+  // attach has to be the follow-up call — the empty list *there* is what means
+  // "every channel that serves this name".
+  const actions = backend({ items: 3 });
+  mount();
+  await screen.findByText("model-01");
+  fireEvent.click(screen.getAllByRole("button", { name: "Attach" })[0]!);
+  await waitFor(() => expect(actions.createRoute).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(actions.autoMatch).toHaveBeenCalledTimes(1));
+  const createBody = JSON.parse(
+    String((actions.createRoute.mock.calls[0]?.[1] as RequestInit).body),
+  );
+  expect(createBody).toEqual({ model_pattern: "model-01", enabled: true });
+  const attachPath = String(actions.autoMatch.mock.calls[0]?.[0]);
+  expect(attachPath).toContain("/admin/routes/77/auto-match");
+  const attachBody = JSON.parse(String((actions.autoMatch.mock.calls[0]?.[1] as RequestInit).body));
+  expect(attachBody).toEqual({ channel_ids: [], group_name: "", match: "exact" });
+  expect(await screen.findByText(/Attached 1 models/)).toBeInTheDocument();
 });

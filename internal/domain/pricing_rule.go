@@ -131,4 +131,8 @@ type PriceQuoteSnapshot struct {
 	Status        string      `json:"status"` // calculable | partial | unsupported | unknown_group
 	ObservedAt    string      `json:"observed_at"`
 	ExpiresAt     string      `json:"expires_at,omitempty"`
+	// SiteName names the publisher, and is filled when a quote is read back
+	// for display: the snapshot itself only carries the site id, because a site
+	// can be renamed without rewriting stored evidence.
+	SiteName string `json:"site_name,omitempty"`
 }

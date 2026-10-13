@@ -179,17 +179,29 @@ export function SiteObservationWorkspace({
    *  bar only offer adoption where there is no route yet. */
   const adopt = useAdminMutation({
     mutationFn: async (models: SiteObservation[]) => {
-      const results = await Promise.allSettled(
-        models.map((item) =>
-          service.createRoute({
+      let created = 0;
+      let failed = 0;
+      // Sequential on purpose: each model is two calls, and a hundred selected
+      // rows fired at once would only trip the admin rate limit.
+      for (const item of models) {
+        try {
+          const route = await service.createRoute({
             model_pattern: item.raw_model,
             enabled: true,
-            auto_match_mode: "exact",
-          }),
-        ),
-      );
-      const failed = results.filter((result) => result.status === "rejected").length;
-      return { created: results.length - failed, failed };
+          });
+          // Creating a route attaches nothing by itself: its auto-match list is
+          // explicit (`create route` with an empty list means "no members"),
+          // while the auto-match endpoint's empty list means "every channel that
+          // serves this name" — which is the action the button promises. Without
+          // this second call the console reported a successful attach and left
+          // the operator with a route no channel serves.
+          await service.autoMatchRouteMembers(route.id, [], undefined, "exact");
+          created++;
+        } catch {
+          failed++;
+        }
+      }
+      return { created, failed };
     },
     invalidateKeys: INVALIDATE,
     onSuccess: (result) => {

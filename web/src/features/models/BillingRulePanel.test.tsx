@@ -234,22 +234,35 @@ const copiedRule: BillingRule = {
   quote_id: 1,
   revision: 4,
 };
-function withQuote(ruleView: BillingView = view) {
+function withQuote(
+  ruleView: BillingView = view,
+  items: PriceQuote[] = [quote],
+  catalog: unknown = null,
+) {
   const original = fetch;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, init?: RequestInit) =>
       path.startsWith("/admin/price-quotes")
-        ? new Response(JSON.stringify({ items: [quote] }), { status: 200 })
-        : path.startsWith("/admin/billing-rule") && !init?.method
-          ? new Response(JSON.stringify(ruleView), { status: 200 })
-          : original(path, init),
+        ? new Response(JSON.stringify({ items }), { status: 200 })
+        : path.startsWith("/admin/model-capabilities/catalog")
+          ? new Response(JSON.stringify(catalog), { status: 200 })
+          : path.startsWith("/admin/billing-rule") && !init?.method
+            ? new Response(JSON.stringify(ruleView), { status: 200 })
+            : original(path, init),
     ),
   );
 }
 function toggle(details: HTMLDetailsElement, open: boolean) {
   details.open = open;
   fireEvent(details, new Event("toggle"));
+}
+/** Opens the evidence area the way a click would, and returns it. */
+async function openEvidence() {
+  const summary = await screen.findByText("Where these prices came from");
+  const details = summary.closest("details") as HTMLDetailsElement;
+  toggle(details, true);
+  return details;
 }
 it("answers with the price in force and folds the sources into one line", async () => {
   withQuote();
@@ -259,7 +272,10 @@ it("answers with the price in force and folds the sources into one line", async 
   // One line of evidence, closed by default; the rows live inside it.
   const evidence = document.querySelector("details.billing-evidence") as HTMLDetailsElement;
   expect(evidence.open).toBe(false);
-  expect(evidence.querySelector("summary")?.textContent).toMatch(/Price the site publishes/);
+  // The line names the publisher and the price it published — the site the price
+  // came from is what makes six numbers six sources instead of six prices.
+  expect(evidence.querySelector("summary")?.textContent).toMatch(/Upstream site/);
+  expect(evidence.querySelector("summary")?.textContent).toMatch(/2 site credit \/1M/);
   expect(evidence.querySelectorAll(".quote-entry")).toHaveLength(1);
   // The price entry is folded too, and is the same editor behind the fold.
   const change = document.querySelector("details.billing-change") as HTMLDetailsElement;
@@ -272,6 +288,30 @@ it("answers with the price in force and folds the sources into one line", async 
   toggle(evidence, true);
   fireEvent.click(screen.getByRole("button", { name: "Use as my price" }));
   expect(screen.getByRole("button", { name: "Confirm and use it" })).toBeInTheDocument();
+});
+it("titles every price with the site that published it, this site first", async () => {
+  withQuote(view, [
+    { ...quote, id: 1, site_id: 9, site_name: "Sandbox", observed_at: "2026-10-12T00:00:00Z" },
+    { ...quote, id: 2, site_id: 4, site_name: "Aurora", observed_at: "2026-10-11T00:00:00Z" },
+  ]);
+  render(wrap(<BillingRulePanel model="m" memberId={17} siteId={4} />));
+  await openEvidence();
+  const names = [...document.querySelectorAll(".quote-entry-title strong")].map(
+    (el) => el.textContent,
+  );
+  // The member's own site leads, even though the other site was read later.
+  expect(names).toEqual(["Aurora", "Sandbox"]);
+  // Each row wears its publisher's mark instead of a generic unit chip, and two
+  // Latin initials keep two "H" sites apart.
+  const badges = [...document.querySelectorAll(".quote-source-badge")].map((el) => el.textContent);
+  expect(badges).toEqual(["Au", "Sa"]);
+  expect(document.querySelectorAll(".quote-chip")).toHaveLength(1);
+});
+it("names why there is no catalog price instead of showing an empty list", async () => {
+  withQuote(view, [quote], { state: null, sources: [], scheduled: false, prices_enabled: true });
+  render(wrap(<BillingRulePanel model="m" />));
+  await openEvidence();
+  expect(await screen.findByText(/No model catalog is wired in/)).toBeInTheDocument();
 });
 it("marks the source the price in force was copied from", async () => {
   withQuote({ ...view, rule: copiedRule, revision: copiedRule.revision });

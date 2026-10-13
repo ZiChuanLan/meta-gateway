@@ -88,6 +88,17 @@ export const en: Dict = {
   "billing.evidenceMore": "{count} more",
   "billing.inUse": "This is what you charge now",
   "billing.credit": "site credit",
+  "billing.catalog": "Model catalog",
+  "billing.upstreamSite": "Upstream site",
+  "billing.ownSite": "This site",
+  "billing.noCatalog.sources":
+    "No model catalog is wired in (no catalog address is configured), so there is no reference price.",
+  "billing.noCatalog.prices":
+    "Catalog sync runs without the price step, so there is no reference price.",
+  "billing.noCatalog.never":
+    "The model catalog has not synced yet, so there is no reference price.",
+  "billing.noCatalog.unknown":
+    "The model catalog does not know the name “{model}”, so there is no reference price. A catalog price is reference only and never changes what you charge.",
   "billing.copy": "Use as my price",
   "billing.copyTitle": "Use a reference price as your price",
   "billing.copyHint":

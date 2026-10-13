@@ -17,6 +17,8 @@ import {
 import { ModelRatioDialog } from "./ModelRatioDialog";
 import { ManualQuoteDialog } from "./ManualQuoteDialog";
 import { QuoteActions } from "./QuoteActions";
+import { quotePublisher } from "./pricingTypes";
+import type { CatalogStatus } from "../../api/types";
 import type { BillingRule, BillingView, PriceQuote } from "./pricingTypes";
 import { nativeAmount } from "./pricingTypes";
 
@@ -78,6 +80,7 @@ export function BillingRulePanel({
   const [editorDirty, setEditorDirty] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [ratioOpen, setRatioOpen] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const scope = memberId ? "member" : "model";
   const key = memberId ? String(memberId) : model;
   const updateDirty = useCallback(
@@ -100,6 +103,15 @@ export function BillingRulePanel({
         signal,
       ),
   });
+  // Only asked for when the evidence area is opened: it is the answer to "why is
+  // there no catalog price here", and an answer nobody sees is not worth a
+  // request.
+  const catalogStatus = useQuery({
+    queryKey: ["model-catalog", "status"],
+    queryFn: ({ signal }) =>
+      client!.get<CatalogStatus>("/admin/model-capabilities/catalog", signal),
+    enabled: evidenceOpen,
+  });
   // The three sources collapse into one line the operator can read without
   // opening anything: what the newest price says, when it was read, and how
   // many more there are. The list itself (with the explicit "use as my price"
@@ -108,9 +120,27 @@ export function BillingRulePanel({
     quote.status === "calculable" &&
     (!quote.expires_at || new Date(quote.expires_at).getTime() > Date.now());
   const quoteList = quotes.data?.items ?? [];
-  const newestQuote = [...quoteList].sort(
-    (a, b) => Date.parse(b.observed_at) - Date.parse(a.observed_at),
-  )[0];
+  // The site this panel belongs to leads, then the other sites, then the model
+  // catalog: a member panel's price is almost always the one from its own site,
+  // and a model panel's is the one that site charges. Sorted only for display —
+  // the API keeps its own order.
+  const quoteRank = (quote: PriceQuote) =>
+    siteId && quote.site_id === siteId ? 0 : quote.purpose === "reference" ? 2 : 1;
+  const orderedQuotes = [...quoteList].sort(
+    (a, b) => quoteRank(a) - quoteRank(b) || Date.parse(b.observed_at) - Date.parse(a.observed_at),
+  );
+  const newestQuote = orderedQuotes[0];
+  const hasReference = quoteList.some((quote) => quote.purpose === "reference");
+  // "No catalog price" has four different causes and the operator cannot tell
+  // them apart from an empty list, so name the one that holds.
+  const noCatalogReason = (() => {
+    const status = catalogStatus.data;
+    if (!status) return "";
+    if (!status.sources.length) return t("billing.noCatalog.sources");
+    if (!status.prices_enabled) return t("billing.noCatalog.prices");
+    if (!status.state) return t("billing.noCatalog.never");
+    return t("billing.noCatalog.unknown", { model: upstreamModel ?? model });
+  })();
   const evidenceLine = (() => {
     if (quotes.isPending) return t("common.loading");
     if (!newestQuote) return t("billing.noQuotes");
@@ -119,7 +149,10 @@ export function BillingRulePanel({
         ? `${nativeAmount(newestQuote.values.input_per_million, newestQuote.unit, t("billing.credit"))} /1M`
         : nativeAmount(newestQuote.values.per_request, newestQuote.unit, t("billing.credit"));
     return [
-      t(newestQuote.purpose === "reference" ? "billing.reference" : "billing.upstream"),
+      quotePublisher(newestQuote, {
+        catalog: t("billing.catalog"),
+        upstream: t("billing.upstreamSite"),
+      }),
       amount,
       relativeTime(newestQuote.observed_at, t),
       quoteList.length > 1 ? t("billing.evidenceMore", { count: quoteList.length - 1 }) : "",
@@ -159,7 +192,11 @@ export function BillingRulePanel({
           onEditRatio={() => setRatioOpen(true)}
         />
       ) : null}
-      <details className="billing-evidence">
+      <details
+        className="billing-evidence"
+        open={evidenceOpen}
+        onToggle={(event) => setEvidenceOpen(event.currentTarget.open)}
+      >
         <summary>
           <strong>{t("billing.quotes")}</strong>
           <span>{evidenceLine}</span>
@@ -179,6 +216,11 @@ export function BillingRulePanel({
           </Button>
         </div>
         <p className="panel-hint">{t("billing.quoteHint")}</p>
+        {!hasReference && !quotes.isPending && noCatalogReason ? (
+          <p className="panel-hint" role="status">
+            {noCatalogReason}
+          </p>
+        ) : null}
         {quotes.isPending ? (
           <Loading />
         ) : quotes.isError ? (
@@ -186,10 +228,11 @@ export function BillingRulePanel({
         ) : !quoteList.length ? (
           <Empty>{t("billing.noQuotes")}</Empty>
         ) : (
-          quoteList.map((quote) => (
+          orderedQuotes.map((quote) => (
             <QuoteActions
               key={quote.scope_key ?? quote.id}
               quote={quote}
+              ownSite={Boolean(siteId && quote.site_id === siteId)}
               inUse={
                 view.data?.rule?.source === "quote_copy" && view.data?.rule?.quote_id === quote.id
               }

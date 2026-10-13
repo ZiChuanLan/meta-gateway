@@ -54,6 +54,11 @@ export type PriceQuote = {
   observed_at: string;
   expires_at?: string;
   raw?: string;
+  /**
+   * The site that published it, filled by the list endpoint. Reference quotes
+   * come from the model catalog and have none.
+   */
+  site_name?: string;
   values: {
     mode: string;
     input_per_million?: number;
@@ -67,4 +72,16 @@ export function nativeAmount(value: number | undefined, unit: QuoteUnit, creditL
   if (value === undefined || !Number.isFinite(value)) return "—";
   const amount = value.toLocaleString(undefined, { maximumSignificantDigits: 10 });
   return `${amount} ${unit.kind === "iso" ? unit.code : creditLabel}`;
+}
+
+/**
+ * Who published a price, as the operator has to read it: the site it was
+ * collected from, or the model catalog that knows it. A list of prices from one
+ * model is a list of publishers — untitled it reads as one price sampled many
+ * times, which is what made the same model look like it had six prices.
+ */
+export function quotePublisher(quote: PriceQuote, labels: { catalog: string; upstream: string }) {
+  return (
+    quote.site_name?.trim() || (quote.purpose === "reference" ? labels.catalog : labels.upstream)
+  );
 }

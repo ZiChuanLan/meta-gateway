@@ -179,7 +179,11 @@ func (db *DB) PriceQuote(id int64) (*domain.PriceQuoteSnapshot, error) {
 	return readPriceQuote(db.DB, id)
 }
 func (db *DB) PriceQuotes(model string) ([]domain.PriceQuoteSnapshot, error) {
-	rows, err := db.Query("SELECT q.id,q.payload FROM price_quotes q WHERE (?='' OR q.model=?) AND q.id=(SELECT MAX(p.id) FROM price_quotes p WHERE p.scope_key=q.scope_key) ORDER BY q.id DESC LIMIT 500", model, model)
+	// The publisher's name is joined here rather than stored in the payload:
+	// the numbers are the snapshot, the name is a label that may be corrected.
+	// `purpose=reference` rows have no site (the model catalog publishes them),
+	// so the join is a LEFT one and the name stays empty for those.
+	rows, err := db.Query("SELECT q.id,q.payload,COALESCE(s.name,'') FROM price_quotes q LEFT JOIN sites s ON s.id=q.site_id WHERE (?='' OR q.model=?) AND q.id=(SELECT MAX(p.id) FROM price_quotes p WHERE p.scope_key=q.scope_key) ORDER BY q.id DESC LIMIT 500", model, model)
 	if err != nil {
 		return nil, err
 	}
@@ -187,8 +191,8 @@ func (db *DB) PriceQuotes(model string) ([]domain.PriceQuoteSnapshot, error) {
 	out := []domain.PriceQuoteSnapshot{}
 	for rows.Next() {
 		var id int64
-		var raw string
-		if err = rows.Scan(&id, &raw); err != nil {
+		var raw, siteName string
+		if err = rows.Scan(&id, &raw, &siteName); err != nil {
 			return nil, err
 		}
 		var q domain.PriceQuoteSnapshot
@@ -196,6 +200,7 @@ func (db *DB) PriceQuotes(model string) ([]domain.PriceQuoteSnapshot, error) {
 			return nil, err
 		}
 		q.ID = id
+		q.SiteName = siteName
 		out = append(out, q)
 	}
 	return out, rows.Err()

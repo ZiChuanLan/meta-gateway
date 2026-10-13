@@ -4,7 +4,7 @@ import { ApiError } from "../../api/client";
 import { Button, Dialog, ErrorState, Field } from "../../components/ui";
 import { useSession } from "../../session";
 import { useI18n } from "../../i18n";
-import { nativeAmount, type BillingView, type PriceQuote } from "./pricingTypes";
+import { nativeAmount, quotePublisher, type BillingView, type PriceQuote } from "./pricingTypes";
 
 type CopyTarget = { scope: string; key: string; revision: number };
 
@@ -14,16 +14,29 @@ export function QuoteActions({
   target,
   current,
   inUse = false,
+  ownSite = false,
 }: {
   quote: PriceQuote;
   target?: CopyTarget;
   current?: BillingView["effective_rates"];
   /** The rule now in force was copied from this quote. */
   inUse?: boolean;
+  /** The quote was collected from the site this panel belongs to. */
+  ownSite?: boolean;
 }) {
   const { t } = useI18n();
   const { client } = useSession();
   const qc = useQueryClient();
+  const publisher = quotePublisher(quote, {
+    catalog: t("billing.catalog"),
+    upstream: t("billing.upstreamSite"),
+  });
+  // Two Latin characters, one CJK one: "HongShi" and "Huan" are two sites and
+  // a single H would make them look like one.
+  const badgeChars = Array.from(publisher);
+  const badge = /[A-Za-z0-9]/.test(badgeChars[0] ?? "")
+    ? badgeChars.slice(0, 2).join("").trim()
+    : (badgeChars[0] ?? "?");
   const [copyTarget, setCopyTarget] = useState<
     (CopyTarget & { quote: PriceQuote; current?: BillingView["effective_rates"] }) | null
   >(null);
@@ -86,20 +99,33 @@ export function QuoteActions({
     <article className="quote-entry">
       <header className="quote-entry-head">
         <div className="quote-entry-title">
-          <strong>
+          <strong>{publisher}</strong>
+          {quote.account_id ? (
+            <span className="quote-entry-account">
+              {t("billing.account", { id: quote.account_id })}
+            </span>
+          ) : null}
+          <span className="quote-entry-kind">
             {t(quote.purpose === "reference" ? "billing.reference" : "billing.upstream")}
-          </strong>
+          </span>
+          {ownSite ? <span className="quote-chip">{t("billing.ownSite")}</span> : null}
           {inUse ? <span className="quote-chip is-current">{t("billing.inUse")}</span> : null}
         </div>
-        <span className="quote-unit">
-          {quote.unit.kind === "iso" ? quote.unit.code : t("billing.credit")}
+        {/* Where the unit used to sit alone: the publisher's own mark, so a list
+            of prices from one model reads as "this site, that site" instead of
+            "six different prices". The unit stays on every amount below. */}
+        <span
+          className={`quote-source-badge${quote.purpose === "reference" ? " is-catalog" : ""}`}
+          title={publisher}
+          aria-label={publisher}
+        >
+          {badge}
         </span>
       </header>
       {/* Who published this price, and when it was read — a footnote, so the
           numbers below it keep the weight. */}
       <p className="quote-entry-meta">
         {quote.source}
-        {quote.account_id ? ` · ${t("billing.account", { id: quote.account_id })}` : ""}
         {quote.upstream_group ? ` · ${t("billing.group", { group: quote.upstream_group })}` : ""}
         {` · ${t("billing.observed", { time: new Date(quote.observed_at).toLocaleString() })}`}
         {quote.unit.display_currency
