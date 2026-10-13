@@ -106,7 +106,7 @@ curl -s http://127.0.0.1:4100/healthz          # version 应变成 v4.x
 > 不带服务名的 `up -d` 会启动侧车，并顺手清掉已经从 compose 文件里删掉的 watchtower 容器。
 > 跑完用 `docker compose ps` 确认 `meta-gateway` 与 `compose-updater` 都在。
 
-也可以**先点控制台「更新」**（watchtower 路径，会先自动备份数据库），升级完再补上面那条
+也可以**先点控制台「更新」**（侧车路径，会先自动备份数据库），升级完再补上面那条
 `docker compose up -d` 把侧车装上——两种顺序都会得到同一个结果。
 > [!NOTE]
 > **控制台会自己提醒这一步。** 网关能看出自己的环境变量是否来自当前部署文件（看容器里有没有

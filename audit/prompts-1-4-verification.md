@@ -1,8 +1,10 @@
 # 四条任务单的实测记录（提示词 1–4）
 
 分支 `experiment/availability`。全部在隔离验收栈（`docker compose -p mg-audit -f docker-compose.audit.yml`，
-控制台 `http://127.0.0.1:4318/console`，mock 上游 `:4319`）里实测，截图见 `audit/evidence/`。
-本地未推送任何提交。
+控制台 `http://127.0.0.1:4318/console`，mock 上游 `:4319`）里实测。
+
+截图存在本机 `audit/evidence/`，**未随仓库发布**（3 MB 图片不适合进版本库，已在 `.gitignore` 里排除）。
+文中提到的每个 `audit/evidence/*.png` 都是那份本机副本里的文件，重现步骤在各段落里，不依赖图片本身。
 
 | 任务 | 提交 |
 | --- | --- |

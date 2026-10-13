@@ -70,3 +70,6 @@ docs/marketing/_art/
 # Local member-UI preview: a scratch copy of the dev database, a built binary,
 # and the screenshots taken while reviewing the member pages. Never committed.
 .tmp-member-ui/
+
+# Verification screenshots: kept on the machine that took them, not in the repo.
+audit/evidence/

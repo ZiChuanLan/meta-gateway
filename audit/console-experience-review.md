@@ -51,7 +51,7 @@
 | 成员端 | 总览、模型卡片、令牌、工作台、日志、个人设置、403 边界；模型/日志/账户手机视图 | 个人路由编辑已读源码，未完整保存各方案 |
 | 普通管理员 | 成员管理与概览；owner-only URL 重定向 | 该角色确实使用简化独立壳，不误判为权限缺失 |
 
-浏览器截图和原始文本在本机 `C:/Users/27783/AppData/Local/Temp/mg-price-architecture-audit/`。部分代表图及复现输出保存到本文相邻的 `evidence/`。
+浏览器截图和原始文本在本机 `C:/Users/27783/AppData/Local/Temp/mg-price-architecture-audit/`。部分代表图及复现输出保存到本文相邻的 `evidence/`（本机文件，未随仓库发布）。
 
 ## 2. 已确认的问题：先修逻辑，后修视觉
 
